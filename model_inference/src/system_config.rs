@@ -28,6 +28,8 @@ pub struct AgentConfig {
     pub updated_at: String,
     #[serde(default)]
     pub tools: Vec<AgentToolConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -545,6 +547,11 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
         }
     }
 
+    let avatar_url = spec.get("avatar_url")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|v| !v.is_empty());
+
     Ok(AgentConfig {
         id: record.config_id.clone(),
         config_id: record.config_id.clone(),
@@ -555,6 +562,7 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
         is_default: spec.get("is_default").and_then(Value::as_bool).unwrap_or(false),
         updated_at: record.updated_at,
         tools: serde_json::from_value(spec.get("tools").cloned().unwrap_or_else(|| Value::Array(Vec::new())))?,
+        avatar_url,
     })
 }
 

@@ -243,6 +243,7 @@ fn build_http_stream_agent(
         is_default: false,
         updated_at: now_rfc3339(),
         tools: vec![],
+        avatar_url: None,
     }
 }
 
@@ -299,6 +300,7 @@ fn build_qq_chat_agent() -> AgentConfig {
         is_default: false,
         updated_at: now_rfc3339(),
         tools: vec![],
+        avatar_url: None,
     }
 }
 
@@ -316,6 +318,7 @@ fn build_workspace_agent(id: &str, name: &str, llm_ref_id: Option<String>) -> Ag
         is_default: false,
         updated_at: now_rfc3339(),
         tools: vec![],
+        avatar_url: None,
     }
 }
 

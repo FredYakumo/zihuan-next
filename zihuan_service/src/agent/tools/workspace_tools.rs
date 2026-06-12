@@ -94,12 +94,14 @@ impl BrainTool for CreateFileBrainTool {
                 return json_error(format!("failed to create parent directory '{}': {err}", parent.display()));
             }
         }
-        if let Err(err) = fs::write(&path, args.content) {
+        if let Err(err) = fs::write(&path, &args.content) {
             return json_error(format!("failed to write file '{}': {err}", path.display()));
         }
+        let line_count = args.content.lines().count();
         success_json(serde_json::json!({
             "ok": true,
             "path": path.display().to_string(),
+            "line_count": line_count,
         }))
     }
 }
@@ -154,6 +156,11 @@ impl BrainTool for DeleteFileBrainTool {
             }
             return json_error(format!("path does not exist: {}", path.display()));
         }
+        let line_count = if path.is_file() {
+            fs::read_to_string(&path).ok().map(|s| s.lines().count())
+        } else {
+            None
+        };
         let delete_result = if path.is_dir() {
             if !args.recursive {
                 return json_error("recursive=true is required to delete a directory".to_string());
@@ -167,6 +174,7 @@ impl BrainTool for DeleteFileBrainTool {
                 "ok": true,
                 "path": path.display().to_string(),
                 "deleted": true,
+                "line_count": line_count,
             })),
             Err(err) => json_error(format!("failed to delete '{}': {err}", path.display())),
         }

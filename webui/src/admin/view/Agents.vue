@@ -286,7 +286,54 @@
               </div>
             </template>
 
-            <template v-else-if="form.type === 'http_stream'">
+            <!-- 头像编辑：http_stream 和 workspace 支持 -->
+            <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
+              <div class="field-full">
+                <label>Agent 头像</label>
+                <div class="avatar-upload-row">
+                  <img
+                    v-if="form.avatar_url"
+                    :src="form.avatar_url"
+                    alt="Avatar preview"
+                    class="avatar-preview"
+                  />
+                  <div v-else class="avatar-placeholder">
+                    {{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}
+                  </div>
+                  <div class="avatar-actions">
+                    <input
+                      ref="createAvatarFileInput"
+                      type="file"
+                      accept="image/*"
+                      style="display: none"
+                      @change="handleAvatarFileSelect"
+                    />
+                    <button
+                      type="button"
+                      class="btn ghost"
+                      @click="$refs.createAvatarFileInput?.click()"
+                    >
+                      {{ form.avatar_url ? '更换头像' : '上传头像' }}
+                    </button>
+                    <button
+                      v-if="form.avatar_url"
+                      type="button"
+                      class="btn warn"
+                      @click="clearAvatar"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+                <input
+                  v-model="form.avatar_url"
+                  placeholder="头像 URL（可选，或直接上传图片）"
+                  style="margin-top: 8px"
+                />
+              </div>
+            </template>
+
+            <template v-if="form.type === 'http_stream'">
               <div class="field">
                 <label>Bind</label
                 ><input
@@ -364,7 +411,7 @@
               </div>
             </template>
 
-            <template v-else>
+            <template v-if="form.type === 'workspace'">
               <div class="editor-card" style="margin-top: 12px">
                 <div class="split-header">
                   <div>
@@ -502,37 +549,86 @@
             </div>
           </div>
 
-          <div v-else class="editor-card" style="margin-top: 12px">
-            <div class="split-header">
-              <div>
-                <h3>默认工具</h3>
+<!-- 头像编辑：http_stream 和 workspace 支持 -->
+            <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
+              <div class="field-full">
+                <label>Agent 头像</label>
+                <div class="avatar-upload-row">
+                  <img
+                    v-if="form.avatar_url"
+                    :src="form.avatar_url"
+                    alt="Avatar preview"
+                    class="avatar-preview"
+                  />
+                  <div v-else class="avatar-placeholder">
+                    {{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}
+                  </div>
+                  <div class="avatar-actions">
+                    <input
+                      ref="avatarFileInput"
+                      type="file"
+                      accept="image/*"
+                      style="display: none"
+                      @change="handleAvatarFileSelect"
+                    />
+                    <button
+                      type="button"
+                      class="btn ghost"
+                      @click="$refs.avatarFileInput?.click()"
+                    >
+                      {{ form.avatar_url ? '更换头像' : '上传头像' }}
+                    </button>
+                    <button
+                      v-if="form.avatar_url"
+                      type="button"
+                      class="btn warn"
+                      @click="clearAvatar"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+                <input
+                  v-model="form.avatar_url"
+                  placeholder="头像 URL（可选，或直接上传图片）"
+                  style="margin-top: 8px"
+                />
+              </div>
+            </template>
+
+            <template v-if="form.type === 'workspace'">
+            <div class="editor-card" style="margin-top: 12px">
+              <div class="split-header">
+                <div>
+                  <h3>默认工具</h3>
+                </div>
+              </div>
+              <div class="list" style="margin-top: 12px">
+                <label
+                  v-for="tool in workspaceDefaultTools"
+                  :key="tool.id"
+                  class="field-check"
+                  style="
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 8px;
+                    margin-bottom: 8px;
+                  "
+                >
+                  <input
+                    v-model="form.default_tools_enabled[tool.id]"
+                    type="checkbox"
+                  />
+                  <span>
+                    <strong>{{ tool.label }}</strong>
+                    <span class="muted" style="display: block">{{
+                      tool.description
+                    }}</span>
+                  </span>
+                </label>
               </div>
             </div>
-            <div class="list" style="margin-top: 12px">
-              <label
-                v-for="tool in workspaceDefaultTools"
-                :key="tool.id"
-                class="field-check"
-                style="
-                  display: flex;
-                  align-items: flex-start;
-                  gap: 8px;
-                  margin-bottom: 8px;
-                "
-              >
-                <input
-                  v-model="form.default_tools_enabled[tool.id]"
-                  type="checkbox"
-                />
-                <span>
-                  <strong>{{ tool.label }}</strong>
-                  <span class="muted" style="display: block">{{
-                    tool.description
-                  }}</span>
-                </span>
-              </label>
-            </div>
-          </div>
+          </template>
 
           <div class="editor-card" style="margin-top: 18px">
             <div class="split-header">
@@ -1022,7 +1118,54 @@
               </div>
             </template>
 
-            <template v-else-if="form.type === 'http_stream'">
+            <!-- 头像编辑：http_stream 和 workspace 支持 -->
+            <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
+              <div class="field-full">
+                <label>Agent 头像</label>
+                <div class="avatar-upload-row">
+                  <img
+                    v-if="form.avatar_url"
+                    :src="form.avatar_url"
+                    alt="Avatar preview"
+                    class="avatar-preview"
+                  />
+                  <div v-else class="avatar-placeholder">
+                    {{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}
+                  </div>
+                  <div class="avatar-actions">
+                    <input
+                      ref="avatarFileInput"
+                      type="file"
+                      accept="image/*"
+                      style="display: none"
+                      @change="handleAvatarFileSelect"
+                    />
+                    <button
+                      type="button"
+                      class="btn ghost"
+                      @click="$refs.avatarFileInput?.click()"
+                    >
+                      {{ form.avatar_url ? '更换头像' : '上传头像' }}
+                    </button>
+                    <button
+                      v-if="form.avatar_url"
+                      type="button"
+                      class="btn warn"
+                      @click="clearAvatar"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+                <input
+                  v-model="form.avatar_url"
+                  placeholder="头像 URL（可选，或直接上传图片）"
+                  style="margin-top: 8px"
+                />
+              </div>
+            </template>
+
+            <template v-if="form.type === 'http_stream'">
               <div class="field">
                 <label>Bind</label
                 ><input
@@ -1108,6 +1251,40 @@
                 <div class="list" style="margin-top: 12px">
                   <label
                     v-for="tool in httpStreamDefaultTools"
+                    :key="tool.id"
+                    class="field-check"
+                    style="
+                      display: flex;
+                      align-items: flex-start;
+                      gap: 8px;
+                      margin-bottom: 8px;
+                    "
+                  >
+                    <input
+                      v-model="form.default_tools_enabled[tool.id]"
+                      type="checkbox"
+                    />
+                    <span>
+                      <strong>{{ tool.label }}</strong>
+                      <span class="muted" style="display: block">{{
+                        tool.description
+                      }}</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </template>
+
+            <template v-if="form.type === 'workspace'">
+              <div class="editor-card" style="margin-top: 12px">
+                <div class="split-header">
+                  <div>
+                    <h3>默认工具</h3>
+                  </div>
+                </div>
+                <div class="list" style="margin-top: 12px">
+                  <label
+                    v-for="tool in workspaceDefaultTools"
                     :key="tool.id"
                     class="field-check"
                     style="
@@ -1961,6 +2138,77 @@ function resetForm() {
   resetEmotionDimensionDraft();
 }
 
+const avatarUploading = ref(false);
+
+function handleAvatarFileSelect(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  // Validate file type
+  if (!file.type.startsWith('image/')) {
+    alert('请上传图片文件');
+    return;
+  }
+
+  // Validate file size (max 30MB)
+  const maxSize = 30 * 1024 * 1024;
+  if (file.size > maxSize) {
+    alert('图片大小不能超过 30MB');
+    return;
+  }
+
+  uploadAvatarFile(file);
+
+  // Reset input
+  input.value = '';
+}
+
+async function uploadAvatarFile(file: File) {
+  if (avatarUploading.value) return;
+
+  avatarUploading.value = true;
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch('/api/agents/avatar', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || '上传失败');
+    }
+
+    const result = await response.json();
+    if (result.avatar_id) {
+      // Store avatar:// prefix to distinguish from external URLs
+      form.avatar_url = `avatar://${result.avatar_id}`;
+    }
+  } catch (e) {
+    alert(`头像上传失败: ${e}`);
+  } finally {
+    avatarUploading.value = false;
+  }
+}
+
+function clearAvatar() {
+  form.avatar_url = '';
+}
+
+// Get display URL for avatar (handles avatar:// prefix)
+function getAvatarDisplayUrl(avatarUrl: string): string {
+  if (!avatarUrl) return '';
+  if (avatarUrl.startsWith('avatar://')) {
+    const avatarId = avatarUrl.substring(9);
+    return `/api/agents/avatar/${avatarId}`;
+  }
+  // External URL or base64
+  return avatarUrl;
+}
+
 function clearEditingAgent() {
   editingAgentId.value = "";
 }
@@ -2717,10 +2965,12 @@ function llmRefName(id: string): string {
 }
 
 function botAvatarUrl(agent: AgentWithRuntime): string {
-  if (agent.agent_type.type !== "qq_chat") {
-    return "";
+  // QQ Chat Agent 使用 bot_avatar_url
+  if (agent.agent_type.type === "qq_chat") {
+    return String(agent.qq_chat_profile?.bot_avatar_url ?? "");
   }
-  return String(agent.qq_chat_profile?.bot_avatar_url ?? "");
+  // HTTP Stream 和 Workspace Agent 使用 avatar_url
+  return String(agent.avatar_url ?? "");
 }
 
 function runtimeBadgeText(agent: AgentWithRuntime): string {
@@ -2965,6 +3215,43 @@ onMounted(() => {
   width: 32px;
   text-align: right;
   color: var(--admin-muted);
+}
+
+/* ── Avatar Upload ── */
+
+.avatar-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.avatar-preview,
+.avatar-placeholder {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.avatar-preview {
+  border: 1px solid var(--admin-border);
+}
+
+.avatar-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--admin-accent);
+  color: #fff;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.avatar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .emotion-dim-prompt-text {

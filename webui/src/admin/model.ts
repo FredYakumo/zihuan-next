@@ -134,6 +134,7 @@ export interface AgentFormState {
   http_weaviate_memory_connection_id: string;
   task_db_connection_id: string;
   tools: ToolFormState[];
+  avatar_url: string;
 }
 
 export type DefaultToolOption = {
@@ -387,6 +388,7 @@ export function defaultAgentForm(): AgentFormState {
     http_weaviate_memory_connection_id: "",
     task_db_connection_id: "",
     tools: [],
+    avatar_url: "",
   };
 }
 
@@ -771,6 +773,8 @@ export function agentFormFromConfig(
       }
     }
   }
+  // avatar_url is at root level for http_stream and workspace agents
+  form.avatar_url = String((agent as AgentWithRuntime).avatar_url ?? "");
   return form;
 }
 
@@ -820,6 +824,7 @@ export function buildAgentPayload(form: AgentFormState): {
   is_default: boolean;
   agent_type: Record<string, unknown>;
   tools: AgentToolConfig[];
+  avatar_url?: string | null;
 } {
   const tools = form.tools.map(buildToolPayload);
   const common = {
@@ -873,6 +878,7 @@ export function buildAgentPayload(form: AgentFormState): {
   if (form.type === "http_stream") {
     return {
       ...common,
+      avatar_url: form.avatar_url.trim() || null,
       agent_type: {
         type: "http_stream",
         bind: form.http_bind.trim(),
@@ -896,6 +902,7 @@ export function buildAgentPayload(form: AgentFormState): {
 
   return {
     ...common,
+    avatar_url: form.avatar_url.trim() || null,
     agent_type: {
       type: "workspace",
       llm_ref_id: form.llm_ref_id || null,

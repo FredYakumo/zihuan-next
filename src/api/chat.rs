@@ -262,7 +262,7 @@ fn extract_agent_snapshot(agent: &AgentConfig, connections: &[ConnectionConfig])
 
     let avatar_url = match &agent.agent_type {
         AgentType::QqChat(config) => resolve_qq_avatar_url(connections, config),
-        AgentType::HttpStream(_) | AgentType::Workspace(_) => None,
+        AgentType::HttpStream(_) | AgentType::Workspace(_) => agent.avatar_url.clone(),
     };
 
     AgentSnapshot {

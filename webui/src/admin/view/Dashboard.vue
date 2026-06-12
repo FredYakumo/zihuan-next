@@ -109,123 +109,250 @@
                 
               </div>
               <div
-                v-for="message in visibleMessages"
-                :key="message.id"
+                v-for="group in messageGroups"
+                :key="group.id"
                 class="chat-bubble-row"
-                :class="message.role"
+                :class="group.role"
               >
                 <img
-                  v-if="message.role === 'assistant' && (message.agentAvatarUrl || selectedAgentAvatarUrl)"
+                  v-if="group.role === 'assistant' && group.avatarUrl"
                   class="chat-message-avatar"
-                  :src="message.agentAvatarUrl || selectedAgentAvatarUrl"
+                  :src="group.avatarUrl"
                   alt="bot avatar"
                 />
                 <div
-                  v-else-if="message.role === 'assistant'"
+                  v-else-if="group.role === 'assistant'"
                   class="chat-message-avatar chat-message-avatar--fallback"
                 >
-                  {{ agentInitial(message.agentName || selectedAgent?.name || "Bot") }}
+                  {{ agentInitial(group.agentName || "Bot") }}
                 </div>
                 <div
-                  v-if="message.role === 'assistant'"
+                  v-if="group.role === 'assistant'"
                   class="chat-bubble-col"
                 >
                   <div
-                    v-if="(message.liveToolCalls && message.liveToolCalls.length > 0) || message.toolCalls.length > 0 || activeToolDetail?.messageId === message.id"
-                    class="chat-tool-above-bubble"
+                    v-for="(message, idx) in group.messages"
+                    :key="message.id + '-' + idx"
+                    class="chat-message-item"
                   >
+                    <!-- 最后一条消息的工具调用显示在上方 -->
                     <div
-                      v-if="message.liveToolCalls && message.liveToolCalls.length > 0"
-                      class="chat-tool-inline-list"
+                      v-if="idx === group.messages.length - 1 && ((message.liveToolCalls && message.liveToolCalls.length > 0) || message.toolCalls.length > 0 || (activeToolDetail?.messageId === message.id))"
+                      class="chat-tool-above-content"
                     >
                       <div
-                        v-for="liveCall in message.liveToolCalls"
-                        :key="liveCall.call_id"
-                        class="chat-live-tool-wrapper"
+                        v-if="message.liveToolCalls && message.liveToolCalls.length > 0"
+                        class="chat-tool-inline-list"
                       >
-                        <button
-                          class="chat-tool-inline"
-                          :class="{ active: expandedLiveToolCalls.has(liveCall.call_id) }"
-                          @click="toggleLiveToolCall(liveCall.call_id)"
-                        >
-                          <span v-if="!liveCall.done" class="live-tool-spinner"></span>
-                          <span v-else class="live-tool-done-icon">✓</span>
-                          工具调用: {{ liveCall.name }}
-                        </button>
                         <div
-                          v-if="expandedLiveToolCalls.has(liveCall.call_id)"
-                          class="chat-tool-detail-inline"
+                          v-for="liveCall in message.liveToolCalls"
+                          :key="liveCall.call_id"
+                          class="chat-live-tool-wrapper"
                         >
-                          <div class="chat-tool-detail-inline-block">
-                            <div class="chat-tool-detail-caption">arguments</div>
-                            <pre>{{ formatToolPayload(liveCall.arguments) }}</pre>
-                          </div>
-                          <div v-if="liveCall.done" class="chat-tool-detail-inline-block">
-                            <div class="chat-tool-detail-caption">result</div>
-                            <pre>{{ liveCall.result || "(空结果)" }}</pre>
-                          </div>
-                          <div v-else class="chat-tool-detail-inline-block">
-                            <div class="chat-tool-detail-caption">result</div>
-                            <div class="live-tool-pending">推理中...</div>
-                          </div>
+                          <template v-if="classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result).type === 'generic'">
+                            <button
+                              class="chat-tool-inline"
+                              :class="{ active: expandedLiveToolCalls.has(liveCall.call_id) }"
+                              @click="toggleLiveToolCall(liveCall.call_id)"
+                            >
+                              <span v-if="!liveCall.done" class="live-tool-spinner"></span>
+                              <span v-else class="live-tool-done-icon">✓</span>
+                              工具调用: {{ liveCall.name }}
+                            </button>
+                            <div
+                              v-if="expandedLiveToolCalls.has(liveCall.call_id)"
+                              class="chat-tool-detail-inline"
+                            >
+                              <div class="chat-tool-detail-inline-block">
+                                <div class="chat-tool-detail-caption">arguments</div>
+                                <pre>{{ formatToolPayload(liveCall.arguments) }}</pre>
+                              </div>
+                              <div v-if="liveCall.done" class="chat-tool-detail-inline-block">
+                                <div class="chat-tool-detail-caption">result</div>
+                                <pre>{{ liveCall.result || "(空结果)" }}</pre>
+                              </div>
+                              <div v-else class="chat-tool-detail-inline-block">
+                                <div class="chat-tool-detail-caption">result</div>
+                                <div class="live-tool-pending">推理中...</div>
+                              </div>
+                            </div>
+                          </template>
+                          <ToolCallBadge
+                            v-else
+                            :kind="classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result)"
+                            :loading="!liveCall.done"
+                            @click="liveCall.done && openToolPreview(classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result))"
+                          />
+                        </div>
+                      </div>
+                      <div
+                        v-if="message.toolCalls.length > 0"
+                        class="chat-tool-inline-list"
+                      >
+                        <template v-for="toolCall in message.toolCalls" :key="toolCall.id">
+                          <button
+                            v-if="classifyToolCall(toolCall.function.name, toolCall.function.arguments, getToolResultText(toolCall.id)).type === 'generic'"
+                            class="chat-tool-inline"
+                            :class="{ active: activeToolCallId === toolCall.id }"
+                            @click="openToolDetail(message.id, toolCall.id)"
+                          >
+                            调用工具: {{ toolCall.function.name }}
+                          </button>
+                          <ToolCallBadge
+                            v-else
+                            :kind="classifyToolCall(toolCall.function.name, toolCall.function.arguments, getToolResultText(toolCall.id))"
+                            @click="openToolPreview(classifyToolCall(toolCall.function.name, toolCall.function.arguments, getToolResultText(toolCall.id)))"
+                          />
+                        </template>
+                      </div>
+                      <div
+                        v-if="activeToolDetail?.messageId === message.id"
+                        class="chat-tool-detail-inline"
+                      >
+                        <div class="chat-tool-detail-inline-header">
+                          <strong>{{ activeToolDetail.toolCall.function.name }}</strong>
+                          <button class="chat-tool-detail-inline-close" @click="closeToolDetail">收起</button>
+                        </div>
+                        <div class="chat-tool-detail-inline-block">
+                          <div class="chat-tool-detail-caption">tool_call_id</div>
+                          <code>{{ activeToolDetail.toolCall.id }}</code>
+                        </div>
+                        <div class="chat-tool-detail-inline-block">
+                          <div class="chat-tool-detail-caption">arguments</div>
+                          <pre>{{ formatToolPayload(activeToolDetail.toolCall.function.arguments) }}</pre>
+                        </div>
+                        <div class="chat-tool-detail-inline-block">
+                          <div class="chat-tool-detail-caption">result</div>
+                          <pre>{{ activeToolDetail.result || "(空结果)" }}</pre>
                         </div>
                       </div>
                     </div>
                     <div
-                      v-if="message.toolCalls.length > 0"
-                      class="chat-tool-inline-list"
+                      v-if="message.thinkingContent"
+                      class="chat-thinking-block"
+                      :class="{ collapsed: !message.thinkingExpanded }"
                     >
                       <button
-                        v-for="toolCall in message.toolCalls"
-                        :key="toolCall.id"
-                        class="chat-tool-inline"
-                        :class="{ active: activeToolCallId === toolCall.id }"
-                        @click="openToolDetail(message.id, toolCall.id)"
+                        class="chat-thinking-toggle"
+                        @click="message.thinkingExpanded = !message.thinkingExpanded"
                       >
-                        调用工具: {{ toolCall.function.name }}
+                        <span class="chat-thinking-icon">{{ message.thinkingExpanded ? '▼' : '▶' }}</span>
+                        思考过程
+                        <span v-if="message.streaming && message.thinkingExpanded" class="live-tool-spinner"></span>
                       </button>
+                      <div v-if="message.thinkingExpanded" class="chat-thinking-content">
+                        {{ message.thinkingContent }}
+                      </div>
                     </div>
                     <div
-                      v-if="activeToolDetail?.messageId === message.id"
-                      class="chat-tool-detail-inline"
+                      v-if="message.content.trim().length > 0 || message.streaming"
+                      class="chat-bubble"
+                      :class="message.role"
                     >
-                      <div class="chat-tool-detail-inline-header">
-                        <strong>{{ activeToolDetail.toolCall.function.name }}</strong>
-                        <button class="chat-tool-detail-inline-close" @click="closeToolDetail">收起</button>
+                      <div
+                        class="chat-bubble-content markdown-body"
+                        v-html="renderMessageContent(message.content, message.streaming)"
+                      ></div>
+                      <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
+                    </div>
+                    <!-- 非最后一条消息的工具调用显示在下方 -->
+                    <div
+                      v-if="idx !== group.messages.length - 1 && ((message.liveToolCalls && message.liveToolCalls.length > 0) || message.toolCalls.length > 0 || (activeToolDetail?.messageId === message.id))"
+                      class="chat-tool-below-content"
+                    >
+                      <div
+                        v-if="message.liveToolCalls && message.liveToolCalls.length > 0"
+                        class="chat-tool-inline-list"
+                      >
+                        <div
+                          v-for="liveCall in message.liveToolCalls"
+                          :key="liveCall.call_id"
+                          class="chat-live-tool-wrapper"
+                        >
+                          <template v-if="classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result).type === 'generic'">
+                            <button
+                              class="chat-tool-inline"
+                              :class="{ active: expandedLiveToolCalls.has(liveCall.call_id) }"
+                              @click="toggleLiveToolCall(liveCall.call_id)"
+                            >
+                              <span v-if="!liveCall.done" class="live-tool-spinner"></span>
+                              <span v-else class="live-tool-done-icon">✓</span>
+                              工具调用: {{ liveCall.name }}
+                            </button>
+                            <div
+                              v-if="expandedLiveToolCalls.has(liveCall.call_id)"
+                              class="chat-tool-detail-inline"
+                            >
+                              <div class="chat-tool-detail-inline-block">
+                                <div class="chat-tool-detail-caption">arguments</div>
+                                <pre>{{ formatToolPayload(liveCall.arguments) }}</pre>
+                              </div>
+                              <div v-if="liveCall.done" class="chat-tool-detail-inline-block">
+                                <div class="chat-tool-detail-caption">result</div>
+                                <pre>{{ liveCall.result || "(空结果)" }}</pre>
+                              </div>
+                              <div v-else class="chat-tool-detail-inline-block">
+                                <div class="chat-tool-detail-caption">result</div>
+                                <div class="live-tool-pending">推理中...</div>
+                              </div>
+                            </div>
+                          </template>
+                          <ToolCallBadge
+                            v-else
+                            :kind="classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result)"
+                            :loading="!liveCall.done"
+                            @click="liveCall.done && openToolPreview(classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result))"
+                          />
+                        </div>
                       </div>
-                      <div class="chat-tool-detail-inline-block">
-                        <div class="chat-tool-detail-caption">tool_call_id</div>
-                        <code>{{ activeToolDetail.toolCall.id }}</code>
+                      <div
+                        v-if="message.toolCalls.length > 0"
+                        class="chat-tool-inline-list"
+                      >
+                        <template v-for="toolCall in message.toolCalls" :key="toolCall.id">
+                          <button
+                            v-if="classifyToolCall(toolCall.function.name, toolCall.function.arguments, getToolResultText(toolCall.id)).type === 'generic'"
+                            class="chat-tool-inline"
+                            :class="{ active: activeToolCallId === toolCall.id }"
+                            @click="openToolDetail(message.id, toolCall.id)"
+                          >
+                            调用工具: {{ toolCall.function.name }}
+                          </button>
+                          <ToolCallBadge
+                            v-else
+                            :kind="classifyToolCall(toolCall.function.name, toolCall.function.arguments, getToolResultText(toolCall.id))"
+                            @click="openToolPreview(classifyToolCall(toolCall.function.name, toolCall.function.arguments, getToolResultText(toolCall.id)))"
+                          />
+                        </template>
                       </div>
-                      <div class="chat-tool-detail-inline-block">
-                        <div class="chat-tool-detail-caption">arguments</div>
-                        <pre>{{ formatToolPayload(activeToolDetail.toolCall.function.arguments) }}</pre>
-                      </div>
-                      <div class="chat-tool-detail-inline-block">
-                        <div class="chat-tool-detail-caption">result</div>
-                        <pre>{{ activeToolDetail.result || "(空结果)" }}</pre>
+                      <div
+                        v-if="activeToolDetail?.messageId === message.id"
+                        class="chat-tool-detail-inline"
+                      >
+                        <div class="chat-tool-detail-inline-header">
+                          <strong>{{ activeToolDetail.toolCall.function.name }}</strong>
+                          <button class="chat-tool-detail-inline-close" @click="closeToolDetail">收起</button>
+                        </div>
+                        <div class="chat-tool-detail-inline-block">
+                          <div class="chat-tool-detail-caption">tool_call_id</div>
+                          <code>{{ activeToolDetail.toolCall.id }}</code>
+                        </div>
+                        <div class="chat-tool-detail-inline-block">
+                          <div class="chat-tool-detail-caption">arguments</div>
+                          <pre>{{ formatToolPayload(activeToolDetail.toolCall.function.arguments) }}</pre>
+                        </div>
+                        <div class="chat-tool-detail-inline-block">
+                          <div class="chat-tool-detail-caption">result</div>
+                          <pre>{{ activeToolDetail.result || "(空结果)" }}</pre>
+                        </div>
                       </div>
                     </div>
                   </div>
+                </div>
+                <div v-if="group.role !== 'assistant'" class="chat-bubble-col">
                   <div
-                    v-if="message.thinkingContent"
-                    class="chat-thinking-block"
-                    :class="{ collapsed: !message.thinkingExpanded }"
-                  >
-                    <button
-                      class="chat-thinking-toggle"
-                      @click="message.thinkingExpanded = !message.thinkingExpanded"
-                    >
-                      <span class="chat-thinking-icon">{{ message.thinkingExpanded ? '▼' : '▶' }}</span>
-                      思考过程
-                      <span v-if="message.streaming && message.thinkingExpanded" class="live-tool-spinner"></span>
-                    </button>
-                    <div v-if="message.thinkingExpanded" class="chat-thinking-content">
-                      {{ message.thinkingContent }}
-                    </div>
-                  </div>
-                  <div
-                    v-if="message.content.trim().length > 0 || message.streaming"
+                    v-for="(message, idx) in group.messages"
+                    :key="message.id + '-' + idx"
                     class="chat-bubble"
                     :class="message.role"
                   >
@@ -235,13 +362,6 @@
                     ></div>
                     <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
                   </div>
-                </div>
-                <div v-if="message.role !== 'assistant'" class="chat-bubble" :class="message.role">
-                  <div
-                    class="chat-bubble-content markdown-body"
-                    v-html="renderMessageContent(message.content, message.streaming)"
-                  ></div>
-                  <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
                 </div>
               </div>
             </div>
@@ -467,6 +587,69 @@
       </section>
     </div>
   </section>
+
+  <Teleport to="body">
+    <div
+      v-if="toolPreviewState"
+      class="tool-preview-overlay"
+      @click.self="closeToolPreview"
+      @keydown="handleToolPreviewKeydown"
+    >
+      <div class="tool-preview-panel">
+        <div class="tool-preview-header">
+          <template v-if="toolPreviewState.kind.type === 'create_file'">
+            <span class="badge-icon">📄</span> 创建文件: {{ toolPreviewState.kind.filename }}
+          </template>
+          <template v-else-if="toolPreviewState.kind.type === 'delete_file'">
+            <span class="badge-icon">🗑️</span> 删除文件: {{ toolPreviewState.kind.filename }}
+          </template>
+          <template v-else-if="toolPreviewState.kind.type === 'edit_file'">
+            <span class="badge-icon">✏️</span> 编辑文件: {{ toolPreviewState.kind.filename }}
+          </template>
+          <template v-else-if="toolPreviewState.kind.type === 'exec_cmd'">
+            <span class="cmd-prefix">&gt;</span> {{ toolPreviewState.kind.command }}
+          </template>
+          <button class="tool-preview-close" @click="closeToolPreview">✕</button>
+        </div>
+        <div class="tool-preview-body">
+          <template v-if="toolPreviewState.kind.type === 'create_file'">
+            <pre class="tool-preview-code tool-preview-code--create">{{ toolPreviewState.kind.content }}</pre>
+          </template>
+          <template v-else-if="toolPreviewState.kind.type === 'delete_file'">
+            <div class="tool-preview-info tool-preview-info--delete">
+              <p>已删除文件: <code>{{ toolPreviewState.kind.filename }}</code></p>
+              <p v-if="toolPreviewState.kind.lineCount != null">共 {{ toolPreviewState.kind.lineCount }} 行</p>
+            </div>
+          </template>
+          <template v-else-if="toolPreviewState.kind.type === 'edit_file'">
+            <div class="tool-preview-diff">
+              <div v-for="(hunk, idx) in editHunks(toolPreviewState.kind.edits)" :key="idx" class="tool-preview-hunk">
+                <div v-for="line in hunk.removed" :key="line" class="tool-preview-diff-line tool-preview-diff-line--removed">
+                  <span class="diff-marker">-</span> {{ line }}
+                </div>
+                <div v-for="line in hunk.added" :key="line" class="tool-preview-diff-line tool-preview-diff-line--added">
+                  <span class="diff-marker">+</span> {{ line }}
+                </div>
+              </div>
+            </div>
+          </template>
+          <template v-else-if="toolPreviewState.kind.type === 'exec_cmd'">
+            <template v-if="toolPreviewState.kind.hasResult">
+              <div v-if="toolPreviewState.kind.stdout" class="tool-preview-output">
+                <div class="tool-preview-output-label">stdout</div>
+                <pre class="tool-preview-code tool-preview-code--cmd">{{ toolPreviewState.kind.stdout }}</pre>
+              </div>
+              <div v-if="toolPreviewState.kind.stderr" class="tool-preview-output">
+                <div class="tool-preview-output-label tool-preview-output-label--error">stderr</div>
+                <pre class="tool-preview-code tool-preview-code--cmd tool-preview-code--error">{{ toolPreviewState.kind.stderr }}</pre>
+              </div>
+            </template>
+            <div v-else class="tool-preview-no-result">无结果</div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -484,6 +667,7 @@ import {
   type LlmConfig,
 } from "../../api/client";
 import { formatTime } from "../model";
+import ToolCallBadge from "./ToolCallBadge.vue";
 
 type ChatRole = "user" | "assistant" | "tool";
 type LiveToolCall = {
@@ -513,6 +697,92 @@ type ToolDetail = {
   toolCall: ChatToolCall;
   result: string;
 };
+type LineEditSpec = {
+  start_line: number;
+  end_line: number;
+  replacement_lines: string[];
+};
+type ToolCallKind =
+  | { type: "create_file"; filename: string; lineCount: number; content: string }
+  | { type: "delete_file"; filename: string; lineCount: number | null }
+  | { type: "edit_file"; filename: string; addedLines: number; removedLines: number; edits: LineEditSpec[] }
+  | { type: "exec_cmd"; command: string; hasResult: boolean; stdout?: string; stderr?: string }
+  | { type: "generic"; name: string };
+
+function basename(p: string): string {
+  const seg = p.replace(/\\/g, "/").split("/");
+  return seg[seg.length - 1] || p;
+}
+
+function safeParseJson<T>(raw: unknown): T | null {
+  if (raw == null) return null;
+  try {
+    return typeof raw === "string" ? JSON.parse(raw) as T : raw as T;
+  } catch {
+    return null;
+  }
+}
+
+function classifyToolCall(name: string, arguments_: unknown, result?: string): ToolCallKind {
+  if (name === "create_file") {
+    const args = safeParseJson<{ path?: string; content?: string }>(arguments_);
+    if (args?.path != null && args?.content != null) {
+      return {
+        type: "create_file",
+        filename: basename(args.path),
+        lineCount: args.content.split("\n").length,
+        content: args.content,
+      };
+    }
+  }
+  if (name === "delete_file") {
+    const args = safeParseJson<{ path?: string }>(arguments_);
+    const res = safeParseJson<{ line_count?: number | null }>(result);
+    if (args?.path != null) {
+      return {
+        type: "delete_file",
+        filename: basename(args.path),
+        lineCount: res?.line_count ?? null,
+      };
+    }
+  }
+  if (name === "edit_file") {
+    const args = safeParseJson<{ path?: string; edits?: LineEditSpec[] }>(arguments_);
+    if (args?.path != null && Array.isArray(args.edits)) {
+      let addedLines = 0;
+      let removedLines = 0;
+      for (const edit of args.edits) {
+        removedLines += Math.max(0, edit.end_line - edit.start_line + 1);
+        addedLines += edit.replacement_lines.length;
+      }
+      return {
+        type: "edit_file",
+        filename: basename(args.path),
+        addedLines,
+        removedLines,
+        edits: args.edits,
+      };
+    }
+  }
+  if (name === "exec_cmd") {
+    const args = safeParseJson<{ command?: string }>(arguments_);
+    const res = safeParseJson<{ stdout?: string; stderr?: string }>(result);
+    const stdout = res?.stdout ?? "";
+    const stderr = res?.stderr ?? "";
+    const hasResult = stdout.length > 0 || stderr.length > 0;
+    if (args?.command != null) {
+      return {
+        type: "exec_cmd",
+        command: args.command,
+        hasResult,
+        stdout: hasResult ? stdout : undefined,
+        stderr: hasResult ? stderr : undefined,
+      };
+    }
+  }
+  return { type: "generic", name };
+}
+
 type PendingNewConversationCommand = {
   passthroughText: string | null;
 };
@@ -674,6 +944,37 @@ function messageAvatarUrl(record: ChatHistoryRecord): string {
   }
   return "";
 }
+type MessageGroup = {
+  id: string;
+  role: ChatRole;
+  messages: DashboardMessage[];
+  avatarUrl?: string;
+  agentName?: string;
+};
+
+// 将连续同角色的消息分组，同时过滤掉 tool 消息
+const messageGroups = computed(() => {
+  const filtered = messages.value.filter((m) => m.role !== "tool");
+  const groups: MessageGroup[] = [];
+  let currentGroup: MessageGroup | null = null;
+
+  for (const message of filtered) {
+    if (currentGroup && currentGroup.role === message.role) {
+      currentGroup.messages.push(message);
+    } else {
+      currentGroup = {
+        id: `group-${message.id}`,
+        role: message.role,
+        messages: [message],
+        avatarUrl: message.role === "assistant" ? (message.agentAvatarUrl || selectedAgentAvatarUrl.value || undefined) : undefined,
+        agentName: message.agentName || selectedAgent.value?.name,
+      };
+      groups.push(currentGroup);
+    }
+  }
+  return groups;
+});
+
 const visibleMessages = computed(() => messages.value.filter((message) => message.role !== "tool"));
 const activeToolDetail = computed<ToolDetail | null>(() => {
   if (!activeToolCallId.value) {
@@ -707,19 +1008,26 @@ function readableAgentType(type: string): string {
 }
 
 function agentAvatarUrl(agent: AgentWithRuntime | null | undefined): string {
-  if (!agent || agent.agent_type.type !== "qq_chat") {
+  if (!agent) {
     return "";
   }
-  const profile = agent.qq_chat_profile;
-  const explicit = String(profile?.bot_avatar_url ?? "").trim();
-  if (explicit) {
-    return explicit;
+
+  // For QQ Chat Agent, use QQ avatar
+  if (agent.agent_type.type === "qq_chat") {
+    const profile = agent.qq_chat_profile;
+    const explicit = String(profile?.bot_avatar_url ?? "").trim();
+    if (explicit) {
+      return explicit;
+    }
+    const botUserId = String(profile?.bot_user_id ?? "").trim();
+    if (!botUserId) {
+      return "";
+    }
+    return `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(botUserId)}&s=640`;
   }
-  const botUserId = String(profile?.bot_user_id ?? "").trim();
-  if (!botUserId) {
-    return "";
-  }
-  return `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(botUserId)}&s=640`;
+
+  // For HTTP Stream and Workspace agents, use configured avatar_url
+  return String(agent.avatar_url ?? "").trim();
 }
 
 function agentInitial(name: string): string {
@@ -786,6 +1094,56 @@ function openToolDetail(messageId: string, toolCallId: string) {
 
 function closeToolDetail() {
   activeToolCallId.value = "";
+}
+
+function getToolResultText(toolCallId: string): string | undefined {
+  const resultMessage = messages.value.find(
+    (item) => item.role === "tool" && item.toolCallId === toolCallId,
+  );
+  return resultMessage?.content || undefined;
+}
+
+function toolBadgeClass(kind: ToolCallKind): string {
+  if (kind.type === "create_file") return "tool-badge--create";
+  if (kind.type === "delete_file") return "tool-badge--delete";
+  if (kind.type === "edit_file") return "tool-badge--edit";
+  if (kind.type === "exec_cmd") return "tool-badge--cmd";
+  return "";
+}
+
+type ToolPreviewData = {
+  kind: ToolCallKind;
+  toolCallId: string;
+};
+
+const toolPreviewState = ref<ToolPreviewData | null>(null);
+
+function openToolPreview(kind: ToolCallKind) {
+  toolPreviewState.value = { kind, toolCallId: "" };
+}
+
+function closeToolPreview() {
+  toolPreviewState.value = null;
+}
+
+function handleToolPreviewKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape" && toolPreviewState.value) {
+    closeToolPreview();
+  }
+}
+
+function editHunks(edits: LineEditSpec[]): { startLine: number; removed: string[]; added: string[] }[] {
+  const sorted = [...edits].sort((a, b) => a.start_line - b.start_line);
+  const hunks: { startLine: number; removed: string[]; added: string[] }[] = [];
+  for (const edit of sorted) {
+    const removedCount = Math.max(0, edit.end_line - edit.start_line + 1);
+    hunks.push({
+      startLine: edit.start_line,
+      removed: Array.from({ length: removedCount }, (_, i) => `L${edit.start_line + i}`),
+      added: edit.replacement_lines.map((line, i) => `L${edit.start_line + i}` + (line.length > 0 ? ": " + line : "")),
+    });
+  }
+  return hunks;
 }
 
 function toggleLiveToolCall(callId: string) {
@@ -1268,10 +1626,12 @@ onMounted(() => {
     alert(`仪表盘加载失败: ${(error as Error).message}`);
   });
   document.addEventListener("click", closePickersOnClickOutside);
+  document.addEventListener("keydown", handleToolPreviewKeydown);
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", closePickersOnClickOutside);
+  document.removeEventListener("keydown", handleToolPreviewKeydown);
 });
 </script>
 
@@ -1620,6 +1980,22 @@ onUnmounted(() => {
   margin-bottom: 6px;
 }
 
+.chat-tool-below-bubble {
+  margin-top: 6px;
+}
+
+.chat-tool-above-content {
+  margin-bottom: 6px;
+}
+
+.chat-tool-below-content {
+  margin-top: 6px;
+}
+
+.chat-message-item + .chat-message-item {
+  margin-top: 8px;
+}
+
 .chat-message-avatar {
   width: 40px;
   height: 40px;
@@ -1750,6 +2126,191 @@ onUnmounted(() => {
 .chat-tool-inline.active {
   color: var(--admin-accent);
   text-decoration: underline;
+}
+
+.tool-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(2px);
+}
+
+.tool-preview-panel {
+  background: var(--admin-bg-elevated);
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.tool-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--admin-border);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--admin-ink);
+  flex-shrink: 0;
+}
+
+.tool-preview-close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--admin-subtle);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.tool-preview-close:hover {
+  color: var(--admin-accent);
+  background: color-mix(in srgb, var(--admin-accent-soft) 30%, transparent);
+}
+
+.tool-preview-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.tool-preview-code {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", monospace;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.tool-preview-code--create {
+  background: color-mix(in srgb, var(--admin-good) 10%, var(--admin-bg) 90%);
+  border: 1px solid color-mix(in srgb, var(--admin-good) 25%, transparent);
+}
+
+.tool-preview-code--cmd {
+  background: color-mix(in srgb, var(--admin-bg-panel-strong) 70%, var(--admin-ink) 30%);
+  border: 1px solid var(--admin-border-strong);
+  color: color-mix(in srgb, var(--admin-ink) 90%, var(--admin-good) 10%);
+}
+
+.tool-preview-code--error {
+  color: color-mix(in srgb, var(--admin-bad) 85%, var(--admin-ink) 15%);
+}
+
+.tool-preview-info {
+  padding: 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.tool-preview-info--delete {
+  background: color-mix(in srgb, var(--admin-bad) 10%, var(--admin-bg) 90%);
+  border: 1px solid color-mix(in srgb, var(--admin-bad) 25%, transparent);
+}
+
+.tool-preview-info p {
+  margin: 0 0 8px;
+}
+
+.tool-preview-info p:last-child {
+  margin-bottom: 0;
+}
+
+.tool-preview-info code {
+  background: color-mix(in srgb, var(--admin-bad) 15%, var(--admin-bg) 85%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", monospace;
+  font-size: 13px;
+}
+
+.tool-preview-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tool-preview-hunk {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--admin-border);
+}
+
+.tool-preview-diff-line {
+  padding: 2px 12px 2px 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.tool-preview-diff-line .diff-marker {
+  display: inline-block;
+  width: 16px;
+  text-align: center;
+  font-weight: 700;
+  user-select: none;
+  margin-right: 4px;
+}
+
+.tool-preview-diff-line--removed {
+  background: color-mix(in srgb, var(--admin-bad) 14%, var(--admin-bg) 86%);
+  color: var(--admin-bad);
+}
+
+.tool-preview-diff-line--added {
+  background: color-mix(in srgb, var(--admin-good) 14%, var(--admin-bg) 86%);
+  color: var(--admin-good);
+}
+
+.tool-preview-output {
+  margin-bottom: 14px;
+}
+
+.tool-preview-output:last-child {
+  margin-bottom: 0;
+}
+
+.tool-preview-output-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--admin-subtle);
+  margin-bottom: 6px;
+}
+
+.tool-preview-output-label--error {
+  color: var(--admin-bad);
+}
+
+.tool-preview-no-result {
+  font-size: 14px;
+  color: var(--admin-subtle);
+  font-style: italic;
+  text-align: center;
+  padding: 24px;
 }
 
 .chat-live-tool-wrapper {

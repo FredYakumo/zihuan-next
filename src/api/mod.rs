@@ -79,6 +79,11 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
                         .get(config::agents::list_agents)
                         .post(config::agents::create_agent)
                         .push(
+                            Router::with_path("avatar")
+                                .post(config::agents::upload_avatar)
+                                .push(Router::with_path("<avatar_id>").get(config::agents::get_avatar)),
+                        )
+                        .push(
                             Router::with_path("<id>")
                                 .put(config::agents::update_agent)
                                 .delete(config::agents::delete_agent)

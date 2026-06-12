@@ -409,6 +409,7 @@ export interface AgentWithRuntime extends AgentConfig {
     bot_nickname?: string | null;
     bot_avatar_url?: string | null;
   } | null;
+  avatar_url?: string | null;
 }
 
 export interface QqChatAgentIgnoreRule {
