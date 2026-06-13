@@ -11,9 +11,9 @@ use std::sync::Arc;
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
+use sqlx;
 use storage_handler::{mysql, sqlite, ConnectionConfig, ConnectionKind, WeaviateCollectionSchema};
 use uuid::Uuid;
-use sqlx;
 use zihuan_core::task_context::{
     AgentTaskHandle, AgentTaskInfo, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
@@ -22,8 +22,8 @@ use ims_bot_adapter::{
     fetch_login_info, fetch_login_info_via_adapter_connection, parse_ims_bot_adapter_connection, qq_avatar_url,
 };
 use log::{info, warn};
-use zihuan_service::agent::qq_chat_agent_ignore_store::{
-    create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule, QqChatAgentIgnoreRuleUpsert,
+use zihuan_service::agent::qq_chat_agent_service_ignore_store::{
+    create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule, QqChatAgentServiceIgnoreRuleUpsert,
 };
 
 use crate::api::state::{AppState, TaskStatus};
@@ -31,7 +31,7 @@ use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::system_config;
 use model_inference::system_config::load_llm_refs;
 use model_inference::system_config::{AgentConfig, AgentToolConfig, AgentType, LlmRefConfig};
-use zihuan_core::agent_config::QqChatAgentConfig;
+use zihuan_core::agent_config::QqChatAgentServiceConfig;
 use zihuan_core::error::{Error as CoreError, Result as CoreResult};
 use zihuan_service::AgentRuntimeInfo;
 
@@ -314,7 +314,7 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
 
 async fn resolve_qq_chat_profile(
     connections: &[ConnectionConfig],
-    config: &QqChatAgentConfig,
+    config: &QqChatAgentServiceConfig,
 ) -> Option<QqChatProfile> {
     let connection = connections
         .iter()
@@ -371,16 +371,16 @@ async fn resolve_qq_chat_profile(
     }
 }
 
-fn resolve_qq_chat_agent_config<'a>(
+fn resolve_qq_chat_agent_service_config<'a>(
     agents: &'a [AgentConfig],
     agent_id: &str,
-) -> Result<&'a QqChatAgentConfig, String> {
+) -> Result<&'a QqChatAgentServiceConfig, String> {
     let agent = agents
         .iter()
         .find(|item| item.id == agent_id)
         .ok_or_else(|| "Agent not found".to_string())?;
     let AgentType::QqChat(config) = &agent.agent_type else {
-        return Err("Agent is not a QQ chat agent".to_string());
+        return Err("Agent is not a QQ Chat Agent Service".to_string());
     };
     Ok(config)
 }
@@ -388,10 +388,10 @@ fn resolve_qq_chat_agent_config<'a>(
 async fn resolve_agent_rdb_connection(agent_id: &str) -> CoreResult<zihuan_core::data_refs::RelationalDbConnection> {
     let agents = system_config::load_agents()?;
     let config =
-        resolve_qq_chat_agent_config(&agents, agent_id).map_err(|err| zihuan_core::string_error!("{}", err))?;
+        resolve_qq_chat_agent_service_config(&agents, agent_id).map_err(|err| zihuan_core::string_error!("{}", err))?;
     let rdb_id = config
         .resolved_rdb_id()
-        .ok_or_else(|| zihuan_core::string_error!("QQ chat agent '{}' has no rdb_id configured", agent_id))?;
+        .ok_or_else(|| zihuan_core::string_error!("QQ Chat Agent Service '{}' has no rdb_id configured", agent_id))?;
     let connections = system_config::load_connections()?;
     storage_handler::build_relational_db_connection_for_connection(rdb_id, &connections).await
 }
@@ -431,7 +431,7 @@ pub async fn create_agent_ignore_rule(req: &mut Request, res: &mut Response, _de
         Err(err) => return render_bad_request(res, err.to_string()),
     };
 
-    let payload = QqChatAgentIgnoreRuleUpsert {
+    let payload = QqChatAgentServiceIgnoreRuleUpsert {
         sender_id: body.sender_id,
         group_id: body.group_id,
     };
@@ -453,7 +453,7 @@ pub async fn update_agent_ignore_rule(req: &mut Request, res: &mut Response, _de
         Err(err) => return render_bad_request(res, err.to_string()),
     };
 
-    let payload = QqChatAgentIgnoreRuleUpsert {
+    let payload = QqChatAgentServiceIgnoreRuleUpsert {
         sender_id: body.sender_id,
         group_id: body.group_id,
     };
@@ -505,7 +505,7 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_qq_chat_agent_llms(&body.agent_type, &llm_refs, &body.name) {
+    if let Err(message) = validate_qq_chat_agent_service_llms(&body.agent_type, &llm_refs, &body.name) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -561,7 +561,7 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_qq_chat_agent_llms(&body.agent_type, &llm_refs, &body.name) {
+    if let Err(message) = validate_qq_chat_agent_service_llms(&body.agent_type, &llm_refs, &body.name) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -611,7 +611,7 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_qq_chat_agent_llms(&agent.agent_type, &llm_refs, &agent.name) {
+    if let Err(message) = validate_qq_chat_agent_service_llms(&agent.agent_type, &llm_refs, &agent.name) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -711,7 +711,7 @@ fn validate_agent_connection_schemas(agent_type: &AgentType, connections: &[Conn
     }
 }
 
-fn validate_qq_chat_agent_llms(
+fn validate_qq_chat_agent_service_llms(
     agent_type: &AgentType,
     llm_refs: &[LlmRefConfig],
     agent_name: &str,
@@ -918,7 +918,7 @@ pub async fn upload_avatar(req: &mut Request, res: &mut Response, depot: &mut De
 
     // Get file from form data
     let file = match form_data.files.get("file") {
-        Some(files) if !files.is_empty() => &files[0],
+        Some(file) => file,
         _ => {
             res.status_code(StatusCode::BAD_REQUEST);
             res.render("Missing file field");
@@ -927,7 +927,10 @@ pub async fn upload_avatar(req: &mut Request, res: &mut Response, depot: &mut De
     };
 
     // Validate mime type
-    let mime_type = file.content_type.as_deref().unwrap_or("application/octet-stream");
+    let mime_type = file
+        .content_type()
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| "application/octet-stream".to_string());
     if !mime_type.starts_with("image/") {
         res.status_code(StatusCode::BAD_REQUEST);
         res.render("Only image files are allowed");
@@ -935,7 +938,7 @@ pub async fn upload_avatar(req: &mut Request, res: &mut Response, depot: &mut De
     }
 
     // Read file content
-    let image_data = match std::fs::read(&file.path) {
+    let image_data = match std::fs::read(file.path()) {
         Ok(data) => data,
         Err(e) => {
             res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
@@ -956,7 +959,7 @@ pub async fn upload_avatar(req: &mut Request, res: &mut Response, depot: &mut De
     let avatar_id = Uuid::new_v4().to_string();
 
     // Save to database
-    match save_avatar_to_db(&state, &avatar_id, "", mime_type, &image_data).await {
+    match save_avatar_to_db(&state, &avatar_id, "", &mime_type, &image_data).await {
         Ok(()) => {
             info!("[avatar] uploaded avatar id={}", avatar_id);
             res.render(Json(AvatarUploadResponse { avatar_id }));
@@ -1019,19 +1022,23 @@ async fn delete_avatar_by_agent_id(state: &Arc<AppState>, agent_id: &str) -> Res
     // Execute delete query based on connection type
     match &db_config.kind {
         ConnectionKind::Mysql(mysql) => {
-            let pool = storage_handler::mysql::get_mysql_pool(&mysql.url)
+            let mysql_ref = storage_handler::mysql::build_mysql_ref(&mysql.url)
                 .await
-                .map_err(|e| format!("Failed to get MySQL pool: {}", e))?;
+                .map_err(|e| format!("Failed to build MySQL ref: {}", e))?;
+            let pool =
+                storage_handler::mysql::get_pool(&mysql_ref).ok_or_else(|| "Failed to get MySQL pool".to_string())?;
             sqlx::query("DELETE FROM agent_avatar WHERE agent_id = ?")
                 .bind(agent_id)
-                .execute(&pool)
+                .execute(pool)
                 .await
                 .map_err(|e| format!("Failed to delete avatar: {}", e))?;
         }
         ConnectionKind::Sqlite(sqlite) => {
-            let pool = storage_handler::sqlite::get_sqlite_pool(&sqlite.path)
+            let db_path = std::path::Path::new(&sqlite.path);
+            let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
+            let pool = sqlx::sqlite::SqlitePool::connect(&db_url)
                 .await
-                .map_err(|e| format!("Failed to get SQLite pool: {}", e))?;
+                .map_err(|e| format!("Failed to connect to SQLite: {}", e))?;
             sqlx::query("DELETE FROM agent_avatar WHERE agent_id = ?")
                 .bind(agent_id)
                 .execute(&pool)
@@ -1068,8 +1075,7 @@ async fn save_avatar_to_db(
             let mysql_ref = mysql::build_mysql_ref(&mysql.url)
                 .await
                 .map_err(|e| format!("Failed to build MySQL ref: {}", e))?;
-            let pool = mysql::get_pool(&mysql_ref)
-                .ok_or_else(|| "Failed to get MySQL pool".to_string())?;
+            let pool = mysql::get_pool(&mysql_ref).ok_or_else(|| "Failed to get MySQL pool".to_string())?;
             sqlx::query(
                 "INSERT INTO agent_avatar (id, agent_id, mime_type, image_data, created_at, updated_at) 
                  VALUES (?, ?, ?, ?, NOW(), NOW()) 
@@ -1077,7 +1083,7 @@ async fn save_avatar_to_db(
                  agent_id = VALUES(agent_id), 
                  mime_type = VALUES(mime_type), 
                  image_data = VALUES(image_data), 
-                 updated_at = NOW()"
+                 updated_at = NOW()",
             )
             .bind(avatar_id)
             .bind(agent_id)
@@ -1100,7 +1106,7 @@ async fn save_avatar_to_db(
                  agent_id = excluded.agent_id, 
                  mime_type = excluded.mime_type, 
                  image_data = excluded.image_data, 
-                 updated_at = datetime('now')"
+                 updated_at = datetime('now')",
             )
             .bind(avatar_id)
             .bind(agent_id)
@@ -1140,15 +1146,12 @@ async fn load_avatar_from_db(_state: &Arc<AppState>, avatar_id: &str) -> Result<
             let mysql_ref = mysql::build_mysql_ref(&mysql.url)
                 .await
                 .map_err(|e| format!("Failed to build MySQL ref: {}", e))?;
-            let pool = mysql::get_pool(&mysql_ref)
-                .ok_or_else(|| "Failed to get MySQL pool".to_string())?;
-            sqlx::query_as::<_, (String, Vec<u8>)>(
-                "SELECT mime_type, image_data FROM agent_avatar WHERE id = ?"
-            )
-            .bind(avatar_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| format!("Failed to load avatar: {}", e))?
+            let pool = mysql::get_pool(&mysql_ref).ok_or_else(|| "Failed to get MySQL pool".to_string())?;
+            sqlx::query_as::<_, (String, Vec<u8>)>("SELECT mime_type, image_data FROM agent_avatar WHERE id = ?")
+                .bind(avatar_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| format!("Failed to load avatar: {}", e))?
         }
         ConnectionKind::Sqlite(sqlite) => {
             let db_path = std::path::Path::new(&sqlite.path);
@@ -1156,19 +1159,14 @@ async fn load_avatar_from_db(_state: &Arc<AppState>, avatar_id: &str) -> Result<
             let pool = sqlx::sqlite::SqlitePool::connect(&db_url)
                 .await
                 .map_err(|e| format!("Failed to connect to SQLite: {}", e))?;
-            sqlx::query_as::<_, (String, Vec<u8>)>(
-                "SELECT mime_type, image_data FROM agent_avatar WHERE id = ?"
-            )
-            .bind(avatar_id)
-            .fetch_optional(&pool)
-            .await
-            .map_err(|e| format!("Failed to load avatar: {}", e))?
+            sqlx::query_as::<_, (String, Vec<u8>)>("SELECT mime_type, image_data FROM agent_avatar WHERE id = ?")
+                .bind(avatar_id)
+                .fetch_optional(&pool)
+                .await
+                .map_err(|e| format!("Failed to load avatar: {}", e))?
         }
         _ => return Ok(None),
     };
 
-    Ok(result.map(|(mime_type, image_data)| AvatarData {
-        mime_type,
-        image_data,
-    }))
+    Ok(result.map(|(mime_type, image_data)| AvatarData { mime_type, image_data }))
 }

@@ -12,7 +12,7 @@ use zihuan_agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{LLMMessage, TokenUsage};
 
-const LOG_PREFIX: &str = "[QqChatAgent]";
+const LOG_PREFIX: &str = "[QqChatAgentService]";
 const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
 const LOG_TOOL_PREVIEW_CHARS: usize = 600;
 

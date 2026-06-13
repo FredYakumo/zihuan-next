@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use storage_handler::{load_connections, resource_resolver};
-use zihuan_core::agent_config::current_qq_chat_agent_config;
+use zihuan_core::agent_config::current_qq_chat_agent_service_config;
 use zihuan_core::error::Result;
 use zihuan_graph_engine::{node_output, DataType, DataValue, Node, Port};
 
@@ -38,7 +38,7 @@ impl Node for AgentTavilyRefNode {
     ];
 
     fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
-        let config = current_qq_chat_agent_config()?;
+        let config = current_qq_chat_agent_service_config()?;
         let web_search_engine_connection_id = config.web_search_engine_connection_id.trim();
         if web_search_engine_connection_id.is_empty() {
             return Err(zihuan_core::error::Error::ValidationError(

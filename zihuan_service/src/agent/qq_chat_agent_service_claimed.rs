@@ -7,7 +7,7 @@ use model_inference::message_content_utils::{downgrade_messages_for_model, sanit
 
 use zihuan_agent::brain::{Brain, BrainStopReason, LongTaskContext};
 
-use zihuan_core::agent_config::current_qq_chat_agent_config;
+use zihuan_core::agent_config::current_qq_chat_agent_service_config;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::Result;
 use zihuan_core::llm::{LLMMessage, TokenUsage};
@@ -18,7 +18,7 @@ use zihuan_graph_engine::brain_tool_spec::{
 };
 use zihuan_graph_engine::DataValue;
 
-use super::super::qq_chat_agent_logging::QqChatBrainObserver;
+use super::super::qq_chat_agent_service_logging::QqChatBrainObserver;
 use ims_bot_adapter::tools::group_members::GetCurrentGroupMembersBrainTool;
 use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
 
@@ -38,19 +38,19 @@ use storage_handler::AgentMemoryAccessContext;
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use crate::storage::qq_chat_history_store::{conversation_history_key, load_history, save_history};
 
-use crate::agent::qq_chat_agent_msg_send::send_direct_text_reply;
+use crate::agent::qq_chat_agent_service_msg_send::send_direct_text_reply;
 
 use super::{
     build_group_system_prompt, build_private_system_prompt, build_user_message, expand_messages_for_inference,
-    prepare_current_turn_user_input, prepare_current_turn_user_input_from_event, QqChatAgent, QqChatAgentContext,
-    QqChatTaskTrace, QqChatTurnResult, QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX,
-    LOG_TEXT_PREVIEW_CHARS,
+    prepare_current_turn_user_input, prepare_current_turn_user_input_from_event, QqChatAgentServiceContext,
+    QqChatAgentServiceInner, QqChatServiceTurnResult, QqChatTaskTrace, QqCommandSideEffectContext, QqLongTaskNotifier,
+    LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 use zihuan_core::utils::string_utils::shorten_text;
 
-use super::super::qq_chat_agent_steer::QqChatSteerHook;
+use super::super::qq_chat_agent_service_steer::QqChatServiceSteerHook;
 
-impl QqChatAgent {
+impl QqChatAgentServiceInner {
     pub(crate) fn build_command_context(
         &self,
         sender_id: &str,
@@ -82,7 +82,7 @@ impl QqChatAgent {
         target_id: &str,
         bot_id: &str,
         history: &mut Vec<LLMMessage>,
-        ctx: &QqChatAgentContext<'_>,
+        ctx: &QqChatAgentServiceContext<'_>,
     ) -> Result<Option<String>> {
         let DispatchResult { result, passthrough_text } = dispatch_result;
         let side_effect_ctx = QqCommandSideEffectContext {
@@ -132,7 +132,7 @@ impl QqChatAgent {
                 build_private_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
             };
             let cmd_session_state = ctx.session_state_store.lock().unwrap().clone();
-            let cmd_emotion_dimensions = current_qq_chat_agent_config()?.resolved_emotion_dimensions();
+            let cmd_emotion_dimensions = current_qq_chat_agent_service_config()?.resolved_emotion_dimensions();
 
             let user_msg_for_cmd = message_with_api_style(
                 build_user_message(
@@ -179,7 +179,7 @@ impl QqChatAgent {
     /// - **Reply delivery** — parses the final assistant output and sends it back to the user
     ///   (group or private chat), persisting message history along the way.
     ///
-    /// Returns a [`QqChatTurnResult`] containing a human-readable summary of what happened.
+    /// Returns a [`QqChatServiceTurnResult`] containing a human-readable summary of what happened.
     pub(crate) fn handle_claimed_turn(
         &self,
         trace: &QqChatTaskTrace,
@@ -189,8 +189,8 @@ impl QqChatAgent {
         target_id: &str,
         is_group: bool,
         bot_id: &str,
-        ctx: &QqChatAgentContext<'_>,
-    ) -> Result<QqChatTurnResult> {
+        ctx: &QqChatAgentServiceContext<'_>,
+    ) -> Result<QqChatServiceTurnResult> {
         let prepared_input = prepare_current_turn_user_input(event, ctx.adapter, bot_id, ctx.bot_name, ctx.s3_ref);
         let mut inference_event = prepared_input.event.clone();
         inference_event.message_list = expand_messages_for_inference(&prepared_input.event.message_list);
@@ -226,7 +226,7 @@ impl QqChatAgent {
                 )? {
                     current_message = passthrough;
                 } else {
-                    return Ok(QqChatTurnResult {
+                    return Ok(QqChatServiceTurnResult {
                         result_summary: "已处理命令".to_string(),
                     });
                 }
@@ -234,7 +234,7 @@ impl QqChatAgent {
         }
 
         let current_session_state = { ctx.session_state_store.lock().unwrap().clone() };
-        let emotion_dimensions = current_qq_chat_agent_config()?.resolved_emotion_dimensions();
+        let emotion_dimensions = current_qq_chat_agent_service_config()?.resolved_emotion_dimensions();
         let mut current_session_state = current_session_state;
         current_session_state.sync_emotion_dimensions(&emotion_dimensions);
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
@@ -295,7 +295,7 @@ impl QqChatAgent {
         let mut brain = Brain::new(Arc::clone(ctx.llm));
         brain.add_tool(CurrentTimeBrainTool);
         brain.set_observer(Arc::new(QqChatBrainObserver { trace: trace.clone() }));
-        brain.set_iteration_hook(Arc::new(QqChatSteerHook {
+        brain.set_iteration_hook(Arc::new(QqChatServiceSteerHook {
             pending_steer: Arc::clone(ctx.pending_steer),
             sender_id: sender_id.to_string(),
             bot_id: bot_id.to_string(),
@@ -492,7 +492,7 @@ impl QqChatAgent {
             prepared_input.event.clone(),
         ));
 
-        let qq_chat_agent_config = current_qq_chat_agent_config()?;
+        let qq_chat_agent_config = current_qq_chat_agent_service_config()?;
         for tool_def in &self.tool_definitions {
             brain.add_tool(EditableQqAgentTool {
                 runner: ToolSubgraphRunner {
@@ -687,6 +687,6 @@ impl QqChatAgent {
         };
         trace.log_result_summary(&result_summary);
 
-        Ok(QqChatTurnResult { result_summary })
+        Ok(QqChatServiceTurnResult { result_summary })
     }
 }

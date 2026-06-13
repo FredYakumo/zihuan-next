@@ -5,7 +5,7 @@ use chrono::Local;
 use log::{info, warn};
 
 use zihuan_agent::brain::BrainIterationHook;
-use zihuan_agent::session_state::QqChatAgentSessionState;
+use zihuan_agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_agent::utils::build_state_system_prefix_lines;
 
 use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
@@ -29,10 +29,11 @@ use crate::qq_chat_user_input::{
 };
 use crate::storage::qq_chat_history_store::{conversation_history_key, load_history};
 
-use super::qq_chat_agent_core::{
-    build_user_message, QqChatAgent, QqChatAgentContext, QqChatHandleReport, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+use super::qq_chat_agent_service_core::{
+    build_user_message, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatServiceHandleReport, LOG_PREFIX,
+    LOG_TEXT_PREVIEW_CHARS,
 };
-use super::qq_chat_agent_logging::QqChatTaskTrace;
+use super::qq_chat_agent_service_logging::QqChatTaskTrace;
 
 const CURRENT_USER_MESSAGE_LABEL: &str = "[Current User Message]";
 const REFERENCED_CONTEXT_LABEL: &str = "[Referenced Context]";
@@ -45,7 +46,7 @@ fn build_steer_user_message(
     llm_supports_multimodal_input: bool,
     api_style: Option<&str>,
     system_prompt: &str,
-    session_state: &QqChatAgentSessionState,
+    session_state: &QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
     let steer_message = build_user_message(
@@ -66,7 +67,7 @@ fn build_merged_steer_user_message(
     llm_supports_multimodal_input: bool,
     api_style: Option<&str>,
     system_prompt: &str,
-    session_state: &QqChatAgentSessionState,
+    session_state: &QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
     let prefix_lines = build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
@@ -178,7 +179,7 @@ fn build_merged_steer_user_message(
     apply_steer_prefix(message, api_style)
 }
 
-pub(crate) struct QqChatSteerHook {
+pub(crate) struct QqChatServiceSteerHook {
     pub(crate) pending_steer: Arc<PendingSteerStore>,
     pub(crate) sender_id: String,
     pub(crate) bot_id: String,
@@ -191,11 +192,11 @@ pub(crate) struct QqChatSteerHook {
     pub(crate) consumed_messages: Arc<Mutex<Vec<LLMMessage>>>,
     pub(crate) shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
     pub(crate) system_prompt: String,
-    pub(crate) session_state: Arc<Mutex<QqChatAgentSessionState>>,
+    pub(crate) session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
     pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
 }
 
-impl BrainIterationHook for QqChatSteerHook {
+impl BrainIterationHook for QqChatServiceSteerHook {
     fn on_before_inference(&self, _iteration: usize, _conversation: &[LLMMessage]) -> Vec<LLMMessage> {
         let (pending, remaining_queue_len, accepted_steer_count) = self.pending_steer.drain_all(&self.sender_id);
         if pending.is_empty() {
@@ -265,11 +266,11 @@ impl BrainIterationHook for QqChatSteerHook {
     }
 }
 
-impl QqChatAgent {
+impl QqChatAgentServiceInner {
     pub(crate) fn try_handle_busy_session_steer(
         &self,
         event: &ims_bot_adapter::models::MessageEvent,
-        ctx: &QqChatAgentContext<'_>,
+        ctx: &QqChatAgentServiceContext<'_>,
         sender_id: &str,
         target_id: &str,
         is_group: bool,
@@ -355,7 +356,7 @@ impl QqChatAgent {
     }
 }
 
-impl QqChatAgent {
+impl QqChatAgentServiceInner {
     pub(crate) fn handle_claimed(
         &self,
         trace: &QqChatTaskTrace,
@@ -364,9 +365,9 @@ impl QqChatAgent {
         sender_id: &str,
         target_id: &str,
         is_group: bool,
-        ctx: &QqChatAgentContext<'_>,
-    ) -> Result<QqChatHandleReport> {
-        (|| -> Result<QqChatHandleReport> {
+        ctx: &QqChatAgentServiceContext<'_>,
+    ) -> Result<QqChatServiceHandleReport> {
+        (|| -> Result<QqChatServiceHandleReport> {
             let bot_id = get_bot_id(ctx.adapter);
             let mut current_event = event.clone();
             let mut current_time = time.to_string();
@@ -423,7 +424,7 @@ impl QqChatAgent {
                     .unwrap_or_else(|| current_time.clone());
             };
 
-            Ok(QqChatHandleReport { result_summary })
+            Ok(QqChatServiceHandleReport { result_summary })
         })()
     }
 }

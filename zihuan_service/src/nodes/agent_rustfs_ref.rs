@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use storage_handler::RuntimeStorageConnectionManager;
-use zihuan_core::agent_config::current_qq_chat_agent_config;
+use zihuan_core::agent_config::current_qq_chat_agent_service_config;
 use zihuan_core::error::Result;
 use zihuan_graph_engine::{node_output, DataType, DataValue, Node, Port};
 
@@ -39,7 +39,7 @@ impl Node for AgentRustfsRefNode {
     node_output![port! { name = "s3_ref", ty = S3Ref, desc = "Agent RustFS 对象存储引用" },];
 
     fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
-        let config = current_qq_chat_agent_config()?;
+        let config = current_qq_chat_agent_service_config()?;
         let rustfs_connection_id = config.rustfs_connection_id.as_deref();
         let rustfs_connection_id = rustfs_connection_id
             .map(str::trim)

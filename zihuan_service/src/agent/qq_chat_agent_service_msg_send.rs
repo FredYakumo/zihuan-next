@@ -20,10 +20,10 @@ use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
 use zihuan_graph_engine::data_value::DataValue;
 use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
-pub(crate) use super::qq_chat_agent_core::{
-    QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest, QqAgentReplyBuildResult,
+pub(crate) use super::qq_chat_agent_service_core::{
+    QqChatServiceReplyBatchBuilder, QqChatServiceReplyBuildRequest, QqChatServiceReplyBuildResult,
 };
-use crate::agent::qq_chat_agent_logging::QqChatTaskTrace;
+use crate::agent::qq_chat_agent_service_logging::QqChatTaskTrace;
 use crate::storage::media::resolve_media_references;
 
 const MAX_FORWARD_NODE_CHARS: usize = 800;
@@ -33,13 +33,13 @@ pub(crate) const QQ_CHAT_REPLY_DIRECTIVE_RUNTIME_KEY: &str = "qq_chat_reply_dire
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum QqReplyDirective {
+pub(crate) enum QqChatServiceReplyDirective {
     Explicit { message_id: i64 },
     TriggerMessage,
 }
 
 #[derive(Clone)]
-pub(crate) struct QqSendContext<'a> {
+pub(crate) struct QqChatServiceSendContext<'a> {
     pub adapter: &'a SharedBotAdapter,
     pub target_id: &'a str,
     pub is_group: bool,
@@ -80,10 +80,10 @@ struct SplitRepairState {
     in_cn_quote: bool,
 }
 
-pub(crate) fn build_reply_batch_builder(segmenter: Arc<dyn TextSegmenter>) -> QqAgentReplyBatchBuilder {
+pub(crate) fn build_reply_batch_builder(segmenter: Arc<dyn TextSegmenter>) -> QqChatServiceReplyBatchBuilder {
     Arc::new(move |request| {
         let plan = plan_model_reply(request, segmenter.as_ref())?;
-        Ok(QqAgentReplyBuildResult {
+        Ok(QqChatServiceReplyBuildResult {
             batches: plan.batches,
             suppress_send: plan.suppress_send,
         })
@@ -92,7 +92,7 @@ pub(crate) fn build_reply_batch_builder(segmenter: Arc<dyn TextSegmenter>) -> Qq
 
 pub(crate) fn store_reply_directive(
     shared_runtime_values: &Arc<Mutex<HashMap<String, DataValue>>>,
-    directive: QqReplyDirective,
+    directive: QqChatServiceReplyDirective,
 ) {
     shared_runtime_values.lock().unwrap().insert(
         QQ_CHAT_REPLY_DIRECTIVE_RUNTIME_KEY.to_string(),
@@ -102,7 +102,7 @@ pub(crate) fn store_reply_directive(
 
 pub(crate) fn take_reply_directive(
     shared_runtime_values: &Arc<Mutex<HashMap<String, DataValue>>>,
-) -> Option<QqReplyDirective> {
+) -> Option<QqChatServiceReplyDirective> {
     let value = shared_runtime_values
         .lock()
         .unwrap()
@@ -114,7 +114,7 @@ pub(crate) fn take_reply_directive(
 }
 
 pub(crate) fn plan_model_reply(
-    request: &QqAgentReplyBuildRequest,
+    request: &QqChatServiceReplyBuildRequest,
     segmenter: &dyn TextSegmenter,
 ) -> Result<QqOutboundPlan> {
     let normalized_text = normalize_assistant_text(request);
@@ -168,7 +168,7 @@ pub(crate) fn plan_model_reply(
     })
 }
 
-pub(crate) fn send_planned_batches(ctx: &QqSendContext<'_>, batches: &[Vec<Message>]) {
+pub(crate) fn send_planned_batches(ctx: &QqChatServiceSendContext<'_>, batches: &[Vec<Message>]) {
     if ctx.is_group {
         send_group_batches_with_persistence(ctx.adapter, ctx.target_id, batches, &ctx.persistence);
     } else {
@@ -176,7 +176,7 @@ pub(crate) fn send_planned_batches(ctx: &QqSendContext<'_>, batches: &[Vec<Messa
     }
 }
 
-pub(crate) fn send_notification_text(ctx: &QqSendContext<'_>, content: &str) -> Result<()> {
+pub(crate) fn send_notification_text(ctx: &QqChatServiceSendContext<'_>, content: &str) -> Result<()> {
     let text = content.trim();
     if text.is_empty() {
         return Ok(());
@@ -197,7 +197,7 @@ pub(crate) fn send_notification_text(ctx: &QqSendContext<'_>, content: &str) -> 
     Ok(())
 }
 
-pub(crate) fn send_forward_content(ctx: &QqSendContext<'_>, content: &str) -> Result<()> {
+pub(crate) fn send_forward_content(ctx: &QqChatServiceSendContext<'_>, content: &str) -> Result<()> {
     let text = content.trim();
     if text.is_empty() {
         return Err(Error::ValidationError("forward content must not be blank".to_string()));
@@ -241,7 +241,7 @@ pub(crate) fn build_long_task_complete_content(
     content
 }
 
-fn normalize_assistant_text(request: &QqAgentReplyBuildRequest) -> String {
+fn normalize_assistant_text(request: &QqChatServiceReplyBuildRequest) -> String {
     if request.is_group {
         request.assistant_text.replace("@sender", &format!("@{}", request.sender_id))
     } else {
@@ -250,12 +250,12 @@ fn normalize_assistant_text(request: &QqAgentReplyBuildRequest) -> String {
 }
 
 fn resolve_reply_message(
-    directive: Option<&QqReplyDirective>,
+    directive: Option<&QqChatServiceReplyDirective>,
     trigger_message_id: Option<i64>,
 ) -> Option<ReplyMessage> {
     let message_id = match directive {
-        Some(QqReplyDirective::Explicit { message_id }) => Some(*message_id),
-        Some(QqReplyDirective::TriggerMessage) => trigger_message_id,
+        Some(QqChatServiceReplyDirective::Explicit { message_id }) => Some(*message_id),
+        Some(QqChatServiceReplyDirective::TriggerMessage) => trigger_message_id,
         None => None,
     }?;
 
@@ -467,7 +467,7 @@ fn build_notification_batches(
     Ok(batches)
 }
 
-fn resolve_bot_identity<'a>(ctx: &'a QqSendContext<'_>) -> (Cow<'a, str>, Cow<'a, str>) {
+fn resolve_bot_identity<'a>(ctx: &'a QqChatServiceSendContext<'_>) -> (Cow<'a, str>, Cow<'a, str>) {
     let bot_id = if ctx.bot_id.trim().is_empty() {
         Cow::Owned(get_bot_id(ctx.adapter))
     } else {
@@ -717,7 +717,7 @@ fn parse_bracket_message(inner: &str) -> Option<ReplySegment> {
     })))
 }
 
-/// Build a `QqAgentReplyBuildResult` from raw reply parameters by calling the
+/// Build a `QqChatServiceReplyBuildResult` from raw reply parameters by calling the
 /// provided `reply_batch_builder`.
 pub(crate) fn build_reply_result(
     reply_text: &str,
@@ -728,12 +728,12 @@ pub(crate) fn build_reply_result(
     bot_id: &str,
     bot_name: &str,
     max_message_length: usize,
-    reply_directive: Option<QqReplyDirective>,
+    reply_directive: Option<QqChatServiceReplyDirective>,
     trigger_message_id: Option<i64>,
     available_media: HashMap<String, PersistedMedia>,
-    reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
-) -> Result<QqAgentReplyBuildResult> {
-    let request = QqAgentReplyBuildRequest {
+    reply_batch_builder: Option<&QqChatServiceReplyBatchBuilder>,
+) -> Result<QqChatServiceReplyBuildResult> {
+    let request = QqChatServiceReplyBuildRequest {
         assistant_text: reply_text.to_string(),
         is_group,
         sender_id: sender_id.to_string(),
@@ -773,7 +773,7 @@ pub(crate) fn send_direct_text_reply(
     sender_name: &str,
     sender_card: &str,
     max_message_length: usize,
-    reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
+    reply_batch_builder: Option<&QqChatServiceReplyBatchBuilder>,
 ) -> Result<()> {
     let persistence =
         crate::storage::qq_chat_session_store::build_outbound_persistence(rdb_pool, mysql_ref, group_name, bot_name);
@@ -799,7 +799,7 @@ pub(crate) fn send_direct_text_reply(
     }
 
     trace.record_reply_send(false, false, &reply_result.batches);
-    let send_ctx = QqSendContext {
+    let send_ctx = QqChatServiceSendContext {
         adapter,
         target_id,
         is_group,

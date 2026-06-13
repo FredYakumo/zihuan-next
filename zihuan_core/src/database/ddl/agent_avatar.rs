@@ -18,10 +18,6 @@ pub const SQLITE_DDL: &str = "CREATE TABLE IF NOT EXISTS agent_avatar (
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )";
 
-pub const MYSQL_INDEXES: &[&str] = &[
-    "CREATE INDEX ix_agent_avatar_agent_id ON agent_avatar (agent_id)",
-];
+pub const MYSQL_INDEXES: &[&str] = &["CREATE INDEX ix_agent_avatar_agent_id ON agent_avatar (agent_id)"];
 
-pub const SQLITE_INDEXES: &[&str] = &[
-    "CREATE INDEX IF NOT EXISTS ix_agent_avatar_agent_id ON agent_avatar (agent_id)",
-];
+pub const SQLITE_INDEXES: &[&str] = &["CREATE INDEX IF NOT EXISTS ix_agent_avatar_agent_id ON agent_avatar (agent_id)"];

@@ -374,7 +374,7 @@ export interface LlmConfig {
   model: ModelRefSpec;
 }
 
-export interface AgentToolConfig {
+export interface ServiceToolConfig {
   id: string;
   name: string;
   description: string;
@@ -383,7 +383,7 @@ export interface AgentToolConfig {
   tool_type: Record<string, unknown> & { type: string };
 }
 
-export interface AgentRuntimeInfo {
+export interface ServiceRuntimeInfo {
   agent_id: string;
   instance_id: string | null;
   status: "stopped" | "starting" | "running" | "error";
@@ -391,7 +391,7 @@ export interface AgentRuntimeInfo {
   last_error: string | null;
 }
 
-export interface AgentConfig {
+export interface ServiceConfig {
   config_id: string;
   name: string;
   enabled: boolean;
@@ -399,11 +399,11 @@ export interface AgentConfig {
   is_default: boolean;
   updated_at: string;
   agent_type: Record<string, unknown> & { type: string };
-  tools: AgentToolConfig[];
+  tools: ServiceToolConfig[];
 }
 
-export interface AgentWithRuntime extends AgentConfig {
-  runtime: AgentRuntimeInfo;
+export interface ServiceWithRuntime extends ServiceConfig {
+  runtime: ServiceRuntimeInfo;
   qq_chat_profile?: {
     bot_user_id?: string | null;
     bot_nickname?: string | null;
@@ -412,7 +412,7 @@ export interface AgentWithRuntime extends AgentConfig {
   avatar_url?: string | null;
 }
 
-export interface QqChatAgentIgnoreRule {
+export interface QqChatAgentServiceIgnoreRule {
   id: number;
   agent_id: string;
   sender_id: string | null;
@@ -554,9 +554,9 @@ export const system = {
       return request("DELETE", `/system/llm-refs/${configId}`);
     },
   },
-  agents: {
-    list(): Promise<AgentWithRuntime[]> {
-      return request("GET", "/system/agents");
+  services: {
+    list(): Promise<ServiceWithRuntime[]> {
+      return request("GET", "/system/services");
     },
     create(payload: {
       name: string;
@@ -564,9 +564,9 @@ export const system = {
       auto_start: boolean;
       is_default: boolean;
       agent_type: Record<string, unknown>;
-      tools: AgentToolConfig[];
-    }): Promise<AgentConfig> {
-      return request("POST", "/system/agents", payload);
+      tools: ServiceToolConfig[];
+    }): Promise<ServiceConfig> {
+      return request("POST", "/system/services", payload);
     },
     update(configId: string, payload: {
       name: string;
@@ -574,37 +574,37 @@ export const system = {
       auto_start: boolean;
       is_default: boolean;
       agent_type: Record<string, unknown>;
-      tools: AgentToolConfig[];
-    }): Promise<AgentConfig> {
-      return request("PUT", `/system/agents/${configId}`, payload);
+      tools: ServiceToolConfig[];
+    }): Promise<ServiceConfig> {
+      return request("PUT", `/system/services/${configId}`, payload);
     },
     delete(configId: string): Promise<{ ok: boolean }> {
-      return request("DELETE", `/system/agents/${configId}`);
+      return request("DELETE", `/system/services/${configId}`);
     },
-    listIgnoreRules(configId: string): Promise<QqChatAgentIgnoreRule[]> {
-      return request("GET", `/system/agents/${configId}/ignore-rules`);
+    listIgnoreRules(configId: string): Promise<QqChatAgentServiceIgnoreRule[]> {
+      return request("GET", `/system/services/${configId}/ignore-rules`);
     },
     createIgnoreRule(
       configId: string,
       payload: { sender_id?: string | null; group_id?: string | null }
-    ): Promise<QqChatAgentIgnoreRule> {
-      return request("POST", `/system/agents/${configId}/ignore-rules`, payload);
+    ): Promise<QqChatAgentServiceIgnoreRule> {
+      return request("POST", `/system/services/${configId}/ignore-rules`, payload);
     },
     updateIgnoreRule(
       configId: string,
       ruleId: number,
       payload: { sender_id?: string | null; group_id?: string | null }
-    ): Promise<QqChatAgentIgnoreRule> {
-      return request("PUT", `/system/agents/${configId}/ignore-rules/${ruleId}`, payload);
+    ): Promise<QqChatAgentServiceIgnoreRule> {
+      return request("PUT", `/system/services/${configId}/ignore-rules/${ruleId}`, payload);
     },
     deleteIgnoreRule(configId: string, ruleId: number): Promise<{ ok: boolean }> {
-      return request("DELETE", `/system/agents/${configId}/ignore-rules/${ruleId}`);
+      return request("DELETE", `/system/services/${configId}/ignore-rules/${ruleId}`);
     },
-    start(configId: string): Promise<{ ok: boolean; runtime: AgentRuntimeInfo }> {
-      return request("POST", `/system/agents/${configId}/start`);
+    start(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo }> {
+      return request("POST", `/system/services/${configId}/start`);
     },
-    stop(configId: string): Promise<{ ok: boolean; runtime: AgentRuntimeInfo }> {
-      return request("POST", `/system/agents/${configId}/stop`);
+    stop(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo }> {
+      return request("POST", `/system/services/${configId}/stop`);
     },
   },
   selectDirectory(): Promise<{ path: string | null }> {

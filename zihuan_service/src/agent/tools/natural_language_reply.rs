@@ -6,7 +6,7 @@ use ims_bot_adapter::models::message::PersistedMedia;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use zihuan_agent::brain::BrainTool;
-use zihuan_agent::session_state::QqChatAgentSessionState;
+use zihuan_agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
 use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 use zihuan_core::error::{Error, Result};
@@ -16,10 +16,10 @@ use zihuan_core::llm::{InferenceParam, LLMMessage};
 use zihuan_graph_engine::message_restore::restore_media_by_id;
 use zihuan_graph_engine::DataValue;
 
-use crate::agent::qq_chat_agent_logging::QqChatTaskTrace;
-use crate::agent::qq_chat_agent_msg_send::{build_reply_result, QqAgentReplyBatchBuilder};
-use crate::agent::qq_chat_agent_msg_send::{
-    send_planned_batches, store_reply_directive, QqReplyDirective, QqSendContext,
+use crate::agent::qq_chat_agent_service_logging::QqChatTaskTrace;
+use crate::agent::qq_chat_agent_service_msg_send::{build_reply_result, QqChatServiceReplyBatchBuilder};
+use crate::agent::qq_chat_agent_service_msg_send::{
+    send_planned_batches, store_reply_directive, QqChatServiceReplyDirective, QqChatServiceSendContext,
 };
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text;
@@ -54,10 +54,10 @@ pub(crate) struct SendNaturalLanguageReplyBrainTool {
     sender_card: String,
     reply_llm: Arc<dyn LLMBase>,
     reply_system_prompt: Option<String>,
-    session_state: Arc<Mutex<QqChatAgentSessionState>>,
+    session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
     emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
-    reply_batch_builder: Option<QqAgentReplyBatchBuilder>,
+    reply_batch_builder: Option<QqChatServiceReplyBatchBuilder>,
     max_message_length: usize,
     trigger_message_id: Option<i64>,
     rdb_pool: Option<RelationalDbConnection>,
@@ -79,10 +79,10 @@ impl SendNaturalLanguageReplyBrainTool {
         sender_card: String,
         reply_llm: Arc<dyn LLMBase>,
         reply_system_prompt: Option<String>,
-        session_state: Arc<Mutex<QqChatAgentSessionState>>,
+        session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
         emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
         shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
-        reply_batch_builder: Option<QqAgentReplyBatchBuilder>,
+        reply_batch_builder: Option<QqChatServiceReplyBatchBuilder>,
         max_message_length: usize,
         trigger_message_id: Option<i64>,
         rdb_pool: Option<RelationalDbConnection>,
@@ -236,7 +236,7 @@ impl BrainTool for SendNaturalLanguageReplyBrainTool {
                 self.trace.record_reply_send(false, false, &reply_result.batches);
                 None
             } else {
-                let send_ctx = QqSendContext {
+                let send_ctx = QqChatServiceSendContext {
                     adapter: &self.adapter,
                     target_id: &self.target_id,
                     is_group: self.is_group,
@@ -284,9 +284,9 @@ impl BrainTool for SendNaturalLanguageReplyBrainTool {
     }
 }
 
-fn parse_reply_directive(arguments: &Value, reply_target: &str) -> Result<Option<QqReplyDirective>> {
+fn parse_reply_directive(arguments: &Value, reply_target: &str) -> Result<Option<QqChatServiceReplyDirective>> {
     match reply_target {
-        "trigger_message" => Ok(Some(QqReplyDirective::TriggerMessage)),
+        "trigger_message" => Ok(Some(QqChatServiceReplyDirective::TriggerMessage)),
         "explicit_message_id" => {
             let message_id = arguments.get("explicit_message_id").and_then(Value::as_i64).ok_or_else(|| {
                 Error::ValidationError(
@@ -298,7 +298,7 @@ fn parse_reply_directive(arguments: &Value, reply_target: &str) -> Result<Option
                     "explicit_message_id must be a positive integer".to_string(),
                 ));
             }
-            Ok(Some(QqReplyDirective::Explicit { message_id }))
+            Ok(Some(QqChatServiceReplyDirective::Explicit { message_id }))
         }
         "none" => Ok(None),
         other => Err(Error::ValidationError(format!("unsupported reply_target '{}'", other))),
@@ -315,7 +315,7 @@ fn parse_mentions(arguments: &Value) -> Result<Vec<ReplyMentionSpec>> {
 
 fn build_reply_llm_messages(
     reply_system_prompt: Option<&str>,
-    session_state: &QqChatAgentSessionState,
+    session_state: &QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
     goal: &str,
     key_points: &[String],
@@ -403,7 +403,7 @@ fn build_reply_llm_messages(
 }
 
 fn resolve_emotion_prompt(
-    session_state: &QqChatAgentSessionState,
+    session_state: &QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> Option<String> {
     const NEUTRAL_THRESHOLD: f64 = 0.3;

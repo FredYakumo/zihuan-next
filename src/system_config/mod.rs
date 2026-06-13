@@ -1,12 +1,11 @@
 pub mod agents {
     #[allow(unused_imports)]
     pub use model_inference::system_config::{
-        AgentConfig, AgentToolConfig, AgentToolType, AgentType, HttpStreamAgentConfig, LlmServiceConfig,
-        NodeGraphToolConfig,
-        WorkspaceAgentConfig,
+        AgentConfig, AgentToolConfig, AgentToolType, AgentType, HttpStreamServiceConfig, LlmServiceConfig,
+        NodeGraphToolConfig, WorkspaceAgentServiceConfig,
     };
     #[allow(unused_imports)]
-    pub use zihuan_core::agent_config::{EmbeddingServiceConfig, QqChatAgentConfig};
+    pub use zihuan_core::agent_config::{EmbeddingServiceConfig, QqChatAgentServiceConfig};
 }
 
 pub mod connections {

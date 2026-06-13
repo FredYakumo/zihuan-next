@@ -13,14 +13,14 @@ pub enum EmotionAdjustmentDirection {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct QqChatAgentSessionState {
+pub struct QqChatAgentServiceSessionState {
     #[serde(default)]
     pub emotion_dimensions: HashMap<String, f64>,
     #[serde(default)]
     pub extra_state: HashMap<String, Value>,
 }
 
-impl QqChatAgentSessionState {
+impl QqChatAgentServiceSessionState {
     pub fn sync_emotion_dimensions(&mut self, dimensions: &[QqChatEmotionDimensionConfig]) {
         let mut allowed_names = Vec::with_capacity(dimensions.len());
         for dimension in dimensions {

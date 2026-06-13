@@ -1,7 +1,7 @@
 import type {
-  AgentConfig,
-  AgentToolConfig,
-  AgentWithRuntime,
+  ServiceConfig,
+  ServiceToolConfig,
+  ServiceWithRuntime,
   ConnectionConfig,
   LlmConfig,
   ModelRefSpec,
@@ -19,7 +19,7 @@ export type ConnectionType =
   | "tokenizer"
   | "sqlite";
 export type WeaviateCollectionSchema = "image_semantic" | "agent_memory";
-export type AgentTypeName = "qq_chat" | "http_stream" | "workspace";
+export type ServiceTypeName = "qq_chat" | "http_stream" | "workspace";
 export type ModelRefType = "chat_llm" | "text_embedding_local";
 export type ToolRunDuration = "Short" | "Long";
 export type LlmApiStyle =
@@ -100,13 +100,13 @@ export interface ToolFormState {
   outputsJson: string;
 }
 
-export interface AgentFormState {
+export interface ServiceFormState {
   id: string | null;
   name: string;
   enabled: boolean;
   auto_start: boolean;
   is_default: boolean;
-  type: AgentTypeName;
+  type: ServiceTypeName;
   ims_bot_adapter_connection_id: string;
   rustfs_connection_id: string;
   bot_name: string;
@@ -353,7 +353,7 @@ export function defaultToolForm(): ToolFormState {
   };
 }
 
-export function defaultAgentForm(): AgentFormState {
+export function defaultServiceForm(): ServiceFormState {
   return {
     id: null,
     name: "",
@@ -627,7 +627,7 @@ export function llmFormFromConfig(config: LlmConfig): LlmFormState {
   };
 }
 
-export function toolFormFromConfig(tool: AgentToolConfig): ToolFormState {
+export function toolFormFromConfig(tool: ServiceToolConfig): ToolFormState {
   const form = defaultToolForm();
   form.id = tool.id;
   form.name = tool.name;
@@ -664,10 +664,10 @@ export function toolFormFromConfig(tool: AgentToolConfig): ToolFormState {
   return form;
 }
 
-export function agentFormFromConfig(
-  agent: AgentWithRuntime | AgentConfig,
-): AgentFormState {
-  const form = defaultAgentForm();
+export function serviceFormFromConfig(
+  agent: ServiceWithRuntime | ServiceConfig,
+): ServiceFormState {
+  const form = defaultServiceForm();
   form.id = agent.config_id;
   form.name = agent.name;
   form.enabled = agent.enabled;
@@ -675,7 +675,7 @@ export function agentFormFromConfig(
   form.is_default = agent.is_default;
   form.tools = agent.tools.map(toolFormFromConfig);
   const agentType = agent.agent_type as Record<string, unknown>;
-  form.type = String(agentType.type) as AgentTypeName;
+  form.type = String(agentType.type) as ServiceTypeName;
   if (form.type === "qq_chat") {
     form.ims_bot_adapter_connection_id = String(
       agentType.ims_bot_adapter_connection_id ?? "",
@@ -773,12 +773,12 @@ export function agentFormFromConfig(
       }
     }
   }
-  // avatar_url is at root level for http_stream and workspace agents
-  form.avatar_url = String((agent as AgentWithRuntime).avatar_url ?? "");
+  // avatar_url is at root level for http_stream and Workspace Agent Services
+  form.avatar_url = String((agent as ServiceWithRuntime).avatar_url ?? "");
   return form;
 }
 
-export function buildToolPayload(form: ToolFormState): AgentToolConfig {
+export function buildToolPayload(form: ToolFormState): ServiceToolConfig {
   const parameters = JSON.parse(form.parametersJson || "[]");
   const outputs = JSON.parse(form.outputsJson || "[]");
   let toolType: Record<string, unknown> & { type: string };
@@ -817,13 +817,13 @@ export function buildToolPayload(form: ToolFormState): AgentToolConfig {
   };
 }
 
-export function buildAgentPayload(form: AgentFormState): {
+export function buildServicePayload(form: ServiceFormState): {
   name: string;
   enabled: boolean;
   auto_start: boolean;
   is_default: boolean;
   agent_type: Record<string, unknown>;
-  tools: AgentToolConfig[];
+  tools: ServiceToolConfig[];
   avatar_url?: string | null;
 } {
   const tools = form.tools.map(buildToolPayload);

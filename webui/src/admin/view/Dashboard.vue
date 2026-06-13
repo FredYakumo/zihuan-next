@@ -14,7 +14,7 @@
         </div>
         <div class="stat-divider"></div>
         <div class="stat-item">
-          <span class="muted">Agent 数量</span>
+          <span class="muted">Service 数量</span>
           <strong>{{ stats.agents }}</strong>
         </div>
       </div>
@@ -24,24 +24,24 @@
       <section class="panel chat-panel">
         <div class="chat-toolbar">
           <div class="chat-agent-picker">
-            <div class="chat-agent-picker-title">选择 Agent</div>
+            <div class="chat-agent-picker-title">选择 Service</div>
             <div class="chat-agent-cards">
-              <div v-if="agentsLoading && agents.length === 0" class="chat-agent-loading" aria-live="polite">
-                <span class="chat-agent-loading-spinner"></span>
-                <span>Agent 加载中...</span>
+              <div v-if="servicesLoading && services.length === 0" class="chat-service-loading" aria-live="polite">
+                <span class="chat-service-loading-spinner"></span>
+                <span>Service 加载中...</span>
               </div>
               <template v-else>
                 <button
-                  v-for="agent in agents.filter(a => chatEligibleAgentTypes.has(a.agent_type.type))"
+                  v-for="agent in services.filter(a => chatEligibleServiceTypes.has(a.agent_type.type))"
                   :key="agent.config_id"
                   class="chat-agent-card"
                   :class="{
-                    active: selectedAgentId === agent.config_id,
-                    inactive: agent.runtime.status !== 'running' || !chatEligibleAgentTypes.has(agent.agent_type.type),
-                    unsupported: !chatEligibleAgentTypes.has(agent.agent_type.type),
+                    active: selectedServiceId === agent.config_id,
+                    inactive: agent.runtime.status !== 'running' || !chatEligibleServiceTypes.has(agent.agent_type.type),
+                    unsupported: !chatEligibleServiceTypes.has(agent.agent_type.type),
                   }"
-                  :disabled="!chatEligibleAgentTypes.has(agent.agent_type.type)"
-                  @click="selectedAgentId = agent.config_id"
+                  :disabled="!chatEligibleServiceTypes.has(agent.agent_type.type)"
+                  @click="selectedServiceId = agent.config_id"
                 >
                   <img
                     v-if="agentAvatarUrl(agent)"
@@ -56,14 +56,14 @@
                     <strong>{{ agent.name }}</strong>
                     <span>{{ readableAgentType(agent.agent_type.type) }}</span>
                   </div>
-                  <span v-if="!chatEligibleAgentTypes.has(agent.agent_type.type)" class="agent-status-badge unsupported-badge">Dashboard 不可用</span>
+                  <span v-if="!chatEligibleServiceTypes.has(agent.agent_type.type)" class="agent-status-badge unsupported-badge">Dashboard 不可用</span>
                   <span v-else-if="agent.runtime.status !== 'running'" class="agent-status-badge">未运行</span>
                 </button>
               </template>
             </div>
           </div>
           <button class="btn ghost" @click="reloadSessions">刷新历史</button>
-          <button v-if="isWorkspaceAgent" class="btn ghost" :disabled="pickingDirectory" @click="pickDirectory">
+          <button v-if="isWorkspaceService" class="btn ghost" :disabled="pickingDirectory" @click="pickDirectory">
             {{ pickingDirectory ? "选择中..." : "打开目录" }}
           </button>
         </div>
@@ -98,7 +98,7 @@
           </aside>
 
           <div class="chat-main">
-            <div v-if="isWorkspaceAgent" class="workspace-path-display">
+            <div v-if="isWorkspaceService" class="workspace-path-display">
               <span class="path-label">当前工作目录：</span>
               <span class="path-value" :class="{ 'path-unset': !workspacePath }">
                 {{ workspacePath || '未选择工作目录' }}
@@ -659,7 +659,7 @@ import MarkdownIt from "markdown-it";
 import {
   chat,
   system,
-  type AgentWithRuntime,
+  type ServiceWithRuntime,
   type ChatHistoryRecord,
   type ChatToolCall,
   type ChatSessionSummary,
@@ -797,11 +797,11 @@ type StreamState = {
   requestText: string;
 };
 
-const agents = ref<AgentWithRuntime[]>([]);
-const agentsLoading = ref(false);
+const services = ref<ServiceWithRuntime[]>([]);
+const servicesLoading = ref(false);
 const sessions = ref<ChatSessionSummary[]>([]);
 const activeSessionId = ref("");
-const selectedAgentId = ref("");
+const selectedServiceId = ref("");
 const draftMessage = ref("");
 const workspacePath = ref("");
 const pickingDirectory = ref(false);
@@ -819,7 +819,7 @@ const openPicker = ref<'model' | 'thinking' | 'effort' | 'settings' | null>(null
 const stats = reactive({
   connections: 0,
   llm: 0,
-  agents: 0,
+  services: 0,
 });
 const markdown = new MarkdownIt({
   html: false,
@@ -827,11 +827,11 @@ const markdown = new MarkdownIt({
   linkify: true,
 });
 
-const chatEligibleAgentTypes = new Set(["http_stream", "workspace"]);
-const selectedAgent = computed(() => agents.value.find((agent) => agent.config_id === selectedAgentId.value) ?? null);
-const selectedAgentType = computed(() => selectedAgent.value?.agent_type?.type ?? "");
-const isChatEligible = computed(() => chatEligibleAgentTypes.has(selectedAgentType.value));
-const isWorkspaceAgent = computed(() => selectedAgentType.value === "workspace");
+const chatEligibleServiceTypes = new Set(["http_stream", "workspace"]);
+const selectedService = computed(() => services.value.find((agent) => agent.config_id === selectedServiceId.value) ?? null);
+const selectedServiceType = computed(() => selectedService.value?.agent_type?.type ?? "");
+const isChatEligible = computed(() => chatEligibleServiceTypes.has(selectedServiceType.value));
+const isWorkspaceService = computed(() => selectedServiceType.value === "workspace");
 const groupedSessions = computed(() => {
   const groups = new Map<string, ChatSessionSummary[]>();
   for (const session of sessions.value) {
@@ -869,7 +869,7 @@ const selectedModelLlmConfig = computed(() => {
   return null;
 });
 const defaultAgentModelId = computed(() => {
-  const agent = selectedAgent.value;
+  const agent = selectedService.value;
   if (!agent) {
     return "";
   }
@@ -900,23 +900,23 @@ const selectedEffortLabel = computed(() => {
   return selectedReasoningEffort.value;
 });
 const canSend = computed(() =>
-  !!selectedAgent.value &&
+  !!selectedService.value &&
   isChatEligible.value &&
-  selectedAgent.value.runtime.status === "running" &&
+  selectedService.value.runtime.status === "running" &&
   draftMessage.value.trim().length > 0,
 );
-const selectedAgentAvatarUrl = computed(() => agentAvatarUrl(selectedAgent.value));
+const selectedAgentAvatarUrl = computed(() => agentAvatarUrl(selectedService.value));
 const selectedAgentAvatarFallback = computed(() => {
-  const name = selectedAgent.value?.name ?? "Bot";
+  const name = selectedService.value?.name ?? "Bot";
   return agentInitial(name);
 });
 const pendingAskUser = ref<PendingAskUser | null>(null);
 const askUserAnswer = ref("");
 const canSubmitAskUser = computed(() =>
   isChatEligible.value &&
-  isWorkspaceAgent.value &&
+  isWorkspaceService.value &&
   !!pendingAskUser.value &&
-  selectedAgent.value?.runtime.status === "running" &&
+  selectedService.value?.runtime.status === "running" &&
   askUserAnswer.value.trim().length > 0 &&
   !sending.value,
 );
@@ -938,7 +938,7 @@ function messageAvatarUrl(record: ChatHistoryRecord): string {
     return record.agent_avatar_url;
   }
   // Fallback: try current agent config
-  const agent = agents.value.find((a) => a.config_id === record.agent_id);
+  const agent = services.value.find((a) => a.config_id === record.agent_id);
   if (agent) {
     return agentAvatarUrl(agent);
   }
@@ -967,7 +967,7 @@ const messageGroups = computed(() => {
         role: message.role,
         messages: [message],
         avatarUrl: message.role === "assistant" ? (message.agentAvatarUrl || selectedAgentAvatarUrl.value || undefined) : undefined,
-        agentName: message.agentName || selectedAgent.value?.name,
+        agentName: message.agentName || selectedService.value?.name,
       };
       groups.push(currentGroup);
     }
@@ -999,20 +999,20 @@ const activeToolDetail = computed<ToolDetail | null>(() => {
 
 function readableAgentType(type: string): string {
   if (type === "http_stream") {
-    return "HTTP Stream Agent";
+    return "HTTP stream service";
   }
   if (type === "workspace") {
-    return "Workspace Agent";
+    return "Workspace Agent Service";
   }
-  return "QQ Chat Agent";
+  return "QQ Chat Agent Service";
 }
 
-function agentAvatarUrl(agent: AgentWithRuntime | null | undefined): string {
+function agentAvatarUrl(agent: ServiceWithRuntime | null | undefined): string {
   if (!agent) {
     return "";
   }
 
-  // For QQ Chat Agent, use QQ avatar
+  // For QQ Chat Agent Service, use QQ avatar
   if (agent.agent_type.type === "qq_chat") {
     const profile = agent.qq_chat_profile;
     const explicit = String(profile?.bot_avatar_url ?? "").trim();
@@ -1026,7 +1026,7 @@ function agentAvatarUrl(agent: AgentWithRuntime | null | undefined): string {
     return `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(botUserId)}&s=640`;
   }
 
-  // For HTTP Stream and Workspace agents, use configured avatar_url
+  // For HTTP Stream and Workspace Agent Services, use configured avatar_url
   return String(agent.avatar_url ?? "").trim();
 }
 
@@ -1236,7 +1236,7 @@ function applyInferenceFailure(streamState: StreamState, errorMessage: string) {
 }
 
 async function reloadSessions() {
-  const result = await chat.listSessions(selectedAgentId.value || undefined);
+  const result = await chat.listSessions(selectedServiceId.value || undefined);
   sessions.value = result.sessions;
 }
 
@@ -1247,8 +1247,8 @@ async function openSession(sessionId: string) {
   const result = await chat.getSessionMessages(sessionId);
   // Auto-select the agent associated with this session
   const firstRecord = result.messages[0];
-  if (firstRecord?.agent_id && agents.value.some((a) => a.config_id === firstRecord.agent_id)) {
-    selectedAgentId.value = firstRecord.agent_id;
+  if (firstRecord?.agent_id && services.value.some((a) => a.config_id === firstRecord.agent_id)) {
+    selectedServiceId.value = firstRecord.agent_id;
   }
   workspacePath.value =
     result.messages[result.messages.length - 1]?.workspace_path ??
@@ -1310,13 +1310,13 @@ function closePickersOnClickOutside(event: MouseEvent) {
   }
 }
 
-watch(selectedAgentId, async () => {
+watch(selectedServiceId, async () => {
   await reloadSessions();
   startNewSession();
   selectedModelId.value = defaultAgentModelId.value;
   selectedThinkingType.value = "";
   selectedReasoningEffort.value = "";
-  if (!isWorkspaceAgent.value) {
+  if (!isWorkspaceService.value) {
     workspacePath.value = "";
   }
   if (!isChatEligible.value) {
@@ -1510,7 +1510,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
   if (!userText) {
     return;
   }
-  if (!selectedAgent.value || selectedAgent.value.runtime.status !== "running") {
+  if (!selectedService.value || selectedService.value.runtime.status !== "running") {
     return;
   }
   if (!fromAskUser && !canSend.value) {
@@ -1572,13 +1572,13 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
   try {
     await chat.stream(
       {
-        agent_id: selectedAgentId.value,
+        agent_id: selectedServiceId.value,
         session_id: activeSessionId.value || null,
         stream: true,
         model_config_id: selectedModelId.value || null,
         thinking_type: selectedThinkingType.value || null,
         reasoning_effort: selectedReasoningEffort.value || null,
-        workspace_path: isWorkspaceAgent.value ? workspacePath.value.trim() || null : null,
+        workspace_path: isWorkspaceService.value ? workspacePath.value.trim() || null : null,
         messages: requestMessages,
       },
       (event) => applyStreamEvent(event, streamState),
@@ -1595,26 +1595,26 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
 }
 
 async function load() {
-  agentsLoading.value = true;
+  servicesLoading.value = true;
   try {
     const [connections, llm, loadedAgents] = await Promise.all([
       system.connections.list(),
       system.llm.list(),
-      system.agents.list(),
+      system.services.list(),
     ]);
     stats.connections = connections.length;
     stats.llm = llm.length;
     stats.agents = loadedAgents.length;
-    agents.value = loadedAgents;
+    services.value = loadedAgents;
     llmModels.value = llm;
 
-    if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.config_id === selectedAgentId.value)) {
-      const firstEligible = loadedAgents.find((agent) => chatEligibleAgentTypes.has(agent.agent_type.type));
-      selectedAgentId.value = firstEligible?.config_id ?? loadedAgents[0]?.config_id ?? "";
+    if (!selectedServiceId.value || !loadedAgents.some((agent) => agent.config_id === selectedServiceId.value)) {
+      const firstEligible = loadedAgents.find((agent) => chatEligibleServiceTypes.has(agent.agent_type.type));
+      selectedServiceId.value = firstEligible?.config_id ?? loadedAgents[0]?.config_id ?? "";
     }
     selectedModelId.value = defaultAgentModelId.value;
   } finally {
-    agentsLoading.value = false;
+    servicesLoading.value = false;
   }
 
   await reloadSessions();
@@ -1719,7 +1719,7 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-.chat-agent-loading {
+.chat-service-loading {
   min-height: 54px;
   display: flex;
   align-items: center;
@@ -1727,7 +1727,7 @@ onUnmounted(() => {
   color: var(--admin-subtle);
 }
 
-.chat-agent-loading-spinner {
+.chat-service-loading-spinner {
   width: 16px;
   height: 16px;
   border: 2px solid color-mix(in srgb, var(--admin-accent) 28%, transparent);

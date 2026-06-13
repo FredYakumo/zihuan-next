@@ -404,7 +404,10 @@ impl BrainTool for AskUserBrainTool {
         }
         let request = AskUserRequest {
             question: question.clone(),
-            details: args.details.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()),
+            details: args
+                .details
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
             placeholder: args
                 .placeholder
                 .map(|value| value.trim().to_string())

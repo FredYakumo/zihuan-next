@@ -75,7 +75,7 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
                         ),
                 )
                 .push(
-                    Router::with_path("agents")
+                    Router::with_path("services")
                         .get(config::agents::list_agents)
                         .post(config::agents::create_agent)
                         .push(
