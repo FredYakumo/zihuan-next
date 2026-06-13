@@ -39,7 +39,7 @@ async function main() {
       { path: "/connections", component: Connections },
       { path: "/connection-manager", component: ConnectionManager },
       { path: "/llm", component: Llm },
-      { path: "/agents", component: Agents },
+      { path: "/services", component: Agents },
       { path: "/graphs", component: Graphs },
       { path: "/tasks", component: Tasks },
       { path: "/commands", component: Commands },

@@ -17,7 +17,7 @@ const CONFIG_ROOT_VERSION: u32 = 2;
 pub enum ConfigCategory {
     Connection,
     LlmRef,
-    Agent,
+    Service,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -32,8 +32,8 @@ pub enum ConfigKind {
     ConnectionTokenizer,
     ConnectionSqlite,
     LlmRef,
-    AgentQqChat,
-    AgentHttpStream,
+    ServiceQqChat,
+    ServiceHttpStream,
     CommandPermission,
 }
 
@@ -49,8 +49,8 @@ impl ConfigKind {
             | Self::ConnectionTokenizer
             | Self::ConnectionSqlite => ConfigCategory::Connection,
             Self::LlmRef => ConfigCategory::LlmRef,
-            Self::AgentQqChat | Self::AgentHttpStream => ConfigCategory::Agent,
-            Self::CommandPermission => ConfigCategory::Agent,
+            Self::ServiceQqChat | Self::ServiceHttpStream => ConfigCategory::Service,
+            Self::CommandPermission => ConfigCategory::Service,
         }
     }
 }
@@ -164,7 +164,7 @@ impl ConfigRoot {
         root.configs.llm_refs =
             migrate_legacy_collection(object.get("llm_refs").and_then(Value::as_array), ConfigCategory::LlmRef)?;
         root.configs.agents =
-            migrate_legacy_collection(object.get("agents").and_then(Value::as_array), ConfigCategory::Agent)?;
+            migrate_legacy_collection(object.get("agents").and_then(Value::as_array), ConfigCategory::Service)?;
         Ok(root)
     }
 
@@ -232,14 +232,14 @@ fn infer_kind_from_legacy_object(category: ConfigCategory, object: &Map<String, 
             None => Err(Error::ValidationError("legacy connection is missing kind.type".to_string())),
         },
         ConfigCategory::LlmRef => Ok(ConfigKind::LlmRef),
-        ConfigCategory::Agent => match object
+        ConfigCategory::Service => match object
             .get("agent_type")
             .and_then(Value::as_object)
             .and_then(|agent_type| agent_type.get("type"))
             .and_then(Value::as_str)
         {
-            Some("qq_chat") => Ok(ConfigKind::AgentQqChat),
-            Some("http_stream") => Ok(ConfigKind::AgentHttpStream),
+            Some("qq_chat") => Ok(ConfigKind::ServiceQqChat),
+            Some("http_stream") => Ok(ConfigKind::ServiceHttpStream),
             Some(other) => Err(Error::ValidationError(format!("unsupported legacy agent type '{other}'"))),
             None => Err(Error::ValidationError("legacy agent is missing agent_type.type".to_string())),
         },
@@ -250,7 +250,7 @@ fn legacy_object_to_spec(category: ConfigCategory, object: &Map<String, Value>) 
     match category {
         ConfigCategory::Connection => Ok(object.get("kind").cloned().unwrap_or(Value::Null)),
         ConfigCategory::LlmRef => Ok(object.get("llm").cloned().unwrap_or(Value::Null)),
-        ConfigCategory::Agent => {
+        ConfigCategory::Service => {
             let mut spec = Map::new();
             spec.insert(
                 "agent_type".to_string(),
@@ -345,7 +345,7 @@ impl<R: ConfigRepository> ConfigCenter<R> {
         Ok(match category {
             ConfigCategory::Connection => root.configs.connections,
             ConfigCategory::LlmRef => root.configs.llm_refs,
-            ConfigCategory::Agent => root.configs.agents,
+            ConfigCategory::Service => root.configs.agents,
         })
     }
 
@@ -388,7 +388,7 @@ fn bucket_mut(root: &mut ConfigRoot, category: ConfigCategory) -> &mut Vec<Store
     match category {
         ConfigCategory::Connection => &mut root.configs.connections,
         ConfigCategory::LlmRef => &mut root.configs.llm_refs,
-        ConfigCategory::Agent => &mut root.configs.agents,
+        ConfigCategory::Service => &mut root.configs.agents,
     }
 }
 
@@ -433,6 +433,6 @@ mod tests {
         assert_eq!(parsed.configs.agents.len(), 1);
         assert_eq!(parsed.configs.connections[0].config_id, "conn-1");
         assert_eq!(parsed.configs.llm_refs[0].kind, ConfigKind::LlmRef);
-        assert_eq!(parsed.configs.agents[0].kind, ConfigKind::AgentQqChat);
+        assert_eq!(parsed.configs.agents[0].kind, ConfigKind::ServiceQqChat);
     }
 }

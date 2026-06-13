@@ -418,7 +418,7 @@ export function openBrainToolsEditor(
 ): void {
   const { dialog, close } = openOverlay();
   const isQqMessageAgent =
-    nodeDef.node_type === "qq_chat_agent" || nodeDef.node_type === "qq_message_agent";
+    nodeDef.node_type === "qq_chat_agent_service" || nodeDef.node_type === "qq_chat_agent" || nodeDef.node_type === "qq_message_agent";
   const ownerLabel = isQqMessageAgent ? "QQ Message Agent" : "Brain";
 
   const rawTools = (nodeDef.inline_values?.["tools_config"] as BrainToolDefinition[] | undefined) ?? [];

@@ -11,9 +11,9 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_graph_engine::{DataType, DataValue};
 
-use crate::agent::qq_chat_agent_msg_send::{send_notification_text, QqSendContext};
+use crate::agent::qq_chat_agent_service_msg_send::{send_notification_text, QqChatServiceSendContext};
 
-const LOG_PREFIX: &str = "[QqChatAgent]";
+const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS: &str = "qq_chat_emit_tool_progress_notifications";
 
 #[derive(Clone)]
@@ -59,7 +59,7 @@ impl ToolNotificationTarget {
         };
         if self.is_group {
             if let Some(mid) = self.mention_target_id.as_deref() {
-                let send_ctx = QqSendContext {
+                let send_ctx = QqChatServiceSendContext {
                     adapter,
                     target_id: &self.target_id,
                     is_group: true,
@@ -73,7 +73,7 @@ impl ToolNotificationTarget {
                 let _ = send_notification_text(&send_ctx, call_content);
             }
         } else {
-            let send_ctx = QqSendContext {
+            let send_ctx = QqChatServiceSendContext {
                 adapter,
                 target_id: &self.target_id,
                 is_group: false,
@@ -137,7 +137,7 @@ pub(crate) fn send_editable_tool_progress_notification(
         if let Some(group_id) = event.group_id {
             let group_id = group_id.to_string();
             let sender_id = event.sender.user_id.to_string();
-            let send_ctx = QqSendContext {
+            let send_ctx = QqChatServiceSendContext {
                 adapter: &adapter,
                 target_id: &group_id,
                 is_group: true,
@@ -154,7 +154,7 @@ pub(crate) fn send_editable_tool_progress_notification(
         }
     } else {
         let target_id = event.sender.user_id.to_string();
-        let send_ctx = QqSendContext {
+        let send_ctx = QqChatServiceSendContext {
             adapter: &adapter,
             target_id: &target_id,
             is_group: false,

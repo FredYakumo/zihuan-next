@@ -3,15 +3,15 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use super::inference::{InferenceToolContext, InferenceToolProvider};
-use super::qq_chat_agent_core::{
+use super::qq_chat_agent_service_core::{
     build_info_brain_tools, expand_messages_for_inference, prepare_current_turn_user_input_from_event,
-    QqAgentReplyBatchBuilder, QqChatAgent, QqChatAgentContext, QqChatAgentService, QqChatAgentServiceConfig,
-    QqChatTaskTrace, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatAgentServiceRuntimeConfig,
+    QqChatServiceReplyBatchBuilder, QqChatTaskTrace, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
-use super::qq_chat_agent_ignore_store::should_ignore_message_blocking;
-use super::qq_chat_agent_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
+use super::qq_chat_agent_service_ignore_store::should_ignore_message_blocking;
+use super::qq_chat_agent_service_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
-use crate::agent::qq_chat_agent_inbox::{QqChatAgentInbox, QqChatAgentSupervisorEvent};
+use crate::agent::qq_chat_agent_service_inbox::{QqChatAgentServiceInbox, QqChatAgentServiceSupervisorEvent};
 use crate::agent::tool_definitions::build_enabled_tool_definitions;
 use crate::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name,
@@ -33,8 +33,8 @@ use storage_handler::{
 };
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
-use zihuan_agent::session_state::QqChatAgentSessionState;
-use zihuan_core::agent_config::QqChatAgentConfig;
+use zihuan_agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::agent_config::QqChatAgentServiceConfig;
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -56,7 +56,7 @@ use zihuan_graph_engine::message_restore::{register_mysql_ref, register_rdb_pool
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_nlp::{build_segmenter, TextSegmenter};
 
-fn build_reply_batch_builder(segmenter: Arc<dyn TextSegmenter>) -> QqAgentReplyBatchBuilder {
+fn build_reply_batch_builder(segmenter: Arc<dyn TextSegmenter>) -> QqChatServiceReplyBatchBuilder {
     build_unified_reply_batch_builder(segmenter)
 }
 
@@ -132,7 +132,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
 
 pub fn load_inference_tool_provider(
     agent: &AgentConfig,
-    config: &QqChatAgentConfig,
+    config: &QqChatAgentServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     Ok(Arc::new(QqInferenceToolProvider {
@@ -143,7 +143,7 @@ pub fn load_inference_tool_provider(
 
 fn load_qq_resources(
     agent: &AgentConfig,
-    config: &QqChatAgentConfig,
+    config: &QqChatAgentServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<QqLoadedInferenceResources> {
     let web_search_engine_ref = build_web_search_engine_ref(
@@ -249,7 +249,7 @@ fn load_qq_resources(
 }
 
 fn build_agent_mysql_ref(
-    config: &QqChatAgentConfig,
+    config: &QqChatAgentServiceConfig,
     connections: &[ConnectionConfig],
     agent_name: &str,
 ) -> Result<Option<Arc<MySqlConfig>>> {
@@ -269,7 +269,7 @@ fn build_agent_mysql_ref(
     })
 }
 
-/// Purpose: Bootstrap and launch a long-running QQ chat agent instance.
+/// Purpose: Bootstrap and launch a long-running QQ Chat Agent Service instance.
 ///
 /// Resolves all runtime dependencies (`llm`, `embedding_model`, `tavily`, `s3_ref`,
 /// `mysql_ref`, `weaviate_image_ref`), wires the IMS bot adapter event handler
@@ -280,14 +280,14 @@ fn build_agent_mysql_ref(
 /// typically from `AgentManager::start_agent` after validating the agent config.
 ///
 /// Call chain:
-///   `AgentManager::start_agent` → `QqChatAgent::spawn`
+///   `AgentManager::start_agent` → `QqChatAgentService::spawn`
 ///     → build deps → register `EventHandler` on bot adapter
 ///     → `tokio::spawn`(`BotAdapter::start`) → `handle_event` per incoming message
 ///     → `on_finish` callback on exit
 pub async fn spawn(
     manager: &AgentManager,
     agent: AgentConfig,
-    config: QqChatAgentConfig,
+    config: QqChatAgentServiceConfig,
     connections: Vec<ConnectionConfig>,
     on_finish: super::OnFinishShared,
     task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
@@ -363,7 +363,7 @@ pub async fn spawn(
         register_rdb_pool(rdb_pool.clone());
     }
 
-    let service = Arc::new(QqChatAgentService::new(QqChatAgentServiceConfig {
+    let service = Arc::new(QqChatAgentService::new(QqChatAgentServiceRuntimeConfig {
         agent_id: agent.id.clone(),
         qq_chat_config: config.clone(),
         node_id: format!("service_agent_{}", agent.id),
@@ -408,13 +408,13 @@ pub async fn spawn(
         shared_inputs: Vec::<FunctionPortDef>::new(),
         tool_definitions,
         shared_runtime_values: HashMap::new(),
-        session_state_store: Arc::new(Mutex::new(QqChatAgentSessionState::default())),
+        session_state_store: Arc::new(Mutex::new(QqChatAgentServiceSessionState::default())),
         task_runtime,
     })?);
 
     let adapter = build_ims_bot_adapter(&ims_bot_adapter_connection, object_storage).await;
 
-    let inbox = QqChatAgentInbox::new(
+    let inbox = QqChatAgentServiceInbox::new(
         Arc::clone(&service),
         adapter.clone(),
         redis_ref,
@@ -440,13 +440,13 @@ pub async fn spawn(
     let agent_id = agent.id.clone();
     let agent_name = agent.name.clone();
     Ok(tokio::spawn(async move {
-        info!("[service] starting QQ chat agent '{}'", agent_name);
+        info!("[service] starting QQ Chat Agent Service '{}'", agent_name);
         let mut tasks = tokio::task::JoinSet::new();
         inbox.spawn_consumers(&mut tasks);
         tasks.spawn(async move {
             match BotAdapter::start(adapter).await {
-                Ok(()) => QqChatAgentSupervisorEvent::AdapterFinished { success: true, error_msg: None },
-                Err(err) => QqChatAgentSupervisorEvent::AdapterFinished {
+                Ok(()) => QqChatAgentServiceSupervisorEvent::AdapterFinished { success: true, error_msg: None },
+                Err(err) => QqChatAgentServiceSupervisorEvent::AdapterFinished {
                     success: false,
                     error_msg: Some(err.to_string()),
                 },
@@ -456,16 +456,16 @@ pub async fn spawn(
         let mut adapter_result: Option<(bool, Option<String>)> = None;
         while let Some(result) = tasks.join_next().await {
             match result {
-                Ok(QqChatAgentSupervisorEvent::AdapterFinished { success, error_msg }) => {
+                Ok(QqChatAgentServiceSupervisorEvent::AdapterFinished { success, error_msg }) => {
                     adapter_result = Some((success, error_msg));
                     inbox.request_shutdown();
                 }
-                Ok(QqChatAgentSupervisorEvent::RedisConsumerFinished) => {
+                Ok(QqChatAgentServiceSupervisorEvent::RedisConsumerFinished) => {
                     if adapter_result.is_none() {
                         warn!("[service][qq_agent] a Redis inbox consumer exited unexpectedly");
                     }
                 }
-                Ok(QqChatAgentSupervisorEvent::MemoryConsumerFinished) => {
+                Ok(QqChatAgentServiceSupervisorEvent::MemoryConsumerFinished) => {
                     if adapter_result.is_none() {
                         warn!("[service][qq_agent] a memory inbox consumer exited unexpectedly");
                     }
@@ -475,11 +475,11 @@ pub async fn spawn(
                 }
             }
         }
-        let (success, error_msg) =
-            adapter_result.unwrap_or_else(|| (false, Some("QQ chat agent task set ended unexpectedly".to_string())));
+        let (success, error_msg) = adapter_result
+            .unwrap_or_else(|| (false, Some("QQ Chat Agent Service task set ended unexpectedly".to_string())));
 
         if success {
-            info!("[service] QQ chat agent '{}' stopped", agent_name);
+            info!("[service] QQ Chat Agent Service '{}' stopped", agent_name);
             manager.update_state(
                 &agent_id,
                 AgentRuntimeState {
@@ -492,8 +492,8 @@ pub async fn spawn(
         } else {
             let msg = error_msg
                 .clone()
-                .unwrap_or_else(|| "QQ chat agent exited unexpectedly".to_string());
-            error!("[service] QQ chat agent '{}' exited with error: {}", agent_name, msg);
+                .unwrap_or_else(|| "QQ Chat Agent Service exited unexpectedly".to_string());
+            error!("[service] QQ Chat Agent Service '{}' exited with error: {}", agent_name, msg);
             manager.update_state(
                 &agent_id,
                 AgentRuntimeState {
@@ -510,7 +510,10 @@ pub async fn spawn(
     }))
 }
 
-fn resolve_tokenizer_segmenter(config: &QqChatAgentConfig, connections: &[ConnectionConfig]) -> Arc<dyn TextSegmenter> {
+fn resolve_tokenizer_segmenter(
+    config: &QqChatAgentServiceConfig,
+    connections: &[ConnectionConfig],
+) -> Arc<dyn TextSegmenter> {
     let tokenizer_path = config
         .tokenizer_connection_id
         .as_deref()
@@ -568,7 +571,7 @@ fn resolve_inbox_redis_ref(
     storage_handler::build_redis_ref(redis_connection_id, connections)
 }
 
-impl QqChatAgent {
+impl QqChatAgentServiceInner {
     /// Entry point for handling a single inbound QQ message event.
     ///
     /// The flow is:
@@ -587,7 +590,7 @@ impl QqChatAgent {
         agent_id: &str,
         session: &Arc<SessionStateRef>,
         user_ip: Option<String>,
-        ctx: &QqChatAgentContext<'_>,
+        ctx: &QqChatAgentServiceContext<'_>,
     ) -> Result<()> {
         let is_group = event.message_type == MessageType::Group;
         let sender_id = event.sender.user_id.to_string();

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use storage_handler::RuntimeStorageConnectionManager;
-use zihuan_core::agent_config::current_qq_chat_agent_config;
+use zihuan_core::agent_config::current_qq_chat_agent_service_config;
 use zihuan_core::error::Result;
 use zihuan_graph_engine::{node_output, DataType, DataValue, Node, Port};
 
@@ -39,7 +39,7 @@ impl Node for AgentMySqlRefNode {
     node_output![port! { name = "mysql_ref", ty = MySqlRef, desc = "Agent MySQL 连接引用" },];
 
     fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
-        let config = current_qq_chat_agent_config()?;
+        let config = current_qq_chat_agent_service_config()?;
         let mysql_connection_id = config.resolved_rdb_id();
         let mysql_connection_id = mysql_connection_id
             .map(str::trim)

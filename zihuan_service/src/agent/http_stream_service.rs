@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use log::info;
-use model_inference::system_config::{load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamAgentConfig};
+use model_inference::system_config::{load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamServiceConfig};
 use salvo::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use salvo::http::{HeaderValue, StatusCode};
 use salvo::prelude::*;
@@ -108,7 +108,7 @@ impl InferenceToolProvider for HttpStreamInferenceToolProvider {
 
 pub fn load_inference_tool_provider(
     agent: &AgentConfig,
-    config: &HttpStreamAgentConfig,
+    config: &HttpStreamServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     Ok(Arc::new(HttpStreamInferenceToolProvider {
@@ -118,7 +118,7 @@ pub fn load_inference_tool_provider(
 }
 
 fn load_http_stream_resources(
-    config: &HttpStreamAgentConfig,
+    config: &HttpStreamServiceConfig,
     connections: &[ConnectionConfig],
 ) -> HttpStreamLoadedInferenceResources {
     let web_search_engine_connection_id = config
@@ -187,17 +187,17 @@ fn load_http_stream_resources(
 pub async fn spawn(
     manager: &AgentManager,
     agent: AgentConfig,
-    config: HttpStreamAgentConfig,
+    config: HttpStreamServiceConfig,
     on_finish: super::OnFinishShared,
     task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
 ) -> Result<JoinHandle<()>> {
-    validate_http_stream_config(&config)?;
+    validate_http_stream_service_config(&config)?;
     let acceptor = salvo::conn::TcpListener::new(config.bind.clone())
         .try_bind()
         .await
         .map_err(|err| {
             Error::StringError(format!(
-                "failed to bind HTTP stream agent '{}' on {}: {}",
+                "failed to bind HTTP stream service '{}' on {}: {}",
                 agent.name, config.bind, err
             ))
         })?;
@@ -223,9 +223,9 @@ pub async fn spawn(
     let agent_name = agent.name.clone();
 
     Ok(tokio::spawn(async move {
-        info!("[service] starting HTTP stream agent '{}' on {}", agent_name, config.bind);
+        info!("[service] starting HTTP stream service '{}' on {}", agent_name, config.bind);
         salvo::Server::new(acceptor).serve(service).await;
-        info!("[service] HTTP stream agent '{}' stopped", agent_name);
+        info!("[service] HTTP stream service '{}' stopped", agent_name);
         manager.update_state(
             &agent_id,
             AgentRuntimeState {
@@ -615,7 +615,7 @@ fn mask_http_stream_api_key(api_key: Option<&str>) -> String {
     format!("{prefix}***{suffix}")
 }
 
-fn validate_http_stream_config(config: &HttpStreamAgentConfig) -> Result<()> {
+fn validate_http_stream_service_config(config: &HttpStreamServiceConfig) -> Result<()> {
     if config.bind.trim().is_empty() {
         return Err(Error::ValidationError("http_stream bind must not be empty".to_string()));
     }

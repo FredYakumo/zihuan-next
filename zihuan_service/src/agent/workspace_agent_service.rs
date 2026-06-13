@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use model_inference::system_config::{AgentConfig, WorkspaceAgentConfig};
+use model_inference::system_config::{AgentConfig, WorkspaceAgentServiceConfig};
 use storage_handler::ConnectionConfig;
 use zihuan_agent::brain::BrainTool;
 use zihuan_core::llm::LLMMessage;
@@ -70,7 +70,7 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
 
 pub fn load_inference_tool_provider(
     agent: &AgentConfig,
-    config: &WorkspaceAgentConfig,
+    config: &WorkspaceAgentServiceConfig,
     _connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     Ok(Arc::new(WorkspaceInferenceToolProvider {

@@ -36,9 +36,10 @@ pub fn with_workspace_context<T>(context: WorkspaceContext, f: impl FnOnce() -> 
 
 pub fn current_workspace_context() -> Result<WorkspaceContext> {
     CURRENT_WORKSPACE_CONTEXT.with(|slot| {
-        slot.borrow().last().cloned().ok_or_else(|| {
-            Error::ValidationError("当前工具调用不在 workspace agent 上下文中".to_string())
-        })
+        slot.borrow()
+            .last()
+            .cloned()
+            .ok_or_else(|| Error::ValidationError("当前工具调用不在 Workspace Agent Service 上下文中".to_string()))
     })
 }
 
@@ -54,9 +55,9 @@ pub fn resolve_workspace_path(path: &str) -> Result<PathBuf> {
     }
 
     let context = current_workspace_context()?;
-    let base = context.workspace_path.ok_or_else(|| {
-        Error::ValidationError("当前 workspace agent 会话尚未选择工作目录".to_string())
-    })?;
+    let base = context
+        .workspace_path
+        .ok_or_else(|| Error::ValidationError("当前 Workspace Agent Service 会话尚未选择工作目录".to_string()))?;
     Ok(base.join(target))
 }
 
@@ -66,9 +67,9 @@ pub fn workspace_cwd_or(current: Option<&str>) -> Result<PathBuf> {
     }
 
     let context = current_workspace_context()?;
-    context.workspace_path.ok_or_else(|| {
-        Error::ValidationError("当前 workspace agent 会话尚未选择工作目录".to_string())
-    })
+    context
+        .workspace_path
+        .ok_or_else(|| Error::ValidationError("当前 Workspace Agent Service 会话尚未选择工作目录".to_string()))
 }
 
 pub fn normalized_workspace_path(path: Option<&str>) -> Option<String> {

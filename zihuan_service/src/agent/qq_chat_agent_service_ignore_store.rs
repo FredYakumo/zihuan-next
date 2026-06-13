@@ -10,7 +10,7 @@ use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
 use zihuan_core::error::{Error, Result};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QqChatAgentIgnoreRule {
+pub struct QqChatAgentServiceIgnoreRule {
     pub id: i64,
     pub agent_id: String,
     pub sender_id: Option<String>,
@@ -21,7 +21,7 @@ pub struct QqChatAgentIgnoreRule {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QqChatAgentIgnoreRuleUpsert {
+pub struct QqChatAgentServiceIgnoreRuleUpsert {
     pub sender_id: Option<String>,
     pub group_id: Option<String>,
 }
@@ -62,7 +62,7 @@ pub fn normalize_ignore_rule_input(
 pub async fn list_ignore_rules(
     connection: &RelationalDbConnection,
     agent_id: &str,
-) -> Result<Vec<QqChatAgentIgnoreRule>> {
+) -> Result<Vec<QqChatAgentServiceIgnoreRule>> {
     match connection {
         RelationalDbConnection::MySql(config) => list_ignore_rules_mysql(config, agent_id).await,
         RelationalDbConnection::Sqlite(config) => list_ignore_rules_sqlite(config, agent_id).await,
@@ -72,8 +72,8 @@ pub async fn list_ignore_rules(
 pub async fn create_ignore_rule(
     connection: &RelationalDbConnection,
     agent_id: &str,
-    input: &QqChatAgentIgnoreRuleUpsert,
-) -> Result<QqChatAgentIgnoreRule> {
+    input: &QqChatAgentServiceIgnoreRuleUpsert,
+) -> Result<QqChatAgentServiceIgnoreRule> {
     let normalized = normalize_ignore_rule_input(input.sender_id.as_deref(), input.group_id.as_deref())?;
     match connection {
         RelationalDbConnection::MySql(config) => create_ignore_rule_mysql(config, agent_id, &normalized).await,
@@ -85,8 +85,8 @@ pub async fn update_ignore_rule(
     connection: &RelationalDbConnection,
     agent_id: &str,
     rule_id: i64,
-    input: &QqChatAgentIgnoreRuleUpsert,
-) -> Result<QqChatAgentIgnoreRule> {
+    input: &QqChatAgentServiceIgnoreRuleUpsert,
+) -> Result<QqChatAgentServiceIgnoreRule> {
     let normalized = normalize_ignore_rule_input(input.sender_id.as_deref(), input.group_id.as_deref())?;
     match connection {
         RelationalDbConnection::MySql(config) => update_ignore_rule_mysql(config, agent_id, rule_id, &normalized).await,
@@ -99,7 +99,7 @@ pub async fn update_ignore_rule(
 pub async fn delete_ignore_rule(connection: &RelationalDbConnection, agent_id: &str, rule_id: i64) -> Result<()> {
     match connection {
         RelationalDbConnection::MySql(config) => {
-            sqlx::query("DELETE FROM qq_chat_agent_ignore_rule WHERE id = ? AND agent_id = ?")
+            sqlx::query("DELETE FROM qq_chat_agent_service_ignore_rule WHERE id = ? AND agent_id = ?")
                 .bind(rule_id)
                 .bind(agent_id)
                 .execute(mysql_pool(config)?)
@@ -107,7 +107,7 @@ pub async fn delete_ignore_rule(connection: &RelationalDbConnection, agent_id: &
                 .map_err(Error::Database)?;
         }
         RelationalDbConnection::Sqlite(config) => {
-            sqlx::query("DELETE FROM qq_chat_agent_ignore_rule WHERE id = ? AND agent_id = ?")
+            sqlx::query("DELETE FROM qq_chat_agent_service_ignore_rule WHERE id = ? AND agent_id = ?")
                 .bind(rule_id)
                 .bind(agent_id)
                 .execute(sqlite_pool(config)?)
@@ -132,7 +132,7 @@ pub async fn should_ignore_message(
     match connection {
         RelationalDbConnection::MySql(config) => {
             let rows = sqlx::query(
-                "SELECT 1 FROM qq_chat_agent_ignore_rule \
+                "SELECT 1 FROM qq_chat_agent_service_ignore_rule \
                  WHERE agent_id = ? AND (match_key = ? OR match_key = ? OR match_key = ?) LIMIT 1",
             )
             .bind(agent_id)
@@ -147,7 +147,7 @@ pub async fn should_ignore_message(
         }
         RelationalDbConnection::Sqlite(config) => {
             let rows = sqlx::query(
-                "SELECT 1 FROM qq_chat_agent_ignore_rule \
+                "SELECT 1 FROM qq_chat_agent_service_ignore_rule \
                  WHERE agent_id = ? AND (match_key = ? OR match_key = ? OR match_key = ?) LIMIT 1",
             )
             .bind(agent_id)
@@ -182,10 +182,13 @@ pub fn should_ignore_message_blocking(
     }
 }
 
-async fn list_ignore_rules_mysql(config: &Arc<MySqlConfig>, agent_id: &str) -> Result<Vec<QqChatAgentIgnoreRule>> {
+async fn list_ignore_rules_mysql(
+    config: &Arc<MySqlConfig>,
+    agent_id: &str,
+) -> Result<Vec<QqChatAgentServiceIgnoreRule>> {
     let rows = sqlx::query(
         "SELECT id, agent_id, sender_id, group_id, match_key, created_at, updated_at \
-         FROM qq_chat_agent_ignore_rule WHERE agent_id = ? ORDER BY id ASC",
+         FROM qq_chat_agent_service_ignore_rule WHERE agent_id = ? ORDER BY id ASC",
     )
     .bind(agent_id)
     .fetch_all(mysql_pool(config)?)
@@ -195,10 +198,13 @@ async fn list_ignore_rules_mysql(config: &Arc<MySqlConfig>, agent_id: &str) -> R
     Ok(rows.into_iter().map(map_ignore_rule_mysql_row).collect())
 }
 
-async fn list_ignore_rules_sqlite(config: &Arc<SqliteConfig>, agent_id: &str) -> Result<Vec<QqChatAgentIgnoreRule>> {
+async fn list_ignore_rules_sqlite(
+    config: &Arc<SqliteConfig>,
+    agent_id: &str,
+) -> Result<Vec<QqChatAgentServiceIgnoreRule>> {
     let rows = sqlx::query(
         "SELECT id, agent_id, sender_id, group_id, match_key, created_at, updated_at \
-         FROM qq_chat_agent_ignore_rule WHERE agent_id = ? ORDER BY id ASC",
+         FROM qq_chat_agent_service_ignore_rule WHERE agent_id = ? ORDER BY id ASC",
     )
     .bind(agent_id)
     .fetch_all(sqlite_pool(config)?)
@@ -212,11 +218,11 @@ async fn create_ignore_rule_mysql(
     config: &Arc<MySqlConfig>,
     agent_id: &str,
     normalized: &NormalizedIgnoreRuleInput,
-) -> Result<QqChatAgentIgnoreRule> {
+) -> Result<QqChatAgentServiceIgnoreRule> {
     let now = Local::now().naive_local();
 
     sqlx::query(
-        "INSERT INTO qq_chat_agent_ignore_rule \
+        "INSERT INTO qq_chat_agent_service_ignore_rule \
          (agent_id, sender_id, group_id, match_key, created_at, updated_at) \
          VALUES (?, ?, ?, ?, ?, ?)",
     )
@@ -237,11 +243,11 @@ async fn create_ignore_rule_sqlite(
     config: &Arc<SqliteConfig>,
     agent_id: &str,
     normalized: &NormalizedIgnoreRuleInput,
-) -> Result<QqChatAgentIgnoreRule> {
+) -> Result<QqChatAgentServiceIgnoreRule> {
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     sqlx::query(
-        "INSERT INTO qq_chat_agent_ignore_rule \
+        "INSERT INTO qq_chat_agent_service_ignore_rule \
          (agent_id, sender_id, group_id, match_key, created_at, updated_at) \
          VALUES (?, ?, ?, ?, ?, ?)",
     )
@@ -263,11 +269,11 @@ async fn update_ignore_rule_mysql(
     agent_id: &str,
     rule_id: i64,
     normalized: &NormalizedIgnoreRuleInput,
-) -> Result<QqChatAgentIgnoreRule> {
+) -> Result<QqChatAgentServiceIgnoreRule> {
     let now = Local::now().naive_local();
 
     let result = sqlx::query(
-        "UPDATE qq_chat_agent_ignore_rule \
+        "UPDATE qq_chat_agent_service_ignore_rule \
          SET sender_id = ?, group_id = ?, match_key = ?, updated_at = ? \
          WHERE id = ? AND agent_id = ?",
     )
@@ -296,11 +302,11 @@ async fn update_ignore_rule_sqlite(
     agent_id: &str,
     rule_id: i64,
     normalized: &NormalizedIgnoreRuleInput,
-) -> Result<QqChatAgentIgnoreRule> {
+) -> Result<QqChatAgentServiceIgnoreRule> {
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let result = sqlx::query(
-        "UPDATE qq_chat_agent_ignore_rule \
+        "UPDATE qq_chat_agent_service_ignore_rule \
          SET sender_id = ?, group_id = ?, match_key = ?, updated_at = ? \
          WHERE id = ? AND agent_id = ?",
     )
@@ -328,10 +334,10 @@ async fn fetch_ignore_rule_by_id_mysql(
     config: &Arc<MySqlConfig>,
     agent_id: &str,
     rule_id: i64,
-) -> Result<QqChatAgentIgnoreRule> {
+) -> Result<QqChatAgentServiceIgnoreRule> {
     let row = sqlx::query(
         "SELECT id, agent_id, sender_id, group_id, match_key, created_at, updated_at \
-         FROM qq_chat_agent_ignore_rule WHERE id = ? AND agent_id = ? LIMIT 1",
+         FROM qq_chat_agent_service_ignore_rule WHERE id = ? AND agent_id = ? LIMIT 1",
     )
     .bind(rule_id)
     .bind(agent_id)
@@ -346,10 +352,10 @@ async fn fetch_ignore_rule_by_id_sqlite(
     config: &Arc<SqliteConfig>,
     agent_id: &str,
     rule_id: i64,
-) -> Result<QqChatAgentIgnoreRule> {
+) -> Result<QqChatAgentServiceIgnoreRule> {
     let row = sqlx::query(
         "SELECT id, agent_id, sender_id, group_id, match_key, created_at, updated_at \
-         FROM qq_chat_agent_ignore_rule WHERE id = ? AND agent_id = ? LIMIT 1",
+         FROM qq_chat_agent_service_ignore_rule WHERE id = ? AND agent_id = ? LIMIT 1",
     )
     .bind(rule_id)
     .bind(agent_id)
@@ -364,10 +370,10 @@ async fn fetch_ignore_rule_by_match_key_mysql(
     config: &Arc<MySqlConfig>,
     agent_id: &str,
     match_key: &str,
-) -> Result<QqChatAgentIgnoreRule> {
+) -> Result<QqChatAgentServiceIgnoreRule> {
     let row = sqlx::query(
         "SELECT id, agent_id, sender_id, group_id, match_key, created_at, updated_at \
-         FROM qq_chat_agent_ignore_rule WHERE agent_id = ? AND match_key = ? LIMIT 1",
+         FROM qq_chat_agent_service_ignore_rule WHERE agent_id = ? AND match_key = ? LIMIT 1",
     )
     .bind(agent_id)
     .bind(match_key)
@@ -382,10 +388,10 @@ async fn fetch_ignore_rule_by_match_key_sqlite(
     config: &Arc<SqliteConfig>,
     agent_id: &str,
     match_key: &str,
-) -> Result<QqChatAgentIgnoreRule> {
+) -> Result<QqChatAgentServiceIgnoreRule> {
     let row = sqlx::query(
         "SELECT id, agent_id, sender_id, group_id, match_key, created_at, updated_at \
-         FROM qq_chat_agent_ignore_rule WHERE agent_id = ? AND match_key = ? LIMIT 1",
+         FROM qq_chat_agent_service_ignore_rule WHERE agent_id = ? AND match_key = ? LIMIT 1",
     )
     .bind(agent_id)
     .bind(match_key)
@@ -396,8 +402,8 @@ async fn fetch_ignore_rule_by_match_key_sqlite(
     Ok(map_ignore_rule_sqlite_row(row))
 }
 
-fn map_ignore_rule_mysql_row(row: MySqlRow) -> QqChatAgentIgnoreRule {
-    QqChatAgentIgnoreRule {
+fn map_ignore_rule_mysql_row(row: MySqlRow) -> QqChatAgentServiceIgnoreRule {
+    QqChatAgentServiceIgnoreRule {
         id: row.get("id"),
         agent_id: row.get("agent_id"),
         sender_id: row.get("sender_id"),
@@ -408,8 +414,8 @@ fn map_ignore_rule_mysql_row(row: MySqlRow) -> QqChatAgentIgnoreRule {
     }
 }
 
-fn map_ignore_rule_sqlite_row(row: SqliteRow) -> QqChatAgentIgnoreRule {
-    QqChatAgentIgnoreRule {
+fn map_ignore_rule_sqlite_row(row: SqliteRow) -> QqChatAgentServiceIgnoreRule {
+    QqChatAgentServiceIgnoreRule {
         id: row.get("id"),
         agent_id: row.get("agent_id"),
         sender_id: row.get("sender_id"),

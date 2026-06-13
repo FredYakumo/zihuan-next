@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 use zihuan_agent::brain::BrainTool;
-use zihuan_agent::session_state::{EmotionAdjustmentDirection, QqChatAgentSessionState};
+use zihuan_agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
 use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
@@ -10,13 +10,13 @@ use zihuan_core::llm::tooling::FunctionTool;
 use super::common::{optional_string_argument, StaticFunctionToolSpec};
 
 pub(crate) struct UpdateAgentStateBrainTool {
-    session_state: Arc<Mutex<QqChatAgentSessionState>>,
+    session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
     emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
 }
 
 impl UpdateAgentStateBrainTool {
     pub(crate) fn new(
-        session_state: Arc<Mutex<QqChatAgentSessionState>>,
+        session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
         emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     ) -> Self {
         Self {
@@ -30,7 +30,7 @@ impl BrainTool for UpdateAgentStateBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "update_agent_state",
-            description: "调整当前 QQ Chat Agent 的某个情绪维度。只说明升高还是降低，具体幅度由后端配置决定。",
+            description: "调整当前 QQ Chat Agent Service 的某个情绪维度。只说明升高还是降低，具体幅度由后端配置决定。",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

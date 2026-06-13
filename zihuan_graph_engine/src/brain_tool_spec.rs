@@ -10,7 +10,7 @@ pub const BRAIN_SHARED_INPUTS_PORT: &str = "shared_inputs";
 pub const BRAIN_TOOL_FIXED_CONTENT_INPUT: &str = "content";
 pub const QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT: &str = "message_event";
 pub const QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT: &str = "qq_ims_bot_adapter";
-pub const QQ_AGENT_TOOL_OWNER_TYPE: &str = "qq_chat_agent";
+pub const QQ_AGENT_TOOL_OWNER_TYPE: &str = "qq_chat_agent_service";
 pub const QQ_AGENT_TOOL_OWNER_TYPE_LEGACY: &str = "qq_message_agent";
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 

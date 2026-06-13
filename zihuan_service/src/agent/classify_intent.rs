@@ -10,7 +10,7 @@ use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::InferenceParam;
 use zihuan_core::llm::{LLMMessage, MessageRole};
 
-const LOG_PREFIX: &str = "[QqChatAgent]";
+const LOG_PREFIX: &str = "[QqChatAgentService]";
 const CLASSIFY_INTENT_PROMPT: &str = r#"You are a message intent classifier. You must output exactly one of the 9 labels below, and nothing else — no explanations, punctuation, quotes, code blocks, or extra text.
 
 Label descriptions:
