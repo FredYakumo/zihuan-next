@@ -935,7 +935,7 @@ function parseNewConversationCommand(input: string): PendingNewConversationComma
 
 function messageAvatarUrl(record: ChatHistoryRecord): string {
   if (record.agent_avatar_url) {
-    return record.agent_avatar_url;
+    return getAvatarDisplayUrl(record.agent_avatar_url);
   }
   // Fallback: try current agent config
   const agent = services.value.find((a) => a.config_id === record.agent_id);
@@ -1027,7 +1027,19 @@ function agentAvatarUrl(agent: ServiceWithRuntime | null | undefined): string {
   }
 
   // For HTTP Stream and Workspace Agent Services, use configured avatar_url
-  return String(agent.avatar_url ?? "").trim();
+  // Need to handle avatar:// prefix
+  return getAvatarDisplayUrl(String(agent.avatar_url ?? ""));
+}
+
+// Get display URL for avatar (handles avatar:// prefix)
+function getAvatarDisplayUrl(avatarUrl: string): string {
+  if (!avatarUrl) return "";
+  if (avatarUrl.startsWith("avatar://")) {
+    const avatarId = avatarUrl.substring(9);
+    return `/api/system/services/avatar/${avatarId}`;
+  }
+  // External URL or base64
+  return avatarUrl;
 }
 
 function agentInitial(name: string): string {

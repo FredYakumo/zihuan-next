@@ -555,7 +555,7 @@
                 <div class="avatar-upload-row">
                   <img
                     v-if="form.avatar_url"
-                    :src="form.avatar_url"
+                    :src="getAvatarDisplayUrl(form.avatar_url)"
                     alt="Avatar preview"
                     class="avatar-preview"
                   />
@@ -2968,7 +2968,8 @@ function botAvatarUrl(service: ServiceWithRuntime): string {
     return String(service.qq_chat_profile?.bot_avatar_url ?? "");
   }
   // HTTP Stream 和 Workspace Agent Service 使用 avatar_url
-  return String(service.avatar_url ?? "");
+  // 需要处理 avatar:// 前缀
+  return getAvatarDisplayUrl(String(service.avatar_url ?? ""));
 }
 
 function runtimeBadgeText(service: ServiceWithRuntime): string {
