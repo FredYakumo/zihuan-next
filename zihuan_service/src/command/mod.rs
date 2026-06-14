@@ -87,7 +87,7 @@ pub fn build_help_text() -> Option<String> {
 //   registry creation calls this builder. The reference is resolved after the
 //   registry is fully constructed.
 // - All built-in commands are scoped to `CommandScope::All` (available in both
-//   QQ Chat and HTTP Stream agents).
+//   QQ Chat and HTTP stream services).
 pub fn build_command_registry() -> Arc<CommandRegistry> {
     let mut registry = CommandRegistry::new();
 

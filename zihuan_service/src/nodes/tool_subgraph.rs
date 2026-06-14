@@ -7,7 +7,7 @@ use log::{info, warn};
 use serde_json::{json, Map, Value};
 
 use zihuan_agent::brain::{consume_tool_progress_notification, current_task_progress_message};
-use zihuan_core::agent_config::{with_current_qq_chat_agent_config, QqChatAgentConfig};
+use zihuan_core::agent_config::{with_current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::task_context::append_current_task_progress;
@@ -27,7 +27,7 @@ use zihuan_graph_engine::util::function::{
 use zihuan_graph_engine::{DataType, DataValue, Port};
 
 use crate::agent::execute_image_understand_tool;
-use crate::agent::qq_chat_agent_msg_send::{send_notification_text, QqSendContext};
+use crate::agent::qq_chat_agent_service_msg_send::{send_notification_text, QqChatServiceSendContext};
 use crate::agent::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
 
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
@@ -45,7 +45,7 @@ pub struct ToolSubgraphRunner {
     pub shared_inputs: Vec<FunctionPortDef>,
     pub definition: BrainToolDefinition,
     pub shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
-    pub qq_chat_agent_config: Option<QqChatAgentConfig>,
+    pub qq_chat_agent_config: Option<QqChatAgentServiceConfig>,
     pub result_mode: ToolResultMode,
 }
 
@@ -333,7 +333,7 @@ fn send_brain_tool_progress_notification(
         if let Some(group_id) = event.group_id {
             let group_id = group_id.to_string();
             let sender_id = event.sender.user_id.to_string();
-            let send_ctx = QqSendContext {
+            let send_ctx = QqChatServiceSendContext {
                 adapter: &adapter,
                 target_id: &group_id,
                 is_group: true,
@@ -348,7 +348,7 @@ fn send_brain_tool_progress_notification(
         }
     } else {
         let target_id = event.sender.user_id.to_string();
-        let send_ctx = QqSendContext {
+        let send_ctx = QqChatServiceSendContext {
             adapter: &adapter,
             target_id: &target_id,
             is_group: false,
@@ -504,7 +504,7 @@ impl ToolSubgraphRunner {
         inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values.into())
             .map_err(|e| self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name)))?;
         let execution_result = if let Some(config) = self.qq_chat_agent_config.clone() {
-            with_current_qq_chat_agent_config(config, || graph.execute_and_capture_results())
+            with_current_qq_chat_agent_service_config(config, || graph.execute_and_capture_results())
         } else {
             graph.execute_and_capture_results()
         };

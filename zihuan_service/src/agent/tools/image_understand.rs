@@ -7,7 +7,7 @@ use model_inference::system_config::load_llm_refs;
 use serde_json::Value;
 use storage_handler::RuntimeStorageConnectionManager;
 use zihuan_agent::brain::{BrainTool, ToolExecutionOutput};
-use zihuan_core::agent_config::{current_qq_chat_agent_config, image_understand_llm_ref_id};
+use zihuan_core::agent_config::{current_qq_chat_agent_service_config, image_understand_llm_ref_id};
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
@@ -21,7 +21,7 @@ use crate::resource_resolver::{build_llm_model, resolve_llm_service_config};
 
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
 
-const LOG_PREFIX: &str = "[QqChatAgent]";
+const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
 
 pub(crate) struct ImageUnderstandBrainTool {
@@ -152,7 +152,7 @@ fn resolve_image_understand_s3_ref(s3_ref: Option<Arc<S3Ref>>) -> Result<Option<
 }
 
 fn load_agent_mysql_ref() -> Option<Result<Arc<MySqlConfig>>> {
-    let config = current_qq_chat_agent_config().ok()?;
+    let config = current_qq_chat_agent_service_config().ok()?;
     let connection_id = config.resolved_rdb_id().map(str::trim).filter(|value| !value.is_empty())?;
     Some(block_async(
         RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(connection_id),
@@ -160,7 +160,7 @@ fn load_agent_mysql_ref() -> Option<Result<Arc<MySqlConfig>>> {
 }
 
 fn load_agent_s3_ref() -> Option<Result<Arc<S3Ref>>> {
-    let config = current_qq_chat_agent_config().ok()?;
+    let config = current_qq_chat_agent_service_config().ok()?;
     let connection_id = config
         .rustfs_connection_id
         .as_deref()
@@ -214,7 +214,7 @@ fn analyze_persisted_media(media: &PersistedMedia, focus_text: Option<&str>, s3_
 }
 
 fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::llm::llm_base::LLMBase>> {
-    let agent_config = current_qq_chat_agent_config()?;
+    let agent_config = current_qq_chat_agent_service_config()?;
     let llm_refs = load_llm_refs()?;
     let llm_ref_id = image_understand_llm_ref_id(&agent_config)
         .map(str::trim)

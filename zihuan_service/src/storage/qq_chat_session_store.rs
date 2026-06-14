@@ -7,7 +7,7 @@ use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 use zihuan_core::runtime::block_async;
 use zihuan_graph_engine::data_value::{SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT};
 
-const LOG_PREFIX: &str = "[QqChatAgent]";
+const LOG_PREFIX: &str = "[QqChatAgentService]";
 
 pub(crate) fn try_claim_session(session: &Arc<SessionStateRef>, sender_id: &str) -> (bool, Option<u64>) {
     let (state, claimed) = block_async(session.try_claim(sender_id, None));

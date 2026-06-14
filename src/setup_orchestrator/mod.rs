@@ -193,7 +193,7 @@ impl SetupOrchestrator {
         match role {
             SetupRole::ChatAssistant => config_factory::create_chat_assistant_stack(llm_config).await,
             SetupRole::CodeDevAssistant => {
-                config_factory::create_workspace_agent_stack(llm_config, "Project Dev Assistant").await
+                config_factory::create_workspace_agent_service_stack(llm_config, "Project Dev Assistant").await
             }
             SetupRole::QqChatBot => {
                 let ims_config =

@@ -1,17 +1,17 @@
-pub mod http_stream_agent;
+pub mod http_stream_service;
 pub mod inference;
-pub mod qq_chat_agent;
+pub mod qq_chat_agent_service;
 pub mod tool_definitions;
-pub mod workspace_agent;
+pub mod workspace_agent_service;
 
 mod agent_text_similarity;
 mod classify_intent;
-mod qq_chat_agent_core;
-pub mod qq_chat_agent_ignore_store;
-mod qq_chat_agent_inbox;
-mod qq_chat_agent_logging;
-pub(crate) mod qq_chat_agent_msg_send;
-mod qq_chat_agent_steer;
+mod qq_chat_agent_service_core;
+pub mod qq_chat_agent_service_ignore_store;
+mod qq_chat_agent_service_inbox;
+mod qq_chat_agent_service_logging;
+pub(crate) mod qq_chat_agent_service_msg_send;
+mod qq_chat_agent_service_steer;
 mod tools;
 pub(crate) use tools::execute_image_understand_tool;
 pub(crate) use tools::CurrentTimeBrainTool;
@@ -146,17 +146,8 @@ impl AgentManager {
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn BrainObserver>>,
     ) -> Result<(Vec<LLMMessage>, zihuan_agent::brain::BrainStopReason)> {
-        self.infer_agent_response_streaming_with_model(
-            agent_id,
-            messages,
-            token_tx,
-            observer,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
+        self.infer_agent_response_streaming_with_model(agent_id, messages, token_tx, observer, None, None, None, None)
+            .await
     }
 
     pub async fn infer_agent_response_streaming_with_model(
@@ -225,7 +216,7 @@ impl AgentManager {
             match &agent.agent_type {
                 AgentType::QqChat(config) => {
                     let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
-                    let task = qq_chat_agent::spawn(
+                    let task = qq_chat_agent_service::spawn(
                         self,
                         agent.clone(),
                         config.clone(),
@@ -250,7 +241,7 @@ impl AgentManager {
                 }
                 AgentType::HttpStream(config) => {
                     let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
-                    let task = http_stream_agent::spawn(
+                    let task = http_stream_service::spawn(
                         self,
                         agent.clone(),
                         config.clone(),
@@ -372,8 +363,10 @@ pub fn build_inference_tool_provider(
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     match &agent.agent_type {
-        AgentType::QqChat(config) => qq_chat_agent::load_inference_tool_provider(agent, config, connections),
-        AgentType::HttpStream(config) => http_stream_agent::load_inference_tool_provider(agent, config, connections),
-        AgentType::Workspace(config) => workspace_agent::load_inference_tool_provider(agent, config, connections),
+        AgentType::QqChat(config) => qq_chat_agent_service::load_inference_tool_provider(agent, config, connections),
+        AgentType::HttpStream(config) => http_stream_service::load_inference_tool_provider(agent, config, connections),
+        AgentType::Workspace(config) => {
+            workspace_agent_service::load_inference_tool_provider(agent, config, connections)
+        }
     }
 }

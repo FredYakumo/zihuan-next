@@ -1,4 +1,4 @@
-use crate::session_state::QqChatAgentSessionState;
+use crate::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
 
 /// Formats the current emotion dimension state as a multi-line display string.
@@ -6,7 +6,7 @@ use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
 /// Each line follows the pattern: `{name}: {value}`.
 /// Returns `[No emotion dimensions]` when no dimensions are configured.
 pub fn emotion_dimensions_snapshot_text(
-    session_state: &QqChatAgentSessionState,
+    session_state: &QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> String {
     let lines: Vec<String> = session_state

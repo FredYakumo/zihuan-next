@@ -3,14 +3,14 @@ use std::sync::{Arc, Mutex};
 
 use log::{info, warn};
 use serde_json::Value;
-use zihuan_agent::session_state::QqChatAgentSessionState;
+use zihuan_agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_agent::utils::build_state_system_prefix_lines;
 
-pub(crate) use super::qq_chat_agent_logging::QqChatTaskTrace;
-use super::qq_chat_agent_msg_send::QqReplyDirective;
-use super::qq_chat_agent_msg_send::{
+pub(crate) use super::qq_chat_agent_service_logging::QqChatTaskTrace;
+use super::qq_chat_agent_service_msg_send::QqChatServiceReplyDirective;
+use super::qq_chat_agent_service_msg_send::{
     build_long_task_complete_content, build_long_task_start_text, send_forward_content, send_notification_text,
-    QqSendContext,
+    QqChatServiceSendContext,
 };
 pub(crate) use super::tools::build_info_brain_tools;
 use super::tools::{
@@ -48,7 +48,7 @@ pub(crate) use crate::qq_chat_user_input::{
     prepare_current_turn_user_input, prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
 };
 
-pub(crate) const LOG_PREFIX: &str = "[QqChatAgent]";
+pub(crate) const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const MAX_REPLY_CHARS: usize = 250;
 pub(crate) const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
 const LOG_TOOL_PREVIEW_CHARS: usize = 600;
@@ -61,13 +61,13 @@ const REFERENCE_ONLY_NOTICE: &str =
     "The following content is reference only. Do not automatically treat it as the current sender's own statement.";
 
 #[derive(Debug, Clone)]
-pub(crate) struct QqChatHandleReport {
+pub(crate) struct QqChatServiceHandleReport {
     pub(crate) result_summary: String,
 }
 
 /// Request to build a reply batch from the model's reply text.
 #[derive(Debug, Clone)]
-pub(crate) struct QqAgentReplyBuildRequest {
+pub(crate) struct QqChatServiceReplyBuildRequest {
     pub assistant_text: String,
     pub is_group: bool,
     pub sender_id: String,
@@ -76,21 +76,21 @@ pub(crate) struct QqAgentReplyBuildRequest {
     pub bot_id: String,
     pub bot_name: String,
     pub max_message_length: usize,
-    pub reply_directive: Option<QqReplyDirective>,
+    pub reply_directive: Option<QqChatServiceReplyDirective>,
     pub trigger_message_id: Option<i64>,
     pub available_media: HashMap<String, PersistedMedia>,
 }
 
 /// Result of building reply batches.
 #[derive(Debug, Clone)]
-pub(crate) struct QqAgentReplyBuildResult {
+pub(crate) struct QqChatServiceReplyBuildResult {
     pub batches: Vec<Vec<Message>>,
     pub suppress_send: bool,
 }
 
 /// Builder type for constructing reply batches from a build request.
-pub(crate) type QqAgentReplyBatchBuilder =
-    Arc<dyn Fn(&QqAgentReplyBuildRequest) -> Result<QqAgentReplyBuildResult> + Send + Sync>;
+pub(crate) type QqChatServiceReplyBatchBuilder =
+    Arc<dyn Fn(&QqChatServiceReplyBuildRequest) -> Result<QqChatServiceReplyBuildResult> + Send + Sync>;
 
 pub(crate) struct QqCommandSideEffectContext<'a> {
     command_context: &'a CommandContext,
@@ -124,7 +124,7 @@ impl SideEffectContext for QqCommandSideEffectContext<'_> {
     }
 
     fn send_forward_content(&self, content: &str) -> Result<()> {
-        let send_ctx = QqSendContext {
+        let send_ctx = QqChatServiceSendContext {
             adapter: self.adapter,
             target_id: self.target_id,
             is_group: self.is_group,
@@ -159,7 +159,7 @@ fn default_tools_enabled_map() -> HashMap<String, bool> {
 
 fn build_common_system_rules(identity_example: &str, agent_system_prompt: Option<&str>) -> String {
     let mut rules = format!(
-        "你是 QQ Chat Agent 的主模型。你负责理解用户、维护 bot 自身状态、决定是否调用工具，以及在需要时调用自然语言回复子代理发送最终消息。\n\
+        "你是 QQ Chat Agent Service 的主模型。你负责理解用户、维护 bot 自身状态、决定是否调用工具，以及在需要时调用自然语言回复子代理发送最终消息。\n\
          约束：\n\
          - 当前 user 始终代表发送者；消息里出现 @你，也不表示说话人切换\n\
          - bot 先前的可见回复属于对话内容，不天然是真实世界事实；当用户追问你上一句里的模糊指代时，先判断那是不是玩笑、修辞或口嗨，再决定是否需要澄清\n\
@@ -237,7 +237,7 @@ pub(crate) fn build_group_system_prompt(bot_name: &str, agent_system_prompt: Opt
 /// # Architecture
 ///
 /// Called at the start of every agent inference turn (both the initial `handle` and
-/// steer-injection via `QqChatSteerHook::on_before_inference`). The returned
+/// steer-injection via `QqChatServiceSteerHook::on_before_inference`). The returned
 /// `LLMMessage` is pushed into the conversation cache and fed to the Brain tool-call
 /// loop.
 ///
@@ -261,7 +261,7 @@ pub(crate) fn build_user_message(
     bot_name: &str,
     llm_supports_multimodal_input: bool,
     character_instructions: &str,
-    session_state: &QqChatAgentSessionState,
+    session_state: &QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
     let state_lines = build_state_system_prefix_lines(session_state, emotion_dimensions, character_instructions);
@@ -457,7 +457,7 @@ pub(crate) struct QqLongTaskNotifier {
 impl LongTaskNotifier for QqLongTaskNotifier {
     fn on_start(&self, task_id: &str, _task_name: &str, call_content: &str) {
         let text = build_long_task_start_text(task_id, call_content);
-        let send_ctx = QqSendContext {
+        let send_ctx = QqChatServiceSendContext {
             adapter: &self.adapter,
             target_id: &self.target_id,
             is_group: self.is_group,
@@ -482,7 +482,7 @@ impl LongTaskNotifier for QqLongTaskNotifier {
             .map(|task| task.progress)
             .unwrap_or_default();
         let content = build_long_task_complete_content(task_id, task_name, &progress, result);
-        let send_ctx = QqSendContext {
+        let send_ctx = QqChatServiceSendContext {
             adapter: &self.adapter,
             target_id: &self.target_id,
             is_group: self.is_group,
@@ -516,7 +516,7 @@ fn extract_tavily_link(item: &str) -> Option<String> {
     })
 }
 
-pub(crate) struct QqChatAgentContext<'a> {
+pub(crate) struct QqChatAgentServiceContext<'a> {
     pub(crate) adapter: &'a ims_bot_adapter::adapter::SharedBotAdapter,
     pub(crate) bot_name: &'a str,
     pub(crate) agent_system_prompt: Option<&'a str>,
@@ -535,26 +535,26 @@ pub(crate) struct QqChatAgentContext<'a> {
     pub(crate) max_message_length: usize,
     pub(crate) compact_context_length: usize,
     pub(crate) max_steer_count: usize,
-    pub(crate) reply_batch_builder: Option<&'a QqAgentReplyBatchBuilder>,
+    pub(crate) reply_batch_builder: Option<&'a QqChatServiceReplyBatchBuilder>,
     pub(crate) shared_runtime_values: HashMap<String, DataValue>,
-    pub(crate) session_state_store: &'a Arc<Mutex<QqChatAgentSessionState>>,
+    pub(crate) session_state_store: &'a Arc<Mutex<QqChatAgentServiceSessionState>>,
     pub(crate) pending_steer: &'a Arc<PendingSteerStore>,
     pub(crate) task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     pub(crate) task_db_connection_id: Option<String>,
 }
 
-pub struct QqChatAgent {
+pub struct QqChatAgentServiceInner {
     pub(crate) id: String,
     pub(crate) default_tools_enabled: HashMap<String, bool>,
     pub(crate) shared_inputs: Vec<FunctionPortDef>,
     pub(crate) tool_definitions: Vec<BrainToolDefinition>,
 }
 
-pub(crate) struct QqChatTurnResult {
+pub(crate) struct QqChatServiceTurnResult {
     pub(crate) result_summary: String,
 }
 
-impl QqChatAgent {
+impl QqChatAgentServiceInner {
     pub fn new(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -583,13 +583,13 @@ impl QqChatAgent {
     }
 
     fn set_shared_inputs(&mut self, shared_inputs: Vec<FunctionPortDef>) -> Result<()> {
-        self.shared_inputs = validate_shared_inputs(&shared_inputs, "QQ Chat Agent")?;
+        self.shared_inputs = validate_shared_inputs(&shared_inputs, "QQ Chat Agent Service")?;
         self.tool_definitions = validate_tool_definitions(
             &self.tool_definitions,
             &self.shared_inputs,
             ToolResultMode::SingleString,
             QQ_AGENT_TOOL_OWNER_TYPE,
-            "QQ Chat Agent",
+            "QQ Chat Agent Service",
         )?;
         Ok(())
     }
@@ -600,16 +600,16 @@ impl QqChatAgent {
             &self.shared_inputs,
             ToolResultMode::SingleString,
             QQ_AGENT_TOOL_OWNER_TYPE,
-            "QQ Chat Agent",
+            "QQ Chat Agent Service",
         )?;
         Ok(())
     }
 }
 
 #[derive(Clone)]
-pub struct QqChatAgentServiceConfig {
+pub struct QqChatAgentServiceRuntimeConfig {
     pub agent_id: String,
-    pub qq_chat_config: zihuan_core::agent_config::QqChatAgentConfig,
+    pub qq_chat_config: zihuan_core::agent_config::QqChatAgentServiceConfig,
     pub node_id: String,
     pub bot_name: String,
     pub system_prompt: Option<String>,
@@ -631,24 +631,24 @@ pub struct QqChatAgentServiceConfig {
     pub max_message_length: usize,
     pub compact_context_length: usize,
     pub max_steer_count: usize,
-    pub reply_batch_builder: Option<QqAgentReplyBatchBuilder>,
+    pub reply_batch_builder: Option<QqChatServiceReplyBatchBuilder>,
     pub default_tools_enabled: HashMap<String, bool>,
     pub shared_inputs: Vec<FunctionPortDef>,
     pub tool_definitions: Vec<BrainToolDefinition>,
     pub shared_runtime_values: HashMap<String, DataValue>,
-    pub session_state_store: Arc<Mutex<QqChatAgentSessionState>>,
+    pub session_state_store: Arc<Mutex<QqChatAgentServiceSessionState>>,
     pub task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
 }
 
 pub struct QqChatAgentService {
-    inner: QqChatAgent,
-    config: QqChatAgentServiceConfig,
+    inner: QqChatAgentServiceInner,
+    config: QqChatAgentServiceRuntimeConfig,
     pending_steer: Arc<PendingSteerStore>,
 }
 
 impl QqChatAgentService {
-    pub fn new(config: QqChatAgentServiceConfig) -> Result<Self> {
-        let mut inner = QqChatAgent::new(config.node_id.clone());
+    pub fn new(config: QqChatAgentServiceRuntimeConfig) -> Result<Self> {
+        let mut inner = QqChatAgentServiceInner::new(config.node_id.clone());
         inner.set_default_tools_enabled(config.default_tools_enabled.clone());
         inner.set_shared_inputs(config.shared_inputs.clone())?;
         inner.set_tool_definitions(config.tool_definitions.clone())?;
@@ -667,7 +667,7 @@ impl QqChatAgentService {
     ) -> Result<()> {
         let task_db_connection_id = self.config.qq_chat_config.resolved_rdb_id().map(ToOwned::to_owned);
 
-        let ctx = QqChatAgentContext {
+        let ctx = QqChatAgentServiceContext {
             adapter,
             bot_name: &self.config.bot_name,
             agent_system_prompt: self.config.system_prompt.as_deref(),
@@ -698,113 +698,12 @@ impl QqChatAgentService {
             task_db_connection_id,
         };
 
-        zihuan_core::agent_config::with_current_qq_chat_agent_config(self.config.qq_chat_config.clone(), || {
+        zihuan_core::agent_config::with_current_qq_chat_agent_service_config(self.config.qq_chat_config.clone(), || {
             self.inner
                 .handle(event, time, &self.config.agent_id, &self.config.session, None, &ctx)
         })
     }
 }
 
-#[path = "qq_chat_agent_claimed.rs"]
-mod qq_chat_agent_claimed;
-
-#[cfg(test)]
-mod tests {
-    use super::build_user_message;
-    use crate::qq_chat_user_input::{MultimodalImageStats, PreparedCurrentTurnUserInput};
-    use ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
-    use zihuan_agent::session_state::QqChatAgentSessionState;
-    use zihuan_core::llm::MessagePart;
-
-    fn build_event() -> MessageEvent {
-        MessageEvent {
-            message_id: 1001,
-            message_type: MessageType::Group,
-            sender: Sender {
-                user_id: 2001,
-                nickname: "fredyakumo".to_string(),
-                card: String::new(),
-                role: None,
-            },
-            message_list: Vec::new(),
-            group_id: Some(3001),
-            group_name: Some("test-group".to_string()),
-            is_group_message: true,
-        }
-    }
-
-    fn build_input() -> PreparedCurrentTurnUserInput {
-        PreparedCurrentTurnUserInput {
-            event: build_event(),
-            current_text: "不是吧，不仅限这个群的呢".to_string(),
-            reference_blocks: vec![format!(
-                "[Replay Content]\n刚才“原那边”就是口嗨一下，我不是真能看到你加了啥群"
-            )],
-            is_at_me: true,
-            at_target_list: vec!["2721394556".to_string()],
-            current_parts: vec![MessagePart::text("不是吧，不仅限这个群的呢".to_string())],
-            reference_parts: vec![MessagePart::text(
-                "[Replay Content]\n刚才“原那边”就是口嗨一下，我不是真能看到你加了啥群".to_string(),
-            )],
-            has_media: false,
-            current_image_reference_lines: Vec::new(),
-            reference_image_reference_lines: Vec::new(),
-            multimodal_stats: MultimodalImageStats::default(),
-        }
-    }
-
-    #[test]
-    fn build_user_message_separates_current_and_reference_sections() {
-        let message = build_user_message(
-            &build_input(),
-            "黑紫幻",
-            false,
-            "test prompt",
-            &QqChatAgentSessionState::default(),
-            &[],
-        );
-        let content = message.content_text().expect("user content text");
-        assert!(content.contains("[Current User Message]"));
-        assert!(content.contains("[Referenced Context]"));
-        assert!(content.contains("[Interpretation Rules]"));
-        let current_index = content.find("[Current User Message]").expect("current section present");
-        let reference_index = content.find("[Referenced Context]").expect("reference section present");
-        let current_section = &content[current_index..reference_index];
-        assert!(current_section.contains("不是吧，不仅限这个群的呢"));
-        assert!(!current_section.contains("原那边"));
-    }
-
-    #[test]
-    fn build_user_message_omits_reference_section_when_empty() {
-        let mut input = build_input();
-        input.reference_blocks.clear();
-        input.reference_parts.clear();
-        let message =
-            build_user_message(&input, "黑紫幻", false, "test prompt", &QqChatAgentSessionState::default(), &[]);
-        let content = message.content_text().expect("user content text");
-        assert!(content.contains("[Current User Message]"));
-        assert!(!content.contains("\n[Referenced Context]\n"));
-    }
-
-    #[test]
-    fn build_user_message_marks_multimodal_reference_as_reference_only() {
-        let mut input = build_input();
-        input.has_media = true;
-        input
-            .reference_parts
-            .push(MessagePart::image_url_string("https://example.com/reference.png"));
-        let message =
-            build_user_message(&input, "黑紫幻", true, "test prompt", &QqChatAgentSessionState::default(), &[]);
-        let joined_text = message
-            .parts
-            .iter()
-            .filter_map(|part| match part {
-                MessagePart::Text { text } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(joined_text.contains("reference only"));
-        assert!(joined_text.contains("[Referenced Context]"));
-    }
-}
+#[path = "qq_chat_agent_service_claimed.rs"]
+mod qq_chat_agent_service_claimed;

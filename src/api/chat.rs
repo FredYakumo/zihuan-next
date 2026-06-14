@@ -18,7 +18,7 @@ use tokio::sync::mpsc;
 use tokio::task;
 use uuid::Uuid;
 use zihuan_agent::brain::{BrainObserver, BrainStopReason};
-use zihuan_core::agent_config::QqChatAgentConfig;
+use zihuan_core::agent_config::QqChatAgentServiceConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
@@ -262,7 +262,7 @@ fn extract_agent_snapshot(agent: &AgentConfig, connections: &[ConnectionConfig])
 
     let avatar_url = match &agent.agent_type {
         AgentType::QqChat(config) => resolve_qq_avatar_url(connections, config),
-        AgentType::HttpStream(_) | AgentType::Workspace(_) => None,
+        AgentType::HttpStream(_) | AgentType::Workspace(_) => agent.avatar_url.clone(),
     };
 
     AgentSnapshot {
@@ -272,7 +272,7 @@ fn extract_agent_snapshot(agent: &AgentConfig, connections: &[ConnectionConfig])
     }
 }
 
-fn resolve_qq_avatar_url(connections: &[ConnectionConfig], config: &QqChatAgentConfig) -> Option<String> {
+fn resolve_qq_avatar_url(connections: &[ConnectionConfig], config: &QqChatAgentServiceConfig) -> Option<String> {
     let connection = connections
         .iter()
         .find(|item| item.id == config.ims_bot_adapter_connection_id)?;
@@ -800,18 +800,15 @@ async fn execute_chat_streaming(
         .cloned();
 
     let trace_id = Uuid::new_v4().to_string();
-    let effective_workspace_path = match resolve_effective_workspace_path(
-        &agent,
-        requested_session_id.as_deref(),
-        workspace_path.as_deref(),
-    ) {
-        Ok(path) => path,
-        Err(err) => {
-            let event = json!({ "type": "error", "error": err.to_string() });
-            let _ = sender.send_data(format!("data: {event}\n\n")).await;
-            return;
-        }
-    };
+    let effective_workspace_path =
+        match resolve_effective_workspace_path(&agent, requested_session_id.as_deref(), workspace_path.as_deref()) {
+            Ok(path) => path,
+            Err(err) => {
+                let event = json!({ "type": "error", "error": err.to_string() });
+                let _ = sender.send_data(format!("data: {event}\n\n")).await;
+                return;
+            }
+        };
 
     let CommandDispatchOutcome {
         session_id,
@@ -1227,7 +1224,7 @@ fn resolve_effective_workspace_path(
     }
 
     Err(Error::ValidationError(
-        "workspace agent requires a workspace_path for new sessions and could not determine current directory"
+        "Workspace Agent Service requires a workspace_path for new sessions and could not determine current directory"
             .to_string(),
     ))
 }

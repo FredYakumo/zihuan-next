@@ -1,7 +1,7 @@
 <template>
   <section class="page">
     <div class="page-hero">
-      <h2>Agent 管理</h2>
+      <h2>Service 管理</h2>
       <div class="hero-actions connection-hero-actions">
         <button
           class="btn primary connection-hero-add-btn"
@@ -13,9 +13,9 @@
     </div>
 
     <div v-if="showCreatePicker" class="connection-picker-backdrop">
-      <div class="connection-picker-dialog agent-picker-dialog" @click.stop>
+      <div class="connection-picker-dialog service-picker-dialog" @click.stop>
         <div class="connection-picker-header">
-          <h3>{{ showCreateForm ? "新建 Agent" : "选择 Agent 类型" }}</h3>
+          <h3>{{ showCreateForm ? "新建 Service" : "选择 Service 类型" }}</h3>
           <button
             class="btn ghost connection-card-compact-btn"
             @click="closeCreatePicker"
@@ -33,9 +33,9 @@
             <div class="field">
               <label>类型</label>
               <select v-model="form.type">
-                <option value="qq_chat">QQ Chat Agent</option>
-                <option value="http_stream">HTTP Stream Agent</option>
-                <option value="workspace">Workspace Agent</option>
+                <option value="qq_chat">QQ Chat Agent Service</option>
+                <option value="http_stream">HTTP stream service</option>
+                <option value="workspace">Workspace Agent Service</option>
               </select>
             </div>
 
@@ -50,8 +50,7 @@
                 />开机自动启动</label
               >
               <label class="field-check"
-                ><input v-model="form.is_default" type="checkbox" />默认
-                Agent</label
+                ><input v-model="form.is_default" type="checkbox" />默认 Service</label
               >
             </div>
 
@@ -148,7 +147,7 @@
                 <label>System Prompt</label>
                 <textarea
                   v-model="form.system_prompt"
-                  placeholder="可选。会追加在 QQ Chat Agent 的通用系统规则后面。"
+                  placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。"
                 />
               </div>
               <div class="field">
@@ -227,7 +226,7 @@
               <div class="field">
                 <label>Max Steer Count</label>
                 <div class="muted">
-                  当 Agent 还没发出最终回复时，用户继续发消息会被视为"插嘴 /
+                  当 Service 还没发出最终回复时，用户继续发消息会被视为"插嘴 /
                   steer"。 这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4
                   次，超出会被丢弃并写入日志。
                 </div>
@@ -238,9 +237,9 @@
                 />
               </div>
               <div class="field-full">
-                <label>配置Agent情绪维度</label>
+                <label>配置Service情绪维度</label>
                 <div class="muted">
-                  Agent的情绪可以由一个或者多个维度组成，这些维度共同构成Agent的决策、行为和输出语言风格
+                  Service的情绪可以由一个或者多个维度组成，这些维度共同构成Agent的决策、行为和输出语言风格
                 </div>
                 <div class="muted" style="margin-top: 6px">
                   当前已配置 {{ form.emotion_dimensions.length }} 个维度。
@@ -286,7 +285,54 @@
               </div>
             </template>
 
-            <template v-else-if="form.type === 'http_stream'">
+            <!-- 头像编辑：http_stream 和 workspace 支持 -->
+            <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
+              <div class="field-full">
+                <label>Service 头像</label>
+                <div class="avatar-upload-row">
+                  <img
+                    v-if="form.avatar_url"
+                    :src="getAvatarDisplayUrl(form.avatar_url)"
+                    alt="Avatar preview"
+                    class="avatar-preview"
+                  />
+                  <div v-else class="avatar-placeholder">
+                    {{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}
+                  </div>
+                  <div class="avatar-actions">
+                    <input
+                      ref="createAvatarFileInput"
+                      type="file"
+                      accept="image/*"
+                      style="display: none"
+                      @change="handleAvatarFileSelect"
+                    />
+                    <button
+                      type="button"
+                      class="btn ghost"
+                      @click="$refs.createAvatarFileInput?.click()"
+                    >
+                      {{ form.avatar_url ? '更换头像' : '上传头像' }}
+                    </button>
+                    <button
+                      v-if="form.avatar_url"
+                      type="button"
+                      class="btn warn"
+                      @click="clearAvatar"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+                <input
+                  v-model="form.avatar_url"
+                  placeholder="头像 URL（可选，或直接上传图片）"
+                  style="margin-top: 8px"
+                />
+              </div>
+            </template>
+
+            <template v-if="form.type === 'http_stream'">
               <div class="field">
                 <label>Bind</label
                 ><input
@@ -364,7 +410,7 @@
               </div>
             </template>
 
-            <template v-else>
+            <template v-if="form.type === 'workspace'">
               <div class="editor-card" style="margin-top: 12px">
                 <div class="split-header">
                   <div>
@@ -449,7 +495,7 @@
                       </option>
                     </select>
                     <div class="muted" style="margin-top: 4px">
-                      image_understand 默认使用 Agent
+                      image_understand 默认使用 Service
                       主模型；这里只有支持多模态的模型可选。
                     </div>
                     <div
@@ -502,37 +548,86 @@
             </div>
           </div>
 
-          <div v-else class="editor-card" style="margin-top: 12px">
-            <div class="split-header">
-              <div>
-                <h3>默认工具</h3>
+<!-- 头像编辑：http_stream 和 workspace 支持 -->
+            <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
+              <div class="field-full">
+                <label>Service 头像</label>
+                <div class="avatar-upload-row">
+                  <img
+                    v-if="form.avatar_url"
+                    :src="form.avatar_url"
+                    alt="Avatar preview"
+                    class="avatar-preview"
+                  />
+                  <div v-else class="avatar-placeholder">
+                    {{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}
+                  </div>
+                  <div class="avatar-actions">
+                    <input
+                      ref="avatarFileInput"
+                      type="file"
+                      accept="image/*"
+                      style="display: none"
+                      @change="handleAvatarFileSelect"
+                    />
+                    <button
+                      type="button"
+                      class="btn ghost"
+                      @click="$refs.avatarFileInput?.click()"
+                    >
+                      {{ form.avatar_url ? '更换头像' : '上传头像' }}
+                    </button>
+                    <button
+                      v-if="form.avatar_url"
+                      type="button"
+                      class="btn warn"
+                      @click="clearAvatar"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+                <input
+                  v-model="form.avatar_url"
+                  placeholder="头像 URL（可选，或直接上传图片）"
+                  style="margin-top: 8px"
+                />
+              </div>
+            </template>
+
+            <template v-if="form.type === 'workspace'">
+            <div class="editor-card" style="margin-top: 12px">
+              <div class="split-header">
+                <div>
+                  <h3>默认工具</h3>
+                </div>
+              </div>
+              <div class="list" style="margin-top: 12px">
+                <label
+                  v-for="tool in workspaceDefaultTools"
+                  :key="tool.id"
+                  class="field-check"
+                  style="
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 8px;
+                    margin-bottom: 8px;
+                  "
+                >
+                  <input
+                    v-model="form.default_tools_enabled[tool.id]"
+                    type="checkbox"
+                  />
+                  <span>
+                    <strong>{{ tool.label }}</strong>
+                    <span class="muted" style="display: block">{{
+                      tool.description
+                    }}</span>
+                  </span>
+                </label>
               </div>
             </div>
-            <div class="list" style="margin-top: 12px">
-              <label
-                v-for="tool in workspaceDefaultTools"
-                :key="tool.id"
-                class="field-check"
-                style="
-                  display: flex;
-                  align-items: flex-start;
-                  gap: 8px;
-                  margin-bottom: 8px;
-                "
-              >
-                <input
-                  v-model="form.default_tools_enabled[tool.id]"
-                  type="checkbox"
-                />
-                <span>
-                  <strong>{{ tool.label }}</strong>
-                  <span class="muted" style="display: block">{{
-                    tool.description
-                  }}</span>
-                </span>
-              </label>
-            </div>
-          </div>
+          </template>
 
           <div class="editor-card" style="margin-top: 18px">
             <div class="split-header">
@@ -662,13 +757,13 @@
             <button class="btn ghost" @click="showCreateForm = false">
               返回
             </button>
-            <button class="btn primary" @click="submitForm">创建 Agent</button>
+            <button class="btn primary" @click="submitForm">创建 Service</button>
           </div>
         </div>
 
         <div v-else class="connection-picker-grid">
           <button
-            v-for="type in agentTypes"
+            v-for="type in serviceTypes"
             :key="type.value"
             class="connection-picker-option"
             @click="pickCreateType(type.value)"
@@ -680,10 +775,10 @@
       </div>
     </div>
 
-    <!-- 编辑 Agent 模态框 -->
-    <div v-if="showEditModal" class="agent-edit-modal-backdrop" @click.stop>
-      <div class="agent-edit-modal" @click.stop>
-        <div class="agent-edit-modal-header">
+    <!-- 编辑 Service 模态框 -->
+    <div v-if="showEditModal" class="service-edit-modal-backdrop" @click.stop>
+      <div class="service-edit-modal" @click.stop>
+        <div class="service-edit-modal-header">
           <div class="connection-card-badges">
             <span class="badge">{{ form.type }}</span>
             <span class="badge" :class="form.enabled ? 'success' : ''">{{
@@ -691,10 +786,10 @@
             }}</span>
             <span v-if="form.is_default" class="badge">default</span>
           </div>
-          <h3 style="margin: 0">{{ form.name || "编辑 Agent" }}</h3>
+          <h3 style="margin: 0">{{ form.name || "编辑 Service" }}</h3>
         </div>
 
-        <div class="agent-edit-modal-body">
+        <div class="service-edit-modal-body">
           <div class="form-grid">
             <div class="field">
               <label>名称</label>
@@ -703,9 +798,9 @@
             <div class="field">
               <label>类型</label>
               <select v-model="form.type">
-                <option value="qq_chat">QQ Chat Agent</option>
-                <option value="http_stream">HTTP Stream Agent</option>
-                <option value="workspace">Workspace Agent</option>
+                <option value="qq_chat">QQ Chat Agent Service</option>
+                <option value="http_stream">HTTP stream service</option>
+                <option value="workspace">Workspace Agent Service</option>
               </select>
             </div>
 
@@ -720,8 +815,7 @@
                 />开机自动启动</label
               >
               <label class="field-check"
-                ><input v-model="form.is_default" type="checkbox" />默认
-                Agent</label
+                ><input v-model="form.is_default" type="checkbox" />默认 Service</label
               >
             </div>
 
@@ -819,7 +913,7 @@
                 <label>System Prompt</label>
                 <textarea
                   v-model="form.system_prompt"
-                  placeholder="可选。会追加在 QQ Chat Agent 的通用系统规则后面。"
+                  placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。"
                   style="min-height: 100px"
                 />
               </div>
@@ -899,7 +993,7 @@
               <div class="field">
                 <label>Max Steer Count</label>
                 <div class="muted">
-                  当 Agent 还没发出最终回复时，用户继续发消息会被视为"插嘴 /
+                  当 Service 还没发出最终回复时，用户继续发消息会被视为"插嘴 /
                   steer"。 这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4
                   次，超出的消息会被丢弃。
                 </div>
@@ -910,9 +1004,9 @@
                 />
               </div>
               <div class="field-full">
-                <label>配置Agent情绪维度</label>
+                <label>配置Service情绪维度</label>
                 <div class="muted">
-                  Agent的情绪可以由一个或者多个维度组成，这些维度共同构成Agent的决策、行为和输出语言风格。
+                  Service的情绪可以由一个或者多个维度组成，这些维度共同构成Agent的决策、行为和输出语言风格。
                 </div>
                 <button
                   class="btn ghost"
@@ -1000,7 +1094,7 @@
                           </option>
                         </select>
                         <div class="muted" style="margin-top: 4px">
-                          image_understand 默认使用 Agent
+                          image_understand 默认使用 Service
                           主模型；这里只有支持多模态的模型可选。
                         </div>
                         <div
@@ -1022,7 +1116,54 @@
               </div>
             </template>
 
-            <template v-else-if="form.type === 'http_stream'">
+            <!-- 头像编辑：http_stream 和 workspace 支持 -->
+            <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
+              <div class="field-full">
+                <label>Service 头像</label>
+                <div class="avatar-upload-row">
+                  <img
+                    v-if="form.avatar_url"
+                    :src="getAvatarDisplayUrl(form.avatar_url)"
+                    alt="Avatar preview"
+                    class="avatar-preview"
+                  />
+                  <div v-else class="avatar-placeholder">
+                    {{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}
+                  </div>
+                  <div class="avatar-actions">
+                    <input
+                      ref="avatarFileInput"
+                      type="file"
+                      accept="image/*"
+                      style="display: none"
+                      @change="handleAvatarFileSelect"
+                    />
+                    <button
+                      type="button"
+                      class="btn ghost"
+                      @click="$refs.avatarFileInput?.click()"
+                    >
+                      {{ form.avatar_url ? '更换头像' : '上传头像' }}
+                    </button>
+                    <button
+                      v-if="form.avatar_url"
+                      type="button"
+                      class="btn warn"
+                      @click="clearAvatar"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+                <input
+                  v-model="form.avatar_url"
+                  placeholder="头像 URL（可选，或直接上传图片）"
+                  style="margin-top: 8px"
+                />
+              </div>
+            </template>
+
+            <template v-if="form.type === 'http_stream'">
               <div class="field">
                 <label>Bind</label
                 ><input
@@ -1108,6 +1249,40 @@
                 <div class="list" style="margin-top: 12px">
                   <label
                     v-for="tool in httpStreamDefaultTools"
+                    :key="tool.id"
+                    class="field-check"
+                    style="
+                      display: flex;
+                      align-items: flex-start;
+                      gap: 8px;
+                      margin-bottom: 8px;
+                    "
+                  >
+                    <input
+                      v-model="form.default_tools_enabled[tool.id]"
+                      type="checkbox"
+                    />
+                    <span>
+                      <strong>{{ tool.label }}</strong>
+                      <span class="muted" style="display: block">{{
+                        tool.description
+                      }}</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </template>
+
+            <template v-if="form.type === 'workspace'">
+              <div class="editor-card" style="margin-top: 12px">
+                <div class="split-header">
+                  <div>
+                    <h3>默认工具</h3>
+                  </div>
+                </div>
+                <div class="list" style="margin-top: 12px">
+                  <label
+                    v-for="tool in workspaceDefaultTools"
                     :key="tool.id"
                     class="field-check"
                     style="
@@ -1258,7 +1433,7 @@
           </div>
         </div>
 
-        <div class="agent-edit-modal-footer">
+        <div class="service-edit-modal-footer">
           <button class="btn ghost" @click="closeEditModal">取消</button>
           <button class="btn primary" @click="submitForm">保存</button>
         </div>
@@ -1267,10 +1442,10 @@
 
     <div
       v-if="showEmotionDimensionsModal"
-      class="agent-edit-modal-backdrop"
+      class="service-edit-modal-backdrop"
       @click.stop
     >
-      <div class="agent-edit-modal emotion-dim-modal" @click.stop>
+      <div class="service-edit-modal emotion-dim-modal" @click.stop>
         <div class="emotion-dim-modal-header">
           <h3 style="margin: 0">情绪维度</h3>
           <button
@@ -1280,7 +1455,7 @@
             ✕
           </button>
         </div>
-        <div class="agent-edit-modal-body">
+        <div class="service-edit-modal-body">
           <div class="editor-card">
             <div class="split-header">
               <div>
@@ -1555,15 +1730,15 @@
 
     <div
       v-if="showIgnoreRulesModal"
-      class="agent-edit-modal-backdrop"
+      class="service-edit-modal-backdrop"
       @click.stop
     >
-      <div class="agent-edit-modal" @click.stop style="max-width: 760px">
-        <div class="agent-edit-modal-header">
+      <div class="service-edit-modal" @click.stop style="max-width: 760px">
+        <div class="service-edit-modal-header">
           <h3 style="margin: 0">Ignore Rules</h3>
           <button class="btn ghost" @click="closeIgnoreRulesModal">关闭</button>
         </div>
-        <div class="agent-edit-modal-body">
+        <div class="service-edit-modal-body">
           <div class="editor-card">
             <div class="split-header">
               <div>
@@ -1689,51 +1864,51 @@
       </div>
     </div>
 
-    <section v-if="agentsLoading && agents.length === 0" class="panel">
-      <div class="agent-loading-state" aria-live="polite">
-        <span class="agent-loading-spinner"></span>
-        <span>Agent 加载中...</span>
+    <section v-if="servicesLoading && services.length === 0" class="panel">
+      <div class="service-loading-state" aria-live="polite">
+        <span class="service-loading-spinner"></span>
+        <span>Service 加载中...</span>
       </div>
     </section>
 
-    <section v-else-if="agents.length > 0" class="panel">
+    <section v-else-if="services.length > 0" class="panel">
       <div
-        class="connection-grid connection-grid--agents"
+        class="connection-grid connection-grid--services"
         style="margin-top: 0"
       >
         <article
-          v-for="agent in agents"
-          :key="agent.config_id"
+          v-for="service in services"
+          :key="service.config_id"
           class="connection-card"
         >
           <div class="connection-card-header connection-card-header--stacked">
             <div class="connection-card-header-top">
               <div class="connection-card-badges">
-                <span class="badge">{{ agent.agent_type.type }}</span>
-                <span class="badge" :class="agent.enabled ? 'success' : ''">{{
-                  agent.enabled ? "已启用" : "已停用"
+                <span class="badge">{{ service.agent_type.type }}</span>
+                <span class="badge" :class="service.enabled ? 'success' : ''">{{
+                  service.enabled ? "已启用" : "已停用"
                 }}</span>
-                <span class="badge" :class="statusTone(agent.runtime.status)">{{
-                  runtimeBadgeText(agent)
+                <span class="badge" :class="statusTone(service.runtime.status)">{{
+                  runtimeBadgeText(service)
                 }}</span>
-                <span v-if="agent.is_default" class="badge">default</span>
+                <span v-if="service.is_default" class="badge">default</span>
               </div>
               <div class="inline-actions connection-card-display-actions">
                 <button
                   class="btn ghost connection-card-compact-btn"
-                  @click="editAgent(agent)"
+                  @click="editService(service)"
                 >
                   编辑
                 </button>
                 <button
                   class="btn connection-card-compact-btn"
-                  @click="toggleAgentRuntime(agent)"
+                  @click="toggleServiceRuntime(service)"
                 >
-                  {{ agent.runtime.status === "running" ? "停止" : "启动" }}
+                  {{ service.runtime.status === "running" ? "停止" : "启动" }}
                 </button>
                 <button
                   class="btn warn connection-card-compact-btn"
-                  @click="removeAgent(agent.config_id)"
+                  @click="removeService(service.config_id)"
                 >
                   删除
                 </button>
@@ -1741,8 +1916,8 @@
             </div>
             <div style="display: flex; align-items: center; gap: 10px">
               <img
-                v-if="botAvatarUrl(agent)"
-                :src="botAvatarUrl(agent)"
+                v-if="botAvatarUrl(service)"
+                :src="botAvatarUrl(service)"
                 alt="bot avatar"
                 style="
                   width: 36px;
@@ -1753,13 +1928,13 @@
                   background: var(--surface-soft);
                 "
               />
-              <h4 style="margin: 0">{{ agent.name }}</h4>
+              <h4 style="margin: 0">{{ service.name }}</h4>
             </div>
           </div>
 
           <div class="connection-card-body">
             <div
-              v-for="item in summarizeAgent(agent)"
+              v-for="item in summarizeService(service)"
               :key="item.label"
               class="key-value"
             >
@@ -1770,16 +1945,16 @@
 
           <div class="connection-card-footer">
             <span class="muted"
-              >启动于 {{ formatTime(agent.runtime.started_at) }}</span
+              >启动于 {{ formatTime(service.runtime.started_at) }}</span
             >
-            <span class="muted">工具 {{ agent.tools.length }} 个</span>
+            <span class="muted">工具 {{ service.tools.length }} 个</span>
           </div>
         </article>
       </div>
     </section>
 
     <section v-else class="panel">
-      <div class="empty-state">当前没有 Agent。</div>
+      <div class="empty-state">当前没有 Service。</div>
     </section>
   </section>
 </template>
@@ -1790,20 +1965,20 @@ import { computed, onMounted, reactive, ref } from "vue";
 import {
   system,
   workflows as workflowApi,
-  type AgentWithRuntime,
+  type ServiceWithRuntime,
   type ConnectionConfig,
   type LlmConfig,
-  type QqChatAgentIgnoreRule,
+  type QqChatAgentServiceIgnoreRule,
   type WorkflowInfo,
 } from "../../api/client";
 import {
-  agentFormFromConfig,
-  buildAgentPayload,
+  serviceFormFromConfig,
+  buildServicePayload,
   HTTP_STREAM_DEFAULT_TOOLS,
   WORKSPACE_DEFAULT_TOOLS,
   isBotAdapterConnectionType,
   QQ_CHAT_DEFAULT_TOOLS,
-  defaultAgentForm,
+  defaultServiceForm,
   defaultHttpStreamDefaultToolsEnabled,
   defaultQqChatDefaultToolsEnabled,
   defaultToolForm,
@@ -1812,49 +1987,49 @@ import {
   formatTime,
   statusTone,
   summarizeIds,
-  type AgentFormState,
-  type AgentTypeName,
+  type ServiceFormState,
+  type ServiceTypeName,
   type QqChatEmotionDimensionFormItem,
 } from "../model";
 
-type AgentTypeOption = {
-  value: AgentTypeName;
+type ServiceTypeOption = {
+  value: ServiceTypeName;
   label: string;
   hint: string;
 };
 
-const agentTypes: AgentTypeOption[] = [
+const serviceTypes: ServiceTypeOption[] = [
   {
     value: "qq_chat",
-    label: "QQ Chat Agent",
+    label: "QQ Chat Agent Service",
     hint: "通过 QQ Bot Adapter 提供对话服务",
   },
   {
     value: "http_stream",
-    label: "HTTP Stream Agent",
+    label: "HTTP Stream Service",
     hint: "通过 HTTP 流式接口对外提供服务",
   },
   {
     value: "workspace",
-    label: "Workspace Agent",
-    hint: "面向项目目录的开发型 Agent",
+    label: "Workspace Agent Service",
+    hint: "面向项目目录的开发型 Agent Service",
   },
 ];
 
-const agents = ref<AgentWithRuntime[]>([]);
-const agentsLoading = ref(false);
+const services = ref<ServiceWithRuntime[]>([]);
+const servicesLoading = ref(false);
 const connections = ref<ConnectionConfig[]>([]);
 const llm = ref<LlmConfig[]>([]);
 const workflows = ref<WorkflowInfo[]>([]);
-const form = reactive<AgentFormState>(defaultAgentForm());
-const editingAgentId = ref("");
+const form = reactive<ServiceFormState>(defaultServiceForm());
+const editingServiceId = ref("");
 const showCreatePicker = ref(false);
 const showCreateForm = ref(false);
 const showEditModal = ref(false);
 const showEmotionDimensionsModal = ref(false);
 const showIgnoreRulesModal = ref(false);
 const ignoreRulesLoading = ref(false);
-const ignoreRules = ref<QqChatAgentIgnoreRule[]>([]);
+const ignoreRules = ref<QqChatAgentServiceIgnoreRule[]>([]);
 const ignoreRuleSubmitting = ref(false);
 const ignoreRuleDeletingId = ref<number | null>(null);
 const ignoreRuleError = ref("");
@@ -1945,8 +2120,8 @@ const memoryWeaviateConnections = computed(() =>
   ),
 );
 const ignoreRulesDisabledReason = computed(() => {
-  if (!editingAgentId.value) {
-    return "请先保存当前 Agent，再管理 Ignore Rules。";
+  if (!editingServiceId.value) {
+    return "请先保存当前 Service，再管理 Ignore Rules。";
   }
   if (!form.rdb_id) {
     return "先配置 RDB Connection，Ignore Rules 和任务/消息持久化都会共用这条关系库连接。";
@@ -1955,14 +2130,85 @@ const ignoreRulesDisabledReason = computed(() => {
 });
 
 function resetForm() {
-  Object.assign(form, defaultAgentForm());
+  Object.assign(form, defaultServiceForm());
   emotionDimensionAdding.value = false;
   emotionDimensionEditingIndex.value = null;
   resetEmotionDimensionDraft();
 }
 
+const avatarUploading = ref(false);
+
+function handleAvatarFileSelect(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  // Validate file type
+  if (!file.type.startsWith('image/')) {
+    alert('请上传图片文件');
+    return;
+  }
+
+  // Validate file size (max 30MB)
+  const maxSize = 30 * 1024 * 1024;
+  if (file.size > maxSize) {
+    alert('图片大小不能超过 30MB');
+    return;
+  }
+
+  uploadAvatarFile(file);
+
+  // Reset input
+  input.value = '';
+}
+
+async function uploadAvatarFile(file: File) {
+  if (avatarUploading.value) return;
+
+  avatarUploading.value = true;
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch('/api/system/services/avatar', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || '上传失败');
+    }
+
+    const result = await response.json();
+    if (result.avatar_id) {
+      // Store avatar:// prefix to distinguish from external URLs
+      form.avatar_url = `avatar://${result.avatar_id}`;
+    }
+  } catch (e) {
+    alert(`头像上传失败: ${e}`);
+  } finally {
+    avatarUploading.value = false;
+  }
+}
+
+function clearAvatar() {
+  form.avatar_url = '';
+}
+
+// Get display URL for avatar (handles avatar:// prefix)
+function getAvatarDisplayUrl(avatarUrl: string): string {
+  if (!avatarUrl) return '';
+  if (avatarUrl.startsWith('avatar://')) {
+    const avatarId = avatarUrl.substring(9);
+    return `/api/system/services/avatar/${avatarId}`;
+  }
+  // External URL or base64
+  return avatarUrl;
+}
+
 function clearEditingAgent() {
-  editingAgentId.value = "";
+  editingServiceId.value = "";
 }
 
 const ignoreRulePreview = computed(() =>
@@ -1991,7 +2237,7 @@ function closeCreatePicker() {
   showCreateForm.value = false;
 }
 
-function pickCreateType(type: AgentTypeName) {
+function pickCreateType(type: ServiceTypeName) {
   resetForm();
   clearEditingAgent();
   form.type = type;
@@ -2013,27 +2259,27 @@ function closeEditor() {
 }
 
 async function load() {
-  agentsLoading.value = true;
+  servicesLoading.value = true;
   try {
     const [loadedAgents, loadedConnections, loadedLlm, loadedWorkflows] =
       await Promise.all([
-        system.agents.list(),
+        system.services.list(),
         system.connections.list(),
         system.llm.list(),
         workflowApi.listDetailed(),
       ]);
-    agents.value = loadedAgents;
+    services.value = loadedAgents;
     connections.value = loadedConnections;
     llm.value = loadedLlm;
     workflows.value = loadedWorkflows.workflows;
   } finally {
-    agentsLoading.value = false;
+    servicesLoading.value = false;
   }
 }
 
-function editAgent(agent: AgentWithRuntime) {
-  Object.assign(form, agentFormFromConfig(agent));
-  editingAgentId.value = agent.config_id;
+function editService(service: ServiceWithRuntime) {
+  Object.assign(form, serviceFormFromConfig(service));
+  editingServiceId.value = service.config_id;
   showEditModal.value = true;
 }
 
@@ -2215,14 +2461,14 @@ function formatIgnoreRule(
 }
 
 async function loadIgnoreRules() {
-  if (!editingAgentId.value) {
+  if (!editingServiceId.value) {
     return;
   }
   ignoreRulesLoading.value = true;
   try {
     ignoreRuleError.value = "";
-    ignoreRules.value = await system.agents.listIgnoreRules(
-      editingAgentId.value,
+    ignoreRules.value = await system.services.listIgnoreRules(
+      editingServiceId.value,
     );
   } catch (error) {
     ignoreRuleError.value = `加载 Ignore Rules 失败: ${formatRequestError(error)}`;
@@ -2247,14 +2493,14 @@ function closeIgnoreRulesModal() {
   ignoreRuleDeletingId.value = null;
 }
 
-function editIgnoreRule(rule: QqChatAgentIgnoreRule) {
+function editIgnoreRule(rule: QqChatAgentServiceIgnoreRule) {
   ignoreRuleForm.id = rule.id;
   ignoreRuleForm.sender_id = rule.sender_id ?? "";
   ignoreRuleForm.group_id = rule.group_id ?? "";
 }
 
 async function submitIgnoreRule() {
-  if (!editingAgentId.value) {
+  if (!editingServiceId.value) {
     return;
   }
   const payload = {
@@ -2269,10 +2515,10 @@ async function submitIgnoreRule() {
   ignoreRuleError.value = "";
   try {
     if (ignoreRuleForm.id == null) {
-      await system.agents.createIgnoreRule(editingAgentId.value, payload);
+      await system.services.createIgnoreRule(editingServiceId.value, payload);
     } else {
-      await system.agents.updateIgnoreRule(
-        editingAgentId.value,
+      await system.services.updateIgnoreRule(
+        editingServiceId.value,
         ignoreRuleForm.id,
         payload,
       );
@@ -2287,7 +2533,7 @@ async function submitIgnoreRule() {
 }
 
 async function removeIgnoreRule(ruleId: number) {
-  if (!editingAgentId.value) {
+  if (!editingServiceId.value) {
     return;
   }
   if (!window.confirm("确认删除这条 Ignore Rule 吗？")) {
@@ -2296,7 +2542,7 @@ async function removeIgnoreRule(ruleId: number) {
   ignoreRuleDeletingId.value = ruleId;
   ignoreRuleError.value = "";
   try {
-    await system.agents.deleteIgnoreRule(editingAgentId.value, ruleId);
+    await system.services.deleteIgnoreRule(editingServiceId.value, ruleId);
     if (ignoreRuleForm.id === ruleId) {
       resetIgnoreRuleForm();
     }
@@ -2354,7 +2600,7 @@ function isGeneratedToolId(value: string): boolean {
 const syncingToolIndex = ref<number | null>(null);
 
 async function syncToolFromGraph(
-  tool: AgentFormState["tools"][number],
+  tool: ServiceFormState["tools"][number],
   index: number,
 ) {
   syncingToolIndex.value = index;
@@ -2367,13 +2613,13 @@ async function syncToolFromGraph(
   }
 }
 
-function handleToolTargetTypeChange(tool: AgentFormState["tools"][number]) {
+function handleToolTargetTypeChange(tool: ServiceFormState["tools"][number]) {
   if (tool.targetType === "workflow_set" && tool.workflowName) {
     applyWorkflowSetMetadata(tool);
   }
 }
 
-function applyWorkflowSetMetadata(tool: AgentFormState["tools"][number]) {
+function applyWorkflowSetMetadata(tool: ServiceFormState["tools"][number]) {
   if (tool.targetType !== "workflow_set" || !tool.workflowName) {
     return;
   }
@@ -2413,7 +2659,7 @@ function applyWorkflowSetMetadata(tool: AgentFormState["tools"][number]) {
 
 async function submitForm() {
   try {
-    const payload = buildAgentPayload(form);
+    const payload = buildServicePayload(form);
     if (!payload.name) {
       alert("请填写 Agent 名称");
       return;
@@ -2423,11 +2669,11 @@ async function submitForm() {
       return;
     }
     if (form.type === "qq_chat" && !form.ims_bot_adapter_connection_id) {
-      alert("QQ Chat Agent 需要绑定 Bot Adapter");
+      alert("QQ Chat Agent Service 需要绑定 Bot Adapter");
       return;
     }
     if (form.type === "qq_chat" && !form.web_search_engine_connection_id) {
-      alert("QQ Chat Agent 需要绑定 Web Search Engine 连接");
+      alert("QQ Chat Agent Service 需要绑定 Web Search Engine 连接");
       return;
     }
     const imageUnderstandError = validateImageUnderstandModelSelection();
@@ -2441,7 +2687,7 @@ async function submitForm() {
       !form.http_web_search_engine_connection_id
     ) {
       alert(
-        "启用 web_search 时，HTTP Stream Agent 需要绑定 Web Search Engine 连接",
+        "启用 web_search 时，HTTP stream service 需要绑定 Web Search Engine 连接",
       );
       return;
     }
@@ -2450,7 +2696,7 @@ async function submitForm() {
       form.weaviate_memory_connection_id &&
       !form.embedding_model_ref_id
     ) {
-      alert("QQ Chat Agent 启用记忆库时需要绑定文本向量模型");
+      alert("QQ Chat Agent Service 启用记忆库时需要绑定文本向量模型");
       return;
     }
     if (
@@ -2458,13 +2704,13 @@ async function submitForm() {
       form.http_weaviate_memory_connection_id &&
       !form.http_embedding_model_ref_id
     ) {
-      alert("HTTP Stream Agent 启用记忆库时需要绑定文本向量模型");
+      alert("HTTP stream service 启用记忆库时需要绑定文本向量模型");
       return;
     }
     if (form.id) {
-      await system.agents.update(form.id, payload);
+      await system.services.update(form.id, payload);
     } else {
-      await system.agents.create(payload);
+      await system.services.create(payload);
     }
     closeEditor();
     await load();
@@ -2473,11 +2719,11 @@ async function submitForm() {
   }
 }
 
-async function removeAgent(id: string) {
+async function removeService(id: string) {
   if (!window.confirm("确认删除这个 Agent 吗？")) {
     return;
   }
-  await system.agents.delete(id);
+  await system.services.delete(id);
   if (form.id === id) {
     closeEditor();
   }
@@ -2487,7 +2733,7 @@ async function removeAgent(id: string) {
 async function startAgent(id: string) {
   try {
     console.log(`[Agent] 启动 Agent ${id}`);
-    await system.agents.start(id);
+    await system.services.start(id);
     await load();
   } catch (error) {
     alert(`启动失败: ${(error as Error).message}`);
@@ -2497,168 +2743,168 @@ async function startAgent(id: string) {
 async function stopAgent(id: string) {
   try {
     console.log(`[Agent] 停止 Agent ${id}`);
-    await system.agents.stop(id);
+    await system.services.stop(id);
     await load();
   } catch (error) {
     alert(`停止失败: ${(error as Error).message}`);
   }
 }
 
-async function toggleAgentRuntime(agent: AgentWithRuntime) {
-  if (agent.runtime.status === "running") {
-    await stopAgent(agent.config_id);
+async function toggleServiceRuntime(service: ServiceWithRuntime) {
+  if (service.runtime.status === "running") {
+    await stopAgent(service.config_id);
   } else {
-    await startAgent(agent.config_id);
+    await startAgent(service.config_id);
   }
 }
 
-function summarizeAgent(
-  agent: AgentWithRuntime,
+function summarizeService(
+  service: ServiceWithRuntime,
 ): Array<{ label: string; value: string; mono?: boolean }> {
   const items: Array<{ label: string; value: string; mono?: boolean }> = [
-    { label: "Config ID", value: compactId(agent.config_id), mono: true },
-    { label: "模型", value: llmName(agent), mono: false },
-    { label: "自动启动", value: agent.auto_start ? "开启" : "关闭" },
+    { label: "Config ID", value: compactId(service.config_id), mono: true },
+    { label: "模型", value: llmName(service), mono: false },
+    { label: "自动启动", value: service.auto_start ? "开启" : "关闭" },
   ];
-  if (agent.runtime.instance_id) {
+  if (service.runtime.instance_id) {
     items.push({
       label: "Instance ID",
-      value: compactId(agent.runtime.instance_id),
+      value: compactId(service.runtime.instance_id),
       mono: true,
     });
   }
-  const agentType = agent.agent_type as Record<string, unknown>;
-  if (agent.agent_type.type === "qq_chat") {
+  const serviceType = service.agent_type as Record<string, unknown>;
+  if (service.agent_type.type === "qq_chat") {
     items.push(
       {
         label: "Bot Adapter",
         value:
           connectionName(
-            String(agentType.ims_bot_adapter_connection_id ?? ""),
+            String(serviceType.ims_bot_adapter_connection_id ?? ""),
           ) || "未绑定",
       },
       {
         label: "Bot QQ",
-        value: String(agent.qq_chat_profile?.bot_user_id ?? "") || "未知",
+        value: String(service.qq_chat_profile?.bot_user_id ?? "") || "未知",
       },
       {
         label: "RustFS",
         value:
-          connectionName(String(agentType.rustfs_connection_id ?? "")) ||
+          connectionName(String(serviceType.rustfs_connection_id ?? "")) ||
           "未绑定",
       },
       {
         label: "Web Search",
         value:
           connectionName(
-            String(agentType.web_search_engine_connection_id ?? ""),
+            String(serviceType.web_search_engine_connection_id ?? ""),
           ) || "未绑定",
       },
       {
         label: "Bot Name",
-        value: String(agentType.bot_name ?? "") || "未设置",
+        value: String(serviceType.bot_name ?? "") || "未设置",
       },
       {
         label: "图片理解模型",
         value:
-          llmRefName(String(agentType.image_understand_llm_ref_id ?? "")) ||
-          llmRefName(String(agentType.llm_ref_id ?? "")) ||
+          llmRefName(String(serviceType.image_understand_llm_ref_id ?? "")) ||
+          llmRefName(String(serviceType.llm_ref_id ?? "")) ||
           "未绑定",
       },
       {
         label: "数学编程模型",
         value:
-          llmRefName(String(agentType.math_programming_llm_ref_id ?? "")) ||
+          llmRefName(String(serviceType.math_programming_llm_ref_id ?? "")) ||
           llmName(agent),
       },
       {
         label: "自然语言回复模型",
         value:
           llmRefName(
-            String(agentType.natural_language_reply_llm_ref_id ?? ""),
+            String(serviceType.natural_language_reply_llm_ref_id ?? ""),
           ) || "未绑定",
       },
       {
         label: "文本向量模型",
         value:
-          llmRefName(String(agentType.embedding_model_ref_id ?? "")) ||
+          llmRefName(String(serviceType.embedding_model_ref_id ?? "")) ||
           "未绑定",
       },
       {
         label: "记忆 Weaviate",
         value:
           connectionName(
-            String(agentType.weaviate_memory_connection_id ?? ""),
+            String(serviceType.weaviate_memory_connection_id ?? ""),
           ) || "未绑定",
       },
       {
         label: "分词 Tokenizer",
         value:
-          connectionName(String(agentType.tokenizer_connection_id ?? "")) ||
+          connectionName(String(serviceType.tokenizer_connection_id ?? "")) ||
           "未绑定",
       },
       {
         label: "System Prompt",
-        value: String(agentType.system_prompt ?? "").trim()
+        value: String(serviceType.system_prompt ?? "").trim()
           ? "已配置"
           : "未设置",
       },
       {
         label: "Reply Prompt",
         value: String(
-          agentType.natural_language_reply_system_prompt ?? "",
+          serviceType.natural_language_reply_system_prompt ?? "",
         ).trim()
           ? "已配置"
           : "未设置",
       },
       {
         label: "Max Message",
-        value: String(agentType.max_message_length ?? 500),
+        value: String(serviceType.max_message_length ?? 500),
       },
-      { label: "Max Steer", value: String(agentType.max_steer_count ?? 4) },
+      { label: "Max Steer", value: String(serviceType.max_steer_count ?? 4) },
       {
         label: "Emotion Dims",
         value: String(
-          (agentType.emotion_dimensions as unknown[] | undefined)?.length ?? 0,
+          (serviceType.emotion_dimensions as unknown[] | undefined)?.length ?? 0,
         ),
       },
     );
-  } else if (agent.agent_type.type === "http_stream") {
+  } else if (service.agent_type.type === "http_stream") {
     items.push(
       {
         label: "Bind",
-        value: String(agentType.bind ?? "127.0.0.1:18080"),
+        value: String(serviceType.bind ?? "127.0.0.1:18080"),
         mono: true,
       },
       {
         label: "API Key",
-        value: String(agentType.api_key ?? "") ? "已配置" : "未设置",
+        value: String(serviceType.api_key ?? "") ? "已配置" : "未设置",
       },
       {
         label: "Web Search",
         value:
           connectionName(
-            String(agentType.web_search_engine_connection_id ?? ""),
+            String(serviceType.web_search_engine_connection_id ?? ""),
           ) || "未绑定",
       },
       {
         label: "记忆向量模型",
         value:
-          llmRefName(String(agentType.embedding_model_ref_id ?? "")) ||
+          llmRefName(String(serviceType.embedding_model_ref_id ?? "")) ||
           "未绑定",
       },
       {
         label: "记忆 Weaviate",
         value:
           connectionName(
-            String(agentType.weaviate_memory_connection_id ?? ""),
+            String(serviceType.weaviate_memory_connection_id ?? ""),
           ) || "未绑定",
       },
       {
         label: "web_search",
         value:
           (
-            agentType.default_tools_enabled as
+            serviceType.default_tools_enabled as
               | Record<string, unknown>
               | undefined
           )?.web_search === false
@@ -2676,7 +2922,7 @@ function summarizeAgent(
         label: "create_file",
         value:
           (
-            agentType.default_tools_enabled as
+            serviceType.default_tools_enabled as
               | Record<string, unknown>
               | undefined
           )?.create_file === false
@@ -2687,7 +2933,7 @@ function summarizeAgent(
         label: "exec_cmd",
         value:
           (
-            agentType.default_tools_enabled as
+            serviceType.default_tools_enabled as
               | Record<string, unknown>
               | undefined
           )?.exec_cmd === false
@@ -2696,8 +2942,8 @@ function summarizeAgent(
       },
     );
   }
-  if (agent.runtime.last_error) {
-    items.push({ label: "最近错误", value: agent.runtime.last_error });
+  if (service.runtime.last_error) {
+    items.push({ label: "最近错误", value: service.runtime.last_error });
   }
   return items;
 }
@@ -2706,9 +2952,9 @@ function connectionName(id: string): string {
   return connections.value.find((item) => item.config_id === id)?.name ?? "";
 }
 
-function llmName(agent: AgentWithRuntime): string {
-  const agentType = agent.agent_type as Record<string, unknown>;
-  const llmId = String(agentType.llm_ref_id ?? "");
+function llmName(service: ServiceWithRuntime): string {
+  const serviceType = service.agent_type as Record<string, unknown>;
+  const llmId = String(serviceType.llm_ref_id ?? "");
   return llmRefName(llmId) || "未绑定";
 }
 
@@ -2716,18 +2962,20 @@ function llmRefName(id: string): string {
   return llm.value.find((item) => item.config_id === id)?.name ?? "";
 }
 
-function botAvatarUrl(agent: AgentWithRuntime): string {
-  if (agent.agent_type.type !== "qq_chat") {
-    return "";
+function botAvatarUrl(service: ServiceWithRuntime): string {
+  // QQ Chat Agent Service 使用 bot_avatar_url
+  if (service.agent_type.type === "qq_chat") {
+    return String(service.qq_chat_profile?.bot_avatar_url ?? "");
   }
-  return String(agent.qq_chat_profile?.bot_avatar_url ?? "");
+  // HTTP Stream 和 Workspace Agent Service 使用 avatar_url
+  return String(service.avatar_url ?? "");
 }
 
-function runtimeBadgeText(agent: AgentWithRuntime): string {
-  switch (agent.runtime.status) {
+function runtimeBadgeText(service: ServiceWithRuntime): string {
+  switch (service.runtime.status) {
     case "running":
-      return agent.runtime.instance_id
-        ? `已启动 (${summarizeIds([agent.runtime.instance_id])})`
+      return service.runtime.instance_id
+        ? `已启动 (${summarizeIds([service.runtime.instance_id])})`
         : "已启动";
     case "stopped":
       return "已停止";
@@ -2736,7 +2984,7 @@ function runtimeBadgeText(agent: AgentWithRuntime): string {
     case "error":
       return "启动失败";
     default:
-      return agent.runtime.status;
+      return service.runtime.status;
   }
 }
 
@@ -2749,7 +2997,7 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
-.agent-loading-state {
+.service-loading-state {
   min-height: 180px;
   display: flex;
   align-items: center;
@@ -2758,7 +3006,7 @@ onMounted(() => {
   color: var(--admin-subtle);
 }
 
-.agent-loading-spinner {
+.service-loading-spinner {
   width: 18px;
   height: 18px;
   border: 2px solid color-mix(in srgb, var(--admin-accent) 28%, transparent);
@@ -2967,7 +3215,133 @@ onMounted(() => {
   color: var(--admin-muted);
 }
 
+/* ── Avatar Upload ── */
+
+.avatar-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.avatar-preview,
+.avatar-placeholder {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.avatar-preview {
+  border: 1px solid var(--admin-border);
+}
+
+.avatar-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--admin-accent);
+  color: #fff;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.avatar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .emotion-dim-prompt-text {
   color: color-mix(in srgb, var(--admin-ink) 74%, transparent);
+}
+
+/* ── Service Edit Modal ── */
+
+.service-edit-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg) 55%, transparent 45%);
+  backdrop-filter: blur(12px);
+}
+
+.service-edit-modal {
+  width: 85vw;
+  height: 85vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-radius: 24px;
+  border: 1px solid var(--admin-border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--admin-bg-panel) 94%, transparent 6%), color-mix(in srgb, var(--admin-bg-panel-strong) 98%, transparent 2%));
+  box-shadow: var(--admin-card-shadow);
+  overflow: hidden;
+}
+
+.service-edit-modal-header {
+  flex-shrink: 0;
+  padding: 20px 28px;
+  border-bottom: 1px solid var(--admin-border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.service-edit-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 28px;
+}
+
+.service-edit-modal-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.service-edit-modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.service-edit-modal-body::-webkit-scrollbar-thumb {
+  background: var(--admin-border);
+  border-radius: 5px;
+  border: 2px solid var(--admin-bg-panel);
+}
+
+.service-edit-modal-body::-webkit-scrollbar-thumb:hover {
+  background: var(--admin-muted);
+}
+
+.service-edit-modal-footer {
+  flex-shrink: 0;
+  padding: 16px 28px;
+  border-top: 1px solid var(--admin-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .service-edit-modal {
+    width: 95vw;
+    height: 90vh;
+    border-radius: 16px;
+  }
+
+  .service-edit-modal-header {
+    padding: 16px 20px;
+  }
+
+  .service-edit-modal-body {
+    padding: 16px 20px;
+  }
+
+  .service-edit-modal-footer {
+    padding: 12px 20px;
+  }
 }
 </style>

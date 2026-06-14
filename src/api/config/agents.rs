@@ -11,7 +11,8 @@ use std::sync::Arc;
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
-use storage_handler::{ConnectionConfig, ConnectionKind, WeaviateCollectionSchema};
+use sqlx;
+use storage_handler::{mysql, sqlite, ConnectionConfig, ConnectionKind, WeaviateCollectionSchema};
 use uuid::Uuid;
 use zihuan_core::task_context::{
     AgentTaskHandle, AgentTaskInfo, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
@@ -21,8 +22,8 @@ use ims_bot_adapter::{
     fetch_login_info, fetch_login_info_via_adapter_connection, parse_ims_bot_adapter_connection, qq_avatar_url,
 };
 use log::{info, warn};
-use zihuan_service::agent::qq_chat_agent_ignore_store::{
-    create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule, QqChatAgentIgnoreRuleUpsert,
+use zihuan_service::agent::qq_chat_agent_service_ignore_store::{
+    create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule, QqChatAgentServiceIgnoreRuleUpsert,
 };
 
 use crate::api::state::{AppState, TaskStatus};
@@ -30,7 +31,7 @@ use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::system_config;
 use model_inference::system_config::load_llm_refs;
 use model_inference::system_config::{AgentConfig, AgentToolConfig, AgentType, LlmRefConfig};
-use zihuan_core::agent_config::QqChatAgentConfig;
+use zihuan_core::agent_config::QqChatAgentServiceConfig;
 use zihuan_core::error::{Error as CoreError, Result as CoreResult};
 use zihuan_service::AgentRuntimeInfo;
 
@@ -45,6 +46,8 @@ struct AgentWithRuntime {
     runtime: AgentRuntimeInfo,
     #[serde(skip_serializing_if = "Option::is_none")]
     qq_chat_profile: Option<QqChatProfile>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    avatar_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -253,6 +256,8 @@ pub struct CreateAgentRequest {
     pub agent_type: AgentType,
     #[serde(default)]
     pub tools: Vec<AgentToolConfig>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -267,6 +272,8 @@ pub struct UpdateAgentRequest {
     pub agent_type: AgentType,
     #[serde(default)]
     pub tools: Vec<AgentToolConfig>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
 }
 
 #[handler]
@@ -286,10 +293,16 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
                     AgentType::HttpStream(_) | AgentType::Workspace(_) => None,
                 };
 
+                let avatar_url = match &agent.agent_type {
+                    AgentType::QqChat(_) => None,
+                    AgentType::HttpStream(_) | AgentType::Workspace(_) => agent.avatar_url.clone(),
+                };
+
                 items.push(AgentWithRuntime {
                     runtime: state.agent_manager.runtime_info(&agent.id),
                     agent,
                     qq_chat_profile,
+                    avatar_url,
                 });
             }
 
@@ -301,7 +314,7 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
 
 async fn resolve_qq_chat_profile(
     connections: &[ConnectionConfig],
-    config: &QqChatAgentConfig,
+    config: &QqChatAgentServiceConfig,
 ) -> Option<QqChatProfile> {
     let connection = connections
         .iter()
@@ -358,16 +371,16 @@ async fn resolve_qq_chat_profile(
     }
 }
 
-fn resolve_qq_chat_agent_config<'a>(
+fn resolve_qq_chat_agent_service_config<'a>(
     agents: &'a [AgentConfig],
     agent_id: &str,
-) -> Result<&'a QqChatAgentConfig, String> {
+) -> Result<&'a QqChatAgentServiceConfig, String> {
     let agent = agents
         .iter()
         .find(|item| item.id == agent_id)
         .ok_or_else(|| "Agent not found".to_string())?;
     let AgentType::QqChat(config) = &agent.agent_type else {
-        return Err("Agent is not a QQ chat agent".to_string());
+        return Err("Agent is not a QQ Chat Agent Service".to_string());
     };
     Ok(config)
 }
@@ -375,10 +388,10 @@ fn resolve_qq_chat_agent_config<'a>(
 async fn resolve_agent_rdb_connection(agent_id: &str) -> CoreResult<zihuan_core::data_refs::RelationalDbConnection> {
     let agents = system_config::load_agents()?;
     let config =
-        resolve_qq_chat_agent_config(&agents, agent_id).map_err(|err| zihuan_core::string_error!("{}", err))?;
+        resolve_qq_chat_agent_service_config(&agents, agent_id).map_err(|err| zihuan_core::string_error!("{}", err))?;
     let rdb_id = config
         .resolved_rdb_id()
-        .ok_or_else(|| zihuan_core::string_error!("QQ chat agent '{}' has no rdb_id configured", agent_id))?;
+        .ok_or_else(|| zihuan_core::string_error!("QQ Chat Agent Service '{}' has no rdb_id configured", agent_id))?;
     let connections = system_config::load_connections()?;
     storage_handler::build_relational_db_connection_for_connection(rdb_id, &connections).await
 }
@@ -418,7 +431,7 @@ pub async fn create_agent_ignore_rule(req: &mut Request, res: &mut Response, _de
         Err(err) => return render_bad_request(res, err.to_string()),
     };
 
-    let payload = QqChatAgentIgnoreRuleUpsert {
+    let payload = QqChatAgentServiceIgnoreRuleUpsert {
         sender_id: body.sender_id,
         group_id: body.group_id,
     };
@@ -440,7 +453,7 @@ pub async fn update_agent_ignore_rule(req: &mut Request, res: &mut Response, _de
         Err(err) => return render_bad_request(res, err.to_string()),
     };
 
-    let payload = QqChatAgentIgnoreRuleUpsert {
+    let payload = QqChatAgentServiceIgnoreRuleUpsert {
         sender_id: body.sender_id,
         group_id: body.group_id,
     };
@@ -492,7 +505,7 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_qq_chat_agent_llms(&body.agent_type, &llm_refs, &body.name) {
+    if let Err(message) = validate_qq_chat_agent_service_llms(&body.agent_type, &llm_refs, &body.name) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -506,6 +519,7 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         is_default: body.is_default,
         updated_at: now_rfc3339(),
         tools: body.tools,
+        avatar_url: body.avatar_url.filter(|v| !v.is_empty()),
     };
     let mut agent = agent;
     agent.config_id = agent.id.clone();
@@ -547,7 +561,7 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_qq_chat_agent_llms(&body.agent_type, &llm_refs, &body.name) {
+    if let Err(message) = validate_qq_chat_agent_service_llms(&body.agent_type, &llm_refs, &body.name) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -562,6 +576,7 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
     agent.is_default = body.is_default;
     agent.updated_at = now_rfc3339();
     agent.tools = body.tools;
+    agent.avatar_url = body.avatar_url.filter(|v| !v.is_empty());
     let response = agent.clone();
 
     match system_config::save_agents(agents) {
@@ -596,7 +611,7 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_qq_chat_agent_llms(&agent.agent_type, &llm_refs, &agent.name) {
+    if let Err(message) = validate_qq_chat_agent_service_llms(&agent.agent_type, &llm_refs, &agent.name) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -696,7 +711,7 @@ fn validate_agent_connection_schemas(agent_type: &AgentType, connections: &[Conn
     }
 }
 
-fn validate_qq_chat_agent_llms(
+fn validate_qq_chat_agent_service_llms(
     agent_type: &AgentType,
     llm_refs: &[LlmRefConfig],
     agent_name: &str,
@@ -874,4 +889,284 @@ fn validate_weaviate_connection_schema(
         ));
     }
     Ok(())
+}
+
+// Avatar upload and retrieval handlers
+
+use salvo::http::form::FormData;
+use salvo::http::StatusCode;
+
+#[derive(Serialize)]
+struct AvatarUploadResponse {
+    avatar_id: String,
+}
+
+/// Upload avatar image - stores in database and returns avatar_id
+#[handler]
+pub async fn upload_avatar(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<Arc<AppState>>().unwrap().clone();
+
+    // Parse multipart form data
+    let form_data = match req.form_data().await {
+        Ok(data) => data,
+        Err(e) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(e.to_string());
+            return;
+        }
+    };
+
+    // Get file from form data
+    let file = match form_data.files.get("file") {
+        Some(file) => file,
+        _ => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render("Missing file field");
+            return;
+        }
+    };
+
+    // Validate mime type
+    let mime_type = file
+        .content_type()
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    if !mime_type.starts_with("image/") {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render("Only image files are allowed");
+        return;
+    }
+
+    // Read file content
+    let image_data = match std::fs::read(file.path()) {
+        Ok(data) => data,
+        Err(e) => {
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            res.render(format!("Failed to read file: {}", e));
+            return;
+        }
+    };
+
+    // Validate file size (30MB)
+    const MAX_SIZE: usize = 30 * 1024 * 1024;
+    if image_data.len() > MAX_SIZE {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render("File size exceeds 30MB limit");
+        return;
+    }
+
+    // Generate avatar ID
+    let avatar_id = Uuid::new_v4().to_string();
+
+    // Save to database
+    match save_avatar_to_db(&state, &avatar_id, "", &mime_type, &image_data).await {
+        Ok(()) => {
+            info!("[avatar] uploaded avatar id={}", avatar_id);
+            res.render(Json(AvatarUploadResponse { avatar_id }));
+        }
+        Err(e) => {
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            res.render(format!("Failed to save avatar: {}", e));
+        }
+    }
+}
+
+/// Get avatar image by ID
+#[handler]
+pub async fn get_avatar(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<Arc<AppState>>().unwrap().clone();
+    let avatar_id = req.param::<String>("avatar_id").unwrap_or_default();
+
+    if avatar_id.is_empty() {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render("Missing avatar_id");
+        return;
+    }
+
+    match load_avatar_from_db(&state, &avatar_id).await {
+        Ok(Some(avatar)) => {
+            res.add_header("Content-Type", avatar.mime_type, true).ok();
+            res.write_body(avatar.image_data).ok();
+        }
+        Ok(None) => {
+            res.status_code(StatusCode::NOT_FOUND);
+            res.render("Avatar not found");
+        }
+        Err(e) => {
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            res.render(format!("Failed to load avatar: {}", e));
+        }
+    }
+}
+
+/// Delete avatar by agent ID (called when agent is deleted or avatar is changed)
+async fn delete_avatar_by_agent_id(state: &Arc<AppState>, agent_id: &str) -> Result<(), String> {
+    // Get task_db_connection_id from connections
+    let connections = system_config::load_connections().map_err(|e| e.to_string())?;
+    let task_db_connection_id = connections
+        .iter()
+        .find(|c| matches!(c.kind, ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_)))
+        .map(|c| c.config_id.clone());
+
+    let Some(db_id) = task_db_connection_id else {
+        // No database connection, skip
+        return Ok(());
+    };
+
+    // Build database connection
+    let db_config = connections
+        .iter()
+        .find(|c| c.config_id == db_id)
+        .ok_or_else(|| format!("Database connection '{}' not found", db_id))?;
+
+    // Execute delete query based on connection type
+    match &db_config.kind {
+        ConnectionKind::Mysql(mysql) => {
+            let mysql_ref = storage_handler::mysql::build_mysql_ref(&mysql.url)
+                .await
+                .map_err(|e| format!("Failed to build MySQL ref: {}", e))?;
+            let pool =
+                storage_handler::mysql::get_pool(&mysql_ref).ok_or_else(|| "Failed to get MySQL pool".to_string())?;
+            sqlx::query("DELETE FROM agent_avatar WHERE agent_id = ?")
+                .bind(agent_id)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("Failed to delete avatar: {}", e))?;
+        }
+        ConnectionKind::Sqlite(sqlite) => {
+            let db_path = std::path::Path::new(&sqlite.path);
+            let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
+            let pool = sqlx::sqlite::SqlitePool::connect(&db_url)
+                .await
+                .map_err(|e| format!("Failed to connect to SQLite: {}", e))?;
+            sqlx::query("DELETE FROM agent_avatar WHERE agent_id = ?")
+                .bind(agent_id)
+                .execute(&pool)
+                .await
+                .map_err(|e| format!("Failed to delete avatar: {}", e))?;
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+/// Save avatar to database
+async fn save_avatar_to_db(
+    _state: &Arc<AppState>,
+    avatar_id: &str,
+    agent_id: &str,
+    mime_type: &str,
+    image_data: &[u8],
+) -> Result<(), String> {
+    // Get first available database connection
+    let connections = system_config::load_connections().map_err(|e| e.to_string())?;
+    let db_config = connections
+        .iter()
+        .find(|c| matches!(c.kind, ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_)));
+
+    let Some(db_config) = db_config else {
+        return Err("No database connection available for avatar storage".to_string());
+    };
+
+    // Execute insert query based on connection type
+    match &db_config.kind {
+        ConnectionKind::Mysql(mysql) => {
+            let mysql_ref = mysql::build_mysql_ref(&mysql.url)
+                .await
+                .map_err(|e| format!("Failed to build MySQL ref: {}", e))?;
+            let pool = mysql::get_pool(&mysql_ref).ok_or_else(|| "Failed to get MySQL pool".to_string())?;
+            sqlx::query(
+                "INSERT INTO agent_avatar (id, agent_id, mime_type, image_data, created_at, updated_at) 
+                 VALUES (?, ?, ?, ?, NOW(), NOW()) 
+                 ON DUPLICATE KEY UPDATE 
+                 agent_id = VALUES(agent_id), 
+                 mime_type = VALUES(mime_type), 
+                 image_data = VALUES(image_data), 
+                 updated_at = NOW()",
+            )
+            .bind(avatar_id)
+            .bind(agent_id)
+            .bind(mime_type)
+            .bind(image_data)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("Failed to save avatar: {}", e))?;
+        }
+        ConnectionKind::Sqlite(sqlite) => {
+            let db_path = std::path::Path::new(&sqlite.path);
+            let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
+            let pool = sqlx::sqlite::SqlitePool::connect(&db_url)
+                .await
+                .map_err(|e| format!("Failed to connect to SQLite: {}", e))?;
+            sqlx::query(
+                "INSERT INTO agent_avatar (id, agent_id, mime_type, image_data, created_at, updated_at) 
+                 VALUES (?, ?, ?, ?, datetime('now'), datetime('now')) 
+                 ON CONFLICT(id) DO UPDATE SET 
+                 agent_id = excluded.agent_id, 
+                 mime_type = excluded.mime_type, 
+                 image_data = excluded.image_data, 
+                 updated_at = datetime('now')",
+            )
+            .bind(avatar_id)
+            .bind(agent_id)
+            .bind(mime_type)
+            .bind(image_data)
+            .execute(&pool)
+            .await
+            .map_err(|e| format!("Failed to save avatar: {}", e))?;
+        }
+        _ => return Err("Unsupported database type".to_string()),
+    }
+
+    Ok(())
+}
+
+/// Avatar data structure
+struct AvatarData {
+    mime_type: String,
+    image_data: Vec<u8>,
+}
+
+/// Load avatar from database
+async fn load_avatar_from_db(_state: &Arc<AppState>, avatar_id: &str) -> Result<Option<AvatarData>, String> {
+    // Get first available database connection
+    let connections = system_config::load_connections().map_err(|e| e.to_string())?;
+    let db_config = connections
+        .iter()
+        .find(|c| matches!(c.kind, ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_)));
+
+    let Some(db_config) = db_config else {
+        return Ok(None);
+    };
+
+    // Execute select query based on connection type
+    let result: Option<(String, Vec<u8>)> = match &db_config.kind {
+        ConnectionKind::Mysql(mysql) => {
+            let mysql_ref = mysql::build_mysql_ref(&mysql.url)
+                .await
+                .map_err(|e| format!("Failed to build MySQL ref: {}", e))?;
+            let pool = mysql::get_pool(&mysql_ref).ok_or_else(|| "Failed to get MySQL pool".to_string())?;
+            sqlx::query_as::<_, (String, Vec<u8>)>("SELECT mime_type, image_data FROM agent_avatar WHERE id = ?")
+                .bind(avatar_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| format!("Failed to load avatar: {}", e))?
+        }
+        ConnectionKind::Sqlite(sqlite) => {
+            let db_path = std::path::Path::new(&sqlite.path);
+            let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
+            let pool = sqlx::sqlite::SqlitePool::connect(&db_url)
+                .await
+                .map_err(|e| format!("Failed to connect to SQLite: {}", e))?;
+            sqlx::query_as::<_, (String, Vec<u8>)>("SELECT mime_type, image_data FROM agent_avatar WHERE id = ?")
+                .bind(avatar_id)
+                .fetch_optional(&pool)
+                .await
+                .map_err(|e| format!("Failed to load avatar: {}", e))?
+        }
+        _ => return Ok(None),
+    };
+
+    Ok(result.map(|(mime_type, image_data)| AvatarData { mime_type, image_data }))
 }

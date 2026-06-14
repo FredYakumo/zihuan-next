@@ -10,7 +10,7 @@ use zihuan_core::rag::WebSearchEngineRef;
 
 use super::common::{StaticFunctionToolSpec, ToolNotificationTarget};
 
-const LOG_PREFIX: &str = "[QqChatAgent]";
+const LOG_PREFIX: &str = "[QqChatAgentService]";
 
 pub(crate) struct WebSearchBrainTool {
     web_search_engine_ref: Arc<WebSearchEngineRef>,

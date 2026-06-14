@@ -11,22 +11,22 @@ pub const LLM_KIND_MATH_PROGRAMMING: &str = "math_programming";
 pub const LLM_KIND_NATURAL_LANGUAGE_REPLY: &str = "natural_language_reply";
 
 thread_local! {
-    static CURRENT_QQ_CHAT_AGENT_CONFIG: RefCell<Vec<QqChatAgentConfig>> = const { RefCell::new(Vec::new()) };
+    static CURRENT_QQ_CHAT_AGENT_SERVICE_CONFIG: RefCell<Vec<QqChatAgentServiceConfig>> = const { RefCell::new(Vec::new()) };
 }
 
-pub fn with_current_qq_chat_agent_config<T>(config: QqChatAgentConfig, f: impl FnOnce() -> T) -> T {
-    CURRENT_QQ_CHAT_AGENT_CONFIG.with(|slot| {
+pub fn with_current_qq_chat_agent_service_config<T>(config: QqChatAgentServiceConfig, f: impl FnOnce() -> T) -> T {
+    CURRENT_QQ_CHAT_AGENT_SERVICE_CONFIG.with(|slot| {
         slot.borrow_mut().push(config);
     });
     let result = f();
-    CURRENT_QQ_CHAT_AGENT_CONFIG.with(|slot| {
+    CURRENT_QQ_CHAT_AGENT_SERVICE_CONFIG.with(|slot| {
         slot.borrow_mut().pop();
     });
     result
 }
 
-pub fn current_qq_chat_agent_config() -> Result<QqChatAgentConfig> {
-    CURRENT_QQ_CHAT_AGENT_CONFIG.with(|slot| {
+pub fn current_qq_chat_agent_service_config() -> Result<QqChatAgentServiceConfig> {
+    CURRENT_QQ_CHAT_AGENT_SERVICE_CONFIG.with(|slot| {
         slot.borrow().last().cloned().ok_or_else(|| {
             Error::ValidationError("当前节点不在 Agent 工具调用上下文中，无法读取 Agent 配置".to_string())
         })
@@ -49,7 +49,7 @@ pub fn normalize_llm_kind(llm_kind: Option<&str>) -> Result<&'static str> {
     }
 }
 
-pub fn llm_ref_id_for_kind<'a>(config: &'a QqChatAgentConfig, llm_kind: &str) -> Option<&'a str> {
+pub fn llm_ref_id_for_kind<'a>(config: &'a QqChatAgentServiceConfig, llm_kind: &str) -> Option<&'a str> {
     match llm_kind {
         LLM_KIND_MAIN => config.llm_ref_id.as_deref(),
         LLM_KIND_MATH_PROGRAMMING => config.math_programming_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref()),
@@ -58,7 +58,7 @@ pub fn llm_ref_id_for_kind<'a>(config: &'a QqChatAgentConfig, llm_kind: &str) ->
     }
 }
 
-pub fn image_understand_llm_ref_id<'a>(config: &'a QqChatAgentConfig) -> Option<&'a str> {
+pub fn image_understand_llm_ref_id<'a>(config: &'a QqChatAgentServiceConfig) -> Option<&'a str> {
     config.image_understand_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref())
 }
 
@@ -76,7 +76,7 @@ pub struct QqChatEmotionDimensionConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QqChatAgentConfig {
+pub struct QqChatAgentServiceConfig {
     pub ims_bot_adapter_connection_id: String,
     #[serde(default)]
     pub rustfs_connection_id: Option<String>,
@@ -127,7 +127,7 @@ pub struct QqChatAgentConfig {
     pub event_handler_threads: Option<usize>,
 }
 
-impl QqChatAgentConfig {
+impl QqChatAgentServiceConfig {
     pub fn resolved_rdb_id(&self) -> Option<&str> {
         self.rdb_id
             .as_deref()
@@ -246,11 +246,11 @@ fn default_retry_count() -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::QqChatAgentConfig;
+    use super::QqChatAgentServiceConfig;
 
     #[test]
-    fn qq_chat_agent_config_defaults_max_steer_count_to_four() {
-        let config: QqChatAgentConfig = serde_json::from_value(serde_json::json!({
+    fn qq_chat_agent_service_config_defaults_max_steer_count_to_four() {
+        let config: QqChatAgentServiceConfig = serde_json::from_value(serde_json::json!({
             "ims_bot_adapter_connection_id": "bot",
             "web_search_engine_connection_id": "tavily"
         }))

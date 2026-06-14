@@ -20,7 +20,7 @@ use super::common::{
 };
 use zihuan_core::url_utils::content_type_from_url;
 
-const LOG_PREFIX: &str = "[QqChatAgent]";
+const LOG_PREFIX: &str = "[QqChatAgentService]";
 const DEFAULT_SEMANTIC_SEARCH_LIMIT: i64 = 5;
 const MAX_SEMANTIC_SEARCH_LIMIT: i64 = 20;
 const WEAVIATE_IMAGE_MAX_GOOD_DISTANCE: f64 = 0.55;

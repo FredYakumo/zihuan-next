@@ -23,7 +23,7 @@
           <RouterLink class="admin-nav-link" to="/" @click="closeSidebar">仪表盘</RouterLink>
           <RouterLink class="admin-nav-link" to="/connections" @click="closeSidebar">连接配置</RouterLink>
           <RouterLink class="admin-nav-link" to="/llm" @click="closeSidebar">模型配置</RouterLink>
-          <RouterLink class="admin-nav-link" to="/agents" @click="closeSidebar">Agent 管理</RouterLink>
+          <RouterLink class="admin-nav-link" to="/services" @click="closeSidebar">Service 管理</RouterLink>
           <RouterLink class="admin-nav-link" to="/graphs" @click="closeSidebar">节点图与工作流</RouterLink>
           <RouterLink class="admin-nav-link" to="/tasks" @click="closeSidebar">任务管理器</RouterLink>
           <RouterLink class="admin-nav-link" to="/commands" @click="closeSidebar">命令管理</RouterLink>

@@ -206,7 +206,7 @@ impl LoadedInferenceAgent {
             Arc::clone(&self.llm),
             workspace_path,
         )
-            .await
+        .await
     }
 
     pub async fn infer_response_streaming_with_trace_and_llm(

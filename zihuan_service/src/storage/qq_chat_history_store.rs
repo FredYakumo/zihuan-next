@@ -7,7 +7,7 @@ use zihuan_core::llm::LLMMessage;
 use zihuan_core::runtime::block_async;
 use zihuan_graph_engine::data_value::LLMMessageSessionCacheRef;
 
-const LOG_PREFIX: &str = "[QqChatAgent]";
+const LOG_PREFIX: &str = "[QqChatAgentService]";
 
 pub(crate) fn conversation_history_key(bot_id: &str, sender_id: &str, is_group: bool, group_id: Option<i64>) -> String {
     if is_group {

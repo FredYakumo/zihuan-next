@@ -15,32 +15,32 @@ use zihuan_graph_engine::data_value::RedisConfig;
 
 use ims_bot_adapter::adapter::SharedBotAdapter;
 
-use super::qq_chat_agent_core::QqChatAgentService;
+use super::qq_chat_agent_service_core::QqChatAgentService;
 
 const DEFAULT_CONSUMER_COUNT: usize = 8;
 const REDIS_DEQUEUE_TIMEOUT_SECS: usize = 1;
 const REDIS_RETRY_DELAY_MS: u64 = 250;
-const REDIS_QUEUE_PREFIX: &str = "qq_chat_agent:inbox";
+const REDIS_QUEUE_PREFIX: &str = "qq_chat_agent_service:inbox";
 
 #[derive(Debug, Clone)]
-pub enum QqChatAgentSupervisorEvent {
+pub enum QqChatAgentServiceSupervisorEvent {
     AdapterFinished { success: bool, error_msg: Option<String> },
     RedisConsumerFinished,
     MemoryConsumerFinished,
 }
 
 #[derive(Debug, Clone)]
-pub enum QqChatAgentInboxBackend {
+pub enum QqChatAgentServiceInboxBackend {
     Redis,
     Memory,
 }
 
 #[derive(Clone)]
-pub struct QqChatAgentInbox {
-    inner: Arc<QqChatAgentInboxInner>,
+pub struct QqChatAgentServiceInbox {
+    inner: Arc<QqChatAgentServiceInboxInner>,
 }
 
-struct QqChatAgentInboxInner {
+struct QqChatAgentServiceInboxInner {
     service: Arc<QqChatAgentService>,
     adapter: SharedBotAdapter,
     redis_ref: Option<Arc<RedisConfig>>,
@@ -51,20 +51,20 @@ struct QqChatAgentInboxInner {
 }
 
 #[derive(Clone)]
-struct QqChatAgentInboxItem {
+struct QqChatAgentServiceInboxItem {
     event: MessageEvent,
     adapter: SharedBotAdapter,
     time: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct StoredQqChatAgentInboxItem {
+struct StoredQqChatAgentServiceInboxItem {
     event: MessageEvent,
     time: String,
 }
 
 struct MemoryInboxQueue {
-    queue: Mutex<VecDeque<QqChatAgentInboxItem>>,
+    queue: Mutex<VecDeque<QqChatAgentServiceInboxItem>>,
     notify: Notify,
 }
 
@@ -81,14 +81,14 @@ impl MemoryInboxQueue {
         }
     }
 
-    async fn push(&self, item: QqChatAgentInboxItem) {
+    async fn push(&self, item: QqChatAgentServiceInboxItem) {
         let mut guard = self.queue.lock().await;
         guard.push_back(item);
         drop(guard);
         self.notify.notify_one();
     }
 
-    async fn pop(&self) -> QqChatAgentInboxItem {
+    async fn pop(&self) -> QqChatAgentServiceInboxItem {
         loop {
             if let Some(item) = {
                 let mut guard = self.queue.lock().await;
@@ -119,7 +119,7 @@ impl InboxShutdown {
     }
 }
 
-impl QqChatAgentInbox {
+impl QqChatAgentServiceInbox {
     pub fn new(
         service: Arc<QqChatAgentService>,
         adapter: SharedBotAdapter,
@@ -129,7 +129,7 @@ impl QqChatAgentInbox {
     ) -> Self {
         let consumer_count = consumer_count.unwrap_or(DEFAULT_CONSUMER_COUNT).max(1);
         Self {
-            inner: Arc::new(QqChatAgentInboxInner {
+            inner: Arc::new(QqChatAgentServiceInboxInner {
                 service,
                 adapter,
                 redis_ref,
@@ -145,8 +145,8 @@ impl QqChatAgentInbox {
         self.inner.shutdown.request_shutdown();
     }
 
-    pub async fn enqueue(&self, event: MessageEvent, time: String) -> Result<QqChatAgentInboxBackend> {
-        let item = QqChatAgentInboxItem {
+    pub async fn enqueue(&self, event: MessageEvent, time: String) -> Result<QqChatAgentServiceInboxBackend> {
+        let item = QqChatAgentServiceInboxItem {
             event,
             adapter: Arc::clone(&self.inner.adapter),
             time,
@@ -161,7 +161,7 @@ impl QqChatAgentInbox {
                         "[service][qq_agent][inbox] enqueued message_id={} sender={} backend=redis",
                         message_id, sender_id
                     );
-                    return Ok(QqChatAgentInboxBackend::Redis);
+                    return Ok(QqChatAgentServiceInboxBackend::Redis);
                 }
                 Err(err) => {
                     warn!(
@@ -177,10 +177,10 @@ impl QqChatAgentInbox {
             "[service][qq_agent][inbox] enqueued message_id={} sender={} backend=memory",
             message_id, sender_id
         );
-        Ok(QqChatAgentInboxBackend::Memory)
+        Ok(QqChatAgentServiceInboxBackend::Memory)
     }
 
-    pub fn spawn_consumers(&self, tasks: &mut JoinSet<QqChatAgentSupervisorEvent>) {
+    pub fn spawn_consumers(&self, tasks: &mut JoinSet<QqChatAgentServiceSupervisorEvent>) {
         if self.inner.redis_ref.is_some() {
             for consumer_idx in 0..self.inner.consumer_count {
                 let inbox = self.clone();
@@ -192,7 +192,7 @@ impl QqChatAgentInbox {
                     .expect("redis consumer requires redis_ref");
                 tasks.spawn(async move {
                     inbox.run_redis_consumer(consumer_idx, redis_blpop).await;
-                    QqChatAgentSupervisorEvent::RedisConsumerFinished
+                    QqChatAgentServiceSupervisorEvent::RedisConsumerFinished
                 });
             }
         }
@@ -201,16 +201,16 @@ impl QqChatAgentInbox {
             let inbox = self.clone();
             tasks.spawn(async move {
                 inbox.run_memory_consumer(consumer_idx).await;
-                QqChatAgentSupervisorEvent::MemoryConsumerFinished
+                QqChatAgentServiceSupervisorEvent::MemoryConsumerFinished
             });
         }
     }
 
-    async fn enqueue_to_redis(&self, item: &QqChatAgentInboxItem) -> Result<()> {
+    async fn enqueue_to_redis(&self, item: &QqChatAgentServiceInboxItem) -> Result<()> {
         let Some(redis_ref) = self.inner.redis_ref.as_ref() else {
             return Ok(());
         };
-        let stored = StoredQqChatAgentInboxItem {
+        let stored = StoredQqChatAgentServiceInboxItem {
             event: item.event.clone(),
             time: item.time.clone(),
         };
@@ -260,7 +260,7 @@ impl QqChatAgentInbox {
         &self,
         consumer_idx: usize,
         redis_blpop: &mut RedisBlockingPopConnection,
-    ) -> Result<Option<QqChatAgentInboxItem>> {
+    ) -> Result<Option<QqChatAgentServiceInboxItem>> {
         let result = redis_blpop
             .blpop_value(&self.inner.redis_queue_key, REDIS_DEQUEUE_TIMEOUT_SECS)
             .await
@@ -273,15 +273,15 @@ impl QqChatAgentInbox {
         let Some((_, payload)) = result else {
             return Ok(None);
         };
-        let stored: StoredQqChatAgentInboxItem = serde_json::from_str(&payload)?;
-        Ok(Some(QqChatAgentInboxItem {
+        let stored: StoredQqChatAgentServiceInboxItem = serde_json::from_str(&payload)?;
+        Ok(Some(QqChatAgentServiceInboxItem {
             event: stored.event,
             adapter: Arc::clone(&self.inner.adapter),
             time: stored.time,
         }))
     }
 
-    async fn process_item(&self, item: QqChatAgentInboxItem) {
+    async fn process_item(&self, item: QqChatAgentServiceInboxItem) {
         let service = Arc::clone(&self.inner.service);
         let event = item.event;
         let adapter = item.adapter;

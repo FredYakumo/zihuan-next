@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use storage_handler::{load_connections, resource_resolver, WeaviateCollectionSchema};
-use zihuan_core::agent_config::current_qq_chat_agent_config;
+use zihuan_core::agent_config::current_qq_chat_agent_service_config;
 use zihuan_core::error::Result;
 use zihuan_graph_engine::{node_output, DataType, DataValue, Node, Port};
 
@@ -39,7 +39,7 @@ impl Node for AgentImageDbRefNode {
     node_output![port! { name = "weaviate_ref", ty = WeaviateRef, desc = "Agent 图片向量库引用" },];
 
     fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
-        let config = current_qq_chat_agent_config()?;
+        let config = current_qq_chat_agent_service_config()?;
         let weaviate_image_connection_id = config.weaviate_image_connection_id.as_deref();
         let weaviate_image_connection_id = weaviate_image_connection_id
             .map(str::trim)

@@ -17,7 +17,7 @@ use zihuan_core::llm::MessagePart;
 use zihuan_core::runtime::block_async;
 use zihuan_graph_engine::object_storage::S3Ref;
 
-const LOG_PREFIX: &str = "[QqChatAgent]";
+const LOG_PREFIX: &str = "[QqChatAgentService]";
 
 #[derive(Debug, Clone, Default)]
 pub struct MultimodalImageStats {
@@ -237,7 +237,7 @@ fn hydrate_reply_sources(event: &MessageEvent, adapter: &SharedBotAdapter) -> Me
                             Ok(None) => {}
                             Err(error) => {
                                 warn!(
-                                    "{LOG_PREFIX} failed to restore reply source inside qq_chat_agent for message_id={}: {}",
+                                    "{LOG_PREFIX} failed to restore reply source inside qq_chat_agent_service for message_id={}: {}",
                                     reply.id, error
                                 );
                             }

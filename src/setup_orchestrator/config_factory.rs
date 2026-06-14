@@ -5,20 +5,21 @@ use crate::setup_orchestrator::{ImsBotAdapterSetupConfig, LlmSetupConfig};
 use crate::system_config;
 use ims_bot_adapter::BotAdapterConnection;
 use model_inference::system_config::{
-    AgentConfig, AgentType, HttpStreamAgentConfig, LlmRefConfig, LlmServiceConfig, ModelRefSpec, WorkspaceAgentConfig,
+    AgentConfig, AgentType, HttpStreamServiceConfig, LlmRefConfig, LlmServiceConfig, ModelRefSpec,
+    WorkspaceAgentServiceConfig,
 };
 use storage_handler::{
     ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection, SqliteConnection, WeaviateConnection,
     WebSearchEngineConnection,
 };
-use zihuan_core::agent_config::QqChatAgentConfig;
+use zihuan_core::agent_config::QqChatAgentServiceConfig;
 use zihuan_core::weaviate::WeaviateCollectionSchema;
 
 pub async fn create_chat_assistant_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {
     let llm_ref = build_llm_ref(llm_config, "setup-default-llm", "Default LLM");
     save_llm_ref(llm_ref)?;
 
-    let agent = build_http_stream_agent(
+    let agent = build_http_stream_service(
         "setup-default-agent",
         "Chat Assistant",
         Some("setup-default-llm".to_string()),
@@ -133,7 +134,7 @@ pub async fn create_qq_bot_stack(
     );
     save_connection(sqlite)?;
 
-    let agent = build_qq_chat_agent();
+    let agent = build_qq_chat_agent_service();
     save_agent(agent)?;
 
     Ok(())
@@ -142,17 +143,18 @@ pub async fn create_qq_bot_stack(
 pub async fn create_butler_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {
     let llm_ref = build_llm_ref(llm_config, "setup-default-llm", "Default LLM");
     save_llm_ref(llm_ref)?;
-    let agent = build_workspace_agent("setup-default-agent", "AI Butler", Some("setup-default-llm".to_string()));
+    let agent =
+        build_workspace_agent_service("setup-default-agent", "AI Butler", Some("setup-default-llm".to_string()));
     save_agent(agent)?;
 
     Ok(())
 }
 
-pub async fn create_workspace_agent_stack(llm_config: &LlmSetupConfig, name: &str) -> Result<(), String> {
+pub async fn create_workspace_agent_service_stack(llm_config: &LlmSetupConfig, name: &str) -> Result<(), String> {
     let llm_ref = build_llm_ref(llm_config, "setup-default-llm", "Default LLM");
     save_llm_ref(llm_ref)?;
 
-    let agent = build_workspace_agent("setup-default-agent", name, Some("setup-default-llm".to_string()));
+    let agent = build_workspace_agent_service("setup-default-agent", name, Some("setup-default-llm".to_string()));
     save_agent(agent)?;
 
     Ok(())
@@ -215,7 +217,7 @@ fn build_connection(id: &str, name: &str, kind: ConnectionKind) -> ConnectionCon
     }
 }
 
-fn build_http_stream_agent(
+fn build_http_stream_service(
     id: &str,
     name: &str,
     llm_ref_id: Option<String>,
@@ -228,7 +230,7 @@ fn build_http_stream_agent(
         id: id.to_string(),
         config_id: id.to_string(),
         name: name.to_string(),
-        agent_type: AgentType::HttpStream(HttpStreamAgentConfig {
+        agent_type: AgentType::HttpStream(HttpStreamServiceConfig {
             bind: "127.0.0.1:18080".to_string(),
             api_key: None,
             llm_ref_id,
@@ -243,10 +245,11 @@ fn build_http_stream_agent(
         is_default: false,
         updated_at: now_rfc3339(),
         tools: vec![],
+        avatar_url: None,
     }
 }
 
-fn build_qq_chat_agent() -> AgentConfig {
+fn build_qq_chat_agent_service() -> AgentConfig {
     let mut default_tools = HashMap::new();
     for tool in [
         "web_search",
@@ -268,7 +271,7 @@ fn build_qq_chat_agent() -> AgentConfig {
         id: "setup-default-agent".to_string(),
         config_id: "setup-default-agent".to_string(),
         name: "QQ Chat Bot".to_string(),
-        agent_type: AgentType::QqChat(QqChatAgentConfig {
+        agent_type: AgentType::QqChat(QqChatAgentServiceConfig {
             ims_bot_adapter_connection_id: "setup-default-bot-adapter".to_string(),
             rustfs_connection_id: Some("setup-default-rustfs".to_string()),
             bot_name: "ZihuanBot".to_string(),
@@ -299,15 +302,16 @@ fn build_qq_chat_agent() -> AgentConfig {
         is_default: false,
         updated_at: now_rfc3339(),
         tools: vec![],
+        avatar_url: None,
     }
 }
 
-fn build_workspace_agent(id: &str, name: &str, llm_ref_id: Option<String>) -> AgentConfig {
+fn build_workspace_agent_service(id: &str, name: &str, llm_ref_id: Option<String>) -> AgentConfig {
     AgentConfig {
         id: id.to_string(),
         config_id: id.to_string(),
         name: name.to_string(),
-        agent_type: AgentType::Workspace(WorkspaceAgentConfig {
+        agent_type: AgentType::Workspace(WorkspaceAgentServiceConfig {
             llm_ref_id,
             default_tools_enabled: default_workspace_tools(),
         }),
@@ -316,6 +320,7 @@ fn build_workspace_agent(id: &str, name: &str, llm_ref_id: Option<String>) -> Ag
         is_default: false,
         updated_at: now_rfc3339(),
         tools: vec![],
+        avatar_url: None,
     }
 }
 

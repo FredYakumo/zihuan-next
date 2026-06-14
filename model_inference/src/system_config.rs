@@ -1,7 +1,7 @@
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use zihuan_core::agent_config::QqChatAgentConfig;
+use zihuan_core::agent_config::QqChatAgentServiceConfig;
 use zihuan_core::config::{ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord};
 use zihuan_core::error::Result;
 use zihuan_core::tool_runtime::ToolRunDuration;
@@ -28,18 +28,20 @@ pub struct AgentConfig {
     pub updated_at: String,
     #[serde(default)]
     pub tools: Vec<AgentToolConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentType {
-    QqChat(QqChatAgentConfig),
-    HttpStream(HttpStreamAgentConfig),
-    Workspace(WorkspaceAgentConfig),
+    QqChat(QqChatAgentServiceConfig),
+    HttpStream(HttpStreamServiceConfig),
+    Workspace(WorkspaceAgentServiceConfig),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HttpStreamAgentConfig {
+pub struct HttpStreamServiceConfig {
     #[serde(default = "default_http_bind")]
     pub bind: String,
     #[serde(default)]
@@ -60,7 +62,7 @@ pub struct HttpStreamAgentConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkspaceAgentConfig {
+pub struct WorkspaceAgentServiceConfig {
     #[serde(default)]
     pub llm_ref_id: Option<String>,
     #[serde(default = "default_workspace_default_tools_enabled")]
@@ -281,9 +283,9 @@ impl ConfigRecord for AgentConfig {
 
     fn kind(&self) -> ConfigKind {
         match self.agent_type {
-            AgentType::QqChat(_) => ConfigKind::AgentQqChat,
-            AgentType::HttpStream(_) => ConfigKind::AgentHttpStream,
-            AgentType::Workspace(_) => ConfigKind::AgentHttpStream,
+            AgentType::QqChat(_) => ConfigKind::ServiceQqChat,
+            AgentType::HttpStream(_) => ConfigKind::ServiceHttpStream,
+            AgentType::Workspace(_) => ConfigKind::ServiceHttpStream,
         }
     }
 
@@ -382,7 +384,7 @@ impl ConfigRecord for LlmRefConfig {
 
 pub fn load_agents() -> Result<Vec<AgentConfig>> {
     let agents = ConfigCenter::shared()
-        .list_configs(ConfigCategory::Agent)?
+        .list_configs(ConfigCategory::Service)?
         .into_iter()
         .map(agent_from_record)
         .collect::<Result<Vec<_>>>()?;
@@ -398,7 +400,7 @@ pub fn load_agents() -> Result<Vec<AgentConfig>> {
 }
 
 pub fn save_agents(agents: Vec<AgentConfig>) -> Result<()> {
-    save_records(ConfigCategory::Agent, agents, normalize_agent_identity, agent_to_record)
+    save_records(ConfigCategory::Service, agents, normalize_agent_identity, agent_to_record)
 }
 
 pub fn load_llm_refs() -> Result<Vec<LlmRefConfig>> {
@@ -499,7 +501,7 @@ fn agent_to_record(agent: &AgentConfig) -> Result<StoredConfigRecord> {
 }
 
 fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
-    if record.kind.category() != ConfigCategory::Agent {
+    if record.kind.category() != ConfigCategory::Service {
         return Err(zihuan_core::string_error!(
             "config '{}' is not an agent config",
             record.config_id
@@ -545,6 +547,12 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
         }
     }
 
+    let avatar_url = spec
+        .get("avatar_url")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|v| !v.is_empty());
+
     Ok(AgentConfig {
         id: record.config_id.clone(),
         config_id: record.config_id.clone(),
@@ -555,6 +563,7 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
         is_default: spec.get("is_default").and_then(Value::as_bool).unwrap_or(false),
         updated_at: record.updated_at,
         tools: serde_json::from_value(spec.get("tools").cloned().unwrap_or_else(|| Value::Array(Vec::new())))?,
+        avatar_url,
     })
 }
 

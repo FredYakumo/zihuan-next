@@ -8,7 +8,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_graph_engine::DataValue;
 
-use crate::agent::qq_chat_agent_msg_send::{store_reply_directive, QqReplyDirective};
+use crate::agent::qq_chat_agent_service_msg_send::{store_reply_directive, QqChatServiceReplyDirective};
 
 use super::common::StaticFunctionToolSpec;
 
@@ -50,9 +50,9 @@ impl BrainTool for ReplyMessageBrainTool {
                     if message_id <= 0 {
                         return Err(Error::ValidationError("message_id must be a positive integer".to_string()));
                     }
-                    QqReplyDirective::Explicit { message_id }
+                    QqChatServiceReplyDirective::Explicit { message_id }
                 }
-                Some(Value::Null) | None => QqReplyDirective::TriggerMessage,
+                Some(Value::Null) | None => QqChatServiceReplyDirective::TriggerMessage,
                 Some(_) => {
                     return Err(Error::ValidationError(
                         "message_id must be an integer when provided".to_string(),
