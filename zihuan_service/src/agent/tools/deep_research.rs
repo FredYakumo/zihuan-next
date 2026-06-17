@@ -19,6 +19,7 @@ use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotifi
 use super::current_time::CurrentTimeBrainTool;
 use super::image_understand::ImageUnderstandBrainTool;
 use super::web_search::WebSearchBrainTool;
+use crate::agent::qq_chat_tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
 
 const LOG_PREFIX: &str = "[DeepResearch]";
 
@@ -62,6 +63,7 @@ pub(crate) struct RunDeepResearchSubagentBrainTool {
     current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
     notification_target: ToolNotificationTarget,
     memory_resources: Option<AgentMemoryToolResources>,
+    tool_quota: Option<QqChatToolQuotaContext>,
 }
 
 impl RunDeepResearchSubagentBrainTool {
@@ -74,6 +76,7 @@ impl RunDeepResearchSubagentBrainTool {
         current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
         notification_target: ToolNotificationTarget,
         memory_resources: Option<AgentMemoryToolResources>,
+        tool_quota: Option<QqChatToolQuotaContext>,
     ) -> Self {
         Self {
             llm,
@@ -83,6 +86,7 @@ impl RunDeepResearchSubagentBrainTool {
             current_message_event,
             notification_target,
             memory_resources,
+            tool_quota,
         }
     }
 }
@@ -158,9 +162,12 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
             if let Some(memory_resources) = self.memory_resources.clone() {
                 brain.add_tool(SearchMemoryContentBrainTool::new(memory_resources));
             }
-            brain.add_tool(WebSearchBrainTool::new(
-                Arc::clone(&self.web_search_engine),
-                self.notification_target.clone(),
+            brain.add_tool(wrap_brain_tool_with_quota(
+                WebSearchBrainTool::new(
+                    Arc::clone(&self.web_search_engine),
+                    self.notification_target.clone(),
+                ),
+                self.tool_quota.clone(),
             ));
             brain.add_tool(ImageUnderstandBrainTool::new(
                 self.current_message_event.clone(),

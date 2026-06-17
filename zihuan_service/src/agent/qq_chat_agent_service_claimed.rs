@@ -54,6 +54,7 @@ use super::{
 };
 
 use super::super::qq_chat_agent_service_steer::QqChatServiceSteerHook;
+use crate::agent::qq_chat_tool_quota::wrap_brain_tool_with_quota;
 
 impl QqChatAgentServiceInner {
     pub(crate) fn build_command_context(
@@ -345,6 +346,7 @@ impl QqChatAgentServiceInner {
         trace.log_llm_conversation(&brain_conversation, prompt_tokens_estimated);
 
         let consumed_steer_messages = Arc::new(Mutex::new(Vec::new()));
+        let tool_quota = ctx.tool_quota.clone();
         let mut brain = Brain::new(Arc::clone(turn_llm));
         brain.add_tool(CurrentTimeBrainTool);
         brain.set_observer(Arc::new(QqChatBrainObserver { trace: trace.clone() }));
@@ -386,168 +388,220 @@ impl QqChatAgentServiceInner {
                 },
             };
             if self.is_default_tool_enabled(DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS) {
-                brain = brain.with_tool(ListAvailableMemoryKeysBrainTool::new(memory_resources.clone()));
+                brain.add_tool(wrap_brain_tool_with_quota(
+                    ListAvailableMemoryKeysBrainTool::new(memory_resources.clone()),
+                    tool_quota.clone(),
+                ));
             }
             if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_MEMORY_CONTENT) {
-                brain = brain.with_tool(SearchMemoryContentBrainTool::new(memory_resources.clone()));
+                brain.add_tool(wrap_brain_tool_with_quota(
+                    SearchMemoryContentBrainTool::new(memory_resources.clone()),
+                    tool_quota.clone(),
+                ));
             }
             if self.is_default_tool_enabled(DEFAULT_TOOL_REMEMBER_CONTENT) {
-                brain = brain.with_tool(RememberContentBrainTool::new(memory_resources));
+                brain.add_tool(wrap_brain_tool_with_quota(
+                    RememberContentBrainTool::new(memory_resources),
+                    tool_quota.clone(),
+                ));
             }
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
-            brain = brain.with_tool(WebSearchBrainTool::new(
-                ctx.web_search_engine.clone(),
-                ToolNotificationTarget::new(
-                    Some(ctx.adapter.clone()),
-                    target_id.to_string(),
-                    if is_group { Some(sender_id.to_string()) } else { None },
-                    is_group,
-                    false,
+            brain.add_tool(wrap_brain_tool_with_quota(
+                WebSearchBrainTool::new(
+                    ctx.web_search_engine.clone(),
+                    ToolNotificationTarget::new(
+                        Some(ctx.adapter.clone()),
+                        target_id.to_string(),
+                        if is_group { Some(sender_id.to_string()) } else { None },
+                        is_group,
+                        false,
+                    ),
                 ),
+                tool_quota.clone(),
             ));
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
-            brain = brain.with_tool(GetAgentPublicInfoBrainTool::new(current_message.clone()));
+            brain.add_tool(wrap_brain_tool_with_quota(
+                GetAgentPublicInfoBrainTool::new(current_message.clone()),
+                tool_quota.clone(),
+            ));
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_FUNCTION_LIST) {
-            brain = brain.with_tool(GetFunctionListBrainTool);
+            brain.add_tool(wrap_brain_tool_with_quota(GetFunctionListBrainTool, tool_quota.clone()));
         }
 
-        brain = brain.with_tool(UpdateAgentStateBrainTool::new(
-            Arc::clone(&turn_session_state),
-            emotion_dimensions.clone(),
+        brain.add_tool(wrap_brain_tool_with_quota(
+            UpdateAgentStateBrainTool::new(
+                Arc::clone(&turn_session_state),
+                emotion_dimensions.clone(),
+            ),
+            tool_quota.clone(),
         ));
-        brain = brain.with_tool(RunResearchSubagentBrainTool::new(
-            Arc::clone(ctx.math_programming_llm),
-            Arc::clone(ctx.web_search_engine),
-            ctx.mysql_ref.cloned(),
-            ctx.s3_ref.cloned(),
-            Some(prepared_input.event.clone()),
-            ToolNotificationTarget::dashboard(),
-            if let (Some(memory_ref), Some(embedding_model)) =
-                (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
-            {
-                Some(AgentMemoryToolResources {
-                    memory_ref,
-                    embedding_model,
-                    llm: Arc::clone(turn_llm),
-                    access: AgentMemoryAccessContext {
-                        sender_id: Some(sender_id.to_string()),
-                        group_id: if is_group {
-                            Some(target_id.to_string())
-                        } else {
-                            prepared_input.event.group_id.map(|value| value.to_string())
+        brain.add_tool(wrap_brain_tool_with_quota(
+            RunResearchSubagentBrainTool::new(
+                Arc::clone(ctx.math_programming_llm),
+                Arc::clone(ctx.web_search_engine),
+                ctx.mysql_ref.cloned(),
+                ctx.s3_ref.cloned(),
+                Some(prepared_input.event.clone()),
+                ToolNotificationTarget::dashboard(),
+                if let (Some(memory_ref), Some(embedding_model)) =
+                    (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
+                {
+                    Some(AgentMemoryToolResources {
+                        memory_ref,
+                        embedding_model,
+                        llm: Arc::clone(turn_llm),
+                        access: AgentMemoryAccessContext {
+                            sender_id: Some(sender_id.to_string()),
+                            group_id: if is_group {
+                                Some(target_id.to_string())
+                            } else {
+                                prepared_input.event.group_id.map(|value| value.to_string())
+                            },
+                            is_group,
+                            admin: false,
+                            skip_expiry_extend: false,
                         },
-                        is_group,
-                        admin: false,
-                        skip_expiry_extend: false,
-                    },
-                })
-            } else {
-                None
-            },
+                    })
+                } else {
+                    None
+                },
+                tool_quota.clone(),
+            ),
+            tool_quota.clone(),
         ));
-        brain = brain.with_tool(ReplyMessageBrainTool::new(Arc::clone(&shared_runtime_values)));
+        brain.add_tool(wrap_brain_tool_with_quota(
+            ReplyMessageBrainTool::new(Arc::clone(&shared_runtime_values)),
+            tool_quota.clone(),
+        ));
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
-            brain = brain.with_tool(GetRecentGroupMessagesBrainTool::new(
-                ctx.mysql_ref.cloned(),
-                ToolNotificationTarget::new(
-                    Some(ctx.adapter.clone()),
-                    target_id.to_string(),
-                    if is_group { Some(sender_id.to_string()) } else { None },
-                    is_group,
-                    false,
+            brain.add_tool(wrap_brain_tool_with_quota(
+                GetRecentGroupMessagesBrainTool::new(
+                    ctx.mysql_ref.cloned(),
+                    ToolNotificationTarget::new(
+                        Some(ctx.adapter.clone()),
+                        target_id.to_string(),
+                        if is_group { Some(sender_id.to_string()) } else { None },
+                        is_group,
+                        false,
+                    ),
                 ),
+                tool_quota.clone(),
             ));
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
-            brain = brain.with_tool(GetRecentUserMessagesBrainTool::new(
-                ctx.mysql_ref.cloned(),
-                ToolNotificationTarget::new(
-                    Some(ctx.adapter.clone()),
-                    target_id.to_string(),
-                    if is_group { Some(sender_id.to_string()) } else { None },
-                    is_group,
-                    false,
+            brain.add_tool(wrap_brain_tool_with_quota(
+                GetRecentUserMessagesBrainTool::new(
+                    ctx.mysql_ref.cloned(),
+                    ToolNotificationTarget::new(
+                        Some(ctx.adapter.clone()),
+                        target_id.to_string(),
+                        if is_group { Some(sender_id.to_string()) } else { None },
+                        is_group,
+                        false,
+                    ),
                 ),
+                tool_quota.clone(),
             ));
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
-            brain = brain.with_tool(SearchSimilarImagesBrainTool::new(
-                ctx.weaviate_image_ref.cloned(),
-                ctx.embedding_model.cloned(),
-                ctx.web_search_engine.clone(),
-                ctx.s3_ref.cloned(),
-                ToolNotificationTarget::new(
-                    Some(ctx.adapter.clone()),
-                    target_id.to_string(),
-                    if is_group { Some(sender_id.to_string()) } else { None },
-                    is_group,
-                    false,
+            brain.add_tool(wrap_brain_tool_with_quota(
+                SearchSimilarImagesBrainTool::new(
+                    ctx.weaviate_image_ref.cloned(),
+                    ctx.embedding_model.cloned(),
+                    ctx.web_search_engine.clone(),
+                    ctx.s3_ref.cloned(),
+                    ToolNotificationTarget::new(
+                        Some(ctx.adapter.clone()),
+                        target_id.to_string(),
+                        if is_group { Some(sender_id.to_string()) } else { None },
+                        is_group,
+                        false,
+                    ),
                 ),
+                tool_quota.clone(),
             ));
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_SAVE_IMAGE) {
             if ctx.s3_ref.is_some() && ctx.weaviate_image_ref.is_some() && ctx.embedding_model.is_some() {
-                brain = brain.with_tool(SaveImageBrainTool::new(
-                    ctx.weaviate_image_ref.cloned(),
-                    ctx.embedding_model.cloned(),
-                    ctx.s3_ref.cloned(),
+                brain.add_tool(wrap_brain_tool_with_quota(
+                    SaveImageBrainTool::new(
+                        ctx.weaviate_image_ref.cloned(),
+                        ctx.embedding_model.cloned(),
+                        ctx.s3_ref.cloned(),
+                    ),
+                    tool_quota.clone(),
                 ));
             }
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_IMAGE_UNDERSTAND) {
-            brain = brain.with_tool(ImageUnderstandBrainTool::new(
-                Some(prepared_input.event.clone()),
-                ctx.mysql_ref.cloned(),
-                ctx.s3_ref.cloned(),
-                ToolNotificationTarget::new(
-                    Some(ctx.adapter.clone()),
-                    target_id.to_string(),
-                    if is_group { Some(sender_id.to_string()) } else { None },
-                    is_group,
-                    false,
+            brain.add_tool(wrap_brain_tool_with_quota(
+                ImageUnderstandBrainTool::new(
+                    Some(prepared_input.event.clone()),
+                    ctx.mysql_ref.cloned(),
+                    ctx.s3_ref.cloned(),
+                    ToolNotificationTarget::new(
+                        Some(ctx.adapter.clone()),
+                        target_id.to_string(),
+                        if is_group { Some(sender_id.to_string()) } else { None },
+                        is_group,
+                        false,
+                    ),
                 ),
+                tool_quota.clone(),
             ));
         }
 
-        brain = brain.with_tool(GetBotProfileBrainTool::new(
-            ctx.adapter.clone(),
-            prepared_input.event.clone(),
-            ctx.s3_ref.cloned(),
+        brain.add_tool(wrap_brain_tool_with_quota(
+            GetBotProfileBrainTool::new(
+                ctx.adapter.clone(),
+                prepared_input.event.clone(),
+                ctx.s3_ref.cloned(),
+            ),
+            tool_quota.clone(),
         ));
-        brain = brain.with_tool(GetQqUserProfileBrainTool::new(
-            ctx.adapter.clone(),
-            prepared_input.event.clone(),
-            ctx.s3_ref.cloned(),
+        brain.add_tool(wrap_brain_tool_with_quota(
+            GetQqUserProfileBrainTool::new(
+                ctx.adapter.clone(),
+                prepared_input.event.clone(),
+                ctx.s3_ref.cloned(),
+            ),
+            tool_quota.clone(),
         ));
-        brain = brain.with_tool(GetCurrentGroupMembersBrainTool::new(
-            ctx.adapter.clone(),
-            prepared_input.event.clone(),
+        brain.add_tool(wrap_brain_tool_with_quota(
+            GetCurrentGroupMembersBrainTool::new(
+                ctx.adapter.clone(),
+                prepared_input.event.clone(),
+            ),
+            tool_quota.clone(),
         ));
 
         let qq_chat_agent_config = current_qq_chat_agent_service_config()?;
         for tool_def in &self.tool_definitions {
-            brain.add_tool(EditableQqAgentTool {
-                runner: ToolSubgraphRunner {
-                    node_id: self.id.clone(),
-                    owner_node_type: QQ_AGENT_TOOL_OWNER_TYPE.to_string(),
-                    shared_inputs: self.shared_inputs.clone(),
-                    definition: tool_def.clone(),
-                    shared_runtime_values: Arc::clone(&shared_runtime_values),
-                    qq_chat_agent_config: Some(qq_chat_agent_config.clone()),
-                    result_mode: ToolResultMode::SingleString,
+            brain.add_tool(wrap_brain_tool_with_quota(
+                EditableQqAgentTool {
+                    runner: ToolSubgraphRunner {
+                        node_id: self.id.clone(),
+                        owner_node_type: QQ_AGENT_TOOL_OWNER_TYPE.to_string(),
+                        shared_inputs: self.shared_inputs.clone(),
+                        definition: tool_def.clone(),
+                        shared_runtime_values: Arc::clone(&shared_runtime_values),
+                        qq_chat_agent_config: Some(qq_chat_agent_config.clone()),
+                        result_mode: ToolResultMode::SingleString,
+                    },
                 },
-            });
+                tool_quota.clone(),
+            ));
         }
 
         trace.mark_llm_request_started();

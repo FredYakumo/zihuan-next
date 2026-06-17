@@ -55,6 +55,8 @@ use zihuan_graph_engine::message_restore::{register_mysql_ref, register_rdb_pool
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_nlp::{build_segmenter, TextSegmenter};
 
+use super::qq_chat_tool_quota::SessionToolQuotaState;
+
 fn build_reply_batch_builder(segmenter: Arc<dyn TextSegmenter>) -> QqChatServiceReplyBatchBuilder {
     build_unified_reply_batch_builder(segmenter)
 }
@@ -426,6 +428,7 @@ pub async fn spawn(
         shared_runtime_values: HashMap::new(),
         session_state_store: Arc::new(Mutex::new(QqChatAgentServiceSessionState::default())),
         task_runtime,
+        tool_quota_session_state: Arc::new(Mutex::new(SessionToolQuotaState::default())),
     })?);
 
     let adapter = ActiveAdapterManager::shared()

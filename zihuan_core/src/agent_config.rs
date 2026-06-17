@@ -133,6 +133,8 @@ pub struct QqChatAgentServiceConfig {
     pub max_steer_count: usize,
     #[serde(default = "default_qq_chat_default_tools_enabled")]
     pub default_tools_enabled: HashMap<String, bool>,
+    #[serde(default = "default_qq_chat_tool_session_call_limits")]
+    pub tool_session_call_limits: HashMap<String, usize>,
     #[serde(default = "default_qq_chat_emotion_dimensions")]
     pub emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     #[serde(default)]
@@ -222,6 +224,10 @@ fn default_qq_chat_default_tools_enabled() -> HashMap<String, bool> {
     .into_iter()
     .map(|name| (name.to_string(), true))
     .collect()
+}
+
+fn default_qq_chat_tool_session_call_limits() -> HashMap<String, usize> {
+    [("web_search".to_string(), 1usize)].into_iter().collect()
 }
 
 fn default_qq_chat_emotion_dimensions() -> Vec<QqChatEmotionDimensionConfig> {
