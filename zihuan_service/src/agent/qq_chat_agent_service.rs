@@ -11,19 +11,18 @@ use super::qq_chat_agent_service_core::{
 use super::qq_chat_agent_service_ignore_store::should_ignore_message_blocking;
 use super::qq_chat_agent_service_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
-use crate::agent::qq_chat_agent_service_inbox::{QqChatAgentServiceInbox, QqChatAgentServiceSupervisorEvent};
+use crate::agent::qq_chat_agent_service_inbox::QqChatAgentServiceInbox;
 use crate::agent::tool_definitions::build_enabled_tool_definitions;
 use crate::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name,
 };
 use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
 use chrono::Local;
-use ims_bot_adapter::adapter::BotAdapter;
+use ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
 use ims_bot_adapter::event::EventHandler;
 use ims_bot_adapter::message_helpers::get_bot_id;
 use ims_bot_adapter::models::event_model::MessageType;
 use ims_bot_adapter::models::message::MessageProp;
-use ims_bot_adapter::{build_ims_bot_adapter, parse_ims_bot_adapter_connection};
 use log::{error, info, warn};
 use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
@@ -294,13 +293,12 @@ pub async fn spawn(
 ) -> Result<JoinHandle<()>> {
     let llm_refs = load_llm_refs()?;
     let bot_connection = find_connection(&connections, &config.ims_bot_adapter_connection_id)?;
-    let ConnectionKind::BotAdapter(ims_bot_adapter_connection) = &bot_connection.kind else {
+    let ConnectionKind::BotAdapter(_) = &bot_connection.kind else {
         return Err(Error::ValidationError(format!(
             "connection '{}' is not a bot adapter connection",
             bot_connection.name
         )));
     };
-    let ims_bot_adapter_connection = parse_ims_bot_adapter_connection(ims_bot_adapter_connection)?;
 
     let llm_config = resolve_llm_service_config(config.llm_ref_id.as_deref(), &llm_refs, &agent.name)?;
     let llm = build_llm_model(&llm_config)?;
@@ -430,7 +428,9 @@ pub async fn spawn(
         task_runtime,
     })?);
 
-    let adapter = build_ims_bot_adapter(&ims_bot_adapter_connection, object_storage).await;
+    let adapter = ActiveAdapterManager::shared()
+        .get_or_create_with_object_storage(&config.ims_bot_adapter_connection_id, object_storage)
+        .await?;
 
     let inbox = QqChatAgentServiceInbox::new(
         Arc::clone(&service),
@@ -440,6 +440,7 @@ pub async fn spawn(
         config.event_handler_threads,
     );
 
+    let handler_id = format!("qq_chat_service:{}", agent.id);
     {
         let inbox = inbox.clone();
         let handler: EventHandler = Arc::new(move |event| {
@@ -451,50 +452,47 @@ pub async fn spawn(
                 Ok(())
             })
         });
-        adapter.lock().await.register_event_handler(handler);
+        adapter.lock().await.register_event_handler_with_id(handler_id.clone(), handler);
     }
 
     let manager = manager.clone();
     let agent_id = agent.id.clone();
     let agent_name = agent.name.clone();
+    let adapter_for_cleanup = adapter.clone();
+    let handler_id_for_cleanup = handler_id.clone();
+    let user_on_finish = {
+        let mut guard = on_finish.lock().unwrap();
+        guard.take()
+    };
+    {
+        let adapter = adapter_for_cleanup.clone();
+        let handler_id = handler_id_for_cleanup.clone();
+        let mut guard = on_finish.lock().unwrap();
+        *guard = Some(Box::new(move |success, error_msg| {
+            let adapter = adapter.clone();
+            let handler_id = handler_id.clone();
+            tokio::spawn(async move {
+                adapter.lock().await.unregister_event_handler(&handler_id);
+            });
+            if let Some(cb) = user_on_finish {
+                cb(success, error_msg);
+            }
+        }));
+    }
+
     Ok(tokio::spawn(async move {
         info!("[service] starting QQ Chat Agent Service '{}'", agent_name);
         let mut tasks = tokio::task::JoinSet::new();
         inbox.spawn_consumers(&mut tasks);
-        tasks.spawn(async move {
-            match BotAdapter::start(adapter).await {
-                Ok(()) => QqChatAgentServiceSupervisorEvent::AdapterFinished { success: true, error_msg: None },
-                Err(err) => QqChatAgentServiceSupervisorEvent::AdapterFinished {
-                    success: false,
-                    error_msg: Some(err.to_string()),
-                },
-            }
-        });
+        std::future::pending::<()>().await;
+        inbox.request_shutdown();
+        adapter_for_cleanup
+            .lock()
+            .await
+            .unregister_event_handler(&handler_id_for_cleanup);
 
-        let mut adapter_result: Option<(bool, Option<String>)> = None;
-        while let Some(result) = tasks.join_next().await {
-            match result {
-                Ok(QqChatAgentServiceSupervisorEvent::AdapterFinished { success, error_msg }) => {
-                    adapter_result = Some((success, error_msg));
-                    inbox.request_shutdown();
-                }
-                Ok(QqChatAgentServiceSupervisorEvent::RedisConsumerFinished) => {
-                    if adapter_result.is_none() {
-                        warn!("[service][qq_agent] a Redis inbox consumer exited unexpectedly");
-                    }
-                }
-                Ok(QqChatAgentServiceSupervisorEvent::MemoryConsumerFinished) => {
-                    if adapter_result.is_none() {
-                        warn!("[service][qq_agent] a memory inbox consumer exited unexpectedly");
-                    }
-                }
-                Err(err) => {
-                    error!("[service][qq_agent] inbox task join failed: {err}");
-                }
-            }
-        }
-        let (success, error_msg) = adapter_result
-            .unwrap_or_else(|| (false, Some("QQ Chat Agent Service task set ended unexpectedly".to_string())));
+        let success = true;
+        let error_msg = None;
 
         if success {
             info!("[service] QQ Chat Agent Service '{}' stopped", agent_name);

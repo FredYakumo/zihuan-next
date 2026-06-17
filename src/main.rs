@@ -13,7 +13,6 @@ use lazy_static::lazy_static;
 use log::{error, info};
 use log_util::log_util::LogUtil;
 use salvo::Listener;
-use sqlx;
 use zihuan_core::config::ConfigRepository;
 
 lazy_static! {
@@ -57,9 +56,6 @@ async fn main() {
         }
     }
 
-    // Ensure database tables exist for all existing MySQL/SQLite connections.
-    ensure_database_tables_for_existing_connections().await;
-
     let args = Args::parse();
 
     let state = Arc::new(api::state::AppState::new());
@@ -67,12 +63,8 @@ async fn main() {
     log_forwarder::set_app_state(Arc::clone(&state));
     log_forwarder::set_broadcast(broadcast.clone());
 
-    register_existing_relational_db_pools(&state).await;
     startup_recover_orphan_tasks(&state).await;
     spawn_task_ttl_cleanup(Arc::clone(&state));
-
-    // Auto-start NapCat for any natively-installed bot adapters before starting agents.
-    startup_napcat_native().await;
 
     {
         let agents = crate::system_config::load_agents().unwrap_or_else(|e| {
@@ -138,68 +130,6 @@ async fn startup_recover_orphan_tasks(state: &api::state::AppState) {
     }
 }
 
-async fn ensure_database_tables_for_existing_connections() {
-    let connections = match crate::system_config::load_connections() {
-        Ok(conns) => conns,
-        Err(e) => {
-            log::warn!("[startup] failed to load connections for table check: {}", e);
-            return;
-        }
-    };
-
-    for conn in &connections {
-        if !conn.enabled {
-            continue;
-        }
-        if matches!(
-            conn.kind,
-            storage_handler::ConnectionKind::Mysql(_) | storage_handler::ConnectionKind::Sqlite(_)
-        ) {
-            if let Err(e) = storage_handler::ensure_tables_for_connection(&conn.kind).await {
-                log::warn!(
-                    "[startup] table creation failed for connection '{}' (id={}): {}",
-                    conn.name,
-                    conn.id,
-                    e
-                );
-            }
-        }
-    }
-}
-
-async fn register_existing_relational_db_pools(state: &api::state::AppState) {
-    let connections = match crate::system_config::load_connections() {
-        Ok(conns) => conns,
-        Err(err) => {
-            log::warn!("[startup] failed to load connections for DB pool setup: {}", err);
-            return;
-        }
-    };
-
-    for connection in connections.into_iter().filter(|item| item.enabled) {
-        if !matches!(
-            connection.kind,
-            storage_handler::ConnectionKind::Mysql(_) | storage_handler::ConnectionKind::Sqlite(_)
-        ) {
-            continue;
-        }
-
-        match storage_handler::build_relational_db_connection_for_kind(&connection.id, &connection.kind).await {
-            Ok(pool) => {
-                state.tasks.lock().unwrap().register_db_pool(connection.id.clone(), pool);
-            }
-            Err(err) => {
-                log::warn!(
-                    "[startup] failed to register relational DB pool for connection '{}' (id={}): {}",
-                    connection.name,
-                    connection.id,
-                    err
-                );
-            }
-        }
-    }
-}
-
 fn spawn_task_ttl_cleanup(state: std::sync::Arc<api::state::AppState>) {
     let ttl_hours = zihuan_core::system_config::load_section::<zihuan_core::system_config::GlobalSettingsSection>()
         .unwrap_or_default()
@@ -218,68 +148,4 @@ fn spawn_task_ttl_cleanup(state: std::sync::Arc<api::state::AppState>) {
             }
         }
     });
-}
-
-/// Auto-start NapCat for any natively-installed bot adapter connections.
-async fn startup_napcat_native() {
-    let connections = match crate::system_config::load_connections() {
-        Ok(conns) => conns,
-        Err(e) => {
-            log::warn!("[startup] failed to load connections for NapCat auto-start: {e}");
-            return;
-        }
-    };
-
-    for conn in &connections {
-        if !conn.enabled {
-            continue;
-        }
-        let storage_handler::ConnectionKind::BotAdapter(ref raw) = conn.kind else {
-            continue;
-        };
-        let Ok(adapter) = serde_json::from_value::<ims_bot_adapter::BotAdapterConnection>(raw.clone()) else {
-            continue;
-        };
-        let Some(ref install_path) = adapter.napcat_install_path else {
-            continue;
-        };
-
-        let install_dir = std::path::Path::new(install_path);
-        let napcat_bat = install_dir.join("napcat.bat");
-
-        if !napcat_bat.exists() {
-            log::warn!(
-                "[startup] NapCat install path '{}' exists but napcat.bat not found; \
-                 skipping auto-start for connection '{}'",
-                install_path,
-                conn.name
-            );
-            continue;
-        }
-
-        log::info!(
-            "[startup] Auto-starting NapCat from '{}' for connection '{}'",
-            install_path,
-            conn.name
-        );
-
-        let mut cmd = tokio::process::Command::new("cmd");
-        cmd.args(["/c", "start", "NapCat QQ (zihuan)"])
-            .arg(napcat_bat.to_string_lossy().as_ref())
-            .current_dir(install_dir);
-
-        // Quick login: pass QQ number if configured
-        if let Some(ref qq) = adapter.qq_id {
-            cmd.arg(qq);
-        }
-
-        match cmd.spawn() {
-            Ok(_) => {
-                log::info!("[startup] NapCat launched successfully for connection '{}'", conn.name);
-            }
-            Err(e) => {
-                log::warn!("[startup] Failed to launch NapCat for connection '{}': {e}", conn.name);
-            }
-        }
-    }
 }

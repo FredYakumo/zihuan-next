@@ -14,6 +14,7 @@ use zihuan_core::connection_manager::{
     ConnectionManager as ConnectionManagerTrait, RuntimeConnectionInstanceSummary, RuntimeConnectionStatus,
 };
 use zihuan_core::error::{Error, Result};
+use zihuan_graph_engine::object_storage::S3Ref;
 
 use crate::adapter::{BotAdapter, SharedBotAdapter};
 use crate::ws_action::ws_send_action_async;
@@ -99,7 +100,11 @@ impl ActiveAdapterManager {
         })
     }
 
-    async fn create_instance(&self, config_id: &str) -> Result<ActiveBotAdapterInstance> {
+    async fn create_instance(
+        &self,
+        config_id: &str,
+        object_storage: Option<Arc<S3Ref>>,
+    ) -> Result<ActiveBotAdapterInstance> {
         let connections = load_connections()?;
         let connection = find_connection(&connections, config_id)?;
         if !connection.enabled {
@@ -114,7 +119,7 @@ impl ActiveAdapterManager {
         };
 
         let adapter_connection = parse_ims_bot_adapter_connection(raw)?;
-        let adapter = build_ims_bot_adapter(&adapter_connection, None).await;
+        let adapter = build_ims_bot_adapter(&adapter_connection, object_storage).await;
         let instance_id = Uuid::new_v4().to_string();
         let task = Arc::new(Self::spawn_keepalive_loop(
             connection.id.clone(),
@@ -160,6 +165,32 @@ impl ActiveAdapterManager {
         let handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = adapter;
         Ok(handle)
     }
+
+    pub async fn get_or_create_with_object_storage(
+        &self,
+        config_id: &str,
+        object_storage: Option<Arc<S3Ref>>,
+    ) -> Result<SharedBotAdapter> {
+        self.cleanup_stale_instances().await?;
+        {
+            let mut instances = self.instances.write().await;
+            if let Some(bucket) = instances.get_mut(config_id) {
+                if let Some(instance) = bucket.first_mut() {
+                    instance.summary.last_used_at = Utc::now();
+                    if object_storage.is_some() {
+                        instance.adapter.lock().await.set_object_storage(object_storage);
+                    }
+                    return Ok(instance.adapter.clone());
+                }
+            }
+        }
+
+        let instance = self.create_instance(config_id, object_storage).await?;
+        let handle = instance.adapter.clone();
+        let mut instances = self.instances.write().await;
+        instances.entry(config_id.to_string()).or_default().push(instance);
+        Ok(handle)
+    }
 }
 
 #[async_trait]
@@ -178,7 +209,7 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
             }
         }
 
-        let instance = self.create_instance(config_id).await?;
+        let instance = self.create_instance(config_id, None).await?;
         let handle = instance.adapter.clone();
         let mut instances = self.instances.write().await;
         instances.entry(config_id.to_string()).or_default().push(instance);
@@ -310,17 +341,6 @@ pub async fn sync_enabled_bot_adapters(connections: &[ConnectionConfig]) {
         );
         item.task.abort();
         item.heartbeat_task.abort();
-    }
-
-    for connection in connections {
-        if connection.enabled && matches!(connection.kind, ConnectionKind::BotAdapter(_)) {
-            if let Err(err) = manager.get_or_create(&connection.id).await {
-                warn!(
-                    "[active_adapter_manager] failed to ensure bot adapter '{}' (config_id={}) after config sync: {}",
-                    connection.name, connection.id, err
-                );
-            }
-        }
     }
 }
 
