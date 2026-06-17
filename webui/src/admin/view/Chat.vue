@@ -1,8 +1,5 @@
 <template>
   <section :class="embedded ? 'chat-embedded-wrapper' : 'page chat-page'">
-    <div v-if="!embedded" class="page-hero">
-      <h2>Chat</h2>
-    </div>
     <div :class="embedded ? 'chat-embedded-inner' : 'chat-page-panel'">
       <section class="panel chat-panel">
         <div class="chat-toolbar">
@@ -451,9 +448,10 @@
                 <textarea
                   v-model="draftMessage"
                   placeholder="输入消息"
-                  @keydown.ctrl.enter.prevent="sendMessage"
+                  @keydown.enter="handleTextareaKeydown"
                   @input="clearChatError"
                 />
+                <div class="chat-input-hint">使用 shift + enter 换行</div>
                 <div class="chat-input-actions">
                   <button class="btn ghost" @click="startNewSession">新对话</button>
                   <div class="chat-input-right">
@@ -616,6 +614,20 @@
                             />
                           </svg>
                         </button>
+                        <div
+                          v-if="openPicker === 'settings'"
+                          class="model-picker-dropdown"
+                          style="right: 0; left: auto"
+                        >
+                          <button
+                            class="model-picker-item"
+                            :class="{ active: autoCollapseThinking }"
+                            @click.stop="toggleAutoCollapseThinking"
+                          >
+                            自动折叠思考过程
+                            <span v-if="autoCollapseThinking" class="live-tool-done-icon">✓</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <button class="btn primary" :disabled="sending || !canSend" @click="sendMessage">
@@ -894,6 +906,7 @@ const selectedModelId = ref("");
 const selectedThinkingType = ref<"" | "enabled" | "disabled">("");
 const selectedReasoningEffort = ref<"" | "low" | "medium" | "high" | "max">("");
 const openPicker = ref<"model" | "thinking" | "effort" | "settings" | null>(null);
+const autoCollapseThinking = ref(true);
 const stats = reactive({
   connections: 0,
   llm: 0,
@@ -1102,7 +1115,7 @@ function applyHistory(records: ChatHistoryRecord[]) {
       role: item.role as ChatRole,
       content: item.content,
       thinkingContent: item.reasoning_content ?? undefined,
-      thinkingExpanded: !!item.reasoning_content,
+      thinkingExpanded: !autoCollapseThinking.value && !!item.reasoning_content,
       timestamp: item.timestamp,
       toolCalls: item.tool_calls ?? [],
       toolCallId: item.tool_call_id ?? null,
@@ -1243,6 +1256,22 @@ function scrollToBottom() {
 
 function clearChatError() {
   chatErrorMessage.value = "";
+}
+
+function handleTextareaKeydown(event: KeyboardEvent) {
+  if (event.key !== "Enter") {
+    return;
+  }
+  if (event.shiftKey) {
+    return;
+  }
+  event.preventDefault();
+  sendMessage();
+}
+
+function toggleAutoCollapseThinking() {
+  autoCollapseThinking.value = !autoCollapseThinking.value;
+  openPicker.value = null;
 }
 
 function clearPendingAskUser() {
@@ -1500,6 +1529,9 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
     const message = messages.value.find((item) => item.id === targetId);
     if (message) {
       message.streaming = false;
+      if (autoCollapseThinking.value && message.thinkingContent) {
+        message.thinkingExpanded = false;
+      }
     }
   }
 
@@ -1702,7 +1734,7 @@ onUnmounted(() => {
   gap: 16px;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 40px);
+  height: calc(100vh - 56px);
 }
 
 .chat-page-panel,
@@ -2532,6 +2564,14 @@ onUnmounted(() => {
   border-color: var(--admin-accent);
   outline: none;
   box-shadow: 0 0 0 3px var(--admin-accent-soft);
+}
+
+.chat-input-hint {
+  font-size: 12px;
+  color: var(--admin-subtle);
+  text-align: right;
+  padding: 0 4px;
+  margin-top: -6px;
 }
 
 .chat-not-supported {

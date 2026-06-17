@@ -21,7 +21,7 @@
         </div>
         <nav class="admin-nav">
           <RouterLink class="admin-nav-link" to="/" @click="closeSidebar">仪表盘</RouterLink>
-          <RouterLink class="admin-nav-link" to="/chat" @click="closeSidebar">Chat</RouterLink>
+          <RouterLink class="admin-nav-link" to="/chat" @click="closeSidebar">对话</RouterLink>
           <RouterLink class="admin-nav-link" to="/connections" @click="closeSidebar">连接配置</RouterLink>
           <RouterLink class="admin-nav-link" to="/llm" @click="closeSidebar">模型配置</RouterLink>
           <RouterLink class="admin-nav-link" to="/services" @click="closeSidebar">Service 管理</RouterLink>
