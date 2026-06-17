@@ -28,7 +28,7 @@
     </section>
 
     <section v-else-if="chatEligibleServices.length > 0" class="panel">
-      <div class="connection-grid connection-grid--services">
+      <div class="connection-grid dashboard-service-grid">
         <article
           v-for="service in chatEligibleServices"
           :key="service.config_id"
@@ -366,22 +366,27 @@ onMounted(() => {
 .dashboard-service-card {
   display: flex;
   flex-direction: column;
+  min-height: auto;
+  padding: 10px;
+  gap: 6px;
+  border-radius: 16px;
 }
 
 .dashboard-service-title {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 .dashboard-service-title h4 {
   margin: 0;
+  font-size: 16px;
 }
 
 .dashboard-service-avatar {
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   border-radius: 999px;
   object-fit: cover;
   border: 1px solid var(--admin-border);
@@ -391,21 +396,58 @@ onMounted(() => {
 .dashboard-service-avatar--fallback {
   display: grid;
   place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
   background: color-mix(in srgb, var(--admin-accent) 18%, var(--admin-bg-panel) 82%);
   color: var(--admin-ink);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .dashboard-service-footer {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   justify-content: flex-end;
+  margin-top: 6px;
 }
 
 .dashboard-service-btn {
   flex: 1;
   min-width: 0;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.dashboard-service-card .connection-card-body {
+  gap: 4px;
+}
+
+.dashboard-service-card .key-value {
+  font-size: 12px;
+}
+
+.dashboard-service-card .key-value strong {
+  min-width: 52px;
+}
+
+.dashboard-service-card .connection-card-badges {
+  gap: 5px;
+}
+
+.dashboard-service-card .connection-card-badges .badge {
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+
+.dashboard-service-card .connection-card-header-top {
+  gap: 4px;
+}
+
+.dashboard-service-grid {
+  grid-template-columns: repeat(auto-fit, 260px);
+  gap: 12px;
 }
 
 .chat-modal-backdrop {
