@@ -25,6 +25,7 @@ const BOT_ADAPTER_HEARTBEAT_INTERVAL_SECS: u64 = 30;
 #[derive(Clone)]
 struct ActiveBotAdapterInstance {
     summary: RuntimeConnectionInstanceSummary,
+    config_updated_at: String,
     adapter: SharedBotAdapter,
     task: Arc<JoinHandle<()>>,
     heartbeat_task: Arc<JoinHandle<()>>,
@@ -139,6 +140,7 @@ impl ActiveAdapterManager {
                 last_used_at: now,
                 status: RuntimeConnectionStatus::Running,
             },
+            config_updated_at: connection.updated_at.clone(),
             adapter,
             task,
             heartbeat_task,
@@ -223,33 +225,36 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
 
     async fn cleanup_stale_instances(&self) -> Result<usize> {
         let connections = load_connections()?;
+        let connection_states = connections
+            .iter()
+            .map(|item| (item.id.as_str(), (item.enabled, item.updated_at.as_str())))
+            .collect::<HashMap<_, _>>();
         let now = Utc::now();
         let mut instances = self.instances.write().await;
         let mut removed = 0usize;
 
         for (config_id, bucket) in instances.iter_mut() {
-            let enabled = connections
-                .iter()
-                .find(|item| item.id == *config_id)
-                .map(|item| item.enabled)
-                .unwrap_or(false);
+            let (enabled, current_updated_at) =
+                connection_states.get(config_id.as_str()).copied().unwrap_or((false, ""));
             let mut retained = Vec::new();
             for item in bucket.drain(..) {
-                if item.summary.keep_alive {
+                let config_changed = item.config_updated_at != current_updated_at;
+                if item.summary.keep_alive && enabled && !config_changed {
                     retained.push(item);
                     continue;
                 }
                 let stale = (now - item.summary.last_used_at).num_seconds() >= BOT_ADAPTER_INSTANCE_IDLE_TIMEOUT_SECS;
-                if enabled && !stale {
+                if enabled && !stale && !config_changed {
                     retained.push(item);
                 } else {
                     info!(
-                        "[active_adapter_manager] destroying idle bot adapter instance_id={} config_id={} name='{}' enabled={} stale={}",
+                        "[active_adapter_manager] destroying bot adapter instance_id={} config_id={} name='{}' enabled={} stale={} config_changed={}",
                         item.summary.instance_id,
                         item.summary.config_id,
                         item.summary.name,
                         enabled,
-                        stale
+                        stale,
+                        config_changed
                     );
                     item.task.abort();
                     item.heartbeat_task.abort();
@@ -266,16 +271,54 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
 pub async fn initialize_enabled_bot_adapters(_connections: &[ConnectionConfig]) {}
 
 pub async fn sync_enabled_bot_adapters(connections: &[ConnectionConfig]) {
-    let desired_ids = connections
+    let desired = connections
         .iter()
         .filter(|item| item.enabled && matches!(item.kind, ConnectionKind::BotAdapter(_)))
-        .map(|item| item.id.clone())
-        .collect::<Vec<_>>();
+        .map(|item| (item.id.clone(), item.updated_at.clone()))
+        .collect::<HashMap<_, _>>();
     let manager = ActiveAdapterManager::shared();
-    if let Ok(current) = manager.list_instances().await {
-        for item in current {
-            if !desired_ids.iter().any(|id| id == &item.config_id) {
-                let _ = manager.close_instances_for_config(&item.config_id).await;
+
+    let mut removed = Vec::new();
+    {
+        let mut instances = manager.instances.write().await;
+        let config_ids = instances.keys().cloned().collect::<Vec<_>>();
+        for config_id in config_ids {
+            let Some(bucket) = instances.get_mut(&config_id) else {
+                continue;
+            };
+            let desired_updated_at = desired.get(&config_id).map(String::as_str);
+            let mut retained = Vec::new();
+            for item in bucket.drain(..) {
+                let should_keep = desired_updated_at
+                    .map(|updated_at| item.config_updated_at == updated_at)
+                    .unwrap_or(false);
+                if should_keep {
+                    retained.push(item);
+                } else {
+                    removed.push(item);
+                }
+            }
+            *bucket = retained;
+        }
+        instances.retain(|_, bucket| !bucket.is_empty());
+    }
+
+    for item in removed {
+        info!(
+            "[active_adapter_manager] closing bot adapter instance_id={} config_id={} name='{}' due to config sync",
+            item.summary.instance_id, item.summary.config_id, item.summary.name
+        );
+        item.task.abort();
+        item.heartbeat_task.abort();
+    }
+
+    for connection in connections {
+        if connection.enabled && matches!(connection.kind, ConnectionKind::BotAdapter(_)) {
+            if let Err(err) = manager.get_or_create(&connection.id).await {
+                warn!(
+                    "[active_adapter_manager] failed to ensure bot adapter '{}' (config_id={}) after config sync: {}",
+                    connection.name, connection.id, err
+                );
             }
         }
     }
