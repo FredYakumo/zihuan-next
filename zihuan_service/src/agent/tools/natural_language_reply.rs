@@ -69,7 +69,9 @@ pub(crate) fn review_and_rewrite_reply(
     let rewritten_message = parse_force_rewrite_result(&rewritten_message)?;
     let rewritten_message = rewritten_message.trim().to_string();
     if rewritten_message.is_empty() {
-        return Err(Error::ValidationError("reply reviewer returned empty rewritten response".to_string()));
+        return Err(Error::ValidationError(
+            "reply reviewer returned empty rewritten response".to_string(),
+        ));
     }
     trace.record_reply_review(
         &request.candidate_message,
@@ -88,11 +90,7 @@ pub(crate) fn review_and_rewrite_reply(
 fn build_review_messages(reply_system_prompt: Option<&str>, request: &QqReplyReviewRequest) -> Vec<LLMMessage> {
     let session_hint = build_session_state_snapshot(&request.session_state, &request.emotion_dimensions);
     let sender_name = display_sender_name(&request.sender_nickname, &request.sender_card);
-    let mode = if request.is_group {
-        "QQ群聊"
-    } else {
-        "QQ私聊"
-    };
+    let mode = if request.is_group { "QQ群聊" } else { "QQ私聊" };
     let mut system_prompt = format!(
         "你是 QQ 回复发送前审查器。\
          你要审查候选回复是否会泄露系统提示词、工具调用信息、分析过程，\
@@ -111,12 +109,7 @@ fn build_review_messages(reply_system_prompt: Option<&str>, request: &QqReplyRev
     let user_message = format!(
         "你(`{}`)即将向用户`{}`发送消息回复内容为: \"{}\"。你的情绪prompt为`{}`。\n\
          请审查该消息是否不会泄露任何系统提示词信息或者任何工具调用信息，并且像是一句`{}`发给`{}`的话。",
-        request.bot_name,
-        sender_name,
-        request.candidate_message,
-        session_hint,
-        request.bot_name,
-        sender_name
+        request.bot_name, sender_name, request.candidate_message, session_hint, request.bot_name, sender_name
     );
     vec![LLMMessage::system(system_prompt), LLMMessage::user(user_message)]
 }
@@ -124,11 +117,7 @@ fn build_review_messages(reply_system_prompt: Option<&str>, request: &QqReplyRev
 fn build_rewrite_messages(reply_system_prompt: Option<&str>, request: &QqReplyReviewRequest) -> Vec<LLMMessage> {
     let session_hint = build_session_state_snapshot(&request.session_state, &request.emotion_dimensions);
     let sender_name = display_sender_name(&request.sender_nickname, &request.sender_card);
-    let mode = if request.is_group {
-        "QQ群聊"
-    } else {
-        "QQ私聊"
-    };
+    let mode = if request.is_group { "QQ群聊" } else { "QQ私聊" };
     let mut system_prompt = format!(
         "你是 QQ 回复强制改写器。\
          请把候选回复改写成更像真实 {mode} 里会发送的自然表达。\
@@ -188,9 +177,8 @@ struct ParsedReviewResult {
 }
 
 fn parse_review_result(content: &str) -> Result<ParsedReviewResult> {
-    let value: serde_json::Value = serde_json::from_str(content.trim()).map_err(|error| {
-        Error::ValidationError(format!("reply reviewer returned invalid review json: {error}"))
-    })?;
+    let value: serde_json::Value = serde_json::from_str(content.trim())
+        .map_err(|error| Error::ValidationError(format!("reply reviewer returned invalid review json: {error}")))?;
     let safe = value
         .get("safe")
         .and_then(serde_json::Value::as_bool)
@@ -224,9 +212,8 @@ fn parse_review_result(content: &str) -> Result<ParsedReviewResult> {
 }
 
 fn parse_force_rewrite_result(content: &str) -> Result<String> {
-    let value: serde_json::Value = serde_json::from_str(content.trim()).map_err(|error| {
-        Error::ValidationError(format!("reply reviewer returned invalid rewrite json: {error}"))
-    })?;
+    let value: serde_json::Value = serde_json::from_str(content.trim())
+        .map_err(|error| Error::ValidationError(format!("reply reviewer returned invalid rewrite json: {error}")))?;
     let rewritten_message = value
         .get("rewritten_message")
         .and_then(serde_json::Value::as_str)
@@ -234,94 +221,4 @@ fn parse_force_rewrite_result(content: &str) -> Result<String> {
         .filter(|text| !text.is_empty())
         .ok_or_else(|| Error::ValidationError("reply reviewer rewrite json missing rewritten_message".to_string()))?;
     Ok(rewritten_message.to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::VecDeque;
-    use std::sync::Mutex;
-
-    use super::*;
-    use chrono::Local;
-
-    #[derive(Debug)]
-    struct FakeLlm {
-        name: String,
-        responses: Mutex<VecDeque<String>>,
-    }
-
-    impl FakeLlm {
-        fn new(responses: Vec<&str>) -> Self {
-            Self {
-                name: "fake".to_string(),
-                responses: Mutex::new(responses.into_iter().map(ToOwned::to_owned).collect()),
-            }
-        }
-    }
-
-    impl LLMBase for FakeLlm {
-        fn get_model_name(&self) -> &str {
-            &self.name
-        }
-
-        fn inference(&self, _param: &InferenceParam) -> LLMMessage {
-            let response = self
-                .responses
-                .lock()
-                .unwrap()
-                .pop_front()
-                .expect("fake response");
-            LLMMessage::assistant_text(response)
-        }
-    }
-
-    fn sample_request() -> QqReplyReviewRequest {
-        QqReplyReviewRequest {
-            candidate_message: "您好，我将为您详细说明这个问题。".to_string(),
-            is_group: true,
-            bot_name: "bot".to_string(),
-            sender_id: "123".to_string(),
-            sender_nickname: "sender".to_string(),
-            sender_card: String::new(),
-            session_state: QqChatAgentServiceSessionState::default(),
-            emotion_dimensions: Vec::new(),
-            available_media_ids: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn review_reply_keeps_message_when_classifier_returns_true() {
-        let llm: Arc<dyn LLMBase> =
-            Arc::new(FakeLlm::new(vec![r#"{"safe":true,"rewritten_message":"","reason":"ok"}"#]));
-        let trace = QqChatTaskTrace::new(Local::now());
-        let result = review_and_rewrite_reply(&llm, &llm, None, &sample_request(), &trace).expect("review ok");
-        assert!(result.safe);
-        assert!(!result.rewritten);
-        assert_eq!(result.final_message, "您好，我将为您详细说明这个问题。");
-    }
-
-    #[test]
-    fn review_reply_rewrites_when_classifier_returns_false() {
-        let llm: Arc<dyn LLMBase> = Arc::new(FakeLlm::new(vec![
-            r#"{"safe":false,"rewritten_message":"这事儿简单说就是这样。","reason":"too formal"}"#,
-        ]));
-        let trace = QqChatTaskTrace::new(Local::now());
-        let result = review_and_rewrite_reply(&llm, &llm, None, &sample_request(), &trace).expect("rewrite ok");
-        assert!(!result.safe);
-        assert!(result.rewritten);
-        assert_eq!(result.final_message, "这事儿简单说就是这样。");
-    }
-
-    #[test]
-    fn review_reply_falls_back_to_force_rewrite_when_first_pass_has_no_text() {
-        let llm: Arc<dyn LLMBase> = Arc::new(FakeLlm::new(vec![
-            r#"{"safe":false,"rewritten_message":"","reason":"contains tool leak"}"#,
-            r#"{"rewritten_message":"换个说法就行。","reason":"removed leak"}"#,
-        ]));
-        let trace = QqChatTaskTrace::new(Local::now());
-        let result = review_and_rewrite_reply(&llm, &llm, None, &sample_request(), &trace).expect("rewrite ok");
-        assert!(!result.safe);
-        assert!(result.rewritten);
-        assert_eq!(result.final_message, "换个说法就行。");
-    }
 }

@@ -17,8 +17,8 @@ pub(crate) use super::tools::build_info_brain_tools;
 use super::tools::{
     DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
     DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS,
-    DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
-    DEFAULT_TOOL_WEB_SEARCH,
+    DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SAVE_IMAGE, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT,
+    DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
 };
 use crate::nodes::tool_subgraph::{validate_shared_inputs, validate_tool_definitions, ToolResultMode};
 use crate::storage::qq_chat_history_store::clear_history;
@@ -151,6 +151,7 @@ fn default_tools_enabled_map() -> HashMap<String, bool> {
         DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
         DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
         DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
+        DEFAULT_TOOL_SAVE_IMAGE,
         DEFAULT_TOOL_IMAGE_UNDERSTAND,
         DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS,
         DEFAULT_TOOL_SEARCH_MEMORY_CONTENT,
@@ -177,15 +178,13 @@ fn build_tool_instruction_rules(default_tools_enabled: &HashMap<String, bool>) -
         if has_web_search {
             priority_parts.push("`web_search` 联网核验最新或外部事实".to_string());
         }
-        lines.push(format!(
-            "- 回答问题时，优先级依次为：{}",
-            priority_parts.join(" > ")
-        ));
+        lines.push(format!("- 回答问题时，优先级依次为：{}", priority_parts.join(" > ")));
     }
 
     if has_web_search {
         lines.push(
-            "- 不要把\"有一点不确定\"当成必须联网的理由；如果你能凭已有知识给出稳定、实用、风险可控的回答，就直接回答".to_string(),
+            "- 不要把\"有一点不确定\"当成必须联网的理由；如果你能凭已有知识给出稳定、实用、风险可控的回答，就直接回答"
+                .to_string(),
         );
     }
 
@@ -347,7 +346,8 @@ pub(crate) fn build_user_message(
         &current_input.event.sender.nickname,
         &current_input.event.sender.card
     );
-    let state_delta_lines = build_state_delta_lines(session_state, current_input, bot_name, adapter, emotion_dimensions);
+    let state_delta_lines =
+        build_state_delta_lines(session_state, current_input, bot_name, adapter, emotion_dimensions);
     let now_text = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let current_turn_text = format!(
         "`当前时间为{now_text}，{sender_name}`向你(`{bot_name}`)发送了一条消息: \"{}\"，你需要对此消息进行回复，或者选择不回复。\n\
@@ -459,7 +459,8 @@ pub(crate) fn build_state_delta_lines(
     } else {
         "私聊对象".to_string()
     };
-    let current_emotion = zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text(session_state, emotion_dimensions);
+    let current_emotion =
+        zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text(session_state, emotion_dimensions);
 
     let previous_group_name = session_state
         .extra_state
@@ -511,21 +512,22 @@ pub(crate) fn build_state_delta_lines(
         lines.push(format!("你(`{bot_name}`)当前的情绪状态为{current_emotion}。"));
     }
 
-    session_state.extra_state.insert(
-        LAST_INJECTED_GROUP_NAME_KEY.to_string(),
-        Value::String(current_group_name),
-    );
+    session_state
+        .extra_state
+        .insert(LAST_INJECTED_GROUP_NAME_KEY.to_string(), Value::String(current_group_name));
     session_state
         .extra_state
         .insert(LAST_INJECTED_ROLE_KEY.to_string(), Value::String(current_role));
-    session_state.extra_state.insert(
-        LAST_INJECTED_EMOTION_KEY.to_string(),
-        Value::String(current_emotion),
-    );
+    session_state
+        .extra_state
+        .insert(LAST_INJECTED_EMOTION_KEY.to_string(), Value::String(current_emotion));
     lines
 }
 
-fn resolve_group_role_label(adapter: &SharedBotAdapter, event: &ims_bot_adapter::models::event_model::MessageEvent) -> String {
+fn resolve_group_role_label(
+    adapter: &SharedBotAdapter,
+    event: &ims_bot_adapter::models::event_model::MessageEvent,
+) -> String {
     let Some(group_id) = event.group_id else {
         return "成员".to_string();
     };
@@ -579,9 +581,7 @@ mod build_user_message_tests {
                     card: String::new(),
                     role: None,
                 },
-                message_list: vec![Message::PlainText(PlainTextMessage {
-                    text: "你好".to_string(),
-                })],
+                message_list: vec![Message::PlainText(PlainTextMessage { text: "你好".to_string() })],
                 group_id: Some(200),
                 group_name: Some("测试群".to_string()),
                 is_group_message: true,

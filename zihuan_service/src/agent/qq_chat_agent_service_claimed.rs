@@ -26,14 +26,14 @@ use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfil
 use super::super::tools::{
     review_and_rewrite_reply, AgentMemoryToolResources, CurrentTimeBrainTool, EditableQqAgentTool,
     GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
-    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool,
-    QqReplyReviewRequest, ReplyMessageBrainTool,
-    RememberContentBrainTool, RunResearchSubagentBrainTool, SearchMemoryContentBrainTool, SearchSimilarImagesBrainTool,
-    ToolNotificationTarget, UpdateAgentStateBrainTool, WebSearchBrainTool,
-    DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
-    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS,
-    DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
-    DEFAULT_TOOL_WEB_SEARCH, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
+    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool, QqReplyReviewRequest,
+    RememberContentBrainTool, ReplyMessageBrainTool, RunResearchSubagentBrainTool, SaveImageBrainTool,
+    SearchMemoryContentBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget, UpdateAgentStateBrainTool,
+    WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
+    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
+    DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS, DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SAVE_IMAGE,
+    DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
+    QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 use storage_handler::AgentMemoryAccessContext;
 
@@ -41,13 +41,16 @@ use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use crate::storage::qq_chat_history_store::{conversation_history_key, load_history, save_history};
 
 use crate::agent::classify_intent::{classify_intent_with_trace, IntentCategory};
-use crate::agent::qq_chat_agent_service_msg_send::{build_reply_result, send_direct_text_reply, send_planned_batches, take_reply_directive, QqChatServiceSendContext};
+use crate::agent::qq_chat_agent_service_msg_send::{
+    build_reply_result, send_direct_text_reply, send_planned_batches, take_reply_directive, QqChatServiceSendContext,
+};
 
 use super::{
-    build_group_system_prompt, build_private_system_prompt, build_user_message, collect_available_media_from_brain_output,
-    expand_messages_for_inference, prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
-    QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatServiceTurnResult, QqChatTaskTrace,
-    QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+    build_group_system_prompt, build_private_system_prompt, build_user_message,
+    collect_available_media_from_brain_output, expand_messages_for_inference, prepare_current_turn_user_input,
+    prepare_current_turn_user_input_from_event, QqChatAgentServiceContext, QqChatAgentServiceInner,
+    QqChatServiceTurnResult, QqChatTaskTrace, QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX,
+    LOG_TEXT_PREVIEW_CHARS,
 };
 
 use super::super::qq_chat_agent_service_steer::QqChatServiceSteerHook;
@@ -169,7 +172,10 @@ impl QqChatAgentServiceInner {
     }
 
     fn parse_final_reply_text(&self, stop_reason: &BrainStopReason, brain_output: &[LLMMessage]) -> Option<String> {
-        if matches!(stop_reason, BrainStopReason::TransportError(_) | BrainStopReason::AwaitUserInput(_)) {
+        if matches!(
+            stop_reason,
+            BrainStopReason::TransportError(_) | BrainStopReason::AwaitUserInput(_)
+        ) {
             return None;
         }
 
@@ -489,6 +495,16 @@ impl QqChatAgentServiceInner {
             ));
         }
 
+        if self.is_default_tool_enabled(DEFAULT_TOOL_SAVE_IMAGE) {
+            if ctx.s3_ref.is_some() && ctx.weaviate_image_ref.is_some() && ctx.embedding_model.is_some() {
+                brain = brain.with_tool(SaveImageBrainTool::new(
+                    ctx.weaviate_image_ref.cloned(),
+                    ctx.embedding_model.cloned(),
+                    ctx.s3_ref.cloned(),
+                ));
+            }
+        }
+
         if self.is_default_tool_enabled(DEFAULT_TOOL_IMAGE_UNDERSTAND) {
             brain = brain.with_tool(ImageUnderstandBrainTool::new(
                 Some(prepared_input.event.clone()),
@@ -643,11 +659,7 @@ impl QqChatAgentServiceInner {
         let suppress_send = final_reply_text
             .as_deref()
             .map(zihuan_agent::utils::string_utils::is_no_reply_directive);
-        trace.record_final_reply_decision(
-            final_reply_text.as_deref(),
-            suppress_send,
-            None,
-        );
+        trace.record_final_reply_decision(final_reply_text.as_deref(), suppress_send, None);
 
         let mut visible_assistant_history_text = None;
         let mut explicit_no_reply = false;

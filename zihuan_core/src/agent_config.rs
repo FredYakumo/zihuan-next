@@ -213,6 +213,7 @@ fn default_qq_chat_default_tools_enabled() -> HashMap<String, bool> {
         "get_recent_group_messages",
         "get_recent_user_messages",
         "search_similar_images",
+        "save_image",
         "image_understand",
         "list_available_memory_keys",
         "search_memory_content",

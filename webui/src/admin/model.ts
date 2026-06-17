@@ -186,6 +186,11 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
     description: "语义检索相似图片",
   },
   {
+    id: "save_image",
+    label: "save_image",
+    description: "保存图片到图片库",
+  },
+  {
     id: "image_understand",
     label: "image_understand",
     description: "按 media_id 理解图片内容",

@@ -7,8 +7,8 @@ use log::info;
 use serde::Serialize;
 use serde_json::Value;
 
-use ims_bot_adapter::models::message::Message;
 use crate::agent::classify_intent::IntentClassificationTrace;
+use ims_bot_adapter::models::message::Message;
 use zihuan_agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{LLMMessage, TokenUsage};
