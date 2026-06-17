@@ -42,7 +42,7 @@ pub(crate) use image_search::SearchSimilarImagesBrainTool;
 pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstandBrainTool};
 pub(crate) use info_tools::{GetAgentPublicInfoBrainTool, GetFunctionListBrainTool};
 pub(crate) use natural_language_reply::{
-    take_last_reply_result, QqNaturalLanguageReplyResult, SendNaturalLanguageReplyBrainTool,
+    review_and_rewrite_reply, QqReplyReviewRequest, QqReplyReviewResult,
 };
 pub(crate) use recent_messages::{GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool};
 pub(crate) use reply_message::ReplyMessageBrainTool;

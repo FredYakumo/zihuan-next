@@ -30,8 +30,8 @@ use crate::qq_chat_user_input::{
 use crate::storage::qq_chat_history_store::{conversation_history_key, load_history};
 
 use super::qq_chat_agent_service_core::{
-    build_user_message, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatServiceHandleReport, LOG_PREFIX,
-    LOG_TEXT_PREVIEW_CHARS,
+    build_state_delta_lines, build_user_message, QqChatAgentServiceContext, QqChatAgentServiceInner,
+    QqChatServiceHandleReport, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 use super::qq_chat_agent_service_logging::QqChatTaskTrace;
 
@@ -43,15 +43,17 @@ const REFERENCE_ONLY_NOTICE: &str =
 fn build_steer_user_message(
     current_input: &PreparedCurrentTurnUserInput,
     bot_name: &str,
+    adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
     llm_supports_multimodal_input: bool,
     api_style: Option<&str>,
     system_prompt: &str,
-    session_state: &QqChatAgentServiceSessionState,
+    session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
     let steer_message = build_user_message(
         current_input,
         bot_name,
+        adapter,
         llm_supports_multimodal_input,
         system_prompt,
         session_state,
@@ -64,14 +66,24 @@ fn build_steer_user_message(
 fn build_merged_steer_user_message(
     current_inputs: &[PreparedCurrentTurnUserInput],
     bot_name: &str,
+    adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
     llm_supports_multimodal_input: bool,
     api_style: Option<&str>,
     system_prompt: &str,
-    session_state: &QqChatAgentServiceSessionState,
+    session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
     let prefix_lines = build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
     let prefix = prefix_lines.join("\n");
+    let mut state_delta_lines = Vec::new();
+    if let Some(last_input) = current_inputs.last() {
+        state_delta_lines = build_state_delta_lines(session_state, last_input, bot_name, adapter, emotion_dimensions);
+    }
+    let state_delta_block = if state_delta_lines.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n\n", state_delta_lines.join("\n"))
+    };
 
     let build_entry_text = |index: usize, input: &PreparedCurrentTurnUserInput| -> String {
         let metadata_text = build_prepared_input_metadata(input, bot_name);
@@ -116,13 +128,15 @@ fn build_merged_steer_user_message(
             .collect::<Vec<_>>()
             .join("\n\n");
 
-        let message = LLMMessage::user(format!("{prefix}\n\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"));
+        let message = LLMMessage::user(format!(
+            "{prefix}\n\n{state_delta_block}{merged_text}\n\n{PROCESSING_INSTRUCTION}"
+        ));
         return apply_steer_prefix(message, api_style);
     }
 
     let state_text = format!("{}\n", prefix_lines.join("\n"));
     let mut parts = vec![MessagePart::text(state_text.clone())];
-    let mut text_buffer = String::new();
+    let mut text_buffer = state_delta_block;
 
     for (index, current_input) in current_inputs.iter().enumerate() {
         if index > 0 {
@@ -184,6 +198,7 @@ pub(crate) struct QqChatServiceSteerHook {
     pub(crate) sender_id: String,
     pub(crate) bot_id: String,
     pub(crate) bot_name: String,
+    pub(crate) adapter: ims_bot_adapter::adapter::SharedBotAdapter,
     pub(crate) max_steer_count: usize,
     pub(crate) llm_supports_multimodal_input: bool,
     pub(crate) llm_api_style: Option<String>,
@@ -224,23 +239,27 @@ impl BrainIterationHook for QqChatServiceSteerHook {
         }
 
         let steer_message = if prepared_inputs.len() == 1 {
+            let mut session_state = self.session_state.lock().unwrap();
             build_steer_user_message(
                 &prepared_inputs[0],
                 &self.bot_name,
+                &self.adapter,
                 self.llm_supports_multimodal_input,
                 self.llm_api_style.as_deref(),
                 &self.system_prompt,
-                &self.session_state.lock().unwrap(),
+                &mut session_state,
                 &self.emotion_dimensions,
             )
         } else {
+            let mut session_state = self.session_state.lock().unwrap();
             build_merged_steer_user_message(
                 &prepared_inputs,
                 &self.bot_name,
+                &self.adapter,
                 self.llm_supports_multimodal_input,
                 self.llm_api_style.as_deref(),
                 &self.system_prompt,
-                &self.session_state.lock().unwrap(),
+                &mut session_state,
                 &self.emotion_dimensions,
             )
         };

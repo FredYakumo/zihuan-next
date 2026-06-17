@@ -304,6 +304,15 @@ pub async fn spawn(
 
     let llm_config = resolve_llm_service_config(config.llm_ref_id.as_deref(), &llm_refs, &agent.name)?;
     let llm = build_llm_model(&llm_config)?;
+    let intent_classification_llm_config = resolve_llm_service_config(
+        config
+            .intent_classification_llm_ref_id
+            .as_deref()
+            .or(config.llm_ref_id.as_deref()),
+        &llm_refs,
+        &agent.name,
+    )?;
+    let intent_classification_llm = build_llm_model(&intent_classification_llm_config)?;
     let math_programming_llm_config = resolve_llm_service_config(
         config.math_programming_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref()),
         &llm_refs,
@@ -376,12 +385,21 @@ pub async fn spawn(
         cache: Arc::new(LLMMessageSessionCacheRef::new(format!("service_agent_cache_{}", agent.id))),
         session: Arc::new(SessionStateRef::new(format!("service_agent_session_{}", agent.id))),
         llm,
+        intent_classification_llm,
         math_programming_llm,
         natural_language_reply_llm,
         main_llm_display_name: resolve_llm_ref_display_name(
             config.llm_ref_id.as_deref(),
             &llm_refs,
             &llm_config.model_name,
+        ),
+        intent_classification_llm_display_name: resolve_llm_ref_display_name(
+            config
+                .intent_classification_llm_ref_id
+                .as_deref()
+                .or(config.llm_ref_id.as_deref()),
+            &llm_refs,
+            &intent_classification_llm_config.model_name,
         ),
         math_programming_llm_display_name: resolve_llm_ref_display_name(
             config.math_programming_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref()),

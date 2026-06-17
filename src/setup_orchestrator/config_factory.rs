@@ -278,6 +278,7 @@ fn build_qq_chat_agent_service() -> AgentConfig {
             system_prompt: None,
             llm_ref_id: Some("setup-default-llm".to_string()),
             image_understand_llm_ref_id: None,
+            intent_classification_llm_ref_id: None,
             math_programming_llm_ref_id: None,
             natural_language_reply_llm_ref_id: None,
             natural_language_reply_system_prompt: None,

@@ -82,6 +82,19 @@
                 </select>
               </div>
               <div class="field">
+                <label>意图分类模型</label>
+                <select v-model="form.intent_classification_llm_ref_id">
+                  <option value="">回退主模型</option>
+                  <option
+                    v-for="item in chatModels"
+                    :key="item.config_id"
+                    :value="item.config_id"
+                  >
+                    {{ item.name }}
+                  </option>
+                </select>
+              </div>
+              <div class="field">
                 <label>自然语言回复模型</label>
                 <select v-model="form.natural_language_reply_llm_ref_id">
                   <option value="">请选择</option>
@@ -836,6 +849,19 @@
               <div class="field">
                 <label>数学编程模型</label>
                 <select v-model="form.math_programming_llm_ref_id">
+                  <option value="">回退主模型</option>
+                  <option
+                    v-for="item in chatModels"
+                    :key="item.config_id"
+                    :value="item.config_id"
+                  >
+                    {{ item.name }}
+                  </option>
+                </select>
+              </div>
+              <div class="field">
+                <label>意图分类模型</label>
+                <select v-model="form.intent_classification_llm_ref_id">
                   <option value="">回退主模型</option>
                   <option
                     v-for="item in chatModels"
@@ -2815,7 +2841,14 @@ function summarizeService(
         label: "数学编程模型",
         value:
           llmRefName(String(serviceType.math_programming_llm_ref_id ?? "")) ||
-          llmName(agent),
+          llmName(service),
+      },
+      {
+        label: "意图分类模型",
+        value:
+          llmRefName(
+            String(serviceType.intent_classification_llm_ref_id ?? ""),
+          ) || llmName(service),
       },
       {
         label: "自然语言回复模型",

@@ -113,6 +113,7 @@ export interface ServiceFormState {
   system_prompt: string;
   llm_ref_id: string;
   image_understand_llm_ref_id: string;
+  intent_classification_llm_ref_id: string;
   math_programming_llm_ref_id: string;
   natural_language_reply_llm_ref_id: string;
   natural_language_reply_system_prompt: string;
@@ -367,6 +368,7 @@ export function defaultServiceForm(): ServiceFormState {
     system_prompt: "",
     llm_ref_id: "",
     image_understand_llm_ref_id: "",
+    intent_classification_llm_ref_id: "",
     math_programming_llm_ref_id: "",
     natural_language_reply_llm_ref_id: "",
     natural_language_reply_system_prompt: "",
@@ -687,6 +689,9 @@ export function serviceFormFromConfig(
     form.image_understand_llm_ref_id = String(
       agentType.image_understand_llm_ref_id ?? "",
     );
+    form.intent_classification_llm_ref_id = String(
+      agentType.intent_classification_llm_ref_id ?? "",
+    );
     form.math_programming_llm_ref_id = String(
       agentType.math_programming_llm_ref_id ?? "",
     );
@@ -851,6 +856,8 @@ export function buildServicePayload(form: ServiceFormState): {
         system_prompt: form.system_prompt.trim() || null,
         llm_ref_id: form.llm_ref_id || null,
         image_understand_llm_ref_id: form.image_understand_llm_ref_id || null,
+        intent_classification_llm_ref_id:
+          form.intent_classification_llm_ref_id || null,
         math_programming_llm_ref_id: form.math_programming_llm_ref_id || null,
         natural_language_reply_llm_ref_id:
           form.natural_language_reply_llm_ref_id || null,
