@@ -24,7 +24,6 @@ const REDIS_QUEUE_PREFIX: &str = "qq_chat_agent_service:inbox";
 
 #[derive(Debug, Clone)]
 pub enum QqChatAgentServiceSupervisorEvent {
-    AdapterFinished { success: bool, error_msg: Option<String> },
     RedisConsumerFinished,
     MemoryConsumerFinished,
 }

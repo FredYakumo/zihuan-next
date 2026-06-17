@@ -7,6 +7,7 @@ use log::info;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::agent::classify_intent::IntentClassificationTrace;
 use ims_bot_adapter::models::message::Message;
 use zihuan_agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::llm::tooling::ToolCalls;
@@ -125,6 +126,22 @@ impl QqChatTaskTrace {
         inner.history_tokens_estimated = Some(history_tokens_estimated);
     }
 
+    pub(crate) fn record_intent_classification(&self, trace: &IntentClassificationTrace, routed_model: &str) {
+        self.log_key_event(
+            "意图识别结果",
+            trace.total_duration_ms,
+            format!(
+                "category={} path={} used_embedding={} used_llm={} raw_label={} routed_model={}",
+                trace.category.label(),
+                trace.path.label(),
+                trace.used_embedding,
+                trace.used_llm,
+                trace.raw_label.as_deref().unwrap_or("<none>"),
+                routed_model
+            ),
+        );
+    }
+
     pub(crate) fn record_steer_received(&self, current_message: &str) {
         self.log_key_event(
             "收到插嘴消息",
@@ -186,6 +203,7 @@ impl QqChatTaskTrace {
     }
 
     pub(crate) fn log_llm_conversation(&self, conversation: &[LLMMessage], prompt_tokens_estimated: usize) {
+        let payload = serde_json::to_string(conversation).unwrap_or_else(|err| format!("<serialize failed: {err}>"));
         self.log_key_event(
             "发送给大模型的消息列表",
             0,
@@ -193,7 +211,7 @@ impl QqChatTaskTrace {
                 "messages={} prompt_tokens_estimated={} payload={}",
                 conversation.len(),
                 prompt_tokens_estimated,
-                json_for_log(conversation, LOG_TEXT_PREVIEW_CHARS)
+                payload
             ),
         );
         let mut inner = self.inner.lock().unwrap();
@@ -306,6 +324,54 @@ impl QqChatTaskTrace {
 
         let mut inner = self.inner.lock().unwrap();
         inner.llm_result_parsed_at = Some(now);
+    }
+
+    pub(crate) fn record_final_reply_decision(
+        &self,
+        final_message: Option<&str>,
+        suppress_send: Option<bool>,
+        reason: Option<&str>,
+    ) {
+        self.log_key_event(
+            "解析最终回复决策",
+            0,
+            format!(
+                "suppress_send={} final_message={} reason={}",
+                suppress_send
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "<invalid>".to_string()),
+                final_message
+                    .map(|text| truncate_for_log(text, LOG_TEXT_PREVIEW_CHARS))
+                    .unwrap_or_else(|| "<none>".to_string()),
+                reason
+                    .map(|text| truncate_for_log(text, LOG_TEXT_PREVIEW_CHARS))
+                    .unwrap_or_else(|| "<none>".to_string())
+            ),
+        );
+    }
+
+    pub(crate) fn record_reply_review(
+        &self,
+        original_message: &str,
+        safe: bool,
+        reason: Option<&str>,
+        rewritten_message: Option<&str>,
+    ) {
+        self.log_key_event(
+            "回复审查结果",
+            0,
+            format!(
+                "safe={} reason={} original={} rewritten={}",
+                safe,
+                reason
+                    .map(|text| truncate_for_log(text, LOG_TEXT_PREVIEW_CHARS))
+                    .unwrap_or_else(|| "<none>".to_string()),
+                truncate_for_log(original_message, LOG_TEXT_PREVIEW_CHARS),
+                rewritten_message
+                    .map(|text| truncate_for_log(text, LOG_TEXT_PREVIEW_CHARS))
+                    .unwrap_or_else(|| "<none>".to_string())
+            ),
+        );
     }
 
     pub(crate) fn mark_reply_send_started(&self) {

@@ -490,6 +490,10 @@ fn agent_to_record(agent: &AgentConfig) -> Result<StoredConfigRecord> {
     spec.insert("auto_start".to_string(), Value::Bool(agent.auto_start));
     spec.insert("is_default".to_string(), Value::Bool(agent.is_default));
     spec.insert("tools".to_string(), serde_json::to_value(&agent.tools)?);
+    // Save avatar_url if present
+    if let Some(avatar_url) = &agent.avatar_url {
+        spec.insert("avatar_url".to_string(), Value::String(avatar_url.clone()));
+    }
     Ok(StoredConfigRecord {
         config_id: agent.canonical_config_id().to_string(),
         kind: agent.kind(),

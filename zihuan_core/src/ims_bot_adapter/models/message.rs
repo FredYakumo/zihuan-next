@@ -151,6 +151,7 @@ pub enum PersistedMediaSource {
     Upload,
     QqChat,
     WebSearch,
+    AgentSave,
 }
 
 impl fmt::Display for PersistedMediaSource {
@@ -159,6 +160,7 @@ impl fmt::Display for PersistedMediaSource {
             PersistedMediaSource::Upload => "upload",
             PersistedMediaSource::QqChat => "qq_chat",
             PersistedMediaSource::WebSearch => "web_search",
+            PersistedMediaSource::AgentSave => "agent_save",
         };
         write!(f, "{value}")
     }

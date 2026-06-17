@@ -16,6 +16,7 @@ mod common;
 mod current_time;
 mod deep_research;
 mod editable_qq_agent_tool;
+mod image_save;
 mod image_search;
 mod image_understand;
 mod info_tools;
@@ -38,12 +39,11 @@ pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIF
 pub(crate) use current_time::CurrentTimeBrainTool;
 pub(crate) use deep_research::RunDeepResearchSubagentBrainTool;
 pub(crate) use editable_qq_agent_tool::EditableQqAgentTool;
+pub(crate) use image_save::SaveImageBrainTool;
 pub(crate) use image_search::SearchSimilarImagesBrainTool;
 pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstandBrainTool};
 pub(crate) use info_tools::{GetAgentPublicInfoBrainTool, GetFunctionListBrainTool};
-pub(crate) use natural_language_reply::{
-    take_last_reply_result, QqNaturalLanguageReplyResult, SendNaturalLanguageReplyBrainTool,
-};
+pub(crate) use natural_language_reply::{review_and_rewrite_reply, QqReplyReviewRequest, QqReplyReviewResult};
 pub(crate) use recent_messages::{GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool};
 pub(crate) use reply_message::ReplyMessageBrainTool;
 pub(crate) use research::RunResearchSubagentBrainTool;
@@ -60,6 +60,7 @@ pub(crate) const DEFAULT_TOOL_GET_FUNCTION_LIST: &str = "get_function_list";
 pub(crate) const DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES: &str = "get_recent_group_messages";
 pub(crate) const DEFAULT_TOOL_GET_RECENT_USER_MESSAGES: &str = "get_recent_user_messages";
 pub(crate) const DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES: &str = "search_similar_images";
+pub(crate) const DEFAULT_TOOL_SAVE_IMAGE: &str = "save_image";
 pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
 pub(crate) const DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS: &str = "list_available_memory_keys";
 pub(crate) const DEFAULT_TOOL_SEARCH_MEMORY_CONTENT: &str = "search_memory_content";
@@ -118,11 +119,21 @@ pub(crate) fn build_info_brain_tools(
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
         if let Some(engine) = web_search_engine_ref {
             tools.push(Box::new(SearchSimilarImagesBrainTool::new(
-                weaviate_image_ref,
+                weaviate_image_ref.clone(),
                 embedding_model.clone(),
                 engine,
                 None,
                 dashboard_target.clone(),
+            )));
+        }
+    }
+
+    if is_enabled(default_tools_enabled, DEFAULT_TOOL_SAVE_IMAGE) {
+        if s3_ref.is_some() && weaviate_image_ref.is_some() && embedding_model.is_some() {
+            tools.push(Box::new(SaveImageBrainTool::new(
+                weaviate_image_ref.clone(),
+                embedding_model.clone(),
+                s3_ref.clone(),
             )));
         }
     }

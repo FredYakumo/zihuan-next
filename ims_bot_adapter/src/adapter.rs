@@ -6,6 +6,7 @@ use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
+use uuid::Uuid;
 
 use super::event;
 use super::models::{MessageEvent, MessageType, Profile, RawMessageEvent};
@@ -74,7 +75,7 @@ pub struct BotAdapter {
     token: String,
     bot_profile: Option<Profile>,
     brain_agent: Option<AgentBox>,
-    event_handlers: Vec<event::EventHandler>,
+    event_handlers: HashMap<String, event::EventHandler>,
     /// Sender half for outbound WebSocket actions (set once the connection is live).
     pub action_tx: Option<mpsc::UnboundedSender<String>>,
     /// Echo → oneshot channel map for correlating action responses.
@@ -143,7 +144,7 @@ impl BotAdapter {
                 ..Default::default()
             }),
             brain_agent: config.brain_agent,
-            event_handlers: Vec::new(),
+            event_handlers: HashMap::new(),
             action_tx: None,
             pending_actions: Arc::new(TokioMutex::new(HashMap::new())),
             object_storage: config.object_storage,
@@ -206,16 +207,32 @@ impl BotAdapter {
         self.object_storage.clone()
     }
 
+    pub fn set_object_storage(&mut self, object_storage: Option<Arc<S3Ref>>) {
+        if object_storage.is_some() {
+            self.object_storage = object_storage;
+        }
+    }
+
     pub fn get_brain_agent(&self) -> Option<&AgentBox> {
         self.brain_agent.as_ref()
     }
 
-    pub fn register_event_handler(&mut self, handler: event::EventHandler) {
-        self.event_handlers.push(handler);
+    pub fn register_event_handler(&mut self, handler: event::EventHandler) -> String {
+        let handler_id = Uuid::new_v4().to_string();
+        self.register_event_handler_with_id(handler_id.clone(), handler);
+        handler_id
+    }
+
+    pub fn register_event_handler_with_id(&mut self, handler_id: impl Into<String>, handler: event::EventHandler) {
+        self.event_handlers.insert(handler_id.into(), handler);
+    }
+
+    pub fn unregister_event_handler(&mut self, handler_id: &str) -> bool {
+        self.event_handlers.remove(handler_id).is_some()
     }
 
     pub fn get_event_handlers(&self) -> Vec<event::EventHandler> {
-        self.event_handlers.clone()
+        self.event_handlers.values().cloned().collect()
     }
 
     /// Start the WebSocket connection and begin processing events using a shared handle

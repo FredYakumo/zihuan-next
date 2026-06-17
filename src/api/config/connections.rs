@@ -9,18 +9,17 @@ use ims_bot_adapter::{
     close_runtime_bot_adapter_instance, list_active_bot_adapter_connection_ids, list_runtime_bot_adapter_instances,
     parse_ims_bot_adapter_connection, sync_enabled_bot_adapters,
 };
-use log::{info, warn};
+use log::info;
 use model_inference::nn::embedding::embedding_runtime_manager::{
     close_runtime_embedding_instance, list_runtime_embedding_instances,
 };
 use storage_handler::{
     close_runtime_storage_instance, close_runtime_storage_instances_for_config, list_runtime_storage_instances,
-    ConnectionConfig, ConnectionKind, WeaviateClient,
+    ConnectionConfig, ConnectionKind,
 };
 use zihuan_core::weaviate::{WeaviateEnsureCollectionResult, WeaviateRef};
 
 use super::{now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found};
-use crate::api::state::AppState;
 
 #[derive(Deserialize)]
 pub struct CreateConnectionRequest {
@@ -51,7 +50,6 @@ struct ConnectionMutationResponse {
 
 enum ConnectionValidationError {
     BadRequest(String),
-    WeaviateCollectionMissing { class_name: String },
 }
 
 fn validate_connection_basics(kind: &ConnectionKind) -> Result<(), String> {
@@ -113,6 +111,10 @@ fn validate_connection(
             "weaviate.class_name must not be empty".to_string(),
         ));
     }
+    if !allow_create_collection {
+        return Ok(false);
+    }
+
     let weaviate_ref = WeaviateRef::new(
         weaviate.base_url.clone(),
         weaviate.class_name.clone(),
@@ -122,14 +124,6 @@ fn validate_connection(
         Duration::from_secs(30),
     )
     .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
-    let existing = weaviate_ref
-        .find_collection_schema(&weaviate_ref.class_name)
-        .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
-    if existing.is_none() && !allow_create_collection {
-        return Err(ConnectionValidationError::WeaviateCollectionMissing {
-            class_name: weaviate_ref.class_name.clone(),
-        });
-    }
     let result =
         storage_handler::ensure_collection_schema(&weaviate_ref, weaviate.collection_schema, allow_create_collection)
             .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
@@ -139,35 +133,6 @@ fn validate_connection(
 fn render_connection_validation_error(res: &mut Response, err: ConnectionValidationError) {
     match err {
         ConnectionValidationError::BadRequest(message) => render_bad_request(res, message),
-        ConnectionValidationError::WeaviateCollectionMissing { class_name } => {
-            res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
-            res.render(Json(serde_json::json!({
-                "error": format!("Weaviate collection '{}' does not exist", class_name),
-                "code": "weaviate_collection_missing",
-                "class_name": class_name,
-            })));
-        }
-    }
-}
-
-async fn refresh_relational_db_pool(state: &std::sync::Arc<AppState>, connection: &ConnectionConfig) {
-    let mut tasks = state.tasks.lock().unwrap();
-    if !connection.enabled || !matches!(connection.kind, ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_)) {
-        tasks.unregister_db_pool(&connection.id);
-        return;
-    }
-    drop(tasks);
-
-    match storage_handler::build_relational_db_connection_for_kind(&connection.id, &connection.kind).await {
-        Ok(pool) => {
-            state.tasks.lock().unwrap().register_db_pool(connection.id.clone(), pool);
-        }
-        Err(err) => {
-            warn!(
-                "[connections] failed to refresh relational DB pool for '{}' (id={}): {}",
-                connection.name, connection.id, err
-            );
-        }
     }
 }
 
@@ -215,8 +180,7 @@ pub async fn list_active_bot_adapters(_req: &mut Request, res: &mut Response, _d
 }
 
 #[handler]
-pub async fn create_connection(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let state = depot.obtain::<std::sync::Arc<AppState>>().unwrap().clone();
+pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let body: CreateConnectionRequest = match req.parse_json().await {
         Ok(body) => body,
         Err(err) => return render_bad_request(res, err.to_string()),
@@ -248,15 +212,6 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, depot: &mu
         Ok(()) => {
             let _ = close_runtime_storage_instances_for_config(&connection.id);
 
-            // Ensure database tables exist for MySQL/SQLite connections.
-            if let Err(e) = storage_handler::ensure_tables_for_connection(&connection.kind).await {
-                warn!(
-                    "[connections] table creation failed for '{}' (id={}): {}",
-                    connection.name, connection.id, e
-                );
-            }
-            refresh_relational_db_pool(&state, &connection).await;
-
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
             info!("[connections] created connection '{}' (id={})", connection.name, connection.id);
@@ -267,8 +222,7 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, depot: &mu
 }
 
 #[handler]
-pub async fn update_connection(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let state = depot.obtain::<std::sync::Arc<AppState>>().unwrap().clone();
+pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
     let body: UpdateConnectionRequest = match req.parse_json().await {
         Ok(body) => body,
@@ -300,15 +254,6 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, depot: &mu
         Ok(()) => {
             let _ = close_runtime_storage_instances_for_config(&response.id);
 
-            // Ensure database tables exist for MySQL/SQLite connections.
-            if let Err(e) = storage_handler::ensure_tables_for_connection(&response.kind).await {
-                warn!(
-                    "[connections] table creation failed for '{}' (id={}): {}",
-                    response.name, response.id, e
-                );
-            }
-            refresh_relational_db_pool(&state, &response).await;
-
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
             info!("[connections] updated connection '{}' (id={})", response.name, response.id);
@@ -323,7 +268,7 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, depot: &mu
 
 #[handler]
 pub async fn delete_connection(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let state = depot.obtain::<std::sync::Arc<AppState>>().unwrap().clone();
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
     let id = req.param::<String>("id").unwrap_or_default();
     let mut connections = match system_config::load_connections() {
         Ok(connections) => connections,

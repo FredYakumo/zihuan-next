@@ -46,8 +46,6 @@ struct AgentWithRuntime {
     runtime: AgentRuntimeInfo,
     #[serde(skip_serializing_if = "Option::is_none")]
     qq_chat_profile: Option<QqChatProfile>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    avatar_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -287,22 +285,21 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
             };
 
             let mut items = Vec::with_capacity(agents.len());
-            for agent in agents {
+            for mut agent in agents {
                 let qq_chat_profile = match &agent.agent_type {
                     AgentType::QqChat(config) => resolve_qq_chat_profile(&connections, config).await,
                     AgentType::HttpStream(_) | AgentType::Workspace(_) => None,
                 };
 
-                let avatar_url = match &agent.agent_type {
-                    AgentType::QqChat(_) => None,
-                    AgentType::HttpStream(_) | AgentType::Workspace(_) => agent.avatar_url.clone(),
-                };
+                // Clear avatar_url for QQ Chat agents (they use bot_avatar_url from qq_chat_profile)
+                if matches!(agent.agent_type, AgentType::QqChat(_)) {
+                    agent.avatar_url = None;
+                }
 
                 items.push(AgentWithRuntime {
                     runtime: state.agent_manager.runtime_info(&agent.id),
                     agent,
                     qq_chat_profile,
-                    avatar_url,
                 });
             }
 

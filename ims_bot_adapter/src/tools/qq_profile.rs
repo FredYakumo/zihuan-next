@@ -338,6 +338,10 @@ fn fetch_group_member_info(adapter: &SharedBotAdapter, group_id: i64, user_id: &
     })
 }
 
+pub fn fetch_group_member_role(adapter: &SharedBotAdapter, group_id: i64, user_id: &str) -> Result<String> {
+    fetch_group_member_info(adapter, group_id, user_id).map(|info| info.role)
+}
+
 /// Resolves a QQ avatar to a persisted media ID, with S3-backed caching.
 ///
 /// On cache miss, downloads the avatar from QQ's CDN via `qq_avatar_url`,
