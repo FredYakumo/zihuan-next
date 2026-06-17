@@ -997,7 +997,7 @@ pub async fn get_avatar(req: &mut Request, res: &mut Response, depot: &mut Depot
 }
 
 /// Delete avatar by agent ID (called when agent is deleted or avatar is changed)
-async fn delete_avatar_by_agent_id(state: &Arc<AppState>, agent_id: &str) -> Result<(), String> {
+async fn delete_avatar_by_agent_id(_state: &Arc<AppState>, agent_id: &str) -> Result<(), String> {
     // Get task_db_connection_id from connections
     let connections = system_config::load_connections().map_err(|e| e.to_string())?;
     let task_db_connection_id = connections
