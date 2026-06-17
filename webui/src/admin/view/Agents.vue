@@ -1942,8 +1942,8 @@
             </div>
             <div style="display: flex; align-items: center; gap: 10px">
               <img
-                v-if="botAvatarUrl(service)"
-                :src="botAvatarUrl(service)"
+                v-if="agentAvatarUrl(service)"
+                :src="agentAvatarUrl(service)"
                 alt="bot avatar"
                 style="
                   width: 36px;
@@ -2013,6 +2013,9 @@ import {
   formatTime,
   statusTone,
   summarizeIds,
+  getAvatarDisplayUrl,
+  agentAvatarUrl,
+  agentInitial,
   type ServiceFormState,
   type ServiceTypeName,
   type QqChatEmotionDimensionFormItem,
@@ -2223,16 +2226,6 @@ function clearAvatar() {
 }
 
 // Get display URL for avatar (handles avatar:// prefix)
-function getAvatarDisplayUrl(avatarUrl: string): string {
-  if (!avatarUrl) return '';
-  if (avatarUrl.startsWith('avatar://')) {
-    const avatarId = avatarUrl.substring(9);
-    return `/api/system/services/avatar/${avatarId}`;
-  }
-  // External URL or base64
-  return avatarUrl;
-}
-
 function clearEditingAgent() {
   editingServiceId.value = "";
 }
@@ -2993,16 +2986,6 @@ function llmName(service: ServiceWithRuntime): string {
 
 function llmRefName(id: string): string {
   return llm.value.find((item) => item.config_id === id)?.name ?? "";
-}
-
-function botAvatarUrl(service: ServiceWithRuntime): string {
-  // QQ Chat Agent Service 使用 bot_avatar_url
-  if (service.agent_type.type === "qq_chat") {
-    return String(service.qq_chat_profile?.bot_avatar_url ?? "");
-  }
-  // HTTP Stream 和 Workspace Agent Service 使用 avatar_url
-  // 需要处理 avatar:// 前缀
-  return getAvatarDisplayUrl(String(service.avatar_url ?? ""));
 }
 
 function runtimeBadgeText(service: ServiceWithRuntime): string {
