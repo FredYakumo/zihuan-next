@@ -281,17 +281,7 @@ impl ImageMessage {
 
 impl fmt::Display for ImageMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[Image")?;
-        if let Some(ref name) = self.media.name {
-            write!(f, ": name={name}")?;
-        }
-        write!(f, ", source={}", self.media.source)?;
-        if !self.media.rustfs_path.trim().is_empty() {
-            write!(f, ", rustfs_path={}", self.media.rustfs_path)?;
-        } else if let Some(locator) = self.source_locator() {
-            write!(f, ", source={locator}")?;
-        }
-        write!(f, "]")
+        write!(f, "[Image: media_id={}]", self.media.media_id)
     }
 }
 
@@ -556,9 +546,13 @@ mod tests {
             Some("image/png".to_string()),
         )));
 
+        let media_id = match &message {
+            Message::Image(img) => img.media.media_id.clone(),
+            _ => String::new(),
+        };
         let rendered = render_messages_readable(&[message]);
-        assert!(rendered.contains("demo.png"));
-        assert!(rendered.contains("uploads/demo.png"));
+        assert!(rendered.contains("[Image: media_id="));
+        assert!(rendered.contains(&media_id));
     }
 }
 

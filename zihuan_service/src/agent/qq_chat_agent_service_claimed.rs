@@ -1053,6 +1053,7 @@ impl QqChatAgentServiceInner {
                         ctx.weaviate_image_ref.cloned(),
                         ctx.embedding_model.cloned(),
                         ctx.s3_ref.cloned(),
+                        ctx.mysql_ref.cloned(),
                     ),
                     tool_quota.clone(),
                 ));
