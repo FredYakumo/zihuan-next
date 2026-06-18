@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use chrono::Utc;
 use log::info;
 use once_cell::sync::Lazy;
-use reqwest::blocking::Client;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 use sqlx::sqlite::SqlitePoolOptions;
 use tokio::sync::RwLock;
@@ -518,14 +517,6 @@ fn kind_name(kind: &ConnectionKind) -> &'static str {
         ConnectionKind::Tokenizer(_) => "tokenizer",
         ConnectionKind::Sqlite(_) => "sqlite",
     }
-}
-
-#[allow(dead_code)]
-fn _reqwest_client() -> Result<Client> {
-    Client::builder()
-        .timeout(Duration::from_secs(DEFAULT_WEAVIATE_TIMEOUT_SECS))
-        .build()
-        .map_err(Error::from)
 }
 
 #[cfg(test)]
