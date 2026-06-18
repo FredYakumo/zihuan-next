@@ -27,6 +27,10 @@ impl SessionToolQuotaState {
     fn increment(&mut self, tool_name: &str) {
         *self.counts.entry(tool_name.to_string()).or_insert(0) += 1;
     }
+
+    pub fn reset(&mut self) {
+        self.counts.clear();
+    }
 }
 
 #[derive(Clone)]

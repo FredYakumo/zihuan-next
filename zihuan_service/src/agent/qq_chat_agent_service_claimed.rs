@@ -450,6 +450,13 @@ impl QqChatAgentServiceInner {
         let mut current_message = inference_input.current_text_for_prompt().to_string();
         trace.log_user_message(&raw_user_message, &current_message);
 
+        // Reset session-level tool quota for each new turn so that
+        // tool call limits apply per single user message cycle and not
+        // across the entire agent service lifetime.
+        if let Some(ref quota) = ctx.tool_quota {
+            quota.session_state.lock().unwrap().reset();
+        }
+
         let history_key = conversation_history_key(bot_id, sender_id, is_group, inference_event.group_id);
         let legacy_history_key = sender_id.to_string();
         let mut history = load_history(ctx.cache, &history_key, &legacy_history_key);
