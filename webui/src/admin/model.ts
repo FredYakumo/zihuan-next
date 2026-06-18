@@ -20,6 +20,9 @@ export type ConnectionType =
   | "sqlite";
 export type WeaviateCollectionSchema = "image_semantic" | "agent_memory";
 export type ServiceTypeName = "qq_chat" | "http_stream" | "workspace";
+
+/** Service types that support the Dashboard embedded Chat component. */
+export const CHAT_ELIGIBLE_SERVICE_TYPES: ReadonlySet<string> = new Set(["http_stream", "workspace"]);
 export type ModelRefType = "chat_llm" | "text_embedding_local";
 export type ToolRunDuration = "Short" | "Long";
 export type LlmApiStyle =

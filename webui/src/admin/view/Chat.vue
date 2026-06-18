@@ -16,7 +16,7 @@
               </div>
               <template v-else>
                 <button
-                  v-for="agent in services.filter((a) => chatEligibleServiceTypes.has(a.agent_type.type))"
+                  v-for="agent in services.filter((a) => CHAT_ELIGIBLE_SERVICE_TYPES.has(a.agent_type.type))"
                   :key="agent.config_id"
                   class="chat-agent-card"
                   :class="{
@@ -746,7 +746,7 @@ import {
   type ChatStreamEvent,
   type LlmConfig,
 } from "../../api/client";
-import { formatTime, agentAvatarUrl, agentInitial, getAvatarDisplayUrl } from "../model";
+import { formatTime, agentAvatarUrl, agentInitial, getAvatarDisplayUrl, CHAT_ELIGIBLE_SERVICE_TYPES } from "../model";
 import ToolCallBadge from "./ToolCallBadge.vue";
 
 type ChatRole = "user" | "assistant" | "tool";
@@ -918,12 +918,12 @@ const markdown = new MarkdownIt({
   linkify: true,
 });
 
-const chatEligibleServiceTypes = new Set(["http_stream", "workspace"]);
+
 const selectedService = computed(
   () => services.value.find((agent) => agent.config_id === selectedServiceId.value) ?? null,
 );
 const selectedServiceType = computed(() => selectedService.value?.agent_type?.type ?? "");
-const isChatEligible = computed(() => chatEligibleServiceTypes.has(selectedServiceType.value));
+const isChatEligible = computed(() => CHAT_ELIGIBLE_SERVICE_TYPES.has(selectedServiceType.value));
 const isWorkspaceService = computed(() => selectedServiceType.value === "workspace");
 const groupedSessions = computed(() => {
   const groups = new Map<string, ChatSessionSummary[]>();
@@ -1687,12 +1687,12 @@ async function load() {
     services.value = loadedAgents;
     llmModels.value = llm;
 
-    const eligible = loadedAgents.filter((agent) => chatEligibleServiceTypes.has(agent.agent_type.type));
+    const eligible = loadedAgents.filter((agent) => CHAT_ELIGIBLE_SERVICE_TYPES.has(agent.agent_type.type));
     const requestedAgent = props.agentId
       ? loadedAgents.find((agent) => agent.config_id === props.agentId)
       : null;
 
-    if (requestedAgent && chatEligibleServiceTypes.has(requestedAgent.agent_type.type)) {
+    if (requestedAgent && CHAT_ELIGIBLE_SERVICE_TYPES.has(requestedAgent.agent_type.type)) {
       selectedServiceId.value = requestedAgent.config_id;
     } else if (
       !selectedServiceId.value ||

@@ -27,10 +27,10 @@
       </div>
     </section>
 
-    <section v-else-if="chatEligibleServices.length > 0" class="panel">
+    <section v-else-if="services.length > 0" class="panel">
       <div class="connection-grid dashboard-service-grid">
         <article
-          v-for="service in chatEligibleServices"
+          v-for="service in services"
           :key="service.config_id"
           class="connection-card dashboard-service-card"
         >
@@ -74,6 +74,10 @@
               <strong>Bind</strong>
               <span class="mono">{{ (service.agent_type as Record<string, unknown>).bind || '127.0.0.1:18080' }}</span>
             </div>
+            <div v-else-if="service.agent_type.type === 'qq_chat'" class="key-value">
+              <strong>Bot QQ</strong>
+              <span class="mono">{{ service.qq_chat_profile?.bot_user_id || '未知' }}</span>
+            </div>
             <div v-else class="key-value">
               <strong>工作模式</strong>
               <span>Dashboard Session Workspace</span>
@@ -86,6 +90,7 @@
 
           <div class="connection-card-footer dashboard-service-footer">
             <button
+              v-if="CHAT_ELIGIBLE_SERVICE_TYPES.has(service.agent_type.type)"
               class="btn primary dashboard-service-btn"
               :disabled="service.runtime.status !== 'running' || operatingId === service.config_id"
               @click="openChatModal(service.config_id)"
@@ -112,7 +117,7 @@
     </section>
 
     <section v-else class="panel">
-      <div class="empty-state">当前没有支持 Dashboard 聊天的 Agent Service。</div>
+      <div class="empty-state">当前没有 Service。</div>
     </section>
 
     <Teleport to="body">
@@ -167,6 +172,7 @@ import {
   compactId,
   agentAvatarUrl,
   agentInitial,
+  CHAT_ELIGIBLE_SERVICE_TYPES,
 } from "../model";
 import Chat from "./Chat.vue";
 
@@ -186,10 +192,6 @@ const stats = reactive({
   agents: 0,
 });
 
-const chatEligibleServiceTypes = new Set(["http_stream", "workspace"]);
-const chatEligibleServices = computed(() =>
-  services.value.filter((service) => chatEligibleServiceTypes.has(service.agent_type.type)),
-);
 const chatModalService = computed(() =>
   services.value.find((service) => service.config_id === chatModalAgentId.value),
 );
