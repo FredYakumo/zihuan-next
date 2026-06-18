@@ -116,6 +116,71 @@
       </div>
     </section>
 
+    <section
+      v-if="privilegeCards.length > 0"
+      class="panel dashboard-privilege-panel"
+    >
+      <div class="dashboard-section-header">
+        <div>
+          <h3>授权密钥</h3>
+        </div>
+      </div>
+      <div class="connection-grid dashboard-privilege-grid">
+        <article
+          v-for="card in privilegeCards"
+          :key="`${card.agent_id}-${card.id}`"
+          class="connection-card dashboard-service-card dashboard-privilege-card"
+        >
+          <div class="connection-card-header connection-card-header--stacked">
+            <div class="connection-card-header-top">
+              <div class="connection-card-badges">
+                <span class="badge">privilege</span>
+                <span class="badge" :class="card.consumed ? '' : 'success'">
+                  {{ card.consumed ? "已消费" : "待验证" }}
+                </span>
+                <span v-if="card.elevated_until" class="badge success">已提权</span>
+              </div>
+            </div>
+            <div class="dashboard-service-title">
+              <div class="dashboard-service-avatar dashboard-service-avatar--fallback">
+                {{ card.agentName.slice(0, 1) }}
+              </div>
+              <h4>{{ card.agentName }}</h4>
+            </div>
+          </div>
+
+          <div class="connection-card-body">
+            <div class="key-value">
+              <strong>用户</strong>
+              <span class="mono">{{ card.sender_id }}</span>
+            </div>
+            <div class="key-value">
+              <strong>用途</strong>
+              <span>{{ card.purpose }}</span>
+            </div>
+            <div class="key-value">
+              <strong>失败次数</strong>
+              <span>{{ card.failed_attempts }}</span>
+            </div>
+            <div class="key-value">
+              <strong>过期时间</strong>
+              <span>{{ card.expires_at }}</span>
+            </div>
+            <div v-if="card.elevated_until" class="key-value">
+              <strong>提权至</strong>
+              <span>{{ card.elevated_until }}</span>
+            </div>
+          </div>
+
+          <div class="connection-card-footer dashboard-service-footer">
+            <button class="btn dashboard-service-btn" @click="openPrivilegeKeyModal(card)">
+              查看密钥
+            </button>
+          </div>
+        </article>
+      </div>
+    </section>
+
     <section v-else class="panel">
       <div class="empty-state">当前没有 Service。</div>
     </section>
@@ -159,6 +224,36 @@
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="selectedPrivilegeCard"
+        class="chat-modal-backdrop"
+        @click.self="selectedPrivilegeCard = null"
+      >
+        <div class="dashboard-secret-dialog">
+          <div class="chat-modal-header">
+            <div class="chat-modal-title">
+              <div class="dashboard-service-avatar dashboard-service-avatar--fallback">
+                {{ selectedPrivilegeCard.agentName.slice(0, 1) }}
+              </div>
+              <h3>{{ selectedPrivilegeCard.agentName }} 密钥</h3>
+            </div>
+            <div class="chat-modal-actions">
+              <button class="chat-modal-close" @click="selectedPrivilegeCard = null">✕</button>
+            </div>
+          </div>
+          <div class="dashboard-secret-body">
+            <div class="dashboard-secret-key mono">{{ selectedPrivilegeCard.auth_key }}</div>
+            <div class="dashboard-secret-meta">
+              <div><strong>用户：</strong>{{ selectedPrivilegeCard.sender_id }}</div>
+              <div><strong>用途：</strong>{{ selectedPrivilegeCard.purpose }}</div>
+              <div><strong>过期时间：</strong>{{ selectedPrivilegeCard.expires_at }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -166,7 +261,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 
-import { system, type ServiceWithRuntime, type LlmConfig } from "../../api/client";
+import { system, type ServiceWithRuntime, type LlmConfig, type QqChatPrivilegeAuthCard } from "../../api/client";
 import {
   statusTone,
   compactId,
@@ -185,6 +280,8 @@ const operatingId = ref("");
 const pendingAction = ref<"start" | "stop" | "">("");
 const chatModalAgentId = ref("");
 const chatModalSessionId = ref("");
+const privilegeCards = ref<Array<QqChatPrivilegeAuthCard & { agentName: string }>>([]);
+const selectedPrivilegeCard = ref<(QqChatPrivilegeAuthCard & { agentName: string }) | null>(null);
 
 const stats = reactive({
   connections: 0,
@@ -261,6 +358,10 @@ function openChatModal(agentId: string) {
   chatModalSessionId.value = "";
 }
 
+function openPrivilegeKeyModal(card: QqChatPrivilegeAuthCard & { agentName: string }) {
+  selectedPrivilegeCard.value = card;
+}
+
 function closeChatModal() {
   chatModalAgentId.value = "";
   chatModalSessionId.value = "";
@@ -291,6 +392,14 @@ async function load() {
     stats.agents = loadedAgents.length;
     services.value = loadedAgents;
     llmModels.value = llm;
+    const qqServices = loadedAgents.filter((item) => item.agent_type.type === "qq_chat");
+    const cardGroups = await Promise.all(
+      qqServices.map(async (service) => {
+        const cards = await system.services.listPrivilegeAuthCards(service.config_id);
+        return cards.map((card) => ({ ...card, agentName: service.name }));
+      }),
+    );
+    privilegeCards.value = cardGroups.flat();
   } finally {
     servicesLoading.value = false;
   }
@@ -450,6 +559,70 @@ onMounted(() => {
 .dashboard-service-grid {
   grid-template-columns: repeat(auto-fit, 260px);
   gap: 12px;
+}
+
+.dashboard-privilege-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dashboard-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dashboard-section-header h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.dashboard-privilege-grid {
+  grid-template-columns: repeat(auto-fit, 280px);
+  gap: 12px;
+}
+
+.dashboard-privilege-card {
+  border-style: dashed;
+}
+
+.dashboard-secret-dialog {
+  width: min(520px, 92vw);
+  border-radius: 20px;
+  border: 1px solid var(--admin-border);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--admin-bg-panel) 94%, transparent 6%),
+    color-mix(in srgb, var(--admin-bg-panel-strong) 98%, transparent 2%)
+  );
+  box-shadow: var(--admin-card-shadow);
+  overflow: hidden;
+}
+
+.dashboard-secret-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dashboard-secret-key {
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--admin-border);
+  background: color-mix(in srgb, var(--admin-accent) 10%, var(--admin-bg-soft) 90%);
+  font-size: 20px;
+  letter-spacing: 0.08em;
+  word-break: break-all;
+}
+
+.dashboard-secret-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
 }
 
 .chat-modal-backdrop {

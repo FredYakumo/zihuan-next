@@ -1,6 +1,8 @@
 mod agent_avatar;
 mod message_record;
 mod qq_chat_agent_service_ignore_rule;
+mod qq_chat_agent_service_language_style;
+mod qq_chat_agent_service_privilege_auth;
 mod qq_chat_agent_service_tool_quota;
 mod task_entry;
 mod task_log;
@@ -14,6 +16,14 @@ pub const MYSQL_TABLES: &[(&str, &[&str])] = &[
     (
         qq_chat_agent_service_ignore_rule::MYSQL_DDL,
         qq_chat_agent_service_ignore_rule::MYSQL_INDEXES,
+    ),
+    (
+        qq_chat_agent_service_privilege_auth::MYSQL_DDL,
+        qq_chat_agent_service_privilege_auth::MYSQL_INDEXES,
+    ),
+    (
+        qq_chat_agent_service_language_style::MYSQL_DDL,
+        qq_chat_agent_service_language_style::MYSQL_INDEXES,
     ),
     (
         qq_chat_agent_service_tool_quota::MYSQL_DDL,
@@ -31,6 +41,14 @@ pub const SQLITE_TABLES: &[(&str, &[&str])] = &[
     (
         qq_chat_agent_service_ignore_rule::SQLITE_DDL,
         qq_chat_agent_service_ignore_rule::SQLITE_INDEXES,
+    ),
+    (
+        qq_chat_agent_service_privilege_auth::SQLITE_DDL,
+        qq_chat_agent_service_privilege_auth::SQLITE_INDEXES,
+    ),
+    (
+        qq_chat_agent_service_language_style::SQLITE_DDL,
+        qq_chat_agent_service_language_style::SQLITE_INDEXES,
     ),
     (
         qq_chat_agent_service_tool_quota::SQLITE_DDL,

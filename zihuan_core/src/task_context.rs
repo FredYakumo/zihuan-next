@@ -53,6 +53,7 @@ pub enum AgentTaskStatus {
     Success,
     Failed,
     Stopped,
+    WaitingAuth,
     Running,
 }
 
@@ -114,6 +115,12 @@ pub struct AgentTaskInfo {
 
 pub trait AgentTaskRuntime: Send + Sync {
     fn start_task(&self, request: AgentTaskRequest) -> Arc<AgentTaskHandle>;
+    fn start_waiting_auth_task(&self, request: AgentTaskRequest) -> Arc<AgentTaskHandle>;
+    fn resume_waiting_auth_task(
+        &self,
+        task_id: &str,
+        runner: Box<dyn FnOnce(Arc<AgentTaskHandle>) + Send + 'static>,
+    ) -> bool;
 
     /// Spawn a runner function as a background task managed by this runtime.
     ///

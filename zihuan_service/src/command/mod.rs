@@ -1,4 +1,6 @@
+mod auth_command;
 mod help_command;
+mod learn_style_command;
 mod new_command;
 mod task_command;
 
@@ -7,7 +9,9 @@ use std::sync::{Arc, OnceLock, RwLock};
 use zihuan_core::command::{CommandDefinition, CommandRegistry, CommandScope};
 use zihuan_core::task_context::AgentTaskRuntime;
 
+use auth_command::AuthCommand;
 use help_command::HelpCommand;
+use learn_style_command::LearnStyleCommand;
 use new_command::NewCommand;
 use task_command::TaskCommand;
 
@@ -127,6 +131,42 @@ pub fn build_command_registry() -> Arc<CommandRegistry> {
             allow_steer_bypass: false,
         },
         Arc::new(HelpCommand { registry: reg_ptr.clone() }),
+    );
+
+    registry.register(
+        CommandDefinition {
+            name: "auth".to_string(),
+            aliases: vec![],
+            description: "输入临时授权密钥，完成特权提权".to_string(),
+            scope: CommandScope::QqChat,
+            accepted_arg_count: 1,
+            allow_steer_bypass: false,
+        },
+        Arc::new(AuthCommand),
+    );
+
+    registry.register(
+        CommandDefinition {
+            name: "learn_global_style".to_string(),
+            aliases: vec![],
+            description: "学习全局聊天语言风格（需管理员权限和特权）".to_string(),
+            scope: CommandScope::QqChat,
+            accepted_arg_count: 0,
+            allow_steer_bypass: false,
+        },
+        Arc::new(LearnStyleCommand),
+    );
+
+    registry.register(
+        CommandDefinition {
+            name: "learn_group_style".to_string(),
+            aliases: vec![],
+            description: "学习当前群聊语言风格（需管理员权限和特权）".to_string(),
+            scope: CommandScope::QqChat,
+            accepted_arg_count: 0,
+            allow_steer_bypass: false,
+        },
+        Arc::new(LearnStyleCommand),
     );
 
     let registry = Arc::new(registry);

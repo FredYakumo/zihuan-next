@@ -30,7 +30,7 @@ use crate::qq_chat_user_input::{
 use crate::storage::qq_chat_history_store::{conversation_history_key, load_history};
 
 use super::qq_chat_agent_service_core::{
-    build_state_delta_lines, build_user_message, QqChatAgentServiceContext, QqChatAgentServiceInner,
+    build_state_delta_lines, build_user_message, merge_character_and_style_prompt, QqChatAgentServiceContext, QqChatAgentServiceInner,
     QqChatServiceHandleReport, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 use super::qq_chat_agent_service_logging::QqChatTaskTrace;
@@ -47,6 +47,7 @@ fn build_steer_user_message(
     llm_supports_multimodal_input: bool,
     api_style: Option<&str>,
     system_prompt: &str,
+    style_prompt: Option<&str>,
     session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
@@ -56,6 +57,7 @@ fn build_steer_user_message(
         adapter,
         llm_supports_multimodal_input,
         system_prompt,
+        style_prompt,
         session_state,
         emotion_dimensions,
     );
@@ -70,10 +72,12 @@ fn build_merged_steer_user_message(
     llm_supports_multimodal_input: bool,
     api_style: Option<&str>,
     system_prompt: &str,
+    style_prompt: Option<&str>,
     session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
-    let prefix_lines = build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
+    let merged_prompt = merge_character_and_style_prompt(system_prompt, style_prompt);
+    let prefix_lines = build_state_system_prefix_lines(session_state, emotion_dimensions, &merged_prompt);
     let prefix = prefix_lines.join("\n");
     let mut state_delta_lines = Vec::new();
     if let Some(last_input) = current_inputs.last() {
@@ -207,6 +211,7 @@ pub(crate) struct QqChatServiceSteerHook {
     pub(crate) consumed_messages: Arc<Mutex<Vec<LLMMessage>>>,
     pub(crate) shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
     pub(crate) system_prompt: String,
+    pub(crate) style_prompt: Option<String>,
     pub(crate) session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
     pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
 }
@@ -247,6 +252,7 @@ impl BrainIterationHook for QqChatServiceSteerHook {
                 self.llm_supports_multimodal_input,
                 self.llm_api_style.as_deref(),
                 &self.system_prompt,
+                self.style_prompt.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
             )
@@ -259,6 +265,7 @@ impl BrainIterationHook for QqChatServiceSteerHook {
                 self.llm_supports_multimodal_input,
                 self.llm_api_style.as_deref(),
                 &self.system_prompt,
+                self.style_prompt.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
             )

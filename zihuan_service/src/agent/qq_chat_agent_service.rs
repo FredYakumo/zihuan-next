@@ -9,6 +9,7 @@ use super::qq_chat_agent_service_core::{
     QqChatServiceReplyBatchBuilder, QqChatTaskTrace, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 use super::qq_chat_agent_service_ignore_store::should_ignore_message_blocking;
+use super::qq_chat_agent_service_language_style_store::get_applicable_language_style_blocking;
 use super::qq_chat_agent_service_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 use crate::agent::qq_chat_agent_service_inbox::QqChatAgentServiceInbox;

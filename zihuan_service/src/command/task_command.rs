@@ -23,6 +23,7 @@ pub struct TaskCommand;
 fn status_label(status: zihuan_core::task_context::AgentTaskStatus) -> &'static str {
     match status {
         zihuan_core::task_context::AgentTaskStatus::Running => "进行中",
+        zihuan_core::task_context::AgentTaskStatus::WaitingAuth => "等待授权",
         zihuan_core::task_context::AgentTaskStatus::Success => "已完成",
         zihuan_core::task_context::AgentTaskStatus::Failed => "失败",
         zihuan_core::task_context::AgentTaskStatus::Stopped => "已停止",

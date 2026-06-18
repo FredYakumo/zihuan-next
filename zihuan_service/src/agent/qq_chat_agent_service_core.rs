@@ -49,6 +49,8 @@ pub(crate) use crate::qq_chat_user_input::{
     prepare_current_turn_user_input, prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
 };
 use crate::agent::qq_chat_tool_quota::{QqChatToolQuotaContext, SessionToolQuotaState};
+use crate::agent::qq_chat_agent_service_language_style_store::get_applicable_language_style_blocking;
+use crate::agent::qq_chat_agent_service_language_style_store::QqChatAgentServiceLanguageStyle;
 
 pub(crate) const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const MAX_REPLY_CHARS: usize = 250;
@@ -281,6 +283,17 @@ pub(crate) fn build_group_system_prompt(bot_name: &str, agent_system_prompt: Opt
     rules
 }
 
+pub(crate) fn merge_character_and_style_prompt(character_instructions: &str, style_prompt: Option<&str>) -> String {
+    let style_prompt = style_prompt.map(str::trim).filter(|value| !value.is_empty());
+    if let Some(style_prompt) = style_prompt {
+        format!(
+            "{character_instructions}\n\n[Language Style]\n以下语言风格引导提示词也必须体现在你本轮对用户的回复表达上：\n{style_prompt}"
+        )
+    } else {
+        character_instructions.to_string()
+    }
+}
+
 /// Build a structured user-role message from pre-processed QQ input for LLM inference.
 ///
 /// # Purpose
@@ -339,10 +352,16 @@ pub(crate) fn build_user_message(
     adapter: &SharedBotAdapter,
     llm_supports_multimodal_input: bool,
     character_instructions: &str,
+    style_prompt: Option<&str>,
     session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
-    let state_lines = build_state_system_prefix_lines(session_state, emotion_dimensions, character_instructions);
+    let merged_character_instructions = merge_character_and_style_prompt(character_instructions, style_prompt);
+    let state_lines = build_state_system_prefix_lines(
+        session_state,
+        emotion_dimensions,
+        &merged_character_instructions,
+    );
     let sender_name = ims_bot_adapter::utils::sender_display_name!(
         &current_input.event.sender.nickname,
         &current_input.event.sender.card
@@ -820,6 +839,7 @@ pub(crate) struct QqChatAgentServiceContext<'a> {
     pub(crate) task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     pub(crate) task_db_connection_id: Option<String>,
     pub(crate) tool_quota: Option<QqChatToolQuotaContext>,
+    pub(crate) resolved_language_style: Option<QqChatAgentServiceLanguageStyle>,
 }
 
 pub struct QqChatAgentServiceInner {
@@ -988,6 +1008,16 @@ impl QqChatAgentService {
             task_runtime: self.config.task_runtime.clone(),
             task_db_connection_id,
             tool_quota,
+            resolved_language_style: self.config.rdb_pool.as_ref().and_then(|connection| {
+                let group_id = if event.message_type == ims_bot_adapter::models::event_model::MessageType::Group {
+                    event.group_id.map(|value| value.to_string())
+                } else {
+                    None
+                };
+                get_applicable_language_style_blocking(connection, group_id.as_deref())
+                    .ok()
+                    .flatten()
+            }),
         };
 
         zihuan_core::agent_config::with_current_qq_chat_agent_service_config(self.config.qq_chat_config.clone(), || {

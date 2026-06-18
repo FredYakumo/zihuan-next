@@ -10,9 +10,11 @@ use zihuan_agent::brain::{Brain, BrainStopReason, LongTaskContext};
 
 use zihuan_core::agent_config::current_qq_chat_agent_service_config;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
-use zihuan_core::error::Result;
+use zihuan_core::data_refs::RelationalDbConnection;
+use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::{LLMMessage, TokenUsage};
 use zihuan_core::steer::message_with_api_style;
+use zihuan_core::task_context::{scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskStatus};
 
 use zihuan_graph_engine::brain_tool_spec::{
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
@@ -54,9 +56,216 @@ use super::{
 };
 
 use super::super::qq_chat_agent_service_steer::QqChatServiceSteerHook;
+use crate::agent::qq_chat_agent_service_language_style_store::LanguageStyleScope;
+use crate::agent::qq_chat_agent_service_privilege_gate::{
+    enqueue_pending_privileged_command, handle_auth_command, parse_privileged_command, AuthCommandOutcome,
+    PrivilegeGateOutcome, QqPrivilegedCommand,
+};
+use crate::agent::qq_chat_agent_service_style_learner::learn_language_style;
 use crate::agent::qq_chat_tool_quota::wrap_brain_tool_with_quota;
 
+fn run_blocking_future<T>(future: impl std::future::Future<Output = Result<T>>) -> Result<T> {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        tokio::task::block_in_place(|| handle.block_on(future))
+    } else {
+        tokio::runtime::Runtime::new()?.block_on(future)
+    }
+}
+
+#[derive(Clone)]
+struct OwnedStyleLearningTaskContext {
+    adapter: ims_bot_adapter::adapter::SharedBotAdapter,
+    bot_name: String,
+    natural_language_reply_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    intent_classification_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    rdb_pool: RelationalDbConnection,
+    mysql_ref: Option<Arc<zihuan_core::data_refs::MySqlConfig>>,
+    max_message_length: usize,
+    reply_batch_builder: Option<super::QqChatServiceReplyBatchBuilder>,
+    resolved_language_style_prompt: Option<String>,
+}
+
+#[derive(Clone)]
+struct StyleLearningResumeInput {
+    event: ims_bot_adapter::models::MessageEvent,
+    inference_event: ims_bot_adapter::models::MessageEvent,
+    sender_id: String,
+    target_id: String,
+    bot_id: String,
+    is_group: bool,
+    scope: LanguageStyleScope,
+}
+
+fn execute_style_learning_task(
+    owned: OwnedStyleLearningTaskContext,
+    input: StyleLearningResumeInput,
+    trace: QqChatTaskTrace,
+    task_handle: Arc<zihuan_core::task_context::AgentTaskHandle>,
+    task_runtime: Arc<dyn zihuan_core::task_context::AgentTaskRuntime>,
+) {
+    let task_handle_for_panic = Arc::clone(&task_handle);
+    let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<String> {
+        scope_task_runtime(task_runtime, || {
+            scope_task_id(task_handle.task_id.clone(), || {
+                let _ = zihuan_core::task_context::append_current_task_progress(
+                    "开始执行语言风格学习".to_string(),
+                );
+                let learning = run_blocking_future(learn_language_style(
+                    &owned.rdb_pool,
+                    &input.scope,
+                    &owned.natural_language_reply_llm,
+                    &input.sender_id,
+                ))?;
+                if !learning.updated {
+                    return Ok(learning.summary);
+                }
+                let _ = zihuan_core::task_context::append_current_task_progress(
+                    format!("已学习 {} 条样本", learning.sample_count),
+                );
+                let feedback_base = format!(
+                    "语言风格学习完成，已更新{}风格提示词。样本数：{}。",
+                    if matches!(input.scope, LanguageStyleScope::Global) {
+                        "全局"
+                    } else {
+                        "当前群聊"
+                    },
+                    learning.sample_count
+                );
+                let review_result = review_and_rewrite_reply(
+                    &owned.intent_classification_llm,
+                    &owned.natural_language_reply_llm,
+                    Some("请确保反馈消息也符合刚刚学到的语言风格。"),
+                    &QqReplyReviewRequest {
+                        candidate_message: feedback_base.clone(),
+                        is_group: input.is_group,
+                        bot_name: owned.bot_name.clone(),
+                        sender_id: input.sender_id.clone(),
+                        sender_nickname: input.inference_event.sender.nickname.clone(),
+                        sender_card: input.inference_event.sender.card.clone(),
+                        session_state: zihuan_agent::session_state::QqChatAgentServiceSessionState::default(),
+                        emotion_dimensions: Vec::new(),
+                        available_media_ids: Vec::new(),
+                    },
+                    &trace,
+                )?;
+                let final_feedback = if owned
+                    .resolved_language_style_prompt
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .is_some()
+                {
+                    review_result.final_message
+                } else {
+                    format!(
+                        "{}\n{}",
+                        review_result.final_message,
+                        learning.style_prompt.clone().unwrap_or_default()
+                    )
+                };
+                let send_ctx = QqChatServiceSendContext {
+                    adapter: &owned.adapter,
+                    target_id: &input.target_id,
+                    is_group: input.is_group,
+                    group_name: input.event.group_name.as_deref(),
+                    bot_id: &input.bot_id,
+                    bot_name: &owned.bot_name,
+                    mention_target_id: None,
+                    persistence: crate::storage::qq_chat_session_store::build_outbound_persistence(
+                        Some(&owned.rdb_pool),
+                        owned.mysql_ref.as_ref(),
+                        input.event.group_name.as_deref(),
+                        &owned.bot_name,
+                    ),
+                    max_text_chars: owned.max_message_length,
+                };
+                let reply_result = build_reply_result(
+                    &final_feedback,
+                    input.is_group,
+                    &input.sender_id,
+                    &input.inference_event.sender.nickname,
+                    &input.inference_event.sender.card,
+                    &input.bot_id,
+                    &owned.bot_name,
+                    owned.max_message_length,
+                    None,
+                    None,
+                    HashMap::new(),
+                    owned.reply_batch_builder.as_ref(),
+                )?;
+                if !reply_result.suppress_send && !reply_result.batches.is_empty() {
+                    send_planned_batches(&send_ctx, &reply_result.batches);
+                }
+                Ok(learning.summary)
+            })
+        })
+    }));
+
+    match run {
+        Ok(Ok(summary)) => task_handle_for_panic.finish(AgentTaskResult {
+            status: Some(AgentTaskStatus::Success),
+            result_summary: Some(summary),
+            error_message: None,
+        }),
+        Ok(Err(err)) => task_handle_for_panic.finish(AgentTaskResult {
+            status: Some(AgentTaskStatus::Failed),
+            result_summary: Some(format!("语言风格学习失败: {err}")),
+            error_message: Some(err.to_string()),
+        }),
+        Err(_panic) => task_handle_for_panic.finish(AgentTaskResult {
+            status: Some(AgentTaskStatus::Failed),
+            result_summary: Some("语言风格学习任务意外终止".to_string()),
+            error_message: Some("task panicked".to_string()),
+        }),
+    }
+}
+
 impl QqChatAgentServiceInner {
+    fn run_style_learning_task(
+        &self,
+        trace: &QqChatTaskTrace,
+        ctx: &QqChatAgentServiceContext<'_>,
+        event: &ims_bot_adapter::models::MessageEvent,
+        inference_event: &ims_bot_adapter::models::MessageEvent,
+        sender_id: &str,
+        target_id: &str,
+        bot_id: &str,
+        is_group: bool,
+        scope: LanguageStyleScope,
+        task_handle: Arc<zihuan_core::task_context::AgentTaskHandle>,
+        task_runtime: Arc<dyn zihuan_core::task_context::AgentTaskRuntime>,
+    ) -> Result<()> {
+        let Some(connection) = ctx.rdb_pool else {
+            return Err(Error::ValidationError("当前未配置关系数据库，无法执行语言风格学习。".to_string()));
+        };
+
+        let owned = OwnedStyleLearningTaskContext {
+            adapter: ctx.adapter.clone(),
+            bot_name: ctx.bot_name.to_string(),
+            natural_language_reply_llm: Arc::clone(ctx.natural_language_reply_llm),
+            intent_classification_llm: Arc::clone(ctx.intent_classification_llm),
+            rdb_pool: connection.clone(),
+            mysql_ref: ctx.mysql_ref.cloned(),
+            max_message_length: ctx.max_message_length,
+            reply_batch_builder: ctx.reply_batch_builder.cloned(),
+            resolved_language_style_prompt: ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.clone()),
+        };
+        let input = StyleLearningResumeInput {
+            event: event.clone(),
+            inference_event: inference_event.clone(),
+            sender_id: sender_id.to_string(),
+            target_id: target_id.to_string(),
+            bot_id: bot_id.to_string(),
+            is_group,
+            scope,
+        };
+        let trace_owned = trace.clone();
+        std::thread::spawn(move || {
+            execute_style_learning_task(owned, input, trace_owned, task_handle, task_runtime);
+        });
+        Ok(())
+    }
+
     pub(crate) fn build_command_context(
         &self,
         sender_id: &str,
@@ -147,6 +356,7 @@ impl QqChatAgentServiceInner {
                     ctx.adapter,
                     ctx.llm.supports_multimodal_input(),
                     &cmd_system_prompt,
+                    ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str()),
                     &mut cmd_session_state,
                     &cmd_emotion_dimensions,
                 ),
@@ -244,6 +454,309 @@ impl QqChatAgentServiceInner {
         let legacy_history_key = sender_id.to_string();
         let mut history = load_history(ctx.cache, &history_key, &legacy_history_key);
 
+        if let Some((command_name, args)) = parse_privileged_command(&raw_user_message) {
+            match command_name.as_str() {
+                "auth" => {
+                    let Some(connection) = ctx.rdb_pool else {
+                        return Ok(QqChatServiceTurnResult {
+                            result_summary: "未配置关系数据库，无法完成授权".to_string(),
+                        });
+                    };
+                    let auth_key = args.first().map(String::as_str).unwrap_or("");
+                    match handle_auth_command(connection, &self.id, sender_id, auth_key)? {
+                        AuthCommandOutcome::Reply(reply) => {
+                            let _ = send_direct_text_reply(
+                                trace,
+                                ctx.adapter,
+                                target_id,
+                                ctx.rdb_pool,
+                                ctx.mysql_ref,
+                                event.group_name.as_deref(),
+                                ctx.bot_name,
+                                bot_id,
+                                &reply,
+                                is_group,
+                                sender_id,
+                                &inference_event.sender.nickname,
+                                inference_event.sender.card.as_str(),
+                                ctx.max_message_length,
+                                ctx.reply_batch_builder,
+                            )?;
+                            return Ok(QqChatServiceTurnResult {
+                                result_summary: "已处理授权命令".to_string(),
+                            });
+                        }
+                        AuthCommandOutcome::Resume { message, pending } => {
+                            let _ = send_direct_text_reply(
+                                trace,
+                                ctx.adapter,
+                                target_id,
+                                ctx.rdb_pool,
+                                ctx.mysql_ref,
+                                event.group_name.as_deref(),
+                                ctx.bot_name,
+                                bot_id,
+                                &message,
+                                is_group,
+                                sender_id,
+                                &inference_event.sender.nickname,
+                                inference_event.sender.card.as_str(),
+                                ctx.max_message_length,
+                                ctx.reply_batch_builder,
+                            )?;
+                            let resume_is_group = pending.pending_is_group;
+                            let resume_target_id = pending
+                                .pending_target_id
+                                .clone()
+                                .unwrap_or_else(|| target_id.to_string());
+                            let resume_group_id = pending.pending_group_id;
+                            if matches!(pending.command, QqPrivilegedCommand::LearnGroupStyle) && !resume_is_group {
+                                let reply = "当前不是群聊，无法学习群聊语言风格。".to_string();
+                                let _ = send_direct_text_reply(
+                                    trace,
+                                    ctx.adapter,
+                                    target_id,
+                                    ctx.rdb_pool,
+                                    ctx.mysql_ref,
+                                    event.group_name.as_deref(),
+                                    ctx.bot_name,
+                                    bot_id,
+                                    &reply,
+                                    is_group,
+                                    sender_id,
+                                    &inference_event.sender.nickname,
+                                    inference_event.sender.card.as_str(),
+                                    ctx.max_message_length,
+                                    ctx.reply_batch_builder,
+                                )?;
+                                return Ok(QqChatServiceTurnResult {
+                                    result_summary: "群聊风格学习命令在私聊中被拒绝".to_string(),
+                                });
+                            }
+                            let scope = match pending.command {
+                                QqPrivilegedCommand::LearnGlobalStyle => LanguageStyleScope::Global,
+                                QqPrivilegedCommand::LearnGroupStyle => LanguageStyleScope::Group {
+                                    group_id: resume_group_id
+                                        .map(|value| value.to_string())
+                                        .unwrap_or_else(|| resume_target_id.clone()),
+                                },
+                            };
+                            let Some(task_runtime) = ctx.task_runtime.clone() else {
+                                return Err(Error::ValidationError("task runtime is not available".to_string()));
+                            };
+                            let Some(task_id) = pending.pending_task_id.as_deref() else {
+                                return Err(Error::ValidationError("pending task id is missing".to_string()));
+                            };
+                            let Some(rdb_pool) = ctx.rdb_pool.cloned() else {
+                                return Err(Error::ValidationError("pending task missing rdb pool".to_string()));
+                            };
+                            let owned = OwnedStyleLearningTaskContext {
+                                adapter: ctx.adapter.clone(),
+                                bot_name: ctx.bot_name.to_string(),
+                                natural_language_reply_llm: Arc::clone(ctx.natural_language_reply_llm),
+                                intent_classification_llm: Arc::clone(ctx.intent_classification_llm),
+                                rdb_pool,
+                                mysql_ref: ctx.mysql_ref.cloned(),
+                                max_message_length: ctx.max_message_length,
+                                reply_batch_builder: ctx.reply_batch_builder.cloned(),
+                                resolved_language_style_prompt: ctx
+                                    .resolved_language_style
+                                    .as_ref()
+                                    .map(|item| item.style_prompt.clone()),
+                            };
+                            let input = StyleLearningResumeInput {
+                                event: event.clone(),
+                                inference_event: inference_event.clone(),
+                                sender_id: sender_id.to_string(),
+                                target_id: resume_target_id.clone(),
+                                bot_id: bot_id.to_string(),
+                                is_group: resume_is_group,
+                                scope,
+                            };
+                            let trace_clone = trace.clone();
+                            let task_runtime_for_runner = Arc::clone(&task_runtime);
+                            let resumed = task_runtime.resume_waiting_auth_task(
+                                task_id,
+                                Box::new(move |task_handle| {
+                                    execute_style_learning_task(
+                                        owned,
+                                        input,
+                                        trace_clone,
+                                        task_handle,
+                                        task_runtime_for_runner,
+                                    );
+                                }),
+                            );
+                            if !resumed {
+                                return Err(Error::ValidationError("pending waiting-auth task could not be resumed".to_string()));
+                            }
+                            return Ok(QqChatServiceTurnResult {
+                                result_summary: "已恢复等待授权的任务".to_string(),
+                            });
+                        }
+                    }
+                }
+                "learn_global_style" | "learn_group_style" => {
+                    let Some(command_registry) = crate::command::global_command_registry() else {
+                        return Err(Error::ValidationError("command registry not initialized".to_string()));
+                    };
+                    let permission_check = command_registry.check_permission(
+                        &self.build_command_context(sender_id, target_id, is_group, inference_event.group_id),
+                        &raw_user_message,
+                    );
+                    if !permission_check.matched || !permission_check.allowed {
+                        let reply = "你没有权限使用此命令。".to_string();
+                        let _ = send_direct_text_reply(
+                            trace,
+                            ctx.adapter,
+                            target_id,
+                            ctx.rdb_pool,
+                            ctx.mysql_ref,
+                            event.group_name.as_deref(),
+                            ctx.bot_name,
+                            bot_id,
+                            &reply,
+                            is_group,
+                            sender_id,
+                            &inference_event.sender.nickname,
+                            inference_event.sender.card.as_str(),
+                            ctx.max_message_length,
+                            ctx.reply_batch_builder,
+                        )?;
+                        return Ok(QqChatServiceTurnResult {
+                            result_summary: "命令权限拒绝".to_string(),
+                        });
+                    }
+
+                    let Some(connection) = ctx.rdb_pool else {
+                        let reply = "当前未配置关系数据库，无法执行语言风格学习。".to_string();
+                        let _ = send_direct_text_reply(
+                            trace,
+                            ctx.adapter,
+                            target_id,
+                            ctx.rdb_pool,
+                            ctx.mysql_ref,
+                            event.group_name.as_deref(),
+                            ctx.bot_name,
+                            bot_id,
+                            &reply,
+                            is_group,
+                            sender_id,
+                            &inference_event.sender.nickname,
+                            inference_event.sender.card.as_str(),
+                            ctx.max_message_length,
+                            ctx.reply_batch_builder,
+                        )?;
+                        return Ok(QqChatServiceTurnResult {
+                            result_summary: "缺少关系数据库".to_string(),
+                        });
+                    };
+
+                    let privileged_command = if command_name == "learn_group_style" {
+                        QqPrivilegedCommand::LearnGroupStyle
+                    } else {
+                        QqPrivilegedCommand::LearnGlobalStyle
+                    };
+                    let Some(task_runtime) = ctx.task_runtime.clone() else {
+                        return Err(Error::ValidationError("task runtime is not available".to_string()));
+                    };
+                    let task_name = if command_name == "learn_group_style" {
+                        "学习群聊语言风格"
+                    } else {
+                        "学习全局语言风格"
+                    }
+                    .to_string();
+                    let waiting_task = task_runtime.start_waiting_auth_task(AgentTaskRequest {
+                        task_name: task_name.clone(),
+                        agent_id: self.id.clone(),
+                        agent_name: ctx.bot_name.to_string(),
+                        user_ip: None,
+                        owner_id: Some(sender_id.to_string()),
+                        task_db_connection_id: ctx.task_db_connection_id.clone(),
+                    });
+
+                    let gate_outcome = enqueue_pending_privileged_command(
+                        &command_registry,
+                        &self.build_command_context(sender_id, target_id, is_group, inference_event.group_id),
+                        connection,
+                        privileged_command,
+                        Some(waiting_task.task_id.as_str()),
+                    )?;
+                    if let PrivilegeGateOutcome::Denied(reply) = gate_outcome {
+                        let _ = send_direct_text_reply(
+                            trace,
+                            ctx.adapter,
+                            target_id,
+                            ctx.rdb_pool,
+                            ctx.mysql_ref,
+                            event.group_name.as_deref(),
+                            ctx.bot_name,
+                            bot_id,
+                            &reply,
+                            is_group,
+                            sender_id,
+                            &inference_event.sender.nickname,
+                            inference_event.sender.card.as_str(),
+                            ctx.max_message_length,
+                            ctx.reply_batch_builder,
+                        )?;
+                        return Ok(QqChatServiceTurnResult {
+                            result_summary: format!("{command_name} 已进入等待授权状态"),
+                        });
+                    }
+
+                    if command_name == "learn_group_style" && !is_group {
+                        let reply = "当前不是群聊，无法学习群聊语言风格。".to_string();
+                        let _ = send_direct_text_reply(
+                            trace,
+                            ctx.adapter,
+                            target_id,
+                            ctx.rdb_pool,
+                            ctx.mysql_ref,
+                            event.group_name.as_deref(),
+                            ctx.bot_name,
+                            bot_id,
+                            &reply,
+                            is_group,
+                            sender_id,
+                            &inference_event.sender.nickname,
+                            inference_event.sender.card.as_str(),
+                            ctx.max_message_length,
+                            ctx.reply_batch_builder,
+                        )?;
+                        return Ok(QqChatServiceTurnResult {
+                            result_summary: "群聊风格学习命令在私聊中被拒绝".to_string(),
+                        });
+                    }
+
+                    let scope = if command_name == "learn_group_style" {
+                        LanguageStyleScope::Group {
+                            group_id: target_id.to_string(),
+                        }
+                    } else {
+                        LanguageStyleScope::Global
+                    };
+                    return self.run_style_learning_task(
+                        trace,
+                        ctx,
+                        event,
+                        &inference_event,
+                        sender_id,
+                        target_id,
+                        bot_id,
+                        is_group,
+                        scope,
+                        waiting_task,
+                        task_runtime,
+                    )
+                    .map(|_| QqChatServiceTurnResult {
+                        result_summary: format!("已创建 {task_name} 任务"),
+                    });
+                }
+                _ => {}
+            }
+        }
+
         // Intercept command-style messages (e.g. slash commands) before the brain loop.
         // Commands are dispatched synchronously; if `passthrough_text` is present it
         // replaces `current_message` and the brain loop runs with the leftover text.
@@ -304,6 +817,7 @@ impl QqChatAgentServiceInner {
                     ctx.adapter,
                     turn_llm.supports_multimodal_input(),
                     &base_system_prompt,
+                    ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str()),
                     &mut session_state,
                     &emotion_dimensions,
                 ),
@@ -364,6 +878,7 @@ impl QqChatAgentServiceInner {
             consumed_messages: Arc::clone(&consumed_steer_messages),
             shared_runtime_values: Arc::clone(&shared_runtime_values),
             system_prompt: base_system_prompt.clone(),
+            style_prompt: ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.clone()),
             session_state: Arc::clone(&turn_session_state),
             emotion_dimensions: emotion_dimensions.clone(),
         }));

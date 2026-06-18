@@ -102,6 +102,7 @@ pub enum TaskStatus {
     Success,
     Failed,
     Stopped,
+    WaitingAuth,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -282,6 +283,26 @@ impl TaskManager {
                 }
             }
 
+            self.persist_index();
+        }
+    }
+
+    pub fn set_task_waiting_auth(&mut self, id: &str) {
+        if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
+            task.status = TaskStatus::WaitingAuth;
+            task.is_running = true;
+            task.result_summary = Some("等待授权".to_string());
+            task.error_message = None;
+            self.persist_index();
+        }
+    }
+
+    pub fn set_task_running(&mut self, id: &str) {
+        if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
+            task.status = TaskStatus::Running;
+            task.is_running = true;
+            task.result_summary = None;
+            task.error_message = None;
             self.persist_index();
         }
     }
