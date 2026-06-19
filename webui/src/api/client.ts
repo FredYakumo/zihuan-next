@@ -422,7 +422,7 @@ export interface QqChatAgentServiceIgnoreRule {
   updated_at: string;
 }
 
-export interface QqChatPrivilegeAuthCard {
+export interface NotificationCard {
   id: number;
   agent_id: string;
   sender_id: string;
@@ -614,8 +614,11 @@ export const system = {
     deleteIgnoreRule(configId: string, ruleId: number): Promise<{ ok: boolean }> {
       return request("DELETE", `/system/services/${configId}/ignore-rules/${ruleId}`);
     },
-    listPrivilegeAuthCards(configId: string, limit = 12): Promise<QqChatPrivilegeAuthCard[]> {
-      return request("GET", `/system/services/${configId}/privilege-auth-cards?limit=${encodeURIComponent(String(limit))}`);
+    listNotifications(configId: string, limit = 12): Promise<NotificationCard[]> {
+      return request("GET", `/system/services/${configId}/notifications?limit=${encodeURIComponent(String(limit))}`);
+    },
+    deleteNotifications(configId: string): Promise<{ ok: boolean; deleted: number }> {
+      return request("DELETE", `/system/services/${configId}/notifications`);
     },
     start(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo }> {
       return request("POST", `/system/services/${configId}/start`);

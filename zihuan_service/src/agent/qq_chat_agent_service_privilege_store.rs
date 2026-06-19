@@ -33,7 +33,7 @@ pub struct QqChatAgentServicePrivilegeAuthRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QqChatPrivilegeCardRecord {
+pub struct NotificationRecord {
     pub id: i64,
     pub agent_id: String,
     pub sender_id: String,
@@ -123,13 +123,22 @@ pub async fn has_active_privilege(
     }
 }
 
-pub async fn list_recent_privilege_auth_cards(
+pub async fn list_recent_notifications(
     connection: &RelationalDbConnection,
     limit: i64,
-) -> Result<Vec<QqChatPrivilegeCardRecord>> {
+) -> Result<Vec<NotificationRecord>> {
     match connection {
-        RelationalDbConnection::MySql(config) => list_recent_privilege_auth_cards_mysql(config, limit).await,
-        RelationalDbConnection::Sqlite(config) => list_recent_privilege_auth_cards_sqlite(config, limit).await,
+        RelationalDbConnection::MySql(config) => list_recent_notifications_mysql(config, limit).await,
+        RelationalDbConnection::Sqlite(config) => list_recent_notifications_sqlite(config, limit).await,
+    }
+}
+
+pub async fn delete_all_notifications(
+    connection: &RelationalDbConnection,
+) -> Result<u64> {
+    match connection {
+        RelationalDbConnection::MySql(config) => delete_all_notifications_mysql(config).await,
+        RelationalDbConnection::Sqlite(config) => delete_all_notifications_sqlite(config).await,
     }
 }
 
@@ -384,34 +393,34 @@ async fn has_active_privilege_sqlite(config: &Arc<SqliteConfig>, agent_id: &str,
     Ok(Local::now() <= parse_sqlite_timestamp(&elevated_until)?)
 }
 
-async fn list_recent_privilege_auth_cards_mysql(
+async fn list_recent_notifications_mysql(
     config: &Arc<MySqlConfig>,
     limit: i64,
-) -> Result<Vec<QqChatPrivilegeCardRecord>> {
+) -> Result<Vec<NotificationRecord>> {
     let rows = sqlx::query(
         "SELECT id, agent_id, sender_id, purpose, auth_key, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
-         FROM qq_chat_agent_service_privilege_auth ORDER BY id DESC LIMIT ?",
+         FROM qq_chat_agent_service_privilege_auth ORDER BY created_at DESC LIMIT ?",
     )
     .bind(limit)
     .fetch_all(mysql_pool(config)?)
     .await
     .map_err(Error::Database)?;
-    Ok(rows.into_iter().map(map_privilege_card_mysql_row).collect())
+    Ok(rows.into_iter().map(map_notification_card_mysql_row).collect())
 }
 
-async fn list_recent_privilege_auth_cards_sqlite(
+async fn list_recent_notifications_sqlite(
     config: &Arc<SqliteConfig>,
     limit: i64,
-) -> Result<Vec<QqChatPrivilegeCardRecord>> {
+) -> Result<Vec<NotificationRecord>> {
     let rows = sqlx::query(
         "SELECT id, agent_id, sender_id, purpose, auth_key, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
-         FROM qq_chat_agent_service_privilege_auth ORDER BY id DESC LIMIT ?",
+         FROM qq_chat_agent_service_privilege_auth ORDER BY created_at DESC LIMIT ?",
     )
     .bind(limit)
     .fetch_all(sqlite_pool(config)?)
     .await
     .map_err(Error::Database)?;
-    Ok(rows.into_iter().map(map_privilege_card_sqlite_row).collect())
+    Ok(rows.into_iter().map(map_notification_card_sqlite_row).collect())
 }
 
 async fn latest_auth_mysql(
@@ -510,8 +519,8 @@ fn map_privilege_auth_sqlite_row(row: SqliteRow) -> QqChatAgentServicePrivilegeA
     }
 }
 
-fn map_privilege_card_mysql_row(row: MySqlRow) -> QqChatPrivilegeCardRecord {
-    QqChatPrivilegeCardRecord {
+fn map_notification_card_mysql_row(row: MySqlRow) -> NotificationRecord {
+    NotificationRecord {
         id: row.get("id"),
         agent_id: row.get("agent_id"),
         sender_id: row.get("sender_id"),
@@ -528,8 +537,8 @@ fn map_privilege_card_mysql_row(row: MySqlRow) -> QqChatPrivilegeCardRecord {
     }
 }
 
-fn map_privilege_card_sqlite_row(row: SqliteRow) -> QqChatPrivilegeCardRecord {
-    QqChatPrivilegeCardRecord {
+fn map_notification_card_sqlite_row(row: SqliteRow) -> NotificationRecord {
+    NotificationRecord {
         id: row.get("id"),
         agent_id: row.get("agent_id"),
         sender_id: row.get("sender_id"),
@@ -556,6 +565,22 @@ fn sqlite_pool(config: &Arc<SqliteConfig>) -> Result<&sqlx::sqlite::SqlitePool> 
         .pool
         .as_ref()
         .ok_or_else(|| Error::ValidationError("privilege-auth sqlite pool is not initialized".to_string()))
+}
+
+async fn delete_all_notifications_mysql(config: &Arc<MySqlConfig>) -> Result<u64> {
+    let result = sqlx::query("DELETE FROM qq_chat_agent_service_privilege_auth")
+        .execute(mysql_pool(config)?)
+        .await
+        .map_err(Error::Database)?;
+    Ok(result.rows_affected())
+}
+
+async fn delete_all_notifications_sqlite(config: &Arc<SqliteConfig>) -> Result<u64> {
+    let result = sqlx::query("DELETE FROM qq_chat_agent_service_privilege_auth")
+        .execute(sqlite_pool(config)?)
+        .await
+        .map_err(Error::Database)?;
+    Ok(result.rows_affected())
 }
 
 fn format_mysql_timestamp(value: NaiveDateTime) -> String {

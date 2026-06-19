@@ -25,7 +25,7 @@ use log::{info, warn};
 use zihuan_service::agent::qq_chat_agent_service_ignore_store::{
     create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule, QqChatAgentServiceIgnoreRuleUpsert,
 };
-use zihuan_service::agent::qq_chat_agent_service_privilege_store::list_recent_privilege_auth_cards;
+use zihuan_service::agent::qq_chat_agent_service_privilege_store::{delete_all_notifications, list_recent_notifications};
 
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
@@ -535,7 +535,7 @@ fn render_ignore_rule_error(res: &mut Response, err: CoreError) {
     }
 }
 
-fn render_privilege_auth_error(res: &mut Response, err: CoreError) {
+fn render_notification_error(res: &mut Response, err: CoreError) {
     match err {
         CoreError::ValidationError(message) | CoreError::StringError(message) => {
             render_unprocessable_entity(res, message)
@@ -546,27 +546,44 @@ fn render_privilege_auth_error(res: &mut Response, err: CoreError) {
 }
 
 #[derive(Deserialize)]
-pub struct PrivilegeAuthCardsQuery {
-    #[serde(default = "default_privilege_card_limit")]
+pub struct NotificationCardsQuery {
+    #[serde(default = "default_notification_card_limit")]
     pub limit: i64,
 }
 
-fn default_privilege_card_limit() -> i64 {
+fn default_notification_card_limit() -> i64 {
     12
 }
 
 #[handler]
-pub async fn list_agent_privilege_auth_cards(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn list_agent_notifications(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
-    let query: PrivilegeAuthCardsQuery = req.parse_queries().unwrap_or(PrivilegeAuthCardsQuery {
-        limit: default_privilege_card_limit(),
+    let query: NotificationCardsQuery = req.parse_queries().unwrap_or(NotificationCardsQuery {
+        limit: default_notification_card_limit(),
     });
     match resolve_agent_rdb_connection(&id).await {
-        Ok(connection) => match list_recent_privilege_auth_cards(&connection, query.limit.max(1)).await {
+        Ok(connection) => match list_recent_notifications(&connection, query.limit.max(1)).await {
             Ok(items) => res.render(Json(items)),
-            Err(err) => render_privilege_auth_error(res, err),
+            Err(err) => render_notification_error(res, err),
         },
-        Err(err) => render_privilege_auth_error(res, err),
+        Err(err) => render_notification_error(res, err),
+    }
+}
+
+#[handler]
+pub async fn delete_agent_notifications(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    match resolve_agent_rdb_connection(&id).await {
+        Ok(connection) => match delete_all_notifications(&connection).await {
+            Ok(count) => {
+                let mut body = serde_json::Map::new();
+                body.insert("ok".to_string(), serde_json::Value::Bool(true));
+                body.insert("deleted".to_string(), serde_json::Value::Number(count.into()));
+                res.render(Json(body));
+            }
+            Err(err) => render_notification_error(res, err),
+        },
+        Err(err) => render_notification_error(res, err),
     }
 }
 

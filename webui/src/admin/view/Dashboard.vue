@@ -117,17 +117,24 @@
     </section>
 
     <section
-      v-if="privilegeCards.length > 0"
+      v-if="notificationCards.length > 0"
       class="panel dashboard-privilege-panel"
     >
       <div class="dashboard-section-header">
         <div>
-          <h3>授权密钥</h3>
+          <h3>通知</h3>
         </div>
+        <button
+          class="btn warn dashboard-clear-btn"
+          :disabled="clearingNotifications"
+          @click="clearAllNotifications"
+        >
+          {{ clearingNotifications ? "清空中..." : "清空" }}
+        </button>
       </div>
       <div class="connection-grid dashboard-privilege-grid">
         <article
-          v-for="card in privilegeCards"
+          v-for="card in notificationCards"
           :key="`${card.agent_id}-${card.id}`"
           class="connection-card dashboard-service-card dashboard-privilege-card"
         >
@@ -173,16 +180,12 @@
           </div>
 
           <div class="connection-card-footer dashboard-service-footer">
-            <button class="btn dashboard-service-btn" @click="openPrivilegeKeyModal(card)">
+            <button class="btn dashboard-service-btn" @click="openNotificationKeyModal(card)">
               查看密钥
             </button>
           </div>
         </article>
       </div>
-    </section>
-
-    <section v-else class="panel">
-      <div class="empty-state">当前没有 Service。</div>
     </section>
 
     <Teleport to="body">
@@ -227,28 +230,28 @@
 
     <Teleport to="body">
       <div
-        v-if="selectedPrivilegeCard"
+        v-if="selectedNotificationCard"
         class="chat-modal-backdrop"
-        @click.self="selectedPrivilegeCard = null"
+        @click.self="selectedNotificationCard = null"
       >
         <div class="dashboard-secret-dialog">
           <div class="chat-modal-header">
             <div class="chat-modal-title">
               <div class="dashboard-service-avatar dashboard-service-avatar--fallback">
-                {{ selectedPrivilegeCard.agentName.slice(0, 1) }}
+                {{ selectedNotificationCard.agentName.slice(0, 1) }}
               </div>
-              <h3>{{ selectedPrivilegeCard.agentName }} 密钥</h3>
+              <h3>{{ selectedNotificationCard.agentName }} 密钥</h3>
             </div>
             <div class="chat-modal-actions">
-              <button class="chat-modal-close" @click="selectedPrivilegeCard = null">✕</button>
+              <button class="chat-modal-close" @click="selectedNotificationCard = null">✕</button>
             </div>
           </div>
           <div class="dashboard-secret-body">
-            <div class="dashboard-secret-key mono">{{ selectedPrivilegeCard.auth_key }}</div>
+            <div class="dashboard-secret-key mono">{{ selectedNotificationCard.auth_key }}</div>
             <div class="dashboard-secret-meta">
-              <div><strong>用户：</strong>{{ selectedPrivilegeCard.sender_id }}</div>
-              <div><strong>用途：</strong>{{ selectedPrivilegeCard.purpose }}</div>
-              <div><strong>过期时间：</strong>{{ selectedPrivilegeCard.expires_at }}</div>
+              <div><strong>用户：</strong>{{ selectedNotificationCard.sender_id }}</div>
+              <div><strong>用途：</strong>{{ selectedNotificationCard.purpose }}</div>
+              <div><strong>过期时间：</strong>{{ selectedNotificationCard.expires_at }}</div>
             </div>
           </div>
         </div>
@@ -261,7 +264,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 
-import { system, type ServiceWithRuntime, type LlmConfig, type QqChatPrivilegeAuthCard } from "../../api/client";
+import { system, type ServiceWithRuntime, type LlmConfig, type NotificationCard } from "../../api/client";
 import {
   statusTone,
   compactId,
@@ -280,8 +283,9 @@ const operatingId = ref("");
 const pendingAction = ref<"start" | "stop" | "">("");
 const chatModalAgentId = ref("");
 const chatModalSessionId = ref("");
-const privilegeCards = ref<Array<QqChatPrivilegeAuthCard & { agentName: string }>>([]);
-const selectedPrivilegeCard = ref<(QqChatPrivilegeAuthCard & { agentName: string }) | null>(null);
+const notificationCards = ref<Array<NotificationCard & { agentName: string }>>([]);
+const selectedNotificationCard = ref<(NotificationCard & { agentName: string }) | null>(null);
+const clearingNotifications = ref(false);
 
 const stats = reactive({
   connections: 0,
@@ -358,8 +362,26 @@ function openChatModal(agentId: string) {
   chatModalSessionId.value = "";
 }
 
-function openPrivilegeKeyModal(card: QqChatPrivilegeAuthCard & { agentName: string }) {
-  selectedPrivilegeCard.value = card;
+function openNotificationKeyModal(card: NotificationCard & { agentName: string }) {
+  selectedNotificationCard.value = card;
+}
+
+async function clearAllNotifications() {
+  if (clearingNotifications.value) {
+    return;
+  }
+  clearingNotifications.value = true;
+  try {
+    const qqServices = services.value.filter((item) => item.agent_type.type === "qq_chat");
+    await Promise.all(
+      qqServices.map((service) => system.services.deleteNotifications(service.config_id)),
+    );
+    notificationCards.value = [];
+  } catch (error) {
+    alert(`清空失败: ${(error as Error).message}`);
+  } finally {
+    clearingNotifications.value = false;
+  }
 }
 
 function closeChatModal() {
@@ -395,11 +417,13 @@ async function load() {
     const qqServices = loadedAgents.filter((item) => item.agent_type.type === "qq_chat");
     const cardGroups = await Promise.all(
       qqServices.map(async (service) => {
-        const cards = await system.services.listPrivilegeAuthCards(service.config_id);
+        const cards = await system.services.listNotifications(service.config_id);
         return cards.map((card) => ({ ...card, agentName: service.name }));
       }),
     );
-    privilegeCards.value = cardGroups.flat();
+    notificationCards.value = cardGroups
+      .flat()
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
   } finally {
     servicesLoading.value = false;
   }
@@ -577,6 +601,12 @@ onMounted(() => {
 .dashboard-section-header h3 {
   margin: 0 0 4px;
   font-size: 16px;
+}
+
+.dashboard-clear-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .dashboard-privilege-grid {

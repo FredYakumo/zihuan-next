@@ -90,8 +90,9 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
                                 .push(Router::with_path("start").post(config::agents::start_agent))
                                 .push(Router::with_path("stop").post(config::agents::stop_agent))
                                 .push(
-                                    Router::with_path("privilege-auth-cards")
-                                        .get(config::agents::list_agent_privilege_auth_cards),
+                                    Router::with_path("notifications")
+                                        .get(config::agents::list_agent_notifications)
+                                        .delete(config::agents::delete_agent_notifications),
                                 )
                                 .push(
                                     Router::with_path("ignore-rules")
