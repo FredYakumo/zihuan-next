@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use sqlx::mysql::MySqlRow;
@@ -7,8 +8,14 @@ use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::{InferenceParam, LLMMessage};
+use zihuan_core::task_context::{scope_task_id, scope_task_runtime, AgentTaskResult, AgentTaskStatus};
 
 use crate::agent::qq_chat_agent_service_language_style_store::{upsert_language_style, LanguageStyleScope};
+use crate::agent::qq_chat_agent_service_logging::QqChatTaskTrace;
+use crate::agent::qq_chat_agent_service_msg_send::{
+    build_reply_result, send_planned_batches, QqChatServiceSendContext,
+};
+use crate::agent::tools::{review_and_rewrite_reply, QqReplyReviewRequest};
 
 const STYLE_LEARNING_SAMPLE_LIMIT: i64 = 200;
 const STYLE_LEARNING_MIN_SAMPLES: usize = 20;
@@ -217,4 +224,160 @@ fn normalize_sqlite_rows(rows: Vec<SqliteRow>) -> Vec<StyleSample> {
             })
         })
         .collect()
+}
+
+fn run_blocking_future<T>(future: impl std::future::Future<Output = Result<T>>) -> Result<T> {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        tokio::task::block_in_place(|| handle.block_on(future))
+    } else {
+        tokio::runtime::Runtime::new()?.block_on(future)
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct OwnedStyleLearningTaskContext {
+    pub adapter: ims_bot_adapter::adapter::SharedBotAdapter,
+    pub bot_name: String,
+    pub natural_language_reply_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    pub intent_classification_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    pub rdb_pool: RelationalDbConnection,
+    pub mysql_ref: Option<Arc<zihuan_core::data_refs::MySqlConfig>>,
+    pub max_message_length: usize,
+    pub reply_batch_builder: Option<crate::agent::qq_chat_agent_service_core::QqChatServiceReplyBatchBuilder>,
+    pub resolved_language_style_prompt: Option<String>,
+}
+
+#[derive(Clone)]
+pub(crate) struct StyleLearningResumeInput {
+    pub event: ims_bot_adapter::models::MessageEvent,
+    pub inference_event: ims_bot_adapter::models::MessageEvent,
+    pub sender_id: String,
+    pub target_id: String,
+    pub bot_id: String,
+    pub is_group: bool,
+    pub scope: LanguageStyleScope,
+}
+
+pub(crate) fn execute_style_learning_task(
+    owned: OwnedStyleLearningTaskContext,
+    input: StyleLearningResumeInput,
+    trace: QqChatTaskTrace,
+    task_handle: Arc<zihuan_core::task_context::AgentTaskHandle>,
+    task_runtime: Arc<dyn zihuan_core::task_context::AgentTaskRuntime>,
+) {
+    let task_handle_for_panic = Arc::clone(&task_handle);
+    let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<String> {
+        scope_task_runtime(task_runtime, || {
+            scope_task_id(task_handle.task_id.clone(), || {
+                let _ = zihuan_core::task_context::append_current_task_progress(
+                    "开始执行语言风格学习".to_string(),
+                );
+                let learning = run_blocking_future(learn_language_style(
+                    &owned.rdb_pool,
+                    &input.scope,
+                    &owned.natural_language_reply_llm,
+                    &input.sender_id,
+                ))?;
+                if !learning.updated {
+                    return Ok(learning.summary);
+                }
+                let _ = zihuan_core::task_context::append_current_task_progress(
+                    format!("已学习 {} 条样本", learning.sample_count),
+                );
+                let feedback_base = format!(
+                    "语言风格学习完成，已更新{}风格提示词。样本数：{}。",
+                    if matches!(input.scope, LanguageStyleScope::Global) {
+                        "全局"
+                    } else {
+                        "当前群聊"
+                    },
+                    learning.sample_count
+                );
+                let review_result = review_and_rewrite_reply(
+                    &owned.intent_classification_llm,
+                    &owned.natural_language_reply_llm,
+                    Some("请确保反馈消息也符合刚刚学到的语言风格。"),
+                    &QqReplyReviewRequest {
+                        candidate_message: feedback_base.clone(),
+                        is_group: input.is_group,
+                        bot_name: owned.bot_name.clone(),
+                        sender_id: input.sender_id.clone(),
+                        sender_nickname: input.inference_event.sender.nickname.clone(),
+                        sender_card: input.inference_event.sender.card.clone(),
+                        session_state: zihuan_agent::session_state::QqChatAgentServiceSessionState::default(),
+                        emotion_dimensions: Vec::new(),
+                        available_media_ids: Vec::new(),
+                    },
+                    &trace,
+                )?;
+                let final_feedback = if owned
+                    .resolved_language_style_prompt
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .is_some()
+                {
+                    review_result.final_message
+                } else {
+                    format!(
+                        "{}\n{}",
+                        review_result.final_message,
+                        learning.style_prompt.clone().unwrap_or_default()
+                    )
+                };
+                let send_ctx = QqChatServiceSendContext {
+                    adapter: &owned.adapter,
+                    target_id: &input.target_id,
+                    is_group: input.is_group,
+                    group_name: input.event.group_name.as_deref(),
+                    bot_id: &input.bot_id,
+                    bot_name: &owned.bot_name,
+                    mention_target_id: None,
+                    persistence: crate::storage::qq_chat_session_store::build_outbound_persistence(
+                        Some(&owned.rdb_pool),
+                        owned.mysql_ref.as_ref(),
+                        input.event.group_name.as_deref(),
+                        &owned.bot_name,
+                    ),
+                    max_text_chars: owned.max_message_length,
+                };
+                let reply_result = build_reply_result(
+                    &final_feedback,
+                    input.is_group,
+                    &input.sender_id,
+                    &input.inference_event.sender.nickname,
+                    &input.inference_event.sender.card,
+                    &input.bot_id,
+                    &owned.bot_name,
+                    owned.max_message_length,
+                    None,
+                    None,
+                    HashMap::new(),
+                    owned.reply_batch_builder.as_ref(),
+                )?;
+                if !reply_result.suppress_send && !reply_result.batches.is_empty() {
+                    send_planned_batches(&send_ctx, &reply_result.batches);
+                }
+                Ok(learning.summary)
+            })
+        })
+    }));
+
+    match run {
+        Ok(Ok(summary)) => task_handle_for_panic.finish(AgentTaskResult {
+            status: Some(AgentTaskStatus::Success),
+            result_summary: Some(summary),
+            error_message: None,
+        }),
+        Ok(Err(err)) => task_handle_for_panic.finish(AgentTaskResult {
+            status: Some(AgentTaskStatus::Failed),
+            result_summary: Some(format!("语言风格学习失败: {err}")),
+            error_message: Some(err.to_string()),
+        }),
+        Err(_panic) => task_handle_for_panic.finish(AgentTaskResult {
+            status: Some(AgentTaskStatus::Failed),
+            result_summary: Some("语言风格学习任务意外终止".to_string()),
+            error_message: Some("task panicked".to_string()),
+        }),
+    }
 }
