@@ -308,6 +308,12 @@ pub struct CommandRegistry {
     commands: HashMap<String, CommandEntry>,
 }
 
+#[derive(Debug, Clone)]
+pub struct PermissionCheckResult {
+    pub matched: bool,
+    pub allowed: bool,
+}
+
 impl CommandRegistry {
     pub fn new() -> Self {
         Self { commands: HashMap::new() }
@@ -387,6 +393,21 @@ impl CommandRegistry {
             args: parsed.args,
             passthrough_text: parsed.passthrough_text,
         })
+    }
+
+    pub fn check_permission(&self, ctx: &CommandContext, raw_input: &str) -> PermissionCheckResult {
+        let Some((entry, _)) = self.find_matching_entry(ctx, raw_input) else {
+            return PermissionCheckResult {
+                matched: false,
+                allowed: false,
+            };
+        };
+
+        let permissions = entry.permissions.lock().unwrap();
+        PermissionCheckResult {
+            matched: true,
+            allowed: PermissionRegistry::check(&permissions, ctx),
+        }
     }
 
     /// Try to dispatch a raw message as a command. Returns None if the message

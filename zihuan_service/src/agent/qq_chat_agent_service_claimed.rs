@@ -10,9 +10,10 @@ use zihuan_agent::brain::{Brain, BrainStopReason, LongTaskContext};
 
 use zihuan_core::agent_config::current_qq_chat_agent_service_config;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
-use zihuan_core::error::Result;
+use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::{LLMMessage, TokenUsage};
 use zihuan_core::steer::message_with_api_style;
+use zihuan_core::task_context::AgentTaskRequest;
 
 use zihuan_graph_engine::brain_tool_spec::{
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
@@ -54,8 +55,62 @@ use super::{
 };
 
 use super::super::qq_chat_agent_service_steer::QqChatServiceSteerHook;
+use crate::agent::qq_chat_agent_service_language_style_store::LanguageStyleScope;
+use crate::agent::qq_chat_agent_service_privilege_gate::{
+    enqueue_pending_privileged_command, handle_auth_command, parse_privileged_command, AuthCommandOutcome,
+    PrivilegeGateOutcome, QqPrivilegedCommand,
+};
+use crate::agent::qq_chat_agent_service_style_learner::{
+    execute_style_learning_task, OwnedStyleLearningTaskContext, StyleLearningResumeInput,
+};
+use crate::agent::qq_chat_tool_quota::wrap_brain_tool_with_quota;
 
 impl QqChatAgentServiceInner {
+    fn run_style_learning_task(
+        &self,
+        trace: &QqChatTaskTrace,
+        ctx: &QqChatAgentServiceContext<'_>,
+        event: &ims_bot_adapter::models::MessageEvent,
+        inference_event: &ims_bot_adapter::models::MessageEvent,
+        sender_id: &str,
+        target_id: &str,
+        bot_id: &str,
+        is_group: bool,
+        scope: LanguageStyleScope,
+        task_handle: Arc<zihuan_core::task_context::AgentTaskHandle>,
+        task_runtime: Arc<dyn zihuan_core::task_context::AgentTaskRuntime>,
+    ) -> Result<()> {
+        let Some(connection) = ctx.rdb_pool else {
+            return Err(Error::ValidationError("当前未配置关系数据库，无法执行语言风格学习。".to_string()));
+        };
+
+        let owned = OwnedStyleLearningTaskContext {
+            adapter: ctx.adapter.clone(),
+            bot_name: ctx.bot_name.to_string(),
+            natural_language_reply_llm: Arc::clone(ctx.natural_language_reply_llm),
+            intent_classification_llm: Arc::clone(ctx.intent_classification_llm),
+            rdb_pool: connection.clone(),
+            mysql_ref: ctx.mysql_ref.cloned(),
+            max_message_length: ctx.max_message_length,
+            reply_batch_builder: ctx.reply_batch_builder.cloned(),
+            resolved_language_style_prompt: ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.clone()),
+        };
+        let input = StyleLearningResumeInput {
+            event: event.clone(),
+            inference_event: inference_event.clone(),
+            sender_id: sender_id.to_string(),
+            target_id: target_id.to_string(),
+            bot_id: bot_id.to_string(),
+            is_group,
+            scope,
+        };
+        let trace_owned = trace.clone();
+        std::thread::spawn(move || {
+            execute_style_learning_task(owned, input, trace_owned, task_handle, task_runtime);
+        });
+        Ok(())
+    }
+
     pub(crate) fn build_command_context(
         &self,
         sender_id: &str,
@@ -146,6 +201,7 @@ impl QqChatAgentServiceInner {
                     ctx.adapter,
                     ctx.llm.supports_multimodal_input(),
                     &cmd_system_prompt,
+                    ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str()),
                     &mut cmd_session_state,
                     &cmd_emotion_dimensions,
                 ),
@@ -171,6 +227,8 @@ impl QqChatAgentServiceInner {
         Ok(passthrough_text)
     }
 
+    /// Returns the last assistant text that carries no tool calls, skipping transport
+    /// errors and awaiting-user-input stops. Empty or whitespace-only text yields `None`.
     fn parse_final_reply_text(&self, stop_reason: &BrainStopReason, brain_output: &[LLMMessage]) -> Option<String> {
         if matches!(
             stop_reason,
@@ -239,9 +297,319 @@ impl QqChatAgentServiceInner {
         let mut current_message = inference_input.current_text_for_prompt().to_string();
         trace.log_user_message(&raw_user_message, &current_message);
 
+        // Reset session-level tool quota for each new turn so that
+        // tool call limits apply per single user message cycle and not
+        // across the entire agent service lifetime.
+        if let Some(ref quota) = ctx.tool_quota {
+            quota.session_state.lock().unwrap().reset();
+        }
+
         let history_key = conversation_history_key(bot_id, sender_id, is_group, inference_event.group_id);
         let legacy_history_key = sender_id.to_string();
         let mut history = load_history(ctx.cache, &history_key, &legacy_history_key);
+
+        if let Some((command_name, args)) = parse_privileged_command(&raw_user_message) {
+            match command_name.as_str() {
+                "auth" => {
+                    let Some(connection) = ctx.rdb_pool else {
+                        return Ok(QqChatServiceTurnResult {
+                            result_summary: "未配置关系数据库，无法完成授权".to_string(),
+                        });
+                    };
+                    let auth_key = args.first().map(String::as_str).unwrap_or("");
+                    match handle_auth_command(connection, &self.id, sender_id, auth_key)? {
+                        AuthCommandOutcome::Reply(reply) => {
+                            let _ = send_direct_text_reply(
+                                trace,
+                                ctx.adapter,
+                                target_id,
+                                ctx.rdb_pool,
+                                ctx.mysql_ref,
+                                event.group_name.as_deref(),
+                                ctx.bot_name,
+                                bot_id,
+                                &reply,
+                                is_group,
+                                sender_id,
+                                &inference_event.sender.nickname,
+                                inference_event.sender.card.as_str(),
+                                ctx.max_message_length,
+                                ctx.reply_batch_builder,
+                            )?;
+                            return Ok(QqChatServiceTurnResult {
+                                result_summary: "已处理授权命令".to_string(),
+                            });
+                        }
+                        AuthCommandOutcome::Resume { message, pending } => {
+                            let _ = send_direct_text_reply(
+                                trace,
+                                ctx.adapter,
+                                target_id,
+                                ctx.rdb_pool,
+                                ctx.mysql_ref,
+                                event.group_name.as_deref(),
+                                ctx.bot_name,
+                                bot_id,
+                                &message,
+                                is_group,
+                                sender_id,
+                                &inference_event.sender.nickname,
+                                inference_event.sender.card.as_str(),
+                                ctx.max_message_length,
+                                ctx.reply_batch_builder,
+                            )?;
+                            let resume_is_group = pending.pending_is_group;
+                            let resume_target_id = pending
+                                .pending_target_id
+                                .clone()
+                                .unwrap_or_else(|| target_id.to_string());
+                            let resume_group_id = pending.pending_group_id;
+                            if matches!(pending.command, QqPrivilegedCommand::LearnGroupStyle) && !resume_is_group {
+                                let reply = "当前不是群聊，无法学习群聊语言风格。".to_string();
+                                let _ = send_direct_text_reply(
+                                    trace,
+                                    ctx.adapter,
+                                    target_id,
+                                    ctx.rdb_pool,
+                                    ctx.mysql_ref,
+                                    event.group_name.as_deref(),
+                                    ctx.bot_name,
+                                    bot_id,
+                                    &reply,
+                                    is_group,
+                                    sender_id,
+                                    &inference_event.sender.nickname,
+                                    inference_event.sender.card.as_str(),
+                                    ctx.max_message_length,
+                                    ctx.reply_batch_builder,
+                                )?;
+                                return Ok(QqChatServiceTurnResult {
+                                    result_summary: "群聊风格学习命令在私聊中被拒绝".to_string(),
+                                });
+                            }
+                            let scope = match pending.command {
+                                QqPrivilegedCommand::LearnGlobalStyle => LanguageStyleScope::Global,
+                                QqPrivilegedCommand::LearnGroupStyle => LanguageStyleScope::Group {
+                                    group_id: resume_group_id
+                                        .map(|value| value.to_string())
+                                        .unwrap_or_else(|| resume_target_id.clone()),
+                                },
+                            };
+                            let Some(task_runtime) = ctx.task_runtime.clone() else {
+                                return Err(Error::ValidationError("task runtime is not available".to_string()));
+                            };
+                            let Some(task_id) = pending.pending_task_id.as_deref() else {
+                                return Err(Error::ValidationError("pending task id is missing".to_string()));
+                            };
+                            let Some(rdb_pool) = ctx.rdb_pool.cloned() else {
+                                return Err(Error::ValidationError("pending task missing rdb pool".to_string()));
+                            };
+                            let owned = OwnedStyleLearningTaskContext {
+                                adapter: ctx.adapter.clone(),
+                                bot_name: ctx.bot_name.to_string(),
+                                natural_language_reply_llm: Arc::clone(ctx.natural_language_reply_llm),
+                                intent_classification_llm: Arc::clone(ctx.intent_classification_llm),
+                                rdb_pool,
+                                mysql_ref: ctx.mysql_ref.cloned(),
+                                max_message_length: ctx.max_message_length,
+                                reply_batch_builder: ctx.reply_batch_builder.cloned(),
+                                resolved_language_style_prompt: ctx
+                                    .resolved_language_style
+                                    .as_ref()
+                                    .map(|item| item.style_prompt.clone()),
+                            };
+                            let input = StyleLearningResumeInput {
+                                event: event.clone(),
+                                inference_event: inference_event.clone(),
+                                sender_id: sender_id.to_string(),
+                                target_id: resume_target_id.clone(),
+                                bot_id: bot_id.to_string(),
+                                is_group: resume_is_group,
+                                scope,
+                            };
+                            let trace_clone = trace.clone();
+                            let task_runtime_for_runner = Arc::clone(&task_runtime);
+                            let resumed = task_runtime.resume_waiting_auth_task(
+                                task_id,
+                                Box::new(move |task_handle| {
+                                    execute_style_learning_task(
+                                        owned,
+                                        input,
+                                        trace_clone,
+                                        task_handle,
+                                        task_runtime_for_runner,
+                                    );
+                                }),
+                            );
+                            if !resumed {
+                                return Err(Error::ValidationError("pending waiting-auth task could not be resumed".to_string()));
+                            }
+                            return Ok(QqChatServiceTurnResult {
+                                result_summary: "已恢复等待授权的任务".to_string(),
+                            });
+                        }
+                    }
+                }
+                "learn_global_style" | "learn_group_style" => {
+                    let Some(command_registry) = crate::command::global_command_registry() else {
+                        return Err(Error::ValidationError("command registry not initialized".to_string()));
+                    };
+                    let permission_check = command_registry.check_permission(
+                        &self.build_command_context(sender_id, target_id, is_group, inference_event.group_id),
+                        &raw_user_message,
+                    );
+                    if !permission_check.matched || !permission_check.allowed {
+                        let reply = "你没有权限使用此命令。".to_string();
+                        let _ = send_direct_text_reply(
+                            trace,
+                            ctx.adapter,
+                            target_id,
+                            ctx.rdb_pool,
+                            ctx.mysql_ref,
+                            event.group_name.as_deref(),
+                            ctx.bot_name,
+                            bot_id,
+                            &reply,
+                            is_group,
+                            sender_id,
+                            &inference_event.sender.nickname,
+                            inference_event.sender.card.as_str(),
+                            ctx.max_message_length,
+                            ctx.reply_batch_builder,
+                        )?;
+                        return Ok(QqChatServiceTurnResult {
+                            result_summary: "命令权限拒绝".to_string(),
+                        });
+                    }
+
+                    let Some(connection) = ctx.rdb_pool else {
+                        let reply = "当前未配置关系数据库，无法执行语言风格学习。".to_string();
+                        let _ = send_direct_text_reply(
+                            trace,
+                            ctx.adapter,
+                            target_id,
+                            ctx.rdb_pool,
+                            ctx.mysql_ref,
+                            event.group_name.as_deref(),
+                            ctx.bot_name,
+                            bot_id,
+                            &reply,
+                            is_group,
+                            sender_id,
+                            &inference_event.sender.nickname,
+                            inference_event.sender.card.as_str(),
+                            ctx.max_message_length,
+                            ctx.reply_batch_builder,
+                        )?;
+                        return Ok(QqChatServiceTurnResult {
+                            result_summary: "缺少关系数据库".to_string(),
+                        });
+                    };
+
+                    let privileged_command = if command_name == "learn_group_style" {
+                        QqPrivilegedCommand::LearnGroupStyle
+                    } else {
+                        QqPrivilegedCommand::LearnGlobalStyle
+                    };
+                    let Some(task_runtime) = ctx.task_runtime.clone() else {
+                        return Err(Error::ValidationError("task runtime is not available".to_string()));
+                    };
+                    let task_name = if command_name == "learn_group_style" {
+                        "学习群聊语言风格"
+                    } else {
+                        "学习全局语言风格"
+                    }
+                    .to_string();
+                    let waiting_task = task_runtime.start_waiting_auth_task(AgentTaskRequest {
+                        task_name: task_name.clone(),
+                        agent_id: self.id.clone(),
+                        agent_name: ctx.bot_name.to_string(),
+                        user_ip: None,
+                        owner_id: Some(sender_id.to_string()),
+                        task_db_connection_id: ctx.task_db_connection_id.clone(),
+                    });
+
+                    let gate_outcome = enqueue_pending_privileged_command(
+                        &command_registry,
+                        &self.build_command_context(sender_id, target_id, is_group, inference_event.group_id),
+                        connection,
+                        privileged_command,
+                        Some(waiting_task.task_id.as_str()),
+                    )?;
+                    if let PrivilegeGateOutcome::Denied(reply) = gate_outcome {
+                        let _ = send_direct_text_reply(
+                            trace,
+                            ctx.adapter,
+                            target_id,
+                            ctx.rdb_pool,
+                            ctx.mysql_ref,
+                            event.group_name.as_deref(),
+                            ctx.bot_name,
+                            bot_id,
+                            &reply,
+                            is_group,
+                            sender_id,
+                            &inference_event.sender.nickname,
+                            inference_event.sender.card.as_str(),
+                            ctx.max_message_length,
+                            ctx.reply_batch_builder,
+                        )?;
+                        return Ok(QqChatServiceTurnResult {
+                            result_summary: format!("{command_name} 已进入等待授权状态"),
+                        });
+                    }
+
+                    if command_name == "learn_group_style" && !is_group {
+                        let reply = "当前不是群聊，无法学习群聊语言风格。".to_string();
+                        let _ = send_direct_text_reply(
+                            trace,
+                            ctx.adapter,
+                            target_id,
+                            ctx.rdb_pool,
+                            ctx.mysql_ref,
+                            event.group_name.as_deref(),
+                            ctx.bot_name,
+                            bot_id,
+                            &reply,
+                            is_group,
+                            sender_id,
+                            &inference_event.sender.nickname,
+                            inference_event.sender.card.as_str(),
+                            ctx.max_message_length,
+                            ctx.reply_batch_builder,
+                        )?;
+                        return Ok(QqChatServiceTurnResult {
+                            result_summary: "群聊风格学习命令在私聊中被拒绝".to_string(),
+                        });
+                    }
+
+                    let scope = if command_name == "learn_group_style" {
+                        LanguageStyleScope::Group {
+                            group_id: target_id.to_string(),
+                        }
+                    } else {
+                        LanguageStyleScope::Global
+                    };
+                    return self.run_style_learning_task(
+                        trace,
+                        ctx,
+                        event,
+                        &inference_event,
+                        sender_id,
+                        target_id,
+                        bot_id,
+                        is_group,
+                        scope,
+                        waiting_task,
+                        task_runtime,
+                    )
+                    .map(|_| QqChatServiceTurnResult {
+                        result_summary: format!("已创建 {task_name} 任务"),
+                    });
+                }
+                _ => {}
+            }
+        }
 
         // Intercept command-style messages (e.g. slash commands) before the brain loop.
         // Commands are dispatched synchronously; if `passthrough_text` is present it
@@ -303,6 +671,7 @@ impl QqChatAgentServiceInner {
                     ctx.adapter,
                     turn_llm.supports_multimodal_input(),
                     &base_system_prompt,
+                    ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str()),
                     &mut session_state,
                     &emotion_dimensions,
                 ),
@@ -345,6 +714,7 @@ impl QqChatAgentServiceInner {
         trace.log_llm_conversation(&brain_conversation, prompt_tokens_estimated);
 
         let consumed_steer_messages = Arc::new(Mutex::new(Vec::new()));
+        let tool_quota = ctx.tool_quota.clone();
         let mut brain = Brain::new(Arc::clone(turn_llm));
         brain.add_tool(CurrentTimeBrainTool);
         brain.set_observer(Arc::new(QqChatBrainObserver { trace: trace.clone() }));
@@ -362,6 +732,7 @@ impl QqChatAgentServiceInner {
             consumed_messages: Arc::clone(&consumed_steer_messages),
             shared_runtime_values: Arc::clone(&shared_runtime_values),
             system_prompt: base_system_prompt.clone(),
+            style_prompt: ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.clone()),
             session_state: Arc::clone(&turn_session_state),
             emotion_dimensions: emotion_dimensions.clone(),
         }));
@@ -386,168 +757,221 @@ impl QqChatAgentServiceInner {
                 },
             };
             if self.is_default_tool_enabled(DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS) {
-                brain = brain.with_tool(ListAvailableMemoryKeysBrainTool::new(memory_resources.clone()));
+                brain.add_tool(wrap_brain_tool_with_quota(
+                    ListAvailableMemoryKeysBrainTool::new(memory_resources.clone()),
+                    tool_quota.clone(),
+                ));
             }
             if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_MEMORY_CONTENT) {
-                brain = brain.with_tool(SearchMemoryContentBrainTool::new(memory_resources.clone()));
+                brain.add_tool(wrap_brain_tool_with_quota(
+                    SearchMemoryContentBrainTool::new(memory_resources.clone()),
+                    tool_quota.clone(),
+                ));
             }
             if self.is_default_tool_enabled(DEFAULT_TOOL_REMEMBER_CONTENT) {
-                brain = brain.with_tool(RememberContentBrainTool::new(memory_resources));
+                brain.add_tool(wrap_brain_tool_with_quota(
+                    RememberContentBrainTool::new(memory_resources),
+                    tool_quota.clone(),
+                ));
             }
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
-            brain = brain.with_tool(WebSearchBrainTool::new(
-                ctx.web_search_engine.clone(),
-                ToolNotificationTarget::new(
-                    Some(ctx.adapter.clone()),
-                    target_id.to_string(),
-                    if is_group { Some(sender_id.to_string()) } else { None },
-                    is_group,
-                    false,
+            brain.add_tool(wrap_brain_tool_with_quota(
+                WebSearchBrainTool::new(
+                    ctx.web_search_engine.clone(),
+                    ToolNotificationTarget::new(
+                        Some(ctx.adapter.clone()),
+                        target_id.to_string(),
+                        if is_group { Some(sender_id.to_string()) } else { None },
+                        is_group,
+                        false,
+                    ),
                 ),
+                tool_quota.clone(),
             ));
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
-            brain = brain.with_tool(GetAgentPublicInfoBrainTool::new(current_message.clone()));
+            brain.add_tool(wrap_brain_tool_with_quota(
+                GetAgentPublicInfoBrainTool::new(current_message.clone()),
+                tool_quota.clone(),
+            ));
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_FUNCTION_LIST) {
-            brain = brain.with_tool(GetFunctionListBrainTool);
+            brain.add_tool(wrap_brain_tool_with_quota(GetFunctionListBrainTool, tool_quota.clone()));
         }
 
-        brain = brain.with_tool(UpdateAgentStateBrainTool::new(
-            Arc::clone(&turn_session_state),
-            emotion_dimensions.clone(),
+        brain.add_tool(wrap_brain_tool_with_quota(
+            UpdateAgentStateBrainTool::new(
+                Arc::clone(&turn_session_state),
+                emotion_dimensions.clone(),
+            ),
+            tool_quota.clone(),
         ));
-        brain = brain.with_tool(RunResearchSubagentBrainTool::new(
-            Arc::clone(ctx.math_programming_llm),
-            Arc::clone(ctx.web_search_engine),
-            ctx.mysql_ref.cloned(),
-            ctx.s3_ref.cloned(),
-            Some(prepared_input.event.clone()),
-            ToolNotificationTarget::dashboard(),
-            if let (Some(memory_ref), Some(embedding_model)) =
-                (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
-            {
-                Some(AgentMemoryToolResources {
-                    memory_ref,
-                    embedding_model,
-                    llm: Arc::clone(turn_llm),
-                    access: AgentMemoryAccessContext {
-                        sender_id: Some(sender_id.to_string()),
-                        group_id: if is_group {
-                            Some(target_id.to_string())
-                        } else {
-                            prepared_input.event.group_id.map(|value| value.to_string())
+        brain.add_tool(wrap_brain_tool_with_quota(
+            RunResearchSubagentBrainTool::new(
+                Arc::clone(ctx.math_programming_llm),
+                Arc::clone(ctx.web_search_engine),
+                ctx.mysql_ref.cloned(),
+                ctx.s3_ref.cloned(),
+                Some(prepared_input.event.clone()),
+                ToolNotificationTarget::dashboard(),
+                if let (Some(memory_ref), Some(embedding_model)) =
+                    (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
+                {
+                    Some(AgentMemoryToolResources {
+                        memory_ref,
+                        embedding_model,
+                        llm: Arc::clone(turn_llm),
+                        access: AgentMemoryAccessContext {
+                            sender_id: Some(sender_id.to_string()),
+                            group_id: if is_group {
+                                Some(target_id.to_string())
+                            } else {
+                                prepared_input.event.group_id.map(|value| value.to_string())
+                            },
+                            is_group,
+                            admin: false,
+                            skip_expiry_extend: false,
                         },
-                        is_group,
-                        admin: false,
-                        skip_expiry_extend: false,
-                    },
-                })
-            } else {
-                None
-            },
+                    })
+                } else {
+                    None
+                },
+                tool_quota.clone(),
+            ),
+            tool_quota.clone(),
         ));
-        brain = brain.with_tool(ReplyMessageBrainTool::new(Arc::clone(&shared_runtime_values)));
+        brain.add_tool(wrap_brain_tool_with_quota(
+            ReplyMessageBrainTool::new(Arc::clone(&shared_runtime_values)),
+            tool_quota.clone(),
+        ));
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
-            brain = brain.with_tool(GetRecentGroupMessagesBrainTool::new(
-                ctx.mysql_ref.cloned(),
-                ToolNotificationTarget::new(
-                    Some(ctx.adapter.clone()),
-                    target_id.to_string(),
-                    if is_group { Some(sender_id.to_string()) } else { None },
-                    is_group,
-                    false,
+            brain.add_tool(wrap_brain_tool_with_quota(
+                GetRecentGroupMessagesBrainTool::new(
+                    ctx.mysql_ref.cloned(),
+                    ToolNotificationTarget::new(
+                        Some(ctx.adapter.clone()),
+                        target_id.to_string(),
+                        if is_group { Some(sender_id.to_string()) } else { None },
+                        is_group,
+                        false,
+                    ),
                 ),
+                tool_quota.clone(),
             ));
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
-            brain = brain.with_tool(GetRecentUserMessagesBrainTool::new(
-                ctx.mysql_ref.cloned(),
-                ToolNotificationTarget::new(
-                    Some(ctx.adapter.clone()),
-                    target_id.to_string(),
-                    if is_group { Some(sender_id.to_string()) } else { None },
-                    is_group,
-                    false,
+            brain.add_tool(wrap_brain_tool_with_quota(
+                GetRecentUserMessagesBrainTool::new(
+                    ctx.mysql_ref.cloned(),
+                    ToolNotificationTarget::new(
+                        Some(ctx.adapter.clone()),
+                        target_id.to_string(),
+                        if is_group { Some(sender_id.to_string()) } else { None },
+                        is_group,
+                        false,
+                    ),
                 ),
+                tool_quota.clone(),
             ));
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
-            brain = brain.with_tool(SearchSimilarImagesBrainTool::new(
-                ctx.weaviate_image_ref.cloned(),
-                ctx.embedding_model.cloned(),
-                ctx.web_search_engine.clone(),
-                ctx.s3_ref.cloned(),
-                ToolNotificationTarget::new(
-                    Some(ctx.adapter.clone()),
-                    target_id.to_string(),
-                    if is_group { Some(sender_id.to_string()) } else { None },
-                    is_group,
-                    false,
+            brain.add_tool(wrap_brain_tool_with_quota(
+                SearchSimilarImagesBrainTool::new(
+                    ctx.weaviate_image_ref.cloned(),
+                    ctx.embedding_model.cloned(),
+                    ctx.web_search_engine.clone(),
+                    ctx.s3_ref.cloned(),
+                    ToolNotificationTarget::new(
+                        Some(ctx.adapter.clone()),
+                        target_id.to_string(),
+                        if is_group { Some(sender_id.to_string()) } else { None },
+                        is_group,
+                        false,
+                    ),
                 ),
+                tool_quota.clone(),
             ));
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_SAVE_IMAGE) {
             if ctx.s3_ref.is_some() && ctx.weaviate_image_ref.is_some() && ctx.embedding_model.is_some() {
-                brain = brain.with_tool(SaveImageBrainTool::new(
-                    ctx.weaviate_image_ref.cloned(),
-                    ctx.embedding_model.cloned(),
-                    ctx.s3_ref.cloned(),
+                brain.add_tool(wrap_brain_tool_with_quota(
+                    SaveImageBrainTool::new(
+                        ctx.weaviate_image_ref.cloned(),
+                        ctx.embedding_model.cloned(),
+                        ctx.s3_ref.cloned(),
+                        ctx.mysql_ref.cloned(),
+                    ),
+                    tool_quota.clone(),
                 ));
             }
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_IMAGE_UNDERSTAND) {
-            brain = brain.with_tool(ImageUnderstandBrainTool::new(
-                Some(prepared_input.event.clone()),
-                ctx.mysql_ref.cloned(),
-                ctx.s3_ref.cloned(),
-                ToolNotificationTarget::new(
-                    Some(ctx.adapter.clone()),
-                    target_id.to_string(),
-                    if is_group { Some(sender_id.to_string()) } else { None },
-                    is_group,
-                    false,
+            brain.add_tool(wrap_brain_tool_with_quota(
+                ImageUnderstandBrainTool::new(
+                    Some(prepared_input.event.clone()),
+                    ctx.mysql_ref.cloned(),
+                    ctx.s3_ref.cloned(),
+                    ToolNotificationTarget::new(
+                        Some(ctx.adapter.clone()),
+                        target_id.to_string(),
+                        if is_group { Some(sender_id.to_string()) } else { None },
+                        is_group,
+                        false,
+                    ),
                 ),
+                tool_quota.clone(),
             ));
         }
 
-        brain = brain.with_tool(GetBotProfileBrainTool::new(
-            ctx.adapter.clone(),
-            prepared_input.event.clone(),
-            ctx.s3_ref.cloned(),
+        brain.add_tool(wrap_brain_tool_with_quota(
+            GetBotProfileBrainTool::new(
+                ctx.adapter.clone(),
+                prepared_input.event.clone(),
+                ctx.s3_ref.cloned(),
+            ),
+            tool_quota.clone(),
         ));
-        brain = brain.with_tool(GetQqUserProfileBrainTool::new(
-            ctx.adapter.clone(),
-            prepared_input.event.clone(),
-            ctx.s3_ref.cloned(),
+        brain.add_tool(wrap_brain_tool_with_quota(
+            GetQqUserProfileBrainTool::new(
+                ctx.adapter.clone(),
+                prepared_input.event.clone(),
+                ctx.s3_ref.cloned(),
+            ),
+            tool_quota.clone(),
         ));
-        brain = brain.with_tool(GetCurrentGroupMembersBrainTool::new(
-            ctx.adapter.clone(),
-            prepared_input.event.clone(),
+        brain.add_tool(wrap_brain_tool_with_quota(
+            GetCurrentGroupMembersBrainTool::new(
+                ctx.adapter.clone(),
+                prepared_input.event.clone(),
+            ),
+            tool_quota.clone(),
         ));
 
         let qq_chat_agent_config = current_qq_chat_agent_service_config()?;
         for tool_def in &self.tool_definitions {
-            brain.add_tool(EditableQqAgentTool {
-                runner: ToolSubgraphRunner {
-                    node_id: self.id.clone(),
-                    owner_node_type: QQ_AGENT_TOOL_OWNER_TYPE.to_string(),
-                    shared_inputs: self.shared_inputs.clone(),
-                    definition: tool_def.clone(),
-                    shared_runtime_values: Arc::clone(&shared_runtime_values),
-                    qq_chat_agent_config: Some(qq_chat_agent_config.clone()),
-                    result_mode: ToolResultMode::SingleString,
+            brain.add_tool(wrap_brain_tool_with_quota(
+                EditableQqAgentTool {
+                    runner: ToolSubgraphRunner {
+                        node_id: self.id.clone(),
+                        owner_node_type: QQ_AGENT_TOOL_OWNER_TYPE.to_string(),
+                        shared_inputs: self.shared_inputs.clone(),
+                        definition: tool_def.clone(),
+                        shared_runtime_values: Arc::clone(&shared_runtime_values),
+                        qq_chat_agent_config: Some(qq_chat_agent_config.clone()),
+                        result_mode: ToolResultMode::SingleString,
+                    },
                 },
-            });
+                tool_quota.clone(),
+            ));
         }
 
         trace.mark_llm_request_started();
@@ -772,29 +1196,5 @@ impl QqChatAgentServiceInner {
         trace.log_result_summary(&result_summary);
 
         Ok(QqChatServiceTurnResult { result_summary })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_final_reply_text_accepts_plain_text_reply() {
-        let inner = QqChatAgentServiceInner::new("test");
-        let messages = vec![LLMMessage::assistant_text("你好".to_string())];
-        let text = inner
-            .parse_final_reply_text(&BrainStopReason::Done, &messages)
-            .expect("reply text");
-        assert_eq!(text, "你好");
-    }
-
-    #[test]
-    fn parse_final_reply_text_rejects_transport_error() {
-        let inner = QqChatAgentServiceInner::new("test");
-        let messages = vec![LLMMessage::assistant_text("[no_reply]".to_string())];
-        assert!(inner
-            .parse_final_reply_text(&BrainStopReason::TransportError("err".to_string()), &messages)
-            .is_none());
     }
 }

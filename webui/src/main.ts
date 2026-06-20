@@ -11,6 +11,7 @@ import Agents from "./admin/view/Agents.vue";
 import Graphs from "./admin/view/Graphs.vue";
 import Tasks from "./admin/view/Tasks.vue";
 import Commands from "./admin/view/Commands.vue";
+import Chat from "./admin/view/Chat.vue";
 import DataExplorer from "./admin/view/DataExplorer.vue";
 import Settings from "./admin/view/Settings.vue";
 import SetupWizard from "./admin/view/SetupWizard.vue";
@@ -43,13 +44,14 @@ async function main() {
       { path: "/graphs", component: Graphs },
       { path: "/tasks", component: Tasks },
       { path: "/commands", component: Commands },
+      { path: "/chat", component: Chat, props: (route) => ({ agentId: route.query.agent_id, sessionId: route.query.session_id }) },
       { path: "/data-explorer", component: DataExplorer },
       { path: "/settings", component: Settings },
       { path: "/setup", component: SetupWizard, meta: { public: true } },
     ],
   });
 
-  router.beforeEach(async (to, from, next) => {
+  router.beforeEach(async (to, _from, next) => {
     if (to.path === "/setup") {
       next();
       return;

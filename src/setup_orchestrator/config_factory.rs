@@ -295,6 +295,7 @@ fn build_qq_chat_agent_service() -> AgentConfig {
             compact_context_length: 0,
             max_steer_count: 4,
             default_tools_enabled: default_tools,
+            tool_session_call_limits: HashMap::new(),
             emotion_dimensions: vec![],
             event_handler_threads: None,
         }),

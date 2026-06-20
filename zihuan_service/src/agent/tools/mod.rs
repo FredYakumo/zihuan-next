@@ -134,6 +134,7 @@ pub(crate) fn build_info_brain_tools(
                 weaviate_image_ref.clone(),
                 embedding_model.clone(),
                 s3_ref.clone(),
+                mysql_ref.clone(),
             )));
         }
     }

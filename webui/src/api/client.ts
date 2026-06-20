@@ -422,6 +422,20 @@ export interface QqChatAgentServiceIgnoreRule {
   updated_at: string;
 }
 
+export interface NotificationCard {
+  id: number;
+  agent_id: string;
+  sender_id: string;
+  purpose: string;
+  auth_key: string;
+  failed_attempts: number;
+  expires_at: string;
+  elevated_until: string | null;
+  consumed: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ChatStreamEvent {
   type: "start" | "delta" | "thinking_delta" | "done" | "error" | "tool_call_start" | "tool_call_result" | "ask_user";
   session_id?: string;
@@ -599,6 +613,12 @@ export const system = {
     },
     deleteIgnoreRule(configId: string, ruleId: number): Promise<{ ok: boolean }> {
       return request("DELETE", `/system/services/${configId}/ignore-rules/${ruleId}`);
+    },
+    listNotifications(configId: string, limit = 12): Promise<NotificationCard[]> {
+      return request("GET", `/system/services/${configId}/notifications?limit=${encodeURIComponent(String(limit))}`);
+    },
+    deleteNotifications(configId: string): Promise<{ ok: boolean; deleted: number }> {
+      return request("DELETE", `/system/services/${configId}/notifications`);
     },
     start(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo }> {
       return request("POST", `/system/services/${configId}/start`);

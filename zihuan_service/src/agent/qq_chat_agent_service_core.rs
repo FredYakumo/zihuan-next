@@ -48,6 +48,9 @@ pub(crate) use crate::qq_chat_user_input::{
     append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference, flush_text_part,
     prepare_current_turn_user_input, prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
 };
+use crate::agent::qq_chat_tool_quota::{QqChatToolQuotaContext, SessionToolQuotaState};
+use crate::agent::qq_chat_agent_service_language_style_store::get_applicable_language_style_blocking;
+use crate::agent::qq_chat_agent_service_language_style_store::QqChatAgentServiceLanguageStyle;
 
 pub(crate) const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const MAX_REPLY_CHARS: usize = 250;
@@ -280,6 +283,17 @@ pub(crate) fn build_group_system_prompt(bot_name: &str, agent_system_prompt: Opt
     rules
 }
 
+pub(crate) fn merge_character_and_style_prompt(character_instructions: &str, style_prompt: Option<&str>) -> String {
+    let style_prompt = style_prompt.map(str::trim).filter(|value| !value.is_empty());
+    if let Some(style_prompt) = style_prompt {
+        format!(
+            "{character_instructions}\n\n[Language Style]\n以下语言风格引导提示词也必须体现在你本轮对用户的回复表达上：\n{style_prompt}"
+        )
+    } else {
+        character_instructions.to_string()
+    }
+}
+
 /// Build a structured user-role message from pre-processed QQ input for LLM inference.
 ///
 /// # Purpose
@@ -338,10 +352,16 @@ pub(crate) fn build_user_message(
     adapter: &SharedBotAdapter,
     llm_supports_multimodal_input: bool,
     character_instructions: &str,
+    style_prompt: Option<&str>,
     session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
-    let state_lines = build_state_system_prefix_lines(session_state, emotion_dimensions, character_instructions);
+    let merged_character_instructions = merge_character_and_style_prompt(character_instructions, style_prompt);
+    let state_lines = build_state_system_prefix_lines(
+        session_state,
+        emotion_dimensions,
+        &merged_character_instructions,
+    );
     let sender_name = ims_bot_adapter::utils::sender_display_name!(
         &current_input.event.sender.nickname,
         &current_input.event.sender.card
@@ -567,8 +587,17 @@ fn build_image_prompt_section(lines: &[String], llm_supports_multimodal_input: b
 mod build_user_message_tests {
     use super::*;
 
+    use ims_bot_adapter::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
     use ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
     use ims_bot_adapter::models::message::{Message, PlainTextMessage};
+    use tokio::runtime::Runtime;
+
+    fn build_test_adapter() -> SharedBotAdapter {
+        Runtime::new()
+            .unwrap()
+            .block_on(BotAdapter::new(BotAdapterConfig::new("ws://example.invalid", "", "10000")))
+            .into_shared()
+    }
 
     fn build_prepared_input() -> PreparedCurrentTurnUserInput {
         PreparedCurrentTurnUserInput {
@@ -612,29 +641,31 @@ mod build_user_message_tests {
     #[test]
     fn state_delta_lines_are_injected_on_first_turn_only() {
         let input = build_prepared_input();
+        let adapter = build_test_adapter();
         let emotion_dimensions = build_emotion_dimensions();
         let mut session_state = QqChatAgentServiceSessionState::default();
         session_state.sync_emotion_dimensions(&emotion_dimensions);
 
-        let first = build_state_delta_lines(&mut session_state, &input, "bot", &emotion_dimensions);
+        let first = build_state_delta_lines(&mut session_state, &input, "bot", &adapter, &emotion_dimensions);
         assert!(first.iter().any(|line| line.contains("当前正在`测试群`里聊天")));
         assert!(first.iter().any(|line| line.contains("当前的情绪状态为")));
 
-        let second = build_state_delta_lines(&mut session_state, &input, "bot", &emotion_dimensions);
+        let second = build_state_delta_lines(&mut session_state, &input, "bot", &adapter, &emotion_dimensions);
         assert!(second.is_empty());
     }
 
     #[test]
     fn state_delta_lines_reappear_when_emotion_changes() {
         let input = build_prepared_input();
+        let adapter = build_test_adapter();
         let emotion_dimensions = build_emotion_dimensions();
         let mut session_state = QqChatAgentServiceSessionState::default();
         session_state.sync_emotion_dimensions(&emotion_dimensions);
 
-        let _ = build_state_delta_lines(&mut session_state, &input, "bot", &emotion_dimensions);
+        let _ = build_state_delta_lines(&mut session_state, &input, "bot", &adapter, &emotion_dimensions);
         session_state.emotion_dimensions.insert("happy".to_string(), 1.0);
 
-        let changed = build_state_delta_lines(&mut session_state, &input, "bot", &emotion_dimensions);
+        let changed = build_state_delta_lines(&mut session_state, &input, "bot", &adapter, &emotion_dimensions);
         assert_eq!(changed.len(), 1);
         assert!(changed[0].contains("当前的情绪状态为"));
     }
@@ -807,6 +838,8 @@ pub(crate) struct QqChatAgentServiceContext<'a> {
     pub(crate) pending_steer: &'a Arc<PendingSteerStore>,
     pub(crate) task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     pub(crate) task_db_connection_id: Option<String>,
+    pub(crate) tool_quota: Option<QqChatToolQuotaContext>,
+    pub(crate) resolved_language_style: Option<QqChatAgentServiceLanguageStyle>,
 }
 
 pub struct QqChatAgentServiceInner {
@@ -906,6 +939,7 @@ pub struct QqChatAgentServiceRuntimeConfig {
     pub shared_runtime_values: HashMap<String, DataValue>,
     pub session_state_store: Arc<Mutex<QqChatAgentServiceSessionState>>,
     pub task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
+    pub tool_quota_session_state: Arc<Mutex<SessionToolQuotaState>>,
 }
 
 pub struct QqChatAgentService {
@@ -934,6 +968,14 @@ impl QqChatAgentService {
         time: &str,
     ) -> Result<()> {
         let task_db_connection_id = self.config.qq_chat_config.resolved_rdb_id().map(ToOwned::to_owned);
+        let sender_id = event.sender.user_id.to_string();
+        let tool_quota = Some(QqChatToolQuotaContext {
+            agent_id: self.config.agent_id.clone(),
+            sender_id,
+            rdb_pool: self.config.rdb_pool.clone(),
+            session_limits: self.config.qq_chat_config.tool_session_call_limits.clone(),
+            session_state: Arc::clone(&self.config.tool_quota_session_state),
+        });
 
         let ctx = QqChatAgentServiceContext {
             adapter,
@@ -965,6 +1007,17 @@ impl QqChatAgentService {
             pending_steer: &self.pending_steer,
             task_runtime: self.config.task_runtime.clone(),
             task_db_connection_id,
+            tool_quota,
+            resolved_language_style: self.config.rdb_pool.as_ref().and_then(|connection| {
+                let group_id = if event.message_type == ims_bot_adapter::models::event_model::MessageType::Group {
+                    event.group_id.map(|value| value.to_string())
+                } else {
+                    None
+                };
+                get_applicable_language_style_blocking(connection, group_id.as_deref())
+                    .ok()
+                    .flatten()
+            }),
         };
 
         zihuan_core::agent_config::with_current_qq_chat_agent_service_config(self.config.qq_chat_config.clone(), || {

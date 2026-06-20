@@ -9,6 +9,7 @@ use super::qq_chat_agent_service_core::{
     QqChatServiceReplyBatchBuilder, QqChatTaskTrace, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 use super::qq_chat_agent_service_ignore_store::should_ignore_message_blocking;
+use super::qq_chat_agent_service_language_style_store::get_applicable_language_style_blocking;
 use super::qq_chat_agent_service_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 use crate::agent::qq_chat_agent_service_inbox::QqChatAgentServiceInbox;
@@ -54,6 +55,8 @@ use zihuan_graph_engine::message_persistence::persist_message_event;
 use zihuan_graph_engine::message_restore::{register_mysql_ref, register_rdb_pool};
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_nlp::{build_segmenter, TextSegmenter};
+
+use super::qq_chat_tool_quota::SessionToolQuotaState;
 
 fn build_reply_batch_builder(segmenter: Arc<dyn TextSegmenter>) -> QqChatServiceReplyBatchBuilder {
     build_unified_reply_batch_builder(segmenter)
@@ -426,6 +429,7 @@ pub async fn spawn(
         shared_runtime_values: HashMap::new(),
         session_state_store: Arc::new(Mutex::new(QqChatAgentServiceSessionState::default())),
         task_runtime,
+        tool_quota_session_state: Arc::new(Mutex::new(SessionToolQuotaState::default())),
     })?);
 
     let adapter = ActiveAdapterManager::shared()

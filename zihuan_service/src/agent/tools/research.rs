@@ -18,6 +18,7 @@ use super::agent_memory::AgentMemoryToolResources;
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
 use super::current_time::CurrentTimeBrainTool;
 use super::deep_research::RunDeepResearchSubagentBrainTool;
+use crate::agent::qq_chat_tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
 
 const LOG_PREFIX: &str = "[ResearchSubagent]";
 
@@ -44,6 +45,7 @@ pub(crate) struct RunResearchSubagentBrainTool {
     current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
     notification_target: ToolNotificationTarget,
     memory_resources: Option<AgentMemoryToolResources>,
+    tool_quota: Option<QqChatToolQuotaContext>,
 }
 
 impl RunResearchSubagentBrainTool {
@@ -56,6 +58,7 @@ impl RunResearchSubagentBrainTool {
         current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
         notification_target: ToolNotificationTarget,
         memory_resources: Option<AgentMemoryToolResources>,
+        tool_quota: Option<QqChatToolQuotaContext>,
     ) -> Self {
         Self {
             llm,
@@ -65,6 +68,7 @@ impl RunResearchSubagentBrainTool {
             current_message_event,
             notification_target,
             memory_resources,
+            tool_quota,
         }
     }
 }
@@ -137,7 +141,8 @@ impl BrainTool for RunResearchSubagentBrainTool {
             // or escalates to deep_research for multi-step web research.
             let mut brain = Brain::new(Arc::clone(&self.llm));
             brain.add_tool(CurrentTimeBrainTool);
-            brain.add_tool(RunDeepResearchSubagentBrainTool::new(
+            brain.add_tool(wrap_brain_tool_with_quota(
+                RunDeepResearchSubagentBrainTool::new(
                 Arc::clone(&self.llm),
                 Arc::clone(&self.web_search_engine),
                 self.mysql_ref.clone(),
@@ -145,6 +150,9 @@ impl BrainTool for RunResearchSubagentBrainTool {
                 self.current_message_event.clone(),
                 self.notification_target.clone(),
                 self.memory_resources.clone(),
+                self.tool_quota.clone(),
+                ),
+                self.tool_quota.clone(),
             ));
 
             let (output_messages, _stop_reason) = brain.run(messages);

@@ -25,6 +25,7 @@ use log::{info, warn};
 use zihuan_service::agent::qq_chat_agent_service_ignore_store::{
     create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule, QqChatAgentServiceIgnoreRuleUpsert,
 };
+use zihuan_service::agent::qq_chat_agent_service_privilege_store::{delete_all_notifications, list_recent_notifications};
 
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
@@ -123,6 +124,7 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
                 AgentTaskStatus::Success => TaskStatus::Success,
                 AgentTaskStatus::Failed => TaskStatus::Failed,
                 AgentTaskStatus::Stopped => TaskStatus::Stopped,
+                AgentTaskStatus::WaitingAuth => TaskStatus::WaitingAuth,
                 AgentTaskStatus::Running => TaskStatus::Running,
             };
 
@@ -161,9 +163,134 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
                         error: result.error_message,
                     });
                 }
-                TaskStatus::Running => {}
+                TaskStatus::Running | TaskStatus::WaitingAuth => {}
             }
         })
+    }
+
+    fn start_waiting_auth_task(&self, request: AgentTaskRequest) -> Arc<AgentTaskHandle> {
+        let task_id = self.state.tasks.lock().unwrap().add_agent_response_task(
+            request.agent_id.clone(),
+            request.task_name.clone(),
+            request.user_ip.clone(),
+            request.owner_id.clone(),
+            request.task_db_connection_id.clone(),
+        );
+
+        let _ = self.broadcast_tx.send(ServerMessage::TaskStarted {
+            task_id: task_id.clone(),
+            graph_name: request.task_name.clone(),
+            graph_session_id: request.agent_id.clone(),
+        });
+
+        let created_at = chrono::Local::now();
+        {
+            let mut bg = self.background_tasks.lock().unwrap();
+            bg.insert(
+                task_id.clone(),
+                AgentTaskInfo {
+                    task_id: task_id.clone(),
+                    task_name: request.task_name,
+                    owner_id: request.owner_id,
+                    agent_id: request.agent_id,
+                    status: AgentTaskStatus::WaitingAuth,
+                    created_at,
+                    finished_at: None,
+                    progress: vec!["等待授权".to_string()],
+                    result_summary: Some("等待授权".to_string()),
+                    error_message: None,
+                },
+            );
+        }
+        self.state.tasks.lock().unwrap().set_task_waiting_auth(&task_id);
+        AgentTaskHandle::new(task_id, |_result| {})
+    }
+
+    fn resume_waiting_auth_task(
+        &self,
+        task_id: &str,
+        runner: Box<dyn FnOnce(Arc<AgentTaskHandle>) + Send + 'static>,
+    ) -> bool {
+        {
+            let mut bg = self.background_tasks.lock().unwrap();
+            let Some(info) = bg.get_mut(task_id) else {
+                return false;
+            };
+            if info.status != AgentTaskStatus::WaitingAuth {
+                return false;
+            }
+            info.status = AgentTaskStatus::Running;
+            info.progress.push("授权成功，任务恢复执行".to_string());
+            info.result_summary = None;
+        }
+        self.state.tasks.lock().unwrap().set_task_running(task_id);
+
+        let task_id_owned = task_id.to_string();
+        let state = Arc::clone(&self.state);
+        let broadcast_tx = self.broadcast_tx.clone();
+        let bg_tasks = Arc::clone(&self.background_tasks);
+        let handle = AgentTaskHandle::new(task_id_owned.clone(), move |result: AgentTaskResult| {
+            let status = result.status.unwrap_or_else(|| {
+                if result.error_message.is_some() {
+                    AgentTaskStatus::Failed
+                } else {
+                    AgentTaskStatus::Success
+                }
+            });
+
+            let task_status = match status {
+                AgentTaskStatus::Success => TaskStatus::Success,
+                AgentTaskStatus::Failed => TaskStatus::Failed,
+                AgentTaskStatus::Stopped => TaskStatus::Stopped,
+                AgentTaskStatus::WaitingAuth => TaskStatus::WaitingAuth,
+                AgentTaskStatus::Running => TaskStatus::Running,
+            };
+
+            state.tasks.lock().unwrap().finish_task(
+                &task_id_owned,
+                task_status.clone(),
+                result.error_message.clone(),
+                result.result_summary.clone(),
+            );
+
+            {
+                let mut bg = bg_tasks.lock().unwrap();
+                if let Some(info) = bg.get_mut(&task_id_owned) {
+                    info.status = status;
+                    info.finished_at = Some(chrono::Local::now());
+                    info.result_summary = result.result_summary.clone();
+                    info.error_message = result.error_message.clone();
+                }
+            }
+
+            match task_status {
+                TaskStatus::Stopped => {
+                    let _ = broadcast_tx.send(ServerMessage::TaskStopped {
+                        task_id: task_id_owned.clone(),
+                    });
+                }
+                TaskStatus::Success => {
+                    let _ = broadcast_tx.send(ServerMessage::TaskFinished {
+                        task_id: task_id_owned.clone(),
+                        success: true,
+                        error: None,
+                    });
+                }
+                TaskStatus::Failed => {
+                    let _ = broadcast_tx.send(ServerMessage::TaskFinished {
+                        task_id: task_id_owned.clone(),
+                        success: false,
+                        error: result.error_message,
+                    });
+                }
+                TaskStatus::Running | TaskStatus::WaitingAuth => {}
+            }
+        });
+
+        std::thread::spawn(move || {
+            runner(handle);
+        });
+        true
     }
 
     fn spawn_task(
@@ -405,6 +532,58 @@ fn render_ignore_rule_error(res: &mut Response, err: CoreError) {
         }
         CoreError::StaticStrError(message) => render_unprocessable_entity(res, message.to_string()),
         other => render_internal_error(res, other),
+    }
+}
+
+fn render_notification_error(res: &mut Response, err: CoreError) {
+    match err {
+        CoreError::ValidationError(message) | CoreError::StringError(message) => {
+            render_unprocessable_entity(res, message)
+        }
+        CoreError::StaticStrError(message) => render_unprocessable_entity(res, message.to_string()),
+        other => render_internal_error(res, other),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct NotificationCardsQuery {
+    #[serde(default = "default_notification_card_limit")]
+    pub limit: i64,
+}
+
+fn default_notification_card_limit() -> i64 {
+    12
+}
+
+#[handler]
+pub async fn list_agent_notifications(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    let query: NotificationCardsQuery = req.parse_queries().unwrap_or(NotificationCardsQuery {
+        limit: default_notification_card_limit(),
+    });
+    match resolve_agent_rdb_connection(&id).await {
+        Ok(connection) => match list_recent_notifications(&connection, query.limit.max(1)).await {
+            Ok(items) => res.render(Json(items)),
+            Err(err) => render_notification_error(res, err),
+        },
+        Err(err) => render_notification_error(res, err),
+    }
+}
+
+#[handler]
+pub async fn delete_agent_notifications(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    match resolve_agent_rdb_connection(&id).await {
+        Ok(connection) => match delete_all_notifications(&connection).await {
+            Ok(count) => {
+                let mut body = serde_json::Map::new();
+                body.insert("ok".to_string(), serde_json::Value::Bool(true));
+                body.insert("deleted".to_string(), serde_json::Value::Number(count.into()));
+                res.render(Json(body));
+            }
+            Err(err) => render_notification_error(res, err),
+        },
+        Err(err) => render_notification_error(res, err),
     }
 }
 
@@ -997,7 +1176,7 @@ pub async fn get_avatar(req: &mut Request, res: &mut Response, depot: &mut Depot
 }
 
 /// Delete avatar by agent ID (called when agent is deleted or avatar is changed)
-async fn delete_avatar_by_agent_id(state: &Arc<AppState>, agent_id: &str) -> Result<(), String> {
+async fn delete_avatar_by_agent_id(_state: &Arc<AppState>, agent_id: &str) -> Result<(), String> {
     // Get task_db_connection_id from connections
     let connections = system_config::load_connections().map_err(|e| e.to_string())?;
     let task_db_connection_id = connections

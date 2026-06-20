@@ -20,6 +20,9 @@ export type ConnectionType =
   | "sqlite";
 export type WeaviateCollectionSchema = "image_semantic" | "agent_memory";
 export type ServiceTypeName = "qq_chat" | "http_stream" | "workspace";
+
+/** Service types that support the Dashboard embedded Chat component. */
+export const CHAT_ELIGIBLE_SERVICE_TYPES: ReadonlySet<string> = new Set(["http_stream", "workspace"]);
 export type ModelRefType = "chat_llm" | "text_embedding_local";
 export type ToolRunDuration = "Short" | "Long";
 export type LlmApiStyle =
@@ -1064,4 +1067,42 @@ export function statusTone(status: string): string {
     default:
       return "idle";
   }
+}
+
+export function getAvatarDisplayUrl(avatarUrl: string): string {
+  if (!avatarUrl) {
+    return "";
+  }
+  if (avatarUrl.startsWith("avatar://")) {
+    const avatarId = avatarUrl.substring(9);
+    return `/api/system/services/avatar/${avatarId}`;
+  }
+  return avatarUrl;
+}
+
+export function agentAvatarUrl(
+  agent: ServiceWithRuntime | null | undefined,
+): string {
+  if (!agent) {
+    return "";
+  }
+
+  if (agent.agent_type.type === "qq_chat") {
+    const profile = agent.qq_chat_profile;
+    const explicit = String(profile?.bot_avatar_url ?? "").trim();
+    if (explicit) {
+      return explicit;
+    }
+    const botUserId = String(profile?.bot_user_id ?? "").trim();
+    if (!botUserId) {
+      return "";
+    }
+    return `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(botUserId)}&s=640`;
+  }
+
+  return getAvatarDisplayUrl(String(agent.avatar_url ?? ""));
+}
+
+export function agentInitial(name: string): string {
+  return (name || "B").trim().slice(0, 1).toUpperCase();
 }

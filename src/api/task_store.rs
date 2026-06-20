@@ -358,6 +358,7 @@ fn task_type_str(task_type: &TaskType) -> &'static str {
 fn task_status_str(status: &TaskStatus) -> &'static str {
     match status {
         TaskStatus::Running => "running",
+        TaskStatus::WaitingAuth => "waiting_auth",
         TaskStatus::Success => "success",
         TaskStatus::Failed => "failed",
         TaskStatus::Stopped => "stopped",
