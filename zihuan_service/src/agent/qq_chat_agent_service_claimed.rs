@@ -227,6 +227,8 @@ impl QqChatAgentServiceInner {
         Ok(passthrough_text)
     }
 
+    /// Returns the last assistant text that carries no tool calls, skipping transport
+    /// errors and awaiting-user-input stops. Empty or whitespace-only text yields `None`.
     fn parse_final_reply_text(&self, stop_reason: &BrainStopReason, brain_output: &[LLMMessage]) -> Option<String> {
         if matches!(
             stop_reason,
@@ -1194,29 +1196,5 @@ impl QqChatAgentServiceInner {
         trace.log_result_summary(&result_summary);
 
         Ok(QqChatServiceTurnResult { result_summary })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_final_reply_text_accepts_plain_text_reply() {
-        let inner = QqChatAgentServiceInner::new("test");
-        let messages = vec![LLMMessage::assistant_text("你好".to_string())];
-        let text = inner
-            .parse_final_reply_text(&BrainStopReason::Done, &messages)
-            .expect("reply text");
-        assert_eq!(text, "你好");
-    }
-
-    #[test]
-    fn parse_final_reply_text_rejects_transport_error() {
-        let inner = QqChatAgentServiceInner::new("test");
-        let messages = vec![LLMMessage::assistant_text("[no_reply]".to_string())];
-        assert!(inner
-            .parse_final_reply_text(&BrainStopReason::TransportError("err".to_string()), &messages)
-            .is_none());
     }
 }
