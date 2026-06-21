@@ -2,7 +2,7 @@ mod agent_memory_weaviate;
 mod connection_manager;
 mod db_schema;
 mod image_weaviate_persistence;
-mod message_store;
+mod message_record;
 pub mod mysql;
 pub mod object_storage;
 mod qq_message_list_weaviate_persistence;
@@ -33,11 +33,11 @@ pub use agent_memory_weaviate::{
 };
 pub use connection_manager::{
     cleanup_runtime_storage_instances, close_runtime_storage_instance, close_runtime_storage_instances_for_config,
-    list_runtime_storage_instances, MessageStoreConnectionAccess, RuntimeStorageConnectionManager,
+    list_runtime_storage_instances, RuntimeStorageConnectionManager,
     StorageRuntimeHandle,
 };
 pub use db_schema::ensure_tables_for_connection;
-pub use message_store::{MessageRecord, MessageStore};
+pub use message_record::MessageRecord;
 pub use mysql::MySqlNode;
 pub use object_storage::{
     enrich_event_images, enrich_message_images, save_image_to_object_storage, upload_remote_image_to_s3,
