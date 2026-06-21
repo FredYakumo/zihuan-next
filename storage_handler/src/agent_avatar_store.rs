@@ -1,6 +1,6 @@
 //! Avatar storage trait and implementations for agent avatars.
 
-use zihuan_core::error::{Error, Result};
+use zihuan_core::error::Result;
 
 /// Avatar data for retrieval
 #[derive(Debug, Clone)]
@@ -25,15 +25,14 @@ pub trait AgentAvatarStore: Send + Sync {
         image_data: Vec<u8>,
     ) -> Result<String>;
 
-    /// Get avatar by ID
+
     async fn get_avatar(&self, avatar_id: &str) -> Result<Option<AgentAvatarData>>;
 
-    /// Get avatar by agent ID
+
     async fn get_avatar_by_agent(&self, agent_id: &str) -> Result<Option<AgentAvatarData>>;
 
-    /// Delete avatar by ID
+
     async fn delete_avatar(&self, avatar_id: &str) -> Result<()>;
 
-    /// Delete avatar by agent ID
     async fn delete_avatar_by_agent(&self, agent_id: &str) -> Result<()>;
 }

@@ -121,7 +121,7 @@ async fn fetch_login_info_via_websocket(connection: &BotAdapterConnection) -> Re
     }
 }
 
-fn parse_login_info(payload: &serde_json::Value) -> Result<BotLoginInfo> {
+pub fn parse_login_info(payload: &serde_json::Value) -> Result<BotLoginInfo> {
     let data = payload
         .get("data")
         .and_then(|value| value.as_object())

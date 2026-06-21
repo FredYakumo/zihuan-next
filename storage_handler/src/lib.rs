@@ -1,3 +1,5 @@
+mod agent_avatar_rdb_store;
+pub mod agent_avatar_store;
 mod agent_memory_weaviate;
 mod connection_manager;
 mod db_schema;
@@ -31,6 +33,8 @@ pub use agent_memory_weaviate::{
     search_memory_content, search_memory_content_by_vector, update_memory_record, update_memory_record_with_vector,
     AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit, AgentMemoryUpsert,
 };
+pub use agent_avatar_rdb_store::{first_available_agent_avatar_store, RdbAgentAvatarStore};
+pub use agent_avatar_store::{AgentAvatarData, AgentAvatarStore};
 pub use connection_manager::{
     cleanup_runtime_storage_instances, close_runtime_storage_instance, close_runtime_storage_instances_for_config,
     list_runtime_storage_instances, RuntimeStorageConnectionManager,

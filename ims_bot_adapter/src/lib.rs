@@ -15,6 +15,7 @@ pub mod message_helpers;
 pub mod message_sender;
 pub mod models;
 pub mod multimodal_image_url;
+pub mod profile;
 pub mod send_friend_message_batches;
 pub mod send_group_message_batches;
 pub mod send_message;
@@ -40,6 +41,10 @@ pub use extract_sender_from_event::ExtractSenderFromEventNode;
 pub use extract_sender_id_from_event::ExtractSenderIdFromEventNode;
 pub use ims_bot_adapter_provider::ImsBotAdapterProviderNode;
 pub use login_info::{fetch_login_info, fetch_login_info_via_adapter_connection, qq_avatar_url};
+pub use profile::{
+    profile_from_login_info, resolve_active_or_fallback_bot_profile, resolve_active_or_fallback_bot_profile_from_connection,
+    resolve_fallback_bot_profile, resolve_fallback_bot_profile_from_connection, QqBotProfile,
+};
 pub use message_event_type_filter::MessageEventTypeFilterNode;
 pub use message_sender::MessageSenderNode;
 pub use send_friend_message_batches::SendFriendMessageBatchesNode;
