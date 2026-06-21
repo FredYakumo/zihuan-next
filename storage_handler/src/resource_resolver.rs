@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use zihuan_core::data_refs::{MySqlConfig, SqliteConfig};
+use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::rag::{BraveSearch, TavilySearch, WebSearchEngine, WebSearchEngineRef};
 use zihuan_core::weaviate::WeaviateRef;
@@ -9,8 +9,7 @@ use zihuan_graph_engine::data_value::RedisConfig;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
-use crate::WeaviateCollectionSchema;
-use crate::{redis::build_redis_connection_url, ConnectionConfig, ConnectionKind, RuntimeStorageConnectionManager};
+use crate::{redis::build_redis_connection_url, WeaviateCollectionSchema, ConnectionConfig, ConnectionKind, RuntimeStorageConnectionManager};
 
 pub fn find_connection<'a>(connections: &'a [ConnectionConfig], id: &str) -> Result<&'a ConnectionConfig> {
     connections
@@ -19,19 +18,30 @@ pub fn find_connection<'a>(connections: &'a [ConnectionConfig], id: &str) -> Res
         .ok_or_else(|| Error::ValidationError(format!("connection '{}' not found", id)))
 }
 
-pub async fn build_mysql_ref(
+pub async fn build_rdb_ref(
     connection_id: Option<&str>,
     connections: &[ConnectionConfig],
-) -> Result<Option<Arc<MySqlConfig>>> {
+) -> Result<Option<RelationalDbConnection>> {
     let Some(connection_id) = connection_id else {
         return Ok(None);
     };
-    let _ = connections;
-    Ok(Some(
-        RuntimeStorageConnectionManager::shared()
-            .get_or_create_mysql_ref(connection_id)
-            .await?,
-    ))
+    let connection = find_connection(connections, connection_id)?;
+    match &connection.kind {
+        ConnectionKind::Mysql(_) => Ok(Some(RelationalDbConnection::MySql(
+            RuntimeStorageConnectionManager::shared()
+                .get_or_create_mysql_ref(connection_id)
+                .await?,
+        ))),
+        ConnectionKind::Sqlite(_) => Ok(Some(RelationalDbConnection::Sqlite(
+            RuntimeStorageConnectionManager::shared()
+                .get_or_create_sqlite_ref(connection_id)
+                .await?,
+        ))),
+        _ => Err(Error::ValidationError(format!(
+            "connection '{}' is not a relational database connection",
+            connection.name
+        ))),
+    }
 }
 
 pub fn build_redis_ref(
@@ -138,30 +148,16 @@ pub fn build_web_search_engine_ref(
     Ok(Some(Arc::new(WebSearchEngineRef::new(engine_ref))))
 }
 
-pub async fn build_sqlite_ref(
-    connection_id: Option<&str>,
-    connections: &[ConnectionConfig],
-) -> Result<Option<Arc<SqliteConfig>>> {
-    let Some(connection_id) = connection_id else {
-        return Ok(None);
-    };
-    let _ = connections;
-    Ok(Some(
-        RuntimeStorageConnectionManager::shared()
-            .get_or_create_sqlite_ref(connection_id)
-            .await?,
-    ))
-}
-
 pub async fn resolve_connection_data_value(
     data_type: &zihuan_graph_engine::DataType,
     connection_id: &str,
     connections: &[ConnectionConfig],
 ) -> Result<Option<DataValue>> {
     match data_type {
-        zihuan_graph_engine::DataType::MySqlRef => build_mysql_ref(Some(connection_id), connections)
-            .await
-            .map(|value| value.map(DataValue::MySqlRef)),
+        zihuan_graph_engine::DataType::RdbRef => {
+            let rdb_ref = build_rdb_ref(Some(connection_id), connections).await?;
+            Ok(rdb_ref.map(DataValue::RdbRef))
+        }
         zihuan_graph_engine::DataType::RedisRef => {
             build_redis_ref(Some(connection_id), connections).map(|value| value.map(DataValue::RedisRef))
         }
@@ -175,9 +171,6 @@ pub async fn resolve_connection_data_value(
             build_web_search_engine_ref(Some(connection_id), connections)
                 .map(|value| value.map(DataValue::WebSearchEngineRef))
         }
-        zihuan_graph_engine::DataType::SqliteRef => build_sqlite_ref(Some(connection_id), connections)
-            .await
-            .map(|value| value.map(DataValue::SqliteRef)),
         _ => Ok(None),
     }
 }

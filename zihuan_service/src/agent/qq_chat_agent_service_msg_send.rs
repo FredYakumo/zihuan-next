@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
+use zihuan_core::data_refs::RelationalDbConnection;
 
 use ims_bot_adapter::adapter::SharedBotAdapter;
 use ims_bot_adapter::message_helpers::{
@@ -763,7 +763,6 @@ pub(crate) fn send_direct_text_reply(
     adapter: &SharedBotAdapter,
     target_id: &str,
     rdb_pool: Option<&RelationalDbConnection>,
-    mysql_ref: Option<&Arc<MySqlConfig>>,
     group_name: Option<&str>,
     bot_name: &str,
     bot_id: &str,
@@ -776,7 +775,7 @@ pub(crate) fn send_direct_text_reply(
     reply_batch_builder: Option<&QqChatServiceReplyBatchBuilder>,
 ) -> Result<()> {
     let persistence =
-        crate::storage::qq_chat_session_store::build_outbound_persistence(rdb_pool, mysql_ref, group_name, bot_name);
+        crate::storage::qq_chat_session_store::build_outbound_persistence(rdb_pool, group_name, bot_name);
 
     let reply_result = build_reply_result(
         text,

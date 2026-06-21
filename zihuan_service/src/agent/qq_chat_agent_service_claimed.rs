@@ -90,7 +90,6 @@ impl QqChatAgentServiceInner {
             natural_language_reply_llm: Arc::clone(ctx.natural_language_reply_llm),
             intent_classification_llm: Arc::clone(ctx.intent_classification_llm),
             rdb_pool: connection.clone(),
-            mysql_ref: ctx.mysql_ref.cloned(),
             max_message_length: ctx.max_message_length,
             reply_batch_builder: ctx.reply_batch_builder.cloned(),
             resolved_language_style_prompt: ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.clone()),
@@ -155,7 +154,6 @@ impl QqChatAgentServiceInner {
             is_group: matches!(cmd_ctx.channel, CommandChannel::QqChat { is_group: true, .. }),
             group_name: hydrated_event.group_name.as_deref(),
             rdb_pool: ctx.rdb_pool,
-            mysql_ref: ctx.mysql_ref,
         };
 
         for effect in &result.side_effects {
@@ -169,7 +167,6 @@ impl QqChatAgentServiceInner {
                 ctx.adapter,
                 target_id,
                 ctx.rdb_pool,
-                ctx.mysql_ref,
                 hydrated_event.group_name.as_deref(),
                 ctx.bot_name,
                 bot_id,
@@ -324,7 +321,6 @@ impl QqChatAgentServiceInner {
                                 ctx.adapter,
                                 target_id,
                                 ctx.rdb_pool,
-                                ctx.mysql_ref,
                                 event.group_name.as_deref(),
                                 ctx.bot_name,
                                 bot_id,
@@ -346,7 +342,6 @@ impl QqChatAgentServiceInner {
                                 ctx.adapter,
                                 target_id,
                                 ctx.rdb_pool,
-                                ctx.mysql_ref,
                                 event.group_name.as_deref(),
                                 ctx.bot_name,
                                 bot_id,
@@ -371,7 +366,6 @@ impl QqChatAgentServiceInner {
                                     ctx.adapter,
                                     target_id,
                                     ctx.rdb_pool,
-                                    ctx.mysql_ref,
                                     event.group_name.as_deref(),
                                     ctx.bot_name,
                                     bot_id,
@@ -410,7 +404,6 @@ impl QqChatAgentServiceInner {
                                 natural_language_reply_llm: Arc::clone(ctx.natural_language_reply_llm),
                                 intent_classification_llm: Arc::clone(ctx.intent_classification_llm),
                                 rdb_pool,
-                                mysql_ref: ctx.mysql_ref.cloned(),
                                 max_message_length: ctx.max_message_length,
                                 reply_batch_builder: ctx.reply_batch_builder.cloned(),
                                 resolved_language_style_prompt: ctx
@@ -465,7 +458,6 @@ impl QqChatAgentServiceInner {
                             ctx.adapter,
                             target_id,
                             ctx.rdb_pool,
-                            ctx.mysql_ref,
                             event.group_name.as_deref(),
                             ctx.bot_name,
                             bot_id,
@@ -489,7 +481,6 @@ impl QqChatAgentServiceInner {
                             ctx.adapter,
                             target_id,
                             ctx.rdb_pool,
-                            ctx.mysql_ref,
                             event.group_name.as_deref(),
                             ctx.bot_name,
                             bot_id,
@@ -542,7 +533,6 @@ impl QqChatAgentServiceInner {
                             ctx.adapter,
                             target_id,
                             ctx.rdb_pool,
-                            ctx.mysql_ref,
                             event.group_name.as_deref(),
                             ctx.bot_name,
                             bot_id,
@@ -566,7 +556,6 @@ impl QqChatAgentServiceInner {
                             ctx.adapter,
                             target_id,
                             ctx.rdb_pool,
-                            ctx.mysql_ref,
                             event.group_name.as_deref(),
                             ctx.bot_name,
                             bot_id,
@@ -814,7 +803,7 @@ impl QqChatAgentServiceInner {
             RunResearchSubagentBrainTool::new(
                 Arc::clone(ctx.math_programming_llm),
                 Arc::clone(ctx.web_search_engine),
-                ctx.mysql_ref.cloned(),
+                ctx.rdb_pool.cloned(),
                 ctx.s3_ref.cloned(),
                 Some(prepared_input.event.clone()),
                 ToolNotificationTarget::dashboard(),
@@ -852,7 +841,7 @@ impl QqChatAgentServiceInner {
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
             brain.add_tool(wrap_brain_tool_with_quota(
                 GetRecentGroupMessagesBrainTool::new(
-                    ctx.mysql_ref.cloned(),
+                    ctx.rdb_pool.cloned(),
                     ToolNotificationTarget::new(
                         Some(ctx.adapter.clone()),
                         target_id.to_string(),
@@ -868,7 +857,7 @@ impl QqChatAgentServiceInner {
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
             brain.add_tool(wrap_brain_tool_with_quota(
                 GetRecentUserMessagesBrainTool::new(
-                    ctx.mysql_ref.cloned(),
+                    ctx.rdb_pool.cloned(),
                     ToolNotificationTarget::new(
                         Some(ctx.adapter.clone()),
                         target_id.to_string(),
@@ -907,7 +896,7 @@ impl QqChatAgentServiceInner {
                         ctx.weaviate_image_ref.cloned(),
                         ctx.embedding_model.cloned(),
                         ctx.s3_ref.cloned(),
-                        ctx.mysql_ref.cloned(),
+                        ctx.rdb_pool.cloned(),
                     ),
                     tool_quota.clone(),
                 ));
@@ -918,7 +907,7 @@ impl QqChatAgentServiceInner {
             brain.add_tool(wrap_brain_tool_with_quota(
                 ImageUnderstandBrainTool::new(
                     Some(prepared_input.event.clone()),
-                    ctx.mysql_ref.cloned(),
+                    ctx.rdb_pool.cloned(),
                     ctx.s3_ref.cloned(),
                     ToolNotificationTarget::new(
                         Some(ctx.adapter.clone()),
@@ -988,7 +977,6 @@ impl QqChatAgentServiceInner {
                     sender_id: sender_id.to_string(),
                     is_group,
                     rdb_pool: ctx.rdb_pool.cloned(),
-                    mysql_ref: ctx.mysql_ref.cloned(),
                     group_name: event.group_name.clone(),
                     bot_id: bot_id.to_string(),
                     bot_name: ctx.bot_name.to_string(),
@@ -1157,7 +1145,6 @@ impl QqChatAgentServiceInner {
                         mention_target_id: None,
                         persistence: crate::storage::qq_chat_session_store::build_outbound_persistence(
                             ctx.rdb_pool,
-                            ctx.mysql_ref,
                             event.group_name.as_deref(),
                             ctx.bot_name,
                         ),

@@ -28,14 +28,14 @@ use log::{error, info, warn};
 use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
 use storage_handler::{
-    build_mysql_ref, build_relational_db_connection_for_connection, build_s3_ref, build_weaviate_ref,
+    build_relational_db_connection_for_connection, build_s3_ref, build_weaviate_ref,
     build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind, WeaviateCollectionSchema,
 };
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
 use zihuan_agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent_config::QqChatAgentServiceConfig;
-use zihuan_core::data_refs::MySqlConfig;
+use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
@@ -52,7 +52,7 @@ use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 use zihuan_graph_engine::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_persistence::persist_message_event;
-use zihuan_graph_engine::message_restore::{register_mysql_ref, register_rdb_pool};
+use zihuan_graph_engine::message_restore::register_rdb_pool;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_nlp::{build_segmenter, TextSegmenter};
 
@@ -88,7 +88,7 @@ struct QqLoadedInferenceResources {
     bot_name: String,
     default_tools_enabled: HashMap<String, bool>,
     web_search_engine_ref: Option<Arc<WebSearchEngineRef>>,
-    mysql_ref: Option<Arc<MySqlConfig>>,
+    rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
     weaviate_memory_ref: Option<Arc<WeaviateRef>>,
@@ -116,7 +116,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
         build_info_brain_tools(
             &self.resources.default_tools_enabled,
             self.resources.web_search_engine_ref.clone(),
-            self.resources.mysql_ref.clone(),
+            self.resources.rdb_pool.clone(),
             self.resources.s3_ref.clone(),
             self.resources.weaviate_image_ref.clone(),
             self.resources.weaviate_memory_ref.clone(),
@@ -161,7 +161,10 @@ fn load_qq_resources(
         None
     });
 
-    let mysql_ref = build_agent_mysql_ref(config, connections, &agent.name)?;
+    let rdb_pool = match config.resolved_rdb_id() {
+        Some(connection_id) => block_async(build_relational_db_connection_for_connection(connection_id, connections)).ok(),
+        None => None,
+    };
     let s3_ref = block_async(build_s3_ref(config.rustfs_connection_id.as_deref(), connections)).unwrap_or_else(|e| {
         warn!("[inference][qq_agent] rustfs connection unavailable: {e}");
         None
@@ -241,7 +244,7 @@ fn load_qq_resources(
         },
         default_tools_enabled: config.default_tools_enabled.clone(),
         web_search_engine_ref,
-        mysql_ref,
+        rdb_pool,
         s3_ref,
         weaviate_image_ref,
         weaviate_memory_ref,
@@ -250,31 +253,10 @@ fn load_qq_resources(
     })
 }
 
-fn build_agent_mysql_ref(
-    config: &QqChatAgentServiceConfig,
-    connections: &[ConnectionConfig],
-    agent_name: &str,
-) -> Result<Option<Arc<MySqlConfig>>> {
-    let Some(connection_id) = config.resolved_rdb_id() else {
-        return Ok(None);
-    };
-    let connection = find_connection(connections, connection_id)?;
-    if !matches!(connection.kind, ConnectionKind::Mysql(_)) {
-        return Ok(None);
-    }
-
-    block_async(build_mysql_ref(Some(connection_id), connections)).map_err(|err| {
-        Error::ValidationError(format!(
-            "agent '{}' failed to initialize mysql dependency from rdb_id='{}': {}",
-            agent_name, connection_id, err
-        ))
-    })
-}
-
 /// Purpose: Bootstrap and launch a long-running QQ Chat Agent Service instance.
 ///
 /// Resolves all runtime dependencies (`llm`, `embedding_model`, `tavily`, `s3_ref`,
-/// `mysql_ref`, `weaviate_image_ref`), wires the IMS bot adapter event handler
+/// `rdb_pool`, `weaviate_image_ref`), wires the IMS bot adapter event handler
 /// through an inbox queue, then spawns a background task that runs the
 /// `BotAdapter::start` loop until exit.
 ///
@@ -344,7 +326,6 @@ pub async fn spawn(
         Some(connection_id) => Some(build_relational_db_connection_for_connection(connection_id, &connections).await?),
         None => None,
     };
-    let mysql_ref = build_agent_mysql_ref(&config, &connections, &agent.name)?;
     let redis_ref = resolve_inbox_redis_ref(&connections)?;
     let weaviate_image_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
@@ -366,9 +347,6 @@ pub async fn spawn(
     let tool_definitions = build_enabled_tool_definitions(&agent.tools)?;
     let tokenizer_segmenter = resolve_tokenizer_segmenter(&config, &connections);
 
-    if let Some(ref mysql) = mysql_ref {
-        register_mysql_ref(mysql.clone());
-    }
     if let Some(ref rdb_pool) = rdb_pool {
         register_rdb_pool(rdb_pool.clone());
     }
@@ -413,7 +391,6 @@ pub async fn spawn(
             &natural_language_reply_llm_config.model_name,
         ),
         rdb_pool,
-        mysql_ref,
         weaviate_image_ref,
         weaviate_memory_ref,
         embedding_model,
@@ -631,7 +608,7 @@ impl QqChatAgentServiceInner {
             target_id
         );
 
-        if let Err(err) = persist_message_event(event, ctx.rdb_pool, ctx.mysql_ref, None) {
+        if let Err(err) = persist_message_event(event, ctx.rdb_pool, None) {
             warn!("{LOG_PREFIX} Message persistence failed: {err}");
         }
 

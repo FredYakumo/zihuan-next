@@ -807,7 +807,7 @@
                   "to_port": "ims_bot_adapter"
                 },
                 {
-                  "from_node_id": "image_mysql_ref",
+                  "from_node_id": "image_rdb_ref",
                   "from_port": "mysql_ref",
                   "to_node_id": "image_extract_message",
                   "to_port": "mysql_ref"
@@ -1345,15 +1345,15 @@
                   "dynamic_output_ports": false,
                   "has_cycle": false,
                   "has_error": false,
-                  "id": "image_mysql_ref",
+                  "id": "image_rdb_ref",
                   "inline_values": {},
                   "input_ports": [],
-                  "name": "agent mysql ref",
-                  "node_type": "agent_mysql_ref",
+                  "name": "agent rdb ref",
+                  "node_type": "agent_rdb_ref",
                   "output_ports": [
                     {
-                      "data_type": "MySqlRef",
-                      "description": "Agent MySQL 连接引用",
+                      "data_type": "RdbRef",
+                      "description": "Agent 关系数据库连接引用",
                       "hidden": false,
                       "name": "mysql_ref",
                       "required": true

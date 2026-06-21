@@ -580,7 +580,7 @@
                     }
                   ],
                   "name": "Search Messages",
-                  "node_type": "message_mysql_search",
+                  "node_type": "message_rdb_search",
                   "output_ports": [
                     {
                       "data_type": {
@@ -1251,9 +1251,9 @@
     },
     {
       "id": "3c8eed6f-1604-4864-add8-cee252a22637",
-      "name": "agent mysql ref",
+      "name": "agent rdb ref",
       "description": null,
-      "node_type": "agent_mysql_ref",
+      "node_type": "agent_rdb_ref",
       "input_ports": [],
       "output_ports": [
         {

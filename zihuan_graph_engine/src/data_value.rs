@@ -9,8 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::block_in_place;
-pub use zihuan_core::data_refs::MySqlConfig;
-pub use zihuan_core::data_refs::SqliteConfig;
+pub use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_core::ims_bot_adapter::models::message::ImageMessage;
 use zihuan_core::ims_bot_adapter::models::sender_model::Sender as GraphSender;
@@ -627,8 +626,7 @@ pub enum DataType {
     BotAdapterRef,
     S3Ref,
     RedisRef,
-    MySqlRef,
-    SqliteRef,
+    RdbRef,
     WeaviateRef,
     WebSearchEngineRef,
     SessionStateRef,
@@ -673,8 +671,7 @@ impl fmt::Display for DataType {
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
             DataType::S3Ref => write!(f, "S3Ref"),
             DataType::RedisRef => write!(f, "RedisRef"),
-            DataType::MySqlRef => write!(f, "MySqlRef"),
-            DataType::SqliteRef => write!(f, "SqliteRef"),
+            DataType::RdbRef => write!(f, "RdbRef"),
             DataType::WeaviateRef => write!(f, "WeaviateRef"),
             DataType::WebSearchEngineRef => write!(f, "WebSearchEngineRef"),
             DataType::SessionStateRef => write!(f, "SessionStateRef"),
@@ -722,8 +719,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "BotAdapterRef" => Ok(DataType::BotAdapterRef),
                     "S3Ref" => Ok(DataType::S3Ref),
                     "RedisRef" => Ok(DataType::RedisRef),
-                    "MySqlRef" => Ok(DataType::MySqlRef),
-                    "SqliteRef" => Ok(DataType::SqliteRef),
+                    "RdbRef" => Ok(DataType::RdbRef),
                     "WeaviateRef" => Ok(DataType::WeaviateRef),
                     "WebSearchEngineRef" => Ok(DataType::WebSearchEngineRef),
                     "SessionStateRef" => Ok(DataType::SessionStateRef),
@@ -755,8 +751,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "BotAdapterRef",
                             "S3Ref",
                             "RedisRef",
-                            "MySqlRef",
-                            "SqliteRef",
+                            "RdbRef",
                             "WeaviateRef",
                             "WebSearchEngineRef",
                             "SessionStateRef",
@@ -824,8 +819,7 @@ pub enum DataValue {
     BotAdapterRef(zihuan_core::ims_bot_adapter::BotAdapterHandle),
     S3Ref(Arc<S3Ref>),
     RedisRef(Arc<RedisConfig>),
-    MySqlRef(Arc<MySqlConfig>),
-    SqliteRef(Arc<SqliteConfig>),
+    RdbRef(RelationalDbConnection),
     WeaviateRef(Arc<WeaviateRef>),
     WebSearchEngineRef(Arc<WebSearchEngineRef>),
     SessionStateRef(Arc<SessionStateRef>),
@@ -857,8 +851,7 @@ impl DataValue {
             DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
             DataValue::S3Ref(_) => DataType::S3Ref,
             DataValue::RedisRef(_) => DataType::RedisRef,
-            DataValue::MySqlRef(_) => DataType::MySqlRef,
-            DataValue::SqliteRef(_) => DataType::SqliteRef,
+            DataValue::RdbRef(_) => DataType::RdbRef,
             DataValue::WeaviateRef(_) => DataType::WeaviateRef,
             DataValue::WebSearchEngineRef(_) => DataType::WebSearchEngineRef,
             DataValue::SessionStateRef(_) => DataType::SessionStateRef,
@@ -945,16 +938,20 @@ impl DataValue {
                 "reconnect_max_attempts": config.reconnect_max_attempts,
                 "reconnect_interval_secs": config.reconnect_interval_secs,
             }),
-            DataValue::MySqlRef(config) => serde_json::json!({
-                "type": "MySqlRef",
-                "url": config.url,
-                "reconnect_max_attempts": config.reconnect_max_attempts,
-                "reconnect_interval_secs": config.reconnect_interval_secs,
-            }),
-            DataValue::SqliteRef(config) => serde_json::json!({
-                "type": "SqliteRef",
-                "path": config.path,
-            }),
+            DataValue::RdbRef(connection) => match connection {
+                RelationalDbConnection::MySql(config) => serde_json::json!({
+                    "type": "RdbRef",
+                    "engine": "mysql",
+                    "url": config.url,
+                    "reconnect_max_attempts": config.reconnect_max_attempts,
+                    "reconnect_interval_secs": config.reconnect_interval_secs,
+                }),
+                RelationalDbConnection::Sqlite(config) => serde_json::json!({
+                    "type": "RdbRef",
+                    "engine": "sqlite",
+                    "path": config.path,
+                }),
+            },
             DataValue::WeaviateRef(weaviate_ref) => serde_json::json!({
                 "type": "WeaviateRef",
                 "base_url": weaviate_ref.base_url,
@@ -998,8 +995,7 @@ impl fmt::Debug for DataValue {
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
             DataValue::S3Ref(config) => f.debug_tuple("S3Ref").field(config).finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
-            DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
-            DataValue::SqliteRef(config) => f.debug_tuple("SqliteRef").field(config).finish(),
+            DataValue::RdbRef(connection) => f.debug_tuple("RdbRef").field(connection).finish(),
             DataValue::WeaviateRef(weaviate_ref) => f.debug_tuple("WeaviateRef").field(weaviate_ref).finish(),
             DataValue::WebSearchEngineRef(tavily_ref) => f.debug_tuple("WebSearchEngineRef").field(tavily_ref).finish(),
             DataValue::SessionStateRef(session_ref) => f.debug_tuple("SessionStateRef").field(session_ref).finish(),

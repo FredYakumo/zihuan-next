@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::LLMMessage;
-use zihuan_graph_engine::message_restore::{register_mysql_ref, restore_media_by_id};
+use zihuan_graph_engine::message_restore::restore_media_by_id;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
 
@@ -42,7 +42,7 @@ impl Node for ExtractMediaByIdNode {
 
     node_input![
         port! { name = "media_id", ty = String, desc = "持久化媒体 ID" },
-        port! { name = "mysql_ref", ty = MySqlRef, desc = "MySQL 连接引用，用于查询消息记录表" },
+        port! { name = "rdb_ref", ty = RdbRef, desc = "关系数据库连接引用，用于查询消息记录表" },
         port! { name = "s3_ref", ty = S3Ref, desc = "对象存储引用，用于读取图片字节" }
     ];
 
@@ -64,10 +64,6 @@ impl Node for ExtractMediaByIdNode {
         };
         if media_id.is_empty() {
             return Err(Error::InvalidNodeInput("media_id must be a non-empty String".to_string()));
-        }
-
-        if let Some(DataValue::MySqlRef(mysql_ref)) = inputs.get("mysql_ref") {
-            register_mysql_ref(mysql_ref.clone());
         }
 
         let s3_ref: Option<Arc<S3Ref>> = inputs.get("s3_ref").and_then(|value| match value {

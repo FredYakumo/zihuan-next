@@ -109,7 +109,6 @@ pub(crate) struct QqCommandSideEffectContext<'a> {
     is_group: bool,
     group_name: Option<&'a str>,
     rdb_pool: Option<&'a RelationalDbConnection>,
-    mysql_ref: Option<&'a Arc<MySqlConfig>>,
 }
 
 impl SideEffectContext for QqCommandSideEffectContext<'_> {
@@ -139,7 +138,7 @@ impl SideEffectContext for QqCommandSideEffectContext<'_> {
             bot_id: self.bot_id,
             bot_name: self.bot_name,
             mention_target_id: None,
-            persistence: build_outbound_persistence(self.rdb_pool, self.mysql_ref, self.group_name, self.bot_name),
+            persistence: build_outbound_persistence(self.rdb_pool, self.group_name, self.bot_name),
             max_text_chars: MAX_REPLY_CHARS,
         };
         send_forward_content(&send_ctx, content)
@@ -744,7 +743,6 @@ pub(crate) struct QqLongTaskNotifier {
     sender_id: String,
     is_group: bool,
     rdb_pool: Option<RelationalDbConnection>,
-    mysql_ref: Option<Arc<MySqlConfig>>,
     group_name: Option<String>,
     bot_id: String,
     bot_name: String,
@@ -763,7 +761,6 @@ impl LongTaskNotifier for QqLongTaskNotifier {
             mention_target_id: Some(&self.sender_id),
             persistence: build_outbound_persistence(
                 self.rdb_pool.as_ref(),
-                self.mysql_ref.as_ref(),
                 self.group_name.as_deref(),
                 &self.bot_name,
             ),
@@ -788,7 +785,6 @@ impl LongTaskNotifier for QqLongTaskNotifier {
             mention_target_id: None,
             persistence: build_outbound_persistence(
                 self.rdb_pool.as_ref(),
-                self.mysql_ref.as_ref(),
                 self.group_name.as_deref(),
                 &self.bot_name,
             ),
@@ -823,7 +819,6 @@ pub(crate) struct QqChatAgentServiceContext<'a> {
     pub(crate) natural_language_reply_llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     pub(crate) natural_language_reply_system_prompt: Option<&'a str>,
     pub(crate) rdb_pool: Option<&'a RelationalDbConnection>,
-    pub(crate) mysql_ref: Option<&'a Arc<MySqlConfig>>,
     pub(crate) weaviate_image_ref: Option<&'a Arc<WeaviateRef>>,
     pub(crate) weaviate_memory_ref: Option<&'a Arc<WeaviateRef>>,
     pub(crate) embedding_model: Option<&'a Arc<dyn EmbeddingBase>>,
@@ -923,7 +918,6 @@ pub struct QqChatAgentServiceRuntimeConfig {
     pub math_programming_llm_display_name: String,
     pub natural_language_reply_llm_display_name: String,
     pub rdb_pool: Option<RelationalDbConnection>,
-    pub mysql_ref: Option<Arc<MySqlConfig>>,
     pub weaviate_image_ref: Option<Arc<WeaviateRef>>,
     pub weaviate_memory_ref: Option<Arc<WeaviateRef>>,
     pub embedding_model: Option<Arc<dyn EmbeddingBase>>,
@@ -992,7 +986,6 @@ impl QqChatAgentService {
                 .natural_language_reply_system_prompt
                 .as_deref(),
             rdb_pool: self.config.rdb_pool.as_ref(),
-            mysql_ref: self.config.mysql_ref.as_ref(),
             weaviate_image_ref: self.config.weaviate_image_ref.as_ref(),
             weaviate_memory_ref: self.config.weaviate_memory_ref.as_ref(),
             embedding_model: self.config.embedding_model.as_ref(),

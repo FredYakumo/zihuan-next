@@ -8,12 +8,12 @@ use serde_json::Value;
 use storage_handler::RuntimeStorageConnectionManager;
 use zihuan_agent::brain::{BrainTool, ToolExecutionOutput};
 use zihuan_core::agent_config::{current_qq_chat_agent_service_config, image_understand_llm_ref_id};
-use zihuan_core::data_refs::MySqlConfig;
+use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart};
 use zihuan_core::runtime::block_async;
-use zihuan_graph_engine::message_restore::{find_media_in_messages, register_mysql_ref, restore_media_by_id};
+use zihuan_graph_engine::message_restore::{find_media_in_messages, restore_media_by_id};
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
@@ -26,7 +26,7 @@ pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
 
 pub(crate) struct ImageUnderstandBrainTool {
     current_event: Option<ims_bot_adapter::models::MessageEvent>,
-    mysql_ref: Option<Arc<MySqlConfig>>,
+    rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
     notification_target: ToolNotificationTarget,
 }
@@ -34,13 +34,13 @@ pub(crate) struct ImageUnderstandBrainTool {
 impl ImageUnderstandBrainTool {
     pub(crate) fn new(
         current_event: Option<ims_bot_adapter::models::MessageEvent>,
-        mysql_ref: Option<Arc<MySqlConfig>>,
+        rdb_pool: Option<RelationalDbConnection>,
         s3_ref: Option<Arc<S3Ref>>,
         notification_target: ToolNotificationTarget,
     ) -> Self {
         Self {
             current_event,
-            mysql_ref,
+            rdb_pool,
             s3_ref,
             notification_target,
         }
@@ -57,7 +57,7 @@ impl BrainTool for ImageUnderstandBrainTool {
         let result = execute_image_understand(
             arguments,
             self.current_event.as_ref(),
-            self.mysql_ref.clone(),
+            self.rdb_pool.clone(),
             self.s3_ref.clone(),
         );
 
@@ -95,8 +95,8 @@ pub(crate) fn execute_image_understand_tool(
         DataValue::MessageEvent(event) => Some(event),
         _ => None,
     });
-    let mysql_ref = runtime_values.get("mysql_ref").and_then(|value| match value {
-        DataValue::MySqlRef(mysql_ref) => Some(mysql_ref.clone()),
+    let rdb_pool = runtime_values.get("mysql_ref").and_then(|value| match value {
+        DataValue::RdbRef(connection) => Some(connection.clone()),
         _ => None,
     });
     let s3_ref = runtime_values.get("s3_ref").and_then(|value| match value {
@@ -104,20 +104,20 @@ pub(crate) fn execute_image_understand_tool(
         _ => None,
     });
 
-    execute_image_understand(arguments, message_event, mysql_ref, s3_ref)
+    execute_image_understand(arguments, message_event, rdb_pool, s3_ref)
 }
 
 fn execute_image_understand(
     arguments: &Value,
     current_event: Option<&ims_bot_adapter::models::MessageEvent>,
-    mysql_ref: Option<Arc<MySqlConfig>>,
+    _rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
 ) -> Result<String> {
     let media_id = optional_string_argument(arguments, "media_id")
         .ok_or_else(|| Error::ValidationError("media_id is required".to_string()))?;
     let focus_text = optional_string_argument(arguments, "content");
 
-    let persisted_media = resolve_image_understand_media(&media_id, current_event, mysql_ref)?;
+    let persisted_media = resolve_image_understand_media(&media_id, current_event, _rdb_pool)?;
     let s3_ref = resolve_image_understand_s3_ref(s3_ref)?;
     let description = analyze_persisted_media(&persisted_media, focus_text.as_deref(), s3_ref.as_deref())?;
     Ok(description)
@@ -126,18 +126,12 @@ fn execute_image_understand(
 fn resolve_image_understand_media(
     media_id: &str,
     current_event: Option<&ims_bot_adapter::models::MessageEvent>,
-    mysql_ref: Option<Arc<MySqlConfig>>,
+    _rdb_pool: Option<RelationalDbConnection>,
 ) -> Result<PersistedMedia> {
     if let Some(event) = current_event {
         if let Some(media) = find_media_in_messages(&event.message_list, media_id) {
             return Ok(media);
         }
-    }
-
-    if let Some(mysql_ref) = mysql_ref {
-        register_mysql_ref(mysql_ref);
-    } else if let Some(mysql_ref) = load_agent_mysql_ref().transpose()? {
-        register_mysql_ref(mysql_ref);
     }
 
     restore_media_by_id(media_id)?
@@ -149,14 +143,6 @@ fn resolve_image_understand_s3_ref(s3_ref: Option<Arc<S3Ref>>) -> Result<Option<
         return Ok(s3_ref);
     }
     load_agent_s3_ref().transpose()
-}
-
-fn load_agent_mysql_ref() -> Option<Result<Arc<MySqlConfig>>> {
-    let config = current_qq_chat_agent_service_config().ok()?;
-    let connection_id = config.resolved_rdb_id().map(str::trim).filter(|value| !value.is_empty())?;
-    Some(block_async(
-        RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(connection_id),
-    ))
 }
 
 fn load_agent_s3_ref() -> Option<Result<Arc<S3Ref>>> {

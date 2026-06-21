@@ -96,8 +96,7 @@ pub fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         | DataType::BotAdapterRef
         | DataType::S3Ref
         | DataType::RedisRef
-        | DataType::MySqlRef
-        | DataType::SqliteRef
+        | DataType::RdbRef
         | DataType::WeaviateRef
         | DataType::WebSearchEngineRef
         | DataType::SessionStateRef

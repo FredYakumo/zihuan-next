@@ -1,4 +1,4 @@
-use crate::message_mysql_chunking::{
+use crate::message_rdb_chunking::{
     split_content_chunks, truncate_field_if_needed, truncate_optional_field_if_needed, AT_TARGET_LIST_MAX_CHARS,
     CONTENT_MAX_CHARS, GROUP_ID_MAX_CHARS, GROUP_NAME_MAX_CHARS, MEDIA_JSON_MAX_CHARS, MESSAGE_ID_MAX_CHARS,
     SENDER_ID_MAX_CHARS, SENDER_NAME_MAX_CHARS,
@@ -24,12 +24,12 @@ fn is_connection_error(e: &sqlx::Error) -> bool {
 /// `MessageEvent`.  The caller must provide `message_id`, `sender_id`, and
 /// `sender_name` explicitly.  `group_id` and `group_name` are optional; an
 /// absent or empty string value is stored as NULL.
-pub struct QQMessageListMySQLPersistenceNode {
+pub struct QQMessageListRdbPersistenceNode {
     id: String,
     name: String,
 }
 
-impl QQMessageListMySQLPersistenceNode {
+impl QQMessageListRdbPersistenceNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -38,7 +38,7 @@ impl QQMessageListMySQLPersistenceNode {
     }
 }
 
-impl Node for QQMessageListMySQLPersistenceNode {
+impl Node for QQMessageListRdbPersistenceNode {
     fn node_type(&self) -> NodeType {
         NodeType::Simple
     }
@@ -71,7 +71,7 @@ impl Node for QQMessageListMySQLPersistenceNode {
     ];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
-        // ── Extract qq_message_list ──────────────────────────────────────────
+        // Extract qq_message_list
         let (msg_item_type, msg_items) = inputs
             .get("qq_message_list")
             .and_then(|v| match v {
@@ -80,7 +80,7 @@ impl Node for QQMessageListMySQLPersistenceNode {
             })
             .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("qq_message_list is required".to_string()))?;
 
-        // ── Extract metadata strings ─────────────────────────────────────────
+        // extract metadata strings
         let raw_message_id = inputs
             .get("message_id")
             .and_then(|v| match v {
@@ -122,7 +122,7 @@ impl Node for QQMessageListMySQLPersistenceNode {
         });
         let group_name = truncate_optional_field_if_needed("group_name", group_name, GROUP_NAME_MAX_CHARS, &message_id);
 
-        // ── MySQL pool ───────────────────────────────────────────────────────
+        // MySQL pool
         let rdb_pool = inputs
             .get("mysql_ref")
             .and_then(|v| match v {
@@ -144,19 +144,19 @@ impl Node for QQMessageListMySQLPersistenceNode {
                 let idle = p.num_idle();
                 let in_use = size.saturating_sub(idle as u32);
                 debug!(
-                    "[QQMessageListMySQLPersistenceNode] pool size={}, idle={}, in-use={}",
+                    "[QQMessageListRdbPersistenceNode] pool size={}, idle={}, in-use={}",
                     size, idle, in_use
                 );
                 if idle == 0 {
                     warn!(
-                        "[QQMessageListMySQLPersistenceNode] No idle connections (all {} in-use) — INSERT may stall",
+                        "[QQMessageListRdbPersistenceNode] No idle connections (all {} in-use) — INSERT may stall",
                         in_use
                     );
                 }
                 p
             }
             None => {
-                error!("[QQMessageListMySQLPersistenceNode] mysql_ref has no active pool");
+                error!("[QQMessageListRdbPersistenceNode] rdb_pool has no active pool");
                 return crate::return_with_node_output![self;
                     "success" => DataValue::Boolean(false),
                     "qq_message_list" => passthrough,
@@ -164,7 +164,7 @@ impl Node for QQMessageListMySQLPersistenceNode {
             }
         };
 
-        // ── Build content and at_target_list from messages ───────────────────
+        // Build content and at_target_list from messages
         let messages: Vec<Message> = msg_items
             .iter()
             .filter_map(|v| match v {
@@ -208,14 +208,14 @@ impl Node for QQMessageListMySQLPersistenceNode {
         let message_id_log = message_id.clone();
 
         info!(
-            "[QQMessageListMySQLPersistenceNode] Inserting message {} (sender={}, group={:?}, chunks={})",
+            "[QQMessageListRdbPersistenceNode] Inserting message {} (sender={}, group={:?}, chunks={})",
             message_id_log,
             sender_id,
             group_id,
             content_chunks.len(),
         );
 
-        // ── Insert with single retry on connection errors ─────────────────────
+        // Insert with single retry on connection errors
         let mut success = false;
         for attempt in 1u32..=2 {
             let run = async {
@@ -266,24 +266,24 @@ impl Node for QQMessageListMySQLPersistenceNode {
                 Ok(_) => {
                     if attempt > 1 {
                         info!(
-                            "[QQMessageListMySQLPersistenceNode] Message {} inserted (attempt {})",
+                            "[QQMessageListRdbPersistenceNode] Message {} inserted (attempt {})",
                             message_id_log, attempt
                         );
                     } else {
-                        info!("[QQMessageListMySQLPersistenceNode] Message {} inserted", message_id_log);
+                        info!("[QQMessageListRdbPersistenceNode] Message {} inserted", message_id_log);
                     }
                     success = true;
                     break;
                 }
                 Err(ref e) if attempt < 2 && is_connection_error(e) => {
                     warn!(
-                        "[QQMessageListMySQLPersistenceNode] Message {} attempt {} connection error ({}); retrying",
+                        "[QQMessageListRdbPersistenceNode] Message {} attempt {} connection error ({}); retrying",
                         message_id_log, attempt, e
                     );
                 }
                 Err(e) => {
                     error!(
-                        "[QQMessageListMySQLPersistenceNode] INSERT failed for message {} (attempt {}): {}",
+                        "[QQMessageListRdbPersistenceNode] INSERT failed for message {} (attempt {}): {}",
                         message_id_log, attempt, e
                     );
                     break;
@@ -293,12 +293,12 @@ impl Node for QQMessageListMySQLPersistenceNode {
 
         if success {
             info!(
-                "[QQMessageListMySQLPersistenceNode] success=true for message {}",
+                "[QQMessageListRdbPersistenceNode] success=true for message {}",
                 message_id_log
             );
         } else {
             error!(
-                "[QQMessageListMySQLPersistenceNode] success=false for message {}",
+                "[QQMessageListRdbPersistenceNode] success=false for message {}",
                 message_id_log
             );
         }

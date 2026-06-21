@@ -1,16 +1,16 @@
-use crate::message_mysql_history_common::{
+use crate::message_rdb_history_common::{
     aggregate_history_rows, format_history_messages, message_history_chunk_row_from_row, run_mysql_query,
     SearchMessagesQueryBuilder,
 };
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use zihuan_core::error::{Error, Result};
 
-pub struct MessageMySQLSearchNode {
+pub struct MessageRdbSearchNode {
     id: String,
     name: String,
 }
 
-impl MessageMySQLSearchNode {
+impl MessageRdbSearchNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -19,7 +19,7 @@ impl MessageMySQLSearchNode {
     }
 }
 
-impl Node for MessageMySQLSearchNode {
+impl Node for MessageRdbSearchNode {
     fn id(&self) -> &str {
         &self.id
     }

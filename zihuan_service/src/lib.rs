@@ -16,7 +16,7 @@ pub fn init_node_registry() -> Result<()> {
     use nodes::agent_embedding_model_node::AgentEmbeddingModelNode;
     use nodes::agent_image_db_ref::AgentImageDbRefNode;
     use nodes::agent_llm_node::AgentLlmNode;
-    use nodes::agent_mysql_ref::AgentMySqlRefNode;
+    use nodes::agent_rdb_ref::AgentRdbRefNode;
     use nodes::agent_rustfs_ref::AgentRustfsRefNode;
     use nodes::agent_task_progress_node::AgentTaskProgressNode;
     use nodes::agent_tavily_ref::AgentTavilyRefNode;
@@ -60,11 +60,11 @@ pub fn init_node_registry() -> Result<()> {
         BrainNode
     );
     register_node!(
-        "agent_mysql_ref",
-        "读取Agent MySQL连接",
+        "agent_rdb_ref",
+        "读取Agent RDB连接",
         "Agent",
-        "从当前 Agent 工具调用上下文中读取 MySQL 连接并输出 MySqlRef",
-        AgentMySqlRefNode
+        "从当前 Agent 工具调用上下文中读取关系数据库连接并输出 RdbRef",
+        AgentRdbRefNode
     );
     register_node!(
         "agent_rustfs_ref",

@@ -241,7 +241,6 @@ pub(crate) struct OwnedStyleLearningTaskContext {
     pub natural_language_reply_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     pub intent_classification_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     pub rdb_pool: RelationalDbConnection,
-    pub mysql_ref: Option<Arc<zihuan_core::data_refs::MySqlConfig>>,
     pub max_message_length: usize,
     pub reply_batch_builder: Option<crate::agent::qq_chat_agent_service_core::QqChatServiceReplyBatchBuilder>,
     pub resolved_language_style_prompt: Option<String>,
@@ -335,7 +334,6 @@ pub(crate) fn execute_style_learning_task(
                     mention_target_id: None,
                     persistence: crate::storage::qq_chat_session_store::build_outbound_persistence(
                         Some(&owned.rdb_pool),
-                        owned.mysql_ref.as_ref(),
                         input.event.group_name.as_deref(),
                         &owned.bot_name,
                     ),

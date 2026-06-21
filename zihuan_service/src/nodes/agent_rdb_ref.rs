@@ -6,12 +6,12 @@ use zihuan_core::error::Result;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_graph_engine::{node_output, DataType, DataValue, Node, Port};
 
-pub struct AgentMySqlRefNode {
+pub struct AgentRdbRefNode {
     id: String,
     name: String,
 }
 
-impl AgentMySqlRefNode {
+impl AgentRdbRefNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -20,7 +20,7 @@ impl AgentMySqlRefNode {
     }
 }
 
-impl Node for AgentMySqlRefNode {
+impl Node for AgentRdbRefNode {
     fn id(&self) -> &str {
         &self.id
     }

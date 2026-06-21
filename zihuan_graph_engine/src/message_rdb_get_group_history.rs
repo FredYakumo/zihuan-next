@@ -1,17 +1,17 @@
-use crate::message_mysql_history_common::{
-    aggregate_history_rows, format_history_messages, history_query_row_limit, message_history_chunk_row_from_row,
-    run_mysql_query, user_history_query,
+use crate::message_rdb_history_common::{
+    aggregate_history_rows, format_history_messages, group_history_query, history_query_row_limit,
+    message_history_chunk_row_from_row, run_mysql_query,
 };
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
 
-pub struct MessageMySQLGetUserHistoryNode {
+pub struct MessageRdbGetGroupHistoryNode {
     id: String,
     name: String,
 }
 
-impl MessageMySQLGetUserHistoryNode {
+impl MessageRdbGetGroupHistoryNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -36,22 +36,7 @@ fn extract_limit(inputs: &HashMap<String, DataValue>) -> Result<u32> {
     Ok(limit as u32)
 }
 
-fn extract_optional_group_id(inputs: &HashMap<String, DataValue>) -> Result<Option<String>> {
-    match inputs.get("group_id") {
-        Some(DataValue::String(group_id)) => {
-            let group_id = group_id.trim();
-            if group_id.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(group_id.to_string()))
-            }
-        }
-        Some(_) => Err(Error::InvalidNodeInput("group_id must be a string".to_string())),
-        None => Ok(None),
-    }
-}
-
-impl Node for MessageMySQLGetUserHistoryNode {
+impl Node for MessageRdbGetGroupHistoryNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -61,13 +46,12 @@ impl Node for MessageMySQLGetUserHistoryNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("按发送者查询最近消息历史，可选限定某个群")
+        Some("按群查询最近消息历史")
     }
 
     node_input![
         port! { name = "mysql_ref", ty = RdbRef, desc = "关系数据库连接引用" },
-        port! { name = "sender_id", ty = String, desc = "要查询的发送者 ID" },
-        port! { name = "group_id", ty = String, desc = "可选的群 ID 过滤条件", optional },
+        port! { name = "group_id", ty = String, desc = "要查询的群 ID" },
         port! { name = "limit", ty = Integer, desc = "要读取的最近消息数量" },
     ];
 
@@ -89,36 +73,23 @@ impl Node for MessageMySQLGetUserHistoryNode {
             _ => return Err(Error::InvalidNodeInput("mysql_ref must be a MySQL connection".to_string())),
         };
 
-        let sender_id = inputs
-            .get("sender_id")
+        let group_id = inputs
+            .get("group_id")
             .and_then(|value| match value {
-                DataValue::String(sender_id) => Some(sender_id.clone()),
+                DataValue::String(group_id) => Some(group_id.clone()),
                 _ => None,
             })
-            .ok_or_else(|| Error::InvalidNodeInput("sender_id is required".to_string()))?;
+            .ok_or_else(|| Error::InvalidNodeInput("group_id is required".to_string()))?;
 
-        let group_id = extract_optional_group_id(&inputs)?;
         let limit = extract_limit(&inputs)?;
-
-        let query_group_id = group_id.clone();
-        let query_sender_id = sender_id.clone();
 
         let rows = run_mysql_query(&mysql_config, move |pool| {
             Box::pin(async move {
-                if let Some(group_id) = query_group_id {
-                    sqlx::query(user_history_query(Some(group_id.as_str())))
-                        .bind(&query_sender_id)
-                        .bind(&group_id)
-                        .bind(history_query_row_limit(limit))
-                        .fetch_all(pool)
-                        .await
-                } else {
-                    sqlx::query(user_history_query(None))
-                        .bind(&query_sender_id)
-                        .bind(history_query_row_limit(limit))
-                        .fetch_all(pool)
-                        .await
-                }
+                sqlx::query(group_history_query())
+                    .bind(&group_id)
+                    .bind(history_query_row_limit(limit))
+                    .fetch_all(pool)
+                    .await
             })
         })?;
 

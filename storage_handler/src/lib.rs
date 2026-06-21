@@ -46,7 +46,7 @@ pub use object_storage::{
 pub use rdb::{build_relational_db_connection_for_connection, build_relational_db_connection_for_kind};
 pub use redis::RedisNode;
 pub use resource_resolver::{
-    build_mysql_ref, build_redis_ref, build_s3_ref, build_sqlite_ref, build_weaviate_ref, build_web_search_engine_ref,
+    build_rdb_ref, build_redis_ref, build_s3_ref, build_weaviate_ref, build_web_search_engine_ref,
     find_connection, resolve_connection_data_value,
 };
 pub use rustfs::RustfsNode;
@@ -396,10 +396,10 @@ pub fn infer_weaviate_collection_schema(connection_name: &str, class_name: &str)
 pub fn init_node_registry() -> Result<()> {
     use crate::image_weaviate_persistence::ImageWeaviatePersistenceNode;
     use crate::qq_message_list_weaviate_persistence::QQMessageListWeaviatePersistenceNode;
-    use zihuan_graph_engine::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
-    use zihuan_graph_engine::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
-    use zihuan_graph_engine::message_mysql_search::MessageMySQLSearchNode;
-    use zihuan_graph_engine::qq_message_list_mysql_persistence::QQMessageListMySQLPersistenceNode;
+    use zihuan_graph_engine::message_rdb_get_group_history::MessageRdbGetGroupHistoryNode;
+    use zihuan_graph_engine::message_rdb_get_user_history::MessageRdbGetUserHistoryNode;
+    use zihuan_graph_engine::message_rdb_search::MessageRdbSearchNode;
+    use zihuan_graph_engine::qq_message_list_rdb_persistence::QQMessageListRdbPersistenceNode;
     use zihuan_graph_engine::register_node;
 
     register_node!(
@@ -438,11 +438,11 @@ pub fn init_node_registry() -> Result<()> {
         WeaviateNode
     );
     register_node!(
-        "qq_message_list_mysql_persistence",
-        "QQMessage列表MySQL持久化",
+        "qq_message_list_rdb_persistence",
+        "QQMessage列表RDB持久化",
         "消息存储",
-        "将Vec<QQMessage>及调用方提供的元数据持久化到MySQL数据库",
-        QQMessageListMySQLPersistenceNode
+        "将Vec<QQMessage>及调用方提供的元数据持久化到关系数据库",
+        QQMessageListRdbPersistenceNode
     );
     register_node!(
         "qq_message_list_weaviate_persistence",
@@ -459,25 +459,25 @@ pub fn init_node_registry() -> Result<()> {
         ImageWeaviatePersistenceNode
     );
     register_node!(
-        "message_mysql_get_user_history",
+        "message_rdb_get_user_history",
         "获取QQ号消息历史",
         "消息存储",
         "根据 sender_id 读取最近消息历史，可选限定某个群",
-        MessageMySQLGetUserHistoryNode
+        MessageRdbGetUserHistoryNode
     );
     register_node!(
-        "message_mysql_get_group_history",
+        "message_rdb_get_group_history",
         "获取QQ群聊消息历史",
         "消息存储",
         "根据 group_id 读取最近消息历史",
-        MessageMySQLGetGroupHistoryNode
+        MessageRdbGetGroupHistoryNode
     );
     register_node!(
-        "message_mysql_search",
+        "message_rdb_search",
         "搜索消息记录",
         "消息存储",
         "在消息记录中搜索，支持发送者、群组、内容关键词、时间范围过滤",
-        MessageMySQLSearchNode
+        MessageRdbSearchNode
     );
     register_node!(
         "tavily_provider",

@@ -4,7 +4,7 @@ use log::info;
 use serde_json::Value;
 
 use zihuan_agent::brain::{Brain, BrainTool};
-use zihuan_core::data_refs::MySqlConfig;
+use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
@@ -58,7 +58,7 @@ If information is insufficient, clearly state the missing information and what c
 pub(crate) struct RunDeepResearchSubagentBrainTool {
     llm: Arc<dyn LLMBase>,
     web_search_engine: Arc<WebSearchEngineRef>,
-    mysql_ref: Option<Arc<MySqlConfig>>,
+    rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
     current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
     notification_target: ToolNotificationTarget,
@@ -71,7 +71,7 @@ impl RunDeepResearchSubagentBrainTool {
     pub(crate) fn new(
         llm: Arc<dyn LLMBase>,
         web_search_engine: Arc<WebSearchEngineRef>,
-        mysql_ref: Option<Arc<MySqlConfig>>,
+        rdb_pool: Option<RelationalDbConnection>,
         s3_ref: Option<Arc<S3Ref>>,
         current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
         notification_target: ToolNotificationTarget,
@@ -81,7 +81,7 @@ impl RunDeepResearchSubagentBrainTool {
         Self {
             llm,
             web_search_engine,
-            mysql_ref,
+            rdb_pool,
             s3_ref,
             current_message_event,
             notification_target,
@@ -171,7 +171,7 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
             ));
             brain.add_tool(ImageUnderstandBrainTool::new(
                 self.current_message_event.clone(),
-                self.mysql_ref.clone(),
+                self.rdb_pool.clone(),
                 self.s3_ref.clone(),
                 self.notification_target.clone(),
             ));

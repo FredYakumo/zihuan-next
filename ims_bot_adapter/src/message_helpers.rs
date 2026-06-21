@@ -11,7 +11,7 @@ use crate::ws_action::{response_message_id, response_success, ws_send_action};
 use log::{info, warn};
 use std::sync::Arc;
 use tokio::task::block_in_place;
-use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
+use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_graph_engine::data_value::RedisConfig;
 use zihuan_graph_engine::message_persistence::persist_message_event;
 use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
@@ -22,7 +22,6 @@ const MAX_BATCH_TEXT_CHARS: usize = 800;
 #[derive(Debug, Clone, Default)]
 pub struct OutboundMessagePersistence {
     pub rdb_pool: Option<RelationalDbConnection>,
-    pub mysql_ref: Option<Arc<MySqlConfig>>,
     pub redis_ref: Option<Arc<RedisConfig>>,
     pub group_name: Option<String>,
     pub sender_name: Option<String>,
@@ -129,7 +128,6 @@ fn persist_outbound_messages(
     if let Err(error) = persist_message_event(
         &event,
         persistence.rdb_pool.as_ref(),
-        persistence.mysql_ref.as_ref(),
         persistence.redis_ref.as_ref(),
     ) {
         warn!(

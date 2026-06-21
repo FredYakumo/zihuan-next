@@ -1,5 +1,4 @@
 use crate::data_value::RedisConfig;
-use crate::message_mysql_history_common::run_mysql_query;
 use log::{debug, warn};
 use once_cell::sync::Lazy;
 use redis::AsyncCommands;
@@ -16,7 +15,6 @@ use zihuan_core::ims_bot_adapter::models::message::{
 
 static RUNTIME_MESSAGE_INDEX: Lazy<RwLock<HashMap<String, Vec<Message>>>> = Lazy::new(|| RwLock::new(HashMap::new()));
 static RUNTIME_MEDIA_INDEX: Lazy<RwLock<HashMap<String, PersistedMedia>>> = Lazy::new(|| RwLock::new(HashMap::new()));
-static LATEST_MYSQL_REF: Lazy<RwLock<Option<Arc<MySqlConfig>>>> = Lazy::new(|| RwLock::new(None));
 static LATEST_RDB_POOL: Lazy<RwLock<Option<RelationalDbConnection>>> = Lazy::new(|| RwLock::new(None));
 static LATEST_REDIS_REF: Lazy<RwLock<Option<Arc<RedisConfig>>>> = Lazy::new(|| RwLock::new(None));
 
@@ -80,12 +78,6 @@ pub fn register_media(media: PersistedMedia) {
     }
 }
 
-pub fn register_mysql_ref(config: Arc<MySqlConfig>) {
-    if let Ok(mut guard) = LATEST_MYSQL_REF.write() {
-        *guard = Some(config);
-    }
-}
-
 pub fn register_rdb_pool(pool: RelationalDbConnection) {
     if let Ok(mut guard) = LATEST_RDB_POOL.write() {
         *guard = Some(pool);
@@ -110,10 +102,6 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
         }
     }
 
-    let mysql_config = match LATEST_MYSQL_REF.read() {
-        Ok(guard) => guard.clone(),
-        Err(_) => None,
-    };
     let rdb_pool = match LATEST_RDB_POOL.read() {
         Ok(guard) => guard.clone(),
         Err(_) => None,
@@ -171,21 +159,7 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
                 }
             }
         } else {
-            let Some(mysql_config) = mysql_config else {
-                return Ok(None);
-            };
-
-            let lookup_id = message_id_str.clone();
-            let rows = run_mysql_query(&mysql_config, move |pool| {
-                Box::pin(async move { sqlx::query(LOOKUP_SQL).bind(&lookup_id).fetch_all(pool).await })
-            })?;
-
-            (
-                rows.into_iter()
-                    .map(|row| (row.get("content"), row.get("media_json"), row.get("raw_message_json")))
-                    .collect(),
-                MessageRestoreSource::MySql,
-            )
+            return Ok(None);
         };
 
     if rows.is_empty() {
@@ -244,10 +218,6 @@ pub fn restore_media_by_id(media_id: &str) -> Result<Option<PersistedMedia>> {
         }
     }
 
-    let mysql_config = match LATEST_MYSQL_REF.read() {
-        Ok(guard) => guard.clone(),
-        Err(_) => None,
-    };
     let rdb_pool = match LATEST_RDB_POOL.read() {
         Ok(guard) => guard.clone(),
         Err(_) => None,
@@ -300,24 +270,7 @@ pub fn restore_media_by_id(media_id: &str) -> Result<Option<PersistedMedia>> {
             }
         }
     } else {
-        let Some(mysql_config) = mysql_config else {
-            return Ok(None);
-        };
-        let rows = run_mysql_query(&mysql_config, move |pool| {
-            let like_pattern_media = like_pattern.clone();
-            let like_pattern_raw = like_pattern.clone();
-            Box::pin(async move {
-                sqlx::query(MEDIA_LOOKUP_SQL)
-                    .bind(like_pattern_media)
-                    .bind(like_pattern_raw)
-                    .fetch_all(pool)
-                    .await
-            })
-        })?;
-
-        rows.into_iter()
-            .map(|row| (row.get("raw_message_json"), row.get("media_json")))
-            .collect()
+        return Ok(None);
     };
 
     for (raw_message_json, media_json) in rows {

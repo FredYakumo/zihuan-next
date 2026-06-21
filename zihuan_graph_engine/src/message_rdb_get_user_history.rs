@@ -1,4 +1,4 @@
-use crate::message_mysql_history_common::{
+use crate::message_rdb_history_common::{
     aggregate_history_rows, format_history_messages, history_query_row_limit, message_history_chunk_row_from_row,
     run_mysql_query, user_history_query,
 };
@@ -6,12 +6,12 @@ use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
 
-pub struct MessageMySQLGetUserHistoryNode {
+pub struct MessageRdbGetUserHistoryNode {
     id: String,
     name: String,
 }
 
-impl MessageMySQLGetUserHistoryNode {
+impl MessageRdbGetUserHistoryNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -51,7 +51,7 @@ fn extract_optional_group_id(inputs: &HashMap<String, DataValue>) -> Result<Opti
     }
 }
 
-impl Node for MessageMySQLGetUserHistoryNode {
+impl Node for MessageRdbGetUserHistoryNode {
     fn id(&self) -> &str {
         &self.id
     }

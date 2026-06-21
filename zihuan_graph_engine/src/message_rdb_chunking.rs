@@ -23,7 +23,7 @@ pub fn truncate_field_if_needed(field_name: &str, value: String, max_chars: usiz
     let original_chars = value.chars().count();
     if let Some(truncated) = truncate_to_char_limit(&value, max_chars) {
         warn!(
-            "[MessageMySQLPersistence] Truncated field '{}' for message {} from {} to {} chars",
+            "[MessageRdbPersistence] Truncated field '{}' for message {} from {} to {} chars",
             field_name, message_id, original_chars, max_chars
         );
         truncated

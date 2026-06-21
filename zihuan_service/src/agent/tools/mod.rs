@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use storage_handler::AgentMemoryAccessContext;
 use zihuan_agent::brain::BrainTool;
-use zihuan_core::data_refs::MySqlConfig;
+use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngineRef;
@@ -72,7 +72,7 @@ const AGENT_GIT_COMMIT_ID: &str = build_metadata::ZIHUAN_GIT_COMMIT_ID;
 pub(crate) fn build_info_brain_tools(
     default_tools_enabled: &HashMap<String, bool>,
     web_search_engine_ref: Option<Arc<WebSearchEngineRef>>,
-    mysql_ref: Option<Arc<MySqlConfig>>,
+    rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
     weaviate_memory_ref: Option<Arc<WeaviateRef>>,
@@ -104,14 +104,14 @@ pub(crate) fn build_info_brain_tools(
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
         tools.push(Box::new(GetRecentGroupMessagesBrainTool::new(
-            mysql_ref.clone(),
+            rdb_pool.clone(),
             dashboard_target.clone(),
         )));
     }
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
         tools.push(Box::new(GetRecentUserMessagesBrainTool::new(
-            mysql_ref.clone(),
+            rdb_pool.clone(),
             dashboard_target.clone(),
         )));
     }
@@ -134,7 +134,7 @@ pub(crate) fn build_info_brain_tools(
                 weaviate_image_ref.clone(),
                 embedding_model.clone(),
                 s3_ref.clone(),
-                mysql_ref.clone(),
+                rdb_pool.clone(),
             )));
         }
     }
@@ -142,7 +142,7 @@ pub(crate) fn build_info_brain_tools(
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_IMAGE_UNDERSTAND) {
         tools.push(Box::new(ImageUnderstandBrainTool::new(
             None,
-            mysql_ref,
+            rdb_pool,
             s3_ref,
             dashboard_target,
         )));
