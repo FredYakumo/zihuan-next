@@ -997,7 +997,7 @@
                       "required": false
                     },
                     {
-                      "data_type": "MySqlRef",
+                      "data_type": "RdbRef",
                       "description": "可选：显式注册给消息恢复链路的 MySQL 连接",
                       "hidden": false,
                       "name": "mysql_ref",
