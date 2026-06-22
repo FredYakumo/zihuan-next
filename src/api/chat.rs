@@ -711,16 +711,16 @@ pub async fn delete_chat_session(req: &mut Request, res: &mut Response, _depot: 
 
 /// Opens a native folder-picker dialog and returns the selected path.
 ///
-/// Uses `rfd::FileDialog` which delegates to the OS native dialog (Win32, macOS NSOpenPanel,
-/// or GTK/Zenity on Linux). Because the native dialog blocks the calling thread, it runs on
-/// a blocking Tokio task via `spawn_blocking`.
+/// Uses `tinyfiledialogs::select_folder_dialog`, which delegates to the OS native dialog
+/// (Win32, macOS NSOpenPanel, or GTK/Zenity on Linux). Because the native dialog blocks the
+/// calling thread, it runs on a blocking Tokio task via `spawn_blocking`.
 #[handler]
 pub async fn select_directory(_req: &mut Request, res: &mut Response, _depot: &mut Depot) {
-    let path = task::spawn_blocking(|| rfd::FileDialog::new().pick_folder())
+    let path = task::spawn_blocking(|| tinyfiledialogs::select_folder_dialog("Select a directory", ""))
         .await
         .unwrap_or(None);
 
-    res.render(Json(json!({ "path": path.map(|p| p.to_string_lossy().to_string()) })));
+    res.render(Json(json!({ "path": path })));
 }
 
 /// Orchestrates a single chat-streaming request from end to end.
