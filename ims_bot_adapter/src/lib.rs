@@ -2,7 +2,6 @@ pub mod active_adapter_manager;
 pub mod adapter;
 pub mod event;
 pub mod extract_group_id_from_event;
-pub mod extract_media_by_id;
 pub mod extract_message_from_event;
 pub mod extract_optional_group_id_from_event;
 pub mod extract_qq_message_list_from_event;
@@ -34,7 +33,6 @@ pub use active_adapter_manager::{
     list_runtime_bot_adapter_instances, register_active_bot_adapter, stop_active_bot_adapter,
     sync_enabled_bot_adapters,
 };
-pub use extract_media_by_id::ExtractMediaByIdNode;
 pub use extract_optional_group_id_from_event::ExtractOptionalGroupIdFromEventNode;
 pub use extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
 pub use extract_sender_from_event::ExtractSenderFromEventNode;
@@ -79,7 +77,6 @@ pub const QUOTE_CONTENT_APPENDIX_LABEL: &str = "[Quote Content Appendix]";
 
 pub fn init_node_registry() -> Result<()> {
     use extract_group_id_from_event::ExtractGroupIdFromEventNode;
-    use extract_media_by_id::ExtractMediaByIdNode;
     use extract_message_from_event::ExtractMessageFromEventNode;
     use extract_optional_group_id_from_event::ExtractOptionalGroupIdFromEventNode;
     use extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
@@ -126,13 +123,6 @@ pub fn init_node_registry() -> Result<()> {
         "Bot适配器",
         "从消息事件中提取 LLMMessage 列表",
         ExtractMessageFromEventNode
-    );
-    register_node!(
-        "extract_media_by_id",
-        "按媒体 ID 提取图片",
-        "Bot适配器",
-        "通过持久化媒体 ID 从数据库恢复图片并转换为 LLMMessage",
-        ExtractMediaByIdNode
     );
     register_node!(
         "extract_qq_message_list_from_event",
