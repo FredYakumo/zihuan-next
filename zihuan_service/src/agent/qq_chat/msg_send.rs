@@ -20,7 +20,7 @@ use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
 use zihuan_graph_engine::data_value::DataValue;
 use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
-pub(crate) use super::core::{
+pub(crate) use super::model::{
     QqChatServiceReplyBatchBuilder, QqChatServiceReplyBuildRequest, QqChatServiceReplyBuildResult,
 };
 use crate::agent::qq_chat::logging::QqChatTaskTrace;

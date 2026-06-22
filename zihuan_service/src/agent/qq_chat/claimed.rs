@@ -25,7 +25,7 @@ use ims_bot_adapter::tools::group_members::GetCurrentGroupMembersBrainTool;
 use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
 
 use super::super::super::tools::{
-    review_and_rewrite_reply, AgentMemoryToolResources, CurrentTimeBrainTool, EditableQqAgentTool,
+    review_and_rewrite_reply, AgentMemoryToolResources, EditableQqAgentTool,
     GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
     GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool, QqReplyReviewRequest,
     RememberContentBrainTool, ReplyMessageBrainTool, RunResearchSubagentBrainTool, SaveImageBrainTool,
@@ -708,7 +708,6 @@ impl QqChatAgentServiceInner {
         let consumed_steer_messages = Arc::new(Mutex::new(Vec::new()));
         let tool_quota = ctx.tool_quota.clone();
         let mut brain = Brain::new(Arc::clone(turn_llm));
-        brain.add_tool(CurrentTimeBrainTool);
         brain.set_observer(Arc::new(QqChatBrainObserver { trace: trace.clone() }));
         brain.set_iteration_hook(Arc::new(QqChatServiceSteerHook {
             pending_steer: Arc::clone(ctx.pending_steer),

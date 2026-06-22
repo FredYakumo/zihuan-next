@@ -8,7 +8,6 @@ mod agent_text_similarity;
 mod classify_intent;
 mod tools;
 pub(crate) use tools::execute_image_understand_tool;
-pub(crate) use tools::CurrentTimeBrainTool;
 pub(crate) use tools::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
 
 use std::collections::HashMap;

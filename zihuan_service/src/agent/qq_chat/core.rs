@@ -15,7 +15,6 @@ use super::super::tools::{
     DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
 };
 pub(crate) use super::logging::QqChatTaskTrace;
-use super::msg_send::QqChatServiceReplyDirective;
 use super::msg_send::{
     build_long_task_complete_content, build_long_task_start_text, send_forward_content, send_notification_text,
     QqChatServiceSendContext,
@@ -23,12 +22,11 @@ use super::msg_send::{
 use crate::nodes::tool_subgraph::{validate_shared_inputs, validate_tool_definitions, ToolResultMode};
 use crate::storage::qq_chat_history_store::clear_history;
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
-use ims_bot_adapter::models::message::{Message, PersistedMedia, PersistedMediaSource};
-use ims_bot_adapter::IMAGE_ANALYSIS_LABEL;
+use ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use zihuan_agent::brain::LongTaskNotifier;
 use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
-use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
+use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::{LLMMessage, MessagePart};
@@ -38,7 +36,7 @@ use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::utils::string_utils::extract_string_field;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::{BrainToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
-use zihuan_graph_engine::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
+use zihuan_graph_engine::data_value::LLMMessageSessionCacheRef;
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_restore::register_media;
 use zihuan_graph_engine::object_storage::S3Ref;
@@ -51,6 +49,11 @@ pub(crate) use super::user_input::{
 };
 use crate::agent::qq_chat::language_style_store::get_applicable_language_style_blocking;
 use crate::agent::qq_chat::language_style_store::QqChatAgentServiceLanguageStyle;
+pub(crate) use crate::agent::qq_chat::model::{
+    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatAgentServiceRuntimeConfig,
+    QqChatServiceHandleReport, QqChatServiceReplyBatchBuilder, QqChatServiceReplyBuildRequest,
+    QqChatServiceReplyBuildResult, QqChatServiceTurnResult, QqCommandSideEffectContext, QqLongTaskNotifier,
+};
 
 pub(crate) const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const MAX_REPLY_CHARS: usize = 250;
@@ -66,50 +69,6 @@ const REFERENCE_ONLY_NOTICE: &str =
 pub(crate) const LAST_INJECTED_GROUP_NAME_KEY: &str = "qq_chat_last_injected_group_name";
 pub(crate) const LAST_INJECTED_ROLE_KEY: &str = "qq_chat_last_injected_role";
 pub(crate) const LAST_INJECTED_EMOTION_KEY: &str = "qq_chat_last_injected_emotion";
-
-#[derive(Debug, Clone)]
-pub(crate) struct QqChatServiceHandleReport {
-    pub(crate) result_summary: String,
-}
-
-/// Request to build a reply batch from the model's reply text.
-#[derive(Debug, Clone)]
-pub(crate) struct QqChatServiceReplyBuildRequest {
-    pub assistant_text: String,
-    pub is_group: bool,
-    pub sender_id: String,
-    pub sender_nickname: String,
-    pub sender_card: String,
-    pub bot_id: String,
-    pub bot_name: String,
-    pub max_message_length: usize,
-    pub reply_directive: Option<QqChatServiceReplyDirective>,
-    pub trigger_message_id: Option<i64>,
-    pub available_media: HashMap<String, PersistedMedia>,
-}
-
-/// Result of building reply batches.
-#[derive(Debug, Clone)]
-pub(crate) struct QqChatServiceReplyBuildResult {
-    pub batches: Vec<Vec<Message>>,
-    pub suppress_send: bool,
-}
-
-/// Builder type for constructing reply batches from a build request.
-pub(crate) type QqChatServiceReplyBatchBuilder =
-    Arc<dyn Fn(&QqChatServiceReplyBuildRequest) -> Result<QqChatServiceReplyBuildResult> + Send + Sync>;
-
-pub(crate) struct QqCommandSideEffectContext<'a> {
-    command_context: &'a CommandContext,
-    cache: &'a Arc<LLMMessageSessionCacheRef>,
-    adapter: &'a ims_bot_adapter::adapter::SharedBotAdapter,
-    bot_id: &'a str,
-    bot_name: &'a str,
-    target_id: &'a str,
-    is_group: bool,
-    group_name: Option<&'a str>,
-    rdb_pool: Option<&'a RelationalDbConnection>,
-}
 
 impl SideEffectContext for QqCommandSideEffectContext<'_> {
     fn command_context(&self) -> &CommandContext {
@@ -633,38 +592,6 @@ mod build_user_message_tests {
             negative_prompt: None,
         }]
     }
-
-    #[test]
-    fn state_delta_lines_are_injected_on_first_turn_only() {
-        let input = build_prepared_input();
-        let adapter = build_test_adapter();
-        let emotion_dimensions = build_emotion_dimensions();
-        let mut session_state = QqChatAgentServiceSessionState::default();
-        session_state.sync_emotion_dimensions(&emotion_dimensions);
-
-        let first = build_state_delta_lines(&mut session_state, &input, "bot", &adapter, &emotion_dimensions);
-        assert!(first.iter().any(|line| line.contains("当前正在`测试群`里聊天")));
-        assert!(first.iter().any(|line| line.contains("当前的情绪状态为")));
-
-        let second = build_state_delta_lines(&mut session_state, &input, "bot", &adapter, &emotion_dimensions);
-        assert!(second.is_empty());
-    }
-
-    #[test]
-    fn state_delta_lines_reappear_when_emotion_changes() {
-        let input = build_prepared_input();
-        let adapter = build_test_adapter();
-        let emotion_dimensions = build_emotion_dimensions();
-        let mut session_state = QqChatAgentServiceSessionState::default();
-        session_state.sync_emotion_dimensions(&emotion_dimensions);
-
-        let _ = build_state_delta_lines(&mut session_state, &input, "bot", &adapter, &emotion_dimensions);
-        session_state.emotion_dimensions.insert("happy".to_string(), 1.0);
-
-        let changed = build_state_delta_lines(&mut session_state, &input, "bot", &adapter, &emotion_dimensions);
-        assert_eq!(changed.len(), 1);
-        assert!(changed[0].contains("当前的情绪状态为"));
-    }
 }
 
 fn persisted_media_from_tool_value(value: &Value) -> Option<PersistedMedia> {
@@ -734,17 +661,6 @@ pub(crate) fn build_model_name_reply(model_display_names: &[String]) -> String {
     }
 }
 
-pub(crate) struct QqLongTaskNotifier {
-    adapter: ims_bot_adapter::adapter::SharedBotAdapter,
-    target_id: String,
-    sender_id: String,
-    is_group: bool,
-    rdb_pool: Option<RelationalDbConnection>,
-    group_name: Option<String>,
-    bot_id: String,
-    bot_name: String,
-}
-
 impl LongTaskNotifier for QqLongTaskNotifier {
     fn on_start(&self, task_id: &str, _task_name: &str, call_content: &str) {
         let text = build_long_task_start_text(task_id, call_content);
@@ -797,46 +713,6 @@ fn extract_tavily_link(item: &str) -> Option<String> {
     })
 }
 
-pub(crate) struct QqChatAgentServiceContext<'a> {
-    pub(crate) adapter: &'a ims_bot_adapter::adapter::SharedBotAdapter,
-    pub(crate) bot_name: &'a str,
-    pub(crate) agent_system_prompt: Option<&'a str>,
-    pub(crate) cache: &'a Arc<LLMMessageSessionCacheRef>,
-    pub(crate) llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    pub(crate) intent_classification_llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    pub(crate) math_programming_llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    pub(crate) natural_language_reply_llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    pub(crate) natural_language_reply_system_prompt: Option<&'a str>,
-    pub(crate) rdb_pool: Option<&'a RelationalDbConnection>,
-    pub(crate) weaviate_image_ref: Option<&'a Arc<WeaviateRef>>,
-    pub(crate) weaviate_memory_ref: Option<&'a Arc<WeaviateRef>>,
-    pub(crate) embedding_model: Option<&'a Arc<dyn EmbeddingBase>>,
-    pub(crate) web_search_engine: &'a Arc<WebSearchEngineRef>,
-    pub(crate) s3_ref: Option<&'a Arc<S3Ref>>,
-    pub(crate) max_message_length: usize,
-    pub(crate) compact_context_length: usize,
-    pub(crate) max_steer_count: usize,
-    pub(crate) reply_batch_builder: Option<&'a QqChatServiceReplyBatchBuilder>,
-    pub(crate) shared_runtime_values: HashMap<String, DataValue>,
-    pub(crate) session_state_store: &'a Arc<Mutex<QqChatAgentServiceSessionState>>,
-    pub(crate) pending_steer: &'a Arc<PendingSteerStore>,
-    pub(crate) task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
-    pub(crate) task_db_connection_id: Option<String>,
-    pub(crate) tool_quota: Option<QqChatToolQuotaContext>,
-    pub(crate) resolved_language_style: Option<QqChatAgentServiceLanguageStyle>,
-}
-
-pub struct QqChatAgentServiceInner {
-    pub(crate) id: String,
-    pub(crate) default_tools_enabled: HashMap<String, bool>,
-    pub(crate) shared_inputs: Vec<FunctionPortDef>,
-    pub(crate) tool_definitions: Vec<BrainToolDefinition>,
-}
-
-pub(crate) struct QqChatServiceTurnResult {
-    pub(crate) result_summary: String,
-}
-
 impl QqChatAgentServiceInner {
     pub fn new(id: impl Into<String>) -> Self {
         Self {
@@ -887,48 +763,6 @@ impl QqChatAgentServiceInner {
         )?;
         Ok(())
     }
-}
-
-#[derive(Clone)]
-pub struct QqChatAgentServiceRuntimeConfig {
-    pub agent_id: String,
-    pub qq_chat_config: zihuan_core::agent_config::qq_chat::QqChatAgentServiceConfig,
-    pub node_id: String,
-    pub bot_name: String,
-    pub system_prompt: Option<String>,
-    pub cache: Arc<LLMMessageSessionCacheRef>,
-    pub session: Arc<SessionStateRef>,
-    pub llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    pub intent_classification_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    pub math_programming_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    pub natural_language_reply_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    pub main_llm_display_name: String,
-    pub intent_classification_llm_display_name: String,
-    pub math_programming_llm_display_name: String,
-    pub natural_language_reply_llm_display_name: String,
-    pub rdb_pool: Option<RelationalDbConnection>,
-    pub weaviate_image_ref: Option<Arc<WeaviateRef>>,
-    pub weaviate_memory_ref: Option<Arc<WeaviateRef>>,
-    pub embedding_model: Option<Arc<dyn EmbeddingBase>>,
-    pub web_search_engine: Arc<WebSearchEngineRef>,
-    pub s3_ref: Option<Arc<S3Ref>>,
-    pub max_message_length: usize,
-    pub compact_context_length: usize,
-    pub max_steer_count: usize,
-    pub reply_batch_builder: Option<QqChatServiceReplyBatchBuilder>,
-    pub default_tools_enabled: HashMap<String, bool>,
-    pub shared_inputs: Vec<FunctionPortDef>,
-    pub tool_definitions: Vec<BrainToolDefinition>,
-    pub shared_runtime_values: HashMap<String, DataValue>,
-    pub session_state_store: Arc<Mutex<QqChatAgentServiceSessionState>>,
-    pub task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
-    pub tool_quota_session_state: Arc<Mutex<SessionToolQuotaState>>,
-}
-
-pub struct QqChatAgentService {
-    inner: QqChatAgentServiceInner,
-    config: QqChatAgentServiceRuntimeConfig,
-    pending_steer: Arc<PendingSteerStore>,
 }
 
 impl QqChatAgentService {

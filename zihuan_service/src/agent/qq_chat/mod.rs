@@ -1,4 +1,5 @@
 mod core;
+pub(crate) mod model;
 pub mod ignore_store;
 mod inbox;
 pub mod language_style_store;
@@ -18,8 +19,11 @@ use std::sync::{Arc, Mutex};
 
 use self::core::{
     build_info_brain_tools, expand_messages_for_inference, prepare_current_turn_user_input_from_event,
+    QqChatTaskTrace, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+};
+use self::model::{
     QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatAgentServiceRuntimeConfig,
-    QqChatServiceReplyBatchBuilder, QqChatTaskTrace, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+    QqChatServiceReplyBatchBuilder, QqInferenceToolProvider, QqLoadedInferenceResources,
 };
 use self::ignore_store::should_ignore_message_blocking;
 use self::inbox::QqChatAgentServiceInbox;
@@ -95,24 +99,6 @@ pub fn prepare_message_event_user_input_for_test(
     bot_name: &str,
 ) -> PreparedCurrentTurnUserInput {
     prepare_current_turn_user_input_from_event(event, bot_id, bot_name, None)
-}
-
-#[derive(Clone)]
-struct QqLoadedInferenceResources {
-    bot_name: String,
-    default_tools_enabled: HashMap<String, bool>,
-    web_search_engine_ref: Option<Arc<WebSearchEngineRef>>,
-    rdb_pool: Option<RelationalDbConnection>,
-    s3_ref: Option<Arc<S3Ref>>,
-    weaviate_image_ref: Option<Arc<WeaviateRef>>,
-    weaviate_memory_ref: Option<Arc<WeaviateRef>>,
-    embedding_model: Option<Arc<dyn EmbeddingBase>>,
-    memory_llm: Option<Arc<dyn LLMBase>>,
-}
-
-pub struct QqInferenceToolProvider {
-    resources: QqLoadedInferenceResources,
-    tool_definitions: Vec<BrainToolDefinition>,
 }
 
 impl InferenceToolProvider for QqInferenceToolProvider {

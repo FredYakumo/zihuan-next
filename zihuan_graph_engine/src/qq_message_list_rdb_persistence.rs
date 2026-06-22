@@ -254,7 +254,7 @@ impl Node for QQMessageListRdbPersistenceNode {
                 Ok::<(), sqlx::Error>(())
             };
 
-            let result = if let Some(handle) = mysql_config.runtime_handle.clone() {
+            let result: std::result::Result<(), sqlx::Error> = if let Some(handle) = rdb_config.runtime_handle.clone() {
                 if tokio::runtime::Handle::try_current().is_ok() {
                     block_in_place(|| handle.block_on(run))
                 } else {
@@ -263,7 +263,8 @@ impl Node for QQMessageListRdbPersistenceNode {
             } else if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 block_in_place(|| handle.block_on(run))
             } else {
-                tokio::runtime::Runtime::new()?.block_on(run)
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(run)
             };
 
             match result {
