@@ -18,7 +18,7 @@ use super::agent_memory::AgentMemoryToolResources;
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
 use super::current_time::CurrentTimeBrainTool;
 use super::deep_research::RunDeepResearchSubagentBrainTool;
-use crate::agent::qq_chat_tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
+use crate::agent::qq_chat::tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
 
 const LOG_PREFIX: &str = "[ResearchSubagent]";
 
@@ -143,14 +143,14 @@ impl BrainTool for RunResearchSubagentBrainTool {
             brain.add_tool(CurrentTimeBrainTool);
             brain.add_tool(wrap_brain_tool_with_quota(
                 RunDeepResearchSubagentBrainTool::new(
-                Arc::clone(&self.llm),
-                Arc::clone(&self.web_search_engine),
-                self.rdb_pool.clone(),
-                self.s3_ref.clone(),
-                self.current_message_event.clone(),
-                self.notification_target.clone(),
-                self.memory_resources.clone(),
-                self.tool_quota.clone(),
+                    Arc::clone(&self.llm),
+                    Arc::clone(&self.web_search_engine),
+                    self.rdb_pool.clone(),
+                    self.s3_ref.clone(),
+                    self.current_message_event.clone(),
+                    self.notification_target.clone(),
+                    self.memory_resources.clone(),
+                    self.tool_quota.clone(),
                 ),
                 self.tool_quota.clone(),
             ));

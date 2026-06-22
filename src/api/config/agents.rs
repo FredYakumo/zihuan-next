@@ -22,17 +22,17 @@ use zihuan_core::task_context::{
 };
 
 use log::{info, warn};
-use zihuan_service::agent::qq_chat_agent_service_ignore_store::{
+use zihuan_service::agent::qq_chat::ignore_store::{
     create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule, QqChatAgentServiceIgnoreRuleUpsert,
 };
-use zihuan_service::agent::qq_chat_agent_service_privilege_store::{delete_all_notifications, list_recent_notifications};
+use zihuan_service::agent::qq_chat::privilege_store::{delete_all_notifications, list_recent_notifications};
 
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::system_config;
 use model_inference::system_config::load_llm_refs;
 use model_inference::system_config::{AgentConfig, AgentToolConfig, AgentType, LlmRefConfig};
-use zihuan_core::agent_config::QqChatAgentServiceConfig;
+use zihuan_core::agent_config::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::error::{Error as CoreError, Result as CoreResult};
 use zihuan_service::agent::AgentRuntimeStatus;
 use zihuan_service::AgentRuntimeInfo;
@@ -266,9 +266,7 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
 
             match task_status {
                 TaskStatus::Stopped => {
-                    let _ = broadcast_tx.send(ServerMessage::TaskStopped {
-                        task_id: task_id_owned.clone(),
-                    });
+                    let _ = broadcast_tx.send(ServerMessage::TaskStopped { task_id: task_id_owned.clone() });
                 }
                 TaskStatus::Success => {
                     let _ = broadcast_tx.send(ServerMessage::TaskFinished {
@@ -1119,7 +1117,11 @@ pub async fn upload_avatar(req: &mut Request, res: &mut Response, depot: &mut De
         }
     };
 
-    match store.save_avatar("", None, &mime_type, image_data).await.map_err(|e| e.to_string()) {
+    match store
+        .save_avatar("", None, &mime_type, image_data)
+        .await
+        .map_err(|e| e.to_string())
+    {
         Ok(avatar_id) => {
             info!("[avatar] uploaded avatar id={}", avatar_id);
             res.render(Json(AvatarUploadResponse { avatar_id }));

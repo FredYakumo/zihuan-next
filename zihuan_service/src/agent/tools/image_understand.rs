@@ -7,7 +7,7 @@ use model_inference::system_config::load_llm_refs;
 use serde_json::Value;
 use storage_handler::RuntimeStorageConnectionManager;
 use zihuan_agent::brain::{BrainTool, ToolExecutionOutput};
-use zihuan_core::agent_config::{current_qq_chat_agent_service_config, image_understand_llm_ref_id};
+use zihuan_core::agent_config::qq_chat::{current_qq_chat_agent_service_config, image_understand_llm_ref_id};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;

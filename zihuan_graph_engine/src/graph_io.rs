@@ -254,7 +254,7 @@ fn rebuild_dynamic_ports_from_inline_values(graph: &mut NodeGraphDefinition) {
 /// Refresh a single node's dynamic input/output ports from its current `inline_values`.
 ///
 /// Call this after mutating `node.inline_values` so that nodes whose port list depends on
-/// inline configuration (e.g. `format_string`, `qq_chat_agent` shared_inputs) reflect
+/// inline configuration (e.g. `format_string`, `qq_chat` shared_inputs) reflect
 /// the new port set immediately, instead of waiting for a full graph reload/migration.
 pub fn refresh_node_dynamic_ports(node: &mut NodeDefinition) {
     use crate::registry::{json_to_data_value, NODE_REGISTRY};

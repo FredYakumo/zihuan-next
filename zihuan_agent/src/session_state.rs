@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
+use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::error::{Error, Result};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

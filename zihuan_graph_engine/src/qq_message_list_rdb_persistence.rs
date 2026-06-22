@@ -62,7 +62,7 @@ impl Node for QQMessageListRdbPersistenceNode {
         port! { name = "sender_name",     ty = String,          desc = "发送者名称" },
         port! { name = "group_id",        ty = String,          desc = "群ID（可选）", optional },
         port! { name = "group_name",      ty = String,          desc = "群名称（可选）", optional },
-        port! { name = "mysql_ref",       ty = RdbRef,        desc = "关系数据库连接引用" },
+        port! { name = "rdb_ref",       ty = RdbRef,        desc = "关系数据库连接引用" },
     ];
 
     node_output![
@@ -122,23 +122,27 @@ impl Node for QQMessageListRdbPersistenceNode {
         });
         let group_name = truncate_optional_field_if_needed("group_name", group_name, GROUP_NAME_MAX_CHARS, &message_id);
 
-        // MySQL pool
+        // RDB pool
         let rdb_pool = inputs
-            .get("mysql_ref")
+            .get("rdb_ref")
             .and_then(|v| match v {
                 DataValue::RdbRef(r) => Some(r.clone()),
                 _ => None,
             })
-            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("mysql_ref is required".to_string()))?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("rdb_ref is required".to_string()))?;
 
-        let mysql_config = match rdb_pool {
+        let rdb_config = match rdb_pool {
             zihuan_core::data_refs::RelationalDbConnection::MySql(config) => config,
-            _ => return Err(zihuan_core::error::Error::InvalidNodeInput("mysql_ref must be a MySQL connection".to_string())),
+            _ => {
+                return Err(zihuan_core::error::Error::InvalidNodeInput(
+                    "rdb_ref must be a MySQL connection".to_string(),
+                ))
+            }
         };
 
         let passthrough = DataValue::Vec(msg_item_type, msg_items.clone());
 
-        let pool = match mysql_config.pool.clone() {
+        let pool = match rdb_config.pool.clone() {
             Some(p) => {
                 let size = p.size();
                 let idle = p.num_idle();
@@ -292,15 +296,9 @@ impl Node for QQMessageListRdbPersistenceNode {
         }
 
         if success {
-            info!(
-                "[QQMessageListRdbPersistenceNode] success=true for message {}",
-                message_id_log
-            );
+            info!("[QQMessageListRdbPersistenceNode] success=true for message {}", message_id_log);
         } else {
-            error!(
-                "[QQMessageListRdbPersistenceNode] success=false for message {}",
-                message_id_log
-            );
+            error!("[QQMessageListRdbPersistenceNode] success=false for message {}", message_id_log);
         }
 
         crate::return_with_node_output![self;

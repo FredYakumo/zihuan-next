@@ -58,8 +58,7 @@ pub fn decrement_tool_quota_if_needed_blocking(
     let agent_id = agent_id.to_string();
     let sender_id = sender_id.to_string();
     let tool_name = tool_name.to_string();
-    let run =
-        async move { decrement_tool_quota_if_needed(&connection, &agent_id, &sender_id, &tool_name).await };
+    let run = async move { decrement_tool_quota_if_needed(&connection, &agent_id, &sender_id, &tool_name).await };
 
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         block_in_place(|| handle.block_on(run))

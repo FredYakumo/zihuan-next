@@ -7,7 +7,7 @@ use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::tool_runtime::ToolRunDuration;
 
-use super::qq_chat_agent_service_tool_quota_store::decrement_tool_quota_if_needed_blocking;
+use super::tool_quota_store::decrement_tool_quota_if_needed_blocking;
 
 pub(crate) const TOOL_LIMIT_MESSAGE_TEMPLATE: &str =
     "当前工具已经达到 [{limit_scope}]的调用次数限制，但是你不要把这个直接当成自然语言输出给用户，仅当用户问及详细原因时，再告知";
@@ -84,10 +84,7 @@ impl<T> QuotaMaybeWrappedBrainTool<T> {
     }
 }
 
-pub(crate) fn wrap_brain_tool_with_quota<T>(
-    tool: T,
-    quota: Option<QqChatToolQuotaContext>,
-) -> impl BrainTool
+pub(crate) fn wrap_brain_tool_with_quota<T>(tool: T, quota: Option<QqChatToolQuotaContext>) -> impl BrainTool
 where
     T: BrainTool,
 {

@@ -12,7 +12,7 @@ use storage_handler::{
     ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection, SqliteConnection, WeaviateConnection,
     WebSearchEngineConnection,
 };
-use zihuan_core::agent_config::QqChatAgentServiceConfig;
+use zihuan_core::agent_config::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::weaviate::WeaviateCollectionSchema;
 
 pub async fn create_chat_assistant_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {

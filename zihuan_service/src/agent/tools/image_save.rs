@@ -68,8 +68,9 @@ impl BrainTool for SaveImageBrainTool {
             let resolved_url = match (&image_url, &media_id) {
                 (Some(url), _) => url.clone(),
                 (None, Some(media_id)) => {
-                    let media = restore_media_by_id(media_id)?
-                        .ok_or_else(|| Error::ValidationError(format!("save_image could not find media_id '{}'", media_id)))?;
+                    let media = restore_media_by_id(media_id)?.ok_or_else(|| {
+                        Error::ValidationError(format!("save_image could not find media_id '{}'", media_id))
+                    })?;
                     if media.original_source.trim().is_empty() {
                         return Err(Error::ValidationError(format!(
                             "save_image: media_id '{}' has no usable source URL",

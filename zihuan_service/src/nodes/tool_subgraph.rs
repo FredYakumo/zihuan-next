@@ -7,7 +7,7 @@ use log::{info, warn};
 use serde_json::{json, Map, Value};
 
 use zihuan_agent::brain::{consume_tool_progress_notification, current_task_progress_message};
-use zihuan_core::agent_config::{with_current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
+use zihuan_core::agent_config::qq_chat::{with_current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::task_context::append_current_task_progress;
@@ -27,7 +27,7 @@ use zihuan_graph_engine::util::function::{
 use zihuan_graph_engine::{DataType, DataValue, Port};
 
 use crate::agent::execute_image_understand_tool;
-use crate::agent::qq_chat_agent_service_msg_send::{send_notification_text, QqChatServiceSendContext};
+use crate::agent::qq_chat::msg_send::{send_notification_text, QqChatServiceSendContext};
 use crate::agent::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
 
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";

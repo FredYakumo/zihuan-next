@@ -15,7 +15,7 @@ use zihuan_graph_engine::data_value::RedisConfig;
 
 use ims_bot_adapter::adapter::SharedBotAdapter;
 
-use super::qq_chat_agent_service_core::QqChatAgentService;
+use super::core::QqChatAgentService;
 
 const DEFAULT_CONSUMER_COUNT: usize = 8;
 const REDIS_DEQUEUE_TIMEOUT_SECS: usize = 1;

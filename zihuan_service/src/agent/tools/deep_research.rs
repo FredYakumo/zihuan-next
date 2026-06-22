@@ -19,7 +19,7 @@ use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotifi
 use super::current_time::CurrentTimeBrainTool;
 use super::image_understand::ImageUnderstandBrainTool;
 use super::web_search::WebSearchBrainTool;
-use crate::agent::qq_chat_tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
+use crate::agent::qq_chat::tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
 
 const LOG_PREFIX: &str = "[DeepResearch]";
 
@@ -163,10 +163,7 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
                 brain.add_tool(SearchMemoryContentBrainTool::new(memory_resources));
             }
             brain.add_tool(wrap_brain_tool_with_quota(
-                WebSearchBrainTool::new(
-                    Arc::clone(&self.web_search_engine),
-                    self.notification_target.clone(),
-                ),
+                WebSearchBrainTool::new(Arc::clone(&self.web_search_engine), self.notification_target.clone()),
                 self.tool_quota.clone(),
             ));
             brain.add_tool(ImageUnderstandBrainTool::new(

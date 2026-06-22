@@ -7,18 +7,18 @@ use serde_json::Value;
 use zihuan_agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_agent::utils::build_state_system_prefix_lines;
 
-pub(crate) use super::qq_chat_agent_service_logging::QqChatTaskTrace;
-use super::qq_chat_agent_service_msg_send::QqChatServiceReplyDirective;
-use super::qq_chat_agent_service_msg_send::{
-    build_long_task_complete_content, build_long_task_start_text, send_forward_content, send_notification_text,
-    QqChatServiceSendContext,
-};
-pub(crate) use super::tools::build_info_brain_tools;
-use super::tools::{
+pub(crate) use super::super::tools::build_info_brain_tools;
+use super::super::tools::{
     DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
     DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS,
     DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SAVE_IMAGE, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT,
     DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
+};
+pub(crate) use super::logging::QqChatTaskTrace;
+use super::msg_send::QqChatServiceReplyDirective;
+use super::msg_send::{
+    build_long_task_complete_content, build_long_task_start_text, send_forward_content, send_notification_text,
+    QqChatServiceSendContext,
 };
 use crate::nodes::tool_subgraph::{validate_shared_inputs, validate_tool_definitions, ToolResultMode};
 use crate::storage::qq_chat_history_store::clear_history;
@@ -26,7 +26,7 @@ use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use ims_bot_adapter::models::message::{Message, PersistedMedia, PersistedMediaSource};
 use ims_bot_adapter::IMAGE_ANALYSIS_LABEL;
 use zihuan_agent::brain::LongTaskNotifier;
-use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
+use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 use zihuan_core::error::{Error, Result};
@@ -44,13 +44,13 @@ use zihuan_graph_engine::message_restore::register_media;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
-pub(crate) use crate::qq_chat_user_input::{
+use super::tool_quota::{QqChatToolQuotaContext, SessionToolQuotaState};
+pub(crate) use super::user_input::{
     append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference, flush_text_part,
     prepare_current_turn_user_input, prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
 };
-use crate::agent::qq_chat_tool_quota::{QqChatToolQuotaContext, SessionToolQuotaState};
-use crate::agent::qq_chat_agent_service_language_style_store::get_applicable_language_style_blocking;
-use crate::agent::qq_chat_agent_service_language_style_store::QqChatAgentServiceLanguageStyle;
+use crate::agent::qq_chat::language_style_store::get_applicable_language_style_blocking;
+use crate::agent::qq_chat::language_style_store::QqChatAgentServiceLanguageStyle;
 
 pub(crate) const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const MAX_REPLY_CHARS: usize = 250;
@@ -356,11 +356,8 @@ pub(crate) fn build_user_message(
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
     let merged_character_instructions = merge_character_and_style_prompt(character_instructions, style_prompt);
-    let state_lines = build_state_system_prefix_lines(
-        session_state,
-        emotion_dimensions,
-        &merged_character_instructions,
-    );
+    let state_lines =
+        build_state_system_prefix_lines(session_state, emotion_dimensions, &merged_character_instructions);
     let sender_name = ims_bot_adapter::utils::sender_display_name!(
         &current_input.event.sender.nickname,
         &current_input.event.sender.card
@@ -623,7 +620,7 @@ mod build_user_message_tests {
             has_media: false,
             current_image_reference_lines: Vec::new(),
             reference_image_reference_lines: Vec::new(),
-            multimodal_stats: crate::qq_chat_user_input::MultimodalImageStats::default(),
+            multimodal_stats: super::super::user_input::MultimodalImageStats::default(),
         }
     }
 
@@ -759,11 +756,7 @@ impl LongTaskNotifier for QqLongTaskNotifier {
             bot_id: &self.bot_id,
             bot_name: &self.bot_name,
             mention_target_id: Some(&self.sender_id),
-            persistence: build_outbound_persistence(
-                self.rdb_pool.as_ref(),
-                self.group_name.as_deref(),
-                &self.bot_name,
-            ),
+            persistence: build_outbound_persistence(self.rdb_pool.as_ref(), self.group_name.as_deref(), &self.bot_name),
             max_text_chars: MAX_REPLY_CHARS,
         };
         let _ = send_notification_text(&send_ctx, &text);
@@ -783,11 +776,7 @@ impl LongTaskNotifier for QqLongTaskNotifier {
             bot_id: &self.bot_id,
             bot_name: &self.bot_name,
             mention_target_id: None,
-            persistence: build_outbound_persistence(
-                self.rdb_pool.as_ref(),
-                self.group_name.as_deref(),
-                &self.bot_name,
-            ),
+            persistence: build_outbound_persistence(self.rdb_pool.as_ref(), self.group_name.as_deref(), &self.bot_name),
             max_text_chars: MAX_REPLY_CHARS,
         };
         if let Err(err) = send_forward_content(&send_ctx, &content) {
@@ -903,7 +892,7 @@ impl QqChatAgentServiceInner {
 #[derive(Clone)]
 pub struct QqChatAgentServiceRuntimeConfig {
     pub agent_id: String,
-    pub qq_chat_config: zihuan_core::agent_config::QqChatAgentServiceConfig,
+    pub qq_chat_config: zihuan_core::agent_config::qq_chat::QqChatAgentServiceConfig,
     pub node_id: String,
     pub bot_name: String,
     pub system_prompt: Option<String>,
@@ -1013,12 +1002,15 @@ impl QqChatAgentService {
             }),
         };
 
-        zihuan_core::agent_config::with_current_qq_chat_agent_service_config(self.config.qq_chat_config.clone(), || {
-            self.inner
-                .handle(event, time, &self.config.agent_id, &self.config.session, None, &ctx)
-        })
+        zihuan_core::agent_config::qq_chat::with_current_qq_chat_agent_service_config(
+            self.config.qq_chat_config.clone(),
+            || {
+                self.inner
+                    .handle(event, time, &self.config.agent_id, &self.config.session, None, &ctx)
+            },
+        )
     }
 }
 
-#[path = "qq_chat_agent_service_claimed.rs"]
-mod qq_chat_agent_service_claimed;
+#[path = "claimed.rs"]
+mod claimed;

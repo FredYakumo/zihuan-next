@@ -1,7 +1,7 @@
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use zihuan_core::agent_config::QqChatAgentServiceConfig;
+use zihuan_core::agent_config::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::config::{ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord};
 use zihuan_core::error::Result;
 use zihuan_core::tool_runtime::ToolRunDuration;
