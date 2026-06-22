@@ -2,7 +2,7 @@ pub mod string_utils;
 
 use crate::emotion::utils::emotion_dimensions_snapshot_text;
 use crate::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
+use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 
 /// Builds the prefix lines shared by all user-message construction paths:
 /// `[Agent State Snapshot]` + `[System Instructions]`.

@@ -20,10 +20,10 @@ use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
 use zihuan_graph_engine::data_value::DataValue;
 use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
-pub(crate) use super::qq_chat_agent_service_core::{
+pub(crate) use super::model::{
     QqChatServiceReplyBatchBuilder, QqChatServiceReplyBuildRequest, QqChatServiceReplyBuildResult,
 };
-use crate::agent::qq_chat_agent_service_logging::QqChatTaskTrace;
+use crate::agent::qq_chat::logging::QqChatTaskTrace;
 use crate::storage::media::resolve_media_references;
 
 const MAX_FORWARD_NODE_CHARS: usize = 800;
@@ -774,8 +774,7 @@ pub(crate) fn send_direct_text_reply(
     max_message_length: usize,
     reply_batch_builder: Option<&QqChatServiceReplyBatchBuilder>,
 ) -> Result<()> {
-    let persistence =
-        crate::storage::qq_chat_session_store::build_outbound_persistence(rdb_pool, group_name, bot_name);
+    let persistence = crate::storage::qq_chat_session_store::build_outbound_persistence(rdb_pool, group_name, bot_name);
 
     let reply_result = build_reply_result(
         text,

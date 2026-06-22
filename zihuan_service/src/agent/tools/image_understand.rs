@@ -7,7 +7,7 @@ use model_inference::system_config::load_llm_refs;
 use serde_json::Value;
 use storage_handler::RuntimeStorageConnectionManager;
 use zihuan_agent::brain::{BrainTool, ToolExecutionOutput};
-use zihuan_core::agent_config::{current_qq_chat_agent_service_config, image_understand_llm_ref_id};
+use zihuan_core::agent_config::qq_chat::{current_qq_chat_agent_service_config, image_understand_llm_ref_id};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
@@ -115,7 +115,7 @@ fn execute_image_understand(
 ) -> Result<String> {
     let media_id = optional_string_argument(arguments, "media_id")
         .ok_or_else(|| Error::ValidationError("media_id is required".to_string()))?;
-    let focus_text = optional_string_argument(arguments, "content");
+    let focus_text = optional_string_argument(arguments, "question");
 
     let persisted_media = resolve_image_understand_media(&media_id, current_event, _rdb_pool)?;
     let s3_ref = resolve_image_understand_s3_ref(s3_ref)?;

@@ -13,8 +13,7 @@ export function setupBrainWidgets(
   onEnterSubgraph: EnterSubgraphCallback
 ): void {
   const tools = (nodeDef.inline_values?.["tools_config"] as BrainToolDefinition[] | undefined) ?? [];
-  const isQqChatAgent =
-    nodeDef.node_type === "qq_chat_agent_service" || nodeDef.node_type === "qq_chat_agent" || nodeDef.node_type === "qq_message_agent";
+  const isQqChatAgent = nodeDef.node_type === "qq_chat";
   const labelPrefix = isQqChatAgent ? "管理 Agent 工具" : "管理工具";
   lNode.addWidget("button", `${labelPrefix} (${tools.length})`, null, () => {
     const sid = getSessionId();

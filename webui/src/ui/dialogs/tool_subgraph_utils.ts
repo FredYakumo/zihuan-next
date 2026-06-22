@@ -8,12 +8,11 @@ const FUNCTION_OUTPUTS_NODE_TYPE = "function_outputs";
 const BRAIN_TOOL_FIXED_CONTENT_INPUT = "content";
 const QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT = "message_event";
 const QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT = "qq_ims_bot_adapter";
-const QQ_AGENT_TOOL_OWNER_TYPE = "qq_chat_agent_service";
-const QQ_AGENT_TOOL_OWNER_TYPE_LEGACY = "qq_message_agent";
+const QQ_AGENT_TOOL_OWNER_TYPE = "qq_chat";
 const QQ_AGENT_TOOL_OUTPUT_NAME = "result";
 
 function isQqAgentOwnerType(ownerNodeType: string): boolean {
-  return ownerNodeType === QQ_AGENT_TOOL_OWNER_TYPE || ownerNodeType === QQ_AGENT_TOOL_OWNER_TYPE_LEGACY;
+  return ownerNodeType === QQ_AGENT_TOOL_OWNER_TYPE;
 }
 
 function cloneDataType(dataType: DataTypeMetaData): DataTypeMetaData {

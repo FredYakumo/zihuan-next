@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::agent::tools::CurrentTimeBrainTool;
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use model_inference::message_content_utils::sanitize_messages_for_inference;
 use model_inference::system_config::{AgentConfig, AgentType, LlmRefConfig};
@@ -321,7 +320,6 @@ fn build_brain(
     tool_definitions: Vec<BrainToolDefinition>,
 ) -> Brain {
     let mut brain = Brain::new(llm);
-    brain.add_tool(CurrentTimeBrainTool);
 
     for tool in default_tools {
         brain.add_tool(DynBrainToolWrapper(tool));

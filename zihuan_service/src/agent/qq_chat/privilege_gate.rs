@@ -4,7 +4,7 @@ use zihuan_core::command::{CommandContext, CommandRegistry};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::Result;
 
-use crate::agent::qq_chat_agent_service_privilege_store::{
+use crate::agent::qq_chat::privilege_store::{
     create_privilege_auth, has_active_privilege_blocking, verify_privilege_auth, PrivilegeAuthStatus,
 };
 
@@ -53,9 +53,7 @@ pub fn parse_privileged_command(raw_input: &str) -> Option<(String, Vec<String>)
     let mut parts = trimmed[1..].split_whitespace();
     let name = parts.next()?.to_string();
     match name.as_str() {
-        "auth" | "learn_global_style" | "learn_group_style" => {
-            Some((name, parts.map(ToOwned::to_owned).collect()))
-        }
+        "auth" | "learn_global_style" | "learn_group_style" => Some((name, parts.map(ToOwned::to_owned).collect())),
         _ => None,
     }
 }
@@ -88,7 +86,9 @@ pub fn handle_auth_command(
     Ok(match status {
         PrivilegeAuthStatus::Elevated { until, record } => match purpose_to_privileged_command(&record.purpose) {
             Some(command) => AuthCommandOutcome::Resume {
-                message: format!("授权成功。正在自动继续执行 `/{} `。", command.command_name()).trim().to_string(),
+                message: format!("授权成功。正在自动继续执行 `/{} `。", command.command_name())
+                    .trim()
+                    .to_string(),
                 pending: PendingAuthorizedCommand {
                     command,
                     pending_task_id: record.pending_task_id,
@@ -102,9 +102,7 @@ pub fn handle_auth_command(
         PrivilegeAuthStatus::NotFound => {
             AuthCommandOutcome::Reply("当前没有待验证的授权密钥，请重新触发需要特权的命令。".to_string())
         }
-        PrivilegeAuthStatus::Pending(_) => {
-            AuthCommandOutcome::Reply("当前密钥仍待验证，请重新输入。".to_string())
-        }
+        PrivilegeAuthStatus::Pending(_) => AuthCommandOutcome::Reply("当前密钥仍待验证，请重新输入。".to_string()),
         PrivilegeAuthStatus::Failed(message) => AuthCommandOutcome::Reply(message),
     })
 }

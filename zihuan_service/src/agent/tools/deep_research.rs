@@ -16,10 +16,9 @@ use zihuan_graph_engine::object_storage::S3Ref;
 
 use super::agent_memory::{AgentMemoryToolResources, SearchMemoryContentBrainTool};
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
-use super::current_time::CurrentTimeBrainTool;
 use super::image_understand::ImageUnderstandBrainTool;
 use super::web_search::WebSearchBrainTool;
-use crate::agent::qq_chat_tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
+use crate::agent::qq_chat::tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
 
 const LOG_PREFIX: &str = "[DeepResearch]";
 
@@ -158,15 +157,11 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
             // dashboard-only) to keep internal tool progress out of QQ chat
             // while still surfacing it in the task dashboard.
             let mut brain = Brain::new(Arc::clone(&self.llm));
-            brain.add_tool(CurrentTimeBrainTool);
             if let Some(memory_resources) = self.memory_resources.clone() {
                 brain.add_tool(SearchMemoryContentBrainTool::new(memory_resources));
             }
             brain.add_tool(wrap_brain_tool_with_quota(
-                WebSearchBrainTool::new(
-                    Arc::clone(&self.web_search_engine),
-                    self.notification_target.clone(),
-                ),
+                WebSearchBrainTool::new(Arc::clone(&self.web_search_engine), self.notification_target.clone()),
                 self.tool_quota.clone(),
             ));
             brain.add_tool(ImageUnderstandBrainTool::new(

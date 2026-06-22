@@ -9,8 +9,6 @@ use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
 use zihuan_graph_engine::DataType;
 
-const LEGACY_QQ_AGENT_TOOL_OWNER_TYPE: &str = "qq_message_agent";
-
 pub fn build_enabled_tool_definitions(tools: &[AgentToolConfig]) -> Result<Vec<BrainToolDefinition>> {
     let mut definitions = Vec::new();
     for tool in tools.iter().filter(|tool| tool.enabled) {
@@ -163,7 +161,7 @@ fn validate_tool_graph_input_port(tool: &AgentToolConfig, port: &FunctionPortDef
 
 fn reserved_tool_graph_input_type(name: &str) -> Option<DataType> {
     let trimmed = name.trim();
-    for owner_type in ["brain", QQ_AGENT_TOOL_OWNER_TYPE, LEGACY_QQ_AGENT_TOOL_OWNER_TYPE] {
+    for owner_type in ["brain", QQ_AGENT_TOOL_OWNER_TYPE] {
         for port in fixed_tool_runtime_inputs(owner_type) {
             if port.name == trimmed {
                 return Some(port.data_type);

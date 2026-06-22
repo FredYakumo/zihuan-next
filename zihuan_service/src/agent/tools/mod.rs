@@ -13,7 +13,6 @@ use zihuan_graph_engine::object_storage::S3Ref;
 mod agent_memory;
 mod agent_state;
 mod common;
-mod current_time;
 mod deep_research;
 mod editable_qq_agent_tool;
 mod image_save;
@@ -36,7 +35,6 @@ pub(crate) use agent_memory::{
 };
 pub(crate) use agent_state::UpdateAgentStateBrainTool;
 pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS};
-pub(crate) use current_time::CurrentTimeBrainTool;
 pub(crate) use deep_research::RunDeepResearchSubagentBrainTool;
 pub(crate) use editable_qq_agent_tool::EditableQqAgentTool;
 pub(crate) use image_save::SaveImageBrainTool;

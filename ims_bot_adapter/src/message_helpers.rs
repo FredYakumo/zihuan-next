@@ -125,11 +125,7 @@ fn persist_outbound_messages(
         return;
     };
 
-    if let Err(error) = persist_message_event(
-        &event,
-        persistence.rdb_pool.as_ref(),
-        persistence.redis_ref.as_ref(),
-    ) {
+    if let Err(error) = persist_message_event(&event, persistence.rdb_pool.as_ref(), persistence.redis_ref.as_ref()) {
         warn!(
             "{LOG_PREFIX} Failed to persist outbound {} message {}: {}",
             message_type.as_str(),

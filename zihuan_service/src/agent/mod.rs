@@ -1,26 +1,13 @@
 pub mod http_stream_service;
 pub mod inference;
-pub mod qq_chat_agent_service;
+pub mod qq_chat;
 pub mod tool_definitions;
 pub mod workspace_agent_service;
 
 mod agent_text_similarity;
 mod classify_intent;
-mod qq_chat_agent_service_core;
-pub mod qq_chat_agent_service_ignore_store;
-pub mod qq_chat_agent_service_language_style_store;
-pub mod qq_chat_agent_service_privilege_gate;
-pub mod qq_chat_agent_service_privilege_store;
-pub mod qq_chat_agent_service_style_learner;
-pub mod qq_chat_agent_service_tool_quota_store;
-mod qq_chat_agent_service_inbox;
-mod qq_chat_agent_service_logging;
-pub(crate) mod qq_chat_agent_service_msg_send;
-mod qq_chat_agent_service_steer;
-mod qq_chat_tool_quota;
 mod tools;
 pub(crate) use tools::execute_image_understand_tool;
-pub(crate) use tools::CurrentTimeBrainTool;
 pub(crate) use tools::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
 
 use std::collections::HashMap;
@@ -222,7 +209,7 @@ impl AgentManager {
             match &agent.agent_type {
                 AgentType::QqChat(config) => {
                     let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
-                    let task = qq_chat_agent_service::spawn(
+                    let task = qq_chat::spawn(
                         self,
                         agent.clone(),
                         config.clone(),
@@ -369,7 +356,7 @@ pub fn build_inference_tool_provider(
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     match &agent.agent_type {
-        AgentType::QqChat(config) => qq_chat_agent_service::load_inference_tool_provider(agent, config, connections),
+        AgentType::QqChat(config) => qq_chat::load_inference_tool_provider(agent, config, connections),
         AgentType::HttpStream(config) => http_stream_service::load_inference_tool_provider(agent, config, connections),
         AgentType::Workspace(config) => {
             workspace_agent_service::load_inference_tool_provider(agent, config, connections)

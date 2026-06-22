@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use storage_handler::{load_connections, resource_resolver};
-use zihuan_core::agent_config::current_qq_chat_agent_service_config;
+use zihuan_core::agent_config::qq_chat::current_qq_chat_agent_service_config;
 use zihuan_core::error::Result;
 use zihuan_graph_engine::{node_output, DataType, DataValue, Node, Port};
 

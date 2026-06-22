@@ -105,7 +105,9 @@ pub async fn verify_privilege_auth(
     auth_key: &str,
 ) -> Result<PrivilegeAuthStatus> {
     match connection {
-        RelationalDbConnection::MySql(config) => verify_privilege_auth_mysql(config, agent_id, sender_id, auth_key).await,
+        RelationalDbConnection::MySql(config) => {
+            verify_privilege_auth_mysql(config, agent_id, sender_id, auth_key).await
+        }
         RelationalDbConnection::Sqlite(config) => {
             verify_privilege_auth_sqlite(config, agent_id, sender_id, auth_key).await
         }
@@ -133,9 +135,7 @@ pub async fn list_recent_notifications(
     }
 }
 
-pub async fn delete_all_notifications(
-    connection: &RelationalDbConnection,
-) -> Result<u64> {
+pub async fn delete_all_notifications(connection: &RelationalDbConnection) -> Result<u64> {
     match connection {
         RelationalDbConnection::MySql(config) => delete_all_notifications_mysql(config).await,
         RelationalDbConnection::Sqlite(config) => delete_all_notifications_sqlite(config).await,
@@ -256,7 +256,9 @@ async fn verify_privilege_auth_mysql(
     let expires_at = parse_mysql_timestamp(&record.expires_at)?;
 
     if record.consumed || now > expires_at {
-        return Ok(PrivilegeAuthStatus::Failed("密钥已过期，请重新触发命令生成新的密钥。".to_string()));
+        return Ok(PrivilegeAuthStatus::Failed(
+            "密钥已过期，请重新触发命令生成新的密钥。".to_string(),
+        ));
     }
 
     if record.auth_key != auth_key.trim() {
@@ -275,7 +277,9 @@ async fn verify_privilege_auth_mysql(
         .map_err(Error::Database)?;
 
         return if consumed {
-            Ok(PrivilegeAuthStatus::Failed("密钥连续输错 2 次，已作废，请重新触发命令。".to_string()))
+            Ok(PrivilegeAuthStatus::Failed(
+                "密钥连续输错 2 次，已作废，请重新触发命令。".to_string(),
+            ))
         } else {
             Ok(PrivilegeAuthStatus::Failed("密钥错误，请重新输入。".to_string()))
         };
@@ -312,7 +316,9 @@ async fn verify_privilege_auth_sqlite(
     let expires_at = parse_sqlite_timestamp(&record.expires_at)?;
 
     if record.consumed || now > expires_at {
-        return Ok(PrivilegeAuthStatus::Failed("密钥已过期，请重新触发命令生成新的密钥。".to_string()));
+        return Ok(PrivilegeAuthStatus::Failed(
+            "密钥已过期，请重新触发命令生成新的密钥。".to_string(),
+        ));
     }
 
     if record.auth_key != auth_key.trim() {
@@ -331,7 +337,9 @@ async fn verify_privilege_auth_sqlite(
         .map_err(Error::Database)?;
 
         return if consumed {
-            Ok(PrivilegeAuthStatus::Failed("密钥连续输错 2 次，已作废，请重新触发命令。".to_string()))
+            Ok(PrivilegeAuthStatus::Failed(
+                "密钥连续输错 2 次，已作废，请重新触发命令。".to_string(),
+            ))
         } else {
             Ok(PrivilegeAuthStatus::Failed("密钥错误，请重新输入。".to_string()))
         };
@@ -351,10 +359,7 @@ async fn verify_privilege_auth_sqlite(
     .await
     .map_err(Error::Database)?;
 
-    Ok(PrivilegeAuthStatus::Elevated {
-        until: elevated_until,
-        record,
-    })
+    Ok(PrivilegeAuthStatus::Elevated { until: elevated_until, record })
 }
 
 async fn has_active_privilege_mysql(config: &Arc<MySqlConfig>, agent_id: &str, sender_id: &str) -> Result<bool> {
@@ -393,10 +398,7 @@ async fn has_active_privilege_sqlite(config: &Arc<SqliteConfig>, agent_id: &str,
     Ok(Local::now() <= parse_sqlite_timestamp(&elevated_until)?)
 }
 
-async fn list_recent_notifications_mysql(
-    config: &Arc<MySqlConfig>,
-    limit: i64,
-) -> Result<Vec<NotificationRecord>> {
+async fn list_recent_notifications_mysql(config: &Arc<MySqlConfig>, limit: i64) -> Result<Vec<NotificationRecord>> {
     let rows = sqlx::query(
         "SELECT id, agent_id, sender_id, purpose, auth_key, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
          FROM qq_chat_agent_service_privilege_auth ORDER BY created_at DESC LIMIT ?",
@@ -408,10 +410,7 @@ async fn list_recent_notifications_mysql(
     Ok(rows.into_iter().map(map_notification_card_mysql_row).collect())
 }
 
-async fn list_recent_notifications_sqlite(
-    config: &Arc<SqliteConfig>,
-    limit: i64,
-) -> Result<Vec<NotificationRecord>> {
+async fn list_recent_notifications_sqlite(config: &Arc<SqliteConfig>, limit: i64) -> Result<Vec<NotificationRecord>> {
     let rows = sqlx::query(
         "SELECT id, agent_id, sender_id, purpose, auth_key, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
          FROM qq_chat_agent_service_privilege_auth ORDER BY created_at DESC LIMIT ?",

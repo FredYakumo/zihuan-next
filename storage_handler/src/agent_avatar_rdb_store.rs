@@ -40,15 +40,20 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
         mime_type: &str,
         image_data: Vec<u8>,
     ) -> Result<String> {
-        let existing_avatar_id = self.get_avatar_by_agent(agent_id).await?.map(|avatar| avatar.id);
+        let existing_avatar_id = if agent_id.is_empty() {
+            None
+        } else {
+            self.get_avatar_by_agent(agent_id).await?.map(|avatar| avatar.id)
+        };
         let avatar_id = existing_avatar_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let file_name = file_name.map(str::to_string);
 
         match &self.connection {
             RelationalDbConnection::MySql(mysql) => {
-                let pool = mysql.pool.as_ref().ok_or_else(|| {
-                    Error::ValidationError("failed to get mysql pool for avatar storage".to_string())
-                })?;
+                let pool = mysql
+                    .pool
+                    .as_ref()
+                    .ok_or_else(|| Error::ValidationError("failed to get mysql pool for avatar storage".to_string()))?;
                 sqlx::query(
                     "INSERT INTO agent_avatar (id, agent_id, file_name, mime_type, image_data, created_at, updated_at)
                      VALUES (?, ?, ?, ?, ?, NOW(), NOW())
@@ -97,9 +102,10 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
     async fn get_avatar(&self, avatar_id: &str) -> Result<Option<AgentAvatarData>> {
         match &self.connection {
             RelationalDbConnection::MySql(mysql) => {
-                let pool = mysql.pool.as_ref().ok_or_else(|| {
-                    Error::ValidationError("failed to get mysql pool for avatar storage".to_string())
-                })?;
+                let pool = mysql
+                    .pool
+                    .as_ref()
+                    .ok_or_else(|| Error::ValidationError("failed to get mysql pool for avatar storage".to_string()))?;
                 let row = sqlx::query_as::<_, (String, String, Option<String>, String, Vec<u8>)>(
                     "SELECT id, agent_id, file_name, mime_type, image_data FROM agent_avatar WHERE id = ? LIMIT 1",
                 )
@@ -126,9 +132,10 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
     async fn get_avatar_by_agent(&self, agent_id: &str) -> Result<Option<AgentAvatarData>> {
         match &self.connection {
             RelationalDbConnection::MySql(mysql) => {
-                let pool = mysql.pool.as_ref().ok_or_else(|| {
-                    Error::ValidationError("failed to get mysql pool for avatar storage".to_string())
-                })?;
+                let pool = mysql
+                    .pool
+                    .as_ref()
+                    .ok_or_else(|| Error::ValidationError("failed to get mysql pool for avatar storage".to_string()))?;
                 let row = sqlx::query_as::<_, (String, String, Option<String>, String, Vec<u8>)>(
                     "SELECT id, agent_id, file_name, mime_type, image_data FROM agent_avatar WHERE agent_id = ? LIMIT 1",
                 )
@@ -155,9 +162,10 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
     async fn delete_avatar(&self, avatar_id: &str) -> Result<()> {
         match &self.connection {
             RelationalDbConnection::MySql(mysql) => {
-                let pool = mysql.pool.as_ref().ok_or_else(|| {
-                    Error::ValidationError("failed to get mysql pool for avatar storage".to_string())
-                })?;
+                let pool = mysql
+                    .pool
+                    .as_ref()
+                    .ok_or_else(|| Error::ValidationError("failed to get mysql pool for avatar storage".to_string()))?;
                 sqlx::query("DELETE FROM agent_avatar WHERE id = ?")
                     .bind(avatar_id)
                     .execute(pool)
@@ -179,9 +187,10 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
     async fn delete_avatar_by_agent(&self, agent_id: &str) -> Result<()> {
         match &self.connection {
             RelationalDbConnection::MySql(mysql) => {
-                let pool = mysql.pool.as_ref().ok_or_else(|| {
-                    Error::ValidationError("failed to get mysql pool for avatar storage".to_string())
-                })?;
+                let pool = mysql
+                    .pool
+                    .as_ref()
+                    .ok_or_else(|| Error::ValidationError("failed to get mysql pool for avatar storage".to_string()))?;
                 sqlx::query("DELETE FROM agent_avatar WHERE agent_id = ?")
                     .bind(agent_id)
                     .execute(pool)

@@ -1,18 +1,36 @@
+mod core;
+pub(crate) mod model;
+pub mod ignore_store;
+mod inbox;
+pub mod language_style_store;
+pub(crate) mod logging;
+pub(crate) mod msg_send;
+pub mod privilege_gate;
+pub mod privilege_store;
+mod steer;
+pub mod style_learner;
+pub(crate) mod tool_quota;
+pub mod tool_quota_store;
+mod user_input;
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use super::inference::{InferenceToolContext, InferenceToolProvider};
-use super::qq_chat_agent_service_core::{
+use self::core::{
     build_info_brain_tools, expand_messages_for_inference, prepare_current_turn_user_input_from_event,
-    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatAgentServiceRuntimeConfig,
-    QqChatServiceReplyBatchBuilder, QqChatTaskTrace, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+    QqChatTaskTrace, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
-use super::qq_chat_agent_service_ignore_store::should_ignore_message_blocking;
-use super::qq_chat_agent_service_language_style_store::get_applicable_language_style_blocking;
-use super::qq_chat_agent_service_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
+use self::model::{
+    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatAgentServiceRuntimeConfig,
+    QqChatServiceReplyBatchBuilder, QqInferenceToolProvider, QqLoadedInferenceResources,
+};
+use self::ignore_store::should_ignore_message_blocking;
+use self::inbox::QqChatAgentServiceInbox;
+use self::language_style_store::get_applicable_language_style_blocking;
+use self::msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
+use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
-use crate::agent::qq_chat_agent_service_inbox::QqChatAgentServiceInbox;
 use crate::agent::tool_definitions::build_enabled_tool_definitions;
 use crate::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name,
@@ -28,13 +46,13 @@ use log::{error, info, warn};
 use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
 use storage_handler::{
-    build_relational_db_connection_for_connection, build_s3_ref, build_weaviate_ref,
-    build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind, WeaviateCollectionSchema,
+    build_relational_db_connection_for_connection, build_s3_ref, build_weaviate_ref, build_web_search_engine_ref,
+    find_connection, ConnectionConfig, ConnectionKind, WeaviateCollectionSchema,
 };
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
 use zihuan_agent::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent_config::QqChatAgentServiceConfig;
+use zihuan_core::agent_config::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -56,7 +74,7 @@ use zihuan_graph_engine::message_restore::register_rdb_pool;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_nlp::{build_segmenter, TextSegmenter};
 
-use super::qq_chat_tool_quota::SessionToolQuotaState;
+use self::tool_quota::SessionToolQuotaState;
 
 fn build_reply_batch_builder(segmenter: Arc<dyn TextSegmenter>) -> QqChatServiceReplyBatchBuilder {
     build_unified_reply_batch_builder(segmenter)
@@ -72,7 +90,7 @@ pub fn expand_message_event_for_tool_input(
 }
 
 #[doc(hidden)]
-pub use crate::qq_chat_user_input::PreparedCurrentTurnUserInput;
+pub use self::user_input::PreparedCurrentTurnUserInput;
 
 #[doc(hidden)]
 pub fn prepare_message_event_user_input_for_test(
@@ -81,24 +99,6 @@ pub fn prepare_message_event_user_input_for_test(
     bot_name: &str,
 ) -> PreparedCurrentTurnUserInput {
     prepare_current_turn_user_input_from_event(event, bot_id, bot_name, None)
-}
-
-#[derive(Clone)]
-struct QqLoadedInferenceResources {
-    bot_name: String,
-    default_tools_enabled: HashMap<String, bool>,
-    web_search_engine_ref: Option<Arc<WebSearchEngineRef>>,
-    rdb_pool: Option<RelationalDbConnection>,
-    s3_ref: Option<Arc<S3Ref>>,
-    weaviate_image_ref: Option<Arc<WeaviateRef>>,
-    weaviate_memory_ref: Option<Arc<WeaviateRef>>,
-    embedding_model: Option<Arc<dyn EmbeddingBase>>,
-    memory_llm: Option<Arc<dyn LLMBase>>,
-}
-
-pub struct QqInferenceToolProvider {
-    resources: QqLoadedInferenceResources,
-    tool_definitions: Vec<BrainToolDefinition>,
 }
 
 impl InferenceToolProvider for QqInferenceToolProvider {
@@ -162,7 +162,9 @@ fn load_qq_resources(
     });
 
     let rdb_pool = match config.resolved_rdb_id() {
-        Some(connection_id) => block_async(build_relational_db_connection_for_connection(connection_id, connections)).ok(),
+        Some(connection_id) => {
+            block_async(build_relational_db_connection_for_connection(connection_id, connections)).ok()
+        }
         None => None,
     };
     let s3_ref = block_async(build_s3_ref(config.rustfs_connection_id.as_deref(), connections)).unwrap_or_else(|e| {

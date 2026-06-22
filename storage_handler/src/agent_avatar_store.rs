@@ -25,12 +25,9 @@ pub trait AgentAvatarStore: Send + Sync {
         image_data: Vec<u8>,
     ) -> Result<String>;
 
-
     async fn get_avatar(&self, avatar_id: &str) -> Result<Option<AgentAvatarData>>;
 
-
     async fn get_avatar_by_agent(&self, agent_id: &str) -> Result<Option<AgentAvatarData>>;
-
 
     async fn delete_avatar(&self, avatar_id: &str) -> Result<()>;
 

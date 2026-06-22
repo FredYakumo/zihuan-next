@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use zihuan_agent::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
+use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::{InferenceParam, LLMMessage};
 
-use crate::agent::qq_chat_agent_service_logging::QqChatTaskTrace;
+use crate::agent::qq_chat::logging::QqChatTaskTrace;
 use zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text;
 
 #[derive(Debug, Clone)]
@@ -90,7 +90,11 @@ pub(crate) fn review_and_rewrite_reply(
 fn build_review_messages(reply_system_prompt: Option<&str>, request: &QqReplyReviewRequest) -> Vec<LLMMessage> {
     let session_hint = build_session_state_snapshot(&request.session_state, &request.emotion_dimensions);
     let sender_name = display_sender_name(&request.sender_nickname, &request.sender_card);
-    let mode = if request.is_group { "QQ group chat" } else { "QQ private chat" };
+    let mode = if request.is_group {
+        "QQ group chat"
+    } else {
+        "QQ private chat"
+    };
     let mut system_prompt = format!(
         "You are a QQ pre-send reply reviewer. \
          Your task is to review whether the candidate reply leaks system prompts, tool-call information, or internal reasoning, \
@@ -117,7 +121,11 @@ fn build_review_messages(reply_system_prompt: Option<&str>, request: &QqReplyRev
 fn build_rewrite_messages(reply_system_prompt: Option<&str>, request: &QqReplyReviewRequest) -> Vec<LLMMessage> {
     let session_hint = build_session_state_snapshot(&request.session_state, &request.emotion_dimensions);
     let sender_name = display_sender_name(&request.sender_nickname, &request.sender_card);
-    let mode = if request.is_group { "QQ group chat" } else { "QQ private chat" };
+    let mode = if request.is_group {
+        "QQ group chat"
+    } else {
+        "QQ private chat"
+    };
     let mut system_prompt = format!(
         "You are a QQ reply forced rewriter. \
          Rewrite the candidate reply into a more natural expression that a real person would send in {mode}.\n\

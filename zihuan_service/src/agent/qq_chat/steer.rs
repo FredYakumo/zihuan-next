@@ -8,7 +8,7 @@ use zihuan_agent::brain::BrainIterationHook;
 use zihuan_agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_agent::utils::build_state_system_prefix_lines;
 
-use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
+use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::error::Result;
 use zihuan_core::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{
@@ -23,17 +23,17 @@ use zihuan_graph_engine::DataValue;
 use ims_bot_adapter::message_helpers::get_bot_id;
 use ims_bot_adapter::{CURRENT_MESSAGE_LABEL, IMAGE_ANALYSIS_LABEL};
 
-use crate::qq_chat_user_input::{
+use super::user_input::{
     append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference, flush_text_part,
     prepare_current_turn_user_input, prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
 };
 use crate::storage::qq_chat_history_store::{conversation_history_key, load_history};
 
-use super::qq_chat_agent_service_core::{
-    build_state_delta_lines, build_user_message, merge_character_and_style_prompt, QqChatAgentServiceContext, QqChatAgentServiceInner,
-    QqChatServiceHandleReport, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+use super::core::{
+    build_state_delta_lines, build_user_message, merge_character_and_style_prompt, QqChatAgentServiceContext,
+    QqChatAgentServiceInner, QqChatServiceHandleReport, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
-use super::qq_chat_agent_service_logging::QqChatTaskTrace;
+use super::logging::QqChatTaskTrace;
 
 const CURRENT_USER_MESSAGE_LABEL: &str = "[Current User Message]";
 const REFERENCED_CONTEXT_LABEL: &str = "[Referenced Context]";
