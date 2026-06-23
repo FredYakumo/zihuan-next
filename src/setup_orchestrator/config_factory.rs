@@ -168,7 +168,7 @@ fn build_llm_ref(config: &LlmSetupConfig, id: &str, name: &str) -> LlmRefConfig 
     } else {
         ModelRefSpec::ChatLlm {
             llm: LlmServiceConfig {
-                model_name: config.model_name.clone(),
+                model_name: config.model_id.clone().unwrap_or_else(|| config.model_name.clone()),
                 api_endpoint: config.api_endpoint.clone(),
                 api_key: config.api_key.clone(),
                 api_style: parse_api_style(&config.api_style),
