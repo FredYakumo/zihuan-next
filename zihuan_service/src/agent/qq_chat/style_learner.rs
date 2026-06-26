@@ -10,11 +10,9 @@ use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::{InferenceParam, LLMMessage};
 use zihuan_core::task_context::{scope_task_id, scope_task_runtime, AgentTaskResult, AgentTaskStatus};
 
-use crate::agent::qq_chat_agent_service_language_style_store::{upsert_language_style, LanguageStyleScope};
-use crate::agent::qq_chat_agent_service_logging::QqChatTaskTrace;
-use crate::agent::qq_chat_agent_service_msg_send::{
-    build_reply_result, send_planned_batches, QqChatServiceSendContext,
-};
+use crate::agent::qq_chat::language_style_store::{upsert_language_style, LanguageStyleScope};
+use crate::agent::qq_chat::logging::QqChatTaskTrace;
+use crate::agent::qq_chat::msg_send::{build_reply_result, send_planned_batches, QqChatServiceSendContext};
 use crate::agent::tools::{review_and_rewrite_reply, QqReplyReviewRequest};
 
 const STYLE_LEARNING_SAMPLE_LIMIT: i64 = 200;
@@ -59,14 +57,8 @@ pub async fn learn_language_style(
     .await
     .map_err(|e| Error::StringError(format!("style learning LLM task panicked: {e}")))?;
     let style_prompt = parse_style_learning_result(&response.content_text_owned().unwrap_or_default())?;
-    let saved = upsert_language_style(
-        connection,
-        scope,
-        &style_prompt,
-        samples.len() as i32,
-        learned_by_sender_id,
-    )
-    .await?;
+    let saved =
+        upsert_language_style(connection, scope, &style_prompt, samples.len() as i32, learned_by_sender_id).await?;
 
     Ok(StyleLearningOutcome {
         updated: true,
@@ -125,28 +117,24 @@ async fn fetch_style_learning_samples(
                 .as_ref()
                 .ok_or_else(|| Error::ValidationError("style-learning mysql pool is not initialized".to_string()))?;
             let rows = match scope {
-                LanguageStyleScope::Global => {
-                    sqlx::query(
-                        "SELECT sender_name, content FROM message_record \
+                LanguageStyleScope::Global => sqlx::query(
+                    "SELECT sender_name, content FROM message_record \
                          WHERE content IS NOT NULL AND TRIM(content) <> '' ORDER BY send_time DESC LIMIT ?",
-                    )
-                    .bind(STYLE_LEARNING_SAMPLE_LIMIT)
-                    .fetch_all(pool)
-                    .await
-                    .map_err(Error::Database)?
-                }
-                LanguageStyleScope::Group { group_id } => {
-                    sqlx::query(
-                        "SELECT sender_name, content FROM message_record \
+                )
+                .bind(STYLE_LEARNING_SAMPLE_LIMIT)
+                .fetch_all(pool)
+                .await
+                .map_err(Error::Database)?,
+                LanguageStyleScope::Group { group_id } => sqlx::query(
+                    "SELECT sender_name, content FROM message_record \
                          WHERE group_id = ? AND content IS NOT NULL AND TRIM(content) <> '' \
                          ORDER BY send_time DESC LIMIT ?",
-                    )
-                    .bind(group_id)
-                    .bind(STYLE_LEARNING_SAMPLE_LIMIT)
-                    .fetch_all(pool)
-                    .await
-                    .map_err(Error::Database)?
-                }
+                )
+                .bind(group_id)
+                .bind(STYLE_LEARNING_SAMPLE_LIMIT)
+                .fetch_all(pool)
+                .await
+                .map_err(Error::Database)?,
             };
             Ok(normalize_mysql_rows(rows))
         }
@@ -156,28 +144,24 @@ async fn fetch_style_learning_samples(
                 .as_ref()
                 .ok_or_else(|| Error::ValidationError("style-learning sqlite pool is not initialized".to_string()))?;
             let rows = match scope {
-                LanguageStyleScope::Global => {
-                    sqlx::query(
-                        "SELECT sender_name, content FROM message_record \
+                LanguageStyleScope::Global => sqlx::query(
+                    "SELECT sender_name, content FROM message_record \
                          WHERE content IS NOT NULL AND TRIM(content) <> '' ORDER BY send_time DESC LIMIT ?",
-                    )
-                    .bind(STYLE_LEARNING_SAMPLE_LIMIT)
-                    .fetch_all(pool)
-                    .await
-                    .map_err(Error::Database)?
-                }
-                LanguageStyleScope::Group { group_id } => {
-                    sqlx::query(
-                        "SELECT sender_name, content FROM message_record \
+                )
+                .bind(STYLE_LEARNING_SAMPLE_LIMIT)
+                .fetch_all(pool)
+                .await
+                .map_err(Error::Database)?,
+                LanguageStyleScope::Group { group_id } => sqlx::query(
+                    "SELECT sender_name, content FROM message_record \
                          WHERE group_id = ? AND content IS NOT NULL AND TRIM(content) <> '' \
                          ORDER BY send_time DESC LIMIT ?",
-                    )
-                    .bind(group_id)
-                    .bind(STYLE_LEARNING_SAMPLE_LIMIT)
-                    .fetch_all(pool)
-                    .await
-                    .map_err(Error::Database)?
-                }
+                )
+                .bind(group_id)
+                .bind(STYLE_LEARNING_SAMPLE_LIMIT)
+                .fetch_all(pool)
+                .await
+                .map_err(Error::Database)?,
             };
             Ok(normalize_sqlite_rows(rows))
         }
@@ -241,9 +225,8 @@ pub(crate) struct OwnedStyleLearningTaskContext {
     pub natural_language_reply_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     pub intent_classification_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     pub rdb_pool: RelationalDbConnection,
-    pub mysql_ref: Option<Arc<zihuan_core::data_refs::MySqlConfig>>,
     pub max_message_length: usize,
-    pub reply_batch_builder: Option<crate::agent::qq_chat_agent_service_core::QqChatServiceReplyBatchBuilder>,
+    pub reply_batch_builder: Option<crate::agent::qq_chat::model::QqChatServiceReplyBatchBuilder>,
     pub resolved_language_style_prompt: Option<String>,
 }
 
@@ -269,9 +252,7 @@ pub(crate) fn execute_style_learning_task(
     let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<String> {
         scope_task_runtime(task_runtime, || {
             scope_task_id(task_handle.task_id.clone(), || {
-                let _ = zihuan_core::task_context::append_current_task_progress(
-                    "开始执行语言风格学习".to_string(),
-                );
+                let _ = zihuan_core::task_context::append_current_task_progress("开始执行语言风格学习".to_string());
                 let learning = run_blocking_future(learn_language_style(
                     &owned.rdb_pool,
                     &input.scope,
@@ -281,9 +262,10 @@ pub(crate) fn execute_style_learning_task(
                 if !learning.updated {
                     return Ok(learning.summary);
                 }
-                let _ = zihuan_core::task_context::append_current_task_progress(
-                    format!("已学习 {} 条样本", learning.sample_count),
-                );
+                let _ = zihuan_core::task_context::append_current_task_progress(format!(
+                    "已学习 {} 条样本",
+                    learning.sample_count
+                ));
                 let feedback_base = format!(
                     "语言风格学习完成，已更新{}风格提示词。样本数：{}。",
                     if matches!(input.scope, LanguageStyleScope::Global) {
@@ -335,7 +317,6 @@ pub(crate) fn execute_style_learning_task(
                     mention_target_id: None,
                     persistence: crate::storage::qq_chat_session_store::build_outbound_persistence(
                         Some(&owned.rdb_pool),
-                        owned.mysql_ref.as_ref(),
                         input.event.group_name.as_deref(),
                         &owned.bot_name,
                     ),
@@ -353,6 +334,7 @@ pub(crate) fn execute_style_learning_task(
                     None,
                     None,
                     HashMap::new(),
+                    Some(owned.rdb_pool.clone()),
                     owned.reply_batch_builder.as_ref(),
                 )?;
                 if !reply_result.suppress_send && !reply_result.batches.is_empty() {

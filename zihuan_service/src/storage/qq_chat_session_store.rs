@@ -3,7 +3,7 @@ use std::sync::Arc;
 use log::info;
 
 use ims_bot_adapter::message_helpers::OutboundMessagePersistence;
-use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
+use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::runtime::block_async;
 use zihuan_graph_engine::data_value::{SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT};
 
@@ -37,13 +37,11 @@ pub(crate) fn release_session(session: &Arc<SessionStateRef>, sender_id: &str, c
 
 pub(crate) fn build_outbound_persistence(
     rdb_pool: Option<&RelationalDbConnection>,
-    mysql_ref: Option<&Arc<MySqlConfig>>,
     group_name: Option<&str>,
     sender_name: &str,
 ) -> OutboundMessagePersistence {
     OutboundMessagePersistence {
         rdb_pool: rdb_pool.cloned(),
-        mysql_ref: mysql_ref.cloned(),
         redis_ref: None,
         group_name: group_name.map(ToOwned::to_owned),
         sender_name: Some(sender_name.to_string()),

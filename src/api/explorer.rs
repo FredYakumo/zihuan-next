@@ -9,9 +9,10 @@ use sqlx::Row as SqlxRow;
 use crate::system_config::load_connections;
 use storage_handler::{
     create_memory_record_with_vector, delete_memory_record, get_memory_record, list_recent_memory_keys,
-    resource_resolver, search_memory_content_by_vector, update_memory_record_with_vector,
-    weaviate::build_weaviate_ref as build_storage_weaviate_ref, AgentMemoryAccessContext, AgentMemoryUpsert,
-    ConnectionKind, WeaviateClient, WeaviateCollectionSchema,
+    resource_resolver::{self, build_rdb_ref},
+    search_memory_content_by_vector, update_memory_record_with_vector,
+    weaviate::build_weaviate_ref as build_storage_weaviate_ref,
+    AgentMemoryAccessContext, AgentMemoryUpsert, ConnectionKind, WeaviateClient, WeaviateCollectionSchema,
 };
 
 use super::config::{render_bad_request, render_internal_error};
@@ -51,8 +52,9 @@ pub async fn query_mysql(req: &mut Request, res: &mut Response, _depot: &mut Dep
         Err(e) => return render_internal_error(res, e),
     };
 
-    let mysql_ref = match resource_resolver::build_mysql_ref(Some(&connection_id), &connections).await {
-        Ok(Some(r)) => r,
+    let mysql_ref = match build_rdb_ref(Some(&connection_id), &connections).await {
+        Ok(Some(zihuan_core::data_refs::RelationalDbConnection::MySql(r))) => r,
+        Ok(Some(_)) => return render_bad_request(res, "connection is not a MySQL connection".into()),
         Ok(None) => return render_bad_request(res, "connection not found".into()),
         Err(e) => return render_internal_error(res, e),
     };

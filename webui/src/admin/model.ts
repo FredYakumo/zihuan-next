@@ -1087,20 +1087,19 @@ export function agentAvatarUrl(
     return "";
   }
 
+  const persisted = getAvatarDisplayUrl(String(agent.avatar_url ?? ""));
+  if (persisted) {
+    return persisted;
+  }
+
   if (agent.agent_type.type === "qq_chat") {
-    const profile = agent.qq_chat_profile;
-    const explicit = String(profile?.bot_avatar_url ?? "").trim();
+    const explicit = String(agent.qq_chat_profile?.bot_avatar_url ?? "").trim();
     if (explicit) {
       return explicit;
     }
-    const botUserId = String(profile?.bot_user_id ?? "").trim();
-    if (!botUserId) {
-      return "";
-    }
-    return `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(botUserId)}&s=640`;
   }
 
-  return getAvatarDisplayUrl(String(agent.avatar_url ?? ""));
+  return "";
 }
 
 export function agentInitial(name: string): string {

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use zihuan_core::data_refs::SqliteConfig;
+use zihuan_core::data_refs::{RelationalDbConnection, SqliteConfig};
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
@@ -60,7 +60,7 @@ impl Node for SqliteNode {
     }
 
     fn output_ports(&self) -> Vec<Port> {
-        vec![Port::new("sqlite_ref", DataType::SqliteRef).with_description("SQLite连接配置引用")]
+        vec![Port::new("sqlite_ref", DataType::RdbRef).with_description("关系数据库连接引用")]
     }
 
     fn config_fields(&self) -> Vec<NodeConfigField> {
@@ -81,7 +81,7 @@ impl Node for SqliteNode {
             RuntimeStorageConnectionManager::shared().get_or_create_sqlite_ref(config_id),
         )?;
         zihuan_graph_engine::return_with_node_output![self;
-            "sqlite_ref" => DataValue::SqliteRef(config),
+            "sqlite_ref" => DataValue::RdbRef(RelationalDbConnection::Sqlite(config)),
         ]
     }
 }

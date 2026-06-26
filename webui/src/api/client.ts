@@ -943,6 +943,7 @@ export interface SetupProgressEvent {
 export interface LlmSetupConfig {
   mode: string;
   model_name: string;
+  model_id?: string | null;
   api_endpoint: string;
   api_key?: string | null;
   api_style: string;

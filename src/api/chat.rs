@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
-use ims_bot_adapter::{parse_ims_bot_adapter_connection, qq_avatar_url};
+use ims_bot_adapter::resolve_fallback_bot_profile;
 use model_inference::system_config::{AgentConfig, AgentType};
 use salvo::http::body::BodySender;
 use salvo::http::header::{CACHE_CONTROL, CONTENT_TYPE};
@@ -13,12 +13,11 @@ use salvo::http::ResBody;
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use storage_handler::{ConnectionConfig, ConnectionKind};
+use storage_handler::ConnectionConfig;
 use tokio::sync::mpsc;
 use tokio::task;
 use uuid::Uuid;
 use zihuan_agent::brain::{BrainObserver, BrainStopReason};
-use zihuan_core::agent_config::QqChatAgentServiceConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
@@ -261,7 +260,10 @@ fn extract_agent_snapshot(agent: &AgentConfig, connections: &[ConnectionConfig])
     };
 
     let avatar_url = match &agent.agent_type {
-        AgentType::QqChat(config) => resolve_qq_avatar_url(connections, config),
+        AgentType::QqChat(config) => resolve_fallback_bot_profile(connections, &config.ims_bot_adapter_connection_id)
+            .ok()
+            .flatten()
+            .and_then(|profile| profile.avatar_url),
         AgentType::HttpStream(_) | AgentType::Workspace(_) => agent.avatar_url.clone(),
     };
 
@@ -270,21 +272,6 @@ fn extract_agent_snapshot(agent: &AgentConfig, connections: &[ConnectionConfig])
         agent_type: agent_type.to_string(),
         avatar_url,
     }
-}
-
-fn resolve_qq_avatar_url(connections: &[ConnectionConfig], config: &QqChatAgentServiceConfig) -> Option<String> {
-    let connection = connections
-        .iter()
-        .find(|item| item.id == config.ims_bot_adapter_connection_id)?;
-    let ConnectionKind::BotAdapter(raw) = &connection.kind else {
-        return None;
-    };
-    let bot_connection = parse_ims_bot_adapter_connection(raw).ok()?;
-    let qq_id = bot_connection.qq_id.as_ref()?.trim();
-    if qq_id.is_empty() {
-        return None;
-    }
-    qq_avatar_url(qq_id)
 }
 
 ///
@@ -724,16 +711,16 @@ pub async fn delete_chat_session(req: &mut Request, res: &mut Response, _depot: 
 
 /// Opens a native folder-picker dialog and returns the selected path.
 ///
-/// Uses `rfd::FileDialog` which delegates to the OS native dialog (Win32, macOS NSOpenPanel,
-/// or GTK/Zenity on Linux). Because the native dialog blocks the calling thread, it runs on
-/// a blocking Tokio task via `spawn_blocking`.
+/// Uses `tinyfiledialogs::select_folder_dialog`, which delegates to the OS native dialog
+/// (Win32, macOS NSOpenPanel, or GTK/Zenity on Linux). Because the native dialog blocks the
+/// calling thread, it runs on a blocking Tokio task via `spawn_blocking`.
 #[handler]
 pub async fn select_directory(_req: &mut Request, res: &mut Response, _depot: &mut Depot) {
-    let path = task::spawn_blocking(|| rfd::FileDialog::new().pick_folder())
+    let path = task::spawn_blocking(|| tinyfiledialogs::select_folder_dialog("Select a directory", ""))
         .await
         .unwrap_or(None);
 
-    res.render(Json(json!({ "path": path.map(|p| p.to_string_lossy().to_string()) })));
+    res.render(Json(json!({ "path": path })));
 }
 
 /// Orchestrates a single chat-streaming request from end to end.

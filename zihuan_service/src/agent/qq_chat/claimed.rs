@@ -8,7 +8,7 @@ use model_inference::message_content_utils::{downgrade_messages_for_model, sanit
 
 use zihuan_agent::brain::{Brain, BrainStopReason, LongTaskContext};
 
-use zihuan_core::agent_config::current_qq_chat_agent_service_config;
+use zihuan_core::agent_config::qq_chat::current_qq_chat_agent_service_config;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::{LLMMessage, TokenUsage};
@@ -20,12 +20,12 @@ use zihuan_graph_engine::brain_tool_spec::{
 };
 use zihuan_graph_engine::DataValue;
 
-use super::super::qq_chat_agent_service_logging::QqChatBrainObserver;
+use super::super::logging::QqChatBrainObserver;
 use ims_bot_adapter::tools::group_members::GetCurrentGroupMembersBrainTool;
 use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
 
-use super::super::tools::{
-    review_and_rewrite_reply, AgentMemoryToolResources, CurrentTimeBrainTool, EditableQqAgentTool,
+use super::super::super::tools::{
+    review_and_rewrite_reply, AgentMemoryToolResources, EditableQqAgentTool,
     GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
     GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool, QqReplyReviewRequest,
     RememberContentBrainTool, ReplyMessageBrainTool, RunResearchSubagentBrainTool, SaveImageBrainTool,
@@ -42,7 +42,7 @@ use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use crate::storage::qq_chat_history_store::{conversation_history_key, load_history, save_history};
 
 use crate::agent::classify_intent::{classify_intent_with_trace, IntentCategory};
-use crate::agent::qq_chat_agent_service_msg_send::{
+use crate::agent::qq_chat::msg_send::{
     build_reply_result, send_direct_text_reply, send_planned_batches, take_reply_directive, QqChatServiceSendContext,
 };
 
@@ -54,16 +54,16 @@ use super::{
     LOG_TEXT_PREVIEW_CHARS,
 };
 
-use super::super::qq_chat_agent_service_steer::QqChatServiceSteerHook;
-use crate::agent::qq_chat_agent_service_language_style_store::LanguageStyleScope;
-use crate::agent::qq_chat_agent_service_privilege_gate::{
+use super::super::steer::QqChatServiceSteerHook;
+use super::super::tool_quota::wrap_brain_tool_with_quota;
+use crate::agent::qq_chat::language_style_store::LanguageStyleScope;
+use crate::agent::qq_chat::privilege_gate::{
     enqueue_pending_privileged_command, handle_auth_command, parse_privileged_command, AuthCommandOutcome,
     PrivilegeGateOutcome, QqPrivilegedCommand,
 };
-use crate::agent::qq_chat_agent_service_style_learner::{
+use crate::agent::qq_chat::style_learner::{
     execute_style_learning_task, OwnedStyleLearningTaskContext, StyleLearningResumeInput,
 };
-use crate::agent::qq_chat_tool_quota::wrap_brain_tool_with_quota;
 
 impl QqChatAgentServiceInner {
     fn run_style_learning_task(
@@ -81,7 +81,9 @@ impl QqChatAgentServiceInner {
         task_runtime: Arc<dyn zihuan_core::task_context::AgentTaskRuntime>,
     ) -> Result<()> {
         let Some(connection) = ctx.rdb_pool else {
-            return Err(Error::ValidationError("当前未配置关系数据库，无法执行语言风格学习。".to_string()));
+            return Err(Error::ValidationError(
+                "当前未配置关系数据库，无法执行语言风格学习。".to_string(),
+            ));
         };
 
         let owned = OwnedStyleLearningTaskContext {
@@ -90,7 +92,6 @@ impl QqChatAgentServiceInner {
             natural_language_reply_llm: Arc::clone(ctx.natural_language_reply_llm),
             intent_classification_llm: Arc::clone(ctx.intent_classification_llm),
             rdb_pool: connection.clone(),
-            mysql_ref: ctx.mysql_ref.cloned(),
             max_message_length: ctx.max_message_length,
             reply_batch_builder: ctx.reply_batch_builder.cloned(),
             resolved_language_style_prompt: ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.clone()),
@@ -155,7 +156,6 @@ impl QqChatAgentServiceInner {
             is_group: matches!(cmd_ctx.channel, CommandChannel::QqChat { is_group: true, .. }),
             group_name: hydrated_event.group_name.as_deref(),
             rdb_pool: ctx.rdb_pool,
-            mysql_ref: ctx.mysql_ref,
         };
 
         for effect in &result.side_effects {
@@ -169,7 +169,6 @@ impl QqChatAgentServiceInner {
                 ctx.adapter,
                 target_id,
                 ctx.rdb_pool,
-                ctx.mysql_ref,
                 hydrated_event.group_name.as_deref(),
                 ctx.bot_name,
                 bot_id,
@@ -324,7 +323,6 @@ impl QqChatAgentServiceInner {
                                 ctx.adapter,
                                 target_id,
                                 ctx.rdb_pool,
-                                ctx.mysql_ref,
                                 event.group_name.as_deref(),
                                 ctx.bot_name,
                                 bot_id,
@@ -346,7 +344,6 @@ impl QqChatAgentServiceInner {
                                 ctx.adapter,
                                 target_id,
                                 ctx.rdb_pool,
-                                ctx.mysql_ref,
                                 event.group_name.as_deref(),
                                 ctx.bot_name,
                                 bot_id,
@@ -359,10 +356,8 @@ impl QqChatAgentServiceInner {
                                 ctx.reply_batch_builder,
                             )?;
                             let resume_is_group = pending.pending_is_group;
-                            let resume_target_id = pending
-                                .pending_target_id
-                                .clone()
-                                .unwrap_or_else(|| target_id.to_string());
+                            let resume_target_id =
+                                pending.pending_target_id.clone().unwrap_or_else(|| target_id.to_string());
                             let resume_group_id = pending.pending_group_id;
                             if matches!(pending.command, QqPrivilegedCommand::LearnGroupStyle) && !resume_is_group {
                                 let reply = "当前不是群聊，无法学习群聊语言风格。".to_string();
@@ -371,7 +366,6 @@ impl QqChatAgentServiceInner {
                                     ctx.adapter,
                                     target_id,
                                     ctx.rdb_pool,
-                                    ctx.mysql_ref,
                                     event.group_name.as_deref(),
                                     ctx.bot_name,
                                     bot_id,
@@ -410,7 +404,6 @@ impl QqChatAgentServiceInner {
                                 natural_language_reply_llm: Arc::clone(ctx.natural_language_reply_llm),
                                 intent_classification_llm: Arc::clone(ctx.intent_classification_llm),
                                 rdb_pool,
-                                mysql_ref: ctx.mysql_ref.cloned(),
                                 max_message_length: ctx.max_message_length,
                                 reply_batch_builder: ctx.reply_batch_builder.cloned(),
                                 resolved_language_style_prompt: ctx
@@ -442,7 +435,9 @@ impl QqChatAgentServiceInner {
                                 }),
                             );
                             if !resumed {
-                                return Err(Error::ValidationError("pending waiting-auth task could not be resumed".to_string()));
+                                return Err(Error::ValidationError(
+                                    "pending waiting-auth task could not be resumed".to_string(),
+                                ));
                             }
                             return Ok(QqChatServiceTurnResult {
                                 result_summary: "已恢复等待授权的任务".to_string(),
@@ -465,7 +460,6 @@ impl QqChatAgentServiceInner {
                             ctx.adapter,
                             target_id,
                             ctx.rdb_pool,
-                            ctx.mysql_ref,
                             event.group_name.as_deref(),
                             ctx.bot_name,
                             bot_id,
@@ -489,7 +483,6 @@ impl QqChatAgentServiceInner {
                             ctx.adapter,
                             target_id,
                             ctx.rdb_pool,
-                            ctx.mysql_ref,
                             event.group_name.as_deref(),
                             ctx.bot_name,
                             bot_id,
@@ -542,7 +535,6 @@ impl QqChatAgentServiceInner {
                             ctx.adapter,
                             target_id,
                             ctx.rdb_pool,
-                            ctx.mysql_ref,
                             event.group_name.as_deref(),
                             ctx.bot_name,
                             bot_id,
@@ -566,7 +558,6 @@ impl QqChatAgentServiceInner {
                             ctx.adapter,
                             target_id,
                             ctx.rdb_pool,
-                            ctx.mysql_ref,
                             event.group_name.as_deref(),
                             ctx.bot_name,
                             bot_id,
@@ -590,22 +581,23 @@ impl QqChatAgentServiceInner {
                     } else {
                         LanguageStyleScope::Global
                     };
-                    return self.run_style_learning_task(
-                        trace,
-                        ctx,
-                        event,
-                        &inference_event,
-                        sender_id,
-                        target_id,
-                        bot_id,
-                        is_group,
-                        scope,
-                        waiting_task,
-                        task_runtime,
-                    )
-                    .map(|_| QqChatServiceTurnResult {
-                        result_summary: format!("已创建 {task_name} 任务"),
-                    });
+                    return self
+                        .run_style_learning_task(
+                            trace,
+                            ctx,
+                            event,
+                            &inference_event,
+                            sender_id,
+                            target_id,
+                            bot_id,
+                            is_group,
+                            scope,
+                            waiting_task,
+                            task_runtime,
+                        )
+                        .map(|_| QqChatServiceTurnResult {
+                            result_summary: format!("已创建 {task_name} 任务"),
+                        });
                 }
                 _ => {}
             }
@@ -716,7 +708,6 @@ impl QqChatAgentServiceInner {
         let consumed_steer_messages = Arc::new(Mutex::new(Vec::new()));
         let tool_quota = ctx.tool_quota.clone();
         let mut brain = Brain::new(Arc::clone(turn_llm));
-        brain.add_tool(CurrentTimeBrainTool);
         brain.set_observer(Arc::new(QqChatBrainObserver { trace: trace.clone() }));
         brain.set_iteration_hook(Arc::new(QqChatServiceSteerHook {
             pending_steer: Arc::clone(ctx.pending_steer),
@@ -804,18 +795,16 @@ impl QqChatAgentServiceInner {
         }
 
         brain.add_tool(wrap_brain_tool_with_quota(
-            UpdateAgentStateBrainTool::new(
-                Arc::clone(&turn_session_state),
-                emotion_dimensions.clone(),
-            ),
+            UpdateAgentStateBrainTool::new(Arc::clone(&turn_session_state), emotion_dimensions.clone()),
             tool_quota.clone(),
         ));
         brain.add_tool(wrap_brain_tool_with_quota(
             RunResearchSubagentBrainTool::new(
                 Arc::clone(ctx.math_programming_llm),
                 Arc::clone(ctx.web_search_engine),
-                ctx.mysql_ref.cloned(),
+                ctx.rdb_pool.cloned(),
                 ctx.s3_ref.cloned(),
+                ctx.weaviate_image_ref.cloned(),
                 Some(prepared_input.event.clone()),
                 ToolNotificationTarget::dashboard(),
                 if let (Some(memory_ref), Some(embedding_model)) =
@@ -852,7 +841,7 @@ impl QqChatAgentServiceInner {
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
             brain.add_tool(wrap_brain_tool_with_quota(
                 GetRecentGroupMessagesBrainTool::new(
-                    ctx.mysql_ref.cloned(),
+                    ctx.rdb_pool.cloned(),
                     ToolNotificationTarget::new(
                         Some(ctx.adapter.clone()),
                         target_id.to_string(),
@@ -868,7 +857,7 @@ impl QqChatAgentServiceInner {
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
             brain.add_tool(wrap_brain_tool_with_quota(
                 GetRecentUserMessagesBrainTool::new(
-                    ctx.mysql_ref.cloned(),
+                    ctx.rdb_pool.cloned(),
                     ToolNotificationTarget::new(
                         Some(ctx.adapter.clone()),
                         target_id.to_string(),
@@ -907,7 +896,7 @@ impl QqChatAgentServiceInner {
                         ctx.weaviate_image_ref.cloned(),
                         ctx.embedding_model.cloned(),
                         ctx.s3_ref.cloned(),
-                        ctx.mysql_ref.cloned(),
+                        ctx.rdb_pool.cloned(),
                     ),
                     tool_quota.clone(),
                 ));
@@ -918,7 +907,7 @@ impl QqChatAgentServiceInner {
             brain.add_tool(wrap_brain_tool_with_quota(
                 ImageUnderstandBrainTool::new(
                     Some(prepared_input.event.clone()),
-                    ctx.mysql_ref.cloned(),
+                    ctx.rdb_pool.cloned(),
                     ctx.s3_ref.cloned(),
                     ToolNotificationTarget::new(
                         Some(ctx.adapter.clone()),
@@ -933,26 +922,15 @@ impl QqChatAgentServiceInner {
         }
 
         brain.add_tool(wrap_brain_tool_with_quota(
-            GetBotProfileBrainTool::new(
-                ctx.adapter.clone(),
-                prepared_input.event.clone(),
-                ctx.s3_ref.cloned(),
-            ),
+            GetBotProfileBrainTool::new(ctx.adapter.clone(), prepared_input.event.clone(), ctx.s3_ref.cloned()),
             tool_quota.clone(),
         ));
         brain.add_tool(wrap_brain_tool_with_quota(
-            GetQqUserProfileBrainTool::new(
-                ctx.adapter.clone(),
-                prepared_input.event.clone(),
-                ctx.s3_ref.cloned(),
-            ),
+            GetQqUserProfileBrainTool::new(ctx.adapter.clone(), prepared_input.event.clone(), ctx.s3_ref.cloned()),
             tool_quota.clone(),
         ));
         brain.add_tool(wrap_brain_tool_with_quota(
-            GetCurrentGroupMembersBrainTool::new(
-                ctx.adapter.clone(),
-                prepared_input.event.clone(),
-            ),
+            GetCurrentGroupMembersBrainTool::new(ctx.adapter.clone(), prepared_input.event.clone()),
             tool_quota.clone(),
         ));
 
@@ -988,7 +966,6 @@ impl QqChatAgentServiceInner {
                     sender_id: sender_id.to_string(),
                     is_group,
                     rdb_pool: ctx.rdb_pool.cloned(),
-                    mysql_ref: ctx.mysql_ref.cloned(),
                     group_name: event.group_name.clone(),
                     bot_id: bot_id.to_string(),
                     bot_name: ctx.bot_name.to_string(),
@@ -1137,6 +1114,7 @@ impl QqChatAgentServiceInner {
                     take_reply_directive(&shared_runtime_values),
                     Some(inference_event.message_id),
                     available_media,
+                    ctx.rdb_pool.cloned(),
                     ctx.reply_batch_builder,
                 )?;
 
@@ -1157,7 +1135,6 @@ impl QqChatAgentServiceInner {
                         mention_target_id: None,
                         persistence: crate::storage::qq_chat_session_store::build_outbound_persistence(
                             ctx.rdb_pool,
-                            ctx.mysql_ref,
                             event.group_name.as_deref(),
                             ctx.bot_name,
                         ),

@@ -71,7 +71,7 @@ export const DATA_TYPES: readonly string[] = [
   "BotAdapterRef",
   "S3Ref",
   "RedisRef",
-  "MySqlRef",
+  "RdbRef",
   "TavilyRef",
   "SessionStateRef",
   "LLMMessageSessionCacheRef",

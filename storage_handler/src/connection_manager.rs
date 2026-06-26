@@ -455,56 +455,7 @@ pub fn cleanup_runtime_storage_instances() -> Result<usize> {
     zihuan_core::runtime::block_async(RuntimeStorageConnectionManager::shared().cleanup_stale_instances())
 }
 
-pub struct MessageStoreConnectionAccess {
-    mysql_ref: Arc<MySqlConfig>,
-    redis_ref: Option<Arc<RedisConfig>>,
-}
 
-impl std::fmt::Debug for MessageStoreConnectionAccess {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MessageStoreConnectionAccess")
-            .field("mysql_ref", &self.mysql_ref)
-            .field("redis_ref", &self.redis_ref)
-            .finish()
-    }
-}
-
-impl MessageStoreConnectionAccess {
-    pub fn new(mysql_ref: Arc<MySqlConfig>, redis_ref: Option<Arc<RedisConfig>>) -> Self {
-        Self { mysql_ref, redis_ref }
-    }
-
-    pub fn mysql_ref(&self) -> &Arc<MySqlConfig> {
-        &self.mysql_ref
-    }
-
-    pub fn redis_ref(&self) -> Option<&Arc<RedisConfig>> {
-        self.redis_ref.as_ref()
-    }
-
-    pub fn mysql_pool(&self) -> Option<&MySqlPool> {
-        get_pool(&self.mysql_ref)
-    }
-
-    pub async fn set_redis_value(&self, key: &str, value: &str) -> Result<()> {
-        let redis_ref = self
-            .redis_ref
-            .as_ref()
-            .ok_or_else(|| zihuan_core::string_error!("redis_ref not configured"))?;
-        crate::redis::set_value(redis_ref, key, value).await
-    }
-
-    pub async fn get_redis_value(&self, key: &str) -> Result<Option<String>> {
-        let Some(redis_ref) = self.redis_ref.as_ref() else {
-            return Ok(None);
-        };
-        crate::redis::get_value(redis_ref, key).await
-    }
-}
-
-pub fn get_pool(mysql_ref: &Arc<MySqlConfig>) -> Option<&MySqlPool> {
-    mysql_ref.pool.as_ref()
-}
 
 fn kind_name(kind: &ConnectionKind) -> &'static str {
     match kind {

@@ -1,9 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use zihuan_core::data_refs::MySqlConfig;
+use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 use zihuan_core::error::{Error, Result};
-use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
 use crate::{RuntimeStorageConnectionManager, DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS, DEFAULT_MYSQL_MAX_CONNECTIONS};
@@ -80,7 +79,7 @@ impl Node for MySqlNode {
     }
 
     fn output_ports(&self) -> Vec<Port> {
-        vec![Port::new("mysql_ref", DataType::MySqlRef).with_description("MySQL连接配置引用")]
+        vec![Port::new("rdb_ref", DataType::RdbRef).with_description("关系数据库连接引用")]
     }
 
     fn config_fields(&self) -> Vec<NodeConfigField> {
@@ -103,9 +102,8 @@ impl Node for MySqlNode {
         let config = zihuan_core::runtime::block_async(
             RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(config_id),
         )?;
-        register_mysql_ref(config.clone());
         zihuan_graph_engine::return_with_node_output![self;
-            "mysql_ref" => DataValue::MySqlRef(config),
+            "rdb_ref" => DataValue::RdbRef(RelationalDbConnection::MySql(config)),
         ]
     }
 }

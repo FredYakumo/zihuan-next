@@ -9,7 +9,7 @@ use ims_bot_adapter::models::message::{
 };
 use ims_bot_adapter::REPLAY_CONTENT_LABEL;
 use zihuan_core::llm::MessagePart;
-use zihuan_service::agent::qq_chat_agent_service::prepare_message_event_user_input_for_test;
+use zihuan_service::agent::qq_chat::prepare_message_event_user_input_for_test;
 
 fn build_sender() -> Sender {
     Sender {

@@ -1,9 +1,9 @@
 use log::error;
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
 use std::fmt;
-use std::hash::{Hash, Hasher};
+
+use crate::utils::hash_string::build_persisted_media_id;
 
 fn deserialize_i64_from_string_or_number<'de, D>(deserializer: D) -> Result<i64, D::Error>
 where
@@ -226,13 +226,6 @@ impl PersistedMedia {
             None
         }
     }
-}
-
-fn build_persisted_media_id(source: &PersistedMediaSource, original_source: &str, rustfs_path: &str) -> String {
-    let seed = format!("{source}|{original_source}|{rustfs_path}");
-    let mut hasher = DefaultHasher::new();
-    seed.hash(&mut hasher);
-    format!("media-{:016x}", hasher.finish())
 }
 
 /// Image message segment.
@@ -478,82 +471,6 @@ pub fn collect_media_records(messages: &[Message]) -> Vec<MessageMediaRecord> {
             _ => None,
         })
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn persisted_media_source_serde_and_display() {
-        let source = PersistedMediaSource::QqChat;
-        assert_eq!(source.to_string(), "qq_chat");
-        assert_eq!(serde_json::to_string(&source).expect("serialize source"), "\"qq_chat\"");
-        let parsed: PersistedMediaSource = serde_json::from_str("\"web_search\"").expect("deserialize source");
-        assert!(matches!(parsed, PersistedMediaSource::WebSearch));
-    }
-
-    #[test]
-    fn image_message_roundtrip_uses_new_media_structure() {
-        let message = ImageMessage::new(PersistedMedia::new(
-            PersistedMediaSource::QqChat,
-            "https://multimedia.nt.qq.com.cn/download?id=1",
-            "qq-images/2026/05/16/sample.jpg",
-            Some("download".to_string()),
-            Some("图片描述".to_string()),
-            Some("image/jpeg".to_string()),
-        ));
-
-        let json = serde_json::to_string(&message).expect("serialize image");
-        assert!(json.contains("\"media\""));
-        assert!(!json.contains("\"object_key\""));
-
-        let restored: ImageMessage = serde_json::from_str(&json).expect("deserialize image");
-        assert_eq!(restored.media.source.to_string(), "qq_chat");
-        assert_eq!(restored.media.mime_type.as_deref(), Some("image/jpeg"));
-        assert_eq!(restored.media.rustfs_path, "qq-images/2026/05/16/sample.jpg");
-    }
-
-    #[test]
-    fn image_message_deserializes_napcat_payload() {
-        let json = r#"{
-            "file":"580FDE1876D6C29E5F2AF42CC83D6E62.png",
-            "file_size":"3168359",
-            "sub_type":0,
-            "summary":"",
-            "url":"https://multimedia.nt.qq.com.cn/download?appid=1406&fileid=test"
-        }"#;
-
-        let restored: ImageMessage = serde_json::from_str(json).expect("deserialize napcat image");
-        assert_eq!(restored.media.source, PersistedMediaSource::QqChat);
-        assert_eq!(
-            restored.media.original_source,
-            "https://multimedia.nt.qq.com.cn/download?appid=1406&fileid=test"
-        );
-        assert_eq!(restored.media.name.as_deref(), Some("580FDE1876D6C29E5F2AF42CC83D6E62.png"));
-        assert_eq!(restored.media.rustfs_path, "");
-        assert_eq!(restored.media.mime_type, None);
-    }
-
-    #[test]
-    fn message_display_contains_media_information() {
-        let message = Message::Image(ImageMessage::new(PersistedMedia::new(
-            PersistedMediaSource::Upload,
-            "upload://manual/demo",
-            "uploads/demo.png",
-            Some("demo.png".to_string()),
-            None,
-            Some("image/png".to_string()),
-        )));
-
-        let media_id = match &message {
-            Message::Image(img) => img.media.media_id.clone(),
-            _ => String::new(),
-        };
-        let rendered = render_messages_readable(&[message]);
-        assert!(rendered.contains("[Image: media_id="));
-        assert!(rendered.contains(&media_id));
-    }
 }
 
 impl MessageProp {

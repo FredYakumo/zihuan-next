@@ -62,7 +62,7 @@ impl Node for QQMessageListMySQLPersistenceNode {
         port! { name = "sender_name",     ty = String,          desc = "发送者名称" },
         port! { name = "group_id",        ty = String,          desc = "群ID（可选）", optional },
         port! { name = "group_name",      ty = String,          desc = "群名称（可选）", optional },
-        port! { name = "mysql_ref",       ty = MySqlRef,        desc = "MySQL连接配置引用" },
+        port! { name = "mysql_ref",       ty = RdbRef,        desc = "关系数据库连接引用" },
     ];
 
     node_output![
@@ -123,13 +123,18 @@ impl Node for QQMessageListMySQLPersistenceNode {
         let group_name = truncate_optional_field_if_needed("group_name", group_name, GROUP_NAME_MAX_CHARS, &message_id);
 
         // ── MySQL pool ───────────────────────────────────────────────────────
-        let mysql_config = inputs
+        let rdb_pool = inputs
             .get("mysql_ref")
             .and_then(|v| match v {
-                DataValue::MySqlRef(r) => Some(r.clone()),
+                DataValue::RdbRef(r) => Some(r.clone()),
                 _ => None,
             })
             .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("mysql_ref is required".to_string()))?;
+
+        let mysql_config = match rdb_pool {
+            zihuan_core::data_refs::RelationalDbConnection::MySql(config) => config,
+            _ => return Err(zihuan_core::error::Error::InvalidNodeInput("mysql_ref must be a MySQL connection".to_string())),
+        };
 
         let passthrough = DataValue::Vec(msg_item_type, msg_items.clone());
 

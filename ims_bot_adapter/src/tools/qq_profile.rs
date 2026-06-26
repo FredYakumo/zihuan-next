@@ -7,11 +7,10 @@ use zihuan_agent::brain::BrainTool;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use zihuan_core::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
-use zihuan_graph_engine::message_restore::register_media;
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use crate::adapter::SharedBotAdapter;
-use crate::login_info::qq_avatar_url;
+use crate::login_info::{parse_login_info, qq_avatar_url};
 use crate::message_helpers::get_bot_id;
 use crate::models::MessageEvent;
 use crate::ws_action::ws_send_action;
@@ -300,18 +299,7 @@ fn fallback_get_login_info(
         return Ok(None);
     }
     match ws_send_action(adapter, "get_login_info", serde_json::json!({})) {
-        Ok(response) => {
-            let data = response
-                .get("data")
-                .ok_or_else(|| Error::ValidationError("get_login_info 响应缺少 data 字段".to_string()))?;
-            let user_id = data
-                .get("user_id")
-                .and_then(|v| v.as_i64().map(|id| id.to_string()))
-                .or_else(|| data.get("user_id").and_then(|v| v.as_str().map(ToOwned::to_owned)))
-                .unwrap_or_default();
-            let nickname = string_field_or(data, "nickname", "");
-            Ok(Some(crate::login_info::BotLoginInfo { user_id, nickname }))
-        }
+        Ok(response) => parse_login_info(&response).map(Some),
         Err(e) => {
             warn!("{LOG_PREFIX} get_login_info fallback also failed: {e}");
             Ok(None)
@@ -365,7 +353,6 @@ fn resolve_avatar_media_id(user_id: &str, s3_ref: &Option<Arc<S3Ref>>) -> Option
     };
 
     if cached.is_some() {
-        register_media(media.clone());
         return Some(media.media_id);
     }
 
@@ -393,7 +380,6 @@ fn resolve_avatar_media_id(user_id: &str, s3_ref: &Option<Arc<S3Ref>>) -> Option
     match zihuan_core::runtime::block_async(async { s3.put_object(&key, AVATAR_CONTENT_TYPE, &bytes).await }) {
         Ok(_) => {
             info!("{LOG_PREFIX} avatar uploaded to S3 for user_id={user_id} key={key}");
-            register_media(media.clone());
             Some(media.media_id)
         }
         Err(e) => {

@@ -96,6 +96,7 @@ const selectedRole = ref<SetupRole | null>(null);
 const llmConfig = ref<LlmSetupConfig>({
   mode: "remote",
   model_name: "",
+  model_id: null,
   api_endpoint: "",
   api_key: null,
   api_style: "open_ai_chat_completions",

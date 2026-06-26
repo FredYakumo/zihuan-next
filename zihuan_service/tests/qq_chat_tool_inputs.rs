@@ -2,7 +2,7 @@ use ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
 use ims_bot_adapter::models::message::{
     ImageMessage, Message, PersistedMedia, PersistedMediaSource, PlainTextMessage, ReplyMessage,
 };
-use zihuan_service::agent::qq_chat_agent_service::expand_message_event_for_tool_input;
+use zihuan_service::agent::qq_chat::expand_message_event_for_tool_input;
 
 fn build_reply_image_event() -> MessageEvent {
     let referenced_image = Message::Image(ImageMessage::new(PersistedMedia::new(

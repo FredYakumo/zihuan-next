@@ -12,7 +12,7 @@ use storage_handler::{
     ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection, SqliteConnection, WeaviateConnection,
     WebSearchEngineConnection,
 };
-use zihuan_core::agent_config::QqChatAgentServiceConfig;
+use zihuan_core::agent_config::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::weaviate::WeaviateCollectionSchema;
 
 pub async fn create_chat_assistant_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {
@@ -168,7 +168,7 @@ fn build_llm_ref(config: &LlmSetupConfig, id: &str, name: &str) -> LlmRefConfig 
     } else {
         ModelRefSpec::ChatLlm {
             llm: LlmServiceConfig {
-                model_name: config.model_name.clone(),
+                model_name: config.model_id.clone().unwrap_or_else(|| config.model_name.clone()),
                 api_endpoint: config.api_endpoint.clone(),
                 api_key: config.api_key.clone(),
                 api_style: parse_api_style(&config.api_style),

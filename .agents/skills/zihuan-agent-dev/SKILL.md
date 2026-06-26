@@ -119,7 +119,6 @@ Built-in tools are Rust structs implementing `BrainTool`. They are assembled in 
 | `GetRecentUserMessagesBrainTool` | MySQL query for recent private messages | `MySqlConfig` |
 | `SearchSimilarImagesBrainTool` | Weaviate embedding-based image search | `WeaviateRef` + `EmbeddingBase` |
 | `ImageUnderstandBrainTool` | Vision LLM image understanding | `LLMBase` (with vision) |
-| `CurrentTimeBrainTool` | Returns current timestamp | None |
 | `SendNaturalLanguageReplyBrainTool` | Natural language reply (agent → user) | `Sender` |
 | `ReplyMessageBrainTool` | QQ reply to specific message | `Sender` |
 | `RunResearchSubagentBrainTool` | Research subagent (sub-Brain) | `LLMBase` + `WebSearchEngineRef` |

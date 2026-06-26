@@ -38,9 +38,7 @@ export function setupNodeWidgets(
       setupFunctionWidgets(lNode, nodeDef, getSessionId, onRefresh, onEnterSubgraph);
       break;
     case "brain":
-    case "qq_chat_agent_service":
-    case "qq_chat_agent":
-    case "qq_message_agent":
+    case "qq_chat":
       setupBrainWidgets(lNode, nodeDef, getSessionId, onRefresh, onEnterSubgraph);
       break;
     case "string_data":

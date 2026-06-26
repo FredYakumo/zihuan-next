@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
+use zihuan_core::data_refs::RelationalDbConnection;
 
 use ims_bot_adapter::adapter::SharedBotAdapter;
 use ims_bot_adapter::message_helpers::{
@@ -20,10 +20,10 @@ use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
 use zihuan_graph_engine::data_value::DataValue;
 use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
-pub(crate) use super::qq_chat_agent_service_core::{
+pub(crate) use super::model::{
     QqChatServiceReplyBatchBuilder, QqChatServiceReplyBuildRequest, QqChatServiceReplyBuildResult,
 };
-use crate::agent::qq_chat_agent_service_logging::QqChatTaskTrace;
+use crate::agent::qq_chat::logging::QqChatTaskTrace;
 use crate::storage::media::resolve_media_references;
 
 const MAX_FORWARD_NODE_CHARS: usize = 800;
@@ -113,6 +113,20 @@ pub(crate) fn take_reply_directive(
     }
 }
 
+/// Translate LLM-generated reply text into protocol-compliant QQ message batches.
+///
+/// Sits at the boundary between free-form model output and the QQ messaging
+/// protocol. Performs three semantic transformations:
+///
+/// - **Segmentation** — decomposes raw text into typed semantic units (text,
+///   mentions, images, control directives) so each carries its own
+///   protocol-level representation.
+/// - **Adaptive dispatch** — selects a delivery strategy based on content
+///   volume: regular sequential batches for concise replies, consolidated
+///   forward-messages for voluminous content to avoid chat flooding.
+/// - **Protocol normalization** — applies QQ-specific invariants (e.g.
+///   mandatory spacing after mentions) that the LLM cannot be expected to
+///   produce reliably.
 pub(crate) fn plan_model_reply(
     request: &QqChatServiceReplyBuildRequest,
     segmenter: &dyn TextSegmenter,
@@ -151,6 +165,8 @@ pub(crate) fn plan_model_reply(
     }
 
     let reply_message = resolve_reply_message(request.reply_directive.as_ref(), request.trigger_message_id);
+
+    // Use forward-message to avoid flooding the chat with too many individual messages
     let forced_forward = text_chunk_count >= 3 || image_count > 1;
     let mut batches = if forced_forward {
         build_forced_forward_batches(expanded_segments, reply_message, &request.bot_id, &request.bot_name)
@@ -158,8 +174,14 @@ pub(crate) fn plan_model_reply(
         build_regular_batches(expanded_segments, reply_message, request.max_message_length)
     };
 
+    // QQ protocol requires a space after @, otherwise the mention marker is ignored
     ensure_space_after_at(&mut batches);
-    resolve_media_references(&mut batches, &request.available_media)?;
+
+    resolve_media_references(
+        &mut batches,
+        &request.available_media,
+        request.rdb_pool.as_ref(),
+    )?;
 
     Ok(QqOutboundPlan {
         batches,
@@ -731,6 +753,7 @@ pub(crate) fn build_reply_result(
     reply_directive: Option<QqChatServiceReplyDirective>,
     trigger_message_id: Option<i64>,
     available_media: HashMap<String, PersistedMedia>,
+    rdb_pool: Option<RelationalDbConnection>,
     reply_batch_builder: Option<&QqChatServiceReplyBatchBuilder>,
 ) -> Result<QqChatServiceReplyBuildResult> {
     let request = QqChatServiceReplyBuildRequest {
@@ -745,6 +768,7 @@ pub(crate) fn build_reply_result(
         reply_directive,
         trigger_message_id,
         available_media,
+        rdb_pool,
     };
 
     if let Some(builder) = reply_batch_builder {
@@ -763,7 +787,6 @@ pub(crate) fn send_direct_text_reply(
     adapter: &SharedBotAdapter,
     target_id: &str,
     rdb_pool: Option<&RelationalDbConnection>,
-    mysql_ref: Option<&Arc<MySqlConfig>>,
     group_name: Option<&str>,
     bot_name: &str,
     bot_id: &str,
@@ -775,8 +798,7 @@ pub(crate) fn send_direct_text_reply(
     max_message_length: usize,
     reply_batch_builder: Option<&QqChatServiceReplyBatchBuilder>,
 ) -> Result<()> {
-    let persistence =
-        crate::storage::qq_chat_session_store::build_outbound_persistence(rdb_pool, mysql_ref, group_name, bot_name);
+    let persistence = crate::storage::qq_chat_session_store::build_outbound_persistence(rdb_pool, group_name, bot_name);
 
     let reply_result = build_reply_result(
         text,
@@ -790,6 +812,7 @@ pub(crate) fn send_direct_text_reply(
         None,
         None,
         HashMap::new(),
+        rdb_pool.cloned(),
         reply_batch_builder,
     )?;
 

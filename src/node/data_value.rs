@@ -8,7 +8,7 @@ use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
-pub use zihuan_core::data_refs::MySqlConfig;
+pub use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 pub use zihuan_core::rag::WebSearchEngineRef;
 
 tokio::task_local! {
@@ -557,7 +557,7 @@ pub enum DataType {
     FunctionTools,
     BotAdapterRef,
     RedisRef,
-    MySqlRef,
+    RdbRef,
     WebSearchEngineRef,
     SessionStateRef,
     LLMMessageSessionCacheRef,
@@ -594,7 +594,7 @@ impl fmt::Display for DataType {
             DataType::FunctionTools => write!(f, "FunctionTools"),
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
             DataType::RedisRef => write!(f, "RedisRef"),
-            DataType::MySqlRef => write!(f, "MySqlRef"),
+            DataType::RdbRef => write!(f, "RdbRef"),
             DataType::WebSearchEngineRef => write!(f, "WebSearchEngineRef"),
             DataType::SessionStateRef => write!(f, "SessionStateRef"),
             DataType::LLMMessageSessionCacheRef => write!(f, "LLMMessageSessionCacheRef"),
@@ -635,7 +635,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "FunctionTools" => Ok(DataType::FunctionTools),
                     "BotAdapterRef" => Ok(DataType::BotAdapterRef),
                     "RedisRef" => Ok(DataType::RedisRef),
-                    "MySqlRef" => Ok(DataType::MySqlRef),
+                    "RdbRef" => Ok(DataType::RdbRef),
                     "WebSearchEngineRef" => Ok(DataType::WebSearchEngineRef),
                     "SessionStateRef" => Ok(DataType::SessionStateRef),
                     "LLMMessageSessionCacheRef" => Ok(DataType::LLMMessageSessionCacheRef),
@@ -660,7 +660,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "FunctionTools",
                             "BotAdapterRef",
                             "RedisRef",
-                            "MySqlRef",
+                            "RdbRef",
                             "WebSearchEngineRef",
                             "SessionStateRef",
                             "LLMMessageSessionCacheRef",
@@ -723,7 +723,7 @@ pub enum DataValue {
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
     BotAdapterRef(zihuan_core::ims_bot_adapter::BotAdapterHandle),
     RedisRef(Arc<RedisConfig>),
-    MySqlRef(Arc<MySqlConfig>),
+    RdbRef(RelationalDbConnection),
     WebSearchEngineRef(Arc<WebSearchEngineRef>),
     SessionStateRef(Arc<SessionStateRef>),
     LLMMessageSessionCacheRef(Arc<LLMMessageSessionCacheRef>),
@@ -748,7 +748,7 @@ impl DataValue {
             DataValue::FunctionTools(_) => DataType::FunctionTools,
             DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
             DataValue::RedisRef(_) => DataType::RedisRef,
-            DataValue::MySqlRef(_) => DataType::MySqlRef,
+            DataValue::RdbRef(_) => DataType::RdbRef,
             DataValue::WebSearchEngineRef(_) => DataType::WebSearchEngineRef,
             DataValue::SessionStateRef(_) => DataType::SessionStateRef,
             DataValue::LLMMessageSessionCacheRef(_) => DataType::LLMMessageSessionCacheRef,
@@ -825,12 +825,20 @@ impl DataValue {
                 "reconnect_max_attempts": config.reconnect_max_attempts,
                 "reconnect_interval_secs": config.reconnect_interval_secs,
             }),
-            DataValue::MySqlRef(config) => serde_json::json!({
-                "type": "MySqlRef",
-                "url": config.url,
-                "reconnect_max_attempts": config.reconnect_max_attempts,
-                "reconnect_interval_secs": config.reconnect_interval_secs,
-            }),
+            DataValue::RdbRef(connection) => match connection {
+                RelationalDbConnection::MySql(config) => serde_json::json!({
+                    "type": "RdbRef",
+                    "engine": "mysql",
+                    "url": config.url,
+                    "reconnect_max_attempts": config.reconnect_max_attempts,
+                    "reconnect_interval_secs": config.reconnect_interval_secs,
+                }),
+                RelationalDbConnection::Sqlite(config) => serde_json::json!({
+                    "type": "RdbRef",
+                    "engine": "sqlite",
+                    "path": config.path,
+                }),
+            },
             DataValue::WebSearchEngineRef(_) => serde_json::json!({
                 "type": "WebSearchEngineRef",
             }),
@@ -863,7 +871,7 @@ impl fmt::Debug for DataValue {
             DataValue::FunctionTools(value) => f.debug_tuple("FunctionTools").field(value).finish(),
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
-            DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
+            DataValue::RdbRef(connection) => f.debug_tuple("RdbRef").field(connection).finish(),
             DataValue::WebSearchEngineRef(_) => f.debug_tuple("WebSearchEngineRef").finish(),
             DataValue::SessionStateRef(session_ref) => {
                 f.debug_tuple("SessionStateRef").field(session_ref).finish()

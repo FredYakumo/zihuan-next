@@ -7,7 +7,6 @@ use tokio::task::block_in_place;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::logging::{LOG_DATA_URL_PREVIEW_CHARS, LOG_MESSAGE_PREVIEW_CHARS};
 use zihuan_core::llm::{LLMMessage, MessagePart};
-use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, NodeInputFlow, Port};
 
@@ -332,7 +331,7 @@ impl Node for ExtractMessageFromEventNode {
         port! { name = "message_event", ty = MessageEvent, desc = "MessageEvent containing message data" },
         port! { name = "ims_bot_adapter", ty = BotAdapterRef, desc = "BotAdapter reference for context-aware system message", required = true },
         port! { name = "message_id", ty = Integer, desc = "可选：要恢复并分析的目标消息 ID", optional },
-        port! { name = "mysql_ref", ty = MySqlRef, desc = "可选：显式注册给消息恢复链路的 MySQL 连接", optional },
+        port! { name = "rdb_ref", ty = RdbRef, desc = "可选：显式注册给消息恢复链路的关系数据库连接", optional },
         port! { name = "s3_ref", ty = S3Ref, desc = "可选：显式传入对象存储引用，优先用于多模态图片提取", optional }
     ];
 
@@ -346,10 +345,6 @@ impl Node for ExtractMessageFromEventNode {
 
     fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
-
-        if let Some(DataValue::MySqlRef(mysql_ref)) = inputs.get("mysql_ref") {
-            register_mysql_ref(mysql_ref.clone());
-        }
 
         let event = match inputs.get("message_event") {
             Some(DataValue::MessageEvent(event)) => event,

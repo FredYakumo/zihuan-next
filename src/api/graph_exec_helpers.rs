@@ -2,7 +2,7 @@ use ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
 use serde_json::Value;
 use std::collections::HashMap;
 use storage_handler::{
-    build_mysql_ref, build_redis_ref, build_s3_ref, build_weaviate_ref, build_web_search_engine_ref, load_connections,
+    build_rdb_ref, build_redis_ref, build_s3_ref, build_weaviate_ref, build_web_search_engine_ref, load_connections,
     ConnectionConfig, WeaviateCollectionSchema,
 };
 use zihuan_core::error::Result;
@@ -129,9 +129,10 @@ async fn resolve_connection_hyperparameter(
     connections: &[ConnectionConfig],
 ) -> Result<Option<(DataValue, Option<tokio::task::JoinHandle<()>>)>> {
     match data_type {
-        DataType::MySqlRef => build_mysql_ref(Some(connection_id), connections)
-            .await
-            .map(|value| value.map(|value| (DataValue::MySqlRef(value), None))),
+        DataType::RdbRef => {
+            let rdb_ref = build_rdb_ref(Some(connection_id), connections).await?;
+            Ok(rdb_ref.map(|rdb| (DataValue::RdbRef(rdb), None)))
+        }
         DataType::RedisRef => build_redis_ref(Some(connection_id), connections)
             .map(|value| value.map(|value| (DataValue::RedisRef(value), None))),
         DataType::WeaviateRef => {

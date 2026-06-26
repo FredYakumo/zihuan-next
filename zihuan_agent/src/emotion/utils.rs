@@ -1,5 +1,5 @@
 use crate::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
+use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 
 /// Formats the current emotion dimension state as a multi-line display string.
 ///

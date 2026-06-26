@@ -37,6 +37,15 @@
         <input
           v-model="model.model_name"
           type="text"
+          placeholder="例如: GPT-4o, DeepSeek-V4"
+        />
+      </div>
+
+      <div class="field">
+        <label>模型 ID</label>
+        <input
+          v-model="model.model_id"
+          type="text"
           placeholder="例如: gpt-4o, deepseek-chat"
         />
       </div>
@@ -95,7 +104,8 @@ defineEmits<{ (e: "next"): void; (e: "back"): void }>();
 const canProceed = computed(() => {
   if (model.value.mode === "remote") {
     return (
-      model.value.model_name.trim().length > 0 &&
+      (model.value.model_name.trim().length > 0 ||
+        (model.value.model_id?.trim().length ?? 0) > 0) &&
       model.value.api_endpoint.trim().length > 0
     );
   }

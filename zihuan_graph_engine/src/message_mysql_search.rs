@@ -33,7 +33,7 @@ impl Node for MessageMySQLSearchNode {
     }
 
     node_input![
-        port! { name = "mysql_ref", ty = MySqlRef, desc = "MySQL连接配置引用" },
+        port! { name = "mysql_ref", ty = RdbRef, desc = "关系数据库连接引用" },
         port! { name = "sender_id", ty = String, desc = "可选：按发送者ID过滤", optional },
         port! { name = "group_id", ty = String, desc = "可选：按群ID过滤", optional },
         port! { name = "contain", ty = String, desc = "可选：消息内容包含的关键词（模糊匹配）", optional },
@@ -48,13 +48,18 @@ impl Node for MessageMySQLSearchNode {
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
-        let mysql_config = inputs
+        let rdb_pool = inputs
             .get("mysql_ref")
             .and_then(|value| match value {
-                DataValue::MySqlRef(config) => Some(config.clone()),
+                DataValue::RdbRef(connection) => Some(connection.clone()),
                 _ => None,
             })
             .ok_or_else(|| Error::InvalidNodeInput("mysql_ref is required".to_string()))?;
+
+        let mysql_config = match rdb_pool {
+            zihuan_core::data_refs::RelationalDbConnection::MySql(config) => config,
+            _ => return Err(Error::InvalidNodeInput("mysql_ref must be a MySQL connection".to_string())),
+        };
 
         let sender_id = inputs.get("sender_id").and_then(|value| match value {
             DataValue::String(s) => {

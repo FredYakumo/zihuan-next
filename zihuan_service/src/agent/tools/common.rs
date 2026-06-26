@@ -11,7 +11,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_graph_engine::{DataType, DataValue};
 
-use crate::agent::qq_chat_agent_service_msg_send::{send_notification_text, QqChatServiceSendContext};
+use crate::agent::qq_chat::msg_send::{send_notification_text, QqChatServiceSendContext};
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS: &str = "qq_chat_emit_tool_progress_notifications";

@@ -242,6 +242,8 @@ pub enum SetupRole {
 pub struct LlmSetupConfig {
     pub mode: String,
     pub model_name: String,
+    #[serde(default)]
+    pub model_id: Option<String>,
     pub api_endpoint: String,
     #[serde(default)]
     pub api_key: Option<String>,

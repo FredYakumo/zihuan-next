@@ -1,5 +1,5 @@
 pub mod hyperparam_store;
-pub mod message_store;
+pub mod message_record;
 pub mod url_utils;
 
 /// Mask credentials in a connection URL (e.g., redis/mysql/http), preserving scheme/host while redacting password.

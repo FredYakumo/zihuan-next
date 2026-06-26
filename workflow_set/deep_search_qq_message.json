@@ -38,7 +38,7 @@
         },
         {
           "name": "mysql_ref",
-          "data_type": "MySqlRef",
+          "data_type": "RdbRef",
           "description": "Brain 共享输入 'mysql_ref'",
           "required": true,
           "hidden": false
@@ -96,7 +96,7 @@
       "inline_values": {
         "shared_inputs": [
           {
-            "data_type": "MySqlRef",
+            "data_type": "RdbRef",
             "description": "",
             "name": "mysql_ref"
           },
@@ -261,7 +261,7 @@
                   "inline_values": {
                     "signature": [
                       {
-                        "data_type": "MySqlRef",
+                        "data_type": "RdbRef",
                         "description": "",
                         "name": "mysql_ref",
                         "required": true
@@ -360,7 +360,7 @@
                   "node_type": "function_inputs",
                   "output_ports": [
                     {
-                      "data_type": "MySqlRef",
+                      "data_type": "RdbRef",
                       "description": "函数输入 'mysql_ref'",
                       "hidden": false,
                       "name": "mysql_ref",
@@ -523,7 +523,7 @@
                   "inline_values": {},
                   "input_ports": [
                     {
-                      "data_type": "MySqlRef",
+                      "data_type": "RdbRef",
                       "description": "MySQL连接配置引用",
                       "hidden": false,
                       "name": "mysql_ref",
@@ -580,7 +580,7 @@
                     }
                   ],
                   "name": "Search Messages",
-                  "node_type": "message_mysql_search",
+                  "node_type": "message_rdb_search",
                   "output_ports": [
                     {
                       "data_type": {
@@ -701,7 +701,7 @@
                   "inline_values": {
                     "signature": [
                       {
-                        "data_type": "MySqlRef",
+                        "data_type": "RdbRef",
                         "description": "",
                         "name": "mysql_ref",
                         "required": true
@@ -770,7 +770,7 @@
                   "node_type": "function_inputs",
                   "output_ports": [
                     {
-                      "data_type": "MySqlRef",
+                      "data_type": "RdbRef",
                       "description": "函数输入 'mysql_ref'",
                       "hidden": false,
                       "name": "mysql_ref",
@@ -1251,14 +1251,14 @@
     },
     {
       "id": "3c8eed6f-1604-4864-add8-cee252a22637",
-      "name": "agent mysql ref",
+      "name": "agent rdb ref",
       "description": null,
-      "node_type": "agent_mysql_ref",
+      "node_type": "agent_rdb_ref",
       "input_ports": [],
       "output_ports": [
         {
           "name": "mysql_ref",
-          "data_type": "MySqlRef",
+          "data_type": "RdbRef",
           "description": "Agent MySQL 连接引用",
           "required": true,
           "hidden": false

@@ -3,7 +3,6 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 
-use crate::agent::CurrentTimeBrainTool;
 use crate::nodes::tool_subgraph::{
     shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool, ToolResultMode,
     ToolSubgraphRunner,
@@ -238,7 +237,6 @@ impl Node for BrainNode {
         let shared_runtime_values = self.parse_shared_inputs_input(&inputs)?;
 
         let mut brain = Brain::new(model);
-        brain.add_tool(CurrentTimeBrainTool);
         for tool_def in &self.tool_definitions {
             brain.add_tool(SubgraphBrainTool {
                 runner: ToolSubgraphRunner {

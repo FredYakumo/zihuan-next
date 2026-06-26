@@ -2,7 +2,6 @@ pub mod active_adapter_manager;
 pub mod adapter;
 pub mod event;
 pub mod extract_group_id_from_event;
-pub mod extract_media_by_id;
 pub mod extract_message_from_event;
 pub mod extract_optional_group_id_from_event;
 pub mod extract_qq_message_list_from_event;
@@ -15,6 +14,7 @@ pub mod message_helpers;
 pub mod message_sender;
 pub mod models;
 pub mod multimodal_image_url;
+pub mod profile;
 pub mod send_friend_message_batches;
 pub mod send_group_message_batches;
 pub mod send_message;
@@ -33,7 +33,6 @@ pub use active_adapter_manager::{
     list_runtime_bot_adapter_instances, register_active_bot_adapter, stop_active_bot_adapter,
     sync_enabled_bot_adapters,
 };
-pub use extract_media_by_id::ExtractMediaByIdNode;
 pub use extract_optional_group_id_from_event::ExtractOptionalGroupIdFromEventNode;
 pub use extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
 pub use extract_sender_from_event::ExtractSenderFromEventNode;
@@ -42,6 +41,11 @@ pub use ims_bot_adapter_provider::ImsBotAdapterProviderNode;
 pub use login_info::{fetch_login_info, fetch_login_info_via_adapter_connection, qq_avatar_url};
 pub use message_event_type_filter::MessageEventTypeFilterNode;
 pub use message_sender::MessageSenderNode;
+pub use profile::{
+    profile_from_login_info, resolve_active_or_fallback_bot_profile,
+    resolve_active_or_fallback_bot_profile_from_connection, resolve_fallback_bot_profile,
+    resolve_fallback_bot_profile_from_connection, QqBotProfile,
+};
 pub use send_friend_message_batches::SendFriendMessageBatchesNode;
 pub use send_group_message_batches::SendGroupMessageBatchesNode;
 pub use send_message::SendMessageNode;
@@ -74,7 +78,6 @@ pub const QUOTE_CONTENT_APPENDIX_LABEL: &str = "[Quote Content Appendix]";
 
 pub fn init_node_registry() -> Result<()> {
     use extract_group_id_from_event::ExtractGroupIdFromEventNode;
-    use extract_media_by_id::ExtractMediaByIdNode;
     use extract_message_from_event::ExtractMessageFromEventNode;
     use extract_optional_group_id_from_event::ExtractOptionalGroupIdFromEventNode;
     use extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
@@ -121,13 +124,6 @@ pub fn init_node_registry() -> Result<()> {
         "Bot适配器",
         "从消息事件中提取 LLMMessage 列表",
         ExtractMessageFromEventNode
-    );
-    register_node!(
-        "extract_media_by_id",
-        "按媒体 ID 提取图片",
-        "Bot适配器",
-        "通过持久化媒体 ID 从数据库恢复图片并转换为 LLMMessage",
-        ExtractMediaByIdNode
     );
     register_node!(
         "extract_qq_message_list_from_event",

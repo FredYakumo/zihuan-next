@@ -148,10 +148,8 @@ async fn get_applicable_language_style_mysql(
     group_id: Option<&str>,
 ) -> Result<Option<QqChatAgentServiceLanguageStyle>> {
     if let Some(group_id) = group_id {
-        if let Some(record) = fetch_scope_optional_mysql(config, &LanguageStyleScope::Group {
-            group_id: group_id.to_string(),
-        })
-        .await?
+        if let Some(record) =
+            fetch_scope_optional_mysql(config, &LanguageStyleScope::Group { group_id: group_id.to_string() }).await?
         {
             return Ok(Some(record));
         }
@@ -164,10 +162,8 @@ async fn get_applicable_language_style_sqlite(
     group_id: Option<&str>,
 ) -> Result<Option<QqChatAgentServiceLanguageStyle>> {
     if let Some(group_id) = group_id {
-        if let Some(record) = fetch_scope_optional_sqlite(config, &LanguageStyleScope::Group {
-            group_id: group_id.to_string(),
-        })
-        .await?
+        if let Some(record) =
+            fetch_scope_optional_sqlite(config, &LanguageStyleScope::Group { group_id: group_id.to_string() }).await?
         {
             return Ok(Some(record));
         }

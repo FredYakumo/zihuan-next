@@ -10,8 +10,7 @@ pub const BRAIN_SHARED_INPUTS_PORT: &str = "shared_inputs";
 pub const BRAIN_TOOL_FIXED_CONTENT_INPUT: &str = "content";
 pub const QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT: &str = "message_event";
 pub const QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT: &str = "qq_ims_bot_adapter";
-pub const QQ_AGENT_TOOL_OWNER_TYPE: &str = "qq_chat_agent_service";
-pub const QQ_AGENT_TOOL_OWNER_TYPE_LEGACY: &str = "qq_message_agent";
+pub const QQ_AGENT_TOOL_OWNER_TYPE: &str = "qq_chat";
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -108,7 +107,7 @@ pub fn brain_shared_inputs_from_value(value: &serde_json::Value) -> Option<Vec<F
 
 pub fn fixed_tool_runtime_inputs(owner_node_type: &str) -> Vec<FunctionPortDef> {
     match owner_node_type {
-        QQ_AGENT_TOOL_OWNER_TYPE | QQ_AGENT_TOOL_OWNER_TYPE_LEGACY => vec![
+        QQ_AGENT_TOOL_OWNER_TYPE => vec![
             FunctionPortDef {
                 name: BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
                 data_type: DataType::String,
@@ -152,8 +151,8 @@ pub fn tool_subgraph_owner_uses_brain_outputs(node_type: &str) -> bool {
     node_type == "brain"
 }
 
-pub fn tool_subgraph_owner_types() -> [&'static str; 3] {
-    ["brain", QQ_AGENT_TOOL_OWNER_TYPE, QQ_AGENT_TOOL_OWNER_TYPE_LEGACY]
+pub fn tool_subgraph_owner_types() -> [&'static str; 2] {
+    ["brain", QQ_AGENT_TOOL_OWNER_TYPE]
 }
 
 pub fn is_tool_subgraph_owner(node_type: &str) -> bool {

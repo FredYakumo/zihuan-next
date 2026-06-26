@@ -22,9 +22,8 @@ pub const SQLITE_DDL: &str = "CREATE TABLE IF NOT EXISTS qq_chat_agent_service_l
     updated_at TEXT NOT NULL
 )";
 
-pub const MYSQL_INDEXES: &[&str] = &[
-    "CREATE UNIQUE INDEX idx_qq_chat_agent_service_language_style_scope_group ON qq_chat_agent_service_language_style (scope_type, group_id)",
-];
+pub const MYSQL_INDEXES: &[&str] =
+    &["CREATE UNIQUE INDEX idx_qq_chat_agent_service_language_style_scope_group ON qq_chat_agent_service_language_style (scope_type, group_id)"];
 
 pub const SQLITE_INDEXES: &[&str] = &[
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_qq_chat_agent_service_language_style_scope_group ON qq_chat_agent_service_language_style (scope_type, group_id)",

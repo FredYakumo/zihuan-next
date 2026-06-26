@@ -4,7 +4,7 @@ use log::info;
 use serde_json::Value;
 
 use zihuan_agent::brain::{Brain, BrainTool};
-use zihuan_core::data_refs::MySqlConfig;
+use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
@@ -12,14 +12,14 @@ use zihuan_core::llm::{LLMMessage, MessageRole};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_core::tool_runtime::ToolRunDuration;
+use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use super::agent_memory::{AgentMemoryToolResources, SearchMemoryContentBrainTool};
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
-use super::current_time::CurrentTimeBrainTool;
 use super::image_understand::ImageUnderstandBrainTool;
 use super::web_search::WebSearchBrainTool;
-use crate::agent::qq_chat_tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
+use crate::agent::qq_chat::tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
 
 const LOG_PREFIX: &str = "[DeepResearch]";
 
@@ -58,8 +58,9 @@ If information is insufficient, clearly state the missing information and what c
 pub(crate) struct RunDeepResearchSubagentBrainTool {
     llm: Arc<dyn LLMBase>,
     web_search_engine: Arc<WebSearchEngineRef>,
-    mysql_ref: Option<Arc<MySqlConfig>>,
+    rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
+    weaviate_ref: Option<Arc<WeaviateRef>>,
     current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
     notification_target: ToolNotificationTarget,
     memory_resources: Option<AgentMemoryToolResources>,
@@ -71,8 +72,9 @@ impl RunDeepResearchSubagentBrainTool {
     pub(crate) fn new(
         llm: Arc<dyn LLMBase>,
         web_search_engine: Arc<WebSearchEngineRef>,
-        mysql_ref: Option<Arc<MySqlConfig>>,
+        rdb_pool: Option<RelationalDbConnection>,
         s3_ref: Option<Arc<S3Ref>>,
+        weaviate_ref: Option<Arc<WeaviateRef>>,
         current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
         notification_target: ToolNotificationTarget,
         memory_resources: Option<AgentMemoryToolResources>,
@@ -81,8 +83,9 @@ impl RunDeepResearchSubagentBrainTool {
         Self {
             llm,
             web_search_engine,
-            mysql_ref,
+            rdb_pool,
             s3_ref,
+            weaviate_ref,
             current_message_event,
             notification_target,
             memory_resources,
@@ -158,20 +161,16 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
             // dashboard-only) to keep internal tool progress out of QQ chat
             // while still surfacing it in the task dashboard.
             let mut brain = Brain::new(Arc::clone(&self.llm));
-            brain.add_tool(CurrentTimeBrainTool);
             if let Some(memory_resources) = self.memory_resources.clone() {
                 brain.add_tool(SearchMemoryContentBrainTool::new(memory_resources));
             }
             brain.add_tool(wrap_brain_tool_with_quota(
-                WebSearchBrainTool::new(
-                    Arc::clone(&self.web_search_engine),
-                    self.notification_target.clone(),
-                ),
+                WebSearchBrainTool::new(Arc::clone(&self.web_search_engine), self.notification_target.clone()),
                 self.tool_quota.clone(),
             ));
             brain.add_tool(ImageUnderstandBrainTool::new(
                 self.current_message_event.clone(),
-                self.mysql_ref.clone(),
+                self.rdb_pool.clone(),
                 self.s3_ref.clone(),
                 self.notification_target.clone(),
             ));
