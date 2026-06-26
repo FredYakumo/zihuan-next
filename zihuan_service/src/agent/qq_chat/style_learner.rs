@@ -334,6 +334,7 @@ pub(crate) fn execute_style_learning_task(
                     None,
                     None,
                     HashMap::new(),
+                    Some(owned.rdb_pool.clone()),
                     owned.reply_batch_builder.as_ref(),
                 )?;
                 if !reply_result.suppress_send && !reply_result.batches.is_empty() {

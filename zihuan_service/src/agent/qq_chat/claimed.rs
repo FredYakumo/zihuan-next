@@ -804,6 +804,7 @@ impl QqChatAgentServiceInner {
                 Arc::clone(ctx.web_search_engine),
                 ctx.rdb_pool.cloned(),
                 ctx.s3_ref.cloned(),
+                ctx.weaviate_image_ref.cloned(),
                 Some(prepared_input.event.clone()),
                 ToolNotificationTarget::dashboard(),
                 if let (Some(memory_ref), Some(embedding_model)) =
@@ -1113,6 +1114,7 @@ impl QqChatAgentServiceInner {
                     take_reply_directive(&shared_runtime_values),
                     Some(inference_event.message_id),
                     available_media,
+                    ctx.rdb_pool.cloned(),
                     ctx.reply_batch_builder,
                 )?;
 

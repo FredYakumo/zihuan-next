@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use ims_bot_adapter::models::message::{ImageMessage, Message, PersistedMedia};
+use ims_bot_adapter::models::message::{Message, PersistedMedia};
+use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_graph_engine::message_restore::restore_media_by_id;
+use zihuan_graph_engine::message_restore::query_media_by_id;
 
 /// Resolves media references for all messages in the given batches.
 ///
@@ -13,10 +14,11 @@ use zihuan_graph_engine::message_restore::restore_media_by_id;
 pub(crate) fn resolve_media_references(
     batches: &mut [Vec<Message>],
     available_media: &HashMap<String, PersistedMedia>,
+    rdb_pool: Option<&RelationalDbConnection>,
 ) -> Result<()> {
     for batch in batches {
         for message in batch {
-            resolve_message_media_reference(message, available_media)?;
+            resolve_message_media_reference(message, available_media, rdb_pool)?;
         }
     }
     Ok(())
@@ -28,13 +30,14 @@ pub(crate) fn resolve_media_references(
 /// Resolution order:
 /// 1. If the image already has a rustfs_path or original_source, it is left as-is.
 /// 2. Otherwise, looks up the `media_id` in the provided `available_media` map.
-/// 3. Falls back to restoring the media from persistent storage via `restore_media_by_id`.
+/// 3. Falls back to restoring the media from persistent storage via `query_media_by_id`.
 ///
 /// Recursively resolves media references inside `Forward` message nodes.
 /// Non-image messages are ignored.
 fn resolve_message_media_reference(
     message: &mut Message,
     available_media: &HashMap<String, PersistedMedia>,
+    rdb_pool: Option<&RelationalDbConnection>,
 ) -> Result<()> {
     match message {
         Message::Image(image) => {
@@ -52,7 +55,7 @@ fn resolve_message_media_reference(
                 return Ok(());
             }
 
-            if let Some(media) = restore_media_by_id(media_id)? {
+            if let Some(media) = query_media_by_id(media_id, rdb_pool)? {
                 image.media = media;
                 return Ok(());
             }
@@ -65,7 +68,7 @@ fn resolve_message_media_reference(
         Message::Forward(forward) => {
             for node in &mut forward.content {
                 for nested in &mut node.content {
-                    resolve_message_media_reference(nested, available_media)?;
+                    resolve_message_media_reference(nested, available_media, rdb_pool)?;
                 }
             }
             Ok(())

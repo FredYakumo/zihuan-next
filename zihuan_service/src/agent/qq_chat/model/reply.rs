@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use ims_bot_adapter::models::message::{Message, PersistedMedia};
+use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::Result;
 
 use crate::agent::qq_chat::msg_send::QqChatServiceReplyDirective;
@@ -26,6 +27,7 @@ pub(crate) struct QqChatServiceReplyBuildRequest {
     pub reply_directive: Option<QqChatServiceReplyDirective>,
     pub trigger_message_id: Option<i64>,
     pub available_media: HashMap<String, PersistedMedia>,
+    pub rdb_pool: Option<RelationalDbConnection>,
 }
 
 /// Result of building reply batches.

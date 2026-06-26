@@ -12,6 +12,7 @@ use zihuan_core::llm::{LLMMessage, MessageRole};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_core::tool_runtime::ToolRunDuration;
+use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use super::agent_memory::{AgentMemoryToolResources, SearchMemoryContentBrainTool};
@@ -59,6 +60,7 @@ pub(crate) struct RunDeepResearchSubagentBrainTool {
     web_search_engine: Arc<WebSearchEngineRef>,
     rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
+    weaviate_ref: Option<Arc<WeaviateRef>>,
     current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
     notification_target: ToolNotificationTarget,
     memory_resources: Option<AgentMemoryToolResources>,
@@ -72,6 +74,7 @@ impl RunDeepResearchSubagentBrainTool {
         web_search_engine: Arc<WebSearchEngineRef>,
         rdb_pool: Option<RelationalDbConnection>,
         s3_ref: Option<Arc<S3Ref>>,
+        weaviate_ref: Option<Arc<WeaviateRef>>,
         current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
         notification_target: ToolNotificationTarget,
         memory_resources: Option<AgentMemoryToolResources>,
@@ -82,6 +85,7 @@ impl RunDeepResearchSubagentBrainTool {
             web_search_engine,
             rdb_pool,
             s3_ref,
+            weaviate_ref,
             current_message_event,
             notification_target,
             memory_resources,

@@ -12,7 +12,7 @@ use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::url_utils::content_type_from_url;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_graph_engine::message_restore::restore_media_by_id;
+use zihuan_graph_engine::message_restore::{persist_media_to_record, query_media_by_id};
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use super::common::{optional_string_argument, StaticFunctionToolSpec};
@@ -68,7 +68,11 @@ impl BrainTool for SaveImageBrainTool {
             let resolved_url = match (&image_url, &media_id) {
                 (Some(url), _) => url.clone(),
                 (None, Some(media_id)) => {
-                    let media = restore_media_by_id(media_id)?.ok_or_else(|| {
+                    let media = query_media_by_id(
+                        media_id,
+                        self.rdb_pool.as_ref(),
+                    )?
+                    .ok_or_else(|| {
                         Error::ValidationError(format!("save_image could not find media_id '{}'", media_id))
                     })?;
                     if media.original_source.trim().is_empty() {
@@ -134,6 +138,12 @@ impl BrainTool for SaveImageBrainTool {
                 "{LOG_PREFIX} save_image saved image_url='{}' -> rustfs_path='{}', media_id='{}'",
                 resolved_url, rustfs_path, media.media_id
             );
+
+            if let Some(rdb_pool) = &self.rdb_pool {
+                if let Err(err) = persist_media_to_record(rdb_pool, &media) {
+                    warn!("{LOG_PREFIX} save_image failed to persist media to media_record: {}", err);
+                }
+            }
 
             Ok(serde_json::json!({
                 "ok": true,

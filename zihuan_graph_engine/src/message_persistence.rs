@@ -260,16 +260,92 @@ fn persist_message_to_rdb(event: &MessageEvent, connection: &RelationalDbConnect
         }
     };
 
-    match result {
-        Ok(()) => Ok(()),
-        Err(error) => {
+    if let Err(error) = result {
+        warn!(
+            "[message_persistence] relational DB persist failed for message {}: {}",
+            message_id, error
+        );
+    }
+
+    let media_records = collect_media_records(&event.message_list);
+    if !media_records.is_empty() {
+        let persist_result = match connection {
+            RelationalDbConnection::MySql(config) => {
+                let pool = mysql_pool(config)?.clone();
+                let records = media_records.clone();
+                let run = async move {
+                    for record in &records {
+                        sqlx::query(
+                            r#"
+                            INSERT INTO media_record (media_id, source, original_source, rustfs_path, name, description, mime_type)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            ON DUPLICATE KEY UPDATE
+                                source = VALUES(source),
+                                original_source = VALUES(original_source),
+                                rustfs_path = VALUES(rustfs_path),
+                                name = VALUES(name),
+                                description = VALUES(description),
+                                mime_type = VALUES(mime_type)
+                            "#,
+                        )
+                        .bind(&record.media_id)
+                        .bind(record.source.to_string())
+                        .bind(&record.original_source)
+                        .bind(&record.rustfs_path)
+                        .bind(&record.name)
+                        .bind(&record.description)
+                        .bind(&record.mime_type)
+                        .execute(&pool)
+                        .await?;
+                    }
+                    Ok::<(), sqlx::Error>(())
+                };
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    block_in_place(|| handle.block_on(run))
+                } else {
+                    tokio::runtime::Runtime::new()?.block_on(run)
+                }
+            }
+            RelationalDbConnection::Sqlite(config) => {
+                let pool = sqlite_pool(config)?.clone();
+                let records = media_records.clone();
+                let run = async move {
+                    for record in &records {
+                        sqlx::query(
+                            r#"
+                            INSERT OR REPLACE INTO media_record (media_id, source, original_source, rustfs_path, name, description, mime_type)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            "#,
+                        )
+                        .bind(&record.media_id)
+                        .bind(record.source.to_string())
+                        .bind(&record.original_source)
+                        .bind(&record.rustfs_path)
+                        .bind(&record.name)
+                        .bind(&record.description)
+                        .bind(&record.mime_type)
+                        .execute(&pool)
+                        .await?;
+                    }
+                    Ok::<(), sqlx::Error>(())
+                };
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    block_in_place(|| handle.block_on(run))
+                } else {
+                    tokio::runtime::Runtime::new()?.block_on(run)
+                }
+            }
+        };
+
+        if let Err(error) = persist_result {
             warn!(
-                "[message_persistence] relational DB persist failed for message {}: {}",
+                "[message_persistence] media_record persist failed for message {}: {}",
                 message_id, error
             );
-            Ok(())
         }
     }
+
+    Ok(())
 }
 
 pub fn persist_message_event(

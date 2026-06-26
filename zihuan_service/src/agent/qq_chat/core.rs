@@ -38,7 +38,6 @@ use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::{BrainToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
 use zihuan_graph_engine::data_value::LLMMessageSessionCacheRef;
 use zihuan_graph_engine::function_graph::FunctionPortDef;
-use zihuan_graph_engine::message_restore::register_media;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
@@ -633,7 +632,6 @@ pub(crate) fn collect_available_media_from_brain_output(messages: &[LLMMessage])
 
         for item in images {
             if let Some(media) = persisted_media_from_tool_value(item) {
-                register_media(media.clone());
                 media_by_id.insert(media.media_id.clone(), media);
             }
         }

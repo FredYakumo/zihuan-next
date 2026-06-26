@@ -13,7 +13,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart};
 use zihuan_core::runtime::block_async;
-use zihuan_graph_engine::message_restore::{find_media_in_messages, restore_media_by_id};
+use zihuan_graph_engine::message_restore::{find_media_in_messages, query_media_by_id};
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
@@ -110,14 +110,15 @@ pub(crate) fn execute_image_understand_tool(
 fn execute_image_understand(
     arguments: &Value,
     current_event: Option<&ims_bot_adapter::models::MessageEvent>,
-    _rdb_pool: Option<RelationalDbConnection>,
+    rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
 ) -> Result<String> {
     let media_id = optional_string_argument(arguments, "media_id")
         .ok_or_else(|| Error::ValidationError("media_id is required".to_string()))?;
     let focus_text = optional_string_argument(arguments, "question");
 
-    let persisted_media = resolve_image_understand_media(&media_id, current_event, _rdb_pool)?;
+    let persisted_media =
+        resolve_image_understand_media(&media_id, current_event, rdb_pool.as_ref())?;
     let s3_ref = resolve_image_understand_s3_ref(s3_ref)?;
     let description = analyze_persisted_media(&persisted_media, focus_text.as_deref(), s3_ref.as_deref())?;
     Ok(description)
@@ -126,7 +127,7 @@ fn execute_image_understand(
 fn resolve_image_understand_media(
     media_id: &str,
     current_event: Option<&ims_bot_adapter::models::MessageEvent>,
-    _rdb_pool: Option<RelationalDbConnection>,
+    rdb_pool: Option<&RelationalDbConnection>,
 ) -> Result<PersistedMedia> {
     if let Some(event) = current_event {
         if let Some(media) = find_media_in_messages(&event.message_list, media_id) {
@@ -134,7 +135,7 @@ fn resolve_image_understand_media(
         }
     }
 
-    restore_media_by_id(media_id)?
+    query_media_by_id(media_id, rdb_pool)?
         .ok_or_else(|| Error::ValidationError(format!("image_understand could not find media_id '{}'", media_id)))
 }
 

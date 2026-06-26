@@ -7,7 +7,6 @@ use zihuan_agent::brain::BrainTool;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use zihuan_core::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
-use zihuan_graph_engine::message_restore::register_media;
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use crate::adapter::SharedBotAdapter;
@@ -354,7 +353,6 @@ fn resolve_avatar_media_id(user_id: &str, s3_ref: &Option<Arc<S3Ref>>) -> Option
     };
 
     if cached.is_some() {
-        register_media(media.clone());
         return Some(media.media_id);
     }
 
@@ -382,7 +380,6 @@ fn resolve_avatar_media_id(user_id: &str, s3_ref: &Option<Arc<S3Ref>>) -> Option
     match zihuan_core::runtime::block_async(async { s3.put_object(&key, AVATAR_CONTENT_TYPE, &bytes).await }) {
         Ok(_) => {
             info!("{LOG_PREFIX} avatar uploaded to S3 for user_id={user_id} key={key}");
-            register_media(media.clone());
             Some(media.media_id)
         }
         Err(e) => {
