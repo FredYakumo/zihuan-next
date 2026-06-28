@@ -44,7 +44,7 @@ use ims_bot_adapter::models::event_model::MessageType;
 use ims_bot_adapter::models::message::MessageProp;
 use log::{error, info, warn};
 use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
+use model_inference::system_config::{load_llm_refs, AgentConfig};
 use storage_handler::{
     build_relational_db_connection_for_connection, build_s3_ref, build_weaviate_ref, build_web_search_engine_ref,
     find_connection, ConnectionConfig, ConnectionKind, WeaviateCollectionSchema,
@@ -369,29 +369,6 @@ pub async fn spawn(
         intent_classification_llm,
         math_programming_llm,
         natural_language_reply_llm,
-        main_llm_display_name: resolve_llm_ref_display_name(
-            config.llm_ref_id.as_deref(),
-            &llm_refs,
-            &llm_config.model_name,
-        ),
-        intent_classification_llm_display_name: resolve_llm_ref_display_name(
-            config
-                .intent_classification_llm_ref_id
-                .as_deref()
-                .or(config.llm_ref_id.as_deref()),
-            &llm_refs,
-            &intent_classification_llm_config.model_name,
-        ),
-        math_programming_llm_display_name: resolve_llm_ref_display_name(
-            config.math_programming_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref()),
-            &llm_refs,
-            &math_programming_llm_config.model_name,
-        ),
-        natural_language_reply_llm_display_name: resolve_llm_ref_display_name(
-            config.natural_language_reply_llm_ref_id.as_deref(),
-            &llm_refs,
-            &natural_language_reply_llm_config.model_name,
-        ),
         rdb_pool,
         weaviate_image_ref,
         weaviate_memory_ref,
@@ -544,17 +521,6 @@ fn resolve_tokenizer_segmenter(
         .map(|model_dir| model_dir.join("tokenizer.json"));
 
     build_segmenter(tokenizer_path.as_deref())
-}
-
-fn resolve_llm_ref_display_name(
-    llm_ref_id: Option<&str>,
-    llm_refs: &[LlmRefConfig],
-    fallback_model_name: &str,
-) -> String {
-    llm_ref_id
-        .and_then(|id| llm_refs.iter().find(|item| item.id == id))
-        .map(|item| item.name.clone())
-        .unwrap_or_else(|| fallback_model_name.to_string())
 }
 
 fn resolve_inbox_redis_ref(

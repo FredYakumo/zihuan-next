@@ -59,7 +59,6 @@ pub(crate) const MAX_REPLY_CHARS: usize = 250;
 pub(crate) const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
 const LOG_TOOL_PREVIEW_CHARS: usize = 600;
 pub(crate) const DIRECT_REPLY_NO_SYSTEM_PROMPT: &str = "没有系统提示词";
-const MODEL_NAME_REPLY_PREFIX: &str = "我不是模型，不过我会调用: ";
 const CURRENT_USER_MESSAGE_LABEL: &str = "[Current User Message]";
 const REFERENCED_CONTEXT_LABEL: &str = "[Referenced Context]";
 const INTERPRETATION_RULES_LABEL: &str = "[Interpretation Rules]";
@@ -686,25 +685,6 @@ pub(crate) fn build_meta_query_user_message(
          Based on the above information, answer the user's question in natural language. \
          Do NOT mention any tool names or technical terms. Describe your capabilities in everyday conversational tone."
     )
-}
-
-pub(crate) fn build_model_name_reply(model_display_names: &[String]) -> String {
-    let mut names = Vec::new();
-    for name in model_display_names {
-        let trimmed = name.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if !names.iter().any(|existing: &String| existing == trimmed) {
-            names.push(trimmed.to_string());
-        }
-    }
-
-    if names.is_empty() {
-        format!("{MODEL_NAME_REPLY_PREFIX}未配置模型")
-    } else {
-        format!("{MODEL_NAME_REPLY_PREFIX}{}", names.join("、"))
-    }
 }
 
 impl LongTaskNotifier for QqLongTaskNotifier {
