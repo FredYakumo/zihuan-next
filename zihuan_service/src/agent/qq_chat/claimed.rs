@@ -11,7 +11,9 @@ use zihuan_agent::brain::{Brain, BrainStopReason, LongTaskContext};
 use zihuan_core::agent_config::qq_chat::current_qq_chat_agent_service_config;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::{LLMMessage, TokenUsage};
+use zihuan_core::llm::{InferenceParam, LLMMessage, TokenUsage};
+use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
+use zihuan_agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::steer::message_with_api_style;
 use zihuan_core::task_context::AgentTaskRequest;
 
@@ -25,16 +27,16 @@ use ims_bot_adapter::tools::group_members::GetCurrentGroupMembersBrainTool;
 use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
 
 use super::super::super::tools::{
-    review_and_rewrite_reply, AgentMemoryToolResources, EditableQqAgentTool,
+    format_public_info_message, review_and_rewrite_reply, AgentMemoryToolResources, EditableQqAgentTool,
     GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
-    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool, QqReplyReviewRequest,
-    RememberContentBrainTool, ReplyMessageBrainTool, RunResearchSubagentBrainTool, SaveImageBrainTool,
-    SearchMemoryContentBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget, UpdateAgentStateBrainTool,
-    WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
-    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
-    DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS, DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SAVE_IMAGE,
-    DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
-    QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
+    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool, ModelIdentityContext,
+    QqReplyReviewRequest, RememberContentBrainTool, ReplyMessageBrainTool, RunResearchSubagentBrainTool,
+    SaveImageBrainTool, SearchMemoryContentBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget,
+    UpdateAgentStateBrainTool, WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
+    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
+    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS, DEFAULT_TOOL_REMEMBER_CONTENT,
+    DEFAULT_TOOL_SAVE_IMAGE, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
+    DEFAULT_TOOL_WEB_SEARCH, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 use storage_handler::AgentMemoryAccessContext;
 
@@ -47,11 +49,11 @@ use crate::agent::qq_chat::msg_send::{
 };
 
 use super::{
-    build_group_system_prompt, build_private_system_prompt, build_user_message,
-    collect_available_media_from_brain_output, expand_messages_for_inference, prepare_current_turn_user_input,
-    prepare_current_turn_user_input_from_event, QqChatAgentServiceContext, QqChatAgentServiceInner,
-    QqChatServiceTurnResult, QqChatTaskTrace, QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX,
-    LOG_TEXT_PREVIEW_CHARS,
+    build_group_system_prompt, build_meta_query_system_prompt, build_meta_query_user_message,
+    build_private_system_prompt, build_user_message, collect_available_media_from_brain_output,
+    expand_messages_for_inference, prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
+    QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatServiceTurnResult, QqChatTaskTrace,
+    QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 
 use super::super::steer::QqChatServiceSteerHook;
@@ -683,6 +685,31 @@ impl QqChatAgentServiceInner {
         }
         trace.record_history_stats(history.len(), estimate_messages_tokens(&history));
 
+        if matches!(
+            intent_trace.category,
+            IntentCategory::AskToolList | IntentCategory::AskSystemPrompt | IntentCategory::AskModelName
+        ) {
+            info!(
+                "{LOG_PREFIX} meta-query short-circuit for sender={sender_id}, intent={}",
+                intent_trace.category.label()
+            );
+            return self.handle_meta_query_turn(
+                trace,
+                event,
+                &inference_event,
+                sender_id,
+                target_id,
+                is_group,
+                bot_id,
+                ctx,
+                &current_message,
+                &history_key,
+                history,
+                &turn_session_state,
+                &emotion_dimensions,
+            );
+        }
+
         let shared_runtime_values = Arc::new(Mutex::new(ctx.shared_runtime_values.clone()));
         {
             let mut locked = shared_runtime_values.lock().unwrap();
@@ -785,7 +812,10 @@ impl QqChatAgentServiceInner {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
             brain.add_tool(wrap_brain_tool_with_quota(
-                GetAgentPublicInfoBrainTool::new(current_message.clone()),
+                GetAgentPublicInfoBrainTool::new(
+                    current_message.clone(),
+                    build_service_model_list(ctx),
+                ),
                 tool_quota.clone(),
             ));
         }
@@ -1098,6 +1128,7 @@ impl QqChatAgentServiceInner {
                         session_state: turn_session_state.lock().unwrap().clone(),
                         emotion_dimensions: emotion_dimensions.clone(),
                         available_media_ids: available_media.keys().cloned().collect(),
+                        model_identity_context: Some(build_model_identity_context(ctx)),
                     },
                     trace,
                 )?;
@@ -1173,5 +1204,180 @@ impl QqChatAgentServiceInner {
         trace.log_result_summary(&result_summary);
 
         Ok(QqChatServiceTurnResult { result_summary })
+    }
+
+    /// Handles meta-query intents (AskToolList, AskSystemPrompt) by using a dedicated
+    /// LLM context with pre-fetched function list and public info, without exposing
+    /// any tool specs to the LLM.
+    ///
+    /// The LLM receives only safe, pre-fetched data as text context and is instructed
+    /// to rephrase it into natural language. The result still goes through
+    /// `review_and_rewrite_reply` as a safety net.
+    fn handle_meta_query_turn(
+        &self,
+        trace: &QqChatTaskTrace,
+        event: &ims_bot_adapter::models::MessageEvent,
+        inference_event: &ims_bot_adapter::models::MessageEvent,
+        sender_id: &str,
+        target_id: &str,
+        is_group: bool,
+        bot_id: &str,
+        ctx: &QqChatAgentServiceContext<'_>,
+        current_message: &str,
+        history_key: &str,
+        mut history: Vec<LLMMessage>,
+        turn_session_state: &Arc<Mutex<QqChatAgentServiceSessionState>>,
+        emotion_dimensions: &[QqChatEmotionDimensionConfig],
+    ) -> Result<QqChatServiceTurnResult> {
+        let function_list = crate::command::build_help_text()
+            .unwrap_or_else(|| "暂无可用功能信息。".to_string());
+        let model_list = build_service_model_list(ctx);
+        let public_info = format_public_info_message(current_message, &model_list).to_string();
+
+        let style_prompt = ctx
+            .resolved_language_style
+            .as_ref()
+            .map(|item| item.style_prompt.as_str());
+        let emotion_text = {
+            let session = turn_session_state.lock().unwrap();
+            zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text(&session, emotion_dimensions)
+        };
+
+        let meta_system_prompt = build_meta_query_system_prompt(ctx.bot_name, style_prompt, &emotion_text);
+        let meta_user_message = build_meta_query_user_message(current_message, &function_list, &public_info);
+
+        let meta_messages = vec![
+            LLMMessage::system(meta_system_prompt),
+            LLMMessage::user(meta_user_message),
+        ];
+
+        trace.mark_llm_request_started();
+        let response = ctx.llm.inference(&InferenceParam {
+            messages: &meta_messages,
+            tools: None,
+        });
+        let candidate_message = response.content_text_owned().unwrap_or_default();
+        let candidate_message = candidate_message.trim();
+        if candidate_message.is_empty() {
+            return Ok(QqChatServiceTurnResult {
+                result_summary: format!("元查询[{sender_id}]：LLM未返回有效回复"),
+            });
+        }
+
+        trace.record_llm_result_parsed(Some(candidate_message));
+
+        if zihuan_agent::utils::string_utils::is_no_reply_directive(candidate_message) {
+            history.push(message_with_api_style(
+                LLMMessage::user(current_message.to_string()),
+                ctx.llm.api_style(),
+            ));
+            save_history(ctx.cache, history_key, history);
+            *ctx.session_state_store.lock().unwrap() = turn_session_state.lock().unwrap().clone();
+            trace.record_final_reply_decision(Some(candidate_message), Some(true), None);
+            return Ok(QqChatServiceTurnResult {
+                result_summary: format!("已处理[{sender_id}]的元查询，显式选择不回复"),
+            });
+        }
+
+        let review_result = review_and_rewrite_reply(
+            ctx.intent_classification_llm,
+            ctx.natural_language_reply_llm,
+            ctx.natural_language_reply_system_prompt,
+            &QqReplyReviewRequest {
+                candidate_message: candidate_message.to_string(),
+                is_group,
+                bot_name: ctx.bot_name.to_string(),
+                sender_id: sender_id.to_string(),
+                sender_nickname: inference_event.sender.nickname.clone(),
+                sender_card: inference_event.sender.card.clone(),
+                session_state: turn_session_state.lock().unwrap().clone(),
+                emotion_dimensions: emotion_dimensions.to_vec(),
+                available_media_ids: Vec::new(),
+                model_identity_context: Some(build_model_identity_context(ctx)),
+            },
+            trace,
+        )?;
+
+        let reply_result = build_reply_result(
+            &review_result.final_message,
+            is_group,
+            sender_id,
+            &inference_event.sender.nickname,
+            inference_event.sender.card.as_str(),
+            bot_id,
+            ctx.bot_name,
+            ctx.max_message_length,
+            None,
+            Some(inference_event.message_id),
+            HashMap::new(),
+            ctx.rdb_pool.cloned(),
+            ctx.reply_batch_builder,
+        )?;
+
+        let mut visible_assistant_history_text = None;
+        trace.mark_reply_send_started();
+        if reply_result.suppress_send {
+            trace.record_reply_send(true, false, &reply_result.batches);
+        } else if reply_result.batches.is_empty() {
+            trace.record_reply_send(false, false, &reply_result.batches);
+        } else {
+            let send_ctx = QqChatServiceSendContext {
+                adapter: ctx.adapter,
+                target_id,
+                is_group,
+                group_name: event.group_name.as_deref(),
+                bot_id,
+                bot_name: ctx.bot_name,
+                mention_target_id: None,
+                persistence: crate::storage::qq_chat_session_store::build_outbound_persistence(
+                    ctx.rdb_pool,
+                    event.group_name.as_deref(),
+                    ctx.bot_name,
+                ),
+                max_text_chars: ctx.max_message_length,
+            };
+            send_planned_batches(&send_ctx, &reply_result.batches);
+            trace.record_reply_send(false, true, &reply_result.batches);
+            visible_assistant_history_text = Some(review_result.final_message);
+        }
+
+        history.push(message_with_api_style(
+            LLMMessage::user(current_message.to_string()),
+            ctx.llm.api_style(),
+        ));
+        if let Some(ref assistant_text) = visible_assistant_history_text {
+            history.push(message_with_api_style(
+                LLMMessage::assistant_text(assistant_text.clone()),
+                ctx.llm.api_style(),
+            ));
+        }
+        save_history(ctx.cache, history_key, history);
+        *ctx.session_state_store.lock().unwrap() = turn_session_state.lock().unwrap().clone();
+
+        let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {
+            format!(
+                "已回复[{sender_id}]的元查询，内容：{}",
+                zihuan_core::utils::string_utils::shorten_text(assistant_text, 80)
+            )
+        } else {
+            format!("已处理[{sender_id}]的元查询，但未发送回复")
+        };
+        trace.log_result_summary(&result_summary);
+
+        Ok(QqChatServiceTurnResult { result_summary })
+    }
+}
+
+fn build_service_model_list(ctx: &QqChatAgentServiceContext<'_>) -> Vec<(String, String)> {
+    ctx.llm_roles()
+        .into_iter()
+        .map(|(role, llm)| (role.to_string(), llm.get_model_name().to_string()))
+        .collect()
+}
+
+fn build_model_identity_context(ctx: &QqChatAgentServiceContext<'_>) -> ModelIdentityContext {
+    ModelIdentityContext {
+        framework_name: "紫幻next".to_string(),
+        model_list: build_service_model_list(ctx),
     }
 }

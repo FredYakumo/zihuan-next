@@ -98,6 +98,7 @@ impl InferenceToolProvider for HttpStreamInferenceToolProvider {
             self.resources.memory_llm.clone(),
             AgentMemoryAccessContext::default(),
             String::new(),
+            Vec::new(),
         )
     }
 
