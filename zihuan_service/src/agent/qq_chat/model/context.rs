@@ -50,6 +50,20 @@ pub(crate) struct QqChatAgentServiceContext<'a> {
     pub(crate) resolved_language_style: Option<QqChatAgentServiceLanguageStyle>,
 }
 
+impl<'a> QqChatAgentServiceContext<'a> {
+    /// Returns `(role_label, llm_ref)` pairs for all LLM roles configured on this service.
+    /// The order matches the service's logical pipeline: main conversation → intent
+    /// classification → math/programming → natural-language reply.
+    pub(crate) fn llm_roles(&'a self) -> [(&'static str, &'a Arc<dyn LLMBase>); 4] {
+        [
+            ("对话", self.llm),
+            ("意图分类", self.intent_classification_llm),
+            ("数学编程", self.math_programming_llm),
+            ("自然语言回复", self.natural_language_reply_llm),
+        ]
+    }
+}
+
 /// Persistent runtime configuration for a QQ chat agent service instance.
 #[derive(Clone)]
 pub struct QqChatAgentServiceRuntimeConfig {

@@ -124,6 +124,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
             self.resources.memory_llm.clone(),
             storage_handler::AgentMemoryAccessContext::default(),
             context.last_user_text.clone(),
+            Vec::new(),
         )
     }
 

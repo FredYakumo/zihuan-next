@@ -29,14 +29,14 @@ use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfil
 use super::super::super::tools::{
     format_public_info_message, review_and_rewrite_reply, AgentMemoryToolResources, EditableQqAgentTool,
     GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
-    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool, QqReplyReviewRequest,
-    RememberContentBrainTool, ReplyMessageBrainTool, RunResearchSubagentBrainTool, SaveImageBrainTool,
-    SearchMemoryContentBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget, UpdateAgentStateBrainTool,
-    WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
-    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
-    DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS, DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SAVE_IMAGE,
-    DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
-    QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
+    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool, ModelIdentityContext,
+    QqReplyReviewRequest, RememberContentBrainTool, ReplyMessageBrainTool, RunResearchSubagentBrainTool,
+    SaveImageBrainTool, SearchMemoryContentBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget,
+    UpdateAgentStateBrainTool, WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
+    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
+    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS, DEFAULT_TOOL_REMEMBER_CONTENT,
+    DEFAULT_TOOL_SAVE_IMAGE, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
+    DEFAULT_TOOL_WEB_SEARCH, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 use storage_handler::AgentMemoryAccessContext;
 
@@ -687,7 +687,7 @@ impl QqChatAgentServiceInner {
 
         if matches!(
             intent_trace.category,
-            IntentCategory::AskToolList | IntentCategory::AskSystemPrompt
+            IntentCategory::AskToolList | IntentCategory::AskSystemPrompt | IntentCategory::AskModelName
         ) {
             info!(
                 "{LOG_PREFIX} meta-query short-circuit for sender={sender_id}, intent={}",
@@ -812,7 +812,10 @@ impl QqChatAgentServiceInner {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
             brain.add_tool(wrap_brain_tool_with_quota(
-                GetAgentPublicInfoBrainTool::new(current_message.clone()),
+                GetAgentPublicInfoBrainTool::new(
+                    current_message.clone(),
+                    build_service_model_list(ctx),
+                ),
                 tool_quota.clone(),
             ));
         }
@@ -1125,6 +1128,7 @@ impl QqChatAgentServiceInner {
                         session_state: turn_session_state.lock().unwrap().clone(),
                         emotion_dimensions: emotion_dimensions.clone(),
                         available_media_ids: available_media.keys().cloned().collect(),
+                        model_identity_context: Some(build_model_identity_context(ctx)),
                     },
                     trace,
                 )?;
@@ -1227,7 +1231,8 @@ impl QqChatAgentServiceInner {
     ) -> Result<QqChatServiceTurnResult> {
         let function_list = crate::command::build_help_text()
             .unwrap_or_else(|| "暂无可用功能信息。".to_string());
-        let public_info = format_public_info_message(current_message).to_string();
+        let model_list = build_service_model_list(ctx);
+        let public_info = format_public_info_message(current_message, &model_list).to_string();
 
         let style_prompt = ctx
             .resolved_language_style
@@ -1288,6 +1293,7 @@ impl QqChatAgentServiceInner {
                 session_state: turn_session_state.lock().unwrap().clone(),
                 emotion_dimensions: emotion_dimensions.to_vec(),
                 available_media_ids: Vec::new(),
+                model_identity_context: Some(build_model_identity_context(ctx)),
             },
             trace,
         )?;
@@ -1359,5 +1365,19 @@ impl QqChatAgentServiceInner {
         trace.log_result_summary(&result_summary);
 
         Ok(QqChatServiceTurnResult { result_summary })
+    }
+}
+
+fn build_service_model_list(ctx: &QqChatAgentServiceContext<'_>) -> Vec<(String, String)> {
+    ctx.llm_roles()
+        .into_iter()
+        .map(|(role, llm)| (role.to_string(), llm.get_model_name().to_string()))
+        .collect()
+}
+
+fn build_model_identity_context(ctx: &QqChatAgentServiceContext<'_>) -> ModelIdentityContext {
+    ModelIdentityContext {
+        framework_name: "紫幻next".to_string(),
+        model_list: build_service_model_list(ctx),
     }
 }

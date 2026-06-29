@@ -289,6 +289,7 @@ pub(crate) fn execute_style_learning_task(
                         session_state: zihuan_agent::session_state::QqChatAgentServiceSessionState::default(),
                         emotion_dimensions: Vec::new(),
                         available_media_ids: Vec::new(),
+                        model_identity_context: None,
                     },
                     &trace,
                 )?;
