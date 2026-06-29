@@ -113,6 +113,8 @@ pub struct QqChatAgentServiceConfig {
     pub default_tools_enabled: HashMap<String, bool>,
     #[serde(default = "default_qq_chat_tool_session_call_limits")]
     pub tool_session_call_limits: HashMap<String, usize>,
+    #[serde(default)]
+    pub tool_session_limit_message: Option<String>,
     #[serde(default = "default_qq_chat_emotion_dimensions")]
     pub emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     #[serde(default)]

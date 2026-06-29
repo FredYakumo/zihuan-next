@@ -131,6 +131,8 @@ export interface ServiceFormState {
   max_steer_count: number;
   emotion_dimensions: QqChatEmotionDimensionFormItem[];
   default_tools_enabled: Record<string, boolean>;
+  tool_session_call_limits: Record<string, number>;
+  tool_session_limit_message: string;
   http_bind: string;
   http_api_key: string;
   http_web_search_engine_connection_id: string;
@@ -391,6 +393,8 @@ export function defaultServiceForm(): ServiceFormState {
     max_steer_count: 4,
     emotion_dimensions: defaultQqChatEmotionDimensions(),
     default_tools_enabled: defaultQqChatDefaultToolsEnabled(),
+    tool_session_call_limits: {},
+    tool_session_limit_message: "",
     http_bind: "127.0.0.1:18080",
     http_api_key: "",
     http_web_search_engine_connection_id: "",
@@ -747,6 +751,20 @@ export function serviceFormFromConfig(
         form.default_tools_enabled[tool.id] = value;
       }
     }
+    const limitsSource = (agentType.tool_session_call_limits ?? {}) as Record<
+      string,
+      unknown
+    >;
+    form.tool_session_call_limits = {};
+    for (const [key, val] of Object.entries(limitsSource)) {
+      const num = Number(val);
+      if (Number.isFinite(num) && num > 0) {
+        form.tool_session_call_limits[key] = num;
+      }
+    }
+    form.tool_session_limit_message = String(
+      agentType.tool_session_limit_message ?? "",
+    );
   } else if (form.type === "http_stream") {
     form.http_bind = String(agentType.bind ?? "127.0.0.1:18080");
     form.http_api_key = String(agentType.api_key ?? "");
@@ -886,6 +904,13 @@ export function buildServicePayload(form: ServiceFormState): {
           form.emotion_dimensions,
         ),
         default_tools_enabled: defaultToolsEnabled,
+        tool_session_call_limits: Object.fromEntries(
+          Object.entries(form.tool_session_call_limits)
+            .filter(([, v]) => Number.isFinite(v) && v > 0)
+            .map(([k, v]) => [k, v]),
+        ),
+        tool_session_limit_message:
+          form.tool_session_limit_message.trim() || null,
       },
     };
   }

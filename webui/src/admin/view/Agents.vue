@@ -524,8 +524,33 @@
                       时必须在这里指定一个支持多模态的模型。
                     </div>
                   </div>
+                  <div
+                    v-if="form.default_tools_enabled[tool.id] !== false"
+                    style="margin-top: 8px"
+                  >
+                    <label>单次会话调用上限</label>
+                    <input
+                      v-model.number="form.tool_session_call_limits[tool.id]"
+                      type="number"
+                      min="0"
+                      placeholder="不限制"
+                      style="width: 120px"
+                    />
+                    <span class="muted" style="margin-left: 8px">0 或留空表示不限制</span>
+                  </div>
                 </span>
               </label>
+            </div>
+            <div style="margin-top: 12px">
+              <label>达到调用上限回文（可选）</label>
+              <textarea
+                v-model="form.tool_session_limit_message"
+                placeholder="当前工具已经达到 [{limit_scope}]的调用次数限制，但是你不要把这个直接当成自然语言输出给用户，仅当用户问及详细原因时，再告知"
+                rows="3"
+              />
+              <div class="muted" style="margin-top: 4px">
+                留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为“单次会话”或“用户”）。
+              </div>
             </div>
           </div>
 
@@ -694,6 +719,19 @@
                   </div>
                   <div class="field field-check">
                     <input v-model="tool.enabled" type="checkbox" />启用该工具
+                  </div>
+                  <div
+                    v-if="form.type === 'qq_chat' && tool.enabled"
+                    class="field"
+                  >
+                    <label>单次会话调用上限</label>
+                    <input
+                      v-model.number="form.tool_session_call_limits[tool.name]"
+                      type="number"
+                      min="0"
+                      placeholder="不限制"
+                    />
+                    <div class="muted" style="font-size: 12px">0 或留空表示不限制</div>
                   </div>
                   <div
                     v-if="tool.targetType === 'workflow_set'"
@@ -1136,8 +1174,33 @@
                           时必须在这里指定一个支持多模态的模型。
                         </div>
                       </div>
+                      <div
+                        v-if="form.default_tools_enabled[tool.id] !== false"
+                        style="margin-top: 8px"
+                      >
+                        <label>单次会话调用上限</label>
+                        <input
+                          v-model.number="form.tool_session_call_limits[tool.id]"
+                          type="number"
+                          min="0"
+                          placeholder="不限制"
+                          style="width: 120px"
+                        />
+                        <span class="muted" style="margin-left: 8px">0 或留空表示不限制</span>
+                      </div>
                     </span>
                   </label>
+                </div>
+                <div style="margin-top: 12px">
+                  <label>达到调用上限回文（可选）</label>
+                  <textarea
+                    v-model="form.tool_session_limit_message"
+                    placeholder="当前工具已经达到 [{limit_scope}]的调用次数限制，但是你不要把这个直接当成自然语言输出给用户，仅当用户问及详细原因时，再告知"
+                    rows="3"
+                  />
+                  <div class="muted" style="margin-top: 4px">
+                    留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为“单次会话”或“用户”）。
+                  </div>
                 </div>
               </div>
             </template>
@@ -1386,6 +1449,19 @@
                   </div>
                   <div class="field field-check">
                     <input v-model="tool.enabled" type="checkbox" />启用该工具
+                  </div>
+                  <div
+                    v-if="form.type === 'qq_chat' && tool.enabled"
+                    class="field"
+                  >
+                    <label>单次会话调用上限</label>
+                    <input
+                      v-model.number="form.tool_session_call_limits[tool.name]"
+                      type="number"
+                      min="0"
+                      placeholder="不限制"
+                    />
+                    <div class="muted" style="font-size: 12px">0 或留空表示不限制</div>
                   </div>
                   <div
                     v-if="tool.targetType === 'workflow_set'"
@@ -2262,10 +2338,16 @@ function pickCreateType(type: ServiceTypeName) {
   form.type = type;
   if (type === "qq_chat") {
     form.default_tools_enabled = defaultQqChatDefaultToolsEnabled();
+    form.tool_session_call_limits = { web_search: 1 };
+    form.tool_session_limit_message = "";
   } else if (type === "http_stream") {
     form.default_tools_enabled = defaultHttpStreamDefaultToolsEnabled();
+    form.tool_session_call_limits = {};
+    form.tool_session_limit_message = "";
   } else {
     form.default_tools_enabled = defaultWorkspaceDefaultToolsEnabled();
+    form.tool_session_call_limits = {};
+    form.tool_session_limit_message = "";
   }
   showCreatePicker.value = true;
   showCreateForm.value = true;

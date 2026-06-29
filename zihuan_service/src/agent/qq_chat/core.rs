@@ -831,6 +831,7 @@ impl QqChatAgentService {
             sender_id,
             rdb_pool: self.config.rdb_pool.clone(),
             session_limits: self.config.qq_chat_config.tool_session_call_limits.clone(),
+            session_limit_message: self.config.qq_chat_config.tool_session_limit_message.clone(),
             session_state: Arc::clone(&self.config.tool_quota_session_state),
         });
 
