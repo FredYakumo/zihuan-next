@@ -707,6 +707,20 @@ export interface AgentMemoryRecord {
   updated_at: string;
 }
 
+export interface QqChatMessageRateLimitUsageRow {
+  sender_id: string;
+  sender_name: string | null;
+  group_id: string | null;
+  group_name: string | null;
+  scope_type: string;
+  scope_key: string;
+  window_unit: "minute" | "hour" | "day" | string;
+  used_calls: number;
+  max_calls: number | null;
+  unlimited: boolean;
+  updated_at: string;
+}
+
 function buildQueryString(params: Record<string, unknown>): string {
   const qs = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -811,6 +825,18 @@ export const explorer = {
   deleteAgentMemory(connectionId: string, objectId: string): Promise<{ ok: boolean }> {
     const qs = buildQueryString({ connection_id: connectionId });
     return request("DELETE", `/explorer/agent-memory/${encodeURIComponent(objectId)}?${qs}`);
+  },
+
+  queryQqChatRateLimitUsage(agentId: string): Promise<{ items: QqChatMessageRateLimitUsageRow[] }> {
+    const qs = buildQueryString({ agent_id: agentId });
+    return request("GET", `/explorer/qq-chat-rate-limit-usage?${qs}`);
+  },
+
+  resetQqChatRateLimitUsage(agentId: string, senderId: string): Promise<{ ok: boolean; deleted: number }> {
+    return request("POST", "/explorer/qq-chat-rate-limit-usage/reset", {
+      agent_id: agentId,
+      sender_id: senderId,
+    });
   },
 };
 

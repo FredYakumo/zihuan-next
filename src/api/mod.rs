@@ -223,6 +223,11 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
         // Data Explorer
         .push(
             Router::with_path("explorer")
+                .push(Router::with_path("qq-chat-rate-limit-usage").get(explorer::query_qq_chat_rate_limit_usage))
+                .push(
+                    Router::with_path("qq-chat-rate-limit-usage/reset")
+                        .post(explorer::reset_qq_chat_rate_limit_usage),
+                )
                 .push(Router::with_path("mysql").get(explorer::query_mysql))
                 .push(Router::with_path("redis").get(explorer::query_redis))
                 .push(Router::with_path("weaviate").get(explorer::query_weaviate))

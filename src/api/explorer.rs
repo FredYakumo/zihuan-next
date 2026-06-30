@@ -1,4 +1,5 @@
 use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use model_inference::system_config::{load_agents, AgentType};
 use redis::AsyncCommands;
 use salvo::prelude::*;
 use salvo::writing::Json;
@@ -8,14 +9,29 @@ use sqlx::Row as SqlxRow;
 
 use crate::system_config::load_connections;
 use storage_handler::{
+    build_relational_db_connection_for_connection,
     create_memory_record_with_vector, delete_memory_record, get_memory_record, list_recent_memory_keys,
     resource_resolver::{self, build_rdb_ref},
     search_memory_content_by_vector, update_memory_record_with_vector,
     weaviate::build_weaviate_ref as build_storage_weaviate_ref,
     AgentMemoryAccessContext, AgentMemoryUpsert, ConnectionKind, WeaviateClient, WeaviateCollectionSchema,
 };
+use zihuan_service::agent::qq_chat::message_rate_limit_store::{
+    list_message_rate_limit_usage, reset_message_rate_limit_usage,
+};
 
 use super::config::{render_bad_request, render_internal_error};
+
+#[derive(Deserialize)]
+pub struct QqChatRateLimitUsageQuery {
+    pub agent_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct QqChatRateLimitUsageResetRequest {
+    pub agent_id: String,
+    pub sender_id: String,
+}
 
 #[derive(Serialize)]
 struct MysqlExploreResponse {
@@ -36,6 +52,49 @@ struct MessageRecordResponse {
     content: String,
     at_target_list: Option<String>,
     media_json: Option<String>,
+}
+
+#[handler]
+pub async fn query_qq_chat_rate_limit_usage(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let query: QqChatRateLimitUsageQuery = match req.parse_queries() {
+        Ok(query) => query,
+        Err(err) => return render_bad_request(res, err.to_string()),
+    };
+    let agent_id = query.agent_id.trim();
+    if agent_id.is_empty() {
+        return render_bad_request(res, "agent_id is required".into());
+    }
+
+    let connection = match resolve_agent_rdb_connection(agent_id).await {
+        Ok(connection) => connection,
+        Err(err) => return render_internal_error(res, err),
+    };
+    match list_message_rate_limit_usage(&connection, agent_id).await {
+        Ok(items) => res.render(Json(json!({ "items": items }))),
+        Err(err) => render_internal_error(res, err),
+    }
+}
+
+#[handler]
+pub async fn reset_qq_chat_rate_limit_usage(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let body: QqChatRateLimitUsageResetRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(err) => return render_bad_request(res, err.to_string()),
+    };
+    let agent_id = body.agent_id.trim();
+    let sender_id = body.sender_id.trim();
+    if agent_id.is_empty() || sender_id.is_empty() {
+        return render_bad_request(res, "agent_id and sender_id are required".into());
+    }
+
+    let connection = match resolve_agent_rdb_connection(agent_id).await {
+        Ok(connection) => connection,
+        Err(err) => return render_internal_error(res, err),
+    };
+    match reset_message_rate_limit_usage(&connection, agent_id, sender_id).await {
+        Ok(deleted) => res.render(Json(json!({ "ok": true, "deleted": deleted }))),
+        Err(err) => render_internal_error(res, err),
+    }
 }
 
 #[handler]
@@ -870,4 +929,25 @@ fn resolve_agent_memory_weaviate_ref(
         weaviate.collection_schema,
     )?;
     Ok(weaviate_ref)
+}
+
+async fn resolve_agent_rdb_connection(
+    agent_id: &str,
+) -> zihuan_core::error::Result<zihuan_core::data_refs::RelationalDbConnection> {
+    let agents = load_agents()?;
+    let agent = agents
+        .into_iter()
+        .find(|item| item.id == agent_id)
+        .ok_or_else(|| zihuan_core::string_error!("agent '{}' not found", agent_id))?;
+    let AgentType::QqChat(config) = agent.agent_type else {
+        return Err(zihuan_core::string_error!(
+            "agent '{}' is not a QQ Chat Agent Service",
+            agent_id
+        ));
+    };
+    let rdb_id = config
+        .resolved_rdb_id()
+        .ok_or_else(|| zihuan_core::string_error!("QQ Chat Agent Service '{}' has no rdb_id configured", agent_id))?;
+    let connections = load_connections()?;
+    build_relational_db_connection_for_connection(rdb_id, &connections).await
 }

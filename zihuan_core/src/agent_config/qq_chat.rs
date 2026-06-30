@@ -63,6 +63,80 @@ pub struct QqChatEmotionDimensionConfig {
     pub negative_prompt: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum QqChatMessageRateLimitWindowUnit {
+    Minute,
+    Hour,
+    Day,
+}
+
+impl QqChatMessageRateLimitWindowUnit {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Minute => "minute",
+            Self::Hour => "hour",
+            Self::Day => "day",
+        }
+    }
+
+    pub fn window_seconds(&self) -> i64 {
+        match self {
+            Self::Minute => 60,
+            Self::Hour => 60 * 60,
+            Self::Day => 60 * 60 * 24,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QqChatMessageRateLimitRule {
+    #[serde(default)]
+    pub unlimited: bool,
+    #[serde(default)]
+    pub window_unit: Option<QqChatMessageRateLimitWindowUnit>,
+    #[serde(default)]
+    pub max_calls: Option<usize>,
+}
+
+impl QqChatMessageRateLimitRule {
+    pub fn is_effectively_unlimited(&self) -> bool {
+        self.unlimited
+    }
+
+    pub fn sanitized(&self) -> Option<Self> {
+        if self.unlimited {
+            return Some(Self {
+                unlimited: true,
+                window_unit: None,
+                max_calls: None,
+            });
+        }
+
+        let window_unit = self.window_unit?;
+        let max_calls = self.max_calls.filter(|value| *value > 0)?;
+        Some(Self {
+            unlimited: false,
+            window_unit: Some(window_unit),
+            max_calls: Some(max_calls),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QqChatMessageRateLimitGroupRule {
+    pub group_id: String,
+    #[serde(flatten)]
+    pub limit: QqChatMessageRateLimitRule,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QqChatMessageRateLimitUserRule {
+    pub sender_id: String,
+    #[serde(flatten)]
+    pub limit: QqChatMessageRateLimitRule,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QqChatAgentServiceConfig {
     pub ims_bot_adapter_connection_id: String,
@@ -115,6 +189,12 @@ pub struct QqChatAgentServiceConfig {
     pub tool_session_call_limits: HashMap<String, usize>,
     #[serde(default)]
     pub tool_session_limit_message: Option<String>,
+    #[serde(default)]
+    pub message_rate_limit_default: Option<QqChatMessageRateLimitRule>,
+    #[serde(default)]
+    pub message_rate_limit_groups: Vec<QqChatMessageRateLimitGroupRule>,
+    #[serde(default)]
+    pub message_rate_limit_users: Vec<QqChatMessageRateLimitUserRule>,
     #[serde(default = "default_qq_chat_emotion_dimensions")]
     pub emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     #[serde(default)]
@@ -164,6 +244,54 @@ impl QqChatAgentServiceConfig {
             return default_qq_chat_emotion_dimensions();
         }
         dimensions
+    }
+
+    pub fn resolved_message_rate_limit_default(&self) -> Option<QqChatMessageRateLimitRule> {
+        self.message_rate_limit_default.as_ref()?.sanitized()
+    }
+
+    pub fn resolved_message_rate_limit_groups(&self) -> Vec<QqChatMessageRateLimitGroupRule> {
+        let mut rules = Vec::new();
+        for rule in &self.message_rate_limit_groups {
+            let group_id = rule.group_id.trim();
+            let Some(limit) = rule.limit.sanitized() else {
+                continue;
+            };
+            if group_id.is_empty()
+                || rules
+                    .iter()
+                    .any(|existing: &QqChatMessageRateLimitGroupRule| existing.group_id == group_id)
+            {
+                continue;
+            }
+            rules.push(QqChatMessageRateLimitGroupRule {
+                group_id: group_id.to_string(),
+                limit,
+            });
+        }
+        rules
+    }
+
+    pub fn resolved_message_rate_limit_users(&self) -> Vec<QqChatMessageRateLimitUserRule> {
+        let mut rules = Vec::new();
+        for rule in &self.message_rate_limit_users {
+            let sender_id = rule.sender_id.trim();
+            let Some(limit) = rule.limit.sanitized() else {
+                continue;
+            };
+            if sender_id.is_empty()
+                || rules
+                    .iter()
+                    .any(|existing: &QqChatMessageRateLimitUserRule| existing.sender_id == sender_id)
+            {
+                continue;
+            }
+            rules.push(QqChatMessageRateLimitUserRule {
+                sender_id: sender_id.to_string(),
+                limit,
+            });
+        }
+        rules
     }
 }
 

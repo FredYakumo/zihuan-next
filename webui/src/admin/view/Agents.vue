@@ -274,6 +274,118 @@
                   min="0"
                 />
               </div>
+              <div class="field-full">
+                <label>消息 Rate Limit</label>
+                <div class="editor-card" style="margin-top: 8px">
+                  <div class="split-header">
+                    <div><h3>默认规则</h3></div>
+                    <label class="field-check"><input v-model="form.message_rate_limit_default_enabled" type="checkbox" />启用</label>
+                  </div>
+                  <div v-if="form.message_rate_limit_default_enabled" class="form-grid" style="margin-top: 12px">
+                    <div class="field">
+                      <label>模式</label>
+                      <select v-model="form.message_rate_limit_default.unlimited">
+                        <option :value="false">限次</option>
+                        <option :value="true">无限</option>
+                      </select>
+                    </div>
+                    <template v-if="!form.message_rate_limit_default.unlimited">
+                      <div class="field">
+                        <label>窗口</label>
+                        <select v-model="form.message_rate_limit_default.window_unit">
+                          <option value="minute">分钟</option>
+                          <option value="hour">小时</option>
+                          <option value="day">天</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label>次数</label>
+                        <input v-model.number="form.message_rate_limit_default.max_calls" type="number" min="1" />
+                      </div>
+                    </template>
+                  </div>
+                </div>
+                <div class="editor-card" style="margin-top: 12px">
+                  <div class="split-header">
+                    <div><h3>群组规则</h3></div>
+                    <button class="btn ghost" type="button" @click="addGroupRateLimitRule">新增群组规则</button>
+                  </div>
+                  <div v-if="form.message_rate_limit_groups.length === 0" class="empty-state" style="margin-top: 12px">还没有群组规则。</div>
+                  <div v-for="(rule, index) in form.message_rate_limit_groups" :key="`group-${index}`" class="tool-block" style="margin-top: 12px">
+                    <div class="split-header">
+                      <strong>群组规则 {{ index + 1 }}</strong>
+                      <button class="btn warn" type="button" @click="removeGroupRateLimitRule(index)">移除</button>
+                    </div>
+                    <div class="form-grid" style="margin-top: 12px">
+                      <div class="field">
+                        <label>Group ID</label>
+                        <input v-model="rule.group_id" />
+                      </div>
+                      <div class="field">
+                        <label>模式</label>
+                        <select v-model="rule.unlimited">
+                          <option :value="false">限次</option>
+                          <option :value="true">无限</option>
+                        </select>
+                      </div>
+                      <template v-if="!rule.unlimited">
+                        <div class="field">
+                          <label>窗口</label>
+                          <select v-model="rule.window_unit">
+                            <option value="minute">分钟</option>
+                            <option value="hour">小时</option>
+                            <option value="day">天</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <label>次数</label>
+                          <input v-model.number="rule.max_calls" type="number" min="1" />
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+                <div class="editor-card" style="margin-top: 12px">
+                  <div class="split-header">
+                    <div><h3>用户规则</h3></div>
+                    <button class="btn ghost" type="button" @click="addUserRateLimitRule">新增用户规则</button>
+                  </div>
+                  <div v-if="form.message_rate_limit_users.length === 0" class="empty-state" style="margin-top: 12px">还没有用户规则。</div>
+                  <div v-for="(rule, index) in form.message_rate_limit_users" :key="`user-${index}`" class="tool-block" style="margin-top: 12px">
+                    <div class="split-header">
+                      <strong>用户规则 {{ index + 1 }}</strong>
+                      <button class="btn warn" type="button" @click="removeUserRateLimitRule(index)">移除</button>
+                    </div>
+                    <div class="form-grid" style="margin-top: 12px">
+                      <div class="field">
+                        <label>Sender ID</label>
+                        <input v-model="rule.sender_id" />
+                      </div>
+                      <div class="field">
+                        <label>模式</label>
+                        <select v-model="rule.unlimited">
+                          <option :value="false">限次</option>
+                          <option :value="true">无限</option>
+                        </select>
+                      </div>
+                      <template v-if="!rule.unlimited">
+                        <div class="field">
+                          <label>窗口</label>
+                          <select v-model="rule.window_unit">
+                            <option value="minute">分钟</option>
+                            <option value="hour">小时</option>
+                            <option value="day">天</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <label>次数</label>
+                          <input v-model.number="rule.max_calls" type="number" min="1" />
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div class="field">
                 <label>Ignore Rules</label>
                 <div class="muted" style="margin-top: 2px">
@@ -971,6 +1083,118 @@
                   type="number"
                   min="0"
                 />
+              </div>
+              <div class="field-full">
+                <label>消息 Rate Limit</label>
+                <div class="editor-card" style="margin-top: 8px">
+                  <div class="split-header">
+                    <div><h3>默认规则</h3></div>
+                    <label class="field-check"><input v-model="form.message_rate_limit_default_enabled" type="checkbox" />启用</label>
+                  </div>
+                  <div v-if="form.message_rate_limit_default_enabled" class="form-grid" style="margin-top: 12px">
+                    <div class="field">
+                      <label>模式</label>
+                      <select v-model="form.message_rate_limit_default.unlimited">
+                        <option :value="false">限次</option>
+                        <option :value="true">无限</option>
+                      </select>
+                    </div>
+                    <template v-if="!form.message_rate_limit_default.unlimited">
+                      <div class="field">
+                        <label>窗口</label>
+                        <select v-model="form.message_rate_limit_default.window_unit">
+                          <option value="minute">分钟</option>
+                          <option value="hour">小时</option>
+                          <option value="day">天</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label>次数</label>
+                        <input v-model.number="form.message_rate_limit_default.max_calls" type="number" min="1" />
+                      </div>
+                    </template>
+                  </div>
+                </div>
+                <div class="editor-card" style="margin-top: 12px">
+                  <div class="split-header">
+                    <div><h3>群组规则</h3></div>
+                    <button class="btn ghost" type="button" @click="addGroupRateLimitRule">新增群组规则</button>
+                  </div>
+                  <div v-if="form.message_rate_limit_groups.length === 0" class="empty-state" style="margin-top: 12px">还没有群组规则。</div>
+                  <div v-for="(rule, index) in form.message_rate_limit_groups" :key="`edit-group-${index}`" class="tool-block" style="margin-top: 12px">
+                    <div class="split-header">
+                      <strong>群组规则 {{ index + 1 }}</strong>
+                      <button class="btn warn" type="button" @click="removeGroupRateLimitRule(index)">移除</button>
+                    </div>
+                    <div class="form-grid" style="margin-top: 12px">
+                      <div class="field">
+                        <label>Group ID</label>
+                        <input v-model="rule.group_id" />
+                      </div>
+                      <div class="field">
+                        <label>模式</label>
+                        <select v-model="rule.unlimited">
+                          <option :value="false">限次</option>
+                          <option :value="true">无限</option>
+                        </select>
+                      </div>
+                      <template v-if="!rule.unlimited">
+                        <div class="field">
+                          <label>窗口</label>
+                          <select v-model="rule.window_unit">
+                            <option value="minute">分钟</option>
+                            <option value="hour">小时</option>
+                            <option value="day">天</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <label>次数</label>
+                          <input v-model.number="rule.max_calls" type="number" min="1" />
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+                <div class="editor-card" style="margin-top: 12px">
+                  <div class="split-header">
+                    <div><h3>用户规则</h3></div>
+                    <button class="btn ghost" type="button" @click="addUserRateLimitRule">新增用户规则</button>
+                  </div>
+                  <div v-if="form.message_rate_limit_users.length === 0" class="empty-state" style="margin-top: 12px">还没有用户规则。</div>
+                  <div v-for="(rule, index) in form.message_rate_limit_users" :key="`edit-user-${index}`" class="tool-block" style="margin-top: 12px">
+                    <div class="split-header">
+                      <strong>用户规则 {{ index + 1 }}</strong>
+                      <button class="btn warn" type="button" @click="removeUserRateLimitRule(index)">移除</button>
+                    </div>
+                    <div class="form-grid" style="margin-top: 12px">
+                      <div class="field">
+                        <label>Sender ID</label>
+                        <input v-model="rule.sender_id" />
+                      </div>
+                      <div class="field">
+                        <label>模式</label>
+                        <select v-model="rule.unlimited">
+                          <option :value="false">限次</option>
+                          <option :value="true">无限</option>
+                        </select>
+                      </div>
+                      <template v-if="!rule.unlimited">
+                        <div class="field">
+                          <label>窗口</label>
+                          <select v-model="rule.window_unit">
+                            <option value="minute">分钟</option>
+                            <option value="hour">小时</option>
+                            <option value="day">天</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <label>次数</label>
+                          <input v-model.number="rule.max_calls" type="number" min="1" />
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </div>
               </div>
               <div class="field">
                 <label>Ignore Rules</label>
@@ -2223,6 +2447,32 @@ async function uploadAvatarFile(file: File) {
 
 function clearAvatar() {
   form.avatar_url = '';
+}
+
+function addGroupRateLimitRule() {
+  form.message_rate_limit_groups.push({
+    group_id: "",
+    unlimited: false,
+    window_unit: "day",
+    max_calls: 20,
+  });
+}
+
+function removeGroupRateLimitRule(index: number) {
+  form.message_rate_limit_groups.splice(index, 1);
+}
+
+function addUserRateLimitRule() {
+  form.message_rate_limit_users.push({
+    sender_id: "",
+    unlimited: false,
+    window_unit: "day",
+    max_calls: 20,
+  });
+}
+
+function removeUserRateLimitRule(index: number) {
+  form.message_rate_limit_users.splice(index, 1);
 }
 
 // Get display URL for avatar (handles avatar:// prefix)

@@ -250,6 +250,71 @@
       </div>
     </section>
 
+    <!-- QQ Chat Rate Limit Usage Tab -->
+    <section v-if="activeTab === 'qq_chat_rate_limit'" class="panel">
+      <div class="explorer-connection-select">
+        <label class="field">
+          <span class="field-label">QQ Chat Agent Service</span>
+          <select v-model="qqChatRateLimit.agentId" class="field-input" @change="onQqChatRateLimitAgentChange">
+            <option value="">— 选择 Service —</option>
+            <option v-for="service in qqChatServices" :key="service.config_id" :value="service.config_id">
+              {{ service.name }}
+            </option>
+          </select>
+        </label>
+      </div>
+
+      <div v-if="qqChatRateLimit.agentId" class="explorer-search">
+        <div class="field" style="align-self: flex-end;">
+          <button class="btn" :disabled="qqChatRateLimit.loading" @click="loadQqChatRateLimitUsage">刷新</button>
+        </div>
+      </div>
+
+      <div v-if="qqChatRateLimit.loading" class="empty-state">加载中…</div>
+      <div v-else-if="qqChatRateLimit.agentId && qqChatRateLimit.items.length === 0 && qqChatRateLimit.searched" class="empty-state">
+        当前没有使用记录。
+      </div>
+      <table v-else-if="qqChatRateLimit.items.length > 0" class="explorer-table">
+        <thead>
+          <tr>
+            <th>用户</th>
+            <th>群组</th>
+            <th>规则来源</th>
+            <th>窗口</th>
+            <th>用量</th>
+            <th>更新时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in qqChatRateLimit.items" :key="`${item.sender_id}-${item.scope_type}-${item.scope_key}-${item.group_id || 'private'}`">
+            <td>
+              <div>{{ item.sender_name || "未知用户" }}</div>
+              <div class="muted" style="font-size:11px;">{{ item.sender_id }}</div>
+            </td>
+            <td>
+              <template v-if="item.group_name">{{ item.group_name }}</template>
+              <template v-else-if="item.group_id">{{ item.group_id }}</template>
+              <span v-else class="muted">—</span>
+            </td>
+            <td>{{ formatRateLimitScope(item.scope_type, item.scope_key) }}</td>
+            <td>{{ formatRateLimitWindow(item.window_unit) }}</td>
+            <td>{{ formatRateLimitUsage(item.used_calls, item.max_calls, item.unlimited) }}</td>
+            <td>{{ item.updated_at }}</td>
+            <td>
+              <button
+                class="btn ghost"
+                :disabled="qqChatRateLimit.resettingSenderId === item.sender_id"
+                @click="resetQqChatRateLimitUsage(item.sender_id)"
+              >
+                {{ qqChatRateLimit.resettingSenderId === item.sender_id ? "重置中…" : "清空当前计数" }}
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
     <!-- RustFS Tab -->
     <section v-if="activeTab === 'rustfs'" class="panel">
       <div class="explorer-connection-select">
@@ -335,8 +400,10 @@ import {
   type ConnectionConfig,
   type LlmConfig,
   type MysqlRecord,
+  type QqChatMessageRateLimitUsageRow,
   type RedisKeyEntry,
   type RustfsObject,
+  type ServiceWithRuntime,
   type WeaviateSearchResult,
 } from "../../api/client";
 import type { WeaviateCollectionSchema } from "../model";
@@ -345,12 +412,14 @@ const tabs = [
   { id: "mysql" as const, label: "MySQL" },
   { id: "redis" as const, label: "Redis" },
   { id: "weaviate" as const, label: "Weaviate" },
+  { id: "qq_chat_rate_limit" as const, label: "用户用量" },
   { id: "rustfs" as const, label: "RustFS" },
 ];
 
-const activeTab = ref<"mysql" | "redis" | "weaviate" | "rustfs">("mysql");
+const activeTab = ref<"mysql" | "redis" | "weaviate" | "qq_chat_rate_limit" | "rustfs">("mysql");
 const connections = ref<ConnectionConfig[]>([]);
 const llmRefs = ref<LlmConfig[]>([]);
+const services = ref<ServiceWithRuntime[]>([]);
 
 const mysqlGoto = ref(1);
 const redisGoto = ref(1);
@@ -385,8 +454,11 @@ const rustfsConnections = computed(() =>
 const embeddingModels = computed(() =>
   llmRefs.value.filter((item) => item.model.type === "text_embedding_local" && item.enabled)
 );
+const qqChatServices = computed(() =>
+  services.value.filter((item) => item.agent_type.type === "qq_chat" && item.enabled)
+);
 
-function switchTab(tab: "mysql" | "redis" | "weaviate" | "rustfs") {
+function switchTab(tab: "mysql" | "redis" | "weaviate" | "qq_chat_rate_limit" | "rustfs") {
   activeTab.value = tab;
 }
 
@@ -674,6 +746,70 @@ function csvToList(value: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
+// ── QQ Chat Rate Limit Usage ──────────────────────────────────
+
+const qqChatRateLimit = ref({
+  agentId: "",
+  loading: false,
+  searched: false,
+  resettingSenderId: "",
+  items: [] as QqChatMessageRateLimitUsageRow[],
+});
+
+function onQqChatRateLimitAgentChange() {
+  qqChatRateLimit.value.items = [];
+  qqChatRateLimit.value.searched = false;
+  if (qqChatRateLimit.value.agentId) {
+    void loadQqChatRateLimitUsage();
+  }
+}
+
+async function loadQqChatRateLimitUsage() {
+  if (!qqChatRateLimit.value.agentId) return;
+  qqChatRateLimit.value.loading = true;
+  qqChatRateLimit.value.searched = true;
+  try {
+    const res = await explorer.queryQqChatRateLimitUsage(qqChatRateLimit.value.agentId);
+    qqChatRateLimit.value.items = res.items;
+  } catch (e: unknown) {
+    alert((e as Error).message);
+  } finally {
+    qqChatRateLimit.value.loading = false;
+  }
+}
+
+async function resetQqChatRateLimitUsage(senderId: string) {
+  if (!qqChatRateLimit.value.agentId) return;
+  if (!window.confirm(`确认清空用户 ${senderId} 的当前计数吗？`)) return;
+  qqChatRateLimit.value.resettingSenderId = senderId;
+  try {
+    await explorer.resetQqChatRateLimitUsage(qqChatRateLimit.value.agentId, senderId);
+    await loadQqChatRateLimitUsage();
+  } catch (e: unknown) {
+    alert((e as Error).message);
+  } finally {
+    qqChatRateLimit.value.resettingSenderId = "";
+  }
+}
+
+function formatRateLimitScope(scopeType: string, scopeKey: string): string {
+  if (scopeType === "user") return `用户: ${scopeKey}`;
+  if (scopeType === "group") return `群组: ${scopeKey}`;
+  return "默认";
+}
+
+function formatRateLimitWindow(windowUnit: string): string {
+  if (windowUnit === "minute") return "分钟";
+  if (windowUnit === "hour") return "小时";
+  if (windowUnit === "day") return "天";
+  return windowUnit || "—";
+}
+
+function formatRateLimitUsage(usedCalls: number, maxCalls: number | null, unlimited: boolean): string {
+  if (unlimited) return `${usedCalls}/无限`;
+  return `${usedCalls}/${maxCalls ?? "—"}`;
+}
+
 // ── RustFS ─────────────────────────────────────────────────────
 
 const rustfs = ref({
@@ -755,15 +891,19 @@ function onImageError(e: Event) {
 // ── Init ───────────────────────────────────────────────────────
 
 onMounted(async () => {
-  const [connectionResult, llmResult] = await Promise.allSettled([
+  const [connectionResult, llmResult, serviceResult] = await Promise.allSettled([
     system.connections.list(),
     system.llm.list(),
+    system.services.list(),
   ]);
   if (connectionResult.status === "fulfilled") {
     connections.value = connectionResult.value;
   }
   if (llmResult.status === "fulfilled") {
     llmRefs.value = llmResult.value;
+  }
+  if (serviceResult.status === "fulfilled") {
+    services.value = serviceResult.value;
   }
 });
 </script>
