@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <section class="page">
     <div class="page-hero">
       <h2>Service 管理</h2>
@@ -423,125 +423,121 @@
               </div>
             </template>
 
-            <template v-if="form.type === 'workspace'">
-              <div class="editor-card" style="margin-top: 12px">
-                <div class="split-header">
-                  <div>
-                    <h3>默认工具</h3>
-                  </div>
-                </div>
-                <div class="list" style="margin-top: 12px">
-                  <label
-                    v-for="tool in workspaceDefaultTools"
-                    :key="tool.id"
-                    class="field-check"
-                    style="
-                      display: flex;
-                      align-items: flex-start;
-                      gap: 8px;
-                      margin-bottom: 8px;
-                    "
-                  >
-                    <input
-                      v-model="form.default_tools_enabled[tool.id]"
-                      type="checkbox"
-                    />
-                    <span>
-                      <strong>{{ tool.label }}</strong>
-                      <span class="muted" style="display: block">{{
-                        tool.description
-                      }}</span>
-                    </span>
-                  </label>
-                </div>
-              </div>
-            </template>
           </div>
 
-          <div
-            v-if="form.type === 'qq_chat'"
-            class="editor-card"
-            style="margin-top: 12px"
-          >
+          <!-- 头像编辑：http_stream 和 workspace 支持 -->
+          <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
+            <div class="field-full">
+              <label>Service 头像</label>
+              <div class="avatar-upload-row">
+                <img
+                  v-if="form.avatar_url"
+                  :src="getAvatarDisplayUrl(form.avatar_url)"
+                  alt="Avatar preview"
+                  class="avatar-preview"
+                />
+                <div v-else class="avatar-placeholder">
+                  {{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}
+                </div>
+                <div class="avatar-actions">
+                  <input
+                    ref="avatarFileInput"
+                    type="file"
+                    accept="image/*"
+                    style="display: none"
+                    @change="handleAvatarFileSelect"
+                  />
+                  <button
+                    type="button"
+                    class="btn ghost"
+                    @click="$refs.avatarFileInput?.click()"
+                  >
+                    {{ form.avatar_url ? '更换头像' : '上传头像' }}
+                  </button>
+                  <button
+                    v-if="form.avatar_url"
+                    type="button"
+                    class="btn warn"
+                    @click="clearAvatar"
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
+              <input
+                v-model="form.avatar_url"
+                placeholder="头像 URL（可选，或直接上传图片）"
+                style="margin-top: 8px"
+              />
+            </div>
+          </template>
+
+          <!-- 默认工具表格 -->
+          <div class="editor-card" style="margin-top: 12px">
             <div class="split-header">
               <div>
                 <h3>默认工具</h3>
               </div>
             </div>
-            <div class="list" style="margin-top: 12px">
-              <label
-                v-for="tool in qqChatDefaultTools"
-                :key="tool.id"
-                class="field-check"
-                style="
-                  display: flex;
-                  align-items: flex-start;
-                  gap: 8px;
-                  margin-bottom: 8px;
-                "
-              >
+            <div class="default-tools-table-wrap" style="margin-top: 10px">
+              <div class="default-tools-search">
                 <input
-                  v-model="form.default_tools_enabled[tool.id]"
-                  type="checkbox"
+                  v-model="defaultToolSearchQuery"
+                  type="text"
+                  placeholder="搜索工具名称、ID 或说明"
+                  class="default-tools-search-input"
                 />
-                <span style="flex: 1">
-                  <strong>{{ tool.label }}</strong>
-                  <span class="muted" style="display: block">{{
-                    tool.description
-                  }}</span>
-                  <div
-                    v-if="
-                      tool.id === 'image_understand' &&
-                      form.default_tools_enabled.image_understand !== false
-                    "
-                    style="margin-top: 8px"
+                <button
+                  v-if="defaultToolSearchQuery"
+                  class="btn ghost default-tools-search-clear"
+                  @click="defaultToolSearchQuery = ''"
+                >
+                  清空
+                </button>
+              </div>
+              <div v-if="filteredDefaultTools.length === 0" class="empty-state" style="padding: 16px">
+                没有匹配的工具。
+              </div>
+              <table v-else class="default-tools-table">
+                <thead>
+                  <tr>
+                    <th class="dt-col-name">工具名称</th>
+                    <th class="dt-col-id">工具 ID</th>
+                    <th class="dt-col-desc">说明</th>
+                    <th class="dt-col-enable">启用</th>
+                    <th class="dt-col-edit">编辑</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="tool in filteredDefaultTools"
+                    :key="tool.id"
                   >
-                    <label>图片理解模型</label>
-                    <select v-model="form.image_understand_llm_ref_id">
-                      <option value="">默认使用主模型</option>
-                      <option
-                        v-for="item in multimodalChatModels"
-                        :key="item.config_id"
-                        :value="item.config_id"
+                    <td class="dt-cell-name"><strong>{{ tool.label }}</strong></td>
+                    <td class="dt-cell-id mono">{{ tool.id }}</td>
+                    <td class="dt-cell-desc"><span class="muted">{{ tool.description }}</span></td>
+                    <td class="dt-cell-enable">
+                      <input
+                        v-model="form.default_tools_enabled[tool.id]"
+                        type="checkbox"
+                      />
+                    </td>
+                    <td class="dt-cell-edit">
+                      <button
+                        class="btn ghost connection-card-compact-btn"
+                        @click="openDefaultToolEditModal(tool.id)"
                       >
-                        {{ item.name }}
-                      </option>
-                    </select>
-                    <div class="muted" style="margin-top: 4px">
-                      image_understand 默认使用 Service
-                      主模型；这里只有支持多模态的模型可选。
-                    </div>
-                    <div
-                      v-if="
-                        form.llm_ref_id &&
-                        !mainChatModelSupportsMultimodal &&
-                        !form.image_understand_llm_ref_id
-                      "
-                      class="muted"
-                      style="margin-top: 4px; color: #ffb36b"
-                    >
-                      当前主模型不支持多模态，启用 image_understand
-                      时必须在这里指定一个支持多模态的模型。
-                    </div>
-                  </div>
-                  <div
-                    v-if="form.default_tools_enabled[tool.id] !== false"
-                    style="margin-top: 8px"
-                  >
-                    <label>单次会话调用上限</label>
-                    <input
-                      v-model.number="form.tool_session_call_limits[tool.id]"
-                      type="number"
-                      min="0"
-                      placeholder="不限制"
-                      style="width: 120px"
-                    />
-                    <span class="muted" style="margin-left: 8px">0 或留空表示不限制</span>
-                  </div>
-                </span>
-              </label>
+                        编辑
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            <div style="margin-top: 12px">
+            <div
+              v-if="form.type === 'qq_chat'"
+              style="margin-top: 12px"
+            >
               <label>达到调用上限回文（可选）</label>
               <textarea
                 v-model="form.tool_session_limit_message"
@@ -549,123 +545,10 @@
                 rows="3"
               />
               <div class="muted" style="margin-top: 4px">
-                留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为“单次会话”或“用户”）。
+                留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为"单次会话"或"用户"）。
               </div>
             </div>
           </div>
-
-          <div v-else-if="form.type === 'http_stream'" class="editor-card" style="margin-top: 12px">
-            <div class="split-header">
-              <div>
-                <h3>默认工具</h3>
-              </div>
-            </div>
-            <div class="list" style="margin-top: 12px">
-              <label
-                v-for="tool in httpStreamDefaultTools"
-                :key="tool.id"
-                class="field-check"
-                style="
-                  display: flex;
-                  align-items: flex-start;
-                  gap: 8px;
-                  margin-bottom: 8px;
-                "
-              >
-                <input
-                  v-model="form.default_tools_enabled[tool.id]"
-                  type="checkbox"
-                />
-                <span>
-                  <strong>{{ tool.label }}</strong>
-                  <span class="muted" style="display: block">{{
-                    tool.description
-                  }}</span>
-                </span>
-              </label>
-            </div>
-          </div>
-
-<!-- 头像编辑：http_stream 和 workspace 支持 -->
-            <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
-              <div class="field-full">
-                <label>Service 头像</label>
-                <div class="avatar-upload-row">
-                  <img
-                    v-if="form.avatar_url"
-                    :src="getAvatarDisplayUrl(form.avatar_url)"
-                    alt="Avatar preview"
-                    class="avatar-preview"
-                  />
-                  <div v-else class="avatar-placeholder">
-                    {{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}
-                  </div>
-                  <div class="avatar-actions">
-                    <input
-                      ref="avatarFileInput"
-                      type="file"
-                      accept="image/*"
-                      style="display: none"
-                      @change="handleAvatarFileSelect"
-                    />
-                    <button
-                      type="button"
-                      class="btn ghost"
-                      @click="$refs.avatarFileInput?.click()"
-                    >
-                      {{ form.avatar_url ? '更换头像' : '上传头像' }}
-                    </button>
-                    <button
-                      v-if="form.avatar_url"
-                      type="button"
-                      class="btn warn"
-                      @click="clearAvatar"
-                    >
-                      删除
-                    </button>
-                  </div>
-                </div>
-                <input
-                  v-model="form.avatar_url"
-                  placeholder="头像 URL（可选，或直接上传图片）"
-                  style="margin-top: 8px"
-                />
-              </div>
-            </template>
-
-            <template v-if="form.type === 'workspace'">
-            <div class="editor-card" style="margin-top: 12px">
-              <div class="split-header">
-                <div>
-                  <h3>默认工具</h3>
-                </div>
-              </div>
-              <div class="list" style="margin-top: 12px">
-                <label
-                  v-for="tool in workspaceDefaultTools"
-                  :key="tool.id"
-                  class="field-check"
-                  style="
-                    display: flex;
-                    align-items: flex-start;
-                    gap: 8px;
-                    margin-bottom: 8px;
-                  "
-                >
-                  <input
-                    v-model="form.default_tools_enabled[tool.id]"
-                    type="checkbox"
-                  />
-                  <span>
-                    <strong>{{ tool.label }}</strong>
-                    <span class="muted" style="display: block">{{
-                      tool.description
-                    }}</span>
-                  </span>
-                </label>
-              </div>
-            </div>
-          </template>
 
           <div class="editor-card" style="margin-top: 18px">
             <div class="split-header">
@@ -1112,84 +995,70 @@
                 </div>
               </div>
 
-              <div class="editor-card" style="margin-top: 12px">
-                <div class="split-header">
-                  <div>
-                    <h3>默认工具</h3>
-                  </div>
+              </div>
+            </template>
+
+            <!-- 默认工具表格 -->
+            <div class="editor-card" style="margin-top: 12px">
+              <div class="split-header">
+                <div>
+                  <h3>默认工具</h3>
                 </div>
-                <div class="list" style="margin-top: 12px">
-                  <label
-                    v-for="tool in qqChatDefaultTools"
-                    :key="tool.id"
-                    class="field-check"
-                    style="
-                      display: flex;
-                      align-items: flex-start;
-                      gap: 8px;
-                      margin-bottom: 8px;
-                    "
-                  >
+              </div>
+              <div class="default-tools-table-wrap" style="margin-top: 10px">
+                  <div class="default-tools-search">
                     <input
-                      v-model="form.default_tools_enabled[tool.id]"
-                      type="checkbox"
+                      v-model="defaultToolSearchQuery"
+                      type="text"
+                      placeholder="搜索工具名称、ID 或说明"
+                      class="default-tools-search-input"
                     />
-                    <span style="flex: 1">
-                      <strong>{{ tool.label }}</strong>
-                      <span class="muted" style="display: block">{{
-                        tool.description
-                      }}</span>
-                      <div
-                        v-if="
-                          tool.id === 'image_understand' &&
-                          form.default_tools_enabled.image_understand !== false
-                        "
-                        style="margin-top: 8px"
+                    <button
+                      v-if="defaultToolSearchQuery"
+                      class="btn ghost default-tools-search-clear"
+                      @click="defaultToolSearchQuery = ''"
+                    >
+                      清空
+                    </button>
+                  </div>
+                  <div v-if="filteredDefaultTools.length === 0" class="empty-state" style="padding: 16px">
+                    没有匹配的工具。
+                  </div>
+                  <table v-else class="default-tools-table">
+                    <thead>
+                      <tr>
+                        <th class="dt-col-name">工具名称</th>
+                        <th class="dt-col-id">工具 ID</th>
+                        <th class="dt-col-desc">说明</th>
+                        <th class="dt-col-enable">启用</th>
+                        <th class="dt-col-edit">编辑</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="tool in filteredDefaultTools"
+                        :key="tool.id"
                       >
-                        <label>图片理解模型</label>
-                        <select v-model="form.image_understand_llm_ref_id">
-                          <option value="">默认使用主模型</option>
-                          <option
-                            v-for="item in multimodalChatModels"
-                            :key="item.config_id"
-                            :value="item.config_id"
+                        <td class="dt-cell-name"><strong>{{ tool.label }}</strong></td>
+                        <td class="dt-cell-id mono">{{ tool.id }}</td>
+                        <td class="dt-cell-desc"><span class="muted">{{ tool.description }}</span></td>
+                        <td class="dt-cell-enable">
+                          <input
+                            v-model="form.default_tools_enabled[tool.id]"
+                            type="checkbox"
+                          />
+                        </td>
+                        <td class="dt-cell-edit">
+                          <button
+                            class="btn ghost connection-card-compact-btn"
+                            @click="openDefaultToolEditModal(tool.id)"
                           >
-                            {{ item.name }}
-                          </option>
-                        </select>
-                        <div class="muted" style="margin-top: 4px">
-                          image_understand 默认使用 Service
-                          主模型；这里只有支持多模态的模型可选。
-                        </div>
-                        <div
-                          v-if="
-                            form.llm_ref_id &&
-                            !mainChatModelSupportsMultimodal &&
-                            !form.image_understand_llm_ref_id
-                          "
-                          class="muted"
-                          style="margin-top: 4px; color: #ffb36b"
-                        >
-                          当前主模型不支持多模态，启用 image_understand
-                          时必须在这里指定一个支持多模态的模型。
-                        </div>
-                      </div>
-                      <div
-                        v-if="form.default_tools_enabled[tool.id] !== false"
-                        style="margin-top: 8px"
-                      >
-                        <label>单次会话调用上限</label>
-                        <input
-                          v-model.number="form.tool_session_call_limits[tool.id]"
-                          type="number"
-                          min="0"
-                          placeholder="不限制"
-                          style="width: 120px"
-                        />
-                        <span class="muted" style="margin-left: 8px">0 或留空表示不限制</span>
-                      </div>
-                    </span>
-                  </label>
+                            编辑
+                          </button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
                 <div style="margin-top: 12px">
                   <label>达到调用上限回文（可选）</label>
@@ -1199,11 +1068,10 @@
                     rows="3"
                   />
                   <div class="muted" style="margin-top: 4px">
-                    留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为“单次会话”或“用户”）。
+                    留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为"单次会话"或"用户"）。
                   </div>
                 </div>
-              </div>
-            </template>
+            </div>
 
             <!-- 头像编辑：http_stream 和 workspace 支持 -->
             <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
@@ -1329,72 +1197,9 @@
                 </select>
               </div>
 
-              <div class="editor-card" style="margin-top: 12px">
-                <div class="split-header">
-                  <div>
-                    <h3>默认工具</h3>
-                  </div>
-                </div>
-                <div class="list" style="margin-top: 12px">
-                  <label
-                    v-for="tool in httpStreamDefaultTools"
-                    :key="tool.id"
-                    class="field-check"
-                    style="
-                      display: flex;
-                      align-items: flex-start;
-                      gap: 8px;
-                      margin-bottom: 8px;
-                    "
-                  >
-                    <input
-                      v-model="form.default_tools_enabled[tool.id]"
-                      type="checkbox"
-                    />
-                    <span>
-                      <strong>{{ tool.label }}</strong>
-                      <span class="muted" style="display: block">{{
-                        tool.description
-                      }}</span>
-                    </span>
-                  </label>
-                </div>
-              </div>
-            </template>
+              </template>
 
-            <template v-if="form.type === 'workspace'">
-              <div class="editor-card" style="margin-top: 12px">
-                <div class="split-header">
-                  <div>
-                    <h3>默认工具</h3>
-                  </div>
-                </div>
-                <div class="list" style="margin-top: 12px">
-                  <label
-                    v-for="tool in workspaceDefaultTools"
-                    :key="tool.id"
-                    class="field-check"
-                    style="
-                      display: flex;
-                      align-items: flex-start;
-                      gap: 8px;
-                      margin-bottom: 8px;
-                    "
-                  >
-                    <input
-                      v-model="form.default_tools_enabled[tool.id]"
-                      type="checkbox"
-                    />
-                    <span>
-                      <strong>{{ tool.label }}</strong>
-                      <span class="muted" style="display: block">{{
-                        tool.description
-                      }}</span>
-                    </span>
-                  </label>
-                </div>
-              </div>
-            </template>
+            
           </div>
 
           <div class="editor-card" style="margin-top: 18px">
@@ -1966,6 +1771,65 @@
       </div>
     </div>
 
+    <!-- 默认工具编辑模态框 -->
+    <div
+      v-if="showDefaultToolEditModal"
+      class="service-edit-modal-backdrop"
+      @click.stop
+    >
+      <div class="service-edit-modal" @click.stop style="max-width: 600px">
+        <div class="service-edit-modal-header">
+          <h3 style="margin: 0">
+            编辑「{{ editingDefaultTool?.label || editingDefaultToolId }}」
+          </h3>
+          <button class="btn ghost" @click="closeDefaultToolEditModal">关闭</button>
+        </div>
+        <div class="service-edit-modal-body">
+          <div class="form-grid">
+            <div class="field field-check">
+              <label><input v-model="defaultToolEditDraft.enabled" type="checkbox" />启用该工具</label>
+            </div>
+            <div class="field">
+              <label>单次会话调用上限</label>
+              <input
+                v-model.number="defaultToolEditDraft.callLimit"
+                type="number"
+                min="0"
+                placeholder="不限制"
+              />
+              <div class="muted" style="margin-top: 4px; font-size: 12px">
+                0 或留空表示不限制
+              </div>
+            </div>
+            <div
+              v-if="editingDefaultToolId === 'image_understand' && form.type === 'qq_chat'"
+              class="field-full"
+            >
+              <label>图片理解模型</label>
+              <select v-model="defaultToolEditDraft.imageUnderstandLlmRefId">
+                <option value="">默认使用主模型</option>
+                <option
+                  v-for="item in multimodalChatModels"
+                  :key="item.config_id"
+                  :value="item.config_id"
+                >
+                  {{ item.name }}
+                </option>
+              </select>
+              <div class="muted" style="margin-top: 4px">
+                image_understand 默认使用 Service
+                主模型；这里只有支持多模态的模型可选。
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="service-edit-modal-footer">
+          <button class="btn ghost" @click="closeDefaultToolEditModal">取消</button>
+          <button class="btn primary" @click="confirmDefaultToolEdit">保存</button>
+        </div>
+      </div>
+    </div>
+
     <section v-if="servicesLoading && services.length === 0" class="panel">
       <div class="service-loading-state" aria-live="polite">
         <span class="service-loading-spinner"></span>
@@ -2081,6 +1945,7 @@ import {
   isBotAdapterConnectionType,
   QQ_CHAT_DEFAULT_TOOLS,
   defaultServiceForm,
+  type DefaultToolOption,
   defaultHttpStreamDefaultToolsEnabled,
   defaultQqChatDefaultToolsEnabled,
   defaultToolForm,
@@ -2165,6 +2030,65 @@ const emotionDimensionEditingIndex = ref<number | null>(null);
 const qqChatDefaultTools = QQ_CHAT_DEFAULT_TOOLS;
 const httpStreamDefaultTools = HTTP_STREAM_DEFAULT_TOOLS;
 const workspaceDefaultTools = WORKSPACE_DEFAULT_TOOLS;
+
+// ── 默认工具表格 / 搜索 / 编辑模态框 ──
+const defaultToolSearchQuery = ref("");
+const showDefaultToolEditModal = ref(false);
+const editingDefaultToolId = ref("");
+const defaultToolEditDraft = reactive({
+  enabled: true,
+  callLimit: 0,
+  imageUnderstandLlmRefId: "",
+});
+
+const currentDefaultTools = computed<DefaultToolOption[]>(() => {
+  if (form.type === "qq_chat") return QQ_CHAT_DEFAULT_TOOLS;
+  if (form.type === "http_stream") return HTTP_STREAM_DEFAULT_TOOLS;
+  return WORKSPACE_DEFAULT_TOOLS;
+});
+
+const filteredDefaultTools = computed<DefaultToolOption[]>(() => {
+  const q = defaultToolSearchQuery.value.trim().toLowerCase();
+  if (!q) return currentDefaultTools.value;
+  return currentDefaultTools.value.filter(
+    (tool) =>
+      tool.label.toLowerCase().includes(q) ||
+      tool.id.toLowerCase().includes(q) ||
+      tool.description.toLowerCase().includes(q),
+  );
+});
+
+const editingDefaultTool = computed<DefaultToolOption | undefined>(() =>
+  currentDefaultTools.value.find((t) => t.id === editingDefaultToolId.value),
+);
+
+function openDefaultToolEditModal(toolId: string) {
+  editingDefaultToolId.value = toolId;
+  defaultToolEditDraft.enabled =
+    form.default_tools_enabled[toolId] !== false;
+  defaultToolEditDraft.callLimit =
+    form.tool_session_call_limits[toolId] ?? 0;
+  defaultToolEditDraft.imageUnderstandLlmRefId =
+    form.image_understand_llm_ref_id ?? "";
+  showDefaultToolEditModal.value = true;
+}
+
+function closeDefaultToolEditModal() {
+  showDefaultToolEditModal.value = false;
+  editingDefaultToolId.value = "";
+}
+
+function confirmDefaultToolEdit() {
+  const toolId = editingDefaultToolId.value;
+  if (!toolId) return;
+  form.default_tools_enabled[toolId] = defaultToolEditDraft.enabled;
+  form.tool_session_call_limits[toolId] = defaultToolEditDraft.callLimit;
+  if (toolId === "image_understand") {
+    form.image_understand_llm_ref_id =
+      defaultToolEditDraft.imageUnderstandLlmRefId;
+  }
+  closeDefaultToolEditModal();
+}
 const chatModels = computed(() =>
   llm.value.filter((item) => item.model.type === "chat_llm"),
 );
