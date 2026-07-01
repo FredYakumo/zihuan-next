@@ -249,7 +249,7 @@
                   min="0"
                 />
               </div>
-              <div class="field-full">
+              <div class="field">
                 <label>配置Service情绪维度</label>
                 <div class="muted">
                   Service的情绪可以由一个或者多个维度组成，这些维度共同构成Agent的决策、行为和输出语言风格
@@ -274,117 +274,19 @@
                   min="0"
                 />
               </div>
-              <div class="field-full">
-                <label>消息 Rate Limit</label>
-                <div class="editor-card" style="margin-top: 8px">
-                  <div class="split-header">
-                    <div><h3>默认规则</h3></div>
-                    <label class="field-check"><input v-model="form.message_rate_limit_default_enabled" type="checkbox" />启用</label>
-                  </div>
-                  <div v-if="form.message_rate_limit_default_enabled" class="form-grid" style="margin-top: 12px">
-                    <div class="field">
-                      <label>模式</label>
-                      <select v-model="form.message_rate_limit_default.unlimited">
-                        <option :value="false">限次</option>
-                        <option :value="true">无限</option>
-                      </select>
-                    </div>
-                    <template v-if="!form.message_rate_limit_default.unlimited">
-                      <div class="field">
-                        <label>窗口</label>
-                        <select v-model="form.message_rate_limit_default.window_unit">
-                          <option value="minute">分钟</option>
-                          <option value="hour">小时</option>
-                          <option value="day">天</option>
-                        </select>
-                      </div>
-                      <div class="field">
-                        <label>次数</label>
-                        <input v-model.number="form.message_rate_limit_default.max_calls" type="number" min="1" />
-                      </div>
-                    </template>
-                  </div>
+              <div class="field">
+                <label>Rate Limit</label>
+                <div class="muted" style="margin-top: 2px">
+                  按天/小时/分钟限制调用次数，优先级：用户 &gt; 群组 &gt; 默认。
                 </div>
-                <div class="editor-card" style="margin-top: 12px">
-                  <div class="split-header">
-                    <div><h3>群组规则</h3></div>
-                    <button class="btn ghost" type="button" @click="addGroupRateLimitRule">新增群组规则</button>
-                  </div>
-                  <div v-if="form.message_rate_limit_groups.length === 0" class="empty-state" style="margin-top: 12px">还没有群组规则。</div>
-                  <div v-for="(rule, index) in form.message_rate_limit_groups" :key="`group-${index}`" class="tool-block" style="margin-top: 12px">
-                    <div class="split-header">
-                      <strong>群组规则 {{ index + 1 }}</strong>
-                      <button class="btn warn" type="button" @click="removeGroupRateLimitRule(index)">移除</button>
-                    </div>
-                    <div class="form-grid" style="margin-top: 12px">
-                      <div class="field">
-                        <label>Group ID</label>
-                        <input v-model="rule.group_id" />
-                      </div>
-                      <div class="field">
-                        <label>模式</label>
-                        <select v-model="rule.unlimited">
-                          <option :value="false">限次</option>
-                          <option :value="true">无限</option>
-                        </select>
-                      </div>
-                      <template v-if="!rule.unlimited">
-                        <div class="field">
-                          <label>窗口</label>
-                          <select v-model="rule.window_unit">
-                            <option value="minute">分钟</option>
-                            <option value="hour">小时</option>
-                            <option value="day">天</option>
-                          </select>
-                        </div>
-                        <div class="field">
-                          <label>次数</label>
-                          <input v-model.number="rule.max_calls" type="number" min="1" />
-                        </div>
-                      </template>
-                    </div>
-                  </div>
-                </div>
-                <div class="editor-card" style="margin-top: 12px">
-                  <div class="split-header">
-                    <div><h3>用户规则</h3></div>
-                    <button class="btn ghost" type="button" @click="addUserRateLimitRule">新增用户规则</button>
-                  </div>
-                  <div v-if="form.message_rate_limit_users.length === 0" class="empty-state" style="margin-top: 12px">还没有用户规则。</div>
-                  <div v-for="(rule, index) in form.message_rate_limit_users" :key="`user-${index}`" class="tool-block" style="margin-top: 12px">
-                    <div class="split-header">
-                      <strong>用户规则 {{ index + 1 }}</strong>
-                      <button class="btn warn" type="button" @click="removeUserRateLimitRule(index)">移除</button>
-                    </div>
-                    <div class="form-grid" style="margin-top: 12px">
-                      <div class="field">
-                        <label>Sender ID</label>
-                        <input v-model="rule.sender_id" />
-                      </div>
-                      <div class="field">
-                        <label>模式</label>
-                        <select v-model="rule.unlimited">
-                          <option :value="false">限次</option>
-                          <option :value="true">无限</option>
-                        </select>
-                      </div>
-                      <template v-if="!rule.unlimited">
-                        <div class="field">
-                          <label>窗口</label>
-                          <select v-model="rule.window_unit">
-                            <option value="minute">分钟</option>
-                            <option value="hour">小时</option>
-                            <option value="day">天</option>
-                          </select>
-                        </div>
-                        <div class="field">
-                          <label>次数</label>
-                          <input v-model.number="rule.max_calls" type="number" min="1" />
-                        </div>
-                      </template>
-                    </div>
-                  </div>
-                </div>
+                <button
+                  class="btn ghost"
+                  type="button"
+                  style="margin-top: 6px"
+                  @click="openRateLimitModal"
+                >
+                  编辑 Rate Limit
+                </button>
               </div>
               <div class="field">
                 <label>Ignore Rules</label>
@@ -537,55 +439,7 @@
 
           </div>
 
-          <!-- 头像编辑：http_stream 和 workspace 支持 -->
-          <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
-            <div class="field-full">
-              <label>Service 头像</label>
-              <div class="avatar-upload-row">
-                <img
-                  v-if="form.avatar_url"
-                  :src="getAvatarDisplayUrl(form.avatar_url)"
-                  alt="Avatar preview"
-                  class="avatar-preview"
-                />
-                <div v-else class="avatar-placeholder">
-                  {{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}
-                </div>
-                <div class="avatar-actions">
-                  <input
-                    ref="avatarFileInput"
-                    type="file"
-                    accept="image/*"
-                    style="display: none"
-                    @change="handleAvatarFileSelect"
-                  />
-                  <button
-                    type="button"
-                    class="btn ghost"
-                    @click="$refs.avatarFileInput?.click()"
-                  >
-                    {{ form.avatar_url ? '更换头像' : '上传头像' }}
-                  </button>
-                  <button
-                    v-if="form.avatar_url"
-                    type="button"
-                    class="btn warn"
-                    @click="clearAvatar"
-                  >
-                    删除
-                  </button>
-                </div>
-              </div>
-              <input
-                v-model="form.avatar_url"
-                placeholder="头像 URL（可选，或直接上传图片）"
-                style="margin-top: 8px"
-              />
-            </div>
-          </template>
-
-          <!-- 默认工具表格 -->
-          <div class="editor-card" style="margin-top: 12px">
+          <div v-if="currentDefaultTools.length > 0" class="editor-card" style="margin-top: 12px">
             <div class="split-header">
               <div>
                 <h3>默认工具</h3>
@@ -621,18 +475,12 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr
-                    v-for="tool in filteredDefaultTools"
-                    :key="tool.id"
-                  >
+                  <tr v-for="tool in filteredDefaultTools" :key="tool.id">
                     <td class="dt-cell-name"><strong>{{ tool.label }}</strong></td>
                     <td class="dt-cell-id mono">{{ tool.id }}</td>
                     <td class="dt-cell-desc"><span class="muted">{{ tool.description }}</span></td>
                     <td class="dt-cell-enable">
-                      <input
-                        v-model="form.default_tools_enabled[tool.id]"
-                        type="checkbox"
-                      />
+                      <input v-model="form.default_tools_enabled[tool.id]" type="checkbox" />
                     </td>
                     <td class="dt-cell-edit">
                       <button
@@ -646,21 +494,66 @@
                 </tbody>
               </table>
             </div>
-            <div
-              v-if="form.type === 'qq_chat'"
-              style="margin-top: 12px"
-            >
+          </div>
+          <div v-if="form.type === 'qq_chat'" class="editor-card" style="margin-top: 12px">
+            <div class="field-full">
               <label>达到调用上限回文（可选）</label>
               <textarea
                 v-model="form.tool_session_limit_message"
                 placeholder="当前工具已经达到 [{limit_scope}]的调用次数限制，但是你不要把这个直接当成自然语言输出给用户，仅当用户问及详细原因时，再告知"
-                rows="3"
               />
-              <div class="muted" style="margin-top: 4px">
-                留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为"单次会话"或"用户"）。
-              </div>
+            </div>
+            <div class="muted" style="margin-top: 4px">
+              留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为"单次会话"或"用户"）。
             </div>
           </div>
+
+<!-- 头像编辑：http_stream 和 workspace 支持 -->
+            <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
+              <div class="field-full">
+                <label>Service 头像</label>
+                <div class="avatar-upload-row">
+                  <img
+                    v-if="form.avatar_url"
+                    :src="getAvatarDisplayUrl(form.avatar_url)"
+                    alt="Avatar preview"
+                    class="avatar-preview"
+                  />
+                  <div v-else class="avatar-placeholder">
+                    {{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}
+                  </div>
+                  <div class="avatar-actions">
+                    <input
+                      ref="avatarFileInput"
+                      type="file"
+                      accept="image/*"
+                      style="display: none"
+                      @change="handleAvatarFileSelect"
+                    />
+                    <button
+                      type="button"
+                      class="btn ghost"
+                      @click="$refs.avatarFileInput?.click()"
+                    >
+                      {{ form.avatar_url ? '更换头像' : '上传头像' }}
+                    </button>
+                    <button
+                      v-if="form.avatar_url"
+                      type="button"
+                      class="btn warn"
+                      @click="clearAvatar"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+                <input
+                  v-model="form.avatar_url"
+                  placeholder="头像 URL（可选，或直接上传图片）"
+                  style="margin-top: 8px"
+                />
+              </div>
+            </template>
 
           <div class="editor-card" style="margin-top: 18px">
             <div class="split-header">
@@ -817,6 +710,74 @@
             <strong>{{ type.label }}</strong>
             <span>{{ type.hint }}</span>
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 编辑默认工具模态框 -->
+    <div v-if="showDefaultToolEditModal" class="service-edit-modal-backdrop" @click.stop>
+      <div class="service-edit-modal default-tool-edit-modal" @click.stop>
+        <div class="service-edit-modal-header">
+          <h3 style="margin: 0">编辑默认工具</h3>
+          <button class="btn ghost" @click="closeDefaultToolEditModal">关闭</button>
+        </div>
+        <div class="service-edit-modal-body">
+          <div class="editor-card">
+            <div class="form-grid">
+              <div class="field-full">
+                <label>工具</label>
+                <div class="muted">
+                  {{ currentEditingDefaultTool?.label }} ({{ currentEditingDefaultTool?.id }})
+                </div>
+              </div>
+              <div class="field-full field-check">
+                <label>
+                  <input v-model="defaultToolEditDraft.enabled" type="checkbox" />
+                  启用该工具
+                </label>
+              </div>
+              <div class="field">
+                <label>单次会话调用上限</label>
+                <input
+                  v-model.number="defaultToolEditDraft.callLimit"
+                  type="number"
+                  min="0"
+                  placeholder="不限制"
+                />
+                <div class="muted" style="font-size: 12px; margin-top: 4px">0 或留空表示不限制</div>
+              </div>
+              <div
+                v-if="form.type === 'qq_chat' && editingDefaultToolId === 'image_understand'"
+                class="field-full"
+              >
+                <label>图片理解模型</label>
+                <select v-model="defaultToolEditDraft.imageUnderstandLlmRefId">
+                  <option value="">默认使用主模型</option>
+                  <option
+                    v-for="item in multimodalChatModels"
+                    :key="item.config_id"
+                    :value="item.config_id"
+                  >
+                    {{ item.name }}
+                  </option>
+                </select>
+                <div class="muted" style="margin-top: 4px">
+                  image_understand 默认使用 Service 主模型；这里只有支持多模态的模型可选。
+                </div>
+                <div
+                  v-if="form.llm_ref_id && !mainChatModelSupportsMultimodal && !defaultToolEditDraft.imageUnderstandLlmRefId"
+                  class="muted"
+                  style="margin-top: 4px; color: #ffb36b"
+                >
+                  当前主模型不支持多模态，启用 image_understand 时必须在这里指定一个支持多模态的模型。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="service-edit-modal-footer">
+          <button class="btn ghost" @click="closeDefaultToolEditModal">取消</button>
+          <button class="btn primary" @click="confirmDefaultToolEdit">保存</button>
         </div>
       </div>
     </div>
@@ -1062,7 +1023,7 @@
                   min="0"
                 />
               </div>
-              <div class="field-full">
+              <div class="field">
                 <label>配置Service情绪维度</label>
                 <div class="muted">
                   Service的情绪可以由一个或者多个维度组成，这些维度共同构成Agent的决策、行为和输出语言风格。
@@ -1084,117 +1045,19 @@
                   min="0"
                 />
               </div>
-              <div class="field-full">
-                <label>消息 Rate Limit</label>
-                <div class="editor-card" style="margin-top: 8px">
-                  <div class="split-header">
-                    <div><h3>默认规则</h3></div>
-                    <label class="field-check"><input v-model="form.message_rate_limit_default_enabled" type="checkbox" />启用</label>
-                  </div>
-                  <div v-if="form.message_rate_limit_default_enabled" class="form-grid" style="margin-top: 12px">
-                    <div class="field">
-                      <label>模式</label>
-                      <select v-model="form.message_rate_limit_default.unlimited">
-                        <option :value="false">限次</option>
-                        <option :value="true">无限</option>
-                      </select>
-                    </div>
-                    <template v-if="!form.message_rate_limit_default.unlimited">
-                      <div class="field">
-                        <label>窗口</label>
-                        <select v-model="form.message_rate_limit_default.window_unit">
-                          <option value="minute">分钟</option>
-                          <option value="hour">小时</option>
-                          <option value="day">天</option>
-                        </select>
-                      </div>
-                      <div class="field">
-                        <label>次数</label>
-                        <input v-model.number="form.message_rate_limit_default.max_calls" type="number" min="1" />
-                      </div>
-                    </template>
-                  </div>
+              <div class="field">
+                <label>Rate Limit</label>
+                <div class="muted" style="margin-top: 2px">
+                  按天/小时/分钟限制调用次数，优先级：用户 &gt; 群组 &gt; 默认。
                 </div>
-                <div class="editor-card" style="margin-top: 12px">
-                  <div class="split-header">
-                    <div><h3>群组规则</h3></div>
-                    <button class="btn ghost" type="button" @click="addGroupRateLimitRule">新增群组规则</button>
-                  </div>
-                  <div v-if="form.message_rate_limit_groups.length === 0" class="empty-state" style="margin-top: 12px">还没有群组规则。</div>
-                  <div v-for="(rule, index) in form.message_rate_limit_groups" :key="`edit-group-${index}`" class="tool-block" style="margin-top: 12px">
-                    <div class="split-header">
-                      <strong>群组规则 {{ index + 1 }}</strong>
-                      <button class="btn warn" type="button" @click="removeGroupRateLimitRule(index)">移除</button>
-                    </div>
-                    <div class="form-grid" style="margin-top: 12px">
-                      <div class="field">
-                        <label>Group ID</label>
-                        <input v-model="rule.group_id" />
-                      </div>
-                      <div class="field">
-                        <label>模式</label>
-                        <select v-model="rule.unlimited">
-                          <option :value="false">限次</option>
-                          <option :value="true">无限</option>
-                        </select>
-                      </div>
-                      <template v-if="!rule.unlimited">
-                        <div class="field">
-                          <label>窗口</label>
-                          <select v-model="rule.window_unit">
-                            <option value="minute">分钟</option>
-                            <option value="hour">小时</option>
-                            <option value="day">天</option>
-                          </select>
-                        </div>
-                        <div class="field">
-                          <label>次数</label>
-                          <input v-model.number="rule.max_calls" type="number" min="1" />
-                        </div>
-                      </template>
-                    </div>
-                  </div>
-                </div>
-                <div class="editor-card" style="margin-top: 12px">
-                  <div class="split-header">
-                    <div><h3>用户规则</h3></div>
-                    <button class="btn ghost" type="button" @click="addUserRateLimitRule">新增用户规则</button>
-                  </div>
-                  <div v-if="form.message_rate_limit_users.length === 0" class="empty-state" style="margin-top: 12px">还没有用户规则。</div>
-                  <div v-for="(rule, index) in form.message_rate_limit_users" :key="`edit-user-${index}`" class="tool-block" style="margin-top: 12px">
-                    <div class="split-header">
-                      <strong>用户规则 {{ index + 1 }}</strong>
-                      <button class="btn warn" type="button" @click="removeUserRateLimitRule(index)">移除</button>
-                    </div>
-                    <div class="form-grid" style="margin-top: 12px">
-                      <div class="field">
-                        <label>Sender ID</label>
-                        <input v-model="rule.sender_id" />
-                      </div>
-                      <div class="field">
-                        <label>模式</label>
-                        <select v-model="rule.unlimited">
-                          <option :value="false">限次</option>
-                          <option :value="true">无限</option>
-                        </select>
-                      </div>
-                      <template v-if="!rule.unlimited">
-                        <div class="field">
-                          <label>窗口</label>
-                          <select v-model="rule.window_unit">
-                            <option value="minute">分钟</option>
-                            <option value="hour">小时</option>
-                            <option value="day">天</option>
-                          </select>
-                        </div>
-                        <div class="field">
-                          <label>次数</label>
-                          <input v-model.number="rule.max_calls" type="number" min="1" />
-                        </div>
-                      </template>
-                    </div>
-                  </div>
-                </div>
+                <button
+                  class="btn ghost"
+                  type="button"
+                  style="margin-top: 6px"
+                  @click="openRateLimitModal"
+                >
+                  编辑 Rate Limit
+                </button>
               </div>
               <div class="field">
                 <label>Ignore Rules</label>
@@ -1218,84 +1081,7 @@
                   💡 {{ ignoreRulesDisabledReason }}
                 </div>
               </div>
-
-              </div>
             </template>
-
-            <!-- 默认工具表格 -->
-            <div class="editor-card" style="margin-top: 12px">
-              <div class="split-header">
-                <div>
-                  <h3>默认工具</h3>
-                </div>
-              </div>
-              <div class="default-tools-table-wrap" style="margin-top: 10px">
-                  <div class="default-tools-search">
-                    <input
-                      v-model="defaultToolSearchQuery"
-                      type="text"
-                      placeholder="搜索工具名称、ID 或说明"
-                      class="default-tools-search-input"
-                    />
-                    <button
-                      v-if="defaultToolSearchQuery"
-                      class="btn ghost default-tools-search-clear"
-                      @click="defaultToolSearchQuery = ''"
-                    >
-                      清空
-                    </button>
-                  </div>
-                  <div v-if="filteredDefaultTools.length === 0" class="empty-state" style="padding: 16px">
-                    没有匹配的工具。
-                  </div>
-                  <table v-else class="default-tools-table">
-                    <thead>
-                      <tr>
-                        <th class="dt-col-name">工具名称</th>
-                        <th class="dt-col-id">工具 ID</th>
-                        <th class="dt-col-desc">说明</th>
-                        <th class="dt-col-enable">启用</th>
-                        <th class="dt-col-edit">编辑</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr
-                        v-for="tool in filteredDefaultTools"
-                        :key="tool.id"
-                      >
-                        <td class="dt-cell-name"><strong>{{ tool.label }}</strong></td>
-                        <td class="dt-cell-id mono">{{ tool.id }}</td>
-                        <td class="dt-cell-desc"><span class="muted">{{ tool.description }}</span></td>
-                        <td class="dt-cell-enable">
-                          <input
-                            v-model="form.default_tools_enabled[tool.id]"
-                            type="checkbox"
-                          />
-                        </td>
-                        <td class="dt-cell-edit">
-                          <button
-                            class="btn ghost connection-card-compact-btn"
-                            @click="openDefaultToolEditModal(tool.id)"
-                          >
-                            编辑
-                          </button>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div style="margin-top: 12px">
-                  <label>达到调用上限回文（可选）</label>
-                  <textarea
-                    v-model="form.tool_session_limit_message"
-                    placeholder="当前工具已经达到 [{limit_scope}]的调用次数限制，但是你不要把这个直接当成自然语言输出给用户，仅当用户问及详细原因时，再告知"
-                    rows="3"
-                  />
-                  <div class="muted" style="margin-top: 4px">
-                    留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为"单次会话"或"用户"）。
-                  </div>
-                </div>
-            </div>
 
             <!-- 头像编辑：http_stream 和 workspace 支持 -->
             <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
@@ -1423,7 +1209,83 @@
 
               </template>
 
-            
+
+          </div>
+
+          <!-- 默认工具表格 -->
+          <div class="editor-card" style="margin-top: 12px">
+            <div class="split-header">
+              <div>
+                <h3>默认工具</h3>
+              </div>
+            </div>
+            <div class="default-tools-table-wrap" style="margin-top: 10px">
+                <div class="default-tools-search">
+                  <input
+                    v-model="defaultToolSearchQuery"
+                    type="text"
+                    placeholder="搜索工具名称、ID 或说明"
+                    class="default-tools-search-input"
+                  />
+                  <button
+                    v-if="defaultToolSearchQuery"
+                    class="btn ghost default-tools-search-clear"
+                    @click="defaultToolSearchQuery = ''"
+                  >
+                    清空
+                  </button>
+                </div>
+                <div v-if="filteredDefaultTools.length === 0" class="empty-state" style="padding: 16px">
+                  没有匹配的工具。
+                </div>
+                <table v-else class="default-tools-table">
+                  <thead>
+                    <tr>
+                      <th class="dt-col-name">工具名称</th>
+                      <th class="dt-col-id">工具 ID</th>
+                      <th class="dt-col-desc">说明</th>
+                      <th class="dt-col-enable">启用</th>
+                      <th class="dt-col-edit">编辑</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="tool in filteredDefaultTools"
+                      :key="tool.id"
+                    >
+                      <td class="dt-cell-name"><strong>{{ tool.label }}</strong></td>
+                      <td class="dt-cell-id mono">{{ tool.id }}</td>
+                      <td class="dt-cell-desc"><span class="muted">{{ tool.description }}</span></td>
+                      <td class="dt-cell-enable">
+                        <input
+                          v-model="form.default_tools_enabled[tool.id]"
+                          type="checkbox"
+                        />
+                      </td>
+                      <td class="dt-cell-edit">
+                        <button
+                          class="btn ghost connection-card-compact-btn"
+                          @click="openDefaultToolEditModal(tool.id)"
+                        >
+                          编辑
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+          </div>
+          <div v-if="form.type === 'qq_chat'" class="editor-card" style="margin-top: 12px">
+            <div class="field-full">
+              <label>达到调用上限回文（可选）</label>
+              <textarea
+                v-model="form.tool_session_limit_message"
+                placeholder="当前工具已经达到 [{limit_scope}]的调用次数限制，但是你不要把这个直接当成自然语言输出给用户，仅当用户问及详细原因时，再告知"
+              />
+            </div>
+            <div class="muted" style="margin-top: 4px">
+              留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为"单次会话"或"用户"）。
+            </div>
           </div>
 
           <div class="editor-card" style="margin-top: 18px">
@@ -1995,61 +1857,187 @@
       </div>
     </div>
 
-    <!-- 默认工具编辑模态框 -->
     <div
-      v-if="showDefaultToolEditModal"
+      v-if="showRateLimitModal"
       class="service-edit-modal-backdrop"
       @click.stop
     >
-      <div class="service-edit-modal" @click.stop style="max-width: 600px">
+      <div class="service-edit-modal" @click.stop style="max-width: 820px">
         <div class="service-edit-modal-header">
-          <h3 style="margin: 0">
-            编辑「{{ editingDefaultTool?.label || editingDefaultToolId }}」
-          </h3>
-          <button class="btn ghost" @click="closeDefaultToolEditModal">关闭</button>
+          <h3 style="margin: 0">Rate Limit</h3>
+          <button class="btn ghost" @click="closeRateLimitModal">关闭</button>
         </div>
         <div class="service-edit-modal-body">
-          <div class="form-grid">
-            <div class="field field-check">
-              <label><input v-model="defaultToolEditDraft.enabled" type="checkbox" />启用该工具</label>
-            </div>
-            <div class="field">
-              <label>单次会话调用上限</label>
-              <input
-                v-model.number="defaultToolEditDraft.callLimit"
-                type="number"
-                min="0"
-                placeholder="不限制"
-              />
-              <div class="muted" style="margin-top: 4px; font-size: 12px">
-                0 或留空表示不限制
-              </div>
+          <div class="muted">
+            调用频率限制，优先级：用户 &gt; 群组 &gt; 默认。窗口可按分钟 / 小时 / 天。
+          </div>
+
+          <div class="editor-card" style="margin-top: 12px">
+            <div class="split-header">
+              <div><h3>默认规则</h3></div>
+              <label class="field-check">
+                <input
+                  v-model="form.message_rate_limit_default_enabled"
+                  type="checkbox"
+                />启用
+              </label>
             </div>
             <div
-              v-if="editingDefaultToolId === 'image_understand' && form.type === 'qq_chat'"
-              class="field-full"
+              v-if="form.message_rate_limit_default_enabled"
+              class="form-grid"
+              style="margin-top: 12px"
             >
-              <label>图片理解模型</label>
-              <select v-model="defaultToolEditDraft.imageUnderstandLlmRefId">
-                <option value="">默认使用主模型</option>
-                <option
-                  v-for="item in multimodalChatModels"
-                  :key="item.config_id"
-                  :value="item.config_id"
+              <div class="field">
+                <label>模式</label>
+                <select v-model="form.message_rate_limit_default.unlimited">
+                  <option :value="false">限次</option>
+                  <option :value="true">无限</option>
+                </select>
+              </div>
+              <template v-if="!form.message_rate_limit_default.unlimited">
+                <div class="field">
+                  <label>窗口</label>
+                  <select v-model="form.message_rate_limit_default.window_unit">
+                    <option value="minute">分钟</option>
+                    <option value="hour">小时</option>
+                    <option value="day">天</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>次数</label>
+                  <input
+                    v-model.number="form.message_rate_limit_default.max_calls"
+                    type="number"
+                    min="1"
+                  />
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div class="editor-card" style="margin-top: 12px">
+            <div class="split-header">
+              <div><h3>群组规则</h3></div>
+              <button class="btn ghost" type="button" @click="addGroupRateLimitRule">
+                新增群组规则
+              </button>
+            </div>
+            <div
+              v-if="form.message_rate_limit_groups.length === 0"
+              class="empty-state"
+              style="margin-top: 12px"
+            >
+              还没有群组规则。
+            </div>
+            <div
+              v-for="(rule, index) in form.message_rate_limit_groups"
+              :key="`group-${index}`"
+              class="tool-block"
+              style="margin-top: 12px"
+            >
+              <div class="split-header">
+                <strong>群组规则 {{ index + 1 }}</strong>
+                <button
+                  class="btn warn"
+                  type="button"
+                  @click="removeGroupRateLimitRule(index)"
                 >
-                  {{ item.name }}
-                </option>
-              </select>
-              <div class="muted" style="margin-top: 4px">
-                image_understand 默认使用 Service
-                主模型；这里只有支持多模态的模型可选。
+                  移除
+                </button>
+              </div>
+              <div class="form-grid" style="margin-top: 12px">
+                <div class="field">
+                  <label>Group ID</label>
+                  <input v-model="rule.group_id" />
+                </div>
+                <div class="field">
+                  <label>模式</label>
+                  <select v-model="rule.unlimited">
+                    <option :value="false">限次</option>
+                    <option :value="true">无限</option>
+                  </select>
+                </div>
+                <template v-if="!rule.unlimited">
+                  <div class="field">
+                    <label>窗口</label>
+                    <select v-model="rule.window_unit">
+                      <option value="minute">分钟</option>
+                      <option value="hour">小时</option>
+                      <option value="day">天</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>次数</label>
+                    <input v-model.number="rule.max_calls" type="number" min="1" />
+                  </div>
+                </template>
               </div>
             </div>
           </div>
-        </div>
-        <div class="service-edit-modal-footer">
-          <button class="btn ghost" @click="closeDefaultToolEditModal">取消</button>
-          <button class="btn primary" @click="confirmDefaultToolEdit">保存</button>
+
+          <div class="editor-card" style="margin-top: 12px">
+            <div class="split-header">
+              <div><h3>用户规则</h3></div>
+              <button class="btn ghost" type="button" @click="addUserRateLimitRule">
+                新增用户规则
+              </button>
+            </div>
+            <div
+              v-if="form.message_rate_limit_users.length === 0"
+              class="empty-state"
+              style="margin-top: 12px"
+            >
+              还没有用户规则。
+            </div>
+            <div
+              v-for="(rule, index) in form.message_rate_limit_users"
+              :key="`user-${index}`"
+              class="tool-block"
+              style="margin-top: 12px"
+            >
+              <div class="split-header">
+                <strong>用户规则 {{ index + 1 }}</strong>
+                <button
+                  class="btn warn"
+                  type="button"
+                  @click="removeUserRateLimitRule(index)"
+                >
+                  移除
+                </button>
+              </div>
+              <div class="form-grid" style="margin-top: 12px">
+                <div class="field">
+                  <label>Sender ID</label>
+                  <input v-model="rule.sender_id" />
+                </div>
+                <div class="field">
+                  <label>模式</label>
+                  <select v-model="rule.unlimited">
+                    <option :value="false">限次</option>
+                    <option :value="true">无限</option>
+                  </select>
+                </div>
+                <template v-if="!rule.unlimited">
+                  <div class="field">
+                    <label>窗口</label>
+                    <select v-model="rule.window_unit">
+                      <option value="minute">分钟</option>
+                      <option value="hour">小时</option>
+                      <option value="day">天</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>次数</label>
+                    <input v-model.number="rule.max_calls" type="number" min="1" />
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-actions" style="margin-top: 16px">
+            <button class="btn primary" @click="closeRateLimitModal">完成</button>
+          </div>
         </div>
       </div>
     </div>
@@ -2169,10 +2157,10 @@ import {
   isBotAdapterConnectionType,
   QQ_CHAT_DEFAULT_TOOLS,
   defaultServiceForm,
-  type DefaultToolOption,
   defaultHttpStreamDefaultToolsEnabled,
   defaultQqChatDefaultToolsEnabled,
   defaultToolForm,
+  defaultQqChatMessageRateLimitRule,
   defaultWorkspaceDefaultToolsEnabled,
   compactId,
   formatTime,
@@ -2221,6 +2209,7 @@ const showCreatePicker = ref(false);
 const showCreateForm = ref(false);
 const showEditModal = ref(false);
 const showEmotionDimensionsModal = ref(false);
+const showRateLimitModal = ref(false);
 const showIgnoreRulesModal = ref(false);
 const ignoreRulesLoading = ref(false);
 const ignoreRules = ref<QqChatAgentServiceIgnoreRule[]>([]);
@@ -2255,64 +2244,64 @@ const qqChatDefaultTools = QQ_CHAT_DEFAULT_TOOLS;
 const httpStreamDefaultTools = HTTP_STREAM_DEFAULT_TOOLS;
 const workspaceDefaultTools = WORKSPACE_DEFAULT_TOOLS;
 
-// ── 默认工具表格 / 搜索 / 编辑模态框 ──
+const currentDefaultTools = computed(() => {
+  if (form.type === "qq_chat") return qqChatDefaultTools;
+  if (form.type === "http_stream") return httpStreamDefaultTools;
+  if (form.type === "workspace") return workspaceDefaultTools;
+  return [];
+});
+
 const defaultToolSearchQuery = ref("");
+
+const filteredDefaultTools = computed(() => {
+  const q = defaultToolSearchQuery.value.trim().toLowerCase();
+  if (!q) return currentDefaultTools.value;
+  return currentDefaultTools.value.filter(
+    (t) =>
+      t.label.toLowerCase().includes(q) ||
+      t.id.toLowerCase().includes(q) ||
+      t.description.toLowerCase().includes(q),
+  );
+});
+
 const showDefaultToolEditModal = ref(false);
 const editingDefaultToolId = ref("");
 const defaultToolEditDraft = reactive({
   enabled: true,
-  callLimit: 0,
+  callLimit: 0 as number | null,
   imageUnderstandLlmRefId: "",
 });
 
-const currentDefaultTools = computed<DefaultToolOption[]>(() => {
-  if (form.type === "qq_chat") return QQ_CHAT_DEFAULT_TOOLS;
-  if (form.type === "http_stream") return HTTP_STREAM_DEFAULT_TOOLS;
-  return WORKSPACE_DEFAULT_TOOLS;
-});
-
-const filteredDefaultTools = computed<DefaultToolOption[]>(() => {
-  const q = defaultToolSearchQuery.value.trim().toLowerCase();
-  if (!q) return currentDefaultTools.value;
-  return currentDefaultTools.value.filter(
-    (tool) =>
-      tool.label.toLowerCase().includes(q) ||
-      tool.id.toLowerCase().includes(q) ||
-      tool.description.toLowerCase().includes(q),
-  );
-});
-
-const editingDefaultTool = computed<DefaultToolOption | undefined>(() =>
+const currentEditingDefaultTool = computed(() =>
   currentDefaultTools.value.find((t) => t.id === editingDefaultToolId.value),
 );
 
 function openDefaultToolEditModal(toolId: string) {
   editingDefaultToolId.value = toolId;
-  defaultToolEditDraft.enabled =
-    form.default_tools_enabled[toolId] !== false;
-  defaultToolEditDraft.callLimit =
-    form.tool_session_call_limits[toolId] ?? 0;
-  defaultToolEditDraft.imageUnderstandLlmRefId =
-    form.image_understand_llm_ref_id ?? "";
+  defaultToolEditDraft.enabled = form.default_tools_enabled[toolId] !== false;
+  defaultToolEditDraft.callLimit = form.tool_session_call_limits[toolId] ?? null;
+  defaultToolEditDraft.imageUnderstandLlmRefId = form.image_understand_llm_ref_id ?? "";
   showDefaultToolEditModal.value = true;
 }
 
 function closeDefaultToolEditModal() {
   showDefaultToolEditModal.value = false;
-  editingDefaultToolId.value = "";
 }
 
 function confirmDefaultToolEdit() {
-  const toolId = editingDefaultToolId.value;
-  if (!toolId) return;
-  form.default_tools_enabled[toolId] = defaultToolEditDraft.enabled;
-  form.tool_session_call_limits[toolId] = defaultToolEditDraft.callLimit;
-  if (toolId === "image_understand") {
-    form.image_understand_llm_ref_id =
-      defaultToolEditDraft.imageUnderstandLlmRefId;
+  const id = editingDefaultToolId.value;
+  form.default_tools_enabled[id] = defaultToolEditDraft.enabled;
+  if (defaultToolEditDraft.callLimit != null && defaultToolEditDraft.callLimit > 0) {
+    form.tool_session_call_limits[id] = defaultToolEditDraft.callLimit;
+  } else {
+    delete form.tool_session_call_limits[id];
   }
-  closeDefaultToolEditModal();
+  if (id === "image_understand") {
+    form.image_understand_llm_ref_id = defaultToolEditDraft.imageUnderstandLlmRefId;
+  }
+  showDefaultToolEditModal.value = false;
 }
+
 const chatModels = computed(() =>
   llm.value.filter((item) => item.model.type === "chat_llm"),
 );
@@ -2447,32 +2436,6 @@ async function uploadAvatarFile(file: File) {
 
 function clearAvatar() {
   form.avatar_url = '';
-}
-
-function addGroupRateLimitRule() {
-  form.message_rate_limit_groups.push({
-    group_id: "",
-    unlimited: false,
-    window_unit: "day",
-    max_calls: 20,
-  });
-}
-
-function removeGroupRateLimitRule(index: number) {
-  form.message_rate_limit_groups.splice(index, 1);
-}
-
-function addUserRateLimitRule() {
-  form.message_rate_limit_users.push({
-    sender_id: "",
-    unlimited: false,
-    window_unit: "day",
-    max_calls: 20,
-  });
-}
-
-function removeUserRateLimitRule(index: number) {
-  form.message_rate_limit_users.splice(index, 1);
 }
 
 // Get display URL for avatar (handles avatar:// prefix)
@@ -2766,6 +2729,36 @@ function closeIgnoreRulesModal() {
   showIgnoreRulesModal.value = false;
   resetIgnoreRuleForm();
   ignoreRuleDeletingId.value = null;
+}
+
+function openRateLimitModal() {
+  showRateLimitModal.value = true;
+}
+
+function closeRateLimitModal() {
+  showRateLimitModal.value = false;
+}
+
+function addGroupRateLimitRule() {
+  form.message_rate_limit_groups.push({
+    group_id: "",
+    ...defaultQqChatMessageRateLimitRule(),
+  });
+}
+
+function removeGroupRateLimitRule(index: number) {
+  form.message_rate_limit_groups.splice(index, 1);
+}
+
+function addUserRateLimitRule() {
+  form.message_rate_limit_users.push({
+    sender_id: "",
+    ...defaultQqChatMessageRateLimitRule(),
+  });
+}
+
+function removeUserRateLimitRule(index: number) {
+  form.message_rate_limit_users.splice(index, 1);
 }
 
 function editIgnoreRule(rule: QqChatAgentServiceIgnoreRule) {
@@ -3616,5 +3609,104 @@ onMounted(() => {
   .service-edit-modal-footer {
     padding: 12px 20px;
   }
+}
+
+/* ── Default Tools Table ── */
+
+.default-tools-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 6px;
+}
+
+.default-tools-search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-bg-panel);
+  color: var(--admin-ink);
+  font-size: 13px;
+}
+
+.default-tools-search-clear {
+  flex-shrink: 0;
+}
+
+.default-tools-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--admin-bg-soft) 78%, transparent 22%);
+}
+
+.default-tools-table {
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  font-size: 13px;
+  table-layout: fixed;
+}
+
+.default-tools-table th,
+.default-tools-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--admin-border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.default-tools-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.default-tools-table th {
+  font-weight: 600;
+  color: var(--admin-subtle);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: color-mix(in srgb, var(--admin-bg-panel-strong) 94%, transparent 6%);
+}
+
+.default-tools-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--admin-bg-panel-strong) 40%, transparent 60%);
+}
+
+.default-tools-table tbody tr:hover {
+  background: color-mix(in srgb, var(--admin-accent-soft) 14%, transparent 86%);
+}
+
+.default-tools-table .dt-col-name { width: 18%; }
+.default-tools-table .dt-col-id   { width: 22%; }
+.default-tools-table .dt-col-desc { width: auto; }
+.default-tools-table .dt-col-enable { width: 56px; text-align: center; white-space: nowrap; }
+.default-tools-table .dt-col-edit   { width: 72px; text-align: center; white-space: nowrap; }
+
+.default-tools-table .dt-cell-name { word-break: break-word; }
+.default-tools-table .dt-cell-id   { word-break: break-all; }
+.default-tools-table .dt-cell-desc { word-break: break-word; }
+.default-tools-table .dt-cell-enable { text-align: center; }
+.default-tools-table .dt-cell-edit   { text-align: center; }
+
+.default-tools-table .dt-cell-edit .btn {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.default-tools-table input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+/* ── Default Tool Edit Modal ── */
+
+.default-tool-edit-modal {
+  max-width: 520px;
+  height: auto;
+  max-height: 85vh;
 }
 </style>
