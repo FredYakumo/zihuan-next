@@ -714,8 +714,8 @@
       </div>
     </div>
 
-    <!-- 编辑默认工具模态框 -->
-    <div v-if="showDefaultToolEditModal" class="service-edit-modal-backdrop" @click.stop>
+    
+    <div v-if="showDefaultToolEditModal" class="service-edit-modal-backdrop" style="z-index: 70" @click.stop>
       <div class="service-edit-modal default-tool-edit-modal" @click.stop>
         <div class="service-edit-modal-header">
           <h3 style="margin: 0">编辑默认工具</h3>
