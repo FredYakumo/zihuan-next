@@ -2257,4 +2257,5 @@ const {
 
 <style scoped lang="scss">
 @use "../styles/agents" as *;
+@use "../styles/connections" as *;
 </style>
