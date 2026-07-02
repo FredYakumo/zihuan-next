@@ -294,5 +294,6 @@ const {
 </script>
 
 <style scoped lang="scss">
+@use "../styles/connections" as *;
 @use "../styles/dashboard" as *;
 </style>
