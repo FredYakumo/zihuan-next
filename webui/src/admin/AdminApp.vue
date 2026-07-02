@@ -58,40 +58,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
+import { RouterLink, RouterView } from "vue-router";
 import brandLogoSrc from "../assets/brand-icon.png";
-import { setup as setupApi } from "../api/client";
+import { useAdminApp } from "./composables/useAdminApp";
 
-const route = useRoute();
-const router = useRouter();
-const isSetupRoute = computed(() => route.path === "/setup");
-const sidebarOpen = ref(false);
-
-const showOverlay = computed(() => {
-  return sidebarOpen.value && window.matchMedia("(max-width: 900px)").matches;
-});
-
-function closeSidebar() {
-  sidebarOpen.value = false;
-}
-
-onMounted(async () => {
-  try {
-    const status = await setupApi.getStatus();
-    if (!status.completed && !status.skipped && router.currentRoute.value.path !== "/setup") {
-      router.push("/setup");
-    }
-  } catch {
-    // fail open
-  }
-});
+const { isSetupRoute, sidebarOpen, showOverlay, closeSidebar } = useAdminApp();
 </script>
 
-<style scoped>
-.setup-fullscreen {
-  grid-column: 1 / -1;
-  min-height: 100vh;
-  background: var(--admin-bg);
-}
+<style scoped lang="scss">
+@use "./styles/admin-app" as *;
 </style>

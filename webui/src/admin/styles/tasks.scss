@@ -167,7 +167,6 @@
   text-align: center;
 }
 
-/* ---- terminal widget ---- */
 .task-terminal {
   display: flex;
   flex-direction: column;
@@ -290,7 +289,6 @@
   color: #60a5fa;
 }
 
-/* ---- task type badges ---- */
 .task-type-badge {
   font-size: 11px;
   padding: 2px 9px;
@@ -309,7 +307,6 @@
   border: 1px solid color-mix(in srgb, #a855f7 30%, transparent 70%);
 }
 
-/* ---- log viewer dialog ---- */
 .log-viewer-dialog {
   width: min(85vw, 1600px);
   max-width: 85vw;
