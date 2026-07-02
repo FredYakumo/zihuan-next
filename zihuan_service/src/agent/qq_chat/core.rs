@@ -312,6 +312,7 @@ pub(crate) fn build_user_message(
     llm_supports_multimodal_input: bool,
     character_instructions: &str,
     style_prompt: Option<&str>,
+    message_rate_limit_warning: Option<&str>,
     session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
@@ -367,8 +368,13 @@ pub(crate) fn build_user_message(
     } else {
         format!("\n\n{}", state_delta_lines.join("\n"))
     };
+    let message_rate_limit_block = message_rate_limit_warning
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("\n\n{value}"))
+        .unwrap_or_default();
     let user_text = format!(
-        "{}{state_delta_block}\n\n{CURRENT_USER_MESSAGE_LABEL}\n{current_turn_text}{current_image_section}{referenced_context_section}\n\n{PROCESSING_INSTRUCTION}",
+        "{}{state_delta_block}{message_rate_limit_block}\n\n{CURRENT_USER_MESSAGE_LABEL}\n{current_turn_text}{current_image_section}{referenced_context_section}\n\n{PROCESSING_INSTRUCTION}",
         state_lines.join("\n"),
     );
 
@@ -378,7 +384,8 @@ pub(crate) fn build_user_message(
 
     let state_text = format!("{}\n", state_lines.join("\n"));
     let mut parts = vec![MessagePart::text(state_text)];
-    let metadata_text = format!("{state_delta_block}\n\n{CURRENT_USER_MESSAGE_LABEL}\n{current_turn_text}");
+    let metadata_text =
+        format!("{state_delta_block}{message_rate_limit_block}\n\n{CURRENT_USER_MESSAGE_LABEL}\n{current_turn_text}");
     let mut text_buffer = metadata_text;
     append_prepared_parts(&mut parts, &mut text_buffer, "\n", &current_input.current_parts);
     if !current_input.current_image_reference_lines.is_empty() {
@@ -831,6 +838,7 @@ impl QqChatAgentService {
             sender_id,
             rdb_pool: self.config.rdb_pool.clone(),
             session_limits: self.config.qq_chat_config.tool_session_call_limits.clone(),
+            session_limit_message: self.config.qq_chat_config.tool_session_limit_message.clone(),
             session_state: Arc::clone(&self.config.tool_quota_session_state),
         });
 

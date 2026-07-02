@@ -94,104 +94,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
 import type { LlmSetupConfig } from "../../api/client";
+import { useLlmConfigStep } from "../composables/useLlmConfigStep";
 
 const model = defineModel<LlmSetupConfig>({ required: true });
 
 defineEmits<{ (e: "next"): void; (e: "back"): void }>();
 
-const canProceed = computed(() => {
-  if (model.value.mode === "remote") {
-    return (
-      (model.value.model_name.trim().length > 0 ||
-        (model.value.model_id?.trim().length ?? 0) > 0) &&
-      model.value.api_endpoint.trim().length > 0
-    );
-  }
-  return model.value.model_name.trim().length > 0;
-});
+const { canProceed } = useLlmConfigStep(model);
 </script>
 
 <style scoped lang="scss">
-.llm-config-step {
-  text-align: center;
-
-  h2 {
-    margin: 0 0 8px;
-    font-size: 22px;
-    color: var(--admin-ink);
-  }
-
-  .subtitle {
-    margin: 0 0 24px;
-    color: var(--admin-muted);
-    font-size: 15px;
-  }
-}
-
-.tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 24px;
-  justify-content: center;
-}
-
-.tab {
-  padding: 8px 16px;
-  border: 1px solid var(--admin-border);
-  border-radius: 6px;
-  background: var(--admin-bg);
-  color: var(--admin-muted);
-  cursor: pointer;
-  font-size: 14px;
-
-  &.active {
-    border-color: var(--admin-accent);
-    background: var(--admin-accent-soft);
-    color: var(--admin-accent);
-    font-weight: 600;
-  }
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-  text-align: left;
-  margin-bottom: 24px;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-
-  label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--admin-ink);
-  }
-
-  input,
-  select {
-    padding: 10px 12px;
-    border: 1px solid var(--admin-border);
-    border-radius: 6px;
-    background: var(--admin-bg);
-    color: var(--admin-ink);
-    font-size: 14px;
-
-    &:focus {
-      outline: none;
-      border-color: var(--admin-accent);
-    }
-  }
-}
-
-.actions {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
+@use "../styles/llm-config-step" as *;
 </style>

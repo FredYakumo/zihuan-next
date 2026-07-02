@@ -15,25 +15,5 @@ defineEmits<{ (e: "finish"): void }>();
 </script>
 
 <style scoped lang="scss">
-.setup-complete {
-  text-align: center;
-  padding: 40px 20px;
-
-  .complete-icon {
-    font-size: 56px;
-    margin-bottom: 16px;
-  }
-
-  h2 {
-    margin: 0 0 8px;
-    font-size: 24px;
-    color: var(--admin-ink);
-  }
-
-  .subtitle {
-    margin: 0 0 32px;
-    color: var(--admin-muted);
-    font-size: 15px;
-  }
-}
+@use "../styles/setup-complete" as *;
 </style>

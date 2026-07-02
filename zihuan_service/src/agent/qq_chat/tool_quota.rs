@@ -39,6 +39,7 @@ pub(crate) struct QqChatToolQuotaContext {
     pub sender_id: String,
     pub rdb_pool: Option<RelationalDbConnection>,
     pub session_limits: HashMap<String, usize>,
+    pub session_limit_message: Option<String>,
     pub session_state: Arc<Mutex<SessionToolQuotaState>>,
 }
 
@@ -54,15 +55,18 @@ pub(crate) struct QuotaMaybeWrappedBrainTool<T> {
 }
 
 impl<T> QuotaMaybeWrappedBrainTool<T> {
-    fn limit_message(scope: &str) -> String {
-        TOOL_LIMIT_MESSAGE_TEMPLATE.replace("{limit_scope}", scope)
+    fn limit_message(quota: &QqChatToolQuotaContext, scope: &str) -> String {
+        match quota.session_limit_message.as_deref() {
+            Some(msg) if !msg.is_empty() => msg.replace("{limit_scope}", scope),
+            _ => TOOL_LIMIT_MESSAGE_TEMPLATE.replace("{limit_scope}", scope),
+        }
     }
 
     fn try_acquire(quota: &QqChatToolQuotaContext, tool_name: &str) -> Result<(), String> {
         if let Some(limit) = quota.limit_for(tool_name) {
             let current = quota.session_state.lock().unwrap().get(tool_name);
             if current >= limit {
-                return Err(Self::limit_message(TOOL_LIMIT_SCOPE_SESSION));
+                return Err(Self::limit_message(quota, TOOL_LIMIT_SCOPE_SESSION));
             }
         }
 
@@ -73,7 +77,7 @@ impl<T> QuotaMaybeWrappedBrainTool<T> {
         let allowed = decrement_tool_quota_if_needed_blocking(rdb_pool, &quota.agent_id, &quota.sender_id, tool_name)
             .map_err(|err| err.to_string())?;
         if !allowed {
-            return Err(Self::limit_message(TOOL_LIMIT_SCOPE_USER));
+            return Err(Self::limit_message(quota, TOOL_LIMIT_SCOPE_USER));
         }
 
         Ok(())
@@ -125,6 +129,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::fmt;
     use std::sync::Arc;
 
@@ -183,6 +188,7 @@ mod tests {
             sender_id: "sender".to_string(),
             rdb_pool: None,
             session_limits: [("echo".to_string(), 1usize)].into_iter().collect(),
+            session_limit_message: None,
             session_state: Arc::new(std::sync::Mutex::new(SessionToolQuotaState::default())),
         };
         let tool = wrap_brain_tool_with_quota(EchoTool, Some(quota));
@@ -203,7 +209,53 @@ mod tests {
 
     #[test]
     fn limit_message_mentions_user_scope_label() {
-        let message = super::QuotaMaybeWrappedBrainTool::<EchoTool>::limit_message(TOOL_LIMIT_SCOPE_USER);
+        let quota = QqChatToolQuotaContext {
+            agent_id: "agent".to_string(),
+            sender_id: "sender".to_string(),
+            rdb_pool: None,
+            session_limits: HashMap::new(),
+            session_limit_message: None,
+            session_state: Arc::new(std::sync::Mutex::new(SessionToolQuotaState::default())),
+        };
+        let message = super::QuotaMaybeWrappedBrainTool::<EchoTool>::limit_message(&quota, TOOL_LIMIT_SCOPE_USER);
         assert!(message.contains(TOOL_LIMIT_SCOPE_USER));
+    }
+
+    #[test]
+    fn custom_limit_message_with_placeholder() {
+        let quota = QqChatToolQuotaContext {
+            agent_id: "agent".to_string(),
+            sender_id: "sender".to_string(),
+            rdb_pool: None,
+            session_limits: [("echo".to_string(), 1usize)].into_iter().collect(),
+            session_limit_message: Some("工具已达到{limit_scope}上限".to_string()),
+            session_state: Arc::new(std::sync::Mutex::new(SessionToolQuotaState::default())),
+        };
+        let tool = wrap_brain_tool_with_quota(EchoTool, Some(quota));
+
+        let _first = tool.execute("", &json!({}));
+        let second = tool.execute("", &json!({}));
+
+        assert!(second.contains("单次会话"));
+        assert!(second.contains("工具已达到"));
+        assert!(!second.contains("{limit_scope}"));
+    }
+
+    #[test]
+    fn custom_limit_message_without_placeholder() {
+        let quota = QqChatToolQuotaContext {
+            agent_id: "agent".to_string(),
+            sender_id: "sender".to_string(),
+            rdb_pool: None,
+            session_limits: [("echo".to_string(), 1usize)].into_iter().collect(),
+            session_limit_message: Some("此工具暂不可用".to_string()),
+            session_state: Arc::new(std::sync::Mutex::new(SessionToolQuotaState::default())),
+        };
+        let tool = wrap_brain_tool_with_quota(EchoTool, Some(quota));
+
+        let _first = tool.execute("", &json!({}));
+        let second = tool.execute("", &json!({}));
+
+        assert_eq!(second, "此工具暂不可用");
     }
 }

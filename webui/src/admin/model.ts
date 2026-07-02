@@ -131,6 +131,12 @@ export interface ServiceFormState {
   max_steer_count: number;
   emotion_dimensions: QqChatEmotionDimensionFormItem[];
   default_tools_enabled: Record<string, boolean>;
+  tool_session_call_limits: Record<string, number>;
+  tool_session_limit_message: string;
+  message_rate_limit_default_enabled: boolean;
+  message_rate_limit_default: QqChatMessageRateLimitRuleFormItem;
+  message_rate_limit_groups: QqChatMessageRateLimitGroupFormItem[];
+  message_rate_limit_users: QqChatMessageRateLimitUserFormItem[];
   http_bind: string;
   http_api_key: string;
   http_web_search_engine_connection_id: string;
@@ -154,6 +160,24 @@ export type QqChatEmotionDimensionFormItem = {
   positive_prompt?: string;
   negative_prompt?: string;
 };
+
+export type QqChatMessageRateLimitWindowUnit = "minute" | "hour" | "day";
+
+export type QqChatMessageRateLimitRuleFormItem = {
+  unlimited: boolean;
+  window_unit: QqChatMessageRateLimitWindowUnit;
+  max_calls: number;
+};
+
+export type QqChatMessageRateLimitGroupFormItem =
+  QqChatMessageRateLimitRuleFormItem & {
+    group_id: string;
+  };
+
+export type QqChatMessageRateLimitUserFormItem =
+  QqChatMessageRateLimitRuleFormItem & {
+    sender_id: string;
+  };
 
 export function isBotAdapterConnectionType(
   type: string,
@@ -258,6 +282,14 @@ export function defaultQqChatEmotionDimensions(): QqChatEmotionDimensionFormItem
     { name: "焦虑", increase_weight: 1, decrease_weight: 1 },
     { name: "激动", increase_weight: 1, decrease_weight: 1 },
   ];
+}
+
+export function defaultQqChatMessageRateLimitRule(): QqChatMessageRateLimitRuleFormItem {
+  return {
+    unlimited: false,
+    window_unit: "day",
+    max_calls: 20,
+  };
 }
 export function defaultHttpStreamDefaultToolsEnabled(): Record<
   string,
@@ -391,6 +423,12 @@ export function defaultServiceForm(): ServiceFormState {
     max_steer_count: 4,
     emotion_dimensions: defaultQqChatEmotionDimensions(),
     default_tools_enabled: defaultQqChatDefaultToolsEnabled(),
+    tool_session_call_limits: {},
+    tool_session_limit_message: "",
+    message_rate_limit_default_enabled: false,
+    message_rate_limit_default: defaultQqChatMessageRateLimitRule(),
+    message_rate_limit_groups: [],
+    message_rate_limit_users: [],
     http_bind: "127.0.0.1:18080",
     http_api_key: "",
     http_web_search_engine_connection_id: "",
@@ -399,6 +437,53 @@ export function defaultServiceForm(): ServiceFormState {
     task_db_connection_id: "",
     tools: [],
     avatar_url: "",
+  };
+}
+
+function normalizeQqChatMessageRateLimitRule(
+  value: unknown,
+): QqChatMessageRateLimitRuleFormItem | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const source = value as Record<string, unknown>;
+  if (source.unlimited === true) {
+    return {
+      unlimited: true,
+      window_unit: "day",
+      max_calls: 1,
+    };
+  }
+  const windowUnit = String(source.window_unit ?? "").trim();
+  const maxCalls = Number(source.max_calls ?? 0);
+  if (
+    (windowUnit !== "minute" && windowUnit !== "hour" && windowUnit !== "day") ||
+    !Number.isFinite(maxCalls) ||
+    maxCalls <= 0
+  ) {
+    return null;
+  }
+  return {
+    unlimited: false,
+    window_unit: windowUnit as QqChatMessageRateLimitWindowUnit,
+    max_calls: maxCalls,
+  };
+}
+
+function buildQqChatMessageRateLimitRulePayload(
+  value: QqChatMessageRateLimitRuleFormItem,
+): Record<string, unknown> {
+  if (value.unlimited) {
+    return {
+      unlimited: true,
+      window_unit: null,
+      max_calls: null,
+    };
+  }
+  return {
+    unlimited: false,
+    window_unit: value.window_unit,
+    max_calls: Number.isFinite(value.max_calls) && value.max_calls > 0 ? value.max_calls : null,
   };
 }
 
@@ -747,6 +832,56 @@ export function serviceFormFromConfig(
         form.default_tools_enabled[tool.id] = value;
       }
     }
+    const limitsSource = (agentType.tool_session_call_limits ?? {}) as Record<
+      string,
+      unknown
+    >;
+    form.tool_session_call_limits = {};
+    for (const [key, val] of Object.entries(limitsSource)) {
+      const num = Number(val);
+      if (Number.isFinite(num) && num > 0) {
+        form.tool_session_call_limits[key] = num;
+      }
+    }
+    form.tool_session_limit_message = String(
+      agentType.tool_session_limit_message ?? "",
+    );
+    const defaultMessageRateLimit = normalizeQqChatMessageRateLimitRule(
+      agentType.message_rate_limit_default,
+    );
+    form.message_rate_limit_default_enabled = Boolean(defaultMessageRateLimit);
+    form.message_rate_limit_default =
+      defaultMessageRateLimit ?? defaultQqChatMessageRateLimitRule();
+    form.message_rate_limit_groups = Array.isArray(agentType.message_rate_limit_groups)
+      ? agentType.message_rate_limit_groups
+          .map((item) => {
+            if (!item || typeof item !== "object") {
+              return null;
+            }
+            const groupId = String((item as Record<string, unknown>).group_id ?? "").trim();
+            const limit = normalizeQqChatMessageRateLimitRule(item);
+            if (!groupId || !limit) {
+              return null;
+            }
+            return { group_id: groupId, ...limit };
+          })
+          .filter((item): item is QqChatMessageRateLimitGroupFormItem => item != null)
+      : [];
+    form.message_rate_limit_users = Array.isArray(agentType.message_rate_limit_users)
+      ? agentType.message_rate_limit_users
+          .map((item) => {
+            if (!item || typeof item !== "object") {
+              return null;
+            }
+            const senderId = String((item as Record<string, unknown>).sender_id ?? "").trim();
+            const limit = normalizeQqChatMessageRateLimitRule(item);
+            if (!senderId || !limit) {
+              return null;
+            }
+            return { sender_id: senderId, ...limit };
+          })
+          .filter((item): item is QqChatMessageRateLimitUserFormItem => item != null)
+      : [];
   } else if (form.type === "http_stream") {
     form.http_bind = String(agentType.bind ?? "127.0.0.1:18080");
     form.http_api_key = String(agentType.api_key ?? "");
@@ -886,6 +1021,28 @@ export function buildServicePayload(form: ServiceFormState): {
           form.emotion_dimensions,
         ),
         default_tools_enabled: defaultToolsEnabled,
+        tool_session_call_limits: Object.fromEntries(
+          Object.entries(form.tool_session_call_limits)
+            .filter(([, v]) => Number.isFinite(v) && v > 0)
+            .map(([k, v]) => [k, v]),
+        ),
+        tool_session_limit_message:
+          form.tool_session_limit_message.trim() || null,
+        message_rate_limit_default: form.message_rate_limit_default_enabled
+          ? buildQqChatMessageRateLimitRulePayload(form.message_rate_limit_default)
+          : null,
+        message_rate_limit_groups: form.message_rate_limit_groups
+          .map((item) => ({
+            group_id: item.group_id.trim(),
+            ...buildQqChatMessageRateLimitRulePayload(item),
+          }))
+          .filter((item) => item.group_id),
+        message_rate_limit_users: form.message_rate_limit_users
+          .map((item) => ({
+            sender_id: item.sender_id.trim(),
+            ...buildQqChatMessageRateLimitRulePayload(item),
+          }))
+          .filter((item) => item.sender_id),
       },
     };
   }
