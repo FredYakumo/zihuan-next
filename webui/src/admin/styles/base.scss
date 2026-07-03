@@ -114,6 +114,9 @@ textarea {
   background: color-mix(in srgb, var(--toolbar-bg) 60%, transparent 40%);
   cursor: pointer;
   place-items: center;
+}
+
+.admin-brand .admin-sidebar-toggle {
   margin-left: auto;
 }
 
