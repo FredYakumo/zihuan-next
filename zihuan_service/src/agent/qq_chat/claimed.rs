@@ -145,6 +145,7 @@ impl QqChatAgentServiceInner {
         target_id: &str,
         bot_id: &str,
         history: &mut Vec<LLMMessage>,
+        message_rate_limit_warning: Option<&str>,
         ctx: &QqChatAgentServiceContext<'_>,
     ) -> Result<Option<String>> {
         let DispatchResult { result, passthrough_text } = dispatch_result;
@@ -203,6 +204,7 @@ impl QqChatAgentServiceInner {
                     ctx.llm.supports_multimodal_input(),
                     &cmd_system_prompt,
                     ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str()),
+                    message_rate_limit_warning,
                     &mut cmd_session_state,
                     &cmd_emotion_dimensions,
                 ),
@@ -287,6 +289,7 @@ impl QqChatAgentServiceInner {
         target_id: &str,
         is_group: bool,
         bot_id: &str,
+        message_rate_limit_warning: Option<&str>,
         ctx: &QqChatAgentServiceContext<'_>,
     ) -> Result<QqChatServiceTurnResult> {
         let prepared_input = prepare_current_turn_user_input(event, ctx.adapter, bot_id, ctx.bot_name, ctx.s3_ref);
@@ -623,6 +626,7 @@ impl QqChatAgentServiceInner {
                     target_id,
                     bot_id,
                     &mut history,
+                    message_rate_limit_warning,
                     ctx,
                 )? {
                     current_message = passthrough;
@@ -666,6 +670,7 @@ impl QqChatAgentServiceInner {
                     turn_llm.supports_multimodal_input(),
                     &base_system_prompt,
                     ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str()),
+                    message_rate_limit_warning,
                     &mut session_state,
                     &emotion_dimensions,
                 ),

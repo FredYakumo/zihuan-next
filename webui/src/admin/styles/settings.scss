@@ -1,0 +1,123 @@
+.settings-section {
+  padding: 24px;
+  display: grid;
+  gap: 20px;
+}
+
+.settings-theme-body {
+  display: grid;
+  gap: 14px;
+  max-width: 380px;
+}
+
+.settings-storage-body {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-path-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--admin-bg-soft) 80%, transparent 20%);
+  border: 1px solid var(--admin-border);
+  flex-wrap: wrap;
+}
+
+.settings-path-row--root {
+  background: color-mix(in srgb, var(--admin-accent-soft) 18%, var(--admin-bg-soft) 82%);
+  border-color: color-mix(in srgb, var(--admin-accent) 24%, var(--admin-border) 76%);
+}
+
+.settings-path-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--admin-subtle);
+  white-space: nowrap;
+  min-width: 100px;
+}
+
+.settings-path-value {
+  flex: 1;
+  font-size: 12px;
+  color: var(--admin-ink);
+  word-break: break-all;
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  opacity: 0.85;
+}
+
+.badge-ok {
+  background: color-mix(in srgb, var(--admin-good-bg) 80%, transparent 20%);
+  color: var(--admin-good);
+  border-color: color-mix(in srgb, var(--admin-good) 30%, transparent 70%);
+}
+
+.badge-missing {
+  background: color-mix(in srgb, var(--admin-warn-bg) 80%, transparent 20%);
+  color: var(--admin-warn);
+  border-color: color-mix(in srgb, var(--admin-warn) 30%, transparent 70%);
+}
+
+.badge-warn {
+  background: color-mix(in srgb, var(--admin-warn-bg) 80%, transparent 20%);
+  color: var(--admin-warn);
+  border-color: color-mix(in srgb, var(--admin-warn) 30%, transparent 70%);
+}
+
+.settings-model-list {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-model-card {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--admin-border);
+  background: color-mix(in srgb, var(--admin-bg-soft) 72%, transparent 28%);
+  display: grid;
+  gap: 8px;
+}
+
+.settings-model-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-model-header strong {
+  font-size: 14px;
+}
+
+.settings-model-meta {
+  font-size: 12px;
+}
+
+.settings-backup-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-backup-file-input {
+  display: none;
+}
+
+.settings-backup-feedback {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+
+  &--ok {
+    background: color-mix(in srgb, var(--admin-good-bg) 60%, transparent 40%);
+    color: var(--admin-good);
+    border: 1px solid color-mix(in srgb, var(--admin-good) 25%, transparent 75%);
+  }
+
+  &--err {
+    background: color-mix(in srgb, var(--admin-warn-bg) 60%, transparent 40%);
+    color: var(--admin-warn);
+    border: 1px solid color-mix(in srgb, var(--admin-warn) 25%, transparent 75%);
+  }
+}

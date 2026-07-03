@@ -1,0 +1,129 @@
+.runtime-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.runtime-stat {
+  min-width: 120px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--admin-bg-soft) 88%, transparent 12%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.runtime-stat strong {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.runtime-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--admin-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--admin-bg-soft) 78%, transparent 22%);
+}
+
+.runtime-table {
+  width: 100%;
+  min-width: 1220px;
+  table-layout: fixed;
+}
+
+.runtime-table th {
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--admin-bg-panel-strong) 94%, transparent 6%);
+}
+
+.runtime-table td {
+  vertical-align: middle;
+}
+
+.runtime-table tbody tr:hover {
+  background: color-mix(in srgb, var(--admin-accent-soft) 14%, transparent 86%);
+}
+
+.runtime-table .col-name {
+  width: 210px;
+}
+
+.runtime-table .col-kind {
+  width: 140px;
+}
+
+.runtime-table .col-config,
+.runtime-table .col-instance {
+  width: 150px;
+}
+
+.runtime-table .col-started {
+  width: 170px;
+}
+
+.runtime-table .col-duration {
+  width: 110px;
+}
+
+.runtime-table .col-keepalive {
+  width: 84px;
+}
+
+.runtime-table .col-heartbeat {
+  width: 92px;
+}
+
+.runtime-table .col-status {
+  width: 100px;
+}
+
+.runtime-table .col-actions {
+  width: 118px;
+}
+
+.runtime-name-cell {
+  min-width: 0;
+}
+
+.runtime-name-cell strong {
+  display: block;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.runtime-cell-name {
+  min-width: 0;
+}
+
+.runtime-cell-nowrap {
+  white-space: nowrap;
+}
+
+.runtime-cell-center {
+  text-align: center;
+}
+
+.runtime-cell-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.runtime-cell-actions {
+  white-space: nowrap;
+}
+
+.runtime-action-btn {
+  width: 100%;
+}
+
+@media (max-width: 1400px) {
+  .runtime-table {
+    min-width: 1160px;
+  }
+}

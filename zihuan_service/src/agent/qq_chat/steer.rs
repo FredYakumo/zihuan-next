@@ -58,6 +58,7 @@ fn build_steer_user_message(
         llm_supports_multimodal_input,
         system_prompt,
         style_prompt,
+        None,
         session_state,
         emotion_dimensions,
     );
@@ -335,6 +336,7 @@ impl QqChatAgentServiceInner {
                             target_id,
                             &bot_id,
                             &mut history,
+                            None,
                             ctx,
                         )?;
                         trace.finish_with_summary();
@@ -391,6 +393,7 @@ impl QqChatAgentServiceInner {
         sender_id: &str,
         target_id: &str,
         is_group: bool,
+        message_rate_limit_warning: Option<&str>,
         ctx: &QqChatAgentServiceContext<'_>,
     ) -> Result<QqChatServiceHandleReport> {
         (|| -> Result<QqChatServiceHandleReport> {
@@ -406,6 +409,7 @@ impl QqChatAgentServiceInner {
                     target_id,
                     is_group,
                     &bot_id,
+                    message_rate_limit_warning,
                     ctx,
                 )?;
 

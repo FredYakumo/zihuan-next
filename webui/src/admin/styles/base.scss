@@ -268,6 +268,8 @@ textarea {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex-shrink: 0;
   background: color-mix(in srgb, var(--toolbar-bg) 72%, transparent 28%);
   color: var(--admin-subtle);
   border: 1px solid var(--admin-border);
@@ -569,7 +571,7 @@ textarea {
 .form-grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .field-full {
