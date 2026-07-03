@@ -73,10 +73,6 @@
   align-items: start;
 }
 
-.connection-grid--services {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
 .connection-grid--agents .connection-card--editing {
   grid-column: 1 / -1;
 }

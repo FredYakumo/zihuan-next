@@ -2080,14 +2080,11 @@
     </section>
 
     <section v-else-if="services.length > 0" class="panel">
-      <div
-        class="connection-grid connection-grid--services"
-        style="margin-top: 0"
-      >
+      <div class="connection-grid dashboard-service-grid" style="margin-top: 0">
         <article
           v-for="service in services"
           :key="service.config_id"
-          class="connection-card"
+          class="connection-card dashboard-service-card"
         >
           <div class="connection-card-header connection-card-header--stacked">
             <div class="connection-card-header-top">
@@ -2101,53 +2098,64 @@
                 }}</span>
                 <span v-if="service.is_default" class="badge">default</span>
               </div>
-              <div class="inline-actions connection-card-display-actions">
-                <button
-                  class="btn ghost connection-card-compact-btn"
-                  @click="editService(service)"
-                >
-                  编辑
-                </button>
-                <button
-                  class="btn connection-card-compact-btn"
-                  @click="toggleServiceRuntime(service)"
-                >
-                  {{ service.runtime.status === "running" ? "停止" : "启动" }}
-                </button>
-                <button
-                  class="btn warn connection-card-compact-btn"
-                  @click="removeService(service.config_id)"
-                >
-                  删除
-                </button>
-              </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 10px">
+            <div class="dashboard-service-title">
               <img
                 v-if="agentAvatarUrl(service)"
                 :src="agentAvatarUrl(service)"
                 alt="bot avatar"
-                style="
-                  width: 36px;
-                  height: 36px;
-                  border-radius: 999px;
-                  border: 1px solid var(--line);
-                  object-fit: cover;
-                  background: var(--surface-soft);
-                "
+                class="dashboard-service-avatar"
               />
-              <h4 style="margin: 0">{{ service.name }}</h4>
+              <div v-else class="dashboard-service-avatar dashboard-service-avatar--fallback">
+                {{ agentInitial(service.name) }}
+              </div>
+              <h4>{{ service.name }}</h4>
             </div>
           </div>
 
           <div class="connection-card-body">
-            <div
-              v-for="item in summarizeService(service)"
-              :key="item.label"
-              class="key-value"
-            >
-              <strong>{{ item.label }}</strong>
-              <span :class="item.mono ? 'mono' : ''">{{ item.value }}</span>
+            <div class="key-value">
+              <strong>Config ID / Instance ID</strong>
+              <span class="mono"
+                >{{ compactId(service.config_id) }} |
+                {{
+                  service.runtime.instance_id
+                    ? compactId(service.runtime.instance_id)
+                    : "未启动"
+                }}</span
+              >
+            </div>
+            <div class="key-value">
+              <strong>自动启动</strong>
+              <span>{{ service.auto_start ? "开启" : "关闭" }}</span>
+            </div>
+            <div class="key-value">
+              <strong>模型</strong>
+              <span>{{ llmName(service) }}</span>
+            </div>
+            <div v-if="service.runtime.last_error" class="key-value">
+              <strong>最近错误</strong>
+              <span>{{ service.runtime.last_error }}</span>
+            </div>
+            <div class="inline-actions connection-card-display-actions">
+              <button
+                class="btn ghost connection-card-compact-btn"
+                @click="editService(service)"
+              >
+                编辑
+              </button>
+              <button
+                class="btn connection-card-compact-btn"
+                @click="toggleServiceRuntime(service)"
+              >
+                {{ service.runtime.status === "running" ? "停止" : "启动" }}
+              </button>
+              <button
+                class="btn warn connection-card-compact-btn"
+                @click="removeService(service.config_id)"
+              >
+                删除
+              </button>
             </div>
           </div>
 
@@ -2155,7 +2163,6 @@
             <span class="muted"
               >启动于 {{ formatTime(service.runtime.started_at) }}</span
             >
-            <span class="muted">工具 {{ service.tools.length }} 个</span>
           </div>
         </article>
       </div>
@@ -2274,8 +2281,6 @@ const {
   startAgent,
   stopAgent,
   toggleServiceRuntime,
-  summarizeService,
-  connectionName,
   llmName,
   llmRefName,
   runtimeBadgeText,
@@ -2292,4 +2297,5 @@ const {
 <style scoped lang="scss">
 @use "../styles/agents" as *;
 @use "../styles/connections" as *;
+@use "../styles/dashboard" as *;
 </style>
