@@ -1037,7 +1037,7 @@ export function buildServicePayload(form: ServiceFormState): {
         tool_session_call_limits: Object.fromEntries(
           Object.entries(form.tool_session_call_limits)
             .filter(([, v]) => Number.isFinite(v) && v > 0)
-            .map(([k, v]) => [k, v]),
+            .map(([k, v]) => [k, Math.trunc(v)]),
         ),
         tool_session_limit_message:
           form.tool_session_limit_message.trim() || null,
