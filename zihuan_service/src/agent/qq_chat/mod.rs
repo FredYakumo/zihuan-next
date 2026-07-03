@@ -1,10 +1,10 @@
 mod core;
-pub(crate) mod model;
 pub mod ignore_store;
 mod inbox;
 pub mod language_style_store;
-pub mod message_rate_limit_store;
 pub(crate) mod logging;
+pub mod message_rate_limit_store;
+pub(crate) mod model;
 pub(crate) mod msg_send;
 pub mod privilege_gate;
 pub mod privilege_store;
@@ -19,18 +19,20 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use self::core::{
-    build_info_brain_tools, expand_messages_for_inference, prepare_current_turn_user_input_from_event,
-    QqChatTaskTrace, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
-};
-use self::model::{
-    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatAgentServiceRuntimeConfig,
-    QqChatServiceReplyBatchBuilder, QqInferenceToolProvider, QqLoadedInferenceResources,
+    build_info_brain_tools, expand_messages_for_inference, prepare_current_turn_user_input_from_event, QqChatTaskTrace,
+    LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 use self::ignore_store::should_ignore_message_blocking;
 use self::inbox::QqChatAgentServiceInbox;
 use self::language_style_store::get_applicable_language_style_blocking;
-use self::message_rate_limit_store::consume_message_rate_limit_blocking;
-use self::msg_send::{build_reply_batch_builder as build_unified_reply_batch_builder, send_direct_text_reply};
+use self::message_rate_limit_store::{consume_message_rate_limit_blocking, MessageRateLimitBlockAction};
+use self::model::{
+    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatAgentServiceRuntimeConfig,
+    QqChatServiceReplyBatchBuilder, QqInferenceToolProvider, QqLoadedInferenceResources,
+};
+use self::msg_send::{
+    build_reply_batch_builder as build_unified_reply_batch_builder, send_direct_notification_text_reply,
+};
 use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 use crate::agent::tool_definitions::build_enabled_tool_definitions;
@@ -610,30 +612,45 @@ impl QqChatAgentServiceInner {
             let rate_limit_result =
                 consume_message_rate_limit_blocking(rdb_pool, agent_id, &sender_id, group_id_text.as_deref(), &config)?;
             if !rate_limit_result.allowed {
-                let bot_id = get_bot_id(ctx.adapter);
-                let blocked_reply = rate_limit_result
-                    .blocked_reply
-                    .unwrap_or_else(|| "你已经达到 rate limit 了，请待会再找我。".to_string());
-                send_direct_text_reply(
-                    &QqChatTaskTrace::new(Local::now()),
-                    ctx.adapter,
-                    &target_id,
-                    ctx.rdb_pool,
-                    event.group_name.as_deref(),
-                    ctx.bot_name,
-                    &bot_id,
-                    &blocked_reply,
-                    is_group,
-                    &sender_id,
-                    &event.sender.nickname,
-                    event.sender.card.as_str(),
-                    ctx.max_message_length,
-                    ctx.reply_batch_builder,
-                )?;
-                info!(
-                    "{LOG_PREFIX} Message rate-limited: message_id={} sender={} group={:?}",
-                    event.message_id, sender_id, event.group_id
-                );
+                match rate_limit_result.block_action {
+                    MessageRateLimitBlockAction::ReplyOnce => {
+                        let bot_id = get_bot_id(ctx.adapter);
+                        let blocked_reply = rate_limit_result
+                            .blocked_reply
+                            .unwrap_or_else(|| "你已经达到 rate limit 了，请待会再找我。".to_string());
+                        let mention_target_id =
+                            (is_group && rate_limit_result.mention_sender_on_block).then_some(sender_id.as_str());
+                        send_direct_notification_text_reply(
+                            &QqChatTaskTrace::new(Local::now()),
+                            ctx.adapter,
+                            &target_id,
+                            ctx.rdb_pool,
+                            event.group_name.as_deref(),
+                            ctx.bot_name,
+                            &bot_id,
+                            &blocked_reply,
+                            is_group,
+                            mention_target_id,
+                            ctx.max_message_length,
+                        )?;
+                        info!(
+                            "{LOG_PREFIX} Message rate-limited with reply: message_id={} sender={} group={:?}",
+                            event.message_id, sender_id, event.group_id
+                        );
+                    }
+                    MessageRateLimitBlockAction::Silent => {
+                        info!(
+                            "{LOG_PREFIX} Message rate-limited silently: message_id={} sender={} group={:?}",
+                            event.message_id, sender_id, event.group_id
+                        );
+                    }
+                    MessageRateLimitBlockAction::None => {
+                        info!(
+                            "{LOG_PREFIX} Message rate-limited without block action: message_id={} sender={} group={:?}",
+                            event.message_id, sender_id, event.group_id
+                        );
+                    }
+                }
                 return Ok(());
             }
             message_rate_limit_warning = rate_limit_result.warning_prompt;

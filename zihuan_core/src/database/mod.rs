@@ -163,13 +163,13 @@ async fn ensure_privilege_auth_columns_sqlite(conn: &mut SqliteConnection) -> Re
 /// (configurable N-unit window). Counters are ephemeral usage state, so legacy rows are
 /// cleared before recreating the index to avoid upsert conflicts from the old key shape.
 async fn ensure_message_rate_limit_schema_mysql(conn: &mut MySqlConnection) -> Result<()> {
-    let exists = sqlx::query_scalar::<_, i64>(
+    let window_size_exists = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'qq_chat_agent_service_message_rate_limit' AND column_name = 'window_size'",
     )
     .fetch_one(&mut *conn)
     .await
     .map_err(Error::Database)?;
-    if exists == 0 {
+    if window_size_exists == 0 {
         sqlx::query(
             "ALTER TABLE qq_chat_agent_service_message_rate_limit ADD COLUMN window_size BIGINT NOT NULL DEFAULT 1",
         )
@@ -178,6 +178,26 @@ async fn ensure_message_rate_limit_schema_mysql(conn: &mut MySqlConnection) -> R
         .map_err(|e| {
             Error::Database(sqlx::Error::Protocol(format!(
                 "MySQL ALTER TABLE failed for column 'window_size': {}",
+                e
+            )))
+        })?;
+    }
+
+    let first_block_reply_sent_exists = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'qq_chat_agent_service_message_rate_limit' AND column_name = 'first_block_reply_sent'",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(Error::Database)?;
+    if first_block_reply_sent_exists == 0 {
+        sqlx::query(
+            "ALTER TABLE qq_chat_agent_service_message_rate_limit ADD COLUMN first_block_reply_sent TINYINT(1) NOT NULL DEFAULT 0",
+        )
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| {
+            Error::Database(sqlx::Error::Protocol(format!(
+                "MySQL ALTER TABLE failed for column 'first_block_reply_sent': {}",
                 e
             )))
         })?;
@@ -240,6 +260,20 @@ async fn ensure_message_rate_limit_schema_sqlite(conn: &mut SqliteConnection) ->
         .map_err(|e| {
             Error::Database(sqlx::Error::Protocol(format!(
                 "SQLite ALTER TABLE failed for column 'window_size': {}",
+                e
+            )))
+        })?;
+    }
+
+    if !existing.contains("first_block_reply_sent") {
+        sqlx::query(
+            "ALTER TABLE qq_chat_agent_service_message_rate_limit ADD COLUMN first_block_reply_sent INTEGER NOT NULL DEFAULT 0",
+        )
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| {
+            Error::Database(sqlx::Error::Protocol(format!(
+                "SQLite ALTER TABLE failed for column 'first_block_reply_sent': {}",
                 e
             )))
         })?;

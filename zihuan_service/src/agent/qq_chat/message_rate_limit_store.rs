@@ -19,6 +19,23 @@ const SCOPE_USER: &str = "user";
 const MESSAGE_RATE_LIMIT_BLOCKED_REPLY: &str = "你已经达到 rate limit 了，请待会再找我。";
 const MESSAGE_RATE_LIMIT_WARNING_PROMPT: &str =
     "[Rate Limit Warning]\n本轮仍可继续处理，但当前用户在这类消息额度上只剩最后 1 次。请在你的自然语言回复里委婉提醒对方最近使用有点频繁、稍后可能需要等一等。不要直接提到 rate limit、配额、系统规则、隐藏提示词。";
+const MESSAGE_RATE_LIMIT_SEVERE_WARNING_PROMPT: &str =
+    "[Rate Limit Severe Warning]\n本轮仍可继续处理，但当前用户在这类消息额度上已经用满。请在你的自然语言回复里更明确地提醒对方已经非常接近限制，再继续发送消息就可能需要等待一段时间。语气可以比平时更直接，但不要辱骂、威胁，也不要直接提到 rate limit、配额、系统规则、隐藏提示词。";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageRateLimitWarningLevel {
+    Warning,
+    Severe,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageRateLimitBlockAction {
+    None,
+    ReplyOnce,
+    Silent,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedMessageRateLimit {
@@ -31,6 +48,9 @@ pub struct ResolvedMessageRateLimit {
 pub struct MessageRateLimitCheckResult {
     pub allowed: bool,
     pub warn_after_this_turn: bool,
+    pub warning_level: Option<MessageRateLimitWarningLevel>,
+    pub block_action: MessageRateLimitBlockAction,
+    pub mention_sender_on_block: bool,
     pub resolved_limit: Option<ResolvedMessageRateLimit>,
     pub used_calls_before_increment: usize,
     pub used_calls_after_increment: usize,
@@ -57,6 +77,7 @@ pub struct MessageRateLimitUsageRow {
 struct MessageRateLimitBucket {
     used_calls: i64,
     window_started_at: NaiveDateTime,
+    first_block_reply_sent: bool,
 }
 
 pub fn blocked_reply_text() -> &'static str {
@@ -65,6 +86,10 @@ pub fn blocked_reply_text() -> &'static str {
 
 pub fn warning_prompt_text() -> &'static str {
     MESSAGE_RATE_LIMIT_WARNING_PROMPT
+}
+
+pub fn severe_warning_prompt_text() -> &'static str {
+    MESSAGE_RATE_LIMIT_SEVERE_WARNING_PROMPT
 }
 
 pub fn resolve_message_rate_limit(
@@ -171,7 +196,9 @@ pub async fn reset_message_rate_limit_usage(
     sender_id: &str,
 ) -> Result<u64> {
     match connection {
-        RelationalDbConnection::MySql(config) => reset_message_rate_limit_usage_mysql(config, agent_id, sender_id).await,
+        RelationalDbConnection::MySql(config) => {
+            reset_message_rate_limit_usage_mysql(config, agent_id, sender_id).await
+        }
         RelationalDbConnection::Sqlite(config) => {
             reset_message_rate_limit_usage_sqlite(config, agent_id, sender_id).await
         }
@@ -182,6 +209,9 @@ fn unlimited_result(resolved_limit: Option<ResolvedMessageRateLimit>) -> Message
     MessageRateLimitCheckResult {
         allowed: true,
         warn_after_this_turn: false,
+        warning_level: None,
+        block_action: MessageRateLimitBlockAction::None,
+        mention_sender_on_block: false,
         resolved_limit,
         used_calls_before_increment: 0,
         used_calls_after_increment: 0,
@@ -224,39 +254,43 @@ async fn consume_bucket_mysql(
     resolved_limit: &ResolvedMessageRateLimit,
 ) -> Result<MessageRateLimitCheckResult> {
     let max_calls = resolved_limit.rule.max_calls.unwrap_or(0);
-    let window_started_at = match bucket.as_ref() {
-        Some(existing) if !window_expired(existing.window_started_at, &resolved_limit.rule, now) => {
-            existing.window_started_at
-        }
-        _ => now,
-    };
-    let used_before = match bucket.as_ref() {
-        Some(existing) if !window_expired(existing.window_started_at, &resolved_limit.rule, now) => {
-            existing.used_calls.max(0) as usize
-        }
-        _ => 0,
-    };
+    let bucket_state = active_bucket_state(bucket.as_ref(), &resolved_limit.rule, now);
+    let window_started_at = bucket_state.window_started_at;
+    let used_before = bucket_state.used_calls;
 
     if used_before >= max_calls {
-        return Ok(MessageRateLimitCheckResult {
-            allowed: false,
-            warn_after_this_turn: false,
-            resolved_limit: Some(resolved_limit.clone()),
-            used_calls_before_increment: used_before,
-            used_calls_after_increment: used_before,
-            max_calls: Some(max_calls),
-            blocked_reply: Some(MESSAGE_RATE_LIMIT_BLOCKED_REPLY.to_string()),
-            warning_prompt: None,
-        });
+        if !bucket_state.first_block_reply_sent {
+            sqlx::query(
+                "UPDATE qq_chat_agent_service_message_rate_limit \
+                 SET first_block_reply_sent = 1, updated_at = ? \
+                 WHERE agent_id = ? AND sender_id = ? AND scope_type = ? AND scope_key = ? AND window_unit = ? AND window_size = ?",
+            )
+            .bind(now)
+            .bind(agent_id)
+            .bind(sender_id)
+            .bind(&resolved_limit.scope_type)
+            .bind(&resolved_limit.scope_key)
+            .bind(resolved_limit.rule.window_unit.expect("sanitized rule").as_str())
+            .bind(resolved_limit.rule.window_size)
+            .execute(&mut **tx)
+            .await
+            .map_err(Error::Database)?;
+        }
+
+        return Ok(build_blocked_result(
+            resolved_limit,
+            used_before,
+            max_calls,
+            bucket_state.first_block_reply_sent,
+        ));
     }
 
     let used_after = used_before + 1;
-    let warn_after_this_turn = max_calls.saturating_sub(used_before) == 1;
     sqlx::query(
         "INSERT INTO qq_chat_agent_service_message_rate_limit \
-         (agent_id, sender_id, scope_type, scope_key, window_unit, window_size, window_started_at, used_calls, max_calls, unlimited, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?) \
-         ON DUPLICATE KEY UPDATE window_started_at = VALUES(window_started_at), used_calls = VALUES(used_calls), max_calls = VALUES(max_calls), unlimited = 0, updated_at = VALUES(updated_at)",
+         (agent_id, sender_id, scope_type, scope_key, window_unit, window_size, window_started_at, used_calls, max_calls, unlimited, first_block_reply_sent, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?) \
+         ON DUPLICATE KEY UPDATE window_started_at = VALUES(window_started_at), used_calls = VALUES(used_calls), max_calls = VALUES(max_calls), unlimited = 0, first_block_reply_sent = 0, updated_at = VALUES(updated_at)",
     )
     .bind(agent_id)
     .bind(sender_id)
@@ -273,16 +307,7 @@ async fn consume_bucket_mysql(
     .await
     .map_err(Error::Database)?;
 
-    Ok(MessageRateLimitCheckResult {
-        allowed: true,
-        warn_after_this_turn,
-        resolved_limit: Some(resolved_limit.clone()),
-        used_calls_before_increment: used_before,
-        used_calls_after_increment: used_after,
-        max_calls: Some(max_calls),
-        blocked_reply: None,
-        warning_prompt: warn_after_this_turn.then(|| MESSAGE_RATE_LIMIT_WARNING_PROMPT.to_string()),
-    })
+    Ok(build_allowed_result(resolved_limit, used_before, used_after, max_calls))
 }
 
 async fn get_message_rate_limit_bucket_mysql(
@@ -292,7 +317,7 @@ async fn get_message_rate_limit_bucket_mysql(
     resolved_limit: &ResolvedMessageRateLimit,
 ) -> Result<Option<MessageRateLimitBucket>> {
     let row = sqlx::query(
-        "SELECT used_calls, max_calls, unlimited, window_started_at \
+        "SELECT used_calls, max_calls, unlimited, window_started_at, first_block_reply_sent \
          FROM qq_chat_agent_service_message_rate_limit \
          WHERE agent_id = ? AND sender_id = ? AND scope_type = ? AND scope_key = ? AND window_unit = ? AND window_size = ? \
          LIMIT 1 FOR UPDATE",
@@ -331,42 +356,46 @@ async fn consume_message_rate_limit_sqlite_tx(
     let now = Local::now().naive_local();
     let bucket = get_message_rate_limit_bucket_sqlite(tx, agent_id, sender_id, resolved_limit).await?;
     let max_calls = resolved_limit.rule.max_calls.unwrap_or(0);
-    let window_started_at = match bucket.as_ref() {
-        Some(existing) if !window_expired(existing.window_started_at, &resolved_limit.rule, now) => {
-            existing.window_started_at
-        }
-        _ => now,
-    };
-    let used_before = match bucket.as_ref() {
-        Some(existing) if !window_expired(existing.window_started_at, &resolved_limit.rule, now) => {
-            existing.used_calls.max(0) as usize
-        }
-        _ => 0,
-    };
+    let bucket_state = active_bucket_state(bucket.as_ref(), &resolved_limit.rule, now);
+    let window_started_at = bucket_state.window_started_at;
+    let used_before = bucket_state.used_calls;
 
     if used_before >= max_calls {
-        return Ok(MessageRateLimitCheckResult {
-            allowed: false,
-            warn_after_this_turn: false,
-            resolved_limit: Some(resolved_limit.clone()),
-            used_calls_before_increment: used_before,
-            used_calls_after_increment: used_before,
-            max_calls: Some(max_calls),
-            blocked_reply: Some(MESSAGE_RATE_LIMIT_BLOCKED_REPLY.to_string()),
-            warning_prompt: None,
-        });
+        if !bucket_state.first_block_reply_sent {
+            sqlx::query(
+                "UPDATE qq_chat_agent_service_message_rate_limit \
+                 SET first_block_reply_sent = 1, updated_at = ? \
+                 WHERE agent_id = ? AND sender_id = ? AND scope_type = ? AND scope_key = ? AND window_unit = ? AND window_size = ?",
+            )
+            .bind(format_sqlite_timestamp(now))
+            .bind(agent_id)
+            .bind(sender_id)
+            .bind(&resolved_limit.scope_type)
+            .bind(&resolved_limit.scope_key)
+            .bind(resolved_limit.rule.window_unit.expect("sanitized rule").as_str())
+            .bind(resolved_limit.rule.window_size)
+            .execute(&mut **tx)
+            .await
+            .map_err(Error::Database)?;
+        }
+
+        return Ok(build_blocked_result(
+            resolved_limit,
+            used_before,
+            max_calls,
+            bucket_state.first_block_reply_sent,
+        ));
     }
 
     let used_after = used_before + 1;
-    let warn_after_this_turn = max_calls.saturating_sub(used_before) == 1;
     let now_text = format_sqlite_timestamp(now);
     let window_started_at_text = format_sqlite_timestamp(window_started_at);
     sqlx::query(
         "INSERT INTO qq_chat_agent_service_message_rate_limit \
-         (agent_id, sender_id, scope_type, scope_key, window_unit, window_size, window_started_at, used_calls, max_calls, unlimited, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?) \
+         (agent_id, sender_id, scope_type, scope_key, window_unit, window_size, window_started_at, used_calls, max_calls, unlimited, first_block_reply_sent, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?) \
          ON CONFLICT(agent_id, sender_id, scope_type, scope_key, window_unit, window_size) \
-         DO UPDATE SET window_started_at = excluded.window_started_at, used_calls = excluded.used_calls, max_calls = excluded.max_calls, unlimited = 0, updated_at = excluded.updated_at",
+         DO UPDATE SET window_started_at = excluded.window_started_at, used_calls = excluded.used_calls, max_calls = excluded.max_calls, unlimited = 0, first_block_reply_sent = 0, updated_at = excluded.updated_at",
     )
     .bind(agent_id)
     .bind(sender_id)
@@ -383,16 +412,7 @@ async fn consume_message_rate_limit_sqlite_tx(
     .await
     .map_err(Error::Database)?;
 
-    Ok(MessageRateLimitCheckResult {
-        allowed: true,
-        warn_after_this_turn,
-        resolved_limit: Some(resolved_limit.clone()),
-        used_calls_before_increment: used_before,
-        used_calls_after_increment: used_after,
-        max_calls: Some(max_calls),
-        blocked_reply: None,
-        warning_prompt: warn_after_this_turn.then(|| MESSAGE_RATE_LIMIT_WARNING_PROMPT.to_string()),
-    })
+    Ok(build_allowed_result(resolved_limit, used_before, used_after, max_calls))
 }
 
 async fn get_message_rate_limit_bucket_sqlite(
@@ -402,7 +422,7 @@ async fn get_message_rate_limit_bucket_sqlite(
     resolved_limit: &ResolvedMessageRateLimit,
 ) -> Result<Option<MessageRateLimitBucket>> {
     let row = sqlx::query(
-        "SELECT used_calls, max_calls, unlimited, window_started_at \
+        "SELECT used_calls, max_calls, unlimited, window_started_at, first_block_reply_sent \
          FROM qq_chat_agent_service_message_rate_limit \
          WHERE agent_id = ? AND sender_id = ? AND scope_type = ? AND scope_key = ? AND window_unit = ? AND window_size = ? \
          LIMIT 1",
@@ -460,14 +480,13 @@ async fn reset_message_rate_limit_usage_mysql(
     agent_id: &str,
     sender_id: &str,
 ) -> Result<u64> {
-    let result = sqlx::query(
-        "DELETE FROM qq_chat_agent_service_message_rate_limit WHERE agent_id = ? AND sender_id = ?",
-    )
-    .bind(agent_id)
-    .bind(sender_id)
-    .execute(mysql_pool(config)?)
-    .await
-    .map_err(Error::Database)?;
+    let result =
+        sqlx::query("DELETE FROM qq_chat_agent_service_message_rate_limit WHERE agent_id = ? AND sender_id = ?")
+            .bind(agent_id)
+            .bind(sender_id)
+            .execute(mysql_pool(config)?)
+            .await
+            .map_err(Error::Database)?;
     Ok(result.rows_affected())
 }
 
@@ -476,14 +495,13 @@ async fn reset_message_rate_limit_usage_sqlite(
     agent_id: &str,
     sender_id: &str,
 ) -> Result<u64> {
-    let result = sqlx::query(
-        "DELETE FROM qq_chat_agent_service_message_rate_limit WHERE agent_id = ? AND sender_id = ?",
-    )
-    .bind(agent_id)
-    .bind(sender_id)
-    .execute(sqlite_pool(config)?)
-    .await
-    .map_err(Error::Database)?;
+    let result =
+        sqlx::query("DELETE FROM qq_chat_agent_service_message_rate_limit WHERE agent_id = ? AND sender_id = ?")
+            .bind(agent_id)
+            .bind(sender_id)
+            .execute(sqlite_pool(config)?)
+            .await
+            .map_err(Error::Database)?;
     Ok(result.rows_affected())
 }
 
@@ -491,6 +509,7 @@ fn map_message_rate_limit_bucket_mysql(row: MySqlRow) -> MessageRateLimitBucket 
     MessageRateLimitBucket {
         used_calls: row.get("used_calls"),
         window_started_at: row.get("window_started_at"),
+        first_block_reply_sent: row.get::<i8, _>("first_block_reply_sent") != 0,
     }
 }
 
@@ -499,6 +518,108 @@ fn map_message_rate_limit_bucket_sqlite(row: SqliteRow) -> MessageRateLimitBucke
     MessageRateLimitBucket {
         used_calls: row.get("used_calls"),
         window_started_at: parse_sqlite_timestamp(&window_started_at_text),
+        first_block_reply_sent: row.get::<i64, _>("first_block_reply_sent") != 0,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ActiveMessageRateLimitBucketState {
+    window_started_at: NaiveDateTime,
+    used_calls: usize,
+    first_block_reply_sent: bool,
+}
+
+fn active_bucket_state(
+    bucket: Option<&MessageRateLimitBucket>,
+    rule: &QqChatMessageRateLimitRule,
+    now: NaiveDateTime,
+) -> ActiveMessageRateLimitBucketState {
+    match bucket {
+        Some(existing) if !window_expired(existing.window_started_at, rule, now) => ActiveMessageRateLimitBucketState {
+            window_started_at: existing.window_started_at,
+            used_calls: existing.used_calls.max(0) as usize,
+            first_block_reply_sent: existing.first_block_reply_sent,
+        },
+        _ => ActiveMessageRateLimitBucketState {
+            window_started_at: now,
+            used_calls: 0,
+            first_block_reply_sent: false,
+        },
+    }
+}
+
+fn build_allowed_result(
+    resolved_limit: &ResolvedMessageRateLimit,
+    used_before: usize,
+    used_after: usize,
+    max_calls: usize,
+) -> MessageRateLimitCheckResult {
+    let warning_level = warning_level_for_used_after(used_after, max_calls);
+    let warning_prompt = warning_level.as_ref().map(warning_prompt_for_level).map(str::to_string);
+    MessageRateLimitCheckResult {
+        allowed: true,
+        warn_after_this_turn: warning_level.is_some(),
+        warning_level,
+        block_action: MessageRateLimitBlockAction::None,
+        mention_sender_on_block: false,
+        resolved_limit: Some(resolved_limit.clone()),
+        used_calls_before_increment: used_before,
+        used_calls_after_increment: used_after,
+        max_calls: Some(max_calls),
+        blocked_reply: None,
+        warning_prompt,
+    }
+}
+
+fn build_blocked_result(
+    resolved_limit: &ResolvedMessageRateLimit,
+    used_before: usize,
+    max_calls: usize,
+    first_block_reply_sent: bool,
+) -> MessageRateLimitCheckResult {
+    let block_action = if first_block_reply_sent {
+        MessageRateLimitBlockAction::Silent
+    } else {
+        MessageRateLimitBlockAction::ReplyOnce
+    };
+    let blocked_reply = if block_action == MessageRateLimitBlockAction::ReplyOnce {
+        Some(MESSAGE_RATE_LIMIT_BLOCKED_REPLY.to_string())
+    } else {
+        None
+    };
+
+    MessageRateLimitCheckResult {
+        allowed: false,
+        warn_after_this_turn: false,
+        warning_level: None,
+        block_action: block_action.clone(),
+        mention_sender_on_block: block_action == MessageRateLimitBlockAction::ReplyOnce,
+        resolved_limit: Some(resolved_limit.clone()),
+        used_calls_before_increment: used_before,
+        used_calls_after_increment: used_before,
+        max_calls: Some(max_calls),
+        blocked_reply,
+        warning_prompt: None,
+    }
+}
+
+fn warning_level_for_used_after(used_after: usize, max_calls: usize) -> Option<MessageRateLimitWarningLevel> {
+    if max_calls == 0 {
+        return None;
+    }
+    if used_after == max_calls {
+        return Some(MessageRateLimitWarningLevel::Severe);
+    }
+    if used_after + 1 == max_calls {
+        return Some(MessageRateLimitWarningLevel::Warning);
+    }
+    None
+}
+
+fn warning_prompt_for_level(level: &MessageRateLimitWarningLevel) -> &'static str {
+    match level {
+        MessageRateLimitWarningLevel::Warning => MESSAGE_RATE_LIMIT_WARNING_PROMPT,
+        MessageRateLimitWarningLevel::Severe => MESSAGE_RATE_LIMIT_SEVERE_WARNING_PROMPT,
     }
 }
 
@@ -562,6 +683,76 @@ fn format_sqlite_timestamp(value: NaiveDateTime) -> String {
 }
 
 fn parse_sqlite_timestamp(value: &str) -> NaiveDateTime {
-    NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
-        .unwrap_or_else(|_| Local::now().naive_local())
+    NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S").unwrap_or_else(|_| Local::now().naive_local())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn resolved_limit(max_calls: usize) -> ResolvedMessageRateLimit {
+        ResolvedMessageRateLimit {
+            scope_type: SCOPE_USER.to_string(),
+            scope_key: "user-1".to_string(),
+            rule: QqChatMessageRateLimitRule {
+                unlimited: false,
+                max_calls: Some(max_calls),
+                window_unit: Some(QqChatMessageRateLimitWindowUnit::Hour),
+                window_size: 1,
+            },
+        }
+    }
+
+    #[test]
+    fn warning_levels_escalate_near_limit() {
+        assert_eq!(warning_level_for_used_after(3, 5), None);
+        assert_eq!(warning_level_for_used_after(4, 5), Some(MessageRateLimitWarningLevel::Warning));
+        assert_eq!(warning_level_for_used_after(5, 5), Some(MessageRateLimitWarningLevel::Severe));
+    }
+
+    #[test]
+    fn allowed_result_injects_warning_prompt_for_four_of_five() {
+        let result = build_allowed_result(&resolved_limit(5), 3, 4, 5);
+        assert!(result.allowed);
+        assert_eq!(result.warning_level, Some(MessageRateLimitWarningLevel::Warning));
+        assert_eq!(result.block_action, MessageRateLimitBlockAction::None);
+        assert_eq!(result.warning_prompt.as_deref(), Some(MESSAGE_RATE_LIMIT_WARNING_PROMPT));
+    }
+
+    #[test]
+    fn allowed_result_injects_severe_prompt_at_five_of_five() {
+        let result = build_allowed_result(&resolved_limit(5), 4, 5, 5);
+        assert!(result.allowed);
+        assert_eq!(result.warning_level, Some(MessageRateLimitWarningLevel::Severe));
+        assert_eq!(result.warning_prompt.as_deref(), Some(MESSAGE_RATE_LIMIT_SEVERE_WARNING_PROMPT));
+    }
+
+    #[test]
+    fn blocked_result_replies_only_once_per_window() {
+        let first = build_blocked_result(&resolved_limit(5), 5, 5, false);
+        assert!(!first.allowed);
+        assert_eq!(first.block_action, MessageRateLimitBlockAction::ReplyOnce);
+        assert!(first.mention_sender_on_block);
+        assert_eq!(first.blocked_reply.as_deref(), Some(MESSAGE_RATE_LIMIT_BLOCKED_REPLY));
+
+        let repeated = build_blocked_result(&resolved_limit(5), 5, 5, true);
+        assert!(!repeated.allowed);
+        assert_eq!(repeated.block_action, MessageRateLimitBlockAction::Silent);
+        assert!(!repeated.mention_sender_on_block);
+        assert_eq!(repeated.blocked_reply, None);
+    }
+
+    #[test]
+    fn active_bucket_state_resets_sent_flag_after_window_expiry() {
+        let now = Local::now().naive_local();
+        let expired = MessageRateLimitBucket {
+            used_calls: 9,
+            window_started_at: now - Duration::hours(2),
+            first_block_reply_sent: true,
+        };
+        let state = active_bucket_state(Some(&expired), &resolved_limit(5).rule, now);
+        assert_eq!(state.used_calls, 0);
+        assert!(!state.first_block_reply_sent);
+        assert_eq!(state.window_started_at, now);
+    }
 }

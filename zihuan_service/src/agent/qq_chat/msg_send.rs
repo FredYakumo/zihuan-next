@@ -177,11 +177,7 @@ pub(crate) fn plan_model_reply(
     // QQ protocol requires a space after @, otherwise the mention marker is ignored
     ensure_space_after_at(&mut batches);
 
-    resolve_media_references(
-        &mut batches,
-        &request.available_media,
-        request.rdb_pool.as_ref(),
-    )?;
+    resolve_media_references(&mut batches, &request.available_media, request.rdb_pool.as_ref())?;
 
     Ok(QqOutboundPlan {
         batches,
@@ -799,7 +795,6 @@ pub(crate) fn send_direct_text_reply(
     reply_batch_builder: Option<&QqChatServiceReplyBatchBuilder>,
 ) -> Result<()> {
     let persistence = crate::storage::qq_chat_session_store::build_outbound_persistence(rdb_pool, group_name, bot_name);
-
     let reply_result = build_reply_result(
         text,
         is_group,
@@ -834,5 +829,35 @@ pub(crate) fn send_direct_text_reply(
         max_text_chars: max_message_length,
     };
     send_planned_batches(&send_ctx, &reply_result.batches);
+    Ok(())
+}
+
+pub(crate) fn send_direct_notification_text_reply(
+    trace: &QqChatTaskTrace,
+    adapter: &SharedBotAdapter,
+    target_id: &str,
+    rdb_pool: Option<&RelationalDbConnection>,
+    group_name: Option<&str>,
+    bot_name: &str,
+    bot_id: &str,
+    text: &str,
+    is_group: bool,
+    mention_target_id: Option<&str>,
+    max_message_length: usize,
+) -> Result<()> {
+    let persistence = crate::storage::qq_chat_session_store::build_outbound_persistence(rdb_pool, group_name, bot_name);
+    let send_ctx = QqChatServiceSendContext {
+        adapter,
+        target_id,
+        is_group,
+        group_name,
+        bot_name,
+        bot_id,
+        mention_target_id,
+        persistence,
+        max_text_chars: max_message_length,
+    };
+    send_notification_text(&send_ctx, text)?;
+    trace.record_reply_send(false, false, &[]);
     Ok(())
 }

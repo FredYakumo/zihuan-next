@@ -11,6 +11,7 @@ pub const MYSQL_DDL: &str = "CREATE TABLE IF NOT EXISTS qq_chat_agent_service_me
     used_calls BIGINT NOT NULL DEFAULT 0,
     max_calls BIGINT NULL,
     unlimited TINYINT(1) NOT NULL DEFAULT 0,
+    first_block_reply_sent TINYINT(1) NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 )";
@@ -28,6 +29,7 @@ pub const SQLITE_DDL: &str = "CREATE TABLE IF NOT EXISTS qq_chat_agent_service_m
     used_calls INTEGER NOT NULL DEFAULT 0,
     max_calls INTEGER NULL,
     unlimited INTEGER NOT NULL DEFAULT 0,
+    first_block_reply_sent INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )";
