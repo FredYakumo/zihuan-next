@@ -401,11 +401,11 @@ export function useDataExplorer() {
     return "默认";
   }
 
-  function formatRateLimitWindow(windowUnit: string): string {
-    if (windowUnit === "minute") return "分钟";
-    if (windowUnit === "hour") return "小时";
-    if (windowUnit === "day") return "天";
-    return windowUnit || "—";
+  function formatRateLimitWindow(windowUnit: string, windowSize: number): string {
+    const unitLabel = windowUnit === "minute" ? "分钟" : windowUnit === "hour" ? "小时" : windowUnit === "day" ? "天" : windowUnit || "—";
+    if (!unitLabel || unitLabel === "—") return "—";
+    const size = Number.isFinite(windowSize) && windowSize > 0 ? Math.trunc(windowSize) : 1;
+    return size > 1 ? `${size} ${unitLabel}` : unitLabel;
   }
 
   function formatRateLimitUsage(usedCalls: number, maxCalls: number | null, unlimited: boolean): string {

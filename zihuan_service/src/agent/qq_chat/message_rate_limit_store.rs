@@ -24,7 +24,6 @@ const MESSAGE_RATE_LIMIT_WARNING_PROMPT: &str =
 pub struct ResolvedMessageRateLimit {
     pub scope_type: String,
     pub scope_key: String,
-    pub group_id: Option<String>,
     pub rule: QqChatMessageRateLimitRule,
 }
 
@@ -44,11 +43,10 @@ pub struct MessageRateLimitCheckResult {
 pub struct MessageRateLimitUsageRow {
     pub sender_id: String,
     pub sender_name: Option<String>,
-    pub group_id: Option<String>,
-    pub group_name: Option<String>,
     pub scope_type: String,
     pub scope_key: String,
     pub window_unit: String,
+    pub window_size: i64,
     pub used_calls: i64,
     pub max_calls: Option<i64>,
     pub unlimited: bool,
@@ -82,7 +80,6 @@ pub fn resolve_message_rate_limit(
         return Some(ResolvedMessageRateLimit {
             scope_type: SCOPE_USER.to_string(),
             scope_key: rule.sender_id,
-            group_id: group_id.map(ToOwned::to_owned),
             rule: rule.limit,
         });
     }
@@ -96,7 +93,6 @@ pub fn resolve_message_rate_limit(
             return Some(ResolvedMessageRateLimit {
                 scope_type: SCOPE_GROUP.to_string(),
                 scope_key: rule.group_id.clone(),
-                group_id: Some(rule.group_id),
                 rule: rule.limit,
             });
         }
@@ -107,7 +103,6 @@ pub fn resolve_message_rate_limit(
         .map(|rule| ResolvedMessageRateLimit {
             scope_type: SCOPE_DEFAULT.to_string(),
             scope_key: SCOPE_DEFAULT.to_string(),
-            group_id: group_id.map(ToOwned::to_owned),
             rule,
         })
 }
@@ -229,7 +224,6 @@ async fn consume_bucket_mysql(
     resolved_limit: &ResolvedMessageRateLimit,
 ) -> Result<MessageRateLimitCheckResult> {
     let max_calls = resolved_limit.rule.max_calls.unwrap_or(0);
-    let group_id_key = normalized_group_id_key(resolved_limit.group_id.as_deref());
     let window_started_at = match bucket.as_ref() {
         Some(existing) if !window_expired(existing.window_started_at, &resolved_limit.rule, now) => {
             existing.window_started_at
@@ -260,16 +254,16 @@ async fn consume_bucket_mysql(
     let warn_after_this_turn = max_calls.saturating_sub(used_before) == 1;
     sqlx::query(
         "INSERT INTO qq_chat_agent_service_message_rate_limit \
-         (agent_id, sender_id, group_id, scope_type, scope_key, window_unit, window_started_at, used_calls, max_calls, unlimited, created_at, updated_at) \
+         (agent_id, sender_id, scope_type, scope_key, window_unit, window_size, window_started_at, used_calls, max_calls, unlimited, created_at, updated_at) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?) \
          ON DUPLICATE KEY UPDATE window_started_at = VALUES(window_started_at), used_calls = VALUES(used_calls), max_calls = VALUES(max_calls), unlimited = 0, updated_at = VALUES(updated_at)",
     )
     .bind(agent_id)
     .bind(sender_id)
-    .bind(group_id_key)
     .bind(&resolved_limit.scope_type)
     .bind(&resolved_limit.scope_key)
     .bind(resolved_limit.rule.window_unit.expect("sanitized rule").as_str())
+    .bind(resolved_limit.rule.window_size)
     .bind(window_started_at)
     .bind(used_after as i64)
     .bind(max_calls as i64)
@@ -300,15 +294,15 @@ async fn get_message_rate_limit_bucket_mysql(
     let row = sqlx::query(
         "SELECT used_calls, max_calls, unlimited, window_started_at \
          FROM qq_chat_agent_service_message_rate_limit \
-         WHERE agent_id = ? AND sender_id = ? AND group_id = ? AND scope_type = ? AND scope_key = ? AND window_unit = ? \
+         WHERE agent_id = ? AND sender_id = ? AND scope_type = ? AND scope_key = ? AND window_unit = ? AND window_size = ? \
          LIMIT 1 FOR UPDATE",
     )
     .bind(agent_id)
     .bind(sender_id)
-    .bind(normalized_group_id_key(resolved_limit.group_id.as_deref()))
     .bind(&resolved_limit.scope_type)
     .bind(&resolved_limit.scope_key)
     .bind(resolved_limit.rule.window_unit.expect("sanitized rule").as_str())
+    .bind(resolved_limit.rule.window_size)
     .fetch_optional(&mut **tx)
     .await
     .map_err(Error::Database)?;
@@ -337,7 +331,6 @@ async fn consume_message_rate_limit_sqlite_tx(
     let now = Local::now().naive_local();
     let bucket = get_message_rate_limit_bucket_sqlite(tx, agent_id, sender_id, resolved_limit).await?;
     let max_calls = resolved_limit.rule.max_calls.unwrap_or(0);
-    let group_id_key = normalized_group_id_key(resolved_limit.group_id.as_deref());
     let window_started_at = match bucket.as_ref() {
         Some(existing) if !window_expired(existing.window_started_at, &resolved_limit.rule, now) => {
             existing.window_started_at
@@ -370,17 +363,17 @@ async fn consume_message_rate_limit_sqlite_tx(
     let window_started_at_text = format_sqlite_timestamp(window_started_at);
     sqlx::query(
         "INSERT INTO qq_chat_agent_service_message_rate_limit \
-         (agent_id, sender_id, group_id, scope_type, scope_key, window_unit, window_started_at, used_calls, max_calls, unlimited, created_at, updated_at) \
+         (agent_id, sender_id, scope_type, scope_key, window_unit, window_size, window_started_at, used_calls, max_calls, unlimited, created_at, updated_at) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?) \
-         ON CONFLICT(agent_id, sender_id, group_id, scope_type, scope_key, window_unit) \
+         ON CONFLICT(agent_id, sender_id, scope_type, scope_key, window_unit, window_size) \
          DO UPDATE SET window_started_at = excluded.window_started_at, used_calls = excluded.used_calls, max_calls = excluded.max_calls, unlimited = 0, updated_at = excluded.updated_at",
     )
     .bind(agent_id)
     .bind(sender_id)
-    .bind(group_id_key)
     .bind(&resolved_limit.scope_type)
     .bind(&resolved_limit.scope_key)
     .bind(resolved_limit.rule.window_unit.expect("sanitized rule").as_str())
+    .bind(resolved_limit.rule.window_size)
     .bind(window_started_at_text)
     .bind(used_after as i64)
     .bind(max_calls as i64)
@@ -411,15 +404,15 @@ async fn get_message_rate_limit_bucket_sqlite(
     let row = sqlx::query(
         "SELECT used_calls, max_calls, unlimited, window_started_at \
          FROM qq_chat_agent_service_message_rate_limit \
-         WHERE agent_id = ? AND sender_id = ? AND group_id = ? AND scope_type = ? AND scope_key = ? AND window_unit = ? \
+         WHERE agent_id = ? AND sender_id = ? AND scope_type = ? AND scope_key = ? AND window_unit = ? AND window_size = ? \
          LIMIT 1",
     )
     .bind(agent_id)
     .bind(sender_id)
-    .bind(normalized_group_id_key(resolved_limit.group_id.as_deref()))
     .bind(&resolved_limit.scope_type)
     .bind(&resolved_limit.scope_key)
     .bind(resolved_limit.rule.window_unit.expect("sanitized rule").as_str())
+    .bind(resolved_limit.rule.window_size)
     .fetch_optional(&mut **tx)
     .await
     .map_err(Error::Database)?;
@@ -431,9 +424,8 @@ async fn list_message_rate_limit_usage_mysql(
     agent_id: &str,
 ) -> Result<Vec<MessageRateLimitUsageRow>> {
     let rows = sqlx::query(
-        "SELECT r.sender_id, NULLIF(r.group_id, '') AS group_id, r.scope_type, r.scope_key, r.window_unit, r.used_calls, r.max_calls, r.unlimited, r.updated_at, \
-            (SELECT m.sender_name FROM message_record m WHERE m.sender_id = r.sender_id ORDER BY m.send_time DESC, m.id DESC LIMIT 1) AS sender_name, \
-            (SELECT m.group_name FROM message_record m WHERE NULLIF(r.group_id, '') <> '' AND m.group_id = r.group_id ORDER BY m.send_time DESC, m.id DESC LIMIT 1) AS group_name \
+        "SELECT r.sender_id, r.scope_type, r.scope_key, r.window_unit, r.window_size, r.used_calls, r.max_calls, r.unlimited, r.updated_at, \
+            (SELECT m.sender_name FROM message_record m WHERE m.sender_id = r.sender_id ORDER BY m.send_time DESC, m.id DESC LIMIT 1) AS sender_name \
          FROM qq_chat_agent_service_message_rate_limit r \
          WHERE r.agent_id = ? \
          ORDER BY r.updated_at DESC, r.sender_id ASC",
@@ -450,9 +442,8 @@ async fn list_message_rate_limit_usage_sqlite(
     agent_id: &str,
 ) -> Result<Vec<MessageRateLimitUsageRow>> {
     let rows = sqlx::query(
-        "SELECT r.sender_id, NULLIF(r.group_id, '') AS group_id, r.scope_type, r.scope_key, r.window_unit, r.used_calls, r.max_calls, r.unlimited, r.updated_at, \
-            (SELECT m.sender_name FROM message_record m WHERE m.sender_id = r.sender_id ORDER BY m.send_time DESC, m.id DESC LIMIT 1) AS sender_name, \
-            (SELECT m.group_name FROM message_record m WHERE NULLIF(r.group_id, '') <> '' AND m.group_id = r.group_id ORDER BY m.send_time DESC, m.id DESC LIMIT 1) AS group_name \
+        "SELECT r.sender_id, r.scope_type, r.scope_key, r.window_unit, r.window_size, r.used_calls, r.max_calls, r.unlimited, r.updated_at, \
+            (SELECT m.sender_name FROM message_record m WHERE m.sender_id = r.sender_id ORDER BY m.send_time DESC, m.id DESC LIMIT 1) AS sender_name \
          FROM qq_chat_agent_service_message_rate_limit r \
          WHERE r.agent_id = ? \
          ORDER BY r.updated_at DESC, r.sender_id ASC",
@@ -515,11 +506,10 @@ fn map_message_rate_limit_usage_mysql(row: MySqlRow) -> MessageRateLimitUsageRow
     MessageRateLimitUsageRow {
         sender_id: row.get("sender_id"),
         sender_name: row.get("sender_name"),
-        group_id: row.get("group_id"),
-        group_name: row.get("group_name"),
         scope_type: row.get("scope_type"),
         scope_key: row.get("scope_key"),
         window_unit: row.get("window_unit"),
+        window_size: row.get("window_size"),
         used_calls: row.get("used_calls"),
         max_calls: row.get("max_calls"),
         unlimited: row.get::<i8, _>("unlimited") != 0,
@@ -531,11 +521,10 @@ fn map_message_rate_limit_usage_sqlite(row: SqliteRow) -> MessageRateLimitUsageR
     MessageRateLimitUsageRow {
         sender_id: row.get("sender_id"),
         sender_name: row.get("sender_name"),
-        group_id: row.get("group_id"),
-        group_name: row.get("group_name"),
         scope_type: row.get("scope_type"),
         scope_key: row.get("scope_key"),
         window_unit: row.get("window_unit"),
+        window_size: row.get("window_size"),
         used_calls: row.get("used_calls"),
         max_calls: row.get("max_calls"),
         unlimited: row.get::<i64, _>("unlimited") != 0,
@@ -544,14 +533,10 @@ fn map_message_rate_limit_usage_sqlite(row: SqliteRow) -> MessageRateLimitUsageR
 }
 
 fn window_expired(window_started_at: NaiveDateTime, rule: &QqChatMessageRateLimitRule, now: NaiveDateTime) -> bool {
-    let Some(window_unit) = rule.window_unit else {
+    let Some(seconds) = rule.window_seconds() else {
         return false;
     };
-    now.signed_duration_since(window_started_at) >= Duration::seconds(window_unit.window_seconds())
-}
-
-fn normalized_group_id_key(group_id: Option<&str>) -> String {
-    group_id.unwrap_or("").trim().to_string()
+    now.signed_duration_since(window_started_at) >= Duration::seconds(seconds)
 }
 
 fn mysql_pool(config: &Arc<MySqlConfig>) -> Result<&sqlx::mysql::MySqlPool> {

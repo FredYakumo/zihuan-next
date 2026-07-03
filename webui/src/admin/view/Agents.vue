@@ -277,7 +277,7 @@
               <div class="field">
                 <label>Rate Limit</label>
                 <div class="muted" style="margin-top: 2px">
-                  按天/小时/分钟限制调用次数，优先级：用户 &gt; 群组 &gt; 默认。
+                  按 N 天/小时/分钟限制调用次数，计数跟随用户（跨群与私聊共享），优先级：用户 &gt; 群组 &gt; 默认。
                 </div>
                 <button
                   class="btn ghost"
@@ -1054,7 +1054,7 @@
               <div class="field">
                 <label>Rate Limit</label>
                 <div class="muted" style="margin-top: 2px">
-                  按天/小时/分钟限制调用次数，优先级：用户 &gt; 群组 &gt; 默认。
+                  按 N 天/小时/分钟限制调用次数，计数跟随用户（跨群与私聊共享），优先级：用户 &gt; 群组 &gt; 默认。
                 </div>
                 <button
                   class="btn ghost"
@@ -1875,7 +1875,7 @@
         </div>
         <div class="service-edit-modal-body">
           <div class="muted">
-            调用频率限制，优先级：用户 &gt; 群组 &gt; 默认。窗口可按分钟 / 小时 / 天。
+            调用频率限制，优先级：用户 &gt; 群组 &gt; 默认。窗口可按 N 分钟 / N 小时 / N 天，计数跟随用户（跨群与私聊共享）。
           </div>
 
           <div class="editor-card" style="margin-top: 12px">
@@ -1903,11 +1903,19 @@
               <template v-if="!form.message_rate_limit_default.unlimited">
                 <div class="field">
                   <label>窗口</label>
-                  <select v-model="form.message_rate_limit_default.window_unit">
-                    <option value="minute">分钟</option>
-                    <option value="hour">小时</option>
-                    <option value="day">天</option>
-                  </select>
+                  <div style="display: flex; gap: 6px">
+                    <input
+                      v-model.number="form.message_rate_limit_default.window_size"
+                      type="number"
+                      min="1"
+                      style="width: 80px"
+                    />
+                    <select v-model="form.message_rate_limit_default.window_unit">
+                      <option value="minute">分钟</option>
+                      <option value="hour">小时</option>
+                      <option value="day">天</option>
+                    </select>
+                  </div>
                 </div>
                 <div class="field">
                   <label>次数</label>
@@ -1966,11 +1974,19 @@
                 <template v-if="!rule.unlimited">
                   <div class="field">
                     <label>窗口</label>
-                    <select v-model="rule.window_unit">
-                      <option value="minute">分钟</option>
-                      <option value="hour">小时</option>
-                      <option value="day">天</option>
-                    </select>
+                    <div style="display: flex; gap: 6px">
+                      <input
+                        v-model.number="rule.window_size"
+                        type="number"
+                        min="1"
+                        style="width: 80px"
+                      />
+                      <select v-model="rule.window_unit">
+                        <option value="minute">分钟</option>
+                        <option value="hour">小时</option>
+                        <option value="day">天</option>
+                      </select>
+                    </div>
                   </div>
                   <div class="field">
                     <label>次数</label>
@@ -2026,11 +2042,19 @@
                 <template v-if="!rule.unlimited">
                   <div class="field">
                     <label>窗口</label>
-                    <select v-model="rule.window_unit">
-                      <option value="minute">分钟</option>
-                      <option value="hour">小时</option>
-                      <option value="day">天</option>
-                    </select>
+                    <div style="display: flex; gap: 6px">
+                      <input
+                        v-model.number="rule.window_size"
+                        type="number"
+                        min="1"
+                        style="width: 80px"
+                      />
+                      <select v-model="rule.window_unit">
+                        <option value="minute">分钟</option>
+                        <option value="hour">小时</option>
+                        <option value="day">天</option>
+                      </select>
+                    </div>
                   </div>
                   <div class="field">
                     <label>次数</label>

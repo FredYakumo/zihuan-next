@@ -710,11 +710,10 @@ export interface AgentMemoryRecord {
 export interface QqChatMessageRateLimitUsageRow {
   sender_id: string;
   sender_name: string | null;
-  group_id: string | null;
-  group_name: string | null;
   scope_type: string;
   scope_key: string;
   window_unit: "minute" | "hour" | "day" | string;
+  window_size: number;
   used_calls: number;
   max_calls: number | null;
   unlimited: boolean;

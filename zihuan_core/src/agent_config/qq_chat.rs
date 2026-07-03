@@ -97,6 +97,8 @@ pub struct QqChatMessageRateLimitRule {
     pub window_unit: Option<QqChatMessageRateLimitWindowUnit>,
     #[serde(default)]
     pub max_calls: Option<usize>,
+    #[serde(default = "default_message_rate_limit_window_size")]
+    pub window_size: i64,
 }
 
 impl QqChatMessageRateLimitRule {
@@ -110,16 +112,25 @@ impl QqChatMessageRateLimitRule {
                 unlimited: true,
                 window_unit: None,
                 max_calls: None,
+                window_size: 1,
             });
         }
 
         let window_unit = self.window_unit?;
         let max_calls = self.max_calls.filter(|value| *value > 0)?;
+        let window_size = if self.window_size > 0 { self.window_size } else { 1 };
         Some(Self {
             unlimited: false,
             window_unit: Some(window_unit),
             max_calls: Some(max_calls),
+            window_size,
         })
+    }
+
+    /// Total window length in seconds: `window_unit` seconds multiplied by `window_size`.
+    pub fn window_seconds(&self) -> Option<i64> {
+        self.window_unit
+            .map(|unit| unit.window_seconds() * self.window_size.max(1))
     }
 }
 
@@ -301,6 +312,10 @@ fn default_max_message_length() -> usize {
 
 fn default_max_steer_count() -> usize {
     4
+}
+
+fn default_message_rate_limit_window_size() -> i64 {
+    1
 }
 
 fn default_qq_chat_default_tools_enabled() -> HashMap<String, bool> {

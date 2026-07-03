@@ -278,7 +278,6 @@
         <thead>
           <tr>
             <th>用户</th>
-            <th>群组</th>
             <th>规则来源</th>
             <th>窗口</th>
             <th>用量</th>
@@ -287,18 +286,13 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="item in qqChatRateLimit.items" :key="`${item.sender_id}-${item.scope_type}-${item.scope_key}-${item.group_id || 'private'}`">
+          <tr v-for="item in qqChatRateLimit.items" :key="`${item.sender_id}-${item.scope_type}-${item.scope_key}`">
             <td>
               <div>{{ item.sender_name || "未知用户" }}</div>
               <div class="muted" style="font-size:11px;">{{ item.sender_id }}</div>
             </td>
-            <td>
-              <template v-if="item.group_name">{{ item.group_name }}</template>
-              <template v-else-if="item.group_id">{{ item.group_id }}</template>
-              <span v-else class="muted">—</span>
-            </td>
             <td>{{ formatRateLimitScope(item.scope_type, item.scope_key) }}</td>
-            <td>{{ formatRateLimitWindow(item.window_unit) }}</td>
+            <td>{{ formatRateLimitWindow(item.window_unit, item.window_size) }}</td>
             <td>{{ formatRateLimitUsage(item.used_calls, item.max_calls, item.unlimited) }}</td>
             <td>{{ item.updated_at }}</td>
             <td>

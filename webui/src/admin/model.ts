@@ -166,6 +166,7 @@ export type QqChatMessageRateLimitWindowUnit = "minute" | "hour" | "day";
 export type QqChatMessageRateLimitRuleFormItem = {
   unlimited: boolean;
   window_unit: QqChatMessageRateLimitWindowUnit;
+  window_size: number;
   max_calls: number;
 };
 
@@ -288,6 +289,7 @@ export function defaultQqChatMessageRateLimitRule(): QqChatMessageRateLimitRuleF
   return {
     unlimited: false,
     window_unit: "day",
+    window_size: 1,
     max_calls: 20,
   };
 }
@@ -451,11 +453,15 @@ function normalizeQqChatMessageRateLimitRule(
     return {
       unlimited: true,
       window_unit: "day",
+      window_size: 1,
       max_calls: 1,
     };
   }
   const windowUnit = String(source.window_unit ?? "").trim();
   const maxCalls = Number(source.max_calls ?? 0);
+  const rawWindowSize = Number(source.window_size ?? 1);
+  const windowSize =
+    Number.isFinite(rawWindowSize) && rawWindowSize > 0 ? Math.trunc(rawWindowSize) : 1;
   if (
     (windowUnit !== "minute" && windowUnit !== "hour" && windowUnit !== "day") ||
     !Number.isFinite(maxCalls) ||
@@ -466,6 +472,7 @@ function normalizeQqChatMessageRateLimitRule(
   return {
     unlimited: false,
     window_unit: windowUnit as QqChatMessageRateLimitWindowUnit,
+    window_size: windowSize,
     max_calls: maxCalls,
   };
 }
@@ -473,16 +480,22 @@ function normalizeQqChatMessageRateLimitRule(
 function buildQqChatMessageRateLimitRulePayload(
   value: QqChatMessageRateLimitRuleFormItem,
 ): Record<string, unknown> {
+  const windowSize =
+    Number.isFinite(value.window_size) && value.window_size > 0
+      ? Math.trunc(value.window_size)
+      : 1;
   if (value.unlimited) {
     return {
       unlimited: true,
       window_unit: null,
+      window_size: 1,
       max_calls: null,
     };
   }
   return {
     unlimited: false,
     window_unit: value.window_unit,
+    window_size: windowSize,
     max_calls: Number.isFinite(value.max_calls) && value.max_calls > 0 ? value.max_calls : null,
   };
 }
