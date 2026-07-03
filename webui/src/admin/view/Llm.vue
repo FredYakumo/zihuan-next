@@ -350,3 +350,7 @@ const {
   formatTime,
 } = useLlm();
 </script>
+
+<style scoped lang="scss">
+@use "../styles/connections" as *;
+</style>
