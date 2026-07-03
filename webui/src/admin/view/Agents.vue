@@ -717,9 +717,15 @@
     
     <div v-if="showDefaultToolEditModal" class="service-edit-modal-backdrop" style="z-index: 70" @click.stop>
       <div class="service-edit-modal default-tool-edit-modal" @click.stop>
-        <div class="service-edit-modal-header">
+        <div class="service-edit-modal-header default-tool-edit-modal-header">
           <h3 style="margin: 0">编辑默认工具</h3>
-          <button class="btn ghost" @click="closeDefaultToolEditModal">关闭</button>
+          <button
+            class="service-edit-modal-close"
+            aria-label="关闭"
+            @click="closeDefaultToolEditModal"
+          >
+            <CloseIcon />
+          </button>
         </div>
         <div class="service-edit-modal-body">
           <div class="editor-card">
@@ -2138,6 +2144,7 @@
 </template>
 
 <script setup lang="ts">
+import { CloseIcon } from "tdesign-icons-vue-next";
 import { useAgents } from "../composables/useAgents";
 
 const {
