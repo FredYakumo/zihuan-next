@@ -743,13 +743,16 @@ async function syncToolFromGraph(
 }
 
 function handleToolTargetTypeChange(tool: ServiceFormState["tools"][number]) {
+  if (tool.implementation !== "node_graph") {
+    return;
+  }
   if (tool.targetType === "workflow_set" && tool.workflowName) {
     applyWorkflowSetMetadata(tool);
   }
 }
 
 function applyWorkflowSetMetadata(tool: ServiceFormState["tools"][number]) {
-  if (tool.targetType !== "workflow_set" || !tool.workflowName) {
+  if (tool.implementation !== "node_graph" || tool.targetType !== "workflow_set" || !tool.workflowName) {
     return;
   }
   const workflow = workflows.value.find(

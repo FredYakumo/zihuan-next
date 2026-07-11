@@ -1,5 +1,9 @@
 use std::collections::{HashMap, HashSet};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use ims_bot_adapter::adapter::shared_from_handle;
 use ims_bot_adapter::models::MessageType;
@@ -13,8 +17,8 @@ use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_graph_engine::brain_tool_spec::{
     brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition, BrainToolImplementation,
-    BuiltInBrainToolKind, ToolParamDef, BRAIN_TOOL_FIXED_CONTENT_INPUT, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
-    QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
+    BuiltInBrainToolKind, PythonScriptToolConfig, ToolParamDef, BRAIN_TOOL_FIXED_CONTENT_INPUT,
+    QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_graph_engine::function_graph::{
     sync_function_subgraph_signature, FunctionPortDef, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,
@@ -207,7 +211,44 @@ fn validate_tool_implementation(tool: &BrainToolDefinition) -> Result<()> {
                 tool.name.trim()
             ))),
         },
+        BrainToolImplementation::PythonScript => {
+            let python_config = tool.python_config().ok_or_else(|| {
+                Error::ValidationError(format!(
+                    "Tool '{}' 使用 python_script implementation 时必须声明 python_config",
+                    tool.name.trim()
+                ))
+            })?;
+            validate_python_tool_config(tool.name.trim(), python_config)
+        }
     }
+}
+
+fn validate_python_tool_config(tool_name: &str, config: &PythonScriptToolConfig) -> Result<()> {
+    if config.script_path.trim().is_empty() {
+        return Err(Error::ValidationError(format!(
+            "Tool '{}' 的 python script_path 不能为空",
+            tool_name
+        )));
+    }
+    if !config.script_path.trim().ends_with(".py") {
+        return Err(Error::ValidationError(format!(
+            "Tool '{}' 的 python script_path 必须指向 .py 文件",
+            tool_name
+        )));
+    }
+    if config.module_entry.trim().is_empty() {
+        return Err(Error::ValidationError(format!(
+            "Tool '{}' 的 python module_entry 不能为空",
+            tool_name
+        )));
+    }
+    if config.timeout_secs == 0 {
+        return Err(Error::ValidationError(format!(
+            "Tool '{}' 的 python timeout_secs 必须大于 0",
+            tool_name
+        )));
+    }
+    Ok(())
 }
 
 pub fn validate_tool_definitions(
@@ -405,7 +446,10 @@ impl ToolSubgraphRunner {
         let builtin_arguments = Value::Object(tool_runtime_values.clone());
 
         let mut runtime_values = self.shared_runtime_values.lock().unwrap().clone();
-        runtime_values.insert(BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(), DataValue::String(tool_call_content));
+        runtime_values.insert(
+            BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
+            DataValue::String(tool_call_content.clone()),
+        );
         if self.owner_node_type == QQ_AGENT_TOOL_OWNER_TYPE {
             for fixed_name in [
                 BRAIN_TOOL_FIXED_CONTENT_INPUT,
@@ -443,35 +487,7 @@ impl ToolSubgraphRunner {
 
         let input_signature = brain_tool_input_signature(&self.owner_node_type, &self.shared_inputs, tool);
         if !tool.uses_subgraph() {
-            let result = match tool.builtin_kind() {
-                Some(BuiltInBrainToolKind::ImageUnderstand) => {
-                    execute_image_understand_tool(&builtin_arguments, &runtime_values)
-                }
-                None => Err(self.wrap_error(format!("Tool '{}' missing built_in_kind", tool.name))),
-            }?;
-
-            return match self.result_mode {
-                ToolResultMode::JsonObject => {
-                    let output = tool
-                        .outputs
-                        .first()
-                        .ok_or_else(|| self.wrap_error(format!("Tool '{}' 必须声明一个 String 输出", tool.name)))?;
-                    let result_payload =
-                        Value::Object(Map::from_iter([(output.name.clone(), Value::String(result))])).to_string();
-                    info!(
-                        "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
-                        self.node_id, tool.name, result_payload
-                    );
-                    Ok(result_payload)
-                }
-                ToolResultMode::SingleString => {
-                    info!(
-                        "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
-                        self.node_id, tool.name, result
-                    );
-                    Ok(result)
-                }
-            };
+            return self.run_non_subgraph_tool(tool, &tool_call_content, &builtin_arguments, &runtime_values);
         }
 
         let mut subgraph = tool.subgraph.clone();
@@ -570,5 +586,269 @@ impl ToolSubgraphRunner {
                 }
             }
         }
+    }
+
+    fn run_non_subgraph_tool(
+        &self,
+        tool: &BrainToolDefinition,
+        tool_call_content: &str,
+        builtin_arguments: &Value,
+        runtime_values: &HashMap<String, DataValue>,
+    ) -> Result<String> {
+        match tool.implementation {
+            BrainToolImplementation::BuiltIn => {
+                let result = match tool.builtin_kind() {
+                    Some(BuiltInBrainToolKind::ImageUnderstand) => {
+                        execute_image_understand_tool(builtin_arguments, runtime_values)
+                    }
+                    None => Err(self.wrap_error(format!("Tool '{}' missing built_in_kind", tool.name))),
+                }?;
+                self.format_scalar_result(tool, result)
+            }
+            BrainToolImplementation::PythonScript => {
+                let result = self.run_python_script_tool(tool, tool_call_content, builtin_arguments, runtime_values)?;
+                self.format_python_result(tool, result)
+            }
+            BrainToolImplementation::NodeGraph => {
+                Err(self.wrap_error(format!("Tool '{}' 非预期地进入了非子图分支", tool.name)))
+            }
+        }
+    }
+
+    fn format_scalar_result(&self, tool: &BrainToolDefinition, result: String) -> Result<String> {
+        match self.result_mode {
+            ToolResultMode::JsonObject => {
+                let output = tool
+                    .outputs
+                    .first()
+                    .ok_or_else(|| self.wrap_error(format!("Tool '{}' 必须声明一个 String 输出", tool.name)))?;
+                let result_payload =
+                    Value::Object(Map::from_iter([(output.name.clone(), Value::String(result))])).to_string();
+                info!(
+                    "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
+                    self.node_id, tool.name, result_payload
+                );
+                Ok(result_payload)
+            }
+            ToolResultMode::SingleString => {
+                info!(
+                    "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
+                    self.node_id, tool.name, result
+                );
+                Ok(result)
+            }
+        }
+    }
+
+    fn format_python_result(&self, tool: &BrainToolDefinition, result: Value) -> Result<String> {
+        match self.result_mode {
+            ToolResultMode::JsonObject => {
+                let object = result.as_object().ok_or_else(|| {
+                    self.wrap_error(format!("Tool '{}' 的 python 返回 result 必须是对象", tool.name))
+                })?;
+                let mut result_payload = Map::new();
+                for port in &tool.outputs {
+                    let value = object.get(&port.name).ok_or_else(|| {
+                        self.wrap_error(format!("Tool '{}' 输出 '{}' 未在 python result 中提供", tool.name, port.name))
+                    })?;
+                    let parsed = data_value_from_json_with_declared_type(port, value)?;
+                    result_payload.insert(port.name.clone(), parsed.to_json());
+                }
+                let encoded = Value::Object(result_payload).to_string();
+                info!(
+                    "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
+                    self.node_id, tool.name, encoded
+                );
+                Ok(encoded)
+            }
+            ToolResultMode::SingleString => {
+                let text = result.as_str().ok_or_else(|| {
+                    self.wrap_error(format!("Tool '{}' 的 python 返回 result 必须是字符串", tool.name))
+                })?;
+                info!(
+                    "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
+                    self.node_id, tool.name, text
+                );
+                Ok(text.to_string())
+            }
+        }
+    }
+
+    fn run_python_script_tool(
+        &self,
+        tool: &BrainToolDefinition,
+        tool_call_content: &str,
+        builtin_arguments: &Value,
+        runtime_values: &HashMap<String, DataValue>,
+    ) -> Result<Value> {
+        let python_config = tool
+            .python_config()
+            .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 python_config", tool.name)))?;
+        let request = self.build_python_request(tool_call_content, builtin_arguments, runtime_values);
+        let raw = self.execute_python_process(tool, python_config, &request)?;
+        let response: Value = serde_json::from_str(&raw)
+            .map_err(|e| self.wrap_error(format!("Tool '{}' 的 python 输出不是合法 JSON: {e}", tool.name)))?;
+        let ok = response.get("ok").and_then(Value::as_bool).unwrap_or(false);
+        if !ok {
+            let error = response
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("python tool returned unknown error");
+            return Err(self.wrap_error(format!("Tool '{}' python 执行失败: {}", tool.name, error)));
+        }
+        response
+            .get("result")
+            .cloned()
+            .ok_or_else(|| self.wrap_error(format!("Tool '{}' 的 python 输出缺少 result 字段", tool.name)))
+    }
+
+    fn build_python_request(
+        &self,
+        tool_call_content: &str,
+        builtin_arguments: &Value,
+        runtime_values: &HashMap<String, DataValue>,
+    ) -> Value {
+        let shared_input_names = self
+            .shared_inputs
+            .iter()
+            .map(|port| port.name.as_str())
+            .collect::<HashSet<_>>();
+        let fixed_input_names = fixed_tool_runtime_inputs(&self.owner_node_type)
+            .into_iter()
+            .map(|port| port.name)
+            .collect::<HashSet<_>>();
+
+        let mut shared_inputs = Map::new();
+        let mut fixed_runtime_inputs = Map::new();
+        for (key, value) in runtime_values {
+            if shared_input_names.contains(key.as_str()) {
+                shared_inputs.insert(key.clone(), value.to_json());
+            } else if fixed_input_names.contains(key) {
+                fixed_runtime_inputs.insert(key.clone(), value.to_json());
+            }
+        }
+
+        json!({
+            "call_content": tool_call_content,
+            "arguments": builtin_arguments,
+            "parameters": self.definition.parameters,
+            "outputs": self.definition.outputs,
+            "shared_inputs": shared_inputs,
+            "fixed_runtime_inputs": fixed_runtime_inputs,
+            "owner_node_type": self.owner_node_type,
+        })
+    }
+
+    fn execute_python_process(
+        &self,
+        tool: &BrainToolDefinition,
+        config: &PythonScriptToolConfig,
+        request: &Value,
+    ) -> Result<String> {
+        let workspace_root = std::env::current_dir()
+            .map_err(|e| self.wrap_error(format!("Tool '{}' 无法获取当前工作目录: {e}", tool.name)))?;
+        let script_path = resolve_path(&workspace_root, &config.script_path);
+        if !script_path.exists() {
+            return Err(self.wrap_error(format!(
+                "Tool '{}' 的 python 脚本不存在: {}",
+                tool.name,
+                script_path.display()
+            )));
+        }
+
+        let bootstrap = workspace_root.join("utils").join("python_tool_runtime.py");
+        if !bootstrap.exists() {
+            return Err(self.wrap_error(format!(
+                "Tool '{}' 缺少 python bootstrap: {}",
+                tool.name,
+                bootstrap.display()
+            )));
+        }
+
+        let mut command = match config.python_mode {
+            zihuan_graph_engine::brain_tool_spec::PythonToolMode::UvProject => {
+                let mut cmd = Command::new("uv");
+                cmd.arg("run").arg("python");
+                cmd
+            }
+            zihuan_graph_engine::brain_tool_spec::PythonToolMode::VenvPython => {
+                let venv_python = workspace_root.join(".venv").join("Scripts").join("python.exe");
+                let executable = if venv_python.exists() {
+                    venv_python
+                } else {
+                    PathBuf::from("python")
+                };
+                Command::new(executable)
+            }
+        };
+
+        command
+            .arg(&bootstrap)
+            .arg("--script")
+            .arg(&script_path)
+            .arg("--entry")
+            .arg(&config.module_entry)
+            .current_dir(&workspace_root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = command
+            .spawn()
+            .map_err(|e| self.wrap_error(format!("Tool '{}' 启动 python 进程失败: {e}", tool.name)))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            let payload = serde_json::to_vec(request)
+                .map_err(|e| self.wrap_error(format!("Tool '{}' 序列化 python 请求失败: {e}", tool.name)))?;
+            stdin
+                .write_all(&payload)
+                .map_err(|e| self.wrap_error(format!("Tool '{}' 写入 python stdin 失败: {e}", tool.name)))?;
+        }
+
+        let deadline = Instant::now() + Duration::from_secs(config.timeout_secs);
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => {
+                    if Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(self.wrap_error(format!(
+                            "Tool '{}' 的 python 执行超时（{} 秒）",
+                            tool.name, config.timeout_secs
+                        )));
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(e) => {
+                    return Err(self.wrap_error(format!("Tool '{}' 等待 python 进程失败: {e}", tool.name)));
+                }
+            }
+        }
+
+        let output = child
+            .wait_with_output()
+            .map_err(|e| self.wrap_error(format!("Tool '{}' 读取 python 输出失败: {e}", tool.name)))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(self.wrap_error(format!(
+                "Tool '{}' 的 python 进程退出失败: {}",
+                tool.name,
+                if stderr.is_empty() { "unknown error".to_string() } else { stderr }
+            )));
+        }
+
+        let stdout = String::from_utf8(output.stdout)
+            .map_err(|e| self.wrap_error(format!("Tool '{}' 的 python stdout 不是有效 UTF-8: {e}", tool.name)))?;
+        Ok(stdout)
+    }
+}
+
+fn resolve_path(root: &Path, raw: &str) -> PathBuf {
+    let path = PathBuf::from(raw);
+    if path.is_absolute() {
+        path
+    } else {
+        root.join(path)
     }
 }

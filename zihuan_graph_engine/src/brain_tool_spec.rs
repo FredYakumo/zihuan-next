@@ -19,12 +19,40 @@ pub enum BrainToolImplementation {
     #[default]
     NodeGraph,
     BuiltIn,
+    PythonScript,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum BuiltInBrainToolKind {
     ImageUnderstand,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PythonToolMode {
+    #[default]
+    UvProject,
+    VenvPython,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PythonScriptToolConfig {
+    pub script_path: String,
+    #[serde(default = "default_python_module_entry")]
+    pub module_entry: String,
+    #[serde(default)]
+    pub python_mode: PythonToolMode,
+    #[serde(default = "default_python_timeout_secs")]
+    pub timeout_secs: u64,
+}
+
+fn default_python_module_entry() -> String {
+    "run_tool".to_string()
+}
+
+fn default_python_timeout_secs() -> u64 {
+    60
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -54,6 +82,8 @@ pub struct BrainToolDefinition {
     pub implementation: BrainToolImplementation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub built_in_kind: Option<BuiltInBrainToolKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub python_config: Option<PythonScriptToolConfig>,
     #[serde(default)]
     pub parameters: Vec<ToolParamDef>,
     #[serde(default)]
@@ -82,6 +112,10 @@ impl BrainToolDefinition {
 
     pub fn builtin_kind(&self) -> Option<BuiltInBrainToolKind> {
         self.built_in_kind
+    }
+
+    pub fn python_config(&self) -> Option<&PythonScriptToolConfig> {
+        self.python_config.as_ref()
     }
 
     pub fn output_boundary_node_id() -> &'static str {

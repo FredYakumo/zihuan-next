@@ -6,10 +6,12 @@ import { cloneDataTypeMetaData, dataTypeSelect, parseDisplayDataType } from "./d
 import { ensureToolSubgraphSignature } from "./tool_subgraph_utils";
 import type { DataTypeMetaData } from "../../api/types";
 import type {
+  BrainToolImplementation,
   BrainToolDefinition,
   EmbeddedFunctionConfig,
   FunctionPortDef,
   LLMMessageItem,
+  PythonScriptToolConfig,
   QQMessageItem,
   ToolParamDef,
 } from "./types";
@@ -456,7 +458,14 @@ export function openBrainToolsEditor(
         id: `tool_${Date.now()}`,
         name: `tool_${tools.length + 1}`,
         description: "",
+        implementation: "node_graph",
         run_duration: "Short",
+        python_config: {
+          script_path: "",
+          module_entry: "run_tool",
+          python_mode: "uv_project",
+          timeout_secs: 60,
+        },
         parameters: [],
         outputs: isQqMessageAgent ? [{ name: "result", data_type: "String" }] : [],
         subgraph: {
@@ -493,9 +502,12 @@ export function openBrainToolsEditor(
     saveBtn.addEventListener("click", async () => {
       try {
         const sharedInputsToSave = readSharedInputs();
-        const toolsToSave = tools.map((tool) =>
-          ensureToolSubgraphSignature(nodeDef.node_type, sharedInputsToSave, tool)
-        );
+        const toolsToSave = tools.map((tool) => {
+          if ((tool.implementation ?? "node_graph") === "node_graph") {
+            return ensureToolSubgraphSignature(nodeDef.node_type, sharedInputsToSave, tool);
+          }
+          return tool;
+        });
         await graphs.updateNode(sessionId, nodeDef.id, {
           inline_values: {
             tools_config: toolsToSave as unknown as unknown[],
@@ -576,6 +588,110 @@ export function openBrainToolsEditor(
     });
     card.appendChild(runDurationLabel);
     card.appendChild(runDurationSelect);
+
+    const implementationLabel = document.createElement("label");
+    implementationLabel.textContent = "实现类型";
+    const implementationSelect = document.createElement("select");
+    const currentImplementation = tool.implementation ?? "node_graph";
+    [
+      { value: "node_graph", label: "node_graph" },
+      { value: "python_script", label: "python_script" },
+    ].forEach((option) => {
+      const opt = document.createElement("option");
+      opt.value = option.value;
+      opt.textContent = option.label;
+      if (currentImplementation === option.value) {
+        opt.selected = true;
+      }
+      implementationSelect.appendChild(opt);
+    });
+    implementationSelect.addEventListener("change", () => {
+      const nextImplementation = implementationSelect.value as BrainToolImplementation;
+      tools[idx].implementation = nextImplementation;
+      if (nextImplementation === "python_script" && !tools[idx].python_config) {
+        tools[idx].python_config = {
+          script_path: "",
+          module_entry: "run_tool",
+          python_mode: "uv_project",
+          timeout_secs: 60,
+        };
+      }
+      close();
+      openBrainToolsEditor(
+        { ...nodeDef, inline_values: { ...nodeDef.inline_values, tools_config: tools, shared_inputs: readSharedInputs() } },
+        sessionId,
+        onSaved,
+        onEditToolSubgraph,
+      );
+    });
+    card.appendChild(implementationLabel);
+    card.appendChild(implementationSelect);
+
+    const pythonConfig = (tool.python_config ?? {
+      script_path: "",
+      module_entry: "run_tool",
+      python_mode: "uv_project",
+      timeout_secs: 60,
+    }) as PythonScriptToolConfig;
+    if ((tool.implementation ?? "node_graph") === "python_script") {
+      const scriptPathLabel = document.createElement("label");
+      scriptPathLabel.textContent = "脚本路径";
+      const scriptPathInput = document.createElement("input");
+      scriptPathInput.type = "text";
+      scriptPathInput.value = pythonConfig.script_path ?? "";
+      scriptPathInput.placeholder = "utils/python_tools/echo_tool.py";
+      scriptPathInput.addEventListener("change", () => {
+        tools[idx].python_config = { ...pythonConfig, script_path: scriptPathInput.value.trim() };
+      });
+      card.appendChild(scriptPathLabel);
+      card.appendChild(scriptPathInput);
+
+      const entryLabel = document.createElement("label");
+      entryLabel.textContent = "入口函数";
+      const entryInput = document.createElement("input");
+      entryInput.type = "text";
+      entryInput.value = pythonConfig.module_entry ?? "run_tool";
+      entryInput.placeholder = "run_tool";
+      entryInput.addEventListener("change", () => {
+        tools[idx].python_config = { ...pythonConfig, module_entry: entryInput.value.trim() || "run_tool" };
+      });
+      card.appendChild(entryLabel);
+      card.appendChild(entryInput);
+
+      const modeLabel = document.createElement("label");
+      modeLabel.textContent = "Python 模式";
+      const modeSelect = document.createElement("select");
+      [
+        { value: "uv_project", label: "uv_project" },
+        { value: "venv_python", label: "venv_python" },
+      ].forEach((option) => {
+        const opt = document.createElement("option");
+        opt.value = option.value;
+        opt.textContent = option.label;
+        if ((pythonConfig.python_mode ?? "uv_project") === option.value) {
+          opt.selected = true;
+        }
+        modeSelect.appendChild(opt);
+      });
+      modeSelect.addEventListener("change", () => {
+        tools[idx].python_config = { ...pythonConfig, python_mode: modeSelect.value as PythonScriptToolConfig["python_mode"] };
+      });
+      card.appendChild(modeLabel);
+      card.appendChild(modeSelect);
+
+      const timeoutLabel = document.createElement("label");
+      timeoutLabel.textContent = "超时（秒）";
+      const timeoutInput = document.createElement("input");
+      timeoutInput.type = "number";
+      timeoutInput.min = "1";
+      timeoutInput.value = String(pythonConfig.timeout_secs ?? 60);
+      timeoutInput.addEventListener("change", () => {
+        const parsed = parseInt(timeoutInput.value, 10);
+        tools[idx].python_config = { ...pythonConfig, timeout_secs: Number.isFinite(parsed) && parsed > 0 ? parsed : 60 };
+      });
+      card.appendChild(timeoutLabel);
+      card.appendChild(timeoutInput);
+    }
 
     const paramLabel = document.createElement("div");
     paramLabel.className = "zh-section-label";
@@ -677,19 +793,21 @@ export function openBrainToolsEditor(
     }
     card.appendChild(outContainer);
 
-    const editSubBtn = document.createElement("button");
-    editSubBtn.textContent = "↳ 编辑工具子图";
-    editSubBtn.style.marginTop = "6px";
-    editSubBtn.addEventListener("click", () => {
-      tools[idx].name = nameInput.value.trim();
-      tools[idx].description = descInput.value.trim();
-      syncParams();
-      tools[idx].outputs = getOutputs();
-      tools[idx] = ensureToolSubgraphSignature(nodeDef.node_type, readSharedInputs(), tools[idx]);
-      close();
-      onEditToolSubgraph(idx, tools[idx]);
-    });
-    card.appendChild(editSubBtn);
+    if ((tool.implementation ?? "node_graph") === "node_graph") {
+      const editSubBtn = document.createElement("button");
+      editSubBtn.textContent = "↳ 编辑工具子图";
+      editSubBtn.style.marginTop = "6px";
+      editSubBtn.addEventListener("click", () => {
+        tools[idx].name = nameInput.value.trim();
+        tools[idx].description = descInput.value.trim();
+        syncParams();
+        tools[idx].outputs = getOutputs();
+        tools[idx] = ensureToolSubgraphSignature(nodeDef.node_type, readSharedInputs(), tools[idx]);
+        close();
+        onEditToolSubgraph(idx, tools[idx]);
+      });
+      card.appendChild(editSubBtn);
+    }
 
     return card;
   };
