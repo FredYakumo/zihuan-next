@@ -2693,7 +2693,7 @@
     },
     {
       "from_node_id": "3c8eed6f-1604-4864-add8-cee252a22637",
-      "from_port": "mysql_ref",
+      "from_port": "rdb_ref",
       "to_node_id": "deep_search_brain",
       "to_port": "mysql_ref"
     },
