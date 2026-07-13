@@ -5,6 +5,7 @@ use chrono::Local;
 use log::{info, warn};
 
 use zihuan_agent::brain::BrainIterationHook;
+use zihuan_agent::emotion::utils::has_noticeable_emotion_expression;
 use zihuan_agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_agent::utils::build_state_system_prefix_lines;
 
@@ -77,6 +78,11 @@ fn build_merged_steer_user_message(
     session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
+    let style_prompt = if has_noticeable_emotion_expression(session_state, emotion_dimensions) {
+        None
+    } else {
+        style_prompt
+    };
     let merged_prompt = merge_character_and_style_prompt(system_prompt, style_prompt);
     let prefix_lines = build_state_system_prefix_lines(session_state, emotion_dimensions, &merged_prompt);
     let prefix = prefix_lines.join("\n");

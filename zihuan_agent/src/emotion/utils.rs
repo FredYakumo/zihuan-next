@@ -1,6 +1,9 @@
 use crate::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 
+const NOTICEABLE_EMOTION_THRESHOLD: f64 = 20.0;
+const STRONG_EMOTION_THRESHOLD: f64 = 60.0;
+
 /// Formats the current emotion dimension state as a multi-line display string.
 ///
 /// Each line follows the pattern: `{name}: {value}`.
@@ -19,4 +22,61 @@ pub fn emotion_dimensions_snapshot_text(
     } else {
         lines.join("\n")
     }
+}
+
+/// Builds model-facing emotion instructions from configured prompts and current weights.
+/// Raw dimension names and numeric values intentionally never leave this module.
+pub fn emotion_expression_prompt(
+    session_state: &QqChatAgentServiceSessionState,
+    emotion_dimensions: &[QqChatEmotionDimensionConfig],
+) -> String {
+    emotion_prompt_entries(session_state, emotion_dimensions)
+        .into_iter()
+        .map(|(weight, prompt)| {
+            if weight < NOTICEABLE_EMOTION_THRESHOLD {
+                format!("Slightly follow [{prompt}] for output.")
+            } else if weight < STRONG_EMOTION_THRESHOLD {
+                format!("Follow [{prompt}] for output.")
+            } else {
+                format!("Strongly use [{prompt}], must strictly follow [{prompt}] for output.")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Returns whether an emotion instruction is strong enough to take precedence over language style.
+pub fn has_noticeable_emotion_expression(
+    session_state: &QqChatAgentServiceSessionState,
+    emotion_dimensions: &[QqChatEmotionDimensionConfig],
+) -> bool {
+    emotion_prompt_entries(session_state, emotion_dimensions)
+        .into_iter()
+        .any(|(weight, _)| weight >= NOTICEABLE_EMOTION_THRESHOLD)
+}
+
+fn emotion_prompt_entries(
+    session_state: &QqChatAgentServiceSessionState,
+    emotion_dimensions: &[QqChatEmotionDimensionConfig],
+) -> Vec<(f64, String)> {
+    emotion_dimensions
+        .iter()
+        .filter_map(|dimension| {
+            let value = *session_state.emotion_dimensions.get(dimension.name.trim()).unwrap_or(&0.0);
+            if !value.is_finite() || value == 0.0 {
+                return None;
+            }
+
+            let prompt = if value > 0.0 {
+                dimension.positive_prompt.as_deref()
+            } else {
+                dimension.negative_prompt.as_deref()
+            }?
+            .trim();
+            if prompt.is_empty() {
+                return None;
+            }
+            Some((value.abs(), prompt.to_string()))
+        })
+        .collect()
 }

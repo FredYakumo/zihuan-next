@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use ims_bot_adapter::adapter::SharedBotAdapter;
 use log::{info, warn};
 use serde_json::Value;
+use zihuan_agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use zihuan_agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_agent::utils::build_state_system_prefix_lines;
 
@@ -316,6 +317,11 @@ pub(crate) fn build_user_message(
     session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
+    let style_prompt = if has_noticeable_emotion_expression(session_state, emotion_dimensions) {
+        None
+    } else {
+        style_prompt
+    };
     let merged_character_instructions = merge_character_and_style_prompt(character_instructions, style_prompt);
     let state_lines =
         build_state_system_prefix_lines(session_state, emotion_dimensions, &merged_character_instructions);
@@ -442,8 +448,7 @@ pub(crate) fn build_state_delta_lines(
     } else {
         "私聊对象".to_string()
     };
-    let current_emotion =
-        zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text(session_state, emotion_dimensions);
+    let current_emotion = emotion_expression_prompt(session_state, emotion_dimensions);
 
     let previous_group_name = session_state
         .extra_state
@@ -491,7 +496,7 @@ pub(crate) fn build_state_delta_lines(
         }
     }
 
-    if previous_emotion.as_deref() != Some(current_emotion.as_str()) {
+    if !current_emotion.is_empty() && previous_emotion.as_deref() != Some(current_emotion.as_str()) {
         lines.push(format!("你(`{bot_name}`)当前的情绪状态为{current_emotion}。"));
     }
 
@@ -677,21 +682,14 @@ pub(crate) fn build_meta_query_system_prompt(bot_name: &str, style_prompt: Optio
         ));
     }
 
-    if !emotion_text.is_empty() && emotion_text != "[No emotion dimensions]" {
-        prompt.push_str(&format!(
-            "\n[Current Emotion State]\nYour current emotional state is:\n{emotion_text}\n\
-             Reflect this emotional state naturally in your reply tone.\n"
-        ));
+    if !emotion_text.is_empty() {
+        prompt.push_str(&format!("\n[Emotion Expression Instructions]\n{emotion_text}\n"));
     }
 
     prompt
 }
 
-pub(crate) fn build_meta_query_user_message(
-    user_question: &str,
-    function_list: &str,
-    public_info: &str,
-) -> String {
+pub(crate) fn build_meta_query_user_message(user_question: &str, function_list: &str, public_info: &str) -> String {
     format!(
         "The user sent you this message: \"{user_question}\"\n\n\
          [Function List]\n\
