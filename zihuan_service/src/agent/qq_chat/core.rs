@@ -654,6 +654,10 @@ pub(crate) fn collect_available_media_from_brain_output(messages: &[LLMMessage])
     media_by_id
 }
 
+/// Builds the system prompt for the isolated meta-query LLM call (`handle_meta_query_turn`),
+/// which is deliberately kept out of the normal tool-calling Brain loop and receives no tool
+/// specs — this keeps real tool/command names and internal architecture out of the model's
+/// context so they can't leak into a user-facing "what can you do / what model are you" answer.
 pub(crate) fn build_meta_query_system_prompt(bot_name: &str, style_prompt: Option<&str>, emotion_text: &str) -> String {
     let mut prompt = format!(
         "You are the QQ bot `{bot_name}`. The user is asking about your capabilities, functions, or internal information.\n\
