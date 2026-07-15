@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use ims_bot_adapter::adapter::SharedBotAdapter;
 use log::{info, warn};
 use serde_json::Value;
+use zihuan_agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use zihuan_agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_agent::utils::build_state_system_prefix_lines;
 
@@ -316,6 +317,11 @@ pub(crate) fn build_user_message(
     session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
+    let style_prompt = if has_noticeable_emotion_expression(session_state, emotion_dimensions) {
+        None
+    } else {
+        style_prompt
+    };
     let merged_character_instructions = merge_character_and_style_prompt(character_instructions, style_prompt);
     let state_lines =
         build_state_system_prefix_lines(session_state, emotion_dimensions, &merged_character_instructions);
@@ -327,15 +333,15 @@ pub(crate) fn build_user_message(
         build_state_delta_lines(session_state, current_input, bot_name, adapter, emotion_dimensions);
     let now_text = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let current_turn_text = format!(
-        "`当前时间为{now_text}，{sender_name}`向你(`{bot_name}`)发送了一条消息: \"{}\"，你需要对此消息进行回复，或者选择不回复。\n\
-         你还可以使用reply工具来引用一条message_id(或者不引用message_id，代表回复刚才的那个消息)进行回复。\n\
-         你的输出将是直接发送出去的消息文本，不要包含任何系统信息，不要使用markdown形式，必须是自然语言回复用户的文本以及其它系统里提到的占位符。\n\
-         你发送出去的消息中，以下这些占位符会被替换成另外具有实际意义的动作，你可以使用的占位符列表:\n\
-         - @id: 提及某个id的人\n\
-         - @sender: 提及向你发送消息的人\n\
-         - [Image media_id=media_id]: 发送一张图片，你发送出去的消息中这里会被替换为指定media_id的图片\n\
-         - [Image: media_id=media_id]: 与[Image media_id=media_id]一致的写法\n\
-         - [no_reply]: 你选择拒绝，或者不回复这个人的消息",
+        "`The current time is {now_text}, `{sender_name}` sent you (`{bot_name}`) a message: \"{}\". You need to reply to this message, or choose not to reply.\n\
+         You can also use the reply tool to quote a message_id (or omit message_id to reply to the message just received).\n\
+         Your output is the message text that will be sent directly. Do not include any system information, do not use markdown, and it must be natural-language reply text plus any placeholders mentioned elsewhere in the system.\n\
+         In the message you send, the following placeholders will be replaced with other actions that have real effects. The list of placeholders you can use:\n\
+         - @id: mention the person with this id\n\
+         - @sender: mention the person who sent you the message\n\
+         - [Image media_id=media_id]: send an image; this will be replaced with the image for the given media_id in the message you send\n\
+         - [Image: media_id=media_id]: same syntax as [Image media_id=media_id]\n\
+         - [no_reply]: you choose to decline, or not reply to this person's message",
         current_input.current_text_for_prompt(),
     );
 
@@ -345,7 +351,7 @@ pub(crate) fn build_user_message(
         build_image_prompt_section(
             &current_input.current_image_reference_lines,
             llm_supports_multimodal_input,
-            "当前用户消息中的图像",
+            "Images in the current user message",
         )
     };
 
@@ -353,7 +359,7 @@ pub(crate) fn build_user_message(
         let reference_image_section = build_image_prompt_section(
             &current_input.reference_image_reference_lines,
             llm_supports_multimodal_input,
-            "引用消息中的图像",
+            "Images in the referenced message",
         );
         format!(
             "\n\n{REFERENCED_CONTEXT_LABEL}\n{REFERENCE_ONLY_NOTICE}\n{}{reference_image_section}",
@@ -392,7 +398,7 @@ pub(crate) fn build_user_message(
         text_buffer.push_str(&build_image_prompt_section(
             &current_input.current_image_reference_lines,
             llm_supports_multimodal_input,
-            "当前用户消息中的图像",
+            "Images in the current user message",
         ));
     }
     if current_input.has_reference_context() {
@@ -407,7 +413,7 @@ pub(crate) fn build_user_message(
             text_buffer.push_str(&build_image_prompt_section(
                 &current_input.reference_image_reference_lines,
                 llm_supports_multimodal_input,
-                "引用消息中的图像",
+                "Images in the referenced message",
             ));
         }
     }
@@ -442,8 +448,7 @@ pub(crate) fn build_state_delta_lines(
     } else {
         "私聊对象".to_string()
     };
-    let current_emotion =
-        zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text(session_state, emotion_dimensions);
+    let current_emotion = emotion_expression_prompt(session_state, emotion_dimensions);
 
     let previous_group_name = session_state
         .extra_state
@@ -465,34 +470,34 @@ pub(crate) fn build_state_delta_lines(
         if previous_group_name.is_none() {
             if is_group {
                 lines.push(format!(
-                    "你(`{bot_name}`)当前正在`{}`里聊天，你是`{}`里的一位`{}`。",
-                    current_group_name, current_group_name, current_role
+                    "You (`{bot_name}`) are currently chatting in `{}`, and you are a `{}` in `{}`.",
+                    current_group_name, current_role, current_group_name
                 ));
             } else {
-                lines.push(format!("你(`{bot_name}`)当前正在私聊窗口里聊天。"));
+                lines.push(format!("You (`{bot_name}`) are currently chatting in a private message window."));
             }
         } else if is_group {
             lines.push(format!(
-                "现在，群名变成了`{}`，你是`{}`里的一位`{}`。",
-                current_group_name, current_group_name, current_role
+                "Now, the group has changed to `{}`, and you are a `{}` in `{}`.",
+                current_group_name, current_role, current_group_name
             ));
         } else {
-            lines.push(format!("现在，你(`{bot_name}`)回到了私聊窗口里聊天。"));
+            lines.push(format!("Now, you (`{bot_name}`) are back to chatting in the private message window."));
         }
     }
 
     if previous_role.as_deref() != Some(current_role.as_str()) {
         if previous_role.is_none() {
             if !is_group && previous_group_name.is_some() {
-                lines.push(format!("你(`{bot_name}`)当前的身份变成了`{current_role}`。"));
+                lines.push(format!("Your (`{bot_name}`) current role is now `{current_role}`."));
             }
         } else {
-            lines.push(format!("现在，你(`{bot_name}`)的身份变成了`{current_role}`。"));
+            lines.push(format!("Now, your (`{bot_name}`) role has changed to `{current_role}`."));
         }
     }
 
-    if previous_emotion.as_deref() != Some(current_emotion.as_str()) {
-        lines.push(format!("你(`{bot_name}`)当前的情绪状态为{current_emotion}。"));
+    if !current_emotion.is_empty() && previous_emotion.as_deref() != Some(current_emotion.as_str()) {
+        lines.push(format!("Your (`{bot_name}`) current emotional state is {current_emotion}."));
     }
 
     session_state
@@ -649,6 +654,10 @@ pub(crate) fn collect_available_media_from_brain_output(messages: &[LLMMessage])
     media_by_id
 }
 
+/// Builds the system prompt for the isolated meta-query LLM call (`handle_meta_query_turn`),
+/// which is deliberately kept out of the normal tool-calling Brain loop and receives no tool
+/// specs — this keeps real tool/command names and internal architecture out of the model's
+/// context so they can't leak into a user-facing "what can you do / what model are you" answer.
 pub(crate) fn build_meta_query_system_prompt(bot_name: &str, style_prompt: Option<&str>, emotion_text: &str) -> String {
     let mut prompt = format!(
         "You are the QQ bot `{bot_name}`. The user is asking about your capabilities, functions, or internal information.\n\
@@ -677,21 +686,14 @@ pub(crate) fn build_meta_query_system_prompt(bot_name: &str, style_prompt: Optio
         ));
     }
 
-    if !emotion_text.is_empty() && emotion_text != "[No emotion dimensions]" {
-        prompt.push_str(&format!(
-            "\n[Current Emotion State]\nYour current emotional state is:\n{emotion_text}\n\
-             Reflect this emotional state naturally in your reply tone.\n"
-        ));
+    if !emotion_text.is_empty() {
+        prompt.push_str(&format!("\n[Emotion Expression Instructions]\n{emotion_text}\n"));
     }
 
     prompt
 }
 
-pub(crate) fn build_meta_query_user_message(
-    user_question: &str,
-    function_list: &str,
-    public_info: &str,
-) -> String {
+pub(crate) fn build_meta_query_user_message(user_question: &str, function_list: &str, public_info: &str) -> String {
     format!(
         "The user sent you this message: \"{user_question}\"\n\n\
          [Function List]\n\
@@ -752,8 +754,8 @@ fn extract_tavily_link(item: &str) -> Option<String> {
     item.lines().find_map(|line| {
         let trimmed = line.trim();
         trimmed
-            .strip_prefix("链接:")
-            .or_else(|| trimmed.strip_prefix("Link:"))
+            .strip_prefix("Link:")
+            .or_else(|| trimmed.strip_prefix("链接:"))
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned)

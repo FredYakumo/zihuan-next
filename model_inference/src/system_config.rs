@@ -8,7 +8,7 @@ use zihuan_core::tool_runtime::ToolRunDuration;
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::graph_io::NodeGraphDefinition;
 
-use zihuan_graph_engine::brain_tool_spec::ToolParamDef;
+use zihuan_graph_engine::brain_tool_spec::{PythonScriptToolConfig, ToolParamDef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
@@ -179,6 +179,40 @@ pub struct AgentToolConfig {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentToolType {
     NodeGraph(NodeGraphToolConfig),
+    PythonScript(PythonScriptAgentToolConfig),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PythonScriptAgentToolConfig {
+    pub script_path: String,
+    #[serde(default)]
+    pub module_entry: Option<String>,
+    #[serde(default)]
+    pub python_mode: Option<zihuan_graph_engine::brain_tool_spec::PythonToolMode>,
+    #[serde(default)]
+    pub python_runtime: Option<zihuan_core::python_runtime::PythonRuntimeConfig>,
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub parameters: Vec<ToolParamDef>,
+    #[serde(default)]
+    pub outputs: Vec<FunctionPortDef>,
+}
+
+impl PythonScriptAgentToolConfig {
+    pub fn to_runtime_config(&self) -> PythonScriptToolConfig {
+        PythonScriptToolConfig {
+            script_path: self.script_path.clone(),
+            module_entry: self
+                .module_entry
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| "run_tool".to_string()),
+            python_runtime: self.python_runtime.clone(),
+            python_mode: self.python_mode,
+            timeout_secs: self.timeout_secs.unwrap_or(60),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

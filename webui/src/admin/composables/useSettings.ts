@@ -10,6 +10,7 @@ import {
   onThemeChange,
   setTheme,
 } from "../../ui/theme";
+import { logErrorBadgeEnabled, setLogErrorBadgeEnabled } from "../state/logStream";
 
 interface StorageEntry {
   label: string;
@@ -34,6 +35,22 @@ interface StorageInfoResponse {
   data_dir: string;
   storage_entries: StorageEntry[];
   model_groups: ModelGroup[];
+}
+
+type PythonRuntimeKind = "uv_project" | "project_venv" | "custom_executable";
+
+interface PythonRuntimeResponse {
+  config: { kind: PythonRuntimeKind; executable_path?: string | null };
+  available: boolean;
+  command: string | null;
+  executable_path: string | null;
+  version: string | null;
+  diagnostic: string | null;
+}
+
+interface PythonRuntimeSelectionResponse {
+  cancelled: boolean;
+  runtime: PythonRuntimeResponse | null;
 }
 
 
@@ -126,6 +143,44 @@ export function useSettings() {
 
   onMounted(reloadStorageInfo);
 
+  const pythonRuntime = ref<PythonRuntimeResponse | null>(null);
+  const pythonRuntimeLoading = ref(false);
+  const pythonRuntimeChanging = ref(false);
+  const pythonRuntimeError = ref<string | null>(null);
+
+  async function reloadPythonRuntime() {
+    pythonRuntimeLoading.value = true;
+    pythonRuntimeError.value = null;
+    try {
+      const response = await request<PythonRuntimeResponse>("GET", "/settings/python-runtime");
+      pythonRuntime.value = response;
+    } catch (error) {
+      pythonRuntimeError.value = String(error);
+    } finally {
+      pythonRuntimeLoading.value = false;
+    }
+  }
+
+  async function changePythonRuntime() {
+    pythonRuntimeChanging.value = true;
+    pythonRuntimeError.value = null;
+    try {
+      const response = await request<PythonRuntimeSelectionResponse>(
+        "POST",
+        "/settings/python-runtime/select",
+      );
+      if (response.runtime) {
+        pythonRuntime.value = response.runtime;
+      }
+    } catch (error) {
+      pythonRuntimeError.value = String(error);
+    } finally {
+      pythonRuntimeChanging.value = false;
+    }
+  }
+
+  onMounted(reloadPythonRuntime);
+
   function formatBytes(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -184,6 +239,11 @@ export function useSettings() {
     document.body.removeChild(a);
   }
 
+  function handleLogErrorBadgeToggle(event: Event) {
+    const target = event.target as HTMLInputElement;
+    setLogErrorBadgeEnabled(target.checked);
+  }
+
   return {
     themeOptions,
     currentThemeName,
@@ -201,6 +261,12 @@ export function useSettings() {
     modelGroups,
     reloadStorageInfo,
     formatBytes,
+    pythonRuntime,
+    pythonRuntimeLoading,
+    pythonRuntimeChanging,
+    pythonRuntimeError,
+    reloadPythonRuntime,
+    changePythonRuntime,
     restoreFileInput,
     restoreLoading,
     restoreError,
@@ -208,6 +274,8 @@ export function useSettings() {
     triggerRestorePicker,
     handleRestoreFileChange,
     handleExportConfig,
+    logErrorBadgeEnabled,
+    handleLogErrorBadgeToggle,
   };
 }
 

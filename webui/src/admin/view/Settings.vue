@@ -41,6 +41,51 @@
       </div>
     </section>
 
+    <!-- Log notifications -->
+    <section class="panel settings-section">
+      <div class="split-header">
+        <div>
+          <h3>日志提示</h3>
+          <p class="muted">在导航栏"日志"旁显示未读错误数量红点。</p>
+        </div>
+      </div>
+      <label class="field-check">
+        <input type="checkbox" :checked="logErrorBadgeEnabled" @change="handleLogErrorBadgeToggle" />显示错误提示
+      </label>
+    </section>
+
+    <section class="panel settings-section">
+      <div class="split-header">
+        <div>
+          <h3>Python 运行时</h3>
+          <p class="muted">Python 工具默认使用的解释器，可由单个工具覆盖。</p>
+        </div>
+        <button class="btn ghost" :disabled="pythonRuntimeLoading" @click="reloadPythonRuntime">
+          {{ pythonRuntimeLoading ? "检测中…" : "刷新" }}
+        </button>
+      </div>
+
+      <div class="settings-python-body">
+        <div v-if="pythonRuntime" class="settings-python-status">
+          <span class="badge" :class="pythonRuntime.available ? 'badge-ok' : 'badge-missing'">
+            {{ pythonRuntime.available ? "可用" : "不可用" }}
+          </span>
+          <span v-if="pythonRuntime.executable_path" class="settings-path-label">Python 路径</span>
+          <code v-if="pythonRuntime.executable_path" class="settings-path-value">{{ pythonRuntime.executable_path }}</code>
+          <span v-if="pythonRuntime.version" class="muted">{{ pythonRuntime.version }}</span>
+          <span v-if="pythonRuntime.diagnostic" class="settings-python-error">{{ pythonRuntime.diagnostic }}</span>
+        </div>
+        <div v-else-if="pythonRuntimeLoading" class="empty-state">加载中…</div>
+
+        <div class="settings-backup-actions">
+          <button class="btn primary" :disabled="pythonRuntimeChanging" @click="changePythonRuntime">
+            {{ pythonRuntimeChanging ? "选择中…" : "更改" }}
+          </button>
+          <span v-if="pythonRuntimeError" class="settings-python-error">{{ pythonRuntimeError }}</span>
+        </div>
+      </div>
+    </section>
+
     <!-- Data directory -->
     <section class="panel settings-section">
       <div class="split-header">
@@ -164,6 +209,14 @@ const {
   triggerRestorePicker,
   handleRestoreFileChange,
   handleExportConfig,
+  pythonRuntime,
+  pythonRuntimeLoading,
+  pythonRuntimeChanging,
+  pythonRuntimeError,
+  reloadPythonRuntime,
+  changePythonRuntime,
+  logErrorBadgeEnabled,
+  handleLogErrorBadgeToggle,
 } = useSettings();
 </script>
 

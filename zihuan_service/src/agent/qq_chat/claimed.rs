@@ -8,12 +8,12 @@ use model_inference::message_content_utils::{downgrade_messages_for_model, sanit
 
 use zihuan_agent::brain::{Brain, BrainStopReason, LongTaskContext};
 
+use zihuan_agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent_config::qq_chat::current_qq_chat_agent_service_config;
+use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::{InferenceParam, LLMMessage, TokenUsage};
-use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
-use zihuan_agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::steer::message_with_api_style;
 use zihuan_core::task_context::AgentTaskRequest;
 
@@ -32,11 +32,11 @@ use super::super::super::tools::{
     GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool, ModelIdentityContext,
     QqReplyReviewRequest, RememberContentBrainTool, ReplyMessageBrainTool, RunResearchSubagentBrainTool,
     SaveImageBrainTool, SearchMemoryContentBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget,
-    UpdateAgentStateBrainTool, WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
-    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
-    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS, DEFAULT_TOOL_REMEMBER_CONTENT,
-    DEFAULT_TOOL_SAVE_IMAGE, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
-    DEFAULT_TOOL_WEB_SEARCH, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
+    UpdateAgentStateBrainTool, WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
+    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
+    DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS, DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SAVE_IMAGE,
+    DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
+    QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 use storage_handler::AgentMemoryAccessContext;
 
@@ -817,10 +817,7 @@ impl QqChatAgentServiceInner {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
             brain.add_tool(wrap_brain_tool_with_quota(
-                GetAgentPublicInfoBrainTool::new(
-                    current_message.clone(),
-                    build_service_model_list(ctx),
-                ),
+                GetAgentPublicInfoBrainTool::new(current_message.clone(), build_service_model_list(ctx)),
                 tool_quota.clone(),
             ));
         }
@@ -1234,21 +1231,21 @@ impl QqChatAgentServiceInner {
         turn_session_state: &Arc<Mutex<QqChatAgentServiceSessionState>>,
         emotion_dimensions: &[QqChatEmotionDimensionConfig],
     ) -> Result<QqChatServiceTurnResult> {
-        let function_list = crate::command::build_help_text()
-            .unwrap_or_else(|| "暂无可用功能信息。".to_string());
+        let function_list = crate::command::build_help_text().unwrap_or_else(|| "暂无可用功能信息。".to_string());
         let model_list = build_service_model_list(ctx);
         let public_info = format_public_info_message(current_message, &model_list).to_string();
 
-        let style_prompt = ctx
-            .resolved_language_style
-            .as_ref()
-            .map(|item| item.style_prompt.as_str());
-        let emotion_text = {
+        let style_prompt = ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str());
+        let (emotion_prompt, suppress_language_style) = {
             let session = turn_session_state.lock().unwrap();
-            zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text(&session, emotion_dimensions)
+            (
+                zihuan_agent::emotion::utils::emotion_expression_prompt(&session, emotion_dimensions),
+                zihuan_agent::emotion::utils::has_noticeable_emotion_expression(&session, emotion_dimensions),
+            )
         };
+        let style_prompt = if suppress_language_style { None } else { style_prompt };
 
-        let meta_system_prompt = build_meta_query_system_prompt(ctx.bot_name, style_prompt, &emotion_text);
+        let meta_system_prompt = build_meta_query_system_prompt(ctx.bot_name, style_prompt, &emotion_prompt);
         let meta_user_message = build_meta_query_user_message(current_message, &function_list, &public_info);
 
         let meta_messages = vec![

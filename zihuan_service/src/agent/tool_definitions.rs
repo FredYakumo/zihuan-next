@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use model_inference::system_config::{AgentToolConfig, AgentToolType, NodeGraphToolConfig};
+use model_inference::system_config::{
+    AgentToolConfig, AgentToolType, NodeGraphToolConfig, PythonScriptAgentToolConfig,
+};
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::brain_tool_spec::{
     fixed_tool_runtime_inputs, BrainToolDefinition, BrainToolImplementation, ToolParamDef, QQ_AGENT_TOOL_OWNER_TYPE,
@@ -15,6 +17,9 @@ pub fn build_enabled_tool_definitions(tools: &[AgentToolConfig]) -> Result<Vec<B
         match &tool.tool_type {
             AgentToolType::NodeGraph(config) => {
                 definitions.push(build_node_graph_tool_definition(tool, config)?);
+            }
+            AgentToolType::PythonScript(config) => {
+                definitions.push(build_python_script_tool_definition(tool, config)?);
             }
         }
     }
@@ -63,9 +68,52 @@ fn build_node_graph_tool_definition(
         run_duration: tool.run_duration,
         implementation: BrainToolImplementation::NodeGraph,
         built_in_kind: None,
+        python_config: None,
         parameters,
         outputs,
         subgraph,
+    })
+}
+
+fn build_python_script_tool_definition(
+    tool: &AgentToolConfig,
+    config: &PythonScriptAgentToolConfig,
+) -> Result<BrainToolDefinition> {
+    let python_config = config.to_runtime_config();
+    if python_config.script_path.trim().is_empty() {
+        return Err(Error::ValidationError(format!(
+            "agent tool '{}' 的 script_path 不能为空",
+            tool.name
+        )));
+    }
+    if !python_config.script_path.trim().ends_with(".py") {
+        return Err(Error::ValidationError(format!(
+            "agent tool '{}' 的 script_path 必须指向 .py 文件",
+            tool.name
+        )));
+    }
+    if config.outputs.is_empty() {
+        return Err(Error::ValidationError(format!(
+            "agent tool '{}' 的 python_script 必须定义 outputs",
+            tool.name
+        )));
+    }
+
+    for parameter in &config.parameters {
+        validate_python_parameter(tool, parameter)?;
+    }
+
+    Ok(BrainToolDefinition {
+        id: tool.id.clone(),
+        name: tool.name.clone(),
+        description: tool.description.clone(),
+        run_duration: tool.run_duration,
+        implementation: BrainToolImplementation::PythonScript,
+        built_in_kind: None,
+        python_config: Some(python_config),
+        parameters: config.parameters.clone(),
+        outputs: config.outputs.clone(),
+        subgraph: Default::default(),
     })
 }
 
@@ -157,6 +205,23 @@ fn validate_tool_graph_input_port(tool: &AgentToolConfig, port: &FunctionPortDef
         "agent tool '{}' 的节点图输入 '{}' 类型必须是基础类型 int/float/string/boolean，或受支持的保留运行时输入；实际为 {}",
         tool.name, port.name, port.data_type
     )))
+}
+
+fn validate_python_parameter(tool: &AgentToolConfig, param: &ToolParamDef) -> Result<()> {
+    let trimmed = param.name.trim();
+    if trimmed.is_empty() {
+        return Err(Error::ValidationError(format!(
+            "agent tool '{}' 的 python 参数名不能为空",
+            tool.name
+        )));
+    }
+    if reserved_tool_graph_input_type(trimmed).is_some() {
+        return Err(Error::ValidationError(format!(
+            "agent tool '{}' 的 python 参数 '{}' 与保留运行时输入冲突",
+            tool.name, trimmed
+        )));
+    }
+    Ok(())
 }
 
 fn reserved_tool_graph_input_type(name: &str) -> Option<DataType> {

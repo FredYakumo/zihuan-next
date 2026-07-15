@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::connection_manager::{RuntimeConnectionInstanceSummary, RuntimeConnectionStatus};
 use crate::error::{Error, Result};
+use crate::python_runtime::PythonRuntimeConfig;
 use crate::system_config::system_config_file_path;
 
 const CONFIG_ROOT_VERSION: u32 = 2;
@@ -126,6 +127,8 @@ pub struct ConfigRoot {
     pub version: u32,
     #[serde(default)]
     pub configs: ConfigCollections,
+    #[serde(default)]
+    pub python_runtime: PythonRuntimeConfig,
 }
 
 impl Default for ConfigRoot {
@@ -133,6 +136,7 @@ impl Default for ConfigRoot {
         Self {
             version: default_config_root_version(),
             configs: ConfigCollections::default(),
+            python_runtime: PythonRuntimeConfig::default(),
         }
     }
 }
@@ -434,5 +438,12 @@ mod tests {
         assert_eq!(parsed.configs.connections[0].config_id, "conn-1");
         assert_eq!(parsed.configs.llm_refs[0].kind, ConfigKind::LlmRef);
         assert_eq!(parsed.configs.agents[0].kind, ConfigKind::ServiceQqChat);
+    }
+
+    #[test]
+    fn python_runtime_uses_default_when_missing() {
+        let parsed = ConfigRoot::from_value(serde_json::json!({ "version": 2, "configs": {} }))
+            .expect("config root should parse");
+        assert_eq!(parsed.python_runtime, PythonRuntimeConfig::default());
     }
 }

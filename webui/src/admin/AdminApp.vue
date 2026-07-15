@@ -27,6 +27,10 @@
           <RouterLink class="admin-nav-link" to="/services" @click="closeSidebar">Service 管理</RouterLink>
           <RouterLink class="admin-nav-link" to="/graphs" @click="closeSidebar">节点图与工作流</RouterLink>
           <RouterLink class="admin-nav-link" to="/tasks" @click="closeSidebar">任务管理器</RouterLink>
+          <RouterLink class="admin-nav-link" to="/logs" @click="closeSidebar">
+            日志
+            <span v-if="logErrorBadgeEnabled && errorCount > 0" class="admin-nav-badge">{{ errorCount }}</span>
+          </RouterLink>
           <RouterLink class="admin-nav-link" to="/commands" @click="closeSidebar">命令管理</RouterLink>
           <RouterLink class="admin-nav-link" to="/connection-manager" @click="closeSidebar">连接管理器</RouterLink>
           <RouterLink class="admin-nav-link" to="/data-explorer" @click="closeSidebar">数据检索</RouterLink>
@@ -61,6 +65,7 @@
 import { RouterLink, RouterView } from "vue-router";
 import brandLogoSrc from "../assets/brand-icon.png";
 import { useAdminApp } from "./composables/useAdminApp";
+import { errorCount, logErrorBadgeEnabled } from "./state/logStream";
 
 const { isSetupRoute, sidebarOpen, showOverlay, closeSidebar } = useAdminApp();
 </script>

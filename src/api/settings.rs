@@ -6,6 +6,11 @@ use salvo::http::StatusCode;
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::Serialize;
+use tokio::task;
+use zihuan_core::config::ConfigCenter;
+use zihuan_core::python_runtime::PythonRuntimeConfig;
+
+use zihuan_service::python_runtime::check_python_runtime;
 use zip::write::SimpleFileOptions;
 use zip::ZipArchive;
 
@@ -41,6 +46,137 @@ pub struct StorageInfoResponse {
     pub data_dir: String,
     pub storage_entries: Vec<StorageEntry>,
     pub model_groups: Vec<ModelGroup>,
+}
+
+#[derive(Serialize)]
+pub struct PythonRuntimeResponse {
+    pub config: PythonRuntimeConfig,
+    pub available: bool,
+    pub command: Option<String>,
+    pub executable_path: Option<String>,
+    pub version: Option<String>,
+    pub diagnostic: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct PythonRuntimeSelectionResponse {
+    pub cancelled: bool,
+    pub runtime: Option<PythonRuntimeResponse>,
+}
+
+fn python_runtime_response(config: PythonRuntimeConfig) -> PythonRuntimeResponse {
+    let workspace_root = match std::env::current_dir() {
+        Ok(path) => path,
+        Err(error) => {
+            return PythonRuntimeResponse {
+                config,
+                available: false,
+                command: None,
+                executable_path: None,
+                version: None,
+                diagnostic: Some(format!("无法获取当前工作目录: {error}")),
+            };
+        }
+    };
+
+    match check_python_runtime(&workspace_root, &config) {
+        Ok((command, version, executable_path)) => PythonRuntimeResponse {
+            config,
+            available: true,
+            command: Some(command.display()),
+            executable_path: Some(executable_path),
+            version: Some(version),
+            diagnostic: None,
+        },
+        Err(error) => PythonRuntimeResponse {
+            config,
+            available: false,
+            command: None,
+            executable_path: None,
+            version: None,
+            diagnostic: Some(error.to_string()),
+        },
+    }
+}
+
+#[handler]
+pub async fn get_python_runtime(_req: &mut Request, res: &mut Response) {
+    let config = match ConfigCenter::shared().load_root() {
+        Ok(root) => root.python_runtime,
+        Err(error) => {
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            res.render(Json(serde_json::json!({ "error": error.to_string() })));
+            return;
+        }
+    };
+    res.render(Json(python_runtime_response(config)));
+}
+
+#[handler]
+pub async fn update_python_runtime(req: &mut Request, res: &mut Response) {
+    let config: PythonRuntimeConfig = match req.parse_json().await {
+        Ok(config) => config,
+        Err(error) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(serde_json::json!({ "error": error.to_string() })));
+            return;
+        }
+    };
+
+    match save_python_runtime(config) {
+        Ok(runtime) => res.render(Json(runtime)),
+        Err((status, error)) => {
+            res.status_code(status);
+            res.render(Json(serde_json::json!({ "error": error })));
+        }
+    }
+}
+
+#[handler]
+pub async fn select_python_runtime(_req: &mut Request, res: &mut Response) {
+    let path = task::spawn_blocking(|| {
+        tinyfiledialogs::open_file_dialog("选择 Python 可执行文件", "", Some((&["*.exe"], "Python executable")))
+    })
+    .await
+    .unwrap_or(None);
+
+    let Some(path) = path else {
+        res.render(Json(PythonRuntimeSelectionResponse { cancelled: true, runtime: None }));
+        return;
+    };
+
+    let config = PythonRuntimeConfig {
+        kind: zihuan_core::python_runtime::PythonRuntimeKind::CustomExecutable,
+        executable_path: Some(path),
+    };
+    match save_python_runtime(config) {
+        Ok(runtime) => res.render(Json(PythonRuntimeSelectionResponse {
+            cancelled: false,
+            runtime: Some(runtime),
+        })),
+        Err((status, error)) => {
+            res.status_code(status);
+            res.render(Json(serde_json::json!({ "error": error })));
+        }
+    }
+}
+
+fn save_python_runtime(
+    config: PythonRuntimeConfig,
+) -> std::result::Result<PythonRuntimeResponse, (StatusCode, String)> {
+    let workspace_root =
+        std::env::current_dir().map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    check_python_runtime(&workspace_root, &config).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+
+    let mut root = ConfigCenter::shared()
+        .load_root()
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    root.python_runtime = config;
+    ConfigCenter::shared()
+        .save_root(&root)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+
+    Ok(python_runtime_response(root.python_runtime))
 }
 
 fn dir_size(path: &Path) -> u64 {

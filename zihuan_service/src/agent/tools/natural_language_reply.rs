@@ -7,7 +7,7 @@ use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::{InferenceParam, LLMMessage};
 
 use crate::agent::qq_chat::logging::QqChatTaskTrace;
-use zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text;
+use zihuan_agent::emotion::utils::emotion_expression_prompt;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ModelIdentityContext {
@@ -215,8 +215,8 @@ fn build_session_state_snapshot(
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> String {
     format!(
-        "emotion_dimensions: {}; extra_state: {}",
-        emotion_dimensions_snapshot_text(session_state, emotion_dimensions),
+        "emotion_expression_instructions: {}; extra_state: {}",
+        emotion_expression_prompt(session_state, emotion_dimensions),
         serde_json::to_string(&session_state.extra_state).unwrap_or_else(|_| "{}".to_string())
     )
 }

@@ -1,5 +1,13 @@
 import type { NodeGraphDefinition, DataTypeMetaData } from "../../api/types";
 
+export type BrainToolImplementation = "node_graph" | "built_in" | "python_script";
+export type PythonToolMode = "uv_project" | "project_venv" | "custom_executable";
+
+export interface PythonRuntimeConfig {
+  kind: PythonToolMode;
+  executable_path?: string | null;
+}
+
 export interface FunctionPortDef {
   name: string;
   data_type: DataTypeMetaData;
@@ -18,13 +26,25 @@ export interface ToolParamDef {
   name: string;
   data_type: DataTypeMetaData;
   desc: string;
+  required?: boolean;
+}
+
+export interface PythonScriptToolConfig {
+  script_path: string;
+  module_entry: string;
+  python_mode?: PythonToolMode;
+  python_runtime?: PythonRuntimeConfig | null;
+  timeout_secs: number;
 }
 
 export interface BrainToolDefinition {
   id: string;
   name: string;
   description: string;
+  implementation?: BrainToolImplementation;
   run_duration?: "Short" | "Long";
+  built_in_kind?: "image_understand";
+  python_config?: PythonScriptToolConfig | null;
   parameters: ToolParamDef[];
   outputs: FunctionPortDef[];
   subgraph: NodeGraphDefinition;

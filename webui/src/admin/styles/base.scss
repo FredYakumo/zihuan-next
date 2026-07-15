@@ -114,6 +114,9 @@ textarea {
   background: color-mix(in srgb, var(--toolbar-bg) 60%, transparent 40%);
   cursor: pointer;
   place-items: center;
+}
+
+.admin-brand .admin-sidebar-toggle {
   margin-left: auto;
 }
 
@@ -218,6 +221,18 @@ textarea {
 .admin-nav-link:hover {
   background: color-mix(in srgb, var(--toolbar-bg) 60%, transparent 40%);
   color: var(--admin-ink);
+}
+
+.admin-nav-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
 }
 
 .admin-theme-card,

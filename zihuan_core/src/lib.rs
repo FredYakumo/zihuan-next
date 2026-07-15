@@ -13,6 +13,7 @@ pub mod error;
 pub mod ims_bot_adapter;
 pub mod llm;
 pub mod message_part;
+pub mod python_runtime;
 pub mod rag;
 pub mod runtime;
 pub mod setup_wizard;

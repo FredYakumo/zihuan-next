@@ -282,16 +282,20 @@ async fn hot_reload_agents_for_saved_graph(state: Arc<AppState>, broadcast_tx: W
 }
 
 fn agent_uses_saved_graph(agent: &AgentConfig, normalized_saved_path: &str, saved_workflow_name: Option<&str>) -> bool {
-    agent.tools.iter().filter(|tool| tool.enabled).any(|tool| {
-        let AgentToolType::NodeGraph(config) = &tool.tool_type;
-        match config {
-            NodeGraphToolConfig::FilePath { path, .. } => normalize_graph_path(path) == normalized_saved_path,
-            NodeGraphToolConfig::WorkflowSet { name, .. } => {
-                saved_workflow_name.is_some_and(|workflow_name| workflow_name == name.trim())
-            }
-            NodeGraphToolConfig::InlineGraph { .. } => false,
-        }
-    })
+    agent
+        .tools
+        .iter()
+        .filter(|tool| tool.enabled)
+        .any(|tool| match &tool.tool_type {
+            AgentToolType::NodeGraph(config) => match config {
+                NodeGraphToolConfig::FilePath { path, .. } => normalize_graph_path(path) == normalized_saved_path,
+                NodeGraphToolConfig::WorkflowSet { name, .. } => {
+                    saved_workflow_name.is_some_and(|workflow_name| workflow_name == name.trim())
+                }
+                NodeGraphToolConfig::InlineGraph { .. } => false,
+            },
+            AgentToolType::PythonScript(_) => false,
+        })
 }
 
 fn normalize_graph_path(path: &str) -> String {

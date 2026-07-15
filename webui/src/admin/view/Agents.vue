@@ -595,6 +595,13 @@
                     </select>
                   </div>
                   <div class="field">
+                    <label>工具模式</label>
+                    <select v-model="tool.implementation">
+                      <option value="node_graph">node_graph</option>
+                      <option value="python_script">python_script</option>
+                    </select>
+                  </div>
+                  <div v-if="tool.implementation === 'node_graph'" class="field">
                     <label>目标类型</label>
                     <select
                       v-model="tool.targetType"
@@ -622,7 +629,7 @@
                     <div class="muted" style="font-size: 12px">0 或留空表示不限制</div>
                   </div>
                   <div
-                    v-if="tool.targetType === 'workflow_set'"
+                    v-if="tool.implementation === 'node_graph' && tool.targetType === 'workflow_set'"
                     class="field-full"
                   >
                     <label>Workflow Set 名称</label>
@@ -641,7 +648,7 @@
                     </select>
                   </div>
                   <div
-                    v-else-if="tool.targetType === 'file_path'"
+                    v-else-if="tool.implementation === 'node_graph' && tool.targetType === 'file_path'"
                     class="field-full"
                   >
                     <label>文件路径</label>
@@ -650,9 +657,34 @@
                       placeholder="workflow_set/demo.json"
                     />
                   </div>
-                  <div v-else class="field-full">
+                  <div v-else-if="tool.implementation === 'node_graph'" class="field-full">
                     <label>Inline Graph JSON</label>
                     <textarea v-model="tool.inlineGraphJson" />
+                  </div>
+                  <div v-else class="field-full">
+                    <label>Python 脚本路径</label>
+                    <input v-model="tool.pythonScriptPath" placeholder="utils/python_tools/echo_tool.py" />
+                  </div>
+                  <div v-if="tool.implementation === 'python_script'" class="field">
+                    <label>入口函数名</label>
+                    <input v-model="tool.pythonModuleEntry" placeholder="run_tool" />
+                  </div>
+                  <div v-if="tool.implementation === 'python_script'" class="field">
+                    <label>Python 运行时</label>
+                    <select v-model="tool.pythonMode">
+                      <option value="inherit">继承全局设置</option>
+                      <option value="uv_project">uv_project</option>
+                      <option value="project_venv">project_venv</option>
+                      <option value="custom_executable">custom_executable</option>
+                    </select>
+                  </div>
+                  <div v-if="tool.implementation === 'python_script' && tool.pythonMode === 'custom_executable'" class="field-full">
+                    <label>自定义 Python 路径</label>
+                    <input v-model="tool.pythonExecutablePath" placeholder="C:\\Python311\\python.exe" />
+                  </div>
+                  <div v-if="tool.implementation === 'python_script'" class="field">
+                    <label>超时（秒）</label>
+                    <input v-model.number="tool.pythonTimeoutSecs" type="number" min="1" />
                   </div>
                   <div class="field-full">
                     <div
@@ -666,6 +698,7 @@
                       <label style="margin-bottom: 0">Parameters JSON</label>
                       <button
                         v-if="
+                          tool.implementation === 'node_graph' &&
                           tool.targetType === 'workflow_set' &&
                           tool.workflowName
                         "
@@ -1334,6 +1367,13 @@
                     </select>
                   </div>
                   <div class="field">
+                    <label>工具模式</label>
+                    <select v-model="tool.implementation">
+                      <option value="node_graph">node_graph</option>
+                      <option value="python_script">python_script</option>
+                    </select>
+                  </div>
+                  <div v-if="tool.implementation === 'node_graph'" class="field">
                     <label>目标类型</label>
                     <select
                       v-model="tool.targetType"
@@ -1361,7 +1401,7 @@
                     <div class="muted" style="font-size: 12px">0 或留空表示不限制</div>
                   </div>
                   <div
-                    v-if="tool.targetType === 'workflow_set'"
+                    v-if="tool.implementation === 'node_graph' && tool.targetType === 'workflow_set'"
                     class="field-full"
                   >
                     <label>Workflow Set 名称</label>
@@ -1380,7 +1420,7 @@
                     </select>
                   </div>
                   <div
-                    v-else-if="tool.targetType === 'file_path'"
+                    v-else-if="tool.implementation === 'node_graph' && tool.targetType === 'file_path'"
                     class="field-full"
                   >
                     <label>文件路径</label>
@@ -1389,9 +1429,34 @@
                       placeholder="workflow_set/demo.json"
                     />
                   </div>
-                  <div v-else class="field-full">
+                  <div v-else-if="tool.implementation === 'node_graph'" class="field-full">
                     <label>Inline Graph JSON</label>
                     <textarea v-model="tool.inlineGraphJson" />
+                  </div>
+                  <div v-else class="field-full">
+                    <label>Python 脚本路径</label>
+                    <input v-model="tool.pythonScriptPath" placeholder="utils/python_tools/echo_tool.py" />
+                  </div>
+                  <div v-if="tool.implementation === 'python_script'" class="field">
+                    <label>入口函数名</label>
+                    <input v-model="tool.pythonModuleEntry" placeholder="run_tool" />
+                  </div>
+                  <div v-if="tool.implementation === 'python_script'" class="field">
+                    <label>Python 运行时</label>
+                    <select v-model="tool.pythonMode">
+                      <option value="inherit">继承全局设置</option>
+                      <option value="uv_project">uv_project</option>
+                      <option value="project_venv">project_venv</option>
+                      <option value="custom_executable">custom_executable</option>
+                    </select>
+                  </div>
+                  <div v-if="tool.implementation === 'python_script' && tool.pythonMode === 'custom_executable'" class="field-full">
+                    <label>自定义 Python 路径</label>
+                    <input v-model="tool.pythonExecutablePath" placeholder="C:\\Python311\\python.exe" />
+                  </div>
+                  <div v-if="tool.implementation === 'python_script'" class="field">
+                    <label>超时（秒）</label>
+                    <input v-model.number="tool.pythonTimeoutSecs" type="number" min="1" />
                   </div>
                   <div class="field-full">
                     <div
@@ -1405,6 +1470,7 @@
                       <label style="margin-bottom: 0">Parameters JSON</label>
                       <button
                         v-if="
+                          tool.implementation === 'node_graph' &&
                           tool.targetType === 'workflow_set' &&
                           tool.workflowName
                         "
