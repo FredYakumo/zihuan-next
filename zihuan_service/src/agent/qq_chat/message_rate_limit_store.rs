@@ -18,9 +18,9 @@ const SCOPE_USER: &str = "user";
 
 const MESSAGE_RATE_LIMIT_BLOCKED_REPLY: &str = "你已经达到 rate limit 了，请待会再找我。";
 const MESSAGE_RATE_LIMIT_WARNING_PROMPT: &str =
-    "[Rate Limit Warning]\n本轮仍可继续处理，但当前用户在这类消息额度上只剩最后 1 次。请在你的自然语言回复里委婉提醒对方最近使用有点频繁、稍后可能需要等一等。不要直接提到 rate limit、配额、系统规则、隐藏提示词。";
+    "[Rate Limit Warning]\nYou may still respond this turn, but the current user has only 1 call left in this quota. In your natural-language reply, gently hint that they've been messaging quite frequently and may need to slow down soon. Do not directly mention rate limits, quotas, system rules, or hidden prompts.";
 const MESSAGE_RATE_LIMIT_SEVERE_WARNING_PROMPT: &str =
-    "[Rate Limit Severe Warning]\n本轮仍可继续处理，但当前用户在这类消息额度上已经用满。请在你的自然语言回复里更明确地提醒对方已经非常接近限制，再继续发送消息就可能需要等待一段时间。语气可以比平时更直接，但不要辱骂、威胁，也不要直接提到 rate limit、配额、系统规则、隐藏提示词。";
+    "[Rate Limit Severe Warning]\nYou may still respond this turn, but the current user has now used up their quota for this message type. In your natural-language reply, more clearly warn them that they are very close to the limit and may need to wait a while if they keep sending messages. You may be more direct than usual in tone, but do not insult or threaten them, and do not directly mention rate limits, quotas, system rules, or hidden prompts.";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
