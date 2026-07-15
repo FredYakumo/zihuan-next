@@ -10,6 +10,7 @@ import {
   onThemeChange,
   setTheme,
 } from "../../ui/theme";
+import { logErrorBadgeEnabled, setLogErrorBadgeEnabled } from "../state/logStream";
 
 interface StorageEntry {
   label: string;
@@ -238,6 +239,11 @@ export function useSettings() {
     document.body.removeChild(a);
   }
 
+  function handleLogErrorBadgeToggle(event: Event) {
+    const target = event.target as HTMLInputElement;
+    setLogErrorBadgeEnabled(target.checked);
+  }
+
   return {
     themeOptions,
     currentThemeName,
@@ -268,6 +274,8 @@ export function useSettings() {
     triggerRestorePicker,
     handleRestoreFileChange,
     handleExportConfig,
+    logErrorBadgeEnabled,
+    handleLogErrorBadgeToggle,
   };
 }
 

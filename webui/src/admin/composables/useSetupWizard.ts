@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 
 import {
@@ -7,7 +7,6 @@ import {
   type LlmSetupConfig,
   type SetupProgressEvent,
 } from "../../api/client";
-import { setLiveLogConsoleVisible } from "../../ui/live_log_console";
 
 type Step = "mode" | "role" | "environment" | "llm" | "ims_bot_adapter" | "install" | "complete";
 type SetupRole = "chat_assistant" | "code_dev_assistant" | "qq_chat_bot" | "ai_butler";
@@ -16,14 +15,6 @@ type SetupRole = "chat_assistant" | "code_dev_assistant" | "qq_chat_bot" | "ai_b
 export function useSetupWizard() {
   const router = useRouter();
   const step = ref<Step>("mode");
-
-  onMounted(() => {
-    setLiveLogConsoleVisible(false);
-  });
-
-  onUnmounted(() => {
-    setLiveLogConsoleVisible(true);
-  });
 
   const selectedMode = ref<"role" | "detailed" | "skip">("role");
   const selectedRole = ref<SetupRole | null>(null);

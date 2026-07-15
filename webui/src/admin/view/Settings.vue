@@ -41,6 +41,19 @@
       </div>
     </section>
 
+    <!-- Log notifications -->
+    <section class="panel settings-section">
+      <div class="split-header">
+        <div>
+          <h3>日志提示</h3>
+          <p class="muted">在导航栏"日志"旁显示未读错误数量红点。</p>
+        </div>
+      </div>
+      <label class="field-check">
+        <input type="checkbox" :checked="logErrorBadgeEnabled" @change="handleLogErrorBadgeToggle" />显示错误提示
+      </label>
+    </section>
+
     <section class="panel settings-section">
       <div class="split-header">
         <div>
@@ -202,6 +215,8 @@ const {
   pythonRuntimeError,
   reloadPythonRuntime,
   changePythonRuntime,
+  logErrorBadgeEnabled,
+  handleLogErrorBadgeToggle,
 } = useSettings();
 </script>
 

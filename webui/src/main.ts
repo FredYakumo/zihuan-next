@@ -10,6 +10,7 @@ import Llm from "./admin/view/Llm.vue";
 import Agents from "./admin/view/Agents.vue";
 import Graphs from "./admin/view/Graphs.vue";
 import Tasks from "./admin/view/Tasks.vue";
+import Logs from "./admin/view/Logs.vue";
 import Commands from "./admin/view/Commands.vue";
 import Chat from "./admin/view/Chat.vue";
 import DataExplorer from "./admin/view/DataExplorer.vue";
@@ -19,7 +20,7 @@ import "./admin/admin.scss";
 import "./ui/theme.css";
 import { initTheme, loadThemes } from "./ui/theme";
 import { ws } from "./api/ws";
-import { mountLiveLogConsole } from "./ui/live_log_console";
+import { initLogStream } from "./admin/state/logStream";
 import { setup as setupApi } from "./api/client";
 
 async function main() {
@@ -31,7 +32,7 @@ async function main() {
   initTheme();
   await loadThemes();
   ws.connect();
-  mountLiveLogConsole();
+  initLogStream();
 
   const router = createRouter({
     history: createWebHistory(),
@@ -43,6 +44,7 @@ async function main() {
       { path: "/services", component: Agents },
       { path: "/graphs", component: Graphs },
       { path: "/tasks", component: Tasks },
+      { path: "/logs", component: Logs },
       { path: "/commands", component: Commands },
       { path: "/chat", component: Chat, props: (route) => ({ agentId: route.query.agent_id, sessionId: route.query.session_id }) },
       { path: "/data-explorer", component: DataExplorer },
