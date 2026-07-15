@@ -105,7 +105,7 @@ textarea {
 }
 
 .admin-sidebar-toggle {
-  display: none;
+  display: grid;
   width: 40px;
   height: 40px;
   padding: 0;
@@ -118,6 +118,10 @@ textarea {
 
 .admin-brand .admin-sidebar-toggle {
   margin-left: auto;
+}
+
+.admin-sidebar-toggle-floating {
+  display: none;
 }
 
 .admin-hamburger,
@@ -784,6 +788,54 @@ code {
   }
 }
 
+@media (min-width: 901px) {
+  .admin-shell {
+    transition: grid-template-columns 220ms ease;
+  }
+
+  .admin-sidebar {
+    overflow: hidden;
+    transition: padding 220ms ease;
+  }
+
+  .admin-nav-link {
+    white-space: nowrap;
+  }
+
+  .admin-brand {
+    position: relative;
+    padding-right: 52px;
+  }
+
+  .admin-brand .admin-sidebar-toggle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    margin-left: 0;
+  }
+
+  .admin-shell.sidebar-collapsed {
+    grid-template-columns: 0px 1fr;
+  }
+
+  .admin-shell.sidebar-collapsed .admin-sidebar {
+    padding-left: 0;
+    padding-right: 0;
+    border-right: none;
+  }
+
+  .admin-sidebar-toggle-floating {
+    position: fixed;
+    top: 28px;
+    left: 16px;
+    z-index: 60;
+  }
+
+  .admin-shell.sidebar-collapsed .admin-sidebar-toggle-floating {
+    display: grid;
+  }
+}
+
 @media (max-width: 900px) {
   .admin-shell {
     grid-template-columns: 1fr;
@@ -856,10 +908,6 @@ code {
 
   .admin-brand-mark-image {
     border-radius: 10px;
-  }
-
-  .admin-sidebar-toggle {
-    display: grid;
   }
 
   .admin-nav {
