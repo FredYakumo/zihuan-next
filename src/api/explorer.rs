@@ -9,8 +9,8 @@ use sqlx::Row as SqlxRow;
 
 use crate::system_config::load_connections;
 use storage_handler::{
-    build_relational_db_connection_for_connection,
-    create_memory_record_with_vector, delete_memory_record, get_memory_record, list_recent_memory_keys,
+    build_relational_db_connection_for_connection, create_memory_record_with_vector, delete_memory_record,
+    get_memory_record, list_recent_memory_keys,
     resource_resolver::{self, build_rdb_ref},
     search_memory_content_by_vector, update_memory_record_with_vector,
     weaviate::build_weaviate_ref as build_storage_weaviate_ref,

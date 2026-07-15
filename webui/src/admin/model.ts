@@ -35,7 +35,8 @@ export type LlmApiStyle =
   | "open_ai_responses_image_url_object_compat";
 export type ToolImplementation = "node_graph" | "python_script";
 export type ToolTargetType = "workflow_set" | "file_path" | "inline_graph";
-export type PythonToolMode = "uv_project" | "venv_python";
+export type PythonToolMode = "uv_project" | "project_venv" | "custom_executable";
+export type PythonToolRuntimeOverride = "inherit" | PythonToolMode;
 
 export const DEFAULT_MYSQL_MAX_CONNECTIONS = 32;
 export const DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS = 30;
@@ -104,7 +105,8 @@ export interface ToolFormState {
   inlineGraphJson: string;
   pythonScriptPath: string;
   pythonModuleEntry: string;
-  pythonMode: PythonToolMode;
+  pythonMode: PythonToolRuntimeOverride;
+  pythonExecutablePath: string;
   pythonTimeoutSecs: number;
   parametersJson: string;
   outputsJson: string;
@@ -401,7 +403,8 @@ export function defaultToolForm(): ToolFormState {
       '{\n  "nodes": [],\n  "edges": [],\n  "graph_inputs": [],\n  "graph_outputs": [],\n  "hyperparameter_groups": [],\n  "hyperparameters": [],\n  "variables": [],\n  "metadata": { "name": null, "description": null, "version": null }\n}',
     pythonScriptPath: "",
     pythonModuleEntry: "run_tool",
-    pythonMode: "uv_project",
+    pythonMode: "inherit",
+    pythonExecutablePath: "",
     pythonTimeoutSecs: 60,
     parametersJson: "[]",
     outputsJson: "[]",
@@ -761,7 +764,14 @@ export function toolFormFromConfig(tool: ServiceToolConfig): ToolFormState {
     form.implementation = "python_script";
     form.pythonScriptPath = String(toolType.script_path ?? "");
     form.pythonModuleEntry = String(toolType.module_entry ?? "run_tool");
-    form.pythonMode = String(toolType.python_mode ?? "uv_project") as PythonToolMode;
+    const runtime = toolType.python_runtime as Record<string, unknown> | null;
+    const legacyMode = String(toolType.python_mode ?? "");
+    const runtimeMode = String(runtime?.kind ?? legacyMode);
+    form.pythonMode = runtimeMode === "venv_python" ? "project_venv" :
+      (["uv_project", "project_venv", "custom_executable"].includes(runtimeMode)
+        ? runtimeMode as PythonToolMode
+        : "inherit");
+    form.pythonExecutablePath = String(runtime?.executable_path ?? "");
     form.pythonTimeoutSecs = Number(toolType.timeout_secs ?? 60);
   } else {
     form.implementation = "node_graph";
@@ -967,11 +977,16 @@ export function buildToolPayload(form: ToolFormState): ServiceToolConfig {
       type: "python_script",
       script_path: form.pythonScriptPath.trim(),
       module_entry: form.pythonModuleEntry.trim() || "run_tool",
-      python_mode: form.pythonMode,
       timeout_secs: form.pythonTimeoutSecs,
       parameters,
       outputs,
     };
+    if (form.pythonMode !== "inherit") {
+      toolType.python_runtime = {
+        kind: form.pythonMode,
+        executable_path: form.pythonMode === "custom_executable" ? form.pythonExecutablePath.trim() || null : null,
+      };
+    }
   } else {
     if (form.targetType === "workflow_set") {
       toolType = {

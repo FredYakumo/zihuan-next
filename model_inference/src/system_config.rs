@@ -190,6 +190,8 @@ pub struct PythonScriptAgentToolConfig {
     #[serde(default)]
     pub python_mode: Option<zihuan_graph_engine::brain_tool_spec::PythonToolMode>,
     #[serde(default)]
+    pub python_runtime: Option<zihuan_core::python_runtime::PythonRuntimeConfig>,
+    #[serde(default)]
     pub timeout_secs: Option<u64>,
     #[serde(default)]
     pub parameters: Vec<ToolParamDef>,
@@ -206,7 +208,8 @@ impl PythonScriptAgentToolConfig {
                 .clone()
                 .filter(|value| !value.trim().is_empty())
                 .unwrap_or_else(|| "run_tool".to_string()),
-            python_mode: self.python_mode.unwrap_or_default(),
+            python_runtime: self.python_runtime.clone(),
+            python_mode: self.python_mode,
             timeout_secs: self.timeout_secs.unwrap_or(60),
         }
     }

@@ -670,11 +670,17 @@
                     <input v-model="tool.pythonModuleEntry" placeholder="run_tool" />
                   </div>
                   <div v-if="tool.implementation === 'python_script'" class="field">
-                    <label>Python 模式</label>
+                    <label>Python 运行时</label>
                     <select v-model="tool.pythonMode">
+                      <option value="inherit">继承全局设置</option>
                       <option value="uv_project">uv_project</option>
-                      <option value="venv_python">venv_python</option>
+                      <option value="project_venv">project_venv</option>
+                      <option value="custom_executable">custom_executable</option>
                     </select>
+                  </div>
+                  <div v-if="tool.implementation === 'python_script' && tool.pythonMode === 'custom_executable'" class="field-full">
+                    <label>自定义 Python 路径</label>
+                    <input v-model="tool.pythonExecutablePath" placeholder="C:\\Python311\\python.exe" />
                   </div>
                   <div v-if="tool.implementation === 'python_script'" class="field">
                     <label>超时（秒）</label>
@@ -1436,11 +1442,17 @@
                     <input v-model="tool.pythonModuleEntry" placeholder="run_tool" />
                   </div>
                   <div v-if="tool.implementation === 'python_script'" class="field">
-                    <label>Python 模式</label>
+                    <label>Python 运行时</label>
                     <select v-model="tool.pythonMode">
+                      <option value="inherit">继承全局设置</option>
                       <option value="uv_project">uv_project</option>
-                      <option value="venv_python">venv_python</option>
+                      <option value="project_venv">project_venv</option>
+                      <option value="custom_executable">custom_executable</option>
                     </select>
+                  </div>
+                  <div v-if="tool.implementation === 'python_script' && tool.pythonMode === 'custom_executable'" class="field-full">
+                    <label>自定义 Python 路径</label>
+                    <input v-model="tool.pythonExecutablePath" placeholder="C:\\Python311\\python.exe" />
                   </div>
                   <div v-if="tool.implementation === 'python_script'" class="field">
                     <label>超时（秒）</label>

@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod command;
 pub mod nodes;
+pub mod python_runtime;
 mod resource_resolver;
 pub mod scheduled_task;
 pub mod storage;

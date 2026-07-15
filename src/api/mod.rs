@@ -218,6 +218,12 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
         )
         // Settings
         .push(Router::with_path("settings/storage-info").get(settings::get_storage_info))
+        .push(
+            Router::with_path("settings/python-runtime")
+                .get(settings::get_python_runtime)
+                .put(settings::update_python_runtime),
+        )
+        .push(Router::with_path("settings/python-runtime/select").post(settings::select_python_runtime))
         .push(Router::with_path("settings/config-export").get(settings::export_config))
         .push(Router::with_path("settings/config-restore").post(settings::restore_config))
         // Data Explorer

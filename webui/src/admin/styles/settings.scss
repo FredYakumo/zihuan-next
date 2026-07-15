@@ -15,6 +15,29 @@
   gap: 10px;
 }
 
+.settings-python-body {
+  display: grid;
+  gap: 14px;
+  max-width: 720px;
+}
+
+.settings-python-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--admin-bg-soft) 80%, transparent 20%);
+  border: 1px solid var(--admin-border);
+}
+
+.settings-python-error {
+  color: var(--admin-warn);
+  font-size: 13px;
+  word-break: break-word;
+}
+
 .settings-path-row {
   display: flex;
   align-items: center;

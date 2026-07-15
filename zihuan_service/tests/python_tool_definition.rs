@@ -17,6 +17,7 @@ fn python_script_tool_builds_definition() {
             script_path: "utils/python_tools/echo_tool.py".to_string(),
             module_entry: Some("run_tool".to_string()),
             python_mode: None,
+            python_runtime: None,
             timeout_secs: Some(30),
             parameters: vec![zihuan_graph_engine::brain_tool_spec::ToolParamDef {
                 name: "text".to_string(),
@@ -41,6 +42,7 @@ fn python_script_tool_builds_definition() {
     assert_eq!(python_config.script_path, "utils/python_tools/echo_tool.py");
     assert_eq!(python_config.module_entry, "run_tool");
     assert_eq!(python_config.timeout_secs, 30);
+    assert!(python_config.runtime_override().is_none());
 }
 
 #[test]
@@ -55,6 +57,7 @@ fn python_script_tool_rejects_reserved_parameter_name() {
             script_path: "utils/python_tools/echo_tool.py".to_string(),
             module_entry: Some("run_tool".to_string()),
             python_mode: None,
+            python_runtime: None,
             timeout_secs: Some(30),
             parameters: vec![zihuan_graph_engine::brain_tool_spec::ToolParamDef {
                 name: "content".to_string(),

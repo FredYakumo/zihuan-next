@@ -365,10 +365,10 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         LLMMessageContentAsJsonNode, LLMMessageSessionCacheClearNode, LLMMessageSessionCacheGetNode,
         LLMMessageSessionCacheNode, LLMMessageSessionCacheSetNode, LLMMessageToStringNode, MessageContentNode,
         MessageListDataNode, PreviewMessageListNode, PreviewQQMessageListNode, PreviewStringNode, PushBackVecNode,
-        QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode, QQMessageToImageNode,
-        SessionStateClearNode, SessionStateGetNode, SessionStateReleaseNode, SessionStateTryClaimNode, SetVariableNode,
-        StackNode, StringDataNode, StringIsNotEmptyNode, StringToImageMessagePartNode, StringToLLMMessageNode,
-        StringToPlainTextNode, SwitchNode, ToolResultNode,
+        QQMessageListDataNode, QQMessageToImageNode, SessionStateClearNode, SessionStateGetNode,
+        SessionStateReleaseNode, SessionStateTryClaimNode, SetVariableNode, StackNode, StringDataNode,
+        StringIsNotEmptyNode, StringToImageMessagePartNode, StringToLLMMessageNode, StringToPlainTextNode, SwitchNode,
+        ToolResultNode,
     };
 
     register_node!(
@@ -681,13 +681,6 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         "消息存储",
         "释放 sender_id 当前持有的会话占用",
         SessionStateReleaseNode
-    );
-    register_node!(
-        "qq_message_json_output_system_prompt_provider",
-        "QQ消息JSON输出格式Prompt",
-        "消息",
-        "输出固定的 system prompt，要求 LLM 只返回 QQ 消息二维 JSON 数组",
-        QQMessageJsonOutputSystemPromptProviderNode
     );
     register_node!(
         "string_to_image_content_part",

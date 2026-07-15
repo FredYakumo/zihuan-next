@@ -1,7 +1,12 @@
 import type { NodeGraphDefinition, DataTypeMetaData } from "../../api/types";
 
 export type BrainToolImplementation = "node_graph" | "built_in" | "python_script";
-export type PythonToolMode = "uv_project" | "venv_python";
+export type PythonToolMode = "uv_project" | "project_venv" | "custom_executable";
+
+export interface PythonRuntimeConfig {
+  kind: PythonToolMode;
+  executable_path?: string | null;
+}
 
 export interface FunctionPortDef {
   name: string;
@@ -27,7 +32,8 @@ export interface ToolParamDef {
 export interface PythonScriptToolConfig {
   script_path: string;
   module_entry: string;
-  python_mode: PythonToolMode;
+  python_mode?: PythonToolMode;
+  python_runtime?: PythonRuntimeConfig | null;
   timeout_secs: number;
 }
 

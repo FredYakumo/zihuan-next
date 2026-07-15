@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -12,6 +12,7 @@ use serde_json::{json, Map, Value};
 
 use zihuan_agent::brain::{consume_tool_progress_notification, current_task_progress_message};
 use zihuan_core::agent_config::qq_chat::{with_current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
+use zihuan_core::config::ConfigCenter;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::task_context::append_current_task_progress;
@@ -33,6 +34,7 @@ use zihuan_graph_engine::{DataType, DataValue, Port};
 use crate::agent::execute_image_understand_tool;
 use crate::agent::qq_chat::msg_send::{send_notification_text, QqChatServiceSendContext};
 use crate::agent::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
+use crate::python_runtime::resolve_python_runtime;
 
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 
@@ -643,9 +645,9 @@ impl ToolSubgraphRunner {
     fn format_python_result(&self, tool: &BrainToolDefinition, result: Value) -> Result<String> {
         match self.result_mode {
             ToolResultMode::JsonObject => {
-                let object = result.as_object().ok_or_else(|| {
-                    self.wrap_error(format!("Tool '{}' 的 python 返回 result 必须是对象", tool.name))
-                })?;
+                let object = result
+                    .as_object()
+                    .ok_or_else(|| self.wrap_error(format!("Tool '{}' 的 python 返回 result 必须是对象", tool.name)))?;
                 let mut result_payload = Map::new();
                 for port in &tool.outputs {
                     let value = object.get(&port.name).ok_or_else(|| {
@@ -708,11 +710,7 @@ impl ToolSubgraphRunner {
         builtin_arguments: &Value,
         runtime_values: &HashMap<String, DataValue>,
     ) -> Value {
-        let shared_input_names = self
-            .shared_inputs
-            .iter()
-            .map(|port| port.name.as_str())
-            .collect::<HashSet<_>>();
+        let shared_input_names = self.shared_inputs.iter().map(|port| port.name.as_str()).collect::<HashSet<_>>();
         let fixed_input_names = fixed_tool_runtime_inputs(&self.owner_node_type)
             .into_iter()
             .map(|port| port.name)
@@ -765,22 +763,20 @@ impl ToolSubgraphRunner {
             )));
         }
 
-        let mut command = match config.python_mode {
-            zihuan_graph_engine::brain_tool_spec::PythonToolMode::UvProject => {
-                let mut cmd = Command::new("uv");
-                cmd.arg("run").arg("python");
-                cmd
-            }
-            zihuan_graph_engine::brain_tool_spec::PythonToolMode::VenvPython => {
-                let venv_python = workspace_root.join(".venv").join("Scripts").join("python.exe");
-                let executable = if venv_python.exists() {
-                    venv_python
-                } else {
-                    PathBuf::from("python")
-                };
-                Command::new(executable)
+        let runtime_config = match config.runtime_override() {
+            Some(runtime) => runtime,
+            None => {
+                ConfigCenter::shared()
+                    .load_root()
+                    .map_err(|error| {
+                        self.wrap_error(format!("Tool '{}' 无法加载 Python 运行时配置: {error}", tool.name))
+                    })?
+                    .python_runtime
             }
         };
+        let command_spec = resolve_python_runtime(&workspace_root, &runtime_config)
+            .map_err(|error| self.wrap_error(format!("Tool '{}' 无法解析 Python 运行时: {error}", tool.name)))?;
+        let mut command = command_spec.to_command();
 
         command
             .arg(&bootstrap)
@@ -834,7 +830,11 @@ impl ToolSubgraphRunner {
             return Err(self.wrap_error(format!(
                 "Tool '{}' 的 python 进程退出失败: {}",
                 tool.name,
-                if stderr.is_empty() { "unknown error".to_string() } else { stderr }
+                if stderr.is_empty() {
+                    "unknown error".to_string()
+                } else {
+                    stderr
+                }
             )));
         }
 

@@ -11,6 +11,7 @@ import type {
   EmbeddedFunctionConfig,
   FunctionPortDef,
   LLMMessageItem,
+  PythonToolMode,
   PythonScriptToolConfig,
   QQMessageItem,
   ToolParamDef,
@@ -463,7 +464,6 @@ export function openBrainToolsEditor(
         python_config: {
           script_path: "",
           module_entry: "run_tool",
-          python_mode: "uv_project",
           timeout_secs: 60,
         },
         parameters: [],
@@ -612,7 +612,6 @@ export function openBrainToolsEditor(
         tools[idx].python_config = {
           script_path: "",
           module_entry: "run_tool",
-          python_mode: "uv_project",
           timeout_secs: 60,
         };
       }
@@ -630,7 +629,6 @@ export function openBrainToolsEditor(
     const pythonConfig = (tool.python_config ?? {
       script_path: "",
       module_entry: "run_tool",
-      python_mode: "uv_project",
       timeout_secs: 60,
     }) as PythonScriptToolConfig;
     if ((tool.implementation ?? "node_graph") === "python_script") {
@@ -659,25 +657,58 @@ export function openBrainToolsEditor(
       card.appendChild(entryInput);
 
       const modeLabel = document.createElement("label");
-      modeLabel.textContent = "Python 模式";
+      modeLabel.textContent = "Python 运行时";
       const modeSelect = document.createElement("select");
       [
-        { value: "uv_project", label: "uv_project" },
-        { value: "venv_python", label: "venv_python" },
+        { value: "inherit", label: "继承全局设置" },
+        { value: "uv_project", label: "项目 uv" },
+        { value: "project_venv", label: "项目 .venv" },
+        { value: "custom_executable", label: "自定义解释器" },
       ].forEach((option) => {
         const opt = document.createElement("option");
         opt.value = option.value;
         opt.textContent = option.label;
-        if ((pythonConfig.python_mode ?? "uv_project") === option.value) {
+        const configuredMode = (pythonConfig.python_runtime?.kind ?? pythonConfig.python_mode) as string | undefined;
+        const currentMode = configuredMode === "venv_python" ? "project_venv" : configuredMode ?? "inherit";
+        if (currentMode === option.value) {
           opt.selected = true;
         }
         modeSelect.appendChild(opt);
       });
       modeSelect.addEventListener("change", () => {
-        tools[idx].python_config = { ...pythonConfig, python_mode: modeSelect.value as PythonScriptToolConfig["python_mode"] };
+        const runtime = modeSelect.value === "inherit" ? null : { kind: modeSelect.value as PythonToolMode };
+        tools[idx].python_config = { ...pythonConfig, python_runtime: runtime, python_mode: undefined };
+        close();
+        openBrainToolsEditor(
+          { ...nodeDef, inline_values: { ...nodeDef.inline_values, tools_config: tools, shared_inputs: readSharedInputs() } },
+          sessionId,
+          onSaved,
+          onEditToolSubgraph,
+        );
       });
       card.appendChild(modeLabel);
       card.appendChild(modeSelect);
+
+      if (pythonConfig.python_runtime?.kind === "custom_executable") {
+        const executableLabel = document.createElement("label");
+        executableLabel.textContent = "自定义 Python 路径";
+        const executableInput = document.createElement("input");
+        executableInput.type = "text";
+        executableInput.value = pythonConfig.python_runtime.executable_path ?? "";
+        executableInput.placeholder = "C:\\Python311\\python.exe";
+        executableInput.addEventListener("change", () => {
+          tools[idx].python_config = {
+            ...pythonConfig,
+            python_runtime: {
+              kind: "custom_executable",
+              executable_path: executableInput.value.trim() || null,
+            },
+            python_mode: undefined,
+          };
+        });
+        card.appendChild(executableLabel);
+        card.appendChild(executableInput);
+      }
 
       const timeoutLabel = document.createElement("label");
       timeoutLabel.textContent = "超时（秒）";
