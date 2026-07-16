@@ -58,7 +58,7 @@ pub(crate) fn run_emotion_agent(
         llm.api_style(),
     );
 
-    let history = load_history(cache, history_key, history_key);
+    let history = load_history(cache, history_key);
     let compact_result = compact_message_history(llm, history, compact_context_length, &user_message);
     let mut history = compact_result.messages;
     if compact_result.did_compact {

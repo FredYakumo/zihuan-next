@@ -327,10 +327,8 @@ impl QqChatAgentServiceInner {
                         preview.definition.name
                     );
                     if let Some(dispatch_result) = command_registry.dispatch(&cmd_ctx, &current_message) {
-                        let history_key =
-                            conversation_history_key(&bot_id, sender_id, is_group, inference_event.group_id);
-                        let legacy_history_key = sender_id.to_string();
-                        let mut history = load_history(ctx.cache, &history_key, &legacy_history_key);
+                        let history_key = conversation_history_key(sender_id);
+                        let mut history = load_history(ctx.cache, &history_key);
                         let trace = QqChatTaskTrace::new(Local::now());
                         self.execute_command_dispatch(
                             &trace,

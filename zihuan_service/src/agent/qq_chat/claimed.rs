@@ -278,12 +278,7 @@ impl QqChatAgentServiceInner {
         }
 
         if result.inject_to_llm && !has_passthrough {
-            let history_key = conversation_history_key(
-                bot_id,
-                sender_id,
-                matches!(cmd_ctx.channel, CommandChannel::QqChat { is_group: true, .. }),
-                inference_event.group_id,
-            );
+            let history_key = conversation_history_key(sender_id);
             save_history(ctx.cache, &history_key, history.clone());
         }
 
@@ -376,9 +371,8 @@ impl QqChatAgentServiceInner {
             quota.session_state.lock().unwrap().reset();
         }
 
-        let history_key = conversation_history_key(bot_id, sender_id, is_group, inference_event.group_id);
-        let legacy_history_key = sender_id.to_string();
-        let mut history = load_history(ctx.cache, &history_key, &legacy_history_key);
+        let history_key = conversation_history_key(sender_id);
+        let mut history = load_history(ctx.cache, &history_key);
 
         if let Some((command_name, args)) = parse_privileged_command(&raw_user_message) {
             match command_name.as_str() {
@@ -859,7 +853,7 @@ impl QqChatAgentServiceInner {
         current_session_state.sync_emotion_dimensions(&emotion_dimensions);
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
-        let emotion_history_key = emotion_history_key(bot_id, sender_id, is_group, inference_event.group_id);
+        let emotion_history_key = emotion_history_key(sender_id);
         run_emotion_agent(
             ctx.natural_language_reply_llm,
             ctx.cache,
@@ -1044,7 +1038,7 @@ impl QqChatAgentServiceInner {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
             brain.add_tool(wrap_brain_tool_with_quota(
-                GetAgentPublicInfoBrainTool::new(current_message.clone(), build_service_model_list(ctx)),
+                GetAgentPublicInfoBrainTool::new(current_message.clone()),
                 tool_quota.clone(),
             ));
         }
@@ -1455,8 +1449,7 @@ impl QqChatAgentServiceInner {
         emotion_dimensions: &[QqChatEmotionDimensionConfig],
     ) -> Result<QqChatServiceTurnResult> {
         let function_list = crate::command::build_help_text().unwrap_or_else(|| "暂无可用功能信息。".to_string());
-        let model_list = build_service_model_list(ctx);
-        let public_info = format_public_info_message(current_message, &model_list).to_string();
+        let public_info = format_public_info_message(current_message).to_string();
 
         let style_prompt = ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str());
         let (emotion_prompt, suppress_language_style) = {

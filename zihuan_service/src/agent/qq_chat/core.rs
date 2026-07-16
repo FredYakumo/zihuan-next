@@ -75,16 +75,13 @@ impl SideEffectContext for QqCommandSideEffectContext<'_> {
     }
 
     fn start_new_conversation(&self, request: &NewConversationRequest) -> Result<()> {
-        let CommandChannel::QqChat {
-            sender_id, is_group, group_id, ..
-        } = &request.channel
-        else {
+        let CommandChannel::QqChat { sender_id, .. } = &request.channel else {
             return Err(Error::ValidationError(
                 "QQ command context received a non-QQ new conversation request".to_string(),
             ));
         };
 
-        clear_history(self.cache, self.bot_id, sender_id, *is_group, *group_id)
+        clear_history(self.cache, sender_id)
     }
 
     fn send_forward_content(&self, content: &str) -> Result<()> {

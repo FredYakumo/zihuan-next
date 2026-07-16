@@ -9,29 +9,16 @@ use zihuan_graph_engine::data_value::LLMMessageSessionCacheRef;
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 
-pub(crate) fn conversation_history_key(bot_id: &str, sender_id: &str, is_group: bool, group_id: Option<i64>) -> String {
-    if is_group {
-        format!("group:{bot_id}:{}:{sender_id}", group_id.unwrap_or_default())
-    } else {
-        format!("private:{bot_id}:{sender_id}")
-    }
+pub(crate) fn conversation_history_key(sender_id: &str) -> String {
+    sender_id.to_string()
 }
 
-pub(crate) fn emotion_history_key(bot_id: &str, sender_id: &str, is_group: bool, group_id: Option<i64>) -> String {
-    format!("emotion:{}", conversation_history_key(bot_id, sender_id, is_group, group_id))
+pub(crate) fn emotion_history_key(sender_id: &str) -> String {
+    format!("emotion:{sender_id}")
 }
 
-pub(crate) fn load_history(
-    cache: &Arc<LLMMessageSessionCacheRef>,
-    history_key: &str,
-    legacy_key: &str,
-) -> Vec<LLMMessage> {
-    let history = block_async(cache.get_messages(history_key)).unwrap_or_default();
-    if history.is_empty() && history_key != legacy_key {
-        block_async(cache.get_messages(legacy_key)).unwrap_or_default()
-    } else {
-        history
-    }
+pub(crate) fn load_history(cache: &Arc<LLMMessageSessionCacheRef>, history_key: &str) -> Vec<LLMMessage> {
+    block_async(cache.get_messages(history_key)).unwrap_or_default()
 }
 
 pub(crate) fn save_history(cache: &Arc<LLMMessageSessionCacheRef>, history_key: &str, messages: Vec<LLMMessage>) {
@@ -46,23 +33,12 @@ fn clear_history_key(cache: &Arc<LLMMessageSessionCacheRef>, history_key: &str) 
         .map_err(|err| Error::StringError(format!("failed to clear QQ chat history for key '{history_key}': {err}")))
 }
 
-pub(crate) fn clear_history(
-    cache: &Arc<LLMMessageSessionCacheRef>,
-    bot_id: &str,
-    sender_id: &str,
-    is_group: bool,
-    group_id: Option<i64>,
-) -> Result<()> {
-    let history_key = conversation_history_key(bot_id, sender_id, is_group, group_id);
+pub(crate) fn clear_history(cache: &Arc<LLMMessageSessionCacheRef>, sender_id: &str) -> Result<()> {
+    let history_key = conversation_history_key(sender_id);
     clear_history_key(cache, &history_key)?;
 
-    let emotion_history_key = emotion_history_key(bot_id, sender_id, is_group, group_id);
+    let emotion_history_key = emotion_history_key(sender_id);
     clear_history_key(cache, &emotion_history_key)?;
-
-    let legacy_key = sender_id.trim();
-    if !legacy_key.is_empty() && legacy_key != history_key {
-        clear_history_key(cache, legacy_key)?;
-    }
 
     Ok(())
 }
@@ -72,11 +48,12 @@ mod tests {
     use super::{conversation_history_key, emotion_history_key};
 
     #[test]
-    fn test_emotion_history_key_isolated_from_conversation_history() {
-        let conversation_key = conversation_history_key("bot", "sender", true, Some(42));
-        let emotion_key = emotion_history_key("bot", "sender", true, Some(42));
+    fn history_keys_are_scoped_to_sender() {
+        let conversation_key = conversation_history_key("sender");
+        let emotion_key = emotion_history_key("sender");
 
-        assert_eq!(conversation_key, "group:bot:42:sender");
-        assert_eq!(emotion_key, "emotion:group:bot:42:sender");
+        assert_eq!(conversation_key, "sender");
+        assert_eq!(emotion_key, "emotion:sender");
+        assert_ne!(conversation_key, emotion_key);
     }
 }

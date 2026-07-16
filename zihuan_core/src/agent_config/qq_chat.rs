@@ -381,19 +381,3 @@ fn sanitize_emotion_dissipation_hours(hours: i64) -> i64 {
         default_emotion_dissipation_hours()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::QqChatAgentServiceConfig;
-
-    #[test]
-    fn qq_chat_agent_service_config_defaults_max_steer_count_to_four() {
-        let config: QqChatAgentServiceConfig = serde_json::from_value(serde_json::json!({
-            "ims_bot_adapter_connection_id": "bot",
-            "web_search_engine_connection_id": "tavily"
-        }))
-        .expect("config should deserialize");
-
-        assert_eq!(config.max_steer_count, 4);
-    }
-}

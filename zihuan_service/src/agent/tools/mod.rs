@@ -80,7 +80,6 @@ pub(crate) fn build_info_brain_tools(
     llm: Option<Arc<dyn LLMBase>>,
     memory_access: AgentMemoryAccessContext,
     current_message: String,
-    model_list: Vec<(String, String)>,
 ) -> Vec<Box<dyn BrainTool>> {
     fn is_enabled(map: &HashMap<String, bool>, name: &str) -> bool {
         *map.get(name).unwrap_or(&true)
@@ -96,7 +95,7 @@ pub(crate) fn build_info_brain_tools(
     }
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
-        tools.push(Box::new(GetAgentPublicInfoBrainTool::new(current_message, model_list)));
+        tools.push(Box::new(GetAgentPublicInfoBrainTool::new(current_message)));
     }
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_FUNCTION_LIST) {
@@ -169,18 +168,11 @@ pub(crate) fn build_info_brain_tools(
 
     tools
 }
-pub(crate) fn format_public_info_message(message: &str, model_list: &[(String, String)]) -> serde_json::Value {
-    let models: Vec<serde_json::Value> = model_list
-        .iter()
-        .map(|(role, name)| {
-            serde_json::json!({ "role": role, "model": name })
-        })
-        .collect();
+pub(crate) fn format_public_info_message(message: &str) -> serde_json::Value {
     serde_json::json!({
         "agent_name": AGENT_PUBLIC_NAME,
         "github_repository": AGENT_GITHUB_REPOSITORY,
         "git_commit_id": AGENT_GIT_COMMIT_ID,
         "message": message,
-        "models": models,
     })
 }
