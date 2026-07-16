@@ -337,6 +337,7 @@ export function useConnections() {
     closeEditor,
     load,
     editConnection,
+    duplicateConnection,
     submitForm,
     removeConnection,
     summarizeConnection,
