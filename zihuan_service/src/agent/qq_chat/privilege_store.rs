@@ -24,6 +24,7 @@ pub struct QqChatAgentServicePrivilegeAuthRecord {
     pub pending_target_id: Option<String>,
     pub pending_group_id: Option<i64>,
     pub pending_is_group: bool,
+    pub pending_args: Vec<String>,
     pub failed_attempts: i32,
     pub expires_at: String,
     pub elevated_until: Option<String>,
@@ -67,6 +68,7 @@ pub async fn create_privilege_auth(
     pending_target_id: Option<&str>,
     pending_group_id: Option<i64>,
     pending_is_group: bool,
+    pending_args: &[String],
 ) -> Result<QqChatAgentServicePrivilegeAuthRecord> {
     match connection {
         RelationalDbConnection::MySql(config) => {
@@ -79,6 +81,7 @@ pub async fn create_privilege_auth(
                 pending_target_id,
                 pending_group_id,
                 pending_is_group,
+                pending_args,
             )
             .await
         }
@@ -92,6 +95,7 @@ pub async fn create_privilege_auth(
                 pending_target_id,
                 pending_group_id,
                 pending_is_group,
+                pending_args,
             )
             .await
         }
@@ -176,6 +180,7 @@ async fn create_privilege_auth_mysql(
     pending_target_id: Option<&str>,
     pending_group_id: Option<i64>,
     pending_is_group: bool,
+    pending_args: &[String],
 ) -> Result<QqChatAgentServicePrivilegeAuthRecord> {
     let now = Local::now().naive_local();
     let expires_at = now + Duration::minutes(AUTH_TTL_MINUTES);
@@ -183,8 +188,8 @@ async fn create_privilege_auth_mysql(
 
     sqlx::query(
         "INSERT INTO qq_chat_agent_service_privilege_auth \
-         (agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, 0, ?, ?)",
+         (agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, pending_args_json, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, 0, ?, ?)",
     )
     .bind(agent_id)
     .bind(sender_id)
@@ -194,6 +199,7 @@ async fn create_privilege_auth_mysql(
     .bind(pending_target_id)
     .bind(pending_group_id)
     .bind(pending_is_group)
+    .bind(serialize_pending_args(pending_args))
     .bind(expires_at)
     .bind(now)
     .bind(now)
@@ -213,6 +219,7 @@ async fn create_privilege_auth_sqlite(
     pending_target_id: Option<&str>,
     pending_group_id: Option<i64>,
     pending_is_group: bool,
+    pending_args: &[String],
 ) -> Result<QqChatAgentServicePrivilegeAuthRecord> {
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let expires_at = (Local::now() + Duration::minutes(AUTH_TTL_MINUTES))
@@ -222,8 +229,8 @@ async fn create_privilege_auth_sqlite(
 
     sqlx::query(
         "INSERT INTO qq_chat_agent_service_privilege_auth \
-         (agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, 0, ?, ?)",
+         (agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, pending_args_json, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, 0, ?, ?)",
     )
     .bind(agent_id)
     .bind(sender_id)
@@ -233,6 +240,7 @@ async fn create_privilege_auth_sqlite(
     .bind(pending_target_id)
     .bind(pending_group_id)
     .bind(pending_is_group)
+    .bind(serialize_pending_args(pending_args))
     .bind(&expires_at)
     .bind(&now)
     .bind(&now)
@@ -448,7 +456,7 @@ async fn latest_auth_optional_mysql(
     sender_id: &str,
 ) -> Result<Option<QqChatAgentServicePrivilegeAuthRecord>> {
     let row = sqlx::query(
-        "SELECT id, agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
+        "SELECT id, agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, pending_args_json, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
          FROM qq_chat_agent_service_privilege_auth WHERE agent_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 1",
     )
     .bind(agent_id)
@@ -465,7 +473,7 @@ async fn latest_auth_optional_sqlite(
     sender_id: &str,
 ) -> Result<Option<QqChatAgentServicePrivilegeAuthRecord>> {
     let row = sqlx::query(
-        "SELECT id, agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
+        "SELECT id, agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, pending_args_json, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
          FROM qq_chat_agent_service_privilege_auth WHERE agent_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 1",
     )
     .bind(agent_id)
@@ -487,6 +495,7 @@ fn map_privilege_auth_mysql_row(row: MySqlRow) -> QqChatAgentServicePrivilegeAut
         pending_target_id: row.get("pending_target_id"),
         pending_group_id: row.get("pending_group_id"),
         pending_is_group: row.get::<i8, _>("pending_is_group") != 0,
+        pending_args: parse_pending_args(row.get("pending_args_json")),
         failed_attempts: row.get("failed_attempts"),
         expires_at: format_mysql_timestamp(row.get::<NaiveDateTime, _>("expires_at")),
         elevated_until: row
@@ -509,6 +518,7 @@ fn map_privilege_auth_sqlite_row(row: SqliteRow) -> QqChatAgentServicePrivilegeA
         pending_target_id: row.get("pending_target_id"),
         pending_group_id: row.get("pending_group_id"),
         pending_is_group: row.get::<i64, _>("pending_is_group") != 0,
+        pending_args: parse_pending_args(row.get("pending_args_json")),
         failed_attempts: row.get("failed_attempts"),
         expires_at: row.get("expires_at"),
         elevated_until: row.get("elevated_until"),
@@ -516,6 +526,16 @@ fn map_privilege_auth_sqlite_row(row: SqliteRow) -> QqChatAgentServicePrivilegeA
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     }
+}
+
+fn serialize_pending_args(pending_args: &[String]) -> String {
+    serde_json::to_string(pending_args).unwrap_or_default()
+}
+
+fn parse_pending_args(pending_args_json: Option<String>) -> Vec<String> {
+    pending_args_json
+        .and_then(|value| serde_json::from_str(&value).ok())
+        .unwrap_or_default()
 }
 
 fn map_notification_card_mysql_row(row: MySqlRow) -> NotificationRecord {

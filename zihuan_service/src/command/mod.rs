@@ -1,4 +1,5 @@
 mod auth_command;
+mod emotion_command;
 mod help_command;
 mod learn_style_command;
 mod new_command;
@@ -10,6 +11,7 @@ use zihuan_core::command::{CommandDefinition, CommandRegistry, CommandScope};
 use zihuan_core::task_context::AgentTaskRuntime;
 
 use auth_command::AuthCommand;
+use emotion_command::EmotionCommand;
 use help_command::HelpCommand;
 use learn_style_command::LearnStyleCommand;
 use new_command::NewCommand;
@@ -167,6 +169,30 @@ pub fn build_command_registry() -> Arc<CommandRegistry> {
             allow_steer_bypass: false,
         },
         Arc::new(LearnStyleCommand),
+    );
+
+    registry.register(
+        CommandDefinition {
+            name: "emotion".to_string(),
+            aliases: vec![],
+            description: "查看当前 Agent 情绪维度（需管理员权限和特权）".to_string(),
+            scope: CommandScope::QqChat,
+            accepted_arg_count: 0,
+            allow_steer_bypass: false,
+        },
+        Arc::new(EmotionCommand),
+    );
+
+    registry.register(
+        CommandDefinition {
+            name: "adjust_emotion".to_string(),
+            aliases: vec![],
+            description: "调整当前 Agent 情绪维度（需管理员权限和特权）".to_string(),
+            scope: CommandScope::QqChat,
+            accepted_arg_count: 2,
+            allow_steer_bypass: false,
+        },
+        Arc::new(EmotionCommand),
     );
 
     let registry = Arc::new(registry);

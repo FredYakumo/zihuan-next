@@ -12,6 +12,8 @@ use crate::agent::qq_chat::privilege_store::{
 pub enum QqPrivilegedCommand {
     LearnGlobalStyle,
     LearnGroupStyle,
+    Emotion,
+    AdjustEmotion,
 }
 
 impl QqPrivilegedCommand {
@@ -19,6 +21,8 @@ impl QqPrivilegedCommand {
         match self {
             Self::LearnGlobalStyle => "learn_global_style",
             Self::LearnGroupStyle => "learn_group_style",
+            Self::Emotion => "emotion",
+            Self::AdjustEmotion => "adjust_emotion",
         }
     }
 }
@@ -35,6 +39,7 @@ pub struct PendingAuthorizedCommand {
     pub pending_target_id: Option<String>,
     pub pending_group_id: Option<i64>,
     pub pending_is_group: bool,
+    pub pending_args: Vec<String>,
 }
 
 pub enum AuthCommandOutcome {
@@ -53,7 +58,9 @@ pub fn parse_privileged_command(raw_input: &str) -> Option<(String, Vec<String>)
     let mut parts = trimmed[1..].split_whitespace();
     let name = parts.next()?.to_string();
     match name.as_str() {
-        "auth" | "learn_global_style" | "learn_group_style" => Some((name, parts.map(ToOwned::to_owned).collect())),
+        "auth" | "learn_global_style" | "learn_group_style" | "emotion" | "adjust_emotion" => {
+            Some((name, parts.map(ToOwned::to_owned).collect()))
+        }
         _ => None,
     }
 }
@@ -62,6 +69,8 @@ pub fn render_privilege_auth_prompt(command_name: &str) -> String {
     let label = match command_name {
         "learn_global_style" => "学习全局语言风格",
         "learn_group_style" => "学习群聊语言风格",
+        "emotion" => "查看当前 Agent 情绪维度",
+        "adjust_emotion" => "调整当前 Agent 情绪维度",
         _ => command_name,
     };
     format!("「{label}」需要授权确认。\n请在 5 分钟内输入 /auth <密钥> 完成授权。")
@@ -95,6 +104,7 @@ pub fn handle_auth_command(
                     pending_target_id: record.pending_target_id,
                     pending_group_id: record.pending_group_id,
                     pending_is_group: record.pending_is_group,
+                    pending_args: record.pending_args,
                 },
             },
             None => AuthCommandOutcome::Reply(format!("授权成功。你已进入特权模式，有效期至 {until}。")),
@@ -113,6 +123,7 @@ pub fn enqueue_pending_privileged_command(
     connection: &RelationalDbConnection,
     privileged_command: QqPrivilegedCommand,
     pending_task_id: Option<&str>,
+    pending_args: &[String],
 ) -> Result<PrivilegeGateOutcome> {
     let raw_command = format!("/{}", privileged_command.command_name());
     let permission_check = registry.check_permission(cmd_ctx, &raw_command);
@@ -124,7 +135,7 @@ pub fn enqueue_pending_privileged_command(
         return Ok(PrivilegeGateOutcome::Authorized);
     }
 
-    let record = run_blocking_future(create_privilege_auth(
+    run_blocking_future(create_privilege_auth(
         connection,
         &cmd_ctx.agent_id,
         &cmd_ctx.caller_id,
@@ -142,6 +153,7 @@ pub fn enqueue_pending_privileged_command(
             cmd_ctx.channel,
             zihuan_core::command::CommandChannel::QqChat { is_group: true, .. }
         ),
+        pending_args,
     ))?;
     Ok(PrivilegeGateOutcome::Denied(render_privilege_auth_prompt(
         privileged_command.command_name(),
@@ -160,6 +172,8 @@ fn purpose_to_privileged_command(purpose: &str) -> Option<QqPrivilegedCommand> {
     match purpose {
         "learn_global_style" => Some(QqPrivilegedCommand::LearnGlobalStyle),
         "learn_group_style" => Some(QqPrivilegedCommand::LearnGroupStyle),
+        "emotion" => Some(QqPrivilegedCommand::Emotion),
+        "adjust_emotion" => Some(QqPrivilegedCommand::AdjustEmotion),
         _ => None,
     }
 }

@@ -9,7 +9,8 @@ use model_inference::message_content_utils::{downgrade_messages_for_model, sanit
 
 use zihuan_agent::brain::{Brain, BrainStopReason, LongTaskContext};
 
-use zihuan_agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text;
+use zihuan_agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
 use zihuan_core::agent_config::qq_chat::current_qq_chat_agent_service_config;
 use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
@@ -71,6 +72,60 @@ use crate::agent::qq_chat::privilege_gate::{
 use crate::agent::qq_chat::style_learner::{
     execute_style_learning_task, OwnedStyleLearningTaskContext, StyleLearningResumeInput,
 };
+
+fn execute_privileged_emotion_command(
+    session_state_store: &Mutex<QqChatAgentServiceSessionState>,
+    emotion_dimensions: &[QqChatEmotionDimensionConfig],
+    command: QqPrivilegedCommand,
+    args: &[String],
+) -> String {
+    match command {
+        QqPrivilegedCommand::Emotion => {
+            if !args.is_empty() {
+                return "用法: /emotion".to_string();
+            }
+            let mut session_state = session_state_store.lock().unwrap();
+            session_state.sync_emotion_dimensions(emotion_dimensions);
+            format!(
+                "当前 Agent 情绪维度：\n{}",
+                emotion_dimensions_snapshot_text(&session_state, emotion_dimensions)
+            )
+        }
+        QqPrivilegedCommand::AdjustEmotion => {
+            if args.len() != 2 {
+                return "用法: /adjust_emotion <维度名> <increase|decrease>".to_string();
+            }
+            let dimension_name = args[0].trim();
+            if !emotion_dimensions
+                .iter()
+                .any(|dimension| dimension.name.trim() == dimension_name)
+            {
+                return format!("不支持的情绪维度「{dimension_name}」。");
+            }
+            let direction = match args[1].to_ascii_lowercase().as_str() {
+                "increase" => EmotionAdjustmentDirection::Increase,
+                "decrease" => EmotionAdjustmentDirection::Decrease,
+                _ => return "方向仅支持 increase 或 decrease。".to_string(),
+            };
+            let direction_label = match direction {
+                EmotionAdjustmentDirection::Increase => "增加",
+                EmotionAdjustmentDirection::Decrease => "降低",
+            };
+            let current_value = match session_state_store.lock().unwrap().apply_emotion_adjustment(
+                emotion_dimensions,
+                dimension_name,
+                direction,
+            ) {
+                Ok(value) => value,
+                Err(error) => return format!("调整情绪维度失败：{error}"),
+            };
+            format!("已{direction_label} Agent 情绪维度「{dimension_name}」，当前值：{current_value}")
+        }
+        QqPrivilegedCommand::LearnGlobalStyle | QqPrivilegedCommand::LearnGroupStyle => {
+            "不支持的情绪命令。".to_string()
+        }
+    }
+}
 
 impl QqChatAgentServiceInner {
     fn run_style_learning_task(
@@ -373,6 +428,36 @@ impl QqChatAgentServiceInner {
                                 ctx.max_message_length,
                                 ctx.reply_batch_builder,
                             )?;
+                            if matches!(
+                                pending.command,
+                                QqPrivilegedCommand::Emotion | QqPrivilegedCommand::AdjustEmotion
+                            ) {
+                                let reply = execute_privileged_emotion_command(
+                                    ctx.session_state_store,
+                                    &emotion_dimensions,
+                                    pending.command,
+                                    &pending.pending_args,
+                                );
+                                let _ = send_direct_text_reply(
+                                    trace,
+                                    ctx.adapter,
+                                    target_id,
+                                    ctx.rdb_pool,
+                                    event.group_name.as_deref(),
+                                    ctx.bot_name,
+                                    bot_id,
+                                    &reply,
+                                    is_group,
+                                    sender_id,
+                                    &inference_event.sender.nickname,
+                                    inference_event.sender.card.as_str(),
+                                    ctx.max_message_length,
+                                    ctx.reply_batch_builder,
+                                )?;
+                                return Ok(QqChatServiceTurnResult {
+                                    result_summary: format!("已恢复执行 /{}", pending.command.command_name()),
+                                });
+                            }
                             let resume_is_group = pending.pending_is_group;
                             let resume_target_id =
                                 pending.pending_target_id.clone().unwrap_or_else(|| target_id.to_string());
@@ -406,6 +491,9 @@ impl QqChatAgentServiceInner {
                                         .map(|value| value.to_string())
                                         .unwrap_or_else(|| resume_target_id.clone()),
                                 },
+                                QqPrivilegedCommand::Emotion | QqPrivilegedCommand::AdjustEmotion => {
+                                    unreachable!("emotion commands return before style-task resumption")
+                                }
                             };
                             let Some(task_runtime) = ctx.task_runtime.clone() else {
                                 return Err(Error::ValidationError("task runtime is not available".to_string()));
@@ -546,6 +634,7 @@ impl QqChatAgentServiceInner {
                         connection,
                         privileged_command,
                         Some(waiting_task.task_id.as_str()),
+                        &[],
                     )?;
                     if let PrivilegeGateOutcome::Denied(reply) = gate_outcome {
                         let _ = send_direct_text_reply(
@@ -616,6 +705,120 @@ impl QqChatAgentServiceInner {
                         .map(|_| QqChatServiceTurnResult {
                             result_summary: format!("已创建 {task_name} 任务"),
                         });
+                }
+                "emotion" | "adjust_emotion" => {
+                    let Some(command_registry) = crate::command::global_command_registry() else {
+                        return Err(Error::ValidationError("command registry not initialized".to_string()));
+                    };
+                    let command_context =
+                        self.build_command_context(sender_id, target_id, is_group, inference_event.group_id);
+                    let permission_check = command_registry.check_permission(&command_context, &raw_user_message);
+                    if !permission_check.matched || !permission_check.allowed {
+                        let reply = "你没有权限使用此命令。".to_string();
+                        let _ = send_direct_text_reply(
+                            trace,
+                            ctx.adapter,
+                            target_id,
+                            ctx.rdb_pool,
+                            event.group_name.as_deref(),
+                            ctx.bot_name,
+                            bot_id,
+                            &reply,
+                            is_group,
+                            sender_id,
+                            &inference_event.sender.nickname,
+                            inference_event.sender.card.as_str(),
+                            ctx.max_message_length,
+                            ctx.reply_batch_builder,
+                        )?;
+                        return Ok(QqChatServiceTurnResult {
+                            result_summary: "命令权限拒绝".to_string(),
+                        });
+                    }
+
+                    let Some(connection) = ctx.rdb_pool else {
+                        let reply = "当前未配置关系数据库，无法完成特权授权。".to_string();
+                        let _ = send_direct_text_reply(
+                            trace,
+                            ctx.adapter,
+                            target_id,
+                            ctx.rdb_pool,
+                            event.group_name.as_deref(),
+                            ctx.bot_name,
+                            bot_id,
+                            &reply,
+                            is_group,
+                            sender_id,
+                            &inference_event.sender.nickname,
+                            inference_event.sender.card.as_str(),
+                            ctx.max_message_length,
+                            ctx.reply_batch_builder,
+                        )?;
+                        return Ok(QqChatServiceTurnResult {
+                            result_summary: "缺少关系数据库".to_string(),
+                        });
+                    };
+
+                    let privileged_command = if command_name == "emotion" {
+                        QqPrivilegedCommand::Emotion
+                    } else {
+                        QqPrivilegedCommand::AdjustEmotion
+                    };
+                    let gate_outcome = enqueue_pending_privileged_command(
+                        &command_registry,
+                        &command_context,
+                        connection,
+                        privileged_command,
+                        None,
+                        &args,
+                    )?;
+                    if let PrivilegeGateOutcome::Denied(reply) = gate_outcome {
+                        let _ = send_direct_text_reply(
+                            trace,
+                            ctx.adapter,
+                            target_id,
+                            ctx.rdb_pool,
+                            event.group_name.as_deref(),
+                            ctx.bot_name,
+                            bot_id,
+                            &reply,
+                            is_group,
+                            sender_id,
+                            &inference_event.sender.nickname,
+                            inference_event.sender.card.as_str(),
+                            ctx.max_message_length,
+                            ctx.reply_batch_builder,
+                        )?;
+                        return Ok(QqChatServiceTurnResult {
+                            result_summary: format!("{command_name} 已进入等待授权状态"),
+                        });
+                    }
+
+                    let reply = execute_privileged_emotion_command(
+                        ctx.session_state_store,
+                        &emotion_dimensions,
+                        privileged_command,
+                        &args,
+                    );
+                    let _ = send_direct_text_reply(
+                        trace,
+                        ctx.adapter,
+                        target_id,
+                        ctx.rdb_pool,
+                        event.group_name.as_deref(),
+                        ctx.bot_name,
+                        bot_id,
+                        &reply,
+                        is_group,
+                        sender_id,
+                        &inference_event.sender.nickname,
+                        inference_event.sender.card.as_str(),
+                        ctx.max_message_length,
+                        ctx.reply_batch_builder,
+                    )?;
+                    return Ok(QqChatServiceTurnResult {
+                        result_summary: format!("已执行 /{command_name}"),
+                    });
                 }
                 _ => {}
             }
