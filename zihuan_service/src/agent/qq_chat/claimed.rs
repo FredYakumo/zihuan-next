@@ -32,7 +32,7 @@ use super::super::super::tools::{
     GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool, ModelIdentityContext,
     QqReplyReviewRequest, RememberContentBrainTool, ReplyMessageBrainTool, RunResearchSubagentBrainTool,
     SaveImageBrainTool, SearchMemoryContentBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget,
-    UpdateAgentStateBrainTool, WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
+    WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
     DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
     DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS, DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SAVE_IMAGE,
     DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
@@ -41,7 +41,9 @@ use super::super::super::tools::{
 use storage_handler::AgentMemoryAccessContext;
 
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
-use crate::storage::qq_chat_history_store::{conversation_history_key, load_history, save_history};
+use crate::storage::qq_chat_history_store::{
+    conversation_history_key, emotion_history_key, load_history, save_history,
+};
 
 use crate::agent::classify_intent::{classify_intent_with_trace, IntentCategory};
 use crate::agent::qq_chat::msg_send::{
@@ -55,6 +57,8 @@ use super::{
     QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatServiceTurnResult, QqChatTaskTrace,
     QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
+
+use super::super::emotion::run_emotion_agent;
 
 use super::super::steer::QqChatServiceSteerHook;
 use super::super::tool_quota::wrap_brain_tool_with_quota;
@@ -644,6 +648,18 @@ impl QqChatAgentServiceInner {
         current_session_state.sync_emotion_dimensions(&emotion_dimensions);
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
+        let emotion_history_key = emotion_history_key(bot_id, sender_id, is_group, inference_event.group_id);
+        run_emotion_agent(
+            ctx.natural_language_reply_llm,
+            ctx.cache,
+            &emotion_history_key,
+            &prepared_input,
+            ctx.bot_name,
+            Arc::clone(&turn_session_state),
+            emotion_dimensions.clone(),
+            ctx.compact_context_length,
+        );
+
         let base_system_prompt = if is_group {
             build_group_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
         } else {
@@ -826,10 +842,6 @@ impl QqChatAgentServiceInner {
             brain.add_tool(wrap_brain_tool_with_quota(GetFunctionListBrainTool, tool_quota.clone()));
         }
 
-        brain.add_tool(wrap_brain_tool_with_quota(
-            UpdateAgentStateBrainTool::new(Arc::clone(&turn_session_state), emotion_dimensions.clone()),
-            tool_quota.clone(),
-        ));
         brain.add_tool(wrap_brain_tool_with_quota(
             RunResearchSubagentBrainTool::new(
                 Arc::clone(ctx.math_programming_llm),

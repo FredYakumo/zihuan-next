@@ -1,4 +1,5 @@
 mod core;
+mod emotion;
 pub mod ignore_store;
 mod inbox;
 pub mod language_style_store;

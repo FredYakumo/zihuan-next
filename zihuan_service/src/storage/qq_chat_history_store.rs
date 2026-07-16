@@ -17,6 +17,10 @@ pub(crate) fn conversation_history_key(bot_id: &str, sender_id: &str, is_group: 
     }
 }
 
+pub(crate) fn emotion_history_key(bot_id: &str, sender_id: &str, is_group: bool, group_id: Option<i64>) -> String {
+    format!("emotion:{}", conversation_history_key(bot_id, sender_id, is_group, group_id))
+}
+
 pub(crate) fn load_history(
     cache: &Arc<LLMMessageSessionCacheRef>,
     history_key: &str,
@@ -52,10 +56,27 @@ pub(crate) fn clear_history(
     let history_key = conversation_history_key(bot_id, sender_id, is_group, group_id);
     clear_history_key(cache, &history_key)?;
 
+    let emotion_history_key = emotion_history_key(bot_id, sender_id, is_group, group_id);
+    clear_history_key(cache, &emotion_history_key)?;
+
     let legacy_key = sender_id.trim();
     if !legacy_key.is_empty() && legacy_key != history_key {
         clear_history_key(cache, legacy_key)?;
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{conversation_history_key, emotion_history_key};
+
+    #[test]
+    fn test_emotion_history_key_isolated_from_conversation_history() {
+        let conversation_key = conversation_history_key("bot", "sender", true, Some(42));
+        let emotion_key = emotion_history_key("bot", "sender", true, Some(42));
+
+        assert_eq!(conversation_key, "group:bot:42:sender");
+        assert_eq!(emotion_key, "emotion:group:bot:42:sender");
+    }
 }

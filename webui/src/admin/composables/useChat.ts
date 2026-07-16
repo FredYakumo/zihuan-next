@@ -211,10 +211,13 @@ const groupedSessions = computed(() => {
   }> = [];
   for (const [key, items] of groups) {
     items.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    const isDefault = key === "__default__";
+    const segments = key.split(/[\\/]/).filter(Boolean);
+    const label = isDefault ? "默认路径" : segments[segments.length - 1] || key;
     result.push({
       pathKey: key,
-      path: key === "__default__" ? null : key,
-      label: key === "__default__" ? "默认路径" : key,
+      path: isDefault ? null : key,
+      label,
       sessions: items,
     });
   }
@@ -597,7 +600,7 @@ async function openSession(sessionId: string) {
   workspacePath.value =
     result.messages[result.messages.length - 1]?.workspace_path ??
     firstRecord?.workspace_path ??
-    workspacePath.value;
+    "";
   const latestRecord = result.messages[result.messages.length - 1];
   if (latestRecord?.pending_ask_user?.question) {
     pendingAskUser.value = {
