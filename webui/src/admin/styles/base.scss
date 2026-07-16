@@ -90,7 +90,9 @@ textarea {
 .admin-sidebar {
   position: sticky;
   top: 0;
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   padding: 28px 22px;
   border-right: 1px solid var(--admin-border);
   background:
@@ -100,6 +102,7 @@ textarea {
 
 .admin-brand {
   display: grid;
+  flex-shrink: 0;
   gap: 12px;
   margin-bottom: 28px;
 }
@@ -204,7 +207,29 @@ textarea {
 
 .admin-nav {
   display: grid;
+  flex: 1;
   gap: 10px;
+  overflow-y: auto;
+  align-content: start;
+}
+
+.admin-nav::-webkit-scrollbar {
+  width: 8px;
+}
+
+.admin-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-nav::-webkit-scrollbar-thumb {
+  background: var(--admin-border);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.admin-nav::-webkit-scrollbar-thumb:hover {
+  background: var(--admin-muted);
 }
 
 .admin-nav-link {

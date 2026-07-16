@@ -16,7 +16,6 @@
           </div>
           <div>
             <h1>Zihuan Next</h1>
-            <p>AI框架管理界面</p>
           </div>
           <button
             type="button"
