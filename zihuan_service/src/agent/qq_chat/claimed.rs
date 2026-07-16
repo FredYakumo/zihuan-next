@@ -29,8 +29,8 @@ use ims_bot_adapter::tools::group_members::GetCurrentGroupMembersBrainTool;
 use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
 
 use super::super::super::tools::{
-    format_public_info_message, review_and_rewrite_reply, AgentMemoryToolResources, EditableQqAgentTool,
-    GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
+    format_public_info_message, review_and_rewrite_reply, AgentMemoryBackend, AgentMemoryToolResources,
+    EditableQqAgentTool, GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
     GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool, ModelIdentityContext,
     QqReplyReviewRequest, RememberContentBrainTool, ReplyMessageBrainTool, RunResearchSubagentBrainTool,
     SaveImageBrainTool, SearchMemoryContentBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget,
@@ -985,7 +985,7 @@ impl QqChatAgentServiceInner {
             (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
         {
             let memory_resources = AgentMemoryToolResources {
-                memory_ref,
+                memory_backend: AgentMemoryBackend::Weaviate(memory_ref),
                 embedding_model,
                 llm: Arc::clone(ctx.llm),
                 access: AgentMemoryAccessContext {
@@ -1060,7 +1060,7 @@ impl QqChatAgentServiceInner {
                     (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
                 {
                     Some(AgentMemoryToolResources {
-                        memory_ref,
+                        memory_backend: AgentMemoryBackend::Weaviate(memory_ref),
                         embedding_model,
                         llm: Arc::clone(turn_llm),
                         access: AgentMemoryAccessContext {
@@ -1143,6 +1143,7 @@ impl QqChatAgentServiceInner {
                 brain.add_tool(wrap_brain_tool_with_quota(
                     SaveImageBrainTool::new(
                         ctx.weaviate_image_ref.cloned(),
+                        None,
                         ctx.embedding_model.cloned(),
                         ctx.s3_ref.cloned(),
                         ctx.rdb_pool.cloned(),

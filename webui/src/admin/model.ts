@@ -12,6 +12,7 @@ export type ConnectionType =
   | "mysql"
   | "redis"
   | "weaviate"
+  | "elasticsearch"
   | "rustfs"
   | "bot_adapter"
   | "ims_bot_adapter"
@@ -63,6 +64,13 @@ export interface ConnectionFormState {
   weaviate_password: string;
   weaviate_api_key: string;
   weaviate_collection_schema: WeaviateCollectionSchema;
+  elasticsearch_base_url: string;
+  elasticsearch_index_name: string;
+  elasticsearch_username: string;
+  elasticsearch_password: string;
+  elasticsearch_api_key: string;
+  elasticsearch_collection_schema: WeaviateCollectionSchema;
+  elasticsearch_vector_dimensions: number;
   rustfs_endpoint: string;
   rustfs_username: string;
   rustfs_password: string;
@@ -135,6 +143,8 @@ export interface ServiceFormState {
   rdb_id: string;
   weaviate_image_connection_id: string;
   weaviate_memory_connection_id: string;
+  elasticsearch_image_connection_id: string;
+  elasticsearch_memory_connection_id: string;
   max_message_length: number;
   compact_context_length: number;
   max_steer_count: number;
@@ -151,6 +161,7 @@ export interface ServiceFormState {
   http_web_search_engine_connection_id: string;
   http_embedding_model_ref_id: string;
   http_weaviate_memory_connection_id: string;
+  http_elasticsearch_memory_connection_id: string;
   task_db_connection_id: string;
   tools: ToolFormState[];
   avatar_url: string;
@@ -357,6 +368,13 @@ export function defaultConnectionForm(): ConnectionFormState {
     weaviate_password: "",
     weaviate_api_key: "",
     weaviate_collection_schema: "agent_memory",
+    elasticsearch_base_url: "",
+    elasticsearch_index_name: "",
+    elasticsearch_username: "",
+    elasticsearch_password: "",
+    elasticsearch_api_key: "",
+    elasticsearch_collection_schema: "agent_memory",
+    elasticsearch_vector_dimensions: 1024,
     rustfs_endpoint: "",
     rustfs_username: "",
     rustfs_password: "",
@@ -436,6 +454,8 @@ export function defaultServiceForm(): ServiceFormState {
     rdb_id: "",
     weaviate_image_connection_id: "",
     weaviate_memory_connection_id: "",
+    elasticsearch_image_connection_id: "",
+    elasticsearch_memory_connection_id: "",
     max_message_length: 500,
     compact_context_length: 0,
     max_steer_count: 4,
@@ -452,6 +472,7 @@ export function defaultServiceForm(): ServiceFormState {
     http_web_search_engine_connection_id: "",
     http_embedding_model_ref_id: "",
     http_weaviate_memory_connection_id: "",
+    http_elasticsearch_memory_connection_id: "",
     task_db_connection_id: "",
     tools: [],
     avatar_url: "",
@@ -552,6 +573,15 @@ export function connectionFormFromConfig(
       form.weaviate_collection_schema = String(
         connection.kind.collection_schema ?? "agent_memory",
       ) as WeaviateCollectionSchema;
+      break;
+    case "elasticsearch":
+      form.elasticsearch_base_url = String(connection.kind.base_url ?? "");
+      form.elasticsearch_index_name = String(connection.kind.index_name ?? "");
+      form.elasticsearch_username = String(connection.kind.username ?? "");
+      form.elasticsearch_password = String(connection.kind.password ?? "");
+      form.elasticsearch_api_key = String(connection.kind.api_key ?? "");
+      form.elasticsearch_collection_schema = String(connection.kind.collection_schema ?? "agent_memory") as WeaviateCollectionSchema;
+      form.elasticsearch_vector_dimensions = Number(connection.kind.vector_dimensions ?? 1024);
       break;
     case "rustfs":
       form.rustfs_endpoint = String(connection.kind.endpoint ?? "");
@@ -667,6 +697,18 @@ export function buildConnectionPayload(form: ConnectionFormState): {
         password: form.weaviate_password.trim() || null,
         api_key: form.weaviate_api_key.trim() || null,
         collection_schema: form.weaviate_collection_schema,
+      };
+      break;
+    case "elasticsearch":
+      payload.kind = {
+        type: "elasticsearch",
+        base_url: form.elasticsearch_base_url.trim(),
+        index_name: form.elasticsearch_index_name.trim(),
+        username: form.elasticsearch_username.trim() || null,
+        password: form.elasticsearch_password.trim() || null,
+        api_key: form.elasticsearch_api_key.trim() || null,
+        collection_schema: form.elasticsearch_collection_schema,
+        vector_dimensions: form.elasticsearch_vector_dimensions,
       };
       break;
     case "rustfs":
@@ -858,6 +900,8 @@ export function serviceFormFromConfig(
     form.weaviate_memory_connection_id = String(
       agentType.weaviate_memory_connection_id ?? "",
     );
+    form.elasticsearch_image_connection_id = String(agentType.elasticsearch_image_connection_id ?? "");
+    form.elasticsearch_memory_connection_id = String(agentType.elasticsearch_memory_connection_id ?? "");
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.compact_context_length = Number(agentType.compact_context_length ?? 0);
     form.max_steer_count = Number(agentType.max_steer_count ?? 4);
@@ -938,6 +982,7 @@ export function serviceFormFromConfig(
     form.http_weaviate_memory_connection_id = String(
       agentType.weaviate_memory_connection_id ?? "",
     );
+    form.http_elasticsearch_memory_connection_id = String(agentType.elasticsearch_memory_connection_id ?? "");
     form.task_db_connection_id = String(agentType.task_db_connection_id ?? "");
     const source = (agentType.default_tools_enabled ?? {}) as Record<
       string,
@@ -1074,6 +1119,8 @@ export function buildServicePayload(form: ServiceFormState): {
         weaviate_image_connection_id: form.weaviate_image_connection_id || null,
         weaviate_memory_connection_id:
           form.weaviate_memory_connection_id || null,
+        elasticsearch_image_connection_id: form.elasticsearch_image_connection_id || null,
+        elasticsearch_memory_connection_id: form.elasticsearch_memory_connection_id || null,
         max_message_length: form.max_message_length,
         compact_context_length: form.compact_context_length,
         max_steer_count: form.max_steer_count,
@@ -1121,6 +1168,8 @@ export function buildServicePayload(form: ServiceFormState): {
           form.http_web_search_engine_connection_id || null,
         weaviate_memory_connection_id:
           form.http_weaviate_memory_connection_id || null,
+        elasticsearch_memory_connection_id:
+          form.http_elasticsearch_memory_connection_id || null,
         task_db_connection_id: form.task_db_connection_id || null,
         default_tools_enabled: Object.fromEntries(
           HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [

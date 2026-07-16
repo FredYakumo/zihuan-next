@@ -4,7 +4,7 @@ use log::{info, warn};
 use serde_json::Value;
 
 use ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-use storage_handler::{upload_remote_image_to_s3, upsert_image_record};
+use storage_handler::{upload_remote_image_to_s3, upsert_elasticsearch_image, upsert_image_record, ElasticsearchRef};
 use zihuan_agent::brain::BrainTool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
@@ -21,6 +21,7 @@ const LOG_PREFIX: &str = "[QqChatAgentService]";
 
 pub(crate) struct SaveImageBrainTool {
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
+    elasticsearch_image_ref: Option<Arc<ElasticsearchRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     s3_ref: Option<Arc<S3Ref>>,
     rdb_pool: Option<RelationalDbConnection>,
@@ -29,12 +30,14 @@ pub(crate) struct SaveImageBrainTool {
 impl SaveImageBrainTool {
     pub(crate) fn new(
         weaviate_image_ref: Option<Arc<WeaviateRef>>,
+        elasticsearch_image_ref: Option<Arc<ElasticsearchRef>>,
         embedding_model: Option<Arc<dyn EmbeddingBase>>,
         s3_ref: Option<Arc<S3Ref>>,
         rdb_pool: Option<RelationalDbConnection>,
     ) -> Self {
         Self {
             weaviate_image_ref,
+            elasticsearch_image_ref,
             embedding_model,
             s3_ref,
             rdb_pool,
@@ -68,11 +71,7 @@ impl BrainTool for SaveImageBrainTool {
             let resolved_url = match (&image_url, &media_id) {
                 (Some(url), _) => url.clone(),
                 (None, Some(media_id)) => {
-                    let media = query_media_by_id(
-                        media_id,
-                        self.rdb_pool.as_ref(),
-                    )?
-                    .ok_or_else(|| {
+                    let media = query_media_by_id(media_id, self.rdb_pool.as_ref())?.ok_or_else(|| {
                         Error::ValidationError(format!("save_image could not find media_id '{}'", media_id))
                     })?;
                     if media.original_source.trim().is_empty() {
@@ -131,6 +130,17 @@ impl BrainTool for SaveImageBrainTool {
                         "{LOG_PREFIX} save_image skipped Weaviate upsert for image_url='{}' because embedding vector is empty",
                         resolved_url
                     );
+                }
+            }
+            if let (Some(elasticsearch_image_ref), Some(embedding_model)) =
+                (self.elasticsearch_image_ref.as_ref(), self.embedding_model.as_ref())
+            {
+                let embedding_text = description.as_deref().unwrap_or(&resolved_url);
+                let vector = embedding_model.inference(embedding_text).unwrap_or_default();
+                if !vector.is_empty() {
+                    if let Err(err) = upsert_elasticsearch_image(elasticsearch_image_ref, &media, vector, None) {
+                        warn!("{LOG_PREFIX} save_image failed to persist image record into Elasticsearch: {err}");
+                    }
                 }
             }
 

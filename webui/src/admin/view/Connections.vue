@@ -25,6 +25,7 @@
                 <option value="mysql">MySQL</option>
                 <option value="redis">Redis</option>
                 <option value="weaviate">Weaviate</option>
+                <option value="elasticsearch">Elasticsearch</option>
                 <option value="rustfs">RustFS</option>
                 <option value="bot_adapter">Bot Adapter</option>
                 <option value="web_search_engine">Web Search Engine</option>
@@ -112,6 +113,16 @@
                   <option value="agent_memory">Agent 记忆</option>
                 </select>
               </div>
+            </template>
+
+            <template v-else-if="form.type === 'elasticsearch'">
+              <div class="field"><label>Base URL</label><input v-model="form.elasticsearch_base_url" placeholder="https://localhost:9200" /></div>
+              <div class="field"><label>Index Name</label><input v-model="form.elasticsearch_index_name" /></div>
+              <div class="field"><label>用户名（可选）</label><input v-model="form.elasticsearch_username" /></div>
+              <div class="field"><label>密码（可选）</label><input v-model="form.elasticsearch_password" type="password" /></div>
+              <div class="field-full"><label>API Key（优先，可选）</label><input v-model="form.elasticsearch_api_key" type="password" /></div>
+              <div class="field"><label>索引用途</label><select v-model="form.elasticsearch_collection_schema"><option value="agent_memory">Agent 记忆</option><option value="image_semantic">图片语义</option></select></div>
+              <div class="field"><label>向量维度</label><input v-model.number="form.elasticsearch_vector_dimensions" type="number" min="1" step="1" /></div>
             </template>
 
             <template v-else-if="form.type === 'rustfs'">

@@ -32,6 +32,7 @@ export function useConnections() {
     { value: "mysql", label: "MySQL", hint: "数据库连接" },
     { value: "redis", label: "Redis", hint: "缓存与会话" },
     { value: "weaviate", label: "Weaviate", hint: "向量检索" },
+    { value: "elasticsearch", label: "Elasticsearch", hint: "混合检索与向量检索" },
     { value: "rustfs", label: "RustFS", hint: "对象存储" },
     { value: "bot_adapter", label: "Bot Adapter", hint: "Bot 服务接入" },
     { value: "web_search_engine", label: "Web Search Engine", hint: "网页搜索引擎配置" },
@@ -144,6 +145,16 @@ export function useConnections() {
         return;
       }
     }
+    if (form.type === "elasticsearch") {
+      if (!form.elasticsearch_base_url.trim() || !form.elasticsearch_index_name.trim()) {
+        alert("请填写 Elasticsearch Base URL 和 Index Name");
+        return;
+      }
+      if (!Number.isInteger(form.elasticsearch_vector_dimensions) || form.elasticsearch_vector_dimensions <= 0) {
+        alert("请填写大于 0 的 Elasticsearch 向量维度");
+        return;
+      }
+    }
     if (form.type === "tokenizer" && !form.tokenizer_model_name.trim()) {
       alert("请选择 Tokenizer 模型");
       return;
@@ -180,6 +191,12 @@ export function useConnections() {
       if (error instanceof ApiError && error.code === "weaviate_collection_missing") {
         const className = String(error.details.class_name ?? form.weaviate_class_name.trim());
         if (window.confirm(`Weaviate collection "${className}" 不存在，是否自动新建？`)) {
+          return await saveConnection(payload, true);
+        }
+        return null;
+      }
+      if (form.type === "elasticsearch" && error instanceof ApiError && error.message.includes("does not exist")) {
+        if (window.confirm(`Elasticsearch index "${form.elasticsearch_index_name.trim()}" 不存在，是否自动新建？`)) {
           return await saveConnection(payload, true);
         }
         return null;
