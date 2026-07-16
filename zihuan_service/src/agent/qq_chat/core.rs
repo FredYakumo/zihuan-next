@@ -477,7 +477,9 @@ pub(crate) fn build_state_delta_lines(
                     current_group_name, current_role, current_group_name
                 ));
             } else {
-                lines.push(format!("You (`{bot_name}`) are currently chatting in a private message window."));
+                lines.push(format!(
+                    "You (`{bot_name}`) are currently chatting in a private message window."
+                ));
             }
         } else if is_group {
             lines.push(format!(
@@ -485,7 +487,9 @@ pub(crate) fn build_state_delta_lines(
                 current_group_name, current_role, current_group_name
             ));
         } else {
-            lines.push(format!("Now, you (`{bot_name}`) are back to chatting in the private message window."));
+            lines.push(format!(
+                "Now, you (`{bot_name}`) are back to chatting in the private message window."
+            ));
         }
     }
 

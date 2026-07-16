@@ -397,10 +397,7 @@ impl CommandRegistry {
 
     pub fn check_permission(&self, ctx: &CommandContext, raw_input: &str) -> PermissionCheckResult {
         let Some((entry, _)) = self.find_matching_entry(ctx, raw_input) else {
-            return PermissionCheckResult {
-                matched: false,
-                allowed: false,
-            };
+            return PermissionCheckResult { matched: false, allowed: false };
         };
 
         let permissions = entry.permissions.lock().unwrap();

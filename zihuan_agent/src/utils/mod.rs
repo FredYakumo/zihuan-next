@@ -16,7 +16,6 @@ pub fn build_state_system_prefix_lines(
     if !emotion_prompt.is_empty() {
         // lines.push(format!("- Your emotion expression instructions: {emotion_prompt}"));
         lines.push(format!("- {emotion_prompt}"));
-
     }
     lines.push(format!("- Your character instructions: {character_instructions}"));
     lines

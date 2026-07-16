@@ -117,8 +117,7 @@ fn execute_image_understand(
         .ok_or_else(|| Error::ValidationError("media_id is required".to_string()))?;
     let focus_text = optional_string_argument(arguments, "question");
 
-    let persisted_media =
-        resolve_image_understand_media(&media_id, current_event, rdb_pool.as_ref())?;
+    let persisted_media = resolve_image_understand_media(&media_id, current_event, rdb_pool.as_ref())?;
     let s3_ref = resolve_image_understand_s3_ref(s3_ref)?;
     let description = analyze_persisted_media(&persisted_media, focus_text.as_deref(), s3_ref.as_deref())?;
     Ok(description)
