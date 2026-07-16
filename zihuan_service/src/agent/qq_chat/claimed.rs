@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::{info, warn};
 
@@ -304,6 +305,14 @@ impl QqChatAgentServiceInner {
         let raw_user_message = prepared_input.current_text_for_prompt().to_string();
         let mut current_message = inference_input.current_text_for_prompt().to_string();
         trace.log_user_message(&raw_user_message, &current_message);
+
+        let emotion_dimensions = current_qq_chat_agent_service_config()?.resolved_emotion_dimensions();
+        let now_unix_seconds = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+        {
+            let mut session_state = ctx.session_state_store.lock().unwrap();
+            session_state.dissipate_expired_emotions(&emotion_dimensions, now_unix_seconds);
+            session_state.record_conversation_activity(now_unix_seconds);
+        }
 
         // Reset session-level tool quota for each new turn so that
         // tool call limits apply per single user message cycle and not
@@ -643,7 +652,6 @@ impl QqChatAgentServiceInner {
         }
 
         let current_session_state = { ctx.session_state_store.lock().unwrap().clone() };
-        let emotion_dimensions = current_qq_chat_agent_service_config()?.resolved_emotion_dimensions();
         let mut current_session_state = current_session_state;
         current_session_state.sync_emotion_dimensions(&emotion_dimensions);
         let turn_session_state = Arc::new(Mutex::new(current_session_state));

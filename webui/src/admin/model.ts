@@ -166,6 +166,7 @@ export type QqChatEmotionDimensionFormItem = {
   name: string;
   increase_weight?: number;
   decrease_weight?: number;
+  dissipation_hours?: number;
   positive_prompt?: string;
   negative_prompt?: string;
 };
@@ -284,13 +285,13 @@ export function defaultQqChatDefaultToolsEnabled(): Record<string, boolean> {
 
 export function defaultQqChatEmotionDimensions(): QqChatEmotionDimensionFormItem[] {
   return [
-    { name: "开心", increase_weight: 1, decrease_weight: 1 },
-    { name: "烦恼", increase_weight: 1, decrease_weight: 1 },
-    { name: "生气", increase_weight: 1, decrease_weight: 1 },
-    { name: "伤心", increase_weight: 1, decrease_weight: 1 },
-    { name: "害怕", increase_weight: 1, decrease_weight: 1 },
-    { name: "焦虑", increase_weight: 1, decrease_weight: 1 },
-    { name: "激动", increase_weight: 1, decrease_weight: 1 },
+    { name: "开心", increase_weight: 1, decrease_weight: 1, dissipation_hours: 5 },
+    { name: "烦恼", increase_weight: 1, decrease_weight: 1, dissipation_hours: 5 },
+    { name: "生气", increase_weight: 1, decrease_weight: 1, dissipation_hours: 5 },
+    { name: "伤心", increase_weight: 1, decrease_weight: 1, dissipation_hours: 5 },
+    { name: "害怕", increase_weight: 1, decrease_weight: 1, dissipation_hours: 5 },
+    { name: "焦虑", increase_weight: 1, decrease_weight: 1, dissipation_hours: 5 },
+    { name: "激动", increase_weight: 1, decrease_weight: 1, dissipation_hours: 5 },
   ];
 }
 
@@ -1174,11 +1175,17 @@ function normalizeQqChatEmotionDimensions(
     const decreaseWeight = Number(
       (item as Record<string, unknown>).decrease_weight ?? 1,
     );
+    const dissipationHours = Number(
+      (item as Record<string, unknown>).dissipation_hours ?? 5,
+    );
     if (!Number.isFinite(increaseWeight) || increaseWeight <= 0) {
       throw new Error(`情绪维度 '${name}' 的 increase_weight 必须大于 0`);
     }
     if (!Number.isFinite(decreaseWeight) || decreaseWeight <= 0) {
       throw new Error(`情绪维度 '${name}' 的 decrease_weight 必须大于 0`);
+    }
+    if (!Number.isInteger(dissipationHours) || dissipationHours <= 0) {
+      throw new Error(`情绪维度 '${name}' 的 dissipation_hours 必须是正整数`);
     }
 
     const positivePrompt = String(
@@ -1192,6 +1199,7 @@ function normalizeQqChatEmotionDimensions(
       name,
       increase_weight: increaseWeight,
       decrease_weight: decreaseWeight,
+      dissipation_hours: dissipationHours,
       ...(positivePrompt ? { positive_prompt: positivePrompt } : {}),
       ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
     };

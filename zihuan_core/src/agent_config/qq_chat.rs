@@ -61,6 +61,8 @@ pub struct QqChatEmotionDimensionConfig {
     pub positive_prompt: Option<String>,
     #[serde(default)]
     pub negative_prompt: Option<String>,
+    #[serde(default = "default_emotion_dissipation_hours")]
+    pub dissipation_hours: i64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -249,6 +251,7 @@ impl QqChatAgentServiceConfig {
                 decrease_weight: sanitize_emotion_adjust_weight(dimension.decrease_weight),
                 positive_prompt: dimension.positive_prompt.clone(),
                 negative_prompt: dimension.negative_prompt.clone(),
+                dissipation_hours: sanitize_emotion_dissipation_hours(dimension.dissipation_hours),
             });
         }
         if dimensions.is_empty() {
@@ -350,6 +353,7 @@ fn default_qq_chat_emotion_dimensions() -> Vec<QqChatEmotionDimensionConfig> {
             decrease_weight: default_emotion_adjust_weight(),
             positive_prompt: None,
             negative_prompt: None,
+            dissipation_hours: default_emotion_dissipation_hours(),
         })
         .collect()
 }
@@ -358,11 +362,23 @@ fn default_emotion_adjust_weight() -> f64 {
     1.0
 }
 
+fn default_emotion_dissipation_hours() -> i64 {
+    5
+}
+
 fn sanitize_emotion_adjust_weight(weight: f64) -> f64 {
     if weight.is_finite() && weight > 0.0 {
         weight
     } else {
         default_emotion_adjust_weight()
+    }
+}
+
+fn sanitize_emotion_dissipation_hours(hours: i64) -> i64 {
+    if hours > 0 {
+        hours
+    } else {
+        default_emotion_dissipation_hours()
     }
 }
 

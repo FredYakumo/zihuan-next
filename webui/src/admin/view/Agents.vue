@@ -1585,6 +1585,15 @@
                       emotionDimensionDraft.decrease_weight
                     }}</span>
                   </div>
+                  <div class="field">
+                    <label>消解时间（小时）</label>
+                    <input
+                      v-model.number="emotionDimensionDraft.dissipation_hours"
+                      type="number"
+                      min="1"
+                      step="1"
+                    />
+                  </div>
                   <div class="field-full">
                     <label>正向风格提示词（可选）</label>
                     <input
@@ -1681,6 +1690,15 @@
                         emotionDimensionDraft.decrease_weight
                       }}</span>
                     </div>
+                    <div class="field">
+                      <label>消解时间（小时）</label>
+                      <input
+                        v-model.number="emotionDimensionDraft.dissipation_hours"
+                        type="number"
+                        min="1"
+                        step="1"
+                      />
+                    </div>
                     <div class="field-full">
                       <label>正向风格提示词（可选）</label>
                       <input
@@ -1774,6 +1792,9 @@
                         dimension.decrease_weight ?? 1
                       }}</span>
                     </div>
+                  </div>
+                  <div class="muted" style="margin-top: 8px">
+                    无对话 {{ dimension.dissipation_hours ?? 5 }} 小时后自动恢复默认
                   </div>
                   <div v-if="dimension.positive_prompt || dimension.negative_prompt" class="emotion-dim-prompts" style="margin-top: 8px">
                     <div v-if="dimension.positive_prompt" class="emotion-dim-prompt-line">

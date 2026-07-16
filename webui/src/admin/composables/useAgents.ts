@@ -91,12 +91,14 @@ const emotionDimensionDraft = reactive<{
   name: string;
   increase_weight: number;
   decrease_weight: number;
+  dissipation_hours: number;
   positive_prompt: string;
   negative_prompt: string;
 }>({
   name: "",
   increase_weight: 1,
   decrease_weight: 1,
+  dissipation_hours: 5,
   positive_prompt: "",
   negative_prompt: "",
 });
@@ -406,6 +408,7 @@ function resetEmotionDimensionDraft() {
   emotionDimensionDraft.name = "";
   emotionDimensionDraft.increase_weight = 1;
   emotionDimensionDraft.decrease_weight = 1;
+  emotionDimensionDraft.dissipation_hours = 5;
   emotionDimensionDraft.positive_prompt = "";
   emotionDimensionDraft.negative_prompt = "";
 }
@@ -441,10 +444,18 @@ function buildEmotionDimensionPayload(): QqChatEmotionDimensionFormItem | null {
     alert("降权重不能为负数");
     return null;
   }
+  if (
+    !Number.isInteger(emotionDimensionDraft.dissipation_hours) ||
+    emotionDimensionDraft.dissipation_hours <= 0
+  ) {
+    alert("消解时间必须是正整数小时");
+    return null;
+  }
   return {
     name,
     increase_weight: emotionDimensionDraft.increase_weight,
     decrease_weight: emotionDimensionDraft.decrease_weight,
+    dissipation_hours: emotionDimensionDraft.dissipation_hours,
     positive_prompt: emotionDimensionDraft.positive_prompt.trim() || undefined,
     negative_prompt: emotionDimensionDraft.negative_prompt.trim() || undefined,
   };
@@ -479,6 +490,7 @@ function editEmotionDimension(index: number) {
   emotionDimensionDraft.name = dimension.name;
   emotionDimensionDraft.increase_weight = Number(dimension.increase_weight ?? 1);
   emotionDimensionDraft.decrease_weight = Number(dimension.decrease_weight ?? 1);
+  emotionDimensionDraft.dissipation_hours = Number(dimension.dissipation_hours ?? 5);
   emotionDimensionDraft.positive_prompt = dimension.positive_prompt ?? "";
   emotionDimensionDraft.negative_prompt = dimension.negative_prompt ?? "";
 }

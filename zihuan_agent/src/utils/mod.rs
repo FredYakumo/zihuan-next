@@ -14,7 +14,9 @@ pub fn build_state_system_prefix_lines(
     let mut lines = vec!["**Your character's current state**:".to_string()];
     let emotion_prompt = emotion_expression_prompt(session_state, emotion_dimensions);
     if !emotion_prompt.is_empty() {
-        lines.push(format!("- Your emotion expression instructions: {emotion_prompt}"));
+        // lines.push(format!("- Your emotion expression instructions: {emotion_prompt}"));
+        lines.push(format!("- {emotion_prompt}"));
+
     }
     lines.push(format!("- Your character instructions: {character_instructions}"));
     lines

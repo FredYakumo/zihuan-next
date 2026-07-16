@@ -603,6 +603,7 @@ mod build_user_message_tests {
             decrease_weight: 1.0,
             positive_prompt: None,
             negative_prompt: None,
+            dissipation_hours: 5,
         }]
     }
 }

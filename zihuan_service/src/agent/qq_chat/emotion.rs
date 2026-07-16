@@ -77,7 +77,12 @@ pub(crate) fn run_emotion_agent(
     conversation.push(user_message.clone());
 
     let mut brain = Brain::new(Arc::clone(llm));
-    brain.add_tool(UpdateAgentStateBrainTool::new(Arc::clone(&session_state), emotion_dimensions));
+    brain.add_tool(UpdateAgentStateBrainTool::new(
+        Arc::clone(&session_state),
+        emotion_dimensions,
+        Arc::clone(llm),
+        input.current_text_for_prompt().to_string(),
+    ));
     let (output, stop_reason) = brain.run(conversation);
     if !matches!(stop_reason, BrainStopReason::Done) {
         warn!("{LOG_PREFIX} inference ended without normal completion: {stop_reason:?}");
