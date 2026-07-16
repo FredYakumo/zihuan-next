@@ -384,6 +384,15 @@ function editService(service: ServiceWithRuntime) {
   showEditModal.value = true;
 }
 
+function duplicateService(service: ServiceWithRuntime) {
+  Object.assign(form, serviceFormFromConfig(service));
+  form.id = null;
+  editingServiceId.value = "";
+  form.name = `${form.name} 副本`;
+  showCreatePicker.value = true;
+  showCreateForm.value = true;
+}
+
 function closeEditModal() {
   showEmotionDimensionsModal.value = false;
   showEditModal.value = false;
@@ -1000,6 +1009,7 @@ onMounted(() => {
     closeEditor,
     load,
     editService,
+    duplicateService,
     closeEditModal,
     openEmotionDimensionsModal,
     closeEmotionDimensionsModal,

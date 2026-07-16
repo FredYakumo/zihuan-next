@@ -403,6 +403,7 @@
                 </div>
                 <div class="inline-actions connection-card-display-actions">
                   <button class="btn ghost connection-card-compact-btn" @click="editConnection(connection)">编辑</button>
+                  <button class="btn ghost connection-card-compact-btn" @click="duplicateConnection(connection)">复制添加</button>
                   <button class="btn warn connection-card-compact-btn" @click="removeConnection(connection.config_id)">删除</button>
                 </div>
               </div>
@@ -441,6 +442,7 @@ const {
   pickCreateType,
   closeEditor,
   editConnection,
+  duplicateConnection,
   submitForm,
   removeConnection,
   summarizeConnection,

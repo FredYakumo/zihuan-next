@@ -96,6 +96,14 @@ export function useConnections() {
     showEditor.value = false;
   }
 
+  function duplicateConnection(connection: ConnectionConfig) {
+    Object.assign(form, connectionFormFromConfig(connection));
+    form.id = null;
+    form.name = `${form.name} 副本`;
+    showCreatePicker.value = true;
+    showEditor.value = true;
+  }
+
   async function submitForm() {
     if (!form.name.trim()) {
       alert("请填写连接名称");

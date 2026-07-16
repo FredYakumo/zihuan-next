@@ -2224,19 +2224,25 @@
               <strong>最近错误</strong>
               <span>{{ service.runtime.last_error }}</span>
             </div>
-            <div class="inline-actions connection-card-display-actions">
+           <div class="inline-actions connection-card-display-actions">
+             <button
+               class="btn ghost connection-card-compact-btn"
+               @click="editService(service)"
+             >
+               编辑
+             </button>
               <button
                 class="btn ghost connection-card-compact-btn"
-                @click="editService(service)"
+                @click="duplicateService(service)"
               >
-                编辑
+                复制添加
               </button>
-              <button
-                class="btn connection-card-compact-btn"
-                @click="toggleServiceRuntime(service)"
-              >
-                {{ service.runtime.status === "running" ? "停止" : "启动" }}
-              </button>
+             <button
+               class="btn connection-card-compact-btn"
+               @click="toggleServiceRuntime(service)"
+             >
+               {{ service.runtime.status === "running" ? "停止" : "启动" }}
+             </button>
               <button
                 class="btn warn connection-card-compact-btn"
                 @click="removeService(service.config_id)"
@@ -2329,6 +2335,7 @@ const {
   closeEditor,
   load,
   editService,
+  duplicateService,
   closeEditModal,
   openEmotionDimensionsModal,
   closeEmotionDimensionsModal,
