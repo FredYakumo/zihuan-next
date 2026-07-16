@@ -981,11 +981,14 @@ impl QqChatAgentServiceInner {
             emotion_dimensions: emotion_dimensions.clone(),
         }));
 
-        if let (Some(memory_ref), Some(embedding_model)) =
-            (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
-        {
+        let memory_backend = ctx
+            .elasticsearch_memory_ref
+            .cloned()
+            .map(AgentMemoryBackend::Elasticsearch)
+            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate));
+        if let (Some(memory_backend), Some(embedding_model)) = (memory_backend, ctx.embedding_model.cloned()) {
             let memory_resources = AgentMemoryToolResources {
-                memory_backend: AgentMemoryBackend::Weaviate(memory_ref),
+                memory_backend,
                 embedding_model,
                 llm: Arc::clone(ctx.llm),
                 access: AgentMemoryAccessContext {
@@ -1056,11 +1059,15 @@ impl QqChatAgentServiceInner {
                 ctx.weaviate_image_ref.cloned(),
                 Some(prepared_input.event.clone()),
                 ToolNotificationTarget::dashboard(),
-                if let (Some(memory_ref), Some(embedding_model)) =
-                    (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
-                {
+                if let (Some(memory_backend), Some(embedding_model)) = (
+                    ctx.elasticsearch_memory_ref
+                        .cloned()
+                        .map(AgentMemoryBackend::Elasticsearch)
+                        .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)),
+                    ctx.embedding_model.cloned(),
+                ) {
                     Some(AgentMemoryToolResources {
-                        memory_backend: AgentMemoryBackend::Weaviate(memory_ref),
+                        memory_backend,
                         embedding_model,
                         llm: Arc::clone(turn_llm),
                         access: AgentMemoryAccessContext {

@@ -337,6 +337,19 @@ pub async fn spawn(
     on_finish: super::OnFinishShared,
     task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
 ) -> Result<JoinHandle<()>> {
+    if config
+        .weaviate_memory_connection_id
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+        && config
+            .elasticsearch_memory_connection_id
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+    {
+        return Err(Error::ValidationError(
+            "configure either Weaviate or Elasticsearch for agent memory, not both".to_string(),
+        ));
+    }
     let llm_refs = load_llm_refs()?;
     let bot_connection = find_connection(&connections, &config.ims_bot_adapter_connection_id)?;
     let ConnectionKind::BotAdapter(_) = &bot_connection.kind else {
@@ -395,6 +408,14 @@ pub async fn spawn(
             Some(WeaviateCollectionSchema::ImageSemantic),
         )
     })?;
+    let elasticsearch_memory_ref = build_elasticsearch_ref(
+        config
+            .elasticsearch_memory_connection_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty()),
+        &connections,
+        Some(WeaviateCollectionSchema::AgentMemory),
+    )?;
     let weaviate_memory_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
             config
@@ -431,6 +452,7 @@ pub async fn spawn(
         rdb_pool,
         weaviate_image_ref,
         weaviate_memory_ref,
+        elasticsearch_memory_ref,
         embedding_model,
         web_search_engine,
         s3_ref: object_storage.clone(),
