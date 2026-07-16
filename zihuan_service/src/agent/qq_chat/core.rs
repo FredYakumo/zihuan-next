@@ -169,6 +169,12 @@ fn build_tool_instruction_rules(default_tools_enabled: &HashMap<String, bool>) -
         );
     }
 
+    if is_enabled(DEFAULT_TOOL_REMEMBER_CONTENT) {
+        lines.push(
+            "- 当你在本轮回复中描述自己对某个具体事物、人物、话题或行为的态度、喜好、厌恶、偏好或长期观点时，必须在发送最终回复前调用 `remember_content` 写入该记忆；记忆应明确记录对象和对应态度，不要只写模糊结论".to_string(),
+        );
+    }
+
     if has_web_search {
         lines.push(
             "- 如果当前环境没有可用的联网搜索工具，就不要假装联网成功；这时应优先直接回答，或在必要时明确说明当前无法联网核验".to_string(),
