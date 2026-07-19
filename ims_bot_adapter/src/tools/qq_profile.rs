@@ -248,13 +248,13 @@ fn execute_profile_query(
         "私聊".to_string()
     };
 
-    let avatar_media_id = if query.contains(&FIELD_AVATAR_MEDIA_ID.to_string()) {
-        resolve_avatar_media_id(user_id, s3_ref)
+    let avatar_media = if query.contains(&FIELD_AVATAR_MEDIA_ID.to_string()) {
+        resolve_avatar_media(user_id, s3_ref)
     } else {
         None
     };
 
-    let result = build_profile_result(query, &stranger, &identity, avatar_media_id.as_deref());
+    let result = build_profile_result(query, &stranger, &identity, avatar_media.as_ref());
     Ok(serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string()))
 }
 
@@ -333,9 +333,9 @@ pub fn fetch_group_member_role(adapter: &SharedBotAdapter, group_id: i64, user_i
 /// Resolves a QQ avatar to a persisted media ID, with S3-backed caching.
 ///
 /// On cache miss, downloads the avatar from QQ's CDN via `qq_avatar_url`,
-/// uploads to S3, and returns the media ID. The S3 key is deterministic:
+/// uploads to S3, and returns the persisted media. The S3 key is deterministic:
 /// `qq_avatar/{user_id}.jpg`.
-fn resolve_avatar_media_id(user_id: &str, s3_ref: &Option<Arc<S3Ref>>) -> Option<String> {
+fn resolve_avatar_media(user_id: &str, s3_ref: &Option<Arc<S3Ref>>) -> Option<PersistedMedia> {
     let s3 = s3_ref.as_ref()?;
     let key = avatar_s3_key(user_id);
     let media = avatar_media_from_s3_key(&key);
@@ -353,7 +353,7 @@ fn resolve_avatar_media_id(user_id: &str, s3_ref: &Option<Arc<S3Ref>>) -> Option
     };
 
     if cached.is_some() {
-        return Some(media.media_id);
+        return Some(media);
     }
 
     let avatar_url = qq_avatar_url(user_id)?;
@@ -380,7 +380,7 @@ fn resolve_avatar_media_id(user_id: &str, s3_ref: &Option<Arc<S3Ref>>) -> Option
     match zihuan_core::runtime::block_async(async { s3.put_object(&key, AVATAR_CONTENT_TYPE, &bytes).await }) {
         Ok(_) => {
             info!("{LOG_PREFIX} avatar uploaded to S3 for user_id={user_id} key={key}");
-            Some(media.media_id)
+            Some(media)
         }
         Err(e) => {
             warn!("{LOG_PREFIX} failed to upload avatar to S3 for user_id={user_id}: {e}");
@@ -408,7 +408,7 @@ fn build_profile_result(
     query: &[String],
     stranger: &StrangerInfo,
     identity: &str,
-    avatar_media_id: Option<&str>,
+    avatar_media: Option<&PersistedMedia>,
 ) -> Value {
     let mut result = serde_json::Map::new();
     result.insert("ok".to_string(), Value::Bool(true));
@@ -420,8 +420,8 @@ fn build_profile_result(
             FIELD_AGE => ("年龄", Value::Number(stranger.age.into())),
             FIELD_AVATAR_MEDIA_ID => (
                 "头像media_id",
-                match avatar_media_id {
-                    Some(id) => Value::String(id.to_string()),
+                match avatar_media {
+                    Some(media) => Value::String(media.media_id.clone()),
                     None => Value::Null,
                 },
             ),
@@ -429,6 +429,12 @@ fn build_profile_result(
             _ => continue,
         };
         result.insert(key.to_string(), value);
+    }
+
+    if query.contains(&FIELD_AVATAR_MEDIA_ID.to_string()) {
+        if let Some(media) = avatar_media.and_then(|media| serde_json::to_value(media).ok()) {
+            result.insert("images".to_string(), Value::Array(vec![media]));
+        }
     }
 
     Value::Object(result)
