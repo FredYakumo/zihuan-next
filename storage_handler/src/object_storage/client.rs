@@ -4,7 +4,7 @@ use std::sync::Arc;
 use chrono::Datelike;
 use zihuan_core::error::Result;
 use zihuan_core::runtime::block_async;
-use zihuan_core::url_utils::content_type_from_url;
+use zihuan_core::url_utils::{image_content_type_from_bytes, supported_image_content_type};
 use zihuan_graph_engine::object_storage::S3Ref;
 
 #[derive(Debug, Clone)]
@@ -102,14 +102,45 @@ pub fn upload_remote_image_to_s3(s3_ref: &S3Ref, url: &str) -> Result<String> {
             resp.status()
         )));
     }
+    let response_content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned);
     let bytes = resp.bytes()?.to_vec();
+    let content_type = verified_image_content_type(response_content_type.as_deref(), &bytes)?;
     let key = zihuan_core::utils::string_utils::derive_tavily_s3_key(url);
-    let content_type = content_type_from_url(url);
     let s3_ref_clone = s3_ref.clone();
     block_async(async move {
         s3_ref_clone.put_object(&key, content_type, &bytes).await?;
         Ok(key)
     })
+}
+
+fn verified_image_content_type(response_content_type: Option<&str>, bytes: &[u8]) -> Result<&'static str> {
+    if bytes.is_empty() {
+        return Err(zihuan_core::error::Error::StringError(
+            "image download returned an empty body".to_string(),
+        ));
+    }
+
+    let response_content_type = response_content_type.and_then(supported_image_content_type).ok_or_else(|| {
+        zihuan_core::error::Error::StringError("image download returned no supported image content type".to_string())
+    })?;
+    let detected_content_type = image_content_type_from_bytes(bytes).ok_or_else(|| {
+        zihuan_core::error::Error::StringError(
+            "image download body does not match a supported image signature".to_string(),
+        )
+    })?;
+
+    if response_content_type != detected_content_type {
+        return Err(zihuan_core::error::Error::StringError(format!(
+            "image download content type mismatch: response={}, detected={}",
+            response_content_type, detected_content_type
+        )));
+    }
+
+    Ok(detected_content_type)
 }
 
 fn sanitize_filename(file_name: &str) -> String {
