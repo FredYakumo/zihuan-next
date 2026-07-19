@@ -288,14 +288,35 @@ fn outbound_image_file_name(image: &ImageMessage, mime_type: &str) -> String {
         .flatten()
     {
         if let Some(file_name) = safe_file_name(candidate) {
-            if Path::new(&file_name).extension().is_some() {
+            if file_name_matches_image_mime_type(&file_name, mime_type) {
                 return file_name;
             }
-            return format!("{file_name}.{extension}");
+            let stem = Path::new(&file_name)
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .filter(|value| !value.is_empty())
+                .unwrap_or("image");
+            return format!("{stem}.{extension}");
         }
     }
 
     format!("image.{extension}")
+}
+
+fn file_name_matches_image_mime_type(file_name: &str, mime_type: &str) -> bool {
+    let Some(extension) = Path::new(file_name).extension().and_then(|value| value.to_str()) else {
+        return false;
+    };
+
+    matches!(
+        (extension.to_ascii_lowercase().as_str(), mime_type),
+        ("jpg" | "jpeg", "image/jpeg")
+            | ("png", "image/png")
+            | ("gif", "image/gif")
+            | ("webp", "image/webp")
+            | ("bmp", "image/bmp")
+            | ("avif", "image/avif")
+    )
 }
 
 fn safe_file_name(value: &str) -> Option<String> {
