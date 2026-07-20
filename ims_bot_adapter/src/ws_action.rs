@@ -526,6 +526,15 @@ pub async fn ws_send_action_async(
     action_name: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value> {
+    ws_send_action_with_timeout_async(adapter_ref, action_name, params, std::time::Duration::from_secs(30)).await
+}
+
+pub async fn ws_send_action_with_timeout_async(
+    adapter_ref: &SharedBotAdapter,
+    action_name: &str,
+    params: serde_json::Value,
+    response_timeout: std::time::Duration,
+) -> Result<serde_json::Value> {
     let echo = next_echo();
     let payload = serde_json::json!({
         "action": action_name,
@@ -549,17 +558,29 @@ pub async fn ws_send_action_async(
     let (tx, rx) = oneshot::channel::<serde_json::Value>();
     pending_actions.lock().await.insert(echo.clone(), tx);
 
-    action_tx
-        .send(payload.to_string())
-        .map_err(|_| zihuan_core::error::Error::ValidationError("Failed to enqueue WebSocket action".to_string()))?;
+    if action_tx.send(payload.to_string()).is_err() {
+        pending_actions.lock().await.remove(&echo);
+        return Err(zihuan_core::error::Error::ValidationError(
+            "Failed to enqueue WebSocket action".to_string(),
+        ));
+    }
 
-    // Wait for the response (30 s timeout).
-    let response = tokio::time::timeout(std::time::Duration::from_secs(30), rx)
-        .await
-        .map_err(|_| {
-            zihuan_core::error::Error::ValidationError(format!("Action '{}' timed out after 30 s", action_name))
-        })?
-        .map_err(|_| zihuan_core::error::Error::ValidationError("Response channel closed unexpectedly".to_string()))?;
+    let response = match tokio::time::timeout(response_timeout, rx).await {
+        Ok(Ok(response)) => response,
+        Ok(Err(_)) => {
+            return Err(zihuan_core::error::Error::ValidationError(
+                "Response channel closed unexpectedly".to_string(),
+            ));
+        }
+        Err(_) => {
+            pending_actions.lock().await.remove(&echo);
+            return Err(zihuan_core::error::Error::ValidationError(format!(
+                "Action '{}' timed out after {} s",
+                action_name,
+                response_timeout.as_secs()
+            )));
+        }
+    };
 
     Ok(response)
 }
@@ -570,6 +591,21 @@ pub fn ws_send_action(
     params: serde_json::Value,
 ) -> Result<serde_json::Value> {
     let run = ws_send_action_async(adapter_ref, action_name, params);
+
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        block_in_place(|| handle.block_on(run))
+    } else {
+        tokio::runtime::Runtime::new()?.block_on(run)
+    }
+}
+
+pub fn ws_send_action_with_timeout(
+    adapter_ref: &SharedBotAdapter,
+    action_name: &str,
+    params: serde_json::Value,
+    response_timeout: std::time::Duration,
+) -> Result<serde_json::Value> {
+    let run = ws_send_action_with_timeout_async(adapter_ref, action_name, params, response_timeout);
 
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         block_in_place(|| handle.block_on(run))
