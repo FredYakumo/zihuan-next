@@ -1,5 +1,5 @@
 mod core;
-mod emotion;
+mod chat_preprompt;
 pub mod ignore_store;
 mod inbox;
 pub mod language_style_store;

@@ -319,6 +319,7 @@ pub(crate) fn build_user_message(
     message_rate_limit_warning: Option<&str>,
     session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
+    preprompt_context: Option<&str>,
 ) -> LLMMessage {
     let style_prompt = if has_noticeable_emotion_expression(session_state, emotion_dimensions) {
         None
@@ -327,7 +328,7 @@ pub(crate) fn build_user_message(
     };
     let merged_character_instructions = merge_character_and_style_prompt(character_instructions, style_prompt);
     let state_lines =
-        build_state_system_prefix_lines(session_state, emotion_dimensions, &merged_character_instructions);
+        build_state_system_prefix_lines(session_state, emotion_dimensions, &merged_character_instructions, preprompt_context);
     let sender_name = ims_bot_adapter::utils::sender_display_name!(
         &current_input.event.sender.nickname,
         &current_input.event.sender.card

@@ -44,7 +44,7 @@ use storage_handler::AgentMemoryAccessContext;
 
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use crate::storage::qq_chat_history_store::{
-    conversation_history_key, emotion_history_key, load_history, save_history,
+    conversation_history_key, chat_preprompt_history_key, load_history, save_history,
 };
 
 use crate::agent::classify_intent::{classify_intent_with_trace, IntentCategory};
@@ -60,7 +60,7 @@ use super::{
     QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 
-use super::super::emotion::run_emotion_agent;
+use super::super::chat_preprompt::run_chat_preprompt_agent;
 
 use super::super::steer::QqChatServiceSteerHook;
 use super::super::tool_quota::wrap_brain_tool_with_quota;
@@ -853,16 +853,47 @@ impl QqChatAgentServiceInner {
         current_session_state.sync_emotion_dimensions(&emotion_dimensions);
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
-        let emotion_history_key = emotion_history_key(sender_id);
-        run_emotion_agent(
+        let chat_preprompt_history_key = chat_preprompt_history_key(sender_id);
+        let preprompt_memory_backend = ctx
+            .elasticsearch_memory_ref
+            .cloned()
+            .map(AgentMemoryBackend::Elasticsearch)
+            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate));
+        let preprompt_memory_resources = match (preprompt_memory_backend, ctx.embedding_model.cloned()) {
+            (Some(memory_backend), Some(embedding_model)) => Some(AgentMemoryToolResources {
+                memory_backend,
+                embedding_model,
+                llm: Arc::clone(ctx.llm),
+                access: AgentMemoryAccessContext {
+                    sender_id: Some(sender_id.to_string()),
+                    group_id: if is_group {
+                        Some(target_id.to_string())
+                    } else {
+                        prepared_input.event.group_id.map(|value| value.to_string())
+                    },
+                    is_group,
+                    admin: false,
+                    skip_expiry_extend: false,
+                },
+            }),
+            _ => None,
+        };
+        let preprompt_context = run_chat_preprompt_agent(
             ctx.natural_language_reply_llm,
             ctx.cache,
-            &emotion_history_key,
+            &chat_preprompt_history_key,
             &prepared_input,
             ctx.bot_name,
+            bot_id,
+            sender_id,
+            target_id,
+            is_group,
             Arc::clone(&turn_session_state),
             emotion_dimensions.clone(),
             ctx.compact_context_length,
+            preprompt_memory_resources,
+            ctx.rdb_pool.cloned(),
+            &self.default_tools_enabled,
         );
 
         let base_system_prompt = if is_group {
