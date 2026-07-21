@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use storage_handler::AgentMemoryAccessContext;
+use storage_handler::ElasticsearchRef;
 use zihuan_agent::brain::BrainTool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -31,7 +32,8 @@ mod build_metadata {
 }
 
 pub(crate) use agent_memory::{
-    AgentMemoryToolResources, ListAvailableMemoryKeysBrainTool, RememberContentBrainTool, SearchMemoryContentBrainTool,
+    AgentMemoryBackend, AgentMemoryToolResources, ListAvailableMemoryKeysBrainTool, RememberContentBrainTool,
+    SearchMemoryContentBrainTool,
 };
 pub(crate) use agent_state::UpdateAgentStateBrainTool;
 pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS};
@@ -75,7 +77,9 @@ pub(crate) fn build_info_brain_tools(
     rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
+    elasticsearch_image_ref: Option<Arc<ElasticsearchRef>>,
     weaviate_memory_ref: Option<Arc<WeaviateRef>>,
+    elasticsearch_memory_ref: Option<Arc<ElasticsearchRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     llm: Option<Arc<dyn LLMBase>>,
     memory_access: AgentMemoryAccessContext,
@@ -129,9 +133,13 @@ pub(crate) fn build_info_brain_tools(
     }
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_SAVE_IMAGE) {
-        if s3_ref.is_some() && weaviate_image_ref.is_some() && embedding_model.is_some() {
+        if s3_ref.is_some()
+            && (weaviate_image_ref.is_some() || elasticsearch_image_ref.is_some())
+            && embedding_model.is_some()
+        {
             tools.push(Box::new(SaveImageBrainTool::new(
                 weaviate_image_ref.clone(),
+                elasticsearch_image_ref.clone(),
                 embedding_model.clone(),
                 s3_ref.clone(),
                 rdb_pool.clone(),
@@ -148,9 +156,12 @@ pub(crate) fn build_info_brain_tools(
         )));
     }
 
-    if let (Some(memory_ref), Some(embedding_model), Some(llm)) = (weaviate_memory_ref, embedding_model.clone(), llm) {
+    let memory_backend = elasticsearch_memory_ref
+        .map(AgentMemoryBackend::Elasticsearch)
+        .or_else(|| weaviate_memory_ref.map(AgentMemoryBackend::Weaviate));
+    if let (Some(memory_backend), Some(embedding_model), Some(llm)) = (memory_backend, embedding_model.clone(), llm) {
         let memory_resources = AgentMemoryToolResources {
-            memory_ref,
+            memory_backend,
             embedding_model,
             llm,
             access: memory_access,

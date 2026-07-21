@@ -4,9 +4,11 @@ use chrono::{Duration, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use storage_handler::ElasticsearchRef;
 use storage_handler::{
-    create_memory_record_with_vector, list_recent_memory_keys, search_memory_content_by_vector,
-    AgentMemoryAccessContext, AgentMemoryUpsert,
+    create_elasticsearch_memory_record, create_memory_record_with_vector, list_elasticsearch_memory_keys,
+    list_recent_memory_keys, search_elasticsearch_memory, search_memory_content_by_vector, AgentMemoryAccessContext,
+    AgentMemoryUpsert,
 };
 use zihuan_agent::brain::BrainTool;
 use zihuan_core::error::{Error, Result};
@@ -25,10 +27,16 @@ const MAX_MEMORY_TOP_N: i64 = 20;
 
 #[derive(Clone)]
 pub(crate) struct AgentMemoryToolResources {
-    pub memory_ref: Arc<WeaviateRef>,
+    pub memory_backend: AgentMemoryBackend,
     pub embedding_model: Arc<dyn EmbeddingBase>,
     pub llm: Arc<dyn LLMBase>,
     pub access: AgentMemoryAccessContext,
+}
+
+#[derive(Clone)]
+pub(crate) enum AgentMemoryBackend {
+    Weaviate(Arc<WeaviateRef>),
+    Elasticsearch(Arc<ElasticsearchRef>),
 }
 
 pub(crate) struct ListAvailableMemoryKeysBrainTool {
@@ -66,16 +74,25 @@ impl BrainTool for ListAvailableMemoryKeysBrainTool {
             let query = optional_string_argument(arguments, "query");
             let hits = if let Some(query) = query.as_deref() {
                 let vector = self.resources.embedding_model.inference(query)?;
-                let mut hits = search_memory_content_by_vector(
-                    &self.resources.memory_ref,
-                    &self.resources.access,
-                    &vector,
-                    top_n,
-                )?;
+                let mut hits = match &self.resources.memory_backend {
+                    AgentMemoryBackend::Weaviate(reference) => {
+                        search_memory_content_by_vector(reference, &self.resources.access, &vector, top_n)?
+                    }
+                    AgentMemoryBackend::Elasticsearch(reference) => {
+                        search_elasticsearch_memory(reference, &self.resources.access, query, &vector, top_n)?
+                    }
+                };
                 hits.sort_by(|left, right| right.record.updated_at.cmp(&left.record.updated_at));
                 hits
             } else {
-                list_recent_memory_keys(&self.resources.memory_ref, &self.resources.access, top_n, None)?
+                match &self.resources.memory_backend {
+                    AgentMemoryBackend::Weaviate(reference) => {
+                        list_recent_memory_keys(reference, &self.resources.access, top_n, None)?
+                    }
+                    AgentMemoryBackend::Elasticsearch(reference) => {
+                        list_elasticsearch_memory_keys(reference, &self.resources.access, top_n, None)?
+                    }
+                }
             };
             Ok(json!({
                 "ok": true,
@@ -130,8 +147,14 @@ impl BrainTool for SearchMemoryContentBrainTool {
                 MAX_MEMORY_TOP_N,
             );
             let vector = self.resources.embedding_model.inference(&query)?;
-            let hits =
-                search_memory_content_by_vector(&self.resources.memory_ref, &self.resources.access, &vector, top_n)?;
+            let hits = match &self.resources.memory_backend {
+                AgentMemoryBackend::Weaviate(reference) => {
+                    search_memory_content_by_vector(reference, &self.resources.access, &vector, top_n)?
+                }
+                AgentMemoryBackend::Elasticsearch(reference) => {
+                    search_elasticsearch_memory(reference, &self.resources.access, &query, &vector, top_n)?
+                }
+            };
             Ok(json!({
                 "ok": true,
                 "items": hits.into_iter().map(|hit| {
@@ -202,17 +225,21 @@ impl BrainTool for RememberContentBrainTool {
                         .resources
                         .embedding_model
                         .inference(&format!("{}\n{}", item.title, item.value))?;
-                    create_memory_record_with_vector(
-                        &self.resources.memory_ref,
-                        &AgentMemoryUpsert {
-                            key: item.title,
-                            value: item.value,
-                            expires_at: Some(expires_at.clone()),
-                            sender_id_list: sender_id_list.clone(),
-                            group_id_list: group_id_list.clone(),
-                        },
-                        Some(vector),
-                    )
+                    let input = AgentMemoryUpsert {
+                        key: item.title,
+                        value: item.value,
+                        expires_at: Some(expires_at.clone()),
+                        sender_id_list: sender_id_list.clone(),
+                        group_id_list: group_id_list.clone(),
+                    };
+                    match &self.resources.memory_backend {
+                        AgentMemoryBackend::Weaviate(reference) => {
+                            create_memory_record_with_vector(reference, &input, Some(vector))
+                        }
+                        AgentMemoryBackend::Elasticsearch(reference) => {
+                            create_elasticsearch_memory_record(reference, &input, vector)
+                        }
+                    }
                 })
                 .collect::<Result<Vec<_>>>()?;
             Ok(json!({

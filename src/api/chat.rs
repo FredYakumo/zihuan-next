@@ -153,6 +153,7 @@ pub struct ChatSessionSummary {
     pub workspace_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_ask_user: Option<AskUserRequest>,
+    pub title: String,
 }
 
 /// Single line in a `.jsonl` chat-history file.
@@ -1118,6 +1119,8 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
             .unwrap_or_else(|| Utc::now().to_rfc3339());
 
         let first_record = read_first_record(&path).ok().flatten();
+        let first_user_message = read_first_user_message(&path).ok().flatten();
+        let title = build_session_title(first_user_message.as_deref(), stem);
 
         if let Some(filter) = filter_agent_id {
             if first_record.as_ref().map(|r| r.agent_id.as_str()) != Some(filter) {
@@ -1134,6 +1137,7 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
             agent_avatar_url: first_record.as_ref().and_then(|r| r.agent_avatar_url.clone()),
             workspace_path: read_last_record(&path).ok().flatten().and_then(|r| r.workspace_path),
             pending_ask_user: read_last_record(&path).ok().flatten().and_then(|r| r.pending_ask_user),
+            title,
         });
     }
 
@@ -1184,6 +1188,44 @@ fn read_last_record(path: &Path) -> Result<Option<ChatHistoryRecord>> {
             .ok_or_else(|| Error::ValidationError("invalid session file name".to_string()))?,
     )?;
     Ok(records.into_iter().last())
+}
+
+/// Return the content of the first user message in a session file.
+fn read_first_user_message(path: &Path) -> Result<Option<String>> {
+    let file = OpenOptions::new().read(true).open(path)?;
+    let reader = BufReader::new(file);
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<ChatHistoryRecord>(line.trim()) {
+            Ok(record) if record.role == "user" => return Ok(Some(record.content)),
+            Ok(_) => continue,
+            Err(err) => {
+                return Err(Error::StringError(format!("failed to parse chat history record: {err}")));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Build a display title for a session from the first user message.
+fn build_session_title(raw: Option<&str>, session_id: &str) -> String {
+    let message = raw.map(str::trim).unwrap_or_default();
+    let message = message
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if message.is_empty() {
+        return session_id.chars().take(8).collect();
+    }
+    const MAX_TITLE_LEN: usize = 30;
+    if message.chars().count() <= MAX_TITLE_LEN {
+        return message;
+    }
+    let truncated: String = message.chars().take(MAX_TITLE_LEN).collect();
+    format!("{truncated}…")
 }
 
 fn resolve_effective_workspace_path(

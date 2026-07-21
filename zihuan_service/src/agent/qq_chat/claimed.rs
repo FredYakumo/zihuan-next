@@ -29,8 +29,8 @@ use ims_bot_adapter::tools::group_members::GetCurrentGroupMembersBrainTool;
 use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
 
 use super::super::super::tools::{
-    format_public_info_message, review_and_rewrite_reply, AgentMemoryToolResources, EditableQqAgentTool,
-    GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
+    format_public_info_message, review_and_rewrite_reply, AgentMemoryBackend, AgentMemoryToolResources,
+    EditableQqAgentTool, GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
     GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool, ModelIdentityContext,
     QqReplyReviewRequest, RememberContentBrainTool, ReplyMessageBrainTool, RunResearchSubagentBrainTool,
     SaveImageBrainTool, SearchMemoryContentBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget,
@@ -44,7 +44,7 @@ use storage_handler::AgentMemoryAccessContext;
 
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use crate::storage::qq_chat_history_store::{
-    conversation_history_key, emotion_history_key, load_history, save_history,
+    conversation_history_key, chat_preprompt_history_key, load_history, save_history,
 };
 
 use crate::agent::classify_intent::{classify_intent_with_trace, IntentCategory};
@@ -60,7 +60,7 @@ use super::{
     QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 
-use super::super::emotion::run_emotion_agent;
+use super::super::chat_preprompt::run_chat_preprompt_agent;
 
 use super::super::steer::QqChatServiceSteerHook;
 use super::super::tool_quota::wrap_brain_tool_with_quota;
@@ -853,16 +853,47 @@ impl QqChatAgentServiceInner {
         current_session_state.sync_emotion_dimensions(&emotion_dimensions);
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
-        let emotion_history_key = emotion_history_key(sender_id);
-        run_emotion_agent(
+        let chat_preprompt_history_key = chat_preprompt_history_key(sender_id);
+        let preprompt_memory_backend = ctx
+            .elasticsearch_memory_ref
+            .cloned()
+            .map(AgentMemoryBackend::Elasticsearch)
+            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate));
+        let preprompt_memory_resources = match (preprompt_memory_backend, ctx.embedding_model.cloned()) {
+            (Some(memory_backend), Some(embedding_model)) => Some(AgentMemoryToolResources {
+                memory_backend,
+                embedding_model,
+                llm: Arc::clone(ctx.llm),
+                access: AgentMemoryAccessContext {
+                    sender_id: Some(sender_id.to_string()),
+                    group_id: if is_group {
+                        Some(target_id.to_string())
+                    } else {
+                        prepared_input.event.group_id.map(|value| value.to_string())
+                    },
+                    is_group,
+                    admin: false,
+                    skip_expiry_extend: false,
+                },
+            }),
+            _ => None,
+        };
+        let preprompt_context = run_chat_preprompt_agent(
             ctx.natural_language_reply_llm,
             ctx.cache,
-            &emotion_history_key,
+            &chat_preprompt_history_key,
             &prepared_input,
             ctx.bot_name,
+            bot_id,
+            sender_id,
+            target_id,
+            is_group,
             Arc::clone(&turn_session_state),
             emotion_dimensions.clone(),
             ctx.compact_context_length,
+            preprompt_memory_resources,
+            ctx.rdb_pool.cloned(),
+            &self.default_tools_enabled,
         );
 
         let base_system_prompt = if is_group {
@@ -981,11 +1012,14 @@ impl QqChatAgentServiceInner {
             emotion_dimensions: emotion_dimensions.clone(),
         }));
 
-        if let (Some(memory_ref), Some(embedding_model)) =
-            (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
-        {
+        let memory_backend = ctx
+            .elasticsearch_memory_ref
+            .cloned()
+            .map(AgentMemoryBackend::Elasticsearch)
+            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate));
+        if let (Some(memory_backend), Some(embedding_model)) = (memory_backend, ctx.embedding_model.cloned()) {
             let memory_resources = AgentMemoryToolResources {
-                memory_ref,
+                memory_backend,
                 embedding_model,
                 llm: Arc::clone(ctx.llm),
                 access: AgentMemoryAccessContext {
@@ -1056,11 +1090,15 @@ impl QqChatAgentServiceInner {
                 ctx.weaviate_image_ref.cloned(),
                 Some(prepared_input.event.clone()),
                 ToolNotificationTarget::dashboard(),
-                if let (Some(memory_ref), Some(embedding_model)) =
-                    (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
-                {
+                if let (Some(memory_backend), Some(embedding_model)) = (
+                    ctx.elasticsearch_memory_ref
+                        .cloned()
+                        .map(AgentMemoryBackend::Elasticsearch)
+                        .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)),
+                    ctx.embedding_model.cloned(),
+                ) {
                     Some(AgentMemoryToolResources {
-                        memory_ref,
+                        memory_backend,
                         embedding_model,
                         llm: Arc::clone(turn_llm),
                         access: AgentMemoryAccessContext {
@@ -1143,6 +1181,7 @@ impl QqChatAgentServiceInner {
                 brain.add_tool(wrap_brain_tool_with_quota(
                     SaveImageBrainTool::new(
                         ctx.weaviate_image_ref.cloned(),
+                        None,
                         ctx.embedding_model.cloned(),
                         ctx.s3_ref.cloned(),
                         ctx.rdb_pool.cloned(),
@@ -1346,7 +1385,6 @@ impl QqChatAgentServiceInner {
                         sender_card: inference_event.sender.card.clone(),
                         session_state: turn_session_state.lock().unwrap().clone(),
                         emotion_dimensions: emotion_dimensions.clone(),
-                        available_media_ids: available_media.keys().cloned().collect(),
                         model_identity_context: Some(build_model_identity_context(ctx)),
                     },
                     trace,
@@ -1510,7 +1548,6 @@ impl QqChatAgentServiceInner {
                 sender_card: inference_event.sender.card.clone(),
                 session_state: turn_session_state.lock().unwrap().clone(),
                 emotion_dimensions: emotion_dimensions.to_vec(),
-                available_media_ids: Vec::new(),
                 model_identity_context: Some(build_model_identity_context(ctx)),
             },
             trace,

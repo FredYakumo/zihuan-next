@@ -4,7 +4,10 @@ use std::time::Duration;
 
 use crate::adapter::SharedBotAdapter;
 use crate::models::message::{ForwardMessage, ForwardNodeMessage, Message};
-use crate::ws_action::{json_i64, qq_message_list_to_send_json, response_message_id, response_success, ws_send_action};
+use crate::ws_action::{
+    json_i64, qq_message_list_to_send_json, response_message_id, response_success, ws_send_action,
+    ws_send_action_with_timeout,
+};
 use log::{info, warn};
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
@@ -12,6 +15,7 @@ use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Po
 pub const TARGET_TYPE_FRIEND: &str = "friend";
 pub const TARGET_TYPE_GROUP: &str = "group";
 const DEFAULT_LOG_PREFIX: &str = "[SendQQMessageBatchesNode]";
+const FORWARD_MESSAGE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub struct SendQQMessageBatchesNode {
     id: String,
@@ -234,7 +238,11 @@ fn send_one_batch(
         (action_name, params)
     };
 
-    let response = ws_send_action(adapter_ref, action_name, params)?;
+    let response = if matches!(action_name, "send_group_forward_msg" | "send_private_forward_msg") {
+        ws_send_action_with_timeout(adapter_ref, action_name, params, FORWARD_MESSAGE_RESPONSE_TIMEOUT)?
+    } else {
+        ws_send_action(adapter_ref, action_name, params)?
+    };
     Ok(SendBatchResult {
         batch_index,
         success: response_success(&response),

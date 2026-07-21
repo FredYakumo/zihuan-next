@@ -13,8 +13,8 @@ pub(crate) fn conversation_history_key(sender_id: &str) -> String {
     sender_id.to_string()
 }
 
-pub(crate) fn emotion_history_key(sender_id: &str) -> String {
-    format!("emotion:{sender_id}")
+pub(crate) fn chat_preprompt_history_key(sender_id: &str) -> String {
+    format!("chat_preprompt:{sender_id}")
 }
 
 pub(crate) fn load_history(cache: &Arc<LLMMessageSessionCacheRef>, history_key: &str) -> Vec<LLMMessage> {
@@ -37,23 +37,23 @@ pub(crate) fn clear_history(cache: &Arc<LLMMessageSessionCacheRef>, sender_id: &
     let history_key = conversation_history_key(sender_id);
     clear_history_key(cache, &history_key)?;
 
-    let emotion_history_key = emotion_history_key(sender_id);
-    clear_history_key(cache, &emotion_history_key)?;
+    let chat_preprompt_history_key = chat_preprompt_history_key(sender_id);
+    clear_history_key(cache, &chat_preprompt_history_key)?;
 
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{conversation_history_key, emotion_history_key};
+    use super::{chat_preprompt_history_key, conversation_history_key};
 
     #[test]
     fn history_keys_are_scoped_to_sender() {
         let conversation_key = conversation_history_key("sender");
-        let emotion_key = emotion_history_key("sender");
+        let preprompt_key = chat_preprompt_history_key("sender");
 
         assert_eq!(conversation_key, "sender");
-        assert_eq!(emotion_key, "emotion:sender");
-        assert_ne!(conversation_key, emotion_key);
+        assert_eq!(preprompt_key, "chat_preprompt:sender");
+        assert_ne!(conversation_key, preprompt_key);
     }
 }

@@ -51,6 +51,7 @@ fn build_steer_user_message(
     style_prompt: Option<&str>,
     session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
+    preprompt_context: Option<&str>,
 ) -> LLMMessage {
     let steer_message = build_user_message(
         current_input,
@@ -62,6 +63,7 @@ fn build_steer_user_message(
         None,
         session_state,
         emotion_dimensions,
+        preprompt_context,
     );
 
     apply_steer_prefix(steer_message, api_style)
@@ -77,6 +79,7 @@ fn build_merged_steer_user_message(
     style_prompt: Option<&str>,
     session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
+    preprompt_context: Option<&str>,
 ) -> LLMMessage {
     let style_prompt = if has_noticeable_emotion_expression(session_state, emotion_dimensions) {
         None
@@ -84,7 +87,12 @@ fn build_merged_steer_user_message(
         style_prompt
     };
     let merged_prompt = merge_character_and_style_prompt(system_prompt, style_prompt);
-    let prefix_lines = build_state_system_prefix_lines(session_state, emotion_dimensions, &merged_prompt);
+    let prefix_lines = build_state_system_prefix_lines(
+        session_state,
+        emotion_dimensions,
+        &merged_prompt,
+        preprompt_context,
+    );
     let prefix = prefix_lines.join("\n");
     let mut state_delta_lines = Vec::new();
     if let Some(last_input) = current_inputs.last() {
@@ -221,6 +229,7 @@ pub(crate) struct QqChatServiceSteerHook {
     pub(crate) style_prompt: Option<String>,
     pub(crate) session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
     pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
+    pub(crate) preprompt_context: Option<String>,
 }
 
 impl BrainIterationHook for QqChatServiceSteerHook {
@@ -262,6 +271,7 @@ impl BrainIterationHook for QqChatServiceSteerHook {
                 self.style_prompt.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
+                self.preprompt_context.as_deref(),
             )
         } else {
             let mut session_state = self.session_state.lock().unwrap();
@@ -275,6 +285,7 @@ impl BrainIterationHook for QqChatServiceSteerHook {
                 self.style_prompt.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
+                self.preprompt_context.as_deref(),
             )
         };
         consumed_guard.push(steer_message.clone());

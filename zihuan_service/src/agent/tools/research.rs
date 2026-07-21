@@ -115,9 +115,7 @@ impl BrainTool for RunResearchSubagentBrainTool {
             let output_requirements = optional_string_argument(arguments, "output_requirements");
 
             // Write initial task progress so the dashboard shows research has started.
-            let progress_msg = format!(
-                "I will start working on this problem: \"{problem}\""
-            );
+            let progress_msg = format!("I will start working on this problem: \"{problem}\"");
             append_current_task_progress(progress_msg);
 
             let mut user_prompt = problem.clone();
@@ -128,9 +126,7 @@ impl BrainTool for RunResearchSubagentBrainTool {
                 user_prompt.push_str(&format!("\n\nOutput requirements:\n{reqs}"));
             }
 
-            info!(
-                "{LOG_PREFIX} starting research, problem: {problem}"
-            );
+            info!("{LOG_PREFIX} starting research, problem: {problem}");
 
             let messages = vec![
                 LLMMessage::system(RESEARCH_SYSTEM_PROMPT.to_string()),

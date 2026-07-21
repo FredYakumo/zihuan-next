@@ -1,5 +1,5 @@
 mod core;
-mod emotion;
+mod chat_preprompt;
 pub mod ignore_store;
 mod inbox;
 pub mod language_style_store;
@@ -51,8 +51,8 @@ use log::{error, info, warn};
 use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use model_inference::system_config::{load_llm_refs, AgentConfig};
 use storage_handler::{
-    build_relational_db_connection_for_connection, build_s3_ref, build_weaviate_ref, build_web_search_engine_ref,
-    find_connection, ConnectionConfig, ConnectionKind, WeaviateCollectionSchema,
+    build_elasticsearch_ref, build_relational_db_connection_for_connection, build_s3_ref, build_weaviate_ref,
+    build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind, WeaviateCollectionSchema,
 };
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
@@ -124,7 +124,9 @@ impl InferenceToolProvider for QqInferenceToolProvider {
             self.resources.rdb_pool.clone(),
             self.resources.s3_ref.clone(),
             self.resources.weaviate_image_ref.clone(),
+            self.resources.elasticsearch_image_ref.clone(),
             self.resources.weaviate_memory_ref.clone(),
+            self.resources.elasticsearch_memory_ref.clone(),
             self.resources.embedding_model.clone(),
             self.resources.memory_llm.clone(),
             storage_handler::AgentMemoryAccessContext::default(),
@@ -153,6 +155,32 @@ fn load_qq_resources(
     config: &QqChatAgentServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<QqLoadedInferenceResources> {
+    if config
+        .weaviate_memory_connection_id
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+        && config
+            .elasticsearch_memory_connection_id
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+    {
+        return Err(Error::ValidationError(
+            "configure either Weaviate or Elasticsearch for agent memory, not both".to_string(),
+        ));
+    }
+    if config
+        .weaviate_image_connection_id
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+        && config
+            .elasticsearch_image_connection_id
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+    {
+        return Err(Error::ValidationError(
+            "configure either Weaviate or Elasticsearch for image semantic storage, not both".to_string(),
+        ));
+    }
     let web_search_engine_ref = build_web_search_engine_ref(
         if config.web_search_engine_connection_id.trim().is_empty() {
             None
@@ -212,6 +240,30 @@ fn load_qq_resources(
         warn!("[inference][qq_agent] weaviate memory connection unavailable: {e}");
         None
     });
+    let elasticsearch_image_ref = build_elasticsearch_ref(
+        config
+            .elasticsearch_image_connection_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty()),
+        connections,
+        Some(WeaviateCollectionSchema::ImageSemantic),
+    )
+    .unwrap_or_else(|error| {
+        warn!("[inference][qq_agent] elasticsearch image connection unavailable: {error}");
+        None
+    });
+    let elasticsearch_memory_ref = build_elasticsearch_ref(
+        config
+            .elasticsearch_memory_connection_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty()),
+        connections,
+        Some(WeaviateCollectionSchema::AgentMemory),
+    )
+    .unwrap_or_else(|error| {
+        warn!("[inference][qq_agent] elasticsearch memory connection unavailable: {error}");
+        None
+    });
 
     let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
         let llm_refs = model_inference::system_config::load_llm_refs().unwrap_or_default();
@@ -254,7 +306,9 @@ fn load_qq_resources(
         rdb_pool,
         s3_ref,
         weaviate_image_ref,
+        elasticsearch_image_ref,
         weaviate_memory_ref,
+        elasticsearch_memory_ref,
         embedding_model,
         memory_llm,
     })
@@ -283,6 +337,19 @@ pub async fn spawn(
     on_finish: super::OnFinishShared,
     task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
 ) -> Result<JoinHandle<()>> {
+    if config
+        .weaviate_memory_connection_id
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+        && config
+            .elasticsearch_memory_connection_id
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+    {
+        return Err(Error::ValidationError(
+            "configure either Weaviate or Elasticsearch for agent memory, not both".to_string(),
+        ));
+    }
     let llm_refs = load_llm_refs()?;
     let bot_connection = find_connection(&connections, &config.ims_bot_adapter_connection_id)?;
     let ConnectionKind::BotAdapter(_) = &bot_connection.kind else {
@@ -341,6 +408,14 @@ pub async fn spawn(
             Some(WeaviateCollectionSchema::ImageSemantic),
         )
     })?;
+    let elasticsearch_memory_ref = build_elasticsearch_ref(
+        config
+            .elasticsearch_memory_connection_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty()),
+        &connections,
+        Some(WeaviateCollectionSchema::AgentMemory),
+    )?;
     let weaviate_memory_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
             config
@@ -377,6 +452,7 @@ pub async fn spawn(
         rdb_pool,
         weaviate_image_ref,
         weaviate_memory_ref,
+        elasticsearch_memory_ref,
         embedding_model,
         web_search_engine,
         s3_ref: object_storage.clone(),

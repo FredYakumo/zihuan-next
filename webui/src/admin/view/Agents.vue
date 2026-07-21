@@ -229,6 +229,14 @@
                 </select>
               </div>
               <div class="field">
+                <label>Elasticsearch Image Connection</label>
+                <select v-model="form.elasticsearch_image_connection_id"><option value="">不使用</option><option v-for="item in imageElasticsearchConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option></select>
+              </div>
+              <div class="field">
+                <label>Elasticsearch Memory Connection</label>
+                <select v-model="form.elasticsearch_memory_connection_id"><option value="">不使用</option><option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option></select>
+              </div>
+              <div class="field">
                 <label>Max Message Length</label
                 ><input
                   v-model.number="form.max_message_length"
@@ -2320,6 +2328,8 @@ const {
   tokenizerConnections,
   imageWeaviateConnections,
   memoryWeaviateConnections,
+  imageElasticsearchConnections,
+  memoryElasticsearchConnections,
   ignoreRulesDisabledReason,
   resetForm,
   avatarUploading,

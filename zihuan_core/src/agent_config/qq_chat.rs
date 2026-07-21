@@ -131,8 +131,7 @@ impl QqChatMessageRateLimitRule {
 
     /// Total window length in seconds: `window_unit` seconds multiplied by `window_size`.
     pub fn window_seconds(&self) -> Option<i64> {
-        self.window_unit
-            .map(|unit| unit.window_seconds() * self.window_size.max(1))
+        self.window_unit.map(|unit| unit.window_seconds() * self.window_size.max(1))
     }
 }
 
@@ -189,7 +188,11 @@ pub struct QqChatAgentServiceConfig {
     #[serde(default)]
     pub weaviate_image_connection_id: Option<String>,
     #[serde(default)]
+    pub elasticsearch_image_connection_id: Option<String>,
+    #[serde(default)]
     pub weaviate_memory_connection_id: Option<String>,
+    #[serde(default)]
+    pub elasticsearch_memory_connection_id: Option<String>,
     #[serde(default = "default_max_message_length")]
     pub max_message_length: usize,
     #[serde(default)]

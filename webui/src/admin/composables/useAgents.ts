@@ -224,6 +224,12 @@ const memoryWeaviateConnections = computed(() =>
       item.kind.collection_schema === "agent_memory",
   ),
 );
+const imageElasticsearchConnections = computed(() =>
+  connections.value.filter((item) => item.kind.type === "elasticsearch" && item.kind.collection_schema === "image_semantic"),
+);
+const memoryElasticsearchConnections = computed(() =>
+  connections.value.filter((item) => item.kind.type === "elasticsearch" && item.kind.collection_schema === "agent_memory"),
+);
 const ignoreRulesDisabledReason = computed(() => {
   if (!editingServiceId.value) {
     return "请先保存当前 Service，再管理 Ignore Rules。";
@@ -994,6 +1000,8 @@ onMounted(() => {
     tokenizerConnections,
     imageWeaviateConnections,
     memoryWeaviateConnections,
+    imageElasticsearchConnections,
+    memoryElasticsearchConnections,
     ignoreRulesDisabledReason,
     resetForm,
     avatarUploading,

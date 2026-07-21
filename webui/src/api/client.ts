@@ -498,6 +498,7 @@ export interface ChatSessionSummary {
     details?: string | null;
     placeholder?: string | null;
   } | null;
+  title?: string | null;
 }
 
 export const system = {

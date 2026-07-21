@@ -230,7 +230,9 @@
 
 .chat-session-main strong {
   font-size: 14px;
-  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-session-main .muted {

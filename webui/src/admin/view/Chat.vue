@@ -70,7 +70,7 @@
                 :class="{ active: session.session_id === activeSessionId }"
               >
                 <button class="chat-session-main" @click="openSession(session.session_id)">
-                  <strong>{{ session.session_id.slice(0, 8) }}</strong>
+                  <strong>{{ session.title || session.session_id.slice(0, 8) }}</strong>
                   <span class="muted">{{ formatTime(session.updated_at) }}</span>
                 </button>
                 <button
