@@ -1,6 +1,18 @@
 <template>
-  <div ref="container" class="credential-input">
-    <input v-model="value" :type="inputType" />
+  <div ref="container" class="credential-input" :class="{ 'has-visibility-control': inputType === 'password' }">
+    <input v-model="value" :type="isVisible ? 'text' : inputType" @blur="isVisible = false" />
+    <button
+      v-if="inputType === 'password'"
+      class="credential-visibility-button"
+      type="button"
+      :aria-label="isVisible ? '隐藏凭据' : '显示凭据'"
+      :title="isVisible ? '隐藏凭据' : '显示凭据'"
+      @mousedown.prevent
+      @click="isVisible = !isVisible"
+    >
+      <BrowseOffIcon v-if="isVisible" />
+      <BrowseIcon v-else />
+    </button>
     <button
       class="credential-help-button"
       type="button"
@@ -19,13 +31,14 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
-import { ErrorCircleIcon } from "tdesign-icons-vue-next";
+import { BrowseIcon, BrowseOffIcon, ErrorCircleIcon } from "tdesign-icons-vue-next";
 
 withDefaults(defineProps<{ inputType?: "password" | "text" }>(), { inputType: "password" });
 
 const value = defineModel<string | null>({ required: true });
 const container = ref<HTMLElement | null>(null);
 const isOpen = ref(false);
+const isVisible = ref(false);
 
 const credentialCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 
@@ -55,7 +68,12 @@ onBeforeUnmount(() => document.removeEventListener("click", closeWhenClickingOut
   padding-right: 38px;
 }
 
-.credential-help-button {
+.credential-input.has-visibility-control input {
+  padding-right: 66px;
+}
+
+.credential-help-button,
+.credential-visibility-button {
   position: absolute;
   top: 50%;
   right: 8px;
@@ -73,8 +91,18 @@ onBeforeUnmount(() => document.removeEventListener("click", closeWhenClickingOut
   transform: translateY(-50%);
 }
 
+.credential-help-button {
+  right: 8px;
+}
+
+.credential-visibility-button {
+  right: 36px;
+}
+
 .credential-help-button:hover,
-.credential-help-button:focus-visible {
+.credential-help-button:focus-visible,
+.credential-visibility-button:hover,
+.credential-visibility-button:focus-visible {
   color: var(--admin-primary);
   background: color-mix(in srgb, var(--admin-primary) 10%, transparent);
   outline: none;
