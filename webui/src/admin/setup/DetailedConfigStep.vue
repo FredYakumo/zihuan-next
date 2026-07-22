@@ -38,7 +38,7 @@
 
       <section class="component-card">
         <ComponentHeader v-model:enabled="model.rustfs.enabled" title="RustFS" />
-        <template v-if="model.rustfs.enabled"><SourceChoice v-model="model.rustfs.source" /><DeploymentFields v-if="model.rustfs.source === 'install'" v-model="model.rustfs.deployment" /><div class="form-grid"><Field label="Endpoint"><input v-model="model.rustfs.endpoint" /></Field><Field label="Bucket"><input v-model="model.rustfs.bucket" /></Field><Field label="Region"><input v-model="model.rustfs.region" /></Field><Field label="Access Key"><CredentialInput v-model="model.rustfs.access_key" input-type="text" /></Field><Field label="Secret Key"><CredentialInput v-model="model.rustfs.secret_key" /></Field><Field label="公开访问地址"><input v-model="model.rustfs.public_base_url" /></Field></div><label class="choice-row"><input v-model="model.rustfs.path_style" type="checkbox" /> 使用 path-style</label></template>
+        <template v-if="model.rustfs.enabled"><SourceChoice v-model="model.rustfs.source" /><DeploymentFields v-if="model.rustfs.source === 'install'" v-model="model.rustfs.deployment" /><div class="form-grid"><Field label="Endpoint"><input v-model="model.rustfs.endpoint" /></Field><Field label="Bucket"><input v-model="model.rustfs.bucket" /></Field><Field label="Region"><input v-model="model.rustfs.region" /></Field><Field label="Access Key"><CredentialInput v-model="model.rustfs.access_key" input-type="text" /></Field><Field label="Secret Key"><CredentialInput v-model="model.rustfs.secret_key" /></Field></div><label class="choice-row"><input v-model="model.rustfs.path_style" type="checkbox" /> 使用 path-style</label></template>
       </section>
 
       <section class="component-card">
