@@ -213,7 +213,7 @@
             </div>
             <div class="chat-modal-actions">
               <button class="btn ghost" @click="openChatInNewWindow">在新窗口打开</button>
-              <button class="chat-modal-close" @click="closeChatModal">✕</button>
+              <button class="chat-modal-close" aria-label="关闭" @click="closeChatModal"><CloseIcon /></button>
             </div>
           </div>
           <div class="chat-modal-body">
@@ -243,7 +243,7 @@
               <h3>{{ selectedNotificationCard.agentName }} 密钥</h3>
             </div>
             <div class="chat-modal-actions">
-              <button class="chat-modal-close" @click="selectedNotificationCard = null">✕</button>
+              <button class="chat-modal-close" aria-label="关闭" @click="selectedNotificationCard = null"><CloseIcon /></button>
             </div>
           </div>
           <div class="dashboard-secret-body">
@@ -261,6 +261,8 @@
 </template>
 
 <script setup lang="ts">
+import { CloseIcon } from "tdesign-icons-vue-next";
+
 import { useDashboard } from "../composables/useDashboard";
 import Chat from "./Chat.vue";
 

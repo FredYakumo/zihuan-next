@@ -288,7 +288,6 @@ pub(crate) fn execute_style_learning_task(
                         sender_card: input.inference_event.sender.card.clone(),
                         session_state: zihuan_agent::session_state::QqChatAgentServiceSessionState::default(),
                         emotion_dimensions: Vec::new(),
-                        available_media_ids: Vec::new(),
                         model_identity_context: None,
                     },
                     &trace,

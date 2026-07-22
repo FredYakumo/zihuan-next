@@ -30,12 +30,11 @@ impl BrainTool for GetFunctionListBrainTool {
 
 pub(crate) struct GetAgentPublicInfoBrainTool {
     message: String,
-    model_list: Vec<(String, String)>,
 }
 
 impl GetAgentPublicInfoBrainTool {
-    pub(crate) fn new(message: String, model_list: Vec<(String, String)>) -> Self {
-        Self { message, model_list }
+    pub(crate) fn new(message: String) -> Self {
+        Self { message }
     }
 }
 
@@ -54,6 +53,6 @@ impl BrainTool for GetAgentPublicInfoBrainTool {
     }
 
     fn execute(&self, _call_content: &str, _arguments: &Value) -> String {
-        format_public_info_message(&self.message, &self.model_list).to_string()
+        format_public_info_message(&self.message).to_string()
     }
 }

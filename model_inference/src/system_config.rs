@@ -56,6 +56,8 @@ pub struct HttpStreamServiceConfig {
     #[serde(default)]
     pub weaviate_memory_connection_id: Option<String>,
     #[serde(default)]
+    pub elasticsearch_memory_connection_id: Option<String>,
+    #[serde(default)]
     pub task_db_connection_id: String,
     #[serde(default = "default_http_stream_default_tools_enabled")]
     pub default_tools_enabled: std::collections::HashMap<String, bool>,

@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use crate::api::config::{now_rfc3339, ok_response, render_internal_error};
 use crate::api::state::AppState;
-use crate::setup_orchestrator::{ImsBotAdapterSetupConfig, LlmSetupConfig, SetupOptions, SetupOrchestrator, SetupRole};
+use crate::setup_orchestrator::{
+    DetailedSetupConfig, ImsBotAdapterSetupConfig, LlmSetupConfig, SetupOptions, SetupOrchestrator, SetupRole,
+};
 use zihuan_core::setup_wizard::{clear_setup_wizard_state, load_setup_wizard_state, save_setup_wizard_state};
 
 #[derive(Deserialize, Clone)]
@@ -19,6 +21,8 @@ pub struct ExecuteSetupRequest {
     pub llm_config: Option<LlmSetupConfig>,
     #[serde(default)]
     pub ims_bot_adapter_config: Option<ImsBotAdapterSetupConfig>,
+    #[serde(default)]
+    pub detailed_config: Option<DetailedSetupConfig>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -82,7 +86,7 @@ pub async fn post_execute_setup(req: &mut Request, res: &mut Response, depot: &m
         }
     };
 
-    if matches!(body.mode, SetupMode::Skip) {
+    if matches!(&body.mode, SetupMode::Skip) {
         let mut state = match load_setup_wizard_state() {
             Ok(state) => state,
             Err(err) => return render_internal_error(res, err),
@@ -96,23 +100,24 @@ pub async fn post_execute_setup(req: &mut Request, res: &mut Response, depot: &m
         return;
     }
 
-    let role = match body.role {
-        Some(role) => role,
-        None => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(serde_json::json!({ "error": "role is required for role-based setup" })));
-            return;
-        }
-    };
-
-    let llm_config = match body.llm_config {
-        Some(config) => config,
-        None => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(serde_json::json!({ "error": "llm_config is required" })));
-            return;
-        }
-    };
+    let detailed_config = body.detailed_config;
+    let role = body.role;
+    let llm_config = body.llm_config;
+    if matches!(&body.mode, SetupMode::RoleBased) && role.is_none() {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({ "error": "role is required for role-based setup" })));
+        return;
+    }
+    if matches!(&body.mode, SetupMode::RoleBased) && llm_config.is_none() {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({ "error": "llm_config is required" })));
+        return;
+    }
+    if matches!(&body.mode, SetupMode::Detailed) && detailed_config.is_none() {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({ "error": "detailed_config is required for detailed setup" })));
+        return;
+    }
 
     let state = match depot.obtain::<Arc<AppState>>() {
         Ok(state) => state.clone(),
@@ -135,11 +140,22 @@ pub async fn post_execute_setup(req: &mut Request, res: &mut Response, depot: &m
     let ims_bot_adapter_config = body.ims_bot_adapter_config;
     let options = body.options;
     let task_id_for_spawn = task_id.clone();
+    let mode = body.mode;
 
     tokio::spawn(async move {
-        let result = orchestrator.run(role, options, llm_config, ims_bot_adapter_config).await;
+        let result = match mode {
+            SetupMode::Detailed => orchestrator.run_detailed(detailed_config.expect("validated detailed config")).await,
+            SetupMode::RoleBased => orchestrator.run(
+                role.expect("validated role"),
+                options,
+                llm_config.expect("validated LLM config"),
+                ims_bot_adapter_config,
+            ).await,
+            SetupMode::Skip => Ok(()),
+        };
         if let Err(err) = result {
             log::warn!("[setup_orchestrator] task {} failed: {}", task_id_for_spawn, err);
+            orchestrator.emit("failed", "error", &err, None);
         }
         // Keep the broadcast channel alive for 60s so late SSE clients can still connect.
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;

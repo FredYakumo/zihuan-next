@@ -229,6 +229,14 @@
                 </select>
               </div>
               <div class="field">
+                <label>Elasticsearch Image Connection</label>
+                <select v-model="form.elasticsearch_image_connection_id"><option value="">不使用</option><option v-for="item in imageElasticsearchConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option></select>
+              </div>
+              <div class="field">
+                <label>Elasticsearch Memory Connection</label>
+                <select v-model="form.elasticsearch_memory_connection_id"><option value="">不使用</option><option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option></select>
+              </div>
+              <div class="field">
                 <label>Max Message Length</label
                 ><input
                   v-model.number="form.max_message_length"
@@ -307,7 +315,7 @@
                   class="muted"
                   style="margin-top: 4px; font-size: 12px"
                 >
-                  💡 {{ ignoreRulesDisabledReason }}
+                  <InfoCircleIcon /> {{ ignoreRulesDisabledReason }}
                 </div>
               </div>
             </template>
@@ -400,7 +408,7 @@
                   class="muted"
                   style="margin-top: 4px"
                 >
-                  💡
+                  <InfoCircleIcon />
                   未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。
                   如需持久化，请在
                   <a href="#/connections" style="color: var(--primary)"
@@ -1117,7 +1125,7 @@
                   class="muted"
                   style="margin-top: 4px; font-size: 12px"
                 >
-                  💡 {{ ignoreRulesDisabledReason }}
+                  <InfoCircleIcon /> {{ ignoreRulesDisabledReason }}
                 </div>
               </div>
             </template>
@@ -1210,7 +1218,7 @@
                   class="muted"
                   style="margin-top: 4px"
                 >
-                  💡
+                  <InfoCircleIcon />
                   未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。
                   如需持久化，请在
                   <a href="#/connections" style="color: var(--primary)"
@@ -1517,7 +1525,7 @@
             class="emotion-dim-close-btn"
             @click="closeEmotionDimensionsModal"
           >
-            ✕
+            <CloseIcon />
           </button>
         </div>
         <div class="service-edit-modal-body">
@@ -1584,6 +1592,15 @@
                     <span class="emotion-dim-weight-value">{{
                       emotionDimensionDraft.decrease_weight
                     }}</span>
+                  </div>
+                  <div class="field">
+                    <label>消解时间（小时）</label>
+                    <input
+                      v-model.number="emotionDimensionDraft.dissipation_hours"
+                      type="number"
+                      min="1"
+                      step="1"
+                    />
                   </div>
                   <div class="field-full">
                     <label>正向风格提示词（可选）</label>
@@ -1681,6 +1698,15 @@
                         emotionDimensionDraft.decrease_weight
                       }}</span>
                     </div>
+                    <div class="field">
+                      <label>消解时间（小时）</label>
+                      <input
+                        v-model.number="emotionDimensionDraft.dissipation_hours"
+                        type="number"
+                        min="1"
+                        step="1"
+                      />
+                    </div>
                     <div class="field-full">
                       <label>正向风格提示词（可选）</label>
                       <input
@@ -1774,6 +1800,9 @@
                         dimension.decrease_weight ?? 1
                       }}</span>
                     </div>
+                  </div>
+                  <div class="muted" style="margin-top: 8px">
+                    无对话 {{ dimension.dissipation_hours ?? 5 }} 小时后自动恢复默认
                   </div>
                   <div v-if="dimension.positive_prompt || dimension.negative_prompt" class="emotion-dim-prompts" style="margin-top: 8px">
                     <div v-if="dimension.positive_prompt" class="emotion-dim-prompt-line">
@@ -2203,19 +2232,25 @@
               <strong>最近错误</strong>
               <span>{{ service.runtime.last_error }}</span>
             </div>
-            <div class="inline-actions connection-card-display-actions">
+           <div class="inline-actions connection-card-display-actions">
+             <button
+               class="btn ghost connection-card-compact-btn"
+               @click="editService(service)"
+             >
+               编辑
+             </button>
               <button
                 class="btn ghost connection-card-compact-btn"
-                @click="editService(service)"
+                @click="duplicateService(service)"
               >
-                编辑
+                复制添加
               </button>
-              <button
-                class="btn connection-card-compact-btn"
-                @click="toggleServiceRuntime(service)"
-              >
-                {{ service.runtime.status === "running" ? "停止" : "启动" }}
-              </button>
+             <button
+               class="btn connection-card-compact-btn"
+               @click="toggleServiceRuntime(service)"
+             >
+               {{ service.runtime.status === "running" ? "停止" : "启动" }}
+             </button>
               <button
                 class="btn warn connection-card-compact-btn"
                 @click="removeService(service.config_id)"
@@ -2241,7 +2276,7 @@
 </template>
 
 <script setup lang="ts">
-import { CloseIcon } from "tdesign-icons-vue-next";
+import { CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
 import { useAgents } from "../composables/useAgents";
 
 const {
@@ -2293,6 +2328,8 @@ const {
   tokenizerConnections,
   imageWeaviateConnections,
   memoryWeaviateConnections,
+  imageElasticsearchConnections,
+  memoryElasticsearchConnections,
   ignoreRulesDisabledReason,
   resetForm,
   avatarUploading,
@@ -2308,6 +2345,7 @@ const {
   closeEditor,
   load,
   editService,
+  duplicateService,
   closeEditModal,
   openEmotionDimensionsModal,
   closeEmotionDimensionsModal,

@@ -134,7 +134,7 @@ impl LocalCandleGgufLlm {
             .map_err(|err| Error::StringError(format!("failed to tokenize local prompt: {err}")))?;
         let mut tokens = prompt_encoding.get_ids().iter().map(|value| *value as u32).collect::<Vec<_>>();
         if tokens.is_empty() {
-            return Err(Error::ValidationError("local llm prompt produced no tokens".to_string()));
+            return Err(Error::ValidationError("model produced no tokens".to_string()));
         }
 
         let prompt_token_count = tokens.len();
@@ -150,18 +150,18 @@ impl LocalCandleGgufLlm {
                 Tensor::new(&[*tokens.last().expect("tokens not empty")], &engine.device)
             }
             .and_then(|tensor| tensor.unsqueeze(0))
-            .map_err(|err| Error::StringError(format!("failed to build local llm input tensor: {err}")))?;
+            .map_err(|err| Error::StringError(format!("failed to build gguf model input tensor: {err}")))?;
             let logits = engine
                 .model
                 .forward(&input, if step == 0 { 0 } else { tokens.len().saturating_sub(1) })
-                .map_err(|err| Error::StringError(format!("local candle gguf forward failed: {err}")))?;
+                .map_err(|err| Error::StringError(format!("gguf model forward failed: {err}")))?;
             let next_token = logits_processor
                 .sample(
                     &logits
                         .squeeze(0)
                         .map_err(|err| Error::StringError(format!("failed to squeeze logits: {err}")))?,
                 )
-                .map_err(|err| Error::StringError(format!("failed to sample local token: {err}")))?;
+                .map_err(|err| Error::StringError(format!("failed to sample model token: {err}")))?;
             if engine.eos_token_ids.contains(&next_token) {
                 break;
             }

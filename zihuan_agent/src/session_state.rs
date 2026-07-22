@@ -17,6 +17,10 @@ pub struct QqChatAgentServiceSessionState {
     #[serde(default)]
     pub emotion_dimensions: HashMap<String, f64>,
     #[serde(default)]
+    pub emotion_expression_prompts: HashMap<String, String>,
+    #[serde(default)]
+    pub last_conversation_at_unix_seconds: Option<i64>,
+    #[serde(default)]
     pub extra_state: HashMap<String, Value>,
 }
 
@@ -32,6 +36,8 @@ impl QqChatAgentServiceSessionState {
             self.emotion_dimensions.entry(name.to_string()).or_insert(0.0);
         }
         self.emotion_dimensions
+            .retain(|name, _| allowed_names.iter().any(|allowed| allowed == name));
+        self.emotion_expression_prompts
             .retain(|name, _| allowed_names.iter().any(|allowed| allowed == name));
     }
 
@@ -63,6 +69,30 @@ impl QqChatAgentServiceSessionState {
         let entry = self.emotion_dimensions.entry(dimension.name.trim().to_string()).or_insert(0.0);
         *entry += delta;
         Ok(*entry)
+    }
+
+    pub fn set_emotion_expression_prompt(&mut self, dimension_name: &str, prompt: String) {
+        self.emotion_expression_prompts.insert(dimension_name.to_string(), prompt);
+    }
+
+    pub fn dissipate_expired_emotions(&mut self, dimensions: &[QqChatEmotionDimensionConfig], now_unix_seconds: i64) {
+        self.sync_emotion_dimensions(dimensions);
+        let Some(last_conversation_at) = self.last_conversation_at_unix_seconds else {
+            return;
+        };
+        let inactive_seconds = now_unix_seconds.saturating_sub(last_conversation_at);
+        for dimension in dimensions {
+            let name = dimension.name.trim();
+            if inactive_seconds < dimension.dissipation_hours.saturating_mul(60 * 60) {
+                continue;
+            }
+            self.emotion_dimensions.insert(name.to_string(), 0.0);
+            self.emotion_expression_prompts.remove(name);
+        }
+    }
+
+    pub fn record_conversation_activity(&mut self, now_unix_seconds: i64) {
+        self.last_conversation_at_unix_seconds = Some(now_unix_seconds);
     }
 
     pub fn ordered_emotion_dimensions(&self, dimensions: &[QqChatEmotionDimensionConfig]) -> Vec<(String, f64)> {

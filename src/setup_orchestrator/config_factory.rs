@@ -206,7 +206,7 @@ fn build_embedding_ref(id: &str, name: &str) -> LlmRefConfig {
     }
 }
 
-fn build_connection(id: &str, name: &str, kind: ConnectionKind) -> ConnectionConfig {
+pub fn build_connection(id: &str, name: &str, kind: ConnectionKind) -> ConnectionConfig {
     ConnectionConfig {
         id: id.to_string(),
         config_id: id.to_string(),
@@ -237,6 +237,7 @@ fn build_http_stream_service(
             embedding_model_ref_id,
             web_search_engine_connection_id,
             weaviate_memory_connection_id,
+            elasticsearch_memory_connection_id: None,
             task_db_connection_id,
             default_tools_enabled: default_http_stream_tools(),
         }),
@@ -290,7 +291,9 @@ fn build_qq_chat_agent_service() -> AgentConfig {
             mysql_connection_id: None,
             task_db_connection_id: None,
             weaviate_image_connection_id: Some("setup-default-weaviate-image".to_string()),
+            elasticsearch_image_connection_id: None,
             weaviate_memory_connection_id: Some("setup-default-weaviate-memory".to_string()),
+            elasticsearch_memory_connection_id: None,
             max_message_length: 500,
             compact_context_length: 0,
             max_steer_count: 4,
@@ -383,7 +386,7 @@ fn save_agent(agent: AgentConfig) -> Result<(), String> {
     system_config::save_agents(agents).map_err(|e| e.to_string())
 }
 
-fn save_connection(connection: ConnectionConfig) -> Result<(), String> {
+pub fn save_connection(connection: ConnectionConfig) -> Result<(), String> {
     let mut connections = system_config::load_connections().map_err(|e| e.to_string())?;
     connections.retain(|c| c.id != connection.id);
     connections.push(connection);

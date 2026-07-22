@@ -1,5 +1,5 @@
 <template>
-  <div class="setup-wizard">
+  <div class="setup-wizard" :class="{ 'setup-wizard--detailed': step === 'detailed' }">
     <div class="setup-header">
       <div class="setup-brand">
         <img :src="brandIconSrc" alt="Zihuan Next" class="setup-brand-icon" />
@@ -23,6 +23,13 @@
       <RoleSelection
         v-else-if="step === 'role'"
         @select="onRoleSelect"
+        @back="step = 'mode'"
+      />
+
+      <DetailedConfigStep
+        v-else-if="step === 'detailed'"
+        v-model="detailedConfig"
+        @next="startDetailedInstallation"
         @back="step = 'mode'"
       />
 
@@ -53,7 +60,7 @@
         :logs="installLogs"
         :error="installError"
         @done="step = 'complete'"
-        @retry="startInstallation"
+        @retry="startInstallation(installationMode)"
       />
 
       <SetupComplete
@@ -68,6 +75,7 @@
 import brandIconSrc from "../../assets/brand-icon.png";
 import ModeSelection from "../setup/ModeSelection.vue";
 import RoleSelection from "../setup/RoleSelection.vue";
+import DetailedConfigStep from "../setup/DetailedConfigStep.vue";
 import EnvironmentCheck from "../setup/EnvironmentCheck.vue";
 import LlmConfigStep from "../setup/LlmConfigStep.vue";
 import ImsBotAdapterConfigStep from "../setup/ImsBotAdapterConfigStep.vue";
@@ -81,7 +89,9 @@ const {
   selectedRole,
   llmConfig,
   imsBotAdapterConfig,
+  detailedConfig,
   taskId,
+  installationMode,
   installLogs,
   installError,
   showProgressBar,
@@ -90,6 +100,7 @@ const {
   onRoleSelect,
   onLlmNext,
   onLlmBack,
+  startDetailedInstallation,
   startInstallation,
   finishSetup,
 } = useSetupWizard();

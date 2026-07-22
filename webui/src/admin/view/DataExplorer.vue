@@ -349,7 +349,7 @@
           :key="p"
           class="explorer-folder-btn"
           @click="rustfs.prefix = p; searchRustfs()"
-        >📁 {{ p }}</button>
+        ><FolderIcon /> {{ p }}</button>
       </div>
 
       <div v-if="rustfs.loading" class="empty-state">加载中…</div>
@@ -387,6 +387,8 @@
 </template>
 
 <script setup lang="ts">
+import { FolderIcon } from "tdesign-icons-vue-next";
+
 import { useDataExplorer } from "../composables/useDataExplorer";
 
 const {

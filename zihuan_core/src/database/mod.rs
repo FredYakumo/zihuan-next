@@ -85,6 +85,10 @@ async fn ensure_privilege_auth_columns_mysql(conn: &mut MySqlConnection) -> Resu
             "pending_is_group",
             "ALTER TABLE qq_chat_agent_service_privilege_auth ADD COLUMN pending_is_group TINYINT(1) NOT NULL DEFAULT 0",
         ),
+        (
+            "pending_args_json",
+            "ALTER TABLE qq_chat_agent_service_privilege_auth ADD COLUMN pending_args_json TEXT NULL",
+        ),
     ];
 
     for (column_name, alter_sql) in columns {
@@ -137,6 +141,10 @@ async fn ensure_privilege_auth_columns_sqlite(conn: &mut SqliteConnection) -> Re
         (
             "pending_is_group",
             "ALTER TABLE qq_chat_agent_service_privilege_auth ADD COLUMN pending_is_group INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "pending_args_json",
+            "ALTER TABLE qq_chat_agent_service_privilege_auth ADD COLUMN pending_args_json TEXT NULL",
         ),
     ];
 

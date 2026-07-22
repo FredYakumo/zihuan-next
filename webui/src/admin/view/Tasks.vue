@@ -137,7 +137,7 @@
       <div class="connection-picker-dialog log-viewer-dialog" @click.stop>
         <div class="connection-picker-header">
           <h3>日志 — {{ logViewerTask.graph_name }}</h3>
-          <button class="task-terminal-btn" @click="closeLogViewer">✕</button>
+          <button class="task-terminal-btn" aria-label="关闭" @click="closeLogViewer"><CloseIcon /></button>
         </div>
 
         <!-- Controls -->
@@ -162,8 +162,8 @@
           </label>
           <div class="log-viewer-pagination">
             <span class="muted" style="font-size:13px;">第 {{ currentPage + 1 }} / {{ logTotalPages }} 页（共 {{ logTotal }} 条）</span>
-            <button class="task-terminal-btn" :disabled="currentPage === 0" @click="prevPage">‹ 上一页</button>
-            <button class="task-terminal-btn" :disabled="currentPage + 1 >= logTotalPages" @click="nextPage">下一页 ›</button>
+            <button class="task-terminal-btn" :disabled="currentPage === 0" @click="prevPage"><ChevronLeftIcon /> 上一页</button>
+            <button class="task-terminal-btn" :disabled="currentPage + 1 >= logTotalPages" @click="nextPage">下一页 <ChevronRightIcon /></button>
           </div>
           <button class="task-terminal-btn" style="margin-left:auto;" @click="fetchLogs(true)">刷新</button>
         </div>
@@ -189,6 +189,8 @@
 </template>
 
 <script setup lang="ts">
+import { ChevronLeftIcon, ChevronRightIcon, CloseIcon } from "tdesign-icons-vue-next";
+
 import { useTasks } from "../composables/useTasks";
 
 const {

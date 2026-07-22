@@ -6,8 +6,8 @@ use salvo::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use salvo::http::{HeaderValue, StatusCode};
 use salvo::prelude::*;
 use storage_handler::{
-    build_weaviate_ref, build_web_search_engine_ref, AgentMemoryAccessContext, ConnectionConfig,
-    WeaviateCollectionSchema,
+    build_elasticsearch_ref, build_weaviate_ref, build_web_search_engine_ref, AgentMemoryAccessContext,
+    ConnectionConfig, WeaviateCollectionSchema,
 };
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
@@ -76,6 +76,7 @@ struct HttpStreamLoadedInferenceResources {
     web_search_engine_ref: Option<Arc<WebSearchEngineRef>>,
     default_tools_enabled: std::collections::HashMap<String, bool>,
     weaviate_memory_ref: Option<Arc<zihuan_core::weaviate::WeaviateRef>>,
+    elasticsearch_memory_ref: Option<Arc<storage_handler::ElasticsearchRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     memory_llm: Option<Arc<dyn LLMBase>>,
 }
@@ -93,12 +94,13 @@ impl InferenceToolProvider for HttpStreamInferenceToolProvider {
             None,
             None,
             None,
+            None,
             self.resources.weaviate_memory_ref.clone(),
+            self.resources.elasticsearch_memory_ref.clone(),
             self.resources.embedding_model.clone(),
             self.resources.memory_llm.clone(),
             AgentMemoryAccessContext::default(),
             String::new(),
-            Vec::new(),
         )
     }
 
@@ -147,6 +149,18 @@ fn load_http_stream_resources(
         log::warn!("[inference][http_stream] weaviate memory connection unavailable: {error}");
         None
     });
+    let elasticsearch_memory_ref = build_elasticsearch_ref(
+        config
+            .elasticsearch_memory_connection_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty()),
+        connections,
+        Some(WeaviateCollectionSchema::AgentMemory),
+    )
+    .unwrap_or_else(|error| {
+        log::warn!("[inference][http_stream] elasticsearch memory connection unavailable: {error}");
+        None
+    });
 
     let llm_refs = load_llm_refs().unwrap_or_default();
     let embedding_model = config
@@ -180,6 +194,7 @@ fn load_http_stream_resources(
         web_search_engine_ref,
         default_tools_enabled: config.default_tools_enabled.clone(),
         weaviate_memory_ref,
+        elasticsearch_memory_ref,
         embedding_model,
         memory_llm,
     }
@@ -627,6 +642,19 @@ fn validate_http_stream_service_config(config: &HttpStreamServiceConfig) -> Resu
         .is_some_and(|value| !value.is_empty());
     if !has_llm_ref {
         return Err(Error::ValidationError("http_stream must define llm_ref_id".to_string()));
+    }
+    if config
+        .weaviate_memory_connection_id
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+        && config
+            .elasticsearch_memory_connection_id
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+    {
+        return Err(Error::ValidationError(
+            "configure either Weaviate or Elasticsearch for agent memory, not both".to_string(),
+        ));
     }
     Ok(())
 }

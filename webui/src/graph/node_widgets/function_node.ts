@@ -42,7 +42,7 @@ export function setupFunctionWidgets(
     );
   });
 
-  lNode.addWidget("button", "↳ 进入子图", null, () => {
+  lNode.addWidget("button", "进入子图", null, () => {
     const sid = getSessionId();
     if (!sid) {
       alert("请先打开一个图。");

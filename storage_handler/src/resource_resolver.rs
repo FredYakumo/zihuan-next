@@ -9,7 +9,10 @@ use zihuan_graph_engine::data_value::RedisConfig;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
-use crate::{redis::build_redis_connection_url, WeaviateCollectionSchema, ConnectionConfig, ConnectionKind, RuntimeStorageConnectionManager};
+use crate::{
+    redis::build_redis_connection_url, ConnectionConfig, ConnectionKind, ElasticsearchRef,
+    RuntimeStorageConnectionManager, WeaviateCollectionSchema,
+};
 
 pub fn find_connection<'a>(connections: &'a [ConnectionConfig], id: &str) -> Result<&'a ConnectionConfig> {
     connections
@@ -95,6 +98,32 @@ pub fn build_weaviate_ref(
     Ok(Some(zihuan_core::runtime::block_async(
         RuntimeStorageConnectionManager::shared().get_or_create_weaviate_ref(connection_id),
     )?))
+}
+
+pub fn build_elasticsearch_ref(
+    connection_id: Option<&str>,
+    connections: &[ConnectionConfig],
+    expected_schema: Option<WeaviateCollectionSchema>,
+) -> Result<Option<Arc<ElasticsearchRef>>> {
+    let Some(connection_id) = connection_id else {
+        return Ok(None);
+    };
+    let connection = find_connection(connections, connection_id)?;
+    let ConnectionKind::Elasticsearch(elasticsearch) = &connection.kind else {
+        return Err(Error::ValidationError(format!(
+            "connection '{}' is not an elasticsearch connection",
+            connection.name
+        )));
+    };
+    if let Some(expected_schema) = expected_schema {
+        if elasticsearch.collection_schema != expected_schema {
+            return Err(Error::ValidationError(format!(
+                "elasticsearch connection '{}' schema mismatch",
+                connection.name
+            )));
+        }
+    }
+    Ok(Some(Arc::new(ElasticsearchRef::new(elasticsearch.clone())?)))
 }
 
 pub async fn build_s3_ref(connection_id: Option<&str>, connections: &[ConnectionConfig]) -> Result<Option<Arc<S3Ref>>> {

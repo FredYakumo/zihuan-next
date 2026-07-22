@@ -395,7 +395,7 @@ export async function openHyperparametersDialog(
     if (isPasswordInit) valueEl.type = "password";
 
     const peekBtn = document.createElement("button");
-    peekBtn.textContent = "👁";
+    peekBtn.textContent = "预览";
     peekBtn.title = "按住查看";
     peekBtn.style.cssText = "padding:2px 5px;font-size:12px;flex-shrink:0;";
     peekBtn.hidden = !isPasswordInit;
@@ -429,7 +429,7 @@ export async function openHyperparametersDialog(
     requiredWrap.appendChild(document.createTextNode("是"));
 
     const removeBtn = document.createElement("button");
-    removeBtn.textContent = "✕";
+    removeBtn.textContent = "移除";
     removeBtn.className = "danger";
     removeBtn.style.cssText = "padding:2px 6px;font-size:12px;";
     removeBtn.addEventListener("click", () => {
@@ -591,7 +591,7 @@ export async function openVariablesDialog(
     valueEl.style.marginBottom = "0";
 
     const removeBtn = document.createElement("button");
-    removeBtn.textContent = "✕";
+    removeBtn.textContent = "移除";
     removeBtn.className = "danger";
     removeBtn.style.cssText = "padding:2px 6px;font-size:12px;";
     removeBtn.addEventListener("click", () => {

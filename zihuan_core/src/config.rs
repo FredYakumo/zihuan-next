@@ -27,6 +27,7 @@ pub enum ConfigKind {
     ConnectionMysql,
     ConnectionRedis,
     ConnectionWeaviate,
+    ConnectionElasticsearch,
     ConnectionRustfs,
     ConnectionBotAdapter,
     ConnectionWebSearchEngine,
@@ -44,6 +45,7 @@ impl ConfigKind {
             Self::ConnectionMysql
             | Self::ConnectionRedis
             | Self::ConnectionWeaviate
+            | Self::ConnectionElasticsearch
             | Self::ConnectionRustfs
             | Self::ConnectionBotAdapter
             | Self::ConnectionWebSearchEngine
@@ -228,6 +230,7 @@ fn infer_kind_from_legacy_object(category: ConfigCategory, object: &Map<String, 
             Some("mysql") => Ok(ConfigKind::ConnectionMysql),
             Some("redis") => Ok(ConfigKind::ConnectionRedis),
             Some("weaviate") => Ok(ConfigKind::ConnectionWeaviate),
+            Some("elasticsearch") => Ok(ConfigKind::ConnectionElasticsearch),
             Some("rustfs") => Ok(ConfigKind::ConnectionRustfs),
             Some("bot_adapter") | Some("ims_bot_adapter") => Ok(ConfigKind::ConnectionBotAdapter),
             Some("tavily") => Ok(ConfigKind::ConnectionWebSearchEngine),

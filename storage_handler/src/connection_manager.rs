@@ -455,13 +455,12 @@ pub fn cleanup_runtime_storage_instances() -> Result<usize> {
     zihuan_core::runtime::block_async(RuntimeStorageConnectionManager::shared().cleanup_stale_instances())
 }
 
-
-
 fn kind_name(kind: &ConnectionKind) -> &'static str {
     match kind {
         ConnectionKind::Mysql(_) => "mysql",
         ConnectionKind::Redis(_) => "redis",
         ConnectionKind::Weaviate(_) => "weaviate",
+        ConnectionKind::Elasticsearch(_) => "elasticsearch",
         ConnectionKind::Rustfs(_) => "rustfs",
         ConnectionKind::BotAdapter(_) => "bot_adapter",
         ConnectionKind::WebSearchEngine(_) => "web_search_engine",

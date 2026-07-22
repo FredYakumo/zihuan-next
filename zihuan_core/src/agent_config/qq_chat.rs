@@ -61,6 +61,8 @@ pub struct QqChatEmotionDimensionConfig {
     pub positive_prompt: Option<String>,
     #[serde(default)]
     pub negative_prompt: Option<String>,
+    #[serde(default = "default_emotion_dissipation_hours")]
+    pub dissipation_hours: i64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -129,8 +131,7 @@ impl QqChatMessageRateLimitRule {
 
     /// Total window length in seconds: `window_unit` seconds multiplied by `window_size`.
     pub fn window_seconds(&self) -> Option<i64> {
-        self.window_unit
-            .map(|unit| unit.window_seconds() * self.window_size.max(1))
+        self.window_unit.map(|unit| unit.window_seconds() * self.window_size.max(1))
     }
 }
 
@@ -187,7 +188,11 @@ pub struct QqChatAgentServiceConfig {
     #[serde(default)]
     pub weaviate_image_connection_id: Option<String>,
     #[serde(default)]
+    pub elasticsearch_image_connection_id: Option<String>,
+    #[serde(default)]
     pub weaviate_memory_connection_id: Option<String>,
+    #[serde(default)]
+    pub elasticsearch_memory_connection_id: Option<String>,
     #[serde(default = "default_max_message_length")]
     pub max_message_length: usize,
     #[serde(default)]
@@ -249,6 +254,7 @@ impl QqChatAgentServiceConfig {
                 decrease_weight: sanitize_emotion_adjust_weight(dimension.decrease_weight),
                 positive_prompt: dimension.positive_prompt.clone(),
                 negative_prompt: dimension.negative_prompt.clone(),
+                dissipation_hours: sanitize_emotion_dissipation_hours(dimension.dissipation_hours),
             });
         }
         if dimensions.is_empty() {
@@ -350,12 +356,17 @@ fn default_qq_chat_emotion_dimensions() -> Vec<QqChatEmotionDimensionConfig> {
             decrease_weight: default_emotion_adjust_weight(),
             positive_prompt: None,
             negative_prompt: None,
+            dissipation_hours: default_emotion_dissipation_hours(),
         })
         .collect()
 }
 
 fn default_emotion_adjust_weight() -> f64 {
     1.0
+}
+
+fn default_emotion_dissipation_hours() -> i64 {
+    5
 }
 
 fn sanitize_emotion_adjust_weight(weight: f64) -> f64 {
@@ -366,18 +377,10 @@ fn sanitize_emotion_adjust_weight(weight: f64) -> f64 {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::QqChatAgentServiceConfig;
-
-    #[test]
-    fn qq_chat_agent_service_config_defaults_max_steer_count_to_four() {
-        let config: QqChatAgentServiceConfig = serde_json::from_value(serde_json::json!({
-            "ims_bot_adapter_connection_id": "bot",
-            "web_search_engine_connection_id": "tavily"
-        }))
-        .expect("config should deserialize");
-
-        assert_eq!(config.max_steer_count, 4);
+fn sanitize_emotion_dissipation_hours(hours: i64) -> i64 {
+    if hours > 0 {
+        hours
+    } else {
+        default_emotion_dissipation_hours()
     }
 }

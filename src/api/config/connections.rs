@@ -99,6 +99,12 @@ fn validate_connection(
 ) -> Result<bool, ConnectionValidationError> {
     validate_connection_basics(kind).map_err(ConnectionValidationError::BadRequest)?;
     let ConnectionKind::Weaviate(weaviate) = kind else {
+        if let ConnectionKind::Elasticsearch(elasticsearch) = kind {
+            let reference = storage_handler::ElasticsearchRef::new(elasticsearch.clone())
+                .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
+            return storage_handler::ensure_elasticsearch_index(&reference, allow_create_collection)
+                .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()));
+        }
         return Ok(false);
     };
     if weaviate.base_url.trim().is_empty() {

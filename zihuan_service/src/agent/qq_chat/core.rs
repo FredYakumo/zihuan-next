@@ -33,7 +33,6 @@ use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::{LLMMessage, MessagePart};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
-use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::utils::string_utils::extract_string_field;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::{BrainToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
@@ -75,16 +74,13 @@ impl SideEffectContext for QqCommandSideEffectContext<'_> {
     }
 
     fn start_new_conversation(&self, request: &NewConversationRequest) -> Result<()> {
-        let CommandChannel::QqChat {
-            sender_id, is_group, group_id, ..
-        } = &request.channel
-        else {
+        let CommandChannel::QqChat { sender_id, .. } = &request.channel else {
             return Err(Error::ValidationError(
                 "QQ command context received a non-QQ new conversation request".to_string(),
             ));
         };
 
-        clear_history(self.cache, self.bot_id, sender_id, *is_group, *group_id)
+        clear_history(self.cache, sender_id)
     }
 
     fn send_forward_content(&self, content: &str) -> Result<()> {
@@ -172,6 +168,12 @@ fn build_tool_instruction_rules(default_tools_enabled: &HashMap<String, bool>) -
         );
     }
 
+    if is_enabled(DEFAULT_TOOL_REMEMBER_CONTENT) {
+        lines.push(
+            "- 当你在本轮回复中描述自己对某个具体事物、人物、话题或行为的态度、喜好、厌恶、偏好或长期观点时，必须在发送最终回复前调用 `remember_content` 写入该记忆；记忆应明确记录对象和对应态度，不要只写模糊结论".to_string(),
+        );
+    }
+
     if has_web_search {
         lines.push(
             "- 如果当前环境没有可用的联网搜索工具，就不要假装联网成功；这时应优先直接回答，或在必要时明确说明当前无法联网核验".to_string(),
@@ -214,7 +216,7 @@ fn build_common_system_rules(
          你需要对事件进行处理。比如用户向你发送消息的时候，你需要生成向用户的回复或者选择不回复此条消息。\n\
          在事件的处理过程中，如果需要的话你可以调用相关的工具来辅助你生成最终的结果。\n\
          涉及到关于知识、Object、对某个人、某件事、某个东西的印象时，需要先查询一下记忆。\n\
-         在必要的时候，你需要管理情绪状态和记忆的更新，特别是对记忆检索之后但是发现记忆与当前事件中获得的事实不对应，或者外部数据不对应时，\n\
+         在必要的时候，你需要管理记忆的更新，特别是对记忆检索之后但是发现记忆与当前事件中获得的事实不对应，或者外部数据不对应时，\n\
          你往往需要对旧的记忆进行更新。\n",
     );
 
@@ -316,6 +318,7 @@ pub(crate) fn build_user_message(
     message_rate_limit_warning: Option<&str>,
     session_state: &mut QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
+    preprompt_context: Option<&str>,
 ) -> LLMMessage {
     let style_prompt = if has_noticeable_emotion_expression(session_state, emotion_dimensions) {
         None
@@ -324,7 +327,7 @@ pub(crate) fn build_user_message(
     };
     let merged_character_instructions = merge_character_and_style_prompt(character_instructions, style_prompt);
     let state_lines =
-        build_state_system_prefix_lines(session_state, emotion_dimensions, &merged_character_instructions);
+        build_state_system_prefix_lines(session_state, emotion_dimensions, &merged_character_instructions, preprompt_context);
     let sender_name = ims_bot_adapter::utils::sender_display_name!(
         &current_input.event.sender.nickname,
         &current_input.event.sender.card
@@ -474,7 +477,9 @@ pub(crate) fn build_state_delta_lines(
                     current_group_name, current_role, current_group_name
                 ));
             } else {
-                lines.push(format!("You (`{bot_name}`) are currently chatting in a private message window."));
+                lines.push(format!(
+                    "You (`{bot_name}`) are currently chatting in a private message window."
+                ));
             }
         } else if is_group {
             lines.push(format!(
@@ -482,7 +487,9 @@ pub(crate) fn build_state_delta_lines(
                 current_group_name, current_role, current_group_name
             ));
         } else {
-            lines.push(format!("Now, you (`{bot_name}`) are back to chatting in the private message window."));
+            lines.push(format!(
+                "Now, you (`{bot_name}`) are back to chatting in the private message window."
+            ));
         }
     }
 
@@ -603,6 +610,7 @@ mod build_user_message_tests {
             decrease_weight: 1.0,
             positive_prompt: None,
             negative_prompt: None,
+            dissipation_hours: 5,
         }]
     }
 }
@@ -861,6 +869,7 @@ impl QqChatAgentService {
             rdb_pool: self.config.rdb_pool.as_ref(),
             weaviate_image_ref: self.config.weaviate_image_ref.as_ref(),
             weaviate_memory_ref: self.config.weaviate_memory_ref.as_ref(),
+            elasticsearch_memory_ref: self.config.elasticsearch_memory_ref.as_ref(),
             embedding_model: self.config.embedding_model.as_ref(),
             web_search_engine: &self.config.web_search_engine,
             s3_ref: self.config.s3_ref.as_ref(),

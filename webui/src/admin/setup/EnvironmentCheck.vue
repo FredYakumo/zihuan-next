@@ -68,13 +68,15 @@
     </div>
 
     <div class="env-actions">
-      <button class="btn ghost" @click="$emit('back')">← Back</button>
-      <button class="btn primary" @click="$emit('next')">Next →</button>
+      <button class="btn ghost" @click="$emit('back')"><ArrowLeftIcon /> Back</button>
+      <button class="btn primary" @click="$emit('next')">Next <ArrowRightIcon /></button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ArrowLeftIcon, ArrowRightIcon } from "tdesign-icons-vue-next";
+
 import { useEnvironmentCheck } from "../composables/useEnvironmentCheck";
 
 defineProps<{

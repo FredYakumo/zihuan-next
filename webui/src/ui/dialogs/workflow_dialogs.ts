@@ -178,7 +178,7 @@ export function showWorkflowBrowserDialog(workflows: WorkflowEntry[]): Promise<s
       } else {
         const placeholder = document.createElement("span");
         placeholder.className = "zh-wf-no-cover";
-        placeholder.textContent = "⬡";
+        placeholder.textContent = "暂无工作流";
         coverDiv.appendChild(placeholder);
       }
 

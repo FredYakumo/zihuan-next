@@ -24,7 +24,7 @@ pub fn emotion_dimensions_snapshot_text(
     }
 }
 
-/// Builds model-facing emotion instructions from configured prompts and current weights.
+/// Builds model-facing emotion instructions from dynamically generated prompts and current weights.
 /// Raw dimension names and numeric values intentionally never leave this module.
 pub fn emotion_expression_prompt(
     session_state: &QqChatAgentServiceSessionState,
@@ -67,12 +67,7 @@ fn emotion_prompt_entries(
                 return None;
             }
 
-            let prompt = if value > 0.0 {
-                dimension.positive_prompt.as_deref()
-            } else {
-                dimension.negative_prompt.as_deref()
-            }?
-            .trim();
+            let prompt = session_state.emotion_expression_prompts.get(dimension.name.trim())?.trim();
             if prompt.is_empty() {
                 return None;
             }

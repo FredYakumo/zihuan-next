@@ -206,10 +206,7 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
     Ok(Some(RestoredMessageSnapshot { messages, source }))
 }
 
-pub fn query_media_by_id(
-    media_id: &str,
-    rdb_ref: Option<&RelationalDbConnection>,
-) -> Result<Option<PersistedMedia>> {
+pub fn query_media_by_id(media_id: &str, rdb_ref: Option<&RelationalDbConnection>) -> Result<Option<PersistedMedia>> {
     let media_id = media_id.trim();
     if media_id.is_empty() {
         return Ok(None);
@@ -520,8 +517,6 @@ pub fn find_media_in_messages(messages: &[Message], media_id: &str) -> Option<Pe
     None
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -605,6 +600,4 @@ mod tests {
             other => panic!("expected image message, got {other:?}"),
         }
     }
-
-
 }

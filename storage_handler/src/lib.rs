@@ -3,6 +3,7 @@ pub mod agent_avatar_store;
 mod agent_memory_weaviate;
 mod connection_manager;
 mod db_schema;
+mod elasticsearch;
 mod image_weaviate_persistence;
 mod message_record;
 pub mod mysql;
@@ -40,6 +41,10 @@ pub use connection_manager::{
     list_runtime_storage_instances, RuntimeStorageConnectionManager, StorageRuntimeHandle,
 };
 pub use db_schema::ensure_tables_for_connection;
+pub use elasticsearch::{
+    create_elasticsearch_memory_record, ensure_elasticsearch_index, list_elasticsearch_memory_keys,
+    search_elasticsearch_memory, upsert_elasticsearch_image, ElasticsearchIndexSchema, ElasticsearchRef,
+};
 pub use message_record::MessageRecord;
 pub use mysql::MySqlNode;
 pub use object_storage::{
@@ -49,8 +54,8 @@ pub use object_storage::{
 pub use rdb::{build_relational_db_connection_for_connection, build_relational_db_connection_for_kind};
 pub use redis::RedisNode;
 pub use resource_resolver::{
-    build_rdb_ref, build_redis_ref, build_s3_ref, build_weaviate_ref, build_web_search_engine_ref, find_connection,
-    resolve_connection_data_value,
+    build_elasticsearch_ref, build_rdb_ref, build_redis_ref, build_s3_ref, build_weaviate_ref,
+    build_web_search_engine_ref, find_connection, resolve_connection_data_value,
 };
 pub use rustfs::RustfsNode;
 pub use sqlite::SqliteNode;
@@ -83,6 +88,7 @@ pub enum ConnectionKind {
     Mysql(MysqlConnection),
     Redis(RedisConnection),
     Weaviate(WeaviateConnection),
+    Elasticsearch(ElasticsearchConnection),
     Rustfs(RustfsConnection),
     BotAdapter(serde_json::Value),
     WebSearchEngine(WebSearchEngineConnection),
@@ -122,6 +128,20 @@ pub struct WeaviateConnection {
     #[serde(default)]
     pub api_key: Option<String>,
     pub collection_schema: WeaviateCollectionSchema,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ElasticsearchConnection {
+    pub base_url: String,
+    pub index_name: String,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    pub collection_schema: WeaviateCollectionSchema,
+    pub vector_dimensions: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -209,6 +229,7 @@ impl ConfigRecord for ConnectionConfig {
             ConnectionKind::Mysql(_) => ConfigKind::ConnectionMysql,
             ConnectionKind::Redis(_) => ConfigKind::ConnectionRedis,
             ConnectionKind::Weaviate(_) => ConfigKind::ConnectionWeaviate,
+            ConnectionKind::Elasticsearch(_) => ConfigKind::ConnectionElasticsearch,
             ConnectionKind::Rustfs(_) => ConfigKind::ConnectionRustfs,
             ConnectionKind::BotAdapter(_) => ConfigKind::ConnectionBotAdapter,
             ConnectionKind::WebSearchEngine(_) => ConfigKind::ConnectionWebSearchEngine,
@@ -239,6 +260,10 @@ impl ConfigRecord for ConnectionConfig {
             if sqlite.path.trim().is_empty() {
                 return Err(zihuan_core::string_error!("sqlite.path must not be empty"));
             }
+        }
+        if let ConnectionKind::Elasticsearch(elasticsearch) = &self.kind {
+            let reference = crate::ElasticsearchRef::new(elasticsearch.clone())?;
+            let _ = reference;
         }
         Ok(())
     }

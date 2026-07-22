@@ -1,6 +1,14 @@
 <template>
-  <div class="admin-shell" :class="{ 'sidebar-open': sidebarOpen }">
+  <div class="admin-shell" :class="{ 'sidebar-open': sidebarOpen, 'sidebar-collapsed': sidebarCollapsed }">
     <template v-if="!isSetupRoute">
+      <button
+        type="button"
+        class="admin-sidebar-toggle admin-sidebar-toggle-floating"
+        aria-label="展开菜单"
+        @click="toggleSidebar"
+      >
+        <span class="admin-hamburger"></span>
+      </button>
       <aside class="admin-sidebar">
         <div class="admin-brand">
           <div class="admin-brand-mark">
@@ -8,13 +16,12 @@
           </div>
           <div>
             <h1>Zihuan Next</h1>
-            <p>AI框架管理界面</p>
           </div>
           <button
             type="button"
             class="admin-sidebar-toggle"
             aria-label="切换菜单"
-            @click="sidebarOpen = !sidebarOpen"
+            @click="toggleSidebar"
           >
             <span class="admin-hamburger"></span>
           </button>
@@ -44,7 +51,7 @@
             type="button"
             class="admin-sidebar-toggle"
             aria-label="切换菜单"
-            @click="sidebarOpen = !sidebarOpen"
+            @click="toggleSidebar"
           >
             <span class="admin-hamburger"></span>
           </button>
@@ -67,7 +74,7 @@ import brandLogoSrc from "../assets/brand-icon.png";
 import { useAdminApp } from "./composables/useAdminApp";
 import { errorCount, logErrorBadgeEnabled } from "./state/logStream";
 
-const { isSetupRoute, sidebarOpen, showOverlay, closeSidebar } = useAdminApp();
+const { isSetupRoute, sidebarOpen, sidebarCollapsed, showOverlay, closeSidebar, toggleSidebar } = useAdminApp();
 </script>
 
 <style scoped lang="scss">

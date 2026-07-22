@@ -81,19 +81,21 @@
     </div>
 
     <div class="actions">
-      <button class="btn ghost" @click="$emit('back')">← 返回</button>
+      <button class="btn ghost" @click="$emit('back')"><ArrowLeftIcon /> 返回</button>
       <button
         class="btn primary"
         :disabled="!canProceed"
         @click="$emit('next')"
       >
-        下一步 →
+        下一步 <ArrowRightIcon />
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ArrowLeftIcon, ArrowRightIcon } from "tdesign-icons-vue-next";
+
 import type { LlmSetupConfig } from "../../api/client";
 import { useLlmConfigStep } from "../composables/useLlmConfigStep";
 
