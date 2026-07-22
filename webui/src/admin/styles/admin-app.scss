@@ -1,11 +1,32 @@
 .setup-fullscreen {
   grid-column: 1 / -1;
+  height: 100vh;
   min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--admin-bg);
 }
 
+body:has(.setup-fullscreen),
+#app:has(.setup-fullscreen) {
+  height: auto;
+  min-height: 100vh;
+}
+
+body:has(.setup-fullscreen) {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .setup-fullscreen:has(.detailed-config-step) {
-  height: 100vh;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+}
+
+@media (max-width: 900px) {
+  .setup-fullscreen:has(.detailed-config-step) {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
 }

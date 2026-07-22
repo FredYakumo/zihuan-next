@@ -8,9 +8,7 @@
 }
 
 .setup-wizard:has(.detailed-config-step) {
-  height: 100vh;
-  min-height: 0;
-  overflow: hidden;
+  min-height: 100%;
 }
 
 .setup-wizard--detailed {
@@ -102,6 +100,12 @@
 }
 
 @media (max-width: 900px) {
+  .setup-wizard:has(.detailed-config-step) {
+    height: auto;
+    min-height: 100vh;
+    overflow-y: auto;
+  }
+
   .setup-wizard.setup-wizard--detailed {
     display: flex;
     height: auto;
