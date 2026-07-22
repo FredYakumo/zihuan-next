@@ -7,6 +7,38 @@
   padding: 40px 20px;
 }
 
+.setup-wizard:has(.detailed-config-step) {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.setup-wizard--detailed {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: 32px;
+  align-items: stretch;
+  padding: 32px;
+
+  .setup-header {
+    max-width: none;
+    margin: 0;
+    padding: 16px 32px 16px 0;
+    border-right: 1px solid var(--admin-border);
+  }
+
+  .setup-brand {
+    text-align: left;
+    margin-bottom: 28px;
+  }
+
+  .setup-body {
+    max-width: none;
+    min-width: 0;
+    height: 100%;
+  }
+}
+
 .setup-header {
   width: 100%;
   max-width: 800px;
@@ -58,4 +90,38 @@
   border: 1px solid var(--admin-border);
   border-radius: 12px;
   padding: 32px;
+}
+
+.setup-body:has(.detailed-config-step) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+
+  > .detailed-config-step { width: 100%; }
+}
+
+@media (max-width: 900px) {
+  .setup-wizard--detailed {
+    display: flex;
+    padding: 24px 20px;
+    overflow-y: auto;
+
+    .setup-header {
+      width: 100%;
+      max-width: 800px;
+      padding: 0;
+      border-right: 0;
+      margin-bottom: 24px;
+    }
+
+    .setup-brand {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .setup-body {
+      height: auto;
+    }
+  }
 }

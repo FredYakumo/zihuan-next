@@ -6,9 +6,10 @@ import {
   type ImsBotAdapterSetupConfig,
   type LlmSetupConfig,
   type SetupProgressEvent,
+  type DetailedSetupConfig,
 } from "../../api/client";
 
-type Step = "mode" | "role" | "environment" | "llm" | "ims_bot_adapter" | "install" | "complete";
+type Step = "mode" | "detailed" | "role" | "environment" | "llm" | "ims_bot_adapter" | "install" | "complete";
 type SetupRole = "chat_assistant" | "code_dev_assistant" | "qq_chat_bot" | "ai_butler";
 
 
@@ -32,17 +33,43 @@ export function useSetupWizard() {
     qq_id: null,
     token: null,
   });
+  const detailedConfig = ref<DetailedSetupConfig>({
+    install_method: "docker",
+    relational: {
+      enabled: true, source: "install", type: "sqlite",
+      deployment: { image: "mysql:8.4", port: 3306, data_dir: "./mysql/data", container_name: "zihuan-mysql", restart_policy: "unless-stopped" },
+      host: "127.0.0.1", username: "root", password: "", database: "zihuan", sqlite_path: "zihuan_data.db", max_connections: 32, acquire_timeout_secs: 30,
+    },
+    rustfs: {
+      enabled: false, source: "install",
+      deployment: { image: "rustfs/rustfs:latest", port: 9000, data_dir: "./rustfs/data", container_name: "zihuan-rustfs", restart_policy: "unless-stopped" },
+      endpoint: "http://127.0.0.1:9000", bucket: "zihuan", region: "us-east-1", access_key: "", secret_key: "", public_base_url: null, path_style: true,
+    },
+    search: {
+      enabled: false, source: "install", type: "weaviate",
+      deployment: { image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./weaviate/data", container_name: "zihuan-weaviate", restart_policy: "unless-stopped" },
+      base_url: "http://127.0.0.1:8080", username: null, password: null, api_key: null, vector_dimensions: 1024,
+    },
+    redis: {
+      enabled: false, source: "install",
+      deployment: { image: "redis:7", port: 6379, data_dir: "./redis/data", container_name: "zihuan-redis", restart_policy: "unless-stopped" },
+      url: "redis://127.0.0.1:6379", username: null, password: null,
+    },
+  });
   const taskId = ref("");
+  const installationMode = ref<"role_based" | "detailed">("role_based");
   const installLogs = ref<SetupProgressEvent[]>([]);
   const installError = ref<string | null>(null);
   let cleanupProgress = (() => {}) as () => void;
 
   const showProgressBar = computed(() =>
-    ["environment", "llm", "ims_bot_adapter", "install", "complete"].includes(step.value),
+    ["detailed", "environment", "llm", "ims_bot_adapter", "install", "complete"].includes(step.value),
   );
 
   const progressPercent = computed(() => {
     switch (step.value) {
+      case "detailed":
+        return 20;
       case "environment":
         return 20;
       case "llm":
@@ -65,12 +92,14 @@ export function useSetupWizard() {
         router.push("/");
       });
     } else if (mode === "detailed") {
-      setupApi.skip().then(() => {
-        router.push("/");
-      });
+      step.value = "detailed";
     } else {
       step.value = "role";
     }
+  }
+
+  function startDetailedInstallation() {
+    startInstallation("detailed");
   }
 
   function onRoleSelect(role: SetupRole) {
@@ -98,19 +127,22 @@ export function useSetupWizard() {
     }
   }
 
-  async function startInstallation() {
+  async function startInstallation(mode: "role_based" | "detailed" = "role_based") {
+    installationMode.value = mode;
     step.value = "install";
     installLogs.value = [];
     installError.value = null;
     cleanupProgress();
 
     try {
-      const res = await setupApi.execute({
+      const res = await setupApi.execute(mode === "detailed" ? {
+        mode: "detailed",
+        detailed_config: detailedConfig.value,
+      } : {
         mode: "role_based",
         role: selectedRole.value ?? undefined,
         llm_config: llmConfig.value,
-        ims_bot_adapter_config:
-          selectedRole.value === "qq_chat_bot" ? imsBotAdapterConfig.value : undefined,
+        ims_bot_adapter_config: selectedRole.value === "qq_chat_bot" ? imsBotAdapterConfig.value : undefined,
       });
       taskId.value = res.task_id;
 
@@ -141,6 +173,7 @@ export function useSetupWizard() {
     selectedRole,
     llmConfig,
     imsBotAdapterConfig,
+    detailedConfig,
     taskId,
     installLogs,
     installError,
@@ -150,6 +183,7 @@ export function useSetupWizard() {
     onRoleSelect,
     onLlmNext,
     onLlmBack,
+    startDetailedInstallation,
     startInstallation,
     finishSetup,
   };
