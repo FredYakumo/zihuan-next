@@ -102,9 +102,11 @@
 }
 
 @media (max-width: 900px) {
-  .setup-wizard--detailed {
+  .setup-wizard.setup-wizard--detailed {
     display: flex;
-    padding: 24px 20px;
+    height: auto;
+    min-height: 100vh;
+    padding: 12px;
     overflow-y: auto;
 
     .setup-header {
@@ -112,16 +114,32 @@
       max-width: 800px;
       padding: 0;
       border-right: 0;
-      margin-bottom: 24px;
+      margin-bottom: 12px;
     }
 
     .setup-brand {
       text-align: center;
-      margin-bottom: 24px;
+      margin-bottom: 12px;
+
+      .setup-brand-icon {
+        width: 40px;
+        height: 40px;
+        margin-bottom: 6px;
+      }
+
+      h1 {
+        font-size: 22px;
+        margin-bottom: 2px;
+      }
+
+      p {
+        font-size: 14px;
+      }
     }
 
     .setup-body {
       height: auto;
+      padding: 20px 16px;
     }
   }
 }
