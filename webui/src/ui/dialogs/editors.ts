@@ -234,7 +234,7 @@ export function openJsonExtractEditor(
     const typeEl = dataTypeSelect(field?.data_type ?? "String");
 
     const removeBtn = document.createElement("button");
-    removeBtn.textContent = "✕";
+    removeBtn.textContent = "移除";
     removeBtn.className = "danger";
     removeBtn.style.padding = "4px 8px";
     removeBtn.addEventListener("click", () => {
@@ -365,7 +365,7 @@ export function openFunctionSignatureEditor(
   cancelBtn.addEventListener("click", close);
 
   const editSubgraphBtn = document.createElement("button");
-  editSubgraphBtn.textContent = "↳ 编辑子图";
+  editSubgraphBtn.textContent = "编辑子图";
   editSubgraphBtn.addEventListener("click", async () => {
     const nameEl = dialog.querySelector<HTMLInputElement>("#zh-fn-name")!;
     const descEl = dialog.querySelector<HTMLInputElement>("#zh-fn-desc")!;
@@ -543,7 +543,7 @@ export function openBrainToolsEditor(
     });
 
     const deleteBtn = document.createElement("button");
-    deleteBtn.textContent = "✕ 删除";
+    deleteBtn.textContent = "删除";
     deleteBtn.className = "danger";
     deleteBtn.style.padding = "4px 8px";
     deleteBtn.addEventListener("click", () => {
@@ -765,7 +765,7 @@ export function openBrainToolsEditor(
       descEl.style.flex = "2";
 
       const removeBtn = document.createElement("button");
-      removeBtn.textContent = "✕";
+      removeBtn.textContent = "移除";
       removeBtn.className = "danger";
       removeBtn.style.padding = "4px 8px";
       removeBtn.addEventListener("click", () => {
@@ -826,7 +826,7 @@ export function openBrainToolsEditor(
 
     if ((tool.implementation ?? "node_graph") === "node_graph") {
       const editSubBtn = document.createElement("button");
-      editSubBtn.textContent = "↳ 编辑工具子图";
+    editSubBtn.textContent = "编辑工具子图";
       editSubBtn.style.marginTop = "6px";
       editSubBtn.addEventListener("click", () => {
         tools[idx].name = nameInput.value.trim();
@@ -951,7 +951,7 @@ export function openQQMessageListEditor(
     });
 
     const deleteBtn = document.createElement("button");
-    deleteBtn.textContent = "✕ 删除";
+    deleteBtn.textContent = "删除";
     deleteBtn.className = "danger";
     deleteBtn.style.cssText = "padding:4px 8px;white-space:nowrap;flex-shrink:0;";
     deleteBtn.addEventListener("click", () => {
@@ -1231,7 +1231,7 @@ export function openLLMMessageListEditor(
     });
 
     const deleteBtn = document.createElement("button");
-    deleteBtn.textContent = "✕ 删除";
+    deleteBtn.textContent = "删除";
     deleteBtn.className = "danger";
     deleteBtn.style.cssText = "padding:4px 8px;white-space:nowrap;flex-shrink:0;";
     deleteBtn.addEventListener("click", () => {

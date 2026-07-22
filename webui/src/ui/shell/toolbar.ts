@@ -1,6 +1,8 @@
 import type { TaskEntry } from "../../api/types";
+import { CheckIcon, ForwardIcon, RollbackIcon } from "tdesign-icons-vue-next";
 import { getThemeConfig } from "../theme";
 import { openOverlay } from "../dialogs/base";
+import { appendIcon, setButtonIcon } from "../icon";
 
 function taskLabel(task: Pick<TaskEntry, "graph_name" | "is_workflow_set">): string {
   return task.is_workflow_set ? `${task.graph_name} [工作流集]` : task.graph_name;
@@ -146,7 +148,7 @@ export function buildToolbar(
       `;
       if (t.name === current) {
         const check = document.createElement("span");
-        check.textContent = "✓";
+        appendIcon(check, CheckIcon);
         check.style.color = "var(--run-color)";
         row.appendChild(check);
       }
@@ -258,7 +260,7 @@ export function buildToolbar(
   undoBtn.id = "toolbar-undo";
   undoBtn.className = "toolbar-icon-btn";
   undoBtn.title = "撤回 (Ctrl+Z)";
-  undoBtn.textContent = "↩";
+  setButtonIcon(undoBtn, RollbackIcon, "撤回");
   undoBtn.disabled = true;
   undoBtn.addEventListener("click", () => onUndo());
   toolbar.appendChild(undoBtn);
@@ -267,7 +269,7 @@ export function buildToolbar(
   redoBtn.id = "toolbar-redo";
   redoBtn.className = "toolbar-icon-btn";
   redoBtn.title = "重做 (Ctrl+Y)";
-  redoBtn.textContent = "↪";
+  setButtonIcon(redoBtn, ForwardIcon, "重做");
   redoBtn.disabled = true;
   redoBtn.addEventListener("click", () => onRedo());
   toolbar.appendChild(redoBtn);

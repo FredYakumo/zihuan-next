@@ -33,11 +33,13 @@
       </button>
     </div>
 
-    <button class="btn ghost back-btn" @click="$emit('back')">← 返回</button>
+    <button class="btn ghost back-btn" @click="$emit('back')"><ArrowLeftIcon /> 返回</button>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ArrowLeftIcon } from "tdesign-icons-vue-next";
+
 defineEmits<{
   (e: "select", role: "chat_assistant" | "code_dev_assistant" | "qq_chat_bot" | "ai_butler"): void;
   (e: "back"): void;

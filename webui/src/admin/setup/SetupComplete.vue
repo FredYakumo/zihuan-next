@@ -1,16 +1,18 @@
 <template>
   <div class="setup-complete">
-    <div class="complete-icon">✅</div>
+    <CheckCircleIcon class="complete-icon" />
     <h2>设置完成！</h2>
     <p class="subtitle">Zihuan Next 已准备好使用</p>
 
     <button class="btn primary" @click="$emit('finish')">
-      进入主界面 →
+      进入主界面 <ArrowRightIcon />
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ArrowRightIcon, CheckCircleIcon } from "tdesign-icons-vue-next";
+
 defineEmits<{ (e: "finish"): void }>();
 </script>
 

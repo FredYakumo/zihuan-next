@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { DeleteIcon, EditIcon, FileIcon } from "tdesign-icons-vue-next";
+
 import { useToolCallBadge, type ToolCallKind } from "../composables/useToolCallBadge";
 
 const props = defineProps<{
@@ -26,17 +28,17 @@ const { kind, loading } = useToolCallBadge(props, emit);
   >
     <span v-if="loading" class="live-tool-spinner"></span>
     <template v-if="kind.type === 'create_file'">
-      <span class="badge-icon">📄</span>
+      <FileIcon class="badge-icon" />
       {{ kind.filename }}
       <span class="badge-lines badge-lines--added">+{{ kind.lineCount }}行</span>
     </template>
     <template v-else-if="kind.type === 'delete_file'">
-      <span class="badge-icon">🗑️</span>
+      <DeleteIcon class="badge-icon" />
       {{ kind.filename }}
       <span v-if="kind.lineCount != null" class="badge-lines badge-lines--removed">-{{ kind.lineCount }}行</span>
     </template>
     <template v-else-if="kind.type === 'edit_file'">
-      <span class="badge-icon">✏️</span>
+      <EditIcon class="badge-icon" />
       {{ kind.filename }}
       <span class="badge-lines badge-lines--added">+{{ kind.addedLines }}行</span>
       <span class="badge-lines badge-lines--removed">-{{ kind.removedLines }}行</span>

@@ -315,7 +315,7 @@
                   class="muted"
                   style="margin-top: 4px; font-size: 12px"
                 >
-                  💡 {{ ignoreRulesDisabledReason }}
+                  <InfoCircleIcon /> {{ ignoreRulesDisabledReason }}
                 </div>
               </div>
             </template>
@@ -408,7 +408,7 @@
                   class="muted"
                   style="margin-top: 4px"
                 >
-                  💡
+                  <InfoCircleIcon />
                   未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。
                   如需持久化，请在
                   <a href="#/connections" style="color: var(--primary)"
@@ -1125,7 +1125,7 @@
                   class="muted"
                   style="margin-top: 4px; font-size: 12px"
                 >
-                  💡 {{ ignoreRulesDisabledReason }}
+                  <InfoCircleIcon /> {{ ignoreRulesDisabledReason }}
                 </div>
               </div>
             </template>
@@ -1218,7 +1218,7 @@
                   class="muted"
                   style="margin-top: 4px"
                 >
-                  💡
+                  <InfoCircleIcon />
                   未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。
                   如需持久化，请在
                   <a href="#/connections" style="color: var(--primary)"
@@ -1525,7 +1525,7 @@
             class="emotion-dim-close-btn"
             @click="closeEmotionDimensionsModal"
           >
-            ✕
+            <CloseIcon />
           </button>
         </div>
         <div class="service-edit-modal-body">
@@ -2276,7 +2276,7 @@
 </template>
 
 <script setup lang="ts">
-import { CloseIcon } from "tdesign-icons-vue-next";
+import { CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
 import { useAgents } from "../composables/useAgents";
 
 const {

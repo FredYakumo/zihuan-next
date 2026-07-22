@@ -1,3 +1,7 @@
+import { CloseIcon, PlayCircleIcon, StopCircleIcon } from "tdesign-icons-vue-next";
+
+import { appendIcon, setButtonIcon } from "../icon";
+
 function makeBadge(level: string): HTMLElement {
   const badge = document.createElement("span");
   badge.className = `log-badge log-badge-${level.toUpperCase()}`;
@@ -85,7 +89,7 @@ export function buildCanvasPanelButtons(
     header.appendChild(title);
     const closeBtn = document.createElement("button");
     closeBtn.className = "log-stream-close";
-    closeBtn.textContent = "×";
+    setButtonIcon(closeBtn, CloseIcon, "关闭");
     closeBtn.title = "关闭";
     closeBtn.addEventListener("click", closeLogOverlay);
     header.appendChild(closeBtn);
@@ -117,7 +121,10 @@ export function buildCanvasPanelButtons(
 
   const runBtn = document.createElement("button");
   runBtn.id = "btn-run";
-  runBtn.textContent = "Run ▶";
+  runBtn.textContent = "Run";
+  runBtn.append(" ");
+  appendIcon(runBtn, PlayCircleIcon);
+  runBtn.setAttribute("aria-label", "运行当前工作流");
   runBtn.title = "运行当前工作流";
   let currentHandler = onExecute;
   runBtn.addEventListener("click", () => currentHandler());
@@ -127,12 +134,18 @@ export function buildCanvasPanelButtons(
 
   function updateRunButton(isRunning: boolean): void {
     if (isRunning) {
-      runBtn.textContent = "Stop ■";
+      runBtn.textContent = "Stop";
+      runBtn.append(" ");
+      appendIcon(runBtn, StopCircleIcon);
+      runBtn.setAttribute("aria-label", "停止当前任务");
       runBtn.title = "停止当前任务";
       runBtn.classList.add("stop");
       currentHandler = onStopTask;
     } else {
-      runBtn.textContent = "Run ▶";
+      runBtn.textContent = "Run";
+      runBtn.append(" ");
+      appendIcon(runBtn, PlayCircleIcon);
+      runBtn.setAttribute("aria-label", "运行当前工作流");
       runBtn.title = "运行当前工作流";
       runBtn.classList.remove("stop");
       currentHandler = onExecute;

@@ -53,7 +53,7 @@ function buildPortSection(ports: PortConnInfo[], showConnections: boolean): HTML
       for (const conn of p.connectedTo) {
         const connEl = document.createElement("div");
         connEl.className = "zh-ni-conn";
-        connEl.textContent = `→ ${conn.nodeName} : ${conn.portName}`;
+        connEl.textContent = `${conn.nodeName} : ${conn.portName}`;
         portEl.appendChild(connEl);
       }
     }

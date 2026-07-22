@@ -121,7 +121,7 @@ export function buildPortListEditor(
       items.push({ nameEl, typeEl, descEl, row, reserved: true });
     } else {
       const removeBtn = document.createElement("button");
-      removeBtn.textContent = "✕";
+      removeBtn.textContent = "移除";
       removeBtn.className = "danger";
       removeBtn.style.padding = "4px 8px";
       removeBtn.addEventListener("click", () => {

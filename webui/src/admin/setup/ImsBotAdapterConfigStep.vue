@@ -9,7 +9,7 @@
         :class="{ selected: model.platform === 'qq_napcat' }"
         @click="model.platform = 'qq_napcat'"
       >
-        <div class="platform-icon">🐧</div>
+        <LogoQqIcon class="platform-icon" />
         <strong>QQ</strong>
         <span class="platform-tag">NapCat</span>
       </button>
@@ -19,7 +19,7 @@
         disabled
         title="即将支持"
       >
-        <div class="platform-icon">💬</div>
+        <ChatIcon class="platform-icon" />
         <strong>微信</strong>
         <span class="platform-tag coming-soon">即将支持</span>
       </button>
@@ -29,7 +29,7 @@
         disabled
         title="即将支持"
       >
-        <div class="platform-icon">✈️</div>
+        <SendIcon class="platform-icon" />
         <strong>Telegram</strong>
         <span class="platform-tag coming-soon">即将支持</span>
       </button>
@@ -71,19 +71,21 @@
     </div>
 
     <div class="actions">
-      <button class="btn ghost" @click="$emit('back')">← 返回</button>
+      <button class="btn ghost" @click="$emit('back')"><ArrowLeftIcon /> 返回</button>
       <button
         class="btn primary"
         :disabled="!canProceed"
         @click="$emit('next')"
       >
-        开始安装 →
+        开始安装 <ArrowRightIcon />
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ArrowLeftIcon, ArrowRightIcon, ChatIcon, LogoQqIcon, SendIcon } from "tdesign-icons-vue-next";
+
 import type { ImsBotAdapterSetupConfig } from "../../api/client";
 import { useImsBotAdapterConfigStep } from "../composables/useImsBotAdapterConfigStep";
 

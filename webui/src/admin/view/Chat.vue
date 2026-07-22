@@ -61,7 +61,7 @@
             <div class="chat-sessions-header">历史</div>
             <template v-for="group in groupedSessions" :key="group.pathKey">
               <div class="chat-session-group-header" :title="group.path ?? undefined">
-                📁 {{ group.label }}
+                <FolderIcon /> {{ group.label }}
               </div>
               <div
                 v-for="session in group.sessions"
@@ -148,7 +148,7 @@
                               @click="toggleLiveToolCall(liveCall.call_id)"
                             >
                               <span v-if="!liveCall.done" class="live-tool-spinner"></span>
-                              <span v-else class="live-tool-done-icon">✓</span>
+                              <CheckIcon v-else class="live-tool-done-icon" />
                               工具调用: {{ liveCall.name }}
                             </button>
                             <div
@@ -251,7 +251,8 @@
                         @click="message.thinkingExpanded = !message.thinkingExpanded"
                       >
                         <span class="chat-thinking-icon">
-                          {{ message.thinkingExpanded ? '▼' : '▶' }}
+                          <ChevronDownIcon v-if="message.thinkingExpanded" />
+                          <ChevronRightIcon v-else />
                         </span>
                         思考过程
                         <span
@@ -304,7 +305,7 @@
                               @click="toggleLiveToolCall(liveCall.call_id)"
                             >
                               <span v-if="!liveCall.done" class="live-tool-spinner"></span>
-                              <span v-else class="live-tool-done-icon">✓</span>
+                              <CheckIcon v-else class="live-tool-done-icon" />
                               工具调用: {{ liveCall.name }}
                             </button>
                             <div
@@ -418,7 +419,7 @@
 
             <div class="chat-input-area">
               <div v-if="!isChatEligible" class="chat-not-supported">
-                <div class="chat-not-supported-icon">🚫</div>
+                <ErrorCircleIcon class="chat-not-supported-icon" />
                 <div class="chat-not-supported-title">此 Agent 不支持在 Dashboard 聊天</div>
                 <div class="chat-not-supported-desc">请在 QQ 群或 HTTP Stream 端点中使用该 Agent。</div>
               </div>
@@ -625,7 +626,7 @@
                             @click.stop="toggleAutoCollapseThinking"
                           >
                             自动折叠思考过程
-                            <span v-if="autoCollapseThinking" class="live-tool-done-icon">✓</span>
+                            <CheckIcon v-if="autoCollapseThinking" class="live-tool-done-icon" />
                           </button>
                         </div>
                       </div>
@@ -655,18 +656,18 @@
         <div class="tool-preview-panel">
           <div class="tool-preview-header">
             <template v-if="toolPreviewState.kind.type === 'create_file'">
-              <span class="badge-icon">📄</span> 创建文件: {{ toolPreviewState.kind.filename }}
+              <FileIcon class="badge-icon" /> 创建文件: {{ toolPreviewState.kind.filename }}
             </template>
             <template v-else-if="toolPreviewState.kind.type === 'delete_file'">
-              <span class="badge-icon">🗑️</span> 删除文件: {{ toolPreviewState.kind.filename }}
+              <DeleteIcon class="badge-icon" /> 删除文件: {{ toolPreviewState.kind.filename }}
             </template>
             <template v-else-if="toolPreviewState.kind.type === 'edit_file'">
-              <span class="badge-icon">✏️</span> 编辑文件: {{ toolPreviewState.kind.filename }}
+              <EditIcon class="badge-icon" /> 编辑文件: {{ toolPreviewState.kind.filename }}
             </template>
             <template v-else-if="toolPreviewState.kind.type === 'exec_cmd'">
               <span class="cmd-prefix">&gt;</span> {{ toolPreviewState.kind.command }}
             </template>
-            <button class="tool-preview-close" @click="closeToolPreview">✕</button>
+            <button class="tool-preview-close" aria-label="关闭" @click="closeToolPreview"><CloseIcon /></button>
           </div>
           <div class="tool-preview-body">
             <template v-if="toolPreviewState.kind.type === 'create_file'">
@@ -733,6 +734,8 @@
 </template>
 
 <script setup lang="ts">
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, DeleteIcon, EditIcon, ErrorCircleIcon, FileIcon, FolderIcon } from "tdesign-icons-vue-next";
+
 import { useChat } from "../composables/useChat";
 import ToolCallBadge from "./ToolCallBadge.vue";
 

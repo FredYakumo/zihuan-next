@@ -1,4 +1,7 @@
 import type { NodeTypeInfo } from "../../api/types";
+import { ArrowLeftIcon, ChevronRightIcon } from "tdesign-icons-vue-next";
+
+import { appendIcon } from "../icon";
 
 export function buildDOM(): {
   toolbar: HTMLElement;
@@ -39,7 +42,8 @@ export function buildDOM(): {
   const backArrow = document.createElement("div");
   backArrow.id = "canvas-back-arrow";
   const backArrowBtn = document.createElement("button");
-  backArrowBtn.textContent = "← 返回";
+  appendIcon(backArrowBtn, ArrowLeftIcon);
+  backArrowBtn.append(" 返回");
   backArrow.appendChild(backArrowBtn);
   canvasContainer.appendChild(backArrow);
 
@@ -81,7 +85,7 @@ export function updateBreadcrumb(
   for (let i = 0; i < labels.length; i++) {
     const sep = document.createElement("span");
     sep.className = "bc-sep";
-    sep.textContent = "›";
+    appendIcon(sep, ChevronRightIcon);
     breadcrumb.appendChild(sep);
 
     const item = document.createElement("span");

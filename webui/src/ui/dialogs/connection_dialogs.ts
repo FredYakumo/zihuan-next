@@ -40,7 +40,7 @@ export function showConnectPortDialog(
       <span>来源端口:</span>
       <span class="zh-cp-badge">${sourcePortName}</span>
       <span class="zh-cp-badge">${sourceType}</span>
-      <span style="color:var(--text-dim)">${isFromOutput ? "→ 寻找输入端口" : "← 寻找输出端口"}</span>
+      <span style="color:var(--text-dim)">${isFromOutput ? "寻找输入端口" : "寻找输出端口"}</span>
     `;
     header.appendChild(sourceInfo);
     dialog.appendChild(header);

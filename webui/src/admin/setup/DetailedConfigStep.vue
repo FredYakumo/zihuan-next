@@ -52,17 +52,18 @@
       </section>
       </div>
 
-      <div class="step-actions"><button class="btn ghost" @click="$emit('back')">← 返回</button><button class="btn primary" @click="$emit('next')">开始配置 →</button></div>
+      <div class="step-actions"><button class="btn ghost" @click="$emit('back')"><ArrowLeftIcon /> 返回</button><button class="btn primary" @click="$emit('next')">开始配置 <ArrowRightIcon /></button></div>
     </template>
 
     <div v-if="!selectedInstallMethod" class="step-actions step-actions--selection">
-      <button class="btn ghost" @click="$emit('back')">← 返回</button>
+      <button class="btn ghost" @click="$emit('back')"><ArrowLeftIcon /> 返回</button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { ArrowLeftIcon, ArrowRightIcon } from "tdesign-icons-vue-next";
 
 import type { DetailedSetupConfig, DetailedSetupInstallMethod } from "../../api/client";
 import { setup as setupApi, type EnvironmentInfo } from "../../api/client";

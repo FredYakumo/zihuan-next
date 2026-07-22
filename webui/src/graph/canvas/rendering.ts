@@ -317,8 +317,12 @@ function bindDrawNodeWidgets(canvas: CanvasFacade) {
               ctx.fillText(truncatedValue, valueLeftX, inlineRowCenterY);
               if (widget.type === "combo" && !widget.disabled) {
                 ctx.fillStyle = widget.disabled ? c.widgetDisabled : c.widgetText;
-                ctx.textAlign = "right";
-                ctx.fillText("▾", valueRightX, inlineRowCenterY);
+                ctx.beginPath();
+                ctx.moveTo(valueRightX - 6, inlineRowCenterY - 2);
+                ctx.lineTo(valueRightX, inlineRowCenterY - 2);
+                ctx.lineTo(valueRightX - 3, inlineRowCenterY + 2);
+                ctx.closePath();
+                ctx.fill();
               }
             }
           } else if (widget.type === "toggle") {
@@ -378,8 +382,14 @@ function bindDrawNodeWidgets(canvas: CanvasFacade) {
               : widgetWidth - margin * 2;
             ctx.fillText(truncatedValue, textRightX, widget.last_y + widgetHeight * 0.7);
             if (widget.type === "combo" && !widget.disabled) {
-              ctx.textAlign = "right";
-              ctx.fillText("▾", widgetWidth - margin * 2, widget.last_y + widgetHeight * 0.7);
+              const arrowX = widgetWidth - margin * 2;
+              const arrowY = widget.last_y + widgetHeight * 0.7;
+              ctx.beginPath();
+              ctx.moveTo(arrowX - 6, arrowY - 2);
+              ctx.lineTo(arrowX, arrowY - 2);
+              ctx.lineTo(arrowX - 3, arrowY + 2);
+              ctx.closePath();
+              ctx.fill();
             }
           }
         }
