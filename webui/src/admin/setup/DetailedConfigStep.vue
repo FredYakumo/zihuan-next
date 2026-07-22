@@ -7,11 +7,11 @@
       <span v-if="environmentLoading" class="install-method-status">正在检测本机安装能力...</span>
       <template v-else>
         <label :class="{ unavailable: !dockerSupported }" :title="dockerUnsupportedReason">
-          <input v-model="model.install_method" type="radio" value="docker" :disabled="!dockerSupported" />
+          <input v-model="selectedInstallMethod" type="radio" value="docker" :disabled="!dockerSupported" />
           Docker <small v-if="!dockerSupported">（本机不支持）</small>
         </label>
         <label :class="{ unavailable: !environment.binary_install_available }" :title="environment.binary_install_reason ?? ''">
-          <input v-model="model.install_method" type="radio" value="binary" :disabled="!environment.binary_install_available" />
+          <input v-model="selectedInstallMethod" type="radio" value="binary" :disabled="!environment.binary_install_available" />
           二进制 <small v-if="!environment.binary_install_available">（本机不支持）</small>
         </label>
         <span v-if="isWindows" class="windows-environment">
@@ -21,7 +21,8 @@
       </template>
     </div>
 
-    <div class="component-scroll">
+    <template v-if="selectedInstallMethod">
+      <div class="component-scroll">
       <section class="component-card">
         <ComponentHeader v-model:enabled="model.relational.enabled" title="关系型数据库" />
         <template v-if="model.relational.enabled">
@@ -49,16 +50,17 @@
         <ComponentHeader v-model:enabled="model.redis.enabled" title="Redis" hint="可选" />
         <template v-if="model.redis.enabled"><SourceChoice v-model="model.redis.source" /><DeploymentFields v-if="model.redis.source === 'install'" v-model="model.redis.deployment" /><div class="form-grid"><Field label="Redis URL"><input v-model="model.redis.url" /></Field><Field label="用户名"><input v-model="model.redis.username" /></Field><Field label="密码"><CredentialInput v-model="model.redis.password" /></Field></div></template>
       </section>
-    </div>
+      </div>
 
-    <div class="step-actions"><button class="btn ghost" @click="$emit('back')">← 返回</button><button class="btn primary" @click="$emit('next')">开始配置 →</button></div>
+      <div class="step-actions"><button class="btn ghost" @click="$emit('back')">← 返回</button><button class="btn primary" @click="$emit('next')">开始配置 →</button></div>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 
-import type { DetailedSetupConfig } from "../../api/client";
+import type { DetailedSetupConfig, DetailedSetupInstallMethod } from "../../api/client";
 import { setup as setupApi, type EnvironmentInfo } from "../../api/client";
 import ComponentHeader from "./SetupComponentHeader.vue";
 import CredentialInput from "./SetupCredentialInput.vue";
@@ -70,6 +72,7 @@ const model = defineModel<DetailedSetupConfig>({ required: true });
 defineEmits<{ (event: "next"): void; (event: "back"): void }>();
 
 const environmentLoading = ref(true);
+const selectedInstallMethod = ref<DetailedSetupInstallMethod | null>(null);
 const environment = ref<EnvironmentInfo>({
   os: "",
   os_detail: "",
@@ -91,7 +94,6 @@ const isWindows = computed(() => environment.value.os.toLowerCase() === "windows
 onMounted(async () => {
   try {
     environment.value = await setupApi.getEnvironment();
-    selectSupportedInstallMethod();
   } catch (error) {
     console.error("Failed to detect setup environment", error);
   } finally {
@@ -99,16 +101,11 @@ onMounted(async () => {
   }
 });
 
-watch(() => model.value.install_method, selectSupportedInstallMethod);
-
-function selectSupportedInstallMethod() {
-  if (model.value.install_method === "docker" && !dockerSupported.value && environment.value.binary_install_available) {
-    model.value.install_method = "binary";
+watch(selectedInstallMethod, (installMethod) => {
+  if (installMethod) {
+    model.value.install_method = installMethod;
   }
-  if (model.value.install_method === "binary" && !environment.value.binary_install_available && dockerSupported.value) {
-    model.value.install_method = "docker";
-  }
-}
+});
 
 function setSearchType(type: "weaviate" | "elasticsearch") {
   model.value.search.type = type;
