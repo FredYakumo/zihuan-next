@@ -984,6 +984,75 @@ export interface ImsBotAdapterSetupConfig {
   token?: string | null;
 }
 
+export type DetailedSetupInstallMethod = "docker" | "binary";
+export type DetailedSetupSource = "install" | "existing";
+export type DetailedRelationalType = "mysql" | "sqlite";
+export type DetailedSearchType = "weaviate" | "elasticsearch";
+
+export interface DetailedDeploymentConfig {
+  image: string;
+  port: number;
+  data_dir: string;
+  container_name: string;
+  restart_policy: string;
+}
+
+export interface DetailedRelationalSetupConfig {
+  enabled: boolean;
+  source: DetailedSetupSource;
+  type: DetailedRelationalType;
+  deployment: DetailedDeploymentConfig;
+  host: string;
+  username: string;
+  password: string;
+  database: string;
+  sqlite_path: string;
+  max_connections: number;
+  acquire_timeout_secs: number;
+}
+
+export interface DetailedRustfsSetupConfig {
+  enabled: boolean;
+  source: DetailedSetupSource;
+  deployment: DetailedDeploymentConfig;
+  endpoint: string;
+  bucket: string;
+  region: string;
+  access_key: string;
+  secret_key: string;
+  public_base_url: string | null;
+  path_style: boolean;
+}
+
+export interface DetailedSearchSetupConfig {
+  enabled: boolean;
+  source: DetailedSetupSource;
+  type: DetailedSearchType;
+  deployment: DetailedDeploymentConfig;
+  base_url: string;
+  username: string | null;
+  password: string | null;
+  api_key: string | null;
+  vector_dimensions: number;
+}
+
+export interface DetailedRedisSetupConfig {
+  enabled: boolean;
+  source: DetailedSetupSource;
+  deployment: DetailedDeploymentConfig;
+  url: string;
+  username: string | null;
+  password: string | null;
+}
+
+export interface DetailedSetupConfig {
+  install_method: DetailedSetupInstallMethod;
+  relational: DetailedRelationalSetupConfig;
+  rustfs: DetailedRustfsSetupConfig;
+  search: DetailedSearchSetupConfig;
+  redis: DetailedRedisSetupConfig;
+}
+
 export const setup = {
   getStatus(): Promise<SetupWizardState> {
     return request("GET", "/setup/status");
@@ -997,6 +1066,7 @@ export const setup = {
     options?: { http_proxy?: string; docker_compose_path?: string };
     llm_config?: LlmSetupConfig;
     ims_bot_adapter_config?: ImsBotAdapterSetupConfig;
+    detailed_config?: DetailedSetupConfig;
   }): Promise<{ accepted: boolean; task_id: string }> {
     return request("POST", "/setup", payload);
   },

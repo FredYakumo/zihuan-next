@@ -206,7 +206,7 @@ fn build_embedding_ref(id: &str, name: &str) -> LlmRefConfig {
     }
 }
 
-fn build_connection(id: &str, name: &str, kind: ConnectionKind) -> ConnectionConfig {
+pub fn build_connection(id: &str, name: &str, kind: ConnectionKind) -> ConnectionConfig {
     ConnectionConfig {
         id: id.to_string(),
         config_id: id.to_string(),
@@ -386,7 +386,7 @@ fn save_agent(agent: AgentConfig) -> Result<(), String> {
     system_config::save_agents(agents).map_err(|e| e.to_string())
 }
 
-fn save_connection(connection: ConnectionConfig) -> Result<(), String> {
+pub fn save_connection(connection: ConnectionConfig) -> Result<(), String> {
     let mut connections = system_config::load_connections().map_err(|e| e.to_string())?;
     connections.retain(|c| c.id != connection.id);
     connections.push(connection);

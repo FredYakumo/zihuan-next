@@ -264,13 +264,14 @@ impl QqChatAgentServiceInner {
                     ctx.llm.supports_multimodal_input(),
                     &cmd_system_prompt,
                     ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str()),
-                    message_rate_limit_warning,
-                    &mut cmd_session_state,
-                    &cmd_emotion_dimensions,
-                ),
-                ctx.llm.api_style(),
-            );
-            history.push(user_msg_for_cmd);
+                   message_rate_limit_warning,
+                   &mut cmd_session_state,
+                   &cmd_emotion_dimensions,
+                   None,
+               ),
+               ctx.llm.api_style(),
+           );
+           history.push(user_msg_for_cmd);
             history.push(message_with_api_style(
                 LLMMessage::assistant_text(result.reply),
                 ctx.llm.api_style(),
@@ -922,12 +923,13 @@ impl QqChatAgentServiceInner {
                     turn_llm.supports_multimodal_input(),
                     &base_system_prompt,
                     ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str()),
-                    message_rate_limit_warning,
-                    &mut session_state,
-                    &emotion_dimensions,
-                ),
-                turn_llm.api_style(),
-            )
+                   message_rate_limit_warning,
+                   &mut session_state,
+                   &emotion_dimensions,
+                   preprompt_context.as_deref(),
+               ),
+               turn_llm.api_style(),
+           )
         };
 
         let mut history = sanitize_messages_for_inference(history);
@@ -1008,9 +1010,10 @@ impl QqChatAgentServiceInner {
             shared_runtime_values: Arc::clone(&shared_runtime_values),
             system_prompt: base_system_prompt.clone(),
             style_prompt: ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.clone()),
-            session_state: Arc::clone(&turn_session_state),
-            emotion_dimensions: emotion_dimensions.clone(),
-        }));
+           session_state: Arc::clone(&turn_session_state),
+           emotion_dimensions: emotion_dimensions.clone(),
+           preprompt_context: preprompt_context.clone(),
+       }));
 
         let memory_backend = ctx
             .elasticsearch_memory_ref

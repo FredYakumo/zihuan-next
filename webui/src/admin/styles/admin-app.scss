@@ -3,3 +3,9 @@
   min-height: 100vh;
   background: var(--admin-bg);
 }
+
+.setup-fullscreen:has(.detailed-config-step) {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
