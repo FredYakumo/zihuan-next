@@ -38,6 +38,7 @@ export function useSetupWizard() {
     install_method: "docker",
     target_machine_address: "",
     expose_public_access: false,
+    use_target_machine_address: false,
     relational: {
       enabled: true, source: "install", type: "sqlite",
       deployment: { image: "mysql:8.4", port: 3306, data_dir: "./mysql/data", container_name: "zihuan-mysql", restart_policy: "unless-stopped" },
@@ -103,7 +104,11 @@ export function useSetupWizard() {
     }
   }
 
-  function startDetailedInstallation() {
+  function startDetailedInstallation(option: "local_docker" | "local_binary" | "command_docker" | "command_binary") {
+    if (option.startsWith("local_")) {
+      startInstallation("detailed");
+      return;
+    }
     detailedInstallResult.value = null;
     detailedInstallError.value = null;
     setupApi.generateDetailedInstallCommand(detailedConfig.value)

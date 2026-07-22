@@ -114,6 +114,8 @@ pub struct DetailedSetupConfig {
     pub target_machine_address: String,
     #[serde(default)]
     pub expose_public_access: bool,
+    #[serde(default)]
+    pub use_target_machine_address: bool,
     pub relational: DetailedRelationalSetupConfig,
     pub rustfs: DetailedRustfsSetupConfig,
     pub search: DetailedSearchSetupConfig,
@@ -352,9 +354,6 @@ impl SetupOrchestrator {
 }
 
 fn validate_detailed_config(config: &DetailedSetupConfig) -> Result<(), String> {
-    if config.target_machine_address.trim().is_empty() {
-        return Err("Target machine address is required".to_string());
-    }
     if !config.relational.enabled && !config.rustfs.enabled && !config.search.enabled && !config.redis.enabled {
         return Err("Select at least one component to configure".to_string());
     }
@@ -453,16 +452,15 @@ fn base64_encode(bytes: &[u8]) -> String {
     output
 }
 
-fn detailed_connection_host(config: &DetailedSetupConfig) -> &str {
-    if config.expose_public_access {
+fn detailed_connection_host<'a>(config: &'a DetailedSetupConfig, default: &'a str) -> &'a str {
+    if config.expose_public_access && config.use_target_machine_address && !config.target_machine_address.trim().is_empty() {
         config.target_machine_address.trim()
     } else {
-        "127.0.0.1"
+        default
     }
 }
 
 fn detailed_connection_configs(config: &DetailedSetupConfig) -> Vec<ConnectionConfig> {
-    let host = detailed_connection_host(config);
     let mut connections = Vec::new();
 
     if config.relational.enabled {
@@ -473,6 +471,7 @@ fn detailed_connection_configs(config: &DetailedSetupConfig) -> Vec<ConnectionCo
                 ConnectionKind::Sqlite(SqliteConnection { path: config.relational.sqlite_path.clone() }),
             )
         } else {
+            let host = detailed_connection_host(config, &config.relational.host);
             let url = format!(
                 "mysql://{}:{}@{}:{}/{}",
                 config.relational.username,
@@ -494,11 +493,16 @@ fn detailed_connection_configs(config: &DetailedSetupConfig) -> Vec<ConnectionCo
         connections.push(connection);
     }
     if config.rustfs.enabled {
+        let endpoint = if config.expose_public_access && config.use_target_machine_address && !config.target_machine_address.trim().is_empty() {
+            format!("http://{}:{}", config.target_machine_address.trim(), config.rustfs.deployment.port)
+        } else {
+            config.rustfs.endpoint.clone()
+        };
         connections.push(config_factory::build_connection(
             "setup-detailed-rustfs",
             "RustFS",
             ConnectionKind::Rustfs(RustfsConnection {
-                endpoint: format!("http://{}:{}", host, config.rustfs.deployment.port),
+                endpoint,
                 bucket: config.rustfs.bucket.clone(),
                 region: config.rustfs.region.clone(),
                 access_key: config.rustfs.access_key.clone(),
@@ -509,23 +513,33 @@ fn detailed_connection_configs(config: &DetailedSetupConfig) -> Vec<ConnectionCo
         ));
     }
     if config.redis.enabled {
+        let url = if config.expose_public_access && config.use_target_machine_address && !config.target_machine_address.trim().is_empty() {
+            format!("redis://{}:{}", config.target_machine_address.trim(), config.redis.deployment.port)
+        } else {
+            config.redis.url.clone()
+        };
         connections.push(config_factory::build_connection(
             "setup-detailed-redis",
             "Redis",
             ConnectionKind::Redis(RedisConnection {
-                url: format!("redis://{}:{}", host, config.redis.deployment.port),
+                url,
                 username: config.redis.username.clone(),
                 password: config.redis.password.clone(),
             }),
         ));
     }
     if config.search.enabled {
+        let base_url = if config.expose_public_access && config.use_target_machine_address && !config.target_machine_address.trim().is_empty() {
+            format!("http://{}:{}", config.target_machine_address.trim(), config.search.deployment.port)
+        } else {
+            config.search.base_url.clone()
+        };
         for (suffix, schema) in [("memory", WeaviateCollectionSchema::AgentMemory), ("image", WeaviateCollectionSchema::ImageSemantic)] {
             let id = format!("setup-detailed-{}-{suffix}", config.search.search_type);
             let name = format!("{} {suffix}", config.search.search_type);
             let kind = if config.search.search_type == "elasticsearch" {
                 ConnectionKind::Elasticsearch(ElasticsearchConnection {
-                    base_url: format!("http://{}:{}", host, config.search.deployment.port),
+                    base_url: base_url.clone(),
                     index_name: format!("zihuan_{suffix}"),
                     username: config.search.username.clone(),
                     password: config.search.password.clone(),
@@ -535,7 +549,7 @@ fn detailed_connection_configs(config: &DetailedSetupConfig) -> Vec<ConnectionCo
                 })
             } else {
                 ConnectionKind::Weaviate(WeaviateConnection {
-                    base_url: format!("http://{}:{}", host, config.search.deployment.port),
+                    base_url: base_url.clone(),
                     class_name: if suffix == "memory" { "AgentMemory".to_string() } else { "ImageSemantic".to_string() },
                     username: config.search.username.clone(),
                     password: config.search.password.clone(),

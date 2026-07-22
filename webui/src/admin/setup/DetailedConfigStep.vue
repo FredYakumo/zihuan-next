@@ -4,24 +4,42 @@
 
     <div class="install-method">
       <span>安装方式</span>
-      <label><input v-model="selectedInstallMethod" type="radio" value="docker" /> 安装命令（Docker）</label>
-      <label><input v-model="selectedInstallMethod" type="radio" value="binary" /> 安装命令（二进制）</label>
+      <span v-if="environmentLoading" class="install-method-status">正在检测本机安装能力...</span>
+      <template v-else>
+        <label :class="{ unavailable: !dockerSupported }" :title="dockerUnsupportedReason">
+          <input v-model="selectedInstallOption" type="radio" value="local_docker" :disabled="!dockerSupported" />
+          Docker <small v-if="!dockerSupported">（本机不支持）</small>
+        </label>
+        <label :class="{ unavailable: !environment.binary_install_available }" :title="environment.binary_install_reason ?? ''">
+          <input v-model="selectedInstallOption" type="radio" value="local_binary" :disabled="!environment.binary_install_available" />
+          二进制 <small v-if="!environment.binary_install_available">（本机不支持）</small>
+        </label>
+        <label><input v-model="selectedInstallOption" type="radio" value="command_docker" /> 安装命令（Docker）</label>
+        <label><input v-model="selectedInstallOption" type="radio" value="command_binary" /> 安装命令（二进制）</label>
+      </template>
     </div>
 
+    <template v-if="!environmentLoading">
     <div class="form-grid global-config">
-      <Field label="目标机器地址">
-        <input v-model="model.target_machine_address" placeholder="例如 203.0.113.10 或 server.example.com" />
-      </Field>
       <label class="public-access-toggle">
         <input v-model="model.expose_public_access" type="checkbox" />
         <span>暴露公网访问</span>
       </label>
-      <p v-if="model.expose_public_access" class="public-access-hint">
-        公网模式会使用目标机器地址生成连接地址，并要求启用服务配置认证凭据。
-      </p>
+      <template v-if="model.expose_public_access">
+        <label class="public-access-toggle">
+          <input v-model="model.use_target_machine_address" type="checkbox" />
+          <span>使用目标机器地址</span>
+        </label>
+        <Field v-if="model.use_target_machine_address" label="目标机器地址（可选）">
+          <input v-model="model.target_machine_address" placeholder="例如 203.0.113.10 或 server.example.com" />
+        </Field>
+        <p class="public-access-hint">
+          使用目标机器地址会覆盖生成连接配置中的服务地址；启用服务仍需配置认证凭据。
+        </p>
+      </template>
     </div>
 
-    <template v-if="selectedInstallMethod">
+    <template v-if="selectedInstallOption">
       <div class="component-scroll">
       <section class="component-card">
         <ComponentHeader v-model:enabled="model.relational.enabled" title="关系型数据库" />
@@ -53,20 +71,21 @@
       </div>
 
       <p v-if="error" class="config-error">{{ error }}</p>
-      <div class="step-actions"><button class="btn ghost" @click="$emit('back')"><ArrowLeftIcon /> 返回</button><button class="btn primary" @click="$emit('next')">配置 <ArrowRightIcon /></button></div>
+      <div class="step-actions"><button class="btn ghost" @click="$emit('back')"><ArrowLeftIcon /> 返回</button><button class="btn primary" @click="$emit('next', selectedInstallOption)">{{ isLocalInstall ? '开始配置' : '配置' }} <ArrowRightIcon /></button></div>
     </template>
 
-    <div v-if="!selectedInstallMethod" class="step-actions step-actions--selection">
+    <div v-if="!selectedInstallOption" class="step-actions step-actions--selection">
       <button class="btn ghost" @click="$emit('back')"><ArrowLeftIcon /> 返回</button>
     </div>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { ArrowLeftIcon, ArrowRightIcon } from "tdesign-icons-vue-next";
 
-import type { DetailedSetupConfig, DetailedSetupInstallMethod } from "../../api/client";
+import { setup as setupApi, type DetailedSetupConfig, type DetailedSetupInstallMethod, type EnvironmentInfo } from "../../api/client";
 import ComponentHeader from "./SetupComponentHeader.vue";
 import CredentialInput from "./SetupCredentialInput.vue";
 import DeploymentFields from "./SetupDeploymentFields.vue";
@@ -75,14 +94,36 @@ import SourceChoice from "./SetupSourceChoice.vue";
 
 const model = defineModel<DetailedSetupConfig>({ required: true });
 defineProps<{ error: string | null }>();
-defineEmits<{ (event: "next"): void; (event: "back"): void }>();
+defineEmits<{ (event: "next", option: DetailedInstallOption): void; (event: "back"): void }>();
 
-const selectedInstallMethod = ref<DetailedSetupInstallMethod>(model.value.install_method);
+type DetailedInstallOption = "local_docker" | "local_binary" | "command_docker" | "command_binary";
 
-watch(selectedInstallMethod, (installMethod) => {
-  if (installMethod) {
-    model.value.install_method = installMethod;
+const environmentLoading = ref(true);
+const environment = ref<EnvironmentInfo>({
+  os: "", os_detail: "", docker_available: false, docker_compose_available: false,
+  binary_install_available: false, binary_install_reason: null, wsl_available: null, wsl_docker_available: null,
+  cuda_version: null, compiler_version: null, proxy: null, services: [],
+});
+const dockerSupported = computed(() => environment.value.docker_compose_available);
+const dockerUnsupportedReason = computed(() => "Docker Compose 不可用，请安装并启动 Docker Desktop 或 Docker Compose");
+const selectedInstallOption = ref<DetailedInstallOption>(
+  model.value.install_method === "docker" ? "command_docker" : "command_binary",
+);
+const isLocalInstall = computed(() => selectedInstallOption.value.startsWith("local_"));
+
+onMounted(async () => {
+  try {
+    environment.value = await setupApi.getEnvironment();
+  } catch (error) {
+    console.error("Failed to detect setup environment", error);
+  } finally {
+    environmentLoading.value = false;
   }
+});
+
+watch(selectedInstallOption, (option) => {
+  const installMethod: DetailedSetupInstallMethod = option.endsWith("docker") ? "docker" : "binary";
+  model.value.install_method = installMethod;
 });
 
 function setSearchType(type: "weaviate" | "elasticsearch") {

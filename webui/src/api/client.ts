@@ -1053,6 +1053,7 @@ export interface DetailedSetupConfig {
   install_method: DetailedSetupInstallMethod;
   target_machine_address: string;
   expose_public_access: boolean;
+  use_target_machine_address: boolean;
   relational: DetailedRelationalSetupConfig;
   rustfs: DetailedRustfsSetupConfig;
   search: DetailedSearchSetupConfig;
