@@ -54,6 +54,10 @@
 
       <div class="step-actions"><button class="btn ghost" @click="$emit('back')">← 返回</button><button class="btn primary" @click="$emit('next')">开始配置 →</button></div>
     </template>
+
+    <div v-if="!selectedInstallMethod" class="step-actions step-actions--selection">
+      <button class="btn ghost" @click="$emit('back')">← 返回</button>
+    </div>
   </div>
 </template>
 
