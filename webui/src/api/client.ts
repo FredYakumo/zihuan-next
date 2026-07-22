@@ -948,6 +948,10 @@ export interface EnvironmentInfo {
   os_detail: string;
   docker_available: boolean;
   docker_compose_available: boolean;
+  binary_install_available: boolean;
+  binary_install_reason?: string | null;
+  wsl_available?: boolean | null;
+  wsl_docker_available?: boolean | null;
   cuda_version: string | null;
   compiler_version: string | null;
   proxy: string | null;

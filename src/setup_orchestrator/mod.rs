@@ -575,6 +575,13 @@ pub struct EnvironmentInfo {
     pub os_detail: String,
     pub docker_available: bool,
     pub docker_compose_available: bool,
+    pub binary_install_available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub binary_install_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wsl_available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wsl_docker_available: Option<bool>,
     pub cuda_version: Option<String>,
     pub compiler_version: Option<String>,
     pub proxy: Option<String>,
@@ -594,6 +601,8 @@ pub async fn detect_environment() -> EnvironmentInfo {
     let os_detail = detailed_os_name().await;
     let docker_available = check_command("docker", &["--version"]).await;
     let docker_compose_available = check_command("docker", &["compose", "version"]).await;
+    let (binary_install_available, binary_install_reason) = detect_binary_installation_support().await;
+    let (wsl_available, wsl_docker_available) = detect_windows_wsl().await;
     let cuda_version = detect_cuda_version().await;
     let compiler_version = detect_compiler_version().await;
     let proxy = detect_proxy().await;
@@ -611,11 +620,53 @@ pub async fn detect_environment() -> EnvironmentInfo {
         os_detail,
         docker_available,
         docker_compose_available,
+        binary_install_available,
+        binary_install_reason,
+        wsl_available,
+        wsl_docker_available,
         cuda_version,
         compiler_version,
         proxy,
         services,
     }
+}
+
+#[cfg(target_os = "windows")]
+async fn detect_binary_installation_support() -> (bool, Option<String>) {
+    (
+        false,
+        Some("Windows 上的二进制安装需在 WSL 发行版内运行本程序".to_string()),
+    )
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn detect_binary_installation_support() -> (bool, Option<String>) {
+    for package_manager in ["brew", "apt-get", "dnf", "pacman"] {
+        if check_command(package_manager, &["--version"]).await {
+            return (true, None);
+        }
+    }
+
+    (
+        false,
+        Some("未检测到 Homebrew、apt、dnf 或 pacman 包管理器".to_string()),
+    )
+}
+
+#[cfg(target_os = "windows")]
+async fn detect_windows_wsl() -> (Option<bool>, Option<bool>) {
+    let wsl_available = check_command("wsl", &["--status"]).await;
+    let wsl_docker_available = if wsl_available {
+        check_command("wsl", &["docker", "compose", "version"]).await
+    } else {
+        false
+    };
+    (Some(wsl_available), Some(wsl_docker_available))
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn detect_windows_wsl() -> (Option<bool>, Option<bool>) {
+    (None, None)
 }
 
 async fn detect_cuda_version() -> Option<String> {

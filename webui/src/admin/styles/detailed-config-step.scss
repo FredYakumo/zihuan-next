@@ -3,6 +3,9 @@
 .subtitle { color: var(--admin-muted); }
 .install-method, .choice-row, .component-header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .install-method { padding: 12px; border: 1px solid var(--admin-border); border-radius: 8px; }
+.install-method-status, .windows-environment { color: var(--admin-muted); font-size: 13px; }
+.install-method .unavailable { color: var(--admin-muted); cursor: not-allowed; }
+.install-method .unavailable small { color: inherit; }
 .component-scroll {
   flex: 1 1 auto;
   min-height: 0;

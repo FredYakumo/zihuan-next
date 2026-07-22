@@ -4,8 +4,21 @@
 
     <div class="install-method">
       <span>安装方式</span>
-      <label><input v-model="model.install_method" type="radio" value="docker" /> Docker</label>
-      <label><input v-model="model.install_method" type="radio" value="binary" /> 二进制</label>
+      <span v-if="environmentLoading" class="install-method-status">正在检测本机安装能力...</span>
+      <template v-else>
+        <label :class="{ unavailable: !dockerSupported }" :title="dockerUnsupportedReason">
+          <input v-model="model.install_method" type="radio" value="docker" :disabled="!dockerSupported" />
+          Docker <small v-if="!dockerSupported">（本机不支持）</small>
+        </label>
+        <label :class="{ unavailable: !environment.binary_install_available }" :title="environment.binary_install_reason ?? ''">
+          <input v-model="model.install_method" type="radio" value="binary" :disabled="!environment.binary_install_available" />
+          二进制 <small v-if="!environment.binary_install_available">（本机不支持）</small>
+        </label>
+        <span v-if="isWindows" class="windows-environment">
+          WSL：{{ environment.wsl_available ? "可用" : "不可用" }}；
+          WSL Docker：{{ environment.wsl_docker_available ? "可用" : "不可用" }}
+        </span>
+      </template>
     </div>
 
     <div class="component-scroll">
@@ -43,7 +56,10 @@
 </template>
 
 <script setup lang="ts">
+import { computed, onMounted, ref, watch } from "vue";
+
 import type { DetailedSetupConfig } from "../../api/client";
+import { setup as setupApi, type EnvironmentInfo } from "../../api/client";
 import ComponentHeader from "./SetupComponentHeader.vue";
 import CredentialInput from "./SetupCredentialInput.vue";
 import DeploymentFields from "./SetupDeploymentFields.vue";
@@ -52,6 +68,47 @@ import SourceChoice from "./SetupSourceChoice.vue";
 
 const model = defineModel<DetailedSetupConfig>({ required: true });
 defineEmits<{ (event: "next"): void; (event: "back"): void }>();
+
+const environmentLoading = ref(true);
+const environment = ref<EnvironmentInfo>({
+  os: "",
+  os_detail: "",
+  docker_available: false,
+  docker_compose_available: false,
+  binary_install_available: false,
+  binary_install_reason: null,
+  wsl_available: null,
+  wsl_docker_available: null,
+  cuda_version: null,
+  compiler_version: null,
+  proxy: null,
+  services: [],
+});
+const dockerSupported = computed(() => environment.value.docker_compose_available);
+const dockerUnsupportedReason = computed(() => "Docker Compose 不可用，请安装并启动 Docker Desktop 或 Docker Compose");
+const isWindows = computed(() => environment.value.os.toLowerCase() === "windows");
+
+onMounted(async () => {
+  try {
+    environment.value = await setupApi.getEnvironment();
+    selectSupportedInstallMethod();
+  } catch (error) {
+    console.error("Failed to detect setup environment", error);
+  } finally {
+    environmentLoading.value = false;
+  }
+});
+
+watch(() => model.value.install_method, selectSupportedInstallMethod);
+
+function selectSupportedInstallMethod() {
+  if (model.value.install_method === "docker" && !dockerSupported.value && environment.value.binary_install_available) {
+    model.value.install_method = "binary";
+  }
+  if (model.value.install_method === "binary" && !environment.value.binary_install_available && dockerSupported.value) {
+    model.value.install_method = "docker";
+  }
+}
 
 function setSearchType(type: "weaviate" | "elasticsearch") {
   model.value.search.type = type;
