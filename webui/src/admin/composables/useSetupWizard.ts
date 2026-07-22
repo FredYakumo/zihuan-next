@@ -41,12 +41,12 @@ export function useSetupWizard() {
       host: "127.0.0.1", username: "root", password: "", database: "zihuan", sqlite_path: "zihuan_data.db", max_connections: 32, acquire_timeout_secs: 30,
     },
     rustfs: {
-      enabled: false, source: "install",
+      enabled: true, source: "install",
       deployment: { image: "rustfs/rustfs:latest", port: 9000, data_dir: "./rustfs/data", container_name: "zihuan-rustfs", restart_policy: "unless-stopped" },
       endpoint: "http://127.0.0.1:9000", bucket: "zihuan", region: "us-east-1", access_key: "", secret_key: "", public_base_url: null, path_style: true,
     },
     search: {
-      enabled: false, source: "install", type: "weaviate",
+      enabled: true, source: "install", type: "weaviate",
       deployment: { image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./weaviate/data", container_name: "zihuan-weaviate", restart_policy: "unless-stopped" },
       base_url: "http://127.0.0.1:8080", username: null, password: null, api_key: null, vector_dimensions: 1024,
     },
