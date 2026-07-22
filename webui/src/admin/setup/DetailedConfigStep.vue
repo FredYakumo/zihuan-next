@@ -1,7 +1,6 @@
 <template>
   <div class="detailed-config-step">
     <h2>详细配置引导</h2>
-    <p class="subtitle">选择要配置的组件。使用现有配置时不会部署服务，会验证并保存连接。</p>
 
     <div class="install-method">
       <span>安装方式</span>
