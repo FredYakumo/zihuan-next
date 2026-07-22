@@ -7,9 +7,10 @@ import {
   type LlmSetupConfig,
   type SetupProgressEvent,
   type DetailedSetupConfig,
+  type DetailedInstallCommandResult,
 } from "../../api/client";
 
-type Step = "mode" | "detailed" | "role" | "environment" | "llm" | "ims_bot_adapter" | "install" | "complete";
+type Step = "mode" | "detailed" | "detailed_result" | "role" | "environment" | "llm" | "ims_bot_adapter" | "install" | "complete";
 type SetupRole = "chat_assistant" | "code_dev_assistant" | "qq_chat_bot" | "ai_butler";
 
 
@@ -35,6 +36,8 @@ export function useSetupWizard() {
   });
   const detailedConfig = ref<DetailedSetupConfig>({
     install_method: "docker",
+    target_machine_address: "",
+    expose_public_access: false,
     relational: {
       enabled: true, source: "install", type: "sqlite",
       deployment: { image: "mysql:8.4", port: 3306, data_dir: "./mysql/data", container_name: "zihuan-mysql", restart_policy: "unless-stopped" },
@@ -56,6 +59,8 @@ export function useSetupWizard() {
       url: "redis://127.0.0.1:6379", username: null, password: null,
     },
   });
+  const detailedInstallResult = ref<DetailedInstallCommandResult | null>(null);
+  const detailedInstallError = ref<string | null>(null);
   const taskId = ref("");
   const installationMode = ref<"role_based" | "detailed">("role_based");
   const installLogs = ref<SetupProgressEvent[]>([]);
@@ -99,7 +104,16 @@ export function useSetupWizard() {
   }
 
   function startDetailedInstallation() {
-    startInstallation("detailed");
+    detailedInstallResult.value = null;
+    detailedInstallError.value = null;
+    setupApi.generateDetailedInstallCommand(detailedConfig.value)
+      .then((result) => {
+        detailedInstallResult.value = result;
+        step.value = "detailed_result";
+      })
+      .catch((error: unknown) => {
+        detailedInstallError.value = error instanceof Error ? error.message : String(error);
+      });
   }
 
   function onRoleSelect(role: SetupRole) {
@@ -174,6 +188,8 @@ export function useSetupWizard() {
     llmConfig,
     imsBotAdapterConfig,
     detailedConfig,
+    detailedInstallResult,
+    detailedInstallError,
     taskId,
     installLogs,
     installError,

@@ -1051,10 +1051,17 @@ export interface DetailedRedisSetupConfig {
 
 export interface DetailedSetupConfig {
   install_method: DetailedSetupInstallMethod;
+  target_machine_address: string;
+  expose_public_access: boolean;
   relational: DetailedRelationalSetupConfig;
   rustfs: DetailedRustfsSetupConfig;
   search: DetailedSearchSetupConfig;
   redis: DetailedRedisSetupConfig;
+}
+
+export interface DetailedInstallCommandResult {
+  install_command: string;
+  connections: ConnectionConfig[];
 }
 
 export const setup = {
@@ -1073,6 +1080,9 @@ export const setup = {
     detailed_config?: DetailedSetupConfig;
   }): Promise<{ accepted: boolean; task_id: string }> {
     return request("POST", "/setup", payload);
+  },
+  generateDetailedInstallCommand(config: DetailedSetupConfig): Promise<DetailedInstallCommandResult> {
+    return request("POST", "/setup/detailed-install-command", { detailed_config: config });
   },
   skip(): Promise<{ ok: boolean }> {
     return request("POST", "/setup/skip");

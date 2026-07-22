@@ -6,7 +6,8 @@ use std::sync::Arc;
 use crate::api::config::{now_rfc3339, ok_response, render_internal_error};
 use crate::api::state::AppState;
 use crate::setup_orchestrator::{
-    DetailedSetupConfig, ImsBotAdapterSetupConfig, LlmSetupConfig, SetupOptions, SetupOrchestrator, SetupRole,
+    generate_detailed_install_command, DetailedSetupConfig, ImsBotAdapterSetupConfig, LlmSetupConfig, SetupOptions,
+    SetupOrchestrator, SetupRole,
 };
 use zihuan_core::setup_wizard::{clear_setup_wizard_state, load_setup_wizard_state, save_setup_wizard_state};
 
@@ -37,6 +38,31 @@ pub enum SetupMode {
 pub struct ExecuteSetupResponse {
     pub accepted: bool,
     pub task_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct GenerateDetailedInstallCommandRequest {
+    pub detailed_config: DetailedSetupConfig,
+}
+
+#[handler]
+pub async fn post_generate_detailed_install_command(req: &mut Request, res: &mut Response) {
+    let body: GenerateDetailedInstallCommandRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(serde_json::json!({ "error": err.to_string() })));
+            return;
+        }
+    };
+
+    match generate_detailed_install_command(&body.detailed_config) {
+        Ok(command) => res.render(Json(command)),
+        Err(error) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(serde_json::json!({ "error": error })));
+        }
+    }
 }
 
 #[handler]

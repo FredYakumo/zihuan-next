@@ -126,6 +126,10 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
             Router::with_path("setup")
                 .get(setup_wizard::get_setup_status)
                 .post(setup_wizard::post_execute_setup)
+                .push(
+                    Router::with_path("detailed-install-command")
+                        .post(setup_wizard::post_generate_detailed_install_command),
+                )
                 .push(Router::with_path("status").get(setup_wizard::get_setup_status))
                 .push(Router::with_path("environment").get(setup_wizard::get_environment_info))
                 .push(Router::with_path("progress").get(setup_wizard::stream_setup_progress))

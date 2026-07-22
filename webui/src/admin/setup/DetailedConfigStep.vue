@@ -4,21 +4,21 @@
 
     <div class="install-method">
       <span>安装方式</span>
-      <span v-if="environmentLoading" class="install-method-status">正在检测本机安装能力...</span>
-      <template v-else>
-        <label :class="{ unavailable: !dockerSupported }" :title="dockerUnsupportedReason">
-          <input v-model="selectedInstallMethod" type="radio" value="docker" :disabled="!dockerSupported" />
-          Docker <small v-if="!dockerSupported">（本机不支持）</small>
-        </label>
-        <label :class="{ unavailable: !environment.binary_install_available }" :title="environment.binary_install_reason ?? ''">
-          <input v-model="selectedInstallMethod" type="radio" value="binary" :disabled="!environment.binary_install_available" />
-          二进制 <small v-if="!environment.binary_install_available">（本机不支持）</small>
-        </label>
-        <span v-if="isWindows" class="windows-environment">
-          WSL：{{ environment.wsl_available ? "可用" : "不可用" }}；
-          WSL Docker：{{ environment.wsl_docker_available ? "可用" : "不可用" }}
-        </span>
-      </template>
+      <label><input v-model="selectedInstallMethod" type="radio" value="docker" /> 安装命令（Docker）</label>
+      <label><input v-model="selectedInstallMethod" type="radio" value="binary" /> 安装命令（二进制）</label>
+    </div>
+
+    <div class="form-grid global-config">
+      <Field label="目标机器地址">
+        <input v-model="model.target_machine_address" placeholder="例如 203.0.113.10 或 server.example.com" />
+      </Field>
+      <label class="public-access-toggle">
+        <input v-model="model.expose_public_access" type="checkbox" />
+        <span>暴露公网访问</span>
+      </label>
+      <p v-if="model.expose_public_access" class="public-access-hint">
+        公网模式会使用目标机器地址生成连接地址，并要求启用服务配置认证凭据。
+      </p>
     </div>
 
     <template v-if="selectedInstallMethod">
@@ -52,7 +52,8 @@
       </section>
       </div>
 
-      <div class="step-actions"><button class="btn ghost" @click="$emit('back')"><ArrowLeftIcon /> 返回</button><button class="btn primary" @click="$emit('next')">开始配置 <ArrowRightIcon /></button></div>
+      <p v-if="error" class="config-error">{{ error }}</p>
+      <div class="step-actions"><button class="btn ghost" @click="$emit('back')"><ArrowLeftIcon /> 返回</button><button class="btn primary" @click="$emit('next')">配置 <ArrowRightIcon /></button></div>
     </template>
 
     <div v-if="!selectedInstallMethod" class="step-actions step-actions--selection">
@@ -62,11 +63,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { ref, watch } from "vue";
 import { ArrowLeftIcon, ArrowRightIcon } from "tdesign-icons-vue-next";
 
 import type { DetailedSetupConfig, DetailedSetupInstallMethod } from "../../api/client";
-import { setup as setupApi, type EnvironmentInfo } from "../../api/client";
 import ComponentHeader from "./SetupComponentHeader.vue";
 import CredentialInput from "./SetupCredentialInput.vue";
 import DeploymentFields from "./SetupDeploymentFields.vue";
@@ -74,37 +74,10 @@ import Field from "./SetupField.vue";
 import SourceChoice from "./SetupSourceChoice.vue";
 
 const model = defineModel<DetailedSetupConfig>({ required: true });
+defineProps<{ error: string | null }>();
 defineEmits<{ (event: "next"): void; (event: "back"): void }>();
 
-const environmentLoading = ref(true);
-const selectedInstallMethod = ref<DetailedSetupInstallMethod | null>(null);
-const environment = ref<EnvironmentInfo>({
-  os: "",
-  os_detail: "",
-  docker_available: false,
-  docker_compose_available: false,
-  binary_install_available: false,
-  binary_install_reason: null,
-  wsl_available: null,
-  wsl_docker_available: null,
-  cuda_version: null,
-  compiler_version: null,
-  proxy: null,
-  services: [],
-});
-const dockerSupported = computed(() => environment.value.docker_compose_available);
-const dockerUnsupportedReason = computed(() => "Docker Compose 不可用，请安装并启动 Docker Desktop 或 Docker Compose");
-const isWindows = computed(() => environment.value.os.toLowerCase() === "windows");
-
-onMounted(async () => {
-  try {
-    environment.value = await setupApi.getEnvironment();
-  } catch (error) {
-    console.error("Failed to detect setup environment", error);
-  } finally {
-    environmentLoading.value = false;
-  }
-});
+const selectedInstallMethod = ref<DetailedSetupInstallMethod>(model.value.install_method);
 
 watch(selectedInstallMethod, (installMethod) => {
   if (installMethod) {
