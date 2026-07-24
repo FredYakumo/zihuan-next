@@ -329,6 +329,23 @@ impl LLMAPI {
             },
             _ => parse_chat_completions_response(&api_resp),
         };
+        if matches!(self.api_style, LlmApiStyle::OpenAiResponsesMessageCompat)
+            && parsed_message.as_ref().is_some_and(|message| {
+                message.parts.is_empty()
+                    && message.tool_calls.is_empty()
+                    && message
+                        .reasoning_content
+                        .as_deref()
+                        .map(|content| content.trim().is_empty())
+                        .unwrap_or(true)
+            })
+        {
+            warn!(
+                "[LLMAPI] Responses message-compatible response has no parsed content: model={} output={}",
+                self.model_name,
+                api_resp.get("output").unwrap_or(&Value::Null),
+            );
+        }
         parsed_message
             .map(|message| self.tag_response_api_style(message))
             .ok_or_else(|| RequestError::NonRetryable {
