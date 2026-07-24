@@ -59,6 +59,7 @@ type ChatImageAttachment = {
   url: string;
   modelUrl?: string;
   key: string;
+  mediaId: string;
   name: string;
   mimeType: string;
   uploading?: boolean;
@@ -395,7 +396,7 @@ function imageAttachmentToPart(attachment: ChatImageAttachment): ChatMessagePart
   return {
     type: "image",
     media: {
-      media_id: attachment.key,
+      media_id: attachment.mediaId,
       source: "upload",
       original_source: attachment.modelUrl ?? attachment.url,
       rustfs_path: "",
@@ -418,6 +419,7 @@ function imageAttachmentsFromParts(parts: ChatMessagePart[] | undefined): ChatIm
       id: part.media.media_id || `history-image-${index}-${url}`,
       url,
       key: part.media.media_id,
+      mediaId: part.media.media_id,
       name: part.media.name || "图片",
       mimeType: part.media.mime_type || "image/*",
     }];
@@ -663,6 +665,7 @@ function addImageFiles(files: File[]) {
       id: crypto.randomUUID(),
       url: URL.createObjectURL(file),
       key: "",
+      mediaId: "",
       name: file.name || "图片",
       mimeType: file.type,
       uploading: true,
@@ -684,6 +687,7 @@ function addImageFiles(files: File[]) {
         current.url = uploaded.url;
         current.modelUrl = modelUrl;
         current.key = uploaded.key;
+        current.mediaId = uploaded.media_id;
         current.name = uploaded.name;
         current.uploading = false;
         current.localPreviewUrl = undefined;

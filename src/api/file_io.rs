@@ -9,6 +9,7 @@ use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 use storage_handler::{load_connections, ObjectStorageConfig};
+use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 
 use super::state::AppState;
 use super::ws::WsBroadcast;
@@ -545,7 +546,25 @@ pub async fn download_graph(req: &mut Request, res: &mut Response, depot: &mut D
 pub struct UploadImageResponse {
     pub url: String,
     pub key: String,
+    pub media_id: String,
     pub name: String,
+}
+
+fn build_upload_image_response(url: String, key: String, name: String, mime: &str) -> UploadImageResponse {
+    let media = PersistedMedia::new(
+        PersistedMediaSource::Upload,
+        &url,
+        &key,
+        Some(name.clone()),
+        None,
+        Some(mime.to_string()),
+    );
+    UploadImageResponse {
+        url,
+        key,
+        media_id: media.media_id,
+        name,
+    }
 }
 
 #[handler]
@@ -600,7 +619,7 @@ pub async fn upload_image(req: &mut Request, res: &mut Response, _depot: &mut De
         let key = format!("manual-uploads/{}/{}", rel_dir, file_name);
         match storage.put_object(&key, &mime, &bytes).await {
             Ok(url) => {
-                res.render(Json(UploadImageResponse { url, key, name: safe_file_name }));
+                res.render(Json(build_upload_image_response(url, key, safe_file_name, &mime)));
             }
             Err(e) => {
                 res.status_code(StatusCode::BAD_GATEWAY);
@@ -628,7 +647,7 @@ pub async fn upload_image(req: &mut Request, res: &mut Response, _depot: &mut De
     }
     let key = format!("{}/{}", rel_dir, file_name);
     let url = format!("/api/uploaded-images/{}", key);
-    res.render(Json(UploadImageResponse { url, key, name: safe_file_name }));
+    res.render(Json(build_upload_image_response(url, key, safe_file_name, &mime)));
 }
 
 #[handler]

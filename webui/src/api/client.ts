@@ -200,7 +200,7 @@ export const fileIO = {
   },
   async uploadImage(
     file: File,
-  ): Promise<{ url: string; key: string; name: string }> {
+  ): Promise<{ url: string; key: string; media_id: string; name: string }> {
     if (!file.type.startsWith("image/")) {
       throw new Error(`不支持的文件类型: ${file.type || "未知"}`);
     }
@@ -215,7 +215,7 @@ export const fileIO = {
       const err = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error((err as { error: string }).error ?? res.statusText);
     }
-    return res.json() as Promise<{ url: string; key: string; name: string }>;
+    return res.json() as Promise<{ url: string; key: string; media_id: string; name: string }>;
   },
   listTextEmbeddingModels(): Promise<{ models: string[] }> {
     return request("GET", "/models/text-embedding");
