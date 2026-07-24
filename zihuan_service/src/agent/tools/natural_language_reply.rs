@@ -54,7 +54,7 @@ pub(crate) fn review_and_rewrite_reply(
         .filter(|text| !text.trim().is_empty())
         .ok_or_else(|| {
             Error::ValidationError(format!(
-                "reply reviewer returned empty text response: model={} api_style={:?} parts={} tool_calls={} reasoning_chars={} usage={:?}",
+                "reply reviewer returned empty text response: model={} api_style={:?} parts={} tool_calls={} reasoning_chars={} usage={:?} full_response={review_response:?}",
                 review_llm.get_model_name(),
                 review_llm.api_style(),
                 review_response.parts.len(),
