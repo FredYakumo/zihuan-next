@@ -180,7 +180,7 @@ pub async fn post_execute_setup(req: &mut Request, res: &mut Response, depot: &m
             SetupMode::Skip => Ok(()),
         };
         if let Err(err) = result {
-            log::warn!("[setup_orchestrator] task {} failed: {}", task_id_for_spawn, err);
+            log::error!("[setup_orchestrator] task {} failed: {}", task_id_for_spawn, err);
             orchestrator.emit("failed", "error", &err, None);
         }
         // Keep the broadcast channel alive for 60s so late SSE clients can still connect.

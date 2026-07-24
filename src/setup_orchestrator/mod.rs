@@ -691,31 +691,35 @@ fn detailed_compose(config: &DetailedSetupConfig) -> String {
     let mut services = String::from("services:\n");
     if config.relational.enabled && config.relational.source == DetailedComponentSource::Install && config.relational.database_type == "mysql" {
         let d = &config.relational.deployment;
-        services.push_str(&format!("  mysql:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:3306\"]\n    volumes: [\"{}:/var/lib/mysql\"]\n    environment:\n      MYSQL_ROOT_PASSWORD: {}\n      MYSQL_DATABASE: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&compose_bind_source(&d.data_dir)), yaml_quote(&config.relational.password), yaml_quote(&config.relational.database)));
+        services.push_str(&format!("  mysql:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:3306\"]\n    volumes: [{}]\n    environment:\n      MYSQL_ROOT_PASSWORD: {}\n      MYSQL_DATABASE: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/var/lib/mysql"), yaml_quote(&config.relational.password), yaml_quote(&config.relational.database)));
     }
-    if config.rustfs.enabled && config.rustfs.source == DetailedComponentSource::Install { let d = &config.rustfs.deployment; services.push_str(&format!("  rustfs:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9000\"]\n    volumes: [\"{}:/data\"]\n    environment:\n      RUSTFS_ACCESS_KEY: {}\n      RUSTFS_SECRET_KEY: {}\n    command: [\"--console-enable\", \"/data\"]\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&compose_bind_source(&d.data_dir)), yaml_quote(&config.rustfs.access_key), yaml_quote(&config.rustfs.secret_key))); }
+    if config.rustfs.enabled && config.rustfs.source == DetailedComponentSource::Install { let d = &config.rustfs.deployment; services.push_str(&format!("  rustfs:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9000\"]\n    volumes: [{}]\n    environment:\n      RUSTFS_ACCESS_KEY: {}\n      RUSTFS_SECRET_KEY: {}\n    command: [\"--console-enable\", \"/data\"]\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/data"), yaml_quote(&config.rustfs.access_key), yaml_quote(&config.rustfs.secret_key))); }
     if config.search.enabled && config.search.source == DetailedComponentSource::Install {
         let d = &config.search.deployment;
-        if config.search.search_type == "elasticsearch" { services.push_str(&format!("  elasticsearch:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9200\"]\n    volumes: [\"{}:/usr/share/elasticsearch/data\"]\n    environment:\n      discovery.type: single-node\n      xpack.security.enabled: 'true'\n      ELASTIC_PASSWORD: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&compose_bind_source(&d.data_dir)), yaml_quote(config.search.password.as_deref().unwrap_or_default()))); }
+        if config.search.search_type == "elasticsearch" { services.push_str(&format!("  elasticsearch:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9200\"]\n    volumes: [{}]\n    environment:\n      discovery.type: single-node\n      xpack.security.enabled: 'true'\n      ELASTIC_PASSWORD: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/usr/share/elasticsearch/data"), yaml_quote(config.search.password.as_deref().unwrap_or_default()))); }
         else {
             let authentication = if config.expose_public_access {
                 format!("      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'false'\n      AUTHENTICATION_APIKEY_ENABLED: 'true'\n      AUTHENTICATION_APIKEY_ALLOWED_KEYS: {}\n", yaml_quote(config.search.api_key.as_deref().unwrap_or_default()))
             } else {
                 "      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'\n".to_string()
             };
-            services.push_str(&format!("  weaviate:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:8080\"]\n    volumes: [\"{}:/var/lib/weaviate\"]\n    environment:\n{}      DEFAULT_VECTORIZER_MODULE: none\n      CLUSTER_HOSTNAME: node1\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&compose_bind_source(&d.data_dir)), authentication));
+            services.push_str(&format!("  weaviate:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:8080\"]\n    volumes: [{}]\n    environment:\n{}      DEFAULT_VECTORIZER_MODULE: none\n      CLUSTER_HOSTNAME: node1\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/var/lib/weaviate"), authentication));
         }
     }
     if config.redis.enabled && config.redis.source == DetailedComponentSource::Install {
         let d = &config.redis.deployment;
         let command = if config.expose_public_access { format!("    command: [\"redis-server\", \"--requirepass\", {}]\n", yaml_quote(config.redis.password.as_deref().unwrap_or_default())) } else { String::new() };
-        services.push_str(&format!("  redis:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:6379\"]\n    volumes: [\"{}:/data\"]\n{}", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&compose_bind_source(&d.data_dir)), command));
+        services.push_str(&format!("  redis:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:6379\"]\n    volumes: [{}]\n{}", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/data"), command));
     }
     services
 }
 
 fn yaml_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
+}
+
+fn compose_bind_mount(data_dir: &str, container_path: &str) -> String {
+    yaml_quote(&format!("{}:{container_path}", compose_bind_source(data_dir)))
 }
 
 async fn save_detailed_connections(config: &DetailedSetupConfig) -> Result<(), String> {
