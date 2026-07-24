@@ -17,6 +17,8 @@ use crate::{
 use zihuan_core::ims_bot_adapter::models::message::PersistedMedia;
 
 const REQUEST_TIMEOUT_SECS: u64 = 30;
+const INDEX_CHECK_RETRY_ATTEMPTS: usize = 15;
+const INDEX_CHECK_RETRY_DELAY: Duration = Duration::from_secs(1);
 const MAX_QUERY_CANDIDATES: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,13 +117,22 @@ impl ElasticsearchRef {
 }
 
 pub fn ensure_elasticsearch_index(reference: &ElasticsearchRef, create_missing: bool) -> Result<bool> {
-    let exists = reference
-        .client
-        .head(format!("{}/{}", reference.base_url, reference.index_name))
-        .send()
-        .map_err(|error| Error::StringError(format!("elasticsearch index check failed: {error}")))?
-        .status()
-        .is_success();
+    let index_url = format!("{}/{}", reference.base_url, reference.index_name);
+    let mut attempt = 0;
+    let exists = loop {
+        match reference.client.head(&index_url).send() {
+            Ok(response) => break response.status().is_success(),
+            Err(error) if attempt + 1 == INDEX_CHECK_RETRY_ATTEMPTS => {
+                return Err(Error::StringError(format!(
+                    "elasticsearch index check failed after {INDEX_CHECK_RETRY_ATTEMPTS} attempts: {error}"
+                )));
+            }
+            Err(_) => {
+                attempt += 1;
+                std::thread::sleep(INDEX_CHECK_RETRY_DELAY);
+            }
+        }
+    };
     if !exists {
         if !create_missing {
             return Err(Error::ValidationError(format!(
