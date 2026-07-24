@@ -412,7 +412,7 @@ pub fn generate_detailed_install_command(config: &DetailedSetupConfig) -> Result
 
     let compose = detailed_compose(config);
     let install_command = match &config.install_method {
-        DetailedInstallMethod::Docker => docker_install_command(&compose),
+        DetailedInstallMethod::Docker => docker_install_command(config, &compose),
         DetailedInstallMethod::Binary => binary_install_command(config, &compose),
     };
 
@@ -422,18 +422,20 @@ pub fn generate_detailed_install_command(config: &DetailedSetupConfig) -> Result
     })
 }
 
-fn docker_install_command(compose: &str) -> String {
+fn docker_install_command(config: &DetailedSetupConfig, compose: &str) -> String {
     let compose_base64 = base64_encode(compose.as_bytes());
+    let create_data_dirs = docker_data_directory_command(config);
     format!(
-        "# Run on the target Linux machine\nmkdir -p ~/zihuan-next-install && cd ~/zihuan-next-install\nprintf '%s' '{compose_base64}' | base64 -d > docker-compose.yaml\ndocker compose -f docker-compose.yaml up -d"
+        "# Run on the target Linux machine\nmkdir -p ~/zihuan-next-install && cd ~/zihuan-next-install\n{create_data_dirs}\nprintf '%s' '{compose_base64}' | base64 -d > docker-compose.yaml\ndocker compose -f docker-compose.yaml up -d"
     )
 }
 
 fn binary_install_command(config: &DetailedSetupConfig, compose: &str) -> String {
     let compose_base64 = base64_encode(compose.as_bytes());
     let services = detailed_install_services(config).join(" ");
+    let create_data_dirs = docker_data_directory_command(config);
     format!(
-        "# Run on the target Linux x86_64 machine\nsudo apt-get update\nsudo apt-get install -y build-essential pkg-config libssl-dev git nodejs npm docker.io docker-compose-plugin\ngit clone --recurse-submodules https://github.com/FredYakumo/zihuan-next.git ~/zihuan-next\ncd ~/zihuan-next\ncorepack enable && corepack prepare pnpm@10.22.0 --activate\ncd webui && pnpm install --frozen-lockfile && pnpm run build\ncd .. && cargo build --release\nmkdir -p ~/zihuan-next-install && cd ~/zihuan-next-install\nprintf '%s' '{compose_base64}' | base64 -d > docker-compose.yaml\ndocker compose -f docker-compose.yaml up -d {services}\n# Start Zihuan Next after importing the generated connections JSON:\n~/zihuan-next/target/release/zihuan_next --host 0.0.0.0 --port 9951"
+        "# Run on the target Linux x86_64 machine\nsudo apt-get update\nsudo apt-get install -y build-essential pkg-config libssl-dev git nodejs npm docker.io docker-compose-plugin\ngit clone --recurse-submodules https://github.com/FredYakumo/zihuan-next.git ~/zihuan-next\ncd ~/zihuan-next\ncorepack enable && corepack prepare pnpm@10.22.0 --activate\ncd webui && pnpm install --frozen-lockfile && pnpm run build\ncd .. && cargo build --release\nmkdir -p ~/zihuan-next-install && cd ~/zihuan-next-install\n{create_data_dirs}\nprintf '%s' '{compose_base64}' | base64 -d > docker-compose.yaml\ndocker compose -f docker-compose.yaml up -d {services}\n# Start Zihuan Next after importing the generated connections JSON:\n~/zihuan-next/target/release/zihuan_next --host 0.0.0.0 --port 9951"
     )
 }
 
@@ -577,7 +579,18 @@ async fn run_detailed_docker(config: &DetailedSetupConfig, services: &[&str]) ->
         return Err("Docker Compose is unavailable. Install Docker Desktop or Docker Compose, then retry.".to_string());
     }
     let compose_path = detailed_compose_path();
-    if let Some(parent) = compose_path.parent() { tokio::fs::create_dir_all(parent).await.map_err(|err| err.to_string())?; }
+    let compose_dir = compose_path
+        .parent()
+        .ok_or_else(|| "Detailed Docker Compose path has no parent directory".to_string())?;
+    tokio::fs::create_dir_all(compose_dir)
+        .await
+        .map_err(|err| format!("Failed to create Docker Compose directory: {err}"))?;
+    for data_dir in detailed_data_dirs(config) {
+        let data_dir = resolve_compose_data_dir(compose_dir, &data_dir);
+        tokio::fs::create_dir_all(&data_dir)
+            .await
+            .map_err(|err| format!("Failed to create container data directory {}: {err}", data_dir.display()))?;
+    }
     tokio::fs::write(&compose_path, detailed_compose(config)).await.map_err(|err| err.to_string())?;
     let output = tokio::process::Command::new("docker")
         .arg("compose").arg("-f").arg(&compose_path).arg("up").arg("-d").args(services)
@@ -620,29 +633,83 @@ async fn run_detailed_binary(_config: &DetailedSetupConfig, services: &[&str]) -
 
 fn detailed_compose_path() -> PathBuf { zihuan_core::system_config::app_data_dir().join("zihuan-next_aibot").join("detailed-compose.yaml") }
 
+fn detailed_data_dirs(config: &DetailedSetupConfig) -> Vec<String> {
+    let mut data_dirs = Vec::new();
+    if config.relational.enabled
+        && config.relational.source == DetailedComponentSource::Install
+        && config.relational.database_type == "mysql"
+    {
+        data_dirs.push(config.relational.deployment.data_dir.clone());
+    }
+    if config.rustfs.enabled && config.rustfs.source == DetailedComponentSource::Install {
+        data_dirs.push(config.rustfs.deployment.data_dir.clone());
+    }
+    if config.search.enabled && config.search.source == DetailedComponentSource::Install {
+        data_dirs.push(config.search.deployment.data_dir.clone());
+    }
+    if config.redis.enabled && config.redis.source == DetailedComponentSource::Install {
+        data_dirs.push(config.redis.deployment.data_dir.clone());
+    }
+    data_dirs
+}
+
+fn compose_bind_source(data_dir: &str) -> String {
+    let data_dir = data_dir.trim();
+    if data_dir.starts_with('.') || Path::new(data_dir).is_absolute() {
+        return data_dir.to_string();
+    }
+    format!("./{data_dir}")
+}
+
+fn resolve_compose_data_dir(compose_dir: &Path, data_dir: &str) -> PathBuf {
+    let bind_source = compose_bind_source(data_dir);
+    let path = Path::new(&bind_source);
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    compose_dir.join(path.strip_prefix(".").unwrap_or(path))
+}
+
+fn docker_data_directory_command(config: &DetailedSetupConfig) -> String {
+    let data_dirs = detailed_data_dirs(config);
+    if data_dirs.is_empty() {
+        return String::new();
+    }
+    let data_dirs = data_dirs
+        .iter()
+        .map(|data_dir| shell_quote(&compose_bind_source(data_dir)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("mkdir -p -- {data_dirs}")
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\\"'\\\"'"))
+}
+
 fn detailed_compose(config: &DetailedSetupConfig) -> String {
     let mut services = String::from("services:\n");
     if config.relational.enabled && config.relational.source == DetailedComponentSource::Install && config.relational.database_type == "mysql" {
         let d = &config.relational.deployment;
-        services.push_str(&format!("  mysql:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:3306\"]\n    volumes: [\"{}:/var/lib/mysql\"]\n    environment:\n      MYSQL_ROOT_PASSWORD: {}\n      MYSQL_DATABASE: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&d.data_dir), yaml_quote(&config.relational.password), yaml_quote(&config.relational.database)));
+        services.push_str(&format!("  mysql:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:3306\"]\n    volumes: [\"{}:/var/lib/mysql\"]\n    environment:\n      MYSQL_ROOT_PASSWORD: {}\n      MYSQL_DATABASE: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&compose_bind_source(&d.data_dir)), yaml_quote(&config.relational.password), yaml_quote(&config.relational.database)));
     }
-    if config.rustfs.enabled && config.rustfs.source == DetailedComponentSource::Install { let d = &config.rustfs.deployment; services.push_str(&format!("  rustfs:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9000\"]\n    volumes: [\"{}:/data\"]\n    environment:\n      RUSTFS_ACCESS_KEY: {}\n      RUSTFS_SECRET_KEY: {}\n    command: [\"--console-enable\", \"/data\"]\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&d.data_dir), yaml_quote(&config.rustfs.access_key), yaml_quote(&config.rustfs.secret_key))); }
+    if config.rustfs.enabled && config.rustfs.source == DetailedComponentSource::Install { let d = &config.rustfs.deployment; services.push_str(&format!("  rustfs:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9000\"]\n    volumes: [\"{}:/data\"]\n    environment:\n      RUSTFS_ACCESS_KEY: {}\n      RUSTFS_SECRET_KEY: {}\n    command: [\"--console-enable\", \"/data\"]\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&compose_bind_source(&d.data_dir)), yaml_quote(&config.rustfs.access_key), yaml_quote(&config.rustfs.secret_key))); }
     if config.search.enabled && config.search.source == DetailedComponentSource::Install {
         let d = &config.search.deployment;
-        if config.search.search_type == "elasticsearch" { services.push_str(&format!("  elasticsearch:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9200\"]\n    volumes: [\"{}:/usr/share/elasticsearch/data\"]\n    environment:\n      discovery.type: single-node\n      xpack.security.enabled: 'true'\n      ELASTIC_PASSWORD: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&d.data_dir), yaml_quote(config.search.password.as_deref().unwrap_or_default()))); }
+        if config.search.search_type == "elasticsearch" { services.push_str(&format!("  elasticsearch:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9200\"]\n    volumes: [\"{}:/usr/share/elasticsearch/data\"]\n    environment:\n      discovery.type: single-node\n      xpack.security.enabled: 'true'\n      ELASTIC_PASSWORD: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&compose_bind_source(&d.data_dir)), yaml_quote(config.search.password.as_deref().unwrap_or_default()))); }
         else {
             let authentication = if config.expose_public_access {
                 format!("      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'false'\n      AUTHENTICATION_APIKEY_ENABLED: 'true'\n      AUTHENTICATION_APIKEY_ALLOWED_KEYS: {}\n", yaml_quote(config.search.api_key.as_deref().unwrap_or_default()))
             } else {
                 "      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'\n".to_string()
             };
-            services.push_str(&format!("  weaviate:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:8080\"]\n    volumes: [\"{}:/var/lib/weaviate\"]\n    environment:\n{}      DEFAULT_VECTORIZER_MODULE: none\n      CLUSTER_HOSTNAME: node1\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&d.data_dir), authentication));
+            services.push_str(&format!("  weaviate:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:8080\"]\n    volumes: [\"{}:/var/lib/weaviate\"]\n    environment:\n{}      DEFAULT_VECTORIZER_MODULE: none\n      CLUSTER_HOSTNAME: node1\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&compose_bind_source(&d.data_dir)), authentication));
         }
     }
     if config.redis.enabled && config.redis.source == DetailedComponentSource::Install {
         let d = &config.redis.deployment;
         let command = if config.expose_public_access { format!("    command: [\"redis-server\", \"--requirepass\", {}]\n", yaml_quote(config.redis.password.as_deref().unwrap_or_default())) } else { String::new() };
-        services.push_str(&format!("  redis:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:6379\"]\n    volumes: [\"{}:/data\"]\n{}", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&d.data_dir), command));
+        services.push_str(&format!("  redis:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:6379\"]\n    volumes: [\"{}:/data\"]\n{}", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, yaml_quote(&compose_bind_source(&d.data_dir)), command));
     }
     services
 }

@@ -41,22 +41,22 @@ export function useSetupWizard() {
     use_target_machine_address: false,
     relational: {
       enabled: true, source: "install", type: "sqlite",
-      deployment: { image: "mysql:8.4", port: 3306, data_dir: "./mysql/data", container_name: "zihuan-mysql", restart_policy: "unless-stopped" },
+      deployment: { image: "mysql:8.4", port: 3306, data_dir: "./data/zihuan-mysql", container_name: "zihuan-mysql", restart_policy: "unless-stopped" },
       host: "127.0.0.1", username: "root", password: "", database: "zihuan", sqlite_path: "zihuan_data.db", max_connections: 32, acquire_timeout_secs: 30,
     },
     rustfs: {
       enabled: true, source: "install",
-      deployment: { image: "rustfs/rustfs:latest", port: 9000, data_dir: "./rustfs/data", container_name: "zihuan-rustfs", restart_policy: "unless-stopped" },
+      deployment: { image: "rustfs/rustfs:latest", port: 9000, data_dir: "./data/zihuan-rustfs", container_name: "zihuan-rustfs", restart_policy: "unless-stopped" },
       endpoint: "http://127.0.0.1:9000", bucket: "zihuan", region: "us-east-1", access_key: "", secret_key: "", public_base_url: null, path_style: true,
     },
     search: {
       enabled: true, source: "install", type: "weaviate",
-      deployment: { image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./weaviate/data", container_name: "zihuan-weaviate", restart_policy: "unless-stopped" },
+      deployment: { image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./data/zihuan-weaviate", container_name: "zihuan-weaviate", restart_policy: "unless-stopped" },
       base_url: "http://127.0.0.1:8080", username: null, password: null, api_key: null, vector_dimensions: 1024,
     },
     redis: {
       enabled: false, source: "install",
-      deployment: { image: "redis:7", port: 6379, data_dir: "./redis/data", container_name: "zihuan-redis", restart_policy: "unless-stopped" },
+      deployment: { image: "redis:7", port: 6379, data_dir: "./data/zihuan-redis", container_name: "zihuan-redis", restart_policy: "unless-stopped" },
       url: "redis://127.0.0.1:6379", username: null, password: null,
     },
   });

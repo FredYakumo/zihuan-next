@@ -129,11 +129,11 @@ watch(selectedInstallOption, (option) => {
 function setSearchType(type: "weaviate" | "elasticsearch") {
   model.value.search.type = type;
   if (type === "elasticsearch") {
-    model.value.search.deployment = { ...model.value.search.deployment, image: "docker.elastic.co/elasticsearch/elasticsearch:8.17.0", port: 9200, container_name: "zihuan-elasticsearch" };
+    model.value.search.deployment = { ...model.value.search.deployment, image: "docker.elastic.co/elasticsearch/elasticsearch:8.17.0", port: 9200, data_dir: "./data/zihuan-elasticsearch", container_name: "zihuan-elasticsearch" };
     model.value.search.base_url = "http://127.0.0.1:9200";
     model.value.search.username = "elastic";
   } else {
-    model.value.search.deployment = { ...model.value.search.deployment, image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, container_name: "zihuan-weaviate" };
+    model.value.search.deployment = { ...model.value.search.deployment, image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./data/zihuan-weaviate", container_name: "zihuan-weaviate" };
     model.value.search.base_url = "http://127.0.0.1:8080";
   }
 }
