@@ -57,6 +57,7 @@ type ChatMessage = {
 type ChatImageAttachment = {
   id: string;
   url: string;
+  modelUrl?: string;
   key: string;
   name: string;
   mimeType: string;
@@ -392,7 +393,7 @@ function imageAttachmentToPart(attachment: ChatImageAttachment): ChatMessagePart
     media: {
       media_id: attachment.key,
       source: "upload",
-      original_source: attachment.url,
+      original_source: attachment.modelUrl ?? attachment.url,
       rustfs_path: "",
       name: attachment.name,
       mime_type: attachment.mimeType,
@@ -648,7 +649,10 @@ function addImageFiles(files: File[]) {
     attachment.localPreviewUrl = attachment.url;
     draftImageAttachments.value.push(attachment);
     void fileIO.uploadImage(file)
-      .then((uploaded) => {
+      .then(async (uploaded) => {
+        const modelUrl = uploaded.url.startsWith("http://") || uploaded.url.startsWith("https://")
+          ? uploaded.url
+          : await readImageAsDataUrl(file);
         const current = draftImageAttachments.value.find((item) => item.id === attachment.id);
         if (!current) {
           return;
@@ -657,6 +661,7 @@ function addImageFiles(files: File[]) {
           URL.revokeObjectURL(current.localPreviewUrl);
         }
         current.url = uploaded.url;
+        current.modelUrl = modelUrl;
         current.key = uploaded.key;
         current.name = uploaded.name;
         current.uploading = false;
@@ -670,6 +675,15 @@ function addImageFiles(files: File[]) {
         }
       });
   }
+}
+
+function readImageAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("读取图片失败"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function removeDraftImageAttachment(id: string) {
