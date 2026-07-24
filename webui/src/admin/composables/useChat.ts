@@ -3,12 +3,14 @@ import MarkdownIt from "markdown-it";
 
 import {
   chat,
+  fileIO,
   system,
   type ServiceWithRuntime,
   type ChatHistoryRecord,
   type ChatToolCall,
   type ChatSessionSummary,
   type ChatStreamEvent,
+  type ChatMessagePart,
   type LlmConfig,
 } from "../../api/client";
 import {
@@ -50,6 +52,17 @@ type ChatMessage = {
   agentAvatarUrl?: string;
   agentName?: string;
   liveToolCalls?: LiveToolCall[];
+  imageAttachments?: ChatImageAttachment[];
+};
+type ChatImageAttachment = {
+  id: string;
+  url: string;
+  key: string;
+  name: string;
+  mimeType: string;
+  uploading?: boolean;
+  error?: string;
+  localPreviewUrl?: string;
 };
 type ToolDetail = {
   messageId: string;
@@ -164,6 +177,8 @@ const sessions = ref<ChatSessionSummary[]>([]);
 const activeSessionId = ref("");
 const selectedServiceId = ref("");
 const draftMessage = ref("");
+const draftImageAttachments = ref<ChatImageAttachment[]>([]);
+const imagePreviewAttachment = ref<ChatImageAttachment | null>(null);
 const workspacePath = ref("");
 const pickingDirectory = ref(false);
 const sending = ref(false);
@@ -268,7 +283,8 @@ const canSend = computed(() =>
   !!selectedService.value &&
   isChatEligible.value &&
   selectedService.value.runtime.status === "running" &&
-  draftMessage.value.trim().length > 0,
+  (draftMessage.value.trim().length > 0 || draftImageAttachments.value.length > 0) &&
+  draftImageAttachments.value.every((attachment) => !attachment.uploading && !attachment.error),
 );
 const selectedAgentAvatarUrl = computed(() => agentAvatarUrl(selectedService.value));
 const selectedAgentAvatarFallback = computed(() => {
@@ -370,12 +386,64 @@ function readableAgentType(type: string): string {
   return "QQ Chat Agent Service";
 }
 
+function imageAttachmentToPart(attachment: ChatImageAttachment): ChatMessagePart {
+  return {
+    type: "image",
+    media: {
+      media_id: attachment.key,
+      source: "upload",
+      original_source: attachment.url,
+      rustfs_path: "",
+      name: attachment.name,
+      mime_type: attachment.mimeType,
+    },
+  };
+}
+
+function imageAttachmentsFromParts(parts: ChatMessagePart[] | undefined): ChatImageAttachment[] {
+  return (parts ?? []).flatMap((part, index) => {
+    if (part.type !== "image" || !part.media) {
+      return [];
+    }
+    const url = part.media.rustfs_path || part.media.original_source;
+    if (!url) {
+      return [];
+    }
+    return [{
+      id: part.media.media_id || `history-image-${index}-${url}`,
+      url,
+      key: part.media.media_id,
+      name: part.media.name || "图片",
+      mimeType: part.media.mime_type || "image/*",
+    }];
+  });
+}
+
+function messageParts(content: string, attachments: ChatImageAttachment[] | undefined): ChatMessagePart[] | undefined {
+  if (!attachments?.length) {
+    return undefined;
+  }
+  const parts: ChatMessagePart[] = [];
+  if (content) {
+    parts.push({ type: "text", text: content });
+  }
+  parts.push(...attachments.map(imageAttachmentToPart));
+  return parts;
+}
+
 function toApiMessages() {
   return messages.value
-    .filter((item) => item.content.trim().length > 0 || item.toolCalls.length > 0 || !!item.toolCallId)
+    .filter(
+      (item) =>
+        item.content.trim().length > 0 ||
+        item.imageAttachments?.length ||
+        item.toolCalls.length > 0 ||
+        !!item.toolCallId,
+    )
     .map((item) => ({
       role: item.role,
       content: item.content,
+      parts: messageParts(item.content, item.imageAttachments),
       tool_calls: item.toolCalls.length > 0 ? item.toolCalls : undefined,
       tool_call_id: item.toolCallId ?? undefined,
     }));
@@ -388,6 +456,7 @@ function applyHistory(records: ChatHistoryRecord[]) {
       id: item.message_id,
       role: item.role as ChatRole,
       content: item.content,
+      imageAttachments: imageAttachmentsFromParts(item.parts),
       thinkingContent: item.reasoning_content ?? undefined,
       thinkingExpanded: !autoCollapseThinking.value && !!item.reasoning_content,
       timestamp: item.timestamp,
@@ -541,6 +610,96 @@ function handleTextareaKeydown(event: KeyboardEvent) {
   }
   event.preventDefault();
   sendMessage();
+}
+
+function handleTextareaPaste(event: ClipboardEvent) {
+  const files = Array.from(event.clipboardData?.items ?? [])
+    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file != null);
+  if (files.length === 0) {
+    return;
+  }
+  event.preventDefault();
+  addImageFiles(files);
+}
+
+function handleImageFileSelection(event: Event) {
+  const input = event.target as HTMLInputElement;
+  if (input.files) {
+    addImageFiles(Array.from(input.files));
+  }
+  input.value = "";
+}
+
+function addImageFiles(files: File[]) {
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) {
+      continue;
+    }
+    const attachment: ChatImageAttachment = {
+      id: crypto.randomUUID(),
+      url: URL.createObjectURL(file),
+      key: "",
+      name: file.name || "图片",
+      mimeType: file.type,
+      uploading: true,
+    };
+    attachment.localPreviewUrl = attachment.url;
+    draftImageAttachments.value.push(attachment);
+    void fileIO.uploadImage(file)
+      .then((uploaded) => {
+        const current = draftImageAttachments.value.find((item) => item.id === attachment.id);
+        if (!current) {
+          return;
+        }
+        if (current.localPreviewUrl) {
+          URL.revokeObjectURL(current.localPreviewUrl);
+        }
+        current.url = uploaded.url;
+        current.key = uploaded.key;
+        current.name = uploaded.name;
+        current.uploading = false;
+        current.localPreviewUrl = undefined;
+      })
+      .catch((error: Error) => {
+        const current = draftImageAttachments.value.find((item) => item.id === attachment.id);
+        if (current) {
+          current.uploading = false;
+          current.error = `上传失败: ${error.message}`;
+        }
+      });
+  }
+}
+
+function removeDraftImageAttachment(id: string) {
+  const index = draftImageAttachments.value.findIndex((attachment) => attachment.id === id);
+  if (index < 0) {
+    return;
+  }
+  const [attachment] = draftImageAttachments.value.splice(index, 1);
+  if (attachment.localPreviewUrl) {
+    URL.revokeObjectURL(attachment.localPreviewUrl);
+  }
+}
+
+function openImagePreview(attachment: ChatImageAttachment) {
+  imagePreviewAttachment.value = attachment;
+}
+
+function closeImagePreview() {
+  imagePreviewAttachment.value = null;
+}
+
+function handleImagePreviewKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape") {
+    closeImagePreview();
+  }
+}
+
+function handleDocumentKeydown(event: KeyboardEvent) {
+  handleToolPreviewKeydown(event);
+  handleImagePreviewKeydown(event);
 }
 
 function toggleAutoCollapseThinking() {
@@ -860,7 +1019,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
   }
 
   const userText = rawInput.trim();
-  if (!userText) {
+  if (!userText && (!fromAskUser && draftImageAttachments.value.length === 0)) {
     return;
   }
   if (!selectedService.value || selectedService.value.runtime.status !== "running") {
@@ -879,13 +1038,16 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
     {
       role: "user",
       content: userText,
+      parts: fromAskUser ? undefined : messageParts(userText, draftImageAttachments.value),
     },
   ];
 
+  const sentAttachments = fromAskUser ? [] : draftImageAttachments.value;
   if (fromAskUser) {
     askUserAnswer.value = "";
   } else {
     draftMessage.value = "";
+    draftImageAttachments.value = [];
   }
   sending.value = true;
 
@@ -904,6 +1066,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
       toolCalls: [],
       toolCallId: null,
       linkedToolCall: null,
+      imageAttachments: sentAttachments,
     };
     messages.value.push(userMessage);
 
@@ -994,12 +1157,12 @@ onMounted(() => {
     alert(`Chat 加载失败: ${(error as Error).message}`);
   });
   document.addEventListener("click", closePickersOnClickOutside);
-  document.addEventListener("keydown", handleToolPreviewKeydown);
+  document.addEventListener("keydown", handleDocumentKeydown);
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", closePickersOnClickOutside);
-  document.removeEventListener("keydown", handleToolPreviewKeydown);
+  document.removeEventListener("keydown", handleDocumentKeydown);
 });
 
   return {
@@ -1009,6 +1172,8 @@ onUnmounted(() => {
     activeSessionId,
     selectedServiceId,
     draftMessage,
+    draftImageAttachments,
+    imagePreviewAttachment,
     workspacePath,
     pickingDirectory,
     sending,
@@ -1066,6 +1231,12 @@ onUnmounted(() => {
     scrollToBottom,
     clearChatError,
     handleTextareaKeydown,
+    handleTextareaPaste,
+    handleImageFileSelection,
+    removeDraftImageAttachment,
+    openImagePreview,
+    closeImagePreview,
+    handleImagePreviewKeydown,
     toggleAutoCollapseThinking,
     clearPendingAskUser,
     pruneFailedAssistantPlaceholder,
