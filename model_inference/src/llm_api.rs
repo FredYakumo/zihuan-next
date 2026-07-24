@@ -292,6 +292,21 @@ impl LLMAPI {
                 },
                 _ => parse_chat_completions_sse_response(&response_text),
             } {
+                if matches!(self.api_style, LlmApiStyle::OpenAiResponsesMessageCompat)
+                    && message.parts.is_empty()
+                    && message.tool_calls.is_empty()
+                    && message
+                        .reasoning_content
+                        .as_deref()
+                        .map(|content| content.trim().is_empty())
+                        .unwrap_or(true)
+                {
+                    warn!(
+                        "[LLMAPI] Responses message-compatible SSE response has no parsed content: model={} response={}",
+                        self.model_name,
+                        response_text,
+                    );
+                }
                 return Ok(self.tag_response_api_style(message));
             }
         }
