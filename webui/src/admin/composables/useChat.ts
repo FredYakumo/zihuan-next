@@ -251,6 +251,7 @@ const selectedModelLlmConfig = computed(() => {
   }
   return null;
 });
+const supportsMultimodalInput = computed(() => selectedModelLlmConfig.value?.supports_multimodal_input === true);
 const defaultAgentModelId = computed(() => {
   const agent = selectedService.value;
   if (!agent) {
@@ -287,6 +288,7 @@ const canSend = computed(() =>
   isChatEligible.value &&
   selectedService.value.runtime.status === "running" &&
   (draftMessage.value.trim().length > 0 || draftImageAttachments.value.length > 0) &&
+  (supportsMultimodalInput.value || draftImageAttachments.value.length === 0) &&
   draftImageAttachments.value.every((attachment) => !attachment.uploading && !attachment.error),
 );
 const selectedAgentAvatarUrl = computed(() => agentAvatarUrl(selectedService.value));
@@ -633,6 +635,10 @@ function handleTextareaPaste(event: ClipboardEvent) {
     return;
   }
   event.preventDefault();
+  if (!supportsMultimodalInput.value) {
+    showChatError("当前模型不支持多模态输入，无法添加图片。");
+    return;
+  }
   addImageFiles(files);
 }
 
@@ -645,6 +651,10 @@ function handleImageFileSelection(event: Event) {
 }
 
 function addImageFiles(files: File[]) {
+  if (!supportsMultimodalInput.value) {
+    showChatError("当前模型不支持多模态输入，无法添加图片。");
+    return;
+  }
   for (const file of files) {
     if (!file.type.startsWith("image/")) {
       continue;
@@ -1045,6 +1055,10 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
   }
 
   const userText = rawInput.trim();
+  if (!fromAskUser && draftImageAttachments.value.length > 0 && !supportsMultimodalInput.value) {
+    showChatError("当前模型不支持多模态输入，无法发送图片。");
+    return;
+  }
   if (!userText && (!fromAskUser && draftImageAttachments.value.length === 0)) {
     return;
   }
@@ -1223,6 +1237,7 @@ onUnmounted(() => {
     groupedSessions,
     chatModels,
     selectedModelLlmConfig,
+    supportsMultimodalInput,
     defaultAgentModelId,
     selectedModelLabel,
     selectedThinkingLabel,

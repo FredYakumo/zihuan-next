@@ -482,17 +482,19 @@
                 <div class="chat-input-actions">
                   <button class="btn ghost" @click="startNewSession">新对话</button>
                   <div class="chat-input-right">
-                    <input
-                      id="chat-image-upload"
-                      class="chat-image-upload-input"
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      @change="handleImageFileSelection"
-                    />
-                    <label class="btn ghost chat-image-upload-button" for="chat-image-upload" title="上传图片">
-                      <ImageAddIcon />
-                    </label>
+                    <template v-if="supportsMultimodalInput">
+                      <input
+                        id="chat-image-upload"
+                        class="chat-image-upload-input"
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        @change="handleImageFileSelection"
+                      />
+                      <label class="btn ghost chat-image-upload-button" for="chat-image-upload" title="上传图片">
+                        <ImageAddIcon />
+                      </label>
+                    </template>
                     <div v-if="isChatEligible" class="chat-model-bar">
                       <div class="model-picker" :class="{ open: openPicker === 'model' }">
                         <button
@@ -846,6 +848,7 @@ const {
   groupedSessions,
   chatModels,
   selectedModelLlmConfig,
+  supportsMultimodalInput,
   defaultAgentModelId,
   selectedModelLabel,
   selectedThinkingLabel,
