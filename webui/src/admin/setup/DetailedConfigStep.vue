@@ -7,21 +7,39 @@
       <span v-if="environmentLoading" class="install-method-status">正在检测本机安装能力...</span>
       <template v-else>
         <label :class="{ unavailable: !dockerSupported }" :title="dockerUnsupportedReason">
-          <input v-model="selectedInstallMethod" type="radio" value="docker" :disabled="!dockerSupported" />
+          <input v-model="selectedInstallOption" type="radio" value="local_docker" :disabled="!dockerSupported" />
           Docker <small v-if="!dockerSupported">（本机不支持）</small>
         </label>
         <label :class="{ unavailable: !environment.binary_install_available }" :title="environment.binary_install_reason ?? ''">
-          <input v-model="selectedInstallMethod" type="radio" value="binary" :disabled="!environment.binary_install_available" />
-          二进制 <small v-if="!environment.binary_install_available">（本机不支持）</small>
+          <input v-model="selectedInstallOption" type="radio" value="local_binary" :disabled="!environment.binary_install_available" />
+          native程序 <small v-if="!environment.binary_install_available">（本机不支持）</small>
         </label>
-        <span v-if="isWindows" class="windows-environment">
-          WSL：{{ environment.wsl_available ? "可用" : "不可用" }}；
-          WSL Docker：{{ environment.wsl_docker_available ? "可用" : "不可用" }}
-        </span>
+        <label><input v-model="selectedInstallOption" type="radio" value="command_docker" /> 安装命令（Docker）</label>
+        <label><input v-model="selectedInstallOption" type="radio" value="command_binary" /> 安装命令（native程序）</label>
       </template>
     </div>
 
-    <template v-if="selectedInstallMethod">
+    <template v-if="!environmentLoading">
+    <div class="form-grid global-config">
+      <label class="public-access-toggle">
+        <input v-model="model.expose_public_access" type="checkbox" />
+        <span>暴露公网访问</span>
+      </label>
+      <template v-if="model.expose_public_access">
+        <label class="public-access-toggle">
+          <input v-model="model.use_target_machine_address" type="checkbox" />
+          <span>使用目标机器地址</span>
+        </label>
+        <Field v-if="model.use_target_machine_address" label="目标机器地址（可选）">
+          <input v-model="model.target_machine_address" placeholder="例如 203.0.113.10 或 server.example.com" />
+        </Field>
+        <p class="public-access-hint">
+          使用目标机器地址会覆盖生成连接配置中的服务地址；启用服务仍需配置认证凭据。
+        </p>
+      </template>
+    </div>
+
+    <template v-if="selectedInstallOption">
       <div class="component-scroll">
       <section class="component-card">
         <ComponentHeader v-model:enabled="model.relational.enabled" title="关系型数据库" />
@@ -52,12 +70,14 @@
       </section>
       </div>
 
-      <div class="step-actions"><button class="btn ghost" @click="$emit('back')"><ArrowLeftIcon /> 返回</button><button class="btn primary" @click="$emit('next')">开始配置 <ArrowRightIcon /></button></div>
+      <p v-if="error" class="config-error">{{ error }}</p>
+      <div class="step-actions"><button class="btn ghost" @click="$emit('back')"><ArrowLeftIcon /> 返回</button><button class="btn primary" @click="$emit('next', selectedInstallOption)">{{ isLocalInstall ? '开始配置' : '配置' }} <ArrowRightIcon /></button></div>
     </template>
 
-    <div v-if="!selectedInstallMethod" class="step-actions step-actions--selection">
+    <div v-if="!selectedInstallOption" class="step-actions step-actions--selection">
       <button class="btn ghost" @click="$emit('back')"><ArrowLeftIcon /> 返回</button>
     </div>
+    </template>
   </div>
 </template>
 
@@ -65,8 +85,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { ArrowLeftIcon, ArrowRightIcon } from "tdesign-icons-vue-next";
 
-import type { DetailedSetupConfig, DetailedSetupInstallMethod } from "../../api/client";
-import { setup as setupApi, type EnvironmentInfo } from "../../api/client";
+import { setup as setupApi, type DetailedSetupConfig, type DetailedSetupInstallMethod, type EnvironmentInfo } from "../../api/client";
 import ComponentHeader from "./SetupComponentHeader.vue";
 import CredentialInput from "./SetupCredentialInput.vue";
 import DeploymentFields from "./SetupDeploymentFields.vue";
@@ -74,31 +93,28 @@ import Field from "./SetupField.vue";
 import SourceChoice from "./SetupSourceChoice.vue";
 
 const model = defineModel<DetailedSetupConfig>({ required: true });
-defineEmits<{ (event: "next"): void; (event: "back"): void }>();
+defineProps<{ error: string | null }>();
+defineEmits<{ (event: "next", option: DetailedInstallOption): void; (event: "back"): void }>();
+
+type DetailedInstallOption = "local_docker" | "local_binary" | "command_docker" | "command_binary";
 
 const environmentLoading = ref(true);
-const selectedInstallMethod = ref<DetailedSetupInstallMethod | null>(null);
 const environment = ref<EnvironmentInfo>({
-  os: "",
-  os_detail: "",
-  docker_available: false,
-  docker_compose_available: false,
-  binary_install_available: false,
-  binary_install_reason: null,
-  wsl_available: null,
-  wsl_docker_available: null,
-  cuda_version: null,
-  compiler_version: null,
-  proxy: null,
-  services: [],
+  os: "", os_detail: "", docker_available: false, docker_compose_available: false,
+  binary_install_available: false, binary_install_reason: null, wsl_available: null, wsl_docker_available: null,
+  cuda_version: null, compiler_version: null, proxy: null, services: [],
 });
 const dockerSupported = computed(() => environment.value.docker_compose_available);
 const dockerUnsupportedReason = computed(() => "Docker Compose 不可用，请安装并启动 Docker Desktop 或 Docker Compose");
-const isWindows = computed(() => environment.value.os.toLowerCase() === "windows");
+const selectedInstallOption = ref<DetailedInstallOption>(
+  model.value.install_method === "docker" ? "command_docker" : "command_binary",
+);
+const isLocalInstall = computed(() => selectedInstallOption.value.startsWith("local_"));
 
 onMounted(async () => {
   try {
     environment.value = await setupApi.getEnvironment();
+    selectedInstallOption.value = getPreferredInstallOption();
   } catch (error) {
     console.error("Failed to detect setup environment", error);
   } finally {
@@ -106,20 +122,29 @@ onMounted(async () => {
   }
 });
 
-watch(selectedInstallMethod, (installMethod) => {
-  if (installMethod) {
-    model.value.install_method = installMethod;
-  }
+watch(selectedInstallOption, (option) => {
+  const installMethod: DetailedSetupInstallMethod = option.endsWith("docker") ? "docker" : "binary";
+  model.value.install_method = installMethod;
 });
+
+function getPreferredInstallOption(): DetailedInstallOption {
+  if (dockerSupported.value) {
+    return "local_docker";
+  }
+  if (environment.value.binary_install_available) {
+    return "local_binary";
+  }
+  return "command_docker";
+}
 
 function setSearchType(type: "weaviate" | "elasticsearch") {
   model.value.search.type = type;
   if (type === "elasticsearch") {
-    model.value.search.deployment = { ...model.value.search.deployment, image: "docker.elastic.co/elasticsearch/elasticsearch:8.17.0", port: 9200, container_name: "zihuan-elasticsearch" };
+    model.value.search.deployment = { ...model.value.search.deployment, image: "docker.elastic.co/elasticsearch/elasticsearch:8.17.0", port: 9200, data_dir: "./data/zihuan-elasticsearch", container_name: "zihuan-elasticsearch" };
     model.value.search.base_url = "http://127.0.0.1:9200";
     model.value.search.username = "elastic";
   } else {
-    model.value.search.deployment = { ...model.value.search.deployment, image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, container_name: "zihuan-weaviate" };
+    model.value.search.deployment = { ...model.value.search.deployment, image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./data/zihuan-weaviate", container_name: "zihuan-weaviate" };
     model.value.search.base_url = "http://127.0.0.1:8080";
   }
 }

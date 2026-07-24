@@ -143,7 +143,6 @@ pub(crate) fn plan_model_reply(
 
     let mut expanded_segments = Vec::new();
     let mut text_chunk_count = 0usize;
-    let mut image_count = 0usize;
 
     for segment in segments {
         match segment {
@@ -157,7 +156,6 @@ pub(crate) fn plan_model_reply(
                 expanded_segments.push(PlannedSegment::At(AtTargetMessage { target: Some(target) }))
             }
             ReplySegment::Image(image) => {
-                image_count += 1;
                 expanded_segments.push(PlannedSegment::Image(image));
             }
             ReplySegment::NoReply => {}
@@ -166,8 +164,8 @@ pub(crate) fn plan_model_reply(
 
     let reply_message = resolve_reply_message(request.reply_directive.as_ref(), request.trigger_message_id);
 
-    // Use forward-message to avoid flooding the chat with too many individual messages
-    let forced_forward = text_chunk_count >= 3 || image_count > 1;
+    // Use forward messages only for long text because QQ clients may not render images in forward nodes.
+    let forced_forward = text_chunk_count >= 3;
     let mut batches = if forced_forward {
         build_forced_forward_batches(expanded_segments, reply_message, &request.bot_id, &request.bot_name)
     } else {

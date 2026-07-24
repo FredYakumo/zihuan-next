@@ -178,6 +178,8 @@ pub struct ChatHistoryRecord {
     pub agent_avatar_url: Option<String>,
     pub role: String,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<MessagePart>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
     pub timestamp: String,
@@ -978,7 +980,7 @@ fn sanitize_messages(messages: Vec<LLMMessage>) -> Vec<LLMMessage> {
         .filter(|message| {
             let has_content = message.content_text_owned().is_some_and(|text| !text.trim().is_empty());
             let has_reasoning = message.reasoning_content.as_deref().is_some_and(|text| !text.trim().is_empty());
-            has_content || has_reasoning || !message.tool_calls.is_empty()
+            has_content || has_reasoning || !message.parts.is_empty() || !message.tool_calls.is_empty()
         })
         .collect()
 }
@@ -1026,6 +1028,7 @@ fn persist_chat_records(
             agent_avatar_url: agent_snapshot.avatar_url.clone(),
             role: "user".to_string(),
             content: user_message.content_text_owned().unwrap_or_default(),
+            parts: user_message.parts.clone(),
             reasoning_content: None,
             timestamp: now.clone(),
             stream_index: None,
@@ -1054,6 +1057,7 @@ fn persist_chat_records(
             agent_avatar_url: agent_snapshot.avatar_url.clone(),
             role: role.to_string(),
             content: message.content_text_owned().unwrap_or_default(),
+            parts: message.parts.clone(),
             reasoning_content: message.reasoning_content.clone(),
             timestamp: now.clone(),
             stream_index: None,

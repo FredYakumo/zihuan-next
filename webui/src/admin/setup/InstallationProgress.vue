@@ -26,6 +26,7 @@
     </div>
 
     <div class="actions">
+      <button class="btn ghost" @click="$emit('back')">返回</button>
       <button v-if="error" class="btn primary" @click="$emit('retry')">
         重试
       </button>
@@ -43,7 +44,7 @@ const props = defineProps<{
   error: string | null;
 }>();
 
-defineEmits<{ (e: "done"): void; (e: "retry"): void }>();
+defineEmits<{ (e: "done"): void; (e: "retry"): void; (e: "back"): void }>();
 
 const { logs, error } = useInstallationProgress(props);
 </script>

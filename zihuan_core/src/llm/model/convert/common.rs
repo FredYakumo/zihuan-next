@@ -55,19 +55,25 @@ pub(crate) fn build_responses_content_items(message: &LLMMessage, image_url_as_o
         return Vec::new();
     }
 
+    let text_content_type = if matches!(message.role, MessageRole::Assistant) {
+        "output_text"
+    } else {
+        "input_text"
+    };
+
     message
         .parts
         .iter()
         .map(|part| match part {
             MessagePart::Text { text } => json!({
-                "type": "input_text",
+                "type": text_content_type,
                 "text": text,
             }),
             MessagePart::Image { .. } => {
                 let locator = part.media_locator().unwrap_or_default();
                 if matches!(message.role, MessageRole::Assistant) {
                     json!({
-                        "type": "input_text",
+                        "type": "output_text",
                         "text": format!("[image omitted] {locator}"),
                     })
                 } else if image_url_as_object {
@@ -85,7 +91,7 @@ pub(crate) fn build_responses_content_items(message: &LLMMessage, image_url_as_o
                 }
             }
             MessagePart::Video { .. } => json!({
-                "type": "input_text",
+                "type": text_content_type,
                 "text": format!("[video omitted] {}", part.media_locator().unwrap_or_default()),
             }),
         })

@@ -6,7 +6,7 @@ use tokio::sync::broadcast;
 
 use zihuan_core::setup_wizard::{load_setup_wizard_state, save_setup_wizard_state};
 use storage_handler::{
-    ensure_collection_schema, ensure_elasticsearch_index, ConnectionKind, ElasticsearchConnection, ElasticsearchRef,
+    ensure_collection_schema, ensure_elasticsearch_index, ConnectionConfig, ConnectionKind, ElasticsearchConnection, ElasticsearchRef,
     MysqlConnection, RedisConnection, RustfsConnection, SqliteConnection, WeaviateConnection,
 };
 use zihuan_core::weaviate::{WeaviateCollectionSchema, WeaviateRef};
@@ -31,21 +31,21 @@ pub struct SetupOrchestrator {
     task_id: String,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DetailedInstallMethod {
     Docker,
     Binary,
 }
 
-#[derive(Clone, Deserialize, PartialEq)]
+#[derive(Clone, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DetailedComponentSource {
     Install,
     Existing,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct DetailedDeploymentConfig {
     pub image: String,
     pub port: u16,
@@ -54,7 +54,7 @@ pub struct DetailedDeploymentConfig {
     pub restart_policy: String,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct DetailedRelationalSetupConfig {
     pub enabled: bool,
     pub source: DetailedComponentSource,
@@ -70,7 +70,7 @@ pub struct DetailedRelationalSetupConfig {
     pub acquire_timeout_secs: u64,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct DetailedRustfsSetupConfig {
     pub enabled: bool,
     pub source: DetailedComponentSource,
@@ -84,7 +84,7 @@ pub struct DetailedRustfsSetupConfig {
     pub path_style: bool,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct DetailedSearchSetupConfig {
     pub enabled: bool,
     pub source: DetailedComponentSource,
@@ -98,7 +98,7 @@ pub struct DetailedSearchSetupConfig {
     pub vector_dimensions: usize,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct DetailedRedisSetupConfig {
     pub enabled: bool,
     pub source: DetailedComponentSource,
@@ -108,13 +108,24 @@ pub struct DetailedRedisSetupConfig {
     pub password: Option<String>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct DetailedSetupConfig {
     pub install_method: DetailedInstallMethod,
+    pub target_machine_address: String,
+    #[serde(default)]
+    pub expose_public_access: bool,
+    #[serde(default)]
+    pub use_target_machine_address: bool,
     pub relational: DetailedRelationalSetupConfig,
     pub rustfs: DetailedRustfsSetupConfig,
     pub search: DetailedSearchSetupConfig,
     pub redis: DetailedRedisSetupConfig,
+}
+
+#[derive(Serialize)]
+pub struct DetailedInstallCommand {
+    pub install_command: String,
+    pub connections: Vec<ConnectionConfig>,
 }
 
 impl SetupOrchestrator {
@@ -369,7 +380,189 @@ fn validate_detailed_config(config: &DetailedSetupConfig) -> Result<(), String> 
     if config.redis.enabled && config.redis.url.trim().is_empty() {
         return Err("Redis URL is required".to_string());
     }
+    if config.expose_public_access {
+        if config.relational.enabled
+            && config.relational.database_type == "mysql"
+            && config.relational.password.is_empty()
+        {
+            return Err("A MySQL password is required when exposing public access".to_string());
+        }
+        if config.rustfs.enabled
+            && (config.rustfs.access_key.is_empty() || config.rustfs.secret_key.is_empty())
+        {
+            return Err("RustFS access and secret keys are required when exposing public access".to_string());
+        }
+        if config.search.enabled {
+            if config.search.search_type == "elasticsearch" && config.search.password.as_deref().unwrap_or_default().is_empty() {
+                return Err("An Elasticsearch password is required when exposing public access".to_string());
+            }
+            if config.search.search_type == "weaviate" && config.search.api_key.as_deref().unwrap_or_default().is_empty() {
+                return Err("A Weaviate API key is required when exposing public access".to_string());
+            }
+        }
+        if config.redis.enabled && config.redis.password.as_deref().unwrap_or_default().is_empty() {
+            return Err("A Redis password is required when exposing public access".to_string());
+        }
+    }
     Ok(())
+}
+
+pub fn generate_detailed_install_command(config: &DetailedSetupConfig) -> Result<DetailedInstallCommand, String> {
+    validate_detailed_config(config)?;
+
+    let compose = detailed_compose(config);
+    let install_command = match &config.install_method {
+        DetailedInstallMethod::Docker => docker_install_command(config, &compose),
+        DetailedInstallMethod::Binary => binary_install_command(config, &compose),
+    };
+
+    Ok(DetailedInstallCommand {
+        install_command,
+        connections: detailed_connection_configs(config),
+    })
+}
+
+fn docker_install_command(config: &DetailedSetupConfig, compose: &str) -> String {
+    let compose_base64 = base64_encode(compose.as_bytes());
+    let create_data_dirs = docker_data_directory_command(config);
+    format!(
+        "# Run on the target Linux machine\nmkdir -p ~/zihuan-next-install && cd ~/zihuan-next-install\n{create_data_dirs}\nprintf '%s' '{compose_base64}' | base64 -d > docker-compose.yaml\ndocker compose -f docker-compose.yaml up -d"
+    )
+}
+
+fn binary_install_command(config: &DetailedSetupConfig, compose: &str) -> String {
+    let compose_base64 = base64_encode(compose.as_bytes());
+    let services = detailed_install_services(config).join(" ");
+    let create_data_dirs = docker_data_directory_command(config);
+    format!(
+        "# Run on the target Linux x86_64 machine\nsudo apt-get update\nsudo apt-get install -y build-essential pkg-config libssl-dev git nodejs npm docker.io docker-compose-plugin\ngit clone --recurse-submodules https://github.com/FredYakumo/zihuan-next.git ~/zihuan-next\ncd ~/zihuan-next\ncorepack enable && corepack prepare pnpm@10.22.0 --activate\ncd webui && pnpm install --frozen-lockfile && pnpm run build\ncd .. && cargo build --release\nmkdir -p ~/zihuan-next-install && cd ~/zihuan-next-install\n{create_data_dirs}\nprintf '%s' '{compose_base64}' | base64 -d > docker-compose.yaml\ndocker compose -f docker-compose.yaml up -d {services}\n# Start Zihuan Next after importing the generated connections JSON:\n~/zihuan-next/target/release/zihuan_next --host 0.0.0.0 --port 9951"
+    )
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    for chunk in bytes.chunks(3) {
+        let first = chunk[0];
+        let second = *chunk.get(1).unwrap_or(&0);
+        let third = *chunk.get(2).unwrap_or(&0);
+        output.push(TABLE[(first >> 2) as usize] as char);
+        output.push(TABLE[((first & 0b0000_0011) << 4 | second >> 4) as usize] as char);
+        output.push(if chunk.len() > 1 { TABLE[((second & 0b0000_1111) << 2 | third >> 6) as usize] as char } else { '=' });
+        output.push(if chunk.len() > 2 { TABLE[(third & 0b0011_1111) as usize] as char } else { '=' });
+    }
+    output
+}
+
+fn detailed_connection_host<'a>(config: &'a DetailedSetupConfig, default: &'a str) -> &'a str {
+    if config.expose_public_access && config.use_target_machine_address && !config.target_machine_address.trim().is_empty() {
+        config.target_machine_address.trim()
+    } else {
+        default
+    }
+}
+
+fn detailed_connection_configs(config: &DetailedSetupConfig) -> Vec<ConnectionConfig> {
+    let mut connections = Vec::new();
+
+    if config.relational.enabled {
+        let connection = if config.relational.database_type == "sqlite" {
+            config_factory::build_connection(
+                "setup-detailed-sqlite",
+                "SQLite",
+                ConnectionKind::Sqlite(SqliteConnection { path: config.relational.sqlite_path.clone() }),
+            )
+        } else {
+            let host = detailed_connection_host(config, &config.relational.host);
+            let url = format!(
+                "mysql://{}:{}@{}:{}/{}",
+                config.relational.username,
+                config.relational.password,
+                host,
+                config.relational.deployment.port,
+                config.relational.database,
+            );
+            config_factory::build_connection(
+                "setup-detailed-mysql",
+                "MySQL",
+                ConnectionKind::Mysql(MysqlConnection {
+                    url,
+                    max_connections: config.relational.max_connections,
+                    acquire_timeout_secs: config.relational.acquire_timeout_secs,
+                }),
+            )
+        };
+        connections.push(connection);
+    }
+    if config.rustfs.enabled {
+        let endpoint = if config.expose_public_access && config.use_target_machine_address && !config.target_machine_address.trim().is_empty() {
+            format!("http://{}:{}", config.target_machine_address.trim(), config.rustfs.deployment.port)
+        } else {
+            config.rustfs.endpoint.clone()
+        };
+        connections.push(config_factory::build_connection(
+            "setup-detailed-rustfs",
+            "RustFS",
+            ConnectionKind::Rustfs(RustfsConnection {
+                endpoint,
+                bucket: config.rustfs.bucket.clone(),
+                region: config.rustfs.region.clone(),
+                access_key: config.rustfs.access_key.clone(),
+                secret_key: config.rustfs.secret_key.clone(),
+                public_base_url: config.rustfs.public_base_url.clone(),
+                path_style: config.rustfs.path_style,
+            }),
+        ));
+    }
+    if config.redis.enabled {
+        let url = if config.expose_public_access && config.use_target_machine_address && !config.target_machine_address.trim().is_empty() {
+            format!("redis://{}:{}", config.target_machine_address.trim(), config.redis.deployment.port)
+        } else {
+            config.redis.url.clone()
+        };
+        connections.push(config_factory::build_connection(
+            "setup-detailed-redis",
+            "Redis",
+            ConnectionKind::Redis(RedisConnection {
+                url,
+                username: config.redis.username.clone(),
+                password: config.redis.password.clone(),
+            }),
+        ));
+    }
+    if config.search.enabled {
+        let base_url = if config.expose_public_access && config.use_target_machine_address && !config.target_machine_address.trim().is_empty() {
+            format!("http://{}:{}", config.target_machine_address.trim(), config.search.deployment.port)
+        } else {
+            config.search.base_url.clone()
+        };
+        for (suffix, schema) in [("memory", WeaviateCollectionSchema::AgentMemory), ("image", WeaviateCollectionSchema::ImageSemantic)] {
+            let id = format!("setup-detailed-{}-{suffix}", config.search.search_type);
+            let name = format!("{} {suffix}", config.search.search_type);
+            let kind = if config.search.search_type == "elasticsearch" {
+                ConnectionKind::Elasticsearch(ElasticsearchConnection {
+                    base_url: base_url.clone(),
+                    index_name: format!("zihuan_{suffix}"),
+                    username: config.search.username.clone(),
+                    password: config.search.password.clone(),
+                    api_key: config.search.api_key.clone(),
+                    collection_schema: schema,
+                    vector_dimensions: config.search.vector_dimensions,
+                })
+            } else {
+                ConnectionKind::Weaviate(WeaviateConnection {
+                    base_url: base_url.clone(),
+                    class_name: if suffix == "memory" { "AgentMemory".to_string() } else { "ImageSemantic".to_string() },
+                    username: config.search.username.clone(),
+                    password: config.search.password.clone(),
+                    api_key: config.search.api_key.clone(),
+                    collection_schema: schema,
+                })
+            };
+            connections.push(config_factory::build_connection(&id, &name, kind));
+        }
+    }
+    connections
 }
 
 fn detailed_install_services(config: &DetailedSetupConfig) -> Vec<&'static str> {
@@ -386,7 +579,18 @@ async fn run_detailed_docker(config: &DetailedSetupConfig, services: &[&str]) ->
         return Err("Docker Compose is unavailable. Install Docker Desktop or Docker Compose, then retry.".to_string());
     }
     let compose_path = detailed_compose_path();
-    if let Some(parent) = compose_path.parent() { tokio::fs::create_dir_all(parent).await.map_err(|err| err.to_string())?; }
+    let compose_dir = compose_path
+        .parent()
+        .ok_or_else(|| "Detailed Docker Compose path has no parent directory".to_string())?;
+    tokio::fs::create_dir_all(compose_dir)
+        .await
+        .map_err(|err| format!("Failed to create Docker Compose directory: {err}"))?;
+    for data_dir in detailed_data_dirs(config) {
+        let data_dir = resolve_compose_data_dir(compose_dir, &data_dir);
+        tokio::fs::create_dir_all(&data_dir)
+            .await
+            .map_err(|err| format!("Failed to create container data directory {}: {err}", data_dir.display()))?;
+    }
     tokio::fs::write(&compose_path, detailed_compose(config)).await.map_err(|err| err.to_string())?;
     let output = tokio::process::Command::new("docker")
         .arg("compose").arg("-f").arg(&compose_path).arg("up").arg("-d").args(services)
@@ -429,20 +633,93 @@ async fn run_detailed_binary(_config: &DetailedSetupConfig, services: &[&str]) -
 
 fn detailed_compose_path() -> PathBuf { zihuan_core::system_config::app_data_dir().join("zihuan-next_aibot").join("detailed-compose.yaml") }
 
+fn detailed_data_dirs(config: &DetailedSetupConfig) -> Vec<String> {
+    let mut data_dirs = Vec::new();
+    if config.relational.enabled
+        && config.relational.source == DetailedComponentSource::Install
+        && config.relational.database_type == "mysql"
+    {
+        data_dirs.push(config.relational.deployment.data_dir.clone());
+    }
+    if config.rustfs.enabled && config.rustfs.source == DetailedComponentSource::Install {
+        data_dirs.push(config.rustfs.deployment.data_dir.clone());
+    }
+    if config.search.enabled && config.search.source == DetailedComponentSource::Install {
+        data_dirs.push(config.search.deployment.data_dir.clone());
+    }
+    if config.redis.enabled && config.redis.source == DetailedComponentSource::Install {
+        data_dirs.push(config.redis.deployment.data_dir.clone());
+    }
+    data_dirs
+}
+
+fn compose_bind_source(data_dir: &str) -> String {
+    let data_dir = data_dir.trim();
+    if data_dir.starts_with('.') || Path::new(data_dir).is_absolute() {
+        return data_dir.to_string();
+    }
+    format!("./{data_dir}")
+}
+
+fn resolve_compose_data_dir(compose_dir: &Path, data_dir: &str) -> PathBuf {
+    let bind_source = compose_bind_source(data_dir);
+    let path = Path::new(&bind_source);
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    compose_dir.join(path.strip_prefix(".").unwrap_or(path))
+}
+
+fn docker_data_directory_command(config: &DetailedSetupConfig) -> String {
+    let data_dirs = detailed_data_dirs(config);
+    if data_dirs.is_empty() {
+        return String::new();
+    }
+    let data_dirs = data_dirs
+        .iter()
+        .map(|data_dir| shell_quote(&compose_bind_source(data_dir)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("mkdir -p -- {data_dirs}")
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\\"'\\\"'"))
+}
+
 fn detailed_compose(config: &DetailedSetupConfig) -> String {
     let mut services = String::from("services:\n");
     if config.relational.enabled && config.relational.source == DetailedComponentSource::Install && config.relational.database_type == "mysql" {
         let d = &config.relational.deployment;
-        services.push_str(&format!("  mysql:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:3306\"]\n    volumes: [\"{}:/var/lib/mysql\"]\n    environment:\n      MYSQL_ROOT_PASSWORD: {}\n      MYSQL_DATABASE: {}\n", d.image, d.container_name, d.restart_policy, d.port, d.data_dir, config.relational.password, config.relational.database));
+        services.push_str(&format!("  mysql:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:3306\"]\n    volumes: [{}]\n    environment:\n      MYSQL_ROOT_PASSWORD: {}\n      MYSQL_DATABASE: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/var/lib/mysql"), yaml_quote(&config.relational.password), yaml_quote(&config.relational.database)));
     }
-    if config.rustfs.enabled && config.rustfs.source == DetailedComponentSource::Install { let d = &config.rustfs.deployment; services.push_str(&format!("  rustfs:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9000\"]\n    volumes: [\"{}:/data\"]\n    command: [\"--console-enable\", \"/data\"]\n", d.image, d.container_name, d.restart_policy, d.port, d.data_dir)); }
+    if config.rustfs.enabled && config.rustfs.source == DetailedComponentSource::Install { let d = &config.rustfs.deployment; services.push_str(&format!("  rustfs:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9000\"]\n    volumes: [{}]\n    environment:\n      RUSTFS_ACCESS_KEY: {}\n      RUSTFS_SECRET_KEY: {}\n    command: [\"--console-enable\", \"/data\"]\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/data"), yaml_quote(&config.rustfs.access_key), yaml_quote(&config.rustfs.secret_key))); }
     if config.search.enabled && config.search.source == DetailedComponentSource::Install {
         let d = &config.search.deployment;
-        if config.search.search_type == "elasticsearch" { services.push_str(&format!("  elasticsearch:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9200\"]\n    volumes: [\"{}:/usr/share/elasticsearch/data\"]\n    environment:\n      discovery.type: single-node\n      xpack.security.enabled: 'true'\n      ELASTIC_PASSWORD: {}\n", d.image, d.container_name, d.restart_policy, d.port, d.data_dir, config.search.password.as_deref().unwrap_or_default())); }
-        else { services.push_str(&format!("  weaviate:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:8080\"]\n    volumes: [\"{}:/var/lib/weaviate\"]\n    environment:\n      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'\n      DEFAULT_VECTORIZER_MODULE: none\n      CLUSTER_HOSTNAME: node1\n", d.image, d.container_name, d.restart_policy, d.port, d.data_dir)); }
+        if config.search.search_type == "elasticsearch" { services.push_str(&format!("  elasticsearch:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9200\"]\n    volumes: [{}]\n    environment:\n      discovery.type: single-node\n      xpack.security.enabled: 'true'\n      ELASTIC_PASSWORD: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/usr/share/elasticsearch/data"), yaml_quote(config.search.password.as_deref().unwrap_or_default()))); }
+        else {
+            let authentication = if config.expose_public_access {
+                format!("      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'false'\n      AUTHENTICATION_APIKEY_ENABLED: 'true'\n      AUTHENTICATION_APIKEY_ALLOWED_KEYS: {}\n", yaml_quote(config.search.api_key.as_deref().unwrap_or_default()))
+            } else {
+                "      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'\n".to_string()
+            };
+            services.push_str(&format!("  weaviate:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:8080\"]\n    volumes: [{}]\n    environment:\n{}      DEFAULT_VECTORIZER_MODULE: none\n      CLUSTER_HOSTNAME: node1\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/var/lib/weaviate"), authentication));
+        }
     }
-    if config.redis.enabled && config.redis.source == DetailedComponentSource::Install { let d = &config.redis.deployment; services.push_str(&format!("  redis:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:6379\"]\n    volumes: [\"{}:/data\"]\n", d.image, d.container_name, d.restart_policy, d.port, d.data_dir)); }
+    if config.redis.enabled && config.redis.source == DetailedComponentSource::Install {
+        let d = &config.redis.deployment;
+        let command = if config.expose_public_access { format!("    command: [\"redis-server\", \"--requirepass\", {}]\n", yaml_quote(config.redis.password.as_deref().unwrap_or_default())) } else { String::new() };
+        services.push_str(&format!("  redis:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:6379\"]\n    volumes: [{}]\n{}", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/data"), command));
+    }
     services
+}
+
+fn yaml_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn compose_bind_mount(data_dir: &str, container_path: &str) -> String {
+    yaml_quote(&format!("{}:{container_path}", compose_bind_source(data_dir)))
 }
 
 async fn save_detailed_connections(config: &DetailedSetupConfig) -> Result<(), String> {

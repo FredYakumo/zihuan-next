@@ -49,7 +49,20 @@ pub(crate) fn review_and_rewrite_reply(
         messages: &review_messages,
         tools: None,
     });
-    let review_text = review_response.content_text_owned().unwrap_or_default();
+    let review_text = review_response
+        .content_text_owned()
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| {
+            Error::ValidationError(format!(
+                "reply reviewer returned empty text response: model={} api_style={:?} parts={} tool_calls={} reasoning_chars={} usage={:?} full_response={review_response:?}",
+                review_llm.get_model_name(),
+                review_llm.api_style(),
+                review_response.parts.len(),
+                review_response.tool_calls.len(),
+                review_response.reasoning_content.as_deref().map(str::len).unwrap_or_default(),
+                review_response.usage,
+            ))
+        })?;
     let review_result = parse_review_result(&review_text)?;
     trace.record_reply_review(
         &request.candidate_message,

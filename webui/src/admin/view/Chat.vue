@@ -407,6 +407,17 @@
                     class="chat-bubble"
                     :class="message.role"
                   >
+                    <div v-if="message.imageAttachments?.length" class="chat-message-images">
+                      <button
+                        v-for="attachment in message.imageAttachments"
+                        :key="attachment.id"
+                        class="chat-message-image"
+                        :title="attachment.name"
+                        @click="openImagePreview(attachment)"
+                      >
+                        <img :src="attachment.url" :alt="attachment.name" />
+                      </button>
+                    </div>
                     <div
                       class="chat-bubble-content markdown-body"
                       v-html="renderMessageContent(message.content, message.streaming)"
@@ -446,16 +457,42 @@
                     </button>
                   </div>
                 </div>
+                <div v-if="draftImageAttachments.length" class="chat-draft-images">
+                  <div v-for="attachment in draftImageAttachments" :key="attachment.id" class="chat-draft-image">
+                    <button class="chat-draft-image-preview" :title="attachment.name" @click="openImagePreview(attachment)">
+                      <img :src="attachment.url" :alt="attachment.name" />
+                    </button>
+                    <span v-if="attachment.uploading" class="chat-draft-image-status">上传中...</span>
+                    <span v-else-if="attachment.error" class="chat-draft-image-status chat-draft-image-status--error">
+                      {{ attachment.error }}
+                    </span>
+                    <button class="chat-draft-image-remove" :aria-label="`删除 ${attachment.name}`" @click="removeDraftImageAttachment(attachment.id)">
+                      <CloseIcon />
+                    </button>
+                  </div>
+                </div>
                 <textarea
                   v-model="draftMessage"
                   placeholder="输入消息"
                   @keydown.enter="handleTextareaKeydown"
+                  @paste="handleTextareaPaste"
                   @input="clearChatError"
                 />
                 <div class="chat-input-hint">使用 shift + enter 换行</div>
                 <div class="chat-input-actions">
                   <button class="btn ghost" @click="startNewSession">新对话</button>
                   <div class="chat-input-right">
+                    <input
+                      id="chat-image-upload"
+                      class="chat-image-upload-input"
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      @change="handleImageFileSelection"
+                    />
+                    <label class="btn ghost chat-image-upload-button" for="chat-image-upload" title="上传图片">
+                      <ImageAddIcon />
+                    </label>
                     <div v-if="isChatEligible" class="chat-model-bar">
                       <div class="model-picker" :class="{ open: openPicker === 'model' }">
                         <button
@@ -648,6 +685,20 @@
 
     <Teleport to="body">
       <div
+        v-if="imagePreviewAttachment"
+        class="chat-image-preview-overlay"
+        @click.self="closeImagePreview"
+        @keydown="handleImagePreviewKeydown"
+      >
+        <div class="chat-image-preview-dialog" role="dialog" aria-modal="true" :aria-label="imagePreviewAttachment.name">
+          <button class="chat-image-preview-close" aria-label="关闭图片预览" @click="closeImagePreview"><CloseIcon /></button>
+          <img :src="imagePreviewAttachment.url" :alt="imagePreviewAttachment.name" />
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
         v-if="toolPreviewState"
         class="tool-preview-overlay"
         @click.self="closeToolPreview"
@@ -734,7 +785,7 @@
 </template>
 
 <script setup lang="ts">
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, DeleteIcon, EditIcon, ErrorCircleIcon, FileIcon, FolderIcon } from "tdesign-icons-vue-next";
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, DeleteIcon, EditIcon, ErrorCircleIcon, FileIcon, FolderIcon, ImageAddIcon } from "tdesign-icons-vue-next";
 
 import { useChat } from "../composables/useChat";
 import ToolCallBadge from "./ToolCallBadge.vue";
@@ -756,6 +807,8 @@ const {
   activeSessionId,
   selectedServiceId,
   draftMessage,
+  draftImageAttachments,
+  imagePreviewAttachment,
   workspacePath,
   pickingDirectory,
   sending,
@@ -812,6 +865,12 @@ const {
   scrollToBottom,
   clearChatError,
   handleTextareaKeydown,
+  handleTextareaPaste,
+  handleImageFileSelection,
+  removeDraftImageAttachment,
+  openImagePreview,
+  closeImagePreview,
+  handleImagePreviewKeydown,
   toggleAutoCollapseThinking,
   clearPendingAskUser,
   pruneFailedAssistantPlaceholder,

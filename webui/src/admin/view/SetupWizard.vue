@@ -29,8 +29,15 @@
       <DetailedConfigStep
         v-else-if="step === 'detailed'"
         v-model="detailedConfig"
+        :error="detailedInstallError"
         @next="startDetailedInstallation"
         @back="step = 'mode'"
+      />
+
+      <DetailedInstallCommandResult
+        v-else-if="step === 'detailed_result' && detailedInstallResult"
+        :result="detailedInstallResult"
+        @back="step = 'detailed'"
       />
 
       <EnvironmentCheck
@@ -61,6 +68,7 @@
         :error="installError"
         @done="step = 'complete'"
         @retry="startInstallation(installationMode)"
+        @back="backFromInstallation"
       />
 
       <SetupComplete
@@ -76,6 +84,7 @@ import brandIconSrc from "../../assets/brand-icon.png";
 import ModeSelection from "../setup/ModeSelection.vue";
 import RoleSelection from "../setup/RoleSelection.vue";
 import DetailedConfigStep from "../setup/DetailedConfigStep.vue";
+import DetailedInstallCommandResult from "../setup/DetailedInstallCommandResult.vue";
 import EnvironmentCheck from "../setup/EnvironmentCheck.vue";
 import LlmConfigStep from "../setup/LlmConfigStep.vue";
 import ImsBotAdapterConfigStep from "../setup/ImsBotAdapterConfigStep.vue";
@@ -90,6 +99,8 @@ const {
   llmConfig,
   imsBotAdapterConfig,
   detailedConfig,
+  detailedInstallResult,
+  detailedInstallError,
   taskId,
   installationMode,
   installLogs,
@@ -102,6 +113,7 @@ const {
   onLlmBack,
   startDetailedInstallation,
   startInstallation,
+  backFromInstallation,
   finishSetup,
 } = useSetupWizard();
 </script>

@@ -462,6 +462,20 @@ export interface ChatToolCall {
   };
 }
 
+export interface ChatMessagePart {
+  type: "text" | "image" | "video";
+  text?: string;
+  media?: {
+    media_id: string;
+    source: "upload" | "qq_chat" | "web_search" | "agent_save";
+    original_source: string;
+    rustfs_path: string;
+    name?: string | null;
+    description?: string | null;
+    mime_type?: string | null;
+  };
+}
+
 export interface ChatHistoryRecord {
   session_id: string;
   agent_id: string;
@@ -470,6 +484,7 @@ export interface ChatHistoryRecord {
   agent_avatar_url: string | null;
   role: string;
   content: string;
+  parts?: ChatMessagePart[];
   reasoning_content?: string | null;
   timestamp: string;
   stream_index?: number | null;
@@ -853,6 +868,7 @@ export const chat = {
       messages: Array<{
         role: string;
         content: string;
+        parts?: ChatMessagePart[];
         tool_calls?: ChatToolCall[];
         tool_call_id?: string | null;
       }>;
@@ -1051,10 +1067,18 @@ export interface DetailedRedisSetupConfig {
 
 export interface DetailedSetupConfig {
   install_method: DetailedSetupInstallMethod;
+  target_machine_address: string;
+  expose_public_access: boolean;
+  use_target_machine_address: boolean;
   relational: DetailedRelationalSetupConfig;
   rustfs: DetailedRustfsSetupConfig;
   search: DetailedSearchSetupConfig;
   redis: DetailedRedisSetupConfig;
+}
+
+export interface DetailedInstallCommandResult {
+  install_command: string;
+  connections: ConnectionConfig[];
 }
 
 export const setup = {
@@ -1073,6 +1097,9 @@ export const setup = {
     detailed_config?: DetailedSetupConfig;
   }): Promise<{ accepted: boolean; task_id: string }> {
     return request("POST", "/setup", payload);
+  },
+  generateDetailedInstallCommand(config: DetailedSetupConfig): Promise<DetailedInstallCommandResult> {
+    return request("POST", "/setup/detailed-install-command", { detailed_config: config });
   },
   skip(): Promise<{ ok: boolean }> {
     return request("POST", "/setup/skip");
