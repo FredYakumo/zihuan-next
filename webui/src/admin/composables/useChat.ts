@@ -65,6 +65,7 @@ type ChatImageAttachment = {
   error?: string;
   localPreviewUrl?: string;
 };
+
 type ToolDetail = {
   messageId: string;
   toolCall: ChatToolCall;
@@ -184,6 +185,7 @@ const workspacePath = ref("");
 const pickingDirectory = ref(false);
 const sending = ref(false);
 const chatErrorMessage = ref("");
+const chatErrorDialogMessage = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 const messages = ref<ChatMessage[]>([]);
 const activeToolCallId = ref("");
@@ -602,6 +604,15 @@ function clearChatError() {
   chatErrorMessage.value = "";
 }
 
+function showChatError(message: string) {
+  chatErrorMessage.value = message;
+  chatErrorDialogMessage.value = message;
+}
+
+function closeChatErrorDialog() {
+  chatErrorDialogMessage.value = "";
+}
+
 function handleTextareaKeydown(event: KeyboardEvent) {
   if (event.key !== "Enter") {
     return;
@@ -672,6 +683,7 @@ function addImageFiles(files: File[]) {
         if (current) {
           current.uploading = false;
           current.error = `上传失败: ${error.message}`;
+          showChatError(current.error);
         }
       });
   }
@@ -749,7 +761,7 @@ function pruneFailedAssistantPlaceholder(assistantMessageId: string | null) {
 
 function applyInferenceFailure(streamState: StreamState, errorMessage: string) {
   pruneFailedAssistantPlaceholder(streamState.assistantMessageId);
-  chatErrorMessage.value = `推理失败: ${errorMessage}`;
+  showChatError(`推理失败: ${errorMessage}`);
   if (!draftMessage.value.trim()) {
     draftMessage.value = streamState.requestText;
   }
@@ -1192,6 +1204,7 @@ onUnmounted(() => {
     pickingDirectory,
     sending,
     chatErrorMessage,
+    chatErrorDialogMessage,
     messagesContainer,
     messages,
     activeToolCallId,
@@ -1244,6 +1257,7 @@ onUnmounted(() => {
     renderMessageContent,
     scrollToBottom,
     clearChatError,
+    closeChatErrorDialog,
     handleTextareaKeydown,
     handleTextareaPaste,
     handleImageFileSelection,

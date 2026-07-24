@@ -684,6 +684,21 @@
     </div>
 
     <Teleport to="body">
+      <div v-if="chatErrorDialogMessage" class="chat-error-dialog-overlay" @click.self="closeChatErrorDialog">
+        <div class="chat-error-dialog" role="alertdialog" aria-modal="true" aria-labelledby="chat-error-dialog-title">
+          <div class="chat-error-dialog-header">
+            <strong id="chat-error-dialog-title">推理失败</strong>
+            <button aria-label="关闭错误提示" @click="closeChatErrorDialog"><CloseIcon /></button>
+          </div>
+          <div class="chat-error-dialog-body">{{ chatErrorDialogMessage }}</div>
+          <div class="chat-error-dialog-actions">
+            <button class="btn primary" @click="closeChatErrorDialog">知道了</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
       <div
         v-if="imagePreviewAttachment"
         class="chat-image-preview-overlay"
@@ -813,6 +828,7 @@ const {
   pickingDirectory,
   sending,
   chatErrorMessage,
+  chatErrorDialogMessage,
   messagesContainer,
   messages,
   activeToolCallId,
@@ -864,6 +880,7 @@ const {
   renderMessageContent,
   scrollToBottom,
   clearChatError,
+  closeChatErrorDialog,
   handleTextareaKeydown,
   handleTextareaPaste,
   handleImageFileSelection,

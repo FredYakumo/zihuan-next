@@ -27,6 +27,7 @@ use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const APP_DIR_NAME: &str = "zihuan-next_aibot";
+const CHAT_STREAM_MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 
 /// Bridges BrainObserver callbacks into the SSE event stream.
 ///
@@ -647,7 +648,7 @@ async fn send_sse(sender: &mut BodySender, event: &Value) -> bool {
 /// receiver is attached to the response, while the sender goes into the spawned task.
 #[handler]
 pub async fn stream_chat(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let body: ChatStreamRequest = match req.parse_json().await {
+    let body: ChatStreamRequest = match req.parse_json_with_max_size(CHAT_STREAM_MAX_BODY_BYTES).await {
         Ok(body) => body,
         Err(err) => {
             render_bad_request(res, format!("invalid request body: {err}"));

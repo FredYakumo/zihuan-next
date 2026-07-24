@@ -1029,6 +1029,68 @@
   white-space: pre-wrap;
 }
 
+.chat-error-dialog-overlay {
+  position: fixed;
+  z-index: 1300;
+  inset: 0;
+  display: grid;
+  padding: 20px;
+  place-items: center;
+  background: rgb(0 0 0 / 55%);
+}
+
+.chat-error-dialog {
+  width: min(520px, 100%);
+  border: 1px solid color-mix(in srgb, var(--admin-danger, #ef4444) 45%, var(--admin-border) 55%);
+  border-radius: 14px;
+  background: var(--admin-bg-elevated);
+  box-shadow: 0 20px 55px rgb(0 0 0 / 28%);
+}
+
+.chat-error-dialog-header,
+.chat-error-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.chat-error-dialog-header {
+  border-bottom: 1px solid var(--admin-border);
+  color: var(--admin-danger, #ef4444);
+}
+
+.chat-error-dialog-header button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 5px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--admin-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.chat-error-dialog-header button:hover {
+  color: var(--admin-ink);
+  background: var(--admin-bg);
+}
+
+.chat-error-dialog-body {
+  padding: 18px 16px;
+  color: var(--admin-ink);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-error-dialog-actions {
+  justify-content: flex-end;
+  border-top: 1px solid var(--admin-border);
+}
+
 .chat-input-right {
   display: flex;
   align-items: center;
