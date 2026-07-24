@@ -67,6 +67,7 @@ export function useSetupWizard() {
   const installLogs = ref<SetupProgressEvent[]>([]);
   const installError = ref<string | null>(null);
   let cleanupProgress = (() => {}) as () => void;
+  let completionTimer: ReturnType<typeof setTimeout> | null = null;
 
   const showProgressBar = computed(() =>
     ["detailed", "environment", "llm", "ims_bot_adapter", "install", "complete"].includes(step.value),
@@ -152,6 +153,10 @@ export function useSetupWizard() {
     installLogs.value = [];
     installError.value = null;
     cleanupProgress();
+    if (completionTimer !== null) {
+      clearTimeout(completionTimer);
+      completionTimer = null;
+    }
 
     try {
       const res = await setupApi.execute(mode === "detailed" ? {
@@ -172,7 +177,7 @@ export function useSetupWizard() {
         }
         if (event.step === "finished") {
           cleanupProgress();
-          setTimeout(() => {
+          completionTimer = setTimeout(() => {
             step.value = "complete";
           }, 500);
         }
@@ -180,6 +185,20 @@ export function useSetupWizard() {
     } catch (err) {
       installError.value = String(err);
     }
+  }
+
+  function backFromInstallation() {
+    cleanupProgress();
+    cleanupProgress = () => {};
+    if (completionTimer !== null) {
+      clearTimeout(completionTimer);
+      completionTimer = null;
+    }
+    step.value = installationMode.value === "detailed"
+      ? "detailed"
+      : selectedRole.value === "qq_chat_bot"
+        ? "ims_bot_adapter"
+        : "llm";
   }
 
   function finishSetup() {
@@ -206,6 +225,7 @@ export function useSetupWizard() {
     onLlmBack,
     startDetailedInstallation,
     startInstallation,
+    backFromInstallation,
     finishSetup,
   };
 }

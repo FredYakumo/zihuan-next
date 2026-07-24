@@ -12,10 +12,10 @@
         </label>
         <label :class="{ unavailable: !environment.binary_install_available }" :title="environment.binary_install_reason ?? ''">
           <input v-model="selectedInstallOption" type="radio" value="local_binary" :disabled="!environment.binary_install_available" />
-          二进制 <small v-if="!environment.binary_install_available">（本机不支持）</small>
+          native程序 <small v-if="!environment.binary_install_available">（本机不支持）</small>
         </label>
         <label><input v-model="selectedInstallOption" type="radio" value="command_docker" /> 安装命令（Docker）</label>
-        <label><input v-model="selectedInstallOption" type="radio" value="command_binary" /> 安装命令（二进制）</label>
+        <label><input v-model="selectedInstallOption" type="radio" value="command_binary" /> 安装命令（native程序）</label>
       </template>
     </div>
 
@@ -114,6 +114,7 @@ const isLocalInstall = computed(() => selectedInstallOption.value.startsWith("lo
 onMounted(async () => {
   try {
     environment.value = await setupApi.getEnvironment();
+    selectedInstallOption.value = getPreferredInstallOption();
   } catch (error) {
     console.error("Failed to detect setup environment", error);
   } finally {
@@ -125,6 +126,16 @@ watch(selectedInstallOption, (option) => {
   const installMethod: DetailedSetupInstallMethod = option.endsWith("docker") ? "docker" : "binary";
   model.value.install_method = installMethod;
 });
+
+function getPreferredInstallOption(): DetailedInstallOption {
+  if (dockerSupported.value) {
+    return "local_docker";
+  }
+  if (environment.value.binary_install_available) {
+    return "local_binary";
+  }
+  return "command_docker";
+}
 
 function setSearchType(type: "weaviate" | "elasticsearch") {
   model.value.search.type = type;

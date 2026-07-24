@@ -68,6 +68,7 @@
         :error="installError"
         @done="step = 'complete'"
         @retry="startInstallation(installationMode)"
+        @back="backFromInstallation"
       />
 
       <SetupComplete
@@ -112,6 +113,7 @@ const {
   onLlmBack,
   startDetailedInstallation,
   startInstallation,
+  backFromInstallation,
   finishSetup,
 } = useSetupWizard();
 </script>
