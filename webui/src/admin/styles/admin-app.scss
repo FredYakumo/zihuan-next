@@ -74,6 +74,10 @@
   overflow-y: auto;
 }
 
+.admin-content:has(.dashboard-page) {
+  padding: 0;
+}
+
 @media (max-width: 1180px) {
   .admin-content {
     padding: 18px;
