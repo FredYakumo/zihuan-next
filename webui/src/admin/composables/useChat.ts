@@ -57,13 +57,16 @@ type ChatMessage = {
 type ChatImageAttachment = {
   id: string;
   url: string;
+  modelUrl?: string;
   key: string;
+  mediaId: string;
   name: string;
   mimeType: string;
   uploading?: boolean;
   error?: string;
   localPreviewUrl?: string;
 };
+
 type ToolDetail = {
   messageId: string;
   toolCall: ChatToolCall;
@@ -183,6 +186,7 @@ const workspacePath = ref("");
 const pickingDirectory = ref(false);
 const sending = ref(false);
 const chatErrorMessage = ref("");
+const chatErrorDialogMessage = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 const messages = ref<ChatMessage[]>([]);
 const activeToolCallId = ref("");
@@ -248,6 +252,7 @@ const selectedModelLlmConfig = computed(() => {
   }
   return null;
 });
+const supportsMultimodalInput = computed(() => selectedModelLlmConfig.value?.supports_multimodal_input === true);
 const defaultAgentModelId = computed(() => {
   const agent = selectedService.value;
   if (!agent) {
@@ -284,6 +289,7 @@ const canSend = computed(() =>
   isChatEligible.value &&
   selectedService.value.runtime.status === "running" &&
   (draftMessage.value.trim().length > 0 || draftImageAttachments.value.length > 0) &&
+  (supportsMultimodalInput.value || draftImageAttachments.value.length === 0) &&
   draftImageAttachments.value.every((attachment) => !attachment.uploading && !attachment.error),
 );
 const selectedAgentAvatarUrl = computed(() => agentAvatarUrl(selectedService.value));
@@ -390,9 +396,9 @@ function imageAttachmentToPart(attachment: ChatImageAttachment): ChatMessagePart
   return {
     type: "image",
     media: {
-      media_id: attachment.key,
+      media_id: attachment.mediaId,
       source: "upload",
-      original_source: attachment.url,
+      original_source: attachment.modelUrl ?? attachment.url,
       rustfs_path: "",
       name: attachment.name,
       mime_type: attachment.mimeType,
@@ -413,6 +419,7 @@ function imageAttachmentsFromParts(parts: ChatMessagePart[] | undefined): ChatIm
       id: part.media.media_id || `history-image-${index}-${url}`,
       url,
       key: part.media.media_id,
+      mediaId: part.media.media_id,
       name: part.media.name || "图片",
       mimeType: part.media.mime_type || "image/*",
     }];
@@ -601,6 +608,15 @@ function clearChatError() {
   chatErrorMessage.value = "";
 }
 
+function showChatError(message: string) {
+  chatErrorMessage.value = message;
+  chatErrorDialogMessage.value = message;
+}
+
+function closeChatErrorDialog() {
+  chatErrorDialogMessage.value = "";
+}
+
 function handleTextareaKeydown(event: KeyboardEvent) {
   if (event.key !== "Enter") {
     return;
@@ -621,6 +637,10 @@ function handleTextareaPaste(event: ClipboardEvent) {
     return;
   }
   event.preventDefault();
+  if (!supportsMultimodalInput.value) {
+    showChatError("当前模型不支持多模态输入，无法添加图片。");
+    return;
+  }
   addImageFiles(files);
 }
 
@@ -633,6 +653,10 @@ function handleImageFileSelection(event: Event) {
 }
 
 function addImageFiles(files: File[]) {
+  if (!supportsMultimodalInput.value) {
+    showChatError("当前模型不支持多模态输入，无法添加图片。");
+    return;
+  }
   for (const file of files) {
     if (!file.type.startsWith("image/")) {
       continue;
@@ -641,6 +665,7 @@ function addImageFiles(files: File[]) {
       id: crypto.randomUUID(),
       url: URL.createObjectURL(file),
       key: "",
+      mediaId: "",
       name: file.name || "图片",
       mimeType: file.type,
       uploading: true,
@@ -648,7 +673,10 @@ function addImageFiles(files: File[]) {
     attachment.localPreviewUrl = attachment.url;
     draftImageAttachments.value.push(attachment);
     void fileIO.uploadImage(file)
-      .then((uploaded) => {
+      .then(async (uploaded) => {
+        const modelUrl = uploaded.url.startsWith("http://") || uploaded.url.startsWith("https://")
+          ? uploaded.url
+          : await readImageAsDataUrl(file);
         const current = draftImageAttachments.value.find((item) => item.id === attachment.id);
         if (!current) {
           return;
@@ -657,7 +685,9 @@ function addImageFiles(files: File[]) {
           URL.revokeObjectURL(current.localPreviewUrl);
         }
         current.url = uploaded.url;
+        current.modelUrl = modelUrl;
         current.key = uploaded.key;
+        current.mediaId = uploaded.media_id;
         current.name = uploaded.name;
         current.uploading = false;
         current.localPreviewUrl = undefined;
@@ -667,9 +697,19 @@ function addImageFiles(files: File[]) {
         if (current) {
           current.uploading = false;
           current.error = `上传失败: ${error.message}`;
+          showChatError(current.error);
         }
       });
   }
+}
+
+function readImageAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("读取图片失败"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function removeDraftImageAttachment(id: string) {
@@ -735,7 +775,7 @@ function pruneFailedAssistantPlaceholder(assistantMessageId: string | null) {
 
 function applyInferenceFailure(streamState: StreamState, errorMessage: string) {
   pruneFailedAssistantPlaceholder(streamState.assistantMessageId);
-  chatErrorMessage.value = `推理失败: ${errorMessage}`;
+  showChatError(`推理失败: ${errorMessage}`);
   if (!draftMessage.value.trim()) {
     draftMessage.value = streamState.requestText;
   }
@@ -1019,6 +1059,10 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
   }
 
   const userText = rawInput.trim();
+  if (!fromAskUser && draftImageAttachments.value.length > 0 && !supportsMultimodalInput.value) {
+    showChatError("当前模型不支持多模态输入，无法发送图片。");
+    return;
+  }
   if (!userText && (!fromAskUser && draftImageAttachments.value.length === 0)) {
     return;
   }
@@ -1178,6 +1222,7 @@ onUnmounted(() => {
     pickingDirectory,
     sending,
     chatErrorMessage,
+    chatErrorDialogMessage,
     messagesContainer,
     messages,
     activeToolCallId,
@@ -1196,6 +1241,7 @@ onUnmounted(() => {
     groupedSessions,
     chatModels,
     selectedModelLlmConfig,
+    supportsMultimodalInput,
     defaultAgentModelId,
     selectedModelLabel,
     selectedThinkingLabel,
@@ -1230,6 +1276,7 @@ onUnmounted(() => {
     renderMessageContent,
     scrollToBottom,
     clearChatError,
+    closeChatErrorDialog,
     handleTextareaKeydown,
     handleTextareaPaste,
     handleImageFileSelection,

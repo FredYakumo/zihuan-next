@@ -593,7 +593,11 @@ impl LLMAPI {
                 status,
                 string_utils::shorten_text(&body, 800)
             );
-            return LLMMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
+            let provider_message = serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|value| value.pointer("/error/message").and_then(|message| message.as_str()).map(str::to_owned))
+                .unwrap_or_else(|| USER_VISIBLE_REQUEST_ERROR.to_string());
+            return LLMMessage::assistant_text(format!("Error: LLM API request failed ({status}): {provider_message}"));
         }
 
         let message = match self.uses_responses_api() {
