@@ -15,6 +15,8 @@ use zihuan_graph_engine::data_value::RedisConfig;
 
 use ims_bot_adapter::adapter::SharedBotAdapter;
 
+use crate::agent::qq_chat::model::inner;
+
 use super::model::QqChatAgentService;
 
 const DEFAULT_CONSUMER_COUNT: usize = 8;
@@ -180,15 +182,10 @@ impl QqChatAgentServiceInbox {
     }
 
     pub fn spawn_consumers(&self, tasks: &mut JoinSet<QqChatAgentServiceSupervisorEvent>) {
-        if self.inner.redis_ref.is_some() {
+        if let Some(redis_ref) = self.inner.redis_ref.as_ref() {
             for consumer_idx in 0..self.inner.consumer_count {
                 let inbox = self.clone();
-                let redis_blpop = self
-                    .inner
-                    .redis_ref
-                    .as_ref()
-                    .map(|redis_ref| RedisBlockingPopConnection::new(Arc::clone(redis_ref)))
-                    .expect("redis consumer requires redis_ref");
+                let redis_blpop = RedisBlockingPopConnection::new(Arc::clone(redis_ref));
                 tasks.spawn(async move {
                     inbox.run_redis_consumer(consumer_idx, redis_blpop).await;
                     QqChatAgentServiceSupervisorEvent::RedisConsumerFinished
@@ -196,6 +193,8 @@ impl QqChatAgentServiceInbox {
             }
         }
 
+        // Redis enqueue failures fall back to the memory queue, 
+        //memory consumers are always required.
         for consumer_idx in 0..self.inner.consumer_count {
             let inbox = self.clone();
             tasks.spawn(async move {
@@ -280,6 +279,9 @@ impl QqChatAgentServiceInbox {
         }))
     }
 
+    /// Processes one message on a blocking thread so synchronous agent logic does not block the Tokio runtime.
+    ///
+    /// Logs both message-handling errors and blocking-task join errors to distinguish their sources.
     async fn process_item(&self, item: QqChatAgentServiceInboxItem) {
         let service = Arc::clone(&self.inner.service);
         let event = item.event;
