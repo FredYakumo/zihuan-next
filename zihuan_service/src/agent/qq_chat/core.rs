@@ -758,18 +758,6 @@ impl LongTaskNotifier for QqLongTaskNotifier {
     }
 }
 
-fn extract_tavily_link(item: &str) -> Option<String> {
-    item.lines().find_map(|line| {
-        let trimmed = line.trim();
-        trimmed
-            .strip_prefix("Link:")
-            .or_else(|| trimmed.strip_prefix("链接:"))
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
-    })
-}
-
 impl QqChatAgentServiceInner {
     pub fn new(id: impl Into<String>) -> Self {
         Self {
