@@ -26,7 +26,9 @@ use self::core::{
 use self::ignore_store::should_ignore_message_blocking;
 use self::inbox::QqChatAgentServiceInbox;
 use self::language_style_store::get_applicable_language_style_blocking;
-use self::message_rate_limit_store::{consume_message_rate_limit_blocking, MessageRateLimitBlockAction};
+use self::message_rate_limit_store::{
+    consume_message_rate_limit_blocking, MessageRateLimitBlockAction, MESSAGE_RATE_LIMIT_BLOCKED_REPLY,
+};
 use self::model::{
     QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatAgentServiceRuntimeConfig,
     QqChatServiceReplyBatchBuilder, QqInferenceToolProvider, QqLoadedInferenceResources,
@@ -693,7 +695,7 @@ impl QqChatAgentServiceInner {
                         let bot_id = get_bot_id(ctx.adapter);
                         let blocked_reply = rate_limit_result
                             .blocked_reply
-                            .unwrap_or_else(|| "你已经达到 rate limit 了，请待会再找我。".to_string());
+                            .unwrap_or_else(|| MESSAGE_RATE_LIMIT_BLOCKED_REPLY.to_string());
                         let mention_target_id =
                             (is_group && rate_limit_result.mention_sender_on_block).then_some(sender_id.as_str());
                         send_direct_notification_text_reply(
