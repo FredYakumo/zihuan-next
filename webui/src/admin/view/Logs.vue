@@ -1,11 +1,10 @@
 <template>
   <section class="page">
-    <div class="page-hero">
-      <h2>日志</h2>
-      <button class="btn ghost" @click="clearLogs">清除</button>
-    </div>
+    <AdminPageHeader title="日志">
+      <t-button variant="outline" @click="clearLogs">清除</t-button>
+    </AdminPageHeader>
 
-    <section class="panel">
+    <t-card bordered>
       <div ref="bodyEl" class="task-terminal-body log-page-body">
         <div v-if="logs.length === 0" class="task-terminal-hint">等待日志输出…</div>
         <div
@@ -19,13 +18,14 @@
           <span class="task-terminal-msg">{{ entry.message }}</span>
         </div>
       </div>
-    </section>
+    </t-card>
   </section>
 </template>
 
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
+import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { clearLogs, enterLogsPage, leaveLogsPage, logLevelClass, logs } from "../state/logStream";
 
 const bodyEl = ref<HTMLElement | null>(null);

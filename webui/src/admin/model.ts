@@ -1342,6 +1342,14 @@ export function statusTone(status: string): string {
   }
 }
 
+export function statusTagTheme(status: string): "success" | "warning" | "danger" | "default" {
+  const tone = statusTone(status);
+  if (tone === "running" || tone === "success") return "success";
+  if (tone === "starting") return "warning";
+  if (tone === "error") return "danger";
+  return "default";
+}
+
 export function getAvatarDisplayUrl(avatarUrl: string): string {
   if (!avatarUrl) {
     return "";

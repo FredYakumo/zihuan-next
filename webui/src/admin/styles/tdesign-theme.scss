@@ -1,0 +1,20 @@
+// Bridges TDesign's own design tokens onto this project's existing theme
+// variables (see webui/src/ui/theme.ts), instead of hardcoding colors, so
+// every custom theme automatically gets a matching TDesign brand color.
+
+:root {
+  --td-radius-small: 2px;
+  --td-radius-default: 2px;
+  --td-radius-medium: 2px;
+  --td-radius-large: 2px;
+  // --td-radius-round / --td-radius-circle intentionally left untouched:
+  // avatars and pill badges should stay circular/rounded.
+
+  --td-brand-color: var(--admin-accent);
+  --td-brand-color-hover: color-mix(in srgb, var(--admin-accent) 82%, white 18%);
+  --td-brand-color-active: color-mix(in srgb, var(--admin-accent) 82%, black 18%);
+  --td-brand-color-focus: color-mix(in srgb, var(--admin-accent) 16%, transparent 84%);
+  --td-brand-color-light: color-mix(in srgb, var(--admin-accent) 10%, transparent 90%);
+  --td-brand-color-light-hover: color-mix(in srgb, var(--admin-accent) 18%, transparent 82%);
+  --td-brand-color-disabled: color-mix(in srgb, var(--admin-accent) 40%, transparent 60%);
+}

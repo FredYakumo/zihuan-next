@@ -1,23 +1,17 @@
 <template>
   <section class="page">
-    <div class="page-hero">
-      <h2>节点图与工作流</h2>
-      <div class="hero-actions connection-hero-actions">
-        <a class="btn primary" href="/editor">打开编辑器</a>
-        <a class="btn" href="/editor">新建空白节点图</a>
-      </div>
-    </div>
+    <AdminPageHeader title="节点图与工作流">
+      <t-button tag="a" href="/editor" theme="primary">打开编辑器</t-button>
+      <t-button tag="a" href="/editor" variant="outline">新建空白节点图</t-button>
+    </AdminPageHeader>
 
     <div class="grid-2">
-      <section class="panel">
-        <div class="split-header">
-          <div>
-            <h3>工作流集</h3>
-          </div>
-          <button class="btn ghost" @click="load">刷新</button>
-        </div>
-        <div class="list" style="margin-top: 12px;">
-          <div v-if="workflows.length === 0" class="empty-state">还没有工作流集。</div>
+      <t-card title="工作流集" bordered header-bordered>
+        <template #actions>
+          <t-button variant="text" @click="load">刷新</t-button>
+        </template>
+        <div v-if="workflows.length === 0" class="empty-state">还没有工作流集。</div>
+        <div v-else class="list">
           <article v-for="workflow in workflows" :key="workflow.file" class="record">
             <div class="split-header">
               <div>
@@ -27,21 +21,18 @@
                   <span v-if="workflow.version">v{{ workflow.version }}</span>
                 </div>
               </div>
-              <a class="btn" :href="`/editor?workflow=${encodeURIComponent(workflow.name)}`">在编辑器打开</a>
+              <t-button tag="a" :href="`/editor?workflow=${encodeURIComponent(workflow.name)}`" variant="outline" size="small">
+                在编辑器打开
+              </t-button>
             </div>
             <p v-if="workflow.description" class="muted" style="margin-top: 10px;">{{ workflow.description }}</p>
           </article>
         </div>
-      </section>
+      </t-card>
 
-      <section class="panel">
-        <div class="split-header">
-          <div>
-            <h3>当前图会话</h3>
-          </div>
-        </div>
-        <div class="list" style="margin-top: 12px;">
-          <div v-if="graphs.length === 0" class="empty-state">当前没有图会话。</div>
+      <t-card title="当前图会话" bordered header-bordered>
+        <div v-if="graphs.length === 0" class="empty-state">当前没有图会话。</div>
+        <div v-else class="list">
           <article v-for="graph in graphs" :key="graph.id" class="record">
             <h4>{{ graph.name }}</h4>
             <div class="record-meta">
@@ -51,11 +42,12 @@
             </div>
           </article>
         </div>
-      </section>
+      </t-card>
     </div>
   </section>
 </template>
 <script setup lang="ts">
+import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useGraphs } from "../composables/useGraphs";
 
 const { workflows, graphs, load } = useGraphs();
