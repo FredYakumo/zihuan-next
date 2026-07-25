@@ -316,19 +316,19 @@ fn load_qq_resources(
 
 /// Purpose: Bootstrap and launch a long-running QQ Chat Agent Service instance.
 ///
-/// Resolves all runtime dependencies (`llm`, `embedding_model`, `tavily`, `s3_ref`,
-/// `rdb_pool`, `weaviate_image_ref`), wires the IMS bot adapter event handler
+/// Resolves all runtime dependencies (llm, embedding_model, tavily, s3_ref,
+/// rdb_pool, weaviate_image_ref), wires the IMS bot adapter event handler
 /// through an inbox queue, then spawns a background task that runs the
-/// `BotAdapter::start` loop until exit.
+/// BotAdapter::start loop until exit.
 ///
 /// Called when the service layer starts an agent whose type is QQ chat —
-/// typically from `AgentManager::start_agent` after validating the agent config.
+/// typically from AgentManager::start_agent after validating the agent config.
 ///
 /// Call chain:
-///   `AgentManager::start_agent` → `QqChatAgentService::spawn`
-///     → build deps → register `EventHandler` on bot adapter
-///     → `tokio::spawn`(`BotAdapter::start`) → `handle_event` per incoming message
-///     → `on_finish` callback on exit
+///   AgentManager::start_agent -> QqChatAgentService::spawn
+///     -> build deps -> register EventHandler on bot adapter
+///     -> tokio::spawn(BotAdapter::start) -> handle_event per incoming message
+///     -> on_finish callback on exit
 pub async fn spawn(
     manager: &AgentManager,
     agent: AgentConfig,
