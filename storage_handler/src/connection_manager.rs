@@ -229,6 +229,7 @@ impl RuntimeStorageConnectionManager {
                     weaviate.username.clone(),
                     weaviate.password.clone(),
                     weaviate.api_key.clone(),
+                    weaviate.auth_method,
                     weaviate.collection_schema,
                 )?;
                 (StorageRuntimePayload::Weaviate(weaviate_ref), "weaviate".to_string(), None)

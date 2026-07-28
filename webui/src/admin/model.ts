@@ -3,6 +3,7 @@ import type {
   ServiceToolConfig,
   ServiceWithRuntime,
   ConnectionConfig,
+  ConnectionAuthMethod,
   LlmConfig,
   ModelRefSpec,
   LlmServiceConfig,
@@ -63,12 +64,14 @@ export interface ConnectionFormState {
   weaviate_username: string;
   weaviate_password: string;
   weaviate_api_key: string;
+  weaviate_auth_method: ConnectionAuthMethod;
   weaviate_collection_schema: WeaviateCollectionSchema;
   elasticsearch_base_url: string;
   elasticsearch_index_name: string;
   elasticsearch_username: string;
   elasticsearch_password: string;
   elasticsearch_api_key: string;
+  elasticsearch_auth_method: ConnectionAuthMethod;
   elasticsearch_collection_schema: WeaviateCollectionSchema;
   elasticsearch_vector_dimensions: number;
   rustfs_endpoint: string;
@@ -367,12 +370,14 @@ export function defaultConnectionForm(): ConnectionFormState {
     weaviate_username: "",
     weaviate_password: "",
     weaviate_api_key: "",
+    weaviate_auth_method: "api_key",
     weaviate_collection_schema: "agent_memory",
     elasticsearch_base_url: "",
     elasticsearch_index_name: "",
     elasticsearch_username: "",
     elasticsearch_password: "",
     elasticsearch_api_key: "",
+    elasticsearch_auth_method: "api_key",
     elasticsearch_collection_schema: "agent_memory",
     elasticsearch_vector_dimensions: 1024,
     rustfs_endpoint: "",
@@ -570,6 +575,16 @@ export function connectionFormFromConfig(
       form.weaviate_username = String(connection.kind.username ?? "");
       form.weaviate_password = String(connection.kind.password ?? "");
       form.weaviate_api_key = String(connection.kind.api_key ?? "");
+      form.weaviate_auth_method = connection.kind.auth_method === "password"
+        || (!connection.kind.auth_method && !form.weaviate_api_key && (form.weaviate_username || form.weaviate_password))
+        ? "password"
+        : "api_key";
+      if (form.weaviate_auth_method === "password") {
+        form.weaviate_api_key = "";
+      } else {
+        form.weaviate_username = "";
+        form.weaviate_password = "";
+      }
       form.weaviate_collection_schema = String(
         connection.kind.collection_schema ?? "agent_memory",
       ) as WeaviateCollectionSchema;
@@ -580,6 +595,16 @@ export function connectionFormFromConfig(
       form.elasticsearch_username = String(connection.kind.username ?? "");
       form.elasticsearch_password = String(connection.kind.password ?? "");
       form.elasticsearch_api_key = String(connection.kind.api_key ?? "");
+      form.elasticsearch_auth_method = connection.kind.auth_method === "password"
+        || (!connection.kind.auth_method && !form.elasticsearch_api_key && (form.elasticsearch_username || form.elasticsearch_password))
+        ? "password"
+        : "api_key";
+      if (form.elasticsearch_auth_method === "password") {
+        form.elasticsearch_api_key = "";
+      } else {
+        form.elasticsearch_username = "";
+        form.elasticsearch_password = "";
+      }
       form.elasticsearch_collection_schema = String(connection.kind.collection_schema ?? "agent_memory") as WeaviateCollectionSchema;
       form.elasticsearch_vector_dimensions = Number(connection.kind.vector_dimensions ?? 1024);
       break;
@@ -693,9 +718,10 @@ export function buildConnectionPayload(form: ConnectionFormState): {
         type: "weaviate",
         base_url: form.weaviate_base_url.trim(),
         class_name: form.weaviate_class_name.trim(),
-        username: form.weaviate_username.trim() || null,
-        password: form.weaviate_password.trim() || null,
-        api_key: form.weaviate_api_key.trim() || null,
+        username: form.weaviate_auth_method === "password" ? form.weaviate_username.trim() || null : null,
+        password: form.weaviate_auth_method === "password" ? form.weaviate_password.trim() || null : null,
+        api_key: form.weaviate_auth_method === "api_key" ? form.weaviate_api_key.trim() || null : null,
+        auth_method: form.weaviate_auth_method,
         collection_schema: form.weaviate_collection_schema,
       };
       break;
@@ -704,9 +730,10 @@ export function buildConnectionPayload(form: ConnectionFormState): {
         type: "elasticsearch",
         base_url: form.elasticsearch_base_url.trim(),
         index_name: form.elasticsearch_index_name.trim(),
-        username: form.elasticsearch_username.trim() || null,
-        password: form.elasticsearch_password.trim() || null,
-        api_key: form.elasticsearch_api_key.trim() || null,
+        username: form.elasticsearch_auth_method === "password" ? form.elasticsearch_username.trim() || null : null,
+        password: form.elasticsearch_auth_method === "password" ? form.elasticsearch_password.trim() || null : null,
+        api_key: form.elasticsearch_auth_method === "api_key" ? form.elasticsearch_api_key.trim() || null : null,
+        auth_method: form.elasticsearch_auth_method,
         collection_schema: form.elasticsearch_collection_schema,
         vector_dimensions: form.elasticsearch_vector_dimensions,
       };

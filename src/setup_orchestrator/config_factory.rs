@@ -9,7 +9,8 @@ use model_inference::system_config::{
     WorkspaceAgentServiceConfig,
 };
 use storage_handler::{
-    ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection, SqliteConnection, WeaviateConnection,
+    ConnectionAuthMethod, ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection, SqliteConnection,
+    WeaviateConnection,
     WebSearchEngineConnection,
 };
 use zihuan_core::agent_config::qq_chat::QqChatAgentServiceConfig;
@@ -63,7 +64,8 @@ pub async fn create_qq_bot_stack(
             class_name: "ImageSemantic".to_string(),
             username: None,
             password: None,
-            api_key: None,
+            api_key: Some("zihuan-weaviate-api-key".to_string()),
+            auth_method: ConnectionAuthMethod::ApiKey,
             collection_schema: WeaviateCollectionSchema::ImageSemantic,
         }),
     );
@@ -77,7 +79,8 @@ pub async fn create_qq_bot_stack(
             class_name: "AgentMemory".to_string(),
             username: None,
             password: None,
-            api_key: None,
+            api_key: Some("zihuan-weaviate-api-key".to_string()),
+            auth_method: ConnectionAuthMethod::ApiKey,
             collection_schema: WeaviateCollectionSchema::AgentMemory,
         }),
     );

@@ -5,7 +5,7 @@ use zihuan_core::weaviate::{WeaviateCollectionSchema, WeaviateRef};
 use zihuan_graph_engine::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
 use crate::weaviate_schema::ensure_collection_schema;
-use crate::RuntimeStorageConnectionManager;
+use crate::{validate_connection_authentication, ConnectionAuthMethod, RuntimeStorageConnectionManager};
 
 const CONFIG_ID_FIELD: &str = "config_id";
 const LEGACY_CONNECTION_ID_FIELD: &str = "connection_id";
@@ -16,8 +16,16 @@ pub fn build_weaviate_ref(
     username: Option<String>,
     password: Option<String>,
     api_key: Option<String>,
+    auth_method: ConnectionAuthMethod,
     collection_schema: WeaviateCollectionSchema,
 ) -> Result<Arc<WeaviateRef>> {
+    validate_connection_authentication(
+        auth_method,
+        username.as_deref(),
+        password.as_deref(),
+        api_key.as_deref(),
+        "weaviate",
+    )?;
     let weaviate_ref = Arc::new(WeaviateRef::new(
         base_url,
         class_name,

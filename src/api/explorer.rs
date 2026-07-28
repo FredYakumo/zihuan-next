@@ -575,6 +575,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         weaviate.username.clone(),
         weaviate.password.clone(),
         weaviate.api_key.clone(),
+        weaviate.auth_method,
         collection_schema,
     ) {
         Ok(weaviate_ref) => weaviate_ref,
@@ -926,6 +927,7 @@ fn resolve_agent_memory_weaviate_ref(
         weaviate.username.clone(),
         weaviate.password.clone(),
         weaviate.api_key.clone(),
+        weaviate.auth_method,
         weaviate.collection_schema,
     )?;
     Ok(weaviate_ref)

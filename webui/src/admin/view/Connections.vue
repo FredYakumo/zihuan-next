@@ -94,17 +94,20 @@
                 <label>Class Name</label>
                 <input v-model="form.weaviate_class_name" />
               </div>
-              <div class="field">
+              <div v-if="form.weaviate_auth_method === 'password'" class="field">
                 <label>用户名（可选）</label>
-                <input v-model="form.weaviate_username" placeholder="可选" />
+                <input v-model="form.weaviate_username" />
               </div>
               <div class="field">
-                <label>密码（可选）</label>
-                <input v-model="form.weaviate_password" type="password" placeholder="可选" />
-              </div>
-              <div class="field-full">
-                <label>API Key（可选）</label>
-                <input v-model="form.weaviate_api_key" type="password" placeholder="可选" />
+                <label>认证</label>
+                <div class="credential-auth-field">
+                  <select v-model="form.weaviate_auth_method" @change="clearInactiveConnectionCredentials('weaviate')">
+                    <option value="password">密码</option>
+                    <option value="api_key">API Key</option>
+                  </select>
+                  <input v-if="form.weaviate_auth_method === 'password'" v-model="form.weaviate_password" type="password" placeholder="密码" />
+                  <input v-else v-model="form.weaviate_api_key" type="password" placeholder="API Key" />
+                </div>
               </div>
               <div class="field-full">
                 <label>Collection Schema</label>
@@ -118,9 +121,8 @@
             <template v-else-if="form.type === 'elasticsearch'">
               <div class="field"><label>Base URL</label><input v-model="form.elasticsearch_base_url" placeholder="https://localhost:9200" /></div>
               <div class="field"><label>Index Name</label><input v-model="form.elasticsearch_index_name" /></div>
-              <div class="field"><label>用户名（可选）</label><input v-model="form.elasticsearch_username" /></div>
-              <div class="field"><label>密码（可选）</label><input v-model="form.elasticsearch_password" type="password" /></div>
-              <div class="field-full"><label>API Key（优先，可选）</label><input v-model="form.elasticsearch_api_key" type="password" /></div>
+              <div v-if="form.elasticsearch_auth_method === 'password'" class="field"><label>用户名</label><input v-model="form.elasticsearch_username" /></div>
+              <div class="field"><label>认证</label><div class="credential-auth-field"><select v-model="form.elasticsearch_auth_method" @change="clearInactiveConnectionCredentials('elasticsearch')"><option value="password">密码</option><option value="api_key">API Key</option></select><input v-if="form.elasticsearch_auth_method === 'password'" v-model="form.elasticsearch_password" type="password" placeholder="密码" /><input v-else v-model="form.elasticsearch_api_key" type="password" placeholder="API Key" /></div></div>
               <div class="field"><label>索引用途</label><select v-model="form.elasticsearch_collection_schema"><option value="agent_memory">Agent 记忆</option><option value="image_semantic">图片语义</option></select></div>
               <div class="field"><label>向量维度</label><input v-model.number="form.elasticsearch_vector_dimensions" type="number" min="1" step="1" /></div>
             </template>
@@ -294,17 +296,20 @@
                   <strong>Class</strong>
                   <input v-model="form.weaviate_class_name" class="connection-card-inline-input" />
                 </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>用户名（可选）</strong>
+                <div v-if="form.weaviate_auth_method === 'password'" class="key-value connection-card-edit-row">
+                  <strong>用户名</strong>
                   <input v-model="form.weaviate_username" class="connection-card-inline-input" />
                 </div>
                 <div class="key-value connection-card-edit-row">
-                  <strong>密码（可选）</strong>
-                  <input v-model="form.weaviate_password" class="connection-card-inline-input" type="password" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>API Key（可选）</strong>
-                  <input v-model="form.weaviate_api_key" class="connection-card-inline-input" type="password" placeholder="可选" />
+                  <strong>认证</strong>
+                  <div class="credential-auth-field">
+                    <select v-model="form.weaviate_auth_method" class="connection-card-inline-input" @change="clearInactiveConnectionCredentials('weaviate')">
+                      <option value="password">密码</option>
+                      <option value="api_key">API Key</option>
+                    </select>
+                    <input v-if="form.weaviate_auth_method === 'password'" v-model="form.weaviate_password" class="connection-card-inline-input" type="password" placeholder="密码" />
+                    <input v-else v-model="form.weaviate_api_key" class="connection-card-inline-input" type="password" placeholder="API Key" />
+                  </div>
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Schema</strong>
@@ -313,6 +318,15 @@
                     <option value="agent_memory">Agent 记忆</option>
                   </select>
                 </div>
+              </template>
+
+              <template v-else-if="form.type === 'elasticsearch'">
+                <div class="key-value connection-card-edit-row"><strong>Base URL</strong><input v-model="form.elasticsearch_base_url" class="connection-card-inline-input" /></div>
+                <div class="key-value connection-card-edit-row"><strong>Index</strong><input v-model="form.elasticsearch_index_name" class="connection-card-inline-input" /></div>
+                <div v-if="form.elasticsearch_auth_method === 'password'" class="key-value connection-card-edit-row"><strong>用户名</strong><input v-model="form.elasticsearch_username" class="connection-card-inline-input" /></div>
+                <div class="key-value connection-card-edit-row"><strong>认证</strong><div class="credential-auth-field"><select v-model="form.elasticsearch_auth_method" class="connection-card-inline-input" @change="clearInactiveConnectionCredentials('elasticsearch')"><option value="password">密码</option><option value="api_key">API Key</option></select><input v-if="form.elasticsearch_auth_method === 'password'" v-model="form.elasticsearch_password" class="connection-card-inline-input" type="password" placeholder="密码" /><input v-else v-model="form.elasticsearch_api_key" class="connection-card-inline-input" type="password" placeholder="API Key" /></div></div>
+                <div class="key-value connection-card-edit-row"><strong>Schema</strong><select v-model="form.elasticsearch_collection_schema" class="connection-card-inline-input"><option value="agent_memory">Agent 记忆</option><option value="image_semantic">图片语义</option></select></div>
+                <div class="key-value connection-card-edit-row"><strong>向量维度</strong><input v-model.number="form.elasticsearch_vector_dimensions" class="connection-card-inline-input" type="number" min="1" step="1" /></div>
               </template>
 
               <template v-else-if="form.type === 'rustfs'">
@@ -464,4 +478,12 @@ const {
 
 <style scoped lang="scss">
 @use "../styles/connections" as *;
+
+.credential-auth-field {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+
 </style>

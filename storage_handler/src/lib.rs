@@ -117,6 +117,19 @@ pub struct RedisConnection {
     pub password: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionAuthMethod {
+    Password,
+    ApiKey,
+}
+
+impl Default for ConnectionAuthMethod {
+    fn default() -> Self {
+        Self::ApiKey
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeaviateConnection {
     pub base_url: String,
@@ -127,6 +140,8 @@ pub struct WeaviateConnection {
     pub password: Option<String>,
     #[serde(default)]
     pub api_key: Option<String>,
+    #[serde(default)]
+    pub auth_method: ConnectionAuthMethod,
     pub collection_schema: WeaviateCollectionSchema,
 }
 
@@ -140,8 +155,50 @@ pub struct ElasticsearchConnection {
     pub password: Option<String>,
     #[serde(default)]
     pub api_key: Option<String>,
+    #[serde(default)]
+    pub auth_method: ConnectionAuthMethod,
     pub collection_schema: WeaviateCollectionSchema,
     pub vector_dimensions: usize,
+}
+
+pub fn validate_connection_authentication(
+    auth_method: ConnectionAuthMethod,
+    username: Option<&str>,
+    password: Option<&str>,
+    api_key: Option<&str>,
+    connection_type: &str,
+) -> Result<()> {
+    let username = username.map(str::trim).filter(|value| !value.is_empty());
+    let password = password.map(str::trim).filter(|value| !value.is_empty());
+    let api_key = api_key.map(str::trim).filter(|value| !value.is_empty());
+
+    match auth_method {
+        ConnectionAuthMethod::Password => {
+            if username.is_none() || password.is_none() {
+                return Err(zihuan_core::string_error!(
+                    "{connection_type} username and password are required when auth_method is password"
+                ));
+            }
+            if api_key.is_some() {
+                return Err(zihuan_core::string_error!(
+                    "{connection_type} api_key must be empty when auth_method is password"
+                ));
+            }
+        }
+        ConnectionAuthMethod::ApiKey => {
+            if api_key.is_none() {
+                return Err(zihuan_core::string_error!(
+                    "{connection_type} api_key is required when auth_method is api_key"
+                ));
+            }
+            if username.is_some() || password.is_some() {
+                return Err(zihuan_core::string_error!(
+                    "{connection_type} username and password must be empty when auth_method is api_key"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -262,8 +319,24 @@ impl ConfigRecord for ConnectionConfig {
             }
         }
         if let ConnectionKind::Elasticsearch(elasticsearch) = &self.kind {
+            validate_connection_authentication(
+                elasticsearch.auth_method,
+                elasticsearch.username.as_deref(),
+                elasticsearch.password.as_deref(),
+                elasticsearch.api_key.as_deref(),
+                "elasticsearch",
+            )?;
             let reference = crate::ElasticsearchRef::new(elasticsearch.clone())?;
             let _ = reference;
+        }
+        if let ConnectionKind::Weaviate(weaviate) = &self.kind {
+            validate_connection_authentication(
+                weaviate.auth_method,
+                weaviate.username.as_deref(),
+                weaviate.password.as_deref(),
+                weaviate.api_key.as_deref(),
+                "weaviate",
+            )?;
         }
         Ok(())
     }
@@ -293,14 +366,18 @@ pub fn load_connections() -> Result<Vec<ConnectionConfig>> {
         })
         .collect::<Result<Vec<_>>>()?;
     for connection in migrated {
-        center.upsert_config(connection_to_record(&connection)?)?;
+        center.upsert_config(StoredConfigRecord {
+            config_id: connection.canonical_config_id().to_string(),
+            kind: connection.kind(),
+            name: connection.name.clone(),
+            enabled: connection.enabled,
+            updated_at: connection.updated_at.clone(),
+            spec: serde_json::to_value(&connection.kind)?,
+        })?;
         info!(
-            "[config_center] migrated weaviate connection config_id={} collection_schema={:?}",
+            "[config_center] migrated connection config_id={} kind={:?}",
             connection.canonical_config_id(),
-            match &connection.kind {
-                ConnectionKind::Weaviate(weaviate) => Some(weaviate.collection_schema),
-                _ => None,
-            }
+            connection.kind(),
         );
     }
     for connection in &connections {
@@ -390,23 +467,53 @@ fn connection_from_record(record: StoredConfigRecord) -> Result<(ConnectionConfi
 }
 
 fn migrate_connection_spec(record: &StoredConfigRecord) -> (Value, bool) {
-    if record.kind != ConfigKind::ConnectionWeaviate {
+    if record.kind != ConfigKind::ConnectionWeaviate && record.kind != ConfigKind::ConnectionElasticsearch {
         return (record.spec.clone(), false);
     }
     let mut spec = record.spec.clone();
     let Some(object) = spec.as_object_mut() else {
         return (spec, false);
     };
-    if object.contains_key("collection_schema") {
-        return (spec, false);
+    let mut migrated = false;
+    if record.kind == ConfigKind::ConnectionWeaviate && !object.contains_key("collection_schema") {
+        let class_name = object.get("class_name").and_then(Value::as_str).unwrap_or_default();
+        let inferred = infer_weaviate_collection_schema(&record.name, class_name);
+        object.insert(
+            "collection_schema".to_string(),
+            serde_json::to_value(inferred).unwrap_or_else(|_| Value::String("agent_memory".to_string())),
+        );
+        migrated = true;
     }
-    let class_name = object.get("class_name").and_then(Value::as_str).unwrap_or_default();
-    let inferred = infer_weaviate_collection_schema(&record.name, class_name);
-    object.insert(
-        "collection_schema".to_string(),
-        serde_json::to_value(inferred).unwrap_or_else(|_| Value::String("agent_memory".to_string())),
-    );
-    (spec, true)
+    if !object.contains_key("auth_method") {
+        let api_key = object.get("api_key").and_then(Value::as_str).is_some_and(|value| !value.trim().is_empty());
+        let has_password_credentials = object
+            .get("username")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+            || object
+                .get("password")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty());
+        let auth_method = if api_key {
+            object.insert("username".to_string(), Value::Null);
+            object.insert("password".to_string(), Value::Null);
+            ConnectionAuthMethod::ApiKey
+        } else if has_password_credentials {
+            object.insert("api_key".to_string(), Value::Null);
+            ConnectionAuthMethod::Password
+        } else {
+            object.insert("username".to_string(), Value::Null);
+            object.insert("password".to_string(), Value::Null);
+            object.insert("api_key".to_string(), Value::Null);
+            ConnectionAuthMethod::ApiKey
+        };
+        object.insert(
+            "auth_method".to_string(),
+            serde_json::to_value(auth_method).unwrap_or_else(|_| Value::String("api_key".to_string())),
+        );
+        migrated = true;
+    }
+    (spec, migrated)
 }
 
 pub fn infer_weaviate_collection_schema(connection_name: &str, class_name: &str) -> WeaviateCollectionSchema {

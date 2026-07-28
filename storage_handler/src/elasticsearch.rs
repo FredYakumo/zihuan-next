@@ -11,8 +11,8 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::weaviate::WeaviateCollectionSchema;
 
 use crate::{
-    memory_is_accessible, AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit, AgentMemoryUpsert,
-    ElasticsearchConnection,
+    memory_is_accessible, validate_connection_authentication, AgentMemoryAccessContext, AgentMemoryRecord,
+    AgentMemorySearchHit, AgentMemoryUpsert, ElasticsearchConnection,
 };
 use zihuan_core::ims_bot_adapter::models::message::PersistedMedia;
 
@@ -58,27 +58,34 @@ impl ElasticsearchRef {
                 "elasticsearch index_name and vector_dimensions are required".to_string(),
             ));
         }
+        validate_connection_authentication(
+            config.auth_method,
+            config.username.as_deref(),
+            config.password.as_deref(),
+            config.api_key.as_deref(),
+            "elasticsearch",
+        )?;
         let username = config.username.as_deref().map(str::trim).filter(|value| !value.is_empty());
         let password = config.password.as_deref().map(str::trim).filter(|value| !value.is_empty());
-        if username.is_some() != password.is_some() {
-            return Err(Error::ValidationError(
-                "elasticsearch username and password must be supplied together".to_string(),
-            ));
-        }
         let mut headers = HeaderMap::new();
-        if let Some(api_key) = config.api_key.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
-            headers.insert(
-                AUTHORIZATION,
-                HeaderValue::from_str(&format!("ApiKey {api_key}"))
-                    .map_err(|_| Error::ValidationError("invalid elasticsearch api_key".to_string()))?,
-            );
-        } else if let (Some(username), Some(password)) = (username, password) {
-            let credentials = base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"));
-            headers.insert(
-                AUTHORIZATION,
-                HeaderValue::from_str(&format!("Basic {credentials}"))
-                    .map_err(|_| Error::ValidationError("invalid elasticsearch basic auth".to_string()))?,
-            );
+        match config.auth_method {
+            crate::ConnectionAuthMethod::ApiKey => {
+                let api_key = config.api_key.as_deref().map(str::trim).filter(|value| !value.is_empty()).unwrap_or_default();
+                headers.insert(
+                    AUTHORIZATION,
+                    HeaderValue::from_str(&format!("ApiKey {api_key}"))
+                        .map_err(|_| Error::ValidationError("invalid elasticsearch api_key".to_string()))?,
+                );
+            }
+            crate::ConnectionAuthMethod::Password => {
+                let credentials = base64::engine::general_purpose::STANDARD
+                    .encode(format!("{}:{}", username.unwrap_or_default(), password.unwrap_or_default()));
+                headers.insert(
+                    AUTHORIZATION,
+                    HeaderValue::from_str(&format!("Basic {credentials}"))
+                        .map_err(|_| Error::ValidationError("invalid elasticsearch basic auth".to_string()))?,
+                );
+            }
         }
         let builder = Client::builder()
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
