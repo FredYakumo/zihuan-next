@@ -1,13 +1,10 @@
 <template>
   <section class="page">
-    <div class="page-hero">
-      <h2>运行时实例</h2>
-      <div class="hero-actions">
-        <button class="btn ghost" @click="load">刷新</button>
-      </div>
-    </div>
+    <AdminPageHeader title="运行时实例">
+      <t-button variant="outline" @click="load">刷新</t-button>
+    </AdminPageHeader>
 
-    <section class="panel">
+    <t-card bordered>
       <div v-if="loading" class="empty-state">加载中…</div>
       <div v-else-if="error" class="empty-state">{{ error }}</div>
       <div v-else-if="items.length === 0" class="empty-state">当前没有活动运行时实例。</div>
@@ -27,73 +24,52 @@
           </div>
         </div>
 
-        <div class="runtime-table-wrap">
-          <table class="explorer-table runtime-table">
-            <colgroup>
-              <col class="col-name" />
-              <col class="col-kind" />
-              <col class="col-config" />
-              <col class="col-instance" />
-              <col class="col-started" />
-              <col class="col-duration" />
-              <col class="col-keepalive" />
-              <col class="col-heartbeat" />
-              <col class="col-status" />
-              <col class="col-actions" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>名称</th>
-                <th>实例类型</th>
-                <th>Config ID</th>
-                <th>Instance ID</th>
-                <th>开始时间</th>
-                <th>持续时间</th>
-                <th>长连接</th>
-                <th>心跳</th>
-                <th>状态</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in items" :key="item.instance_id">
-                <td class="runtime-cell-name">
-                  <div class="runtime-name-cell">
-                    <strong>{{ item.name }}</strong>
-                  </div>
-                </td>
-                <td class="runtime-cell-nowrap">
-                  <span class="badge">{{ item.kind }}</span>
-                </td>
-                <td class="mono runtime-cell-ellipsis runtime-cell-nowrap" :title="item.config_id">{{ compactId(item.config_id) }}</td>
-                <td class="mono runtime-cell-ellipsis runtime-cell-nowrap" :title="item.instance_id">{{ compactId(item.instance_id) }}</td>
-                <td class="runtime-cell-nowrap">{{ formatTime(item.started_at) }}</td>
-                <td class="runtime-cell-nowrap">{{ durationText(item.started_at) }}</td>
-                <td class="runtime-cell-center runtime-cell-nowrap">{{ item.keep_alive ? "是" : "否" }}</td>
-                <td class="runtime-cell-nowrap">{{ heartbeatText(item.heartbeat_interval_secs) }}</td>
-                <td class="runtime-cell-nowrap">
-                  <span class="badge" :class="statusTone(item.status)">{{ statusLabel(item.status) }}</span>
-                </td>
-                <td class="runtime-cell-actions">
-                  <button class="btn warn runtime-action-btn" @click="forceClose(item.instance_id)">强制关闭</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <t-table
+          class="runtime-table"
+          row-key="instance_id"
+          bordered
+          size="small"
+          :data="items"
+          :columns="columns"
+        >
+          <template #name="{ row }">
+            <strong>{{ row.name }}</strong>
+          </template>
+          <template #kind="{ row }">
+            <t-tag variant="light">{{ row.kind }}</t-tag>
+          </template>
+          <template #config_id="{ row }">
+            <span class="mono" :title="row.config_id">{{ compactId(row.config_id) }}</span>
+          </template>
+          <template #instance_id="{ row }">
+            <span class="mono" :title="row.instance_id">{{ compactId(row.instance_id) }}</span>
+          </template>
+          <template #started_at="{ row }">{{ formatTime(row.started_at) }}</template>
+          <template #duration="{ row }">{{ durationText(row.started_at) }}</template>
+          <template #keep_alive="{ row }">{{ row.keep_alive ? "是" : "否" }}</template>
+          <template #heartbeat_interval_secs="{ row }">{{ heartbeatText(row.heartbeat_interval_secs) }}</template>
+          <template #status="{ row }">
+            <t-tag :theme="statusTagTheme(row.status)" variant="light">{{ statusLabel(row.status) }}</t-tag>
+          </template>
+          <template #actions="{ row }">
+            <t-button theme="danger" variant="outline" size="small" @click="forceClose(row.instance_id)">强制关闭</t-button>
+          </template>
+        </t-table>
 
         <div class="explorer-pagination">
-          <button class="btn ghost" :disabled="page <= 1" @click="go(page - 1)">上一页</button>
+          <t-button variant="outline" :disabled="page <= 1" @click="go(page - 1)">上一页</t-button>
           <span>{{ page }} / {{ totalPages }} ({{ total }} 条)</span>
-          <button class="btn ghost" :disabled="page >= totalPages" @click="go(page + 1)">下一页</button>
+          <t-button variant="outline" :disabled="page >= totalPages" @click="go(page + 1)">下一页</t-button>
         </div>
       </template>
-    </section>
+    </t-card>
   </section>
 </template>
 
 <script setup lang="ts">
+import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useConnectionManager } from "../composables/useConnectionManager";
+import { statusTagTheme } from "../model";
 
 const {
   items,
@@ -113,8 +89,20 @@ const {
   statusLabel,
   compactId,
   formatTime,
-  statusTone,
 } = useConnectionManager();
+
+const columns = [
+  { colKey: "name", title: "名称" },
+  { colKey: "kind", title: "实例类型" },
+  { colKey: "config_id", title: "Config ID" },
+  { colKey: "instance_id", title: "Instance ID" },
+  { colKey: "started_at", title: "开始时间" },
+  { colKey: "duration", title: "持续时间" },
+  { colKey: "keep_alive", title: "长连接" },
+  { colKey: "heartbeat_interval_secs", title: "心跳" },
+  { colKey: "status", title: "状态" },
+  { colKey: "actions", title: "操作" },
+];
 </script>
 
 <style scoped lang="scss">

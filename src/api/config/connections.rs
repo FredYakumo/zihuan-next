@@ -15,7 +15,7 @@ use model_inference::nn::embedding::embedding_runtime_manager::{
 };
 use storage_handler::{
     close_runtime_storage_instance, close_runtime_storage_instances_for_config, list_runtime_storage_instances,
-    ConnectionConfig, ConnectionKind,
+    validate_connection_authentication, ConnectionConfig, ConnectionKind,
 };
 use zihuan_core::weaviate::{WeaviateEnsureCollectionResult, WeaviateRef};
 
@@ -117,6 +117,14 @@ fn validate_connection(
             "weaviate.class_name must not be empty".to_string(),
         ));
     }
+    validate_connection_authentication(
+        weaviate.auth_method,
+        weaviate.username.as_deref(),
+        weaviate.password.as_deref(),
+        weaviate.api_key.as_deref(),
+        "weaviate",
+    )
+    .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
     if !allow_create_collection {
         return Ok(false);
     }

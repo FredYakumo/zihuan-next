@@ -212,12 +212,12 @@ fn build_common_system_rules(
     default_tools_enabled: &HashMap<String, bool>,
 ) -> String {
     let mut rules = format!(
-        "你是一个管理QQ机器人的思考状态的Agent,你正在维护的机器人名叫`{identity_example}`。\n\
-         你需要对事件进行处理。比如用户向你发送消息的时候，你需要生成向用户的回复或者选择不回复此条消息。\n\
-         在事件的处理过程中，如果需要的话你可以调用相关的工具来辅助你生成最终的结果。\n\
-         涉及到关于知识、Object、对某个人、某件事、某个东西的印象时，需要先查询一下记忆。\n\
-         在必要的时候，你需要管理记忆的更新，特别是对记忆检索之后但是发现记忆与当前事件中获得的事实不对应，或者外部数据不对应时，\n\
-         你往往需要对旧的记忆进行更新。\n",
+        "You are an Agent responsible for managing the thinking state of a QQ bot, and the bot you maintain is named `{identity_example}`.\n\
+         You need to process events. For example, when a user sends a message, you need to generate a reply or choose not to respond to it.\n\
+         During event processing, you may call relevant tools when necessary to help produce the final result.\n\
+         When dealing with knowledge, objects, or impressions of a person, event, or thing, you must search the memories first.\n\
+         When necessary, you need to manage memory updates, especially when retrieved memories do not match facts from the current event or external data.\n\
+         You will often need to update outdated memories.\n",
     );
 
     let tool_lines = build_tool_instruction_rules(default_tools_enabled);
@@ -241,7 +241,7 @@ pub(crate) fn build_private_system_prompt(bot_name: &str, agent_system_prompt: O
 /// System prompt template (group variant).
 pub(crate) fn build_group_system_prompt(bot_name: &str, agent_system_prompt: Option<&str>) -> String {
     let mut rules = build_common_system_rules(bot_name, agent_system_prompt, &default_tools_enabled_map());
-    rules.push_str("\n- 群聊里如需引用某条 QQ 消息，请调用 `reply_message` 设置 reply 目标。");
+    rules.push_str("\n- When you need to quote a QQ message in a group chat, call `reply_message` to set the reply target.");
     rules
 }
 
@@ -249,7 +249,7 @@ pub(crate) fn merge_character_and_style_prompt(character_instructions: &str, sty
     let style_prompt = style_prompt.map(str::trim).filter(|value| !value.is_empty());
     if let Some(style_prompt) = style_prompt {
         format!(
-            "{character_instructions}\n\n[Language Style]\n以下语言风格引导提示词也必须体现在你本轮对用户的回复表达上：\n{style_prompt}"
+            "{character_instructions}\n\n[Language Style]\nThe following language style guidance must also be reflected in your reply to the user in this turn:\n{style_prompt}"
         )
     } else {
         character_instructions.to_string()
@@ -756,18 +756,6 @@ impl LongTaskNotifier for QqLongTaskNotifier {
             warn!("{LOG_PREFIX} failed to send long-task completion forward message for task_id={task_id}: {err}");
         }
     }
-}
-
-fn extract_tavily_link(item: &str) -> Option<String> {
-    item.lines().find_map(|line| {
-        let trimmed = line.trim();
-        trimmed
-            .strip_prefix("Link:")
-            .or_else(|| trimmed.strip_prefix("链接:"))
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
-    })
 }
 
 impl QqChatAgentServiceInner {

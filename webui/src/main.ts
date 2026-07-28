@@ -1,5 +1,7 @@
 import { createApp } from "vue";
 import { createRouter, createWebHistory } from "vue-router";
+import TDesignVueNext from "tdesign-vue-next";
+import "tdesign-vue-next/dist/tdesign.css";
 
 import { bootstrapGraphEditor } from "./graph_editor_bootstrap";
 import AdminApp from "./admin/AdminApp.vue";
@@ -72,6 +74,7 @@ async function main() {
 
   const app = createApp(AdminApp);
   app.use(router);
+  app.use(TDesignVueNext);
   app.mount("#app");
 }
 

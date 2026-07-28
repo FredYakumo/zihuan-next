@@ -1,80 +1,131 @@
 <template>
-  <div class="admin-shell" :class="{ 'sidebar-open': sidebarOpen, 'sidebar-collapsed': sidebarCollapsed }">
-    <template v-if="!isSetupRoute">
-      <button
-        type="button"
-        class="admin-sidebar-toggle admin-sidebar-toggle-floating"
-        aria-label="展开菜单"
-        @click="toggleSidebar"
-      >
-        <span class="admin-hamburger"></span>
-      </button>
-      <aside class="admin-sidebar">
-        <div class="admin-brand">
-          <div class="admin-brand-mark">
-            <img class="admin-brand-mark-image" :src="brandLogoSrc" alt="Zihuan Next icon" />
-          </div>
-          <div>
-            <h1>Zihuan Next</h1>
-          </div>
-          <button
-            type="button"
-            class="admin-sidebar-toggle"
-            aria-label="切换菜单"
-            @click="toggleSidebar"
-          >
-            <span class="admin-hamburger"></span>
-          </button>
-        </div>
-        <nav class="admin-nav">
-          <RouterLink class="admin-nav-link" to="/" @click="closeSidebar">仪表盘</RouterLink>
-          <RouterLink class="admin-nav-link" to="/chat" @click="closeSidebar">对话</RouterLink>
-          <RouterLink class="admin-nav-link" to="/connections" @click="closeSidebar">连接配置</RouterLink>
-          <RouterLink class="admin-nav-link" to="/llm" @click="closeSidebar">模型配置</RouterLink>
-          <RouterLink class="admin-nav-link" to="/services" @click="closeSidebar">Service 管理</RouterLink>
-          <RouterLink class="admin-nav-link" to="/graphs" @click="closeSidebar">节点图与工作流</RouterLink>
-          <RouterLink class="admin-nav-link" to="/tasks" @click="closeSidebar">任务管理器</RouterLink>
-          <RouterLink class="admin-nav-link" to="/logs" @click="closeSidebar">
-            日志
-            <span v-if="logErrorBadgeEnabled && errorCount > 0" class="admin-nav-badge">{{ errorCount }}</span>
-          </RouterLink>
-          <RouterLink class="admin-nav-link" to="/commands" @click="closeSidebar">命令管理</RouterLink>
-          <RouterLink class="admin-nav-link" to="/connection-manager" @click="closeSidebar">连接管理器</RouterLink>
-          <RouterLink class="admin-nav-link" to="/data-explorer" @click="closeSidebar">数据检索</RouterLink>
-          <RouterLink class="admin-nav-link" to="/settings" @click="closeSidebar">设置</RouterLink>
-        </nav>
-      </aside>
-      <div v-if="showOverlay" class="admin-sidebar-overlay" @click="sidebarOpen = false"></div>
-      <main class="admin-main">
-        <header class="admin-mobile-topbar">
-          <button
-            type="button"
-            class="admin-sidebar-toggle"
-            aria-label="切换菜单"
-            @click="toggleSidebar"
-          >
-            <span class="admin-hamburger"></span>
-          </button>
-          <span class="admin-mobile-brand">Zihuan Next</span>
-        </header>
-        <RouterView />
-      </main>
-    </template>
-    <template v-else>
-      <div class="setup-fullscreen">
-        <RouterView />
+  <t-layout v-if="!isSetupRoute" class="admin-shell" :class="{ 'admin-shell--sidebar-open': sidebarOpen }">
+    <t-aside class="admin-aside" :width="sidebarCollapsed ? '56px' : '216px'">
+      <div class="admin-brand">
+        <img v-if="!sidebarCollapsed" class="admin-brand-logo" :src="brandLogoSrc" alt="Zihuan Next" />
+        <span v-if="!sidebarCollapsed" class="admin-brand-title">Zihuan Next</span>
+        <t-button class="admin-collapse-toggle" variant="text" shape="square" @click="toggleSidebar">
+          <MenuUnfoldIcon v-if="sidebarCollapsed" />
+          <MenuFoldIcon v-else />
+        </t-button>
       </div>
-    </template>
+      <t-menu :theme="menuTheme" :value="activeMenuValue" :collapsed="sidebarCollapsed" class="admin-menu">
+        <t-menu-item value="/" to="/" @click="closeSidebar">
+          <template #icon><DashboardIcon /></template>
+          仪表盘
+        </t-menu-item>
+        <t-menu-item value="/chat" to="/chat" @click="closeSidebar">
+          <template #icon><ChatIcon /></template>
+          对话
+        </t-menu-item>
+        <t-menu-item value="/connections" to="/connections" @click="closeSidebar">
+          <template #icon><LinkIcon /></template>
+          连接配置
+        </t-menu-item>
+        <t-menu-item value="/llm" to="/llm" @click="closeSidebar">
+          <template #icon><CloudIcon /></template>
+          模型配置
+        </t-menu-item>
+        <t-menu-item value="/services" to="/services" @click="closeSidebar">
+          <template #icon><ServerIcon /></template>
+          Service 管理
+        </t-menu-item>
+        <t-menu-item value="/graphs" to="/graphs" @click="closeSidebar">
+          <template #icon><SitemapIcon /></template>
+          节点图与工作流
+        </t-menu-item>
+        <t-menu-item value="/tasks" to="/tasks" @click="closeSidebar">
+          <template #icon><TaskIcon /></template>
+          任务管理器
+        </t-menu-item>
+        <t-menu-item value="/logs" to="/logs" @click="closeSidebar">
+          <template #icon><ArticleIcon /></template>
+          日志
+          <t-tag v-if="logErrorBadgeEnabled && errorCount > 0" class="admin-nav-badge" theme="danger" variant="dark" size="small">
+            {{ errorCount }}
+          </t-tag>
+        </t-menu-item>
+        <t-menu-item value="/commands" to="/commands" @click="closeSidebar">
+          <template #icon><TerminalIcon /></template>
+          命令管理
+        </t-menu-item>
+        <t-menu-item value="/connection-manager" to="/connection-manager" @click="closeSidebar">
+          <template #icon><ControlPlatformIcon /></template>
+          连接管理器
+        </t-menu-item>
+        <t-menu-item value="/data-explorer" to="/data-explorer" @click="closeSidebar">
+          <template #icon><SearchIcon /></template>
+          数据检索
+        </t-menu-item>
+        <t-menu-item value="/settings" to="/settings" @click="closeSidebar">
+          <template #icon><SettingIcon /></template>
+          设置
+        </t-menu-item>
+      </t-menu>
+    </t-aside>
+    <div v-if="showOverlay" class="admin-sidebar-overlay" @click="sidebarOpen = false"></div>
+    <t-layout>
+      <t-header class="admin-mobile-topbar" height="52px">
+        <t-button variant="text" shape="square" @click="toggleSidebar">
+          <MenuUnfoldIcon />
+        </t-button>
+        <span class="admin-mobile-brand">Zihuan Next</span>
+      </t-header>
+      <t-content class="admin-content">
+        <RouterView />
+      </t-content>
+    </t-layout>
+  </t-layout>
+  <div v-else class="setup-fullscreen">
+    <RouterView />
   </div>
 </template>
 
 <script setup lang="ts">
-import { RouterLink, RouterView } from "vue-router";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { RouterView, useRoute } from "vue-router";
+import {
+  ArticleIcon,
+  ChatIcon,
+  CloudIcon,
+  ControlPlatformIcon,
+  DashboardIcon,
+  LinkIcon,
+  MenuFoldIcon,
+  MenuUnfoldIcon,
+  SearchIcon,
+  ServerIcon,
+  SettingIcon,
+  SitemapIcon,
+  TaskIcon,
+  TerminalIcon,
+} from "tdesign-icons-vue-next";
 import brandLogoSrc from "../assets/brand-icon.png";
 import { useAdminApp } from "./composables/useAdminApp";
 import { errorCount, logErrorBadgeEnabled } from "./state/logStream";
+import { onThemeChange } from "../ui/theme";
 
 const { isSetupRoute, sidebarOpen, sidebarCollapsed, showOverlay, closeSidebar, toggleSidebar } = useAdminApp();
+
+const route = useRoute();
+const activeMenuValue = computed(() => route.path);
+
+function readMenuTheme(): "light" | "dark" {
+  return document.documentElement.getAttribute("theme-mode") === "light" ? "light" : "dark";
+}
+
+const menuTheme = ref(readMenuTheme());
+let unsubscribeTheme: (() => void) | undefined;
+
+onMounted(() => {
+  unsubscribeTheme = onThemeChange(() => {
+    menuTheme.value = readMenuTheme();
+  });
+});
+
+onUnmounted(() => {
+  unsubscribeTheme?.();
+});
 </script>
 
 <style scoped lang="scss">

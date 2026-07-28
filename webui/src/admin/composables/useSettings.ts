@@ -107,9 +107,7 @@ export function useSettings() {
     };
   });
 
-  function handleThemeChange(event: Event): void {
-    const target = event.target as HTMLSelectElement;
-    const next = target.value;
+  function handleThemeChange(next: string): void {
     if (next === "system") {
       clearTheme();
       selectedTheme.value = "system";
@@ -239,9 +237,8 @@ export function useSettings() {
     document.body.removeChild(a);
   }
 
-  function handleLogErrorBadgeToggle(event: Event) {
-    const target = event.target as HTMLInputElement;
-    setLogErrorBadgeEnabled(target.checked);
+  function handleLogErrorBadgeToggle(checked: boolean) {
+    setLogErrorBadgeEnabled(checked);
   }
 
   return {

@@ -1,9 +1,3 @@
-.settings-section {
-  padding: 24px;
-  display: grid;
-  gap: 20px;
-}
-
 .settings-theme-body {
   display: grid;
   gap: 14px;
@@ -27,8 +21,7 @@
   gap: 10px;
   flex-wrap: wrap;
   padding: 10px 14px;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--admin-bg-soft) 80%, transparent 20%);
+  background: var(--admin-bg-soft);
   border: 1px solid var(--admin-border);
 }
 
@@ -43,8 +36,7 @@
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--admin-bg-soft) 80%, transparent 20%);
+  background: var(--admin-bg-soft);
   border: 1px solid var(--admin-border);
   flex-wrap: wrap;
 }
@@ -71,34 +63,15 @@
   opacity: 0.85;
 }
 
-.badge-ok {
-  background: color-mix(in srgb, var(--admin-good-bg) 80%, transparent 20%);
-  color: var(--admin-good);
-  border-color: color-mix(in srgb, var(--admin-good) 30%, transparent 70%);
-}
-
-.badge-missing {
-  background: color-mix(in srgb, var(--admin-warn-bg) 80%, transparent 20%);
-  color: var(--admin-warn);
-  border-color: color-mix(in srgb, var(--admin-warn) 30%, transparent 70%);
-}
-
-.badge-warn {
-  background: color-mix(in srgb, var(--admin-warn-bg) 80%, transparent 20%);
-  color: var(--admin-warn);
-  border-color: color-mix(in srgb, var(--admin-warn) 30%, transparent 70%);
-}
-
 .settings-model-list {
   display: grid;
   gap: 12px;
 }
 
 .settings-model-card {
-  padding: 16px;
-  border-radius: 18px;
+  padding: 14px 16px;
   border: 1px solid var(--admin-border);
-  background: color-mix(in srgb, var(--admin-bg-soft) 72%, transparent 28%);
+  background: var(--admin-bg-soft);
   display: grid;
   gap: 8px;
 }
@@ -121,6 +94,7 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .settings-backup-file-input {
@@ -129,18 +103,18 @@
 
 .settings-backup-feedback {
   padding: 10px 14px;
-  border-radius: 12px;
   font-size: 13px;
+  border: 1px solid transparent;
 
   &--ok {
     background: color-mix(in srgb, var(--admin-good-bg) 60%, transparent 40%);
     color: var(--admin-good);
-    border: 1px solid color-mix(in srgb, var(--admin-good) 25%, transparent 75%);
+    border-color: color-mix(in srgb, var(--admin-good) 25%, transparent 75%);
   }
 
   &--err {
     background: color-mix(in srgb, var(--admin-warn-bg) 60%, transparent 40%);
     color: var(--admin-warn);
-    border: 1px solid color-mix(in srgb, var(--admin-warn) 25%, transparent 75%);
+    border-color: color-mix(in srgb, var(--admin-warn) 25%, transparent 75%);
   }
 }

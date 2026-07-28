@@ -406,12 +406,17 @@ function imageAttachmentToPart(attachment: ChatImageAttachment): ChatMessagePart
   };
 }
 
+function isProviderImageUrl(url: string): boolean {
+  return url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:image/");
+}
+
 function imageAttachmentsFromParts(parts: ChatMessagePart[] | undefined): ChatImageAttachment[] {
   return (parts ?? []).flatMap((part, index) => {
     if (part.type !== "image" || !part.media) {
       return [];
     }
-    const url = part.media.rustfs_path || part.media.original_source;
+    const providerUrl = [part.media.original_source, part.media.rustfs_path].find(isProviderImageUrl);
+    const url = part.media.original_source || part.media.rustfs_path;
     if (!url) {
       return [];
     }
@@ -422,6 +427,7 @@ function imageAttachmentsFromParts(parts: ChatMessagePart[] | undefined): ChatIm
       mediaId: part.media.media_id,
       name: part.media.name || "图片",
       mimeType: part.media.mime_type || "image/*",
+      modelUrl: providerUrl,
     }];
   });
 }
@@ -674,9 +680,7 @@ function addImageFiles(files: File[]) {
     draftImageAttachments.value.push(attachment);
     void fileIO.uploadImage(file)
       .then(async (uploaded) => {
-        const modelUrl = uploaded.url.startsWith("http://") || uploaded.url.startsWith("https://")
-          ? uploaded.url
-          : await readImageAsDataUrl(file);
+        const modelUrl = isProviderImageUrl(uploaded.url) ? uploaded.url : await readImageAsDataUrl(file);
         const current = draftImageAttachments.value.find((item) => item.id === attachment.id);
         if (!current) {
           return;
@@ -704,12 +708,42 @@ function addImageFiles(files: File[]) {
 }
 
 function readImageAsDataUrl(file: File): Promise<string> {
+  return readBlobAsDataUrl(file);
+}
+
+function readBlobAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = () => reject(reader.error ?? new Error("读取图片失败"));
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(blob);
   });
+}
+
+async function resolveAttachmentModelUrl(attachment: ChatImageAttachment): Promise<void> {
+  if (attachment.modelUrl && isProviderImageUrl(attachment.modelUrl)) {
+    return;
+  }
+  if (isProviderImageUrl(attachment.url)) {
+    attachment.modelUrl = attachment.url;
+    return;
+  }
+
+  const response = await fetch(attachment.url);
+  if (!response.ok) {
+    throw new Error(`无法读取历史图片 ${attachment.name}: HTTP ${response.status}`);
+  }
+  const blob = await response.blob();
+  if (!blob.type.startsWith("image/")) {
+    throw new Error(`历史附件 ${attachment.name} 不是有效图片`);
+  }
+  attachment.modelUrl = await readBlobAsDataUrl(blob);
+}
+
+async function resolveConversationImageUrls(): Promise<void> {
+  const attachments = messages.value.flatMap((message) => message.imageAttachments ?? []);
+  attachments.push(...draftImageAttachments.value);
+  await Promise.all(attachments.map(resolveAttachmentModelUrl));
 }
 
 function removeDraftImageAttachment(id: string) {
@@ -1076,6 +1110,15 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
     return;
   }
   clearChatError();
+  sending.value = true;
+  try {
+    await resolveConversationImageUrls();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    showChatError(`图片准备失败: ${message}`);
+    sending.value = false;
+    return;
+  }
   const pendingNewConversation = parseNewConversationCommand(userText);
   const requestMessages = [
     ...toApiMessages(),
@@ -1093,8 +1136,6 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
     draftMessage.value = "";
     draftImageAttachments.value = [];
   }
-  sending.value = true;
-
   const streamState: StreamState = {
     assistantMessageId: null,
     pendingNewConversation,

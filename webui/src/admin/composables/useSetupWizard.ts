@@ -52,7 +52,7 @@ export function useSetupWizard() {
     search: {
       enabled: true, source: "install", type: "weaviate",
       deployment: { image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./data/zihuan-weaviate", container_name: "zihuan-weaviate", restart_policy: "unless-stopped" },
-      base_url: "http://127.0.0.1:8080", username: null, password: null, api_key: null, vector_dimensions: 1024,
+      base_url: "http://127.0.0.1:8080", username: null, password: null, api_key: null, auth_method: "api_key", vector_dimensions: 1024,
     },
     redis: {
       enabled: false, source: "install",

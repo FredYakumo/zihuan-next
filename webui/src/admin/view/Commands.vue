@@ -1,177 +1,123 @@
 <template>
   <section class="page">
-    <div class="page-hero">
-      <h2>命令管理</h2>
-      <div class="hero-actions">
-        <button class="btn primary" @click="startCreatePermission">+ 添加权限规则</button>
-      </div>
-    </div>
+    <AdminPageHeader title="命令管理">
+      <t-button theme="primary" @click="startCreatePermission">+ 添加权限规则</t-button>
+    </AdminPageHeader>
 
-    <!-- Registered commands table -->
-    <section class="panel">
-      <div class="split-header">
-        <div>
-          <h3>已注册命令</h3>
-          <p class="muted">共 {{ commands.length }} 个命令，由系统代码注册，不可在此增删。</p>
-        </div>
-        <button class="btn ghost" @click="loadData">刷新</button>
-      </div>
+    <t-card title="已注册命令" bordered header-bordered class="commands-card">
+      <template #actions>
+        <t-button variant="text" @click="loadData">刷新</t-button>
+      </template>
+      <p class="muted">共 {{ commands.length }} 个命令，由系统代码注册，不可在此增删。</p>
 
       <div v-if="commands.length === 0" class="empty-state">正在加载...</div>
+      <t-table v-else row-key="name" bordered size="small" :data="commands" :columns="commandColumns">
+        <template #name="{ row }">
+          <span class="mono">/{{ row.name }}</span>
+        </template>
+        <template #aliases="{ row }">
+          <span v-if="row.aliases.length">
+            <code v-for="alias in row.aliases" :key="alias" class="tag">/{{ alias }}</code>
+          </span>
+          <span v-else class="muted">—</span>
+        </template>
+        <template #accepted_arg_count="{ row }">
+          <code>{{ row.accepted_arg_count ?? 0 }}</code>
+        </template>
+        <template #scope="{ row }">
+          <t-tag variant="light">{{ scopeLabel(row.scope) }}</t-tag>
+        </template>
+        <template #permission="{ row }">
+          <t-tag v-if="permissionFor(row.name)" variant="light" :theme="permissionEnabled(row.name) ? 'success' : 'warning'">
+            {{ permissionEnabled(row.name) ? "已配置" : "已禁用" }}
+          </t-tag>
+          <t-tag v-else variant="light" theme="default">默认（所有人）</t-tag>
+        </template>
+        <template #actions="{ row }">
+          <t-button variant="text" size="small" @click="editPermission(row.name)">编辑权限</t-button>
+        </template>
+      </t-table>
+    </t-card>
 
-      <table v-else class="data-table">
-        <thead>
-          <tr>
-            <th>命令名</th>
-            <th>别名</th>
-            <th>参数数</th>
-            <th>描述</th>
-            <th>适用范围</th>
-            <th>权限状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="cmd in commands" :key="cmd.name">
-            <td class="mono">/{{ cmd.name }}</td>
-            <td>
-              <span v-if="cmd.aliases.length">
-                <code v-for="alias in cmd.aliases" :key="alias" class="tag">/{{ alias }}</code>
-              </span>
-              <span v-else class="muted">—</span>
-            </td>
-            <td>
-              <code>{{ cmd.accepted_arg_count ?? 0 }}</code>
-            </td>
-            <td>{{ cmd.description }}</td>
-            <td>
-              <span class="badge">{{ scopeLabel(cmd.scope) }}</span>
-            </td>
-            <td>
-              <span v-if="permissionFor(cmd.name)" class="badge" :class="permissionFor(cmd.name).enabled ? 'badge-success' : 'badge-warning'">
-                {{ permissionFor(cmd.name).enabled ? '已配置' : '已禁用' }}
-              </span>
-              <span v-else class="badge badge-muted">默认（所有人）</span>
-            </td>
-            <td>
-              <button class="btn ghost" @click="editPermission(cmd.name)">编辑权限</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-
-    <!-- Permission rules -->
-    <section class="panel">
-      <div class="split-header">
-        <div>
-          <h3>权限规则</h3>
-          <p class="muted">共 {{ permissions.length }} 条规则。权限规则控制谁能使用特定命令。</p>
-        </div>
-      </div>
+    <t-card title="权限规则" bordered header-bordered class="commands-card">
+      <p class="muted">共 {{ permissions.length }} 条规则。权限规则控制谁能使用特定命令。</p>
 
       <div v-if="permissions.length === 0" class="empty-state">暂无自定义权限规则，所有命令默认对所有人开放。</div>
+      <t-table v-else row-key="config_id" bordered size="small" :data="permissions" :columns="permissionColumns">
+        <template #command_name="{ row }">
+          <span class="mono">/{{ row.command_name }}</span>
+        </template>
+        <template #rules="{ row }">
+          <div v-for="(rule, i) in row.rules" :key="i" class="rule-item">
+            <t-tag variant="light">{{ ruleLabel(rule) }}</t-tag>
+            <span class="mono rule-detail">{{ ruleDetail(rule) }}</span>
+          </div>
+        </template>
+        <template #enabled="{ row }">
+          <t-tag variant="light" :theme="row.enabled ? 'success' : 'danger'">{{ row.enabled ? "启用" : "禁用" }}</t-tag>
+        </template>
+        <template #updated_at="{ row }">{{ formatTime(row.updated_at) }}</template>
+        <template #actions="{ row }">
+          <t-button variant="text" size="small" @click="editExistingPermission(row)">编辑</t-button>
+          <t-button variant="text" theme="danger" size="small" @click="deletePermission(row.config_id)">删除</t-button>
+        </template>
+      </t-table>
+    </t-card>
 
-      <table v-else class="data-table">
-        <thead>
-          <tr>
-            <th>命令</th>
-            <th>规则</th>
-            <th>状态</th>
-            <th>更新时间</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="perm in permissions" :key="perm.config_id">
-            <td class="mono">/{{ perm.command_name }}</td>
-            <td>
-              <div v-for="(rule, i) in perm.rules" :key="i" class="rule-item">
-                <span class="badge">{{ ruleLabel(rule) }}</span>
-                <span class="mono rule-detail">{{ ruleDetail(rule) }}</span>
-              </div>
-            </td>
-            <td>
-              <span class="badge" :class="perm.enabled ? 'badge-success' : 'badge-danger'">
-                {{ perm.enabled ? '启用' : '禁用' }}
-              </span>
-            </td>
-            <td>{{ formatTime(perm.updated_at) }}</td>
-            <td>
-              <button class="btn ghost" @click="editExistingPermission(perm)">编辑</button>
-              <button class="btn ghost danger" @click="deletePermission(perm.config_id)">删除</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-
-    <!-- Create / Edit Modal -->
-    <div v-if="showEditor" class="connection-picker-backdrop">
-      <div class="connection-picker-dialog" @click.stop>
-        <div class="connection-picker-header">
-          <h3>{{ editingId ? '编辑权限规则' : '新建权限规则' }}</h3>
-          <button class="btn ghost" @click="closeEditor">取消</button>
+    <t-dialog
+      :visible="showEditor"
+      :header="editingId ? '编辑权限规则' : '新建权限规则'"
+      :close-on-overlay-click="false"
+      attach="body"
+      @close="closeEditor"
+    >
+      <template #body>
+        <div class="form-grid">
+          <div class="field">
+            <label>命令名</label>
+            <t-select v-model="form.command_name" placeholder="请选择命令">
+              <t-option v-for="cmd in commands" :key="cmd.name" :value="cmd.name" :label="`/${cmd.name}`" />
+            </t-select>
+          </div>
+          <div class="field-full status-row">
+            <t-checkbox v-model="form.enabled">启用</t-checkbox>
+          </div>
         </div>
-        <div class="connection-picker-form">
-          <div class="form-grid">
+
+        <div class="rules-section">
+          <div class="split-header" style="margin-top: 12px">
+            <h4>权限规则</h4>
+            <t-button variant="text" @click="addRule">+ 添加规则</t-button>
+          </div>
+          <div v-if="form.rules.length === 0" class="empty-state" style="margin-top: 8px">
+            尚未添加规则。默认行为：所有人可访问。
+          </div>
+          <div v-for="(rule, i) in form.rules" :key="i" class="rule-editor">
             <div class="field">
-              <label>命令名</label>
-              <select v-model="form.command_name">
-                <option value="">请选择命令</option>
-                <option v-for="cmd in commands" :key="cmd.name" :value="cmd.name">
-                  /{{ cmd.name }}
-                </option>
-              </select>
+              <label>规则类型</label>
+              <t-select v-model="rule.rule_type" @change="onRuleTypeChange(rule)">
+                <t-option value="everyone" label="所有人" />
+                <t-option value="qq_users" label="QQ 用户" />
+                <t-option value="api_keys" label="API Key" />
+              </t-select>
             </div>
-            <div class="field-full status-row">
-              <label class="field-check">
-                <input v-model="form.enabled" type="checkbox" />启用
-              </label>
+            <div v-if="rule.rule_type !== 'everyone'" class="field-full">
+              <label>允许列表（逗号分隔）</label>
+              <t-input v-model="rule.allowListText" placeholder="例如: 123456,789012" @change="syncAllowList(rule)" />
             </div>
-          </div>
-
-          <div class="rules-section">
-            <div class="split-header" style="margin-top: 12px;">
-              <h4>权限规则</h4>
-              <button class="btn ghost" @click="addRule">+ 添加规则</button>
-            </div>
-            <div v-if="form.rules.length === 0" class="empty-state" style="margin-top: 8px;">
-              尚未添加规则。默认行为：所有人可访问。
-            </div>
-            <div v-for="(rule, i) in form.rules" :key="i" class="rule-editor">
-              <div class="field">
-                <label>规则类型</label>
-                <select v-model="rule.rule_type" @change="onRuleTypeChange(rule)">
-                  <option value="everyone">所有人</option>
-                  <option value="qq_users">QQ 用户</option>
-                  <option value="api_keys">API Key</option>
-                </select>
-              </div>
-              <div v-if="rule.rule_type !== 'everyone'" class="field-full">
-                <label>允许列表（逗号分隔）</label>
-                <input
-                  v-model="rule.allowListText"
-                  placeholder="例如: 123456,789012"
-                  @input="syncAllowList(rule)"
-                />
-              </div>
-              <button class="btn ghost danger" @click="removeRule(i)">删除规则</button>
-            </div>
-          </div>
-
-          <div class="dialog-actions" style="margin-top: 16px;">
-            <button class="btn primary" @click="savePermission">
-              {{ editingId ? '保存' : '创建' }}
-            </button>
+            <t-button variant="text" theme="danger" @click="removeRule(i)">删除规则</t-button>
           </div>
         </div>
-      </div>
-    </div>
+      </template>
+      <template #footer>
+        <t-button theme="primary" @click="savePermission">{{ editingId ? "保存" : "创建" }}</t-button>
+      </template>
+    </t-dialog>
   </section>
 </template>
 
 <script setup lang="ts">
+import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useCommands } from "../composables/useCommands";
 
 const {
@@ -197,6 +143,28 @@ const {
   savePermission,
   deletePermission,
 } = useCommands();
+
+function permissionEnabled(commandName: string): boolean {
+  return permissionFor(commandName)?.enabled ?? false;
+}
+
+const commandColumns = [
+  { colKey: "name", title: "命令名" },
+  { colKey: "aliases", title: "别名" },
+  { colKey: "accepted_arg_count", title: "参数数" },
+  { colKey: "description", title: "描述" },
+  { colKey: "scope", title: "适用范围" },
+  { colKey: "permission", title: "权限状态" },
+  { colKey: "actions", title: "操作" },
+];
+
+const permissionColumns = [
+  { colKey: "command_name", title: "命令" },
+  { colKey: "rules", title: "规则" },
+  { colKey: "enabled", title: "状态" },
+  { colKey: "updated_at", title: "更新时间" },
+  { colKey: "actions", title: "操作" },
+];
 </script>
 
 <style scoped lang="scss">

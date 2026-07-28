@@ -1,174 +1,104 @@
 <template>
   <section class="page tasks-page">
-    <div class="page-hero">
-      <h2>任务管理器</h2>
-    </div>
+    <AdminPageHeader title="任务管理器" />
 
-    <section class="panel">
-      <div class="split-header">
-        <div>
-          <h3>任务列表</h3>
-          <p class="muted">共 {{ taskItems.length }} 个。</p>
-        </div>
-        <div class="inline-actions">
-          <button class="btn ghost" @click="load">刷新</button>
-          <button class="btn danger" :disabled="selectedTaskIds.size === 0" @click="deleteSelectedTasks">
-            删除选中
-          </button>
-          <button class="btn" @click="clearFinished">清理已结束任务</button>
-        </div>
-      </div>
-      <div class="tasks-list-shell tasks-pagination">
-        <label class="tasks-pagination-label">
-          每页条数
-          <select v-model.number="pageSize" class="field-input tasks-pagination-select">
-            <option :value="10">10</option>
-            <option :value="20">20</option>
-            <option :value="50">50</option>
-            <option :value="100">100</option>
-          </select>
-        </label>
-        <span class="muted tasks-pagination-status">
-          第 {{ listPage }} / {{ listTotalPages }} 页
-          <span>共 {{ taskItems.length }} 条</span>
-        </span>
-        <div class="tasks-pagination-actions">
-          <button class="btn ghost" :disabled="listPage <= 1" @click="goToListPage(1)">首页</button>
-          <button class="btn ghost" :disabled="listPage <= 1" @click="goToListPage(listPage - 1)">上一页</button>
-          <label class="tasks-pagination-label">
-            跳转
-            <input
-              v-model.number="listPageInput"
-              type="number"
-              min="1"
-              :max="listTotalPages"
-              class="field-input tasks-pagination-input"
-              @keydown.enter.prevent="jumpToListPage"
-            />
-          </label>
-          <button class="btn ghost" @click="jumpToListPage">前往</button>
-          <button class="btn ghost" :disabled="listPage >= listTotalPages" @click="goToListPage(listPage + 1)">下一页</button>
-          <button class="btn ghost" :disabled="listPage >= listTotalPages" @click="goToListPage(listTotalPages)">末页</button>
-        </div>
-      </div>
-      <div class="tasks-table tasks-list-shell" style="margin-top: 16px;">
-        <div v-if="taskItems.length > 0" class="tasks-table-head">
-          <span>
-            <input
-              type="checkbox"
-              :checked="allPagedTasksSelected"
-              :indeterminate="somePagedTasksSelected && !allPagedTasksSelected"
-              aria-label="选择当前页任务"
-              @change="toggleCurrentPageSelection"
-            />
-          </span>
-          <span>任务</span>
-          <span>开始时间</span>
-          <span>耗时</span>
-          <span>来源</span>
-          <span>摘要</span>
-          <span>状态</span>
-          <span>操作</span>
-        </div>
-        <div v-if="taskItems.length === 0" class="empty-state">还没有任务。</div>
-        <article
-          v-for="task in pagedTaskItems"
-          :key="task.id"
-          class="record task-row-card"
+    <t-card title="任务列表" bordered header-bordered>
+      <template #actions>
+        <t-button variant="text" @click="load">刷新</t-button>
+        <t-button theme="danger" variant="outline" :disabled="selectedTaskIds.size === 0" @click="deleteSelectedTasks">
+          删除选中
+        </t-button>
+        <t-button variant="outline" @click="clearFinished">清理已结束任务</t-button>
+      </template>
+      <p class="muted">共 {{ taskItems.length }} 个。</p>
+
+      <div v-if="taskItems.length === 0" class="empty-state">还没有任务。</div>
+      <template v-else>
+        <t-table
+          row-key="id"
+          bordered
+          size="small"
+          :data="pagedTaskItems"
+          :columns="columns"
+          :selected-row-keys="selectedRowKeys"
+          @select-change="onSelectChange"
         >
-          <div class="task-row-check">
-            <input
-              type="checkbox"
-              :checked="selectedTaskIds.has(task.id)"
-              :aria-label="`选择任务 ${task.graph_name}`"
-              @change="toggleTaskSelection(task.id)"
-            />
-          </div>
-          <div class="task-row-main">
-            <div class="task-row-title">
-              <h4>{{ task.graph_name }}</h4>
-              <div class="task-row-badges">
-                <span class="badge task-type-badge" :class="task.task_type === 'agent_service' ? 'task-type-agent' : 'task-type-graph'">
-                  {{ task.task_type === "agent_service" ? "Agent 响应" : "节点图" }}
-                </span>
-              </div>
+          <template #task="{ row }">
+            <div class="task-cell-title">
+              <strong>{{ row.graph_name }}</strong>
+              <t-tag variant="light" :theme="row.task_type === 'agent_service' ? 'primary' : 'default'">
+                {{ row.task_type === "agent_service" ? "Agent 响应" : "节点图" }}
+              </t-tag>
             </div>
-            <div class="task-row-id mono">{{ task.id }}</div>
-          </div>
-          <div class="task-row-meta">
-            <span class="task-row-label">开始时间</span>
-            <span>{{ formatTime(task.start_time) }}</span>
-          </div>
-          <div class="task-row-meta">
-            <span class="task-row-label">耗时</span>
-            <span>{{ formatTaskDuration(task) }}</span>
-          </div>
-          <div class="task-row-meta">
-            <span class="task-row-label">来源</span>
-            <span class="mono task-row-ellipsis">{{ task.file_path ?? "-" }}</span>
-          </div>
-          <div class="task-row-summary">
-            <span class="task-row-label">摘要</span>
-            <span class="task-row-ellipsis">{{ task.result_summary ?? task.error_message ?? "-" }}</span>
-          </div>
-          <div class="task-row-status">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span class="badge" :class="statusTone(task.status)">{{ task.status }}</span>
-            </div>
-          </div>
-          <div class="panel-actions task-row-actions">
-            <button
-              class="btn"
-              :disabled="!task.is_running || task.task_type === 'agent_service'"
-              @click="stopTask(task.id)"
-            >
+            <div class="mono task-cell-id">{{ row.id }}</div>
+          </template>
+          <template #start_time="{ row }">{{ formatTime(row.start_time) }}</template>
+          <template #duration="{ row }">{{ formatTaskDuration(row) }}</template>
+          <template #file_path="{ row }">
+            <span class="mono task-cell-ellipsis" :title="row.file_path ?? undefined">{{ row.file_path ?? "-" }}</span>
+          </template>
+          <template #summary="{ row }">
+            <span class="task-cell-ellipsis">{{ row.result_summary ?? row.error_message ?? "-" }}</span>
+          </template>
+          <template #status="{ row }">
+            <t-tag variant="light" :theme="statusTagTheme(row.status)">{{ row.status }}</t-tag>
+          </template>
+          <template #actions="{ row }">
+            <t-button variant="text" size="small" :disabled="!row.is_running || row.task_type === 'agent_service'" @click="stopTask(row.id)">
               停止
-            </button>
-            <button class="btn" :disabled="!task.can_rerun" @click="rerunTask(task.id)">重跑</button>
-            <button class="btn ghost" @click="openLogViewer(task)">查看日志</button>
-            <button class="btn danger" @click="deleteSingleTask(task)">删除</button>
-          </div>
-        </article>
-      </div>
-    </section>
+            </t-button>
+            <t-button variant="text" size="small" :disabled="!row.can_rerun" @click="rerunTask(row.id)">重跑</t-button>
+            <t-button variant="text" size="small" @click="openLogViewer(row)">查看日志</t-button>
+            <t-button variant="text" theme="danger" size="small" @click="deleteSingleTask(row)">删除</t-button>
+          </template>
+        </t-table>
 
-    <!-- Log viewer dialog -->
-    <div v-if="logViewerTask" class="connection-picker-backdrop">
-      <div class="connection-picker-dialog log-viewer-dialog" @click.stop>
-        <div class="connection-picker-header">
-          <h3>日志 — {{ logViewerTask.graph_name }}</h3>
-          <button class="task-terminal-btn" aria-label="关闭" @click="closeLogViewer"><CloseIcon /></button>
-        </div>
+        <t-pagination
+          class="tasks-pagination-bar"
+          :total="taskItems.length"
+          :current="listPage"
+          :page-size="pageSize"
+          :page-size-options="[10, 20, 50, 100]"
+          show-jumper
+          @change="onPaginationChange"
+        />
+      </template>
+    </t-card>
 
-        <!-- Controls -->
+    <t-dialog
+      :visible="!!logViewerTask"
+      :header="logViewerTask ? `日志 — ${logViewerTask.graph_name}` : ''"
+      width="min(85vw, 1400px)"
+      attach="body"
+      @close="closeLogViewer"
+    >
+      <template #body>
         <div class="log-viewer-controls">
           <label class="log-viewer-label">
             日期
-            <input
-              v-model="logFilter.date"
-              type="date"
-              class="log-viewer-input"
-              @change="fetchLogs(true)"
-            />
+            <input v-model="logFilter.date" type="date" class="log-viewer-input" @change="fetchLogs(true)" />
           </label>
           <label class="log-viewer-label">
             每页条数
-            <select v-model="logFilter.limit" class="log-viewer-input" @change="fetchLogs(true)">
-              <option :value="50">50</option>
-              <option :value="100">100</option>
-              <option :value="200">200</option>
-              <option :value="500">500</option>
-            </select>
+            <t-select v-model="logFilter.limit" class="log-viewer-select" @change="fetchLogs(true)">
+              <t-option :value="50" label="50" />
+              <t-option :value="100" label="100" />
+              <t-option :value="200" label="200" />
+              <t-option :value="500" label="500" />
+            </t-select>
           </label>
           <div class="log-viewer-pagination">
-            <span class="muted" style="font-size:13px;">第 {{ currentPage + 1 }} / {{ logTotalPages }} 页（共 {{ logTotal }} 条）</span>
-            <button class="task-terminal-btn" :disabled="currentPage === 0" @click="prevPage"><ChevronLeftIcon /> 上一页</button>
-            <button class="task-terminal-btn" :disabled="currentPage + 1 >= logTotalPages" @click="nextPage">下一页 <ChevronRightIcon /></button>
+            <span class="muted" style="font-size: 13px">第 {{ currentPage + 1 }} / {{ logTotalPages }} 页（共 {{ logTotal }} 条）</span>
+            <t-button variant="text" size="small" :disabled="currentPage === 0" @click="prevPage">
+              <ChevronLeftIcon />上一页
+            </t-button>
+            <t-button variant="text" size="small" :disabled="currentPage + 1 >= logTotalPages" @click="nextPage">
+              下一页<ChevronRightIcon />
+            </t-button>
           </div>
-          <button class="task-terminal-btn" style="margin-left:auto;" @click="fetchLogs(true)">刷新</button>
+          <t-button variant="text" size="small" style="margin-left: auto" @click="fetchLogs(true)">刷新</t-button>
         </div>
 
-        <!-- Log body -->
         <div ref="logViewerBody" class="task-terminal-body log-viewer-body">
           <div v-if="logViewerLoading" class="task-terminal-hint">加载中…</div>
           <div v-else-if="logViewerEntries.length === 0" class="task-terminal-hint">暂无日志。</div>
@@ -183,39 +113,35 @@
             <span class="task-terminal-msg">{{ entry.message }}</span>
           </div>
         </div>
-      </div>
-    </div>
+      </template>
+    </t-dialog>
   </section>
 </template>
 
 <script setup lang="ts">
-import { ChevronLeftIcon, ChevronRightIcon, CloseIcon } from "tdesign-icons-vue-next";
+import { computed } from "vue";
+import { ChevronLeftIcon, ChevronRightIcon } from "tdesign-icons-vue-next";
+import type { PrimaryTableCol } from "tdesign-vue-next";
 
+import type { TaskEntry } from "../../api/client";
 import { useTasks } from "../composables/useTasks";
+import { statusTagTheme } from "../model";
 
 const {
   taskItems,
   pageSize,
   listPage,
-  listPageInput,
   selectedTaskIds,
-  listTotalPages,
   pagedTaskItems,
-  allPagedTasksSelected,
-  somePagedTasksSelected,
   goToListPage,
-  jumpToListPage,
   load,
   stopTask,
   rerunTask,
   clearFinished,
-  toggleTaskSelection,
-  toggleCurrentPageSelection,
   deleteSingleTask,
   deleteSelectedTasks,
   formatTime,
   formatTaskDuration,
-  statusTone,
   logViewerTask,
   logViewerEntries,
   logViewerLoading,
@@ -231,6 +157,28 @@ const {
   prevPage,
   nextPage,
 } = useTasks();
+
+const selectedRowKeys = computed(() => [...selectedTaskIds.value]);
+
+function onSelectChange(keys: Array<string | number>) {
+  selectedTaskIds.value = new Set(keys as string[]);
+}
+
+function onPaginationChange(pageInfo: { current: number; pageSize: number }) {
+  pageSize.value = pageInfo.pageSize;
+  goToListPage(pageInfo.current);
+}
+
+const columns: PrimaryTableCol<TaskEntry>[] = [
+  { colKey: "row-select", type: "multiple", width: 48 },
+  { colKey: "task", title: "任务" },
+  { colKey: "start_time", title: "开始时间" },
+  { colKey: "duration", title: "耗时" },
+  { colKey: "file_path", title: "来源" },
+  { colKey: "summary", title: "摘要" },
+  { colKey: "status", title: "状态" },
+  { colKey: "actions", title: "操作", width: 220 },
+];
 </script>
 
 <style scoped lang="scss">

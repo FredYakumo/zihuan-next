@@ -406,7 +406,9 @@ export function clearTheme(): void {
 
 function applyTheme(name: string): void {
   document.documentElement.dataset.theme = name;
-  document.documentElement.dataset.themeSchema = getThemeSchemaByName(name);
+  const schema = getThemeSchemaByName(name);
+  document.documentElement.dataset.themeSchema = schema;
+  document.documentElement.setAttribute("theme-mode", schema);
   for (const cb of themeListeners) cb();
 }
 
@@ -432,8 +434,10 @@ export function initTheme(): void {
   const stored = migrateOldThemeName(localStorage.getItem(STORAGE_KEY));
   const name = stored ? getSystemResolvedThemeName(stored) : getSystemThemeName();
   currentThemeName = name;
+  const schema = getThemeSchemaByName(name);
   document.documentElement.dataset.theme = name;
-  document.documentElement.dataset.themeSchema = getThemeSchemaByName(name);
+  document.documentElement.dataset.themeSchema = schema;
+  document.documentElement.setAttribute("theme-mode", schema);
 
   if (!systemThemeMediaQuery) {
     systemThemeMediaQuery = window.matchMedia("(prefers-color-scheme: light)");

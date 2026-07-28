@@ -61,7 +61,26 @@
 
       <section class="component-card">
         <ComponentHeader v-model:enabled="model.search.enabled" title="检索数据库" />
-        <template v-if="model.search.enabled"><div class="choice-row"><label><input :checked="model.search.type === 'weaviate'" type="radio" @change="setSearchType('weaviate')" /> Weaviate</label><label><input :checked="model.search.type === 'elasticsearch'" type="radio" @change="setSearchType('elasticsearch')" /> Elasticsearch</label></div><SourceChoice v-model="model.search.source" /><DeploymentFields v-if="model.search.source === 'install'" v-model="model.search.deployment" /><div class="form-grid"><Field label="Base URL"><input v-model="model.search.base_url" /></Field><Field label="用户名"><input v-model="model.search.username" /></Field><Field label="密码"><CredentialInput v-model="model.search.password" /></Field><Field label="API Key"><CredentialInput v-model="model.search.api_key" /></Field><Field label="向量维度"><input v-model.number="model.search.vector_dimensions" type="number" min="1" /></Field></div></template>
+        <template v-if="model.search.enabled">
+          <div class="choice-row"><label><input :checked="model.search.type === 'weaviate'" type="radio" @change="setSearchType('weaviate')" /> Weaviate</label><label><input :checked="model.search.type === 'elasticsearch'" type="radio" @change="setSearchType('elasticsearch')" /> Elasticsearch</label></div>
+          <SourceChoice v-model="model.search.source" />
+          <DeploymentFields v-if="model.search.source === 'install'" v-model="model.search.deployment" />
+          <div class="form-grid">
+            <Field label="Base URL"><input v-model="model.search.base_url" /></Field>
+            <Field v-if="usesPasswordAuth" label="用户名"><input v-model="model.search.username" :disabled="isInstalledElasticsearch" /></Field>
+            <Field label="认证">
+              <div class="credential-auth-field">
+                <select v-model="model.search.auth_method" :disabled="isSearchAuthLocked" @change="clearInactiveSearchCredentials">
+                  <option value="password">密码</option>
+                  <option value="api_key">API Key</option>
+                </select>
+                <CredentialInput v-if="usesPasswordAuth" v-model="model.search.password" />
+                <CredentialInput v-else v-model="model.search.api_key" />
+              </div>
+            </Field>
+            <Field label="向量维度"><input v-model.number="model.search.vector_dimensions" type="number" min="1" /></Field>
+          </div>
+        </template>
       </section>
 
       <section class="component-card">
@@ -110,6 +129,14 @@ const selectedInstallOption = ref<DetailedInstallOption>(
   model.value.install_method === "docker" ? "command_docker" : "command_binary",
 );
 const isLocalInstall = computed(() => selectedInstallOption.value.startsWith("local_"));
+const isInstalledElasticsearch = computed(() =>
+  model.value.search.type === "elasticsearch" && model.value.search.source === "install",
+);
+const isInstalledWeaviate = computed(() =>
+  model.value.search.type === "weaviate" && model.value.search.source === "install",
+);
+const isSearchAuthLocked = computed(() => isInstalledElasticsearch.value || isInstalledWeaviate.value);
+const usesPasswordAuth = computed(() => model.value.search.auth_method === "password");
 
 onMounted(async () => {
   try {
@@ -127,6 +154,22 @@ watch(selectedInstallOption, (option) => {
   model.value.install_method = installMethod;
 });
 
+watch(
+  () => [model.value.search.type, model.value.search.source],
+  () => {
+    if (isInstalledElasticsearch.value) {
+      model.value.search.auth_method = "password";
+      model.value.search.username = "elastic";
+    } else if (isInstalledWeaviate.value) {
+      model.value.search.auth_method = "api_key";
+    }
+    clearInactiveSearchCredentials();
+  },
+  { immediate: true },
+);
+
+watch(() => model.value.search.auth_method, clearInactiveSearchCredentials);
+
 function getPreferredInstallOption(): DetailedInstallOption {
   if (dockerSupported.value) {
     return "local_docker";
@@ -143,14 +186,32 @@ function setSearchType(type: "weaviate" | "elasticsearch") {
     model.value.search.deployment = { ...model.value.search.deployment, image: "docker.elastic.co/elasticsearch/elasticsearch:8.17.0", port: 9200, data_dir: "./data/zihuan-elasticsearch", container_name: "zihuan-elasticsearch" };
     model.value.search.base_url = "http://127.0.0.1:9200";
     model.value.search.username = "elastic";
+    model.value.search.api_key = null;
+    model.value.search.auth_method = "password";
   } else {
     model.value.search.deployment = { ...model.value.search.deployment, image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./data/zihuan-weaviate", container_name: "zihuan-weaviate" };
     model.value.search.base_url = "http://127.0.0.1:8080";
+    model.value.search.auth_method = "api_key";
   }
+}
+
+function clearInactiveSearchCredentials() {
+  if (model.value.search.auth_method === "password") {
+    model.value.search.api_key = null;
+    return;
+  }
+  model.value.search.username = null;
+  model.value.search.password = null;
 }
 
 </script>
 
 <style scoped lang="scss">
 @use "../styles/detailed-config-step" as *;
+
+.credential-auth-field {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+}
 </style>

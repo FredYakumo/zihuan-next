@@ -105,6 +105,24 @@ export function useConnections() {
     showEditor.value = true;
   }
 
+  function clearInactiveConnectionCredentials(type: "weaviate" | "elasticsearch") {
+    if (type === "weaviate") {
+      if (form.weaviate_auth_method === "password") {
+        form.weaviate_api_key = "";
+      } else {
+        form.weaviate_username = "";
+        form.weaviate_password = "";
+      }
+      return;
+    }
+    if (form.elasticsearch_auth_method === "password") {
+      form.elasticsearch_api_key = "";
+    } else {
+      form.elasticsearch_username = "";
+      form.elasticsearch_password = "";
+    }
+  }
+
   async function submitForm() {
     if (!form.name.trim()) {
       alert("请填写连接名称");
@@ -144,6 +162,15 @@ export function useConnections() {
         alert("请填写 Weaviate Class Name");
         return;
       }
+      if (form.weaviate_auth_method === "password") {
+        if (!form.weaviate_username.trim() || !form.weaviate_password.trim()) {
+          alert("请填写 Weaviate 用户名和密码");
+          return;
+        }
+      } else if (!form.weaviate_api_key.trim()) {
+        alert("请填写 Weaviate API Key");
+        return;
+      }
     }
     if (form.type === "elasticsearch") {
       if (!form.elasticsearch_base_url.trim() || !form.elasticsearch_index_name.trim()) {
@@ -152,6 +179,15 @@ export function useConnections() {
       }
       if (!Number.isInteger(form.elasticsearch_vector_dimensions) || form.elasticsearch_vector_dimensions <= 0) {
         alert("请填写大于 0 的 Elasticsearch 向量维度");
+        return;
+      }
+      if (form.elasticsearch_auth_method === "password") {
+        if (!form.elasticsearch_username.trim() || !form.elasticsearch_password.trim()) {
+          alert("请填写 Elasticsearch 用户名和密码");
+          return;
+        }
+      } else if (!form.elasticsearch_api_key.trim()) {
+        alert("请填写 Elasticsearch API Key");
         return;
       }
     }
@@ -215,7 +251,7 @@ export function useConnections() {
         lowerMessage.includes("anonymous access not enabled") ||
         lowerMessage.includes("authenticate through one of the available methods")
       ) {
-        return "Weaviate 鉴权失败：请检查用户名/密码或 API Key 是否正确；如果实例允许匿名访问，也可以在 Weaviate 端开启匿名访问。";
+        return "检索数据库鉴权失败：请检查所选认证方式的凭据是否正确。";
       }
 
       if (rawMessage) {
@@ -358,6 +394,7 @@ export function useConnections() {
     submitForm,
     removeConnection,
     summarizeConnection,
+    clearInactiveConnectionCredentials,
     formatTime,
     isBotAdapterConnectionType,
   };

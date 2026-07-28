@@ -26,7 +26,9 @@ use self::core::{
 use self::ignore_store::should_ignore_message_blocking;
 use self::inbox::QqChatAgentServiceInbox;
 use self::language_style_store::get_applicable_language_style_blocking;
-use self::message_rate_limit_store::{consume_message_rate_limit_blocking, MessageRateLimitBlockAction};
+use self::message_rate_limit_store::{
+    consume_message_rate_limit_blocking, MessageRateLimitBlockAction, MESSAGE_RATE_LIMIT_BLOCKED_REPLY,
+};
 use self::model::{
     QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatAgentServiceRuntimeConfig,
     QqChatServiceReplyBatchBuilder, QqInferenceToolProvider, QqLoadedInferenceResources,
@@ -316,19 +318,19 @@ fn load_qq_resources(
 
 /// Purpose: Bootstrap and launch a long-running QQ Chat Agent Service instance.
 ///
-/// Resolves all runtime dependencies (`llm`, `embedding_model`, `tavily`, `s3_ref`,
-/// `rdb_pool`, `weaviate_image_ref`), wires the IMS bot adapter event handler
+/// Resolves all runtime dependencies (llm, embedding_model, tavily, s3_ref,
+/// rdb_pool, weaviate_image_ref), wires the IMS bot adapter event handler
 /// through an inbox queue, then spawns a background task that runs the
-/// `BotAdapter::start` loop until exit.
+/// BotAdapter::start loop until exit.
 ///
 /// Called when the service layer starts an agent whose type is QQ chat —
-/// typically from `AgentManager::start_agent` after validating the agent config.
+/// typically from AgentManager::start_agent after validating the agent config.
 ///
 /// Call chain:
-///   `AgentManager::start_agent` → `QqChatAgentService::spawn`
-///     → build deps → register `EventHandler` on bot adapter
-///     → `tokio::spawn`(`BotAdapter::start`) → `handle_event` per incoming message
-///     → `on_finish` callback on exit
+///   AgentManager::start_agent -> QqChatAgentService::spawn
+///     -> build deps -> register EventHandler on bot adapter
+///     -> tokio::spawn(BotAdapter::start) -> handle_event per incoming message
+///     -> on_finish callback on exit
 pub async fn spawn(
     manager: &AgentManager,
     agent: AgentConfig,
@@ -693,7 +695,7 @@ impl QqChatAgentServiceInner {
                         let bot_id = get_bot_id(ctx.adapter);
                         let blocked_reply = rate_limit_result
                             .blocked_reply
-                            .unwrap_or_else(|| "你已经达到 rate limit 了，请待会再找我。".to_string());
+                            .unwrap_or_else(|| MESSAGE_RATE_LIMIT_BLOCKED_REPLY.to_string());
                         let mention_target_id =
                             (is_group && rate_limit_result.mention_sender_on_block).then_some(sender_id.as_str());
                         send_direct_notification_text_reply(

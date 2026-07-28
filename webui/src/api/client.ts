@@ -306,6 +306,8 @@ export interface ConnectionMutationResponse extends ConnectionConfig {
   collection_created: boolean;
 }
 
+export type ConnectionAuthMethod = "password" | "api_key";
+
 export interface ActiveBotAdapterInfo {
   connection_id: string;
   config_id: string;
@@ -1008,6 +1010,7 @@ export type DetailedSetupInstallMethod = "docker" | "binary";
 export type DetailedSetupSource = "install" | "existing";
 export type DetailedRelationalType = "mysql" | "sqlite";
 export type DetailedSearchType = "weaviate" | "elasticsearch";
+export type DetailedSearchAuthMethod = "password" | "api_key";
 
 export interface DetailedDeploymentConfig {
   image: string;
@@ -1053,6 +1056,7 @@ export interface DetailedSearchSetupConfig {
   username: string | null;
   password: string | null;
   api_key: string | null;
+  auth_method: DetailedSearchAuthMethod;
   vector_dimensions: number;
 }
 

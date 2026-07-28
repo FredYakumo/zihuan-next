@@ -100,14 +100,32 @@ impl WeaviateRef {
     ) -> Result<Self> {
         let base_url = normalize_base_url(base_url.into())?;
         let class_name = normalize_class_name(class_name.into())?;
+        let username = normalize_owned_optional_string(username);
+        let password = normalize_owned_optional_string(password);
+        let api_key = normalize_owned_optional_string(api_key);
+        if username.is_some() != password.is_some() {
+            return Err(Error::ValidationError(
+                "weaviate username and password must be supplied together".to_string(),
+            ));
+        }
+        if api_key.is_some() && username.is_some() {
+            return Err(Error::ValidationError(
+                "configure either weaviate username/password or api_key, not both".to_string(),
+            ));
+        }
+        if api_key.is_none() && username.is_none() {
+            return Err(Error::ValidationError(
+                "weaviate authentication is required".to_string(),
+            ));
+        }
         let client = Client::builder().timeout(timeout).build()?;
 
         Ok(Self {
             base_url,
             class_name,
-            username: normalize_owned_optional_string(username),
-            password: normalize_owned_optional_string(password),
-            api_key: api_key.filter(|value| !value.trim().is_empty()),
+            username,
+            password,
+            api_key,
             timeout,
             client,
         })
@@ -134,12 +152,10 @@ impl WeaviateRef {
     }
 
     pub fn authorized(&self, builder: RequestBuilder) -> RequestBuilder {
-        if let Some(api_key) = &self.api_key {
-            builder.bearer_auth(api_key)
-        } else if self.username.is_some() || self.password.is_some() {
-            builder.basic_auth(self.username.clone().unwrap_or_default(), self.password.clone())
-        } else {
-            builder
+        match (&self.api_key, &self.username, &self.password) {
+            (Some(api_key), None, None) => builder.bearer_auth(api_key),
+            (None, Some(username), Some(password)) => builder.basic_auth(username, Some(password)),
+            _ => builder,
         }
     }
 

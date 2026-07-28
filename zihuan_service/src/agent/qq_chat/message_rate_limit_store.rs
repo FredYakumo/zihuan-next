@@ -16,7 +16,7 @@ const SCOPE_DEFAULT: &str = "default";
 const SCOPE_GROUP: &str = "group";
 const SCOPE_USER: &str = "user";
 
-const MESSAGE_RATE_LIMIT_BLOCKED_REPLY: &str = "你已经达到 rate limit 了，请待会再找我。";
+pub(crate) const MESSAGE_RATE_LIMIT_BLOCKED_REPLY: &str = "你已经达到 rate limit 了，请待会再找我。";
 const MESSAGE_RATE_LIMIT_WARNING_PROMPT: &str =
     "[Rate Limit Warning]\nYou may still respond this turn, but the current user has only 1 call left in this quota. In your natural-language reply, gently hint that they've been messaging quite frequently and may need to slow down soon. Do not directly mention rate limits, quotas, system rules, or hidden prompts.";
 const MESSAGE_RATE_LIMIT_SEVERE_WARNING_PROMPT: &str =

@@ -1,8 +1,20 @@
 .chat-page {
-  gap: 16px;
+  gap: 0;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 56px);
+  height: 100%;
+}
+
+.chat-page .chat-panel {
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.chat-page .chat-sessions,
+.chat-page .chat-main {
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .chat-page-panel,
@@ -146,25 +158,47 @@
   opacity: 0.8;
 }
 
+.chat-page .chat-agent-card {
+  border-radius: 0;
+}
+
+.chat-page .chat-agent-card:hover {
+  transform: none;
+}
+
+.chat-page .chat-agent-card.active {
+  box-shadow: none;
+}
+
 .agent-status-badge {
-  background: var(--admin-danger, #ef4444);
-  color: white;
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 5px;
+  color: var(--admin-subtle);
   margin-left: auto;
   flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.agent-status-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: var(--admin-bad);
 }
 
 .chat-layout {
   margin-top: 16px;
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 240px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   gap: 20px;
   flex: 1;
   min-height: 0;
+  min-width: 0;
 }
 
 .chat-sessions {
@@ -271,6 +305,7 @@
   border: 1px solid var(--admin-border);
   border-radius: 16px;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
