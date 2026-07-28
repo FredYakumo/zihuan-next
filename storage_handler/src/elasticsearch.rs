@@ -17,8 +17,8 @@ use crate::{
 use zihuan_core::ims_bot_adapter::models::message::PersistedMedia;
 
 const REQUEST_TIMEOUT_SECS: u64 = 30;
-const INDEX_CHECK_RETRY_ATTEMPTS: usize = 15;
-const INDEX_CHECK_RETRY_DELAY: Duration = Duration::from_secs(1);
+const INDEX_CHECK_RETRY_ATTEMPTS: usize = 5;
+const INDEX_CHECK_RETRY_DELAY: Duration = Duration::from_secs(30);
 const MAX_QUERY_CANDIDATES: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
