@@ -3,6 +3,8 @@
     <div class="page-hero">
       <h2>连接配置</h2>
       <div class="hero-actions connection-hero-actions">
+        <button class="btn ghost" @click="triggerImportFile">导入</button>
+        <input ref="importFileInput" type="file" accept=".json" style="display: none" @change="handleFileChange" />
         <button class="btn primary connection-hero-add-btn" @click="startCreate">+</button>
       </div>
     </div>
@@ -429,6 +431,7 @@
                 <div class="inline-actions connection-card-display-actions">
                   <button class="btn ghost connection-card-compact-btn" @click="editConnection(connection)">编辑</button>
                   <button class="btn ghost connection-card-compact-btn" @click="duplicateConnection(connection)">复制添加</button>
+                  <button class="btn ghost connection-card-compact-btn" @click="copyConnectionConfig(connection)">{{ copiedId === connection.config_id ? '已复制' : '复制' }}</button>
                   <button class="btn warn connection-card-compact-btn" @click="removeConnection(connection.config_id)">删除</button>
                 </div>
               </div>
@@ -453,6 +456,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
 import { useConnections } from "../composables/useConnections";
 
 const {
@@ -473,7 +477,20 @@ const {
   summarizeConnection,
   formatTime,
   isBotAdapterConnectionType,
+  copiedId,
+  copyConfig,
+  handleFileChange,
 } = useConnections();
+
+const importFileInput = ref<HTMLInputElement | null>(null);
+
+function triggerImportFile() {
+  importFileInput.value?.click();
+}
+
+function copyConnectionConfig(connection: { config_id: string; name: string; enabled: boolean; kind: Record<string, unknown> }) {
+  copyConfig({ name: connection.name, enabled: connection.enabled, kind: connection.kind }, connection.config_id);
+}
 </script>
 
 <style scoped lang="scss">

@@ -3,6 +3,8 @@
     <div class="page-hero">
       <h2>模型配置</h2>
       <div class="hero-actions connection-hero-actions">
+        <button class="btn ghost" @click="triggerImportFile">导入</button>
+        <input ref="importFileInput" type="file" accept=".json" style="display: none" @change="handleFileChange" />
         <button class="btn primary connection-hero-add-btn" @click="startCreate">+</button>
       </div>
     </div>
@@ -287,6 +289,7 @@
                 </div>
                 <div class="inline-actions connection-card-display-actions">
                   <button class="btn ghost connection-card-compact-btn" @click="editItem(item)">编辑</button>
+                  <button class="btn ghost connection-card-compact-btn" @click="copyLlmConfig(item)">{{ copiedId === item.config_id ? '已复制' : '复制' }}</button>
                   <button class="btn warn connection-card-compact-btn" @click="removeItem(item.config_id)">删除</button>
                 </div>
               </div>
@@ -328,6 +331,8 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
+import type { LlmConfig } from "../../api/client";
 import { useLlm } from "../composables/useLlm";
 
 const {
@@ -348,7 +353,25 @@ const {
   localLlmOptionLabel,
   compactId,
   formatTime,
+  copiedId,
+  copyConfig,
+  handleFileChange,
 } = useLlm();
+
+const importFileInput = ref<HTMLInputElement | null>(null);
+
+function triggerImportFile() {
+  importFileInput.value?.click();
+}
+
+function copyLlmConfig(item: LlmConfig) {
+  const payload = {
+    name: item.name,
+    enabled: item.enabled,
+    model: item.model,
+  };
+  copyConfig(payload, item.config_id);
+}
 </script>
 
 <style scoped lang="scss">
