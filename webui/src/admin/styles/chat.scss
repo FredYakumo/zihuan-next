@@ -1186,8 +1186,8 @@
 
 .chat-image-upload-button {
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   place-items: center;
   cursor: pointer;
@@ -1280,6 +1280,16 @@
   justify-content: space-between;
   align-items: center;
   gap: 10px;
+}
+
+.chat-input-actions > .btn,
+.chat-input-right > .btn,
+.chat-input-right .model-chip {
+  height: 40px;
+}
+
+.chat-input-right .model-chip.icon-only {
+  width: 40px;
 }
 
 .chat-error-box {
@@ -1387,6 +1397,7 @@
   transition: all 0.2s ease;
   white-space: nowrap;
   line-height: 1;
+  height: 40px;
 }
 
 .model-chip:hover {
