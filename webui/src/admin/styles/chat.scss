@@ -234,6 +234,10 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+.chat-embedded-wrapper .chat-layout--history-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .chat-sessions {
   background: var(--admin-bg-panel);
   border: 1px solid var(--admin-border);
@@ -331,6 +335,10 @@
   display: flex;
   gap: 10px;
   padding: 0 4px 4px;
+}
+
+.chat-sessions-actions .chat-history-toggle {
+  margin-left: auto;
 }
 
 .chat-sessions-action {

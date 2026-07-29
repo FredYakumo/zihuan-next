@@ -56,8 +56,8 @@
           </button>
         </div>
 
-        <div :class="['chat-layout', { 'chat-layout--history-collapsed': !embedded && historyCollapsed }]">
-          <aside v-if="embedded || !historyCollapsed" class="chat-sessions">
+        <div :class="['chat-layout', { 'chat-layout--history-collapsed': historyCollapsed }]">
+          <aside v-if="!historyCollapsed" class="chat-sessions">
             <template v-if="!embedded">
               <div class="chat-service-select-row">
                 <t-select
@@ -113,15 +113,26 @@
                 </button>
               </div>
             </template>
-            <div v-if="!embedded || agentId" class="chat-sessions-actions">
-              <button class="chat-sessions-action" @click="reloadSessions">刷新历史</button>
+            <div class="chat-sessions-actions">
+              <template v-if="!embedded || agentId">
+                <button class="chat-sessions-action" @click="reloadSessions">刷新历史</button>
+                <button
+                  v-if="isWorkspaceService"
+                  class="chat-sessions-action"
+                  :disabled="pickingDirectory"
+                  @click="pickDirectory"
+                >
+                  {{ pickingDirectory ? "选择中..." : "打开目录" }}
+                </button>
+              </template>
               <button
-                v-if="isWorkspaceService"
-                class="chat-sessions-action"
-                :disabled="pickingDirectory"
-                @click="pickDirectory"
+                v-if="embedded"
+                class="chat-history-toggle"
+                title="收起历史"
+                aria-label="收起历史"
+                @click="toggleHistory"
               >
-                {{ pickingDirectory ? "选择中..." : "打开目录" }}
+                <MenuFoldIcon />
               </button>
             </div>
             <div class="chat-sessions-header">历史</div>
@@ -151,9 +162,9 @@
             <div v-if="sessions.length === 0" class="muted">暂无历史会话</div>
           </aside>
 
-          <div :class="['chat-main', { 'chat-main--history-collapsed': !embedded && historyCollapsed }]">
+          <div :class="['chat-main', { 'chat-main--history-collapsed': historyCollapsed }]">
             <button
-              v-if="!embedded && historyCollapsed"
+              v-if="historyCollapsed"
               class="chat-history-expand"
               title="展开历史"
               aria-label="展开历史"
