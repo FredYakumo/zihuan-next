@@ -11,6 +11,7 @@ import {
   type ChatSessionSummary,
   type ChatStreamEvent,
   type ChatMessagePart,
+  type ChatMessageBranch,
   type LlmConfig,
 } from "../../api/client";
 import {
@@ -65,6 +66,15 @@ type ChatImageAttachment = {
   uploading?: boolean;
   error?: string;
   localPreviewUrl?: string;
+};
+type EditingMessage = {
+  messageId: string;
+  content: string;
+  imageAttachments: ChatImageAttachment[];
+};
+type SendMessageOptions = {
+  attachments?: ChatImageAttachment[];
+  isEdit?: boolean;
 };
 
 type ToolDetail = {
@@ -189,6 +199,9 @@ const chatErrorMessage = ref("");
 const chatErrorDialogMessage = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 const messages = ref<ChatMessage[]>([]);
+const messageBranches = ref<ChatMessageBranch[]>([]);
+const editingMessage = ref<EditingMessage | null>(null);
+const copiedMessageId = ref("");
 const activeToolCallId = ref("");
 const expandedLiveToolCalls = ref(new Set<string>());
 const llmModels = ref<LlmConfig[]>([]);
@@ -360,6 +373,10 @@ const messageGroups = computed(() => {
   }
   return groups;
 });
+
+const messageBranchMap = computed(() =>
+  new Map(messageBranches.value.map((branch) => [branch.message_id, branch])),
+);
 
 const activeToolDetail = computed<ToolDetail | null>(() => {
   if (!activeToolCallId.value) {
@@ -647,18 +664,26 @@ function handleTextareaPaste(event: ClipboardEvent) {
     showChatError("当前模型不支持多模态输入，无法添加图片。");
     return;
   }
-  addImageFiles(files);
+  addImageFilesTo(draftImageAttachments.value, files);
 }
 
 function handleImageFileSelection(event: Event) {
   const input = event.target as HTMLInputElement;
   if (input.files) {
-    addImageFiles(Array.from(input.files));
+    addImageFilesTo(draftImageAttachments.value, Array.from(input.files));
   }
   input.value = "";
 }
 
-function addImageFiles(files: File[]) {
+function handleEditImageFileSelection(event: Event) {
+  const input = event.target as HTMLInputElement;
+  if (input.files && editingMessage.value) {
+    addImageFilesTo(editingMessage.value.imageAttachments, Array.from(input.files));
+  }
+  input.value = "";
+}
+
+function addImageFilesTo(target: ChatImageAttachment[], files: File[]) {
   if (!supportsMultimodalInput.value) {
     showChatError("当前模型不支持多模态输入，无法添加图片。");
     return;
@@ -677,11 +702,11 @@ function addImageFiles(files: File[]) {
       uploading: true,
     };
     attachment.localPreviewUrl = attachment.url;
-    draftImageAttachments.value.push(attachment);
+    target.push(attachment);
     void fileIO.uploadImage(file)
       .then(async (uploaded) => {
         const modelUrl = isProviderImageUrl(uploaded.url) ? uploaded.url : await readImageAsDataUrl(file);
-        const current = draftImageAttachments.value.find((item) => item.id === attachment.id);
+        const current = target.find((item) => item.id === attachment.id);
         if (!current) {
           return;
         }
@@ -697,7 +722,7 @@ function addImageFiles(files: File[]) {
         current.localPreviewUrl = undefined;
       })
       .catch((error: Error) => {
-        const current = draftImageAttachments.value.find((item) => item.id === attachment.id);
+        const current = target.find((item) => item.id === attachment.id);
         if (current) {
           current.uploading = false;
           current.error = `上传失败: ${error.message}`;
@@ -740,18 +765,29 @@ async function resolveAttachmentModelUrl(attachment: ChatImageAttachment): Promi
   attachment.modelUrl = await readBlobAsDataUrl(blob);
 }
 
-async function resolveConversationImageUrls(): Promise<void> {
+async function resolveConversationImageUrls(extraAttachments: ChatImageAttachment[] = []): Promise<void> {
   const attachments = messages.value.flatMap((message) => message.imageAttachments ?? []);
   attachments.push(...draftImageAttachments.value);
+  attachments.push(...extraAttachments);
   await Promise.all(attachments.map(resolveAttachmentModelUrl));
 }
 
 function removeDraftImageAttachment(id: string) {
-  const index = draftImageAttachments.value.findIndex((attachment) => attachment.id === id);
+  removeImageAttachment(draftImageAttachments.value, id);
+}
+
+function removeEditingImageAttachment(id: string) {
+  if (editingMessage.value) {
+    removeImageAttachment(editingMessage.value.imageAttachments, id);
+  }
+}
+
+function removeImageAttachment(target: ChatImageAttachment[], id: string) {
+  const index = target.findIndex((attachment) => attachment.id === id);
   if (index < 0) {
     return;
   }
-  const [attachment] = draftImageAttachments.value.splice(index, 1);
+  const [attachment] = target.splice(index, 1);
   if (attachment.localPreviewUrl) {
     URL.revokeObjectURL(attachment.localPreviewUrl);
   }
@@ -843,6 +879,77 @@ async function openSession(sessionId: string) {
     };
   }
   applyHistory(result.messages);
+  messageBranches.value = result.branches;
+  editingMessage.value = null;
+}
+
+async function copyMessage(message: ChatMessage): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(message.content);
+    copiedMessageId.value = message.id;
+    window.setTimeout(() => {
+      if (copiedMessageId.value === message.id) {
+        copiedMessageId.value = "";
+      }
+    }, 1600);
+  } catch (error) {
+    showChatError(`复制失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function startEditingMessage(message: ChatMessage) {
+  if (sending.value || message.role !== "user" || message.id.startsWith("local-")) {
+    return;
+  }
+  editingMessage.value = {
+    messageId: message.id,
+    content: message.content,
+    imageAttachments: (message.imageAttachments ?? []).map((attachment) => ({ ...attachment })),
+  };
+}
+
+function cancelEditingMessage() {
+  editingMessage.value = null;
+}
+
+async function switchMessageBranch(messageId: string, direction: -1 | 1) {
+  const branch = messageBranchMap.value.get(messageId);
+  if (!branch || sending.value) {
+    return;
+  }
+  const target = branch.versions[branch.current_index + direction];
+  if (target) {
+    await openSession(target.session_id);
+  }
+}
+
+async function submitEditingMessage() {
+  const editing = editingMessage.value;
+  if (!editing || sending.value || !activeSessionId.value) {
+    return;
+  }
+  const content = editing.content.trim();
+  const attachments = editing.imageAttachments;
+  if (!content && attachments.length === 0) {
+    return;
+  }
+  if (!supportsMultimodalInput.value && attachments.length > 0) {
+    showChatError("当前模型不支持多模态输入，无法发送图片。");
+    return;
+  }
+  if (attachments.some((attachment) => attachment.uploading || attachment.error)) {
+    showChatError("图片尚未准备完成，无法发送编辑后的消息。");
+    return;
+  }
+
+  try {
+    const forked = await chat.forkSession(activeSessionId.value, editing.messageId);
+    await openSession(forked.session_id);
+    editingMessage.value = null;
+    await sendMessageWithText(content, false, { attachments, isEdit: true });
+  } catch (error) {
+    showChatError(`创建对话分支失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 async function pickDirectory() {
@@ -865,6 +972,8 @@ function startNewSession() {
   messages.value = [];
   activeToolCallId.value = "";
   expandedLiveToolCalls.value = new Set();
+  messageBranches.value = [];
+  editingMessage.value = null;
   clearChatError();
   clearPendingAskUser();
 }
@@ -1087,23 +1196,24 @@ async function submitAskUserAnswer() {
   await sendMessageWithText(askUserAnswer.value, true);
 }
 
-async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
+async function sendMessageWithText(rawInput: string, fromAskUser: boolean, options: SendMessageOptions = {}) {
   if (sending.value) {
     return;
   }
 
   const userText = rawInput.trim();
-  if (!fromAskUser && draftImageAttachments.value.length > 0 && !supportsMultimodalInput.value) {
+  const sentAttachments = fromAskUser ? [] : options.attachments ?? draftImageAttachments.value;
+  if (!fromAskUser && sentAttachments.length > 0 && !supportsMultimodalInput.value) {
     showChatError("当前模型不支持多模态输入，无法发送图片。");
     return;
   }
-  if (!userText && (!fromAskUser && draftImageAttachments.value.length === 0)) {
+  if (!userText && (!fromAskUser && sentAttachments.length === 0)) {
     return;
   }
   if (!selectedService.value || selectedService.value.runtime.status !== "running") {
     return;
   }
-  if (!fromAskUser && !canSend.value) {
+  if (!fromAskUser && !options.isEdit && !canSend.value) {
     return;
   }
   if (fromAskUser && !canSubmitAskUser.value) {
@@ -1112,27 +1222,26 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
   clearChatError();
   sending.value = true;
   try {
-    await resolveConversationImageUrls();
+    await resolveConversationImageUrls(options.attachments);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     showChatError(`图片准备失败: ${message}`);
     sending.value = false;
     return;
   }
-  const pendingNewConversation = parseNewConversationCommand(userText);
+  const pendingNewConversation = options.isEdit ? null : parseNewConversationCommand(userText);
   const requestMessages = [
     ...toApiMessages(),
     {
       role: "user",
       content: userText,
-      parts: fromAskUser ? undefined : messageParts(userText, draftImageAttachments.value),
+      parts: fromAskUser ? undefined : messageParts(userText, sentAttachments),
     },
   ];
 
-  const sentAttachments = fromAskUser ? [] : draftImageAttachments.value;
   if (fromAskUser) {
     askUserAnswer.value = "";
-  } else {
+  } else if (!options.attachments) {
     draftMessage.value = "";
     draftImageAttachments.value = [];
   }
@@ -1266,6 +1375,9 @@ onUnmounted(() => {
     chatErrorDialogMessage,
     messagesContainer,
     messages,
+    messageBranchMap,
+    editingMessage,
+    copiedMessageId,
     activeToolCallId,
     expandedLiveToolCalls,
     llmModels,
@@ -1321,7 +1433,9 @@ onUnmounted(() => {
     handleTextareaKeydown,
     handleTextareaPaste,
     handleImageFileSelection,
+    handleEditImageFileSelection,
     removeDraftImageAttachment,
+    removeEditingImageAttachment,
     openImagePreview,
     closeImagePreview,
     handleImagePreviewKeydown,
@@ -1331,6 +1445,11 @@ onUnmounted(() => {
     applyInferenceFailure,
     reloadSessions,
     openSession,
+    copyMessage,
+    startEditingMessage,
+    cancelEditingMessage,
+    submitEditingMessage,
+    switchMessageBranch,
     pickDirectory,
     startNewSession,
     selectModel,

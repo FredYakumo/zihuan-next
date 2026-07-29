@@ -350,6 +350,20 @@
                       ></div>
                       <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
                     </div>
+                    <div v-if="!message.streaming" class="chat-message-actions">
+                      <t-tooltip content="复制消息">
+                        <t-button
+                          variant="text"
+                          size="small"
+                          shape="square"
+                          :aria-label="copiedMessageId === message.id ? '已复制' : '复制消息'"
+                          @click="copyMessage(message)"
+                        >
+                          <CheckIcon v-if="copiedMessageId === message.id" />
+                          <CopyIcon v-else />
+                        </t-button>
+                      </t-tooltip>
+                    </div>
                     <div
                       v-if="
                         idx !== group.messages.length - 1 &&
@@ -479,25 +493,84 @@
                   <div
                     v-for="(message, idx) in group.messages"
                     :key="message.id + '-' + idx"
-                    class="chat-bubble"
-                    :class="message.role"
+                    class="chat-user-message-item"
                   >
-                    <div v-if="message.imageAttachments?.length" class="chat-message-images">
-                      <button
-                        v-for="attachment in message.imageAttachments"
-                        :key="attachment.id"
-                        class="chat-message-image"
-                        :title="attachment.name"
-                        @click="openImagePreview(attachment)"
-                      >
-                        <img :src="attachment.url" :alt="attachment.name" />
-                      </button>
+                    <div v-if="editingMessage?.messageId === message.id" class="chat-message-edit">
+                      <div v-if="editingMessage.imageAttachments.length" class="chat-draft-images">
+                        <div v-for="attachment in editingMessage.imageAttachments" :key="attachment.id" class="chat-draft-image">
+                          <button class="chat-draft-image-preview" :title="attachment.name" @click="openImagePreview(attachment)">
+                            <img :src="attachment.url" :alt="attachment.name" />
+                          </button>
+                          <span v-if="attachment.uploading" class="chat-draft-image-status">上传中...</span>
+                          <span v-else-if="attachment.error" class="chat-draft-image-status chat-draft-image-status--error">
+                            {{ attachment.error }}
+                          </span>
+                          <button class="chat-draft-image-remove" :aria-label="`删除 ${attachment.name}`" @click="removeEditingImageAttachment(attachment.id)">
+                            <CloseIcon />
+                          </button>
+                        </div>
+                      </div>
+                      <textarea v-model="editingMessage.content" placeholder="输入消息" />
+                      <div class="chat-message-edit-actions">
+                        <template v-if="supportsMultimodalInput">
+                          <input
+                            :id="`chat-edit-image-upload-${message.id}`"
+                            class="chat-image-upload-input"
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            @change="handleEditImageFileSelection"
+                          />
+                          <label class="chat-message-action-button" :for="`chat-edit-image-upload-${message.id}`" title="添加图片">
+                            <ImageAddIcon />
+                          </label>
+                        </template>
+                        <t-button variant="text" size="small" @click="cancelEditingMessage">取消</t-button>
+                        <t-button theme="primary" size="small" :disabled="sending" @click="submitEditingMessage">发送</t-button>
+                      </div>
                     </div>
-                    <div
-                      class="chat-bubble-content markdown-body"
-                      v-html="renderMessageContent(message.content, message.streaming)"
-                    ></div>
-                    <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
+                    <template v-else>
+                      <div class="chat-bubble" :class="message.role">
+                        <div v-if="message.imageAttachments?.length" class="chat-message-images">
+                          <button
+                            v-for="attachment in message.imageAttachments"
+                            :key="attachment.id"
+                            class="chat-message-image"
+                            :title="attachment.name"
+                            @click="openImagePreview(attachment)"
+                          >
+                            <img :src="attachment.url" :alt="attachment.name" />
+                          </button>
+                        </div>
+                        <div
+                          class="chat-bubble-content markdown-body"
+                          v-html="renderMessageContent(message.content, message.streaming)"
+                        ></div>
+                        <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
+                      </div>
+                      <div class="chat-message-actions">
+                        <t-tooltip content="复制消息">
+                          <t-button variant="text" size="small" shape="square" :aria-label="copiedMessageId === message.id ? '已复制' : '复制消息'" @click="copyMessage(message)">
+                            <CheckIcon v-if="copiedMessageId === message.id" />
+                            <CopyIcon v-else />
+                          </t-button>
+                        </t-tooltip>
+                        <t-tooltip content="编辑并创建新分支">
+                          <t-button variant="text" size="small" shape="square" :disabled="sending || message.id.startsWith('local-')" aria-label="编辑消息" @click="startEditingMessage(message)">
+                            <EditIcon />
+                          </t-button>
+                        </t-tooltip>
+                        <template v-if="messageBranchMap.has(message.id)">
+                          <t-button variant="text" size="small" shape="square" :disabled="sending || messageBranchMap.get(message.id)?.current_index === 0" aria-label="上一版本" @click="switchMessageBranch(message.id, -1)">
+                            <ChevronLeftIcon />
+                          </t-button>
+                          <span class="chat-branch-count">{{ (messageBranchMap.get(message.id)?.current_index ?? 0) + 1 }}/{{ messageBranchMap.get(message.id)?.total ?? 1 }}</span>
+                          <t-button variant="text" size="small" shape="square" :disabled="sending || (messageBranchMap.get(message.id)?.current_index ?? 0) + 1 === (messageBranchMap.get(message.id)?.total ?? 1)" aria-label="下一版本" @click="switchMessageBranch(message.id, 1)">
+                            <ChevronRightIcon />
+                          </t-button>
+                        </template>
+                      </div>
+                    </template>
                   </div>
                 </div>
               </div>
@@ -879,9 +952,11 @@
 <script setup lang="ts">
 import {
   CheckIcon,
+  ChevronLeftIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CloseIcon,
+  CopyIcon,
   DeleteIcon,
   EditIcon,
   ErrorCircleIcon,
@@ -936,6 +1011,9 @@ const {
   chatErrorDialogMessage,
   messagesContainer,
   messages,
+  messageBranchMap,
+  editingMessage,
+  copiedMessageId,
   activeToolCallId,
   expandedLiveToolCalls,
   llmModels,
@@ -990,7 +1068,9 @@ const {
   handleTextareaKeydown,
   handleTextareaPaste,
   handleImageFileSelection,
+  handleEditImageFileSelection,
   removeDraftImageAttachment,
+  removeEditingImageAttachment,
   openImagePreview,
   closeImagePreview,
   handleImagePreviewKeydown,
@@ -1000,6 +1080,11 @@ const {
   applyInferenceFailure,
   reloadSessions,
   openSession,
+  copyMessage,
+  startEditingMessage,
+  cancelEditingMessage,
+  submitEditingMessage,
+  switchMessageBranch,
   pickDirectory,
   startNewSession,
   selectModel,
