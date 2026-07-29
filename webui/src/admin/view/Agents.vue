@@ -3,6 +3,8 @@
     <div class="page-hero">
       <h2>Service 管理</h2>
       <div class="hero-actions connection-hero-actions">
+        <button class="btn ghost" @click="triggerServiceImportFile">导入</button>
+        <input ref="serviceImportFileInput" type="file" accept=".json" style="display: none" @change="handleServiceFileChange" />
         <button
           class="btn primary connection-hero-add-btn"
           @click="startCreate"
@@ -2245,6 +2247,12 @@
               >
                 复制添加
               </button>
+              <button
+                class="btn ghost connection-card-compact-btn"
+                @click="copyServiceConfigItem(service)"
+              >
+                {{ serviceCopiedId === service.config_id ? '已复制' : '复制' }}
+              </button>
              <button
                class="btn connection-card-compact-btn"
                @click="toggleServiceRuntime(service)"
@@ -2276,7 +2284,9 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
 import { CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
+import type { ServiceWithRuntime } from "../../api/client";
 import { useAgents } from "../composables/useAgents";
 
 const {
@@ -2395,7 +2405,29 @@ const {
   getAvatarDisplayUrl,
   agentAvatarUrl,
   agentInitial,
+  serviceCopiedId,
+  copyServiceConfig,
+  handleServiceFileChange,
 } = useAgents();
+
+const serviceImportFileInput = ref<HTMLInputElement | null>(null);
+
+function triggerServiceImportFile() {
+  serviceImportFileInput.value?.click();
+}
+
+function copyServiceConfigItem(service: ServiceWithRuntime) {
+  const payload = {
+    name: service.name,
+    enabled: service.enabled,
+    auto_start: service.auto_start,
+    is_default: service.is_default,
+    agent_type: service.agent_type,
+    tools: service.tools,
+    ...(service.avatar_url ? { avatar_url: service.avatar_url } : {}),
+  };
+  copyServiceConfig(payload, service.config_id);
+}
 </script>
 
 <style scoped lang="scss">

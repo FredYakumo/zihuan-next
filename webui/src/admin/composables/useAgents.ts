@@ -22,6 +22,7 @@ import {
   defaultToolForm,
   defaultQqChatMessageRateLimitRule,
   defaultWorkspaceDefaultToolsEnabled,
+  assertServiceConfig,
   compactId,
   formatTime,
   statusTone,
@@ -33,6 +34,7 @@ import {
   type ServiceTypeName,
   type QqChatEmotionDimensionFormItem,
 } from "../model";
+import { useAdminClipboard } from "./useAdminClipboard";
 
 export function useAgents() {
 type ServiceTypeOption = {
@@ -103,6 +105,19 @@ const emotionDimensionDraft = reactive<{
   negative_prompt: "",
 });
 const emotionDimensionEditingIndex = ref<number | null>(null);
+const { copiedId: serviceCopiedId, copyConfig: copyServiceConfig, handleFileChange: handleServiceFileChange } = useAdminClipboard<ServiceWithRuntime>({
+  validate: assertServiceConfig,
+  onImport: (config) => {
+    Object.assign(form, serviceFormFromConfig(config));
+    form.id = null;
+    editingServiceId.value = "";
+    form.name = `${form.name} 副本`;
+    showCreatePicker.value = true;
+    showCreateForm.value = true;
+  },
+  isEnabled: () => !showCreatePicker.value && !showEditModal.value,
+});
+
 const qqChatDefaultTools = QQ_CHAT_DEFAULT_TOOLS;
 const httpStreamDefaultTools = HTTP_STREAM_DEFAULT_TOOLS;
 const workspaceDefaultTools = WORKSPACE_DEFAULT_TOOLS;
@@ -1067,6 +1082,9 @@ onMounted(() => {
     getAvatarDisplayUrl,
     agentAvatarUrl,
     agentInitial,
+    serviceCopiedId,
+    copyServiceConfig,
+    handleServiceFileChange,
   };
 }
 

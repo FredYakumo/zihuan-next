@@ -2,6 +2,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import { fileIO, system, type LlmConfig, type LocalLlmModelInfo } from "../../api/client";
 import {
+  assertLlmConfig,
   buildModelRefPayload,
   compactId,
   defaultLlmForm,
@@ -9,6 +10,7 @@ import {
   llmFormFromConfig,
   type LlmFormState,
 } from "../model";
+import { useAdminClipboard } from "./useAdminClipboard";
 
 
 export function useLlm() {
@@ -18,6 +20,18 @@ export function useLlm() {
   const showCreateForm = ref(false);
   const localEmbeddingModels = ref<string[]>([]);
   const localLlmModels = ref<LocalLlmModelInfo[]>([]);
+
+  const { copiedId, copyConfig, handleFileChange } = useAdminClipboard<LlmConfig>({
+    validate: assertLlmConfig,
+    onImport: (config) => {
+      Object.assign(form, llmFormFromConfig(config));
+      form.id = null;
+      form.name = `${form.name} 副本`;
+      showCreatePicker.value = true;
+      showCreateForm.value = true;
+    },
+    isEnabled: () => !showCreatePicker.value,
+  });
 
   const isCandleMode = computed(
     () =>
@@ -199,6 +213,9 @@ export function useLlm() {
     localLlmOptionLabel,
     compactId,
     formatTime,
+    copiedId,
+    copyConfig,
+    handleFileChange,
   };
 }
 

@@ -8,6 +8,7 @@ import {
   type RuntimeConnectionInstanceSummary,
 } from "../../api/client";
 import {
+  assertConnectionConfig,
   buildConnectionPayload,
   compactId,
   connectionFormFromConfig,
@@ -19,6 +20,7 @@ import {
   summarizeIds,
   type ConnectionFormState,
 } from "../model";
+import { useAdminClipboard } from "./useAdminClipboard";
 
 type ConnectionTypeOption = {
   value: ConnectionFormState["type"];
@@ -46,6 +48,18 @@ export function useConnections() {
   const form = reactive<ConnectionFormState>(defaultConnectionForm());
   const showEditor = ref(false);
   const showCreatePicker = ref(false);
+
+  const { copiedId, copyConfig, handleFileChange } = useAdminClipboard<ConnectionConfig>({
+    validate: assertConnectionConfig,
+    onImport: (config) => {
+      Object.assign(form, connectionFormFromConfig(config));
+      form.id = null;
+      form.name = `${form.name} 副本`;
+      showCreatePicker.value = true;
+      showEditor.value = true;
+    },
+    isEnabled: () => !showCreatePicker.value && !showEditor.value,
+  });
 
   function resetForm() {
     Object.assign(form, defaultConnectionForm());
@@ -397,6 +411,9 @@ export function useConnections() {
     clearInactiveConnectionCredentials,
     formatTime,
     isBotAdapterConnectionType,
+    copiedId,
+    copyConfig,
+    handleFileChange,
   };
 }
 

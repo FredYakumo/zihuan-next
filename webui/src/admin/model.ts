@@ -1320,6 +1320,112 @@ export function buildModelRefPayload(form: LlmFormState): ModelRefSpec {
   };
 }
 
+const SUPPORTED_CONNECTION_TYPES = new Set([
+  "mysql",
+  "redis",
+  "weaviate",
+  "elasticsearch",
+  "rustfs",
+  "bot_adapter",
+  "ims_bot_adapter",
+  "web_search_engine",
+  "tokenizer",
+  "sqlite",
+]);
+
+export function assertConnectionConfig(json: unknown): ConnectionConfig {
+  if (!json || typeof json !== "object") {
+    throw new Error("配置必须是 JSON 对象");
+  }
+  const obj = json as Record<string, unknown>;
+  if (!obj.name || typeof obj.name !== "string" || !obj.name.trim()) {
+    throw new Error("配置缺少有效的 name 字段");
+  }
+  if (typeof obj.enabled !== "boolean") {
+    throw new Error("配置缺少有效的 enabled 字段");
+  }
+  const kind = obj.kind;
+  if (!kind || typeof kind !== "object") {
+    throw new Error("配置缺少 kind 字段");
+  }
+  const type = String((kind as Record<string, unknown>).type ?? "");
+  if (!SUPPORTED_CONNECTION_TYPES.has(type)) {
+    throw new Error(`不支持的连接类型: ${type || "(空)"}`);
+  }
+  return obj as unknown as ConnectionConfig;
+}
+
+export function assertLlmConfig(json: unknown): LlmConfig {
+  if (!json || typeof json !== "object") {
+    throw new Error("配置必须是 JSON 对象");
+  }
+  const obj = json as Record<string, unknown>;
+  if (!obj.name || typeof obj.name !== "string" || !obj.name.trim()) {
+    throw new Error("配置缺少有效的 name 字段");
+  }
+  if (typeof obj.enabled !== "boolean") {
+    throw new Error("配置缺少有效的 enabled 字段");
+  }
+  const model = obj.model;
+  if (!model || typeof model !== "object") {
+    throw new Error("配置缺少 model 字段");
+  }
+  const modelObj = model as Record<string, unknown>;
+  const modelType = String(modelObj.type ?? "");
+  if (modelType === "chat_llm") {
+    const llm = modelObj.llm;
+    if (!llm || typeof llm !== "object") {
+      throw new Error("聊天模型配置缺少 llm 字段");
+    }
+    const llmModelName = String((llm as Record<string, unknown>).model_name ?? "").trim();
+    if (!llmModelName) {
+      throw new Error("聊天模型配置缺少 model_name");
+    }
+  } else if (modelType === "text_embedding_local") {
+    const modelName = String(modelObj.model_name ?? "").trim();
+    if (!modelName) {
+      throw new Error("本地向量模型配置缺少 model_name");
+    }
+  } else {
+    throw new Error(`不支持的模型类型: ${modelType || "(空)"}`);
+  }
+  return obj as unknown as LlmConfig;
+}
+
+const SUPPORTED_SERVICE_TYPES = new Set(["qq_chat", "http_stream", "workspace"]);
+
+export function assertServiceConfig(json: unknown): ServiceWithRuntime {
+  if (!json || typeof json !== "object") {
+    throw new Error("配置必须是 JSON 对象");
+  }
+  const obj = json as Record<string, unknown>;
+  if (!obj.name || typeof obj.name !== "string" || !obj.name.trim()) {
+    throw new Error("配置缺少有效的 name 字段");
+  }
+  if (typeof obj.enabled !== "boolean") {
+    throw new Error("配置缺少有效的 enabled 字段");
+  }
+  if (typeof obj.auto_start !== "boolean") {
+    throw new Error("配置缺少有效的 auto_start 字段");
+  }
+  if (typeof obj.is_default !== "boolean") {
+    throw new Error("配置缺少有效的 is_default 字段");
+  }
+  const agentType = obj.agent_type;
+  if (!agentType || typeof agentType !== "object") {
+    throw new Error("配置缺少 agent_type 字段");
+  }
+  const agentTypeObj = agentType as Record<string, unknown>;
+  const type = String(agentTypeObj.type ?? "");
+  if (!SUPPORTED_SERVICE_TYPES.has(type)) {
+    throw new Error(`不支持的 Service 类型: ${type || "(空)"}`);
+  }
+  if (!Array.isArray(obj.tools)) {
+    throw new Error("配置缺少 tools 数组");
+  }
+  return obj as unknown as ServiceWithRuntime;
+}
+
 export function formatTime(value: string | null | undefined): string {
   if (!value) {
     return "未记录";
