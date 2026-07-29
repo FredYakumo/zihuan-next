@@ -2,7 +2,7 @@
   <section :class="embedded ? 'chat-embedded-wrapper' : 'page chat-page'">
     <div :class="embedded ? 'chat-embedded-inner' : 'chat-page-panel'">
       <section class="panel chat-panel">
-        <div class="chat-toolbar">
+        <div v-if="embedded" class="chat-toolbar">
           <div class="chat-agent-picker">
             <div class="chat-agent-picker-title">选择 Service</div>
             <div class="chat-agent-cards">
@@ -56,8 +56,74 @@
           </button>
         </div>
 
-        <div class="chat-layout">
-          <aside class="chat-sessions">
+        <div :class="['chat-layout', { 'chat-layout--history-collapsed': !embedded && historyCollapsed }]">
+          <aside v-if="embedded || !historyCollapsed" class="chat-sessions">
+            <template v-if="!embedded">
+              <div class="chat-service-select-row">
+                <t-select
+                  v-model="selectedServiceId"
+                  class="chat-service-select"
+                  :loading="servicesLoading"
+                  placeholder="选择 Service"
+                >
+                  <template #valueDisplay>
+                    <div v-if="selectedService" class="chat-service-select-value">
+                      <img
+                        v-if="agentAvatarUrl(selectedService)"
+                        :src="agentAvatarUrl(selectedService)"
+                        class="chat-service-select-avatar"
+                        alt=""
+                      />
+                      <span v-else class="chat-service-select-avatar chat-service-select-avatar--fallback">
+                        {{ agentInitial(selectedService.name) }}
+                      </span>
+                      <span>{{ selectedService.name }}</span>
+                    </div>
+                  </template>
+                  <t-option
+                    v-for="agent in services.filter((item) => CHAT_ELIGIBLE_SERVICE_TYPES.has(item.agent_type.type))"
+                    :key="agent.config_id"
+                    :value="agent.config_id"
+                    :label="agent.name"
+                  >
+                    <div class="chat-service-select-option">
+                      <img
+                        v-if="agentAvatarUrl(agent)"
+                        :src="agentAvatarUrl(agent)"
+                        class="chat-service-select-avatar"
+                        alt=""
+                      />
+                      <span v-else class="chat-service-select-avatar chat-service-select-avatar--fallback">
+                        {{ agentInitial(agent.name) }}
+                      </span>
+                      <span class="chat-service-select-option-name">{{ agent.name }}</span>
+                      <span v-if="agent.runtime.status !== 'running'" class="chat-service-select-status">
+                        未运行
+                      </span>
+                    </div>
+                  </t-option>
+                </t-select>
+                <button
+                  class="chat-history-toggle"
+                  title="收起历史"
+                  aria-label="收起历史"
+                  @click="toggleHistory"
+                >
+                  <MenuFoldIcon />
+                </button>
+              </div>
+              <div class="chat-sessions-actions">
+                <button class="chat-sessions-action" @click="reloadSessions">刷新历史</button>
+                <button
+                  v-if="isWorkspaceService"
+                  class="chat-sessions-action"
+                  :disabled="pickingDirectory"
+                  @click="pickDirectory"
+                >
+                  {{ pickingDirectory ? "选择中..." : "打开目录" }}
+                </button>
+              </div>
+            </template>
             <div class="chat-sessions-header">历史</div>
             <template v-for="group in groupedSessions" :key="group.pathKey">
               <div class="chat-session-group-header" :title="group.path ?? undefined">
@@ -85,7 +151,16 @@
             <div v-if="sessions.length === 0" class="muted">暂无历史会话</div>
           </aside>
 
-          <div class="chat-main">
+          <div :class="['chat-main', { 'chat-main--history-collapsed': !embedded && historyCollapsed }]">
+            <button
+              v-if="!embedded && historyCollapsed"
+              class="chat-history-expand"
+              title="展开历史"
+              aria-label="展开历史"
+              @click="toggleHistory"
+            >
+              <MenuUnfoldIcon />
+            </button>
             <div v-if="isWorkspaceService" class="workspace-path-display">
               <span class="path-label">当前工作目录：</span>
               <span class="path-value" :class="{ 'path-unset': !workspacePath }">
@@ -273,7 +348,23 @@
                         class="chat-bubble-content markdown-body"
                         v-html="renderMessageContent(message.content, message.streaming)"
                       ></div>
-                      <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
+                      <div class="chat-bubble-footer">
+                        <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
+                        <div v-if="!message.streaming" class="chat-message-actions chat-message-actions--inside">
+                          <t-tooltip content="复制消息">
+                            <t-button
+                              variant="text"
+                              size="small"
+                              shape="square"
+                              :aria-label="copiedMessageId === message.id ? '已复制' : '复制消息'"
+                              @click="copyMessage(message)"
+                            >
+                              <CheckIcon v-if="copiedMessageId === message.id" />
+                              <CopyIcon v-else />
+                            </t-button>
+                          </t-tooltip>
+                        </div>
+                      </div>
                     </div>
                     <div
                       v-if="
@@ -404,25 +495,86 @@
                   <div
                     v-for="(message, idx) in group.messages"
                     :key="message.id + '-' + idx"
-                    class="chat-bubble"
-                    :class="message.role"
+                    class="chat-user-message-item"
                   >
-                    <div v-if="message.imageAttachments?.length" class="chat-message-images">
-                      <button
-                        v-for="attachment in message.imageAttachments"
-                        :key="attachment.id"
-                        class="chat-message-image"
-                        :title="attachment.name"
-                        @click="openImagePreview(attachment)"
-                      >
-                        <img :src="attachment.url" :alt="attachment.name" />
-                      </button>
+                    <div v-if="editingMessage?.messageId === message.id" class="chat-message-edit">
+                      <div v-if="editingMessage.imageAttachments.length" class="chat-draft-images">
+                        <div v-for="attachment in editingMessage.imageAttachments" :key="attachment.id" class="chat-draft-image">
+                          <button class="chat-draft-image-preview" :title="attachment.name" @click="openImagePreview(attachment)">
+                            <img :src="attachment.url" :alt="attachment.name" />
+                          </button>
+                          <span v-if="attachment.uploading" class="chat-draft-image-status">上传中...</span>
+                          <span v-else-if="attachment.error" class="chat-draft-image-status chat-draft-image-status--error">
+                            {{ attachment.error }}
+                          </span>
+                          <button class="chat-draft-image-remove" :aria-label="`删除 ${attachment.name}`" @click="removeEditingImageAttachment(attachment.id)">
+                            <CloseIcon />
+                          </button>
+                        </div>
+                      </div>
+                      <textarea v-model="editingMessage.content" placeholder="输入消息" />
+                      <div class="chat-message-edit-actions">
+                        <template v-if="supportsMultimodalInput">
+                          <input
+                            :id="`chat-edit-image-upload-${message.id}`"
+                            class="chat-image-upload-input"
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            @change="handleEditImageFileSelection"
+                          />
+                          <label class="chat-message-action-button" :for="`chat-edit-image-upload-${message.id}`" title="添加图片">
+                            <ImageAddIcon />
+                          </label>
+                        </template>
+                        <t-button variant="text" size="small" @click="cancelEditingMessage">取消</t-button>
+                        <t-button theme="primary" size="small" :disabled="sending" @click="submitEditingMessage">发送</t-button>
+                      </div>
                     </div>
-                    <div
-                      class="chat-bubble-content markdown-body"
-                      v-html="renderMessageContent(message.content, message.streaming)"
-                    ></div>
-                    <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
+                    <template v-else>
+                      <div class="chat-bubble" :class="message.role">
+                        <div v-if="message.imageAttachments?.length" class="chat-message-images">
+                          <button
+                            v-for="attachment in message.imageAttachments"
+                            :key="attachment.id"
+                            class="chat-message-image"
+                            :title="attachment.name"
+                            @click="openImagePreview(attachment)"
+                          >
+                            <img :src="attachment.url" :alt="attachment.name" />
+                          </button>
+                        </div>
+                        <div
+                          class="chat-bubble-content markdown-body"
+                          v-html="renderMessageContent(message.content, message.streaming)"
+                        ></div>
+                        <div class="chat-bubble-footer chat-bubble-footer--user">
+                          <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
+                          <div class="chat-message-actions chat-message-actions--inside">
+                            <t-tooltip content="复制消息">
+                              <t-button variant="text" size="small" shape="square" :aria-label="copiedMessageId === message.id ? '已复制' : '复制消息'" @click="copyMessage(message)">
+                                <CheckIcon v-if="copiedMessageId === message.id" />
+                                <CopyIcon v-else />
+                              </t-button>
+                            </t-tooltip>
+                            <t-tooltip content="编辑并创建新分支">
+                              <t-button variant="text" size="small" shape="square" :disabled="sending || message.id.startsWith('local-')" aria-label="编辑消息" @click="startEditingMessage(message)">
+                                <EditIcon />
+                              </t-button>
+                            </t-tooltip>
+                            <template v-if="messageBranchMap.has(message.id)">
+                              <t-button variant="text" size="small" shape="square" :disabled="sending || messageBranchMap.get(message.id)?.current_index === 0" aria-label="上一版本" @click="switchMessageBranch(message.id, -1)">
+                                <ChevronLeftIcon />
+                              </t-button>
+                              <span class="chat-branch-count">{{ (messageBranchMap.get(message.id)?.current_index ?? 0) + 1 }}/{{ messageBranchMap.get(message.id)?.total ?? 1 }}</span>
+                              <t-button variant="text" size="small" shape="square" :disabled="sending || (messageBranchMap.get(message.id)?.current_index ?? 0) + 1 === (messageBranchMap.get(message.id)?.total ?? 1)" aria-label="下一版本" @click="switchMessageBranch(message.id, 1)">
+                                <ChevronRightIcon />
+                              </t-button>
+                            </template>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
                   </div>
                 </div>
               </div>
@@ -802,7 +954,24 @@
 </template>
 
 <script setup lang="ts">
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, DeleteIcon, EditIcon, ErrorCircleIcon, FileIcon, FolderIcon, ImageAddIcon } from "tdesign-icons-vue-next";
+import {
+  CheckIcon,
+  ChevronLeftIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CloseIcon,
+  CopyIcon,
+  DeleteIcon,
+  EditIcon,
+  ErrorCircleIcon,
+  FileIcon,
+  FolderIcon,
+  ImageAddIcon,
+  MenuFoldIcon,
+  MenuUnfoldIcon,
+} from "tdesign-icons-vue-next";
+
+import { ref, watch } from "vue";
 
 import { useChat } from "../composables/useChat";
 import ToolCallBadge from "./ToolCallBadge.vue";
@@ -816,6 +985,19 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "update:sessionId", sessionId: string): void;
 }>();
+
+const HISTORY_COLLAPSED_KEY = "zihuan.chat.history-collapsed";
+const historyCollapsed = ref(!props.embedded && localStorage.getItem(HISTORY_COLLAPSED_KEY) === "1");
+
+function toggleHistory() {
+  historyCollapsed.value = !historyCollapsed.value;
+}
+
+watch(historyCollapsed, (collapsed) => {
+  if (!props.embedded) {
+    localStorage.setItem(HISTORY_COLLAPSED_KEY, collapsed ? "1" : "0");
+  }
+});
 
 const {
   services,
@@ -833,6 +1015,9 @@ const {
   chatErrorDialogMessage,
   messagesContainer,
   messages,
+  messageBranchMap,
+  editingMessage,
+  copiedMessageId,
   activeToolCallId,
   expandedLiveToolCalls,
   llmModels,
@@ -887,7 +1072,9 @@ const {
   handleTextareaKeydown,
   handleTextareaPaste,
   handleImageFileSelection,
+  handleEditImageFileSelection,
   removeDraftImageAttachment,
+  removeEditingImageAttachment,
   openImagePreview,
   closeImagePreview,
   handleImagePreviewKeydown,
@@ -897,6 +1084,11 @@ const {
   applyInferenceFailure,
   reloadSessions,
   openSession,
+  copyMessage,
+  startEditingMessage,
+  cancelEditingMessage,
+  submitEditingMessage,
+  switchMessageBranch,
   pickDirectory,
   startNewSession,
   selectModel,

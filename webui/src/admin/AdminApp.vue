@@ -23,7 +23,7 @@
           连接配置
         </t-menu-item>
         <t-menu-item value="/llm" to="/llm" @click="closeSidebar">
-          <template #icon><CloudIcon /></template>
+          <template #icon><MindMapIcon /></template>
           模型配置
         </t-menu-item>
         <t-menu-item value="/services" to="/services" @click="closeSidebar">
@@ -87,12 +87,12 @@ import { RouterView, useRoute } from "vue-router";
 import {
   ArticleIcon,
   ChatIcon,
-  CloudIcon,
   ControlPlatformIcon,
   DashboardIcon,
   LinkIcon,
   MenuFoldIcon,
   MenuUnfoldIcon,
+  MindMapIcon,
   SearchIcon,
   ServerIcon,
   SettingIcon,

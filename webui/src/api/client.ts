@@ -518,6 +518,18 @@ export interface ChatSessionSummary {
   title?: string | null;
 }
 
+export interface ChatBranchVersion {
+  session_id: string;
+  message_id: string;
+}
+
+export interface ChatMessageBranch {
+  message_id: string;
+  current_index: number;
+  total: number;
+  versions: ChatBranchVersion[];
+}
+
 export const system = {
   connections: {
     list(): Promise<ConnectionConfig[]> {
@@ -942,8 +954,12 @@ export const chat = {
     return request("GET", `/chat/sessions${qs}`);
   },
 
-  getSessionMessages(sessionId: string): Promise<{ messages: ChatHistoryRecord[] }> {
+  getSessionMessages(sessionId: string): Promise<{ messages: ChatHistoryRecord[]; branches: ChatMessageBranch[] }> {
     return request("GET", `/chat/sessions/${sessionId}/messages`);
+  },
+
+  forkSession(sessionId: string, messageId: string): Promise<{ session_id: string }> {
+    return request("POST", `/chat/sessions/${sessionId}/fork`, { message_id: messageId });
   },
 
   deleteSession(sessionId: string): Promise<{ ok: boolean }> {

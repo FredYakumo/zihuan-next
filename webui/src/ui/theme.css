@@ -17,6 +17,9 @@
   --text-faint2:     #383838;
   --accent:          #3b82f6;
   --accent-subtle:   rgba(59, 130, 246, 0.12);
+  --chat-user-bubble-bg: color-mix(in srgb, var(--accent) 28%, var(--bg) 72%);
+  --chat-user-bubble-text: var(--text);
+  --chat-user-bubble-time: var(--text);
   --border:          #222222;
   --node-hover:      #1c1c1c;
   --tab-inactive:    #252525;

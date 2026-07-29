@@ -28,6 +28,7 @@ use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const APP_DIR_NAME: &str = "zihuan-next_aibot";
 const CHAT_STREAM_MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
+const CHAT_FORK_METADATA_SUFFIX: &str = ".fork.json";
 
 /// Bridges BrainObserver callbacks into the SSE event stream.
 ///
@@ -196,6 +197,39 @@ pub struct ChatHistoryRecord {
     pub workspace_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_ask_user: Option<AskUserRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChatForkRequest {
+    pub message_id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatForkResponse {
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ChatForkMetadata {
+    source_session_id: String,
+    source_message_id: String,
+    fork_group_id: String,
+    prefix_record_count: usize,
+    created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatBranchVersion {
+    session_id: String,
+    message_id: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatMessageBranch {
+    message_id: String,
+    current_index: usize,
+    total: usize,
+    versions: Vec<ChatBranchVersion>,
 }
 
 /// Lightweight display metadata extracted from an `AgentConfig`.
@@ -694,7 +728,34 @@ pub async fn get_chat_session_messages(req: &mut Request, res: &mut Response, _d
     }
 
     match load_chat_session_messages(&session_id) {
-        Ok(messages) => res.render(Json(json!({ "messages": messages }))),
+        Ok(messages) => match load_message_branches(&session_id, &messages) {
+            Ok(branches) => res.render(Json(json!({ "messages": messages, "branches": branches }))),
+            Err(err) => render_internal_error(res, err),
+        },
+        Err(err) => render_internal_error(res, err),
+    }
+}
+
+#[handler]
+pub async fn fork_chat_session(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let session_id = req.param::<String>("session_id").unwrap_or_default();
+    let body: ChatForkRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(err) => {
+            render_bad_request(res, format!("invalid fork request: {err}"));
+            return;
+        }
+    };
+    if session_id.trim().is_empty() || body.message_id.trim().is_empty() {
+        render_bad_request(res, "session_id and message_id must not be empty".to_string());
+        return;
+    }
+
+    match fork_chat_session_history(&session_id, &body.message_id) {
+        Ok(forked_session_id) => res.render(Json(ChatForkResponse {
+            session_id: forked_session_id,
+        })),
+        Err(Error::ValidationError(message)) => render_bad_request(res, message),
         Err(err) => render_internal_error(res, err),
     }
 }
@@ -1097,6 +1158,152 @@ fn append_history_record(record: &ChatHistoryRecord) -> Result<()> {
     Ok(())
 }
 
+fn fork_chat_session_history(source_session_id: &str, source_message_id: &str) -> Result<String> {
+    let records = load_chat_session_messages(source_session_id)?;
+    let Some(message_index) = records
+        .iter()
+        .position(|record| record.message_id == source_message_id && record.role == "user")
+    else {
+        return Err(Error::ValidationError("only an existing user message can be forked".to_string()));
+    };
+
+    let forked_session_id = Uuid::new_v4().to_string();
+    let mut prefix = records[..message_index].to_vec();
+    for record in &mut prefix {
+        record.session_id = forked_session_id.clone();
+    }
+    write_chat_session_records(&forked_session_id, &prefix)?;
+
+    let metadata = ChatForkMetadata {
+        source_session_id: source_session_id.to_string(),
+        source_message_id: source_message_id.to_string(),
+        fork_group_id: resolve_fork_group_id(source_session_id, source_message_id)?,
+        prefix_record_count: prefix.len(),
+        created_at: Utc::now().to_rfc3339(),
+    };
+    write_fork_metadata(&forked_session_id, &metadata)?;
+    Ok(forked_session_id)
+}
+
+fn write_chat_session_records(session_id: &str, records: &[ChatHistoryRecord]) -> Result<()> {
+    let path = chat_session_file_path(session_id)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
+    for record in records {
+        serde_json::to_writer(&mut file, record)
+            .map_err(|err| Error::StringError(format!("failed to serialize fork history record: {err}")))?;
+        file.write_all(b"\n")?;
+    }
+    file.flush()?;
+    Ok(())
+}
+
+fn resolve_fork_group_id(session_id: &str, message_id: &str) -> Result<String> {
+    let Some(metadata) = load_fork_metadata(session_id)? else {
+        return Ok(message_id.to_string());
+    };
+    let records = load_chat_session_messages(session_id)?;
+    if records
+        .get(metadata.prefix_record_count)
+        .is_some_and(|record| record.message_id == message_id)
+    {
+        return Ok(metadata.fork_group_id);
+    }
+    resolve_fork_group_id(&metadata.source_session_id, message_id)
+}
+
+fn load_message_branches(session_id: &str, records: &[ChatHistoryRecord]) -> Result<Vec<ChatMessageBranch>> {
+    let metadata_by_session = load_all_fork_metadata()?;
+    let mut branches = Vec::new();
+    for record in records.iter().filter(|record| record.role == "user") {
+        let group_id = resolve_fork_group_id(session_id, &record.message_id)?;
+        let mut versions = Vec::new();
+        for (forked_session_id, metadata) in &metadata_by_session {
+            if metadata.fork_group_id != group_id {
+                continue;
+            }
+            versions.push(ChatBranchVersion {
+                session_id: metadata.source_session_id.clone(),
+                message_id: metadata.source_message_id.clone(),
+            });
+            let forked_records = load_chat_session_messages(forked_session_id)?;
+            if let Some(forked_message) = forked_records.get(metadata.prefix_record_count) {
+                versions.push(ChatBranchVersion {
+                    session_id: forked_session_id.clone(),
+                    message_id: forked_message.message_id.clone(),
+                });
+            }
+        }
+        let mut distinct_versions = Vec::new();
+        for version in versions {
+            if distinct_versions
+                .iter()
+                .any(|existing: &ChatBranchVersion| existing.session_id == version.session_id)
+            {
+                continue;
+            }
+            distinct_versions.push(version);
+        }
+        let versions = distinct_versions;
+        if versions.len() < 2 {
+            continue;
+        }
+        let current_index = versions
+            .iter()
+            .position(|version| version.session_id == session_id)
+            .unwrap_or(0);
+        branches.push(ChatMessageBranch {
+            message_id: record.message_id.clone(),
+            current_index,
+            total: versions.len(),
+            versions,
+        });
+    }
+    Ok(branches)
+}
+
+fn load_all_fork_metadata() -> Result<Vec<(String, ChatForkMetadata)>> {
+    let dir = chat_history_dir()?;
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut metadata = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let Some(session_id) = file_name.strip_suffix(CHAT_FORK_METADATA_SUFFIX) else {
+            continue;
+        };
+        if let Some(item) = load_fork_metadata(session_id)? {
+            metadata.push((session_id.to_string(), item));
+        }
+    }
+    metadata.sort_by(|left, right| left.1.created_at.cmp(&right.1.created_at));
+    Ok(metadata)
+}
+
+fn load_fork_metadata(session_id: &str) -> Result<Option<ChatForkMetadata>> {
+    let path = chat_fork_metadata_path(session_id)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let file = OpenOptions::new().read(true).open(path)?;
+    serde_json::from_reader(file)
+        .map(Some)
+        .map_err(|err| Error::StringError(format!("failed to parse chat fork metadata: {err}")))
+}
+
+fn write_fork_metadata(session_id: &str, metadata: &ChatForkMetadata) -> Result<()> {
+    let path = chat_fork_metadata_path(session_id)?;
+    let file = OpenOptions::new().create_new(true).write(true).open(path)?;
+    serde_json::to_writer(file, metadata)
+        .map_err(|err| Error::StringError(format!("failed to serialize chat fork metadata: {err}")))
+}
+
 fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSummary>> {
     let dir = chat_history_dir()?;
     if !dir.exists() {
@@ -1277,10 +1484,21 @@ fn chat_session_file_path(session_id: &str) -> Result<PathBuf> {
     Ok(chat_history_dir()?.join(format!("{session_id}.jsonl")))
 }
 
+fn chat_fork_metadata_path(session_id: &str) -> Result<PathBuf> {
+    if session_id.trim().is_empty() {
+        return Err(Error::ValidationError("session_id must not be empty".to_string()));
+    }
+    Ok(chat_history_dir()?.join(format!("{session_id}{CHAT_FORK_METADATA_SUFFIX}")))
+}
+
 fn delete_chat_session_file(session_id: &str) -> Result<()> {
     let path = chat_session_file_path(session_id)?;
     if path.exists() {
         fs::remove_file(path)?;
+    }
+    let metadata_path = chat_fork_metadata_path(session_id)?;
+    if metadata_path.exists() {
+        fs::remove_file(metadata_path)?;
     }
     Ok(())
 }
