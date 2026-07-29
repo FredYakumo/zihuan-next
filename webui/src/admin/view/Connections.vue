@@ -56,7 +56,7 @@
               </div>
               <div class="field">
                 <label>密码（可选）</label>
-                <input v-model="form.mysql_password" type="password" placeholder="请输入密码" />
+                <ConnectionCredentialInput v-model="form.mysql_password" placeholder="请输入密码" />
               </div>
               <div class="field-full">
                 <label>数据库名</label>
@@ -83,7 +83,7 @@
               </div>
               <div class="field">
                 <label>密码（可选）</label>
-                <input v-model="form.redis_password" type="password" placeholder="可选" />
+                <ConnectionCredentialInput v-model="form.redis_password" placeholder="可选" />
               </div>
             </template>
 
@@ -107,8 +107,8 @@
                     <option value="password">密码</option>
                     <option value="api_key">API Key</option>
                   </select>
-                  <input v-if="form.weaviate_auth_method === 'password'" v-model="form.weaviate_password" type="password" placeholder="密码" />
-                  <input v-else v-model="form.weaviate_api_key" type="password" placeholder="API Key" />
+                  <ConnectionCredentialInput v-if="form.weaviate_auth_method === 'password'" v-model="form.weaviate_password" placeholder="密码" />
+                  <ConnectionCredentialInput v-else v-model="form.weaviate_api_key" placeholder="API Key" />
                 </div>
               </div>
               <div class="field-full">
@@ -124,7 +124,7 @@
               <div class="field"><label>Base URL</label><input v-model="form.elasticsearch_base_url" placeholder="https://localhost:9200" /></div>
               <div class="field"><label>Index Name</label><input v-model="form.elasticsearch_index_name" /></div>
               <div v-if="form.elasticsearch_auth_method === 'password'" class="field"><label>用户名</label><input v-model="form.elasticsearch_username" /></div>
-              <div class="field"><label>认证</label><div class="credential-auth-field"><select v-model="form.elasticsearch_auth_method" @change="clearInactiveConnectionCredentials('elasticsearch')"><option value="password">密码</option><option value="api_key">API Key</option></select><input v-if="form.elasticsearch_auth_method === 'password'" v-model="form.elasticsearch_password" type="password" placeholder="密码" /><input v-else v-model="form.elasticsearch_api_key" type="password" placeholder="API Key" /></div></div>
+              <div class="field"><label>认证</label><div class="credential-auth-field"><select v-model="form.elasticsearch_auth_method" @change="clearInactiveConnectionCredentials('elasticsearch')"><option value="password">密码</option><option value="api_key">API Key</option></select><ConnectionCredentialInput v-if="form.elasticsearch_auth_method === 'password'" v-model="form.elasticsearch_password" placeholder="密码" /><ConnectionCredentialInput v-else v-model="form.elasticsearch_api_key" placeholder="API Key" /></div></div>
               <div class="field"><label>索引用途</label><select v-model="form.elasticsearch_collection_schema"><option value="agent_memory">Agent 记忆</option><option value="image_semantic">图片语义</option></select></div>
               <div class="field"><label>向量维度</label><input v-model.number="form.elasticsearch_vector_dimensions" type="number" min="1" step="1" /></div>
             </template>
@@ -134,7 +134,7 @@
               <div class="field"><label>Bucket</label><input v-model="form.rustfs_bucket" /></div>
               <div class="field"><label>Region</label><input v-model="form.rustfs_region" /></div>
               <div class="field"><label>Access Key</label><input v-model="form.rustfs_access_key" /></div>
-              <div class="field"><label>Secret Key</label><input v-model="form.rustfs_secret_key" /></div>
+              <div class="field"><label>Secret Key</label><ConnectionCredentialInput v-model="form.rustfs_secret_key" /></div>
               <div class="field"><label>Public Base URL</label><input v-model="form.rustfs_public_base_url" /></div>
               <div class="field-full field-check">
                 <input id="rustfs-path-style" v-model="form.rustfs_path_style" type="checkbox" />
@@ -146,7 +146,7 @@
               <div class="field"><label>Bot WS URL</label><input v-model="form.bot_server_url" placeholder="ws://192.168.71.2:3008" /></div>
               <div class="field"><label>Adapter HTTP URL</label><input v-model="form.adapter_server_url" placeholder="http://192.168.71.2:3001" /></div>
               <div class="field"><label>QQ 号</label><input v-model="form.qq_id" /></div>
-              <div class="field-full"><label>Token</label><input v-model="form.bot_server_token" /></div>
+              <div class="field-full"><label>Token</label><ConnectionCredentialInput v-model="form.bot_server_token" /></div>
             </template>
 
             <template v-else-if="form.type === 'web_search_engine'">
@@ -157,7 +157,7 @@
                   <option value="brave">Brave</option>
                 </select>
               </div>
-              <div class="field-full"><label>API Token（可选）</label><input v-model="form.web_search_engine_api_token" type="password" placeholder="可选" /></div>
+              <div class="field-full"><label>API Token（可选）</label><ConnectionCredentialInput v-model="form.web_search_engine_api_token" placeholder="可选" /></div>
               <div class="field"><label>Timeout</label><input v-model.number="form.web_search_engine_timeout_secs" type="number" min="1" /></div>
             </template>
 
@@ -258,7 +258,7 @@
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>密码（可选）</strong>
-                  <input v-model="form.mysql_password" class="connection-card-inline-input" type="password" placeholder="请输入密码" />
+                  <ConnectionCredentialInput v-model="form.mysql_password" input-class="connection-card-inline-input" placeholder="请输入密码" />
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>数据库</strong>
@@ -285,7 +285,7 @@
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>密码（可选）</strong>
-                  <input v-model="form.redis_password" class="connection-card-inline-input" type="password" />
+                  <ConnectionCredentialInput v-model="form.redis_password" input-class="connection-card-inline-input" />
                 </div>
               </template>
 
@@ -309,8 +309,8 @@
                       <option value="password">密码</option>
                       <option value="api_key">API Key</option>
                     </select>
-                    <input v-if="form.weaviate_auth_method === 'password'" v-model="form.weaviate_password" class="connection-card-inline-input" type="password" placeholder="密码" />
-                    <input v-else v-model="form.weaviate_api_key" class="connection-card-inline-input" type="password" placeholder="API Key" />
+                    <ConnectionCredentialInput v-if="form.weaviate_auth_method === 'password'" v-model="form.weaviate_password" input-class="connection-card-inline-input" placeholder="密码" />
+                    <ConnectionCredentialInput v-else v-model="form.weaviate_api_key" input-class="connection-card-inline-input" placeholder="API Key" />
                   </div>
                 </div>
                 <div class="key-value connection-card-edit-row">
@@ -326,7 +326,7 @@
                 <div class="key-value connection-card-edit-row"><strong>Base URL</strong><input v-model="form.elasticsearch_base_url" class="connection-card-inline-input" /></div>
                 <div class="key-value connection-card-edit-row"><strong>Index</strong><input v-model="form.elasticsearch_index_name" class="connection-card-inline-input" /></div>
                 <div v-if="form.elasticsearch_auth_method === 'password'" class="key-value connection-card-edit-row"><strong>用户名</strong><input v-model="form.elasticsearch_username" class="connection-card-inline-input" /></div>
-                <div class="key-value connection-card-edit-row"><strong>认证</strong><div class="credential-auth-field"><select v-model="form.elasticsearch_auth_method" class="connection-card-inline-input" @change="clearInactiveConnectionCredentials('elasticsearch')"><option value="password">密码</option><option value="api_key">API Key</option></select><input v-if="form.elasticsearch_auth_method === 'password'" v-model="form.elasticsearch_password" class="connection-card-inline-input" type="password" placeholder="密码" /><input v-else v-model="form.elasticsearch_api_key" class="connection-card-inline-input" type="password" placeholder="API Key" /></div></div>
+                <div class="key-value connection-card-edit-row"><strong>认证</strong><div class="credential-auth-field"><select v-model="form.elasticsearch_auth_method" class="connection-card-inline-input" @change="clearInactiveConnectionCredentials('elasticsearch')"><option value="password">密码</option><option value="api_key">API Key</option></select><ConnectionCredentialInput v-if="form.elasticsearch_auth_method === 'password'" v-model="form.elasticsearch_password" input-class="connection-card-inline-input" placeholder="密码" /><ConnectionCredentialInput v-else v-model="form.elasticsearch_api_key" input-class="connection-card-inline-input" placeholder="API Key" /></div></div>
                 <div class="key-value connection-card-edit-row"><strong>Schema</strong><select v-model="form.elasticsearch_collection_schema" class="connection-card-inline-input"><option value="agent_memory">Agent 记忆</option><option value="image_semantic">图片语义</option></select></div>
                 <div class="key-value connection-card-edit-row"><strong>向量维度</strong><input v-model.number="form.elasticsearch_vector_dimensions" class="connection-card-inline-input" type="number" min="1" step="1" /></div>
               </template>
@@ -350,7 +350,7 @@
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Secret Key</strong>
-                  <input v-model="form.rustfs_secret_key" class="connection-card-inline-input" type="password" />
+                  <ConnectionCredentialInput v-model="form.rustfs_secret_key" input-class="connection-card-inline-input" />
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Public URL</strong>
@@ -380,7 +380,7 @@
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Token</strong>
-                  <input v-model="form.bot_server_token" class="connection-card-inline-input" type="password" />
+                  <ConnectionCredentialInput v-model="form.bot_server_token" input-class="connection-card-inline-input" />
                 </div>
               </template>
 
@@ -394,7 +394,7 @@
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>API Token（可选）</strong>
-                  <input v-model="form.web_search_engine_api_token" class="connection-card-inline-input" type="password" placeholder="可选" />
+                  <ConnectionCredentialInput v-model="form.web_search_engine_api_token" input-class="connection-card-inline-input" placeholder="可选" />
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Timeout</strong>
@@ -457,6 +457,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
+import ConnectionCredentialInput from "./ConnectionCredentialInput.vue";
 import { useConnections } from "../composables/useConnections";
 
 const {
