@@ -2,7 +2,7 @@
   <section :class="embedded ? 'chat-embedded-wrapper' : 'page chat-page'">
     <div :class="embedded ? 'chat-embedded-inner' : 'chat-page-panel'">
       <section class="panel chat-panel">
-        <div class="chat-toolbar">
+        <div v-if="embedded" class="chat-toolbar">
           <div class="chat-agent-picker">
             <div class="chat-agent-picker-title">选择 Service</div>
             <div class="chat-agent-cards">
@@ -56,8 +56,74 @@
           </button>
         </div>
 
-        <div class="chat-layout">
-          <aside class="chat-sessions">
+        <div :class="['chat-layout', { 'chat-layout--history-collapsed': !embedded && historyCollapsed }]">
+          <aside v-if="embedded || !historyCollapsed" class="chat-sessions">
+            <template v-if="!embedded">
+              <div class="chat-service-select-row">
+                <t-select
+                  v-model="selectedServiceId"
+                  class="chat-service-select"
+                  :loading="servicesLoading"
+                  placeholder="选择 Service"
+                >
+                  <template #valueDisplay>
+                    <div v-if="selectedService" class="chat-service-select-value">
+                      <img
+                        v-if="agentAvatarUrl(selectedService)"
+                        :src="agentAvatarUrl(selectedService)"
+                        class="chat-service-select-avatar"
+                        alt=""
+                      />
+                      <span v-else class="chat-service-select-avatar chat-service-select-avatar--fallback">
+                        {{ agentInitial(selectedService.name) }}
+                      </span>
+                      <span>{{ selectedService.name }}</span>
+                    </div>
+                  </template>
+                  <t-option
+                    v-for="agent in services.filter((item) => CHAT_ELIGIBLE_SERVICE_TYPES.has(item.agent_type.type))"
+                    :key="agent.config_id"
+                    :value="agent.config_id"
+                    :label="agent.name"
+                  >
+                    <div class="chat-service-select-option">
+                      <img
+                        v-if="agentAvatarUrl(agent)"
+                        :src="agentAvatarUrl(agent)"
+                        class="chat-service-select-avatar"
+                        alt=""
+                      />
+                      <span v-else class="chat-service-select-avatar chat-service-select-avatar--fallback">
+                        {{ agentInitial(agent.name) }}
+                      </span>
+                      <span class="chat-service-select-option-name">{{ agent.name }}</span>
+                      <span v-if="agent.runtime.status !== 'running'" class="chat-service-select-status">
+                        未运行
+                      </span>
+                    </div>
+                  </t-option>
+                </t-select>
+                <button
+                  class="chat-history-toggle"
+                  title="收起历史"
+                  aria-label="收起历史"
+                  @click="toggleHistory"
+                >
+                  <MenuFoldIcon />
+                </button>
+              </div>
+              <div class="chat-sessions-actions">
+                <button class="chat-sessions-action" @click="reloadSessions">刷新历史</button>
+                <button
+                  v-if="isWorkspaceService"
+                  class="chat-sessions-action"
+                  :disabled="pickingDirectory"
+                  @click="pickDirectory"
+                >
+                  {{ pickingDirectory ? "选择中..." : "打开目录" }}
+                </button>
+              </div>
+            </template>
             <div class="chat-sessions-header">历史</div>
             <template v-for="group in groupedSessions" :key="group.pathKey">
               <div class="chat-session-group-header" :title="group.path ?? undefined">
@@ -85,7 +151,16 @@
             <div v-if="sessions.length === 0" class="muted">暂无历史会话</div>
           </aside>
 
-          <div class="chat-main">
+          <div :class="['chat-main', { 'chat-main--history-collapsed': !embedded && historyCollapsed }]">
+            <button
+              v-if="!embedded && historyCollapsed"
+              class="chat-history-expand"
+              title="展开历史"
+              aria-label="展开历史"
+              @click="toggleHistory"
+            >
+              <MenuUnfoldIcon />
+            </button>
             <div v-if="isWorkspaceService" class="workspace-path-display">
               <span class="path-label">当前工作目录：</span>
               <span class="path-value" :class="{ 'path-unset': !workspacePath }">
@@ -802,7 +877,22 @@
 </template>
 
 <script setup lang="ts">
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, DeleteIcon, EditIcon, ErrorCircleIcon, FileIcon, FolderIcon, ImageAddIcon } from "tdesign-icons-vue-next";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CloseIcon,
+  DeleteIcon,
+  EditIcon,
+  ErrorCircleIcon,
+  FileIcon,
+  FolderIcon,
+  ImageAddIcon,
+  MenuFoldIcon,
+  MenuUnfoldIcon,
+} from "tdesign-icons-vue-next";
+
+import { ref, watch } from "vue";
 
 import { useChat } from "../composables/useChat";
 import ToolCallBadge from "./ToolCallBadge.vue";
@@ -816,6 +906,19 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "update:sessionId", sessionId: string): void;
 }>();
+
+const HISTORY_COLLAPSED_KEY = "zihuan.chat.history-collapsed";
+const historyCollapsed = ref(!props.embedded && localStorage.getItem(HISTORY_COLLAPSED_KEY) === "1");
+
+function toggleHistory() {
+  historyCollapsed.value = !historyCollapsed.value;
+}
+
+watch(historyCollapsed, (collapsed) => {
+  if (!props.embedded) {
+    localStorage.setItem(HISTORY_COLLAPSED_KEY, collapsed ? "1" : "0");
+  }
+});
 
 const {
   services,
