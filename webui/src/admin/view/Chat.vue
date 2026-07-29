@@ -348,21 +348,23 @@
                         class="chat-bubble-content markdown-body"
                         v-html="renderMessageContent(message.content, message.streaming)"
                       ></div>
-                      <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
-                    </div>
-                    <div v-if="!message.streaming" class="chat-message-actions">
-                      <t-tooltip content="复制消息">
-                        <t-button
-                          variant="text"
-                          size="small"
-                          shape="square"
-                          :aria-label="copiedMessageId === message.id ? '已复制' : '复制消息'"
-                          @click="copyMessage(message)"
-                        >
-                          <CheckIcon v-if="copiedMessageId === message.id" />
-                          <CopyIcon v-else />
-                        </t-button>
-                      </t-tooltip>
+                      <div class="chat-bubble-footer">
+                        <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
+                        <div v-if="!message.streaming" class="chat-message-actions chat-message-actions--inside">
+                          <t-tooltip content="复制消息">
+                            <t-button
+                              variant="text"
+                              size="small"
+                              shape="square"
+                              :aria-label="copiedMessageId === message.id ? '已复制' : '复制消息'"
+                              @click="copyMessage(message)"
+                            >
+                              <CheckIcon v-if="copiedMessageId === message.id" />
+                              <CopyIcon v-else />
+                            </t-button>
+                          </t-tooltip>
+                        </div>
+                      </div>
                     </div>
                     <div
                       v-if="
@@ -546,29 +548,31 @@
                           class="chat-bubble-content markdown-body"
                           v-html="renderMessageContent(message.content, message.streaming)"
                         ></div>
-                        <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
-                      </div>
-                      <div class="chat-message-actions">
-                        <t-tooltip content="复制消息">
-                          <t-button variant="text" size="small" shape="square" :aria-label="copiedMessageId === message.id ? '已复制' : '复制消息'" @click="copyMessage(message)">
-                            <CheckIcon v-if="copiedMessageId === message.id" />
-                            <CopyIcon v-else />
-                          </t-button>
-                        </t-tooltip>
-                        <t-tooltip content="编辑并创建新分支">
-                          <t-button variant="text" size="small" shape="square" :disabled="sending || message.id.startsWith('local-')" aria-label="编辑消息" @click="startEditingMessage(message)">
-                            <EditIcon />
-                          </t-button>
-                        </t-tooltip>
-                        <template v-if="messageBranchMap.has(message.id)">
-                          <t-button variant="text" size="small" shape="square" :disabled="sending || messageBranchMap.get(message.id)?.current_index === 0" aria-label="上一版本" @click="switchMessageBranch(message.id, -1)">
-                            <ChevronLeftIcon />
-                          </t-button>
-                          <span class="chat-branch-count">{{ (messageBranchMap.get(message.id)?.current_index ?? 0) + 1 }}/{{ messageBranchMap.get(message.id)?.total ?? 1 }}</span>
-                          <t-button variant="text" size="small" shape="square" :disabled="sending || (messageBranchMap.get(message.id)?.current_index ?? 0) + 1 === (messageBranchMap.get(message.id)?.total ?? 1)" aria-label="下一版本" @click="switchMessageBranch(message.id, 1)">
-                            <ChevronRightIcon />
-                          </t-button>
-                        </template>
+                        <div class="chat-bubble-footer chat-bubble-footer--user">
+                          <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
+                          <div class="chat-message-actions chat-message-actions--inside">
+                            <t-tooltip content="复制消息">
+                              <t-button variant="text" size="small" shape="square" :aria-label="copiedMessageId === message.id ? '已复制' : '复制消息'" @click="copyMessage(message)">
+                                <CheckIcon v-if="copiedMessageId === message.id" />
+                                <CopyIcon v-else />
+                              </t-button>
+                            </t-tooltip>
+                            <t-tooltip content="编辑并创建新分支">
+                              <t-button variant="text" size="small" shape="square" :disabled="sending || message.id.startsWith('local-')" aria-label="编辑消息" @click="startEditingMessage(message)">
+                                <EditIcon />
+                              </t-button>
+                            </t-tooltip>
+                            <template v-if="messageBranchMap.has(message.id)">
+                              <t-button variant="text" size="small" shape="square" :disabled="sending || messageBranchMap.get(message.id)?.current_index === 0" aria-label="上一版本" @click="switchMessageBranch(message.id, -1)">
+                                <ChevronLeftIcon />
+                              </t-button>
+                              <span class="chat-branch-count">{{ (messageBranchMap.get(message.id)?.current_index ?? 0) + 1 }}/{{ messageBranchMap.get(message.id)?.total ?? 1 }}</span>
+                              <t-button variant="text" size="small" shape="square" :disabled="sending || (messageBranchMap.get(message.id)?.current_index ?? 0) + 1 === (messageBranchMap.get(message.id)?.total ?? 1)" aria-label="下一版本" @click="switchMessageBranch(message.id, 1)">
+                                <ChevronRightIcon />
+                              </t-button>
+                            </template>
+                          </div>
+                        </div>
                       </div>
                     </template>
                   </div>

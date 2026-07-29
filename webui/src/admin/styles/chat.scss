@@ -548,21 +548,29 @@
   border-top: 1px solid var(--admin-border);
 }
 
-.chat-bubble-time {
+.chat-bubble-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
   margin-top: 6px;
+}
+
+.chat-bubble-footer--user {
+  flex-direction: row-reverse;
+}
+
+.chat-bubble-time {
   font-size: 12px;
   color: var(--admin-subtle);
   opacity: 0.85;
-  text-align: right;
+  white-space: nowrap;
 }
 
 .chat-bubble.user .chat-bubble-time {
   color: rgba(255, 255, 255, 0.82);
   opacity: 1;
-}
-
-.chat-bubble.assistant .chat-bubble-time {
-  text-align: left;
 }
 
 .chat-bubble.user {
@@ -592,8 +600,9 @@
   color: var(--admin-subtle);
 }
 
-.chat-bubble-col .chat-message-actions {
-  justify-content: flex-start;
+.chat-message-actions--inside {
+  min-height: 24px;
+  margin-top: 0;
 }
 
 .chat-branch-count {
@@ -652,6 +661,21 @@
 .chat-message-action-button:hover {
   color: var(--admin-accent);
   background: var(--admin-bg-soft);
+}
+
+.chat-panel .chat-bubble,
+.chat-panel .chat-message-edit,
+.chat-panel .chat-message-edit textarea,
+.chat-panel .chat-input-area textarea,
+.chat-panel .ask-user-row input,
+.chat-panel .t-input,
+.chat-panel .t-input__wrap,
+.chat-panel .t-select__wrap,
+.chat-panel .chat-message-action-button,
+.chat-panel button,
+.chat-panel .btn,
+.chat-panel .t-button {
+  border-radius: 0;
 }
 
 .chat-tool-inline-list {
