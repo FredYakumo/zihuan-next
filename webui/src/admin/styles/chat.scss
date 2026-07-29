@@ -569,13 +569,13 @@
 }
 
 .chat-bubble.user .chat-bubble-time {
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--chat-user-bubble-time);
   opacity: 1;
 }
 
 .chat-bubble.user {
-  background: var(--admin-accent);
-  color: #fff;
+  background: var(--chat-user-bubble-bg);
+  color: var(--chat-user-bubble-text);
   border-bottom-right-radius: 4px;
 }
 
