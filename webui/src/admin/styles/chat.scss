@@ -1015,7 +1015,7 @@
 
 .workspace-path-display {
   position: relative;
-  padding: 10px 16px;
+  padding: 6px 16px;
   background: var(--admin-bg-elevated);
   border-bottom: 1px solid var(--admin-border);
   display: flex;
@@ -1186,8 +1186,8 @@
 
 .chat-image-upload-button {
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   place-items: center;
   cursor: pointer;
@@ -1285,11 +1285,11 @@
 .chat-input-actions > .btn,
 .chat-input-right > .btn,
 .chat-input-right .model-chip {
-  height: 40px;
+  height: 36px;
 }
 
 .chat-input-right .model-chip.icon-only {
-  width: 40px;
+  width: 36px;
 }
 
 .chat-error-box {
@@ -1397,7 +1397,7 @@
   transition: all 0.2s ease;
   white-space: nowrap;
   line-height: 1;
-  height: 40px;
+  height: 36px;
 }
 
 .model-chip:hover {
@@ -1412,6 +1412,18 @@
 
 .model-chip.icon-only:hover {
   color: var(--admin-accent);
+}
+
+.model-settings .model-chip.icon-only,
+.model-settings .model-chip.icon-only:hover {
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.model-settings .model-chip.icon-only svg {
+  width: 20px;
+  height: 20px;
 }
 
 .model-chip svg {
