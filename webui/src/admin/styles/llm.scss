@@ -1,0 +1,149 @@
+.llm-page {
+  gap: 0;
+}
+
+.llm-import-input {
+  display: none;
+}
+
+.llm-card {
+  border-radius: 0;
+}
+
+.llm-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) minmax(150px, 0.9fr) minmax(120px, 0.7fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+
+.llm-count {
+  color: var(--admin-subtle);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.llm-name-cell,
+.llm-model-cell {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.llm-name-cell strong,
+.llm-model-cell > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-name-cell .mono,
+.llm-model-cell small {
+  color: var(--admin-subtle);
+  font-size: 12px;
+}
+
+.llm-endpoint {
+  display: block;
+  overflow: hidden;
+  color: var(--admin-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-actions,
+.llm-drawer-footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.llm-drawer-footer {
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.llm-empty {
+  padding: 56px 0;
+  color: var(--admin-subtle);
+  text-align: center;
+}
+
+.llm-form {
+  display: grid;
+  gap: 28px;
+}
+
+.llm-form-section {
+  display: grid;
+  gap: 16px;
+}
+
+.llm-form-section h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.llm-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.llm-form-item--full {
+  grid-column: 1 / -1;
+}
+
+.llm-form-hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--admin-subtle);
+  line-height: 1.5;
+}
+
+.llm-switches {
+  display: grid;
+  gap: 12px;
+}
+
+.connection-credential-input :deep(input) {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 42px 6px 10px;
+  color: var(--td-text-color-primary);
+  font: inherit;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-border);
+  border-radius: var(--td-radius-default);
+}
+
+.connection-credential-input :deep(input:focus) {
+  border-color: var(--td-brand-color);
+  outline: 0;
+}
+
+@media (max-width: 960px) {
+  .llm-toolbar {
+    grid-template-columns: minmax(200px, 1fr) minmax(150px, 1fr) minmax(120px, 0.8fr) auto;
+  }
+
+  .llm-count {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .llm-toolbar,
+  .llm-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .llm-form-item--full,
+  .llm-count {
+    grid-column: auto;
+  }
+}
