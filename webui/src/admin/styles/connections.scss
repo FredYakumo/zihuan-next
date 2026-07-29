@@ -1,225 +1,137 @@
-.connection-hero-actions {
-  position: relative;
-  justify-content: flex-end;
+.connections-page {
+  gap: 0;
 }
 
-.connection-hero-add-btn {
-  min-width: 48px;
-  min-height: 48px;
-  padding: 0;
-  border-radius: 14px;
-  font-size: 24px;
-  line-height: 1;
+.connection-import-input {
+  display: none;
 }
 
-.connection-create-panel {
-  margin-top: 18px;
+.connections-card {
+  border-radius: 0;
 }
 
-.connection-picker-grid {
+.connections-toolbar {
   display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) minmax(140px, 0.8fr) minmax(120px, 0.7fr) auto auto;
+  align-items: center;
   gap: 12px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 18px;
+  padding-bottom: 16px;
 }
 
-.connection-picker-grid--single {
-  grid-template-columns: 1fr;
+.connections-count {
+  color: var(--admin-subtle);
+  font-size: 13px;
+  white-space: nowrap;
 }
 
-.connection-picker-form {
-  margin-top: 18px;
-}
-
-.connection-picker-form-actions {
-  justify-content: flex-end;
-  margin-top: 16px;
-}
-
-.connection-picker-option {
-  padding: 16px;
+.connection-name-cell {
   display: grid;
-  gap: 6px;
-  text-align: left;
-  border-radius: 18px;
-  border: 1px solid var(--admin-border);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--admin-bg-soft) 88%, transparent 12%), color-mix(in srgb, var(--admin-bg-panel) 96%, transparent 4%));
-  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  gap: 4px;
+  min-width: 0;
 }
 
-.connection-picker-option strong {
-  font-size: 16px;
+.connection-name-cell strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.connection-picker-option span {
+.connection-name-cell .mono {
+  color: var(--admin-subtle);
+  font-size: 12px;
+}
+
+.connection-summary {
+  display: block;
+  overflow: hidden;
   color: var(--admin-muted);
   font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.connection-picker-option:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--admin-accent) 32%, var(--admin-border) 68%);
-  box-shadow: 0 12px 24px color-mix(in srgb, var(--admin-accent) 10%, transparent 90%);
+.connection-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
 }
 
-.agent-picker-dialog {
-  width: min(920px, 100%);
+.connections-empty {
+  padding: 56px 0;
+  color: var(--admin-subtle);
+  text-align: center;
 }
 
-.connection-grid {
+.connection-form {
   display: grid;
-  gap: 18px;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  align-items: start;
+  gap: 28px;
 }
 
-.connection-grid--agents .connection-card--editing {
+.connection-form-section {
+  display: grid;
+  gap: 16px;
+}
+
+.connection-form-section h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.connection-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.connection-form-item--full {
   grid-column: 1 / -1;
 }
 
-.connection-card {
-  width: 100%;
-  min-height: 220px;
-  padding: 20px;
-  display: grid;
-  gap: 16px;
-  text-align: left;
-  border-radius: 24px;
-  border: 1px solid color-mix(in srgb, var(--admin-border) 80%, var(--admin-accent) 20%);
-  background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--admin-accent) 10%, transparent 90%), transparent 34%),
-    linear-gradient(180deg, color-mix(in srgb, var(--admin-bg-soft) 92%, transparent 8%), color-mix(in srgb, var(--admin-bg-panel) 96%, transparent 4%));
-  box-shadow: 0 20px 42px color-mix(in srgb, var(--bg) 78%, transparent 22%);
-}
-
-.connection-card--editing {
+.connection-drawer-footer {
+  display: flex;
+  justify-content: flex-end;
   gap: 12px;
 }
 
-.connection-card-header,
-.connection-card-footer {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.connection-card-header--stacked {
-  display: grid;
-  gap: 10px;
-}
-
-.connection-card-header-top {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.connection-card-header h4 {
-  margin: 0;
-  font-size: 22px;
-  line-height: 1.25;
-}
-
-.connection-card-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.connection-card-body {
-  display: grid;
-  gap: 10px;
-}
-
-.connection-card-title-edit {
-  margin-top: 8px;
-}
-
-.connection-card-edit-actions {
-  gap: 8px;
-  flex-wrap: nowrap;
-  align-items: center;
-}
-
-.connection-card-display-actions {
-  gap: 8px;
-  flex-wrap: nowrap;
-  align-items: center;
-}
-
-.connection-card-compact-btn {
-  min-width: 68px;
-  min-height: 36px;
-  padding: 7px 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-  box-shadow: none;
-}
-
-.connection-card-compact-btn.btn.primary {
-  box-shadow: 0 10px 20px color-mix(in srgb, var(--btn-primary) 18%, transparent 82%);
-}
-
-.connection-card-compact-btn.btn.ghost {
-  background: color-mix(in srgb, var(--btn-bg) 72%, transparent 28%);
-}
-
-.connection-card-inline-input {
+.connection-credential-input :deep(input) {
   width: 100%;
   min-height: 32px;
-  padding: 6px 10px;
-  border-radius: 12px;
-  border: 1px solid var(--admin-border);
-  background: color-mix(in srgb, var(--admin-bg-panel) 92%, white 8%);
-  color: var(--admin-ink);
+  padding: 6px 42px 6px 10px;
+  color: var(--td-text-color-primary);
   font: inherit;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-border);
+  border-radius: var(--td-radius-default);
 }
 
-.connection-card-inline-input--title {
-  min-height: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1.15;
+.connection-credential-input :deep(input:focus) {
+  border-color: var(--td-brand-color);
+  outline: 0;
 }
 
-.connection-card-edit-row {
-  align-items: center;
-  gap: 10px;
-}
-
-.connection-card-edit-row strong {
-  min-width: 76px;
-  font-size: 13px;
-}
-
-.connection-card-inline-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  color: var(--admin-muted);
-}
-
-@media (max-width: 1180px) {
-  .connection-hero-actions {
-    position: static;
-    margin-top: 0;
-    width: 100%;
-    justify-content: flex-end;
+@media (max-width: 960px) {
+  .connections-toolbar {
+    grid-template-columns: minmax(200px, 1fr) minmax(140px, 1fr) minmax(120px, 0.8fr) auto;
   }
 
-  .connection-picker-grid {
+  .connections-count {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .connections-toolbar,
+  .connection-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .connection-form-item--full {
+    grid-column: auto;
+  }
+
+  .connections-count {
+    grid-column: auto;
   }
 }
