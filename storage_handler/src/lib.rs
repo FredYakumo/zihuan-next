@@ -415,6 +415,22 @@ pub fn save_connections(connections: Vec<ConnectionConfig>) -> Result<()> {
     Ok(())
 }
 
+pub fn connection_exists(config_id: &str) -> Result<bool> {
+    let record = ConfigCenter::shared().get_config(config_id)?;
+    Ok(matches!(record, Some(record) if record.kind.category() == ConfigCategory::Connection))
+}
+
+pub fn upsert_connection(connection: ConnectionConfig) -> Result<ConnectionConfig> {
+    let center = ConfigCenter::shared();
+    let connection = normalize_connection_identity(connection, center.new_config_id());
+    center.upsert_config(connection_to_record(&connection)?)?;
+    Ok(connection)
+}
+
+pub fn delete_connection(config_id: &str) -> Result<bool> {
+    ConfigCenter::shared().delete_config(ConfigCategory::Connection, config_id)
+}
+
 fn normalize_connection_identity(mut connection: ConnectionConfig, fallback_id: String) -> ConnectionConfig {
     let canonical = if connection.config_id.trim().is_empty() {
         if connection.id.trim().is_empty() {

@@ -14,7 +14,8 @@ use model_inference::nn::embedding::embedding_runtime_manager::{
     close_runtime_embedding_instance, list_runtime_embedding_instances,
 };
 use storage_handler::{
-    close_runtime_storage_instance, close_runtime_storage_instances_for_config, list_runtime_storage_instances,
+    close_runtime_storage_instance, close_runtime_storage_instances_for_config, connection_exists,
+    delete_connection as delete_stored_connection, list_runtime_storage_instances, upsert_connection,
     validate_connection_authentication, ConnectionConfig, ConnectionKind,
 };
 use zihuan_core::weaviate::{WeaviateEnsureCollectionResult, WeaviateRef};
@@ -205,11 +206,6 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
         Err(err) => return render_connection_validation_error(res, err),
     };
 
-    let mut connections = match system_config::load_connections() {
-        Ok(connections) => connections,
-        Err(err) => return render_internal_error(res, err),
-    };
-
     let connection = ConnectionConfig {
         id: Uuid::new_v4().to_string(),
         config_id: String::new(),
@@ -220,10 +216,9 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
     };
     let mut connection = connection;
     connection.config_id = connection.id.clone();
-    connections.push(connection.clone());
 
-    match system_config::save_connections(connections) {
-        Ok(()) => {
+    match upsert_connection(connection) {
+        Ok(connection) => {
             let _ = close_runtime_storage_instances_for_config(&connection.id);
 
             let refreshed = system_config::load_connections().unwrap_or_default();
@@ -248,24 +243,25 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
         Err(err) => return render_connection_validation_error(res, err),
     };
 
-    let mut connections = match system_config::load_connections() {
-        Ok(connections) => connections,
+    let exists = match connection_exists(&id) {
+        Ok(exists) => exists,
         Err(err) => return render_internal_error(res, err),
     };
-
-    let Some(connection) = connections.iter_mut().find(|item| item.id == id) else {
+    if !exists {
         return render_not_found(res, "Connection not found");
+    }
+
+    let response = ConnectionConfig {
+        id: id.clone(),
+        config_id: id,
+        name: body.name,
+        enabled: body.enabled,
+        kind: body.kind,
+        updated_at: now_rfc3339(),
     };
 
-    connection.name = body.name;
-    connection.config_id = connection.id.clone();
-    connection.enabled = body.enabled;
-    connection.kind = body.kind;
-    connection.updated_at = now_rfc3339();
-    let response = connection.clone();
-
-    match system_config::save_connections(connections) {
-        Ok(()) => {
+    match upsert_connection(response.clone()) {
+        Ok(_) => {
             let _ = close_runtime_storage_instances_for_config(&response.id);
 
             let refreshed = system_config::load_connections().unwrap_or_default();
@@ -284,25 +280,15 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
 pub async fn delete_connection(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
     let id = req.param::<String>("id").unwrap_or_default();
-    let mut connections = match system_config::load_connections() {
-        Ok(connections) => connections,
-        Err(err) => return render_internal_error(res, err),
-    };
-    let before = connections.len();
-    connections.retain(|item| item.id != id);
-
-    if before == connections.len() {
-        return render_not_found(res, "Connection not found");
-    }
-
-    match system_config::save_connections(connections) {
-        Ok(()) => {
+    match delete_stored_connection(&id) {
+        Ok(true) => {
             state.tasks.lock().unwrap().unregister_db_pool(&id);
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
             info!("[connections] deleted connection (id={})", id);
             res.render(Json(ok_response()));
         }
+        Ok(false) => render_not_found(res, "Connection not found"),
         Err(err) => render_internal_error(res, err),
     }
 }
