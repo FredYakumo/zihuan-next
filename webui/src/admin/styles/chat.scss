@@ -37,6 +37,26 @@
 
 .chat-embedded-wrapper .chat-panel {
   flex: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.chat-embedded-wrapper .chat-toolbar {
+  padding: 16px;
+}
+
+.chat-embedded-wrapper .chat-layout {
+  margin-top: 0;
+  gap: 0;
+}
+
+.chat-embedded-wrapper .chat-sessions,
+.chat-embedded-wrapper .chat-main {
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .chat-panel {

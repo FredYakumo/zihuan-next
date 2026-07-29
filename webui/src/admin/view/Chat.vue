@@ -2,7 +2,7 @@
   <section :class="embedded ? 'chat-embedded-wrapper' : 'page chat-page'">
     <div :class="embedded ? 'chat-embedded-inner' : 'chat-page-panel'">
       <section class="panel chat-panel">
-        <div v-if="embedded" class="chat-toolbar">
+        <div v-if="embedded && !agentId" class="chat-toolbar">
           <div class="chat-agent-picker">
             <div class="chat-agent-picker-title">选择 Service</div>
             <div class="chat-agent-cards">
@@ -112,18 +112,18 @@
                   <MenuFoldIcon />
                 </button>
               </div>
-              <div class="chat-sessions-actions">
-                <button class="chat-sessions-action" @click="reloadSessions">刷新历史</button>
-                <button
-                  v-if="isWorkspaceService"
-                  class="chat-sessions-action"
-                  :disabled="pickingDirectory"
-                  @click="pickDirectory"
-                >
-                  {{ pickingDirectory ? "选择中..." : "打开目录" }}
-                </button>
-              </div>
             </template>
+            <div v-if="!embedded || agentId" class="chat-sessions-actions">
+              <button class="chat-sessions-action" @click="reloadSessions">刷新历史</button>
+              <button
+                v-if="isWorkspaceService"
+                class="chat-sessions-action"
+                :disabled="pickingDirectory"
+                @click="pickDirectory"
+              >
+                {{ pickingDirectory ? "选择中..." : "打开目录" }}
+              </button>
+            </div>
             <div class="chat-sessions-header">历史</div>
             <template v-for="group in groupedSessions" :key="group.pathKey">
               <div class="chat-session-group-header" :title="group.path ?? undefined">
