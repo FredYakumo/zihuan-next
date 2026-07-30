@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <section class="page agent-service-page">
     <AdminPageHeader title="Service 管理">
       <t-button variant="outline" @click="triggerServiceImportFile">导入配置</t-button>
@@ -6,2155 +6,1172 @@
       <t-button theme="primary" @click="startCreate">新建 Service</t-button>
     </AdminPageHeader>
 
-    <t-dialog
+    <!-- 新建 Service 抽屉 -->
+    <t-drawer
       v-model:visible="showCreatePicker"
       :header="showCreateForm ? '新建 Service' : '选择 Service 类型'"
-      width="960px"
-      :footer="false"
+      size="960px"
       :close-on-overlay-click="false"
+      :footer="false"
       @close="closeCreatePicker"
     >
+      <div v-if="showCreateForm" class="agent-service-drawer-body">
+        <t-form class="agent-service-form" label-align="top">
+          <!-- 基本信息 -->
+          <t-card class="agent-service-form-section" :bordered="false">
+            <template #title>基本信息</template>
+            <div class="agent-service-form-grid">
+              <t-form-item label="名称" required>
+                <t-input v-model="form.name" />
+              </t-form-item>
+              <t-form-item label="类型">
+                <t-select v-model="form.type" disabled>
+                  <t-option value="qq_chat" label="QQ Chat Agent Service" />
+                  <t-option value="http_stream" label="HTTP stream service" />
+                  <t-option value="workspace" label="Workspace Agent Service" />
+                </t-select>
+              </t-form-item>
+            </div>
+            <div class="agent-service-check-row">
+              <t-checkbox v-model="form.enabled">启用</t-checkbox>
+              <t-checkbox v-model="form.auto_start">开机自动启动</t-checkbox>
+              <t-checkbox v-model="form.is_default">默认 Service</t-checkbox>
+            </div>
+          </t-card>
 
-        <div v-if="showCreateForm" class="connection-picker-form">
-          <div class="form-grid">
-            <div class="field">
-              <label>名称</label>
-              <input v-model="form.name" />
+          <!-- 模型配置 -->
+          <t-card class="agent-service-form-section" :bordered="false">
+            <template #title>{{ form.type === 'http_stream' ? '默认模型配置' : '模型配置' }}</template>
+            <div class="agent-service-form-grid">
+              <t-form-item :label="form.type === 'http_stream' ? '默认模型配置' : '模型配置'" required>
+                <t-select v-model="form.llm_ref_id" placeholder="请选择">
+                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
             </div>
-            <div class="field">
-              <label>类型</label>
-              <select v-model="form.type">
-                <option value="qq_chat">QQ Chat Agent Service</option>
-                <option value="http_stream">HTTP stream service</option>
-                <option value="workspace">Workspace Agent Service</option>
-              </select>
-            </div>
+          </t-card>
 
-            <div class="field-full status-row">
-              <label class="field-check"
-                ><input v-model="form.enabled" type="checkbox" />启用</label
-              >
-              <label class="field-check"
-                ><input
-                  v-model="form.auto_start"
-                  type="checkbox"
-                />开机自动启动</label
-              >
-              <label class="field-check"
-                ><input v-model="form.is_default" type="checkbox" />默认 Service</label
-              >
-            </div>
+          <!-- QQ Chat 专属字段 -->
+          <template v-if="form.type === 'qq_chat'">
+            <t-card class="agent-service-form-section" :bordered="false">
+              <template #title>QQ Chat 模型配置</template>
+              <div class="agent-service-form-grid">
+                <t-form-item label="数学编程模型">
+                  <t-select v-model="form.math_programming_llm_ref_id" placeholder="回退主模型" clearable>
+                    <t-option value="" label="回退主模型" />
+                    <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="意图分类模型">
+                  <t-select v-model="form.intent_classification_llm_ref_id" placeholder="回退主模型" clearable>
+                    <t-option value="" label="回退主模型" />
+                    <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="自然语言回复模型">
+                  <t-select v-model="form.natural_language_reply_llm_ref_id" placeholder="请选择" clearable>
+                    <t-option value="" label="请选择" />
+                    <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="自然语言回复 Prompt" class="agent-service-form-item-full">
+                  <t-textarea v-model="form.natural_language_reply_system_prompt" placeholder="可选。专门给自然语言回复模型使用的系统提示词。" />
+                </t-form-item>
+              </div>
+            </t-card>
 
-            <div class="field">
-              <label>{{ form.type === 'http_stream' ? '默认模型配置' : '模型配置' }}</label>
-              <select v-model="form.llm_ref_id">
-                <option value="">请选择</option>
-                <option
-                  v-for="item in chatModels"
-                  :key="item.config_id"
-                  :value="item.config_id"
-                >
-                  {{ item.name }}
-                </option>
-              </select>
+            <t-card class="agent-service-form-section" :bordered="false">
+              <template #title>向量与分词</template>
+              <div class="agent-service-form-grid">
+                <t-form-item label="文本向量模型">
+                  <t-select v-model="form.embedding_model_ref_id" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="分词 Tokenizer 连接">
+                  <t-select v-model="form.tokenizer_connection_id" placeholder="不使用（标点分段）" clearable>
+                    <t-option value="" label="不使用（标点分段）" />
+                    <t-option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+              </div>
+            </t-card>
+
+            <t-card class="agent-service-form-section" :bordered="false">
+              <template #title>Bot 配置</template>
+              <div class="agent-service-form-grid">
+                <t-form-item label="Bot Adapter" required>
+                  <t-select v-model="form.ims_bot_adapter_connection_id" placeholder="请选择">
+                    <t-option value="" label="请选择" />
+                    <t-option v-for="item in botConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="Bot Name">
+                  <t-input v-model="form.bot_name" />
+                </t-form-item>
+                <t-form-item label="System Prompt" class="agent-service-form-item-full">
+                  <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。" />
+                </t-form-item>
+              </div>
+            </t-card>
+
+            <t-card class="agent-service-form-section" :bordered="false">
+              <template #title>外部连接</template>
+              <div class="agent-service-form-grid">
+                <t-form-item label="RustFS Connection">
+                  <t-select v-model="form.rustfs_connection_id" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option v-for="item in rustfsConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="Web Search Engine" required>
+                  <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择">
+                    <t-option value="" label="请选择" />
+                    <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="RDB Connection">
+                  <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="Weaviate Image Connection">
+                  <t-select v-model="form.weaviate_image_connection_id" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option v-for="item in imageWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="Weaviate Memory Connection">
+                  <t-select v-model="form.weaviate_memory_connection_id" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="Elasticsearch Image Connection">
+                  <t-select v-model="form.elasticsearch_image_connection_id" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option v-for="item in imageElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="Elasticsearch Memory Connection">
+                  <t-select v-model="form.elasticsearch_memory_connection_id" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+              </div>
+            </t-card>
+
+            <t-card class="agent-service-form-section" :bordered="false">
+              <template #title>高级设置</template>
+              <div class="agent-service-form-grid">
+                <t-form-item label="Max Message Length">
+                  <t-input-number v-model="form.max_message_length" :min="1" />
+                </t-form-item>
+                <t-form-item label="Max Steer Count">
+                  <t-input-number v-model="form.max_steer_count" :min="0" />
+                  <div class="agent-service-form-hint">当 Service 还没发出最终回复时，用户继续发消息会被视为"插嘴 / steer"。这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出会被丢弃并写入日志。</div>
+                </t-form-item>
+                <t-form-item label="Compact Context Length">
+                  <t-input-number v-model="form.compact_context_length" :min="0" />
+                </t-form-item>
+              </div>
+              <div class="agent-service-form-grid">
+                <t-form-item label="情绪维度" class="agent-service-form-item-full">
+                  <div class="agent-service-form-hint">Service 的情绪可以由一个或者多个维度组成，这些维度共同构成 Agent 的决策、行为和输出语言风格。</div>
+                  <div class="agent-service-form-hint" style="margin-top: 6px">当前已配置 {{ form.emotion_dimensions.length }} 个维度。</div>
+                  <t-button variant="text" style="margin-top: 6px; padding-left: 0" @click="openEmotionDimensionsModal">配置情绪维度</t-button>
+                </t-form-item>
+                <t-form-item label="Rate Limit" class="agent-service-form-item-full">
+                  <div class="agent-service-form-hint">按 N 天/小时/分钟限制调用次数，计数跟随用户（跨群与私聊共享），优先级：用户 &gt; 群组 &gt; 默认。</div>
+                  <t-button variant="text" style="margin-top: 6px; padding-left: 0" @click="openRateLimitModal">编辑 Rate Limit</t-button>
+                </t-form-item>
+                <t-form-item label="Ignore Rules" class="agent-service-form-item-full">
+                  <div class="agent-service-form-hint">命中后仅做消息存储，不回复、不进入推理流程。</div>
+                  <t-button variant="text" style="margin-top: 6px; padding-left: 0" :disabled="Boolean(ignoreRulesDisabledReason)" @click="openIgnoreRulesModal()">管理 Ignore Rules</t-button>
+                  <div v-if="ignoreRulesDisabledReason" class="agent-service-form-hint" style="margin-top: 4px">
+                    <InfoCircleIcon /> {{ ignoreRulesDisabledReason }}
+                  </div>
+                </t-form-item>
+              </div>
+            </t-card>
+          </template>
+
+          <!-- 头像编辑：http_stream 和 workspace -->
+          <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
+            <t-card class="agent-service-form-section" :bordered="false">
+              <template #title>Service 头像</template>
+              <t-form-item label="头像" class="agent-service-form-item-full">
+                <div class="agent-service-avatar-row">
+                  <img v-if="form.avatar_url" :src="getAvatarDisplayUrl(form.avatar_url)" alt="Avatar preview" class="agent-service-avatar-preview" />
+                  <div v-else class="agent-service-avatar-placeholder">{{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}</div>
+                  <div class="agent-service-avatar-actions">
+                    <input ref="createAvatarFileInput" type="file" accept="image/*" style="display: none" @change="handleAvatarFileSelect" />
+                    <t-button variant="text" @click="$refs.createAvatarFileInput?.click()">{{ form.avatar_url ? '更换头像' : '上传头像' }}</t-button>
+                    <t-button v-if="form.avatar_url" variant="text" theme="danger" @click="clearAvatar">删除</t-button>
+                  </div>
+                </div>
+                <t-input v-model="form.avatar_url" placeholder="头像 URL（可选，或直接上传图片）" style="margin-top: 8px" />
+              </t-form-item>
+            </t-card>
+          </template>
+
+          <!-- HTTP Stream 专属 -->
+          <template v-if="form.type === 'http_stream'">
+            <t-card class="agent-service-form-section" :bordered="false">
+              <template #title>HTTP Stream 配置</template>
+              <div class="agent-service-form-grid">
+                <t-form-item label="Bind">
+                  <t-input v-model="form.http_bind" placeholder="127.0.0.1:18080" />
+                </t-form-item>
+                <t-form-item label="API Key">
+                  <t-input v-model="form.http_api_key" />
+                </t-form-item>
+                <t-form-item label="Web Search Engine">
+                  <t-select v-model="form.http_web_search_engine_connection_id" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="Task DB Connection">
+                  <t-select v-model="form.task_db_connection_id" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                  <div v-if="!form.task_db_connection_id" class="agent-service-form-hint" style="margin-top: 4px">
+                    <InfoCircleIcon /> 未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。如需持久化，请在 <t-link theme="primary" href="#/connections">连接管理</t-link> 中新建 MySQL 或 SQLite 连接。
+                  </div>
+                </t-form-item>
+                <t-form-item label="Memory Embedding Model">
+                  <t-select v-model="form.http_embedding_model_ref_id" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="Weaviate Memory Connection">
+                  <t-select v-model="form.http_weaviate_memory_connection_id" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+              </div>
+            </t-card>
+          </template>
+
+          <!-- 默认工具 -->
+          <t-card v-if="currentDefaultTools.length > 0" class="agent-service-form-section" :bordered="false">
+            <template #title>默认工具</template>
+            <div class="agent-service-default-tools-search">
+              <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具名称、ID 或说明" clearable>
+                <template v-if="defaultToolSearchQuery" #suffixIcon>
+                  <t-button variant="text" size="small" @click="defaultToolSearchQuery = ''">清空</t-button>
+                </template>
+              </t-input>
             </div>
-            <template v-if="form.type === 'qq_chat'">
-              <div class="field">
-                <label>数学编程模型</label>
-                <select v-model="form.math_programming_llm_ref_id">
-                  <option value="">回退主模型</option>
-                  <option
-                    v-for="item in chatModels"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>意图分类模型</label>
-                <select v-model="form.intent_classification_llm_ref_id">
-                  <option value="">回退主模型</option>
-                  <option
-                    v-for="item in chatModels"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>自然语言回复模型</label>
-                <select v-model="form.natural_language_reply_llm_ref_id">
-                  <option value="">请选择</option>
-                  <option
-                    v-for="item in chatModels"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field-full">
-                <label>自然语言回复 Prompt</label>
-                <textarea
-                  v-model="form.natural_language_reply_system_prompt"
-                  placeholder="可选。专门给自然语言回复模型使用的系统提示词。"
-                />
-              </div>
-              <div class="field">
-                <label>文本向量模型</label>
-                <select v-model="form.embedding_model_ref_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in embeddingModels"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>分词 Tokenizer 连接</label>
-                <select v-model="form.tokenizer_connection_id">
-                  <option value="">不使用（标点分段）</option>
-                  <option
-                    v-for="item in tokenizerConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Bot Adapter</label>
-                <select v-model="form.ims_bot_adapter_connection_id">
-                  <option value="">请选择</option>
-                  <option
-                    v-for="item in botConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Bot Name</label><input v-model="form.bot_name" />
-              </div>
-              <div class="field-full">
-                <label>System Prompt</label>
-                <textarea
-                  v-model="form.system_prompt"
-                  placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。"
-                />
-              </div>
-              <div class="field">
-                <label>RustFS Connection</label>
-                <select v-model="form.rustfs_connection_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in rustfsConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Web Search Engine</label>
-                <select v-model="form.web_search_engine_connection_id">
-                  <option value="">请选择</option>
-                  <option
-                    v-for="item in webSearchEngineConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>RDB Connection</label>
-                <select v-model="form.rdb_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in taskDbConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Weaviate Image Connection</label>
-                <select v-model="form.weaviate_image_connection_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in imageWeaviateConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Weaviate Memory Connection</label>
-                <select v-model="form.weaviate_memory_connection_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in memoryWeaviateConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Elasticsearch Image Connection</label>
-                <select v-model="form.elasticsearch_image_connection_id"><option value="">不使用</option><option v-for="item in imageElasticsearchConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option></select>
-              </div>
-              <div class="field">
-                <label>Elasticsearch Memory Connection</label>
-                <select v-model="form.elasticsearch_memory_connection_id"><option value="">不使用</option><option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option></select>
-              </div>
-              <div class="field">
-                <label>Max Message Length</label
-                ><input
-                  v-model.number="form.max_message_length"
-                  type="number"
-                  min="1"
-                />
-              </div>
-              <div class="field">
-                <label>Max Steer Count</label>
-                <div class="muted">
-                  当 Service 还没发出最终回复时，用户继续发消息会被视为"插嘴 /
-                  steer"。 这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4
-                  次，超出会被丢弃并写入日志。
-                </div>
-                <input
-                  v-model.number="form.max_steer_count"
-                  type="number"
-                  min="0"
-                />
-              </div>
-              <div class="field">
-                <label>配置Service情绪维度</label>
-                <div class="muted">
-                  Service的情绪可以由一个或者多个维度组成，这些维度共同构成Agent的决策、行为和输出语言风格
-                </div>
-                <div class="muted" style="margin-top: 6px">
-                  当前已配置 {{ form.emotion_dimensions.length }} 个维度。
-                </div>
-                <button
-                  class="btn ghost"
-                  type="button"
-                  style="margin-top: 6px"
-                  @click="openEmotionDimensionsModal"
-                >
-                  配置情绪维度
-                </button>
-              </div>
-              <div class="field">
-                <label>Compact Context Length</label
-                ><input
-                  v-model.number="form.compact_context_length"
-                  type="number"
-                  min="0"
-                />
-              </div>
-              <div class="field">
-                <label>Rate Limit</label>
-                <div class="muted" style="margin-top: 2px">
-                  按 N 天/小时/分钟限制调用次数，计数跟随用户（跨群与私聊共享），优先级：用户 &gt; 群组 &gt; 默认。
-                </div>
-                <button
-                  class="btn ghost"
-                  type="button"
-                  style="margin-top: 6px"
-                  @click="openRateLimitModal"
-                >
-                  编辑 Rate Limit
-                </button>
-              </div>
-              <div class="field">
-                <label>Ignore Rules</label>
-                <div class="muted" style="margin-top: 2px">
-                  命中后仅做消息存储，不回复、不进入推理流程。
-                </div>
-                <button
-                  class="btn ghost"
-                  type="button"
-                  style="margin-top: 6px"
-                  :disabled="Boolean(ignoreRulesDisabledReason)"
-                  @click="openIgnoreRulesModal()"
-                >
-                  管理 Ignore Rules
-                </button>
-                <div
-                  v-if="ignoreRulesDisabledReason"
-                  class="muted"
-                  style="margin-top: 4px; font-size: 12px"
-                >
-                  <InfoCircleIcon /> {{ ignoreRulesDisabledReason }}
-                </div>
+            <div v-if="filteredDefaultTools.length === 0" class="agent-service-empty-state">没有匹配的工具。</div>
+            <t-table v-else :data="filteredDefaultTools" :columns="defaultToolColumns" :hover="true" :pagination="false" row-key="id" table-layout="fixed">
+              <template #enabled="{ row }">
+                <t-checkbox v-model="form.default_tools_enabled[row.id]" />
+              </template>
+              <template #edit="{ row }">
+                <t-button variant="text" size="small" @click="openDefaultToolEditModal(row.id)">编辑</t-button>
+              </template>
+            </t-table>
+          </t-card>
+
+          <!-- 工具调用上限回文 -->
+          <t-card v-if="form.type === 'qq_chat'" class="agent-service-form-section" :bordered="false">
+            <template #title>工具调用上限回文</template>
+            <t-form-item label="达到调用上限回文（可选）" class="agent-service-form-item-full">
+              <t-textarea v-model="form.tool_session_limit_message" placeholder="当前工具已经达到 [{limit_scope}]的调用次数限制，但是你不要把这个直接当成自然语言输出给用户，仅当用户问及详细原因时，再告知" />
+            </t-form-item>
+            <div class="agent-service-form-hint">留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为"单次会话"或"用户"）。</div>
+          </t-card>
+
+          <!-- 工具配置 -->
+          <t-card class="agent-service-form-section" :bordered="false">
+            <template #title>
+              <div class="agent-service-section-title-row">
+                <span>工具配置</span>
+                <t-button variant="text" @click="addTool">新增工具</t-button>
               </div>
             </template>
-
-            <!-- 头像编辑：http_stream 和 workspace 支持 -->
-            <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
-              <div class="field-full">
-                <label>Service 头像</label>
-                <div class="avatar-upload-row">
-                  <img
-                    v-if="form.avatar_url"
-                    :src="getAvatarDisplayUrl(form.avatar_url)"
-                    alt="Avatar preview"
-                    class="avatar-preview"
-                  />
-                  <div v-else class="avatar-placeholder">
-                    {{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}
+            <div v-if="form.tools.length === 0" class="agent-service-empty-state">还没有配置工具。</div>
+            <div v-for="(tool, index) in form.tools" :key="tool.id" class="agent-service-tool-block">
+              <t-card :bordered="true" style="margin-top: 12px">
+                <template #title>
+                  <div class="agent-service-tool-header">
+                    <strong>工具 {{ index + 1 }}</strong>
+                    <t-button variant="text" theme="danger" size="small" @click="removeTool(index)">移除</t-button>
                   </div>
-                  <div class="avatar-actions">
-                    <input
-                      ref="createAvatarFileInput"
-                      type="file"
-                      accept="image/*"
-                      style="display: none"
-                      @change="handleAvatarFileSelect"
-                    />
-                    <button
-                      type="button"
-                      class="btn ghost"
-                      @click="$refs.createAvatarFileInput?.click()"
-                    >
-                      {{ form.avatar_url ? '更换头像' : '上传头像' }}
-                    </button>
-                    <button
-                      v-if="form.avatar_url"
-                      type="button"
-                      class="btn warn"
-                      @click="clearAvatar"
-                    >
-                      删除
-                    </button>
-                  </div>
+                </template>
+                <div class="agent-service-form-grid">
+                  <t-form-item label="ID">
+                    <t-input v-model="tool.id" />
+                  </t-form-item>
+                  <t-form-item label="名称">
+                    <t-input v-model="tool.name" />
+                  </t-form-item>
+                  <t-form-item label="描述" class="agent-service-form-item-full">
+                    <t-input v-model="tool.description" />
+                  </t-form-item>
+                  <t-form-item label="运行时长">
+                    <t-select v-model="tool.runDuration">
+                      <t-option value="Short" label="Short（短时）" />
+                      <t-option value="Long" label="Long（长时）" />
+                    </t-select>
+                  </t-form-item>
+                  <t-form-item label="工具模式">
+                    <t-select v-model="tool.implementation">
+                      <t-option value="node_graph" label="node_graph" />
+                      <t-option value="python_script" label="python_script" />
+                    </t-select>
+                  </t-form-item>
+                  <t-form-item v-if="tool.implementation === 'node_graph'" label="目标类型">
+                    <t-select v-model="tool.targetType" @change="handleToolTargetTypeChange(tool)">
+                      <t-option value="workflow_set" label="workflow_set" />
+                      <t-option value="file_path" label="file_path" />
+                      <t-option value="inline_graph" label="inline_graph" />
+                    </t-select>
+                  </t-form-item>
+                  <t-form-item style="align-self: end">
+                    <t-checkbox v-model="tool.enabled">启用该工具</t-checkbox>
+                  </t-form-item>
+                  <t-form-item v-if="form.type === 'qq_chat' && tool.enabled" label="单次会话调用上限">
+                    <t-input-number v-model="form.tool_session_call_limits[tool.name]" :min="0" placeholder="不限制" />
+                    <div class="agent-service-form-hint" style="font-size: 12px">0 或留空表示不限制</div>
+                  </t-form-item>
+                  <t-form-item v-if="tool.implementation === 'node_graph' && tool.targetType === 'workflow_set'" label="Workflow Set 名称" class="agent-service-form-item-full">
+                    <t-select v-model="tool.workflowName" @change="applyWorkflowSetMetadata(tool)" placeholder="请选择">
+                      <t-option v-for="workflow in workflows" :key="workflow.name" :value="workflow.name" :label="workflow.display_name || workflow.name" />
+                    </t-select>
+                  </t-form-item>
+                  <t-form-item v-else-if="tool.implementation === 'node_graph' && tool.targetType === 'file_path'" label="文件路径" class="agent-service-form-item-full">
+                    <t-input v-model="tool.filePath" placeholder="workflow_set/demo.json" />
+                  </t-form-item>
+                  <t-form-item v-else-if="tool.implementation === 'node_graph'" label="Inline Graph JSON" class="agent-service-form-item-full">
+                    <t-textarea v-model="tool.inlineGraphJson" />
+                  </t-form-item>
+                  <t-form-item v-else label="Python 脚本路径" class="agent-service-form-item-full">
+                    <t-input v-model="tool.pythonScriptPath" placeholder="utils/python_tools/echo_tool.py" />
+                  </t-form-item>
+                  <t-form-item v-if="tool.implementation === 'python_script'" label="入口函数名">
+                    <t-input v-model="tool.pythonModuleEntry" placeholder="run_tool" />
+                  </t-form-item>
+                  <t-form-item v-if="tool.implementation === 'python_script'" label="Python 运行时">
+                    <t-select v-model="tool.pythonMode">
+                      <t-option value="inherit" label="继承全局设置" />
+                      <t-option value="uv_project" label="uv_project" />
+                      <t-option value="project_venv" label="project_venv" />
+                      <t-option value="custom_executable" label="custom_executable" />
+                    </t-select>
+                  </t-form-item>
+                  <t-form-item v-if="tool.implementation === 'python_script' && tool.pythonMode === 'custom_executable'" label="自定义 Python 路径" class="agent-service-form-item-full">
+                    <t-input v-model="tool.pythonExecutablePath" placeholder="C:\\Python311\\python.exe" />
+                  </t-form-item>
+                  <t-form-item v-if="tool.implementation === 'python_script'" label="超时（秒）">
+                    <t-input-number v-model="tool.pythonTimeoutSecs" :min="1" />
+                  </t-form-item>
+                  <t-form-item label="Parameters JSON" class="agent-service-form-item-full">
+                    <template #label>
+                      <div class="agent-service-params-label">
+                        <span>Parameters JSON</span>
+                        <t-button v-if="tool.implementation === 'node_graph' && tool.targetType === 'workflow_set' && tool.workflowName" variant="text" size="small" :disabled="syncingToolIndex === index" @click="syncToolFromGraph(tool, index)">
+                          {{ syncingToolIndex === index ? '同步中…' : '从节点图更新' }}
+                        </t-button>
+                      </div>
+                    </template>
+                    <t-textarea v-model="tool.parametersJson" />
+                  </t-form-item>
+                  <t-form-item label="Outputs JSON" class="agent-service-form-item-full">
+                    <t-textarea v-model="tool.outputsJson" />
+                  </t-form-item>
                 </div>
-                <input
-                  v-model="form.avatar_url"
-                  placeholder="头像 URL（可选，或直接上传图片）"
-                  style="margin-top: 8px"
-                />
-              </div>
-            </template>
-
-            <template v-if="form.type === 'http_stream'">
-              <div class="field">
-                <label>Bind</label
-                ><input
-                  v-model="form.http_bind"
-                  placeholder="127.0.0.1:18080"
-                />
-              </div>
-              <div class="field">
-                <label>API Key</label><input v-model="form.http_api_key" />
-              </div>
-              <div class="field">
-                <label>Web Search Engine</label>
-                <select v-model="form.http_web_search_engine_connection_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in webSearchEngineConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Task DB Connection</label>
-                <select v-model="form.task_db_connection_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in taskDbConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-                <div
-                  v-if="!form.task_db_connection_id"
-                  class="muted"
-                  style="margin-top: 4px"
-                >
-                  <InfoCircleIcon />
-                  未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。
-                  如需持久化，请在
-                  <a href="#/connections" style="color: var(--primary)"
-                    >连接管理</a
-                  >
-                  中新建 MySQL 或 SQLite 连接。
-                </div>
-              </div>
-              <div class="field">
-                <label>Memory Embedding Model</label>
-                <select v-model="form.http_embedding_model_ref_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in embeddingModels"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Weaviate Memory Connection</label>
-                <select v-model="form.http_weaviate_memory_connection_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in memoryWeaviateConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-            </template>
-
-          </div>
-
-          <div v-if="currentDefaultTools.length > 0" class="editor-card" style="margin-top: 12px">
-            <div class="split-header">
-              <div>
-                <h3>默认工具</h3>
-              </div>
+              </t-card>
             </div>
-            <div class="default-tools-table-wrap" style="margin-top: 10px">
-              <div class="default-tools-search">
-                <input
-                  v-model="defaultToolSearchQuery"
-                  type="text"
-                  placeholder="搜索工具名称、ID 或说明"
-                  class="default-tools-search-input"
-                />
-                <button
-                  v-if="defaultToolSearchQuery"
-                  class="btn ghost default-tools-search-clear"
-                  @click="defaultToolSearchQuery = ''"
-                >
-                  清空
-                </button>
-              </div>
-              <div v-if="filteredDefaultTools.length === 0" class="empty-state" style="padding: 16px">
-                没有匹配的工具。
-              </div>
-              <table v-else class="default-tools-table">
-                <thead>
-                  <tr>
-                    <th class="dt-col-name">工具名称</th>
-                    <th class="dt-col-id">工具 ID</th>
-                    <th class="dt-col-desc">说明</th>
-                    <th class="dt-col-enable">启用</th>
-                    <th class="dt-col-edit">编辑</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="tool in filteredDefaultTools" :key="tool.id">
-                    <td class="dt-cell-name"><strong>{{ tool.label }}</strong></td>
-                    <td class="dt-cell-id mono">{{ tool.id }}</td>
-                    <td class="dt-cell-desc"><span class="muted">{{ tool.description }}</span></td>
-                    <td class="dt-cell-enable">
-                      <input v-model="form.default_tools_enabled[tool.id]" type="checkbox" />
-                    </td>
-                    <td class="dt-cell-edit">
-                      <button
-                        class="btn ghost connection-card-compact-btn"
-                        @click="openDefaultToolEditModal(tool.id)"
-                      >
-                        编辑
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div v-if="form.type === 'qq_chat'" class="editor-card" style="margin-top: 12px">
-            <div class="field-full">
-              <label>达到调用上限回文（可选）</label>
-              <textarea
-                v-model="form.tool_session_limit_message"
-                placeholder="当前工具已经达到 [{limit_scope}]的调用次数限制，但是你不要把这个直接当成自然语言输出给用户，仅当用户问及详细原因时，再告知"
-              />
-            </div>
-            <div class="muted" style="margin-top: 4px">
-              留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为"单次会话"或"用户"）。
-            </div>
-          </div>
+          </t-card>
+        </t-form>
 
-<!-- 头像编辑：http_stream 和 workspace 支持 -->
-            <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
-              <div class="field-full">
-                <label>Service 头像</label>
-                <div class="avatar-upload-row">
-                  <img
-                    v-if="form.avatar_url"
-                    :src="getAvatarDisplayUrl(form.avatar_url)"
-                    alt="Avatar preview"
-                    class="avatar-preview"
-                  />
-                  <div v-else class="avatar-placeholder">
-                    {{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}
-                  </div>
-                  <div class="avatar-actions">
-                    <input
-                      ref="avatarFileInput"
-                      type="file"
-                      accept="image/*"
-                      style="display: none"
-                      @change="handleAvatarFileSelect"
-                    />
-                    <button
-                      type="button"
-                      class="btn ghost"
-                      @click="$refs.avatarFileInput?.click()"
-                    >
-                      {{ form.avatar_url ? '更换头像' : '上传头像' }}
-                    </button>
-                    <button
-                      v-if="form.avatar_url"
-                      type="button"
-                      class="btn warn"
-                      @click="clearAvatar"
-                    >
-                      删除
-                    </button>
-                  </div>
-                </div>
-                <input
-                  v-model="form.avatar_url"
-                  placeholder="头像 URL（可选，或直接上传图片）"
-                  style="margin-top: 8px"
-                />
-              </div>
-            </template>
-
-          <div class="editor-card" style="margin-top: 18px">
-            <div class="split-header">
-              <div>
-                <h3>工具配置</h3>
-              </div>
-              <button class="btn ghost" @click="addTool">新增工具</button>
-            </div>
-            <div class="list" style="margin-top: 14px">
-              <div v-if="form.tools.length === 0" class="empty-state">
-                还没有配置工具。
-              </div>
-              <div
-                v-for="(tool, index) in form.tools"
-                :key="tool.id"
-                class="tool-block"
-              >
-                <div class="split-header">
-                  <strong>工具 {{ index + 1 }}</strong>
-                  <button class="btn warn" @click="removeTool(index)">
-                    移除
-                  </button>
-                </div>
-                <div class="form-grid">
-                  <div class="field">
-                    <label>ID</label><input v-model="tool.id" />
-                  </div>
-                  <div class="field">
-                    <label>名称</label><input v-model="tool.name" />
-                  </div>
-                  <div class="field-full">
-                    <label>描述</label><input v-model="tool.description" />
-                  </div>
-                  <div class="field">
-                    <label>运行时长</label>
-                    <select v-model="tool.runDuration">
-                      <option value="Short">Short（短时）</option>
-                      <option value="Long">Long（长时）</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label>工具模式</label>
-                    <select v-model="tool.implementation">
-                      <option value="node_graph">node_graph</option>
-                      <option value="python_script">python_script</option>
-                    </select>
-                  </div>
-                  <div v-if="tool.implementation === 'node_graph'" class="field">
-                    <label>目标类型</label>
-                    <select
-                      v-model="tool.targetType"
-                      @change="handleToolTargetTypeChange(tool)"
-                    >
-                      <option value="workflow_set">workflow_set</option>
-                      <option value="file_path">file_path</option>
-                      <option value="inline_graph">inline_graph</option>
-                    </select>
-                  </div>
-                  <div class="field field-check">
-                    <input v-model="tool.enabled" type="checkbox" />启用该工具
-                  </div>
-                  <div
-                    v-if="form.type === 'qq_chat' && tool.enabled"
-                    class="field"
-                  >
-                    <label>单次会话调用上限</label>
-                    <input
-                      v-model.number="form.tool_session_call_limits[tool.name]"
-                      type="number"
-                      min="0"
-                      placeholder="不限制"
-                    />
-                    <div class="muted" style="font-size: 12px">0 或留空表示不限制</div>
-                  </div>
-                  <div
-                    v-if="tool.implementation === 'node_graph' && tool.targetType === 'workflow_set'"
-                    class="field-full"
-                  >
-                    <label>Workflow Set 名称</label>
-                    <select
-                      v-model="tool.workflowName"
-                      @change="applyWorkflowSetMetadata(tool)"
-                    >
-                      <option value="">请选择</option>
-                      <option
-                        v-for="workflow in workflows"
-                        :key="workflow.name"
-                        :value="workflow.name"
-                      >
-                        {{ workflow.display_name || workflow.name }}
-                      </option>
-                    </select>
-                  </div>
-                  <div
-                    v-else-if="tool.implementation === 'node_graph' && tool.targetType === 'file_path'"
-                    class="field-full"
-                  >
-                    <label>文件路径</label>
-                    <input
-                      v-model="tool.filePath"
-                      placeholder="workflow_set/demo.json"
-                    />
-                  </div>
-                  <div v-else-if="tool.implementation === 'node_graph'" class="field-full">
-                    <label>Inline Graph JSON</label>
-                    <textarea v-model="tool.inlineGraphJson" />
-                  </div>
-                  <div v-else class="field-full">
-                    <label>Python 脚本路径</label>
-                    <input v-model="tool.pythonScriptPath" placeholder="utils/python_tools/echo_tool.py" />
-                  </div>
-                  <div v-if="tool.implementation === 'python_script'" class="field">
-                    <label>入口函数名</label>
-                    <input v-model="tool.pythonModuleEntry" placeholder="run_tool" />
-                  </div>
-                  <div v-if="tool.implementation === 'python_script'" class="field">
-                    <label>Python 运行时</label>
-                    <select v-model="tool.pythonMode">
-                      <option value="inherit">继承全局设置</option>
-                      <option value="uv_project">uv_project</option>
-                      <option value="project_venv">project_venv</option>
-                      <option value="custom_executable">custom_executable</option>
-                    </select>
-                  </div>
-                  <div v-if="tool.implementation === 'python_script' && tool.pythonMode === 'custom_executable'" class="field-full">
-                    <label>自定义 Python 路径</label>
-                    <input v-model="tool.pythonExecutablePath" placeholder="C:\\Python311\\python.exe" />
-                  </div>
-                  <div v-if="tool.implementation === 'python_script'" class="field">
-                    <label>超时（秒）</label>
-                    <input v-model.number="tool.pythonTimeoutSecs" type="number" min="1" />
-                  </div>
-                  <div class="field-full">
-                    <div
-                      style="
-                        display: flex;
-                        align-items: center;
-                        justify-content: space-between;
-                        margin-bottom: 4px;
-                      "
-                    >
-                      <label style="margin-bottom: 0">Parameters JSON</label>
-                      <button
-                        v-if="
-                          tool.implementation === 'node_graph' &&
-                          tool.targetType === 'workflow_set' &&
-                          tool.workflowName
-                        "
-                        class="btn ghost"
-                        style="padding: 2px 10px; font-size: 12px"
-                        :disabled="syncingToolIndex === index"
-                        @click="syncToolFromGraph(tool, index)"
-                      >
-                        {{
-                          syncingToolIndex === index
-                            ? "同步中…"
-                            : "从节点图更新"
-                        }}
-                      </button>
-                    </div>
-                    <textarea v-model="tool.parametersJson" />
-                  </div>
-                  <div class="field-full">
-                    <label>Outputs JSON</label>
-                    <textarea v-model="tool.outputsJson" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="agent-service-dialog-actions">
-            <t-button variant="outline" @click="showCreateForm = false">返回</t-button>
-            <t-button theme="primary" @click="submitForm">创建 Service</t-button>
-          </div>
+        <div class="agent-service-drawer-footer">
+          <t-button variant="outline" @click="showCreateForm = false">返回</t-button>
+          <t-button theme="primary" @click="submitForm">创建 Service</t-button>
         </div>
+      </div>
 
-        <div v-else class="agent-service-type-grid">
-          <button
-            v-for="type in serviceTypes"
-            :key="type.value"
-            class="connection-picker-option"
-            @click="pickCreateType(type.value)"
-          >
+      <div v-else class="agent-service-type-grid">
+        <t-button v-for="type in serviceTypes" :key="type.value" variant="outline" class="agent-service-type-card" @click="pickCreateType(type.value)">
+          <div class="agent-service-type-card-content">
             <strong>{{ type.label }}</strong>
-            <span>{{ type.hint }}</span>
-          </button>
-        </div>
-    </t-dialog>
-
-    
-    <div v-if="showDefaultToolEditModal" class="service-edit-modal-backdrop" style="z-index: 70" @click.stop>
-      <div class="service-edit-modal default-tool-edit-modal" @click.stop>
-        <div class="service-edit-modal-header default-tool-edit-modal-header">
-          <h3 style="margin: 0">编辑默认工具</h3>
-          <button
-            class="service-edit-modal-close"
-            aria-label="关闭"
-            @click="closeDefaultToolEditModal"
-          >
-            <CloseIcon />
-          </button>
-        </div>
-        <div class="service-edit-modal-body">
-          <div class="editor-card">
-            <div class="form-grid">
-              <div class="field-full">
-                <label>工具</label>
-                <div class="muted">
-                  {{ currentEditingDefaultTool?.label }} ({{ currentEditingDefaultTool?.id }})
-                </div>
-              </div>
-              <div class="field-full field-check">
-                <label>
-                  <input v-model="defaultToolEditDraft.enabled" type="checkbox" />
-                  启用该工具
-                </label>
-              </div>
-              <div class="field">
-                <label>单次会话调用上限</label>
-                <input
-                  v-model.number="defaultToolEditDraft.callLimit"
-                  type="number"
-                  min="0"
-                  placeholder="不限制"
-                />
-                <div class="muted" style="font-size: 12px; margin-top: 4px">0 或留空表示不限制</div>
-              </div>
-              <div
-                v-if="form.type === 'qq_chat' && editingDefaultToolId === 'image_understand'"
-                class="field-full"
-              >
-                <label>图片理解模型</label>
-                <select v-model="defaultToolEditDraft.imageUnderstandLlmRefId">
-                  <option value="">默认使用主模型</option>
-                  <option
-                    v-for="item in multimodalChatModels"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-                <div class="muted" style="margin-top: 4px">
-                  image_understand 默认使用 Service 主模型；这里只有支持多模态的模型可选。
-                </div>
-                <div
-                  v-if="form.llm_ref_id && !mainChatModelSupportsMultimodal && !defaultToolEditDraft.imageUnderstandLlmRefId"
-                  class="muted"
-                  style="margin-top: 4px; color: #ffb36b"
-                >
-                  当前主模型不支持多模态，启用 image_understand 时必须在这里指定一个支持多模态的模型。
-                </div>
-              </div>
-            </div>
+            <span class="agent-service-type-hint">{{ type.hint }}</span>
           </div>
-        </div>
-        <div class="service-edit-modal-footer">
-          <button class="btn ghost" @click="closeDefaultToolEditModal">取消</button>
-          <button class="btn primary" @click="confirmDefaultToolEdit">保存</button>
-        </div>
+        </t-button>
       </div>
-    </div>
+    </t-drawer>
 
-    <!-- 编辑 Service 模态框 -->
-    <div v-if="showEditModal" class="service-edit-modal-backdrop" @click.stop>
-      <div class="service-edit-modal" @click.stop>
-        <div class="service-edit-modal-header">
-          <div class="connection-card-badges">
-            <span class="badge">{{ form.type }}</span>
-            <span class="badge" :class="form.enabled ? 'success' : ''">{{
-              form.enabled ? "已启用" : "已停用"
-            }}</span>
-            <span v-if="form.is_default" class="badge">default</span>
+    <!-- 编辑 Service 抽屉 -->
+    <t-drawer
+      v-model:visible="showEditModal"
+      :header="form.name || '编辑 Service'"
+      size="960px"
+      :close-on-overlay-click="false"
+      @close="closeEditModal"
+    >
+      <template #header>
+        <div class="agent-service-edit-drawer-header">
+          <div class="agent-service-edit-badges">
+            <t-tag variant="light">{{ form.type }}</t-tag>
+            <t-tag :theme="form.enabled ? 'success' : 'default'" variant="light">{{ form.enabled ? '已启用' : '已停用' }}</t-tag>
+            <t-tag v-if="form.is_default" theme="warning" variant="light">default</t-tag>
           </div>
-          <h3 style="margin: 0">{{ form.name || "编辑 Service" }}</h3>
+          <strong>{{ form.name || '编辑 Service' }}</strong>
         </div>
+      </template>
 
-        <div class="service-edit-modal-body">
-          <div class="form-grid">
-            <div class="field">
-              <label>名称</label>
-              <input v-model="form.name" />
-            </div>
-            <div class="field">
-              <label>类型</label>
-              <select v-model="form.type">
-                <option value="qq_chat">QQ Chat Agent Service</option>
-                <option value="http_stream">HTTP stream service</option>
-                <option value="workspace">Workspace Agent Service</option>
-              </select>
-            </div>
+      <t-form class="agent-service-form" label-align="top">
+        <!-- 基本信息 -->
+        <t-card class="agent-service-form-section" :bordered="false">
+          <template #title>基本信息</template>
+          <div class="agent-service-form-grid">
+            <t-form-item label="名称" required>
+              <t-input v-model="form.name" />
+            </t-form-item>
+            <t-form-item label="类型">
+              <t-select v-model="form.type" disabled>
+                <t-option value="qq_chat" label="QQ Chat Agent Service" />
+                <t-option value="http_stream" label="HTTP stream service" />
+                <t-option value="workspace" label="Workspace Agent Service" />
+              </t-select>
+            </t-form-item>
+          </div>
+          <div class="agent-service-check-row">
+            <t-checkbox v-model="form.enabled">启用</t-checkbox>
+            <t-checkbox v-model="form.auto_start">开机自动启动</t-checkbox>
+            <t-checkbox v-model="form.is_default">默认 Service</t-checkbox>
+          </div>
+        </t-card>
 
-            <div class="field-full status-row">
-              <label class="field-check"
-                ><input v-model="form.enabled" type="checkbox" />启用</label
-              >
-              <label class="field-check"
-                ><input
-                  v-model="form.auto_start"
-                  type="checkbox"
-                />开机自动启动</label
-              >
-              <label class="field-check"
-                ><input v-model="form.is_default" type="checkbox" />默认 Service</label
-              >
-            </div>
+        <!-- 模型配置 -->
+        <t-card class="agent-service-form-section" :bordered="false">
+          <template #title>{{ form.type === 'http_stream' ? '默认模型配置' : '模型配置' }}</template>
+          <div class="agent-service-form-grid">
+            <t-form-item :label="form.type === 'http_stream' ? '默认模型配置' : '模型配置'" required>
+              <t-select v-model="form.llm_ref_id" placeholder="请选择">
+                <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
+          </div>
+        </t-card>
 
-            <div class="field">
-              <label>{{ form.type === 'http_stream' ? '默认模型配置' : '模型配置' }}</label>
-              <select v-model="form.llm_ref_id">
-                <option value="">请选择</option>
-                <option
-                  v-for="item in chatModels"
-                  :key="item.config_id"
-                  :value="item.config_id"
-                >
-                  {{ item.name }}
-                </option>
-              </select>
+        <!-- QQ Chat 专属 -->
+        <template v-if="form.type === 'qq_chat'">
+          <t-card class="agent-service-form-section" :bordered="false">
+            <template #title>QQ Chat 模型配置</template>
+            <div class="agent-service-form-grid">
+              <t-form-item label="数学编程模型">
+                <t-select v-model="form.math_programming_llm_ref_id" placeholder="回退主模型" clearable>
+                  <t-option value="" label="回退主模型" />
+                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="意图分类模型">
+                <t-select v-model="form.intent_classification_llm_ref_id" placeholder="回退主模型" clearable>
+                  <t-option value="" label="回退主模型" />
+                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="自然语言回复模型">
+                <t-select v-model="form.natural_language_reply_llm_ref_id" placeholder="请选择" clearable>
+                  <t-option value="" label="请选择" />
+                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="自然语言回复 Prompt" class="agent-service-form-item-full">
+                <t-textarea v-model="form.natural_language_reply_system_prompt" placeholder="可选。专门给自然语言回复模型使用的系统提示词。" />
+              </t-form-item>
             </div>
-            <template v-if="form.type === 'qq_chat'">
-              <div class="field">
-                <label>数学编程模型</label>
-                <select v-model="form.math_programming_llm_ref_id">
-                  <option value="">回退主模型</option>
-                  <option
-                    v-for="item in chatModels"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>意图分类模型</label>
-                <select v-model="form.intent_classification_llm_ref_id">
-                  <option value="">回退主模型</option>
-                  <option
-                    v-for="item in chatModels"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>自然语言回复模型</label>
-                <select v-model="form.natural_language_reply_llm_ref_id">
-                  <option value="">请选择</option>
-                  <option
-                    v-for="item in chatModels"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field-full">
-                <label>自然语言回复 Prompt</label>
-                <textarea
-                  v-model="form.natural_language_reply_system_prompt"
-                  placeholder="可选。专门给自然语言回复模型使用的系统提示词。"
-                  style="min-height: 100px"
-                />
-              </div>
-              <div class="field">
-                <label>文本向量模型</label>
-                <select v-model="form.embedding_model_ref_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in embeddingModels"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>分词 Tokenizer 连接</label>
-                <select v-model="form.tokenizer_connection_id">
-                  <option value="">不使用（标点分段）</option>
-                  <option
-                    v-for="item in tokenizerConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Bot Adapter</label>
-                <select v-model="form.ims_bot_adapter_connection_id">
-                  <option value="">请选择</option>
-                  <option
-                    v-for="item in botConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Bot Name</label><input v-model="form.bot_name" />
-              </div>
-              <div class="field-full">
-                <label>System Prompt</label>
-                <textarea
-                  v-model="form.system_prompt"
-                  placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。"
-                  style="min-height: 100px"
-                />
-              </div>
-              <div class="field">
-                <label>RustFS Connection</label>
-                <select v-model="form.rustfs_connection_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in rustfsConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Web Search Engine</label>
-                <select v-model="form.web_search_engine_connection_id">
-                  <option value="">请选择</option>
-                  <option
-                    v-for="item in webSearchEngineConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>RDB Connection</label>
-                <select v-model="form.rdb_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in taskDbConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Weaviate Image Connection</label>
-                <select v-model="form.weaviate_image_connection_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in imageWeaviateConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Weaviate Memory Connection</label>
-                <select v-model="form.weaviate_memory_connection_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in memoryWeaviateConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Max Message Length</label
-                ><input
-                  v-model.number="form.max_message_length"
-                  type="number"
-                  min="1"
-                />
-              </div>
-              <div class="field">
-                <label>Max Steer Count</label>
-                <div class="muted">
-                  当 Service 还没发出最终回复时，用户继续发消息会被视为"插嘴 /
-                  steer"。 这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4
-                  次，超出的消息会被丢弃。
-                </div>
-                <input
-                  v-model.number="form.max_steer_count"
-                  type="number"
-                  min="0"
-                />
-              </div>
-              <div class="field">
-                <label>配置Service情绪维度</label>
-                <div class="muted">
-                  Service的情绪可以由一个或者多个维度组成，这些维度共同构成Agent的决策、行为和输出语言风格。
-                </div>
-                <button
-                  class="btn ghost"
-                  type="button"
-                  style="margin-top: 6px"
-                  @click="openEmotionDimensionsModal"
-                >
-                  管理情绪维度
-                </button>
-              </div>
-              <div class="field">
-                <label>Compact Context Length</label
-                ><input
-                  v-model.number="form.compact_context_length"
-                  type="number"
-                  min="0"
-                />
-              </div>
-              <div class="field">
-                <label>Rate Limit</label>
-                <div class="muted" style="margin-top: 2px">
-                  按 N 天/小时/分钟限制调用次数，计数跟随用户（跨群与私聊共享），优先级：用户 &gt; 群组 &gt; 默认。
-                </div>
-                <button
-                  class="btn ghost"
-                  type="button"
-                  style="margin-top: 6px"
-                  @click="openRateLimitModal"
-                >
-                  编辑 Rate Limit
-                </button>
-              </div>
-              <div class="field">
-                <label>Ignore Rules</label>
-                <div class="muted" style="margin-top: 2px">
-                  命中后仅做消息存储，不回复、不进入推理流程。
-                </div>
-                <button
-                  class="btn ghost"
-                  type="button"
-                  style="margin-top: 6px"
-                  :disabled="Boolean(ignoreRulesDisabledReason)"
-                  @click="openIgnoreRulesModal()"
-                >
-                  管理 Ignore Rules
-                </button>
-                <div
-                  v-if="ignoreRulesDisabledReason"
-                  class="muted"
-                  style="margin-top: 4px; font-size: 12px"
-                >
+          </t-card>
+
+          <t-card class="agent-service-form-section" :bordered="false">
+            <template #title>向量与分词</template>
+            <div class="agent-service-form-grid">
+              <t-form-item label="文本向量模型">
+                <t-select v-model="form.embedding_model_ref_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="分词 Tokenizer 连接">
+                <t-select v-model="form.tokenizer_connection_id" placeholder="不使用（标点分段）" clearable>
+                  <t-option value="" label="不使用（标点分段）" />
+                  <t-option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+            </div>
+          </t-card>
+
+          <t-card class="agent-service-form-section" :bordered="false">
+            <template #title>Bot 配置</template>
+            <div class="agent-service-form-grid">
+              <t-form-item label="Bot Adapter" required>
+                <t-select v-model="form.ims_bot_adapter_connection_id" placeholder="请选择">
+                  <t-option value="" label="请选择" />
+                  <t-option v-for="item in botConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="Bot Name">
+                <t-input v-model="form.bot_name" />
+              </t-form-item>
+              <t-form-item label="System Prompt" class="agent-service-form-item-full">
+                <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。" />
+              </t-form-item>
+            </div>
+          </t-card>
+
+          <t-card class="agent-service-form-section" :bordered="false">
+            <template #title>外部连接</template>
+            <div class="agent-service-form-grid">
+              <t-form-item label="RustFS Connection">
+                <t-select v-model="form.rustfs_connection_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in rustfsConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="Web Search Engine" required>
+                <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择">
+                  <t-option value="" label="请选择" />
+                  <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="RDB Connection">
+                <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="Weaviate Image Connection">
+                <t-select v-model="form.weaviate_image_connection_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in imageWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="Weaviate Memory Connection">
+                <t-select v-model="form.weaviate_memory_connection_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="Elasticsearch Image Connection">
+                <t-select v-model="form.elasticsearch_image_connection_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in imageElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="Elasticsearch Memory Connection">
+                <t-select v-model="form.elasticsearch_memory_connection_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+            </div>
+          </t-card>
+
+          <t-card class="agent-service-form-section" :bordered="false">
+            <template #title>高级设置</template>
+            <div class="agent-service-form-grid">
+              <t-form-item label="Max Message Length">
+                <t-input-number v-model="form.max_message_length" :min="1" />
+              </t-form-item>
+              <t-form-item label="Max Steer Count">
+                <t-input-number v-model="form.max_steer_count" :min="0" />
+                <div class="agent-service-form-hint">当 Service 还没发出最终回复时，用户继续发消息会被视为"插嘴 / steer"。这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出的消息会被丢弃。</div>
+              </t-form-item>
+              <t-form-item label="Compact Context Length">
+                <t-input-number v-model="form.compact_context_length" :min="0" />
+              </t-form-item>
+            </div>
+            <div class="agent-service-form-grid">
+              <t-form-item label="情绪维度" class="agent-service-form-item-full">
+                <div class="agent-service-form-hint">Service 的情绪可以由一个或者多个维度组成，这些维度共同构成 Agent 的决策、行为和输出语言风格。</div>
+                <t-button variant="text" style="margin-top: 6px; padding-left: 0" @click="openEmotionDimensionsModal">管理情绪维度</t-button>
+              </t-form-item>
+              <t-form-item label="Rate Limit" class="agent-service-form-item-full">
+                <div class="agent-service-form-hint">按 N 天/小时/分钟限制调用次数，计数跟随用户（跨群与私聊共享），优先级：用户 &gt; 群组 &gt; 默认。</div>
+                <t-button variant="text" style="margin-top: 6px; padding-left: 0" @click="openRateLimitModal">编辑 Rate Limit</t-button>
+              </t-form-item>
+              <t-form-item label="Ignore Rules" class="agent-service-form-item-full">
+                <div class="agent-service-form-hint">命中后仅做消息存储，不回复、不进入推理流程。</div>
+                <t-button variant="text" style="margin-top: 6px; padding-left: 0" :disabled="Boolean(ignoreRulesDisabledReason)" @click="openIgnoreRulesModal()">管理 Ignore Rules</t-button>
+                <div v-if="ignoreRulesDisabledReason" class="agent-service-form-hint" style="margin-top: 4px">
                   <InfoCircleIcon /> {{ ignoreRulesDisabledReason }}
                 </div>
+              </t-form-item>
+            </div>
+          </t-card>
+        </template>
+
+        <!-- 头像编辑 -->
+        <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
+          <t-card class="agent-service-form-section" :bordered="false">
+            <template #title>Service 头像</template>
+            <t-form-item label="头像" class="agent-service-form-item-full">
+              <div class="agent-service-avatar-row">
+                <img v-if="form.avatar_url" :src="getAvatarDisplayUrl(form.avatar_url)" alt="Avatar preview" class="agent-service-avatar-preview" />
+                <div v-else class="agent-service-avatar-placeholder">{{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}</div>
+                <div class="agent-service-avatar-actions">
+                  <input ref="avatarFileInput" type="file" accept="image/*" style="display: none" @change="handleAvatarFileSelect" />
+                  <t-button variant="text" @click="$refs.avatarFileInput?.click()">{{ form.avatar_url ? '更换头像' : '上传头像' }}</t-button>
+                  <t-button v-if="form.avatar_url" variant="text" theme="danger" @click="clearAvatar">删除</t-button>
+                </div>
               </div>
+              <t-input v-model="form.avatar_url" placeholder="头像 URL（可选，或直接上传图片）" style="margin-top: 8px" />
+            </t-form-item>
+          </t-card>
+        </template>
+
+        <!-- HTTP Stream 专属 -->
+        <template v-if="form.type === 'http_stream'">
+          <t-card class="agent-service-form-section" :bordered="false">
+            <template #title>HTTP Stream 配置</template>
+            <div class="agent-service-form-grid">
+              <t-form-item label="Bind">
+                <t-input v-model="form.http_bind" placeholder="127.0.0.1:18080" />
+              </t-form-item>
+              <t-form-item label="API Key">
+                <t-input v-model="form.http_api_key" />
+              </t-form-item>
+              <t-form-item label="Web Search Engine">
+                <t-select v-model="form.http_web_search_engine_connection_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="Task DB Connection">
+                <t-select v-model="form.task_db_connection_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+                <div v-if="!form.task_db_connection_id" class="agent-service-form-hint" style="margin-top: 4px">
+                  <InfoCircleIcon /> 未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。如需持久化，请在 <t-link theme="primary" href="#/connections">连接管理</t-link> 中新建 MySQL 或 SQLite 连接。
+                </div>
+              </t-form-item>
+              <t-form-item label="Memory Embedding Model">
+                <t-select v-model="form.http_embedding_model_ref_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="Weaviate Memory Connection">
+                <t-select v-model="form.http_weaviate_memory_connection_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+            </div>
+          </t-card>
+        </template>
+
+        <!-- 默认工具 -->
+        <t-card class="agent-service-form-section" :bordered="false">
+          <template #title>默认工具</template>
+          <div class="agent-service-default-tools-search">
+            <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具名称、ID 或说明" clearable />
+          </div>
+          <div v-if="filteredDefaultTools.length === 0" class="agent-service-empty-state">没有匹配的工具。</div>
+          <t-table v-else :data="filteredDefaultTools" :columns="defaultToolColumns" :hover="true" :pagination="false" row-key="id" table-layout="fixed">
+            <template #enabled="{ row }">
+              <t-checkbox v-model="form.default_tools_enabled[row.id]" />
             </template>
-
-            <!-- 头像编辑：http_stream 和 workspace 支持 -->
-            <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
-              <div class="field-full">
-                <label>Service 头像</label>
-                <div class="avatar-upload-row">
-                  <img
-                    v-if="form.avatar_url"
-                    :src="getAvatarDisplayUrl(form.avatar_url)"
-                    alt="Avatar preview"
-                    class="avatar-preview"
-                  />
-                  <div v-else class="avatar-placeholder">
-                    {{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}
-                  </div>
-                  <div class="avatar-actions">
-                    <input
-                      ref="avatarFileInput"
-                      type="file"
-                      accept="image/*"
-                      style="display: none"
-                      @change="handleAvatarFileSelect"
-                    />
-                    <button
-                      type="button"
-                      class="btn ghost"
-                      @click="$refs.avatarFileInput?.click()"
-                    >
-                      {{ form.avatar_url ? '更换头像' : '上传头像' }}
-                    </button>
-                    <button
-                      v-if="form.avatar_url"
-                      type="button"
-                      class="btn warn"
-                      @click="clearAvatar"
-                    >
-                      删除
-                    </button>
-                  </div>
-                </div>
-                <input
-                  v-model="form.avatar_url"
-                  placeholder="头像 URL（可选，或直接上传图片）"
-                  style="margin-top: 8px"
-                />
-              </div>
+            <template #edit="{ row }">
+              <t-button variant="text" size="small" @click="openDefaultToolEditModal(row.id)">编辑</t-button>
             </template>
+          </t-table>
+        </t-card>
 
-            <template v-if="form.type === 'http_stream'">
-              <div class="field">
-                <label>Bind</label
-                ><input
-                  v-model="form.http_bind"
-                  placeholder="127.0.0.1:18080"
-                />
-              </div>
-              <div class="field">
-                <label>API Key</label><input v-model="form.http_api_key" />
-              </div>
-              <div class="field">
-                <label>Web Search Engine</label>
-                <select v-model="form.http_web_search_engine_connection_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in webSearchEngineConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Task DB Connection</label>
-                <select v-model="form.task_db_connection_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in taskDbConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-                <div
-                  v-if="!form.task_db_connection_id"
-                  class="muted"
-                  style="margin-top: 4px"
-                >
-                  <InfoCircleIcon />
-                  未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。
-                  如需持久化，请在
-                  <a href="#/connections" style="color: var(--primary)"
-                    >连接管理</a
-                  >
-                  中新建 MySQL 或 SQLite 连接。
-                </div>
-              </div>
-              <div class="field">
-                <label>Memory Embedding Model</label>
-                <select v-model="form.http_embedding_model_ref_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in embeddingModels"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Weaviate Memory Connection</label>
-                <select v-model="form.http_weaviate_memory_connection_id">
-                  <option value="">不使用</option>
-                  <option
-                    v-for="item in memoryWeaviateConnections"
-                    :key="item.config_id"
-                    :value="item.config_id"
-                  >
-                    {{ item.name }}
-                  </option>
-                </select>
-              </div>
+        <!-- 工具调用上限回文 -->
+        <t-card v-if="form.type === 'qq_chat'" class="agent-service-form-section" :bordered="false">
+          <template #title>工具调用上限回文</template>
+          <t-form-item label="达到调用上限回文（可选）" class="agent-service-form-item-full">
+            <t-textarea v-model="form.tool_session_limit_message" placeholder="当前工具已经达到 [{limit_scope}]的调用次数限制，但是你不要把这个直接当成自然语言输出给用户，仅当用户问及详细原因时，再告知" />
+          </t-form-item>
+          <div class="agent-service-form-hint">留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为"单次会话"或"用户"）。</div>
+        </t-card>
 
-              </template>
-
-
-          </div>
-
-          <!-- 默认工具表格 -->
-          <div class="editor-card" style="margin-top: 12px">
-            <div class="split-header">
-              <div>
-                <h3>默认工具</h3>
-              </div>
+        <!-- 工具配置 -->
+        <t-card class="agent-service-form-section" :bordered="false">
+          <template #title>
+            <div class="agent-service-section-title-row">
+              <span>工具配置</span>
+              <t-button variant="text" @click="addTool">新增工具</t-button>
             </div>
-            <div class="default-tools-table-wrap" style="margin-top: 10px">
-                <div class="default-tools-search">
-                  <input
-                    v-model="defaultToolSearchQuery"
-                    type="text"
-                    placeholder="搜索工具名称、ID 或说明"
-                    class="default-tools-search-input"
-                  />
-                  <button
-                    v-if="defaultToolSearchQuery"
-                    class="btn ghost default-tools-search-clear"
-                    @click="defaultToolSearchQuery = ''"
-                  >
-                    清空
-                  </button>
-                </div>
-                <div v-if="filteredDefaultTools.length === 0" class="empty-state" style="padding: 16px">
-                  没有匹配的工具。
-                </div>
-                <table v-else class="default-tools-table">
-                  <thead>
-                    <tr>
-                      <th class="dt-col-name">工具名称</th>
-                      <th class="dt-col-id">工具 ID</th>
-                      <th class="dt-col-desc">说明</th>
-                      <th class="dt-col-enable">启用</th>
-                      <th class="dt-col-edit">编辑</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr
-                      v-for="tool in filteredDefaultTools"
-                      :key="tool.id"
-                    >
-                      <td class="dt-cell-name"><strong>{{ tool.label }}</strong></td>
-                      <td class="dt-cell-id mono">{{ tool.id }}</td>
-                      <td class="dt-cell-desc"><span class="muted">{{ tool.description }}</span></td>
-                      <td class="dt-cell-enable">
-                        <input
-                          v-model="form.default_tools_enabled[tool.id]"
-                          type="checkbox"
-                        />
-                      </td>
-                      <td class="dt-cell-edit">
-                        <button
-                          class="btn ghost connection-card-compact-btn"
-                          @click="openDefaultToolEditModal(tool.id)"
-                        >
-                          编辑
-                        </button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-          </div>
-          <div v-if="form.type === 'qq_chat'" class="editor-card" style="margin-top: 12px">
-            <div class="field-full">
-              <label>达到调用上限回文（可选）</label>
-              <textarea
-                v-model="form.tool_session_limit_message"
-                placeholder="当前工具已经达到 [{limit_scope}]的调用次数限制，但是你不要把这个直接当成自然语言输出给用户，仅当用户问及详细原因时，再告知"
-              />
-            </div>
-            <div class="muted" style="margin-top: 4px">
-              留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为"单次会话"或"用户"）。
-            </div>
-          </div>
-
-          <div class="editor-card" style="margin-top: 18px">
-            <div class="split-header">
-              <div>
-                <h3>工具配置</h3>
-              </div>
-              <button class="btn ghost" @click="addTool">新增工具</button>
-            </div>
-            <div class="list" style="margin-top: 14px">
-              <div v-if="form.tools.length === 0" class="empty-state">
-                还没有配置工具。
-              </div>
-              <div
-                v-for="(tool, index) in form.tools"
-                :key="tool.id"
-                class="tool-block"
-              >
-                <div class="split-header">
+          </template>
+          <div v-if="form.tools.length === 0" class="agent-service-empty-state">还没有配置工具。</div>
+          <div v-for="(tool, index) in form.tools" :key="tool.id" class="agent-service-tool-block">
+            <t-card :bordered="true" style="margin-top: 12px">
+              <template #title>
+                <div class="agent-service-tool-header">
                   <strong>工具 {{ index + 1 }}</strong>
-                  <button class="btn warn" @click="removeTool(index)">
-                    移除
-                  </button>
-                </div>
-                <div class="form-grid">
-                  <div class="field">
-                    <label>ID</label><input v-model="tool.id" />
-                  </div>
-                  <div class="field">
-                    <label>名称</label><input v-model="tool.name" />
-                  </div>
-                  <div class="field-full">
-                    <label>描述</label><input v-model="tool.description" />
-                  </div>
-                  <div class="field">
-                    <label>运行时长</label>
-                    <select v-model="tool.runDuration">
-                      <option value="Short">Short（短时）</option>
-                      <option value="Long">Long（长时）</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label>工具模式</label>
-                    <select v-model="tool.implementation">
-                      <option value="node_graph">node_graph</option>
-                      <option value="python_script">python_script</option>
-                    </select>
-                  </div>
-                  <div v-if="tool.implementation === 'node_graph'" class="field">
-                    <label>目标类型</label>
-                    <select
-                      v-model="tool.targetType"
-                      @change="handleToolTargetTypeChange(tool)"
-                    >
-                      <option value="workflow_set">workflow_set</option>
-                      <option value="file_path">file_path</option>
-                      <option value="inline_graph">inline_graph</option>
-                    </select>
-                  </div>
-                  <div class="field field-check">
-                    <input v-model="tool.enabled" type="checkbox" />启用该工具
-                  </div>
-                  <div
-                    v-if="form.type === 'qq_chat' && tool.enabled"
-                    class="field"
-                  >
-                    <label>单次会话调用上限</label>
-                    <input
-                      v-model.number="form.tool_session_call_limits[tool.name]"
-                      type="number"
-                      min="0"
-                      placeholder="不限制"
-                    />
-                    <div class="muted" style="font-size: 12px">0 或留空表示不限制</div>
-                  </div>
-                  <div
-                    v-if="tool.implementation === 'node_graph' && tool.targetType === 'workflow_set'"
-                    class="field-full"
-                  >
-                    <label>Workflow Set 名称</label>
-                    <select
-                      v-model="tool.workflowName"
-                      @change="applyWorkflowSetMetadata(tool)"
-                    >
-                      <option value="">请选择</option>
-                      <option
-                        v-for="workflow in workflows"
-                        :key="workflow.name"
-                        :value="workflow.name"
-                      >
-                        {{ workflow.display_name || workflow.name }}
-                      </option>
-                    </select>
-                  </div>
-                  <div
-                    v-else-if="tool.implementation === 'node_graph' && tool.targetType === 'file_path'"
-                    class="field-full"
-                  >
-                    <label>文件路径</label>
-                    <input
-                      v-model="tool.filePath"
-                      placeholder="workflow_set/demo.json"
-                    />
-                  </div>
-                  <div v-else-if="tool.implementation === 'node_graph'" class="field-full">
-                    <label>Inline Graph JSON</label>
-                    <textarea v-model="tool.inlineGraphJson" />
-                  </div>
-                  <div v-else class="field-full">
-                    <label>Python 脚本路径</label>
-                    <input v-model="tool.pythonScriptPath" placeholder="utils/python_tools/echo_tool.py" />
-                  </div>
-                  <div v-if="tool.implementation === 'python_script'" class="field">
-                    <label>入口函数名</label>
-                    <input v-model="tool.pythonModuleEntry" placeholder="run_tool" />
-                  </div>
-                  <div v-if="tool.implementation === 'python_script'" class="field">
-                    <label>Python 运行时</label>
-                    <select v-model="tool.pythonMode">
-                      <option value="inherit">继承全局设置</option>
-                      <option value="uv_project">uv_project</option>
-                      <option value="project_venv">project_venv</option>
-                      <option value="custom_executable">custom_executable</option>
-                    </select>
-                  </div>
-                  <div v-if="tool.implementation === 'python_script' && tool.pythonMode === 'custom_executable'" class="field-full">
-                    <label>自定义 Python 路径</label>
-                    <input v-model="tool.pythonExecutablePath" placeholder="C:\\Python311\\python.exe" />
-                  </div>
-                  <div v-if="tool.implementation === 'python_script'" class="field">
-                    <label>超时（秒）</label>
-                    <input v-model.number="tool.pythonTimeoutSecs" type="number" min="1" />
-                  </div>
-                  <div class="field-full">
-                    <div
-                      style="
-                        display: flex;
-                        align-items: center;
-                        justify-content: space-between;
-                        margin-bottom: 4px;
-                      "
-                    >
-                      <label style="margin-bottom: 0">Parameters JSON</label>
-                      <button
-                        v-if="
-                          tool.implementation === 'node_graph' &&
-                          tool.targetType === 'workflow_set' &&
-                          tool.workflowName
-                        "
-                        class="btn ghost"
-                        style="padding: 2px 10px; font-size: 12px"
-                        :disabled="syncingToolIndex === index"
-                        @click="syncToolFromGraph(tool, index)"
-                      >
-                        {{
-                          syncingToolIndex === index
-                            ? "同步中…"
-                            : "从节点图更新"
-                        }}
-                      </button>
-                    </div>
-                    <textarea v-model="tool.parametersJson" />
-                  </div>
-                  <div class="field-full">
-                    <label>Outputs JSON</label>
-                    <textarea v-model="tool.outputsJson" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="service-edit-modal-footer">
-          <button class="btn ghost" @click="closeEditModal">取消</button>
-          <button class="btn primary" @click="submitForm">保存</button>
-        </div>
-      </div>
-    </div>
-
-    <div
-      v-if="showEmotionDimensionsModal"
-      class="service-edit-modal-backdrop"
-      @click.stop
-    >
-      <div class="service-edit-modal emotion-dim-modal" @click.stop>
-        <div class="emotion-dim-modal-header">
-          <h3 style="margin: 0">情绪维度</h3>
-          <button
-            class="emotion-dim-close-btn"
-            @click="closeEmotionDimensionsModal"
-          >
-            <CloseIcon />
-          </button>
-        </div>
-        <div class="service-edit-modal-body">
-          <div class="editor-card">
-            <div class="split-header">
-              <div>
-                <h3>维度列表</h3>
-              </div>
-              <button
-                class="btn ghost"
-                type="button"
-                :disabled="emotionDimensionAdding"
-                @click="startAddEmotionDimension"
-              >
-                新增维度
-              </button>
-            </div>
-            <div class="list" style="margin-top: 12px">
-              <!-- 新增中的内联编辑卡片 -->
-              <div
-                v-if="emotionDimensionAdding"
-                class="emotion-dim-card emotion-dim-card--editing"
-              >
-                <div class="emotion-dim-card-header">
-                  <strong>新维度</strong>
-                  <button
-                    class="btn ghost connection-card-compact-btn"
-                    type="button"
-                    @click="cancelAddEmotionDimension"
-                  >
-                    取消
-                  </button>
-                </div>
-                <div class="form-grid" style="margin-top: 10px">
-                  <div class="field">
-                    <label>名称</label>
-                    <input
-                      v-model="emotionDimensionDraft.name"
-                      placeholder="例如：开心"
-                    />
-                  </div>
-                  <div class="field">
-                    <label>升权重 (0–20)</label>
-                    <input
-                      v-model.number="emotionDimensionDraft.increase_weight"
-                      type="range"
-                      min="0"
-                      max="20"
-                      step="0.1"
-                    />
-                    <span class="emotion-dim-weight-value">{{
-                      emotionDimensionDraft.increase_weight
-                    }}</span>
-                  </div>
-                  <div class="field">
-                    <label>降权重 (0–20)</label>
-                    <input
-                      v-model.number="emotionDimensionDraft.decrease_weight"
-                      type="range"
-                      min="0"
-                      max="20"
-                      step="0.1"
-                    />
-                    <span class="emotion-dim-weight-value">{{
-                      emotionDimensionDraft.decrease_weight
-                    }}</span>
-                  </div>
-                  <div class="field">
-                    <label>消解时间（小时）</label>
-                    <input
-                      v-model.number="emotionDimensionDraft.dissipation_hours"
-                      type="number"
-                      min="1"
-                      step="1"
-                    />
-                  </div>
-                  <div class="field-full">
-                    <label>正向风格提示词（可选）</label>
-                    <input
-                      v-model="emotionDimensionDraft.positive_prompt"
-                      placeholder="维度值正向时的语言风格，留空用维度名称"
-                    />
-                  </div>
-                  <div class="field-full">
-                    <label>负向风格提示词（可选）</label>
-                    <input
-                      v-model="emotionDimensionDraft.negative_prompt"
-                      placeholder="维度值负向时的语言风格，留空用「不+维度名称」"
-                    />
-                  </div>
-                </div>
-                <div class="emotion-dim-card-actions">
-                  <button
-                    class="btn ghost"
-                    type="button"
-                    @click="cancelAddEmotionDimension"
-                  >
-                    取消
-                  </button>
-                  <button
-                    class="btn primary"
-                    type="button"
-                    @click="confirmAddEmotionDimension"
-                  >
-                    新增
-                  </button>
-                </div>
-              </div>
-
-              <div
-                v-if="
-                  !emotionDimensionAdding &&
-                  form.emotion_dimensions.length === 0
-                "
-                class="empty-state"
-              >
-                还没有配置情绪维度。点击「新增维度」开始添加。
-              </div>
-
-              <!-- 已有维度卡片 -->
-              <div
-                v-for="(dimension, index) in form.emotion_dimensions"
-                :key="`${dimension.name}-${index}`"
-                class="emotion-dim-card"
-                :class="{ 'emotion-dim-card--editing': emotionDimensionEditingIndex === index }"
-              >
-                <!-- 编辑态 -->
-                <template v-if="emotionDimensionEditingIndex === index">
-                  <div class="emotion-dim-card-header">
-                    <strong>编辑维度</strong>
-                    <button
-                      class="btn ghost connection-card-compact-btn"
-                      type="button"
-                      @click="cancelEditEmotionDimension"
-                    >
-                      取消
-                    </button>
-                  </div>
-                  <div class="form-grid" style="margin-top: 10px">
-                    <div class="field">
-                      <label>名称</label>
-                      <input
-                        v-model="emotionDimensionDraft.name"
-                        placeholder="例如：开心"
-                      />
-                    </div>
-                    <div class="field">
-                      <label>升权重 (0–20)</label>
-                      <input
-                        v-model.number="emotionDimensionDraft.increase_weight"
-                        type="range"
-                        min="0"
-                        max="20"
-                        step="0.1"
-                      />
-                      <span class="emotion-dim-weight-value">{{
-                        emotionDimensionDraft.increase_weight
-                      }}</span>
-                    </div>
-                    <div class="field">
-                      <label>降权重 (0–20)</label>
-                      <input
-                        v-model.number="emotionDimensionDraft.decrease_weight"
-                        type="range"
-                        min="0"
-                        max="20"
-                        step="0.1"
-                      />
-                      <span class="emotion-dim-weight-value">{{
-                        emotionDimensionDraft.decrease_weight
-                      }}</span>
-                    </div>
-                    <div class="field">
-                      <label>消解时间（小时）</label>
-                      <input
-                        v-model.number="emotionDimensionDraft.dissipation_hours"
-                        type="number"
-                        min="1"
-                        step="1"
-                      />
-                    </div>
-                    <div class="field-full">
-                      <label>正向风格提示词（可选）</label>
-                      <input
-                        v-model="emotionDimensionDraft.positive_prompt"
-                        placeholder="维度值正向时的语言风格提示，留空用维度名称"
-                      />
-                    </div>
-                    <div class="field-full">
-                      <label>负向风格提示词（可选）</label>
-                      <input
-                        v-model="emotionDimensionDraft.negative_prompt"
-                        placeholder="维度值负向时的语言风格提示，留空用「不+维度名称」"
-                      />
-                    </div>
-                  </div>
-                  <div class="emotion-dim-card-actions">
-                    <button
-                      class="btn ghost"
-                      type="button"
-                      @click="cancelEditEmotionDimension"
-                    >
-                      取消
-                    </button>
-                    <button
-                      class="btn primary"
-                      type="button"
-                      @click="confirmEditEmotionDimension"
-                    >
-                      保存
-                    </button>
-                  </div>
-                </template>
-
-                <!-- 展示态 -->
-                <template v-else>
-                  <div class="emotion-dim-card-header">
-                    <strong>{{ dimension.name }}</strong>
-                    <div class="inline-actions">
-                      <button
-                        class="btn ghost connection-card-compact-btn"
-                        type="button"
-                        :disabled="emotionDimensionAdding || emotionDimensionEditingIndex != null"
-                        @click="editEmotionDimension(index)"
-                      >
-                        编辑
-                      </button>
-                      <button
-                        class="btn warn connection-card-compact-btn"
-                        type="button"
-                        :disabled="emotionDimensionAdding || emotionDimensionEditingIndex != null"
-                        @click="removeEmotionDimension(index)"
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </div>
-                  <div class="emotion-dim-bars">
-                    <div class="emotion-dim-bar-row">
-                      <span class="emotion-dim-bar-label">升权重</span>
-                      <div class="emotion-dim-bar-track">
-                        <div
-                          class="emotion-dim-bar-fill emotion-dim-bar-fill--increase"
-                          :style="{
-                            width:
-                              Math.min(
-                                ((dimension.increase_weight ?? 1) / 20) * 100,
-                                100,
-                              ) + '%',
-                          }"
-                        />
-                      </div>
-                      <span class="emotion-dim-bar-value">{{
-                        dimension.increase_weight ?? 1
-                      }}</span>
-                    </div>
-                    <div class="emotion-dim-bar-row">
-                      <span class="emotion-dim-bar-label">降权重</span>
-                      <div class="emotion-dim-bar-track">
-                        <div
-                          class="emotion-dim-bar-fill emotion-dim-bar-fill--decrease"
-                          :style="{
-                            width:
-                              Math.min(
-                                ((dimension.decrease_weight ?? 1) / 20) * 100,
-                                100,
-                              ) + '%',
-                          }"
-                        />
-                      </div>
-                      <span class="emotion-dim-bar-value">{{
-                        dimension.decrease_weight ?? 1
-                      }}</span>
-                    </div>
-                  </div>
-                  <div class="muted" style="margin-top: 8px">
-                    无对话 {{ dimension.dissipation_hours ?? 5 }} 小时后自动恢复默认
-                  </div>
-                  <div v-if="dimension.positive_prompt || dimension.negative_prompt" class="emotion-dim-prompts" style="margin-top: 8px">
-                    <div v-if="dimension.positive_prompt" class="emotion-dim-prompt-line">
-                      <span class="emotion-dim-prompt-label">正向</span>
-                      <span class="emotion-dim-prompt-text">{{ dimension.positive_prompt }}</span>
-                    </div>
-                    <div v-if="dimension.negative_prompt" class="emotion-dim-prompt-line">
-                      <span class="emotion-dim-prompt-label">负向</span>
-                      <span class="emotion-dim-prompt-text">{{ dimension.negative_prompt }}</span>
-                    </div>
-                  </div>
-                </template>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div
-      v-if="showIgnoreRulesModal"
-      class="service-edit-modal-backdrop"
-      @click.stop
-    >
-      <div class="service-edit-modal" @click.stop style="max-width: 760px">
-        <div class="service-edit-modal-header">
-          <h3 style="margin: 0">Ignore Rules</h3>
-          <button class="btn ghost" @click="closeIgnoreRulesModal">关闭</button>
-        </div>
-        <div class="service-edit-modal-body">
-          <div class="editor-card">
-            <div class="split-header">
-              <div>
-                <h3>
-                  {{ ignoreRuleForm.id == null ? "新增规则" : "编辑规则" }}
-                </h3>
-              </div>
-            </div>
-            <div class="form-grid" style="margin-top: 12px">
-              <div class="field">
-                <label>sender_id</label>
-                <input
-                  v-model="ignoreRuleForm.sender_id"
-                  :disabled="ignoreRuleSubmitting"
-                  placeholder="可空"
-                />
-              </div>
-              <div class="field">
-                <label>group_id</label>
-                <input
-                  v-model="ignoreRuleForm.group_id"
-                  :disabled="ignoreRuleSubmitting"
-                  placeholder="可空"
-                />
-              </div>
-              <div class="field-full">
-                <label>规则说明</label>
-                <div class="muted">{{ ignoreRulePreview }}</div>
-              </div>
-            </div>
-            <div
-              v-if="ignoreRuleError"
-              class="muted"
-              style="margin-top: 12px; color: var(--danger, #d9534f)"
-            >
-              {{ ignoreRuleError }}
-            </div>
-            <div class="panel-actions" style="margin-top: 12px">
-              <button
-                class="btn ghost"
-                :disabled="ignoreRuleSubmitting"
-                @click="resetIgnoreRuleForm"
-              >
-                清空
-              </button>
-              <button
-                class="btn primary"
-                :disabled="ignoreRuleSubmitting"
-                @click="submitIgnoreRule"
-              >
-                {{
-                  ignoreRuleSubmitting
-                    ? ignoreRuleForm.id == null
-                      ? "新增中…"
-                      : "保存中…"
-                    : ignoreRuleForm.id == null
-                      ? "新增"
-                      : "保存"
-                }}
-              </button>
-            </div>
-          </div>
-
-          <div class="editor-card" style="margin-top: 16px">
-            <div class="split-header">
-              <div>
-                <h3>现有规则</h3>
-              </div>
-            </div>
-            <div class="list" style="margin-top: 12px">
-              <div v-if="ignoreRulesLoading" class="empty-state">加载中...</div>
-              <div v-else-if="ignoreRules.length === 0" class="empty-state">
-                还没有规则。
-              </div>
-              <div
-                v-for="rule in ignoreRules"
-                :key="rule.id"
-                class="tool-block"
-              >
-                <div class="split-header">
-                  <strong>#{{ rule.id }}</strong>
-                  <div class="inline-actions">
-                    <button
-                      class="btn ghost connection-card-compact-btn"
-                      :disabled="
-                        ignoreRuleSubmitting || ignoreRuleDeletingId === rule.id
-                      "
-                      @click="editIgnoreRule(rule)"
-                    >
-                      编辑
-                    </button>
-                    <button
-                      class="btn warn connection-card-compact-btn"
-                      :disabled="
-                        ignoreRuleSubmitting || ignoreRuleDeletingId === rule.id
-                      "
-                      @click="removeIgnoreRule(rule.id)"
-                    >
-                      {{
-                        ignoreRuleDeletingId === rule.id ? "删除中…" : "删除"
-                      }}
-                    </button>
-                  </div>
-                </div>
-                <div class="key-value">
-                  <strong>sender_id</strong
-                  ><span>{{ rule.sender_id || "未设置" }}</span>
-                </div>
-                <div class="key-value">
-                  <strong>group_id</strong
-                  ><span>{{ rule.group_id || "未设置" }}</span>
-                </div>
-                <div class="key-value">
-                  <strong>含义</strong
-                  ><span>{{
-                    formatIgnoreRule(rule.sender_id, rule.group_id)
-                  }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div
-      v-if="showRateLimitModal"
-      class="service-edit-modal-backdrop"
-      @click.stop
-    >
-      <div class="service-edit-modal" @click.stop style="max-width: 820px">
-        <div class="service-edit-modal-header">
-          <h3 style="margin: 0">Rate Limit</h3>
-          <button class="btn ghost" @click="closeRateLimitModal">关闭</button>
-        </div>
-        <div class="service-edit-modal-body">
-          <div class="muted">
-            调用频率限制，优先级：用户 &gt; 群组 &gt; 默认。窗口可按 N 分钟 / N 小时 / N 天，计数跟随用户（跨群与私聊共享）。
-          </div>
-
-          <div class="editor-card" style="margin-top: 12px">
-            <div class="split-header">
-              <div><h3>默认规则</h3></div>
-              <label class="field-check">
-                <input
-                  v-model="form.message_rate_limit_default_enabled"
-                  type="checkbox"
-                />启用
-              </label>
-            </div>
-            <div
-              v-if="form.message_rate_limit_default_enabled"
-              class="form-grid"
-              style="margin-top: 12px"
-            >
-              <div class="field">
-                <label>模式</label>
-                <select v-model="form.message_rate_limit_default.unlimited">
-                  <option :value="false">限次</option>
-                  <option :value="true">无限</option>
-                </select>
-              </div>
-              <template v-if="!form.message_rate_limit_default.unlimited">
-                <div class="field">
-                  <label>窗口</label>
-                  <div style="display: flex; gap: 6px">
-                    <input
-                      v-model.number="form.message_rate_limit_default.window_size"
-                      type="number"
-                      min="1"
-                      style="width: 80px"
-                    />
-                    <select v-model="form.message_rate_limit_default.window_unit">
-                      <option value="minute">分钟</option>
-                      <option value="hour">小时</option>
-                      <option value="day">天</option>
-                    </select>
-                  </div>
-                </div>
-                <div class="field">
-                  <label>次数</label>
-                  <input
-                    v-model.number="form.message_rate_limit_default.max_calls"
-                    type="number"
-                    min="1"
-                  />
+                  <t-button variant="text" theme="danger" size="small" @click="removeTool(index)">移除</t-button>
                 </div>
               </template>
-            </div>
-          </div>
-
-          <div class="editor-card" style="margin-top: 12px">
-            <div class="split-header">
-              <div><h3>群组规则</h3></div>
-              <button class="btn ghost" type="button" @click="addGroupRateLimitRule">
-                新增群组规则
-              </button>
-            </div>
-            <div
-              v-if="form.message_rate_limit_groups.length === 0"
-              class="empty-state"
-              style="margin-top: 12px"
-            >
-              还没有群组规则。
-            </div>
-            <div
-              v-for="(rule, index) in form.message_rate_limit_groups"
-              :key="`group-${index}`"
-              class="tool-block"
-              style="margin-top: 12px"
-            >
-              <div class="split-header">
-                <strong>群组规则 {{ index + 1 }}</strong>
-                <button
-                  class="btn warn"
-                  type="button"
-                  @click="removeGroupRateLimitRule(index)"
-                >
-                  移除
-                </button>
-              </div>
-              <div class="form-grid" style="margin-top: 12px">
-                <div class="field">
-                  <label>Group ID</label>
-                  <input v-model="rule.group_id" />
-                </div>
-                <div class="field">
-                  <label>模式</label>
-                  <select v-model="rule.unlimited">
-                    <option :value="false">限次</option>
-                    <option :value="true">无限</option>
-                  </select>
-                </div>
-                <template v-if="!rule.unlimited">
-                  <div class="field">
-                    <label>窗口</label>
-                    <div style="display: flex; gap: 6px">
-                      <input
-                        v-model.number="rule.window_size"
-                        type="number"
-                        min="1"
-                        style="width: 80px"
-                      />
-                      <select v-model="rule.window_unit">
-                        <option value="minute">分钟</option>
-                        <option value="hour">小时</option>
-                        <option value="day">天</option>
-                      </select>
+              <div class="agent-service-form-grid">
+                <t-form-item label="ID">
+                  <t-input v-model="tool.id" />
+                </t-form-item>
+                <t-form-item label="名称">
+                  <t-input v-model="tool.name" />
+                </t-form-item>
+                <t-form-item label="描述" class="agent-service-form-item-full">
+                  <t-input v-model="tool.description" />
+                </t-form-item>
+                <t-form-item label="运行时长">
+                  <t-select v-model="tool.runDuration">
+                    <t-option value="Short" label="Short（短时）" />
+                    <t-option value="Long" label="Long（长时）" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item label="工具模式">
+                  <t-select v-model="tool.implementation">
+                    <t-option value="node_graph" label="node_graph" />
+                    <t-option value="python_script" label="python_script" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item v-if="tool.implementation === 'node_graph'" label="目标类型">
+                  <t-select v-model="tool.targetType" @change="handleToolTargetTypeChange(tool)">
+                    <t-option value="workflow_set" label="workflow_set" />
+                    <t-option value="file_path" label="file_path" />
+                    <t-option value="inline_graph" label="inline_graph" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item style="align-self: end">
+                  <t-checkbox v-model="tool.enabled">启用该工具</t-checkbox>
+                </t-form-item>
+                <t-form-item v-if="form.type === 'qq_chat' && tool.enabled" label="单次会话调用上限">
+                  <t-input-number v-model="form.tool_session_call_limits[tool.name]" :min="0" placeholder="不限制" />
+                  <div class="agent-service-form-hint" style="font-size: 12px">0 或留空表示不限制</div>
+                </t-form-item>
+                <t-form-item v-if="tool.implementation === 'node_graph' && tool.targetType === 'workflow_set'" label="Workflow Set 名称" class="agent-service-form-item-full">
+                  <t-select v-model="tool.workflowName" @change="applyWorkflowSetMetadata(tool)" placeholder="请选择">
+                    <t-option v-for="workflow in workflows" :key="workflow.name" :value="workflow.name" :label="workflow.display_name || workflow.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item v-else-if="tool.implementation === 'node_graph' && tool.targetType === 'file_path'" label="文件路径" class="agent-service-form-item-full">
+                  <t-input v-model="tool.filePath" placeholder="workflow_set/demo.json" />
+                </t-form-item>
+                <t-form-item v-else-if="tool.implementation === 'node_graph'" label="Inline Graph JSON" class="agent-service-form-item-full">
+                  <t-textarea v-model="tool.inlineGraphJson" />
+                </t-form-item>
+                <t-form-item v-else label="Python 脚本路径" class="agent-service-form-item-full">
+                  <t-input v-model="tool.pythonScriptPath" placeholder="utils/python_tools/echo_tool.py" />
+                </t-form-item>
+                <t-form-item v-if="tool.implementation === 'python_script'" label="入口函数名">
+                  <t-input v-model="tool.pythonModuleEntry" placeholder="run_tool" />
+                </t-form-item>
+                <t-form-item v-if="tool.implementation === 'python_script'" label="Python 运行时">
+                  <t-select v-model="tool.pythonMode">
+                    <t-option value="inherit" label="继承全局设置" />
+                    <t-option value="uv_project" label="uv_project" />
+                    <t-option value="project_venv" label="project_venv" />
+                    <t-option value="custom_executable" label="custom_executable" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item v-if="tool.implementation === 'python_script' && tool.pythonMode === 'custom_executable'" label="自定义 Python 路径" class="agent-service-form-item-full">
+                  <t-input v-model="tool.pythonExecutablePath" placeholder="C:\\Python311\\python.exe" />
+                </t-form-item>
+                <t-form-item v-if="tool.implementation === 'python_script'" label="超时（秒）">
+                  <t-input-number v-model="tool.pythonTimeoutSecs" :min="1" />
+                </t-form-item>
+                <t-form-item label="Parameters JSON" class="agent-service-form-item-full">
+                  <template #label>
+                    <div class="agent-service-params-label">
+                      <span>Parameters JSON</span>
+                      <t-button v-if="tool.implementation === 'node_graph' && tool.targetType === 'workflow_set' && tool.workflowName" variant="text" size="small" :disabled="syncingToolIndex === index" @click="syncToolFromGraph(tool, index)">
+                        {{ syncingToolIndex === index ? '同步中…' : '从节点图更新' }}
+                      </t-button>
                     </div>
-                  </div>
-                  <div class="field">
-                    <label>次数</label>
-                    <input v-model.number="rule.max_calls" type="number" min="1" />
-                  </div>
-                </template>
+                  </template>
+                  <t-textarea v-model="tool.parametersJson" />
+                </t-form-item>
+                <t-form-item label="Outputs JSON" class="agent-service-form-item-full">
+                  <t-textarea v-model="tool.outputsJson" />
+                </t-form-item>
               </div>
-            </div>
+            </t-card>
           </div>
+        </t-card>
+      </t-form>
 
-          <div class="editor-card" style="margin-top: 12px">
-            <div class="split-header">
-              <div><h3>用户规则</h3></div>
-              <button class="btn ghost" type="button" @click="addUserRateLimitRule">
-                新增用户规则
-              </button>
-            </div>
-            <div
-              v-if="form.message_rate_limit_users.length === 0"
-              class="empty-state"
-              style="margin-top: 12px"
-            >
-              还没有用户规则。
-            </div>
-            <div
-              v-for="(rule, index) in form.message_rate_limit_users"
-              :key="`user-${index}`"
-              class="tool-block"
-              style="margin-top: 12px"
-            >
-              <div class="split-header">
-                <strong>用户规则 {{ index + 1 }}</strong>
-                <button
-                  class="btn warn"
-                  type="button"
-                  @click="removeUserRateLimitRule(index)"
-                >
-                  移除
-                </button>
-              </div>
-              <div class="form-grid" style="margin-top: 12px">
-                <div class="field">
-                  <label>Sender ID</label>
-                  <input v-model="rule.sender_id" />
-                </div>
-                <div class="field">
-                  <label>模式</label>
-                  <select v-model="rule.unlimited">
-                    <option :value="false">限次</option>
-                    <option :value="true">无限</option>
-                  </select>
-                </div>
-                <template v-if="!rule.unlimited">
-                  <div class="field">
-                    <label>窗口</label>
-                    <div style="display: flex; gap: 6px">
-                      <input
-                        v-model.number="rule.window_size"
-                        type="number"
-                        min="1"
-                        style="width: 80px"
-                      />
-                      <select v-model="rule.window_unit">
-                        <option value="minute">分钟</option>
-                        <option value="hour">小时</option>
-                        <option value="day">天</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div class="field">
-                    <label>次数</label>
-                    <input v-model.number="rule.max_calls" type="number" min="1" />
-                  </div>
-                </template>
-              </div>
-            </div>
-          </div>
-
-          <div class="panel-actions" style="margin-top: 16px">
-            <button class="btn primary" @click="closeRateLimitModal">完成</button>
-          </div>
+      <template #footer>
+        <div class="agent-service-drawer-footer">
+          <t-button variant="outline" @click="closeEditModal">取消</t-button>
+          <t-button theme="primary" @click="submitForm">保存</t-button>
         </div>
-      </div>
-    </div>
+      </template>
+    </t-drawer>
 
+    <!-- 默认工具编辑抽屉 -->
+    <t-drawer
+      v-model:visible="showDefaultToolEditModal"
+      :header="'编辑默认工具'"
+      size="480px"
+      :close-on-overlay-click="false"
+      @close="closeDefaultToolEditModal"
+    >
+      <t-form class="agent-service-form" label-align="top">
+        <t-card class="agent-service-form-section" :bordered="false">
+          <t-form-item label="工具">
+            <div class="agent-service-form-hint">{{ currentEditingDefaultTool?.label }} ({{ currentEditingDefaultTool?.id }})</div>
+          </t-form-item>
+          <t-checkbox v-model="defaultToolEditDraft.enabled">启用该工具</t-checkbox>
+          <t-form-item label="单次会话调用上限" style="margin-top: 16px">
+            <t-input-number v-model="defaultToolEditDraft.callLimit" :min="0" placeholder="不限制" />
+            <div class="agent-service-form-hint" style="font-size: 12px; margin-top: 4px">0 或留空表示不限制</div>
+          </t-form-item>
+          <t-form-item v-if="form.type === 'qq_chat' && editingDefaultToolId === 'image_understand'" label="图片理解模型" class="agent-service-form-item-full">
+            <t-select v-model="defaultToolEditDraft.imageUnderstandLlmRefId" placeholder="默认使用主模型" clearable>
+              <t-option value="" label="默认使用主模型" />
+              <t-option v-for="item in multimodalChatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+            </t-select>
+            <div class="agent-service-form-hint" style="margin-top: 4px">image_understand 默认使用 Service 主模型；这里只有支持多模态的模型可选。</div>
+            <div v-if="form.llm_ref_id && !mainChatModelSupportsMultimodal && !defaultToolEditDraft.imageUnderstandLlmRefId" class="agent-service-form-hint" style="margin-top: 4px; color: #ffb36b">当前主模型不支持多模态，启用 image_understand 时必须在这里指定一个支持多模态的模型。</div>
+          </t-form-item>
+        </t-card>
+      </t-form>
+      <template #footer>
+        <div class="agent-service-drawer-footer">
+          <t-button variant="outline" @click="closeDefaultToolEditModal">取消</t-button>
+          <t-button theme="primary" @click="confirmDefaultToolEdit">保存</t-button>
+        </div>
+      </template>
+    </t-drawer>
+
+    <!-- 情绪维度抽屉 -->
+    <t-drawer
+      v-model:visible="showEmotionDimensionsModal"
+      header="情绪维度"
+      size="640px"
+      :close-on-overlay-click="false"
+      :footer="false"
+      @close="closeEmotionDimensionsModal"
+    >
+      <t-card class="agent-service-form-section" :bordered="false">
+        <template #title>
+          <div class="agent-service-section-title-row">
+            <span>维度列表</span>
+            <t-button variant="text" :disabled="emotionDimensionAdding" @click="startAddEmotionDimension">新增维度</t-button>
+          </div>
+        </template>
+
+        <!-- 新增中的内联编辑卡片 -->
+        <t-card v-if="emotionDimensionAdding" :bordered="true" style="margin-top: 12px">
+          <template #title>
+            <div class="agent-service-tool-header">
+              <strong>新维度</strong>
+              <t-button variant="text" @click="cancelAddEmotionDimension">取消</t-button>
+            </div>
+          </template>
+          <div class="agent-service-form-grid">
+            <t-form-item label="名称">
+              <t-input v-model="emotionDimensionDraft.name" placeholder="例如：开心" />
+            </t-form-item>
+            <t-form-item label="升权重 (0–20)">
+              <t-slider v-model="emotionDimensionDraft.increase_weight" :min="0" :max="20" :step="0.1" />
+            </t-form-item>
+            <t-form-item label="降权重 (0–20)">
+              <t-slider v-model="emotionDimensionDraft.decrease_weight" :min="0" :max="20" :step="0.1" />
+            </t-form-item>
+            <t-form-item label="消解时间（小时）">
+              <t-input-number v-model="emotionDimensionDraft.dissipation_hours" :min="1" :step="1" />
+            </t-form-item>
+            <t-form-item label="正向风格提示词（可选）" class="agent-service-form-item-full">
+              <t-input v-model="emotionDimensionDraft.positive_prompt" placeholder="维度值正向时的语言风格，留空用维度名称" />
+            </t-form-item>
+            <t-form-item label="负向风格提示词（可选）" class="agent-service-form-item-full">
+              <t-input v-model="emotionDimensionDraft.negative_prompt" placeholder="维度值负向时的语言风格，留空用「不+维度名称」" />
+            </t-form-item>
+          </div>
+          <div class="agent-service-tool-actions" style="margin-top: 12px">
+            <t-button variant="outline" @click="cancelAddEmotionDimension">取消</t-button>
+            <t-button theme="primary" @click="confirmAddEmotionDimension">新增</t-button>
+          </div>
+        </t-card>
+
+        <div v-if="!emotionDimensionAdding && form.emotion_dimensions.length === 0" class="agent-service-empty-state">还没有配置情绪维度。点击「新增维度」开始添加。</div>
+
+        <!-- 已有维度卡片 -->
+        <t-card v-for="(dimension, index) in form.emotion_dimensions" :key="`${dimension.name}-${index}`" :bordered="true" style="margin-top: 12px">
+          <template #title>
+            <div v-if="emotionDimensionEditingIndex === index" class="agent-service-tool-header">
+              <strong>编辑维度</strong>
+              <t-button variant="text" @click="cancelEditEmotionDimension">取消</t-button>
+            </div>
+            <div v-else class="agent-service-tool-header">
+              <strong>{{ dimension.name }}</strong>
+              <div>
+                <t-button variant="text" size="small" :disabled="emotionDimensionAdding || emotionDimensionEditingIndex != null" @click="editEmotionDimension(index)">编辑</t-button>
+                <t-button variant="text" theme="danger" size="small" :disabled="emotionDimensionAdding || emotionDimensionEditingIndex != null" @click="removeEmotionDimension(index)">删除</t-button>
+              </div>
+            </div>
+          </template>
+
+          <!-- 编辑态 -->
+          <template v-if="emotionDimensionEditingIndex === index">
+            <div class="agent-service-form-grid">
+              <t-form-item label="名称">
+                <t-input v-model="emotionDimensionDraft.name" placeholder="例如：开心" />
+              </t-form-item>
+              <t-form-item label="升权重 (0–20)">
+                <t-slider v-model="emotionDimensionDraft.increase_weight" :min="0" :max="20" :step="0.1" />
+              </t-form-item>
+              <t-form-item label="降权重 (0–20)">
+                <t-slider v-model="emotionDimensionDraft.decrease_weight" :min="0" :max="20" :step="0.1" />
+              </t-form-item>
+              <t-form-item label="消解时间（小时）">
+                <t-input-number v-model="emotionDimensionDraft.dissipation_hours" :min="1" :step="1" />
+              </t-form-item>
+              <t-form-item label="正向风格提示词（可选）" class="agent-service-form-item-full">
+                <t-input v-model="emotionDimensionDraft.positive_prompt" placeholder="维度值正向时的语言风格提示，留空用维度名称" />
+              </t-form-item>
+              <t-form-item label="负向风格提示词（可选）" class="agent-service-form-item-full">
+                <t-input v-model="emotionDimensionDraft.negative_prompt" placeholder="维度值负向时的语言风格提示，留空用「不+维度名称」" />
+              </t-form-item>
+            </div>
+            <div class="agent-service-tool-actions" style="margin-top: 12px">
+              <t-button variant="outline" @click="cancelEditEmotionDimension">取消</t-button>
+              <t-button theme="primary" @click="confirmEditEmotionDimension">保存</t-button>
+            </div>
+          </template>
+
+          <!-- 展示态 -->
+          <template v-else>
+            <div class="agent-service-emotion-bars">
+              <div class="agent-service-emotion-bar-row">
+                <span class="agent-service-emotion-bar-label">升权重</span>
+                <div class="agent-service-emotion-bar-track">
+                  <div class="agent-service-emotion-bar-fill agent-service-emotion-bar-fill--increase" :style="{ width: Math.min(((dimension.increase_weight ?? 1) / 20) * 100, 100) + '%' }" />
+                </div>
+                <span class="agent-service-emotion-bar-value">{{ dimension.increase_weight ?? 1 }}</span>
+              </div>
+              <div class="agent-service-emotion-bar-row">
+                <span class="agent-service-emotion-bar-label">降权重</span>
+                <div class="agent-service-emotion-bar-track">
+                  <div class="agent-service-emotion-bar-fill agent-service-emotion-bar-fill--decrease" :style="{ width: Math.min(((dimension.decrease_weight ?? 1) / 20) * 100, 100) + '%' }" />
+                </div>
+                <span class="agent-service-emotion-bar-value">{{ dimension.decrease_weight ?? 1 }}</span>
+              </div>
+            </div>
+            <div class="agent-service-form-hint" style="margin-top: 8px">无对话 {{ dimension.dissipation_hours ?? 5 }} 小时后自动恢复默认</div>
+            <div v-if="dimension.positive_prompt || dimension.negative_prompt" style="margin-top: 8px">
+              <div v-if="dimension.positive_prompt" class="agent-service-emotion-prompt-line">
+                <span class="agent-service-emotion-prompt-label">正向</span>
+                <span class="agent-service-emotion-prompt-text">{{ dimension.positive_prompt }}</span>
+              </div>
+              <div v-if="dimension.negative_prompt" class="agent-service-emotion-prompt-line">
+                <span class="agent-service-emotion-prompt-label">负向</span>
+                <span class="agent-service-emotion-prompt-text">{{ dimension.negative_prompt }}</span>
+              </div>
+            </div>
+          </template>
+        </t-card>
+      </t-card>
+    </t-drawer>
+
+    <!-- Ignore Rules 抽屉 -->
+    <t-drawer
+      v-model:visible="showIgnoreRulesModal"
+      header="Ignore Rules"
+      size="760px"
+      :close-on-overlay-click="false"
+      :footer="false"
+      @close="closeIgnoreRulesModal"
+    >
+      <t-card class="agent-service-form-section" :bordered="false">
+        <template #title>{{ ignoreRuleForm.id == null ? '新增规则' : '编辑规则' }}</template>
+        <div class="agent-service-form-grid">
+          <t-form-item label="sender_id">
+            <t-input v-model="ignoreRuleForm.sender_id" :disabled="ignoreRuleSubmitting" placeholder="可空" />
+          </t-form-item>
+          <t-form-item label="group_id">
+            <t-input v-model="ignoreRuleForm.group_id" :disabled="ignoreRuleSubmitting" placeholder="可空" />
+          </t-form-item>
+          <t-form-item label="规则说明" class="agent-service-form-item-full">
+            <div class="agent-service-form-hint">{{ ignoreRulePreview }}</div>
+          </t-form-item>
+        </div>
+        <div v-if="ignoreRuleError" class="agent-service-form-hint" style="color: var(--td-error-color); margin-top: 12px">{{ ignoreRuleError }}</div>
+        <div style="display: flex; gap: 8px; margin-top: 12px">
+          <t-button variant="outline" :disabled="ignoreRuleSubmitting" @click="resetIgnoreRuleForm">清空</t-button>
+          <t-button theme="primary" :disabled="ignoreRuleSubmitting" @click="submitIgnoreRule">
+            {{ ignoreRuleSubmitting ? (ignoreRuleForm.id == null ? '新增中…' : '保存中…') : (ignoreRuleForm.id == null ? '新增' : '保存') }}
+          </t-button>
+        </div>
+      </t-card>
+
+      <t-card class="agent-service-form-section" :bordered="false" style="margin-top: 16px">
+        <template #title>现有规则</template>
+        <div v-if="ignoreRulesLoading" class="agent-service-empty-state">加载中...</div>
+        <div v-else-if="ignoreRules.length === 0" class="agent-service-empty-state">还没有规则。</div>
+        <t-card v-for="rule in ignoreRules" :key="rule.id" :bordered="true" style="margin-top: 12px">
+          <template #title>
+            <div class="agent-service-tool-header">
+              <strong>#{{ rule.id }}</strong>
+              <div>
+                <t-button variant="text" size="small" :disabled="ignoreRuleSubmitting || ignoreRuleDeletingId === rule.id" @click="editIgnoreRule(rule)">编辑</t-button>
+                <t-button variant="text" theme="danger" size="small" :disabled="ignoreRuleSubmitting || ignoreRuleDeletingId === rule.id" @click="removeIgnoreRule(rule.id)">
+                  {{ ignoreRuleDeletingId === rule.id ? '删除中…' : '删除' }}
+                </t-button>
+              </div>
+            </div>
+          </template>
+          <div class="agent-service-key-value"><strong>sender_id</strong><span>{{ rule.sender_id || '未设置' }}</span></div>
+          <div class="agent-service-key-value"><strong>group_id</strong><span>{{ rule.group_id || '未设置' }}</span></div>
+          <div class="agent-service-key-value"><strong>含义</strong><span>{{ formatIgnoreRule(rule.sender_id, rule.group_id) }}</span></div>
+        </t-card>
+      </t-card>
+    </t-drawer>
+
+    <!-- Rate Limit 抽屉 -->
+    <t-drawer
+      v-model:visible="showRateLimitModal"
+      header="Rate Limit"
+      size="820px"
+      :close-on-overlay-click="false"
+      @close="closeRateLimitModal"
+    >
+      <div class="agent-service-form-hint">调用频率限制，优先级：用户 &gt; 群组 &gt; 默认。窗口可按 N 分钟 / N 小时 / N 天，计数跟随用户（跨群与私聊共享）。</div>
+
+      <!-- 默认规则 -->
+      <t-card class="agent-service-form-section" :bordered="false" style="margin-top: 12px">
+        <template #title>
+          <div class="agent-service-section-title-row">
+            <span>默认规则</span>
+            <t-checkbox v-model="form.message_rate_limit_default_enabled">启用</t-checkbox>
+          </div>
+        </template>
+        <div v-if="form.message_rate_limit_default_enabled" class="agent-service-form-grid">
+          <t-form-item label="模式">
+            <t-select v-model="form.message_rate_limit_default.unlimited">
+              <t-option :value="false" label="限次" />
+              <t-option :value="true" label="无限" />
+            </t-select>
+          </t-form-item>
+          <template v-if="!form.message_rate_limit_default.unlimited">
+            <t-form-item label="窗口">
+              <div style="display: flex; gap: 6px">
+                <t-input-number v-model="form.message_rate_limit_default.window_size" :min="1" style="width: 100px" />
+                <t-select v-model="form.message_rate_limit_default.window_unit" style="width: 100px">
+                  <t-option value="minute" label="分钟" />
+                  <t-option value="hour" label="小时" />
+                  <t-option value="day" label="天" />
+                </t-select>
+              </div>
+            </t-form-item>
+            <t-form-item label="次数">
+              <t-input-number v-model="form.message_rate_limit_default.max_calls" :min="1" />
+            </t-form-item>
+          </template>
+        </div>
+      </t-card>
+
+      <!-- 群组规则 -->
+      <t-card class="agent-service-form-section" :bordered="false" style="margin-top: 12px">
+        <template #title>
+          <div class="agent-service-section-title-row">
+            <span>群组规则</span>
+            <t-button variant="text" @click="addGroupRateLimitRule">新增群组规则</t-button>
+          </div>
+        </template>
+        <div v-if="form.message_rate_limit_groups.length === 0" class="agent-service-empty-state">还没有群组规则。</div>
+        <t-card v-for="(rule, index) in form.message_rate_limit_groups" :key="`group-${index}`" :bordered="true" style="margin-top: 12px">
+          <template #title>
+            <div class="agent-service-tool-header">
+              <strong>群组规则 {{ index + 1 }}</strong>
+              <t-button variant="text" theme="danger" size="small" @click="removeGroupRateLimitRule(index)">移除</t-button>
+            </div>
+          </template>
+          <div class="agent-service-form-grid">
+            <t-form-item label="Group ID">
+              <t-input v-model="rule.group_id" />
+            </t-form-item>
+            <t-form-item label="模式">
+              <t-select v-model="rule.unlimited">
+                <t-option :value="false" label="限次" />
+                <t-option :value="true" label="无限" />
+              </t-select>
+            </t-form-item>
+            <template v-if="!rule.unlimited">
+              <t-form-item label="窗口">
+                <div style="display: flex; gap: 6px">
+                  <t-input-number v-model="rule.window_size" :min="1" style="width: 100px" />
+                  <t-select v-model="rule.window_unit" style="width: 100px">
+                    <t-option value="minute" label="分钟" />
+                    <t-option value="hour" label="小时" />
+                    <t-option value="day" label="天" />
+                  </t-select>
+                </div>
+              </t-form-item>
+              <t-form-item label="次数">
+                <t-input-number v-model="rule.max_calls" :min="1" />
+              </t-form-item>
+            </template>
+          </div>
+        </t-card>
+      </t-card>
+
+      <!-- 用户规则 -->
+      <t-card class="agent-service-form-section" :bordered="false" style="margin-top: 12px">
+        <template #title>
+          <div class="agent-service-section-title-row">
+            <span>用户规则</span>
+            <t-button variant="text" @click="addUserRateLimitRule">新增用户规则</t-button>
+          </div>
+        </template>
+        <div v-if="form.message_rate_limit_users.length === 0" class="agent-service-empty-state">还没有用户规则。</div>
+        <t-card v-for="(rule, index) in form.message_rate_limit_users" :key="`user-${index}`" :bordered="true" style="margin-top: 12px">
+          <template #title>
+            <div class="agent-service-tool-header">
+              <strong>用户规则 {{ index + 1 }}</strong>
+              <t-button variant="text" theme="danger" size="small" @click="removeUserRateLimitRule(index)">移除</t-button>
+            </div>
+          </template>
+          <div class="agent-service-form-grid">
+            <t-form-item label="Sender ID">
+              <t-input v-model="rule.sender_id" />
+            </t-form-item>
+            <t-form-item label="模式">
+              <t-select v-model="rule.unlimited">
+                <t-option :value="false" label="限次" />
+                <t-option :value="true" label="无限" />
+              </t-select>
+            </t-form-item>
+            <template v-if="!rule.unlimited">
+              <t-form-item label="窗口">
+                <div style="display: flex; gap: 6px">
+                  <t-input-number v-model="rule.window_size" :min="1" style="width: 100px" />
+                  <t-select v-model="rule.window_unit" style="width: 100px">
+                    <t-option value="minute" label="分钟" />
+                    <t-option value="hour" label="小时" />
+                    <t-option value="day" label="天" />
+                  </t-select>
+                </div>
+              </t-form-item>
+              <t-form-item label="次数">
+                <t-input-number v-model="rule.max_calls" :min="1" />
+              </t-form-item>
+            </template>
+          </div>
+        </t-card>
+      </t-card>
+
+      <template #footer>
+        <div class="agent-service-drawer-footer">
+          <t-button theme="primary" @click="closeRateLimitModal">完成</t-button>
+        </div>
+      </template>
+    </t-drawer>
+
+    <!-- Service 列表 -->
     <t-card class="agent-service-card" bordered>
       <div class="agent-service-toolbar">
         <t-input v-model="filters.keyword" clearable placeholder="搜索名称或 Config ID" />
@@ -2187,14 +1204,14 @@
         <template #type="{ row }"><t-tag variant="light">{{ serviceTypeLabel(row.agent_type.type) }}</t-tag></template>
         <template #model="{ row }"><span :title="llmName(row)">{{ llmName(row) }}</span></template>
         <template #runtime="{ row }"><t-tag :theme="runtimeTheme(row.runtime.status)" variant="light">{{ runtimeBadgeText(row) }}</t-tag></template>
-        <template #enabled="{ row }"><t-tag :theme="row.enabled ? 'success' : 'default'" variant="light">{{ row.enabled ? "已启用" : "已停用" }}</t-tag></template>
+        <template #enabled="{ row }"><t-tag :theme="row.enabled ? 'success' : 'default'" variant="light">{{ row.enabled ? '已启用' : '已停用' }}</t-tag></template>
         <template #updated="{ row }"><span>{{ formatTime(row.runtime.started_at) }}</span></template>
         <template #actions="{ row }">
           <div class="agent-service-actions">
             <t-button variant="text" size="small" @click="editService(row)">编辑</t-button>
             <t-button variant="text" size="small" @click="duplicateService(row)">复制添加</t-button>
-            <t-button variant="text" size="small" @click="copyServiceConfigItem(row)">{{ serviceCopiedId === row.config_id ? "已复制" : "复制" }}</t-button>
-            <t-button variant="text" :theme="row.runtime.status === 'running' ? 'warning' : 'primary'" size="small" @click="toggleServiceRuntime(row)">{{ row.runtime.status === "running" ? "停止" : "启动" }}</t-button>
+            <t-button variant="text" size="small" @click="copyServiceConfigItem(row)">{{ serviceCopiedId === row.config_id ? '已复制' : '复制' }}</t-button>
+            <t-button variant="text" :theme="row.runtime.status === 'running' ? 'warning' : 'primary'" size="small" @click="toggleServiceRuntime(row)">{{ row.runtime.status === 'running' ? '停止' : '启动' }}</t-button>
             <t-popconfirm content="确认删除这个 Service 吗？" @confirm="removeService(row.config_id)"><t-button variant="text" theme="danger" size="small">删除</t-button></t-popconfirm>
           </div>
         </template>
@@ -2365,6 +1382,14 @@ const columns = [
   { colKey: "actions", title: "操作", width: 310, fixed: "right" },
 ];
 
+const defaultToolColumns = [
+  { colKey: "label", title: "工具名称", width: 150 },
+  { colKey: "id", title: "工具 ID", width: 160 },
+  { colKey: "description", title: "说明", ellipsis: true },
+  { colKey: "enabled", title: "启用", width: 70 },
+  { colKey: "edit", title: "编辑", width: 70 },
+];
+
 function triggerServiceImportFile() {
   serviceImportFileInput.value?.click();
 }
@@ -2492,11 +1517,130 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   text-align: center;
 }
 
-.agent-service-dialog-actions {
+.agent-service-empty-state {
+  padding: 24px 0;
+  color: var(--td-text-color-placeholder);
+  text-align: center;
+}
+
+.agent-service-drawer-body {
+  padding-bottom: 80px;
+}
+
+.agent-service-drawer-footer {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  margin-top: 20px;
+}
+
+.agent-service-form-section {
+  margin-bottom: 16px;
+}
+
+.agent-service-form-section :deep(.t-card__title) {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.agent-service-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 24px;
+}
+
+.agent-service-form-item-full {
+  grid-column: 1 / -1;
+}
+
+.agent-service-form-hint {
+  color: var(--td-text-color-placeholder);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+.agent-service-form-hint a {
+  color: var(--td-brand-color);
+}
+
+.agent-service-check-row {
+  display: flex;
+  gap: 24px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.agent-service-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.agent-service-tool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.agent-service-tool-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.agent-service-tool-block {
+  margin-top: 0;
+}
+
+.agent-service-params-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.agent-service-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.agent-service-avatar-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--td-component-border);
+}
+
+.agent-service-avatar-placeholder {
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--td-brand-color);
+  color: var(--td-text-color-anti);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.agent-service-avatar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.agent-service-edit-drawer-header {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-service-edit-badges {
+  display: flex;
+  gap: 6px;
 }
 
 .agent-service-type-grid {
@@ -2505,10 +1649,108 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   gap: 16px;
 }
 
-.agent-service-type-grid .connection-picker-option {
-  min-height: 132px;
-  border-color: var(--td-component-border);
-  border-radius: var(--td-radius-default);
+.agent-service-type-card {
+  height: auto;
+  min-height: 120px;
+  padding: 24px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.agent-service-type-card-content {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+}
+
+.agent-service-type-hint {
+  font-size: 13px;
+  color: var(--td-text-color-placeholder);
+  font-weight: 400;
+}
+
+.agent-service-default-tools-search {
+  margin-bottom: 10px;
+}
+
+.agent-service-emotion-bars {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.agent-service-emotion-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-service-emotion-bar-label {
+  width: 52px;
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+  flex-shrink: 0;
+}
+
+.agent-service-emotion-bar-track {
+  flex: 1;
+  height: 6px;
+  background: var(--td-bg-color-component);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.agent-service-emotion-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+
+.agent-service-emotion-bar-fill--increase {
+  background: var(--td-success-color);
+}
+
+.agent-service-emotion-bar-fill--decrease {
+  background: var(--td-warning-color);
+}
+
+.agent-service-emotion-bar-value {
+  width: 28px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.agent-service-emotion-prompt-line {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.agent-service-emotion-prompt-label {
+  color: var(--td-text-color-placeholder);
+  flex-shrink: 0;
+  width: 32px;
+}
+
+.agent-service-emotion-prompt-text {
+  color: var(--td-text-color-secondary);
+}
+
+.agent-service-key-value {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.agent-service-key-value strong {
+  flex-shrink: 0;
+  min-width: 80px;
+  color: var(--td-text-color-placeholder);
 }
 
 @media (max-width: 840px) {
@@ -2521,6 +1763,10 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   }
 
   .agent-service-type-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-service-form-grid {
     grid-template-columns: 1fr;
   }
 }
