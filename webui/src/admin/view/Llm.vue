@@ -40,16 +40,16 @@
         <template #updated_at="{ row }">{{ formatTime(row.updated_at) }}</template>
         <template #actions="{ row }">
           <div class="llm-actions">
-            <t-checkbox
-              :checked="row.enabled"
-              :disabled="updatingEnabledIds.has(row.config_id)"
-              @change="updateEnabled(row, $event.checked)"
-            >
-              是否启用
-            </t-checkbox>
             <t-button variant="text" size="small" @click="editItem(row)">编辑</t-button>
             <t-button variant="text" size="small" @click="copyLlmConfig(row)">{{ copiedId === row.config_id ? "已复制" : "复制" }}</t-button>
             <t-popconfirm content="确认删除这个模型配置吗？" @confirm="removeItem(row.config_id)"><t-button variant="text" theme="danger" size="small">删除</t-button></t-popconfirm>
+            <t-checkbox
+              :checked="row.enabled"
+              :disabled="updatingEnabledIds.has(row.config_id)"
+              @change="updateEnabled(row, $event)"
+            >
+              是否启用
+            </t-checkbox>
           </div>
         </template>
         <template #empty><div class="llm-empty">暂无匹配的模型配置。</div></template>

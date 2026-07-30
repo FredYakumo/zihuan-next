@@ -1,30 +1,19 @@
 ﻿<template>
-  <section class="page">
-    <div class="page-hero">
-      <h2>Service 管理</h2>
-      <div class="hero-actions connection-hero-actions">
-        <button class="btn ghost" @click="triggerServiceImportFile">导入</button>
-        <input ref="serviceImportFileInput" type="file" accept=".json" style="display: none" @change="handleServiceFileChange" />
-        <button
-          class="btn primary connection-hero-add-btn"
-          @click="startCreate"
-        >
-          +
-        </button>
-      </div>
-    </div>
+  <section class="page agent-service-page">
+    <AdminPageHeader title="Service 管理">
+      <t-button variant="outline" @click="triggerServiceImportFile">导入配置</t-button>
+      <input ref="serviceImportFileInput" type="file" accept=".json" class="agent-service-import-input" @change="handleServiceFileChange" />
+      <t-button theme="primary" @click="startCreate">新建 Service</t-button>
+    </AdminPageHeader>
 
-    <div v-if="showCreatePicker" class="connection-picker-backdrop">
-      <div class="connection-picker-dialog service-picker-dialog" @click.stop>
-        <div class="connection-picker-header">
-          <h3>{{ showCreateForm ? "新建 Service" : "选择 Service 类型" }}</h3>
-          <button
-            class="btn ghost connection-card-compact-btn"
-            @click="closeCreatePicker"
-          >
-            {{ showCreateForm ? "关闭" : "取消" }}
-          </button>
-        </div>
+    <t-dialog
+      v-model:visible="showCreatePicker"
+      :header="showCreateForm ? '新建 Service' : '选择 Service 类型'"
+      width="960px"
+      :footer="false"
+      :close-on-overlay-click="false"
+      @close="closeCreatePicker"
+    >
 
         <div v-if="showCreateForm" class="connection-picker-form">
           <div class="form-grid">
@@ -735,15 +724,13 @@
             </div>
           </div>
 
-          <div class="panel-actions connection-picker-form-actions">
-            <button class="btn ghost" @click="showCreateForm = false">
-              返回
-            </button>
-            <button class="btn primary" @click="submitForm">创建 Service</button>
+          <div class="agent-service-dialog-actions">
+            <t-button variant="outline" @click="showCreateForm = false">返回</t-button>
+            <t-button theme="primary" @click="submitForm">创建 Service</t-button>
           </div>
         </div>
 
-        <div v-else class="connection-picker-grid">
+        <div v-else class="agent-service-type-grid">
           <button
             v-for="type in serviceTypes"
             :key="type.value"
@@ -754,8 +741,7 @@
             <span>{{ type.hint }}</span>
           </button>
         </div>
-      </div>
-    </div>
+    </t-dialog>
 
     
     <div v-if="showDefaultToolEditModal" class="service-edit-modal-backdrop" style="z-index: 70" @click.stop>
@@ -2169,124 +2155,60 @@
       </div>
     </div>
 
-    <section v-if="servicesLoading && services.length === 0" class="panel">
-      <div class="service-loading-state" aria-live="polite">
-        <span class="service-loading-spinner"></span>
-        <span>Service 加载中...</span>
+    <t-card class="agent-service-card" bordered>
+      <div class="agent-service-toolbar">
+        <t-input v-model="filters.keyword" clearable placeholder="搜索名称或 Config ID" />
+        <t-select v-model="filters.type">
+          <t-option value="all" label="全部 Service 类型" />
+          <t-option value="qq_chat" label="QQ Chat Agent Service" />
+          <t-option value="http_stream" label="HTTP Stream Service" />
+          <t-option value="workspace" label="Workspace Agent Service" />
+        </t-select>
+        <t-select v-model="filters.status">
+          <t-option value="all" label="全部运行状态" />
+          <t-option value="running" label="运行中" />
+          <t-option value="stopped" label="已停止" />
+          <t-option value="error" label="异常" />
+        </t-select>
+        <div class="agent-service-toolbar-actions">
+          <t-button variant="text" :loading="servicesLoading" @click="load">刷新</t-button>
+          <span>共 {{ filteredServices.length }} 条</span>
+        </div>
       </div>
-    </section>
 
-    <section v-else-if="services.length > 0" class="panel">
-      <div class="connection-grid dashboard-service-grid" style="margin-top: 0">
-        <article
-          v-for="service in services"
-          :key="service.config_id"
-          class="connection-card dashboard-service-card"
-        >
-          <div class="connection-card-header connection-card-header--stacked">
-            <div class="connection-card-header-top">
-              <div class="connection-card-badges">
-                <span class="badge">{{ service.agent_type.type }}</span>
-                <span class="badge" :class="service.enabled ? 'success' : ''">{{
-                  service.enabled ? "已启用" : "已停用"
-                }}</span>
-                <span class="badge" :class="statusTone(service.runtime.status)">{{
-                  runtimeBadgeText(service)
-                }}</span>
-                <span v-if="service.is_default" class="badge">default</span>
-              </div>
-            </div>
-            <div class="dashboard-service-title">
-              <img
-                v-if="agentAvatarUrl(service)"
-                :src="agentAvatarUrl(service)"
-                alt="bot avatar"
-                class="dashboard-service-avatar"
-              />
-              <div v-else class="dashboard-service-avatar dashboard-service-avatar--fallback">
-                {{ agentInitial(service.name) }}
-              </div>
-              <h4>{{ service.name }}</h4>
-            </div>
+      <t-table row-key="config_id" :data="filteredServices" :columns="columns" :loading="servicesLoading" :hover="true" :pagination="false" table-layout="fixed">
+        <template #name="{ row }">
+          <div class="agent-service-name-cell">
+            <img v-if="agentAvatarUrl(row)" :src="agentAvatarUrl(row)" class="agent-service-avatar" alt="" />
+            <span v-else class="agent-service-avatar agent-service-avatar--fallback">{{ agentInitial(row.name) }}</span>
+            <div><strong>{{ row.name }}</strong><small class="mono">{{ compactId(row.config_id) }}</small></div>
           </div>
-
-          <div class="connection-card-body">
-            <div class="key-value">
-              <strong>Config ID / Instance ID</strong>
-              <span class="mono"
-                >{{ compactId(service.config_id) }} |
-                {{
-                  service.runtime.instance_id
-                    ? compactId(service.runtime.instance_id)
-                    : "未启动"
-                }}</span
-              >
-            </div>
-            <div class="key-value">
-              <strong>自动启动</strong>
-              <span>{{ service.auto_start ? "开启" : "关闭" }}</span>
-            </div>
-            <div class="key-value">
-              <strong>模型</strong>
-              <span>{{ llmName(service) }}</span>
-            </div>
-            <div v-if="service.runtime.last_error" class="key-value">
-              <strong>最近错误</strong>
-              <span>{{ service.runtime.last_error }}</span>
-            </div>
-           <div class="inline-actions connection-card-display-actions">
-             <button
-               class="btn ghost connection-card-compact-btn"
-               @click="editService(service)"
-             >
-               编辑
-             </button>
-              <button
-                class="btn ghost connection-card-compact-btn"
-                @click="duplicateService(service)"
-              >
-                复制添加
-              </button>
-              <button
-                class="btn ghost connection-card-compact-btn"
-                @click="copyServiceConfigItem(service)"
-              >
-                {{ serviceCopiedId === service.config_id ? '已复制' : '复制' }}
-              </button>
-             <button
-               class="btn connection-card-compact-btn"
-               @click="toggleServiceRuntime(service)"
-             >
-               {{ service.runtime.status === "running" ? "停止" : "启动" }}
-             </button>
-              <button
-                class="btn warn connection-card-compact-btn"
-                @click="removeService(service.config_id)"
-              >
-                删除
-              </button>
-            </div>
+        </template>
+        <template #type="{ row }"><t-tag variant="light">{{ serviceTypeLabel(row.agent_type.type) }}</t-tag></template>
+        <template #model="{ row }"><span :title="llmName(row)">{{ llmName(row) }}</span></template>
+        <template #runtime="{ row }"><t-tag :theme="runtimeTheme(row.runtime.status)" variant="light">{{ runtimeBadgeText(row) }}</t-tag></template>
+        <template #enabled="{ row }"><t-tag :theme="row.enabled ? 'success' : 'default'" variant="light">{{ row.enabled ? "已启用" : "已停用" }}</t-tag></template>
+        <template #updated="{ row }"><span>{{ formatTime(row.runtime.started_at) }}</span></template>
+        <template #actions="{ row }">
+          <div class="agent-service-actions">
+            <t-button variant="text" size="small" @click="editService(row)">编辑</t-button>
+            <t-button variant="text" size="small" @click="duplicateService(row)">复制添加</t-button>
+            <t-button variant="text" size="small" @click="copyServiceConfigItem(row)">{{ serviceCopiedId === row.config_id ? "已复制" : "复制" }}</t-button>
+            <t-button variant="text" :theme="row.runtime.status === 'running' ? 'warning' : 'primary'" size="small" @click="toggleServiceRuntime(row)">{{ row.runtime.status === "running" ? "停止" : "启动" }}</t-button>
+            <t-popconfirm content="确认删除这个 Service 吗？" @confirm="removeService(row.config_id)"><t-button variant="text" theme="danger" size="small">删除</t-button></t-popconfirm>
           </div>
-
-          <div class="connection-card-footer">
-            <span class="muted"
-              >启动于 {{ formatTime(service.runtime.started_at) }}</span
-            >
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <section v-else class="panel">
-      <div class="empty-state">当前没有 Service。</div>
-    </section>
+        </template>
+        <template #empty><div class="agent-service-empty">暂无匹配的 Service。</div></template>
+      </t-table>
+    </t-card>
   </section>
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import { CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
 import type { ServiceWithRuntime } from "../../api/client";
+import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useAgents } from "../composables/useAgents";
 
 const {
@@ -2411,9 +2333,62 @@ const {
 } = useAgents();
 
 const serviceImportFileInput = ref<HTMLInputElement | null>(null);
+const filters = reactive({
+  keyword: "",
+  type: "all",
+  status: "all",
+});
+
+const filteredServices = computed(() => {
+  const keyword = filters.keyword.trim().toLowerCase();
+  return services.value.filter((service) => {
+    if (filters.type !== "all" && service.agent_type.type !== filters.type) {
+      return false;
+    }
+    if (filters.status !== "all" && service.runtime.status !== filters.status) {
+      return false;
+    }
+    if (!keyword) {
+      return true;
+    }
+    return `${service.name} ${service.config_id}`.toLowerCase().includes(keyword);
+  });
+});
+
+const columns = [
+  { colKey: "name", title: "Service 名称", width: 230 },
+  { colKey: "type", title: "Service 类型", width: 185 },
+  { colKey: "model", title: "默认模型", ellipsis: true },
+  { colKey: "runtime", title: "运行状态", width: 150 },
+  { colKey: "enabled", title: "配置状态", width: 100 },
+  { colKey: "updated", title: "启动时间", width: 170 },
+  { colKey: "actions", title: "操作", width: 310, fixed: "right" },
+];
 
 function triggerServiceImportFile() {
   serviceImportFileInput.value?.click();
+}
+
+function serviceTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    qq_chat: "QQ Chat",
+    http_stream: "HTTP Stream",
+    workspace: "Workspace",
+  };
+  return labels[type] ?? type;
+}
+
+function runtimeTheme(status: string): "success" | "warning" | "danger" | "default" {
+  if (status === "running") {
+    return "success";
+  }
+  if (status === "starting") {
+    return "warning";
+  }
+  if (status === "error") {
+    return "danger";
+  }
+  return "default";
 }
 
 function copyServiceConfigItem(service: ServiceWithRuntime) {
@@ -2434,4 +2409,125 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
 @use "../styles/agents" as *;
 @use "../styles/connections" as *;
 @use "../styles/dashboard" as *;
+
+.agent-service-page {
+  gap: 0;
+}
+
+.agent-service-import-input {
+  display: none;
+}
+
+.agent-service-card {
+  border-radius: 0;
+}
+
+.agent-service-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(180px, 1fr) minmax(150px, 0.8fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+
+.agent-service-toolbar-actions,
+.agent-service-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.agent-service-toolbar-actions {
+  gap: 12px;
+  color: var(--admin-subtle);
+  font-size: 13px;
+}
+
+.agent-service-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.agent-service-name-cell > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.agent-service-name-cell strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-service-name-cell small {
+  color: var(--admin-subtle);
+  font-size: 12px;
+}
+
+.agent-service-avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.agent-service-avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--td-text-color-anti);
+  background: var(--td-brand-color);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.agent-service-empty {
+  padding: 56px 0;
+  color: var(--admin-subtle);
+  text-align: center;
+}
+
+.agent-service-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.agent-service-type-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.agent-service-type-grid .connection-picker-option {
+  min-height: 132px;
+  border-color: var(--td-component-border);
+  border-radius: var(--td-radius-default);
+}
+
+@media (max-width: 840px) {
+  .agent-service-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .agent-service-toolbar-actions {
+    justify-content: space-between;
+  }
+
+  .agent-service-type-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .agent-service-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
 </style>
