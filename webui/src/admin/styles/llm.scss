@@ -12,10 +12,18 @@
 
 .llm-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1.6fr) minmax(150px, 0.9fr) minmax(120px, 0.7fr) auto auto;
+  grid-template-columns: minmax(220px, 1.6fr) minmax(150px, 0.9fr) minmax(120px, 0.7fr) auto;
   align-items: center;
   gap: 12px;
   padding-bottom: 16px;
+}
+
+.llm-toolbar-actions {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
 }
 
 .llm-count {
@@ -130,10 +138,6 @@
   .llm-toolbar {
     grid-template-columns: minmax(200px, 1fr) minmax(150px, 1fr) minmax(120px, 0.8fr) auto;
   }
-
-  .llm-count {
-    grid-column: 1 / -1;
-  }
 }
 
 @media (max-width: 640px) {
@@ -142,8 +146,11 @@
     grid-template-columns: 1fr;
   }
 
-  .llm-form-item--full,
-  .llm-count {
+  .llm-form-item--full {
     grid-column: auto;
+  }
+
+  .llm-toolbar-actions {
+    justify-content: space-between;
   }
 }
