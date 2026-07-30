@@ -37,10 +37,16 @@
           <span v-if="row.model.type === 'chat_llm' && !isCandleStyle(row.model.llm.api_style)" class="llm-endpoint" :title="row.model.llm.api_endpoint">{{ row.model.llm.api_endpoint || "—" }}</span>
           <span v-else>本地模型</span>
         </template>
-        <template #enabled="{ row }"><t-tag variant="light" :theme="row.enabled ? 'success' : 'warning'">{{ row.enabled ? "已启用" : "已停用" }}</t-tag></template>
         <template #updated_at="{ row }">{{ formatTime(row.updated_at) }}</template>
         <template #actions="{ row }">
           <div class="llm-actions">
+            <t-checkbox
+              :checked="row.enabled"
+              :disabled="updatingEnabledIds.has(row.config_id)"
+              @change="updateEnabled(row, $event.checked)"
+            >
+              是否启用
+            </t-checkbox>
             <t-button variant="text" size="small" @click="editItem(row)">编辑</t-button>
             <t-button variant="text" size="small" @click="copyLlmConfig(row)">{{ copiedId === row.config_id ? "已复制" : "复制" }}</t-button>
             <t-popconfirm content="确认删除这个模型配置吗？" @confirm="removeItem(row.config_id)"><t-button variant="text" theme="danger" size="small">删除</t-button></t-popconfirm>
@@ -111,7 +117,7 @@ import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useLlm } from "../composables/useLlm";
 import ConnectionCredentialInput from "./ConnectionCredentialInput.vue";
 
-const { filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, isCandleMode, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, localLlmOptionLabel, compactId, formatTime, copiedId, copyConfig, handleFileChange } = useLlm();
+const { filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, isCandleMode, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, updateEnabled, updatingEnabledIds, localLlmOptionLabel, compactId, formatTime, copiedId, copyConfig, handleFileChange } = useLlm();
 
 const importFileInput = ref<HTMLInputElement | null>(null);
 const columns = [
@@ -119,9 +125,8 @@ const columns = [
   { colKey: "model_type", title: "模型类型", width: 150 },
   { colKey: "model", title: "模型", ellipsis: true },
   { colKey: "endpoint", title: "接口地址", ellipsis: true },
-  { colKey: "enabled", title: "状态", width: 100 },
   { colKey: "updated_at", title: "更新时间", width: 170 },
-  { colKey: "actions", title: "操作", width: 190, fixed: "right" },
+  { colKey: "actions", title: "操作", width: 270, fixed: "right" },
 ];
 
 function triggerImportFile() { importFileInput.value?.click(); }

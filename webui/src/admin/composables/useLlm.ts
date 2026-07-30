@@ -29,6 +29,7 @@ export function useLlm() {
   });
   const localEmbeddingModels = ref<string[]>([]);
   const localLlmModels = ref<LocalLlmModelInfo[]>([]);
+  const updatingEnabledIds = ref(new Set<string>());
   const isCreating = computed(() => form.id === null);
   const filteredItems = computed(() => {
     const keyword = filters.keyword.trim().toLowerCase();
@@ -172,6 +173,27 @@ export function useLlm() {
     await load();
   }
 
+  async function updateEnabled(item: LlmConfig, enabled: boolean) {
+    if (item.enabled === enabled || updatingEnabledIds.value.has(item.config_id)) {
+      return;
+    }
+
+    updatingEnabledIds.value.add(item.config_id);
+    try {
+      const updatedItem = await system.llm.update(item.config_id, {
+        name: item.name,
+        enabled,
+        model: item.model,
+      });
+      Object.assign(item, updatedItem);
+    } catch (error) {
+      console.error(error);
+      alert(`更新模型启用状态失败: ${(error as Error).message}`);
+    } finally {
+      updatingEnabledIds.value.delete(item.config_id);
+    }
+  }
+
   onMounted(() => {
     load().catch((error) => {
       console.error(error);
@@ -234,6 +256,8 @@ export function useLlm() {
     editItem,
     submitForm,
     removeItem,
+    updateEnabled,
+    updatingEnabledIds,
     localLlmOptionLabel,
     compactId,
     formatTime,
