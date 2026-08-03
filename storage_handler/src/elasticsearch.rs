@@ -45,6 +45,14 @@ pub struct ElasticsearchRef {
     pub vector_dimensions: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct ElasticsearchImageSearchHit {
+    pub object_id: String,
+    pub properties: Value,
+    pub score: Option<f64>,
+    pub keyword_match: bool,
+}
+
 impl ElasticsearchRef {
     pub fn new(config: ElasticsearchConnection) -> Result<Self> {
         let base_url = config.base_url.trim().trim_end_matches('/').to_string();
@@ -208,6 +216,54 @@ pub fn upsert_elasticsearch_image(
     Ok(())
 }
 
+pub fn search_elasticsearch_images(
+    reference: &ElasticsearchRef,
+    name_query: Option<&str>,
+    description_query: Option<&str>,
+    name_vector: Option<&[f32]>,
+    description_vector: Option<&[f32]>,
+    limit: usize,
+) -> Result<Vec<ElasticsearchImageSearchHit>> {
+    let limit = limit.clamp(1, 50);
+    let mut merged = Vec::new();
+    if let Some(query) = name_query.map(str::trim).filter(|value| !value.is_empty()) {
+        merged.extend(parse_image_hits(reference.request(reqwest::Method::POST, &format!("/{}/_search", reference.index_name), Some(json!({"size": limit, "query": {"match": {"name": query}}})))?, true));
+    }
+    if let Some(query) = description_query.map(str::trim).filter(|value| !value.is_empty()) {
+        merged.extend(parse_image_hits(reference.request(reqwest::Method::POST, &format!("/{}/_search", reference.index_name), Some(json!({"size": limit, "query": {"match": {"description": query}}})))?, true));
+    }
+    for (field, vector) in [("name_vector", name_vector), ("description_vector", description_vector)] {
+        if let Some(vector) = vector {
+            validate_vector(reference, vector)?;
+            merged.extend(parse_image_hits(reference.request(reqwest::Method::POST, &format!("/{}/_search", reference.index_name), Some(json!({"size": limit, "knn": {"field": field, "query_vector": vector, "k": limit, "num_candidates": (limit * 5).min(MAX_QUERY_CANDIDATES)}})))?, false));
+        }
+    }
+    let mut deduped = std::collections::BTreeMap::<String, ElasticsearchImageSearchHit>::new();
+    for hit in merged {
+        match deduped.get_mut(&hit.object_id) {
+            Some(existing) => {
+                existing.keyword_match |= hit.keyword_match;
+                existing.score = match (existing.score, hit.score) {
+                    (Some(current), Some(incoming)) => Some(current.max(incoming)),
+                    (Some(current), None) => Some(current),
+                    (None, score) => score,
+                };
+            }
+            None => { deduped.insert(hit.object_id.clone(), hit); }
+        }
+    }
+    let mut results = deduped.into_values().collect::<Vec<_>>();
+    results.sort_by(|left, right| right.keyword_match.cmp(&left.keyword_match).then_with(|| right.score.partial_cmp(&left.score).unwrap_or(std::cmp::Ordering::Equal)));
+    results.truncate(limit);
+    Ok(results)
+}
+
+fn parse_image_hits(value: Value, keyword_match: bool) -> Vec<ElasticsearchImageSearchHit> {
+    value.pointer("/hits/hits").and_then(Value::as_array).into_iter().flatten().filter_map(|hit| {
+        Some(ElasticsearchImageSearchHit { object_id: hit.get("_id")?.as_str()?.to_string(), properties: hit.get("_source")?.clone(), score: hit.get("_score").and_then(Value::as_f64), keyword_match })
+    }).collect()
+}
+
 pub fn list_elasticsearch_memory_keys(
     reference: &ElasticsearchRef,
     access: &AgentMemoryAccessContext,
@@ -218,7 +274,7 @@ pub fn list_elasticsearch_memory_keys(
     let body = if query.is_empty() {
         json!({"size": top_n.min(MAX_QUERY_CANDIDATES), "sort": [{"updated_at": "desc"}], "query": access_filter(access)})
     } else {
-        memory_search_body(reference, access, query, None, top_n)
+        memory_search_body(access, query, None, top_n)
     };
     parse_memory_hits(
         reference.request(reqwest::Method::POST, &format!("/{}/_search", reference.index_name), Some(body))?,
@@ -237,13 +293,12 @@ pub fn search_elasticsearch_memory(
     let response = reference.request(
         reqwest::Method::POST,
         &format!("/{}/_search", reference.index_name),
-        Some(memory_search_body(reference, access, query, Some(vector), top_n)),
+        Some(memory_search_body(access, query, Some(vector), top_n)),
     )?;
     parse_memory_hits(response, access)
 }
 
 fn memory_search_body(
-    reference: &ElasticsearchRef,
     access: &AgentMemoryAccessContext,
     query: &str,
     vector: Option<&[f32]>,

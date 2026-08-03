@@ -737,6 +737,30 @@ export interface AgentMemoryRecord {
   updated_at: string;
 }
 
+export type ExplorerMatchKind = "keyword" | "semantic" | "recent";
+
+export interface ServiceExplorerMemoryRecord extends AgentMemoryRecord {
+  match_kinds: ExplorerMatchKind[];
+  score: number | null;
+  backend: "weaviate" | "elasticsearch";
+  mutable: boolean;
+}
+
+export interface ServiceExplorerImageRecord {
+  object_id: string;
+  media_id: string | null;
+  name: string | null;
+  description: string | null;
+  original_source: string | null;
+  rustfs_path: string | null;
+  mime_type: string | null;
+  source: string | null;
+  url: string | null;
+  match_kinds: ExplorerMatchKind[];
+  score: number | null;
+  backend: "weaviate" | "elasticsearch";
+}
+
 export interface QqChatMessageRateLimitUsageRow {
   sender_id: string;
   sender_name: string | null;
@@ -761,6 +785,44 @@ function buildQueryString(params: Record<string, unknown>): string {
 }
 
 export const explorer = {
+  queryServiceMessages(params: {
+    service_id: string;
+    message_id?: string;
+    sender_id?: string;
+    sender_name?: string;
+    group_id?: string;
+    content?: string;
+    send_time_start?: string;
+    send_time_end?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<MysqlExploreResponse> {
+    const { service_id, ...query } = params;
+    const qs = buildQueryString(query as Record<string, unknown>);
+    return request("GET", `/explorer/services/${encodeURIComponent(service_id)}/messages?${qs}`);
+  },
+
+  queryServiceMemories(params: {
+    service_id: string;
+    query?: string;
+    limit?: number;
+  }): Promise<{ items: ServiceExplorerMemoryRecord[]; backend: "weaviate" | "elasticsearch"; mutable: boolean }> {
+    const { service_id, ...query } = params;
+    const qs = buildQueryString(query as Record<string, unknown>);
+    return request("GET", `/explorer/services/${encodeURIComponent(service_id)}/memories?${qs}`);
+  },
+
+  queryServiceImages(params: {
+    service_id: string;
+    name_query?: string;
+    description_query?: string;
+    limit?: number;
+  }): Promise<{ items: ServiceExplorerImageRecord[]; backend: "weaviate" | "elasticsearch" }> {
+    const { service_id, ...query } = params;
+    const qs = buildQueryString(query as Record<string, unknown>);
+    return request("GET", `/explorer/services/${encodeURIComponent(service_id)}/images?${qs}`);
+  },
+
   queryMysql(params: {
     connection_id: string;
     message_id?: string;

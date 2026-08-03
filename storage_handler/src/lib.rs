@@ -43,7 +43,8 @@ pub use connection_manager::{
 pub use db_schema::ensure_tables_for_connection;
 pub use elasticsearch::{
     create_elasticsearch_memory_record, ensure_elasticsearch_index, list_elasticsearch_memory_keys,
-    search_elasticsearch_memory, upsert_elasticsearch_image, ElasticsearchIndexSchema, ElasticsearchRef,
+    search_elasticsearch_images, search_elasticsearch_memory, upsert_elasticsearch_image,
+    ElasticsearchImageSearchHit, ElasticsearchIndexSchema, ElasticsearchRef,
 };
 pub use message_record::MessageRecord;
 pub use mysql::MySqlNode;

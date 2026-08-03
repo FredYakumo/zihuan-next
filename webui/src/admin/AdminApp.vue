@@ -108,7 +108,9 @@ import { onThemeChange } from "../ui/theme";
 const { isSetupRoute, sidebarOpen, sidebarCollapsed, showOverlay, closeSidebar, toggleSidebar } = useAdminApp();
 
 const route = useRoute();
-const activeMenuValue = computed(() => route.path);
+const activeMenuValue = computed(() =>
+  route.path.startsWith("/data-explorer/") ? "/data-explorer" : route.path,
+);
 
 function readMenuTheme(): "light" | "dark" {
   return document.documentElement.getAttribute("theme-mode") === "light" ? "light" : "dark";
