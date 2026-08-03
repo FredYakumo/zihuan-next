@@ -240,6 +240,12 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
                         .post(explorer::reset_qq_chat_rate_limit_usage),
                 )
                 .push(Router::with_path("mysql").get(explorer::query_mysql))
+                .push(
+                    Router::with_path("services/<service_id>")
+                        .push(Router::with_path("messages").get(explorer::query_service_messages))
+                        .push(Router::with_path("memories").get(explorer::query_service_memories))
+                        .push(Router::with_path("images").get(explorer::query_service_images)),
+                )
                 .push(Router::with_path("redis").get(explorer::query_redis))
                 .push(Router::with_path("weaviate").get(explorer::query_weaviate))
                 .push(

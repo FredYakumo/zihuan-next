@@ -12,14 +12,44 @@ import {
 } from "../model";
 import { useAdminClipboard } from "./useAdminClipboard";
 
+type LlmFilters = {
+  keyword: string;
+  modelType: LlmFormState["model_type"] | "all";
+  enabled: "all" | "enabled" | "disabled";
+};
 
 export function useLlm() {
   const items = ref<LlmConfig[]>([]);
   const form = reactive<LlmFormState>(defaultLlmForm());
-  const showCreatePicker = ref(false);
-  const showCreateForm = ref(false);
+  const drawerVisible = ref(false);
+  const filters = reactive<LlmFilters>({
+    keyword: "",
+    modelType: "all",
+    enabled: "all",
+  });
   const localEmbeddingModels = ref<string[]>([]);
   const localLlmModels = ref<LocalLlmModelInfo[]>([]);
+  const updatingEnabledIds = ref(new Set<string>());
+  const isCreating = computed(() => form.id === null);
+  const filteredItems = computed(() => {
+    const keyword = filters.keyword.trim().toLowerCase();
+    return items.value.filter((item) => {
+      if (filters.modelType !== "all" && item.model.type !== filters.modelType) {
+        return false;
+      }
+      if (filters.enabled === "enabled" && !item.enabled) {
+        return false;
+      }
+      if (filters.enabled === "disabled" && item.enabled) {
+        return false;
+      }
+      if (!keyword) {
+        return true;
+      }
+      const modelName = item.model.type === "chat_llm" ? item.model.llm.model_name : item.model.model_name;
+      return [item.name, item.config_id, modelName].join(" ").toLowerCase().includes(keyword);
+    });
+  });
 
   const { copiedId, copyConfig, handleFileChange } = useAdminClipboard<LlmConfig>({
     validate: assertLlmConfig,
@@ -27,10 +57,9 @@ export function useLlm() {
       Object.assign(form, llmFormFromConfig(config));
       form.id = null;
       form.name = `${form.name} 副本`;
-      showCreatePicker.value = true;
-      showCreateForm.value = true;
+      drawerVisible.value = true;
     },
-    isEnabled: () => !showCreatePicker.value,
+    isEnabled: () => !drawerVisible.value,
   });
 
   const isCandleMode = computed(
@@ -74,14 +103,12 @@ export function useLlm() {
 
   function startCreate() {
     resetCreateForm();
-    showCreatePicker.value = true;
-    showCreateForm.value = false;
+    drawerVisible.value = true;
   }
 
-  function closeCreatePicker() {
+  function closeDrawer() {
     resetCreateForm();
-    showCreatePicker.value = false;
-    showCreateForm.value = false;
+    drawerVisible.value = false;
   }
 
   async function load() {
@@ -97,8 +124,7 @@ export function useLlm() {
 
   function editItem(item: LlmConfig) {
     Object.assign(form, llmFormFromConfig(item));
-    showCreatePicker.value = false;
-    showCreateForm.value = false;
+    drawerVisible.value = true;
   }
 
   async function submitForm() {
@@ -135,19 +161,37 @@ export function useLlm() {
       await system.llm.create(payload);
     }
     resetCreateForm();
-    closeCreatePicker();
+    drawerVisible.value = false;
     await load();
   }
 
   async function removeItem(id: string) {
-    if (!window.confirm("确认删除这个模型配置吗？")) {
-      return;
-    }
     await system.llm.delete(id);
     if (form.id === id) {
-      resetCreateForm();
+      closeDrawer();
     }
     await load();
+  }
+
+  async function updateEnabled(item: LlmConfig, enabled: boolean) {
+    if (item.enabled === enabled || updatingEnabledIds.value.has(item.config_id)) {
+      return;
+    }
+
+    updatingEnabledIds.value.add(item.config_id);
+    try {
+      const updatedItem = await system.llm.update(item.config_id, {
+        name: item.name,
+        enabled,
+        model: item.model,
+      });
+      Object.assign(item, updatedItem);
+    } catch (error) {
+      console.error(error);
+      alert(`更新模型启用状态失败: ${(error as Error).message}`);
+    } finally {
+      updatingEnabledIds.value.delete(item.config_id);
+    }
   }
 
   onMounted(() => {
@@ -193,9 +237,11 @@ export function useLlm() {
 
   return {
     items,
+    filteredItems,
     form,
-    showCreatePicker,
-    showCreateForm,
+    drawerVisible,
+    isCreating,
+    filters,
     localEmbeddingModels,
     localLlmModels,
     isCandleMode,
@@ -205,11 +251,13 @@ export function useLlm() {
     resetCreateForm,
     resetForm,
     startCreate,
-    closeCreatePicker,
+    closeDrawer,
     load,
     editItem,
     submitForm,
     removeItem,
+    updateEnabled,
+    updatingEnabledIds,
     localLlmOptionLabel,
     compactId,
     formatTime,

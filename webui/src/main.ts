@@ -9,13 +9,14 @@ import Dashboard from "./admin/view/Dashboard.vue";
 import Connections from "./admin/view/Connections.vue";
 import ConnectionManager from "./admin/view/ConnectionManager.vue";
 import Llm from "./admin/view/Llm.vue";
-import Agents from "./admin/view/Agents.vue";
+import AgentService from "./admin/view/AgentService.vue";
 import Graphs from "./admin/view/Graphs.vue";
 import Tasks from "./admin/view/Tasks.vue";
 import Logs from "./admin/view/Logs.vue";
 import Commands from "./admin/view/Commands.vue";
 import Chat from "./admin/view/Chat.vue";
 import DataExplorer from "./admin/view/DataExplorer.vue";
+import DataExplorerDetail from "./admin/view/DataExplorerDetail.vue";
 import Settings from "./admin/view/Settings.vue";
 import SetupWizard from "./admin/view/SetupWizard.vue";
 import "./admin/admin.scss";
@@ -43,13 +44,14 @@ async function main() {
       { path: "/connections", component: Connections },
       { path: "/connection-manager", component: ConnectionManager },
       { path: "/llm", component: Llm },
-      { path: "/services", component: Agents },
+      { path: "/services", component: AgentService },
       { path: "/graphs", component: Graphs },
       { path: "/tasks", component: Tasks },
       { path: "/logs", component: Logs },
       { path: "/commands", component: Commands },
       { path: "/chat", component: Chat, props: (route) => ({ agentId: route.query.agent_id, sessionId: route.query.session_id }) },
       { path: "/data-explorer", component: DataExplorer },
+      { path: "/data-explorer/:serviceId/:capability(messages|memories|images)", component: DataExplorerDetail },
       { path: "/settings", component: Settings },
       { path: "/setup", component: SetupWizard, meta: { public: true } },
     ],

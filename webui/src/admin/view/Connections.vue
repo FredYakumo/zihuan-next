@@ -1,481 +1,206 @@
 <template>
-  <section class="page">
-    <div class="page-hero">
-      <h2>连接配置</h2>
-      <div class="hero-actions connection-hero-actions">
-        <button class="btn ghost" @click="triggerImportFile">导入</button>
-        <input ref="importFileInput" type="file" accept=".json" style="display: none" @change="handleFileChange" />
-        <button class="btn primary connection-hero-add-btn" @click="startCreate">+</button>
+  <section class="page connections-page">
+    <AdminPageHeader title="连接配置">
+      <t-button variant="outline" @click="triggerImportFile">导入配置</t-button>
+      <input ref="importFileInput" type="file" accept=".json" class="connection-import-input" @change="handleFileChange" />
+      <t-button theme="primary" @click="startCreate">新建连接</t-button>
+    </AdminPageHeader>
+
+    <t-card class="connections-card" bordered>
+      <div class="connections-toolbar">
+        <t-input v-model="filters.keyword" clearable placeholder="搜索名称、类型或 Config ID" />
+        <t-select v-model="filters.type">
+          <t-option value="all" label="全部类型" />
+          <t-option v-for="type in connectionTypes" :key="type.value" :value="type.value" :label="type.label" />
+        </t-select>
+        <t-select v-model="filters.enabled">
+          <t-option value="all" label="全部状态" />
+          <t-option value="enabled" label="已启用" />
+          <t-option value="disabled" label="已停用" />
+        </t-select>
+        <t-button variant="text" @click="load">刷新</t-button>
+        <span class="connections-count">共 {{ filteredConnections.length }} 条</span>
       </div>
-    </div>
 
-    <div v-if="showCreatePicker" class="connection-picker-backdrop">
-      <div class="connection-picker-dialog" @click.stop>
-        <div class="connection-picker-header">
-          <h3>{{ showEditor && !form.id ? "新建连接" : "选择连接类型" }}</h3>
-          <button class="btn ghost connection-card-compact-btn" @click="closeCreatePicker">{{ showEditor && !form.id ? "关闭" : "取消" }}</button>
+      <t-table
+        row-key="config_id"
+        :data="filteredConnections"
+        :columns="columns"
+        :hover="true"
+        :pagination="false"
+        table-layout="fixed"
+      >
+        <template #name="{ row }">
+          <div class="connection-name-cell">
+            <strong>{{ row.name }}</strong>
+            <span class="mono">{{ compactId(row.config_id) }}</span>
+          </div>
+        </template>
+        <template #type="{ row }">
+          <t-tag variant="light">{{ connectionTypeLabel(row.kind.type) }}</t-tag>
+        </template>
+        <template #enabled="{ row }">
+          <t-tag variant="light" :theme="row.enabled ? 'success' : 'warning'">
+            {{ row.enabled ? "已启用" : "已停用" }}
+          </t-tag>
+        </template>
+        <template #summary="{ row }">
+          <span class="connection-summary" :title="connectionSummary(row)">{{ connectionSummary(row) || "—" }}</span>
+        </template>
+        <template #runtime="{ row }">
+          <span>{{ runtimeInstanceCount(row.config_id) }} 个实例</span>
+        </template>
+        <template #updated_at="{ row }">{{ formatTime(row.updated_at) }}</template>
+        <template #actions="{ row }">
+          <div class="connection-actions">
+            <t-button variant="text" size="small" @click="editConnection(row)">编辑</t-button>
+            <t-button variant="text" size="small" @click="duplicateConnection(row)">复制添加</t-button>
+            <t-button variant="text" size="small" @click="copyConnectionConfig(row)">
+              {{ copiedId === row.config_id ? "已复制" : "复制" }}
+            </t-button>
+            <t-popconfirm content="确认删除这个连接配置吗？" @confirm="removeConnection(row.config_id)">
+              <t-button variant="text" theme="danger" size="small">删除</t-button>
+            </t-popconfirm>
+          </div>
+        </template>
+        <template #empty>
+          <div class="connections-empty">暂无匹配的连接配置。</div>
+        </template>
+      </t-table>
+    </t-card>
+
+    <t-drawer
+      v-model:visible="drawerVisible"
+      :header="isCreating ? '新建连接' : '编辑连接'"
+      size="640px"
+      :close-on-overlay-click="false"
+      @close="closeDrawer"
+    >
+      <t-form class="connection-form" label-align="top">
+        <div class="connection-form-section">
+          <h3>基本信息</h3>
+          <div class="connection-form-grid">
+            <t-form-item label="名称" required>
+              <t-input v-model="form.name" placeholder="请输入连接名称" />
+            </t-form-item>
+            <t-form-item label="连接类型" required>
+              <t-select v-model="form.type" :disabled="!isCreating">
+                <t-option v-for="type in connectionTypes" :key="type.value" :value="type.value" :label="type.label" />
+              </t-select>
+            </t-form-item>
+          </div>
+          <t-checkbox v-model="form.enabled">启用该连接</t-checkbox>
         </div>
-        <div v-if="showEditor && !form.id" class="connection-picker-form">
-          <div class="form-grid">
-            <div class="field">
-              <label>名称</label>
-              <input v-model="form.name" />
-            </div>
-            <div class="field">
-              <label>类型</label>
-              <select v-model="form.type">
-                <option value="mysql">MySQL</option>
-                <option value="redis">Redis</option>
-                <option value="weaviate">Weaviate</option>
-                <option value="elasticsearch">Elasticsearch</option>
-                <option value="rustfs">RustFS</option>
-                <option value="bot_adapter">Bot Adapter</option>
-                <option value="web_search_engine">Web Search Engine</option>
-                <option value="tokenizer">Tokenizer</option>
-                <option value="sqlite">SQLite</option>
-              </select>
-            </div>
 
-            <div class="field-full field-check">
-              <input id="connection-enabled" v-model="form.enabled" type="checkbox" />
-              <label for="connection-enabled">启用该连接</label>
-            </div>
-
+        <div class="connection-form-section">
+          <h3>{{ connectionTypeLabel(form.type) }} 配置</h3>
+          <div class="connection-form-grid">
             <template v-if="form.type === 'mysql'">
-              <div class="field">
-                <label>地址</label>
-                <input v-model="form.mysql_host" placeholder="127.0.0.1" />
-              </div>
-              <div class="field">
-                <label>端口</label>
-                <input v-model="form.mysql_port" placeholder="3306" />
-              </div>
-              <div class="field">
-                <label>账号（可选）</label>
-                <input v-model="form.mysql_user" placeholder="可选" />
-              </div>
-              <div class="field">
-                <label>密码（可选）</label>
-                <ConnectionCredentialInput v-model="form.mysql_password" placeholder="请输入密码" />
-              </div>
-              <div class="field-full">
-                <label>数据库名</label>
-                <input v-model="form.mysql_database" placeholder="zihuan" />
-              </div>
-              <div class="field">
-                <label>最大连接数</label>
-                <input v-model.number="form.mysql_max_connections" type="number" min="1" step="1" />
-              </div>
-              <div class="field">
-                <label>获取连接超时（秒）</label>
-                <input v-model.number="form.mysql_acquire_timeout_secs" type="number" min="1" step="1" />
-              </div>
+              <t-form-item label="地址" required><t-input v-model="form.mysql_host" placeholder="127.0.0.1" /></t-form-item>
+              <t-form-item label="端口" required><t-input v-model="form.mysql_port" placeholder="3306" /></t-form-item>
+              <t-form-item label="账号（可选）"><t-input v-model="form.mysql_user" /></t-form-item>
+              <t-form-item label="密码（可选）"><ConnectionCredentialInput v-model="form.mysql_password" placeholder="请输入密码" /></t-form-item>
+              <t-form-item class="connection-form-item--full" label="数据库名" required><t-input v-model="form.mysql_database" placeholder="zihuan" /></t-form-item>
+              <t-form-item label="最大连接数"><t-input-number v-model="form.mysql_max_connections" :min="1" /></t-form-item>
+              <t-form-item label="获取连接超时（秒）"><t-input-number v-model="form.mysql_acquire_timeout_secs" :min="1" /></t-form-item>
             </template>
 
             <template v-else-if="form.type === 'redis'">
-              <div class="field-full">
-                <label>URL</label>
-                <input v-model="form.redis_url" placeholder="redis://127.0.0.1:6379" />
-              </div>
-              <div class="field">
-                <label>用户名（可选）</label>
-                <input v-model="form.redis_username" placeholder="default" />
-              </div>
-              <div class="field">
-                <label>密码（可选）</label>
-                <ConnectionCredentialInput v-model="form.redis_password" placeholder="可选" />
-              </div>
+              <t-form-item class="connection-form-item--full" label="URL"><t-input v-model="form.redis_url" placeholder="redis://127.0.0.1:6379" /></t-form-item>
+              <t-form-item label="用户名（可选）"><t-input v-model="form.redis_username" placeholder="default" /></t-form-item>
+              <t-form-item label="密码（可选）"><ConnectionCredentialInput v-model="form.redis_password" /></t-form-item>
             </template>
 
             <template v-else-if="form.type === 'weaviate'">
-              <div class="field">
-                <label>Base URL</label>
-                <input v-model="form.weaviate_base_url" />
-              </div>
-              <div class="field">
-                <label>Class Name</label>
-                <input v-model="form.weaviate_class_name" />
-              </div>
-              <div v-if="form.weaviate_auth_method === 'password'" class="field">
-                <label>用户名（可选）</label>
-                <input v-model="form.weaviate_username" />
-              </div>
-              <div class="field">
-                <label>认证</label>
-                <div class="credential-auth-field">
-                  <select v-model="form.weaviate_auth_method" @change="clearInactiveConnectionCredentials('weaviate')">
-                    <option value="password">密码</option>
-                    <option value="api_key">API Key</option>
-                  </select>
-                  <ConnectionCredentialInput v-if="form.weaviate_auth_method === 'password'" v-model="form.weaviate_password" placeholder="密码" />
-                  <ConnectionCredentialInput v-else v-model="form.weaviate_api_key" placeholder="API Key" />
-                </div>
-              </div>
-              <div class="field-full">
-                <label>Collection Schema</label>
-                <select v-model="form.weaviate_collection_schema">
-                  <option value="image_semantic">图片语义</option>
-                  <option value="agent_memory">Agent 记忆</option>
-                </select>
-              </div>
+              <t-form-item label="Base URL" required><t-input v-model="form.weaviate_base_url" /></t-form-item>
+              <t-form-item label="Class Name" required><t-input v-model="form.weaviate_class_name" /></t-form-item>
+              <t-form-item label="认证方式"><t-select v-model="form.weaviate_auth_method" @change="clearInactiveConnectionCredentials('weaviate')"><t-option value="password" label="密码" /><t-option value="api_key" label="API Key" /></t-select></t-form-item>
+              <t-form-item v-if="form.weaviate_auth_method === 'password'" label="用户名" required><t-input v-model="form.weaviate_username" /></t-form-item>
+              <t-form-item :label="form.weaviate_auth_method === 'password' ? '密码' : 'API Key'" required><ConnectionCredentialInput v-if="form.weaviate_auth_method === 'password'" v-model="form.weaviate_password" /><ConnectionCredentialInput v-else v-model="form.weaviate_api_key" /></t-form-item>
+              <t-form-item label="Collection Schema"><t-select v-model="form.weaviate_collection_schema"><t-option value="image_semantic" label="图片语义" /><t-option value="agent_memory" label="Agent 记忆" /></t-select></t-form-item>
             </template>
 
             <template v-else-if="form.type === 'elasticsearch'">
-              <div class="field"><label>Base URL</label><input v-model="form.elasticsearch_base_url" placeholder="https://localhost:9200" /></div>
-              <div class="field"><label>Index Name</label><input v-model="form.elasticsearch_index_name" /></div>
-              <div v-if="form.elasticsearch_auth_method === 'password'" class="field"><label>用户名</label><input v-model="form.elasticsearch_username" /></div>
-              <div class="field"><label>认证</label><div class="credential-auth-field"><select v-model="form.elasticsearch_auth_method" @change="clearInactiveConnectionCredentials('elasticsearch')"><option value="password">密码</option><option value="api_key">API Key</option></select><ConnectionCredentialInput v-if="form.elasticsearch_auth_method === 'password'" v-model="form.elasticsearch_password" placeholder="密码" /><ConnectionCredentialInput v-else v-model="form.elasticsearch_api_key" placeholder="API Key" /></div></div>
-              <div class="field"><label>索引用途</label><select v-model="form.elasticsearch_collection_schema"><option value="agent_memory">Agent 记忆</option><option value="image_semantic">图片语义</option></select></div>
-              <div class="field"><label>向量维度</label><input v-model.number="form.elasticsearch_vector_dimensions" type="number" min="1" step="1" /></div>
+              <t-form-item label="Base URL" required><t-input v-model="form.elasticsearch_base_url" placeholder="https://localhost:9200" /></t-form-item>
+              <t-form-item label="Index Name" required><t-input v-model="form.elasticsearch_index_name" /></t-form-item>
+              <t-form-item label="认证方式"><t-select v-model="form.elasticsearch_auth_method" @change="clearInactiveConnectionCredentials('elasticsearch')"><t-option value="password" label="密码" /><t-option value="api_key" label="API Key" /></t-select></t-form-item>
+              <t-form-item v-if="form.elasticsearch_auth_method === 'password'" label="用户名" required><t-input v-model="form.elasticsearch_username" /></t-form-item>
+              <t-form-item :label="form.elasticsearch_auth_method === 'password' ? '密码' : 'API Key'" required><ConnectionCredentialInput v-if="form.elasticsearch_auth_method === 'password'" v-model="form.elasticsearch_password" /><ConnectionCredentialInput v-else v-model="form.elasticsearch_api_key" /></t-form-item>
+              <t-form-item label="索引用途"><t-select v-model="form.elasticsearch_collection_schema"><t-option value="agent_memory" label="Agent 记忆" /><t-option value="image_semantic" label="图片语义" /></t-select></t-form-item>
+              <t-form-item label="向量维度"><t-input-number v-model="form.elasticsearch_vector_dimensions" :min="1" /></t-form-item>
             </template>
 
             <template v-else-if="form.type === 'rustfs'">
-              <div class="field"><label>Endpoint</label><input v-model="form.rustfs_endpoint" /></div>
-              <div class="field"><label>Bucket</label><input v-model="form.rustfs_bucket" /></div>
-              <div class="field"><label>Region</label><input v-model="form.rustfs_region" /></div>
-              <div class="field"><label>Access Key</label><input v-model="form.rustfs_access_key" /></div>
-              <div class="field"><label>Secret Key</label><ConnectionCredentialInput v-model="form.rustfs_secret_key" /></div>
-              <div class="field"><label>Public Base URL</label><input v-model="form.rustfs_public_base_url" /></div>
-              <div class="field-full field-check">
-                <input id="rustfs-path-style" v-model="form.rustfs_path_style" type="checkbox" />
-                <label for="rustfs-path-style">使用 path-style</label>
-              </div>
+              <t-form-item label="Endpoint"><t-input v-model="form.rustfs_endpoint" /></t-form-item>
+              <t-form-item label="Bucket"><t-input v-model="form.rustfs_bucket" /></t-form-item>
+              <t-form-item label="Region"><t-input v-model="form.rustfs_region" /></t-form-item>
+              <t-form-item label="Access Key"><t-input v-model="form.rustfs_access_key" /></t-form-item>
+              <t-form-item label="Secret Key"><ConnectionCredentialInput v-model="form.rustfs_secret_key" /></t-form-item>
+              <t-form-item label="Public Base URL"><t-input v-model="form.rustfs_public_base_url" /></t-form-item>
+              <t-form-item class="connection-form-item--full"><t-checkbox v-model="form.rustfs_path_style">使用 path-style</t-checkbox></t-form-item>
             </template>
 
             <template v-else-if="isBotAdapterConnectionType(form.type)">
-              <div class="field"><label>Bot WS URL</label><input v-model="form.bot_server_url" placeholder="ws://192.168.71.2:3008" /></div>
-              <div class="field"><label>Adapter HTTP URL</label><input v-model="form.adapter_server_url" placeholder="http://192.168.71.2:3001" /></div>
-              <div class="field"><label>QQ 号</label><input v-model="form.qq_id" /></div>
-              <div class="field-full"><label>Token</label><ConnectionCredentialInput v-model="form.bot_server_token" /></div>
+              <t-form-item label="Bot WS URL"><t-input v-model="form.bot_server_url" placeholder="ws://192.168.71.2:3008" /></t-form-item>
+              <t-form-item label="Adapter HTTP URL"><t-input v-model="form.adapter_server_url" placeholder="http://192.168.71.2:3001" /></t-form-item>
+              <t-form-item label="QQ 号"><t-input v-model="form.qq_id" /></t-form-item>
+              <t-form-item label="Token"><ConnectionCredentialInput v-model="form.bot_server_token" /></t-form-item>
             </template>
 
             <template v-else-if="form.type === 'web_search_engine'">
-              <div class="field">
-                <label>Provider</label>
-                <select v-model="form.web_search_engine_provider">
-                  <option value="tavily">Tavily</option>
-                  <option value="brave">Brave</option>
-                </select>
-              </div>
-              <div class="field-full"><label>API Token（可选）</label><ConnectionCredentialInput v-model="form.web_search_engine_api_token" placeholder="可选" /></div>
-              <div class="field"><label>Timeout</label><input v-model.number="form.web_search_engine_timeout_secs" type="number" min="1" /></div>
+              <t-form-item label="Provider"><t-select v-model="form.web_search_engine_provider"><t-option value="tavily" label="Tavily" /><t-option value="brave" label="Brave" /></t-select></t-form-item>
+              <t-form-item label="Timeout（秒）"><t-input-number v-model="form.web_search_engine_timeout_secs" :min="1" /></t-form-item>
+              <t-form-item class="connection-form-item--full" label="API Token（可选）"><ConnectionCredentialInput v-model="form.web_search_engine_api_token" /></t-form-item>
             </template>
 
             <template v-else-if="form.type === 'tokenizer'">
-              <div class="field-full">
-                <label>Tokenizer 模型</label>
-                <select v-model="form.tokenizer_model_name">
-                  <option value="">请选择</option>
-                  <option v-for="model in tokenizerModels" :key="model" :value="model">{{ model }}</option>
-                </select>
-              </div>
+              <t-form-item class="connection-form-item--full" label="Tokenizer 模型" required><t-select v-model="form.tokenizer_model_name" placeholder="请选择"><t-option v-for="model in tokenizerModels" :key="model" :value="model" :label="model" /></t-select></t-form-item>
             </template>
 
             <template v-else-if="form.type === 'sqlite'">
-              <div class="field-full">
-                <label>数据库文件路径</label>
-                <input v-model="form.sqlite_path" placeholder="/path/to/database.db" />
-              </div>
+              <t-form-item class="connection-form-item--full" label="数据库文件路径"><t-input v-model="form.sqlite_path" placeholder="/path/to/database.db" /></t-form-item>
             </template>
           </div>
-          <div class="panel-actions connection-picker-form-actions">
-            <button class="btn ghost" @click="showEditor = false">返回</button>
-            <button class="btn primary" @click="submitForm">创建连接</button>
-          </div>
         </div>
-        <div v-else class="connection-picker-grid">
-          <button
-            v-for="type in connectionTypes"
-            :key="type.value"
-            class="connection-picker-option"
-            @click="pickCreateType(type.value)"
-          >
-            <strong>{{ type.label }}</strong>
-            <span>{{ type.hint }}</span>
-          </button>
+      </t-form>
+
+      <template #footer>
+        <div class="connection-drawer-footer">
+          <t-button variant="outline" @click="closeDrawer">取消</t-button>
+          <t-button theme="primary" @click="submitForm">{{ isCreating ? "创建连接" : "保存修改" }}</t-button>
         </div>
-      </div>
-    </div>
-
-    <section v-if="connections.length > 0" class="panel">
-      <div class="connection-grid" style="margin-top: 0;">
-        <article
-          v-for="connection in connections"
-          :key="connection.config_id"
-          :class="['connection-card', { 'connection-card--editing': form.id === connection.config_id }]"
-        >
-          <template v-if="form.id === connection.config_id">
-            <div class="connection-card-header connection-card-header--stacked">
-              <div class="connection-card-header-top">
-                <div class="connection-card-badges">
-                  <span class="badge">{{ form.type }}</span>
-                  <span class="badge" :class="form.enabled ? 'success' : ''">{{ form.enabled ? "已启用" : "已停用" }}</span>
-                </div>
-                <div class="inline-actions connection-card-edit-actions">
-                  <button class="btn primary connection-card-compact-btn" @click="submitForm">保存</button>
-                  <button class="btn ghost connection-card-compact-btn" @click="closeEditor">取消</button>
-                </div>
-              </div>
-              <div class="connection-card-title-edit">
-                <input v-model="form.name" class="connection-card-inline-input connection-card-inline-input--title" />
-              </div>
-            </div>
-
-            <div class="connection-card-body">
-              <div class="key-value connection-card-edit-row">
-                <strong>类型</strong>
-                <select v-model="form.type" class="connection-card-inline-input">
-                  <option value="mysql">MySQL</option>
-                  <option value="redis">Redis</option>
-                  <option value="weaviate">Weaviate</option>
-                  <option value="rustfs">RustFS</option>
-                  <option value="bot_adapter">Bot Adapter</option>
-                  <option value="web_search_engine">Web Search Engine</option>
-                  <option value="tokenizer">Tokenizer</option>
-                  <option value="sqlite">SQLite</option>
-                </select>
-              </div>
-              <div class="key-value connection-card-edit-row">
-                <strong>启用</strong>
-                <label class="connection-card-inline-check">
-                  <input :id="`connection-enabled-${connection.config_id}`" v-model="form.enabled" type="checkbox" />
-                  <span>{{ form.enabled ? "已启用" : "已停用" }}</span>
-                </label>
-              </div>
-
-              <template v-if="form.type === 'mysql'">
-                <div class="key-value connection-card-edit-row">
-                  <strong>地址</strong>
-                  <input v-model="form.mysql_host" class="connection-card-inline-input" placeholder="127.0.0.1" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>端口</strong>
-                  <input v-model="form.mysql_port" class="connection-card-inline-input" placeholder="3306" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>账号（可选）</strong>
-                  <input v-model="form.mysql_user" class="connection-card-inline-input" placeholder="可选" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>密码（可选）</strong>
-                  <ConnectionCredentialInput v-model="form.mysql_password" input-class="connection-card-inline-input" placeholder="请输入密码" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>数据库</strong>
-                  <input v-model="form.mysql_database" class="connection-card-inline-input" placeholder="zihuan" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>最大连接数</strong>
-                  <input v-model.number="form.mysql_max_connections" class="connection-card-inline-input" type="number" min="1" step="1" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>获取超时</strong>
-                  <input v-model.number="form.mysql_acquire_timeout_secs" class="connection-card-inline-input" type="number" min="1" step="1" />
-                </div>
-              </template>
-
-              <template v-else-if="form.type === 'redis'">
-                <div class="key-value connection-card-edit-row">
-                  <strong>URL</strong>
-                  <input v-model="form.redis_url" class="connection-card-inline-input" placeholder="redis://127.0.0.1:6379" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>用户名（可选）</strong>
-                  <input v-model="form.redis_username" class="connection-card-inline-input" placeholder="default" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>密码（可选）</strong>
-                  <ConnectionCredentialInput v-model="form.redis_password" input-class="connection-card-inline-input" />
-                </div>
-              </template>
-
-              <template v-else-if="form.type === 'weaviate'">
-                <div class="key-value connection-card-edit-row">
-                  <strong>Base URL</strong>
-                  <input v-model="form.weaviate_base_url" class="connection-card-inline-input" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Class</strong>
-                  <input v-model="form.weaviate_class_name" class="connection-card-inline-input" />
-                </div>
-                <div v-if="form.weaviate_auth_method === 'password'" class="key-value connection-card-edit-row">
-                  <strong>用户名</strong>
-                  <input v-model="form.weaviate_username" class="connection-card-inline-input" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>认证</strong>
-                  <div class="credential-auth-field">
-                    <select v-model="form.weaviate_auth_method" class="connection-card-inline-input" @change="clearInactiveConnectionCredentials('weaviate')">
-                      <option value="password">密码</option>
-                      <option value="api_key">API Key</option>
-                    </select>
-                    <ConnectionCredentialInput v-if="form.weaviate_auth_method === 'password'" v-model="form.weaviate_password" input-class="connection-card-inline-input" placeholder="密码" />
-                    <ConnectionCredentialInput v-else v-model="form.weaviate_api_key" input-class="connection-card-inline-input" placeholder="API Key" />
-                  </div>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Schema</strong>
-                  <select v-model="form.weaviate_collection_schema" class="connection-card-inline-input">
-                    <option value="image_semantic">图片语义</option>
-                    <option value="agent_memory">Agent 记忆</option>
-                  </select>
-                </div>
-              </template>
-
-              <template v-else-if="form.type === 'elasticsearch'">
-                <div class="key-value connection-card-edit-row"><strong>Base URL</strong><input v-model="form.elasticsearch_base_url" class="connection-card-inline-input" /></div>
-                <div class="key-value connection-card-edit-row"><strong>Index</strong><input v-model="form.elasticsearch_index_name" class="connection-card-inline-input" /></div>
-                <div v-if="form.elasticsearch_auth_method === 'password'" class="key-value connection-card-edit-row"><strong>用户名</strong><input v-model="form.elasticsearch_username" class="connection-card-inline-input" /></div>
-                <div class="key-value connection-card-edit-row"><strong>认证</strong><div class="credential-auth-field"><select v-model="form.elasticsearch_auth_method" class="connection-card-inline-input" @change="clearInactiveConnectionCredentials('elasticsearch')"><option value="password">密码</option><option value="api_key">API Key</option></select><ConnectionCredentialInput v-if="form.elasticsearch_auth_method === 'password'" v-model="form.elasticsearch_password" input-class="connection-card-inline-input" placeholder="密码" /><ConnectionCredentialInput v-else v-model="form.elasticsearch_api_key" input-class="connection-card-inline-input" placeholder="API Key" /></div></div>
-                <div class="key-value connection-card-edit-row"><strong>Schema</strong><select v-model="form.elasticsearch_collection_schema" class="connection-card-inline-input"><option value="agent_memory">Agent 记忆</option><option value="image_semantic">图片语义</option></select></div>
-                <div class="key-value connection-card-edit-row"><strong>向量维度</strong><input v-model.number="form.elasticsearch_vector_dimensions" class="connection-card-inline-input" type="number" min="1" step="1" /></div>
-              </template>
-
-              <template v-else-if="form.type === 'rustfs'">
-                <div class="key-value connection-card-edit-row">
-                  <strong>Endpoint</strong>
-                  <input v-model="form.rustfs_endpoint" class="connection-card-inline-input" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Bucket</strong>
-                  <input v-model="form.rustfs_bucket" class="connection-card-inline-input" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Region</strong>
-                  <input v-model="form.rustfs_region" class="connection-card-inline-input" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Access Key</strong>
-                  <input v-model="form.rustfs_access_key" class="connection-card-inline-input" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Secret Key</strong>
-                  <ConnectionCredentialInput v-model="form.rustfs_secret_key" input-class="connection-card-inline-input" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Public URL</strong>
-                  <input v-model="form.rustfs_public_base_url" class="connection-card-inline-input" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Path Style</strong>
-                  <label class="connection-card-inline-check">
-                    <input :id="`rustfs-path-style-${connection.config_id}`" v-model="form.rustfs_path_style" type="checkbox" />
-                    <span>{{ form.rustfs_path_style ? "开启" : "关闭" }}</span>
-                  </label>
-                </div>
-              </template>
-
-              <template v-else-if="isBotAdapterConnectionType(form.type)">
-                <div class="key-value connection-card-edit-row">
-                  <strong>WS</strong>
-                  <input v-model="form.bot_server_url" class="connection-card-inline-input" placeholder="ws://192.168.71.2:3008" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>HTTP</strong>
-                  <input v-model="form.adapter_server_url" class="connection-card-inline-input" placeholder="http://192.168.71.2:3001" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>QQ</strong>
-                  <input v-model="form.qq_id" class="connection-card-inline-input" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Token</strong>
-                  <ConnectionCredentialInput v-model="form.bot_server_token" input-class="connection-card-inline-input" />
-                </div>
-              </template>
-
-              <template v-else-if="form.type === 'web_search_engine'">
-                <div class="key-value connection-card-edit-row">
-                  <strong>Provider</strong>
-                  <select v-model="form.web_search_engine_provider" class="connection-card-inline-input">
-                    <option value="tavily">Tavily</option>
-                    <option value="brave">Brave</option>
-                  </select>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>API Token（可选）</strong>
-                  <ConnectionCredentialInput v-model="form.web_search_engine_api_token" input-class="connection-card-inline-input" placeholder="可选" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Timeout</strong>
-                  <input v-model.number="form.web_search_engine_timeout_secs" class="connection-card-inline-input" type="number" min="1" />
-                </div>
-              </template>
-
-              <template v-else-if="form.type === 'tokenizer'">
-                <div class="key-value connection-card-edit-row">
-                  <strong>Tokenizer 模型</strong>
-                  <select v-model="form.tokenizer_model_name" class="connection-card-inline-input">
-                    <option value="">请选择</option>
-                    <option v-for="model in tokenizerModels" :key="model" :value="model">{{ model }}</option>
-                  </select>
-                </div>
-              </template>
-
-              <template v-else-if="form.type === 'sqlite'">
-                <div class="key-value connection-card-edit-row">
-                  <strong>文件路径</strong>
-                  <input v-model="form.sqlite_path" class="connection-card-inline-input" placeholder="/path/to/database.db" />
-                </div>
-              </template>
-            </div>
-          </template>
-
-          <template v-else>
-            <div class="connection-card-header connection-card-header--stacked">
-              <div class="connection-card-header-top">
-                <div class="connection-card-badges">
-                  <span class="badge">{{ connection.kind.type }}</span>
-                  <span class="badge" :class="connection.enabled ? 'success' : ''">{{ connection.enabled ? "已启用" : "已停用" }}</span>
-                </div>
-                <div class="inline-actions connection-card-display-actions">
-                  <button class="btn ghost connection-card-compact-btn" @click="editConnection(connection)">编辑</button>
-                  <button class="btn ghost connection-card-compact-btn" @click="duplicateConnection(connection)">复制添加</button>
-                  <button class="btn ghost connection-card-compact-btn" @click="copyConnectionConfig(connection)">{{ copiedId === connection.config_id ? '已复制' : '复制' }}</button>
-                  <button class="btn warn connection-card-compact-btn" @click="removeConnection(connection.config_id)">删除</button>
-                </div>
-              </div>
-              <h4>{{ connection.name }}</h4>
-            </div>
-
-            <div class="connection-card-body">
-              <div v-for="item in summarizeConnection(connection)" :key="item.label" class="key-value">
-                <strong>{{ item.label }}</strong>
-                <span class="mono">{{ item.value }}</span>
-              </div>
-            </div>
-
-            <div class="connection-card-footer">
-              <span class="muted">更新于 {{ formatTime(connection.updated_at) }}</span>
-            </div>
-          </template>
-        </article>
-      </div>
-    </section>
+      </template>
+    </t-drawer>
   </section>
 </template>
 
 <script setup lang="ts">
 import { ref } from "vue";
-import ConnectionCredentialInput from "./ConnectionCredentialInput.vue";
+
+import type { ConnectionConfig } from "../../api/client";
+import AdminPageHeader from "../components/AdminPageHeader.vue";
+import { compactId } from "../model";
 import { useConnections } from "../composables/useConnections";
+import ConnectionCredentialInput from "./ConnectionCredentialInput.vue";
 
 const {
-  connections,
+  filteredConnections,
   tokenizerModels,
   form,
-  showEditor,
-  showCreatePicker,
+  drawerVisible,
+  isCreating,
+  filters,
   connectionTypes,
   startCreate,
-  closeCreatePicker,
-  pickCreateType,
-  closeEditor,
+  closeDrawer,
+  load,
   editConnection,
   duplicateConnection,
   submitForm,
   removeConnection,
-  summarizeConnection,
+  connectionSummary,
+  runtimeInstanceCount,
+  clearInactiveConnectionCredentials,
   formatTime,
   isBotAdapterConnectionType,
   copiedId,
@@ -485,23 +210,29 @@ const {
 
 const importFileInput = ref<HTMLInputElement | null>(null);
 
+const columns = [
+  { colKey: "name", title: "连接名称", width: 210 },
+  { colKey: "type", title: "类型", width: 130 },
+  { colKey: "enabled", title: "状态", width: 100 },
+  { colKey: "summary", title: "连接摘要", ellipsis: true },
+  { colKey: "runtime", title: "运行时", width: 100 },
+  { colKey: "updated_at", title: "更新时间", width: 170 },
+  { colKey: "actions", title: "操作", width: 270, fixed: "right" },
+];
+
 function triggerImportFile() {
   importFileInput.value?.click();
 }
 
-function copyConnectionConfig(connection: { config_id: string; name: string; enabled: boolean; kind: Record<string, unknown> }) {
+function connectionTypeLabel(type: string): string {
+  return connectionTypes.find((option) => option.value === type)?.label ?? type;
+}
+
+function copyConnectionConfig(connection: ConnectionConfig) {
   copyConfig({ name: connection.name, enabled: connection.enabled, kind: connection.kind }, connection.config_id);
 }
 </script>
 
 <style scoped lang="scss">
 @use "../styles/connections" as *;
-
-.credential-auth-field {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 8px;
-  width: 100%;
-}
-
 </style>

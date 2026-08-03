@@ -1,379 +1,145 @@
 <template>
-  <section class="page">
-    <div class="page-hero">
-      <h2>模型配置</h2>
-      <div class="hero-actions connection-hero-actions">
-        <button class="btn ghost" @click="triggerImportFile">导入</button>
-        <input ref="importFileInput" type="file" accept=".json" style="display: none" @change="handleFileChange" />
-        <button class="btn primary connection-hero-add-btn" @click="startCreate">+</button>
-      </div>
-    </div>
+  <section class="page llm-page">
+    <AdminPageHeader title="模型配置">
+      <t-button variant="outline" @click="triggerImportFile">导入配置</t-button>
+      <input ref="importFileInput" type="file" accept=".json" class="llm-import-input" @change="handleFileChange" />
+      <t-button theme="primary" @click="startCreate">新建模型</t-button>
+    </AdminPageHeader>
 
-    <div v-if="showCreatePicker" class="connection-picker-backdrop">
-      <div class="connection-picker-dialog" @click.stop>
-        <div class="connection-picker-header">
-          <h3>新建模型配置</h3>
-          <button class="btn ghost connection-card-compact-btn" @click="closeCreatePicker">
-            {{ showCreateForm ? "关闭" : "取消" }}
-          </button>
+    <t-card class="llm-card" bordered>
+      <div class="llm-toolbar">
+        <t-input v-model="filters.keyword" clearable placeholder="搜索名称、模型名或 Config ID" />
+        <t-select v-model="filters.modelType">
+          <t-option value="all" label="全部模型类型" />
+          <t-option value="chat_llm" label="聊天模型" />
+          <t-option value="text_embedding_local" label="本地文本向量模型" />
+        </t-select>
+        <t-select v-model="filters.enabled">
+          <t-option value="all" label="全部状态" />
+          <t-option value="enabled" label="已启用" />
+          <t-option value="disabled" label="已停用" />
+        </t-select>
+        <div class="llm-toolbar-actions">
+          <t-button variant="text" @click="load">刷新</t-button>
+          <span class="llm-count">共 {{ filteredItems.length }} 条</span>
         </div>
+      </div>
 
-        <div v-if="showCreateForm" class="connection-picker-form">
-          <div class="form-grid">
-            <div class="field">
-              <label>名称</label>
-              <input v-model="form.name" placeholder="例如：OpenAI 主模型" />
-            </div>
-            <div class="field">
-              <label>类型</label>
-              <select v-model="form.model_type">
-                <option value="chat_llm">聊天模型</option>
-                <option value="text_embedding_local">本地文本向量模型</option>
-              </select>
-            </div>
-            <div class="field-full field-check">
-              <input id="llm-enabled" v-model="form.enabled" type="checkbox" />
-              <label for="llm-enabled">启用该模型配置</label>
-            </div>
-            <template v-if="form.model_type === 'chat_llm'">
-              <div class="field-full field-check">
-                <input id="llm-multimodal-enabled" v-model="form.llm.supports_multimodal_input" :disabled="isCandleMode" type="checkbox" />
-                <label for="llm-multimodal-enabled">多模态模型（允许传入图片）</label>
-              </div>
-              <div class="field-full field-check">
-                <input id="llm-stream-enabled" v-model="form.llm.stream" type="checkbox" />
-                <label for="llm-stream-enabled">默认启用 stream 请求参数</label>
-              </div>
-              <div class="field-full field-check">
-                <input id="llm-reasoning-content-enabled" v-model="form.llm.include_reasoning_content" type="checkbox" />
-                <label for="llm-reasoning-content-enabled">推理时回灌 reasoning_content</label>
-              </div>
-              <div class="field">
-                <label>思考模式</label>
-                <select v-model="form.llm.thinking_type">
-                  <option :value="null">未配置</option>
-                  <option value="enabled">启用</option>
-                  <option value="disabled">关闭</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>思考强度</label>
-                <select v-model="form.llm.reasoning_effort">
-                  <option :value="null">未配置</option>
-                  <option value="low">低</option>
-                  <option value="medium">中</option>
-                  <option value="high">高</option>
-                  <option value="max">最高</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>后端格式</label>
-                <select v-model="form.llm.api_style">
-                  <option value="candle_gguf">Candle GGUF 本地推理</option>
-                  <option value="candle_hf">Candle HF 本地推理</option>
-                  <option value="open_ai_chat_completions">OpenAI Chat Completions API</option>
-                  <option value="open_ai_chat_completions_tencent_multimodal_compat">OpenAI Chat Completions API（腾讯多模态兼容）</option>
-                  <option value="open_ai_responses">OpenAI Responses API</option>
-                  <option value="open_ai_responses_message_compat">OpenAI Responses API（message兼容）</option>
-                  <option value="open_ai_responses_image_url_object_compat">OpenAI Responses API（image_url对象兼容）</option>
-                </select>
-              </div>
-              <div v-if="isCandleMode" class="field-full">
-                <label>本地 LLM 目录</label>
-                <select v-model="form.llm.model_name">
-                  <option value="">请选择</option>
-                  <option
-                    v-for="item in filteredLocalLlmModels"
-                    :key="item.model_name"
-                    :value="item.model_name"
-                    :disabled="!item.available"
-                  >
-                    {{ localLlmOptionLabel(item) }}
-                  </option>
-                </select>
-                <small class="muted">{{ selectedLocalLlmHint }}</small>
-              </div>
-              <template v-else>
-                <div class="field"><label>Model Name</label><input v-model="form.llm.model_name" /></div>
-                <div class="field"><label>API Endpoint</label><input v-model="form.llm.api_endpoint" /></div>
-                <div class="field"><label>API Key</label><input v-model="form.llm.api_key" type="password" /></div>
-              </template>
-              <div class="field"><label>Timeout Secs</label><input v-model.number="form.llm.timeout_secs" type="number" min="1" /></div>
-              <div class="field"><label>Retry Count</label><input v-model.number="form.llm.retry_count" type="number" min="0" /></div>
-            </template>
-            <template v-else>
-              <div class="field-full">
-                <label>本地模型目录</label>
-                <select v-model="form.local_model_name">
-                  <option value="">请选择</option>
-                  <option v-for="item in localEmbeddingModels" :key="item" :value="item">{{ item }}</option>
-                </select>
-              </div>
-            </template>
+      <t-table row-key="config_id" :data="filteredItems" :columns="columns" :hover="true" :pagination="false" table-layout="fixed">
+        <template #name="{ row }">
+          <div class="llm-name-cell"><strong>{{ row.name }}</strong><span class="mono">{{ compactId(row.config_id) }}</span></div>
+        </template>
+        <template #model_type="{ row }"><t-tag variant="light">{{ modelTypeLabel(row.model.type) }}</t-tag></template>
+        <template #model="{ row }">
+          <div class="llm-model-cell"><span :title="modelName(row)">{{ modelName(row) || "—" }}</span><small v-if="row.model.type === 'chat_llm'">{{ apiStyleLabel(row.model.llm.api_style) }}</small></div>
+        </template>
+        <template #endpoint="{ row }">
+          <span v-if="row.model.type === 'chat_llm' && !isCandleStyle(row.model.llm.api_style)" class="llm-endpoint" :title="row.model.llm.api_endpoint">{{ row.model.llm.api_endpoint || "—" }}</span>
+          <span v-else>本地模型</span>
+        </template>
+        <template #updated_at="{ row }">{{ formatTime(row.updated_at) }}</template>
+        <template #actions="{ row }">
+          <div class="llm-actions">
+            <t-button variant="text" size="small" @click="editItem(row)">编辑</t-button>
+            <t-button variant="text" size="small" @click="copyLlmConfig(row)">{{ copiedId === row.config_id ? "已复制" : "复制" }}</t-button>
+            <t-popconfirm content="确认删除这个模型配置吗？" @confirm="removeItem(row.config_id)"><t-button variant="text" theme="danger" size="small">删除</t-button></t-popconfirm>
+            <t-checkbox
+              :checked="row.enabled"
+              :disabled="updatingEnabledIds.has(row.config_id)"
+              @change="updateEnabled(row, $event)"
+            >
+              是否启用
+            </t-checkbox>
           </div>
-          <div class="panel-actions connection-picker-form-actions">
-            <button class="btn ghost" @click="showCreateForm = false">返回</button>
-            <button class="btn primary" @click="submitForm">创建模型配置</button>
+        </template>
+        <template #empty><div class="llm-empty">暂无匹配的模型配置。</div></template>
+      </t-table>
+    </t-card>
+
+    <t-drawer v-model:visible="drawerVisible" :header="isCreating ? '新建模型配置' : '编辑模型配置'" size="680px" :close-on-overlay-click="false" @close="closeDrawer">
+      <t-form class="llm-form" label-align="top">
+        <div class="llm-form-section">
+          <h3>基本信息</h3>
+          <div class="llm-form-grid">
+            <t-form-item label="名称" required><t-input v-model="form.name" placeholder="例如：OpenAI 主模型" /></t-form-item>
+            <t-form-item label="模型类型" required><t-select v-model="form.model_type" :disabled="!isCreating"><t-option value="chat_llm" label="聊天模型" /><t-option value="text_embedding_local" label="本地文本向量模型" /></t-select></t-form-item>
           </div>
+          <t-checkbox v-model="form.enabled">启用该模型配置</t-checkbox>
         </div>
 
-        <div v-else class="connection-picker-grid connection-picker-grid--single">
-          <button class="connection-picker-option" @click="showCreateForm = true">
-            <strong>模型配置</strong>
-            <span>填写模型名、接口地址、API Key 与超时重试参数</span>
-          </button>
+        <template v-if="form.model_type === 'chat_llm'">
+          <div class="llm-form-section">
+            <h3>模型与接口</h3>
+            <div class="llm-form-grid">
+              <t-form-item class="llm-form-item--full" label="后端格式"><t-select v-model="form.llm.api_style"><t-option value="candle_gguf" label="Candle GGUF 本地推理" /><t-option value="candle_hf" label="Candle HF 本地推理" /><t-option value="open_ai_chat_completions" label="OpenAI Chat Completions API" /><t-option value="open_ai_chat_completions_tencent_multimodal_compat" label="OpenAI Chat Completions API（腾讯多模态兼容）" /><t-option value="open_ai_responses" label="OpenAI Responses API" /><t-option value="open_ai_responses_message_compat" label="OpenAI Responses API（message 兼容）" /><t-option value="open_ai_responses_image_url_object_compat" label="OpenAI Responses API（image_url 对象兼容）" /></t-select></t-form-item>
+              <template v-if="isCandleMode">
+                <t-form-item class="llm-form-item--full" label="本地 LLM 目录" required><t-select v-model="form.llm.model_name" placeholder="请选择"><t-option v-for="item in filteredLocalLlmModels" :key="item.model_name" :value="item.model_name" :label="localLlmOptionLabel(item)" :disabled="!item.available" /></t-select><small class="llm-form-hint">{{ selectedLocalLlmHint }}</small></t-form-item>
+              </template>
+              <template v-else>
+                <t-form-item label="Model Name" required><t-input v-model="form.llm.model_name" /></t-form-item>
+                <t-form-item label="API Endpoint" required><t-input v-model="form.llm.api_endpoint" /></t-form-item>
+                <t-form-item class="llm-form-item--full" label="API Key"><ConnectionCredentialInput v-model="form.llm.api_key" /></t-form-item>
+              </template>
+            </div>
+          </div>
+
+          <div class="llm-form-section">
+            <h3>请求参数</h3>
+            <div class="llm-form-grid">
+              <t-form-item label="Timeout Secs"><t-input-number v-model="form.llm.timeout_secs" :min="1" /></t-form-item>
+              <t-form-item label="Retry Count"><t-input-number v-model="form.llm.retry_count" :min="0" /></t-form-item>
+              <t-form-item label="思考模式"><t-select v-model="form.llm.thinking_type"><t-option :value="null" label="未配置" /><t-option value="enabled" label="启用" /><t-option value="disabled" label="关闭" /></t-select></t-form-item>
+              <t-form-item label="思考强度"><t-select v-model="form.llm.reasoning_effort"><t-option :value="null" label="未配置" /><t-option value="low" label="低" /><t-option value="medium" label="中" /><t-option value="high" label="高" /><t-option value="max" label="最高" /></t-select></t-form-item>
+            </div>
+            <div class="llm-switches">
+              <t-checkbox v-model="form.llm.supports_multimodal_input" :disabled="isCandleMode">多模态模型（允许传入图片）</t-checkbox>
+              <t-checkbox v-model="form.llm.stream">默认启用 stream 请求参数</t-checkbox>
+              <t-checkbox v-model="form.llm.include_reasoning_content">推理时回灌 reasoning_content</t-checkbox>
+            </div>
+          </div>
+        </template>
+
+        <div v-else class="llm-form-section">
+          <h3>本地向量模型</h3>
+          <t-form-item label="本地模型目录" required><t-select v-model="form.local_model_name" placeholder="请选择"><t-option v-for="item in localEmbeddingModels" :key="item" :value="item" :label="item" /></t-select></t-form-item>
         </div>
-      </div>
-    </div>
-
-    <section v-if="items.length > 0" class="panel">
-      <div class="connection-grid" style="margin-top: 0;">
-        <article
-          v-for="item in items"
-          :key="item.config_id"
-          :class="['connection-card', { 'connection-card--editing': form.id === item.config_id }]"
-        >
-          <template v-if="form.id === item.config_id">
-            <div class="connection-card-header connection-card-header--stacked">
-              <div class="connection-card-header-top">
-                <div class="connection-card-badges">
-                  <span class="badge">model</span>
-                  <span class="badge" :class="form.enabled ? 'success' : ''">{{ form.enabled ? "已启用" : "已停用" }}</span>
-                </div>
-                <div class="inline-actions connection-card-edit-actions">
-                  <button class="btn primary connection-card-compact-btn" @click="submitForm">保存</button>
-                  <button class="btn ghost connection-card-compact-btn" @click="resetForm">取消</button>
-                </div>
-              </div>
-              <div class="connection-card-title-edit">
-                <input v-model="form.name" class="connection-card-inline-input connection-card-inline-input--title" />
-              </div>
-            </div>
-
-            <div class="connection-card-body">
-              <div class="key-value connection-card-edit-row">
-                <strong>启用</strong>
-                <label class="connection-card-inline-check">
-                  <input :id="`llm-enabled-${item.config_id}`" v-model="form.enabled" type="checkbox" />
-                  <span>{{ form.enabled ? "已启用" : "已停用" }}</span>
-                </label>
-              </div>
-              <div class="key-value connection-card-edit-row">
-                <strong>类型</strong>
-                <select v-model="form.model_type" class="connection-card-inline-input">
-                  <option value="chat_llm">聊天模型</option>
-                  <option value="text_embedding_local">本地文本向量模型</option>
-                </select>
-              </div>
-              <template v-if="form.model_type === 'chat_llm'">
-                <div class="key-value connection-card-edit-row">
-                  <strong>多模态</strong>
-                  <label class="connection-card-inline-check">
-                    <input
-                      :id="`llm-multimodal-enabled-${item.config_id}`"
-                      v-model="form.llm.supports_multimodal_input"
-                      :disabled="isCandleMode"
-                      type="checkbox"
-                    />
-                    <span>{{ form.llm.supports_multimodal_input ? "已启用" : "未启用" }}</span>
-                  </label>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Stream</strong>
-                  <label class="connection-card-inline-check">
-                    <input
-                      :id="`llm-stream-enabled-${item.config_id}`"
-                      v-model="form.llm.stream"
-                      type="checkbox"
-                    />
-                    <span>{{ form.llm.stream ? "已启用" : "未启用" }}</span>
-                  </label>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Reasoning</strong>
-                  <label class="connection-card-inline-check">
-                    <input
-                      :id="`llm-reasoning-content-enabled-${item.config_id}`"
-                      v-model="form.llm.include_reasoning_content"
-                      type="checkbox"
-                    />
-                    <span>{{ form.llm.include_reasoning_content ? "已回灌" : "不回灌" }}</span>
-                  </label>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>思考模式</strong>
-                  <select v-model="form.llm.thinking_type" class="connection-card-inline-input">
-                    <option :value="null">未配置</option>
-                    <option value="enabled">启用</option>
-                    <option value="disabled">关闭</option>
-                  </select>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>思考强度</strong>
-                  <select v-model="form.llm.reasoning_effort" class="connection-card-inline-input">
-                    <option :value="null">未配置</option>
-                    <option value="low">低</option>
-                    <option value="medium">中</option>
-                    <option value="high">高</option>
-                    <option value="max">最高</option>
-                  </select>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>后端格式</strong>
-                  <select v-model="form.llm.api_style" class="connection-card-inline-input">
-                    <option value="candle_gguf">Candle（GGUF 本地）</option>
-                    <option value="candle_hf">Candle（HF 本地）</option>
-                    <option value="open_ai_chat_completions">OpenAI Chat Completions</option>
-                    <option value="open_ai_chat_completions_tencent_multimodal_compat">OpenAI Chat Completions（腾讯多模态兼容）</option>
-                    <option value="open_ai_responses">OpenAI Responses</option>
-                    <option value="open_ai_responses_message_compat">OpenAI Responses（message兼容）</option>
-                    <option value="open_ai_responses_image_url_object_compat">OpenAI Responses（image_url对象兼容）</option>
-                  </select>
-                </div>
-                <div v-if="isCandleMode" class="key-value connection-card-edit-row">
-                  <strong>本地模型</strong>
-                  <select v-model="form.llm.model_name" class="connection-card-inline-input">
-                    <option value="">请选择</option>
-                    <option
-                      v-for="localModel in filteredLocalLlmModels"
-                      :key="localModel.model_name"
-                      :value="localModel.model_name"
-                      :disabled="!localModel.available"
-                    >
-                      {{ localLlmOptionLabel(localModel) }}
-                    </option>
-                  </select>
-                </div>
-                <template v-else>
-                  <div class="key-value connection-card-edit-row">
-                    <strong>Model</strong>
-                    <input v-model="form.llm.model_name" class="connection-card-inline-input" />
-                  </div>
-                  <div class="key-value connection-card-edit-row">
-                    <strong>Endpoint</strong>
-                    <input v-model="form.llm.api_endpoint" class="connection-card-inline-input" />
-                  </div>
-                  <div class="key-value connection-card-edit-row">
-                    <strong>API Key</strong>
-                    <input v-model="form.llm.api_key" class="connection-card-inline-input" type="password" />
-                  </div>
-                </template>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Timeout</strong>
-                  <input v-model.number="form.llm.timeout_secs" class="connection-card-inline-input" type="number" min="1" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Retry</strong>
-                  <input v-model.number="form.llm.retry_count" class="connection-card-inline-input" type="number" min="0" />
-                </div>
-              </template>
-              <template v-else>
-                <div class="key-value connection-card-edit-row">
-                  <strong>本地模型目录</strong>
-                  <select v-model="form.local_model_name" class="connection-card-inline-input">
-                    <option value="">请选择</option>
-                    <option v-for="name in localEmbeddingModels" :key="name" :value="name">{{ name }}</option>
-                  </select>
-                </div>
-              </template>
-            </div>
-          </template>
-
-          <template v-else>
-            <div class="connection-card-header connection-card-header--stacked">
-              <div class="connection-card-header-top">
-                <div class="connection-card-badges">
-                  <span class="badge">model</span>
-                  <span class="badge">{{ item.model.type }}</span>
-                  <span class="badge" :class="item.enabled ? 'success' : ''">{{ item.enabled ? "已启用" : "已停用" }}</span>
-                </div>
-                <div class="inline-actions connection-card-display-actions">
-                  <button class="btn ghost connection-card-compact-btn" @click="editItem(item)">编辑</button>
-                  <button class="btn ghost connection-card-compact-btn" @click="copyLlmConfig(item)">{{ copiedId === item.config_id ? '已复制' : '复制' }}</button>
-                  <button class="btn warn connection-card-compact-btn" @click="removeItem(item.config_id)">删除</button>
-                </div>
-              </div>
-              <h4>{{ item.name }}</h4>
-            </div>
-
-            <div class="connection-card-body">
-              <div class="key-value"><strong>Config ID</strong><span class="mono">{{ compactId(item.config_id) }}</span></div>
-              <template v-if="item.model.type === 'chat_llm'">
-                <div class="key-value"><strong>Model</strong><span>{{ item.model.llm.model_name }}</span></div>
-                <div class="key-value"><strong>后端格式</strong><span>{{ item.model.llm.api_style }}</span></div>
-                <div v-if="item.model.llm.api_style !== 'candle_gguf' && item.model.llm.api_style !== 'candle_hf'" class="key-value">
-                  <strong>Endpoint</strong><span class="mono">{{ item.model.llm.api_endpoint }}</span>
-                </div>
-                <div class="key-value"><strong>Stream</strong><span>{{ item.model.llm.stream ? "是" : "否" }}</span></div>
-                <div class="key-value"><strong>多模态</strong><span>{{ item.model.llm.supports_multimodal_input ? "是" : "否" }}</span></div>
-                <div class="key-value">
-                  <strong>回灌 Reasoning</strong>
-                  <span>{{ item.model.llm.include_reasoning_content ? "是" : "否" }}</span>
-                </div>
-                <div class="key-value"><strong>思考模式</strong><span>{{ item.model.llm.thinking_type ?? "未配置" }}</span></div>
-                <div class="key-value"><strong>思考强度</strong><span>{{ item.model.llm.reasoning_effort ?? "未配置" }}</span></div>
-                <div class="key-value"><strong>Timeout</strong><span>{{ item.model.llm.timeout_secs }}s</span></div>
-                <div class="key-value"><strong>Retry</strong><span>{{ item.model.llm.retry_count }} 次</span></div>
-              </template>
-              <template v-else>
-                <div class="key-value"><strong>本地模型目录</strong><span>{{ item.model.model_name }}</span></div>
-              </template>
-            </div>
-
-            <div class="connection-card-footer">
-              <span class="muted">更新于 {{ formatTime(item.updated_at) }}</span>
-            </div>
-          </template>
-        </article>
-      </div>
-    </section>
+      </t-form>
+      <template #footer><div class="llm-drawer-footer"><t-button variant="outline" @click="closeDrawer">取消</t-button><t-button theme="primary" @click="submitForm">{{ isCreating ? "创建模型" : "保存修改" }}</t-button></div></template>
+    </t-drawer>
   </section>
 </template>
 
 <script setup lang="ts">
 import { ref } from "vue";
-import type { LlmConfig } from "../../api/client";
-import { useLlm } from "../composables/useLlm";
 
-const {
-  items,
-  form,
-  showCreatePicker,
-  showCreateForm,
-  localEmbeddingModels,
-  isCandleMode,
-  filteredLocalLlmModels,
-  selectedLocalLlmHint,
-  resetForm,
-  startCreate,
-  closeCreatePicker,
-  editItem,
-  submitForm,
-  removeItem,
-  localLlmOptionLabel,
-  compactId,
-  formatTime,
-  copiedId,
-  copyConfig,
-  handleFileChange,
-} = useLlm();
+import type { LlmConfig } from "../../api/client";
+import AdminPageHeader from "../components/AdminPageHeader.vue";
+import { useLlm } from "../composables/useLlm";
+import ConnectionCredentialInput from "./ConnectionCredentialInput.vue";
+
+const { filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, isCandleMode, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, updateEnabled, updatingEnabledIds, localLlmOptionLabel, compactId, formatTime, copiedId, copyConfig, handleFileChange } = useLlm();
 
 const importFileInput = ref<HTMLInputElement | null>(null);
+const columns = [
+  { colKey: "name", title: "配置名称", width: 210 },
+  { colKey: "model_type", title: "模型类型", width: 150 },
+  { colKey: "model", title: "模型", ellipsis: true },
+  { colKey: "endpoint", title: "接口地址", ellipsis: true },
+  { colKey: "updated_at", title: "更新时间", width: 170 },
+  { colKey: "actions", title: "操作", width: 270, fixed: "right" },
+];
 
-function triggerImportFile() {
-  importFileInput.value?.click();
+function triggerImportFile() { importFileInput.value?.click(); }
+function modelTypeLabel(type: string) { return type === "chat_llm" ? "聊天模型" : "本地文本向量模型"; }
+function modelName(item: LlmConfig) { return item.model.type === "chat_llm" ? item.model.llm.model_name : item.model.model_name; }
+function isCandleStyle(apiStyle: string) { return apiStyle === "candle_gguf" || apiStyle === "candle_hf"; }
+function apiStyleLabel(apiStyle: string) {
+  const labels: Record<string, string> = { candle_gguf: "Candle GGUF", candle_hf: "Candle HF", open_ai_chat_completions: "OpenAI Chat Completions", open_ai_chat_completions_tencent_multimodal_compat: "腾讯多模态兼容", open_ai_responses: "OpenAI Responses", open_ai_responses_message_compat: "Responses message 兼容", open_ai_responses_image_url_object_compat: "Responses image_url 兼容" };
+  return labels[apiStyle] ?? apiStyle;
 }
-
-function copyLlmConfig(item: LlmConfig) {
-  const payload = {
-    name: item.name,
-    enabled: item.enabled,
-    model: item.model,
-  };
-  copyConfig(payload, item.config_id);
-}
+function copyLlmConfig(item: LlmConfig) { copyConfig({ name: item.name, enabled: item.enabled, model: item.model }, item.config_id); }
 </script>
 
 <style scoped lang="scss">
-@use "../styles/connections" as *;
+@use "../styles/llm" as *;
 </style>

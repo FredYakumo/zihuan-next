@@ -1,4 +1,4 @@
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 
 import {
   ApiError,
@@ -28,6 +28,11 @@ type ConnectionTypeOption = {
   hint: string;
 };
 
+type ConnectionFilters = {
+  keyword: string;
+  type: ConnectionFormState["type"] | "all";
+  enabled: "all" | "enabled" | "disabled";
+};
 
 export function useConnections() {
   const connectionTypes: ConnectionTypeOption[] = [
@@ -46,8 +51,34 @@ export function useConnections() {
   const runtimeInstances = ref<RuntimeConnectionInstanceSummary[]>([]);
   const tokenizerModels = ref<string[]>([]);
   const form = reactive<ConnectionFormState>(defaultConnectionForm());
-  const showEditor = ref(false);
-  const showCreatePicker = ref(false);
+  const drawerVisible = ref(false);
+  const filters = reactive<ConnectionFilters>({
+    keyword: "",
+    type: "all",
+    enabled: "all",
+  });
+  const isCreating = computed(() => form.id === null);
+  const filteredConnections = computed(() => {
+    const keyword = filters.keyword.trim().toLowerCase();
+    return connections.value.filter((connection) => {
+      if (filters.type !== "all" && connection.kind.type !== filters.type) {
+        return false;
+      }
+      if (filters.enabled === "enabled" && !connection.enabled) {
+        return false;
+      }
+      if (filters.enabled === "disabled" && connection.enabled) {
+        return false;
+      }
+      if (!keyword) {
+        return true;
+      }
+      return [connection.name, connection.config_id, connection.kind.type]
+        .join(" ")
+        .toLowerCase()
+        .includes(keyword);
+    });
+  });
 
   const { copiedId, copyConfig, handleFileChange } = useAdminClipboard<ConnectionConfig>({
     validate: assertConnectionConfig,
@@ -55,10 +86,9 @@ export function useConnections() {
       Object.assign(form, connectionFormFromConfig(config));
       form.id = null;
       form.name = `${form.name} 副本`;
-      showCreatePicker.value = true;
-      showEditor.value = true;
+      drawerVisible.value = true;
     },
-    isEnabled: () => !showCreatePicker.value && !showEditor.value,
+    isEnabled: () => !drawerVisible.value,
   });
 
   function resetForm() {
@@ -66,33 +96,13 @@ export function useConnections() {
   }
 
   function startCreate() {
-    if (form.id) {
-      resetForm();
-      showEditor.value = false;
-    } else if (showEditor.value) {
-      showEditor.value = false;
-      return;
-    }
-    showCreatePicker.value = true;
+    resetForm();
+    drawerVisible.value = true;
   }
 
-  function closeCreatePicker() {
+  function closeDrawer() {
     resetForm();
-    showEditor.value = false;
-    showCreatePicker.value = false;
-  }
-
-  function pickCreateType(type: ConnectionFormState["type"]) {
-    resetForm();
-    form.type = type;
-    showCreatePicker.value = true;
-    showEditor.value = true;
-  }
-
-  function closeEditor() {
-    resetForm();
-    showEditor.value = false;
-    showCreatePicker.value = false;
+    drawerVisible.value = false;
   }
 
   async function load() {
@@ -108,15 +118,14 @@ export function useConnections() {
 
   function editConnection(connection: ConnectionConfig) {
     Object.assign(form, connectionFormFromConfig(connection));
-    showEditor.value = false;
+    drawerVisible.value = true;
   }
 
   function duplicateConnection(connection: ConnectionConfig) {
     Object.assign(form, connectionFormFromConfig(connection));
     form.id = null;
     form.name = `${form.name} 副本`;
-    showCreatePicker.value = true;
-    showEditor.value = true;
+    drawerVisible.value = true;
   }
 
   function clearInactiveConnectionCredentials(type: "weaviate" | "elasticsearch") {
@@ -216,7 +225,7 @@ export function useConnections() {
       if (result.collection_created) {
         alert(`已自动创建 Weaviate collection: ${form.weaviate_class_name.trim()}`);
       }
-      closeEditor();
+      closeDrawer();
       await load();
     } catch (error) {
       console.error("连接保存失败", error);
@@ -282,12 +291,9 @@ export function useConnections() {
   }
 
   async function removeConnection(id: string) {
-    if (!window.confirm("确认删除这个连接配置吗？")) {
-      return;
-    }
     await system.connections.delete(id);
     if (form.id === id) {
-      closeEditor();
+      closeDrawer();
     }
     await load();
   }
@@ -353,6 +359,18 @@ export function useConnections() {
     }
   }
 
+  function connectionSummary(connection: ConnectionConfig): string {
+    return summarizeConnection(connection)
+      .filter((item) => item.label !== "Config ID" && item.label !== "实例")
+      .slice(0, 2)
+      .map((item) => `${item.label}: ${item.value}`)
+      .join(" · ");
+  }
+
+  function runtimeInstanceCount(configId: string): number {
+    return runtimeInstances.value.filter((item) => item.config_id === configId).length;
+  }
+
   function formatWeaviateSchema(schema: string): string {
     if (schema === "image_semantic") return "图片语义";
     if (schema === "agent_memory") return "Agent 记忆";
@@ -392,22 +410,24 @@ export function useConnections() {
 
   return {
     connections,
+    filteredConnections,
     runtimeInstances,
     tokenizerModels,
     form,
-    showEditor,
-    showCreatePicker,
+    drawerVisible,
+    isCreating,
+    filters,
     connectionTypes,
     startCreate,
-    closeCreatePicker,
-    pickCreateType,
-    closeEditor,
+    closeDrawer,
     load,
     editConnection,
     duplicateConnection,
     submitForm,
     removeConnection,
     summarizeConnection,
+    connectionSummary,
+    runtimeInstanceCount,
     clearInactiveConnectionCredentials,
     formatTime,
     isBotAdapterConnectionType,
