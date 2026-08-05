@@ -1,0 +1,110 @@
+name: CI
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - dev
+      - master
+  pull_request:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows-x86_64-cpu
+            runner: windows-2022
+            artifact_name: Windows-x86_64-cpu
+            binary_extension: .exe
+            build_command: cargo build --release
+          - name: Linux-x86_64-cpu
+            runner: ubuntu-22.04
+            artifact_name: Linux-x86_64-cpu
+            binary_extension: ''
+            build_command: cargo build --release
+          - name: macOS-Apple-cpu
+            runner: macos-14
+            artifact_name: macOS-Apple-cpu
+            binary_extension: ''
+            build_command: cargo build --release
+          - name: Windows-x86_64-candle-cuda-12.6
+            runner: windows-2022
+            artifact_name: Windows-x86_64-candle-cuda-12.6
+            binary_extension: .exe
+            cuda: true
+            windows_cuda: true
+          - name: Linux-x86_64-candle-cuda-12.6
+            runner: ubuntu-22.04
+            artifact_name: Linux-x86_64-candle-cuda-12.6
+            binary_extension: ''
+            cuda: true
+            build_command: cargo build --release --features candle-cuda
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: webui/pnpm-lock.yaml
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        working-directory: webui
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up MSVC environment
+        if: matrix.windows_cuda
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up CUDA Toolkit 12.6
+        if: matrix.cuda
+        uses: Jimver/cuda-toolkit@v0.2.22
+        with:
+          cuda: 12.6.0
+
+      - name: Build CUDA binary on Windows
+        if: matrix.windows_cuda
+        shell: pwsh
+        run: .\scripts\cargo-cuda.ps1 -Release
+
+      - name: Build binary
+        if: "!matrix.windows_cuda"
+        run: ${{ matrix.build_command }}
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: target/release/zihuan_next${{ matrix.binary_extension }}
+          if-no-files-found: error
