@@ -8,6 +8,8 @@ on:
     branches:
       - dev
       - master
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - master
@@ -113,3 +115,37 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: target/release/zihuan_next${{ matrix.binary_extension }}
           if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir release
+          cp artifacts/Windows-x86_64-cpu/zihuan_next.exe \
+            release/zihuan_next-Windows-x86_64-cpu.exe
+          cp artifacts/Linux-x86_64-cpu/zihuan_next \
+            release/zihuan_next-Linux-x86_64-cpu
+          cp artifacts/macOS-Apple-cpu/zihuan_next \
+            release/zihuan_next-macOS-Apple-cpu
+          cp artifacts/Windows-x86_64-candle-cuda-12.6/zihuan_next.exe \
+            release/zihuan_next-Windows-x86_64-candle-cuda-12.6.exe
+          cp artifacts/Linux-x86_64-candle-cuda-12.6/zihuan_next \
+            release/zihuan_next-Linux-x86_64-candle-cuda-12.6
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release/*
