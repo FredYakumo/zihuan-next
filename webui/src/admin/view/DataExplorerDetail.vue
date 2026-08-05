@@ -1,13 +1,19 @@
 <template>
   <section class="page data-explorer-detail-page">
     <AdminPageHeader :title="pageTitle">
-      <t-button variant="outline" @click="returnToList">返回 Service 列表</t-button>
+      <!-- <t-button variant="outline" @click="returnToList">返回 Service 列表</t-button> -->
     </AdminPageHeader>
 
     <t-card v-if="loadingService" bordered><div class="empty-state">加载 Service 中…</div></t-card>
     <t-card v-else-if="unavailable" bordered><div class="empty-state">该 Service 不存在，或未配置此数据检索能力。</div></t-card>
-    <t-card v-else-if="service" :title="service.name" bordered header-bordered>
-      <template #actions><t-tag variant="light">{{ serviceTypeLabel(service.agent_type.type) }}</t-tag></template>
+    <t-card v-else-if="service" bordered header-bordered>
+      <template #title>
+        <div class="service-card-title">
+          <t-button variant="outline" @click="returnToList">返回 Service 列表</t-button>
+          <span class="service-name">{{ service.name }}</span>
+          <t-tag variant="light">{{ serviceTypeLabel(service.agent_type.type) }}</t-tag>
+        </div>
+      </template>
 
       <template v-if="capability === 'messages'">
         <t-form class="search-form" layout="inline" @submit.prevent="searchMessages">
@@ -72,6 +78,8 @@ function onImageError(event: Event) { (event.target as HTMLImageElement).style.d
 
 <style scoped lang="scss">
 .data-explorer-detail-page { display: grid; gap: 16px; }
+.service-card-title { display: flex; align-items: center; gap: 12px; }
+.service-name { font-size: 20px; }
 .search-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 16px; }
 .search-form :deep(.t-form__item) { margin-bottom: 0; }
 .message-filter-row, .message-content-row { display: flex; width: 100%; flex-wrap: wrap; gap: 12px; }
