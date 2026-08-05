@@ -278,6 +278,25 @@ pub async fn get_task_logs(req: &mut Request, res: &mut Response, depot: &mut De
 }
 
 #[handler]
+pub async fn get_task_trace(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let task_id = req.param::<String>("task_id").unwrap_or_default();
+    let tasks = state.tasks.lock().unwrap();
+    if tasks.get(&task_id).is_none() {
+        res.status_code(StatusCode::NOT_FOUND);
+        res.render(Json(serde_json::json!({"error": "Task not found"})));
+        return;
+    }
+    match tasks.read_task_trace(&task_id) {
+        Ok(events) => res.render(Json(serde_json::json!({"events": events}))),
+        Err(err) => {
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            res.render(Json(serde_json::json!({"error": err.to_string()})));
+        }
+    }
+}
+
+#[handler]
 pub async fn clear_non_running_tasks(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
     let cleared = state.tasks.lock().unwrap().clear_non_running();

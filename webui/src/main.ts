@@ -12,6 +12,7 @@ import Llm from "./admin/view/Llm.vue";
 import AgentService from "./admin/view/AgentService.vue";
 import Graphs from "./admin/view/Graphs.vue";
 import Tasks from "./admin/view/Tasks.vue";
+import TaskExecution from "./admin/view/TaskExecution.vue";
 import Logs from "./admin/view/Logs.vue";
 import Commands from "./admin/view/Commands.vue";
 import Chat from "./admin/view/Chat.vue";
@@ -47,6 +48,7 @@ async function main() {
       { path: "/services", component: AgentService },
       { path: "/graphs", component: Graphs },
       { path: "/tasks", component: Tasks },
+      { path: "/tasks/:taskId", component: TaskExecution },
       { path: "/logs", component: Logs },
       { path: "/commands", component: Commands },
       { path: "/chat", component: Chat, props: (route) => ({ agentId: route.query.agent_id, sessionId: route.query.session_id }) },

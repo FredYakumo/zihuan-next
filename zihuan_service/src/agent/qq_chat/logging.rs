@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use chrono::{DateTime, Local};
@@ -12,6 +13,7 @@ use ims_bot_adapter::models::message::Message;
 use zihuan_agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{LLMMessage, TokenUsage};
+use zihuan_core::task_context::{current_task_id, current_task_runtime, TaskTraceEvent};
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
@@ -66,6 +68,7 @@ struct QqChatTaskTraceInner {
 #[derive(Clone)]
 pub(crate) struct QqChatTaskTrace {
     inner: Arc<Mutex<QqChatTaskTraceInner>>,
+    next_trace_seq: Arc<AtomicU64>,
 }
 
 impl QqChatTaskTrace {
@@ -96,10 +99,31 @@ impl QqChatTaskTrace {
                 reply_suppress_send: None,
                 reply_sent: None,
             })),
+            next_trace_seq: Arc::new(AtomicU64::new(0)),
         }
     }
 
+    fn emit_trace(&self, event_type: &str, status: &str, payload: Value) {
+        let Some(task_id) = current_task_id() else { return; };
+        let Some(runtime) = current_task_runtime() else { return; };
+        let seq = self.next_trace_seq.fetch_add(1, Ordering::Relaxed) + 1;
+        runtime.append_task_trace(&task_id, TaskTraceEvent {
+            task_id: task_id.clone(),
+            seq,
+            timestamp: Local::now().to_rfc3339(),
+            event_type: event_type.to_string(),
+            node_id: format!("trace-{seq}"),
+            parent_node_id: (seq > 1).then(|| format!("trace-{}", seq - 1)),
+            status: status.to_string(),
+            payload,
+        });
+    }
+
     pub(crate) fn log_user_message(&self, raw_user_message: &str, current_message: &str) {
+        self.emit_trace("user_message", "success", serde_json::json!({
+            "raw_user_message": raw_user_message,
+            "inference_message": current_message,
+        }));
         let details = if raw_user_message.trim() == current_message.trim() {
             format!("用户消息: {}", truncate_for_log(current_message, LOG_TEXT_PREVIEW_CHARS))
         } else {
@@ -203,6 +227,10 @@ impl QqChatTaskTrace {
     }
 
     pub(crate) fn log_llm_conversation(&self, conversation: &[LLMMessage], prompt_tokens_estimated: usize) {
+        self.emit_trace("llm_request", "running", serde_json::json!({
+            "messages": conversation,
+            "prompt_tokens_estimated": prompt_tokens_estimated,
+        }));
         let payload = serde_json::to_string(conversation).unwrap_or_else(|err| format!("<serialize failed: {err}>"));
         self.log_key_event(
             "发送给大模型的消息列表",
@@ -219,6 +247,11 @@ impl QqChatTaskTrace {
     }
 
     pub(crate) fn record_tool_request(&self, iteration: usize, content: &str, tool_calls: &[ToolCalls]) {
+        self.emit_trace("tool_calls_requested", "success", serde_json::json!({
+            "iteration": iteration,
+            "assistant_content": content,
+            "tool_calls": tool_calls,
+        }));
         let details = format!(
             "iteration={} assistant_content={} tool_calls={}",
             iteration,
@@ -236,7 +269,10 @@ impl QqChatTaskTrace {
         self.log_key_event("模型请求工具", duration_ms, details);
     }
 
-    pub(crate) fn record_tool_start(&self, name: &str, arguments: &Value) {
+    pub(crate) fn record_tool_start(&self, name: &str, call_id: &str, arguments: &Value) {
+        self.emit_trace("tool", "running", serde_json::json!({
+            "name": name, "call_id": call_id, "arguments": arguments,
+        }));
         self.log_key_event(
             &format!("工具调用 {name}"),
             0,
@@ -252,7 +288,10 @@ impl QqChatTaskTrace {
         *inner.tool_call_counts.entry(name.to_string()).or_insert(0) += 1;
     }
 
-    pub(crate) fn record_tool_finish(&self, name: &str, result: &str) {
+    pub(crate) fn record_tool_finish(&self, name: &str, call_id: &str, result: &str) {
+        self.emit_trace("tool", "success", serde_json::json!({
+            "name": name, "call_id": call_id, "result": result,
+        }));
         let finished_at = TracePoint::now();
         let duration_ms = {
             let mut inner = self.inner.lock().unwrap();
@@ -276,6 +315,9 @@ impl QqChatTaskTrace {
     }
 
     pub(crate) fn record_llm_final_result(&self, stop_reason: &BrainStopReason, brain_output: &[LLMMessage]) {
+        self.emit_trace("llm_response", "success", serde_json::json!({
+            "stop_reason": format!("{stop_reason:?}"), "messages": brain_output,
+        }));
         let now = TracePoint::now();
         let duration_ms = self
             .inner
@@ -380,6 +422,9 @@ impl QqChatTaskTrace {
     }
 
     pub(crate) fn record_reply_send(&self, suppress_send: bool, reply_sent: bool, batches: &[Vec<Message>]) {
+        self.emit_trace("reply_send", if reply_sent { "success" } else { "failed" }, serde_json::json!({
+            "suppress_send": suppress_send, "reply_sent": reply_sent, "batches": batches,
+        }));
         let now = TracePoint::now();
         let duration_ms = self
             .inner
@@ -579,12 +624,12 @@ impl BrainObserver for QqChatBrainObserver {
         self.trace.record_tool_request(iteration, content, tool_calls);
     }
 
-    fn on_tool_start(&self, name: &str, _call_id: &str, arguments: &Value) {
-        self.trace.record_tool_start(name, arguments);
+    fn on_tool_start(&self, name: &str, call_id: &str, arguments: &Value) {
+        self.trace.record_tool_start(name, call_id, arguments);
     }
 
-    fn on_tool_finish(&self, name: &str, _call_id: &str, result: &str) {
-        self.trace.record_tool_finish(name, result);
+    fn on_tool_finish(&self, name: &str, call_id: &str, result: &str) {
+        self.trace.record_tool_finish(name, call_id, result);
     }
 }
 

@@ -26,6 +26,9 @@ pub enum ServerMessage {
     TaskStopped {
         task_id: String,
     },
+    TaskTraceEvent {
+        event: zihuan_core::task_context::TaskTraceEvent,
+    },
     LogMessage {
         level: String,
         message: String,

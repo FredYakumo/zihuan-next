@@ -18,7 +18,7 @@ use storage_handler::{
 };
 use uuid::Uuid;
 use zihuan_core::task_context::{
-    AgentTaskHandle, AgentTaskInfo, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
+    AgentTaskHandle, AgentTaskInfo, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus, TaskTraceEvent,
 };
 
 use log::{info, warn};
@@ -324,6 +324,13 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
             info.progress.push(message.clone());
         }
         self.state.tasks.lock().unwrap().append_task_progress(task_id, message);
+    }
+
+    fn append_task_trace(&self, task_id: &str, event: TaskTraceEvent) {
+        if let Err(err) = self.state.tasks.lock().unwrap().append_task_trace(task_id, &event) {
+            warn!("Failed to append task trace for '{}': {}", task_id, err);
+        }
+        let _ = self.broadcast_tx.send(ServerMessage::TaskTraceEvent { event });
     }
 
     fn cancel_task(&self, task_id: &str) -> bool {
