@@ -1,5 +1,7 @@
 # zihuan-next
 
+[![Latest release](https://img.shields.io/github/v/release/FredYakumo/zihuan-next?label=release)](https://github.com/FredYakumo/zihuan-next/releases/latest)
+
 `zihuan-next` is a multi-tier AI agent development and runtime framework built in Rust. It unifies local inference (Candle, Llama.cpp) and cloud model APIs (OpenAI, Anthropic) under a single abstraction, then layers on a **Brain** tool-calling agent runtime, a **visual node-graph engine** for workflow orchestration, and **IMS-native adapters** for real-world bot deployment.
 
 The framework is built around two ideas:
@@ -13,7 +15,25 @@ The graph stays focused on data flow. Long-lived behavior such as chat agents, H
 
 ## Quick Start
 
-### Requirements
+### Use a prebuilt release (recommended)
+
+Download the executable for your platform from the [latest release](https://github.com/FredYakumo/zihuan-next/releases/latest):
+
+- Use the `cpu` artifact for standard Windows, Linux, or Apple Silicon macOS deployments.
+- Use the `candle-cuda-12.6` artifact only when you need NVIDIA CUDA acceleration and have CUDA 12.6 installed.
+
+On Linux and macOS, mark the downloaded executable as runnable before starting it:
+
+```bash
+chmod +x ./zihuan_next-Linux-x86_64-cpu
+./zihuan_next-Linux-x86_64-cpu
+```
+
+On Windows, run the downloaded `.exe` directly.
+
+### Build from source
+
+Requirements:
 
 - Rust stable
 - Node.js 18+
@@ -25,8 +45,6 @@ Optional services, depending on your setup:
 - Redis
 - Weaviate
 - RustFS
-
-### Build
 
 ```bash
 git clone https://github.com/FredYakumo/zihuan-next.git
@@ -42,12 +60,14 @@ cargo build --release
 
 The main binary embeds the frontend bundle from `webui/dist/`.
 
-### Run
+### Run with services
 
 ```bash
 docker compose -f docker/docker-compose.yaml up -d
-./target/release/zihuan_next
+./zihuan_next-Linux-x86_64-cpu
 ```
+
+For a source build, run `./target/release/zihuan_next` instead.
 
 Default address:
 
@@ -58,7 +78,7 @@ http://127.0.0.1:9951
 Custom bind:
 
 ```bash
-./target/release/zihuan_next --host 0.0.0.0 --port 9000
+./zihuan_next-Linux-x86_64-cpu --host 0.0.0.0 --port 9000
 ```
 
 ## Highlights
