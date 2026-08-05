@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 use zihuan_core::data_refs::RelationalDbConnection;
-use zihuan_core::task_context::TaskTraceEvent;
 use zihuan_graph_engine::graph_io::NodeGraphDefinition;
 
 use zihuan_service::AgentManager;
@@ -89,8 +88,6 @@ pub struct TaskEntry {
     pub error_message: Option<String>,
     pub result_summary: Option<String>,
     pub log_path: Option<String>,
-    #[serde(default)]
-    pub trace_path: Option<String>,
     pub can_rerun: bool,
     #[serde(default)]
     pub task_db_connection_id: Option<String>,
@@ -195,7 +192,6 @@ impl TaskManager {
     ) -> String {
         let id = Uuid::new_v4().to_string();
         let log_path = Self::task_log_path(&id).ok();
-        let trace_path = Self::task_trace_path(&id).ok();
         let task_db_connection_id_for_insert = task_db_connection_id.clone();
         let entry = TaskEntry {
             id: id.clone(),
@@ -215,7 +211,6 @@ impl TaskManager {
             error_message: None,
             result_summary: None,
             log_path,
-            trace_path,
             task_db_connection_id,
             stop_flag,
         };
@@ -345,9 +340,7 @@ impl TaskManager {
             .tasks
             .iter()
             .filter(|task| !task.is_running)
-            .flat_map(|task| [task.log_path.as_ref(), task.trace_path.as_ref()])
-            .flatten()
-            .map(PathBuf::from)
+            .filter_map(|task| task.log_path.as_ref().map(PathBuf::from))
             .collect();
         self.tasks.retain(|task| task.is_running);
 
@@ -368,9 +361,6 @@ impl TaskManager {
             flag.store(true, std::sync::atomic::Ordering::Relaxed);
         }
         if let Some(path) = task.log_path {
-            let _ = fs::remove_file(path);
-        }
-        if let Some(path) = task.trace_path {
             let _ = fs::remove_file(path);
         }
         self.persist_index();
@@ -432,27 +422,6 @@ impl TaskManager {
         Ok(entries)
     }
 
-    pub fn append_task_trace(&self, task_id: &str, event: &TaskTraceEvent) -> std::io::Result<()> {
-        let Some(task) = self.get(task_id) else { return Ok(()); };
-        let Some(path) = task.trace_path.as_ref() else { return Ok(()); };
-        if let Some(parent) = Path::new(path).parent() { fs::create_dir_all(parent)?; }
-        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-        serde_json::to_writer(&mut file, event)?;
-        file.write_all(b"\n")?;
-        file.flush()
-    }
-
-    pub fn read_task_trace(&self, task_id: &str) -> std::io::Result<Vec<TaskTraceEvent>> {
-        let Some(task) = self.get(task_id) else { return Ok(Vec::new()); };
-        let Some(path) = task.trace_path.as_ref() else { return Ok(Vec::new()); };
-        let file = match OpenOptions::new().read(true).open(path) {
-            Ok(file) => file,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(err) => return Err(err),
-        };
-        Ok(BufReader::new(file).lines().filter_map(Result::ok).filter_map(|line| serde_json::from_str(&line).ok()).collect())
-    }
-
     /// Append a progress step message for a task. If the task has a DB connection configured,
     /// writes to the database; otherwise the message is silently dropped (in-memory tracking
     /// is handled by the agent runtime).
@@ -483,12 +452,6 @@ impl TaskManager {
         let dir = Path::new("logs").join("tasks");
         fs::create_dir_all(&dir)?;
         Ok(dir.join(format!("{task_id}.jsonl")).to_string_lossy().to_string())
-    }
-
-    fn task_trace_path(task_id: &str) -> std::io::Result<String> {
-        let dir = Path::new("logs").join("tasks");
-        fs::create_dir_all(&dir)?;
-        Ok(dir.join(format!("{task_id}.trace.jsonl")).to_string_lossy().to_string())
     }
 
     fn task_index_path() -> PathBuf {
@@ -526,7 +489,6 @@ impl TaskManager {
                 }
                 if task.log_path.is_none() {
                     task.log_path = Self::task_log_path(&task.id).ok();
-                    task.trace_path = Self::task_trace_path(&task.id).ok();
                 }
             }
             self.tasks = tasks;

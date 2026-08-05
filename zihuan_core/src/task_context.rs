@@ -2,8 +2,7 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Local};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::Serialize;
 
 thread_local! {
     static CURRENT_TASK_ID: RefCell<Option<String>> = const { RefCell::new(None) };
@@ -46,18 +45,6 @@ pub fn append_current_task_progress(message: String) -> bool {
     };
     runtime.append_task_progress(&task_id, message);
     true
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskTraceEvent {
-    pub task_id: String,
-    pub seq: u64,
-    pub timestamp: String,
-    pub event_type: String,
-    pub node_id: String,
-    pub parent_node_id: Option<String>,
-    pub status: String,
-    pub payload: Value,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -157,10 +144,6 @@ pub trait AgentTaskRuntime: Send + Sync {
 
     /// Append a progress message to a running task.
     fn append_task_progress(&self, task_id: &str, message: String);
-
-    /// Persist and publish a structured execution-trace event. Runtimes that do
-    /// not expose task tracing can keep the default no-op implementation.
-    fn append_task_trace(&self, _task_id: &str, _event: TaskTraceEvent) {}
 
     /// Request cancellation of a running task. Returns `true` if the task
     /// was found and a stop signal was set, `false` if the task does not

@@ -48,7 +48,7 @@
               停止
             </t-button>
             <t-button variant="text" size="small" :disabled="!row.can_rerun" @click="rerunTask(row.id)">重跑</t-button>
-            <t-button variant="text" size="small" :disabled="row.task_type !== 'agent_service'" @click="router.push(`/tasks/${row.id}`)">执行过程</t-button>
+            <t-button variant="text" size="small" @click="openLogViewer(row)">查看日志</t-button>
             <t-button variant="text" theme="danger" size="small" @click="deleteSingleTask(row)">删除</t-button>
           </template>
         </t-table>
@@ -120,7 +120,6 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { useRouter } from "vue-router";
 import { ChevronLeftIcon, ChevronRightIcon } from "tdesign-icons-vue-next";
 import type { PrimaryTableCol } from "tdesign-vue-next";
 
@@ -160,7 +159,6 @@ const {
 } = useTasks();
 
 const selectedRowKeys = computed(() => [...selectedTaskIds.value]);
-const router = useRouter();
 
 function onSelectChange(keys: Array<string | number>) {
   selectedTaskIds.value = new Set(keys as string[]);
@@ -179,7 +177,7 @@ const columns: PrimaryTableCol<TaskEntry>[] = [
   { colKey: "file_path", title: "来源" },
   { colKey: "summary", title: "摘要" },
   { colKey: "status", title: "状态" },
-  { colKey: "actions", title: "操作", width: 250 },
+  { colKey: "actions", title: "操作", width: 220 },
 ];
 </script>
 

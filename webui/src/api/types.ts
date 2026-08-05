@@ -184,17 +184,6 @@ export interface TaskLogEntry {
   message: string;
 }
 
-export interface TaskTraceEvent {
-  task_id: string;
-  seq: number;
-  timestamp: string;
-  event_type: string;
-  node_id: string;
-  parent_node_id: string | null;
-  status: string;
-  payload: unknown;
-}
-
 // WebSocket message types
 import type { QQMessageItem } from "../ui/dialogs/types";
 
@@ -202,7 +191,6 @@ export type ServerMessage =
   | { type: "TaskStarted"; task_id: string; graph_name: string; graph_session_id: string }
   | { type: "TaskFinished"; task_id: string; success: boolean; error?: string }
   | { type: "TaskStopped"; task_id: string }
-  | { type: "TaskTraceEvent"; event: TaskTraceEvent }
   | { type: "LogMessage"; level: string; message: string; timestamp: string }
   | { type: "GraphValidationResult"; graph_id: string; issues: ValidationIssue[] }
   | {

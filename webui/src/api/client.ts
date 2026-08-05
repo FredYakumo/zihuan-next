@@ -9,14 +9,13 @@ import type {
   ValidationResult,
   TaskEntry,
   TaskLogEntry,
-  TaskTraceEvent,
   HyperParameter,
   GraphVariable,
   GraphMetadata,
   DataTypeMetaData,
 } from "./types";
 
-export type { GraphTabInfo, TaskEntry, TaskLogEntry, TaskTraceEvent } from "./types";
+export type { GraphTabInfo, TaskEntry, TaskLogEntry } from "./types";
 
 const BASE = "/api";
 
@@ -250,9 +249,6 @@ export const tasks = {
     if (params?.offset != null) qs.set("offset", String(params.offset));
     const suffix = qs.size > 0 ? `?${qs.toString()}` : "";
     return request("GET", `/tasks/${taskId}/logs${suffix}`);
-  },
-  trace(taskId: string): Promise<{ events: TaskTraceEvent[] }> {
-    return request("GET", `/tasks/${taskId}/trace`);
   },
   clearFinished(): Promise<{ ok: boolean; cleared: number }> {
     return request("DELETE", "/tasks");
