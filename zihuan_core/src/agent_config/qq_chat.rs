@@ -149,6 +149,25 @@ pub struct QqChatMessageRateLimitUserRule {
     pub limit: QqChatMessageRateLimitRule,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DreamIntervalUnit {
+    #[default]
+    Minutes,
+    Hours,
+    Days,
+}
+
+impl DreamIntervalUnit {
+    pub fn seconds_multiplier(self) -> usize {
+        match self {
+            Self::Minutes => 60,
+            Self::Hours => 60 * 60,
+            Self::Days => 24 * 60 * 60,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QqChatAgentServiceConfig {
     pub ims_bot_adapter_connection_id: String,
@@ -197,6 +216,12 @@ pub struct QqChatAgentServiceConfig {
     pub max_message_length: usize,
     #[serde(default)]
     pub compact_context_length: usize,
+    #[serde(default)]
+    pub dream_enabled: bool,
+    #[serde(default = "default_dream_interval_value")]
+    pub dream_interval_value: usize,
+    #[serde(default)]
+    pub dream_interval_unit: DreamIntervalUnit,
     #[serde(default = "default_max_steer_count")]
     pub max_steer_count: usize,
     #[serde(default = "default_qq_chat_default_tools_enabled")]
@@ -218,6 +243,14 @@ pub struct QqChatAgentServiceConfig {
 }
 
 impl QqChatAgentServiceConfig {
+    pub fn dream_interval_seconds(&self) -> Option<u64> {
+        if !self.dream_enabled || self.dream_interval_value == 0 {
+            return None;
+        }
+        self.dream_interval_value
+            .checked_mul(self.dream_interval_unit.seconds_multiplier())
+            .map(|value| value as u64)
+    }
     pub fn resolved_rdb_id(&self) -> Option<&str> {
         self.rdb_id
             .as_deref()
@@ -314,6 +347,10 @@ impl QqChatAgentServiceConfig {
 
 fn default_max_message_length() -> usize {
     500
+}
+
+fn default_dream_interval_value() -> usize {
+    15
 }
 
 fn default_max_steer_count() -> usize {

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::time::Duration;
 
 use ims_bot_adapter::adapter::SharedBotAdapter;
 use log::{info, warn};
@@ -21,7 +22,7 @@ use super::msg_send::{
     QqChatServiceSendContext,
 };
 use crate::nodes::tool_subgraph::{validate_shared_inputs, validate_tool_definitions, ToolResultMode};
-use crate::storage::qq_chat_history_store::clear_history;
+use crate::storage::qq_chat_history_store::{clear_history, load_history};
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use zihuan_agent::brain::LongTaskNotifier;
@@ -30,7 +31,7 @@ use zihuan_core::command::{CommandChannel, CommandContext, NewConversationReques
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::llm::{LLMMessage, MessagePart};
+use zihuan_core::llm::{LLMMessage, MessagePart, MessageRole};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
 use zihuan_core::utils::string_utils::extract_string_field;
@@ -811,6 +812,71 @@ impl QqChatAgentServiceInner {
 }
 
 impl QqChatAgentService {
+    fn schedule_dream(&self, sender_id: String) {
+        let Some(delay_seconds) = self.config.qq_chat_config.dream_interval_seconds() else {
+            return;
+        };
+        let Some(connection) = self.config.rdb_pool.clone() else {
+            return;
+        };
+        let agent_id = self.config.agent_id.clone();
+        let cache = Arc::clone(&self.config.cache);
+        let llm = Arc::clone(&self.config.llm);
+        let tool_definitions = self.config.tool_definitions.clone();
+        tokio::spawn(async move {
+            if let Err(err) = crate::scheduled_task::cancel_pending_dreams(&connection, &agent_id, &sender_id).await {
+                warn!("[Dream] failed to cancel previous task: {err}");
+                return;
+            }
+            let task = crate::scheduled_task::ScheduledTaskEntry::dream(
+                agent_id.clone(),
+                sender_id.clone(),
+                chrono::Local::now() + chrono::Duration::seconds(delay_seconds as i64),
+            );
+            if let Err(err) = crate::scheduled_task::insert_task(&connection, &task).await {
+                warn!("[Dream] failed to create task: {err}");
+                return;
+            }
+            tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
+            let pending = crate::scheduled_task::list_tasks(&connection, Some(&agent_id), Some("pending"))
+                .await
+                .map(|tasks| tasks.into_iter().any(|entry| entry.id == task.id))
+                .unwrap_or(false);
+            if !pending {
+                return;
+            }
+            let history = load_history(&cache, &sender_id);
+            let transcript = history
+                .iter()
+                .filter_map(|message| match message.role {
+                    MessageRole::User | MessageRole::Assistant => message.content_text_owned().map(|text| (message.role.clone(), text)),
+                    _ => None,
+                })
+                .map(|(role, text)| format!("{}: {text}", if role == MessageRole::User { "用户" } else { "Bot" }))
+                .collect::<Vec<_>>();
+            let chars = transcript.iter().map(|text| text.chars().count() as i64).sum();
+            let previous = crate::scheduled_task::latest_dream_memory(&connection, &agent_id, &sender_id)
+                .await
+                .unwrap_or(None)
+                .unwrap_or_default();
+            match zihuan_agent::dream_agent::run_dream_agent(
+                llm,
+                &previous,
+                &transcript.join("\n"),
+                tool_definitions,
+            ) {
+                Ok(content) => match crate::scheduled_task::insert_dream_memory(&connection, &agent_id, &sender_id, chars, &content).await {
+                    Ok(()) => {
+                        if let Err(err) = clear_history(&cache, &sender_id) { warn!("[Dream] memory saved but history clear failed: {err}"); }
+                        let _ = crate::scheduled_task::finish_task(&connection, &task.id, crate::scheduled_task::ScheduledTaskStatus::Succeeded, Some("Dream 记忆已生成")).await;
+                    }
+                    Err(err) => { let _ = crate::scheduled_task::finish_task(&connection, &task.id, crate::scheduled_task::ScheduledTaskStatus::Failed, Some(&err.to_string())).await; }
+                },
+                Err(err) => { let _ = crate::scheduled_task::finish_task(&connection, &task.id, crate::scheduled_task::ScheduledTaskStatus::Failed, Some(&err.to_string())).await; }
+            }
+        });
+    }
+
     pub fn new(config: QqChatAgentServiceRuntimeConfig) -> Result<Self> {
         let mut inner = QqChatAgentServiceInner::new(config.node_id.clone());
         inner.set_default_tools_enabled(config.default_tools_enabled.clone());
@@ -829,6 +895,7 @@ impl QqChatAgentService {
         adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
         time: &str,
     ) -> Result<()> {
+        self.schedule_dream(event.sender.user_id.to_string());
         let task_db_connection_id = self.config.qq_chat_config.resolved_rdb_id().map(ToOwned::to_owned);
         let sender_id = event.sender.user_id.to_string();
         let tool_quota = Some(QqChatToolQuotaContext {

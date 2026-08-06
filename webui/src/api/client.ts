@@ -9,6 +9,7 @@ import type {
   ValidationResult,
   TaskEntry,
   TaskLogEntry,
+  ScheduledTaskEntry,
   HyperParameter,
   GraphVariable,
   GraphMetadata,
@@ -261,6 +262,17 @@ export const tasks = {
   },
   deleteBatch(taskIds: string[]): Promise<{ ok: boolean; deleted: number }> {
     return request("POST", "/tasks/delete-batch", { task_ids: taskIds });
+  },
+};
+
+export const scheduledTasks = {
+  list(serviceId: string, status?: string): Promise<ScheduledTaskEntry[]> {
+    const query = new URLSearchParams({ service_id: serviceId });
+    if (status) query.set("status", status);
+    return request("GET", `/scheduled-tasks?${query.toString()}`);
+  },
+  cancel(serviceId: string, taskId: string): Promise<{ ok: boolean }> {
+    return request("POST", `/scheduled-tasks/${encodeURIComponent(taskId)}/cancel?service_id=${encodeURIComponent(serviceId)}`, {});
   },
 };
 

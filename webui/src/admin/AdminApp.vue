@@ -38,6 +38,10 @@
           <template #icon><TaskIcon /></template>
           任务管理器
         </t-menu-item>
+        <t-menu-item value="/scheduled-tasks" to="/scheduled-tasks" @click="closeSidebar">
+          <template #icon><TaskIcon /></template>
+          计划任务
+        </t-menu-item>
         <t-menu-item value="/logs" to="/logs" @click="closeSidebar">
           <template #icon><ArticleIcon /></template>
           日志
