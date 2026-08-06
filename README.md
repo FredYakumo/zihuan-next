@@ -1,6 +1,11 @@
 # zihuan-next
 
+[![Rust](https://img.shields.io/badge/built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/FredYakumo/zihuan-next/blob/master/LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/FredYakumo/zihuan-next?label=release)](https://github.com/FredYakumo/zihuan-next/releases/latest)
+[![GitHub stars](https://img.shields.io/github/stars/FredYakumo/zihuan-next)](https://github.com/FredYakumo/zihuan-next/stargazers)
+[![Downloads](https://img.shields.io/github/downloads/FredYakumo/zihuan-next/total)](https://github.com/FredYakumo/zihuan-next/releases)
+
 
 `zihuan-next` is a multi-tier AI agent development and runtime framework built in Rust. It unifies local inference (Candle, Llama.cpp) and cloud model APIs (OpenAI, Anthropic) under a single abstraction, then layers on a **Brain** tool-calling agent runtime, a **visual node-graph engine** for workflow orchestration, and **IMS-native adapters** for real-world bot deployment.
 
