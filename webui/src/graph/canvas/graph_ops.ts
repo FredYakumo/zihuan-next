@@ -3,6 +3,7 @@ import { graphs } from "../../api/client";
 import { logger } from "../../api/logger";
 import type { EdgeDefinition, NodeDefinition, NodeGraphDefinition } from "../../api/types";
 import { getBoundaryNodeColors, getDisabledNodeColors, getLiteGraphColors, getPortColor } from "../../ui/theme";
+import { openOverlay } from "../../ui/dialogs/index";
 import { setupNodeWidgets } from "../widgets";
 import type { BrainToolDefinition, EmbeddedFunctionConfig } from "../../ui/dialogs/types";
 import type { CanvasFacade } from "./types";
@@ -378,6 +379,12 @@ export class CanvasGraphOps {
         e.stopPropagation();
         return true;
       }
+      if (isOutputDetailHit(node, pos)) {
+        showOutputDetailDialog(node.title, String(node._outputFullText ?? ""), node._executionTime ?? null);
+        e.preventDefault();
+        e.stopPropagation();
+        return true;
+      }
       const btnX = node.size[0] - 12;
       const btnY = -NODE_TITLE_HEIGHT / 2;
       const dx = pos[0] - btnX;
@@ -478,8 +485,10 @@ export class CanvasGraphOps {
     }
     if (nodeDef.output !== null && nodeDef.output !== undefined) {
       node._outputBaseSize = [node.size[0], node.size[1]];
-      node._outputText = formatNodeOutput(nodeDef.output);
+      node._outputFullText = formatNodeOutput(nodeDef.output);
+      node._outputText = formatNodeOutputPreview(node._outputFullText);
       node._executionTime = nodeDef.execution_time ?? null;
+      node._outputNeedsDetail = requiresOutputDetail(nodeDef.output, node._outputFullText);
       node._hideOutput = false;
       node.size[0] = Math.max(node.size[0], OUTPUT_PANEL_WIDTH);
       updateOutputPanelSize(node);
@@ -670,9 +679,13 @@ function formatNodeOutput(output: unknown): string {
       value = String(output);
     }
   }
-  return value.length > OUTPUT_TEXT_MAX_CHARS
-    ? `${value.slice(0, OUTPUT_TEXT_MAX_CHARS)}\n...（输出已截断）`
-    : value;
+  return value;
+}
+
+function formatNodeOutputPreview(text: string): string {
+  return text.length > OUTPUT_TEXT_MAX_CHARS
+    ? `${text.slice(0, OUTPUT_TEXT_MAX_CHARS)}\n...（预览已截断，打开详细查看完整内容）`
+    : text;
 }
 
 function outputLines(node: any, ctx: CanvasRenderingContext2D): string[] {
@@ -707,9 +720,12 @@ function updateOutputPanelSize(node: any): void {
   const ctx = measuredCanvas.getContext("2d");
   if (!ctx) return;
   ctx.font = "12px monospace";
-  const contentHeight = Math.min(OUTPUT_PANEL_MAX_HEIGHT - OUTPUT_PANEL_HEADER_HEIGHT, Math.max(
+  const lines = outputLines(node, ctx);
+  const maxContentHeight = OUTPUT_PANEL_MAX_HEIGHT - OUTPUT_PANEL_HEADER_HEIGHT;
+  node._outputNeedsDetail = Boolean(node._outputNeedsDetail) || lines.length * 16 + 12 > maxContentHeight;
+  const contentHeight = Math.min(maxContentHeight, Math.max(
     OUTPUT_PANEL_MIN_HEIGHT - OUTPUT_PANEL_HEADER_HEIGHT,
-    outputLines(node, ctx).length * 16 + 12,
+    lines.length * 16 + 12,
   ));
   node.size[1] = baseHeight + OUTPUT_PANEL_HEADER_HEIGHT + contentHeight;
 }
@@ -723,6 +739,53 @@ function isOutputToggleHit(node: any, pos: [number, number]): boolean {
     && pos[1] <= baseHeight + OUTPUT_PANEL_HEADER_HEIGHT;
 }
 
+function isOutputDetailHit(node: any, pos: [number, number]): boolean {
+  if (!node._outputBaseSize || node._hideOutput || !node._outputNeedsDetail) return false;
+  const baseHeight = Number(node._outputBaseSize[1]);
+  return pos[0] >= node.size[0] - 82
+    && pos[0] <= node.size[0] - 8
+    && pos[1] >= node.size[1] - 28
+    && pos[1] <= node.size[1] - 6
+    && pos[1] > baseHeight + OUTPUT_PANEL_HEADER_HEIGHT;
+}
+
+function requiresOutputDetail(output: unknown, text: string): boolean {
+  if (text.length > 1_200) return true;
+  if (output === null || typeof output !== "object") return false;
+  return /"(?:image|video|audio|media|attachment|file|url|base64)"\s*:/i.test(text);
+}
+
+function showOutputDetailDialog(title: string, text: string, executionTime: string | null): void {
+  const { overlay, dialog, close } = openOverlay();
+  dialog.style.width = "min(900px, 88vw)";
+  dialog.style.maxWidth = "900px";
+  const heading = document.createElement("h3");
+  heading.textContent = `${title} - 执行输出`;
+  dialog.appendChild(heading);
+  if (executionTime) {
+    const time = document.createElement("div");
+    time.className = "zh-hint";
+    time.textContent = `执行时间 ${executionTime}`;
+    dialog.appendChild(time);
+  }
+  const content = document.createElement("pre");
+  content.style.cssText = "margin:0;max-height:60vh;overflow:auto;white-space:pre-wrap;word-break:break-word;font:12px/1.5 monospace;";
+  content.textContent = text;
+  dialog.appendChild(content);
+  const buttons = document.createElement("div");
+  buttons.className = "zh-buttons";
+  const closeButton = document.createElement("button");
+  closeButton.className = "primary";
+  closeButton.textContent = "关闭";
+  closeButton.addEventListener("click", close);
+  buttons.appendChild(closeButton);
+  dialog.appendChild(buttons);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) close();
+  });
+  setTimeout(() => closeButton.focus(), 0);
+}
+
 function drawNodeOutputPanel(node: any, ctx: CanvasRenderingContext2D): void {
   if (!node._outputBaseSize) return;
   const colors = getLiteGraphColors();
@@ -732,7 +795,7 @@ function drawNodeOutputPanel(node: any, ctx: CanvasRenderingContext2D): void {
   const hidden = !!node._hideOutput;
 
   ctx.save();
-  ctx.fillStyle = colors.widgetBg;
+  ctx.fillStyle = "rgba(90, 111, 132, 0.08)";
   ctx.fillRect(0, baseHeight, width, panelHeight);
   ctx.strokeStyle = colors.widgetOutline;
   ctx.strokeRect(0.5, baseHeight + 0.5, width - 1, panelHeight - 1);
@@ -764,9 +827,23 @@ function drawNodeOutputPanel(node: any, ctx: CanvasRenderingContext2D): void {
     ctx.textBaseline = "top";
     ctx.fillStyle = colors.widgetText;
     const lines = outputLines(node, ctx);
-    const maxLines = Math.floor((panelHeight - OUTPUT_PANEL_HEADER_HEIGHT - 12) / 16);
+    const maxLines = Math.floor((panelHeight - OUTPUT_PANEL_HEADER_HEIGHT - (node._outputNeedsDetail ? 34 : 12)) / 16);
     for (let index = 0; index < Math.min(lines.length, maxLines); index++) {
       ctx.fillText(lines[index], 10, baseHeight + OUTPUT_PANEL_HEADER_HEIGHT + 8 + index * 16);
+    }
+    if (node._outputNeedsDetail) {
+      const buttonX = width - 78;
+      const buttonY = baseHeight + panelHeight - 25;
+      ctx.fillStyle = colors.widgetButtonBg;
+      ctx.fillRect(buttonX, buttonY, 70, 18);
+      ctx.strokeStyle = colors.widgetOutline;
+      ctx.strokeRect(buttonX + 0.5, buttonY + 0.5, 69, 17);
+      ctx.font = "11px sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = colors.widgetButtonText;
+      ctx.textAlign = "center";
+      ctx.fillText("打开详细", buttonX + 35, buttonY + 9);
+      ctx.textAlign = "left";
     }
     ctx.restore();
   }
