@@ -18,8 +18,24 @@ use zihuan_graph_engine::graph_io::{
 use zihuan_graph_engine::{DataType, Port};
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
+// Maximum number of characters retained for a text segment in regular logs.
 const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
+// Maximum number of characters retained for tool arguments and results in logs.
 const LOG_TOOL_PREVIEW_CHARS: usize = 600;
+// Initial x-coordinate for the task graph layout.
+const TASK_GRAPH_ORIGIN_X: f32 = 60.0;
+// Initial y-coordinate for the task graph layout.
+const TASK_GRAPH_ORIGIN_Y: f32 = 60.0;
+// Maximum width of a task graph row before wrapping to the next row.
+const TASK_GRAPH_MAX_ROW_WIDTH: f32 = 1_440.0;
+// Standard width of a task graph node.
+const TASK_GRAPH_NODE_WIDTH: f32 = 280.0;
+// Base height of a task graph node.
+const TASK_GRAPH_BASE_NODE_HEIGHT: f32 = 120.0;
+// Horizontal gap between adjacent task graph nodes in the same row.
+const TASK_GRAPH_HORIZONTAL_GAP: f32 = 72.0;
+// Vertical gap between adjacent task graph rows.
+const TASK_GRAPH_VERTICAL_GAP: f32 = 80.0;
 
 #[derive(Debug, Clone)]
 struct TracePoint {
@@ -651,8 +667,10 @@ impl QqChatTaskTrace {
 
     pub(crate) fn graph_definition(&self, task_id: &str) -> NodeGraphDefinition {
         let inner = self.inner.lock().unwrap();
+        let mut nodes = inner.graph_nodes.clone();
+        layout_task_graph_nodes(&mut nodes);
         NodeGraphDefinition {
-            nodes: inner.graph_nodes.clone(),
+            nodes,
             edges: inner.graph_edges.clone(),
             metadata: GraphMetadata {
                 name: Some(format!("QQ Chat 回复任务 {task_id}")),
@@ -667,7 +685,6 @@ impl QqChatTaskTrace {
         let mut inner = self.inner.lock().unwrap();
         let id = format!("step_{:03}", inner.graph_nodes.len() + 1);
         let previous = inner.graph_nodes.last().map(|node| node.id.clone());
-        let position_x = inner.graph_nodes.len() as f32 * 260.0;
         inner.graph_nodes.push(NodeDefinition {
             id: id.clone(),
             name: name.to_string(),
@@ -675,11 +692,14 @@ impl QqChatTaskTrace {
             node_type: node_type.to_string(),
             input_ports: vec![Port::new("previous", DataType::Json).optional()],
             output_ports: vec![Port::new("result", DataType::Json)],
-            output: Some(output),
+            output: Some(serde_json::json!({ "result": output })),
             execution_time: Some(Local::now().to_rfc3339()),
             dynamic_input_ports: false,
             dynamic_output_ports: false,
-            position: Some(GraphPosition { x: position_x, y: 180.0 }),
+            position: Some(GraphPosition {
+                x: TASK_GRAPH_ORIGIN_X,
+                y: TASK_GRAPH_ORIGIN_Y,
+            }),
             size: Some(zihuan_graph_engine::graph_io::GraphSize { width: 220.0, height: 120.0 }),
             inline_values: HashMap::new(),
             port_bindings: HashMap::new(),
@@ -703,7 +723,7 @@ impl QqChatTaskTrace {
             return;
         }
         if let Some(node) = self.inner.lock().unwrap().graph_nodes.iter_mut().find(|node| node.id == id) {
-            node.output = Some(output);
+            node.output = Some(serde_json::json!({ "result": output }));
             node.execution_time = Some(Local::now().to_rfc3339());
         }
     }
@@ -711,6 +731,58 @@ impl QqChatTaskTrace {
     fn log_key_event(&self, title: &str, duration_ms: u128, details: impl AsRef<str>) {
         info!("{LOG_PREFIX} {title} [耗时 {duration_ms} ms] {}", details.as_ref());
     }
+}
+
+fn layout_task_graph_nodes(nodes: &mut [NodeDefinition]) {
+    let mut rows: Vec<Vec<usize>> = Vec::new();
+    let mut row_width = 0.0;
+
+    for index in 0..nodes.len() {
+        let node_width = TASK_GRAPH_NODE_WIDTH;
+        let next_width = if row_width == 0.0 {
+            node_width
+        } else {
+            row_width + TASK_GRAPH_HORIZONTAL_GAP + node_width
+        };
+        if !rows.last().is_some_and(|row| row.is_empty()) && row_width > 0.0 && next_width > TASK_GRAPH_MAX_ROW_WIDTH {
+            rows.push(Vec::new());
+            row_width = 0.0;
+        }
+        if rows.is_empty() {
+            rows.push(Vec::new());
+        }
+        let current_row = rows.last_mut().unwrap();
+        if current_row.is_empty() {
+            row_width = node_width;
+        } else {
+            row_width += TASK_GRAPH_HORIZONTAL_GAP + node_width;
+        }
+        current_row.push(index);
+    }
+
+    let mut y = TASK_GRAPH_ORIGIN_Y;
+    for (row_index, row) in rows.into_iter().enumerate() {
+        let mut visual_order = row.clone();
+        if row_index % 2 == 1 {
+            visual_order.reverse();
+        }
+
+        let mut x = TASK_GRAPH_ORIGIN_X;
+        let row_height = row
+            .iter()
+            .map(|index| task_graph_node_visual_height(&nodes[*index]))
+            .fold(0.0f32, f32::max);
+        for index in visual_order {
+            nodes[index].position = Some(GraphPosition { x, y });
+            x += TASK_GRAPH_NODE_WIDTH + TASK_GRAPH_HORIZONTAL_GAP;
+        }
+        y += row_height + TASK_GRAPH_VERTICAL_GAP;
+    }
+}
+
+fn task_graph_node_visual_height(node: &NodeDefinition) -> f32 {
+    let _ = node;
+    TASK_GRAPH_BASE_NODE_HEIGHT
 }
 
 pub(crate) struct QqChatBrainObserver {

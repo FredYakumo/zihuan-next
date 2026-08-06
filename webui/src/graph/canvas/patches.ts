@@ -144,6 +144,7 @@ export function installLiteGraphPatches(): void {
   // ±8×5 px so the user must click within ~8 px of the port circle itself.
   const originalProcessMouseDown = (LGraphCanvas.prototype as any).processMouseDown;
   (LGraphCanvas.prototype as any).processMouseDown = function (e: any) {
+    if (this._zhOutputSummaryClick?.(e)) return;
     const node: any = this.graph?.getNodeOnPos?.(e.canvasX, e.canvasY, this.visible_nodes);
     if (!node) return originalProcessMouseDown.call(this, e);
 

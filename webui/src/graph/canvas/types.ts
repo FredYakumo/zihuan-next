@@ -29,6 +29,7 @@ export interface CanvasFacade {
   _graphMutationTimer: ReturnType<typeof setTimeout> | null;
   _pendingWidgetMutations: Set<Promise<unknown>>;
   _pendingGraphMutations: Set<Promise<unknown>>;
+  outputSummariesVisible: boolean;
   nodeTypes: NodeTypeInfo[];
   onNavigationChange?: (labels: string[]) => void;
   onGraphDirty?: () => void;
@@ -62,4 +63,5 @@ export interface CanvasFacade {
     graphX: number,
     graphY: number,
   ): Promise<void>;
+  toggleOutputSummaries(): boolean;
 }

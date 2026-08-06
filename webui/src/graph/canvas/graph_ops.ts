@@ -2,8 +2,7 @@ import { LiteGraph } from "litegraph.js";
 import { graphs } from "../../api/client";
 import { logger } from "../../api/logger";
 import type { EdgeDefinition, NodeDefinition, NodeGraphDefinition } from "../../api/types";
-import { getBoundaryNodeColors, getDisabledNodeColors, getLiteGraphColors, getPortColor } from "../../ui/theme";
-import { openOverlay } from "../../ui/dialogs/index";
+import { getBoundaryNodeColors, getDisabledNodeColors, getPortColor } from "../../ui/theme";
 import { setupNodeWidgets } from "../widgets";
 import type { BrainToolDefinition, EmbeddedFunctionConfig } from "../../ui/dialogs/types";
 import type { CanvasFacade } from "./types";
@@ -25,11 +24,7 @@ const PROTECTED_BOUNDARY_NODE_IDS = new Set([
   "__graph_outputs__",
 ]);
 
-const OUTPUT_PANEL_HEADER_HEIGHT = 26;
-const OUTPUT_PANEL_MIN_HEIGHT = 142;
-const OUTPUT_PANEL_MAX_HEIGHT = 302;
-const OUTPUT_PANEL_WIDTH = 280;
-const OUTPUT_TEXT_MAX_CHARS = 8_000;
+const EXECUTION_TIME_BAND_HEIGHT = 18;
 
 export class CanvasGraphOps {
   constructor(private readonly canvas: CanvasFacade) {}
@@ -368,23 +363,8 @@ export class CanvasGraphOps {
     node.onDrawForeground = function (this: any, ctx: CanvasRenderingContext2D) {
       drawBindingBadges.call(this, ctx);
       drawHelpButton.call(this, ctx);
-      drawNodeOutputPanel(this, ctx);
     };
     node.onMouseDown = (e: MouseEvent, pos: [number, number]): boolean | undefined => {
-      if (isOutputToggleHit(node, pos)) {
-        node._hideOutput = !node._hideOutput;
-        updateOutputPanelSize(node);
-        this.canvas.lGraph.setDirtyCanvas(true, true);
-        e.preventDefault();
-        e.stopPropagation();
-        return true;
-      }
-      if (isOutputDetailHit(node, pos)) {
-        showOutputDetailDialog(node.title, String(node._outputFullText ?? ""), node._executionTime ?? null);
-        e.preventDefault();
-        e.stopPropagation();
-        return true;
-      }
       const btnX = node.size[0] - 12;
       const btnY = -NODE_TITLE_HEIGHT / 2;
       const dx = pos[0] - btnX;
@@ -417,6 +397,11 @@ export class CanvasGraphOps {
       const title = String(this.title);
       const maxWidth = size[0] - titleHeight - 8;
       ctx.fillText(truncateText(ctx, title, maxWidth), titleHeight, LiteGraph.NODE_TITLE_TEXT_Y - titleHeight);
+      if (this._executionTime) {
+        ctx.font = "10px sans-serif";
+        ctx.fillStyle = "rgba(255,255,255,0.62)";
+        ctx.fillText(`执行时间 ${this._executionTime}`, 8, 12);
+      }
     };
 
     if (nodeDef.position) node.pos = [nodeDef.position.x, nodeDef.position.y];
@@ -483,15 +468,14 @@ export class CanvasGraphOps {
     if (nodeDef.size) {
       node.size = [nodeDef.size.width, nodeDef.size.height];
     }
-    if (nodeDef.output !== null && nodeDef.output !== undefined) {
-      node._outputBaseSize = [node.size[0], node.size[1]];
-      node._outputFullText = formatNodeOutput(nodeDef.output);
-      node._outputText = formatNodeOutputPreview(node._outputFullText);
-      node._executionTime = nodeDef.execution_time ?? null;
-      node._outputNeedsDetail = requiresOutputDetail(nodeDef.output, node._outputFullText);
-      node._hideOutput = false;
-      node.size[0] = Math.max(node.size[0], OUTPUT_PANEL_WIDTH);
-      updateOutputPanelSize(node);
+    node._outputByPort = outputByPort(nodeDef);
+    node._executionTime = nodeDef.execution_time ?? null;
+    if (node._executionTime) {
+      const BaseClass = Object.getPrototypeOf(node).constructor;
+      const TimedClass = class extends BaseClass {};
+      TimedClass.slot_start_y = Number(BaseClass.slot_start_y ?? 0) + EXECUTION_TIME_BAND_HEIGHT;
+      Object.setPrototypeOf(node, TimedClass.prototype);
+      node.size[1] += EXECUTION_TIME_BAND_HEIGHT;
     }
   }
 
@@ -668,184 +652,24 @@ export class CanvasGraphOps {
   }
 }
 
-function formatNodeOutput(output: unknown): string {
-  let value: string;
-  if (typeof output === "string") {
-    value = output;
-  } else {
-    try {
-      value = JSON.stringify(output, null, 2) ?? String(output);
-    } catch {
-      value = String(output);
+function outputByPort(node: NodeDefinition): Record<string, unknown> {
+  if (node.output === null || node.output === undefined) return {};
+  if (node.output_ports.length === 1) {
+    const portName = node.output_ports[0].name;
+    if (
+      typeof node.output === "object"
+      && !Array.isArray(node.output)
+      && Object.prototype.hasOwnProperty.call(node.output, portName)
+    ) {
+      return { [portName]: (node.output as Record<string, unknown>)[portName] };
     }
+    return { [portName]: node.output };
   }
-  return value;
-}
-
-function formatNodeOutputPreview(text: string): string {
-  return text.length > OUTPUT_TEXT_MAX_CHARS
-    ? `${text.slice(0, OUTPUT_TEXT_MAX_CHARS)}\n...（预览已截断，打开详细查看完整内容）`
-    : text;
-}
-
-function outputLines(node: any, ctx: CanvasRenderingContext2D): string[] {
-  const text = String(node._outputText ?? "");
-  const maxWidth = Math.max(80, node.size[0] - 20);
-  const lines: string[] = [];
-  for (const sourceLine of text.split("\n")) {
-    if (!sourceLine) {
-      lines.push("");
-      continue;
-    }
-    let line = "";
-    for (const char of sourceLine) {
-      if (ctx.measureText(line + char).width > maxWidth && line) {
-        lines.push(line);
-        line = char;
-      } else {
-        line += char;
-      }
-    }
-    lines.push(line);
+  if (typeof node.output !== "object" || Array.isArray(node.output)) return {};
+  const record = node.output as Record<string, unknown>;
+  const outputs: Record<string, unknown> = {};
+  for (const port of node.output_ports) {
+    if (Object.prototype.hasOwnProperty.call(record, port.name)) outputs[port.name] = record[port.name];
   }
-  return lines;
-}
-
-function updateOutputPanelSize(node: any): void {
-  const baseHeight = Number(node._outputBaseSize?.[1] ?? node.size[1]);
-  node.size[1] = baseHeight + OUTPUT_PANEL_HEADER_HEIGHT;
-  if (node._hideOutput) return;
-
-  const measuredCanvas = document.createElement("canvas");
-  const ctx = measuredCanvas.getContext("2d");
-  if (!ctx) return;
-  ctx.font = "12px monospace";
-  const lines = outputLines(node, ctx);
-  const maxContentHeight = OUTPUT_PANEL_MAX_HEIGHT - OUTPUT_PANEL_HEADER_HEIGHT;
-  node._outputNeedsDetail = Boolean(node._outputNeedsDetail) || lines.length * 16 + 12 > maxContentHeight;
-  const contentHeight = Math.min(maxContentHeight, Math.max(
-    OUTPUT_PANEL_MIN_HEIGHT - OUTPUT_PANEL_HEADER_HEIGHT,
-    lines.length * 16 + 12,
-  ));
-  node.size[1] = baseHeight + OUTPUT_PANEL_HEADER_HEIGHT + contentHeight;
-}
-
-function isOutputToggleHit(node: any, pos: [number, number]): boolean {
-  if (!node._outputBaseSize) return false;
-  const baseHeight = Number(node._outputBaseSize[1]);
-  return pos[0] >= node.size[0] - 82
-    && pos[0] <= node.size[0] - 8
-    && pos[1] >= baseHeight
-    && pos[1] <= baseHeight + OUTPUT_PANEL_HEADER_HEIGHT;
-}
-
-function isOutputDetailHit(node: any, pos: [number, number]): boolean {
-  if (!node._outputBaseSize || node._hideOutput || !node._outputNeedsDetail) return false;
-  const baseHeight = Number(node._outputBaseSize[1]);
-  return pos[0] >= node.size[0] - 82
-    && pos[0] <= node.size[0] - 8
-    && pos[1] >= node.size[1] - 28
-    && pos[1] <= node.size[1] - 6
-    && pos[1] > baseHeight + OUTPUT_PANEL_HEADER_HEIGHT;
-}
-
-function requiresOutputDetail(output: unknown, text: string): boolean {
-  if (text.length > 1_200) return true;
-  if (output === null || typeof output !== "object") return false;
-  return /"(?:image|video|audio|media|attachment|file|url|base64)"\s*:/i.test(text);
-}
-
-function showOutputDetailDialog(title: string, text: string, executionTime: string | null): void {
-  const { overlay, dialog, close } = openOverlay();
-  dialog.style.width = "min(900px, 88vw)";
-  dialog.style.maxWidth = "900px";
-  const heading = document.createElement("h3");
-  heading.textContent = `${title} - 执行输出`;
-  dialog.appendChild(heading);
-  if (executionTime) {
-    const time = document.createElement("div");
-    time.className = "zh-hint";
-    time.textContent = `执行时间 ${executionTime}`;
-    dialog.appendChild(time);
-  }
-  const content = document.createElement("pre");
-  content.style.cssText = "margin:0;max-height:60vh;overflow:auto;white-space:pre-wrap;word-break:break-word;font:12px/1.5 monospace;";
-  content.textContent = text;
-  dialog.appendChild(content);
-  const buttons = document.createElement("div");
-  buttons.className = "zh-buttons";
-  const closeButton = document.createElement("button");
-  closeButton.className = "primary";
-  closeButton.textContent = "关闭";
-  closeButton.addEventListener("click", close);
-  buttons.appendChild(closeButton);
-  dialog.appendChild(buttons);
-  overlay.addEventListener("click", (event) => {
-    if (event.target === overlay) close();
-  });
-  setTimeout(() => closeButton.focus(), 0);
-}
-
-function drawNodeOutputPanel(node: any, ctx: CanvasRenderingContext2D): void {
-  if (!node._outputBaseSize) return;
-  const colors = getLiteGraphColors();
-  const baseHeight = Number(node._outputBaseSize[1]);
-  const width = Number(node.size[0]);
-  const panelHeight = Number(node.size[1]) - baseHeight;
-  const hidden = !!node._hideOutput;
-
-  ctx.save();
-  ctx.fillStyle = "rgba(90, 111, 132, 0.08)";
-  ctx.fillRect(0, baseHeight, width, panelHeight);
-  ctx.strokeStyle = colors.widgetOutline;
-  ctx.strokeRect(0.5, baseHeight + 0.5, width - 1, panelHeight - 1);
-  ctx.font = "11px sans-serif";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = colors.widgetSecondary;
-  ctx.fillText(node._executionTime ? `执行时间 ${node._executionTime}` : "执行输出", 9, baseHeight + 13);
-
-  const toggleX = width - 77;
-  const toggleY = baseHeight + 8;
-  ctx.strokeStyle = colors.widgetText;
-  ctx.strokeRect(toggleX, toggleY, 10, 10);
-  if (hidden) {
-    ctx.beginPath();
-    ctx.moveTo(toggleX + 2, toggleY + 5);
-    ctx.lineTo(toggleX + 4, toggleY + 8);
-    ctx.lineTo(toggleX + 9, toggleY + 2);
-    ctx.stroke();
-  }
-  ctx.fillStyle = colors.widgetText;
-  ctx.fillText("隐藏输出", toggleX + 15, baseHeight + 13);
-
-  if (!hidden) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(8, baseHeight + OUTPUT_PANEL_HEADER_HEIGHT + 4, width - 16, panelHeight - OUTPUT_PANEL_HEADER_HEIGHT - 8);
-    ctx.clip();
-    ctx.font = "12px monospace";
-    ctx.textBaseline = "top";
-    ctx.fillStyle = colors.widgetText;
-    const lines = outputLines(node, ctx);
-    const maxLines = Math.floor((panelHeight - OUTPUT_PANEL_HEADER_HEIGHT - (node._outputNeedsDetail ? 34 : 12)) / 16);
-    for (let index = 0; index < Math.min(lines.length, maxLines); index++) {
-      ctx.fillText(lines[index], 10, baseHeight + OUTPUT_PANEL_HEADER_HEIGHT + 8 + index * 16);
-    }
-    if (node._outputNeedsDetail) {
-      const buttonX = width - 78;
-      const buttonY = baseHeight + panelHeight - 25;
-      ctx.fillStyle = colors.widgetButtonBg;
-      ctx.fillRect(buttonX, buttonY, 70, 18);
-      ctx.strokeStyle = colors.widgetOutline;
-      ctx.strokeRect(buttonX + 0.5, buttonY + 0.5, 69, 17);
-      ctx.font = "11px sans-serif";
-      ctx.textBaseline = "middle";
-      ctx.fillStyle = colors.widgetButtonText;
-      ctx.textAlign = "center";
-      ctx.fillText("打开详细", buttonX + 35, buttonY + 9);
-      ctx.textAlign = "left";
-    }
-    ctx.restore();
-  }
-  ctx.restore();
+  return outputs;
 }

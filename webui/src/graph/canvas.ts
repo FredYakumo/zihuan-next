@@ -23,6 +23,7 @@ export class ZihuanCanvas implements CanvasFacade {
   _graphMutationTimer: ReturnType<typeof setTimeout> | null = null;
   _pendingWidgetMutations = new Set<Promise<unknown>>();
   _pendingGraphMutations = new Set<Promise<unknown>>();
+  outputSummariesVisible = true;
   nodeTypes: NodeTypeInfo[] = [];
 
   onNavigationChange?: (labels: string[]) => void;
@@ -148,6 +149,12 @@ export class ZihuanCanvas implements CanvasFacade {
 
   async flushPendingGraphMutations(): Promise<void> {
     await this.graphOps.flushPendingGraphMutations();
+  }
+
+  toggleOutputSummaries(): boolean {
+    this.outputSummariesVisible = !this.outputSummariesVisible;
+    this.lGraph.setDirtyCanvas(true, true);
+    return this.outputSummariesVisible;
   }
 
   canUndo(): boolean {

@@ -25,6 +25,18 @@ import { GraphActions } from "./app/graph_actions";
 import { WorkspaceController } from "./app/workspace_controller";
 import { openTaskManagerDialog } from "./ui/dialogs/index";
 
+const TASK_TRACE_NODE_PREFIX = "qq_chat_";
+// Initial x-coordinate for the task trace graph layout.
+const TASK_TRACE_ORIGIN_X = 60;
+// Initial y-coordinate for the task trace graph layout.
+const TASK_TRACE_ORIGIN_Y = 60;
+// Maximum width of a task trace graph row before wrapping to the next row.
+const TASK_TRACE_MAX_ROW_WIDTH = 1440;
+// Horizontal gap between adjacent task trace nodes in the same row.
+const TASK_TRACE_HORIZONTAL_GAP = 72;
+// Vertical gap between adjacent task trace graph rows.
+const TASK_TRACE_VERTICAL_GAP = 80;
+
 export async function bootstrapGraphEditor() {
   initTheme();
   await loadThemes();
@@ -154,6 +166,7 @@ export async function bootstrapGraphEditor() {
     await graphs.put(tab.id, snapshot);
     await tabs.openTab(tab.id, snapshot.metadata.name ?? `任务节点图 ${taskId.slice(0, 8)}`, false);
     await canvas.loadExternalSession(tab.id);
+    await layoutTaskTraceGraph(canvas);
     // This session is a fresh copy of the immutable task snapshot. Saving it can
     // never overwrite the task record; users can use Save As to make a workflow.
     tabs.setTabDirty(tab.id, false);
@@ -209,6 +222,7 @@ export async function bootstrapGraphEditor() {
     () => { graphActions.addNodeWithDialog().catch(console.error); },
     () => { graphActions.execute().catch(console.error); },
     () => { graphActions.stopTask().catch(console.error); },
+    () => canvas.toggleOutputSummaries(),
   ));
 
   const onNewGraph = () => createNewTab().catch((e: Error) => {
@@ -287,4 +301,62 @@ export async function bootstrapGraphEditor() {
   } catch {
     // Startup restoration failed — user can create one manually.
   }
+}
+
+async function layoutTaskTraceGraph(canvas: ZihuanCanvas): Promise<void> {
+  const graph = canvas.state.graph;
+  const sessionId = canvas.sessionId;
+  if (!graph || !sessionId || graph.nodes.length === 0) return;
+  if (!graph.nodes.every((node) => node.node_type.startsWith(TASK_TRACE_NODE_PREFIX))) return;
+
+  const rows: Array<Array<{ id: string; width: number; height: number }>> = [];
+  let rowWidth = 0;
+  for (const nodeDef of graph.nodes) {
+    const renderedNode = canvas.nodeMap.get(nodeDef.id);
+    const width = Math.max(
+      220,
+      Number(renderedNode?.size?.[0] ?? nodeDef.size?.width ?? 220),
+    );
+    const height = Math.max(
+      120,
+      Number(renderedNode?.size?.[1] ?? nodeDef.size?.height ?? 120),
+    );
+    const nextWidth = rowWidth === 0 ? width : rowWidth + TASK_TRACE_HORIZONTAL_GAP + width;
+    if (rows.length > 0 && rowWidth > 0 && nextWidth > TASK_TRACE_MAX_ROW_WIDTH) {
+      rows.push([]);
+      rowWidth = 0;
+    }
+    if (rows.length === 0) rows.push([]);
+    const row = rows[rows.length - 1];
+    rowWidth = row.length === 0 ? width : rowWidth + TASK_TRACE_HORIZONTAL_GAP + width;
+    row.push({ id: nodeDef.id, width, height });
+  }
+
+  const positions = new Map<string, { x: number; y: number }>();
+  let y = TASK_TRACE_ORIGIN_Y;
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+    const row = rows[rowIndex];
+    const visualOrder = rowIndex % 2 === 0 ? row : [...row].reverse();
+    let x = TASK_TRACE_ORIGIN_X;
+    for (const node of visualOrder) {
+      positions.set(node.id, { x, y });
+      x += node.width + TASK_TRACE_HORIZONTAL_GAP;
+    }
+    y += Math.max(...row.map((node) => node.height)) + TASK_TRACE_VERTICAL_GAP;
+  }
+
+  const positionedGraph = {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      const position = positions.get(node.id);
+      return position ? { ...node, position } : node;
+    }),
+  };
+  for (const [nodeId, position] of positions) {
+    const renderedNode = canvas.nodeMap.get(nodeId);
+    if (renderedNode) renderedNode.pos = [position.x, position.y];
+  }
+  canvas.state.graph = positionedGraph;
+  canvas.lGraph.setDirtyCanvas(true, true);
+  await graphs.put(sessionId, positionedGraph);
 }
