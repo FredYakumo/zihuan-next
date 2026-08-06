@@ -90,6 +90,8 @@ pub struct TaskEntry {
     pub log_path: Option<String>,
     pub can_rerun: bool,
     #[serde(default)]
+    pub graph_snapshot: Option<serde_json::Value>,
+    #[serde(default)]
     pub task_db_connection_id: Option<String>,
     #[serde(skip, default)]
     pub stop_flag: Option<Arc<AtomicBool>>,
@@ -211,6 +213,7 @@ impl TaskManager {
             error_message: None,
             result_summary: None,
             log_path,
+            graph_snapshot: None,
             task_db_connection_id,
             stop_flag,
         };
@@ -332,6 +335,16 @@ impl TaskManager {
 
     pub fn get(&self, id: &str) -> Option<&TaskEntry> {
         self.tasks.iter().find(|task| task.id == id)
+    }
+
+    pub fn set_task_graph(&mut self, id: &str, graph: serde_json::Value, object_path: Option<String>) {
+        if let Some(task) = self.tasks.iter_mut().find(|task| task.id == id) {
+            task.graph_snapshot = Some(graph);
+            if object_path.is_some() {
+                task.file_path = object_path;
+            }
+            self.persist_index();
+        }
     }
 
     pub fn clear_non_running(&mut self) -> usize {
@@ -544,6 +557,7 @@ impl TaskManager {
                 result_summary: Some("从历史日志文件恢复的任务记录".to_string()),
                 log_path: Some(path.to_string_lossy().to_string()),
                 can_rerun: false,
+                graph_snapshot: None,
                 task_db_connection_id: None,
                 stop_flag: None,
             });

@@ -296,11 +296,11 @@ export class CanvasGraphOps {
 
   private addLGraphNode(nodeDef: NodeDefinition): void {
     const typeKey = findRegisteredType(nodeDef.node_type);
-    if (!typeKey) {
-      console.warn(`[Canvas] Unknown node type: ${nodeDef.node_type}`);
-      return;
-    }
-    const node = LiteGraph.createNode(typeKey) as any;
+    // Task snapshots can contain trace-only nodes that are intentionally not in
+    // the executable node registry. Render them from their persisted signature.
+    const node = typeKey
+      ? LiteGraph.createNode(typeKey) as any
+      : new (LiteGraph as any).LGraphNode(nodeDef.name);
     if (!node) return;
 
     node.inputs = [];

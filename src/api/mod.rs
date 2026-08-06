@@ -186,7 +186,8 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
                 .push(Router::with_path("<task_id>").delete(execution::delete_task))
                 .push(Router::with_path("<task_id>/stop").post(execution::stop_task))
                 .push(Router::with_path("<task_id>/rerun").post(execution::rerun_task))
-                .push(Router::with_path("<task_id>/logs").get(execution::get_task_logs)),
+                .push(Router::with_path("<task_id>/logs").get(execution::get_task_logs))
+                .push(Router::with_path("<task_id>/graph").get(execution::get_task_graph)),
         )
         // File I/O (not graph-scoped)
         .push(Router::with_path("file/open").post(file_io::open_file))

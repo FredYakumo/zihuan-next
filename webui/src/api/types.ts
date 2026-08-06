@@ -83,6 +83,7 @@ export interface NodeDefinition {
   node_type: string;
   input_ports: Port[];
   output_ports: Port[];
+  output?: unknown | null;
   dynamic_input_ports: boolean;
   dynamic_output_ports: boolean;
   position: GraphPosition | null;
