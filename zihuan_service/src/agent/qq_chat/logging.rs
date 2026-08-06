@@ -12,6 +12,10 @@ use ims_bot_adapter::models::message::Message;
 use zihuan_agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{LLMMessage, TokenUsage};
+use zihuan_graph_engine::graph_io::{
+    EdgeDefinition, GraphMetadata, GraphPosition, NodeDefinition, NodeGraphDefinition,
+};
+use zihuan_graph_engine::{DataType, Port};
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
@@ -35,6 +39,7 @@ impl TracePoint {
 #[derive(Debug, Clone)]
 struct ToolCallTrace {
     name: String,
+    graph_node_id: String,
     started_at: TracePoint,
     finished_at: Option<TracePoint>,
 }
@@ -61,6 +66,8 @@ struct QqChatTaskTraceInner {
     exact_usage_available: bool,
     reply_suppress_send: Option<bool>,
     reply_sent: Option<bool>,
+    graph_nodes: Vec<NodeDefinition>,
+    graph_edges: Vec<EdgeDefinition>,
 }
 
 #[derive(Clone)]
@@ -95,11 +102,21 @@ impl QqChatTaskTrace {
                 exact_usage_available: false,
                 reply_suppress_send: None,
                 reply_sent: None,
+                graph_nodes: Vec::new(),
+                graph_edges: Vec::new(),
             })),
         }
     }
 
     pub(crate) fn log_user_message(&self, raw_user_message: &str, current_message: &str) {
+        self.record_graph_step(
+            "用户输入",
+            "qq_chat_user_input",
+            serde_json::json!({
+                "raw": raw_user_message,
+                "text": current_message,
+            }),
+        );
         let details = if raw_user_message.trim() == current_message.trim() {
             format!("用户消息: {}", truncate_for_log(current_message, LOG_TEXT_PREVIEW_CHARS))
         } else {
@@ -127,6 +144,13 @@ impl QqChatTaskTrace {
     }
 
     pub(crate) fn record_intent_classification(&self, trace: &IntentClassificationTrace, routed_model: &str) {
+        self.record_graph_step(
+            "意图识别",
+            "qq_chat_intent",
+            serde_json::json!({
+                "category": trace.category.label(), "path": trace.path.label(), "routed_model": routed_model,
+            }),
+        );
         self.log_key_event(
             "意图识别结果",
             trace.total_duration_ms,
@@ -203,6 +227,13 @@ impl QqChatTaskTrace {
     }
 
     pub(crate) fn log_llm_conversation(&self, conversation: &[LLMMessage], prompt_tokens_estimated: usize) {
+        self.record_graph_step(
+            "主 Brain 提示词",
+            "qq_chat_brain_prompt",
+            serde_json::json!({
+                "messages": conversation, "prompt_tokens_estimated": prompt_tokens_estimated,
+            }),
+        );
         let payload = serde_json::to_string(conversation).unwrap_or_else(|err| format!("<serialize failed: {err}>"));
         self.log_key_event(
             "发送给大模型的消息列表",
@@ -237,6 +268,11 @@ impl QqChatTaskTrace {
     }
 
     pub(crate) fn record_tool_start(&self, name: &str, arguments: &Value) {
+        let graph_node_id = self.record_graph_step(
+            &format!("工具调用 {name}"),
+            "qq_chat_tool_call",
+            serde_json::json!({"tool": name, "arguments": arguments, "status": "running"}),
+        );
         self.log_key_event(
             &format!("工具调用 {name}"),
             0,
@@ -246,6 +282,7 @@ impl QqChatTaskTrace {
         let mut inner = self.inner.lock().unwrap();
         inner.tool_calls.push(ToolCallTrace {
             name: name.to_string(),
+            graph_node_id,
             started_at: TracePoint::now(),
             finished_at: None,
         });
@@ -254,7 +291,7 @@ impl QqChatTaskTrace {
 
     pub(crate) fn record_tool_finish(&self, name: &str, result: &str) {
         let finished_at = TracePoint::now();
-        let duration_ms = {
+        let (duration_ms, graph_node_id) = {
             let mut inner = self.inner.lock().unwrap();
             inner
                 .tool_calls
@@ -263,10 +300,20 @@ impl QqChatTaskTrace {
                 .find(|call| call.name == name && call.finished_at.is_none())
                 .map(|call| {
                     call.finished_at = Some(finished_at.clone());
-                    finished_at.instant.duration_since(call.started_at.instant).as_millis()
+                    (
+                        finished_at.instant.duration_since(call.started_at.instant).as_millis(),
+                        call.graph_node_id.clone(),
+                    )
                 })
                 .unwrap_or_default()
         };
+
+        self.update_graph_step(
+            &graph_node_id,
+            serde_json::json!({
+                "tool": name, "result": result, "duration_ms": duration_ms, "status": "finished",
+            }),
+        );
 
         self.log_key_event(
             &format!("工具调用结果 {name}"),
@@ -276,6 +323,13 @@ impl QqChatTaskTrace {
     }
 
     pub(crate) fn record_llm_final_result(&self, stop_reason: &BrainStopReason, brain_output: &[LLMMessage]) {
+        self.record_graph_step(
+            "主 Brain 输出",
+            "qq_chat_brain_result",
+            serde_json::json!({
+                "stop_reason": format!("{stop_reason:?}"), "messages": brain_output,
+            }),
+        );
         let now = TracePoint::now();
         let duration_ms = self
             .inner
@@ -301,6 +355,13 @@ impl QqChatTaskTrace {
     }
 
     pub(crate) fn record_llm_result_parsed(&self, final_assistant_text: Option<&str>) {
+        self.record_graph_step(
+            "主 Brain 回复解析",
+            "qq_chat_reply_parse",
+            serde_json::json!({
+                "final_assistant_text": final_assistant_text,
+            }),
+        );
         let now = TracePoint::now();
         let duration_ms = self
             .inner
@@ -357,6 +418,13 @@ impl QqChatTaskTrace {
         reason: Option<&str>,
         rewritten_message: Option<&str>,
     ) {
+        self.record_graph_step(
+            "自然语言审查与改写",
+            "qq_chat_natural_language",
+            serde_json::json!({
+                "original": original_message, "safe": safe, "reason": reason, "rewritten": rewritten_message,
+            }),
+        );
         self.log_key_event(
             "回复审查结果",
             0,
@@ -380,6 +448,13 @@ impl QqChatTaskTrace {
     }
 
     pub(crate) fn record_reply_send(&self, suppress_send: bool, reply_sent: bool, batches: &[Vec<Message>]) {
+        self.record_graph_step(
+            "构建并发送回复",
+            "qq_chat_send_reply",
+            serde_json::json!({
+                "suppress_send": suppress_send, "reply_sent": reply_sent, "batches": batches,
+            }),
+        );
         let now = TracePoint::now();
         let duration_ms = self
             .inner
@@ -440,6 +515,11 @@ impl QqChatTaskTrace {
     }
 
     pub(crate) fn log_result_summary(&self, result_summary: &str) {
+        self.record_graph_step(
+            "任务执行结果",
+            "qq_chat_task_result",
+            serde_json::json!({"summary": result_summary}),
+        );
         self.log_key_event(
             "任务结果",
             0,
@@ -563,6 +643,69 @@ impl QqChatTaskTrace {
         ));
 
         info!("{LOG_PREFIX}\n{}", lines.join("\n"));
+    }
+
+    pub(crate) fn record_graph_phase(&self, name: &str, output: Value) {
+        self.record_graph_step(name, "qq_chat_phase", output);
+    }
+
+    pub(crate) fn graph_definition(&self, task_id: &str) -> NodeGraphDefinition {
+        let inner = self.inner.lock().unwrap();
+        NodeGraphDefinition {
+            nodes: inner.graph_nodes.clone(),
+            edges: inner.graph_edges.clone(),
+            metadata: GraphMetadata {
+                name: Some(format!("QQ Chat 回复任务 {task_id}")),
+                description: Some("由 QQ Chat Agent 实际执行流程生成的只读任务快照。".to_string()),
+                version: Some("1.0.0".to_string()),
+            },
+            ..Default::default()
+        }
+    }
+
+    fn record_graph_step(&self, name: &str, node_type: &str, output: Value) -> String {
+        let mut inner = self.inner.lock().unwrap();
+        let id = format!("step_{:03}", inner.graph_nodes.len() + 1);
+        let previous = inner.graph_nodes.last().map(|node| node.id.clone());
+        let position_x = inner.graph_nodes.len() as f32 * 260.0;
+        inner.graph_nodes.push(NodeDefinition {
+            id: id.clone(),
+            name: name.to_string(),
+            description: Some("QQ Chat 回复任务执行节点".to_string()),
+            node_type: node_type.to_string(),
+            input_ports: vec![Port::new("previous", DataType::Json).optional()],
+            output_ports: vec![Port::new("result", DataType::Json)],
+            output: Some(output),
+            execution_time: Some(Local::now().to_rfc3339()),
+            dynamic_input_ports: false,
+            dynamic_output_ports: false,
+            position: Some(GraphPosition { x: position_x, y: 180.0 }),
+            size: Some(zihuan_graph_engine::graph_io::GraphSize { width: 220.0, height: 120.0 }),
+            inline_values: HashMap::new(),
+            port_bindings: HashMap::new(),
+            has_error: false,
+            has_cycle: false,
+            disabled: false,
+        });
+        if let Some(from_node_id) = previous {
+            inner.graph_edges.push(EdgeDefinition {
+                from_node_id,
+                from_port: "result".to_string(),
+                to_node_id: id.clone(),
+                to_port: "previous".to_string(),
+            });
+        }
+        id
+    }
+
+    fn update_graph_step(&self, id: &str, output: Value) {
+        if id.is_empty() {
+            return;
+        }
+        if let Some(node) = self.inner.lock().unwrap().graph_nodes.iter_mut().find(|node| node.id == id) {
+            node.output = Some(output);
+            node.execution_time = Some(Local::now().to_rfc3339());
+        }
     }
 
     fn log_key_event(&self, title: &str, duration_ms: u128, details: impl AsRef<str>) {

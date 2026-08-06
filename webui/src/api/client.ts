@@ -250,6 +250,9 @@ export const tasks = {
     const suffix = qs.size > 0 ? `?${qs.toString()}` : "";
     return request("GET", `/tasks/${taskId}/logs${suffix}`);
   },
+  graph(taskId: string): Promise<NodeGraphDefinition> {
+    return request("GET", `/tasks/${taskId}/graph`);
+  },
   clearFinished(): Promise<{ ok: boolean; cleared: number }> {
     return request("DELETE", "/tasks");
   },

@@ -49,6 +49,9 @@
             </t-button>
             <t-button variant="text" size="small" :disabled="!row.can_rerun" @click="rerunTask(row.id)">重跑</t-button>
             <t-button variant="text" size="small" @click="openLogViewer(row)">查看日志</t-button>
+            <t-button variant="text" size="small" :disabled="row.task_type !== 'agent_service' || !row.file_path" @click="openTaskGraph(row.id)">
+              打开节点图
+            </t-button>
             <t-button variant="text" theme="danger" size="small" @click="deleteSingleTask(row)">删除</t-button>
           </template>
         </t-table>
@@ -169,6 +172,10 @@ function onPaginationChange(pageInfo: { current: number; pageSize: number }) {
   goToListPage(pageInfo.current);
 }
 
+function openTaskGraph(taskId: string) {
+  window.open(`/editor?task_graph=${encodeURIComponent(taskId)}`, "_blank", "noopener");
+}
+
 const columns: PrimaryTableCol<TaskEntry>[] = [
   { colKey: "row-select", type: "multiple", width: 48 },
   { colKey: "task", title: "任务" },
@@ -177,7 +184,7 @@ const columns: PrimaryTableCol<TaskEntry>[] = [
   { colKey: "file_path", title: "来源" },
   { colKey: "summary", title: "摘要" },
   { colKey: "status", title: "状态" },
-  { colKey: "actions", title: "操作", width: 220 },
+  { colKey: "actions", title: "操作", width: 300 },
 ];
 </script>
 

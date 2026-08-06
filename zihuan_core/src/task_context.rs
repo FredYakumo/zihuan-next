@@ -145,6 +145,10 @@ pub trait AgentTaskRuntime: Send + Sync {
     /// Append a progress message to a running task.
     fn append_task_progress(&self, task_id: &str, message: String);
 
+    /// Attach a persisted execution graph snapshot to a task. Runtimes that do not
+    /// expose task history can ignore this without affecting agent execution.
+    fn set_task_graph(&self, _task_id: &str, _graph: serde_json::Value, _object_path: Option<String>) {}
+
     /// Request cancellation of a running task. Returns `true` if the task
     /// was found and a stop signal was set, `false` if the task does not
     /// exist or has already finished.

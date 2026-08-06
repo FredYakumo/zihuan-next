@@ -1,6 +1,6 @@
 import "./ui/theme.css";
 import { initTheme, loadThemes, getThemeNames, getCurrentThemeName, setTheme } from "./ui/theme";
-import { registry, graphs, workflows, fileIO } from "./api/client";
+import { registry, graphs, workflows, fileIO, tasks } from "./api/client";
 import { ws } from "./api/ws";
 import type { NodeTypeInfo, TaskEntry } from "./api/types";
 import { registerNodeTypes } from "./graph/registry";
@@ -145,6 +145,21 @@ export async function bootstrapGraphEditor() {
     updateRunButton(taskStore.getRunningTaskForSession(loaded.session_id) !== null);
   }
 
+  async function openTaskGraphFromRoute(): Promise<void> {
+    const taskId = new URLSearchParams(window.location.search).get("task_graph");
+    if (!taskId) return;
+
+    const snapshot = await tasks.graph(taskId);
+    const tab = await graphs.create();
+    await graphs.put(tab.id, snapshot);
+    await tabs.openTab(tab.id, snapshot.metadata.name ?? `任务节点图 ${taskId.slice(0, 8)}`, false);
+    await canvas.loadExternalSession(tab.id);
+    // This session is a fresh copy of the immutable task snapshot. Saving it can
+    // never overwrite the task record; users can use Save As to make a workflow.
+    tabs.setTabDirty(tab.id, false);
+    updateRunButton(false);
+  }
+
   backArrow.querySelector("button")!.addEventListener("click", () => {
     canvas.exitSubgraph().catch((e: Error) => {
       showErrorDialog(`退出子图失败: ${e.message}`);
@@ -268,6 +283,7 @@ export async function bootstrapGraphEditor() {
   try {
     await workspace.restoreOrCreateTabs();
     await openWorkflowFromRoute();
+    await openTaskGraphFromRoute();
   } catch {
     // Startup restoration failed — user can create one manually.
   }

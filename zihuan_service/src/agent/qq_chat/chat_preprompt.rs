@@ -17,13 +17,13 @@ use zihuan_graph_engine::data_value::LLMMessageSessionCacheRef;
 
 use crate::agent::tools::{
     AgentMemoryToolResources, GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool,
-    ListAvailableMemoryKeysBrainTool, SearchMemoryContentBrainTool, ToolNotificationTarget,
-    UpdateAgentStateBrainTool, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
+    ListAvailableMemoryKeysBrainTool, SearchMemoryContentBrainTool, ToolNotificationTarget, UpdateAgentStateBrainTool,
+    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
     DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT,
 };
 use crate::storage::qq_chat_history_store::{load_history, save_history};
 
-use super::PreparedCurrentTurnUserInput;
+use super::{logging::QqChatBrainObserver, PreparedCurrentTurnUserInput, QqChatTaskTrace};
 
 const LOG_PREFIX: &str = "[QqChatPrepromptAgent]";
 
@@ -77,6 +77,7 @@ fn build_chat_preprompt_agent_user_message(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_chat_preprompt_agent(
+    trace: &QqChatTaskTrace,
     llm: &Arc<dyn LLMBase>,
     cache: &Arc<LLMMessageSessionCacheRef>,
     history_key: &str,
@@ -93,6 +94,9 @@ pub(crate) fn run_chat_preprompt_agent(
     rdb_pool: Option<RelationalDbConnection>,
     default_tools_enabled: &HashMap<String, bool>,
 ) -> Option<String> {
+    trace.record_graph_phase("名词处理", serde_json::json!({"status": "preprompt"}));
+    trace.record_graph_phase("情绪维度处理", serde_json::json!({"status": "preprompt"}));
+    trace.record_graph_phase("获取最近消息", serde_json::json!({"status": "preprompt tool when needed"}));
     let original_session_state = {
         let session_state = session_state.lock().unwrap();
         session_state.clone()
@@ -123,6 +127,7 @@ pub(crate) fn run_chat_preprompt_agent(
     conversation.push(user_message.clone());
 
     let mut brain = Brain::new(Arc::clone(llm));
+    brain.set_observer(Arc::new(QqChatBrainObserver { trace: trace.clone() }));
     brain.add_tool(UpdateAgentStateBrainTool::new(
         Arc::clone(&session_state),
         emotion_dimensions,

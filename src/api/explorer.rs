@@ -984,10 +984,26 @@ pub async fn query_service_messages(req: &mut Request, res: &mut Response, _depo
     };
     let page = req.query::<u32>("page").unwrap_or(1).max(1);
     let page_size = req.query::<u32>("page_size").unwrap_or(20).clamp(1, 100);
-    let filters = ["message_id", "sender_id", "sender_name", "group_id", "content", "send_time_start", "send_time_end"]
-        .into_iter().map(|key| (key, req.query::<String>(key).unwrap_or_default())).filter(|(_, value)| !value.trim().is_empty()).collect::<Vec<_>>();
+    let filters = [
+        "message_id",
+        "sender_id",
+        "sender_name",
+        "group_id",
+        "content",
+        "send_time_start",
+        "send_time_end",
+    ]
+    .into_iter()
+    .map(|key| (key, req.query::<String>(key).unwrap_or_default()))
+    .filter(|(_, value)| !value.trim().is_empty())
+    .collect::<Vec<_>>();
     match query_service_message_rows(connection, &filters, page, page_size).await {
-        Ok((records, total)) => res.render(Json(MysqlExploreResponse { records, total, page, page_size })),
+        Ok((records, total)) => res.render(Json(MysqlExploreResponse {
+            records,
+            total,
+            page,
+            page_size,
+        })),
         Err(error) => render_internal_error(res, error),
     }
 }
@@ -1008,25 +1024,43 @@ async fn query_service_message_rows(
             _ => continue,
         };
         where_clauses.push(clause);
-        values.push(if key.starts_with("send_time") { value.clone() } else { format!("%{value}%") });
+        values.push(if key.starts_with("send_time") {
+            value.clone()
+        } else {
+            format!("%{value}%")
+        });
     }
-    let where_sql = if where_clauses.is_empty() { String::new() } else { format!("WHERE {}", where_clauses.join(" AND ")) };
+    let where_sql = if where_clauses.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", where_clauses.join(" AND "))
+    };
     let count_sql = format!("SELECT COUNT(*) AS cnt FROM message_record {where_sql}");
     let data_sql = format!("SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json FROM message_record {where_sql} ORDER BY send_time DESC, id DESC LIMIT ? OFFSET ?");
     macro_rules! fetch_records {
         ($pool:expr, $time:expr) => {{
             let mut count_query = sqlx::query(&count_sql);
-            for value in &values { count_query = count_query.bind(value); }
+            for value in &values {
+                count_query = count_query.bind(value);
+            }
             let total: i64 = count_query.fetch_one($pool).await?.try_get("cnt")?;
             let mut data_query = sqlx::query(&data_sql);
-            for value in &values { data_query = data_query.bind(value); }
+            for value in &values {
+                data_query = data_query.bind(value);
+            }
             let rows = data_query.bind(page_size).bind((page - 1) * page_size).fetch_all($pool).await?;
             let mut records = Vec::with_capacity(rows.len());
             for row in rows {
                 records.push(MessageRecordResponse {
-                    message_id: row.try_get("message_id").unwrap_or_default(), sender_id: row.try_get("sender_id").unwrap_or_default(), sender_name: row.try_get("sender_name").unwrap_or_default(),
-                    send_time: $time(&row), group_id: row.try_get("group_id").unwrap_or(None), group_name: row.try_get("group_name").unwrap_or(None), content: truncate_preview(&row.try_get::<String, _>("content").unwrap_or_default(), 500),
-                    at_target_list: row.try_get("at_target_list").unwrap_or(None), media_json: row.try_get("media_json").unwrap_or(None),
+                    message_id: row.try_get("message_id").unwrap_or_default(),
+                    sender_id: row.try_get("sender_id").unwrap_or_default(),
+                    sender_name: row.try_get("sender_name").unwrap_or_default(),
+                    send_time: $time(&row),
+                    group_id: row.try_get("group_id").unwrap_or(None),
+                    group_name: row.try_get("group_name").unwrap_or(None),
+                    content: truncate_preview(&row.try_get::<String, _>("content").unwrap_or_default(), 500),
+                    at_target_list: row.try_get("at_target_list").unwrap_or(None),
+                    media_json: row.try_get("media_json").unwrap_or(None),
                 });
             }
             Ok((records, total))
@@ -1034,12 +1068,23 @@ async fn query_service_message_rows(
     }
     match connection {
         RelationalDbConnection::MySql(config) => {
-            let pool = config.pool.as_ref().ok_or_else(|| zihuan_core::string_error!("mysql pool not available"))?;
-            fetch_records!(pool, |row: &sqlx::mysql::MySqlRow| row.try_get::<chrono::NaiveDateTime, _>("send_time").map(|time| time.format("%Y-%m-%d %H:%M:%S").to_string()).unwrap_or_default())
+            let pool = config
+                .pool
+                .as_ref()
+                .ok_or_else(|| zihuan_core::string_error!("mysql pool not available"))?;
+            fetch_records!(pool, |row: &sqlx::mysql::MySqlRow| row
+                .try_get::<chrono::NaiveDateTime, _>("send_time")
+                .map(|time| time.format("%Y-%m-%d %H:%M:%S").to_string())
+                .unwrap_or_default())
         }
         RelationalDbConnection::Sqlite(config) => {
-            let pool = config.pool.as_ref().ok_or_else(|| zihuan_core::string_error!("sqlite pool not available"))?;
-            fetch_records!(pool, |row: &sqlx::sqlite::SqliteRow| row.try_get::<String, _>("send_time").unwrap_or_default())
+            let pool = config
+                .pool
+                .as_ref()
+                .ok_or_else(|| zihuan_core::string_error!("sqlite pool not available"))?;
+            fetch_records!(pool, |row: &sqlx::sqlite::SqliteRow| row
+                .try_get::<String, _>("send_time")
+                .unwrap_or_default())
         }
     }
 }
@@ -1047,113 +1092,385 @@ async fn query_service_message_rows(
 #[handler]
 pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let service_id = req.param::<String>("service_id").unwrap_or_default();
-    let query = req.query::<String>("query").map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
+    let query = req
+        .query::<String>("query")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     let limit = req.query::<usize>("limit").unwrap_or(20).clamp(1, 50);
-    let (agent, connections) = match load_service_and_connections(&service_id) { Ok(value) => value, Err(error) => return render_bad_request(res, error.to_string()) };
+    let (agent, connections) = match load_service_and_connections(&service_id) {
+        Ok(value) => value,
+        Err(error) => return render_bad_request(res, error.to_string()),
+    };
     let (weaviate_id, elasticsearch_id, embedding_id) = service_memory_config(&agent);
-    let access = AgentMemoryAccessContext { admin: true, skip_expiry_extend: true, ..Default::default() };
+    let access = AgentMemoryAccessContext {
+        admin: true,
+        skip_expiry_extend: true,
+        ..Default::default()
+    };
     if let Some(connection_id) = weaviate_id {
-        let reference = match resource_resolver::build_weaviate_ref(Some(&connection_id), &connections, Some(WeaviateCollectionSchema::AgentMemory)) { Ok(Some(reference)) => reference, Ok(None) => return render_bad_request(res, "memory connection is not configured".into()), Err(error) => return render_internal_error(res, error) };
-        let keyword_hits = match query.as_deref() { Some(value) => search_memory_content(&reference, &access, value, limit), None => list_recent_memory_keys(&reference, &access, limit, None) };
-        let mut items = match keyword_hits { Ok(hits) => memory_items(hits, if query.is_some() { "keyword" } else { "recent" }, "weaviate", true), Err(error) => return render_internal_error(res, error) };
+        let reference = match resource_resolver::build_weaviate_ref(
+            Some(&connection_id),
+            &connections,
+            Some(WeaviateCollectionSchema::AgentMemory),
+        ) {
+            Ok(Some(reference)) => reference,
+            Ok(None) => return render_bad_request(res, "memory connection is not configured".into()),
+            Err(error) => return render_internal_error(res, error),
+        };
+        let keyword_hits = match query.as_deref() {
+            Some(value) => search_memory_content(&reference, &access, value, limit),
+            None => list_recent_memory_keys(&reference, &access, limit, None),
+        };
+        let mut items = match keyword_hits {
+            Ok(hits) => memory_items(hits, if query.is_some() { "keyword" } else { "recent" }, "weaviate", true),
+            Err(error) => return render_internal_error(res, error),
+        };
         if let (Some(value), Some(model_id)) = (query.as_deref(), embedding_id.as_deref()) {
-            if let Ok(model) = RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_id).await {
+            if let Ok(model) = RuntimeEmbeddingModelManager::shared()
+                .get_or_create_embedding_model(model_id)
+                .await
+            {
                 if let Ok(vector) = tokio::task::block_in_place(|| model.inference(value)) {
-                    if let Ok(hits) = search_memory_content_by_vector(&reference, &access, &vector, limit) { merge_memory_items(&mut items, memory_items(hits, "semantic", "weaviate", true)); }
+                    if let Ok(hits) = search_memory_content_by_vector(&reference, &access, &vector, limit) {
+                        merge_memory_items(&mut items, memory_items(hits, "semantic", "weaviate", true));
+                    }
                 }
             }
         }
-        res.render(Json(ServiceMemoryResponse { items, backend: "weaviate", mutable: true })); return;
+        res.render(Json(ServiceMemoryResponse {
+            items,
+            backend: "weaviate",
+            mutable: true,
+        }));
+        return;
     }
-    let Some(connection_id) = elasticsearch_id else { return render_bad_request(res, "Service has no memory store configured".into()) };
-    let reference = match resource_resolver::build_elasticsearch_ref(Some(&connection_id), &connections, Some(WeaviateCollectionSchema::AgentMemory)) { Ok(Some(reference)) => reference, Ok(None) => return render_bad_request(res, "memory connection is not configured".into()), Err(error) => return render_internal_error(res, error) };
-    let keyword = match list_elasticsearch_memory_keys(&reference, &access, limit, query.as_deref()) { Ok(hits) => hits, Err(error) => return render_internal_error(res, error) };
-    let mut items = memory_items(keyword, if query.is_some() { "keyword" } else { "recent" }, "elasticsearch", false);
-    if let (Some(value), Some(model_id)) = (query.as_deref(), embedding_id.as_deref()) { if let Ok(model) = RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_id).await { if let Ok(vector) = tokio::task::block_in_place(|| model.inference(value)) { if let Ok(hits) = search_elasticsearch_memory(&reference, &access, value, &vector, limit) { merge_memory_items(&mut items, memory_items(hits, "semantic", "elasticsearch", false)); } } } }
-    res.render(Json(ServiceMemoryResponse { items, backend: "elasticsearch", mutable: false }));
+    let Some(connection_id) = elasticsearch_id else {
+        return render_bad_request(res, "Service has no memory store configured".into());
+    };
+    let reference = match resource_resolver::build_elasticsearch_ref(
+        Some(&connection_id),
+        &connections,
+        Some(WeaviateCollectionSchema::AgentMemory),
+    ) {
+        Ok(Some(reference)) => reference,
+        Ok(None) => return render_bad_request(res, "memory connection is not configured".into()),
+        Err(error) => return render_internal_error(res, error),
+    };
+    let keyword = match list_elasticsearch_memory_keys(&reference, &access, limit, query.as_deref()) {
+        Ok(hits) => hits,
+        Err(error) => return render_internal_error(res, error),
+    };
+    let mut items = memory_items(
+        keyword,
+        if query.is_some() { "keyword" } else { "recent" },
+        "elasticsearch",
+        false,
+    );
+    if let (Some(value), Some(model_id)) = (query.as_deref(), embedding_id.as_deref()) {
+        if let Ok(model) = RuntimeEmbeddingModelManager::shared()
+            .get_or_create_embedding_model(model_id)
+            .await
+        {
+            if let Ok(vector) = tokio::task::block_in_place(|| model.inference(value)) {
+                if let Ok(hits) = search_elasticsearch_memory(&reference, &access, value, &vector, limit) {
+                    merge_memory_items(&mut items, memory_items(hits, "semantic", "elasticsearch", false));
+                }
+            }
+        }
+    }
+    res.render(Json(ServiceMemoryResponse {
+        items,
+        backend: "elasticsearch",
+        mutable: false,
+    }));
 }
 
 #[handler]
 pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let service_id = req.param::<String>("service_id").unwrap_or_default();
-    let name_query = req.query::<String>("name_query").map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
-    let description_query = req.query::<String>("description_query").map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
+    let name_query = req
+        .query::<String>("name_query")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let description_query = req
+        .query::<String>("description_query")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     let limit = req.query::<usize>("limit").unwrap_or(20).clamp(1, 50);
-    let (agent, connections) = match load_service_and_connections(&service_id) { Ok(value) => value, Err(error) => return render_bad_request(res, error.to_string()) };
+    let (agent, connections) = match load_service_and_connections(&service_id) {
+        Ok(value) => value,
+        Err(error) => return render_bad_request(res, error.to_string()),
+    };
     let (weaviate_id, elasticsearch_id, embedding_id) = service_image_config(&agent);
-    let (name_vector, description_vector) = match embedding_vectors(embedding_id.as_deref(), name_query.as_deref(), description_query.as_deref()).await { Ok(value) => value, Err(error) => return render_internal_error(res, error) };
+    let (name_vector, description_vector) =
+        match embedding_vectors(embedding_id.as_deref(), name_query.as_deref(), description_query.as_deref()).await {
+            Ok(value) => value,
+            Err(error) => return render_internal_error(res, error),
+        };
     if let Some(connection_id) = weaviate_id {
-        let reference = match resource_resolver::build_weaviate_ref(Some(&connection_id), &connections, Some(WeaviateCollectionSchema::ImageSemantic)) { Ok(Some(reference)) => reference, Ok(None) => return render_bad_request(res, "image connection is not configured".into()), Err(error) => return render_internal_error(res, error) };
+        let reference = match resource_resolver::build_weaviate_ref(
+            Some(&connection_id),
+            &connections,
+            Some(WeaviateCollectionSchema::ImageSemantic),
+        ) {
+            Ok(Some(reference)) => reference,
+            Ok(None) => return render_bad_request(res, "image connection is not configured".into()),
+            Err(error) => return render_internal_error(res, error),
+        };
         let properties = image_property_names();
         let mut items = Vec::new();
-        for (query, field) in [(name_query.as_deref(), "name"), (description_query.as_deref(), "description")] {
+        for (query, field) in [
+            (name_query.as_deref(), "name"),
+            (description_query.as_deref(), "description"),
+        ] {
             if let Some(query) = query {
-                let args = format!("bm25: {{ query: \"{}\", properties: [\"{}\"] }}, limit: {}", zihuan_core::weaviate::gql_escape(query), field, limit);
-                if let Ok(response) = reference.query_with_args(&reference.class_name, &args, &properties) { merge_image_items(&mut items, weaviate_image_items(response, "keyword")); }
+                let args = format!(
+                    "bm25: {{ query: \"{}\", properties: [\"{}\"] }}, limit: {}",
+                    zihuan_core::weaviate::gql_escape(query),
+                    field,
+                    limit
+                );
+                if let Ok(response) = reference.query_with_args(&reference.class_name, &args, &properties) {
+                    merge_image_items(&mut items, weaviate_image_items(response, "keyword"));
+                }
             }
         }
-        for (vector, target) in [(name_vector.as_deref(), "name_vector"), (description_vector.as_deref(), "description_vector")] {
+        for (vector, target) in [
+            (name_vector.as_deref(), "name_vector"),
+            (description_vector.as_deref(), "description_vector"),
+        ] {
             if let Some(vector) = vector {
-                if let Ok(response) = reference.query_near_vector(&reference.class_name, vector, Some(target), limit, &properties, true, false) { merge_image_items(&mut items, weaviate_image_items(response, "semantic")); }
+                if let Ok(response) = reference.query_near_vector(
+                    &reference.class_name,
+                    vector,
+                    Some(target),
+                    limit,
+                    &properties,
+                    true,
+                    false,
+                ) {
+                    merge_image_items(&mut items, weaviate_image_items(response, "semantic"));
+                }
             }
         }
         if name_query.is_none() && description_query.is_none() {
-            if let Ok(response) = reference.query_all(&reference.class_name, limit, &properties) { merge_image_items(&mut items, weaviate_image_items(response, "recent")); }
+            if let Ok(response) = reference.query_all(&reference.class_name, limit, &properties) {
+                merge_image_items(&mut items, weaviate_image_items(response, "recent"));
+            }
         }
-        res.render(Json(ServiceImageResponse { items, backend: "weaviate" })); return;
+        res.render(Json(ServiceImageResponse { items, backend: "weaviate" }));
+        return;
     }
-    let Some(connection_id) = elasticsearch_id else { return render_bad_request(res, "Service has no image store configured".into()) };
-    let reference = match resource_resolver::build_elasticsearch_ref(Some(&connection_id), &connections, Some(WeaviateCollectionSchema::ImageSemantic)) { Ok(Some(reference)) => reference, Ok(None) => return render_bad_request(res, "image connection is not configured".into()), Err(error) => return render_internal_error(res, error) };
-    let hits = match search_elasticsearch_images(&reference, name_query.as_deref(), description_query.as_deref(), name_vector.as_deref(), description_vector.as_deref(), limit) { Ok(hits) => hits, Err(error) => return render_internal_error(res, error) };
-    let items = hits.into_iter().map(|hit| image_item(hit.object_id, &hit.properties, if hit.keyword_match { "keyword" } else { "semantic" }, hit.score, "elasticsearch")).collect();
-    res.render(Json(ServiceImageResponse { items, backend: "elasticsearch" }));
+    let Some(connection_id) = elasticsearch_id else {
+        return render_bad_request(res, "Service has no image store configured".into());
+    };
+    let reference = match resource_resolver::build_elasticsearch_ref(
+        Some(&connection_id),
+        &connections,
+        Some(WeaviateCollectionSchema::ImageSemantic),
+    ) {
+        Ok(Some(reference)) => reference,
+        Ok(None) => return render_bad_request(res, "image connection is not configured".into()),
+        Err(error) => return render_internal_error(res, error),
+    };
+    let hits = match search_elasticsearch_images(
+        &reference,
+        name_query.as_deref(),
+        description_query.as_deref(),
+        name_vector.as_deref(),
+        description_vector.as_deref(),
+        limit,
+    ) {
+        Ok(hits) => hits,
+        Err(error) => return render_internal_error(res, error),
+    };
+    let items = hits
+        .into_iter()
+        .map(|hit| {
+            image_item(
+                hit.object_id,
+                &hit.properties,
+                if hit.keyword_match { "keyword" } else { "semantic" },
+                hit.score,
+                "elasticsearch",
+            )
+        })
+        .collect();
+    res.render(Json(ServiceImageResponse {
+        items,
+        backend: "elasticsearch",
+    }));
 }
 
-fn load_service_and_connections(service_id: &str) -> zihuan_core::error::Result<(model_inference::system_config::AgentConfig, Vec<storage_handler::ConnectionConfig>)> {
-    let agent = load_agents()?.into_iter().find(|item| item.id == service_id).ok_or_else(|| zihuan_core::string_error!("Service '{}' not found", service_id))?;
+fn load_service_and_connections(
+    service_id: &str,
+) -> zihuan_core::error::Result<(
+    model_inference::system_config::AgentConfig,
+    Vec<storage_handler::ConnectionConfig>,
+)> {
+    let agent = load_agents()?
+        .into_iter()
+        .find(|item| item.id == service_id)
+        .ok_or_else(|| zihuan_core::string_error!("Service '{}' not found", service_id))?;
     Ok((agent, load_connections()?))
 }
 
-fn service_memory_config(agent: &model_inference::system_config::AgentConfig) -> (Option<String>, Option<String>, Option<String>) {
+fn service_memory_config(
+    agent: &model_inference::system_config::AgentConfig,
+) -> (Option<String>, Option<String>, Option<String>) {
     match &agent.agent_type {
-        AgentType::QqChat(config) => (config.weaviate_memory_connection_id.clone(), config.elasticsearch_memory_connection_id.clone(), config.embedding_model_ref_id.clone()),
-        AgentType::HttpStream(config) => (config.weaviate_memory_connection_id.clone(), config.elasticsearch_memory_connection_id.clone(), config.embedding_model_ref_id.clone()),
+        AgentType::QqChat(config) => (
+            config.weaviate_memory_connection_id.clone(),
+            config.elasticsearch_memory_connection_id.clone(),
+            config.embedding_model_ref_id.clone(),
+        ),
+        AgentType::HttpStream(config) => (
+            config.weaviate_memory_connection_id.clone(),
+            config.elasticsearch_memory_connection_id.clone(),
+            config.embedding_model_ref_id.clone(),
+        ),
         AgentType::Workspace(_) => (None, None, None),
     }
 }
 
-fn service_image_config(agent: &model_inference::system_config::AgentConfig) -> (Option<String>, Option<String>, Option<String>) {
-    match &agent.agent_type { AgentType::QqChat(config) => (config.weaviate_image_connection_id.clone(), config.elasticsearch_image_connection_id.clone(), config.embedding_model_ref_id.clone()), _ => (None, None, None) }
+fn service_image_config(
+    agent: &model_inference::system_config::AgentConfig,
+) -> (Option<String>, Option<String>, Option<String>) {
+    match &agent.agent_type {
+        AgentType::QqChat(config) => (
+            config.weaviate_image_connection_id.clone(),
+            config.elasticsearch_image_connection_id.clone(),
+            config.embedding_model_ref_id.clone(),
+        ),
+        _ => (None, None, None),
+    }
 }
 
-async fn embedding_vectors(model_id: Option<&str>, name: Option<&str>, description: Option<&str>) -> zihuan_core::error::Result<(Option<Vec<f32>>, Option<Vec<f32>>)> {
-    let Some(model_id) = model_id.filter(|value| !value.is_empty()) else { return Ok((None, None)) };
-    if name.is_none() && description.is_none() { return Ok((None, None)) }
-    let model = RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_id).await?;
+async fn embedding_vectors(
+    model_id: Option<&str>,
+    name: Option<&str>,
+    description: Option<&str>,
+) -> zihuan_core::error::Result<(Option<Vec<f32>>, Option<Vec<f32>>)> {
+    let Some(model_id) = model_id.filter(|value| !value.is_empty()) else {
+        return Ok((None, None));
+    };
+    if name.is_none() && description.is_none() {
+        return Ok((None, None));
+    }
+    let model = RuntimeEmbeddingModelManager::shared()
+        .get_or_create_embedding_model(model_id)
+        .await?;
     let name_vector = name.map(|value| model.inference(value)).transpose()?;
     let description_vector = description.map(|value| model.inference(value)).transpose()?;
     Ok((name_vector, description_vector))
 }
 
-fn memory_items(hits: Vec<AgentMemorySearchHit>, kind: &'static str, backend: &'static str, mutable: bool) -> Vec<ServiceMemoryItem> {
-    hits.into_iter().map(|hit| ServiceMemoryItem { record: hit.record, match_kinds: vec![kind], score: hit.distance, backend, mutable }).collect()
+fn memory_items(
+    hits: Vec<AgentMemorySearchHit>,
+    kind: &'static str,
+    backend: &'static str,
+    mutable: bool,
+) -> Vec<ServiceMemoryItem> {
+    hits.into_iter()
+        .map(|hit| ServiceMemoryItem {
+            record: hit.record,
+            match_kinds: vec![kind],
+            score: hit.distance,
+            backend,
+            mutable,
+        })
+        .collect()
 }
 
 fn merge_memory_items(target: &mut Vec<ServiceMemoryItem>, incoming: Vec<ServiceMemoryItem>) {
-    for item in incoming { if let Some(existing) = target.iter_mut().find(|current| current.record.object_id == item.record.object_id) { if !existing.match_kinds.contains(&item.match_kinds[0]) { existing.match_kinds.push(item.match_kinds[0]); } } else { target.push(item); } }
+    for item in incoming {
+        if let Some(existing) = target
+            .iter_mut()
+            .find(|current| current.record.object_id == item.record.object_id)
+        {
+            if !existing.match_kinds.contains(&item.match_kinds[0]) {
+                existing.match_kinds.push(item.match_kinds[0]);
+            }
+        } else {
+            target.push(item);
+        }
+    }
     target.sort_by_key(|item| !item.match_kinds.contains(&"keyword"));
 }
 
-fn image_property_names() -> Vec<String> { ["media_id", "original_source", "rustfs_path", "name", "description", "mime_type", "source"].into_iter().map(str::to_string).collect() }
-fn weaviate_image_items(response: Value, kind: &'static str) -> Vec<ServiceImageItem> {
-    response.get("data").and_then(|value| value.get("Get")).and_then(Value::as_object).and_then(|items| items.values().next()).and_then(Value::as_array).into_iter().flatten().filter_map(|item| { let id = item.get("_additional").and_then(|value| value.get("id")).and_then(Value::as_str)?; Some(image_item(id.to_string(), item, kind, item.get("_additional").and_then(|value| value.get("distance")).and_then(Value::as_f64), "weaviate")) }).collect()
+fn image_property_names() -> Vec<String> {
+    [
+        "media_id",
+        "original_source",
+        "rustfs_path",
+        "name",
+        "description",
+        "mime_type",
+        "source",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
 }
-fn image_item(object_id: String, value: &Value, kind: &'static str, score: Option<f64>, backend: &'static str) -> ServiceImageItem {
+fn weaviate_image_items(response: Value, kind: &'static str) -> Vec<ServiceImageItem> {
+    response
+        .get("data")
+        .and_then(|value| value.get("Get"))
+        .and_then(Value::as_object)
+        .and_then(|items| items.values().next())
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let id = item
+                .get("_additional")
+                .and_then(|value| value.get("id"))
+                .and_then(Value::as_str)?;
+            Some(image_item(
+                id.to_string(),
+                item,
+                kind,
+                item.get("_additional")
+                    .and_then(|value| value.get("distance"))
+                    .and_then(Value::as_f64),
+                "weaviate",
+            ))
+        })
+        .collect()
+}
+fn image_item(
+    object_id: String,
+    value: &Value,
+    kind: &'static str,
+    score: Option<f64>,
+    backend: &'static str,
+) -> ServiceImageItem {
     let string = |key| value.get(key).and_then(Value::as_str).map(ToOwned::to_owned);
-    ServiceImageItem { object_id, media_id: string("media_id"), name: string("name"), description: string("description"), original_source: string("original_source"), rustfs_path: string("rustfs_path"), mime_type: string("mime_type"), source: string("source"), url: None, match_kinds: vec![kind], score, backend }
+    ServiceImageItem {
+        object_id,
+        media_id: string("media_id"),
+        name: string("name"),
+        description: string("description"),
+        original_source: string("original_source"),
+        rustfs_path: string("rustfs_path"),
+        mime_type: string("mime_type"),
+        source: string("source"),
+        url: None,
+        match_kinds: vec![kind],
+        score,
+        backend,
+    }
 }
 fn merge_image_items(target: &mut Vec<ServiceImageItem>, incoming: Vec<ServiceImageItem>) {
-    for item in incoming { if let Some(existing) = target.iter_mut().find(|current| current.object_id == item.object_id) { if !existing.match_kinds.contains(&item.match_kinds[0]) { existing.match_kinds.push(item.match_kinds[0]); } } else { target.push(item); } }
+    for item in incoming {
+        if let Some(existing) = target.iter_mut().find(|current| current.object_id == item.object_id) {
+            if !existing.match_kinds.contains(&item.match_kinds[0]) {
+                existing.match_kinds.push(item.match_kinds[0]);
+            }
+        } else {
+            target.push(item);
+        }
+    }
     target.sort_by_key(|item| !item.match_kinds.contains(&"keyword"));
 }
 

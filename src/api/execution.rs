@@ -278,6 +278,24 @@ pub async fn get_task_logs(req: &mut Request, res: &mut Response, depot: &mut De
 }
 
 #[handler]
+pub async fn get_task_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let task_id = req.param::<String>("task_id").unwrap_or_default();
+    let tasks = state.tasks.lock().unwrap();
+    let Some(task) = tasks.get(&task_id) else {
+        res.status_code(StatusCode::NOT_FOUND);
+        res.render(Json(serde_json::json!({"error": "Task not found"})));
+        return;
+    };
+    let Some(graph) = task.graph_snapshot.clone() else {
+        res.status_code(StatusCode::NOT_FOUND);
+        res.render(Json(serde_json::json!({"error": "该任务没有可用的节点图快照"})));
+        return;
+    };
+    res.render(Json(graph));
+}
+
+#[handler]
 pub async fn clear_non_running_tasks(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
     let cleared = state.tasks.lock().unwrap().clear_non_running();
