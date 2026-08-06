@@ -2,10 +2,22 @@ import { LiteGraph } from "litegraph.js";
 import type { CanvasFacade } from "./types";
 import { getInlineRowCenterY, getInlineWidgetHeight, getInlineWidgetTopY } from "../inline_layout";
 import { getBoundaryNodeColors, getLiteGraphColors, onThemeChange } from "../../ui/theme";
+import { openOverlay } from "../../ui/dialogs/index";
 import { resolveConcretePortType } from "./type_utils";
 
 export const NODE_TITLE_HEIGHT = 30;
 export const DESC_BAND_HEIGHT = 20;
+
+interface OutputSummaryHitRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  nodeTitle: string;
+  portName: string;
+  output: unknown;
+  executionTime: string | null;
+}
 
 export function bindThemeLifecycle(canvas: CanvasFacade): void {
   applyLiteGraphTheme(canvas);
@@ -205,7 +217,186 @@ export function bindCanvasRendering(canvas: CanvasFacade, onNodesMoved: () => vo
       void targetDef;
     }
     ctx.restore();
+    drawOutputSummaries(canvas, ctx, links, allNodes, scale, occupiedRects);
   };
+
+  const handleOutputSummaryClick = (event: MouseEvent): boolean => {
+    if (!canvas.outputSummariesVisible) return false;
+    const [x, y] = (lCanvas as any).convertEventToCanvasOffset(event) as [number, number];
+    const hitRects = ((lCanvas as any)._zhOutputSummaryHitRects ?? []) as OutputSummaryHitRect[];
+    const hit = hitRects.find((rect) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom);
+    if (!hit) return false;
+    showOutputDetailDialog(hit.nodeTitle, hit.portName, hit.output, hit.executionTime);
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  };
+  (lCanvas as any)._zhOutputSummaryClick = handleOutputSummaryClick;
+
+  const canvasElement = (lCanvas as any).canvas as HTMLCanvasElement;
+  window.addEventListener("mousedown", (event: MouseEvent) => {
+    if (event.target !== canvasElement || !handleOutputSummaryClick(event)) return;
+    event.stopImmediatePropagation();
+  }, true);
+}
+
+function drawOutputSummaries(
+  canvas: CanvasFacade,
+  ctx: CanvasRenderingContext2D,
+  links: Record<number, any>,
+  allNodes: any[],
+  scale: number,
+  occupiedRects: Array<{ left: number; top: number; right: number; bottom: number }>,
+): void {
+  const lCanvas = canvas.lCanvas as any;
+  const hitRects: OutputSummaryHitRect[] = [];
+  lCanvas._zhOutputSummaryHitRects = hitRects;
+  if (!canvas.outputSummariesVisible) return;
+
+  const linksByOutput = new Map<string, any[]>();
+  for (const link of Object.values(links)) {
+    if (!link || link.origin_id === undefined) continue;
+    const key = `${link.origin_id}:${link.origin_slot}`;
+    const siblings = linksByOutput.get(key) ?? [];
+    siblings.push(link);
+    linksByOutput.set(key, siblings);
+  }
+
+  ctx.save();
+  ctx.font = `${Math.round(11 / scale)}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const node of allNodes) {
+    const values = node?._outputByPort as Record<string, unknown> | undefined;
+    if (!values || !node.outputs) continue;
+    for (let slot = 0; slot < node.outputs.length; slot++) {
+      const port = node.outputs[slot];
+      if (!port || !Object.prototype.hasOwnProperty.call(values, port.name)) continue;
+      const value = values[port.name];
+      const outgoing = linksByOutput.get(`${node.id}:${slot}`) ?? [];
+      if (outgoing.length > 0) {
+        const sourcePortPos = new Float32Array(2);
+        node.getConnectionPos(false, slot, sourcePortPos);
+        for (const link of outgoing) {
+          const pos = getLinkLabelPosition(link);
+          if (!pos) continue;
+          drawOutputSummaryPill(
+            ctx,
+            pos[0],
+            pos[1] + 18 / scale,
+            value,
+            node.title,
+            port.name,
+            node._executionTime ?? null,
+            scale,
+            occupiedRects,
+            hitRects,
+            "center",
+            sourcePortPos[0] + 8 / scale,
+          );
+        }
+        continue;
+      }
+
+      const connectionPos = new Float32Array(2);
+      node.getConnectionPos(false, slot, connectionPos);
+      drawOutputSummaryPill(
+        ctx,
+        connectionPos[0] + 10 / scale,
+        connectionPos[1],
+        value,
+        node.title,
+        port.name,
+        node._executionTime ?? null,
+        scale,
+        occupiedRects,
+        hitRects,
+        "left",
+      );
+    }
+  }
+  ctx.restore();
+}
+
+function drawOutputSummaryPill(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  initialY: number,
+  output: unknown,
+  nodeTitle: string,
+  portName: string,
+  executionTime: string | null,
+  scale: number,
+  occupiedRects: Array<{ left: number; top: number; right: number; bottom: number }>,
+  hitRects: OutputSummaryHitRect[],
+  align: "center" | "left" = "center",
+  minimumLeft = Number.NEGATIVE_INFINITY,
+): void {
+  const paddingX = 6 / scale;
+  const paddingY = 4 / scale;
+  const fontSize = Math.round(10 / scale);
+  const text = truncateText(ctx, formatOutputSummary(output), 120 / scale);
+  const width = ctx.measureText(text).width + paddingX * 2;
+  const height = fontSize + paddingY * 2;
+  const left = Math.max(align === "center" ? x - width / 2 : x, minimumLeft);
+  let top = initialY - height / 2;
+  let rect = { left, top, right: left + width, bottom: top + height };
+  for (let attempt = 0; attempt < 6 && occupiedRects.some((other) => rectsOverlap(rect, other)); attempt++) {
+    top += height + 4 / scale;
+    rect = { left, top, right: left + width, bottom: top + height };
+  }
+  occupiedRects.push(rect);
+
+  const colors = getLiteGraphColors();
+  ctx.fillStyle = colors.widgetButtonBg;
+  ctx.strokeStyle = colors.widgetOutline;
+  ctx.beginPath();
+  (ctx as any).roundRect(rect.left, rect.top, width, height, 3 / scale);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = colors.widgetButtonText;
+  ctx.fillText(text, rect.left + width / 2, rect.top + height / 2);
+  hitRects.push({ ...rect, nodeTitle, portName, output, executionTime });
+}
+
+function formatOutputSummary(output: unknown): string {
+  if (typeof output === "string") return output.replace(/\s+/g, " ").trim() || "(空字符串)";
+  try {
+    return JSON.stringify(output) ?? String(output);
+  } catch {
+    return String(output);
+  }
+}
+
+function showOutputDetailDialog(title: string, portName: string, output: unknown, executionTime: string | null): void {
+  const { overlay, dialog, close } = openOverlay();
+  dialog.style.width = "min(900px, 88vw)";
+  dialog.style.maxWidth = "900px";
+  const heading = document.createElement("h3");
+  heading.textContent = `${title} - ${portName} 输出`;
+  dialog.appendChild(heading);
+  if (executionTime) {
+    const time = document.createElement("div");
+    time.className = "zh-hint";
+    time.textContent = `执行时间 ${executionTime}`;
+    dialog.appendChild(time);
+  }
+  const content = document.createElement("pre");
+  content.style.cssText = "margin:0;max-height:60vh;overflow:auto;white-space:pre-wrap;word-break:break-word;font:12px/1.5 monospace;";
+  content.textContent = typeof output === "string" ? output : JSON.stringify(output, null, 2) ?? String(output);
+  dialog.appendChild(content);
+  const buttons = document.createElement("div");
+  buttons.className = "zh-buttons";
+  const closeButton = document.createElement("button");
+  closeButton.className = "primary";
+  closeButton.textContent = "关闭";
+  closeButton.addEventListener("click", close);
+  buttons.appendChild(closeButton);
+  dialog.appendChild(buttons);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) close();
+  });
+  setTimeout(() => closeButton.focus(), 0);
 }
 
 function bindDrawNodeWidgets(canvas: CanvasFacade) {

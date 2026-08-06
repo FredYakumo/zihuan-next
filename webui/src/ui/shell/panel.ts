@@ -1,4 +1,4 @@
-import { CloseIcon, PlayCircleIcon, StopCircleIcon } from "tdesign-icons-vue-next";
+import { BrowseIcon, BrowseOffIcon, CloseIcon, PlayCircleIcon, StopCircleIcon } from "tdesign-icons-vue-next";
 
 import { appendIcon, setButtonIcon } from "../icon";
 
@@ -16,6 +16,7 @@ export function buildCanvasPanelButtons(
   onAddNode: () => void,
   onExecute: () => void,
   onStopTask: () => void,
+  onToggleOutputSummaries: () => boolean,
 ): {
   updateRunButton: (isRunning: boolean) => void;
   appendLogEntry: (level: string, message: string, timestamp: string) => void;
@@ -40,6 +41,17 @@ export function buildCanvasPanelButtons(
   varBtn.title = "管理图变量";
   varBtn.addEventListener("click", onVariables);
   panel.appendChild(varBtn);
+
+  const outputBtn = document.createElement("button");
+  outputBtn.className = "canvas-output-toggle";
+  outputBtn.title = "隐藏输出摘要";
+  setButtonIcon(outputBtn, BrowseIcon, "隐藏输出摘要");
+  outputBtn.addEventListener("click", () => {
+    const visible = onToggleOutputSummaries();
+    outputBtn.title = visible ? "隐藏输出摘要" : "显示输出摘要";
+    setButtonIcon(outputBtn, visible ? BrowseIcon : BrowseOffIcon, outputBtn.title);
+  });
+  panel.appendChild(outputBtn);
 
   const MAX_BUFFER = 1000;
   const logBuffer: Array<{ level: string; message: string; timestamp: string }> = [];
