@@ -326,6 +326,10 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
         self.state.tasks.lock().unwrap().append_task_progress(task_id, message);
     }
 
+    fn set_task_graph(&self, task_id: &str, graph: serde_json::Value, object_path: Option<String>) {
+        self.state.tasks.lock().unwrap().set_task_graph(task_id, graph, object_path);
+    }
+
     fn cancel_task(&self, task_id: &str) -> bool {
         self.state.tasks.lock().unwrap().stop_task(task_id)
     }

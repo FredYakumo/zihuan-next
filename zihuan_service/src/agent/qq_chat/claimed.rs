@@ -44,7 +44,7 @@ use storage_handler::AgentMemoryAccessContext;
 
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use crate::storage::qq_chat_history_store::{
-    conversation_history_key, chat_preprompt_history_key, load_history, save_history,
+    chat_preprompt_history_key, conversation_history_key, load_history, save_history,
 };
 
 use crate::agent::classify_intent::{classify_intent_with_trace, IntentCategory};
@@ -264,14 +264,14 @@ impl QqChatAgentServiceInner {
                     ctx.llm.supports_multimodal_input(),
                     &cmd_system_prompt,
                     ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str()),
-                   message_rate_limit_warning,
-                   &mut cmd_session_state,
-                   &cmd_emotion_dimensions,
-                   None,
-               ),
-               ctx.llm.api_style(),
-           );
-           history.push(user_msg_for_cmd);
+                    message_rate_limit_warning,
+                    &mut cmd_session_state,
+                    &cmd_emotion_dimensions,
+                    None,
+                ),
+                ctx.llm.api_style(),
+            );
+            history.push(user_msg_for_cmd);
             history.push(message_with_api_style(
                 LLMMessage::assistant_text(result.reply),
                 ctx.llm.api_style(),
@@ -880,6 +880,7 @@ impl QqChatAgentServiceInner {
             _ => None,
         };
         let preprompt_context = run_chat_preprompt_agent(
+            trace,
             ctx.natural_language_reply_llm,
             ctx.cache,
             &chat_preprompt_history_key,
@@ -896,12 +897,26 @@ impl QqChatAgentServiceInner {
             ctx.rdb_pool.cloned(),
             &self.default_tools_enabled,
         );
+        trace.record_graph_phase(
+            "Preprompt 阶段",
+            serde_json::json!({
+                "context": preprompt_context,
+                "includes": ["名词处理", "情绪维度处理", "情绪提示词生成", "最近消息与记忆查询"],
+            }),
+        );
 
         let base_system_prompt = if is_group {
             build_group_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
         } else {
             build_private_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
         };
+        trace.record_graph_phase(
+            "情绪提示词生成",
+            serde_json::json!({
+                "emotion_dimensions": emotion_dimensions,
+                "preprompt_context": preprompt_context,
+            }),
+        );
 
         let intent_trace = classify_intent_with_trace(
             ctx.intent_classification_llm,
@@ -923,13 +938,13 @@ impl QqChatAgentServiceInner {
                     turn_llm.supports_multimodal_input(),
                     &base_system_prompt,
                     ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str()),
-                   message_rate_limit_warning,
-                   &mut session_state,
-                   &emotion_dimensions,
-                   preprompt_context.as_deref(),
-               ),
-               turn_llm.api_style(),
-           )
+                    message_rate_limit_warning,
+                    &mut session_state,
+                    &emotion_dimensions,
+                    preprompt_context.as_deref(),
+                ),
+                turn_llm.api_style(),
+            )
         };
 
         let mut history = sanitize_messages_for_inference(history);
@@ -1010,10 +1025,10 @@ impl QqChatAgentServiceInner {
             shared_runtime_values: Arc::clone(&shared_runtime_values),
             system_prompt: base_system_prompt.clone(),
             style_prompt: ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.clone()),
-           session_state: Arc::clone(&turn_session_state),
-           emotion_dimensions: emotion_dimensions.clone(),
-           preprompt_context: preprompt_context.clone(),
-       }));
+            session_state: Arc::clone(&turn_session_state),
+            emotion_dimensions: emotion_dimensions.clone(),
+            preprompt_context: preprompt_context.clone(),
+        }));
 
         let memory_backend = ctx
             .elasticsearch_memory_ref

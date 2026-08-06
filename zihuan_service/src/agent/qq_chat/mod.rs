@@ -1,5 +1,5 @@
-mod core;
 mod chat_preprompt;
+mod core;
 pub mod ignore_store;
 mod inbox;
 pub mod language_style_store;
@@ -796,6 +796,32 @@ impl QqChatAgentServiceInner {
             )
         };
         trace.finish_with_summary();
+
+        if let Some(task_handle) = task_handle.as_ref() {
+            let graph = trace.graph_definition(&task_handle.task_id);
+            let graph_value = serde_json::to_value(&graph).unwrap_or(serde_json::Value::Null);
+            let object_path = ctx.s3_ref.as_ref().and_then(|s3_ref| {
+                let key = format!(
+                    "qq-chat-task-graphs/{}/{}.json",
+                    Local::now().format("%Y/%m/%d"),
+                    task_handle.task_id
+                );
+                let bytes = serde_json::to_vec(&graph).ok()?;
+                match block_async(s3_ref.put_object(&key, "application/json", &bytes)) {
+                    Ok(_) => Some(format!("rustfs://{key}")),
+                    Err(err) => {
+                        warn!(
+                            "[QqChatAgentService] failed to persist task graph {}: {err}",
+                            task_handle.task_id
+                        );
+                        None
+                    }
+                }
+            });
+            if let Some(runtime) = ctx.task_runtime.as_ref() {
+                runtime.set_task_graph(&task_handle.task_id, graph_value, object_path);
+            }
+        }
 
         release_session(session, &sender_id, claim_token);
         ctx.pending_steer.finish_session(&sender_id);
