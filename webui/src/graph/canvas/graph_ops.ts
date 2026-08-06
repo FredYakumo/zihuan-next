@@ -2,7 +2,7 @@ import { LiteGraph } from "litegraph.js";
 import { graphs } from "../../api/client";
 import { logger } from "../../api/logger";
 import type { EdgeDefinition, NodeDefinition, NodeGraphDefinition } from "../../api/types";
-import { getBoundaryNodeColors, getDisabledNodeColors, getPortColor } from "../../ui/theme";
+import { getBoundaryNodeColors, getDisabledNodeColors, getLiteGraphColors, getPortColor } from "../../ui/theme";
 import { setupNodeWidgets } from "../widgets";
 import type { BrainToolDefinition, EmbeddedFunctionConfig } from "../../ui/dialogs/types";
 import type { CanvasFacade } from "./types";
@@ -23,6 +23,12 @@ const PROTECTED_BOUNDARY_NODE_IDS = new Set([
   "__graph_inputs__",
   "__graph_outputs__",
 ]);
+
+const OUTPUT_PANEL_HEADER_HEIGHT = 26;
+const OUTPUT_PANEL_MIN_HEIGHT = 142;
+const OUTPUT_PANEL_MAX_HEIGHT = 302;
+const OUTPUT_PANEL_WIDTH = 280;
+const OUTPUT_TEXT_MAX_CHARS = 8_000;
 
 export class CanvasGraphOps {
   constructor(private readonly canvas: CanvasFacade) {}
@@ -361,8 +367,17 @@ export class CanvasGraphOps {
     node.onDrawForeground = function (this: any, ctx: CanvasRenderingContext2D) {
       drawBindingBadges.call(this, ctx);
       drawHelpButton.call(this, ctx);
+      drawNodeOutputPanel(this, ctx);
     };
     node.onMouseDown = (e: MouseEvent, pos: [number, number]): boolean | undefined => {
+      if (isOutputToggleHit(node, pos)) {
+        node._hideOutput = !node._hideOutput;
+        updateOutputPanelSize(node);
+        this.canvas.lGraph.setDirtyCanvas(true, true);
+        e.preventDefault();
+        e.stopPropagation();
+        return true;
+      }
       const btnX = node.size[0] - 12;
       const btnY = -NODE_TITLE_HEIGHT / 2;
       const dx = pos[0] - btnX;
@@ -460,6 +475,14 @@ export class CanvasGraphOps {
 
     if (nodeDef.size) {
       node.size = [nodeDef.size.width, nodeDef.size.height];
+    }
+    if (nodeDef.output !== null && nodeDef.output !== undefined) {
+      node._outputBaseSize = [node.size[0], node.size[1]];
+      node._outputText = formatNodeOutput(nodeDef.output);
+      node._executionTime = nodeDef.execution_time ?? null;
+      node._hideOutput = false;
+      node.size[0] = Math.max(node.size[0], OUTPUT_PANEL_WIDTH);
+      updateOutputPanelSize(node);
     }
   }
 
@@ -634,4 +657,118 @@ export class CanvasGraphOps {
     this.colorizeAllLinks();
     this.canvas.lGraph.setDirtyCanvas(true, false);
   }
+}
+
+function formatNodeOutput(output: unknown): string {
+  let value: string;
+  if (typeof output === "string") {
+    value = output;
+  } else {
+    try {
+      value = JSON.stringify(output, null, 2) ?? String(output);
+    } catch {
+      value = String(output);
+    }
+  }
+  return value.length > OUTPUT_TEXT_MAX_CHARS
+    ? `${value.slice(0, OUTPUT_TEXT_MAX_CHARS)}\n...（输出已截断）`
+    : value;
+}
+
+function outputLines(node: any, ctx: CanvasRenderingContext2D): string[] {
+  const text = String(node._outputText ?? "");
+  const maxWidth = Math.max(80, node.size[0] - 20);
+  const lines: string[] = [];
+  for (const sourceLine of text.split("\n")) {
+    if (!sourceLine) {
+      lines.push("");
+      continue;
+    }
+    let line = "";
+    for (const char of sourceLine) {
+      if (ctx.measureText(line + char).width > maxWidth && line) {
+        lines.push(line);
+        line = char;
+      } else {
+        line += char;
+      }
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+function updateOutputPanelSize(node: any): void {
+  const baseHeight = Number(node._outputBaseSize?.[1] ?? node.size[1]);
+  node.size[1] = baseHeight + OUTPUT_PANEL_HEADER_HEIGHT;
+  if (node._hideOutput) return;
+
+  const measuredCanvas = document.createElement("canvas");
+  const ctx = measuredCanvas.getContext("2d");
+  if (!ctx) return;
+  ctx.font = "12px monospace";
+  const contentHeight = Math.min(OUTPUT_PANEL_MAX_HEIGHT - OUTPUT_PANEL_HEADER_HEIGHT, Math.max(
+    OUTPUT_PANEL_MIN_HEIGHT - OUTPUT_PANEL_HEADER_HEIGHT,
+    outputLines(node, ctx).length * 16 + 12,
+  ));
+  node.size[1] = baseHeight + OUTPUT_PANEL_HEADER_HEIGHT + contentHeight;
+}
+
+function isOutputToggleHit(node: any, pos: [number, number]): boolean {
+  if (!node._outputBaseSize) return false;
+  const baseHeight = Number(node._outputBaseSize[1]);
+  return pos[0] >= node.size[0] - 82
+    && pos[0] <= node.size[0] - 8
+    && pos[1] >= baseHeight
+    && pos[1] <= baseHeight + OUTPUT_PANEL_HEADER_HEIGHT;
+}
+
+function drawNodeOutputPanel(node: any, ctx: CanvasRenderingContext2D): void {
+  if (!node._outputBaseSize) return;
+  const colors = getLiteGraphColors();
+  const baseHeight = Number(node._outputBaseSize[1]);
+  const width = Number(node.size[0]);
+  const panelHeight = Number(node.size[1]) - baseHeight;
+  const hidden = !!node._hideOutput;
+
+  ctx.save();
+  ctx.fillStyle = colors.widgetBg;
+  ctx.fillRect(0, baseHeight, width, panelHeight);
+  ctx.strokeStyle = colors.widgetOutline;
+  ctx.strokeRect(0.5, baseHeight + 0.5, width - 1, panelHeight - 1);
+  ctx.font = "11px sans-serif";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = colors.widgetSecondary;
+  ctx.fillText(node._executionTime ? `执行时间 ${node._executionTime}` : "执行输出", 9, baseHeight + 13);
+
+  const toggleX = width - 77;
+  const toggleY = baseHeight + 8;
+  ctx.strokeStyle = colors.widgetText;
+  ctx.strokeRect(toggleX, toggleY, 10, 10);
+  if (hidden) {
+    ctx.beginPath();
+    ctx.moveTo(toggleX + 2, toggleY + 5);
+    ctx.lineTo(toggleX + 4, toggleY + 8);
+    ctx.lineTo(toggleX + 9, toggleY + 2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = colors.widgetText;
+  ctx.fillText("隐藏输出", toggleX + 15, baseHeight + 13);
+
+  if (!hidden) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(8, baseHeight + OUTPUT_PANEL_HEADER_HEIGHT + 4, width - 16, panelHeight - OUTPUT_PANEL_HEADER_HEIGHT - 8);
+    ctx.clip();
+    ctx.font = "12px monospace";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = colors.widgetText;
+    const lines = outputLines(node, ctx);
+    const maxLines = Math.floor((panelHeight - OUTPUT_PANEL_HEADER_HEIGHT - 12) / 16);
+    for (let index = 0; index < Math.min(lines.length, maxLines); index++) {
+      ctx.fillText(lines[index], 10, baseHeight + OUTPUT_PANEL_HEADER_HEIGHT + 8 + index * 16);
+    }
+    ctx.restore();
+  }
+  ctx.restore();
 }
