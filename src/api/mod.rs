@@ -9,6 +9,7 @@ pub mod hyperparams;
 pub mod log;
 pub mod registry;
 pub mod settings;
+pub mod scheduled_tasks;
 pub mod setup_wizard;
 pub mod state;
 pub mod task_store;
@@ -188,6 +189,11 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
                 .push(Router::with_path("<task_id>/rerun").post(execution::rerun_task))
                 .push(Router::with_path("<task_id>/logs").get(execution::get_task_logs))
                 .push(Router::with_path("<task_id>/graph").get(execution::get_task_graph)),
+        )
+        .push(
+            Router::with_path("scheduled-tasks")
+                .get(scheduled_tasks::list_scheduled_tasks)
+                .push(Router::with_path("<task_id>/cancel").post(scheduled_tasks::cancel_scheduled_task)),
         )
         // File I/O (not graph-scoped)
         .push(Router::with_path("file/open").post(file_io::open_file))

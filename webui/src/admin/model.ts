@@ -150,6 +150,9 @@ export interface ServiceFormState {
   elasticsearch_memory_connection_id: string;
   max_message_length: number;
   compact_context_length: number;
+  dream_enabled: boolean;
+  dream_interval_value: number;
+  dream_interval_unit: "minutes" | "hours" | "days";
   max_steer_count: number;
   emotion_dimensions: QqChatEmotionDimensionFormItem[];
   default_tools_enabled: Record<string, boolean>;
@@ -463,6 +466,9 @@ export function defaultServiceForm(): ServiceFormState {
     elasticsearch_memory_connection_id: "",
     max_message_length: 500,
     compact_context_length: 0,
+    dream_enabled: false,
+    dream_interval_value: 30,
+    dream_interval_unit: "minutes",
     max_steer_count: 4,
     emotion_dimensions: defaultQqChatEmotionDimensions(),
     default_tools_enabled: defaultQqChatDefaultToolsEnabled(),
@@ -931,6 +937,9 @@ export function serviceFormFromConfig(
     form.elasticsearch_memory_connection_id = String(agentType.elasticsearch_memory_connection_id ?? "");
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.compact_context_length = Number(agentType.compact_context_length ?? 0);
+    form.dream_enabled = Boolean(agentType.dream_enabled ?? false);
+    form.dream_interval_value = Number(agentType.dream_interval_value ?? 30);
+    form.dream_interval_unit = (agentType.dream_interval_unit === "hours" || agentType.dream_interval_unit === "days") ? agentType.dream_interval_unit : "minutes";
     form.max_steer_count = Number(agentType.max_steer_count ?? 4);
     form.emotion_dimensions = normalizeQqChatEmotionDimensions(
       agentType.emotion_dimensions,
@@ -1150,6 +1159,9 @@ export function buildServicePayload(form: ServiceFormState): {
         elasticsearch_memory_connection_id: form.elasticsearch_memory_connection_id || null,
         max_message_length: form.max_message_length,
         compact_context_length: form.compact_context_length,
+        dream_enabled: form.dream_enabled,
+        dream_interval_value: Math.max(1, Math.trunc(form.dream_interval_value || 1)),
+        dream_interval_unit: form.dream_interval_unit,
         max_steer_count: form.max_steer_count,
         emotion_dimensions: normalizeQqChatEmotionDimensions(
           form.emotion_dimensions,

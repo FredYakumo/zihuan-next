@@ -845,6 +845,14 @@ fn validate_agent_connection_schemas(agent_type: &AgentType, connections: &[Conn
     match agent_type {
         AgentType::QqChat(config) => {
             validate_rdb_connection(connections, config.resolved_rdb_id())?;
+            if config.dream_enabled {
+                if config.dream_interval_seconds().is_none() {
+                    return Err("Dream interval must use minutes, hours, or days with a positive value".to_string());
+                }
+                if config.resolved_rdb_id().is_none() {
+                    return Err("Dream requires a relational database connection".to_string());
+                }
+            }
             validate_weaviate_connection_schema(
                 connections,
                 config.weaviate_image_connection_id.as_deref(),

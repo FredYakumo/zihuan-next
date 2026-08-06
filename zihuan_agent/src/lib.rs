@@ -1,4 +1,5 @@
 pub mod brain;
+pub mod dream_agent;
 pub mod emotion;
 pub mod session_state;
 pub mod utils;

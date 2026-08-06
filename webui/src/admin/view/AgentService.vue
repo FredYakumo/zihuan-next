@@ -177,6 +177,18 @@
                 <t-form-item label="Compact Context Length">
                   <t-input-number v-model="form.compact_context_length" :min="0" />
                 </t-form-item>
+                <t-form-item label="Dream">
+                  <t-checkbox v-model="form.dream_enabled">启用 Dream 记忆</t-checkbox>
+                  <div v-if="form.dream_enabled" class="agent-service-form-grid" style="margin-top: 8px">
+                    <t-input-number v-model="form.dream_interval_value" :min="1" />
+                    <t-select v-model="form.dream_interval_unit">
+                      <t-option value="minutes" label="分" />
+                      <t-option value="hours" label="时" />
+                      <t-option value="days" label="天" />
+                    </t-select>
+                  </div>
+                  <div v-if="form.dream_enabled && !form.rdb_id" class="agent-service-form-hint">Dream 需要配置关系数据库连接。</div>
+                </t-form-item>
               </div>
               <div class="agent-service-form-grid">
                 <t-form-item label="情绪维度" class="agent-service-form-item-full">

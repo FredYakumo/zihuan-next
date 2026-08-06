@@ -186,6 +186,18 @@ export interface TaskLogEntry {
   message: string;
 }
 
+export interface ScheduledTaskEntry {
+  id: string;
+  task_name: string;
+  source_service: string;
+  triggered_by: string | null;
+  start_time: string;
+  end_time: string | null;
+  status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
+  related_task_ids: string[];
+  info_summary: string | null;
+}
+
 // WebSocket message types
 import type { QQMessageItem } from "../ui/dialogs/types";
 
