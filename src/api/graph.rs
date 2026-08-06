@@ -157,6 +157,7 @@ pub async fn add_node(req: &mut Request, res: &mut Response, depot: &mut Depot) 
         input_ports,
         output_ports,
         output: None,
+        execution_time: None,
         dynamic_input_ports: dyn_in,
         dynamic_output_ports: dyn_out,
         position: Some(GraphPosition { x: body.x, y: body.y }),

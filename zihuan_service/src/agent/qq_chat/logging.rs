@@ -676,6 +676,7 @@ impl QqChatTaskTrace {
             input_ports: vec![Port::new("previous", DataType::Json).optional()],
             output_ports: vec![Port::new("result", DataType::Json)],
             output: Some(output),
+            execution_time: Some(Local::now().to_rfc3339()),
             dynamic_input_ports: false,
             dynamic_output_ports: false,
             position: Some(GraphPosition { x: position_x, y: 180.0 }),
@@ -703,6 +704,7 @@ impl QqChatTaskTrace {
         }
         if let Some(node) = self.inner.lock().unwrap().graph_nodes.iter_mut().find(|node| node.id == id) {
             node.output = Some(output);
+            node.execution_time = Some(Local::now().to_rfc3339());
         }
     }
 

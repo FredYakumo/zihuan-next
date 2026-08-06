@@ -134,6 +134,9 @@ pub struct NodeDefinition {
     /// Serializable execution result captured for task snapshots.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<Value>,
+    /// Wall-clock time at which this node produced its captured output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_time: Option<String>,
     #[serde(default)]
     pub dynamic_input_ports: bool,
     #[serde(default)]
@@ -1238,6 +1241,7 @@ fn node_to_definition(id: &str, node: &dyn Node) -> NodeDefinition {
         input_ports: node.input_ports(),
         output_ports: node.output_ports(),
         output: None,
+        execution_time: None,
         dynamic_input_ports: node.has_dynamic_input_ports(),
         dynamic_output_ports: node.has_dynamic_output_ports(),
         position: None,
