@@ -23,6 +23,7 @@ use crate::agent::qq_chat::tool_quota::{QqChatToolQuotaContext, SessionToolQuota
 
 /// Runtime context assembled per-turn for the QQ chat agent service.
 pub(crate) struct QqChatAgentServiceContext<'a> {
+    pub(crate) agent_id: &'a str,
     pub(crate) adapter: &'a ims_bot_adapter::adapter::SharedBotAdapter,
     pub(crate) bot_name: &'a str,
     pub(crate) agent_system_prompt: Option<&'a str>,
@@ -54,8 +55,12 @@ pub(crate) struct QqChatAgentServiceContext<'a> {
 
 impl<'a> QqChatAgentServiceContext<'a> {
     /// Returns `(role_label, llm_ref)` pairs for all LLM roles configured on this service.
-    /// The order matches the service's logical pipeline: main conversation → intent
-    /// classification → math/programming → natural-language reply.
+    /// QQ Chat agent service's logical pipeline: 
+    /// - main conversation,
+    /// - intent classification,
+    /// - math/programming,
+    /// - natural-language reply
+    /// 
     pub(crate) fn llm_roles(&'a self) -> [(&'static str, &'a Arc<dyn LLMBase>); 4] {
         [
             ("对话", self.llm),

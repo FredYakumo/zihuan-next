@@ -43,6 +43,7 @@ use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
 use super::tool_quota::{QqChatToolQuotaContext, SessionToolQuotaState};
+use super::chat_preprompt::run_dream_agent;
 pub(crate) use super::user_input::{
     append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference, flush_text_part,
     prepare_current_turn_user_input, prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
@@ -859,7 +860,7 @@ impl QqChatAgentService {
                 .await
                 .unwrap_or(None)
                 .unwrap_or_default();
-            match zihuan_agent::dream_agent::run_dream_agent(
+            match run_dream_agent(
                 llm,
                 &previous,
                 &transcript.join("\n"),
@@ -908,6 +909,7 @@ impl QqChatAgentService {
         });
 
         let ctx = QqChatAgentServiceContext {
+            agent_id: &self.config.agent_id,
             adapter,
             bot_name: &self.config.bot_name,
             agent_system_prompt: self.config.system_prompt.as_deref(),
