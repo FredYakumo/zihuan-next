@@ -23,9 +23,14 @@ pub async fn list_scheduled_tasks(req: &mut Request, res: &mut Response, _depot:
     let service_id = req.query::<String>("service_id");
     let Some(service_id) = service_id else { return render_bad_request(res, "service_id is required".to_string()); };
     let status = req.query::<String>("status");
-    match connection_for_service(&service_id).await.and_then(|connection| async move {
-        zihuan_service::scheduled_task::list_tasks(&connection, Some(&service_id), status.as_deref()).await.map_err(|err| err.to_string())
-    }.await) {
+    let result = async {
+        let connection = connection_for_service(&service_id).await?;
+        zihuan_service::scheduled_task::list_tasks(&connection, Some(&service_id), status.as_deref())
+            .await
+            .map_err(|err| err.to_string())
+    }
+    .await;
+    match result {
         Ok(tasks) => res.render(Json(tasks)),
         Err(err) => render_internal_error(res, err),
     }

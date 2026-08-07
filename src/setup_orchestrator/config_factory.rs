@@ -13,7 +13,7 @@ use storage_handler::{
     WeaviateConnection,
     WebSearchEngineConnection,
 };
-use zihuan_core::agent_config::qq_chat::QqChatAgentServiceConfig;
+use zihuan_core::agent_config::qq_chat::{DreamIntervalUnit, QqChatAgentServiceConfig};
 use zihuan_core::weaviate::WeaviateCollectionSchema;
 
 pub async fn create_chat_assistant_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {
@@ -299,6 +299,9 @@ fn build_qq_chat_agent_service() -> AgentConfig {
             elasticsearch_memory_connection_id: None,
             max_message_length: 500,
             compact_context_length: 0,
+            dream_enabled: false,
+            dream_interval_value: 15,
+            dream_interval_unit: DreamIntervalUnit::default(),
             max_steer_count: 4,
             default_tools_enabled: default_tools,
             tool_session_call_limits: HashMap::new(),
