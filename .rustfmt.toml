@@ -1,25 +1,3 @@
-# Rustfmt configuration for zihuan-next
-# Keep this file limited to options supported by stable rustfmt.
-# The previous config mixed in nightly-only options, which stable silently
-# ignored after emitting warnings, causing large repo-wide reformat diffs.
-
+# Rustfmt must preserve the layout chosen by the author, including manual line breaks.
 edition = "2021"
-
-# Line width
-max_width = 120
-chain_width = 80
-fn_call_width = 80
-struct_lit_width = 30
-
-# Imports
-reorder_imports = true
-
-# Formatting style
-hard_tabs = false
-tab_spaces = 4
-newline_style = "Auto"
-
-# Misc
-remove_nested_parens = true
-use_field_init_shorthand = true
-use_try_shorthand = true
+disable_all_formatting = true
