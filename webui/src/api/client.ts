@@ -454,7 +454,7 @@ export interface NotificationCard {
 }
 
 export interface ChatStreamEvent {
-  type: "start" | "delta" | "thinking_delta" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "ask_user";
+  type: "start" | "delta" | "thinking_delta" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "ask_user";
   session_id?: string;
   message_id?: string;
   index?: number;
@@ -470,6 +470,36 @@ export interface ChatStreamEvent {
   question?: string;
   details?: string;
   placeholder?: string;
+  change?: WorkspaceChange;
+}
+
+export type WorkspaceChangeOperation = "create" | "edit" | "delete" | "copy" | "move";
+export type WorkspaceChangeStatus = "pending" | "accepted" | "canceled";
+export interface WorkspaceDiffLine {
+  kind: "added" | "removed";
+  line: string;
+}
+export interface WorkspaceChange {
+  change_id: string;
+  session_id: string;
+  operation: WorkspaceChangeOperation;
+  paths: string[];
+  display_path: string;
+  added_lines: number;
+  removed_lines: number;
+  before_fingerprint: string;
+  after_fingerprint: string;
+  status: WorkspaceChangeStatus;
+  merged_count: number;
+  diff: WorkspaceDiffLine[];
+}
+
+export type AgentsMdLocationKey = "workspace" | "executable" | "home";
+export interface AgentsMdFile {
+  key: AgentsMdLocationKey;
+  path: string;
+  exists: boolean;
+  content: string;
 }
 
 export interface ChatToolCall {
@@ -1043,6 +1073,33 @@ export const chat = {
 
   deleteSession(sessionId: string): Promise<{ ok: boolean }> {
     return request("DELETE", `/chat/sessions/${sessionId}`);
+  },
+
+  listWorkspaceChanges(sessionId: string): Promise<{ changes: WorkspaceChange[] }> {
+    return request("GET", `/chat/sessions/${encodeURIComponent(sessionId)}/changes`);
+  },
+
+  acceptWorkspaceChange(sessionId: string, changeId: string): Promise<{ change: WorkspaceChange }> {
+    return request("POST", `/chat/sessions/${encodeURIComponent(sessionId)}/changes/${encodeURIComponent(changeId)}/accept`);
+  },
+
+  cancelWorkspaceChange(sessionId: string, changeId: string): Promise<{ change: WorkspaceChange }> {
+    return request("POST", `/chat/sessions/${encodeURIComponent(sessionId)}/changes/${encodeURIComponent(changeId)}/cancel`);
+  },
+};
+
+export const agentsMd = {
+  list(workspacePath: string): Promise<{ files: AgentsMdFile[] }> {
+    const qs = buildQueryString({ workspace_path: workspacePath });
+    return request("GET", `/agents-md${qs ? `?${qs}` : ""}`);
+  },
+  save(key: string, content: string, workspacePath: string): Promise<{ ok: boolean; path: string }> {
+    const qs = buildQueryString({ workspace_path: workspacePath });
+    return request("POST", `/agents-md${qs ? `?${qs}` : ""}`, { key, content });
+  },
+  remove(key: string, workspacePath: string): Promise<{ ok: boolean; path: string }> {
+    const qs = buildQueryString({ key, workspace_path: workspacePath });
+    return request("DELETE", `/agents-md${qs ? `?${qs}` : ""}`);
   },
 };
 

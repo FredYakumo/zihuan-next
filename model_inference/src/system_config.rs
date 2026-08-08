@@ -67,6 +67,8 @@ pub struct HttpStreamServiceConfig {
 pub struct WorkspaceAgentServiceConfig {
     #[serde(default)]
     pub llm_ref_id: Option<String>,
+    #[serde(default)]
+    pub agents_md_enabled: bool,
     #[serde(default = "default_workspace_default_tools_enabled")]
     pub default_tools_enabled: std::collections::HashMap<String, bool>,
 }

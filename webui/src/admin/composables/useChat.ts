@@ -5,6 +5,8 @@ import {
   chat,
   fileIO,
   system,
+  agentsMd,
+  type AgentsMdFile,
   type ServiceWithRuntime,
   type ChatHistoryRecord,
   type ChatToolCall,
@@ -13,6 +15,7 @@ import {
   type ChatMessagePart,
   type ChatMessageBranch,
   type LlmConfig,
+  type WorkspaceChange,
 } from "../../api/client";
 import {
   formatTime,
@@ -355,6 +358,14 @@ const selectedService = computed(
 const selectedServiceType = computed(() => selectedService.value?.agent_type?.type ?? "");
 const isChatEligible = computed(() => CHAT_ELIGIBLE_SERVICE_TYPES.has(selectedServiceType.value));
 const isWorkspaceService = computed(() => selectedServiceType.value === "workspace");
+const agentsMdEnabled = computed(() => {
+  const agentType = selectedService.value?.agent_type as Record<string, unknown> | undefined;
+  return agentType?.agents_md_enabled === true;
+});
+const agentsMdAppliedKeys = computed(() => {
+  if (!agentsMdEnabled.value) return new Set<string>();
+  return new Set(agentsMdFiles.value.filter((file) => file.exists).map((file) => file.key));
+});
 const groupedSessions = computed(() => {
   const groups = new Map<string, ChatSessionSummary[]>();
   for (const session of sessions.value) {
@@ -438,6 +449,29 @@ const selectedAgentAvatarFallback = computed(() => {
   return agentInitial(name);
 });
 const pendingAskUser = ref<PendingAskUser | null>(null);
+const workspaceChanges = ref<WorkspaceChange[]>([]);
+const selectedWorkspaceChangeId = ref<string | null>(null);
+const workspaceChangeDialogOpen = ref(false);
+const workspaceChangeError = ref("");
+const agentsMdDialogOpen = ref(false);
+const agentsMdLoading = ref(false);
+const agentsMdSaving = ref(false);
+const agentsMdFiles = ref<AgentsMdFile[]>([]);
+const agentsMdError = ref("");
+const agentsMdEditingKey = ref("");
+const agentsMdEditorContent = ref("");
+const selectedWorkspaceChange = computed(() =>
+  workspaceChanges.value.find((item) => item.change_id === selectedWorkspaceChangeId.value) ?? workspaceChanges.value[0] ?? null,
+);
+const workspaceFileGroups = computed(() => {
+  const groups = new Map<string, WorkspaceChange[]>();
+  for (const change of workspaceChanges.value) {
+    const group = groups.get(change.display_path) ?? [];
+    group.push(change);
+    groups.set(change.display_path, group);
+  }
+  return Array.from(groups, ([path, changes]) => ({ path, changes }));
+});
 const askUserAnswer = ref("");
 const canSubmitAskUser = computed(() =>
   isChatEligible.value &&
@@ -1123,6 +1157,8 @@ async function openSession(sessionId: string) {
   clearChatError();
   clearPendingAskUser();
   const result = await chat.getSessionMessages(sessionId);
+  workspaceChanges.value = (await chat.listWorkspaceChanges(sessionId)).changes;
+  selectedWorkspaceChangeId.value = workspaceChanges.value[0]?.change_id ?? null;
   const firstRecord = result.messages[0];
   if (firstRecord?.agent_id && services.value.some((a) => a.config_id === firstRecord.agent_id)) {
     selectedServiceId.value = firstRecord.agent_id;
@@ -1142,6 +1178,71 @@ async function openSession(sessionId: string) {
   applyHistory(result.messages);
   messageBranches.value = result.branches;
   editingMessage.value = null;
+}
+
+function applyWorkspaceChange(change: WorkspaceChange) {
+  const index = workspaceChanges.value.findIndex((item) => item.change_id === change.change_id);
+  if (index >= 0) {
+    workspaceChanges.value[index] = change;
+  } else if (change.status === "pending") {
+    workspaceChanges.value.push(change);
+  }
+  if (!selectedWorkspaceChangeId.value) {
+    selectedWorkspaceChangeId.value = change.change_id;
+  }
+}
+
+function openWorkspaceChange(change: WorkspaceChange) {
+  selectedWorkspaceChangeId.value = change.change_id;
+  workspaceChangeDialogOpen.value = true;
+  workspaceChangeError.value = "";
+}
+
+function closeWorkspaceChange() {
+  workspaceChangeDialogOpen.value = false;
+}
+
+async function acceptWorkspaceChange(change: WorkspaceChange) {
+  if (!activeSessionId.value) return;
+  try {
+    await chat.acceptWorkspaceChange(activeSessionId.value, change.change_id);
+    workspaceChanges.value = workspaceChanges.value.filter((item) => item.change_id !== change.change_id);
+    if (selectedWorkspaceChangeId.value === change.change_id) {
+      selectedWorkspaceChangeId.value = workspaceChanges.value[0]?.change_id ?? null;
+    }
+    workspaceChangeDialogOpen.value = false;
+  } catch (error) {
+    workspaceChangeError.value = `接受失败: ${(error as Error).message}`;
+  }
+}
+
+async function cancelWorkspaceChange(change: WorkspaceChange) {
+  if (!activeSessionId.value) return;
+  try {
+    await chat.cancelWorkspaceChange(activeSessionId.value, change.change_id);
+    workspaceChanges.value = workspaceChanges.value.filter((item) => item.change_id !== change.change_id);
+    if (selectedWorkspaceChangeId.value === change.change_id) {
+      selectedWorkspaceChangeId.value = workspaceChanges.value[0]?.change_id ?? null;
+    }
+    workspaceChangeDialogOpen.value = false;
+  } catch (error) {
+    workspaceChangeError.value = `撤销失败: ${(error as Error).message}`;
+  }
+}
+
+async function acceptWorkspaceFile(path: string) {
+  const changes = workspaceChanges.value.filter((item) => item.display_path === path);
+  for (const change of changes) {
+    await acceptWorkspaceChange(change);
+  }
+}
+
+async function cancelWorkspaceFile(path: string) {
+  const changes = workspaceChanges.value.filter((item) => item.display_path === path);
+  for (const change of changes) {
+    await cancelWorkspaceChange(change);
+    if (workspaceChangeError.value) break;
+  }
 }
 
 async function copyMessage(message: ChatMessage): Promise<void> {
@@ -1227,6 +1328,105 @@ async function pickDirectory() {
   }
 }
 
+function agentsMdLocationLabel(key: string): string {
+  switch (key) {
+    case "workspace": return "工作目录";
+    case "executable": return "运行目录";
+    case "home": return "用户目录";
+    default: return key;
+  }
+}
+
+async function refreshAgentsMd() {
+  agentsMdLoading.value = true;
+  agentsMdError.value = "";
+  try {
+    const result = await agentsMd.list(workspacePath.value);
+    agentsMdFiles.value = result.files;
+    if (!agentsMdEditingKey.value) {
+      const existing = result.files.find((file) => file.exists) ?? result.files[0];
+      agentsMdEditingKey.value = existing?.key ?? "";
+      agentsMdEditorContent.value = existing?.content ?? "";
+    } else {
+      const current = result.files.find((file) => file.key === agentsMdEditingKey.value);
+      if (current) agentsMdEditorContent.value = current.content;
+    }
+  } catch (error) {
+    agentsMdError.value = `加载失败: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    agentsMdLoading.value = false;
+  }
+}
+
+async function openAgentsMdDialog() {
+  agentsMdDialogOpen.value = true;
+  agentsMdEditingKey.value = "";
+  agentsMdEditorContent.value = "";
+  await refreshAgentsMd();
+}
+
+function closeAgentsMdDialog() {
+  agentsMdDialogOpen.value = false;
+  agentsMdError.value = "";
+}
+
+function selectAgentsMdFile(file: AgentsMdFile) {
+  agentsMdEditingKey.value = file.key;
+  agentsMdEditorContent.value = file.content;
+  agentsMdError.value = "";
+}
+
+async function createAgentsMd() {
+  const existing = agentsMdFiles.value.find((file) => file.key === "workspace" && file.exists);
+  if (existing) {
+    selectAgentsMdFile(existing);
+    return;
+  }
+  agentsMdSaving.value = true;
+  agentsMdError.value = "";
+  try {
+    const created = await agentsMd.save("workspace", "", workspacePath.value);
+    await refreshAgentsMd();
+    const createdFile = agentsMdFiles.value.find((file) => file.path === created.path);
+    if (createdFile) selectAgentsMdFile(createdFile);
+  } catch (error) {
+    agentsMdError.value = `创建失败: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    agentsMdSaving.value = false;
+  }
+}
+
+async function saveAgentsMd() {
+  if (!agentsMdEditingKey.value) return;
+  agentsMdSaving.value = true;
+  agentsMdError.value = "";
+  try {
+    await agentsMd.save(agentsMdEditingKey.value, agentsMdEditorContent.value, workspacePath.value);
+    await refreshAgentsMd();
+  } catch (error) {
+    agentsMdError.value = `保存失败: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    agentsMdSaving.value = false;
+  }
+}
+
+async function deleteAgentsMd(file: AgentsMdFile) {
+  agentsMdSaving.value = true;
+  agentsMdError.value = "";
+  try {
+    await agentsMd.remove(file.key, workspacePath.value);
+    if (agentsMdEditingKey.value === file.key) {
+      agentsMdEditingKey.value = "";
+      agentsMdEditorContent.value = "";
+    }
+    await refreshAgentsMd();
+  } catch (error) {
+    agentsMdError.value = `删除失败: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    agentsMdSaving.value = false;
+  }
+}
+
 function startNewSession() {
   activeSessionId.value = "";
   emit("update:sessionId", "");
@@ -1237,6 +1437,14 @@ function startNewSession() {
   editingMessage.value = null;
   clearChatError();
   clearPendingAskUser();
+  workspaceChanges.value = [];
+  selectedWorkspaceChangeId.value = null;
+  workspaceChangeDialogOpen.value = false;
+  workspaceChangeError.value = "";
+  agentsMdDialogOpen.value = false;
+  agentsMdEditingKey.value = "";
+  agentsMdEditorContent.value = "";
+  agentsMdError.value = "";
 }
 
 function selectModel(id: string) {
@@ -1308,6 +1516,11 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
       placeholder: event.placeholder ?? undefined,
     };
     askUserAnswer.value = "";
+    return;
+  }
+
+  if (event.type === "workspace_change" && event.change) {
+    applyWorkspaceChange(event.change);
     return;
   }
 
@@ -1534,7 +1747,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
   ];
 
   if (fromAskUser) {
-    askUserAnswer.value = "";
+    clearPendingAskUser();
   } else if (!options.attachments) {
     draftMessage.value = "";
     draftImageAttachments.value = [];
@@ -1699,6 +1912,29 @@ onUnmounted(() => {
     selectedAgentAvatarUrl,
     selectedAgentAvatarFallback,
     pendingAskUser,
+    workspaceChanges,
+    workspaceFileGroups,
+    selectedWorkspaceChange,
+    selectedWorkspaceChangeId,
+    workspaceChangeDialogOpen,
+    workspaceChangeError,
+    agentsMdDialogOpen,
+    agentsMdLoading,
+    agentsMdSaving,
+    agentsMdFiles,
+    agentsMdError,
+    agentsMdEditingKey,
+    agentsMdEditorContent,
+    agentsMdEnabled,
+    agentsMdAppliedKeys,
+    agentsMdLocationLabel,
+    openAgentsMdDialog,
+    closeAgentsMdDialog,
+    refreshAgentsMd,
+    selectAgentsMdFile,
+    createAgentsMd,
+    saveAgentsMd,
+    deleteAgentsMd,
     askUserAnswer,
     canSubmitAskUser,
     messageGroups,
@@ -1739,6 +1975,12 @@ onUnmounted(() => {
     handleImagePreviewKeydown,
     toggleAutoCollapseThinking,
     clearPendingAskUser,
+    openWorkspaceChange,
+    closeWorkspaceChange,
+    acceptWorkspaceChange,
+    cancelWorkspaceChange,
+    acceptWorkspaceFile,
+    cancelWorkspaceFile,
     pruneFailedAssistantPlaceholder,
     applyInferenceFailure,
     reloadSessions,

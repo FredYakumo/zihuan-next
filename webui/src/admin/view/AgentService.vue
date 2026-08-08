@@ -48,6 +48,10 @@
                   <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
+              <t-form-item v-if="form.type === 'workspace'" label="AGENTS.md">
+                <t-checkbox v-model="form.agents_md_enabled">关注 AGENTS.md</t-checkbox>
+                <div class="agent-service-form-hint">让Agent关注 AGENTS.md</div>
+              </t-form-item>
             </div>
           </t-card>
 
@@ -472,6 +476,10 @@
               <t-select v-model="form.llm_ref_id" placeholder="请选择">
                 <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
               </t-select>
+            </t-form-item>
+            <t-form-item v-if="form.type === 'workspace'" label="AGENTS.md">
+              <t-checkbox v-model="form.agents_md_enabled">关注 AGENTS.md</t-checkbox>
+              <div class="agent-service-form-hint">让Agent 关注 AGENTS.md</div>
             </t-form-item>
           </div>
         </t-card>
