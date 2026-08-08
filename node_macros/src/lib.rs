@@ -159,7 +159,7 @@ fn expand_return_with_node_output(input: TokenStream) -> TokenStream {
 
     let entries = match parsed {
         FlowInput::WithSelf { entries, .. } => entries,
-        FlowInput::Entries(_) => {
+        FlowInput::Entries => {
             return syn::Error::new(
                 proc_macro2::Span::call_site(),
                 "`return_with_node_output!` requires `self;` prefix: `return_with_node_output![self; \"key\" => val]`",
