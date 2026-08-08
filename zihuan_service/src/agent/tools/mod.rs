@@ -52,8 +52,9 @@ pub(crate) use research::RunResearchSubagentBrainTool;
 pub(crate) use web_search::WebSearchBrainTool;
 pub(crate) use workspace_tools::{
     AskUserBrainTool, CreateFileBrainTool, DeleteFileBrainTool, EditFileBrainTool, ExecCmdBrainTool,
-    DEFAULT_TOOL_ASK_USER, DEFAULT_TOOL_CREATE_FILE, DEFAULT_TOOL_DELETE_FILE, DEFAULT_TOOL_EDIT_FILE,
-    DEFAULT_TOOL_EXEC_CMD,
+    CopyFileBrainTool, FileInfoBrainTool, FindFilesBrainTool, GitStatusBrainTool, GrepBrainTool, ListDirBrainTool, MoveFileBrainTool, ReadFileBrainTool, RgBrainTool, DEFAULT_TOOL_ASK_USER,
+    DEFAULT_TOOL_CREATE_FILE, DEFAULT_TOOL_DELETE_FILE, DEFAULT_TOOL_EDIT_FILE, DEFAULT_TOOL_EXEC_CMD,
+    DEFAULT_TOOL_COPY_FILE, DEFAULT_TOOL_FILE_INFO, DEFAULT_TOOL_FIND_FILES, DEFAULT_TOOL_GIT_STATUS, DEFAULT_TOOL_GREP, DEFAULT_TOOL_LIST_DIR, DEFAULT_TOOL_MOVE_FILE, DEFAULT_TOOL_READ_FILE, DEFAULT_TOOL_RG,
 };
 
 pub(crate) const DEFAULT_TOOL_WEB_SEARCH: &str = "web_search";

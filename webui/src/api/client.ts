@@ -454,7 +454,7 @@ export interface NotificationCard {
 }
 
 export interface ChatStreamEvent {
-  type: "start" | "delta" | "thinking_delta" | "done" | "error" | "tool_call_start" | "tool_call_result" | "ask_user";
+  type: "start" | "delta" | "thinking_delta" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "ask_user";
   session_id?: string;
   message_id?: string;
   index?: number;
@@ -465,6 +465,8 @@ export interface ChatStreamEvent {
   name?: string;
   arguments?: unknown;
   result?: string;
+  stream?: "stdout" | "stderr";
+  chunk?: string;
   question?: string;
   details?: string;
   placeholder?: string;

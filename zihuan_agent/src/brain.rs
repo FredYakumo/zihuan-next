@@ -1,11 +1,13 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use log::{info, warn};
 use model_inference::message_content_utils::{is_transport_error, sanitize_messages_for_inference};
 use serde_json::Value;
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
@@ -119,6 +121,7 @@ pub trait LongTaskNotifier: Send + Sync + 'static {
 /// Purpose: carries the task runtime and notifier needed when a tool opts into
 /// [`ToolRunDuration::Long`]. The Brain still returns the actual tool result to
 /// the LLM in the same turn.
+#[derive(Clone)]
 pub struct LongTaskContext {
     pub task_runtime: Arc<dyn AgentTaskRuntime>,
     pub owner_id: Option<String>,
@@ -138,18 +141,72 @@ pub trait BrainTool: Send + Sync + 'static {
     fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
         ToolExecutionOutput::text(self.execute(call_content, arguments))
     }
+    fn execute_with_progress(
+        &self,
+        call_content: &str,
+        arguments: &Value,
+        _on_output: Arc<dyn Fn(&str, &str) + Send + Sync>,
+    ) -> ToolExecutionOutput {
+        self.execute_with_outcome(call_content, arguments)
+    }
     /// Declares whether this tool should be treated as short or long running.
     /// Long tools may emit task lifecycle updates, but still execute
     /// synchronously so the LLM receives the real result immediately.
     fn run_duration(&self) -> ToolRunDuration {
         ToolRunDuration::Short
     }
+
+    /// Describes the resource touched by a call so independent calls can run concurrently.
+    /// Tools default to concurrent execution until they explicitly opt into a conflicting resource class.
+    fn execution_resource(&self, _arguments: &Value) -> ToolExecutionResource {
+        ToolExecutionResource::Concurrent
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToolExecutionResource {
+    Concurrent,
+    Read(PathBuf),
+    Write(PathBuf),
+    Exclusive,
+}
+
+#[derive(Clone)]
+struct PreparedToolCall {
+    index: usize,
+    call_id: String,
+    name: String,
+    arguments: Value,
+    tool: Option<Arc<dyn BrainTool>>,
+}
+
+struct PreparedToolResult {
+    index: usize,
+    call_id: String,
+    name: String,
+    result: ToolExecutionOutput,
+}
+
+fn tool_output_callback(
+    observer: Option<&Arc<dyn BrainObserver>>,
+    tool_name: &str,
+    call_id: &str,
+) -> Arc<dyn Fn(&str, &str) + Send + Sync> {
+    let Some(observer) = observer else {
+        return Arc::new(|_, _| {});
+    };
+    let observer = Arc::clone(observer);
+    let tool_name = tool_name.to_string();
+    let call_id = call_id.to_string();
+    Arc::new(move |stream, chunk| observer.on_tool_output(&tool_name, &call_id, stream, chunk))
 }
 
 pub trait BrainObserver: Send + Sync + 'static {
     fn on_assistant_tool_request(&self, _iteration: usize, _content: &str, _tool_calls: &[ToolCalls]) {}
 
     fn on_tool_start(&self, _name: &str, _call_id: &str, _arguments: &Value) {}
+
+    fn on_tool_output(&self, _name: &str, _call_id: &str, _stream: &str, _chunk: &str) {}
 
     fn on_tool_finish(&self, _name: &str, _call_id: &str, _result: &str) {}
 
@@ -258,15 +315,17 @@ impl Brain {
 
     /// Execute a single tool call, creating a tracked task entry when the tool's
     /// run duration is `Long` and a [`LongTaskContext`] is available.
-    fn execute_tool_call(
-        &self,
+    fn execute_tool_call_with_context(
         tool: &Arc<dyn BrainTool>,
         call_content: &str,
         arguments: &Value,
         tool_name: &str,
+        call_id: &str,
+        observer: Option<&Arc<dyn BrainObserver>>,
+        long_task_context: Option<&LongTaskContext>,
     ) -> ToolExecutionOutput {
         if tool.run_duration() == ToolRunDuration::Long {
-            if let Some(long_ctx) = &self.long_task_context {
+            if let Some(long_ctx) = long_task_context {
                 let task_name = format!("工具: {tool_name}");
                 let handle = long_ctx.task_runtime.start_task(AgentTaskRequest {
                     task_name: task_name.clone(),
@@ -281,8 +340,9 @@ impl Brain {
                     long_ctx.task_runtime.append_task_progress(&task_id, progress_text);
                 }
                 long_ctx.notifier.on_start(&task_id, &task_name, call_content);
+                let on_output = tool_output_callback(observer, tool_name, call_id);
                 let result = scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
-                    scope_task_id(task_id.clone(), || tool.execute_with_outcome(call_content, arguments))
+                    scope_task_id(task_id.clone(), || tool.execute_with_progress(call_content, arguments, on_output))
                 });
                 handle.finish(AgentTaskResult {
                     status: Some(AgentTaskStatus::Success),
@@ -294,7 +354,123 @@ impl Brain {
                 return result;
             }
         }
-        tool.execute_with_outcome(call_content, arguments)
+        let on_output = tool_output_callback(observer, tool_name, call_id);
+        tool.execute_with_progress(call_content, arguments, on_output)
+    }
+
+    fn prepare_tool_calls(&self, tool_calls: &[ToolCalls]) -> Vec<PreparedToolCall> {
+        tool_calls
+            .iter()
+            .enumerate()
+            .map(|(index, call)| PreparedToolCall {
+                index,
+                call_id: call.id.clone(),
+                name: call.function.name.clone(),
+                arguments: call.function.arguments.clone(),
+                tool: self
+                    .tools
+                    .iter()
+                    .find(|tool| tool.spec().name() == call.function.name)
+                    .cloned(),
+            })
+            .collect()
+    }
+
+    fn can_execute_in_parallel(calls: &[PreparedToolCall]) -> bool {
+        if calls.len() < 2 {
+            return false;
+        }
+        for call in calls {
+            let Some(tool) = call.tool.as_ref() else {
+                return false;
+            };
+            if matches!(tool.execution_resource(&call.arguments), ToolExecutionResource::Exclusive) {
+                return false;
+            }
+        }
+        for (left_index, left) in calls.iter().enumerate() {
+            let Some(left_tool) = left.tool.as_ref() else {
+                return false;
+            };
+            let left_resource = left_tool.execution_resource(&left.arguments);
+            for right in calls.iter().skip(left_index + 1) {
+                let Some(right_tool) = right.tool.as_ref() else {
+                    return false;
+                };
+                let right_resource = right_tool.execution_resource(&right.arguments);
+                if resources_conflict(&left_resource, &right_resource) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn execute_prepared_call(&self, call_content: &str, call: PreparedToolCall) -> PreparedToolResult {
+        Self::execute_prepared_call_with_context(call_content, call, self.long_task_context.as_ref(), self.observer.as_ref())
+    }
+
+    fn execute_prepared_call_with_context(
+        call_content: &str,
+        call: PreparedToolCall,
+        long_task_context: Option<&LongTaskContext>,
+        observer: Option<&Arc<dyn BrainObserver>>,
+    ) -> PreparedToolResult {
+        let result = if let Some(tool) = call.tool.as_ref() {
+            Self::execute_tool_call_with_context(
+                tool,
+                call_content,
+                &call.arguments,
+                &call.name,
+                &call.call_id,
+                observer,
+                long_task_context,
+            )
+        } else {
+            warn!(
+                "[Brain] Tool '{}' not found for call id={} arguments={}",
+                call.name, call.call_id, call.arguments
+            );
+            ToolExecutionOutput::text(
+                serde_json::json!({"error": format!("Tool '{}' not found", call.name)}).to_string(),
+            )
+        };
+        PreparedToolResult {
+            index: call.index,
+            call_id: call.call_id,
+            name: call.name,
+            result,
+        }
+    }
+
+    fn notify_tool_finish(&self, call: &PreparedToolResult) {
+        info!(
+            "[Brain] tool call id={} name={} result: {}",
+            call.call_id,
+            call.name,
+            truncate_for_log(&call.result.result, LOG_PREVIEW_CHARS)
+        );
+        if let Some(observer) = self.observer.as_ref() {
+            observer.on_tool_finish(&call.name, &call.call_id, &call.result.result);
+        }
+    }
+
+    fn append_tool_results(
+        &self,
+        results: &mut [PreparedToolResult],
+        conversation: &mut Vec<LLMMessage>,
+        output: &mut Vec<LLMMessage>,
+    ) -> Option<(String, AskUserRequest)> {
+        results.sort_by_key(|result| result.index);
+        for call in results {
+            let msg = LLMMessage::tool_result(call.call_id.clone(), call.result.result.clone());
+            conversation.push(msg.clone());
+            output.push(msg);
+            if let Some(request) = call.result.ask_user.clone() {
+                return Some((call.call_id.clone(), request));
+            }
+        }
+        None
     }
 
     fn log_llm_usage(&self, response: &LLMMessage) {
@@ -431,47 +607,49 @@ impl Brain {
             output.push(response.clone());
 
             let _tool_progress_scope = ToolProgressScopeGuard::enter(&tool_call_content);
-            for tc in &response.tool_calls {
+            let prepared_calls = self.prepare_tool_calls(&response.tool_calls);
+            for call in &prepared_calls {
                 info!(
                     "[Brain] tool call id={} name={} arguments={}",
-                    tc.id,
-                    tc.function.name,
-                    truncate_for_log(&tc.function.arguments.to_string(), LOG_PREVIEW_CHARS)
+                    call.call_id,
+                    call.name,
+                    truncate_for_log(&call.arguments.to_string(), LOG_PREVIEW_CHARS)
                 );
                 if let Some(observer) = self.observer.as_ref() {
-                    observer.on_tool_start(&tc.function.name, &tc.id, &tc.function.arguments);
+                    observer.on_tool_start(&call.name, &call.call_id, &call.arguments);
                 }
-                let matching_tool = self.tools.iter().find(|t| t.spec().name() == tc.function.name);
-                let result = if let Some(tool) = matching_tool {
-                    self.execute_tool_call(tool, &tool_call_content, &tc.function.arguments, &tc.function.name)
-                } else {
-                    warn!(
-                        "[Brain] Tool '{}' not found for call id={} arguments={}",
-                        tc.function.name, tc.id, tc.function.arguments
-                    );
-                    ToolExecutionOutput::text(
-                        serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)}).to_string(),
-                    )
-                };
+            }
 
-                info!(
-                    "[Brain] tool call id={} name={} result: {}",
-                    tc.id,
-                    tc.function.name,
-                    truncate_for_log(&result.result, LOG_PREVIEW_CHARS)
-                );
+            let mut results: Vec<PreparedToolResult> = if Self::can_execute_in_parallel(&prepared_calls) {
+                std::thread::scope(|scope| {
+                    let handles = prepared_calls.into_iter().map(|call| {
+                        let call_content = tool_call_content.clone();
+                        scope.spawn(move || {
+                            let result = self.execute_prepared_call(&call_content, call);
+                            self.notify_tool_finish(&result);
+                            result
+                        })
+                    });
+                    handles
+                        .map(|handle| handle.join().expect("parallel tool execution panicked"))
+                        .collect::<Vec<PreparedToolResult>>()
+                })
+            } else {
+                prepared_calls
+                    .into_iter()
+                    .map(|call| {
+                        let result = self.execute_prepared_call(&tool_call_content, call);
+                        self.notify_tool_finish(&result);
+                        result
+                    })
+                    .collect::<Vec<PreparedToolResult>>()
+            };
+
+            if let Some((call_id, request)) = self.append_tool_results(&mut results, &mut conversation, &mut output) {
                 if let Some(observer) = self.observer.as_ref() {
-                    observer.on_tool_finish(&tc.function.name, &tc.id, &result.result);
+                    observer.on_ask_user(&call_id, &request);
                 }
-                let msg = LLMMessage::tool_result(tc.id.clone(), result.result.clone());
-                conversation.push(msg.clone());
-                output.push(msg);
-                if let Some(request) = result.ask_user {
-                    if let Some(observer) = self.observer.as_ref() {
-                        observer.on_ask_user(&tc.id, &request);
-                    }
-                    return (output, BrainStopReason::AwaitUserInput(request));
-                }
+                return (output, BrainStopReason::AwaitUserInput(request));
             }
         }
 
@@ -589,47 +767,59 @@ impl Brain {
             output.push(response.clone());
 
             let _tool_progress_scope = ToolProgressScopeGuard::enter(&tool_call_content);
-            for tc in &response.tool_calls {
+            let prepared_calls = self.prepare_tool_calls(&response.tool_calls);
+            for call in &prepared_calls {
                 info!(
                     "[Brain] tool call id={} name={} arguments={}",
-                    tc.id,
-                    tc.function.name,
-                    truncate_for_log(&tc.function.arguments.to_string(), LOG_PREVIEW_CHARS)
+                    call.call_id,
+                    call.name,
+                    truncate_for_log(&call.arguments.to_string(), LOG_PREVIEW_CHARS)
                 );
                 if let Some(observer) = self.observer.as_ref() {
-                    observer.on_tool_start(&tc.function.name, &tc.id, &tc.function.arguments);
+                    observer.on_tool_start(&call.name, &call.call_id, &call.arguments);
                 }
-                let matching_tool = self.tools.iter().find(|t| t.spec().name() == tc.function.name);
-                let result = if let Some(tool) = matching_tool {
-                    self.execute_tool_call(tool, &tool_call_content, &tc.function.arguments, &tc.function.name)
-                } else {
-                    warn!(
-                        "[Brain] Tool '{}' not found for call id={} arguments={}",
-                        tc.function.name, tc.id, tc.function.arguments
-                    );
-                    ToolExecutionOutput::text(
-                        serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)}).to_string(),
-                    )
-                };
+            }
 
-                info!(
-                    "[Brain] tool call id={} name={} result: {}",
-                    tc.id,
-                    tc.function.name,
-                    truncate_for_log(&result.result, LOG_PREVIEW_CHARS)
-                );
+            let mut results: Vec<PreparedToolResult> = if Self::can_execute_in_parallel(&prepared_calls) {
+                let long_task_context = self.long_task_context.clone();
+                let observer_handle = self.observer.clone();
+                let mut tasks = JoinSet::new();
+                for call in prepared_calls {
+                    let call_content = tool_call_content.clone();
+                    let long_task_context = long_task_context.clone();
+                    let task_observer = observer_handle.clone();
+                    tasks.spawn_blocking(move || {
+                        Self::execute_prepared_call_with_context(
+                            &call_content,
+                            call,
+                            long_task_context.as_ref(),
+                            task_observer.as_ref(),
+                        )
+                    });
+                }
+                let mut results = Vec::new();
+                while let Some(result) = tasks.join_next().await {
+                    let result = result.expect("parallel streaming tool execution panicked");
+                    self.notify_tool_finish(&result);
+                    results.push(result);
+                }
+                results
+            } else {
+                prepared_calls
+                    .into_iter()
+                    .map(|call| {
+                        let result = self.execute_prepared_call(&tool_call_content, call);
+                        self.notify_tool_finish(&result);
+                        result
+                    })
+                    .collect::<Vec<PreparedToolResult>>()
+            };
+
+            if let Some((call_id, request)) = self.append_tool_results(&mut results, &mut conversation, &mut output) {
                 if let Some(observer) = self.observer.as_ref() {
-                    observer.on_tool_finish(&tc.function.name, &tc.id, &result.result);
+                    observer.on_ask_user(&call_id, &request);
                 }
-                let msg = LLMMessage::tool_result(tc.id.clone(), result.result.clone());
-                conversation.push(msg.clone());
-                output.push(msg);
-                if let Some(request) = result.ask_user {
-                    if let Some(observer) = self.observer.as_ref() {
-                        observer.on_ask_user(&tc.id, &request);
-                    }
-                    return (output, BrainStopReason::AwaitUserInput(request));
-                }
+                return (output, BrainStopReason::AwaitUserInput(request));
             }
         }
 
@@ -653,6 +843,19 @@ impl Brain {
             appended.len()
         );
         conversation.append(&mut appended);
+    }
+}
+
+fn resources_conflict(left: &ToolExecutionResource, right: &ToolExecutionResource) -> bool {
+    match (left, right) {
+        (ToolExecutionResource::Concurrent, _) | (_, ToolExecutionResource::Concurrent) => false,
+        (ToolExecutionResource::Read(_), ToolExecutionResource::Read(_)) => false,
+        (ToolExecutionResource::Write(left), ToolExecutionResource::Write(right))
+        | (ToolExecutionResource::Read(left), ToolExecutionResource::Write(right))
+        | (ToolExecutionResource::Write(left), ToolExecutionResource::Read(right)) => {
+            left == right || left.starts_with(right) || right.starts_with(left)
+        }
+        (ToolExecutionResource::Exclusive, _) | (_, ToolExecutionResource::Exclusive) => true,
     }
 }
 
@@ -696,4 +899,120 @@ fn append_tool_summary_to_system(messages: &mut Vec<LLMMessage>, counts: &HashMa
     }
 
     messages.push(LLMMessage::system(summary));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zihuan_core::llm::tooling::StaticFunctionToolSpec;
+
+    #[derive(Debug)]
+    struct TestTool {
+        name: &'static str,
+        resource: ToolExecutionResource,
+    }
+
+    impl BrainTool for TestTool {
+        fn spec(&self) -> Arc<dyn FunctionTool> {
+            Arc::new(StaticFunctionToolSpec {
+                name: self.name,
+                description: "test tool",
+                parameters: serde_json::json!({"type": "object"}),
+            })
+        }
+
+        fn execute(&self, _call_content: &str, _arguments: &Value) -> String {
+            "ok".to_string()
+        }
+
+        fn execution_resource(&self, _arguments: &Value) -> ToolExecutionResource {
+            self.resource.clone()
+        }
+    }
+
+    fn prepared(index: usize, tool: TestTool, arguments: Value) -> PreparedToolCall {
+        PreparedToolCall {
+            index,
+            call_id: format!("call-{index}"),
+            name: tool.name.to_string(),
+            arguments,
+            tool: Some(Arc::new(tool)),
+        }
+    }
+
+    #[test]
+    fn independent_reads_can_run_in_parallel() {
+        let calls = vec![
+            prepared(0, TestTool { name: "read_a", resource: ToolExecutionResource::Read("a".into()) }, Value::Null),
+            prepared(1, TestTool { name: "read_b", resource: ToolExecutionResource::Read("b".into()) }, Value::Null),
+        ];
+        assert!(Brain::can_execute_in_parallel(&calls));
+    }
+
+    #[test]
+    fn overlapping_read_write_calls_are_serialized() {
+        let calls = vec![
+            prepared(0, TestTool { name: "read", resource: ToolExecutionResource::Read("workspace".into()) }, Value::Null),
+            prepared(1, TestTool { name: "write", resource: ToolExecutionResource::Write("workspace/file.txt".into()) }, Value::Null),
+        ];
+        assert!(!Brain::can_execute_in_parallel(&calls));
+    }
+
+    #[test]
+    fn exclusive_calls_are_serialized() {
+        let calls = vec![
+            prepared(0, TestTool { name: "one", resource: ToolExecutionResource::Concurrent }, Value::Null),
+            prepared(1, TestTool { name: "two", resource: ToolExecutionResource::Exclusive }, Value::Null),
+        ];
+        assert!(!Brain::can_execute_in_parallel(&calls));
+    }
+
+    #[test]
+    fn tool_results_are_appended_in_original_call_order() {
+        let brain = Brain {
+            llm: panic_llm_for_test(),
+            tools: Vec::new(),
+            observer: None,
+            iteration_hook: None,
+            long_task_context: None,
+        };
+        let mut results = vec![
+            PreparedToolResult {
+                index: 1,
+                call_id: "call-1".to_string(),
+                name: "second".to_string(),
+                result: ToolExecutionOutput::text("second result"),
+            },
+            PreparedToolResult {
+                index: 0,
+                call_id: "call-0".to_string(),
+                name: "first".to_string(),
+                result: ToolExecutionOutput::text("first result"),
+            },
+        ];
+        let mut conversation = Vec::new();
+        let mut output = Vec::new();
+        assert!(brain.append_tool_results(&mut results, &mut conversation, &mut output).is_none());
+        assert_eq!(conversation[0].tool_call_id.as_deref(), Some("call-0"));
+        assert_eq!(conversation[1].tool_call_id.as_deref(), Some("call-1"));
+    }
+
+    fn panic_llm_for_test() -> Arc<dyn LLMBase> {
+        #[derive(Debug)]
+        struct UnusedLlm;
+        impl LLMBase for UnusedLlm {
+            fn get_model_name(&self) -> &str {
+                "test"
+            }
+
+            fn inference(&self, _param: &InferenceParam) -> LLMMessage {
+                panic!("unused test LLM")
+            }
+
+            fn as_streaming(&self) -> Option<&dyn zihuan_core::llm::llm_base::StreamingLLMBase> {
+                None
+            }
+        }
+        Arc::new(UnusedLlm)
+    }
 }

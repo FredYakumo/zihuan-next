@@ -178,7 +178,7 @@
                 {{ workspacePath || '未选择工作目录' }}
               </span>
             </div>
-            <div class="chat-messages" ref="messagesContainer">
+            <div class="chat-messages" ref="messagesContainer" @scroll="handleMessagesScroll">
               <div v-if="messages.length === 0" class="empty-state"></div>
               <div
                 v-for="group in messageGroups"
@@ -259,11 +259,20 @@
                             v-else
                             :kind="classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result)"
                             :loading="!liveCall.done"
-                            @click="
-                              liveCall.done &&
-                              openToolPreview(classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result))
-                            "
+                            @click="openLiveToolPreview(
+                              liveCall.call_id,
+                              classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result),
+                            )"
                           />
+                          <pre
+                            v-if="
+                              classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result).type ===
+                              'exec_cmd'
+                            "
+                            class="chat-tool-live-output"
+                            :ref="(element) => setLiveOutputElement(liveCall.call_id, element)"
+                            @scroll="handleLiveOutputScroll(liveCall.call_id)"
+                          >{{ liveExecOutput(liveCall) }}</pre>
                         </div>
                       </div>
                       <div v-if="message.toolCalls.length > 0" class="chat-tool-inline-list">
@@ -432,11 +441,20 @@
                             v-else
                             :kind="classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result)"
                             :loading="!liveCall.done"
-                            @click="
-                              liveCall.done &&
-                              openToolPreview(classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result))
-                            "
+                            @click="openLiveToolPreview(
+                              liveCall.call_id,
+                              classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result),
+                            )"
                           />
+                          <pre
+                            v-if="
+                              classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result).type ===
+                              'exec_cmd'
+                            "
+                            class="chat-tool-live-output"
+                            :ref="(element) => setLiveOutputElement(liveCall.call_id, element)"
+                            @scroll="handleLiveOutputScroll(liveCall.call_id)"
+                          >{{ liveExecOutput(liveCall) }}</pre>
                         </div>
                       </div>
                       <div v-if="message.toolCalls.length > 0" class="chat-tool-inline-list">
@@ -898,6 +916,36 @@
             <template v-else-if="toolPreviewState.kind.type === 'exec_cmd'">
               <span class="cmd-prefix">&gt;</span> {{ toolPreviewState.kind.command }}
             </template>
+            <template v-else-if="toolPreviewState.kind.type === 'read_file'">
+              <FileSearchIcon class="badge-icon" /> 读取文件: {{ toolPreviewState.kind.filename }}
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'list_dir'">
+              <FolderSearchIcon class="badge-icon" /> 列出目录: {{ toolPreviewState.kind.dirname }}
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'grep'">
+              <SearchIcon class="badge-icon" /> Grep: {{ toolPreviewState.kind.pattern }}
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'rg'">
+              <CodeIcon class="badge-icon" /> Rg: {{ toolPreviewState.kind.pattern }}
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'find_files'">
+              <FolderSearchIcon class="badge-icon" /> 查找: {{ toolPreviewState.kind.pattern }}
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'git_status'">
+              <GitBranchIcon class="badge-icon" /> Git: {{ toolPreviewState.kind.branch }}
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'copy_file'">
+              <CopyIcon class="badge-icon" /> 复制: {{ toolPreviewState.kind.src }} → {{ toolPreviewState.kind.dest }}
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'move_file'">
+              <MoveIcon class="badge-icon" /> 移动: {{ toolPreviewState.kind.src }} → {{ toolPreviewState.kind.dest }}
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'file_info'">
+              <InfoCircleIcon class="badge-icon" /> 元数据: {{ toolPreviewState.kind.filename }}
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'ask_user'">
+              <ChatIcon class="badge-icon" /> 询问用户
+            </template>
             <button class="tool-preview-close" aria-label="关闭" @click="closeToolPreview"><CloseIcon /></button>
           </div>
           <div class="tool-preview-body">
@@ -939,10 +987,19 @@
               </div>
             </template>
             <template v-else-if="toolPreviewState.kind.type === 'exec_cmd'">
+              <div class="tool-preview-info">
+                <p v-if="toolPreviewState.kind.shell">Shell: {{ toolPreviewState.kind.shell }}</p>
+                <p v-if="toolPreviewState.kind.exitCode != null">Exit code: {{ toolPreviewState.kind.exitCode }}</p>
+                <p v-if="toolPreviewState.kind.truncated" class="tool-preview-no-result">输出已截断</p>
+              </div>
               <template v-if="toolPreviewState.kind.hasResult">
                 <div v-if="toolPreviewState.kind.stdout" class="tool-preview-output">
                   <div class="tool-preview-output-label">stdout</div>
-                  <pre class="tool-preview-code tool-preview-code--cmd">
+                  <pre
+                    class="tool-preview-code tool-preview-code--cmd"
+                    :ref="toolPreviewState.toolCallId ? (element) => setLiveOutputElement(`${toolPreviewState.toolCallId}:stdout`, element) : undefined"
+                    @scroll="toolPreviewState.toolCallId && handleLiveOutputScroll(`${toolPreviewState.toolCallId}:stdout`)"
+                  >
                     {{ toolPreviewState.kind.stdout }}
                   </pre>
                 </div>
@@ -950,12 +1007,87 @@
                   <div class="tool-preview-output-label tool-preview-output-label--error">
                     stderr
                   </div>
-                  <pre class="tool-preview-code tool-preview-code--cmd tool-preview-code--error">
+                  <pre
+                    class="tool-preview-code tool-preview-code--cmd tool-preview-code--error"
+                    :ref="toolPreviewState.toolCallId ? (element) => setLiveOutputElement(`${toolPreviewState.toolCallId}:stderr`, element) : undefined"
+                    @scroll="toolPreviewState.toolCallId && handleLiveOutputScroll(`${toolPreviewState.toolCallId}:stderr`)"
+                  >
                     {{ toolPreviewState.kind.stderr }}
                   </pre>
                 </div>
               </template>
               <div v-else class="tool-preview-no-result">无结果</div>
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'read_file'">
+              <div class="tool-preview-info">
+                <p v-if="toolPreviewState.kind.startLine != null && toolPreviewState.kind.endLine != null">
+                  行范围: {{ toolPreviewState.kind.startLine }}-{{ toolPreviewState.kind.endLine }}
+                  <span v-if="toolPreviewState.kind.totalLines != null">（共 {{ toolPreviewState.kind.totalLines }} 行）</span>
+                </p>
+                <pre v-if="toolPreviewState.kind.content" class="tool-preview-code">{{ toolPreviewState.kind.content }}</pre>
+                <p v-if="toolPreviewState.kind.encoding">编码: {{ toolPreviewState.kind.encoding }}</p>
+                <div
+                  v-if="!toolPreviewState.kind.content && !toolPreviewState.kind.encoding"
+                  class="tool-preview-no-result"
+                >
+                  无内容或工具仍在执行
+                </div>
+              </div>
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'list_dir'">
+              <pre v-if="toolPreviewState.kind.tree" class="tool-preview-code">{{ toolPreviewState.kind.tree }}</pre>
+              <div v-if="toolPreviewState.kind.entries.length" class="tool-preview-list">
+                <div v-for="entry in toolPreviewState.kind.entries" :key="entry.path" class="tool-preview-list-item">
+                  <FolderIcon v-if="entry.type === 'directory'" />
+                  <FileIcon v-else />
+                  <span>{{ entry.name }}</span>
+                  <small>{{ entry.type }}</small>
+                </div>
+              </div>
+              <div v-else class="tool-preview-no-result">目录为空或工具仍在执行</div>
+              <div v-if="toolPreviewState.kind.truncated" class="tool-preview-no-result">结果已截断</div>
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'grep' || toolPreviewState.kind.type === 'rg'">
+              <div class="tool-preview-info">命中文件: {{ toolPreviewState.kind.matchedFiles }}，跳过二进制: {{ toolPreviewState.kind.skippedBinary }}</div>
+              <div v-if="toolPreviewState.kind.matches.length" class="tool-preview-list">
+                <div v-for="match in toolPreviewState.kind.matches" :key="`${match.path}:${match.line}`" class="tool-preview-match">
+                  <div class="tool-preview-match-header">{{ match.path }}:{{ match.line }}</div>
+                  <pre class="tool-preview-code">{{ match.content }}</pre>
+                </div>
+              </div>
+              <div v-else class="tool-preview-no-result">未找到匹配或工具仍在执行</div>
+              <div v-if="toolPreviewState.kind.truncated" class="tool-preview-no-result">
+                结果已截断，共 {{ toolPreviewState.kind.totalMatches }} 处匹配
+              </div>
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'find_files'">
+              <div v-if="toolPreviewState.kind.matches.length" class="tool-preview-list">
+                <div v-for="match in toolPreviewState.kind.matches" :key="match.path" class="tool-preview-list-item">
+                  <strong>{{ match.name }}</strong> <code>{{ match.path }}</code>
+                </div>
+              </div>
+              <div v-if="toolPreviewState.kind.truncated" class="tool-preview-no-result">结果已截断</div>
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'git_status'">
+              <div class="tool-preview-info">分支: <code>{{ toolPreviewState.kind.branch }}</code></div>
+              <div v-if="toolPreviewState.kind.changes.length" class="tool-preview-list">
+                <div v-for="change in toolPreviewState.kind.changes" :key="`${change.status}:${change.path}`" class="tool-preview-list-item">
+                  <code>{{ change.status }}</code> {{ change.path }}
+                </div>
+              </div>
+              <div v-else class="tool-preview-no-result">工作区干净</div>
+              <div v-if="toolPreviewState.kind.truncated" class="tool-preview-no-result">结果已截断</div>
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'copy_file' || toolPreviewState.kind.type === 'move_file'">
+              <p>源: <code>{{ toolPreviewState.kind.src }}</code></p>
+              <p>目标: <code>{{ toolPreviewState.kind.dest }}</code></p>
+              <p>覆盖: {{ toolPreviewState.kind.overwritten ? '是' : '否' }}</p>
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'file_info'">
+              <pre class="tool-preview-code">{{ formatToolPayload(toolPreviewState.kind.metadata) }}</pre>
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'ask_user'">
+              <p>{{ toolPreviewState.kind.question }}</p>
             </template>
           </div>
         </div>
@@ -976,10 +1108,18 @@ import {
   EditIcon,
   ErrorCircleIcon,
   FileIcon,
+  FileSearchIcon,
   FolderIcon,
+  FolderSearchIcon,
+  GitBranchIcon,
   ImageAddIcon,
   MenuFoldIcon,
   MenuUnfoldIcon,
+  CodeIcon,
+  SearchIcon,
+  InfoCircleIcon,
+  MoveIcon,
+  ChatIcon,
 } from "tdesign-icons-vue-next";
 
 import { ref, watch } from "vue";
@@ -1070,14 +1210,19 @@ const {
   closeToolDetail,
   getToolResultText,
   openToolPreview,
+  openLiveToolPreview,
   closeToolPreview,
   handleToolPreviewKeydown,
   editHunks,
   toggleLiveToolCall,
   formatToolPayload,
+  liveExecOutput,
   formatChatTime,
   renderMessageContent,
   scrollToBottom,
+  handleMessagesScroll,
+  setLiveOutputElement,
+  handleLiveOutputScroll,
   clearChatError,
   closeChatErrorDialog,
   handleTextareaKeydown,

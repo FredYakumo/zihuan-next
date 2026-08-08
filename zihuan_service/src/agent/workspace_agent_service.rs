@@ -12,8 +12,9 @@ use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::tool_definitions::build_enabled_tool_definitions;
 use super::tools::{
     AskUserBrainTool, CreateFileBrainTool, DeleteFileBrainTool, EditFileBrainTool, ExecCmdBrainTool,
-    DEFAULT_TOOL_ASK_USER, DEFAULT_TOOL_CREATE_FILE, DEFAULT_TOOL_DELETE_FILE, DEFAULT_TOOL_EDIT_FILE,
-    DEFAULT_TOOL_EXEC_CMD,
+    CopyFileBrainTool, FileInfoBrainTool, FindFilesBrainTool, GitStatusBrainTool, GrepBrainTool, ListDirBrainTool, MoveFileBrainTool, ReadFileBrainTool, RgBrainTool, DEFAULT_TOOL_ASK_USER,
+    DEFAULT_TOOL_CREATE_FILE, DEFAULT_TOOL_DELETE_FILE, DEFAULT_TOOL_EDIT_FILE, DEFAULT_TOOL_EXEC_CMD,
+    DEFAULT_TOOL_COPY_FILE, DEFAULT_TOOL_FILE_INFO, DEFAULT_TOOL_FIND_FILES, DEFAULT_TOOL_GIT_STATUS, DEFAULT_TOOL_GREP, DEFAULT_TOOL_LIST_DIR, DEFAULT_TOOL_MOVE_FILE, DEFAULT_TOOL_READ_FILE, DEFAULT_TOOL_RG,
 };
 use zihuan_core::error::Result;
 
@@ -28,7 +29,7 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
             messages.insert(
                 0,
                 LLMMessage::system(format!(
-                    "当前工作目录是: {path}\n你可以在该目录下创建、编辑、删除文件，以及执行命令。"
+                    "当前工作目录是: {path}\n你可以在该目录下读取文件、列出目录、按名称查找路径、搜索文本、创建、编辑、删除、复制、移动文件，查看元数据和 Git 状态，以及执行命令。read_file 可在需要时使用 base64 读取二进制片段。"
                 )),
             );
         }
@@ -51,6 +52,41 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
             tools.push(Box::new(EditFileBrainTool {
                 workspace_path: workspace_path.clone(),
             }));
+        }
+        if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_READ_FILE) {
+            tools.push(Box::new(ReadFileBrainTool {
+                workspace_path: workspace_path.clone(),
+            }));
+        }
+        if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_LIST_DIR) {
+            tools.push(Box::new(ListDirBrainTool {
+                workspace_path: workspace_path.clone(),
+            }));
+        }
+        if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_GREP) {
+            tools.push(Box::new(GrepBrainTool {
+                workspace_path: workspace_path.clone(),
+            }));
+        }
+        if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_RG) {
+            tools.push(Box::new(RgBrainTool {
+                workspace_path: workspace_path.clone(),
+            }));
+        }
+        if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_FIND_FILES) {
+            tools.push(Box::new(FindFilesBrainTool { workspace_path: workspace_path.clone() }));
+        }
+        if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_COPY_FILE) {
+            tools.push(Box::new(CopyFileBrainTool { workspace_path: workspace_path.clone() }));
+        }
+        if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_MOVE_FILE) {
+            tools.push(Box::new(MoveFileBrainTool { workspace_path: workspace_path.clone() }));
+        }
+        if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_FILE_INFO) {
+            tools.push(Box::new(FileInfoBrainTool { workspace_path: workspace_path.clone() }));
+        }
+        if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_GIT_STATUS) {
+            tools.push(Box::new(GitStatusBrainTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_EXEC_CMD) {
             tools.push(Box::new(ExecCmdBrainTool {

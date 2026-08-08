@@ -123,6 +123,15 @@ fn default_http_stream_default_tools_enabled() -> std::collections::HashMap<Stri
 
 fn default_workspace_default_tools_enabled() -> std::collections::HashMap<String, bool> {
     [
+        ("read_file".to_string(), true),
+        ("list_dir".to_string(), true),
+        ("grep".to_string(), true),
+        ("rg".to_string(), true),
+        ("find_files".to_string(), true),
+        ("copy_file".to_string(), true),
+        ("move_file".to_string(), true),
+        ("file_info".to_string(), true),
+        ("git_status".to_string(), true),
         ("create_file".to_string(), true),
         ("delete_file".to_string(), true),
         ("edit_file".to_string(), true),

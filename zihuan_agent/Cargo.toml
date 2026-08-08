@@ -10,4 +10,4 @@ model_inference = { path = "../model_inference" }
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync"] }

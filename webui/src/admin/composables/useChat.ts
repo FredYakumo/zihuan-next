@@ -87,11 +87,34 @@ type LineEditSpec = {
   end_line: number;
   replacement_lines: string[];
 };
+type SearchMatch = {
+  path: string;
+  line: number;
+  content: string;
+  context_before?: string[];
+  context_after?: string[];
+};
 type ToolCallKind =
   | { type: "create_file"; filename: string; lineCount: number; content: string }
   | { type: "delete_file"; filename: string; lineCount: number | null }
   | { type: "edit_file"; filename: string; addedLines: number; removedLines: number; edits: LineEditSpec[] }
-  | { type: "exec_cmd"; command: string; hasResult: boolean; stdout?: string; stderr?: string }
+  | { type: "copy_file" | "move_file"; src: string; dest: string; overwritten: boolean }
+  | { type: "file_info"; filename: string; metadata: Record<string, unknown> }
+  | { type: "find_files"; pattern: string; matches: Array<{ name: string; path: string; type: string }>; truncated: boolean }
+  | { type: "git_status"; branch: string; changes: Array<{ status: string; path: string }>; truncated: boolean }
+  | { type: "exec_cmd"; command: string; hasResult: boolean; stdout?: string; stderr?: string; shell?: string; exitCode?: number | null; truncated?: boolean }
+  | {
+      type: "read_file";
+      filename: string;
+      startLine: number | null;
+      endLine: number | null;
+      totalLines: number | null;
+      content: string;
+      encoding?: string;
+    }
+  | { type: "list_dir"; dirname: string; entries: Array<{ name: string; path: string; type: string }>; truncated: boolean; tree?: string }
+  | { type: "grep" | "rg"; pattern: string; matches: SearchMatch[]; totalMatches: number; matchedFiles: number; skippedBinary: number; truncated: boolean }
+  | { type: "ask_user"; question: string }
   | { type: "generic"; name: string };
 
 
@@ -153,7 +176,7 @@ function classifyToolCall(name: string, arguments_: unknown, result?: string): T
   }
   if (name === "exec_cmd") {
     const args = safeParseJson<{ command?: string }>(arguments_);
-    const res = safeParseJson<{ stdout?: string; stderr?: string }>(result);
+    const res = safeParseJson<{ stdout?: string; stderr?: string; shell?: string; exit_code?: number | null; output_truncated?: boolean }>(result);
     const stdout = res?.stdout ?? "";
     const stderr = res?.stderr ?? "";
     const hasResult = stdout.length > 0 || stderr.length > 0;
@@ -164,6 +187,104 @@ function classifyToolCall(name: string, arguments_: unknown, result?: string): T
         hasResult,
         stdout: hasResult ? stdout : undefined,
         stderr: hasResult ? stderr : undefined,
+        shell: res?.shell,
+        exitCode: res?.exit_code,
+        truncated: res?.output_truncated,
+      };
+    }
+  }
+  if (name === "read_file") {
+    const args = safeParseJson<{ path?: string }>(arguments_);
+    const res = safeParseJson<{
+      content?: string;
+      encoding?: string;
+      start_line?: number;
+      end_line?: number;
+      total_lines?: number;
+    }>(result);
+    if (args?.path != null) {
+      return {
+        type: "read_file",
+        filename: basename(args.path),
+        startLine: res?.start_line ?? null,
+        endLine: res?.end_line ?? null,
+        totalLines: res?.total_lines ?? null,
+        content: res?.content ?? "",
+        encoding: res?.encoding,
+      };
+    }
+  }
+  if (name === "list_dir") {
+    const args = safeParseJson<{ path?: string }>(arguments_);
+    const res = safeParseJson<{
+      entries?: Array<{ name?: string; path?: string; type?: string }>;
+      truncated?: boolean;
+    }>(result);
+    if (args?.path != null) {
+      return {
+        type: "list_dir",
+        dirname: basename(args.path),
+        entries: (res?.entries ?? []).map((entry) => ({
+          name: entry.name ?? "",
+          path: entry.path ?? "",
+          type: entry.type ?? "unknown",
+        })),
+        truncated: res?.truncated ?? false,
+        tree: (res as { tree?: string })?.tree,
+      };
+    }
+  }
+  if (name === "find_files") {
+    const args = safeParseJson<{ name?: string; glob?: string }>(arguments_);
+    const res = safeParseJson<{ matches?: Array<{ name?: string; path?: string; type?: string }>; truncated?: boolean }>(result);
+    if (args?.name != null || args?.glob != null) {
+      return { type: "find_files", pattern: args.name ?? args.glob ?? "", matches: (res?.matches ?? []).map((item) => ({ name: item.name ?? "", path: item.path ?? "", type: item.type ?? "unknown" })), truncated: res?.truncated ?? false };
+    }
+  }
+  if (name === "copy_file" || name === "move_file") {
+    const args = safeParseJson<{ src?: string; dest?: string }>(arguments_);
+    const res = safeParseJson<{ overwritten?: boolean }>(result);
+    if (args?.src != null && args.dest != null) return { type: name, src: args.src, dest: args.dest, overwritten: res?.overwritten ?? false };
+  }
+  if (name === "file_info") {
+    const args = safeParseJson<{ path?: string }>(arguments_);
+    const res = safeParseJson<Record<string, unknown>>(result);
+    if (args?.path != null) return { type: "file_info", filename: basename(args.path), metadata: res ?? {} };
+  }
+  if (name === "git_status") {
+    const res = safeParseJson<{ branch?: string; changes?: Array<{ status?: string; path?: string }>; output_truncated?: boolean }>(result);
+    if (res != null) {
+      return {
+        type: "git_status",
+        branch: res.branch ?? "",
+        changes: (res.changes ?? []).map((change) => ({ status: change.status ?? "", path: change.path ?? "" })),
+        truncated: res.output_truncated ?? false,
+      };
+    }
+  }
+  if (name === "ask_user") {
+    const args = safeParseJson<{ question?: string }>(arguments_);
+    if (args?.question != null) return { type: "ask_user", question: args.question };
+  }
+  if (name === "grep" || name === "rg") {
+    const args = safeParseJson<{ pattern?: string }>(arguments_);
+    const res = safeParseJson<{
+      pattern?: string;
+      matches?: SearchMatch[];
+      total_matches?: number;
+      matched_files?: number;
+      skipped_binary?: number;
+      truncated?: boolean;
+    }>(result);
+    if (args?.pattern != null) {
+      return {
+        type: name,
+        pattern: res?.pattern ?? args.pattern,
+        matches: res?.matches ?? [],
+        totalMatches: res?.total_matches ?? res?.matches?.length ?? 0,
+        matchedFiles: res?.matched_files ?? 0,
+        skippedBinary: res?.skipped_binary ?? 0,
+        truncated: res?.truncated ?? false,
       };
     }
   }
@@ -180,6 +301,8 @@ type PendingAskUser = {
 };
 type StreamState = {
   assistantMessageId: string | null;
+  toolMessageId: string | null;
+  awaitingPostToolContent: boolean;
   pendingNewConversation: PendingNewConversationCommand | null;
   requestText: string;
 };
@@ -198,6 +321,10 @@ const sending = ref(false);
 const chatErrorMessage = ref("");
 const chatErrorDialogMessage = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
+const shouldFollowMessages = ref(true);
+const liveOutputElements = new Map<string, HTMLElement>();
+const shouldFollowLiveOutput = new Map<string, boolean>();
+const programmaticScrollElements = new Set<string>();
 const messages = ref<ChatMessage[]>([]);
 const messageBranches = ref<ChatMessageBranch[]>([]);
 const editingMessage = ref<EditingMessage | null>(null);
@@ -516,7 +643,7 @@ function applyHistory(records: ChatHistoryRecord[]) {
       activeToolCallId.value = "";
     }
   }
-  scrollToBottom();
+  scrollToBottom(true);
 }
 
 function openToolDetail(messageId: string, toolCallId: string) {
@@ -547,6 +674,10 @@ const toolPreviewState = ref<ToolPreviewData | null>(null);
 
 function openToolPreview(kind: ToolCallKind) {
   toolPreviewState.value = { kind, toolCallId: "" };
+}
+
+function openLiveToolPreview(callId: string, kind: ToolCallKind) {
+  toolPreviewState.value = { kind, toolCallId: callId };
 }
 
 function closeToolPreview() {
@@ -598,6 +729,14 @@ function formatToolPayload(payload: unknown): string {
   }
 }
 
+function liveExecOutput(liveCall: LiveToolCall): string {
+  const kind = classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result);
+  if (kind.type !== "exec_cmd") {
+    return "";
+  }
+  return [kind.stdout, kind.stderr].filter(Boolean).join("") || (liveCall.done ? "(空结果)" : "执行中...");
+}
+
 function formatChatTime(timestamp?: string): string {
   if (!timestamp) {
     return "";
@@ -619,11 +758,91 @@ function renderMessageContent(content: string, streaming = false): string {
   return markdown.render(text);
 }
 
-function scrollToBottom() {
+function isAtBottom(element: HTMLElement, threshold = 24): boolean {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= threshold;
+}
+
+function handleMessagesScroll() {
+  // TODO: Keep programmatic scroll events separate from user scroll events; browser layout
+  // changes may dispatch scroll while streaming content is being appended.
+  if (programmaticScrollElements.has("messages")) {
+    return;
+  }
+  if (messagesContainer.value) {
+    shouldFollowMessages.value = isAtBottom(messagesContainer.value);
+  }
+}
+
+function scrollToBottom(force = false) {
+  if (!force && !shouldFollowMessages.value) {
+    return;
+  }
   nextTick(() => {
-    if (messagesContainer.value) {
+    if (messagesContainer.value && (force || shouldFollowMessages.value)) {
+      programmaticScrollElements.add("messages");
       messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+      requestAnimationFrame(() => programmaticScrollElements.delete("messages"));
     }
+  });
+}
+
+function setLiveOutputElement(callId: string, element: Element | null) {
+  if (element instanceof HTMLElement) {
+    liveOutputElements.set(callId, element);
+    if (!shouldFollowLiveOutput.has(callId)) {
+      shouldFollowLiveOutput.set(callId, true);
+    }
+    if (shouldFollowLiveOutput.get(callId) !== false) {
+      scrollElementToBottom(callId, element);
+    }
+    return;
+  }
+  liveOutputElements.delete(callId);
+}
+
+function handleLiveOutputScroll(callId: string) {
+  // TODO: A scroll event caused by assigning scrollTop must not disable follow mode.
+  if (programmaticScrollElements.has(callId)) {
+    return;
+  }
+  const element = liveOutputElements.get(callId);
+  if (element) {
+    shouldFollowLiveOutput.set(callId, isAtBottom(element));
+  }
+}
+
+function scrollLiveOutputToBottom(callId: string) {
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        for (const [elementId, element] of liveOutputElements) {
+          if (
+            (elementId === callId || elementId.startsWith(`${callId}:`)) &&
+            shouldFollowLiveOutput.get(elementId) !== false
+          ) {
+            scrollElementToBottom(elementId, element);
+          }
+        }
+      });
+    });
+  });
+}
+
+function scrollElementToBottom(elementId: string, element: HTMLElement) {
+  // TODO: If this still fails in a browser, inspect whether the scrolling element is the
+  // <pre> itself or an ancestor; this is the single point for replacing the strategy with
+  // scrollIntoView/ResizeObserver without changing the follow-state logic.
+  if (shouldFollowLiveOutput.get(elementId) === false) {
+    return;
+  }
+  programmaticScrollElements.add(elementId);
+  element.scrollTop = element.scrollHeight;
+  requestAnimationFrame(() => {
+    element.scrollTop = element.scrollHeight;
+    requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight;
+      programmaticScrollElements.delete(elementId);
+    });
   });
 }
 
@@ -634,6 +853,48 @@ function clearChatError() {
 function showChatError(message: string) {
   chatErrorMessage.value = message;
   chatErrorDialogMessage.value = message;
+}
+
+function createStreamingAssistantMessage(): ChatMessage {
+  return {
+    id: `local-assistant-${crypto.randomUUID()}`,
+    role: "assistant",
+    content: "",
+    streaming: true,
+    timestamp: new Date().toISOString(),
+    toolCalls: [],
+    toolCallId: null,
+    linkedToolCall: null,
+  };
+}
+
+function hasMessageContent(message: ChatMessage): boolean {
+  return message.content.trim().length > 0 || (message.thinkingContent?.trim().length ?? 0) > 0;
+}
+
+function appendStreamingAssistantMessage(streamState: StreamState): ChatMessage {
+  const current = streamState.assistantMessageId
+    ? messages.value.find((item) => item.id === streamState.assistantMessageId)
+    : undefined;
+  if (current) {
+    current.streaming = false;
+  }
+
+  const message = createStreamingAssistantMessage();
+  messages.value.push(message);
+  streamState.assistantMessageId = message.id;
+  return message;
+}
+
+function getStreamingContentTarget(streamState: StreamState): ChatMessage | undefined {
+  if (streamState.awaitingPostToolContent) {
+    streamState.awaitingPostToolContent = false;
+    return appendStreamingAssistantMessage(streamState);
+  }
+
+  return streamState.assistantMessageId
+    ? messages.value.find((item) => item.id === streamState.assistantMessageId)
+    : undefined;
 }
 
 function closeChatErrorDialog() {
@@ -1108,11 +1369,7 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   }
 
   if (event.type === "delta") {
-    const targetId = event.message_id || streamState.assistantMessageId;
-    if (!targetId) {
-      return;
-    }
-    const message = messages.value.find((item) => item.id === targetId);
+    const message = getStreamingContentTarget(streamState);
     if (message) {
       message.content += event.token ?? "";
       message.streaming = true;
@@ -1121,11 +1378,7 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   }
 
   if (event.type === "thinking_delta") {
-    const targetId = event.message_id || streamState.assistantMessageId;
-    if (!targetId) {
-      return;
-    }
-    const message = messages.value.find((item) => item.id === targetId);
+    const message = getStreamingContentTarget(streamState);
     if (message) {
       if (!message.thinkingContent) {
         message.thinkingContent = "";
@@ -1138,7 +1391,7 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   }
 
   if (event.type === "done") {
-    const targetId = event.message_id || streamState.assistantMessageId;
+    const targetId = streamState.assistantMessageId || event.message_id;
     if (!targetId) {
       return;
     }
@@ -1152,38 +1405,79 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   }
 
   if (event.type === "tool_call_start" && event.call_id && event.name) {
-    const targetId = event.message_id || streamState.assistantMessageId;
-    if (!targetId) {
-      return;
-    }
-    const message = messages.value.find((item) => item.id === targetId);
-    if (message) {
-      if (!message.liveToolCalls) {
-        message.liveToolCalls = [];
+    let message = streamState.toolMessageId
+      ? messages.value.find((item) => item.id === streamState.toolMessageId)
+      : undefined;
+    if (!message || streamState.assistantMessageId !== message.id) {
+      const current = streamState.assistantMessageId
+        ? messages.value.find((item) => item.id === streamState.assistantMessageId)
+        : undefined;
+      if (current && !hasMessageContent(current) && current.toolCalls.length === 0 && !current.liveToolCalls?.length) {
+        messages.value = messages.value.filter((item) => item.id !== current.id);
       }
+      message = appendStreamingAssistantMessage(streamState);
+      streamState.toolMessageId = message.id;
+    }
+
+    streamState.assistantMessageId = message.id;
+    streamState.awaitingPostToolContent = true;
+    if (!message.liveToolCalls) {
+      message.liveToolCalls = [];
+    }
+    const existing = message.liveToolCalls.find((item) => item.call_id === event.call_id);
+    if (existing) {
+      existing.name = event.name;
+      existing.arguments = event.arguments;
+    } else {
       message.liveToolCalls.push({
         call_id: event.call_id,
         name: event.name,
         arguments: event.arguments,
         done: false,
+        result: JSON.stringify({ stdout: "", stderr: "" }),
       });
+    }
+    scrollToBottom();
+  }
+
+  if (event.type === "tool_call_output" && event.call_id && event.chunk) {
+    const targetId = streamState.toolMessageId || streamState.assistantMessageId || event.message_id;
+    const message = targetId ? messages.value.find((item) => item.id === targetId) : undefined;
+    const liveCall = message?.liveToolCalls?.find((item) => item.call_id === event.call_id);
+    if (liveCall) {
+      const current = safeParseJson<{ stdout?: string; stderr?: string }>(liveCall.result) ?? {};
+      const key = event.stream === "stderr" ? "stderr" : "stdout";
+      current[key] = (current[key] ?? "") + event.chunk;
+      liveCall.result = JSON.stringify(current);
+      if (toolPreviewState.value?.toolCallId === event.call_id) {
+        toolPreviewState.value.kind = classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result);
+      }
+      scrollLiveOutputToBottom(event.call_id);
       scrollToBottom();
     }
   }
 
   if (event.type === "tool_call_result" && event.call_id) {
-    const targetId = event.message_id || streamState.assistantMessageId;
-    if (!targetId) {
-      return;
-    }
-    const message = messages.value.find((item) => item.id === targetId);
-    if (message?.liveToolCalls) {
+    const targetId = streamState.toolMessageId || streamState.assistantMessageId || event.message_id;
+    const message = targetId ? messages.value.find((item) => item.id === targetId) : undefined;
+    if (message) {
+      if (!message.liveToolCalls) {
+        message.liveToolCalls = [];
+      }
       const liveCall = message.liveToolCalls.find((item) => item.call_id === event.call_id);
       if (liveCall) {
         liveCall.result = event.result ?? "";
         liveCall.done = true;
-        scrollToBottom();
+      } else {
+        message.liveToolCalls.push({
+          call_id: event.call_id,
+          name: event.name ?? "unknown",
+          arguments: event.arguments ?? {},
+          result: event.result ?? "",
+          done: true,
+        });
       }
+      scrollToBottom();
     }
   }
 }
@@ -1247,6 +1541,8 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
   }
   const streamState: StreamState = {
     assistantMessageId: null,
+    toolMessageId: null,
+    awaitingPostToolContent: false,
     pendingNewConversation,
     requestText: userText,
   };
@@ -1420,11 +1716,13 @@ onUnmounted(() => {
     closeToolDetail,
     getToolResultText,
     openToolPreview,
+    openLiveToolPreview,
     closeToolPreview,
     handleToolPreviewKeydown,
     editHunks,
     toggleLiveToolCall,
     formatToolPayload,
+    liveExecOutput,
     formatChatTime,
     renderMessageContent,
     scrollToBottom,

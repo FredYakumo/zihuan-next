@@ -43,6 +43,30 @@
   border-radius: 4px;
 }
 
+.tool-badge--read {
+  background: color-mix(in srgb, var(--admin-accent) 14%, var(--admin-bg-elevated) 86%);
+  border-color: color-mix(in srgb, var(--admin-accent) 30%, transparent);
+  color: var(--admin-accent);
+}
+
+.tool-badge--list {
+  background: color-mix(in srgb, var(--admin-good) 12%, var(--admin-bg-elevated) 88%);
+  border-color: color-mix(in srgb, var(--admin-good) 28%, transparent);
+  color: var(--admin-good);
+}
+
+.tool-badge--grep {
+  background: color-mix(in srgb, #8b5cf6 14%, var(--admin-bg-elevated) 86%);
+  border-color: color-mix(in srgb, #8b5cf6 32%, transparent);
+  color: #8b5cf6;
+}
+
+.tool-badge--rg {
+  background: color-mix(in srgb, #0ea5e9 14%, var(--admin-bg-elevated) 86%);
+  border-color: color-mix(in srgb, #0ea5e9 32%, transparent);
+  color: #0ea5e9;
+}
+
 .badge-icon {
   font-size: 13px;
   flex-shrink: 0;

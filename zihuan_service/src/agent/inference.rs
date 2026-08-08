@@ -78,6 +78,7 @@ impl BrainTool for ServiceSubgraphBrainTool {
     fn execute_with_outcome(&self, call_content: &str, arguments: &serde_json::Value) -> ToolExecutionOutput {
         ToolExecutionOutput::text(self.execute(call_content, arguments))
     }
+
 }
 
 struct DynBrainToolWrapper(Box<dyn BrainTool>);
@@ -97,6 +98,15 @@ impl BrainTool for DynBrainToolWrapper {
 
     fn execute_with_outcome(&self, call_content: &str, arguments: &serde_json::Value) -> ToolExecutionOutput {
         self.0.execute_with_outcome(call_content, arguments)
+    }
+
+    fn execute_with_progress(
+        &self,
+        call_content: &str,
+        arguments: &serde_json::Value,
+        on_output: Arc<dyn Fn(&str, &str) + Send + Sync>,
+    ) -> ToolExecutionOutput {
+        self.0.execute_with_progress(call_content, arguments, on_output)
     }
 }
 
