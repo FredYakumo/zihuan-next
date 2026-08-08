@@ -17,6 +17,13 @@ fn temp_dir() -> PathBuf {
     path
 }
 
+/// Purpose: Verify that listing a directory returns entries in stable
+/// alphabetical order (files and directories interleaved by name), and that
+/// the tool advertises the expected tool name via its spec.
+///
+/// Test Data: A temporary directory containing z-dir (directory), a.txt and
+/// m.txt (files). Executes with path ".". Expects names
+/// ["a.txt", "m.txt", "z-dir"].
 #[test]
 fn list_dir_returns_stably_sorted_entries() {
     let directory = temp_dir();
@@ -41,6 +48,12 @@ fn list_dir_returns_stably_sorted_entries() {
     fs::remove_dir_all(directory).expect("remove temporary directory");
 }
 
+/// Purpose: Verify that recursive listing descends into nested directories
+/// while excluding hidden entries such as dotfiles.
+///
+/// Test Data: A temporary directory containing nested/child.txt and a hidden
+/// .hidden file. Executes with path "." and recursive true. Expects exactly
+/// 2 entries ("nested" and "child.txt") and no ".hidden" entry.
 #[test]
 fn list_dir_can_recurse_and_skip_hidden_entries() {
     let directory = temp_dir();

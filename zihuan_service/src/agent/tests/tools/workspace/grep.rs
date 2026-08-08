@@ -17,6 +17,15 @@ fn temp_dir() -> PathBuf {
     path
 }
 
+/// Purpose: Verify that the grep tool finds literal string matches recursively
+/// from the workspace path and returns the surrounding context lines, while
+/// still reporting the correct tool name via its spec.
+///
+/// Test Data: A temporary directory containing root.txt with
+/// "before\nneedle here\nafter" and nested/nested.txt with "another needle".
+/// Executes with path ".", pattern "needle", context_lines 1, glob "*.txt".
+/// Expects 2 total matches; the root.txt match is on line 2 with
+/// context_before "before" and context_after "after".
 #[test]
 fn grep_finds_literal_matches_recursively_with_context() {
     let directory = temp_dir();
@@ -48,6 +57,14 @@ fn grep_finds_literal_matches_recursively_with_context() {
     fs::remove_dir_all(directory).expect("remove temporary directory");
 }
 
+/// Purpose: Verify that max_results caps the number of returned matches while
+/// total_matches still reports the full match count, and that binary files
+/// are skipped during the search.
+///
+/// Test Data: A temporary directory containing text.txt with
+/// "needle\nneedle\nneedle" and binary.bin with bytes [0, 159, 146, 150].
+/// Executes with pattern "needle" and max_results 2. Expects total_matches 3,
+/// 2 entries in the returned matches array, and truncated == true.
 #[test]
 fn grep_honors_max_results_and_skips_binary_files() {
     let directory = temp_dir();
