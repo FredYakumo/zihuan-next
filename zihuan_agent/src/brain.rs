@@ -141,6 +141,14 @@ pub trait BrainTool: Send + Sync + 'static {
     fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
         ToolExecutionOutput::text(self.execute(call_content, arguments))
     }
+    fn execute_with_progress(
+        &self,
+        call_content: &str,
+        arguments: &Value,
+        _on_output: Arc<dyn Fn(&str, &str) + Send + Sync>,
+    ) -> ToolExecutionOutput {
+        self.execute_with_outcome(call_content, arguments)
+    }
     /// Declares whether this tool should be treated as short or long running.
     /// Long tools may emit task lifecycle updates, but still execute
     /// synchronously so the LLM receives the real result immediately.
@@ -179,10 +187,26 @@ struct PreparedToolResult {
     result: ToolExecutionOutput,
 }
 
+fn tool_output_callback(
+    observer: Option<&Arc<dyn BrainObserver>>,
+    tool_name: &str,
+    call_id: &str,
+) -> Arc<dyn Fn(&str, &str) + Send + Sync> {
+    let Some(observer) = observer else {
+        return Arc::new(|_, _| {});
+    };
+    let observer = Arc::clone(observer);
+    let tool_name = tool_name.to_string();
+    let call_id = call_id.to_string();
+    Arc::new(move |stream, chunk| observer.on_tool_output(&tool_name, &call_id, stream, chunk))
+}
+
 pub trait BrainObserver: Send + Sync + 'static {
     fn on_assistant_tool_request(&self, _iteration: usize, _content: &str, _tool_calls: &[ToolCalls]) {}
 
     fn on_tool_start(&self, _name: &str, _call_id: &str, _arguments: &Value) {}
+
+    fn on_tool_output(&self, _name: &str, _call_id: &str, _stream: &str, _chunk: &str) {}
 
     fn on_tool_finish(&self, _name: &str, _call_id: &str, _result: &str) {}
 
@@ -296,6 +320,8 @@ impl Brain {
         call_content: &str,
         arguments: &Value,
         tool_name: &str,
+        call_id: &str,
+        observer: Option<&Arc<dyn BrainObserver>>,
         long_task_context: Option<&LongTaskContext>,
     ) -> ToolExecutionOutput {
         if tool.run_duration() == ToolRunDuration::Long {
@@ -314,8 +340,9 @@ impl Brain {
                     long_ctx.task_runtime.append_task_progress(&task_id, progress_text);
                 }
                 long_ctx.notifier.on_start(&task_id, &task_name, call_content);
+                let on_output = tool_output_callback(observer, tool_name, call_id);
                 let result = scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
-                    scope_task_id(task_id.clone(), || tool.execute_with_outcome(call_content, arguments))
+                    scope_task_id(task_id.clone(), || tool.execute_with_progress(call_content, arguments, on_output))
                 });
                 handle.finish(AgentTaskResult {
                     status: Some(AgentTaskStatus::Success),
@@ -327,7 +354,8 @@ impl Brain {
                 return result;
             }
         }
-        tool.execute_with_outcome(call_content, arguments)
+        let on_output = tool_output_callback(observer, tool_name, call_id);
+        tool.execute_with_progress(call_content, arguments, on_output)
     }
 
     fn prepare_tool_calls(&self, tool_calls: &[ToolCalls]) -> Vec<PreparedToolCall> {
@@ -379,13 +407,14 @@ impl Brain {
     }
 
     fn execute_prepared_call(&self, call_content: &str, call: PreparedToolCall) -> PreparedToolResult {
-        Self::execute_prepared_call_with_context(call_content, call, self.long_task_context.as_ref())
+        Self::execute_prepared_call_with_context(call_content, call, self.long_task_context.as_ref(), self.observer.as_ref())
     }
 
     fn execute_prepared_call_with_context(
         call_content: &str,
         call: PreparedToolCall,
         long_task_context: Option<&LongTaskContext>,
+        observer: Option<&Arc<dyn BrainObserver>>,
     ) -> PreparedToolResult {
         let result = if let Some(tool) = call.tool.as_ref() {
             Self::execute_tool_call_with_context(
@@ -393,6 +422,8 @@ impl Brain {
                 call_content,
                 &call.arguments,
                 &call.name,
+                &call.call_id,
+                observer,
                 long_task_context,
             )
         } else {
@@ -751,15 +782,18 @@ impl Brain {
 
             let mut results: Vec<PreparedToolResult> = if Self::can_execute_in_parallel(&prepared_calls) {
                 let long_task_context = self.long_task_context.clone();
+                let observer_handle = self.observer.clone();
                 let mut tasks = JoinSet::new();
                 for call in prepared_calls {
                     let call_content = tool_call_content.clone();
                     let long_task_context = long_task_context.clone();
+                    let task_observer = observer_handle.clone();
                     tasks.spawn_blocking(move || {
                         Self::execute_prepared_call_with_context(
                             &call_content,
                             call,
                             long_task_context.as_ref(),
+                            task_observer.as_ref(),
                         )
                     });
                 }

@@ -29,7 +29,11 @@ type ToolCallKind =
       removedLines: number;
       edits: LineEditSpec[];
     }
-  | { type: "exec_cmd"; command: string; hasResult: boolean; stdout?: string; stderr?: string }
+  | { type: "copy_file" | "move_file"; src: string; dest: string; overwritten: boolean }
+  | { type: "file_info"; filename: string; metadata: Record<string, unknown> }
+  | { type: "find_files"; pattern: string; matches: Array<{ name: string; path: string; type: string }>; truncated: boolean }
+  | { type: "git_status"; branch: string; changes: Array<{ status: string; path: string }>; truncated: boolean }
+  | { type: "exec_cmd"; command: string; hasResult: boolean; stdout?: string; stderr?: string; shell?: string; exitCode?: number | null; truncated?: boolean }
   | {
       type: "read_file";
       filename: string;
@@ -37,9 +41,11 @@ type ToolCallKind =
       endLine: number | null;
       totalLines: number | null;
       content: string;
+      encoding?: string;
     }
-  | { type: "list_dir"; dirname: string; entries: Array<{ name: string; path: string; type: string }>; truncated: boolean }
-  | { type: "grep" | "rg"; pattern: string; matches: SearchMatch[]; totalMatches: number; truncated: boolean }
+  | { type: "list_dir"; dirname: string; entries: Array<{ name: string; path: string; type: string }>; truncated: boolean; tree?: string }
+  | { type: "grep" | "rg"; pattern: string; matches: SearchMatch[]; totalMatches: number; matchedFiles: number; skippedBinary: number; truncated: boolean }
+  | { type: "ask_user"; question: string }
   | { type: "generic"; name: string };
 
 export type { ToolCallKind, LineEditSpec };

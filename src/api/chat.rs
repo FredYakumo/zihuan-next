@@ -61,6 +61,18 @@ impl BrainObserver for SseBrainObserver {
         let _ = self.event_tx.send(event);
     }
 
+    fn on_tool_output(&self, name: &str, call_id: &str, stream: &str, chunk: &str) {
+        let event = json!({
+            "type": "tool_call_output",
+            "message_id": self.message_id,
+            "call_id": call_id,
+            "name": name,
+            "stream": stream,
+            "chunk": chunk,
+        });
+        let _ = self.event_tx.send(event);
+    }
+
     fn on_tool_finish(&self, name: &str, call_id: &str, result: &str) {
         let event = json!({
             "type": "tool_call_result",

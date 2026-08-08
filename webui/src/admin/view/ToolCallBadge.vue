@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import {
   CodeIcon,
+  CopyIcon,
   DeleteIcon,
   EditIcon,
   FileIcon,
   FileSearchIcon,
   FolderSearchIcon,
+  GitBranchIcon,
+  InfoCircleIcon,
+  MoveIcon,
   SearchIcon,
+  ChatIcon,
 } from "tdesign-icons-vue-next";
 
 import { useToolCallBadge, type ToolCallKind } from "../composables/useToolCallBadge";
@@ -35,6 +40,10 @@ const { kind, loading } = useToolCallBadge(props, emit);
       'tool-badge--list': kind.type === 'list_dir',
       'tool-badge--grep': kind.type === 'grep',
       'tool-badge--rg': kind.type === 'rg',
+      'tool-badge--find': kind.type === 'find_files',
+      'tool-badge--copy': kind.type === 'copy_file',
+      'tool-badge--move': kind.type === 'move_file',
+      'tool-badge--git': kind.type === 'git_status',
     }"
     @click="$emit('click')"
   >
@@ -56,6 +65,7 @@ const { kind, loading } = useToolCallBadge(props, emit);
       <span class="badge-lines badge-lines--removed">-{{ kind.removedLines }}行</span>
     </template>
     <template v-else-if="kind.type === 'exec_cmd'">
+      <CodeIcon class="badge-icon" />
       <span class="cmd-prefix">&gt;</span>
       {{ kind.command }}
     </template>
@@ -80,6 +90,28 @@ const { kind, loading } = useToolCallBadge(props, emit);
       <CodeIcon class="badge-icon" />
       {{ kind.pattern }}
       <span class="badge-lines">{{ kind.totalMatches }}处</span>
+    </template>
+    <template v-else-if="kind.type === 'find_files'">
+      <FolderSearchIcon class="badge-icon" />
+      {{ kind.pattern }}
+      <span class="badge-lines">{{ kind.matches.length }}项</span>
+    </template>
+    <template v-else-if="kind.type === 'git_status'">
+      <GitBranchIcon class="badge-icon" />
+      {{ kind.branch || 'Git 状态' }}
+      <span class="badge-lines">{{ kind.changes.length }}项</span>
+    </template>
+    <template v-else-if="kind.type === 'copy_file'">
+      <CopyIcon class="badge-icon" /> 复制 {{ kind.src }} → {{ kind.dest }}
+    </template>
+    <template v-else-if="kind.type === 'move_file'">
+      <MoveIcon class="badge-icon" /> 移动 {{ kind.src }} → {{ kind.dest }}
+    </template>
+    <template v-else-if="kind.type === 'file_info'">
+      <InfoCircleIcon class="badge-icon" /> {{ kind.filename }}
+    </template>
+    <template v-else-if="kind.type === 'ask_user'">
+      <ChatIcon class="badge-icon" /> {{ kind.question }}
     </template>
   </span>
 </template>

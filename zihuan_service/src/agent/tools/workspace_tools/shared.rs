@@ -48,13 +48,20 @@ pub(crate) struct SearchArgs {
     #[serde(default)] pub(crate) glob: Option<String>,
     #[serde(default)] pub(crate) max_results: Option<usize>,
     #[serde(default)] pub(crate) context_lines: usize,
+    #[serde(default)] pub(crate) context_before: Option<usize>,
+    #[serde(default)] pub(crate) context_after: Option<usize>,
     #[serde(default)] pub(crate) case_sensitive: bool,
+    #[serde(default)] pub(crate) output: Option<String>,
+    #[serde(default)] pub(crate) only_matching: bool,
+    #[serde(default)] pub(crate) no_filename: bool,
+    #[serde(default)] pub(crate) unique: bool,
+    #[serde(default)] pub(crate) count_only: bool,
 }
 
 #[derive(Debug, Clone)]
 struct SearchMatch { path: String, line: usize, content: String, context_before: Vec<String>, context_after: Vec<String> }
 
-fn wildcard_matches(pattern: &str, text: &str) -> bool {
+pub(crate) fn wildcard_matches(pattern: &str, text: &str) -> bool {
     let pattern: Vec<char> = pattern.chars().collect();
     let text: Vec<char> = text.chars().collect();
     let mut dp = vec![vec![false; text.len() + 1]; pattern.len() + 1];
@@ -72,14 +79,18 @@ fn wildcard_matches(pattern: &str, text: &str) -> bool {
     dp[pattern.len()][text.len()]
 }
 
-fn glob_matches(path: &Path, root: &Path, glob: Option<&str>) -> bool {
+pub(crate) fn glob_matches(path: &Path, root: &Path, glob: Option<&str>) -> bool {
     let Some(glob) = glob.map(str::trim).filter(|value| !value.is_empty()) else { return true; };
     let relative = path.strip_prefix(root).unwrap_or(path).to_string_lossy().replace('\\', "/");
-    wildcard_matches(glob, &relative)
-        || wildcard_matches(glob, path.file_name().and_then(|value| value.to_str()).unwrap_or_default())
+    let file_name = path.file_name().and_then(|value| value.to_str()).unwrap_or_default();
+    glob.split(',').map(str::trim).filter(|value| !value.is_empty()).all(|pattern| {
+        let (exclude, pattern) = pattern.strip_prefix('!').map_or((false, pattern), |value| (true, value));
+        let matched = wildcard_matches(pattern, &relative) || wildcard_matches(pattern, file_name);
+        if exclude { !matched } else { matched }
+    })
 }
 
-fn collect_search_files(root: &Path, glob: Option<&str>) -> Result<Vec<PathBuf>, String> {
+pub(crate) fn collect_search_files(root: &Path, glob: Option<&str>) -> Result<Vec<PathBuf>, String> {
     let mut pending = VecDeque::from([root.to_path_buf()]);
     let mut files = Vec::new();
     while let Some(path) = pending.pop_front() {
@@ -101,14 +112,14 @@ fn collect_search_files(root: &Path, glob: Option<&str>) -> Result<Vec<PathBuf>,
     Ok(files)
 }
 
-fn search_file(path: &Path, matcher: &dyn Fn(&str) -> bool, context_lines: usize) -> Result<Vec<SearchMatch>, String> {
+fn search_file(path: &Path, matcher: &dyn Fn(&str) -> bool, context_before: usize, context_after: usize) -> Result<Vec<SearchMatch>, String> {
     let content = fs::read_to_string(path).map_err(|err| format!("failed to read '{}': {err}", path.display()))?;
     let lines: Vec<&str> = content.lines().collect();
     let mut matches = Vec::new();
     for (index, line) in lines.iter().enumerate() {
         if !matcher(line) { continue; }
-        let start = index.saturating_sub(context_lines);
-        let end = (index + context_lines + 1).min(lines.len());
+        let start = index.saturating_sub(context_before);
+        let end = (index + context_after + 1).min(lines.len());
         matches.push(SearchMatch {
             path: path.display().to_string(), line: index + 1, content: (*line).to_string(),
             context_before: lines[start..index].iter().map(|value| (*value).to_string()).collect(),
@@ -124,17 +135,79 @@ pub(crate) fn execute_search(args: SearchArgs, workspace_path: Option<&Path>, re
     let max_results = args.max_results.unwrap_or(DEFAULT_MAX_RESULTS);
     if max_results == 0 { return json_error("max_results must be greater than zero"); }
     let pattern = args.pattern.clone();
-    let regex_pattern = if args.case_sensitive { args.pattern.clone() } else if regex_mode { format!("(?i:{})", args.pattern) } else { format!("(?i){}", regex::escape(&args.pattern)) };
+    let regex_source = if regex_mode {
+        let alternatives: Vec<&str> = args.pattern.split('\n').filter(|value| !value.trim().is_empty()).collect();
+        if alternatives.len() > 1 { format!("(?:{})", alternatives.join(")|(?:")) } else { args.pattern.clone() }
+    } else { args.pattern.clone() };
+    let regex_pattern = if args.case_sensitive { regex_source } else if regex_mode { format!("(?i:{regex_source})") } else { format!("(?i){}", regex::escape(&regex_source)) };
     let regex = if regex_mode { match Regex::new(&regex_pattern) { Ok(value) => Some(value), Err(err) => return json_error(format!("invalid rg pattern: {err}")) } } else { None };
-    let matcher = |line: &str| regex.as_ref().map_or_else(|| if args.case_sensitive { line.contains(&args.pattern) } else { line.to_lowercase().contains(&args.pattern.to_lowercase()) }, |value| value.is_match(line));
+    let patterns: Vec<String> = args.pattern.split('\n').map(str::trim).filter(|value| !value.is_empty()).map(str::to_string).collect();
+    if patterns.is_empty() { return json_error("pattern must not be empty"); }
+    let matcher = |line: &str| regex.as_ref().map_or_else(|| {
+        patterns.iter().any(|pattern| if args.case_sensitive { line.contains(pattern) } else { line.to_lowercase().contains(&pattern.to_lowercase()) })
+    }, |value| value.is_match(line));
     let files = match collect_search_files(&path, args.glob.as_deref()) { Ok(files) => files, Err(err) => return json_error(err) };
     let mut matches = Vec::new();
-    for file in files { if let Ok(mut file_matches) = search_file(&file, &matcher, args.context_lines) { matches.append(&mut file_matches); } }
+    let mut matched_files = 0usize;
+    let mut skipped_binary = 0usize;
+    let context_before = args.context_before.unwrap_or(args.context_lines);
+    let context_after = args.context_after.unwrap_or(args.context_lines);
+    for file in files {
+        match search_file(&file, &matcher, context_before, context_after) {
+            Ok(mut file_matches) => {
+                if !file_matches.is_empty() { matched_files += 1; }
+                matches.append(&mut file_matches);
+            }
+            Err(_) => skipped_binary += 1,
+        }
+    }
     let total_matches = matches.len();
-    let results: Vec<Value> = matches.into_iter().take(max_results).map(|item| serde_json::json!({
-        "path": item.path, "line": item.line, "content": item.content,
-        "context_before": item.context_before, "context_after": item.context_after,
-    })).collect();
+    let mut values: Vec<(String, SearchMatch)> = matches.into_iter().map(|item| {
+        let value = if regex_mode && (args.output.is_some() || args.only_matching) {
+            let source = regex.as_ref().expect("regex exists in regex mode");
+            source.find(&item.content).map(|matched| {
+                if let Some(template) = args.output.as_deref() {
+                    render_capture_template(template, source.captures(matched.as_str()).as_ref())
+                } else { matched.as_str().to_string() }
+            }).unwrap_or_default()
+        } else { item.content.clone() };
+        (value, item)
+    }).collect();
+    let results: Vec<Value> = if args.unique || args.count_only {
+        let mut counts = std::collections::BTreeMap::<String, usize>::new();
+        for (value, _) in &values { *counts.entry(value.clone()).or_default() += 1; }
+        counts.into_iter().take(max_results).map(|(value, count)| serde_json::json!({"value":value,"count":count})).collect()
+    } else {
+        values.drain(..).take(max_results).map(|(value, item)| serde_json::json!({
+            "path": if args.no_filename { "" } else { &item.path }, "line": item.line, "content": value,
+            "context_before": item.context_before, "context_after": item.context_after,
+        })).collect()
+    };
     success_json(serde_json::json!({ "ok": true, "path": path.display().to_string(), "pattern": pattern,
-        "matches": results, "total_matches": total_matches, "truncated": total_matches > max_results }))
+        "matches": results, "total_matches": total_matches, "matched_files": matched_files,
+        "skipped_binary": skipped_binary, "truncated": total_matches > max_results }))
+}
+
+fn render_capture_template(template: &str, captures: Option<&regex::Captures<'_>>) -> String {
+    let Some(captures) = captures else { return String::new(); };
+    let mut output = String::new();
+    let chars: Vec<char> = template.chars().collect();
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] == '$' {
+            let start = index + 1;
+            let mut end = start;
+            while end < chars.len() && (chars[end].is_ascii_alphanumeric() || chars[end] == '_') { end += 1; }
+            if end > start {
+                let key: String = chars[start..end].iter().collect();
+                let capture = key.parse::<usize>().ok().and_then(|number| captures.get(number).map(|value| value.as_str().to_string())).or_else(|| captures.name(&key).map(|value| value.as_str().to_string()));
+                if let Some(value) = capture { output.push_str(&value); } else { output.push('$'); output.push_str(&key); }
+                index = end;
+                continue;
+            }
+        }
+        output.push(chars[index]);
+        index += 1;
+    }
+    output
 }
