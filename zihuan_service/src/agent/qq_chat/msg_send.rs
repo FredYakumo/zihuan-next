@@ -4,21 +4,21 @@ use std::sync::{Arc, Mutex};
 
 use zihuan_core::data_refs::RelationalDbConnection;
 
-use ims_bot_adapter::adapter::SharedBotAdapter;
-use ims_bot_adapter::message_helpers::{
+use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
+use zihuan_core::ims_bot_adapter::message_helpers::{
     get_bot_id, send_friend_batches_with_persistence, send_group_batches_with_persistence, OutboundMessagePersistence,
 };
-use ims_bot_adapter::models::message::{
+use zihuan_core::ims_bot_adapter::models::message::{
     AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, PersistedMedia, PersistedMediaSource,
     PlainTextMessage, ReplyMessage,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use zihuan_agent::utils::string_utils::is_no_reply_directive;
+use zihuan_core::agent::utils::string_utils::is_no_reply_directive;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
-use zihuan_graph_engine::data_value::DataValue;
-use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
+use zihuan_core::graph_engine::data_value::DataValue;
+use zihuan_core::nlp::{PunctuationSegmenter, TextSegmenter};
 
 pub(crate) use super::model::{
     QqChatServiceReplyBatchBuilder, QqChatServiceReplyBuildRequest, QqChatServiceReplyBuildResult,

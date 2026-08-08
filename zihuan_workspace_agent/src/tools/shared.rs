@@ -8,8 +8,8 @@ use serde_json::Value;
 use zihuan_core::agent::brain::ToolExecutionResource;
 use zihuan_core::error::Error;
 
-pub(crate) const DEFAULT_MAX_RESULTS: usize = 100;
-pub(crate) const DEFAULT_MAX_ENTRIES: usize = 200;
+pub const DEFAULT_MAX_RESULTS: usize = 100;
+pub const DEFAULT_MAX_ENTRIES: usize = 200;
 const MAX_SEARCH_FILE_BYTES: u64 = 4 * 1024 * 1024;
 
 pub(crate) fn resolve_tool_path(workspace_path: Option<&Path>, raw_path: &str) -> Result<PathBuf, Error> {
@@ -42,7 +42,7 @@ pub(crate) fn path_resource(workspace_path: Option<&Path>, raw_path: &str, write
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct SearchArgs {
+pub struct SearchArgs {
     pub(crate) path: String,
     pub(crate) pattern: String,
     #[serde(default)] pub(crate) glob: Option<String>,

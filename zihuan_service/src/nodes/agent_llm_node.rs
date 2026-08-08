@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use model_inference::agent_config_support::{build_llm_from_ref_id, LLM_KIND_FIELD};
+use zihuan_core::model_inference::agent_config_support::{build_llm_from_ref_id, LLM_KIND_FIELD};
 use zihuan_core::agent_config::qq_chat::{current_qq_chat_agent_service_config, llm_ref_id_for_kind};
 use zihuan_core::agent_config::{normalize_llm_kind, LLM_KIND_MAIN};
 use zihuan_core::error::Result;
-use zihuan_graph_engine::{node_output, DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
+use zihuan_core::graph_engine::{node_output, DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
 pub struct AgentLlmNode {
     id: String,
@@ -45,7 +45,7 @@ impl Node for AgentLlmNode {
         ]
     }
 
-    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &zihuan_core::graph_engine::NodeConfigFlow) -> Result<()> {
         self.llm_kind = inline_values.get(LLM_KIND_FIELD).and_then(|value| match value {
             DataValue::String(value) => Some(value.clone()),
             _ => None,
@@ -53,11 +53,11 @@ impl Node for AgentLlmNode {
         Ok(())
     }
 
-    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_core::graph_engine::NodeInputFlow) -> Result<zihuan_core::graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_service_config()?;
         let llm_kind = normalize_llm_kind(self.llm_kind.as_deref())?;
         let llm = build_llm_from_ref_id(llm_ref_id_for_kind(&config, llm_kind))?;
-        zihuan_graph_engine::return_with_node_output![self;
+        zihuan_core::graph_engine::return_with_node_output![self;
             "llm_model" => DataValue::LLModel(llm),
         ]
     }

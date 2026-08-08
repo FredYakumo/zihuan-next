@@ -1,23 +1,23 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ims_bot_adapter::models::message::{ImageMessage, PersistedMedia};
+use zihuan_core::ims_bot_adapter::models::message::{ImageMessage, PersistedMedia};
 use log::warn;
-use model_inference::system_config::load_llm_refs;
+use zihuan_core::model_inference::system_config::load_llm_refs;
 use serde_json::Value;
-use storage_handler::RuntimeStorageConnectionManager;
-use zihuan_agent::brain::{BrainTool, ToolExecutionOutput};
+use zihuan_core::storage_handler::RuntimeStorageConnectionManager;
+use zihuan_core::agent::brain::{BrainTool, ToolExecutionOutput};
 use zihuan_core::agent_config::qq_chat::{current_qq_chat_agent_service_config, image_understand_llm_ref_id};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart};
 use zihuan_core::runtime::block_async;
-use zihuan_graph_engine::message_restore::{find_media_in_messages, query_media_by_id};
-use zihuan_graph_engine::object_storage::S3Ref;
-use zihuan_graph_engine::DataValue;
+use zihuan_core::graph_engine::message_restore::{find_media_in_messages, query_media_by_id};
+use zihuan_core::graph_engine::object_storage::S3Ref;
+use zihuan_core::graph_engine::DataValue;
 
-use crate::resource_resolver::{build_llm_model, resolve_llm_service_config};
+use zihuan_core::model_inference::resource_resolver::{build_llm_model, resolve_llm_service_config};
 
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
 
@@ -25,7 +25,7 @@ const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
 
 pub(crate) struct ImageUnderstandBrainTool {
-    current_event: Option<ims_bot_adapter::models::MessageEvent>,
+    current_event: Option<zihuan_core::ims_bot_adapter::models::MessageEvent>,
     rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
     notification_target: ToolNotificationTarget,
@@ -33,7 +33,7 @@ pub(crate) struct ImageUnderstandBrainTool {
 
 impl ImageUnderstandBrainTool {
     pub(crate) fn new(
-        current_event: Option<ims_bot_adapter::models::MessageEvent>,
+        current_event: Option<zihuan_core::ims_bot_adapter::models::MessageEvent>,
         rdb_pool: Option<RelationalDbConnection>,
         s3_ref: Option<Arc<S3Ref>>,
         notification_target: ToolNotificationTarget,
@@ -109,7 +109,7 @@ pub(crate) fn execute_image_understand_tool(
 
 fn execute_image_understand(
     arguments: &Value,
-    current_event: Option<&ims_bot_adapter::models::MessageEvent>,
+    current_event: Option<&zihuan_core::ims_bot_adapter::models::MessageEvent>,
     rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
 ) -> Result<String> {
@@ -125,7 +125,7 @@ fn execute_image_understand(
 
 fn resolve_image_understand_media(
     media_id: &str,
-    current_event: Option<&ims_bot_adapter::models::MessageEvent>,
+    current_event: Option<&zihuan_core::ims_bot_adapter::models::MessageEvent>,
     rdb_pool: Option<&RelationalDbConnection>,
 ) -> Result<PersistedMedia> {
     if let Some(event) = current_event {
@@ -159,7 +159,7 @@ fn load_agent_s3_ref() -> Option<Result<Arc<S3Ref>>> {
 
 fn analyze_persisted_media(media: &PersistedMedia, focus_text: Option<&str>, s3_ref: Option<&S3Ref>) -> Result<String> {
     let image_message = ImageMessage::new(media.clone());
-    let resolved = match ims_bot_adapter::multimodal_image_url::resolve_image_message_part(
+    let resolved = match zihuan_core::ims_bot_adapter::multimodal_image_url::resolve_image_message_part(
         &image_message,
         s3_ref,
         false,

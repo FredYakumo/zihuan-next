@@ -10,13 +10,13 @@ use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
 use super::shared::{json_error, path_resource, resolve_tool_path, success_json};
 
-pub(crate) const DEFAULT_TOOL_MOVE_FILE: &str = "move_file";
+pub const DEFAULT_TOOL_MOVE_FILE: &str = "move_file";
 
 #[derive(Debug, Clone, Deserialize)]
 struct MoveFileArgs { src: String, dest: String, #[serde(default)] overwrite: bool }
 
 #[derive(Debug, Clone)]
-pub(crate) struct MoveFileBrainTool { pub(crate) workspace_path: Option<PathBuf> }
+pub struct MoveFileBrainTool { pub(crate) workspace_path: Option<PathBuf> }
 
 impl BrainTool for MoveFileBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {

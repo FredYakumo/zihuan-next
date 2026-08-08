@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 zihuan_core = { path = "../zihuan_core" }
+zihuan_workspace_agent = { path = "../zihuan_workspace_agent" }
+general_wheel_cpp = { path = "../general_wheel_cpp" }
 
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
@@ -25,3 +27,4 @@ hex = "0.4"
 percent-encoding = "2.3"
 base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
+rand = "0.8"

@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
-use zihuan_agent::brain::BrainTool;
-use zihuan_agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
+use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
 use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;

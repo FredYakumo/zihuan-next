@@ -67,4 +67,9 @@ pub trait AgentStateManager: Send + Sync {
     fn update_agent_status(&self, agent_id: &str, status: AgentRuntimeStatus);
     fn update_agent_error(&self, agent_id: &str, error: Option<String>);
     fn update_agent_instance(&self, agent_id: &str, instance_id: Option<String>);
+    fn update_state(&self, agent_id: &str, state: AgentRuntimeState) {
+        self.update_agent_status(agent_id, state.status);
+        self.update_agent_error(agent_id, state.last_error);
+        self.update_agent_instance(agent_id, state.instance_id);
+    }
 }

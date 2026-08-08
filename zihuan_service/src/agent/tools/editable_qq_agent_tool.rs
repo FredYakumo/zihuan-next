@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::nodes::tool_subgraph::ToolSubgraphRunner;
-use zihuan_agent::brain::{BrainTool, ToolExecutionOutput, ToolRunDuration};
+use zihuan_core::agent::brain::{BrainTool, ToolExecutionOutput, ToolRunDuration};
 use zihuan_core::llm::tooling::FunctionTool;
 
 pub(crate) struct EditableQqAgentTool {

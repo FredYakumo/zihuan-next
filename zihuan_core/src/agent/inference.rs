@@ -248,6 +248,46 @@ impl LoadedInferenceAgent {
     }
 }
 
+pub fn infer_agent_response(
+    agent: &AgentConfig,
+    llm_refs: &[LlmRefConfig],
+    messages: Vec<LLMMessage>,
+    tools: Arc<dyn InferenceToolProvider>,
+) -> Result<LLMMessage> {
+    infer_agent_response_with_model(agent, llm_refs, messages, None, tools)
+}
+
+pub fn infer_agent_response_with_model(
+    agent: &AgentConfig,
+    llm_refs: &[LlmRefConfig],
+    messages: Vec<LLMMessage>,
+    model_override: Option<&str>,
+    tools: Arc<dyn InferenceToolProvider>,
+) -> Result<LLMMessage> {
+    let loaded = LoadedInferenceAgent::load_with_tools(agent, llm_refs, tools)?;
+    let output_messages = if let Some(model_id) = model_override {
+        let llm_config = resolve_llm_service_config(Some(model_id), llm_refs, &agent.name)?;
+        let llm = build_llm_model(&llm_config)?;
+        loaded.infer_response_with_trace_and_llm(messages, llm, None)?
+    } else {
+        loaded.infer_response_with_trace(messages)?
+    };
+    output_messages
+        .into_iter()
+        .rev()
+        .find(|message| matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty())
+        .ok_or_else(|| Error::StringError(format!("agent '{}' did not produce a final assistant message", agent.name)))
+}
+
+pub fn infer_agent_response_with_trace(
+    agent: &AgentConfig,
+    llm_refs: &[LlmRefConfig],
+    messages: Vec<LLMMessage>,
+    tools: Arc<dyn InferenceToolProvider>,
+) -> Result<Vec<LLMMessage>> {
+    LoadedInferenceAgent::load_with_tools(agent, llm_refs, tools)?.infer_response_with_trace(messages)
+}
+
 pub fn resolve_agent_model_name(agent: &AgentConfig, llm_refs: &[LlmRefConfig]) -> Result<String> {
     resolve_agent_model_name_with_override(agent, llm_refs, None)
 }

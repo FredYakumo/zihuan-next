@@ -3,7 +3,7 @@ use std::sync::Arc;
 use log::info;
 use serde_json::Value;
 
-use zihuan_agent::brain::{Brain, BrainTool};
+use zihuan_core::agent::brain::{Brain, BrainTool};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
@@ -13,7 +13,7 @@ use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_core::tool_runtime::ToolRunDuration;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_graph_engine::object_storage::S3Ref;
+use zihuan_core::graph_engine::object_storage::S3Ref;
 
 use super::agent_memory::{AgentMemoryToolResources, SearchMemoryContentBrainTool};
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
@@ -61,7 +61,7 @@ pub(crate) struct RunDeepResearchSubagentBrainTool {
     rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
     weaviate_ref: Option<Arc<WeaviateRef>>,
-    current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
+    current_message_event: Option<zihuan_core::ims_bot_adapter::models::MessageEvent>,
     notification_target: ToolNotificationTarget,
     memory_resources: Option<AgentMemoryToolResources>,
     tool_quota: Option<QqChatToolQuotaContext>,
@@ -75,7 +75,7 @@ impl RunDeepResearchSubagentBrainTool {
         rdb_pool: Option<RelationalDbConnection>,
         s3_ref: Option<Arc<S3Ref>>,
         weaviate_ref: Option<Arc<WeaviateRef>>,
-        current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
+        current_message_event: Option<zihuan_core::ims_bot_adapter::models::MessageEvent>,
         notification_target: ToolNotificationTarget,
         memory_resources: Option<AgentMemoryToolResources>,
         tool_quota: Option<QqChatToolQuotaContext>,

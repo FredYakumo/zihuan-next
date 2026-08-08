@@ -3,7 +3,7 @@ use std::sync::Arc;
 use log::warn;
 use serde_json::Value;
 
-use zihuan_agent::brain::BrainTool;
+use zihuan_core::agent::brain::BrainTool;
 use zihuan_core::error::Result;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::rag::WebSearchEngineRef;

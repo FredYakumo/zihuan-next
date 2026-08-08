@@ -1,16 +1,17 @@
 use std::sync::Arc;
 
 use log::info;
-use model_inference::system_config::{load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamServiceConfig};
+use zihuan_core::model_inference::system_config::{load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamServiceConfig};
 use salvo::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use salvo::http::{HeaderValue, StatusCode};
 use salvo::prelude::*;
-use storage_handler::{
+use zihuan_core::storage_handler::{
     build_elasticsearch_ref, build_weaviate_ref, build_web_search_engine_ref, AgentMemoryAccessContext,
-    ConnectionConfig, WeaviateCollectionSchema,
+    ConnectionConfig,
 };
+use zihuan_core::weaviate::WeaviateCollectionSchema;
 use tokio::task::JoinHandle;
-use zihuan_agent::brain::BrainTool;
+use zihuan_core::agent::brain::BrainTool;
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -19,20 +20,20 @@ use zihuan_core::llm::{LLMMessage, MessageRole};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::{AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus};
-use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
+use zihuan_core::graph_engine::brain_tool_spec::BrainToolDefinition;
 
-use zihuan_graph_engine::data_value::EXECUTION_TASK_ID;
+use zihuan_core::graph_engine::data_value::EXECUTION_TASK_ID;
 
-use super::inference::{
+use zihuan_core::agent::inference::{
     infer_agent_response, infer_agent_response_with_model, resolve_agent_model_name,
     resolve_agent_model_name_with_override,
 };
-use super::inference::{InferenceToolContext, InferenceToolProvider};
-use super::tool_definitions::build_enabled_tool_definitions;
+use zihuan_core::agent::inference::{InferenceToolContext, InferenceToolProvider};
+use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
 use super::tools::build_info_brain_tools;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
-use crate::resource_resolver::{build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name};
-use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use zihuan_core::model_inference::resource_resolver::{build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name};
+use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 
 #[derive(Clone)]
 struct HttpStreamRuntimeState {
@@ -76,7 +77,7 @@ struct HttpStreamLoadedInferenceResources {
     web_search_engine_ref: Option<Arc<WebSearchEngineRef>>,
     default_tools_enabled: std::collections::HashMap<String, bool>,
     weaviate_memory_ref: Option<Arc<zihuan_core::weaviate::WeaviateRef>>,
-    elasticsearch_memory_ref: Option<Arc<storage_handler::ElasticsearchRef>>,
+    elasticsearch_memory_ref: Option<Arc<zihuan_core::storage_handler::ElasticsearchRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     memory_llm: Option<Arc<dyn LLMBase>>,
 }
@@ -457,10 +458,11 @@ async fn execute_http_stream_completion(
         }
     }
 
+    let empty_tools: Arc<dyn InferenceToolProvider> = Arc::new(zihuan_core::agent::inference::StaticInferenceToolProvider::default());
     let final_message = if let Some(model_id) = model_override_for_inference {
-        infer_agent_response_with_model(&target_agent, &llm_refs, messages, Some(model_id))?
+        infer_agent_response_with_model(&target_agent, &llm_refs, messages, Some(model_id), Arc::clone(&empty_tools))?
     } else {
-        infer_agent_response(&target_agent, &llm_refs, messages)?
+        infer_agent_response(&target_agent, &llm_refs, messages, Arc::clone(&empty_tools))?
     };
 
     let response_model = user_model.unwrap_or(&resolved_model_name).to_string();

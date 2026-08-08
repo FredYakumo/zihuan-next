@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use crate::config::{ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord};
 use crate::error::Result;
-use crate::weaviate::WeaviateCollectionSchema;
+pub use crate::weaviate::WeaviateCollectionSchema;
 
 pub use agent_avatar_rdb_store::{first_available_agent_avatar_store, RdbAgentAvatarStore};
 pub use agent_avatar_store::{AgentAvatarData, AgentAvatarStore};

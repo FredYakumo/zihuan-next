@@ -5,7 +5,7 @@ use log::warn;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::LLMMessage;
 use zihuan_core::runtime::block_async;
-use zihuan_graph_engine::data_value::LLMMessageSessionCacheRef;
+use zihuan_core::graph_engine::data_value::LLMMessageSessionCacheRef;
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 

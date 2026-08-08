@@ -1,5 +1,5 @@
 use zihuan_core::error::Result;
-use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
+use zihuan_core::graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
 
 pub struct AgentTaskProgressNode {
     id: String,
@@ -35,7 +35,7 @@ impl Node for AgentTaskProgressNode {
 
     node_output![port! { name = "ok", ty = Boolean, desc = "是否成功写入进度" },];
 
-    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_core::graph_engine::NodeInputFlow) -> Result<zihuan_core::graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let task_id = inputs
@@ -62,6 +62,6 @@ impl Node for AgentTaskProgressNode {
             false
         };
 
-        zihuan_graph_engine::return_with_node_output![self; "ok" => DataValue::Boolean(ok)]
+        zihuan_core::graph_engine::return_with_node_output![self; "ok" => DataValue::Boolean(ok)]
     }
 }

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use model_inference::agent_config_support::build_embedding_from_ref_id;
+use zihuan_core::model_inference::agent_config_support::build_embedding_from_ref_id;
 use zihuan_core::agent_config::qq_chat::current_qq_chat_agent_service_config;
 use zihuan_core::error::Result;
-use zihuan_graph_engine::{node_output, DataType, DataValue, Node, Port};
+use zihuan_core::graph_engine::{node_output, DataType, DataValue, Node, Port};
 
 pub struct AgentEmbeddingModelNode {
     id: String,
@@ -35,10 +35,10 @@ impl Node for AgentEmbeddingModelNode {
 
     node_output![port! { name = "embedding_model", ty = EmbeddingModel, desc = "Agent 文本向量模型引用" },];
 
-    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_core::graph_engine::NodeInputFlow) -> Result<zihuan_core::graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_service_config()?;
         let model = build_embedding_from_ref_id(config.embedding_model_ref_id.as_deref())?;
-        zihuan_graph_engine::return_with_node_output![self;
+        zihuan_core::graph_engine::return_with_node_output![self;
             "embedding_model" => DataValue::EmbeddingModel(model),
         ]
     }

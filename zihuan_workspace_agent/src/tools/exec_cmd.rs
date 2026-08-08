@@ -12,7 +12,7 @@ use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::runtime::block_async;
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
 use super::shared::{json_error, resolve_tool_path, success_json};
-pub(crate) const DEFAULT_TOOL_EXEC_CMD:&str="exec_cmd";
+pub const DEFAULT_TOOL_EXEC_CMD:&str="exec_cmd";
 #[derive(Debug,Deserialize)]struct ExecCmdArgs {
 	command: String,
 	#[serde(default)] cwd: Option<String>,
@@ -22,7 +22,7 @@ pub(crate) const DEFAULT_TOOL_EXEC_CMD:&str="exec_cmd";
 	#[serde(default)] max_output_bytes: Option<usize>,
 	#[serde(default)] shell: Option<String>,
 }
-#[derive(Debug,Clone)]pub(crate)struct ExecCmdBrainTool{pub(crate)workspace_path:Option<PathBuf>}
+#[derive(Debug,Clone)]pub struct ExecCmdBrainTool{pub(crate)workspace_path:Option<PathBuf>}
 impl BrainTool for ExecCmdBrainTool{
  fn spec(&self)->Arc<dyn FunctionTool>{Arc::new(StaticFunctionToolSpec{name:DEFAULT_TOOL_EXEC_CMD,description:"Execute a shell command with optional environment, stdin, shell, timeout, and bounded output",parameters:serde_json::json!({"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"timeout_secs":{"type":"integer","minimum":1},"env":{"type":"object","additionalProperties":{"type":"string"}},"input":{"type":"string"},"max_output_bytes":{"type":"integer","minimum":1},"shell":{"type":"string","enum":["powershell","bash"]}},"required":["command"]})})}
  fn execute(&self, call_content: &str, a: &Value)->String{

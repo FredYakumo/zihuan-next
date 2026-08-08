@@ -4,13 +4,13 @@ use chrono::{Duration, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use storage_handler::ElasticsearchRef;
-use storage_handler::{
+use zihuan_core::storage_handler::ElasticsearchRef;
+use zihuan_core::storage_handler::{
     create_elasticsearch_memory_record, create_memory_record_with_vector, list_elasticsearch_memory_keys,
     list_recent_memory_keys, search_elasticsearch_memory, search_memory_content_by_vector, AgentMemoryAccessContext,
     AgentMemoryUpsert,
 };
-use zihuan_agent::brain::BrainTool;
+use zihuan_core::agent::brain::BrainTool;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;

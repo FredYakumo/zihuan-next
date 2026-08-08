@@ -27,7 +27,11 @@ mod research;
 mod web_search;
 
 mod build_metadata {
-    include!(concat!(env!("OUT_DIR"), "/build_metadata.rs"));
+    pub(crate) const BUILD_TIMESTAMP: &str = "";
+    pub(crate) const GIT_COMMIT_HASH: &str = "";
+    pub(crate) const GIT_BRANCH: &str = "";
+    pub(crate) const RUST_VERSION: &str = "";
+    pub(crate) const ZIHUAN_GIT_COMMIT_ID: &str = "";
 }
 
 pub(crate) use agent_memory::{
@@ -49,7 +53,7 @@ pub(crate) use recent_messages::{GetRecentGroupMessagesBrainTool, GetRecentUserM
 pub(crate) use reply_message::ReplyMessageBrainTool;
 pub(crate) use research::RunResearchSubagentBrainTool;
 pub(crate) use web_search::WebSearchBrainTool;
-pub(crate) use workspace_tools::{
+pub(crate) use zihuan_workspace_agent::tools::{
     AskUserBrainTool, CreateFileBrainTool, DeleteFileBrainTool, EditFileBrainTool, ExecCmdBrainTool,
     CopyFileBrainTool, FileInfoBrainTool, FindFilesBrainTool, GitStatusBrainTool, GrepBrainTool, ListDirBrainTool, MoveFileBrainTool, ReadFileBrainTool, RgBrainTool, DEFAULT_TOOL_ASK_USER,
     DEFAULT_TOOL_CREATE_FILE, DEFAULT_TOOL_DELETE_FILE, DEFAULT_TOOL_EDIT_FILE, DEFAULT_TOOL_EXEC_CMD,

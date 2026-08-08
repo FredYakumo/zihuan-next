@@ -4,10 +4,10 @@ use std::sync::{Arc, Mutex};
 use chrono::Local;
 use log::{info, warn};
 
-use zihuan_agent::brain::BrainIterationHook;
-use zihuan_agent::emotion::utils::has_noticeable_emotion_expression;
-use zihuan_agent::session_state::QqChatAgentServiceSessionState;
-use zihuan_agent::utils::build_state_system_prefix_lines;
+use zihuan_core::agent::brain::BrainIterationHook;
+use zihuan_core::agent::emotion::utils::has_noticeable_emotion_expression;
+use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::agent::utils::build_state_system_prefix_lines;
 
 use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::error::Result;
@@ -17,12 +17,12 @@ use zihuan_core::steer::{
 };
 use zihuan_core::utils::string_utils::shorten_text;
 
-use zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT;
-use zihuan_graph_engine::object_storage::S3Ref;
-use zihuan_graph_engine::DataValue;
+use zihuan_core::graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT;
+use zihuan_core::graph_engine::object_storage::S3Ref;
+use zihuan_core::graph_engine::DataValue;
 
-use ims_bot_adapter::message_helpers::get_bot_id;
-use ims_bot_adapter::{CURRENT_MESSAGE_LABEL, IMAGE_ANALYSIS_LABEL};
+use zihuan_core::ims_bot_adapter::message_helpers::get_bot_id;
+use zihuan_core::ims_bot_adapter::{CURRENT_MESSAGE_LABEL, IMAGE_ANALYSIS_LABEL};
 
 use super::user_input::{
     append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference, flush_text_part,
@@ -44,7 +44,7 @@ const REFERENCE_ONLY_NOTICE: &str =
 fn build_steer_user_message(
     current_input: &PreparedCurrentTurnUserInput,
     bot_name: &str,
-    adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
+    adapter: &zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
     llm_supports_multimodal_input: bool,
     api_style: Option<&str>,
     system_prompt: &str,
@@ -72,7 +72,7 @@ fn build_steer_user_message(
 fn build_merged_steer_user_message(
     current_inputs: &[PreparedCurrentTurnUserInput],
     bot_name: &str,
-    adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
+    adapter: &zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
     llm_supports_multimodal_input: bool,
     api_style: Option<&str>,
     system_prompt: &str,
@@ -217,7 +217,7 @@ pub(crate) struct QqChatServiceSteerHook {
     pub(crate) sender_id: String,
     pub(crate) bot_id: String,
     pub(crate) bot_name: String,
-    pub(crate) adapter: ims_bot_adapter::adapter::SharedBotAdapter,
+    pub(crate) adapter: zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
     pub(crate) max_steer_count: usize,
     pub(crate) llm_supports_multimodal_input: bool,
     pub(crate) llm_api_style: Option<String>,
@@ -313,7 +313,7 @@ impl BrainIterationHook for QqChatServiceSteerHook {
 impl QqChatAgentServiceInner {
     pub(crate) fn try_handle_busy_session_steer(
         &self,
-        event: &ims_bot_adapter::models::MessageEvent,
+        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
         ctx: &QqChatAgentServiceContext<'_>,
         sender_id: &str,
         target_id: &str,
@@ -403,7 +403,7 @@ impl QqChatAgentServiceInner {
     pub(crate) fn handle_claimed(
         &self,
         trace: &QqChatTaskTrace,
-        event: &ims_bot_adapter::models::MessageEvent,
+        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
         time: &str,
         sender_id: &str,
         target_id: &str,

@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ims_bot_adapter::adapter::SharedBotAdapter;
+use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 use log::{info, warn};
 use serde_json::Value;
-use zihuan_agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
-use zihuan_agent::session_state::QqChatAgentServiceSessionState;
-use zihuan_agent::utils::build_state_system_prefix_lines;
+use zihuan_core::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
+use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::agent::utils::build_state_system_prefix_lines;
 
 pub(crate) use super::super::tools::build_info_brain_tools;
 use super::super::tools::{
@@ -24,8 +24,8 @@ use super::msg_send::{
 use crate::nodes::tool_subgraph::{validate_shared_inputs, validate_tool_definitions, ToolResultMode};
 use crate::storage::qq_chat_history_store::{clear_history, load_history};
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
-use ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-use zihuan_agent::brain::LongTaskNotifier;
+use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
+use zihuan_core::agent::brain::LongTaskNotifier;
 use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -36,11 +36,11 @@ use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
 use zihuan_core::utils::string_utils::extract_string_field;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_graph_engine::brain_tool_spec::{BrainToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
-use zihuan_graph_engine::data_value::LLMMessageSessionCacheRef;
-use zihuan_graph_engine::function_graph::FunctionPortDef;
-use zihuan_graph_engine::object_storage::S3Ref;
-use zihuan_graph_engine::DataValue;
+use zihuan_core::graph_engine::brain_tool_spec::{BrainToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
+use zihuan_core::graph_engine::data_value::LLMMessageSessionCacheRef;
+use zihuan_core::graph_engine::function_graph::FunctionPortDef;
+use zihuan_core::graph_engine::object_storage::S3Ref;
+use zihuan_core::graph_engine::DataValue;
 
 use super::tool_quota::{QqChatToolQuotaContext, SessionToolQuotaState};
 use super::chat_preprompt::run_dream_agent;
@@ -330,7 +330,7 @@ pub(crate) fn build_user_message(
     let merged_character_instructions = merge_character_and_style_prompt(character_instructions, style_prompt);
     let state_lines =
         build_state_system_prefix_lines(session_state, emotion_dimensions, &merged_character_instructions, preprompt_context);
-    let sender_name = ims_bot_adapter::utils::sender_display_name!(
+    let sender_name = zihuan_core::ims_bot_adapter::utils::sender_display_name!(
         &current_input.event.sender.nickname,
         &current_input.event.sender.card
     );
@@ -523,14 +523,14 @@ pub(crate) fn build_state_delta_lines(
 
 fn resolve_group_role_label(
     adapter: &SharedBotAdapter,
-    event: &ims_bot_adapter::models::event_model::MessageEvent,
+    event: &zihuan_core::ims_bot_adapter::models::event_model::MessageEvent,
 ) -> String {
     let Some(group_id) = event.group_id else {
         return "成员".to_string();
     };
 
-    let bot_id = ims_bot_adapter::message_helpers::get_bot_id(adapter);
-    match ims_bot_adapter::tools::qq_profile::fetch_group_member_role(adapter, group_id, &bot_id) {
+    let bot_id = zihuan_core::ims_bot_adapter::message_helpers::get_bot_id(adapter);
+    match zihuan_core::ims_bot_adapter::tools::qq_profile::fetch_group_member_role(adapter, group_id, &bot_id) {
         Ok(role) => match role.trim().to_lowercase().as_str() {
             "owner" => "群主".to_string(),
             "admin" => "管理员".to_string(),
@@ -564,9 +564,9 @@ fn build_image_prompt_section(lines: &[String], llm_supports_multimodal_input: b
 mod build_user_message_tests {
     use super::*;
 
-    use ims_bot_adapter::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
-    use ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
-    use ims_bot_adapter::models::message::{Message, PlainTextMessage};
+    use zihuan_core::ims_bot_adapter::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
+    use zihuan_core::ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
+    use zihuan_core::ims_bot_adapter::models::message::{Message, PlainTextMessage};
     use tokio::runtime::Runtime;
 
     fn build_test_adapter() -> SharedBotAdapter {
@@ -892,8 +892,8 @@ impl QqChatAgentService {
 
     pub fn handle_event(
         &self,
-        event: &ims_bot_adapter::models::MessageEvent,
-        adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
+        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
+        adapter: &zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
         time: &str,
     ) -> Result<()> {
         self.schedule_dream(event.sender.user_id.to_string());
@@ -941,7 +941,7 @@ impl QqChatAgentService {
             task_db_connection_id,
             tool_quota,
             resolved_language_style: self.config.rdb_pool.as_ref().and_then(|connection| {
-                let group_id = if event.message_type == ims_bot_adapter::models::event_model::MessageType::Group {
+                let group_id = if event.message_type == zihuan_core::ims_bot_adapter::models::event_model::MessageType::Group {
                     event.group_id.map(|value| value.to_string())
                 } else {
                     None

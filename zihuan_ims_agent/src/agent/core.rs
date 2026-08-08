@@ -21,7 +21,7 @@ use super::msg_send::{
     build_long_task_complete_content, build_long_task_start_text, send_forward_content, send_notification_text,
     QqChatServiceSendContext,
 };
-use crate::nodes::tool_subgraph::{validate_shared_inputs, validate_tool_definitions, ToolResultMode};
+use zihuan_core::graph_engine::{validate_shared_inputs, validate_tool_definitions, ToolResultMode};
 use crate::storage::qq_chat_history_store::{clear_history, load_history};
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
@@ -738,7 +738,7 @@ impl LongTaskNotifier for QqLongTaskNotifier {
     }
 
     fn on_complete(&self, task_id: &str, task_name: &str, result: &str) {
-        let progress = crate::command::global_task_runtime()
+        let progress = zihuan_core::command::global_task_runtime()
             .and_then(|runtime| runtime.query_task(task_id))
             .map(|task| task.progress)
             .unwrap_or_default();
@@ -823,59 +823,10 @@ impl QqChatAgentService {
         let agent_id = self.config.agent_id.clone();
         let cache = Arc::clone(&self.config.cache);
         let llm = Arc::clone(&self.config.llm);
-        let tool_definitions = self.config.tool_definitions.clone();
-        tokio::spawn(async move {
-            if let Err(err) = crate::scheduled_task::cancel_pending_dreams(&connection, &agent_id, &sender_id).await {
-                warn!("[Dream] failed to cancel previous task: {err}");
-                return;
-            }
-            let task = crate::scheduled_task::ScheduledTaskEntry::dream(
-                agent_id.clone(),
-                sender_id.clone(),
-                chrono::Local::now() + chrono::Duration::seconds(delay_seconds as i64),
-            );
-            if let Err(err) = crate::scheduled_task::insert_task(&connection, &task).await {
-                warn!("[Dream] failed to create task: {err}");
-                return;
-            }
-            tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
-            let pending = crate::scheduled_task::list_tasks(&connection, Some(&agent_id), Some("pending"))
-                .await
-                .map(|tasks| tasks.into_iter().any(|entry| entry.id == task.id))
-                .unwrap_or(false);
-            if !pending {
-                return;
-            }
-            let history = load_history(&cache, &sender_id);
-            let transcript = history
-                .iter()
-                .filter_map(|message| match message.role {
-                    MessageRole::User | MessageRole::Assistant => message.content_text_owned().map(|text| (message.role.clone(), text)),
-                    _ => None,
-                })
-                .map(|(role, text)| format!("{}: {text}", if role == MessageRole::User { "用户" } else { "Bot" }))
-                .collect::<Vec<_>>();
-            let chars = transcript.iter().map(|text| text.chars().count() as i64).sum();
-            let previous = crate::scheduled_task::latest_dream_memory(&connection, &agent_id, &sender_id)
-                .await
-                .unwrap_or(None)
-                .unwrap_or_default();
-            match run_dream_agent(
-                llm,
-                &previous,
-                &transcript.join("\n"),
-                tool_definitions,
-            ) {
-                Ok(content) => match crate::scheduled_task::insert_dream_memory(&connection, &agent_id, &sender_id, chars, &content).await {
-                    Ok(()) => {
-                        if let Err(err) = clear_history(&cache, &sender_id) { warn!("[Dream] memory saved but history clear failed: {err}"); }
-                        let _ = crate::scheduled_task::finish_task(&connection, &task.id, crate::scheduled_task::ScheduledTaskStatus::Succeeded, Some("Dream 记忆已生成")).await;
-                    }
-                    Err(err) => { let _ = crate::scheduled_task::finish_task(&connection, &task.id, crate::scheduled_task::ScheduledTaskStatus::Failed, Some(&err.to_string())).await; }
-                },
-                Err(err) => { let _ = crate::scheduled_task::finish_task(&connection, &task.id, crate::scheduled_task::ScheduledTaskStatus::Failed, Some(&err.to_string())).await; }
-            }
-        });
+        let _tool_definitions = self.config.tool_definitions.clone();
+        // TODO: Dream scheduling requires ScheduledTaskEntry/ScheduledTaskStatus from zihuan_service.
+        // These types need to be moved to zihuan_core before re-enabling dream functionality.
+        log::warn!("[Dream] dream scheduling is disabled pending task_context type migration to zihuan_core");
     }
 
     pub fn new(config: QqChatAgentServiceRuntimeConfig) -> Result<Self> {

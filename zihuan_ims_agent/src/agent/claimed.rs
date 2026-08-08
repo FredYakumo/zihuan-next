@@ -42,7 +42,7 @@ use super::super::super::tools::{
 };
 use zihuan_core::storage_handler::AgentMemoryAccessContext;
 
-use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
+use zihuan_core::graph_engine::{ToolResultMode, ToolSubgraphRunner};
 use crate::storage::qq_chat_history_store::{
     chat_preprompt_history_key, conversation_history_key, load_history, save_history,
 };
@@ -547,7 +547,7 @@ impl QqChatAgentServiceInner {
                     }
                 }
                 "learn_global_style" | "learn_group_style" => {
-                    let Some(command_registry) = crate::command::global_command_registry() else {
+                    let Some(command_registry) = zihuan_core::command::global_command_registry() else {
                         return Err(Error::ValidationError("command registry not initialized".to_string()));
                     };
                     let permission_check = command_registry.check_permission(
@@ -702,7 +702,7 @@ impl QqChatAgentServiceInner {
                         });
                 }
                 "emotion" | "adjust_emotion" => {
-                    let Some(command_registry) = crate::command::global_command_registry() else {
+                    let Some(command_registry) = zihuan_core::command::global_command_registry() else {
                         return Err(Error::ValidationError("command registry not initialized".to_string()));
                     };
                     let command_context =
@@ -822,7 +822,7 @@ impl QqChatAgentServiceInner {
         // Intercept command-style messages (e.g. slash commands) before the brain loop.
         // Commands are dispatched synchronously; if `passthrough_text` is present it
         // replaces `current_message` and the brain loop runs with the leftover text.
-        if let Some(command_registry) = crate::command::global_command_registry() {
+        if let Some(command_registry) = zihuan_core::command::global_command_registry() {
             let cmd_ctx = self.build_command_context(sender_id, target_id, is_group, inference_event.group_id);
             if let Some(DispatchResult { result, passthrough_text }) =
                 command_registry.dispatch(&cmd_ctx, &raw_user_message)
@@ -992,7 +992,7 @@ impl QqChatAgentServiceInner {
                 QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
                 DataValue::MessageEvent(prepared_input.event.clone()),
             );
-            let adapter_handle: zihuan_core::zihuan_core::ims_bot_adapter::BotAdapterHandle = ctx.adapter.clone();
+            let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = ctx.adapter.clone();
             locked.insert(
                 QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
                 DataValue::BotAdapterRef(adapter_handle),
@@ -1505,7 +1505,7 @@ impl QqChatAgentServiceInner {
         turn_session_state: &Arc<Mutex<QqChatAgentServiceSessionState>>,
         emotion_dimensions: &[QqChatEmotionDimensionConfig],
     ) -> Result<QqChatServiceTurnResult> {
-        let function_list = crate::command::build_help_text().unwrap_or_else(|| "暂无可用功能信息。".to_string());
+        let function_list = zihuan_core::command::build_help_text().unwrap_or_else(|| "暂无可用功能信息。".to_string());
         let public_info = format_public_info_message(current_message).to_string();
 
         let style_prompt = ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str());

@@ -447,7 +447,7 @@ fn collect_reference_context_text(messages: &[Message]) -> Vec<String> {
             Message::Reply(reply) => {
                 if let Some(source_messages) = valid_reply_source_messages(reply) {
                     let rendered =
-                        zihuan_core::zihuan_core::ims_bot_adapter::models::message::render_messages_readable(source_messages);
+                        zihuan_core::ims_bot_adapter::models::message::render_messages_readable(source_messages);
                     let trimmed = rendered.trim();
                     if !trimmed.is_empty() {
                         blocks.push(format!("[{}]\n{trimmed}", REPLAY_CONTENT_LABEL));
@@ -459,7 +459,7 @@ fn collect_reference_context_text(messages: &[Message]) -> Vec<String> {
                     continue;
                 }
                 let rendered =
-                    zihuan_core::zihuan_core::ims_bot_adapter::models::message::render_messages_readable(&[Message::Forward(
+                    zihuan_core::ims_bot_adapter::models::message::render_messages_readable(&[Message::Forward(
                         forward.clone(),
                     )]);
                 let trimmed = rendered.trim();

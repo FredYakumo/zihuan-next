@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ims_bot_adapter::models::message::{Message, PersistedMedia};
+use zihuan_core::ims_bot_adapter::models::message::{Message, PersistedMedia};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::Result;
 

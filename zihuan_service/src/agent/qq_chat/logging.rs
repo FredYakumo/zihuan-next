@@ -8,14 +8,14 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::agent::classify_intent::IntentClassificationTrace;
-use ims_bot_adapter::models::message::Message;
-use zihuan_agent::brain::{BrainObserver, BrainStopReason};
+use zihuan_core::ims_bot_adapter::models::message::Message;
+use zihuan_core::agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{LLMMessage, TokenUsage};
-use zihuan_graph_engine::graph_io::{
+use zihuan_core::graph_engine::graph_io::{
     EdgeDefinition, GraphMetadata, GraphPosition, NodeDefinition, NodeGraphDefinition,
 };
-use zihuan_graph_engine::{DataType, Port};
+use zihuan_core::graph_engine::{DataType, Port};
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 // Maximum number of characters retained for a text segment in regular logs.
@@ -700,7 +700,7 @@ impl QqChatTaskTrace {
                 x: TASK_GRAPH_ORIGIN_X,
                 y: TASK_GRAPH_ORIGIN_Y,
             }),
-            size: Some(zihuan_graph_engine::graph_io::GraphSize { width: 220.0, height: 120.0 }),
+            size: Some(zihuan_core::graph_engine::graph_io::GraphSize { width: 220.0, height: 120.0 }),
             inline_values: HashMap::new(),
             port_bindings: HashMap::new(),
             has_error: false,

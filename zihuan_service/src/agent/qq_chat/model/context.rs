@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use storage_handler::ElasticsearchRef;
-use zihuan_agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::storage_handler::ElasticsearchRef;
+use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent_config::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -11,11 +11,11 @@ use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::steer::PendingSteerStore;
 use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
-use zihuan_graph_engine::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
-use zihuan_graph_engine::function_graph::FunctionPortDef;
-use zihuan_graph_engine::object_storage::S3Ref;
-use zihuan_graph_engine::DataValue;
+use zihuan_core::graph_engine::brain_tool_spec::BrainToolDefinition;
+use zihuan_core::graph_engine::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
+use zihuan_core::graph_engine::function_graph::FunctionPortDef;
+use zihuan_core::graph_engine::object_storage::S3Ref;
+use zihuan_core::graph_engine::DataValue;
 
 use crate::agent::qq_chat::language_style_store::QqChatAgentServiceLanguageStyle;
 use crate::agent::qq_chat::model::reply::QqChatServiceReplyBatchBuilder;
@@ -24,7 +24,7 @@ use crate::agent::qq_chat::tool_quota::{QqChatToolQuotaContext, SessionToolQuota
 /// Runtime context assembled per-turn for the QQ chat agent service.
 pub(crate) struct QqChatAgentServiceContext<'a> {
     pub(crate) agent_id: &'a str,
-    pub(crate) adapter: &'a ims_bot_adapter::adapter::SharedBotAdapter,
+    pub(crate) adapter: &'a zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
     pub(crate) bot_name: &'a str,
     pub(crate) agent_system_prompt: Option<&'a str>,
     pub(crate) cache: &'a Arc<LLMMessageSessionCacheRef>,

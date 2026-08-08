@@ -3,17 +3,17 @@ use std::sync::Arc;
 use log::{info, warn};
 use serde_json::Value;
 
-use ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-use storage_handler::{upload_remote_image_to_s3, upsert_elasticsearch_image, upsert_image_record, ElasticsearchRef};
-use zihuan_agent::brain::BrainTool;
+use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
+use zihuan_core::storage_handler::{upload_remote_image_to_s3, upsert_elasticsearch_image, upsert_image_record, ElasticsearchRef};
+use zihuan_core::agent::brain::BrainTool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::url_utils::content_type_from_url;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_graph_engine::message_restore::{persist_media_to_record, query_media_by_id};
-use zihuan_graph_engine::object_storage::S3Ref;
+use zihuan_core::graph_engine::message_restore::{persist_media_to_record, query_media_by_id};
+use zihuan_core::graph_engine::object_storage::S3Ref;
 
 use super::common::{optional_string_argument, StaticFunctionToolSpec};
 

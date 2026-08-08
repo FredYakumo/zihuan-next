@@ -11,10 +11,10 @@ use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
 use super::shared::{json_error, path_resource, resolve_tool_path, success_json};
 
-pub(crate) const DEFAULT_TOOL_FILE_INFO: &str = "file_info";
+pub const DEFAULT_TOOL_FILE_INFO: &str = "file_info";
 
 #[derive(Debug, Clone, Deserialize)] struct FileInfoArgs { path: String }
-#[derive(Debug, Clone)] pub(crate) struct FileInfoBrainTool { pub(crate) workspace_path: Option<PathBuf> }
+#[derive(Debug, Clone)] pub struct FileInfoBrainTool { pub(crate) workspace_path: Option<PathBuf> }
 
 impl BrainTool for FileInfoBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {

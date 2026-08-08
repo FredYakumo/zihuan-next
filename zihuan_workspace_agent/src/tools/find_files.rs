@@ -11,7 +11,7 @@ use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
 use super::shared::{json_error, path_resource, resolve_tool_path, success_json, wildcard_matches};
 
-pub(crate) const DEFAULT_TOOL_FIND_FILES: &str = "find_files";
+pub const DEFAULT_TOOL_FIND_FILES: &str = "find_files";
 
 #[derive(Debug, Clone, Deserialize)]
 struct FindFilesArgs {
@@ -24,7 +24,7 @@ struct FindFilesArgs {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct FindFilesBrainTool { pub(crate) workspace_path: Option<PathBuf> }
+pub struct FindFilesBrainTool { pub(crate) workspace_path: Option<PathBuf> }
 
 impl BrainTool for FindFilesBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {

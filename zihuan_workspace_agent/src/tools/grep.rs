@@ -5,8 +5,8 @@ use zihuan_core::agent::brain::{BrainTool, ToolExecutionResource};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
 use super::shared::{execute_search, json_error, path_resource, SearchArgs};
-pub(crate) const DEFAULT_TOOL_GREP: &str = "grep";
-#[derive(Debug, Clone)] pub(crate) struct GrepBrainTool { pub(crate) workspace_path: Option<PathBuf> }
+pub const DEFAULT_TOOL_GREP: &str = "grep";
+#[derive(Debug, Clone)] pub struct GrepBrainTool { pub(crate) workspace_path: Option<PathBuf> }
 impl BrainTool for GrepBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> { Arc::new(StaticFunctionToolSpec { name: DEFAULT_TOOL_GREP, description: "Search workspace text files recursively for a literal string", parameters: serde_json::json!({"type":"object","properties":{"path":{"type":"string"},"pattern":{"type":"string"},"glob":{"type":"string"},"max_results":{"type":"integer","minimum":1},"context_lines":{"type":"integer","minimum":0},"context_before":{"type":"integer","minimum":0},"context_after":{"type":"integer","minimum":0},"case_sensitive":{"type":"boolean"}},"required":["path","pattern"]}) }) }
     fn execute(&self, _: &str, arguments: &Value) -> String { let args: SearchArgs = match serde_json::from_value(arguments.clone()) { Ok(value) => value, Err(err) => return json_error(format!("invalid grep arguments: {err}")) }; execute_search(args, self.workspace_path.as_deref(), false) }

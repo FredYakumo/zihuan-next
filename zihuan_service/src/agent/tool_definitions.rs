@@ -1,15 +1,15 @@
 use std::path::PathBuf;
 
-use model_inference::system_config::{
+use zihuan_core::model_inference::system_config::{
     AgentToolConfig, AgentToolType, NodeGraphToolConfig, PythonScriptAgentToolConfig,
 };
 use zihuan_core::error::{Error, Result};
-use zihuan_graph_engine::brain_tool_spec::{
+use zihuan_core::graph_engine::brain_tool_spec::{
     fixed_tool_runtime_inputs, BrainToolDefinition, BrainToolImplementation, ToolParamDef, QQ_AGENT_TOOL_OWNER_TYPE,
 };
-use zihuan_graph_engine::function_graph::FunctionPortDef;
-use zihuan_graph_engine::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
-use zihuan_graph_engine::DataType;
+use zihuan_core::graph_engine::function_graph::FunctionPortDef;
+use zihuan_core::graph_engine::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
+use zihuan_core::graph_engine::DataType;
 
 pub fn build_enabled_tool_definitions(tools: &[AgentToolConfig]) -> Result<Vec<BrainToolDefinition>> {
     let mut definitions = Vec::new();
@@ -130,16 +130,16 @@ fn derive_parameters_from_graph_inputs(inputs: &[FunctionPortDef]) -> Vec<ToolPa
         .collect()
 }
 
-fn load_graph_from_path(path: PathBuf) -> Result<zihuan_graph_engine::graph_io::NodeGraphDefinition> {
+fn load_graph_from_path(path: PathBuf) -> Result<zihuan_core::graph_engine::graph_io::NodeGraphDefinition> {
     if !path.exists() {
         return Err(Error::ValidationError(format!("tool graph file not found: {}", path.display())));
     }
-    zihuan_graph_engine::load_graph_definition_from_json(&path)
+    zihuan_core::graph_engine::load_graph_definition_from_json(&path)
 }
 
 fn validate_tool_graph_contract(
     tool: &AgentToolConfig,
-    graph: &zihuan_graph_engine::graph_io::NodeGraphDefinition,
+    graph: &zihuan_core::graph_engine::graph_io::NodeGraphDefinition,
     parameters: &[ToolParamDef],
     outputs: &[FunctionPortDef],
 ) -> Result<()> {

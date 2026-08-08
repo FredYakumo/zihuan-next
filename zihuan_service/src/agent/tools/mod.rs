@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use storage_handler::AgentMemoryAccessContext;
-use storage_handler::ElasticsearchRef;
-use zihuan_agent::brain::BrainTool;
+use zihuan_core::storage_handler::AgentMemoryAccessContext;
+use zihuan_core::storage_handler::ElasticsearchRef;
+use zihuan_core::agent::brain::BrainTool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_graph_engine::object_storage::S3Ref;
+use zihuan_core::graph_engine::object_storage::S3Ref;
 
 mod agent_memory;
 mod agent_state;

@@ -5,31 +5,31 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use ims_bot_adapter::adapter::shared_from_handle;
-use ims_bot_adapter::models::MessageType;
+use zihuan_core::ims_bot_adapter::adapter::shared_from_handle;
+use zihuan_core::ims_bot_adapter::models::MessageType;
 use log::{info, warn};
 use serde_json::{json, Map, Value};
 
-use zihuan_agent::brain::{consume_tool_progress_notification, current_task_progress_message};
+use zihuan_core::agent::brain::{consume_tool_progress_notification, current_task_progress_message};
 use zihuan_core::agent_config::qq_chat::{with_current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
 use zihuan_core::config::ConfigCenter;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::task_context::append_current_task_progress;
-use zihuan_graph_engine::brain_tool_spec::{
+use zihuan_core::graph_engine::brain_tool_spec::{
     brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition, BrainToolImplementation,
     BuiltInBrainToolKind, PythonScriptToolConfig, ToolParamDef, BRAIN_TOOL_FIXED_CONTENT_INPUT,
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
-use zihuan_graph_engine::function_graph::{
+use zihuan_core::graph_engine::function_graph::{
     sync_function_subgraph_signature, FunctionPortDef, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,
 };
-use zihuan_graph_engine::graph_io::refresh_port_types;
-use zihuan_graph_engine::registry::{build_node_graph_from_definition, NODE_REGISTRY};
-use zihuan_graph_engine::util::function::{
+use zihuan_core::graph_engine::graph_io::refresh_port_types;
+use zihuan_core::graph_engine::registry::{build_node_graph_from_definition, NODE_REGISTRY};
+use zihuan_core::graph_engine::util::function::{
     data_value_from_json_with_declared_type, inject_runtime_values_into_function_inputs_node,
 };
-use zihuan_graph_engine::{DataType, DataValue, Port};
+use zihuan_core::graph_engine::{DataType, DataValue, Port};
 
 use crate::agent::execute_image_understand_tool;
 use crate::agent::qq_chat::msg_send::{send_notification_text, QqChatServiceSendContext};
@@ -502,7 +502,7 @@ impl ToolSubgraphRunner {
             .find(|node| node.id == FUNCTION_INPUTS_NODE_ID)
             .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 function_inputs 边界节点", tool.name)))?;
         function_inputs_node.inline_values.insert(
-            zihuan_graph_engine::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
+            zihuan_core::graph_engine::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
             serde_json::to_value(&input_signature).unwrap_or(Value::Null),
         );
 
@@ -512,7 +512,7 @@ impl ToolSubgraphRunner {
             .find(|node| node.id == FUNCTION_OUTPUTS_NODE_ID)
             .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 function_outputs 边界节点", tool.name)))?;
         function_outputs_node.inline_values.insert(
-            zihuan_graph_engine::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
+            zihuan_core::graph_engine::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
             serde_json::to_value(&tool.outputs).unwrap_or(Value::Null),
         );
 

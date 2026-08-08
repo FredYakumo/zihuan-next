@@ -1,0 +1,17 @@
+[package]
+name = "zihuan_cli"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+candle-cuda = ["zihuan_core/candle-cuda", "zihuan_service/candle-cuda"]
+candle-metal = ["zihuan_core/candle-metal", "zihuan_service/candle-metal"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+zihuan_core = { path = "../zihuan_core" }
+zihuan_service = { path = "../zihuan_service" }
+zihuan_ims_agent = { path = "../zihuan_ims_agent" }
+zihuan_workspace_agent = { path = "../zihuan_workspace_agent" }

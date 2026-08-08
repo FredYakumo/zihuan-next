@@ -4,13 +4,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::{info, warn};
 
-use model_inference::inference_function::compact_message::{compact_message_history, estimate_messages_tokens};
-use model_inference::message_content_utils::{downgrade_messages_for_model, sanitize_messages_for_inference};
+use zihuan_core::model_inference::inference_function::compact_message::{compact_message_history, estimate_messages_tokens};
+use zihuan_core::model_inference::message_content_utils::{downgrade_messages_for_model, sanitize_messages_for_inference};
 
-use zihuan_agent::brain::{Brain, BrainStopReason, LongTaskContext};
+use zihuan_core::agent::brain::{Brain, BrainStopReason, LongTaskContext};
 
-use zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text;
-use zihuan_agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
+use zihuan_core::agent::emotion::utils::emotion_dimensions_snapshot_text;
+use zihuan_core::agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
 use zihuan_core::agent_config::qq_chat::current_qq_chat_agent_service_config;
 use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
@@ -19,14 +19,14 @@ use zihuan_core::llm::{InferenceParam, LLMMessage, TokenUsage};
 use zihuan_core::steer::message_with_api_style;
 use zihuan_core::task_context::AgentTaskRequest;
 
-use zihuan_graph_engine::brain_tool_spec::{
+use zihuan_core::graph_engine::brain_tool_spec::{
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
-use zihuan_graph_engine::DataValue;
+use zihuan_core::graph_engine::DataValue;
 
 use super::super::logging::QqChatBrainObserver;
-use ims_bot_adapter::tools::group_members::GetCurrentGroupMembersBrainTool;
-use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
+use zihuan_core::ims_bot_adapter::tools::group_members::GetCurrentGroupMembersBrainTool;
+use zihuan_core::ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
 
 use super::super::super::tools::{
     format_public_info_message, review_and_rewrite_reply, AgentMemoryBackend, AgentMemoryToolResources,
@@ -40,7 +40,7 @@ use super::super::super::tools::{
     DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
     QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
-use storage_handler::AgentMemoryAccessContext;
+use zihuan_core::storage_handler::AgentMemoryAccessContext;
 
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use crate::storage::qq_chat_history_store::{
@@ -132,8 +132,8 @@ impl QqChatAgentServiceInner {
         &self,
         trace: &QqChatTaskTrace,
         ctx: &QqChatAgentServiceContext<'_>,
-        event: &ims_bot_adapter::models::MessageEvent,
-        inference_event: &ims_bot_adapter::models::MessageEvent,
+        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
+        inference_event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
         sender_id: &str,
         target_id: &str,
         bot_id: &str,
@@ -199,8 +199,8 @@ impl QqChatAgentServiceInner {
         trace: &QqChatTaskTrace,
         cmd_ctx: &CommandContext,
         dispatch_result: DispatchResult,
-        hydrated_event: &ims_bot_adapter::models::MessageEvent,
-        inference_event: &ims_bot_adapter::models::MessageEvent,
+        hydrated_event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
+        inference_event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
         sender_id: &str,
         target_id: &str,
         bot_id: &str,
@@ -339,7 +339,7 @@ impl QqChatAgentServiceInner {
     pub(crate) fn handle_claimed_turn(
         &self,
         trace: &QqChatTaskTrace,
-        event: &ims_bot_adapter::models::MessageEvent,
+        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
         _time: &str,
         sender_id: &str,
         target_id: &str,
@@ -1366,7 +1366,7 @@ impl QqChatAgentServiceInner {
         trace.record_llm_result_parsed(final_reply_text.as_deref());
         let suppress_send = final_reply_text
             .as_deref()
-            .map(zihuan_agent::utils::string_utils::is_no_reply_directive);
+            .map(zihuan_core::agent::utils::string_utils::is_no_reply_directive);
         trace.record_final_reply_decision(final_reply_text.as_deref(), suppress_send, None);
 
         let mut visible_assistant_history_text = None;
@@ -1387,7 +1387,7 @@ impl QqChatAgentServiceInner {
                 }
             }
         } else if let Some(candidate_message) = final_reply_text.as_ref() {
-            if zihuan_agent::utils::string_utils::is_no_reply_directive(candidate_message) {
+            if zihuan_core::agent::utils::string_utils::is_no_reply_directive(candidate_message) {
                 explicit_no_reply = true;
             } else {
                 let available_media = collect_available_media_from_brain_output(&brain_output);
@@ -1492,8 +1492,8 @@ impl QqChatAgentServiceInner {
     fn handle_meta_query_turn(
         &self,
         trace: &QqChatTaskTrace,
-        event: &ims_bot_adapter::models::MessageEvent,
-        inference_event: &ims_bot_adapter::models::MessageEvent,
+        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
+        inference_event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
         sender_id: &str,
         target_id: &str,
         is_group: bool,
@@ -1512,8 +1512,8 @@ impl QqChatAgentServiceInner {
         let (emotion_prompt, suppress_language_style) = {
             let session = turn_session_state.lock().unwrap();
             (
-                zihuan_agent::emotion::utils::emotion_expression_prompt(&session, emotion_dimensions),
-                zihuan_agent::emotion::utils::has_noticeable_emotion_expression(&session, emotion_dimensions),
+                zihuan_core::agent::emotion::utils::emotion_expression_prompt(&session, emotion_dimensions),
+                zihuan_core::agent::emotion::utils::has_noticeable_emotion_expression(&session, emotion_dimensions),
             )
         };
         let style_prompt = if suppress_language_style { None } else { style_prompt };
@@ -1541,7 +1541,7 @@ impl QqChatAgentServiceInner {
 
         trace.record_llm_result_parsed(Some(candidate_message));
 
-        if zihuan_agent::utils::string_utils::is_no_reply_directive(candidate_message) {
+        if zihuan_core::agent::utils::string_utils::is_no_reply_directive(candidate_message) {
             history.push(message_with_api_style(
                 LLMMessage::user(current_message.to_string()),
                 ctx.llm.api_style(),

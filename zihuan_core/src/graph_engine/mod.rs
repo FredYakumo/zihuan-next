@@ -117,6 +117,7 @@ pub mod message_restore;
 pub mod object_storage;
 pub mod qq_message_list_rdb_persistence;
 pub mod registry;
+pub mod tool_subgraph;
 pub mod util;
 
 pub type RuntimeVariableStore = Arc<RwLock<RuntimeValueFlow>>;
@@ -133,6 +134,8 @@ pub use graph_io::{
 pub use node_macros::{node_input, node_input_flow, node_output, node_output_flow, return_with_node_output};
 #[allow(unused_imports)]
 pub use registry::build_node_graph_from_definition;
+#[allow(unused_imports)]
+pub use tool_subgraph::{validate_shared_inputs, validate_tool_definitions, ToolResultMode, ToolSubgraphRunner};
 
 pub mod flow {
     use std::collections::HashMap;

@@ -447,6 +447,31 @@ impl Default for CommandRegistry {
     }
 }
 
+use std::sync::OnceLock;
+use crate::task_context::AgentTaskRuntime;
+static COMMAND_REGISTRY: OnceLock<CommandRegistry> = OnceLock::new();
+static TASK_RUNTIME: OnceLock<Arc<dyn AgentTaskRuntime>> = OnceLock::new();
+
+/// Stub: the real registry is initialized by zihuan_service at startup.
+pub fn global_command_registry() -> Option<&'static CommandRegistry> {
+    COMMAND_REGISTRY.get()
+}
+
+/// Stub: the real task runtime is initialized by zihuan_service at startup.
+pub fn global_task_runtime() -> Option<Arc<dyn AgentTaskRuntime>> {
+    TASK_RUNTIME.get().cloned()
+}
+
+/// Set the global command registry (called by zihuan_service).
+pub fn set_global_command_registry(registry: CommandRegistry) {
+    let _ = COMMAND_REGISTRY.set(registry);
+}
+
+/// Stub: returns None until the registry is initialized by zihuan_service.
+pub fn build_help_text() -> Option<String> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;

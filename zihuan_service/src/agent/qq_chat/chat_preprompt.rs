@@ -4,11 +4,11 @@ use std::sync::{Arc, Mutex};
 use log::{info, warn};
 use serde_json::{json, Map, Value};
 
-use model_inference::inference_function::compact_message::compact_message_history;
+use zihuan_core::model_inference::inference_function::compact_message::compact_message_history;
 
-use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool, ToolExecutionOutput, ToolRunDuration};
-use zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text;
-use zihuan_agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::agent::brain::{Brain, BrainStopReason, BrainTool, ToolExecutionOutput, ToolRunDuration};
+use zihuan_core::agent::emotion::utils::emotion_dimensions_snapshot_text;
+use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::llm::llm_base::LLMBase;
@@ -16,17 +16,17 @@ use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{LLMMessage, MessageRole};
 use zihuan_core::runtime::block_async;
 use zihuan_core::steer::message_with_api_style;
-use zihuan_graph_engine::data_value::LLMMessageSessionCacheRef;
-use zihuan_graph_engine::brain_tool_spec::{brain_tool_input_signature, BrainToolDefinition, ToolParamDef};
-use zihuan_graph_engine::function_graph::{
+use zihuan_core::graph_engine::data_value::LLMMessageSessionCacheRef;
+use zihuan_core::graph_engine::brain_tool_spec::{brain_tool_input_signature, BrainToolDefinition, ToolParamDef};
+use zihuan_core::graph_engine::function_graph::{
     sync_function_subgraph_signature, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,
 };
-use zihuan_graph_engine::graph_io::refresh_port_types;
-use zihuan_graph_engine::registry::build_node_graph_from_definition;
-use zihuan_graph_engine::util::function::{
+use zihuan_core::graph_engine::graph_io::refresh_port_types;
+use zihuan_core::graph_engine::registry::build_node_graph_from_definition;
+use zihuan_core::graph_engine::util::function::{
     data_value_from_json_with_declared_type, inject_runtime_values_into_function_inputs_node,
 };
-use zihuan_graph_engine::{DataType, DataValue};
+use zihuan_core::graph_engine::{DataType, DataValue};
 
 use crate::agent::tools::{
     AgentMemoryToolResources, GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool,
@@ -92,7 +92,7 @@ fn build_chat_preprompt_agent_user_message(
     dream_memory: Option<&str>,
 ) -> String {
     let sender_name =
-        ims_bot_adapter::utils::sender_display_name!(&input.event.sender.nickname, &input.event.sender.card);
+        zihuan_core::ims_bot_adapter::utils::sender_display_name!(&input.event.sender.nickname, &input.event.sender.card);
     let dream_candidate = dream_memory
         .filter(|content| !content.trim().is_empty())
         .map(|content| format!("\n\n[Candidate Dream Memory]\n{content}"))
@@ -139,7 +139,7 @@ impl DreamNodeGraphTool {
             if value.is_null() && !parameter.required {
                 continue;
             }
-            let port = zihuan_graph_engine::function_graph::FunctionPortDef {
+            let port = zihuan_core::graph_engine::function_graph::FunctionPortDef {
                 name: parameter.name.clone(),
                 data_type: parameter.data_type.clone(),
                 description: parameter.desc.clone(),
@@ -163,7 +163,7 @@ impl DreamNodeGraphTool {
             ))
         })?;
         function_inputs_node.inline_values.insert(
-            zihuan_graph_engine::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
+            zihuan_core::graph_engine::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
             serde_json::to_value(&input_signature).unwrap_or(Value::Null),
         );
 
@@ -174,7 +174,7 @@ impl DreamNodeGraphTool {
             ))
         })?;
         function_outputs_node.inline_values.insert(
-            zihuan_graph_engine::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
+            zihuan_core::graph_engine::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
             serde_json::to_value(&self.definition.outputs).unwrap_or(Value::Null),
         );
 

@@ -17,7 +17,7 @@ use zihuan_core::graph_engine::message_restore::{find_media_in_messages, query_m
 use zihuan_core::graph_engine::object_storage::S3Ref;
 use zihuan_core::graph_engine::DataValue;
 
-use crate::resource_resolver::{build_llm_model, resolve_llm_service_config};
+use zihuan_core::model_inference::resource_resolver::{build_llm_model, resolve_llm_service_config};
 
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
 

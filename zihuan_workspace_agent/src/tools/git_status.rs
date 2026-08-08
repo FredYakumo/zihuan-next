@@ -10,7 +10,7 @@ use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
 use super::shared::{json_error, path_resource, resolve_tool_path, success_json};
 
-pub(crate) const DEFAULT_TOOL_GIT_STATUS: &str = "git_status";
+pub const DEFAULT_TOOL_GIT_STATUS: &str = "git_status";
 const DEFAULT_MAX_OUTPUT_BYTES: usize = 32 * 1024;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -24,7 +24,7 @@ struct GitStatusArgs {
 fn default_path() -> String { ".".to_string() }
 
 #[derive(Debug, Clone)]
-pub(crate) struct GitStatusBrainTool { pub(crate) workspace_path: Option<PathBuf> }
+pub struct GitStatusBrainTool { pub(crate) workspace_path: Option<PathBuf> }
 
 impl BrainTool for GitStatusBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {

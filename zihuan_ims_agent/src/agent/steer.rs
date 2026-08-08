@@ -328,7 +328,7 @@ impl QqChatAgentServiceInner {
             prepare_current_turn_user_input_from_event(&inference_event, &bot_id, ctx.bot_name, ctx.s3_ref)
                 .current_text_for_prompt()
                 .to_string();
-        if let Some(command_registry) = crate::command::global_command_registry() {
+        if let Some(command_registry) = zihuan_core::command::global_command_registry() {
             let cmd_ctx = self.build_command_context(sender_id, target_id, is_group, inference_event.group_id);
             if let Some(preview) = command_registry.preview(&cmd_ctx, &current_message) {
                 if preview.definition.allow_steer_bypass && preview.passthrough_text.is_none() {

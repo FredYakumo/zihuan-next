@@ -4,12 +4,12 @@ use std::sync::{Arc, Mutex};
 use log::warn;
 use serde_json::Value;
 
-use ims_bot_adapter::adapter::{shared_from_handle, SharedBotAdapter};
-use ims_bot_adapter::models::event_model::MessageType;
-use zihuan_agent::brain::{consume_tool_progress_notification, current_task_progress_message};
+use zihuan_core::ims_bot_adapter::adapter::{shared_from_handle, SharedBotAdapter};
+use zihuan_core::ims_bot_adapter::models::event_model::MessageType;
+use zihuan_core::agent::brain::{consume_tool_progress_notification, current_task_progress_message};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::task_context::append_current_task_progress;
-use zihuan_graph_engine::{DataType, DataValue};
+use zihuan_core::graph_engine::{DataType, DataValue};
 
 use crate::agent::qq_chat::msg_send::{send_notification_text, QqChatServiceSendContext};
 
@@ -118,14 +118,14 @@ pub(crate) fn send_editable_tool_progress_notification(
         return;
     }
 
-    let event = match shared_rt.get(zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
+    let event = match shared_rt.get(zihuan_core::graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
         Some(DataValue::MessageEvent(event)) => event,
         _ => {
             warn!("{LOG_PREFIX} editable tool progress notification skipped: missing message_event");
             return;
         }
     };
-    let adapter = match shared_rt.get(zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT) {
+    let adapter = match shared_rt.get(zihuan_core::graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT) {
         Some(DataValue::BotAdapterRef(handle)) => shared_from_handle(handle),
         _ => {
             warn!("{LOG_PREFIX} editable tool progress notification skipped: missing qq_ims_bot_adapter");

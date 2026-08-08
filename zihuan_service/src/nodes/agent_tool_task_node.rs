@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use zihuan_core::error::Result;
 use zihuan_core::task_context::current_task_id;
-use zihuan_graph_engine::{node_output, DataType, DataValue, Node, Port};
+use zihuan_core::graph_engine::{node_output, DataType, DataValue, Node, Port};
 
 pub struct AgentToolTaskNode {
     id: String,
@@ -40,11 +40,11 @@ impl Node for AgentToolTaskNode {
         port! { name = "has_task", ty = Boolean, desc = "当前是否存在绑定的任务" },
     ];
 
-    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_core::graph_engine::NodeInputFlow) -> Result<zihuan_core::graph_engine::NodeOutputFlow> {
         let task_id = current_task_id().unwrap_or_default();
         let has_task = !task_id.trim().is_empty();
 
-        zihuan_graph_engine::return_with_node_output![self;
+        zihuan_core::graph_engine::return_with_node_output![self;
             "task_id" => DataValue::String(task_id.clone()),
             "has_task" => DataValue::Boolean(has_task)
         ]

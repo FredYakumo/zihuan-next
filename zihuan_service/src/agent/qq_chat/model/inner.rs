@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use zihuan_core::steer::PendingSteerStore;
-use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
-use zihuan_graph_engine::function_graph::FunctionPortDef;
+use zihuan_core::graph_engine::brain_tool_spec::BrainToolDefinition;
+use zihuan_core::graph_engine::function_graph::FunctionPortDef;
 
 use crate::agent::qq_chat::model::context::QqChatAgentServiceRuntimeConfig;
 

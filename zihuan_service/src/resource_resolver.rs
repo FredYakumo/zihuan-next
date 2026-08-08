@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use model_inference::linalg::embedding_api::EmbeddingAPI;
-use model_inference::nn::queued_embedding_model::QueuedEmbeddingModel;
-use model_inference::nodes::llm_node::build_llm;
-use model_inference::system_config::{LlmRefConfig, LlmServiceConfig, ModelRefSpec};
+use zihuan_core::model_inference::linalg::embedding_api::EmbeddingAPI;
+use zihuan_core::model_inference::nn::queued_embedding_model::QueuedEmbeddingModel;
+use zihuan_core::model_inference::nodes::llm_node::build_llm;
+use zihuan_core::model_inference::system_config::{LlmRefConfig, LlmServiceConfig, ModelRefSpec};
 use zihuan_core::agent_config::EmbeddingServiceConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;

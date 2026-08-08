@@ -118,7 +118,7 @@ pub fn handle_auth_command(
 }
 
 pub fn enqueue_pending_privileged_command(
-    registry: &Arc<CommandRegistry>,
+    registry: &CommandRegistry,
     cmd_ctx: &CommandContext,
     connection: &RelationalDbConnection,
     privileged_command: QqPrivilegedCommand,

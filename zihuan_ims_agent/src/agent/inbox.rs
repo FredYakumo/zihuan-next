@@ -10,7 +10,7 @@ use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use zihuan_core::error::Result;
-use zihuan_core::zihuan_core::ims_bot_adapter::models::MessageEvent;
+use zihuan_core::ims_bot_adapter::models::MessageEvent;
 use zihuan_core::graph_engine::data_value::RedisConfig;
 
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;

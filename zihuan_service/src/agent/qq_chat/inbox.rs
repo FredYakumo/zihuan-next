@@ -5,15 +5,15 @@ use std::time::Duration;
 
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use storage_handler::redis::{rpush_value, RedisBlockingPopConnection};
+use zihuan_core::storage_handler::redis::{rpush_value, RedisBlockingPopConnection};
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::models::MessageEvent;
-use zihuan_graph_engine::data_value::RedisConfig;
+use zihuan_core::graph_engine::data_value::RedisConfig;
 
-use ims_bot_adapter::adapter::SharedBotAdapter;
+use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 
 use crate::agent::qq_chat::model::inner;
 

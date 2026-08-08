@@ -1,7 +1,5 @@
 pub mod http_stream_service;
-pub mod inference;
 pub mod qq_chat;
-pub mod tool_definitions;
 pub mod workspace_agent_service;
 
 mod agent_text_similarity;
@@ -17,76 +15,22 @@ use std::sync::{Arc, Mutex};
 
 use chrono::Local;
 use log::error;
-use model_inference::system_config::{load_agents, AgentConfig, AgentType};
+use zihuan_core::model_inference::system_config::{load_agents, AgentConfig, AgentType};
 use serde::Serialize;
-use storage_handler::{load_connections, ConnectionConfig};
+use zihuan_core::storage_handler::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
-use zihuan_agent::brain::BrainObserver;
+use zihuan_core::agent::brain::BrainObserver;
 use zihuan_core::error::Result;
 use zihuan_core::llm::{LLMMessage, StreamToken};
 use zihuan_core::task_context::AgentTaskRuntime;
 
-use self::inference::{InferenceToolProvider, LoadedInferenceAgent};
+use zihuan_core::agent::inference::{InferenceToolProvider, LoadedInferenceAgent};
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum AgentRuntimeStatus {
-    Stopped,
-    Starting,
-    Running,
-    Error,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AgentRuntimeInfo {
-    pub agent_id: String,
-    pub instance_id: Option<String>,
-    pub status: AgentRuntimeStatus,
-    pub started_at: Option<String>,
-    pub last_error: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct AgentRuntimeState {
-    pub instance_id: Option<String>,
-    pub status: AgentRuntimeStatus,
-    pub started_at: Option<String>,
-    pub last_error: Option<String>,
-}
-
-impl Default for AgentRuntimeState {
-    fn default() -> Self {
-        Self {
-            instance_id: None,
-            status: AgentRuntimeStatus::Stopped,
-            started_at: None,
-            last_error: None,
-        }
-    }
-}
-
-pub(super) type OnFinishShared = Arc<Mutex<Option<Box<dyn FnOnce(bool, Option<String>) + Send + 'static>>>>;
-
-pub(super) struct AgentRuntimeEntry {
-    pub loaded_agent: Option<Arc<LoadedInferenceAgent>>,
-    pub state: AgentRuntimeState,
-    pub task: Option<JoinHandle<()>>,
-    pub on_finish: OnFinishShared,
-}
-
-impl Default for AgentRuntimeEntry {
-    fn default() -> Self {
-        Self {
-            loaded_agent: None,
-            state: AgentRuntimeState::default(),
-            task: None,
-            on_finish: Arc::new(Mutex::new(None)),
-        }
-    }
-}
-
+pub use zihuan_core::agent_runtime::{
+    AgentRuntimeEntry, AgentRuntimeInfo, AgentRuntimeState, AgentRuntimeStatus, OnFinishShared,
+};
 #[derive(Clone, Default)]
 pub struct AgentManager {
     pub(super) inner: Arc<Mutex<HashMap<String, AgentRuntimeEntry>>>,
@@ -140,7 +84,7 @@ impl AgentManager {
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn BrainObserver>>,
-    ) -> Result<(Vec<LLMMessage>, zihuan_agent::brain::BrainStopReason)> {
+    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::brain::BrainStopReason)> {
         self.infer_agent_response_streaming_with_model(agent_id, messages, token_tx, observer, None, None, None, None)
             .await
     }
@@ -152,16 +96,16 @@ impl AgentManager {
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn BrainObserver>>,
         model_config_id: Option<&str>,
-        thinking_type: Option<model_inference::system_config::ThinkingType>,
-        reasoning_effort: Option<model_inference::system_config::ReasoningEffort>,
+        thinking_type: Option<zihuan_core::model_inference::system_config::ThinkingType>,
+        reasoning_effort: Option<zihuan_core::model_inference::system_config::ReasoningEffort>,
         workspace_path: Option<String>,
-    ) -> Result<(Vec<LLMMessage>, zihuan_agent::brain::BrainStopReason)> {
+    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::brain::BrainStopReason)> {
         let agent = self.running_agent(agent_id).ok_or_else(|| {
             zihuan_core::error::Error::ValidationError(format!("agent '{}' is not running", agent_id))
         })?;
         if let Some(model_id) = model_config_id {
-            let llm_refs = model_inference::system_config::load_llm_refs()?;
-            let mut llm_config = crate::resource_resolver::resolve_llm_service_config(
+            let llm_refs = zihuan_core::model_inference::system_config::load_llm_refs()?;
+            let mut llm_config = zihuan_core::model_inference::resource_resolver::resolve_llm_service_config(
                 Some(model_id),
                 &llm_refs,
                 &agent.agent_config().name,
@@ -172,7 +116,7 @@ impl AgentManager {
             if let Some(override_value) = reasoning_effort {
                 llm_config.reasoning_effort = Some(override_value);
             }
-            let llm = crate::resource_resolver::build_llm_model(&llm_config)?;
+            let llm = zihuan_core::model_inference::resource_resolver::build_llm_model(&llm_config)?;
             agent
                 .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, llm, workspace_path)
                 .await
@@ -192,7 +136,7 @@ impl AgentManager {
     ) -> Result<()> {
         self.stop_agent(&agent.id).await?;
         let start_result: Result<()> = async {
-            let llm_refs = model_inference::system_config::load_llm_refs()?;
+            let llm_refs = zihuan_core::model_inference::system_config::load_llm_refs()?;
             let tool_provider = build_inference_tool_provider(&agent, &connections)?;
             let loaded_agent = Arc::new(LoadedInferenceAgent::load_with_tools(&agent, &llm_refs, tool_provider)?);
 

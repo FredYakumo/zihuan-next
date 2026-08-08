@@ -36,29 +36,29 @@ use self::model::{
 use self::msg_send::{
     build_reply_batch_builder as build_unified_reply_batch_builder, send_direct_notification_text_reply,
 };
-use super::inference::{InferenceToolContext, InferenceToolProvider};
+use zihuan_core::agent::inference::{InferenceToolContext, InferenceToolProvider};
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
-use crate::agent::tool_definitions::build_enabled_tool_definitions;
-use crate::resource_resolver::{
+use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
+use zihuan_core::model_inference::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name,
 };
 use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
 use chrono::Local;
-use ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
-use ims_bot_adapter::event::EventHandler;
-use ims_bot_adapter::message_helpers::get_bot_id;
-use ims_bot_adapter::models::event_model::MessageType;
-use ims_bot_adapter::models::message::MessageProp;
+use zihuan_core::ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
+use zihuan_core::ims_bot_adapter::event::EventHandler;
+use zihuan_core::ims_bot_adapter::message_helpers::get_bot_id;
+use zihuan_core::ims_bot_adapter::models::event_model::MessageType;
+use zihuan_core::ims_bot_adapter::models::message::MessageProp;
 use log::{error, info, warn};
-use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use model_inference::system_config::{load_llm_refs, AgentConfig};
-use storage_handler::{
+use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use zihuan_core::model_inference::system_config::{load_llm_refs, AgentConfig};
+use zihuan_core::storage_handler::{
     build_elasticsearch_ref, build_relational_db_connection_for_connection, build_s3_ref, build_weaviate_ref,
     build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind, WeaviateCollectionSchema,
 };
 use tokio::task::JoinHandle;
-use zihuan_agent::brain::BrainTool;
-use zihuan_agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent_config::qq_chat::{current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
@@ -73,13 +73,13 @@ use zihuan_core::task_context::{
 };
 use zihuan_core::utils::string_utils::shorten_text;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
-use zihuan_graph_engine::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
-use zihuan_graph_engine::function_graph::FunctionPortDef;
-use zihuan_graph_engine::message_persistence::persist_message_event;
-use zihuan_graph_engine::message_restore::register_rdb_pool;
-use zihuan_graph_engine::object_storage::S3Ref;
-use zihuan_nlp::{build_segmenter, TextSegmenter};
+use zihuan_core::graph_engine::brain_tool_spec::BrainToolDefinition;
+use zihuan_core::graph_engine::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
+use zihuan_core::graph_engine::function_graph::FunctionPortDef;
+use zihuan_core::graph_engine::message_persistence::persist_message_event;
+use zihuan_core::graph_engine::message_restore::register_rdb_pool;
+use zihuan_core::graph_engine::object_storage::S3Ref;
+use zihuan_core::nlp::{build_segmenter, TextSegmenter};
 
 use self::tool_quota::SessionToolQuotaState;
 
@@ -89,8 +89,8 @@ fn build_reply_batch_builder(segmenter: Arc<dyn TextSegmenter>) -> QqChatService
 
 #[doc(hidden)]
 pub fn expand_message_event_for_tool_input(
-    event: &ims_bot_adapter::models::event_model::MessageEvent,
-) -> ims_bot_adapter::models::event_model::MessageEvent {
+    event: &zihuan_core::ims_bot_adapter::models::event_model::MessageEvent,
+) -> zihuan_core::ims_bot_adapter::models::event_model::MessageEvent {
     let mut expanded = event.clone();
     expanded.message_list = expand_messages_for_inference(&event.message_list);
     expanded
@@ -101,7 +101,7 @@ pub use self::user_input::PreparedCurrentTurnUserInput;
 
 #[doc(hidden)]
 pub fn prepare_message_event_user_input_for_test(
-    event: &ims_bot_adapter::models::event_model::MessageEvent,
+    event: &zihuan_core::ims_bot_adapter::models::event_model::MessageEvent,
     bot_id: &str,
     bot_name: &str,
 ) -> PreparedCurrentTurnUserInput {
@@ -131,7 +131,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
             self.resources.elasticsearch_memory_ref.clone(),
             self.resources.embedding_model.clone(),
             self.resources.memory_llm.clone(),
-            storage_handler::AgentMemoryAccessContext::default(),
+            zihuan_core::storage_handler::AgentMemoryAccessContext::default(),
             context.last_user_text.clone(),
         )
     }
@@ -268,7 +268,7 @@ fn load_qq_resources(
     });
 
     let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
-        let llm_refs = model_inference::system_config::load_llm_refs().unwrap_or_default();
+        let llm_refs = zihuan_core::model_inference::system_config::load_llm_refs().unwrap_or_default();
         match resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name) {
             Ok(Some(_)) => {
                 block_async(RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id)).ok()
@@ -608,7 +608,7 @@ fn resolve_tokenizer_segmenter(
 
 fn resolve_inbox_redis_ref(
     connections: &[ConnectionConfig],
-) -> Result<Option<Arc<zihuan_graph_engine::data_value::RedisConfig>>> {
+) -> Result<Option<Arc<zihuan_core::graph_engine::data_value::RedisConfig>>> {
     let redis_connection_id = connections.iter().find_map(|connection| {
         if connection.enabled && matches!(connection.kind, ConnectionKind::Redis(_)) {
             Some(connection.id.as_str())
@@ -616,7 +616,7 @@ fn resolve_inbox_redis_ref(
             None
         }
     });
-    storage_handler::build_redis_ref(redis_connection_id, connections)
+    zihuan_core::storage_handler::build_redis_ref(redis_connection_id, connections)
 }
 
 impl QqChatAgentServiceInner {
@@ -633,7 +633,7 @@ impl QqChatAgentServiceInner {
     ///   as completed or failed.
     pub(crate) fn handle(
         &self,
-        event: &ims_bot_adapter::models::MessageEvent,
+        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
         time: &str,
         agent_id: &str,
         session: &Arc<SessionStateRef>,

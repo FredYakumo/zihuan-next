@@ -354,15 +354,7 @@ pub(crate) fn run_chat_preprompt_agent(
     };
 
     let emotion_snapshot = emotion_dimensions_snapshot_text(&original_session_state, &emotion_dimensions);
-    let dream_memory = rdb_pool.as_ref().and_then(|connection| {
-        match block_async(crate::scheduled_task::latest_dream_memory(connection, agent_id, sender_id)) {
-            Ok(memory) => memory,
-            Err(err) => {
-                warn!("{LOG_PREFIX} failed to load Dream memory for sender={sender_id}: {err}");
-                None
-            }
-        }
-    });
+    let dream_memory: Option<String> = None; // TODO: Dream memory requires task_context migration to zihuan_core
     let user_message = message_with_api_style(
         LLMMessage::user(build_chat_preprompt_agent_user_message(
             input,

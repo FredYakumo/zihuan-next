@@ -3,14 +3,14 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use zihuan_agent::brain::BrainTool;
+use zihuan_core::agent::brain::BrainTool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_graph_engine::data_value::DataValue;
-use zihuan_graph_engine::message_rdb_get_group_history::MessageRdbGetGroupHistoryNode;
-use zihuan_graph_engine::message_rdb_get_user_history::MessageRdbGetUserHistoryNode;
-use zihuan_graph_engine::Node;
+use zihuan_core::graph_engine::data_value::DataValue;
+use zihuan_core::graph_engine::message_rdb_get_group_history::MessageRdbGetGroupHistoryNode;
+use zihuan_core::graph_engine::message_rdb_get_user_history::MessageRdbGetUserHistoryNode;
+use zihuan_core::graph_engine::Node;
 
 use super::common::{
     extract_string_list_output, optional_string_argument, sanitize_positive_limit, StaticFunctionToolSpec,

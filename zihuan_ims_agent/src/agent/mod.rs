@@ -1,4 +1,6 @@
+mod agent_text_similarity;
 mod chat_preprompt;
+mod classify_intent;
 mod core;
 pub mod ignore_store;
 mod inbox;
@@ -37,9 +39,9 @@ use self::msg_send::{
     build_reply_batch_builder as build_unified_reply_batch_builder, send_direct_notification_text_reply,
 };
 use zihuan_core::agent::inference::{InferenceToolContext, InferenceToolProvider};
-use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
+use zihuan_core::agent_runtime::{AgentRuntimeState, AgentRuntimeStatus, AgentStateManager, OnFinishShared};
 use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
-use crate::resource_resolver::{
+use zihuan_core::model_inference::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name,
 };
 use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
@@ -54,8 +56,9 @@ use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::Runt
 use zihuan_core::model_inference::system_config::{load_llm_refs, AgentConfig};
 use zihuan_core::storage_handler::{
     build_elasticsearch_ref, build_relational_db_connection_for_connection, build_s3_ref, build_weaviate_ref,
-    build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind, WeaviateCollectionSchema,
+    build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind,
 };
+use zihuan_core::weaviate::WeaviateCollectionSchema;
 use tokio::task::JoinHandle;
 use zihuan_core::agent::brain::BrainTool;
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
@@ -332,11 +335,11 @@ fn load_qq_resources(
 ///     -> tokio::spawn(BotAdapter::start) -> handle_event per incoming message
 ///     -> on_finish callback on exit
 pub async fn spawn(
-    manager: &AgentManager,
+    manager: Arc<dyn AgentStateManager>,
     agent: AgentConfig,
     config: QqChatAgentServiceConfig,
     connections: Vec<ConnectionConfig>,
-    on_finish: super::OnFinishShared,
+    on_finish: OnFinishShared,
     task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
 ) -> Result<JoinHandle<()>> {
     if config

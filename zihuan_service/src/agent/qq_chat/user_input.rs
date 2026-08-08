@@ -1,21 +1,21 @@
 use std::sync::Arc;
 
-use ims_bot_adapter::adapter::{restore_messages_for_message_id, SharedBotAdapter};
-use ims_bot_adapter::message_helpers::render_current_message_body;
-use ims_bot_adapter::models::event_model::MessageEvent;
-use ims_bot_adapter::models::message::{Message, MessageProp, PlainTextMessage, ReplyMessage};
-use ims_bot_adapter::multimodal_image_url::{
+use zihuan_core::ims_bot_adapter::adapter::{restore_messages_for_message_id, SharedBotAdapter};
+use zihuan_core::ims_bot_adapter::message_helpers::render_current_message_body;
+use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
+use zihuan_core::ims_bot_adapter::models::message::{Message, MessageProp, PlainTextMessage, ReplyMessage};
+use zihuan_core::ims_bot_adapter::multimodal_image_url::{
     resolve_image_message_part, resolve_plain_text_segments, ImagePartSource, ResolvedTextSegment,
 };
-use ims_bot_adapter::utils;
-use ims_bot_adapter::{
+use zihuan_core::ims_bot_adapter::utils;
+use zihuan_core::ims_bot_adapter::{
     CURRENT_MESSAGE_LABEL, FORWARD_CONTENT_LABEL, FORWARD_END_MARKER, FORWARD_NODE_LABEL, FORWARD_START_MARKER,
     REPLAY_CONTENT_LABEL, REPLY_END_MARKER, REPLY_MESSAGE_LABEL, REPLY_START_MARKER, SENDER_LABEL,
 };
 use log::{info, warn};
 use zihuan_core::llm::MessagePart;
 use zihuan_core::runtime::block_async;
-use zihuan_graph_engine::object_storage::S3Ref;
+use zihuan_core::graph_engine::object_storage::S3Ref;
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 
@@ -307,7 +307,7 @@ pub(crate) fn append_prepared_parts(
 pub(crate) fn build_prepared_input_metadata(input: &PreparedCurrentTurnUserInput, bot_name: &str) -> String {
     let environment = format!("[Environment]\n- Your name: {bot_name}");
     let sender_name =
-        ims_bot_adapter::utils::sender_display_name!(&input.event.sender.nickname, &input.event.sender.card);
+        zihuan_core::ims_bot_adapter::utils::sender_display_name!(&input.event.sender.nickname, &input.event.sender.card);
     let at_mention = if input.is_at_me {
         "\n- You were @-mentioned in this message"
     } else {

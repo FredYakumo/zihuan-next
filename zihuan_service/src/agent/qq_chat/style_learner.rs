@@ -220,7 +220,7 @@ fn run_blocking_future<T>(future: impl std::future::Future<Output = Result<T>>) 
 
 #[derive(Clone)]
 pub(crate) struct OwnedStyleLearningTaskContext {
-    pub adapter: ims_bot_adapter::adapter::SharedBotAdapter,
+    pub adapter: zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
     pub bot_name: String,
     pub natural_language_reply_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     pub intent_classification_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
@@ -232,8 +232,8 @@ pub(crate) struct OwnedStyleLearningTaskContext {
 
 #[derive(Clone)]
 pub(crate) struct StyleLearningResumeInput {
-    pub event: ims_bot_adapter::models::MessageEvent,
-    pub inference_event: ims_bot_adapter::models::MessageEvent,
+    pub event: zihuan_core::ims_bot_adapter::models::MessageEvent,
+    pub inference_event: zihuan_core::ims_bot_adapter::models::MessageEvent,
     pub sender_id: String,
     pub target_id: String,
     pub bot_id: String,
@@ -286,7 +286,7 @@ pub(crate) fn execute_style_learning_task(
                         sender_id: input.sender_id.clone(),
                         sender_nickname: input.inference_event.sender.nickname.clone(),
                         sender_card: input.inference_event.sender.card.clone(),
-                        session_state: zihuan_agent::session_state::QqChatAgentServiceSessionState::default(),
+                        session_state: zihuan_core::agent::session_state::QqChatAgentServiceSessionState::default(),
                         emotion_dimensions: Vec::new(),
                         model_identity_context: None,
                     },

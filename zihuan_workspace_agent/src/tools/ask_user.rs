@@ -6,8 +6,8 @@ use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::workspace::AskUserRequest;
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
 use super::shared::json_error;
-pub(crate) const DEFAULT_TOOL_ASK_USER:&str="ask_user";
-#[derive(Debug,Clone,Default)]pub(crate)struct AskUserBrainTool;
+pub const DEFAULT_TOOL_ASK_USER:&str="ask_user";
+#[derive(Debug,Clone,Default)]pub struct AskUserBrainTool;
 #[derive(Debug,Deserialize)]struct AskUserArgs{question:String,#[serde(default)]details:Option<String>,#[serde(default)]placeholder:Option<String>}
 impl BrainTool for AskUserBrainTool{
  fn spec(&self)->Arc<dyn FunctionTool>{Arc::new(StaticFunctionToolSpec{name:DEFAULT_TOOL_ASK_USER,description:"Ask the dashboard user for missing details and pause until they reply",parameters:serde_json::json!({"type":"object","properties":{"question":{"type":"string"},"details":{"type":"string"},"placeholder":{"type":"string"}},"required":["question"]})})}
