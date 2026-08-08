@@ -421,7 +421,7 @@ fn restore_message_snapshot_from_redis(
     }))
 }
 
-fn rebuild_message_list(content: &str, media_json: Option<&str>) -> Vec<Message> {
+pub fn rebuild_message_list(content: &str, media_json: Option<&str>) -> Vec<Message> {
     let mut messages = Vec::new();
     let trimmed_content = content.trim();
     if !trimmed_content.is_empty() {
@@ -472,7 +472,7 @@ fn rebuild_message_list(content: &str, media_json: Option<&str>) -> Vec<Message>
     messages
 }
 
-fn rebuild_message_list_from_raw_json(raw_message_json: &str) -> Option<Vec<Message>> {
+pub fn rebuild_message_list_from_raw_json(raw_message_json: &str) -> Option<Vec<Message>> {
     if raw_message_json.trim().is_empty() {
         return None;
     }
@@ -517,87 +517,3 @@ pub fn find_media_in_messages(messages: &[Message], media_id: &str) -> Option<Pe
     None
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use zihuan_core::ims_bot_adapter::models::message::collect_media_records;
-    use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-
-    #[test]
-    fn rebuild_message_list_from_media_json_restores_persisted_media_image() {
-        let media_json = serde_json::to_string(&vec![MessageMediaRecord {
-            segment_index: 0,
-            r#type: "image".to_string(),
-            media_id: "media-1".to_string(),
-            source: PersistedMediaSource::QqChat,
-            original_source: "https://multimedia.nt.qq.com.cn/download?fileid=1".to_string(),
-            rustfs_path: "qq-images/2026/05/16/1.jpg".to_string(),
-            name: Some("download".to_string()),
-            description: Some("图片描述".to_string()),
-            mime_type: Some("image/jpeg".to_string()),
-        }])
-        .expect("serialize media json");
-
-        let messages = rebuild_message_list("", Some(&media_json));
-        match &messages[0] {
-            Message::Image(image) => {
-                assert_eq!(image.media.media_id, "media-1");
-                assert_eq!(image.media.rustfs_path, "qq-images/2026/05/16/1.jpg");
-                assert_eq!(image.media.mime_type.as_deref(), Some("image/jpeg"));
-            }
-            other => panic!("expected image message, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn rebuild_message_list_from_raw_json_restores_nested_media() {
-        let messages = vec![Message::Image(ImageMessage::new(PersistedMedia::new(
-            PersistedMediaSource::Upload,
-            "upload://manual/demo",
-            "uploads/demo.png",
-            Some("demo.png".to_string()),
-            None,
-            Some("image/png".to_string()),
-        )))];
-        let raw_json = serde_json::to_string(&messages).expect("serialize messages");
-        let restored = rebuild_message_list_from_raw_json(&raw_json).expect("restore raw json");
-        assert_eq!(restored.len(), 1);
-        match &restored[0] {
-            Message::Image(image) => {
-                assert_eq!(image.media.rustfs_path, "uploads/demo.png");
-            }
-            other => panic!("expected image message, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn redis_snapshot_payload_roundtrip_restores_media_ids() {
-        let messages = vec![Message::Image(ImageMessage::new(PersistedMedia::new(
-            PersistedMediaSource::QqChat,
-            "https://multimedia.nt.qq.com.cn/download?fileid=1",
-            "qq-images/2026/05/16/1.jpg",
-            Some("download".to_string()),
-            Some("图片描述".to_string()),
-            Some("image/jpeg".to_string()),
-        )))];
-        let payload = CachedMessageSnapshotPayload {
-            message_id: "1".to_string(),
-            content: String::new(),
-            media_json: Some(serde_json::to_string(&collect_media_records(&messages)).expect("serialize media")),
-            raw_message_json: Some(serde_json::to_string(&messages).expect("serialize raw message json")),
-        };
-
-        let restored = payload
-            .raw_message_json
-            .as_deref()
-            .and_then(rebuild_message_list_from_raw_json)
-            .expect("restore raw json");
-        match &restored[0] {
-            Message::Image(image) => {
-                assert!(image.media.media_id.starts_with("media-"));
-                assert_eq!(image.media.rustfs_path, "qq-images/2026/05/16/1.jpg");
-            }
-            other => panic!("expected image message, got {other:?}"),
-        }
-    }
-}
