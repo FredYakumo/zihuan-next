@@ -494,6 +494,14 @@ export interface WorkspaceChange {
   diff: WorkspaceDiffLine[];
 }
 
+export type AgentsMdLocationKey = "workspace" | "executable" | "home";
+export interface AgentsMdFile {
+  key: AgentsMdLocationKey;
+  path: string;
+  exists: boolean;
+  content: string;
+}
+
 export interface ChatToolCall {
   id: string;
   type_name: string;
@@ -1077,6 +1085,21 @@ export const chat = {
 
   cancelWorkspaceChange(sessionId: string, changeId: string): Promise<{ change: WorkspaceChange }> {
     return request("POST", `/chat/sessions/${encodeURIComponent(sessionId)}/changes/${encodeURIComponent(changeId)}/cancel`);
+  },
+};
+
+export const agentsMd = {
+  list(workspacePath: string): Promise<{ files: AgentsMdFile[] }> {
+    const qs = buildQueryString({ workspace_path: workspacePath });
+    return request("GET", `/agents-md${qs ? `?${qs}` : ""}`);
+  },
+  save(key: string, content: string, workspacePath: string): Promise<{ ok: boolean; path: string }> {
+    const qs = buildQueryString({ workspace_path: workspacePath });
+    return request("POST", `/agents-md${qs ? `?${qs}` : ""}`, { key, content });
+  },
+  remove(key: string, workspacePath: string): Promise<{ ok: boolean; path: string }> {
+    const qs = buildQueryString({ key, workspace_path: workspacePath });
+    return request("DELETE", `/agents-md${qs ? `?${qs}` : ""}`);
   },
 };
 

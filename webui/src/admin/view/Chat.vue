@@ -832,6 +832,15 @@
                         </div>
                       </div>
 
+                      <button
+                        v-if="isWorkspaceService"
+                        class="model-chip agents-md-chip"
+                        title="管理 AGENTS.md"
+                        @click.stop="openAgentsMdDialog"
+                      >
+                        AGENTS.md
+                      </button>
+
                       <div class="model-settings" :class="{ open: openPicker === 'settings' }">
                         <button
                           class="model-chip icon-only"
@@ -933,6 +942,67 @@
             <footer v-if="selectedWorkspaceChange" class="workspace-change-dialog-actions">
               <button class="workspace-change-accept" @click="acceptWorkspaceChange(selectedWorkspaceChange)">Accept</button>
               <button class="workspace-change-cancel" @click="cancelWorkspaceChange(selectedWorkspaceChange)">Cancel</button>
+            </footer>
+          </section>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="agentsMdDialogOpen" class="agents-md-overlay" @click.self="closeAgentsMdDialog">
+        <div class="agents-md-dialog" role="dialog" aria-modal="true" aria-label="AGENTS.md 管理">
+          <aside class="agents-md-dialog-sidebar">
+            <strong>AGENTS.md</strong>
+            <div v-if="!agentsMdEnabled" class="agents-md-disabled-hint">当前未开启 AGENTS.md 读取，可在 Service 配置中开启后按优先级应用。</div>
+            <div v-if="!workspacePath" class="agents-md-disabled-hint">未选择工作目录，将使用当前运行目录检测 AGENTS.md。</div>
+            <div class="agents-md-toolbar">
+              <button class="agents-md-create" :disabled="agentsMdSaving" @click="createAgentsMd">创建 AGENTS.md</button>
+              <button class="agents-md-refresh" :disabled="agentsMdLoading" @click="refreshAgentsMd">刷新</button>
+            </div>
+            <div v-if="agentsMdLoading" class="agents-md-loading">加载中…</div>
+            <div v-for="file in agentsMdFiles" :key="file.key" class="agents-md-file-row">
+              <div
+                class="agents-md-file"
+                :class="{ active: agentsMdEditingKey === file.key, applied: agentsMdAppliedKeys.has(file.key) }"
+              >
+                <div class="agents-md-file-head">
+                  <strong>{{ agentsMdLocationLabel(file.key) }}</strong>
+                  <span v-if="file.exists" class="agents-md-status agents-md-status--exists">
+                    {{ agentsMdAppliedKeys.has(file.key) ? "已应用" : "存在" }}
+                  </span>
+                  <span v-else class="agents-md-status">未创建</span>
+                </div>
+                <span class="agents-md-file-path" :title="file.path">{{ file.path }}</span>
+              </div>
+              <div class="agents-md-file-actions">
+                <button v-if="file.exists" class="agents-md-edit" :disabled="agentsMdSaving" @click="selectAgentsMdFile(file)">编辑</button>
+                <button v-if="file.exists" class="agents-md-delete" :disabled="agentsMdSaving" @click="deleteAgentsMd(file)">删除</button>
+              </div>
+            </div>
+            <div v-if="agentsMdError" class="agents-md-error">{{ agentsMdError }}</div>
+          </aside>
+          <section class="agents-md-dialog-main">
+            <header class="agents-md-dialog-header">
+              <strong>{{ agentsMdEditingKey ? `编辑 ${agentsMdLocationLabel(agentsMdEditingKey)} AGENTS.md` : "AGENTS.md 内容" }}</strong>
+              <button aria-label="关闭 AGENTS.md 管理" @click="closeAgentsMdDialog"><CloseIcon /></button>
+            </header>
+            <div class="agents-md-editor-wrap">
+              <div ref="agentsMdLineNumbersRef" class="agents-md-line-numbers">
+                <div v-for="n in agentsMdLineCount" :key="n" class="agents-md-line-number">{{ n }}</div>
+              </div>
+              <textarea
+                ref="agentsMdEditorRef"
+                v-model="agentsMdEditorContent"
+                class="agents-md-editor"
+                spellcheck="false"
+                wrap="off"
+                placeholder="输入 AGENTS.md 内容…"
+                @scroll="syncAgentsMdScroll"
+              ></textarea>
+            </div>
+            <footer class="agents-md-dialog-actions">
+              <button class="agents-md-save" :disabled="agentsMdSaving || !agentsMdEditingKey" @click="saveAgentsMd">保存</button>
+              <button class="agents-md-cancel" :disabled="agentsMdSaving" @click="closeAgentsMdDialog">取消</button>
             </footer>
           </section>
         </div>
@@ -1195,7 +1265,7 @@ import {
   ChatIcon,
 } from "tdesign-icons-vue-next";
 
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 
 import { useChat } from "../composables/useChat";
 import ToolCallBadge from "./ToolCallBadge.vue";
@@ -1345,8 +1415,44 @@ const {
   agentAvatarUrl,
   agentInitial,
   getAvatarDisplayUrl,
+  agentsMdDialogOpen,
+  agentsMdLoading,
+  agentsMdSaving,
+  agentsMdFiles,
+  agentsMdError,
+  agentsMdEditingKey,
+  agentsMdEditorContent,
+  agentsMdEnabled,
+  agentsMdAppliedKeys,
+  agentsMdLocationLabel,
+  openAgentsMdDialog,
+  closeAgentsMdDialog,
+  refreshAgentsMd,
+  selectAgentsMdFile,
+  createAgentsMd,
+  saveAgentsMd,
+  deleteAgentsMd,
   CHAT_ELIGIBLE_SERVICE_TYPES,
 } = useChat(props, emit);
+
+const agentsMdEditorRef = ref<HTMLTextAreaElement | null>(null);
+const agentsMdLineNumbersRef = ref<HTMLElement | null>(null);
+
+const agentsMdLineCount = computed(() => {
+  const content = agentsMdEditorContent.value;
+  if (!content) {
+    return 1;
+  }
+  return content.split("\n").length;
+});
+
+function syncAgentsMdScroll() {
+  const editor = agentsMdEditorRef.value;
+  const gutter = agentsMdLineNumbersRef.value;
+  if (editor && gutter) {
+    gutter.scrollTop = editor.scrollTop;
+  }
+}
 </script>
 
 <style scoped lang="scss">

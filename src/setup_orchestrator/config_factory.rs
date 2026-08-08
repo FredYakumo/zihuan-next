@@ -328,6 +328,7 @@ fn build_workspace_agent_service(id: &str, name: &str, llm_ref_id: Option<String
         name: name.to_string(),
         agent_type: AgentType::Workspace(WorkspaceAgentServiceConfig {
             llm_ref_id,
+            agents_md_enabled: true,
             default_tools_enabled: default_workspace_tools(),
         }),
         enabled: true,

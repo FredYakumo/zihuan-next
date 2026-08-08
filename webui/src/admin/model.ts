@@ -169,6 +169,7 @@ export interface ServiceFormState {
   http_weaviate_memory_connection_id: string;
   http_elasticsearch_memory_connection_id: string;
   task_db_connection_id: string;
+  agents_md_enabled: boolean;
   tools: ToolFormState[];
   avatar_url: string;
 }
@@ -494,6 +495,7 @@ export function defaultServiceForm(): ServiceFormState {
     http_weaviate_memory_connection_id: "",
     http_elasticsearch_memory_connection_id: "",
     task_db_connection_id: "",
+    agents_md_enabled: false,
     tools: [],
     avatar_url: "",
   };
@@ -1042,6 +1044,7 @@ export function serviceFormFromConfig(
     }
   } else {
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
+    form.agents_md_enabled = Boolean(agentType.agents_md_enabled ?? false);
     const source = (agentType.default_tools_enabled ?? {}) as Record<
       string,
       unknown
@@ -1235,6 +1238,7 @@ export function buildServicePayload(form: ServiceFormState): {
     agent_type: {
       type: "workspace",
       llm_ref_id: form.llm_ref_id || null,
+      agents_md_enabled: form.agents_md_enabled,
       default_tools_enabled: Object.fromEntries(
         WORKSPACE_DEFAULT_TOOLS.map((tool) => [
           tool.id,

@@ -15,6 +15,7 @@ pub mod state;
 pub mod task_store;
 pub mod themes;
 pub mod ws;
+pub mod agents_md;
 pub mod workspace_changes;
 
 use std::sync::Arc;
@@ -220,6 +221,12 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
                     Router::with_path("sessions/<session_id>/messages")
                         .get(chat::get_chat_session_messages),
                 ),
+        )
+        .push(
+            Router::with_path("agents-md")
+                .get(agents_md::list_agents_md)
+                .post(agents_md::save_agents_md)
+                .delete(agents_md::delete_agents_md),
         )
         // Workflows directory
         .push(Router::with_path("workflow_set").get(file_io::list_workflows))
