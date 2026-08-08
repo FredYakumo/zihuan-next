@@ -27,3 +27,8 @@ reqwest = { version = "0.12.25", features = ["blocking", "json", "stream"] }
 rand = "0.8"
 regex = "1"
 
+[dev-dependencies]
+zihuan_core = { path = "../zihuan_core" }
+model_inference = { path = "../model_inference" }
+uuid = { version = "1", features = ["v4"] }
+
