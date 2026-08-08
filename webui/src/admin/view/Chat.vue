@@ -616,6 +616,23 @@
                 <div class="chat-not-supported-desc">请在 QQ 群或 HTTP Stream 端点中使用该 Agent。</div>
               </div>
               <template v-else>
+                <div v-if="workspaceChanges.length" class="workspace-change-panel">
+                  <div class="workspace-change-panel-header">
+                    <strong>文件更改</strong>
+                    <span>{{ workspaceChanges.length }} 处待处理</span>
+                  </div>
+                  <div class="workspace-change-list">
+                    <div v-for="change in workspaceChanges" :key="change.change_id" class="workspace-change-row">
+                      <button class="workspace-change-summary" @click="openWorkspaceChange(change)">
+                        <span class="workspace-change-operation">{{ change.operation }}</span>
+                        <span class="workspace-change-path" :title="change.paths.join(' → ')">{{ change.display_path }}</span>
+                        <span class="workspace-change-lines">+{{ change.added_lines }} / -{{ change.removed_lines }}</span>
+                      </button>
+                      <button class="workspace-change-accept" @click="acceptWorkspaceChange(change)">Accept</button>
+                      <button class="workspace-change-cancel" @click="cancelWorkspaceChange(change)">Cancel</button>
+                    </div>
+                  </div>
+                </div>
                 <div v-if="pendingAskUser" class="ask-user-panel">
                   <div class="ask-user-question">{{ pendingAskUser.question }}</div>
                   <div v-if="pendingAskUser.details" class="ask-user-details">
@@ -865,6 +882,62 @@
         </div>
       </section>
     </div>
+
+    <Teleport to="body">
+      <div v-if="workspaceChangeDialogOpen" class="workspace-change-overlay" @click.self="closeWorkspaceChange">
+        <div class="workspace-change-dialog" role="dialog" aria-modal="true" aria-label="文件更改">
+          <aside class="workspace-change-dialog-sidebar">
+            <strong>文件更改</strong>
+            <div v-for="group in workspaceFileGroups" :key="group.path" class="workspace-change-file-row">
+              <button
+                class="workspace-change-file"
+                :class="{ active: selectedWorkspaceChange?.display_path === group.path }"
+                @click="openWorkspaceChange(group.changes[0])"
+              >
+                <span>{{ group.path }}</span>
+                <small>{{ group.changes.length }} 处更改</small>
+              </button>
+              <div class="workspace-change-file-actions">
+                <button class="workspace-change-accept" @click="acceptWorkspaceFile(group.path)">Accept</button>
+                <button class="workspace-change-cancel" @click="cancelWorkspaceFile(group.path)">Cancel</button>
+              </div>
+            </div>
+          </aside>
+          <section class="workspace-change-dialog-main">
+            <header class="workspace-change-dialog-header">
+              <strong>{{ selectedWorkspaceChange?.display_path || "文件更改" }}</strong>
+              <button aria-label="关闭文件更改" @click="closeWorkspaceChange"><CloseIcon /></button>
+            </header>
+            <div v-if="selectedWorkspaceChange" class="workspace-change-detail">
+              <div class="workspace-change-detail-meta">
+                <span>操作：{{ selectedWorkspaceChange.operation }}</span>
+                <span>合并：{{ selectedWorkspaceChange.merged_count }} 次</span>
+                <span>行数：+{{ selectedWorkspaceChange.added_lines }} / -{{ selectedWorkspaceChange.removed_lines }}</span>
+              </div>
+              <div class="workspace-change-paths">
+                <div v-for="path in selectedWorkspaceChange.paths" :key="path">{{ path }}</div>
+              </div>
+              <div v-if="selectedWorkspaceChange.diff.length" class="workspace-change-diff">
+                <div
+                  v-for="(line, index) in selectedWorkspaceChange.diff"
+                  :key="`${line.kind}-${index}`"
+                  class="workspace-change-diff-line"
+                  :class="`workspace-change-diff-line--${line.kind}`"
+                >
+                  <span>{{ line.kind === "added" ? "+" : "−" }}</span>{{ line.line }}
+                </div>
+              </div>
+              <p class="workspace-change-note">文件已写入磁盘。Accept 只确认并移除记录，Cancel 会在文件未被外部修改时恢复。</p>
+              <p v-if="workspaceChangeError" class="workspace-change-error">{{ workspaceChangeError }}</p>
+            </div>
+            <footer v-if="selectedWorkspaceChange" class="workspace-change-dialog-actions">
+              <button class="workspace-change-accept" @click="acceptWorkspaceChange(selectedWorkspaceChange)">Accept</button>
+              <button class="workspace-change-cancel" @click="cancelWorkspaceChange(selectedWorkspaceChange)">Cancel</button>
+            </footer>
+          </section>
+        </div>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div v-if="chatErrorDialogMessage" class="chat-error-dialog-overlay" @click.self="closeChatErrorDialog">
@@ -1193,6 +1266,11 @@ const {
   selectedAgentAvatarUrl,
   selectedAgentAvatarFallback,
   pendingAskUser,
+  workspaceChanges,
+  workspaceFileGroups,
+  selectedWorkspaceChange,
+  workspaceChangeDialogOpen,
+  workspaceChangeError,
   askUserAnswer,
   canSubmitAskUser,
   messageGroups,
@@ -1236,6 +1314,12 @@ const {
   handleImagePreviewKeydown,
   toggleAutoCollapseThinking,
   clearPendingAskUser,
+  openWorkspaceChange,
+  closeWorkspaceChange,
+  acceptWorkspaceChange,
+  cancelWorkspaceChange,
+  acceptWorkspaceFile,
+  cancelWorkspaceFile,
   pruneFailedAssistantPlaceholder,
   applyInferenceFailure,
   reloadSessions,

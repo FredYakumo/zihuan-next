@@ -25,6 +25,8 @@ use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken};
 use zihuan_core::message_part::MessagePart;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
+use crate::api::workspace_changes;
+
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const APP_DIR_NAME: &str = "zihuan-next_aibot";
 const CHAT_STREAM_MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
@@ -47,6 +49,7 @@ const CHAT_FORK_METADATA_SUFFIX: &str = ".fork.json";
 struct SseBrainObserver {
     event_tx: mpsc::UnboundedSender<Value>,
     message_id: String,
+    change_recorder: Arc<workspace_changes::WorkspaceChangeRecorder>,
 }
 
 impl BrainObserver for SseBrainObserver {
@@ -59,6 +62,9 @@ impl BrainObserver for SseBrainObserver {
             "arguments": arguments,
         });
         let _ = self.event_tx.send(event);
+        if let Some(operation) = workspace_changes::operation_for_tool(name) {
+            self.change_recorder.start(call_id, operation, arguments);
+        }
     }
 
     fn on_tool_output(&self, name: &str, call_id: &str, stream: &str, chunk: &str) {
@@ -82,6 +88,13 @@ impl BrainObserver for SseBrainObserver {
             "result": result,
         });
         let _ = self.event_tx.send(event);
+        if let Some(change) = self.change_recorder.finish(call_id, result) {
+            let _ = self.event_tx.send(json!({
+                "type": "workspace_change",
+                "message_id": self.message_id,
+                "change": change,
+            }));
+        }
     }
 }
 
@@ -944,6 +957,10 @@ async fn execute_chat_streaming(
     let observer: Arc<dyn BrainObserver> = Arc::new(SseBrainObserver {
         event_tx,
         message_id: assistant_message_id.clone(),
+        change_recorder: workspace_changes::WorkspaceChangeRecorder::new(
+            session_id.clone(),
+            effective_workspace_path.clone(),
+        ),
     });
 
     let chat_workspace_path = effective_workspace_path.clone();

@@ -13,6 +13,7 @@ import {
   type ChatMessagePart,
   type ChatMessageBranch,
   type LlmConfig,
+  type WorkspaceChange,
 } from "../../api/client";
 import {
   formatTime,
@@ -438,6 +439,22 @@ const selectedAgentAvatarFallback = computed(() => {
   return agentInitial(name);
 });
 const pendingAskUser = ref<PendingAskUser | null>(null);
+const workspaceChanges = ref<WorkspaceChange[]>([]);
+const selectedWorkspaceChangeId = ref<string | null>(null);
+const workspaceChangeDialogOpen = ref(false);
+const workspaceChangeError = ref("");
+const selectedWorkspaceChange = computed(() =>
+  workspaceChanges.value.find((item) => item.change_id === selectedWorkspaceChangeId.value) ?? workspaceChanges.value[0] ?? null,
+);
+const workspaceFileGroups = computed(() => {
+  const groups = new Map<string, WorkspaceChange[]>();
+  for (const change of workspaceChanges.value) {
+    const group = groups.get(change.display_path) ?? [];
+    group.push(change);
+    groups.set(change.display_path, group);
+  }
+  return Array.from(groups, ([path, changes]) => ({ path, changes }));
+});
 const askUserAnswer = ref("");
 const canSubmitAskUser = computed(() =>
   isChatEligible.value &&
@@ -1123,6 +1140,8 @@ async function openSession(sessionId: string) {
   clearChatError();
   clearPendingAskUser();
   const result = await chat.getSessionMessages(sessionId);
+  workspaceChanges.value = (await chat.listWorkspaceChanges(sessionId)).changes;
+  selectedWorkspaceChangeId.value = workspaceChanges.value[0]?.change_id ?? null;
   const firstRecord = result.messages[0];
   if (firstRecord?.agent_id && services.value.some((a) => a.config_id === firstRecord.agent_id)) {
     selectedServiceId.value = firstRecord.agent_id;
@@ -1142,6 +1161,71 @@ async function openSession(sessionId: string) {
   applyHistory(result.messages);
   messageBranches.value = result.branches;
   editingMessage.value = null;
+}
+
+function applyWorkspaceChange(change: WorkspaceChange) {
+  const index = workspaceChanges.value.findIndex((item) => item.change_id === change.change_id);
+  if (index >= 0) {
+    workspaceChanges.value[index] = change;
+  } else if (change.status === "pending") {
+    workspaceChanges.value.push(change);
+  }
+  if (!selectedWorkspaceChangeId.value) {
+    selectedWorkspaceChangeId.value = change.change_id;
+  }
+}
+
+function openWorkspaceChange(change: WorkspaceChange) {
+  selectedWorkspaceChangeId.value = change.change_id;
+  workspaceChangeDialogOpen.value = true;
+  workspaceChangeError.value = "";
+}
+
+function closeWorkspaceChange() {
+  workspaceChangeDialogOpen.value = false;
+}
+
+async function acceptWorkspaceChange(change: WorkspaceChange) {
+  if (!activeSessionId.value) return;
+  try {
+    await chat.acceptWorkspaceChange(activeSessionId.value, change.change_id);
+    workspaceChanges.value = workspaceChanges.value.filter((item) => item.change_id !== change.change_id);
+    if (selectedWorkspaceChangeId.value === change.change_id) {
+      selectedWorkspaceChangeId.value = workspaceChanges.value[0]?.change_id ?? null;
+    }
+    workspaceChangeDialogOpen.value = false;
+  } catch (error) {
+    workspaceChangeError.value = `接受失败: ${(error as Error).message}`;
+  }
+}
+
+async function cancelWorkspaceChange(change: WorkspaceChange) {
+  if (!activeSessionId.value) return;
+  try {
+    await chat.cancelWorkspaceChange(activeSessionId.value, change.change_id);
+    workspaceChanges.value = workspaceChanges.value.filter((item) => item.change_id !== change.change_id);
+    if (selectedWorkspaceChangeId.value === change.change_id) {
+      selectedWorkspaceChangeId.value = workspaceChanges.value[0]?.change_id ?? null;
+    }
+    workspaceChangeDialogOpen.value = false;
+  } catch (error) {
+    workspaceChangeError.value = `撤销失败: ${(error as Error).message}`;
+  }
+}
+
+async function acceptWorkspaceFile(path: string) {
+  const changes = workspaceChanges.value.filter((item) => item.display_path === path);
+  for (const change of changes) {
+    await acceptWorkspaceChange(change);
+  }
+}
+
+async function cancelWorkspaceFile(path: string) {
+  const changes = workspaceChanges.value.filter((item) => item.display_path === path);
+  for (const change of changes) {
+    await cancelWorkspaceChange(change);
+    if (workspaceChangeError.value) break;
+  }
 }
 
 async function copyMessage(message: ChatMessage): Promise<void> {
@@ -1237,6 +1321,10 @@ function startNewSession() {
   editingMessage.value = null;
   clearChatError();
   clearPendingAskUser();
+  workspaceChanges.value = [];
+  selectedWorkspaceChangeId.value = null;
+  workspaceChangeDialogOpen.value = false;
+  workspaceChangeError.value = "";
 }
 
 function selectModel(id: string) {
@@ -1308,6 +1396,11 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
       placeholder: event.placeholder ?? undefined,
     };
     askUserAnswer.value = "";
+    return;
+  }
+
+  if (event.type === "workspace_change" && event.change) {
+    applyWorkspaceChange(event.change);
     return;
   }
 
@@ -1699,6 +1792,12 @@ onUnmounted(() => {
     selectedAgentAvatarUrl,
     selectedAgentAvatarFallback,
     pendingAskUser,
+    workspaceChanges,
+    workspaceFileGroups,
+    selectedWorkspaceChange,
+    selectedWorkspaceChangeId,
+    workspaceChangeDialogOpen,
+    workspaceChangeError,
     askUserAnswer,
     canSubmitAskUser,
     messageGroups,
@@ -1739,6 +1838,12 @@ onUnmounted(() => {
     handleImagePreviewKeydown,
     toggleAutoCollapseThinking,
     clearPendingAskUser,
+    openWorkspaceChange,
+    closeWorkspaceChange,
+    acceptWorkspaceChange,
+    cancelWorkspaceChange,
+    acceptWorkspaceFile,
+    cancelWorkspaceFile,
     pruneFailedAssistantPlaceholder,
     applyInferenceFailure,
     reloadSessions,
