@@ -253,6 +253,8 @@ type PendingAskUser = {
 };
 type StreamState = {
   assistantMessageId: string | null;
+  toolMessageId: string | null;
+  awaitingPostToolContent: boolean;
   pendingNewConversation: PendingNewConversationCommand | null;
   requestText: string;
 };
@@ -707,6 +709,48 @@ function clearChatError() {
 function showChatError(message: string) {
   chatErrorMessage.value = message;
   chatErrorDialogMessage.value = message;
+}
+
+function createStreamingAssistantMessage(): ChatMessage {
+  return {
+    id: `local-assistant-${crypto.randomUUID()}`,
+    role: "assistant",
+    content: "",
+    streaming: true,
+    timestamp: new Date().toISOString(),
+    toolCalls: [],
+    toolCallId: null,
+    linkedToolCall: null,
+  };
+}
+
+function hasMessageContent(message: ChatMessage): boolean {
+  return message.content.trim().length > 0 || (message.thinkingContent?.trim().length ?? 0) > 0;
+}
+
+function appendStreamingAssistantMessage(streamState: StreamState): ChatMessage {
+  const current = streamState.assistantMessageId
+    ? messages.value.find((item) => item.id === streamState.assistantMessageId)
+    : undefined;
+  if (current) {
+    current.streaming = false;
+  }
+
+  const message = createStreamingAssistantMessage();
+  messages.value.push(message);
+  streamState.assistantMessageId = message.id;
+  return message;
+}
+
+function getStreamingContentTarget(streamState: StreamState): ChatMessage | undefined {
+  if (streamState.awaitingPostToolContent) {
+    streamState.awaitingPostToolContent = false;
+    return appendStreamingAssistantMessage(streamState);
+  }
+
+  return streamState.assistantMessageId
+    ? messages.value.find((item) => item.id === streamState.assistantMessageId)
+    : undefined;
 }
 
 function closeChatErrorDialog() {
@@ -1181,11 +1225,7 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   }
 
   if (event.type === "delta") {
-    const targetId = event.message_id || streamState.assistantMessageId;
-    if (!targetId) {
-      return;
-    }
-    const message = messages.value.find((item) => item.id === targetId);
+    const message = getStreamingContentTarget(streamState);
     if (message) {
       message.content += event.token ?? "";
       message.streaming = true;
@@ -1194,11 +1234,7 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   }
 
   if (event.type === "thinking_delta") {
-    const targetId = event.message_id || streamState.assistantMessageId;
-    if (!targetId) {
-      return;
-    }
-    const message = messages.value.find((item) => item.id === targetId);
+    const message = getStreamingContentTarget(streamState);
     if (message) {
       if (!message.thinkingContent) {
         message.thinkingContent = "";
@@ -1211,7 +1247,7 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   }
 
   if (event.type === "done") {
-    const targetId = event.message_id || streamState.assistantMessageId;
+    const targetId = streamState.assistantMessageId || event.message_id;
     if (!targetId) {
       return;
     }
@@ -1225,37 +1261,43 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   }
 
   if (event.type === "tool_call_start" && event.call_id && event.name) {
-    const targetId = event.message_id || streamState.assistantMessageId;
-    if (!targetId) {
-      return;
-    }
-    const message = messages.value.find((item) => item.id === targetId);
-    if (message) {
-      if (!message.liveToolCalls) {
-        message.liveToolCalls = [];
+    let message = streamState.toolMessageId
+      ? messages.value.find((item) => item.id === streamState.toolMessageId)
+      : undefined;
+    if (!message || streamState.assistantMessageId !== message.id) {
+      const current = streamState.assistantMessageId
+        ? messages.value.find((item) => item.id === streamState.assistantMessageId)
+        : undefined;
+      if (current && !hasMessageContent(current) && current.toolCalls.length === 0 && !current.liveToolCalls?.length) {
+        messages.value = messages.value.filter((item) => item.id !== current.id);
       }
-      const existing = message.liveToolCalls.find((item) => item.call_id === event.call_id);
-      if (existing) {
-        existing.name = event.name;
-        existing.arguments = event.arguments;
-      } else {
-        message.liveToolCalls.push({
-          call_id: event.call_id,
-          name: event.name,
-          arguments: event.arguments,
-          done: false,
-        });
-      }
-      scrollToBottom();
+      message = appendStreamingAssistantMessage(streamState);
+      streamState.toolMessageId = message.id;
     }
+
+    streamState.assistantMessageId = message.id;
+    streamState.awaitingPostToolContent = true;
+    if (!message.liveToolCalls) {
+      message.liveToolCalls = [];
+    }
+    const existing = message.liveToolCalls.find((item) => item.call_id === event.call_id);
+    if (existing) {
+      existing.name = event.name;
+      existing.arguments = event.arguments;
+    } else {
+      message.liveToolCalls.push({
+        call_id: event.call_id,
+        name: event.name,
+        arguments: event.arguments,
+        done: false,
+      });
+    }
+    scrollToBottom();
   }
 
   if (event.type === "tool_call_result" && event.call_id) {
-    const targetId = event.message_id || streamState.assistantMessageId;
-    if (!targetId) {
-      return;
-    }
-    const message = messages.value.find((item) => item.id === targetId);
+    const targetId = streamState.toolMessageId || streamState.assistantMessageId || event.message_id;
+    const message = targetId ? messages.value.find((item) => item.id === targetId) : undefined;
     if (message) {
       if (!message.liveToolCalls) {
         message.liveToolCalls = [];
@@ -1337,6 +1379,8 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
   }
   const streamState: StreamState = {
     assistantMessageId: null,
+    toolMessageId: null,
+    awaitingPostToolContent: false,
     pendingNewConversation,
     requestText: userText,
   };
