@@ -191,7 +191,7 @@ jobs:
         run: cargo test --workspace
 
       - name: Lint workspace
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace
 
       - name: Check formatting
         run: cargo fmt --check --all

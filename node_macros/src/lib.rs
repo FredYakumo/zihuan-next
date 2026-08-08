@@ -220,23 +220,20 @@ struct FlowEntryList {
 }
 
 enum FlowInput {
-    WithSelf {
-        self_token: Token![self],
-        entries: FlowEntryList,
-    },
-    Entries(FlowEntryList),
+    WithSelf { entries: FlowEntryList },
+    Entries,
 }
 
 impl Parse for FlowInput {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek(Token![self]) && input.peek2(Token![;]) {
-            let self_token: Token![self] = input.parse()?;
+            input.parse::<Token![self]>()?;
             input.parse::<Token![;]>()?;
             let entries: FlowEntryList = input.parse()?;
-            Ok(FlowInput::WithSelf { self_token, entries })
+            Ok(FlowInput::WithSelf { entries })
         } else {
-            let entries: FlowEntryList = input.parse()?;
-            Ok(FlowInput::Entries(entries))
+            input.parse::<FlowEntryList>()?;
+            Ok(FlowInput::Entries)
         }
     }
 }
