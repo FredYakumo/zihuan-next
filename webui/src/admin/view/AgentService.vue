@@ -41,9 +41,9 @@
 
           <!-- 模型配置 -->
           <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>{{ form.type === 'http_stream' ? '默认模型配置' : '模型配置' }}</template>
+            <template #title>{{ form.type === 'http_stream' ? '默认模型配置' : form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
             <div class="agent-service-form-grid">
-              <t-form-item :label="form.type === 'http_stream' ? '默认模型配置' : '模型配置'" required>
+              <t-form-item :label="form.type === 'http_stream' ? '默认模型配置' : form.type === 'workspace' ? '默认模型' : '模型配置'" required>
                 <t-select v-model="form.llm_ref_id" placeholder="请选择">
                   <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
@@ -466,9 +466,9 @@
 
         <!-- 模型配置 -->
         <t-card class="agent-service-form-section" :bordered="false">
-          <template #title>{{ form.type === 'http_stream' ? '默认模型配置' : '模型配置' }}</template>
+          <template #title>{{ form.type === 'http_stream' ? '默认模型配置' : form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
           <div class="agent-service-form-grid">
-            <t-form-item :label="form.type === 'http_stream' ? '默认模型配置' : '模型配置'" required>
+            <t-form-item :label="form.type === 'http_stream' ? '默认模型配置' : form.type === 'workspace' ? '默认模型' : '模型配置'" required>
               <t-select v-model="form.llm_ref_id" placeholder="请选择">
                 <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
               </t-select>
