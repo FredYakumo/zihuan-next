@@ -1,4 +1,4 @@
-use zihuan_graph_engine::{node_input_flow, node_output_flow, DataValue, NodeInputFlow, NodeOutputFlow};
+use zihuan_core::graph_engine::{node_input_flow, node_output_flow, DataValue, NodeInputFlow, NodeOutputFlow};
 
 fn build_value(prefix: &str, count: i64) -> DataValue {
     DataValue::String(format!("{prefix}-{count}"))

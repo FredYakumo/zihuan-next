@@ -126,8 +126,8 @@ fn expand_node_flow(input: TokenStream, kind: FlowKind) -> TokenStream {
     }
 
     let flow_type = match kind {
-        FlowKind::Input => quote! { ::zihuan_graph_engine::NodeInputFlow },
-        FlowKind::Output => quote! { ::zihuan_graph_engine::NodeOutputFlow },
+        FlowKind::Input => quote! { ::zihuan_core::graph_engine::NodeInputFlow },
+        FlowKind::Output => quote! { ::zihuan_core::graph_engine::NodeOutputFlow },
     };
 
     let entry_tokens: Vec<_> = entries
@@ -190,7 +190,7 @@ fn expand_return_with_node_output(input: TokenStream) -> TokenStream {
 
     quote! {
         {
-            let __flow = ::zihuan_graph_engine::NodeOutputFlow::from(
+            let __flow = ::zihuan_core::graph_engine::NodeOutputFlow::from(
                 ::std::collections::HashMap::from([
                     #(#entry_tokens),*
                 ])

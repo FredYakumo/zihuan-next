@@ -13,4 +13,4 @@ syn = { version = "2", features = ["full"] }
 
 [dev-dependencies]
 trybuild = "1"
-zihuan_graph_engine = { path = "../zihuan_graph_engine" }
+zihuan_core = { path = "../zihuan_core" }

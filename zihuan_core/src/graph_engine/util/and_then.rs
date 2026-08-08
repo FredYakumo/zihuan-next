@@ -1,0 +1,51 @@
+use crate::graph_engine::{node_input, node_output, DataType, Node, Port};
+use crate::error::Result;
+
+/// Waits for two inputs, then forwards the second one unchanged.
+pub struct AndThenNode {
+    id: String,
+    name: String,
+}
+
+impl AndThenNode {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+}
+
+impl Node for AndThenNode {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("等待 first 和 second 都到齐后，原样透传 second")
+    }
+
+    node_input![
+        port! { name = "first", ty = Any, desc = "用于串联依赖的前置输入，仅用于等待其到齐" },
+        port! { name = "second", ty = Any, desc = "在两个输入都到齐后原样透传的值" },
+    ];
+
+    node_output![port! { name = "output", ty = Any, desc = "second 的原样输出" },];
+
+    fn execute(&mut self, inputs: crate::graph_engine::NodeInputFlow) -> Result<crate::graph_engine::NodeOutputFlow> {
+        self.validate_inputs(&inputs)?;
+
+        let output = inputs
+            .get("second")
+            .cloned()
+            .ok_or_else(|| crate::error::Error::ValidationError("second 输入不存在".to_string()))?;
+
+        crate::graph_engine::return_with_node_output![self;
+            "output" => output,
+        ]
+    }
+}

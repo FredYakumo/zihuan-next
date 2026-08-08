@@ -1,4 +1,4 @@
-use zihuan_graph_engine::{node_input_flow, node_output_flow, NodeInputFlow, NodeOutputFlow};
+use zihuan_core::graph_engine::{node_input_flow, node_output_flow, NodeInputFlow, NodeOutputFlow};
 
 fn main() {
     let _inputs: NodeInputFlow = node_input_flow![];
