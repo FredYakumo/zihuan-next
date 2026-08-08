@@ -1359,7 +1359,17 @@
 }
 
 .chat-input-actions > .btn,
-.chat-input-right > .btn,
+.chat-input-right > .btn {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .chat-input-right .model-chip {
   height: 36px;
 }
