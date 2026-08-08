@@ -1534,7 +1534,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
   ];
 
   if (fromAskUser) {
-    askUserAnswer.value = "";
+    clearPendingAskUser();
   } else if (!options.attachments) {
     draftMessage.value = "";
     draftImageAttachments.value = [];
