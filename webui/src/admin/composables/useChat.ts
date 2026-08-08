@@ -87,11 +87,28 @@ type LineEditSpec = {
   end_line: number;
   replacement_lines: string[];
 };
+type SearchMatch = {
+  path: string;
+  line: number;
+  content: string;
+  context_before?: string[];
+  context_after?: string[];
+};
 type ToolCallKind =
   | { type: "create_file"; filename: string; lineCount: number; content: string }
   | { type: "delete_file"; filename: string; lineCount: number | null }
   | { type: "edit_file"; filename: string; addedLines: number; removedLines: number; edits: LineEditSpec[] }
   | { type: "exec_cmd"; command: string; hasResult: boolean; stdout?: string; stderr?: string }
+  | {
+      type: "read_file";
+      filename: string;
+      startLine: number | null;
+      endLine: number | null;
+      totalLines: number | null;
+      content: string;
+    }
+  | { type: "list_dir"; dirname: string; entries: Array<{ name: string; path: string; type: string }>; truncated: boolean }
+  | { type: "grep" | "rg"; pattern: string; matches: SearchMatch[]; totalMatches: number; truncated: boolean }
   | { type: "generic"; name: string };
 
 
@@ -164,6 +181,62 @@ function classifyToolCall(name: string, arguments_: unknown, result?: string): T
         hasResult,
         stdout: hasResult ? stdout : undefined,
         stderr: hasResult ? stderr : undefined,
+      };
+    }
+  }
+  if (name === "read_file") {
+    const args = safeParseJson<{ path?: string }>(arguments_);
+    const res = safeParseJson<{
+      content?: string;
+      start_line?: number;
+      end_line?: number;
+      total_lines?: number;
+    }>(result);
+    if (args?.path != null) {
+      return {
+        type: "read_file",
+        filename: basename(args.path),
+        startLine: res?.start_line ?? null,
+        endLine: res?.end_line ?? null,
+        totalLines: res?.total_lines ?? null,
+        content: res?.content ?? "",
+      };
+    }
+  }
+  if (name === "list_dir") {
+    const args = safeParseJson<{ path?: string }>(arguments_);
+    const res = safeParseJson<{
+      entries?: Array<{ name?: string; path?: string; type?: string }>;
+      truncated?: boolean;
+    }>(result);
+    if (args?.path != null) {
+      return {
+        type: "list_dir",
+        dirname: basename(args.path),
+        entries: (res?.entries ?? []).map((entry) => ({
+          name: entry.name ?? "",
+          path: entry.path ?? "",
+          type: entry.type ?? "unknown",
+        })),
+        truncated: res?.truncated ?? false,
+      };
+    }
+  }
+  if (name === "grep" || name === "rg") {
+    const args = safeParseJson<{ pattern?: string }>(arguments_);
+    const res = safeParseJson<{
+      pattern?: string;
+      matches?: SearchMatch[];
+      total_matches?: number;
+      truncated?: boolean;
+    }>(result);
+    if (args?.pattern != null) {
+      return {
+        type: name,
+        pattern: res?.pattern ?? args.pattern,
+        matches: res?.matches ?? [],
+        totalMatches: res?.total_matches ?? res?.matches?.length ?? 0,
+        truncated: res?.truncated ?? false,
       };
     }
   }
@@ -1161,12 +1234,18 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
       if (!message.liveToolCalls) {
         message.liveToolCalls = [];
       }
-      message.liveToolCalls.push({
-        call_id: event.call_id,
-        name: event.name,
-        arguments: event.arguments,
-        done: false,
-      });
+      const existing = message.liveToolCalls.find((item) => item.call_id === event.call_id);
+      if (existing) {
+        existing.name = event.name;
+        existing.arguments = event.arguments;
+      } else {
+        message.liveToolCalls.push({
+          call_id: event.call_id,
+          name: event.name,
+          arguments: event.arguments,
+          done: false,
+        });
+      }
       scrollToBottom();
     }
   }
@@ -1177,13 +1256,24 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
       return;
     }
     const message = messages.value.find((item) => item.id === targetId);
-    if (message?.liveToolCalls) {
+    if (message) {
+      if (!message.liveToolCalls) {
+        message.liveToolCalls = [];
+      }
       const liveCall = message.liveToolCalls.find((item) => item.call_id === event.call_id);
       if (liveCall) {
         liveCall.result = event.result ?? "";
         liveCall.done = true;
-        scrollToBottom();
+      } else {
+        message.liveToolCalls.push({
+          call_id: event.call_id,
+          name: event.name ?? "unknown",
+          arguments: event.arguments ?? {},
+          result: event.result ?? "",
+          done: true,
+        });
       }
+      scrollToBottom();
     }
   }
 }

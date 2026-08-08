@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { DeleteIcon, EditIcon, FileIcon } from "tdesign-icons-vue-next";
+import {
+  CodeIcon,
+  DeleteIcon,
+  EditIcon,
+  FileIcon,
+  FileSearchIcon,
+  FolderSearchIcon,
+  SearchIcon,
+} from "tdesign-icons-vue-next";
 
 import { useToolCallBadge, type ToolCallKind } from "../composables/useToolCallBadge";
 
@@ -23,6 +31,10 @@ const { kind, loading } = useToolCallBadge(props, emit);
       'tool-badge--delete': kind.type === 'delete_file',
       'tool-badge--edit': kind.type === 'edit_file',
       'tool-badge--cmd': kind.type === 'exec_cmd',
+      'tool-badge--read': kind.type === 'read_file',
+      'tool-badge--list': kind.type === 'list_dir',
+      'tool-badge--grep': kind.type === 'grep',
+      'tool-badge--rg': kind.type === 'rg',
     }"
     @click="$emit('click')"
   >
@@ -46,6 +58,28 @@ const { kind, loading } = useToolCallBadge(props, emit);
     <template v-else-if="kind.type === 'exec_cmd'">
       <span class="cmd-prefix">&gt;</span>
       {{ kind.command }}
+    </template>
+    <template v-else-if="kind.type === 'read_file'">
+      <FileSearchIcon class="badge-icon" />
+      {{ kind.filename }}
+      <span v-if="kind.startLine != null && kind.endLine != null" class="badge-lines">
+        L{{ kind.startLine }}-{{ kind.endLine }}
+      </span>
+    </template>
+    <template v-else-if="kind.type === 'list_dir'">
+      <FolderSearchIcon class="badge-icon" />
+      {{ kind.dirname }}
+      <span class="badge-lines">{{ kind.entries.length }}项</span>
+    </template>
+    <template v-else-if="kind.type === 'grep'">
+      <SearchIcon class="badge-icon" />
+      {{ kind.pattern }}
+      <span class="badge-lines">{{ kind.totalMatches }}处</span>
+    </template>
+    <template v-else-if="kind.type === 'rg'">
+      <CodeIcon class="badge-icon" />
+      {{ kind.pattern }}
+      <span class="badge-lines">{{ kind.totalMatches }}处</span>
     </template>
   </span>
 </template>

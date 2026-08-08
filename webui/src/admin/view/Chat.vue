@@ -898,6 +898,18 @@
             <template v-else-if="toolPreviewState.kind.type === 'exec_cmd'">
               <span class="cmd-prefix">&gt;</span> {{ toolPreviewState.kind.command }}
             </template>
+            <template v-else-if="toolPreviewState.kind.type === 'read_file'">
+              <FileSearchIcon class="badge-icon" /> 读取文件: {{ toolPreviewState.kind.filename }}
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'list_dir'">
+              <FolderSearchIcon class="badge-icon" /> 列出目录: {{ toolPreviewState.kind.dirname }}
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'grep'">
+              <SearchIcon class="badge-icon" /> Grep: {{ toolPreviewState.kind.pattern }}
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'rg'">
+              <CodeIcon class="badge-icon" /> Rg: {{ toolPreviewState.kind.pattern }}
+            </template>
             <button class="tool-preview-close" aria-label="关闭" @click="closeToolPreview"><CloseIcon /></button>
           </div>
           <div class="tool-preview-body">
@@ -957,6 +969,40 @@
               </template>
               <div v-else class="tool-preview-no-result">无结果</div>
             </template>
+            <template v-else-if="toolPreviewState.kind.type === 'read_file'">
+              <div class="tool-preview-info">
+                <p v-if="toolPreviewState.kind.startLine != null && toolPreviewState.kind.endLine != null">
+                  行范围: {{ toolPreviewState.kind.startLine }}-{{ toolPreviewState.kind.endLine }}
+                  <span v-if="toolPreviewState.kind.totalLines != null">（共 {{ toolPreviewState.kind.totalLines }} 行）</span>
+                </p>
+                <pre v-if="toolPreviewState.kind.content" class="tool-preview-code">{{ toolPreviewState.kind.content }}</pre>
+                <div v-else class="tool-preview-no-result">无内容或工具仍在执行</div>
+              </div>
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'list_dir'">
+              <div v-if="toolPreviewState.kind.entries.length" class="tool-preview-list">
+                <div v-for="entry in toolPreviewState.kind.entries" :key="entry.path" class="tool-preview-list-item">
+                  <FolderIcon v-if="entry.type === 'directory'" />
+                  <FileIcon v-else />
+                  <span>{{ entry.name }}</span>
+                  <small>{{ entry.type }}</small>
+                </div>
+              </div>
+              <div v-else class="tool-preview-no-result">目录为空或工具仍在执行</div>
+              <div v-if="toolPreviewState.kind.truncated" class="tool-preview-no-result">结果已截断</div>
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'grep' || toolPreviewState.kind.type === 'rg'">
+              <div v-if="toolPreviewState.kind.matches.length" class="tool-preview-list">
+                <div v-for="match in toolPreviewState.kind.matches" :key="`${match.path}:${match.line}`" class="tool-preview-match">
+                  <div class="tool-preview-match-header">{{ match.path }}:{{ match.line }}</div>
+                  <pre class="tool-preview-code">{{ match.content }}</pre>
+                </div>
+              </div>
+              <div v-else class="tool-preview-no-result">未找到匹配或工具仍在执行</div>
+              <div v-if="toolPreviewState.kind.truncated" class="tool-preview-no-result">
+                结果已截断，共 {{ toolPreviewState.kind.totalMatches }} 处匹配
+              </div>
+            </template>
           </div>
         </div>
       </div>
@@ -976,10 +1022,14 @@ import {
   EditIcon,
   ErrorCircleIcon,
   FileIcon,
+  FileSearchIcon,
   FolderIcon,
+  FolderSearchIcon,
   ImageAddIcon,
   MenuFoldIcon,
   MenuUnfoldIcon,
+  CodeIcon,
+  SearchIcon,
 } from "tdesign-icons-vue-next";
 
 import { ref, watch } from "vue";

@@ -287,6 +287,10 @@ export const HTTP_STREAM_DEFAULT_TOOLS: DefaultToolOption[] = [
 ];
 
 export const WORKSPACE_DEFAULT_TOOLS: DefaultToolOption[] = [
+  { id: "read_file", label: "read_file", description: "读取文件内容" },
+  { id: "list_dir", label: "list_dir", description: "列出目录内容" },
+  { id: "grep", label: "grep", description: "递归搜索文本" },
+  { id: "rg", label: "rg", description: "使用正则表达式搜索文本" },
   { id: "create_file", label: "create_file", description: "创建文件" },
   { id: "delete_file", label: "delete_file", description: "删除文件" },
   { id: "edit_file", label: "edit_file", description: "按行替换文件内容" },
