@@ -159,7 +159,7 @@ fn expand_return_with_node_output(input: TokenStream) -> TokenStream {
 
     let entries = match parsed {
         FlowInput::WithSelf { entries, .. } => entries,
-        FlowInput::Entries(_) => {
+        FlowInput::Entries => {
             return syn::Error::new(
                 proc_macro2::Span::call_site(),
                 "`return_with_node_output!` requires `self;` prefix: `return_with_node_output![self; \"key\" => val]`",
@@ -220,23 +220,20 @@ struct FlowEntryList {
 }
 
 enum FlowInput {
-    WithSelf {
-        self_token: Token![self],
-        entries: FlowEntryList,
-    },
-    Entries(FlowEntryList),
+    WithSelf { entries: FlowEntryList },
+    Entries,
 }
 
 impl Parse for FlowInput {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek(Token![self]) && input.peek2(Token![;]) {
-            let self_token: Token![self] = input.parse()?;
+            input.parse::<Token![self]>()?;
             input.parse::<Token![;]>()?;
             let entries: FlowEntryList = input.parse()?;
-            Ok(FlowInput::WithSelf { self_token, entries })
+            Ok(FlowInput::WithSelf { entries })
         } else {
-            let entries: FlowEntryList = input.parse()?;
-            Ok(FlowInput::Entries(entries))
+            input.parse::<FlowEntryList>()?;
+            Ok(FlowInput::Entries)
         }
     }
 }

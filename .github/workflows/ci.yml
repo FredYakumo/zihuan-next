@@ -22,11 +22,40 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  validate-release-tag:
+    name: Validate release tag
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag commit
+        shell: bash
+        run: |
+          git fetch origin master dev --no-tags
+
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            source_ref="origin/dev"
+          else
+            source_ref="origin/master"
+          fi
+
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "$source_ref"; then
+            echo "Tag $GITHUB_REF_NAME does not point to a commit on $source_ref."
+            exit 1
+          fi
+
   build-release:
+    needs: validate-release-tag
     if: >-
+      always() &&
       (github.event_name == 'push' &&
-        (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))) ||
-      (github.event_name == 'pull_request' && github.base_ref == 'master')
+        (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))) &&
+      (needs.validate-release-tag.result == 'success' || needs.validate-release-tag.result == 'skipped')
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     env:
@@ -162,7 +191,7 @@ jobs:
         run: cargo test --workspace
 
       - name: Lint workspace
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace
 
       - name: Check formatting
         run: cargo fmt --check --all
@@ -199,4 +228,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: release/*

@@ -1,0 +1,13 @@
+error: expected `=>`
+ --> tests/flow_macros/fail/wrong_separator.rs:5:17
+  |
+5 |         "result": DataValue::Boolean(true),
+  |                 ^
+
+warning: unused import: `DataValue`
+ --> tests/flow_macros/fail/wrong_separator.rs:1:45
+  |
+1 | use zihuan_graph_engine::{node_output_flow, DataValue};
+  |                                             ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

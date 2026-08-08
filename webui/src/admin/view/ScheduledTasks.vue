@@ -26,7 +26,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import type { PrimaryTableCol } from "tdesign-vue-next";
-import { scheduledTasks, services, type ScheduledTaskEntry } from "../../api/client";
+import { scheduledTasks, system } from "../../api/client";
+import type { ScheduledTaskEntry } from "../../api/types";
 
 const serviceId = ref("");
 const status = ref("");
@@ -36,7 +37,7 @@ const qqServices = computed(() => serviceItems.value.filter((service) => service
 function formatTime(value: string) { return new Date(value).toLocaleString(); }
 async function load() { if (serviceId.value) items.value = await scheduledTasks.list(serviceId.value, status.value || undefined); }
 async function cancel(taskId: string) { await scheduledTasks.cancel(serviceId.value, taskId); await load(); }
-onMounted(async () => { serviceItems.value = await services.list() as typeof serviceItems.value; if (qqServices.value.length === 1) { serviceId.value = qqServices.value[0].config_id; await load(); } });
+onMounted(async () => { serviceItems.value = await system.services.list() as typeof serviceItems.value; if (qqServices.value.length === 1) { serviceId.value = qqServices.value[0].config_id; await load(); } });
 const columns: PrimaryTableCol<ScheduledTaskEntry>[] = [
   { colKey: "task_name", title: "任务名称", width: 120 }, { colKey: "triggered_by", title: "触发者", width: 150 },
   { colKey: "time", title: "开始 / 结束时间", width: 210 }, { colKey: "status", title: "状态", width: 110 },

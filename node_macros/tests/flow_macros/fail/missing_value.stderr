@@ -1,0 +1,10 @@
+error: unexpected end of input, expected an expression
+ --> tests/flow_macros/fail/missing_value.rs:4:13
+  |
+4 |       let _ = node_output_flow![
+  |  _____________^
+5 | |         "result" =>
+6 | |     ];
+  | |_____^
+  |
+  = note: this error originates in the macro `node_output_flow` (in Nightly builds, run with -Z macro-backtrace for more info)
