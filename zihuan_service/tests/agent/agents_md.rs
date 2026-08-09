@@ -8,10 +8,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use model_inference::system_config::{AgentConfig, AgentType, WorkspaceAgentServiceConfig};
+use zihuan_core::inference::system_config::{AgentConfig, AgentType, WorkspaceAgentServiceConfig};
 use zihuan_core::llm::{LLMMessage, MessageRole};
 use zihuan_service::agent::inference::{InferenceToolContext, InferenceToolProvider};
-use zihuan_service::agent::workspace_agent_service::load_inference_tool_provider;
+use zihuan_workspace_agent::workspace_agent_service::load_inference_tool_provider;
 
 /// Serialize tests that mutate process-level environment variables.
 static ENV_MUTEX: Mutex<()> = Mutex::new(());
