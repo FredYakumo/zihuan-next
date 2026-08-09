@@ -44,7 +44,7 @@ function Ensure-CandleCudaFeature {
     param([switch]$Release, [string[]]$Args)
 
     if (-not $Args -or $Args.Count -eq 0) {
-        $base = @('build', '--features', 'candle-cuda')
+        $base = @('build', '-p', 'zihuan_service', '--bin', 'zihuan_next', '--features', 'candle-cuda')
         if ($Release) { $base += '--release' }
         return $base
     }

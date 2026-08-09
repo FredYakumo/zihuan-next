@@ -60,7 +60,7 @@ cd webui
 pnpm install
 cd ..
 
-cargo build --release
+cargo build --release -p zihuan_service --bin zihuan_next
 ```
 
 The main binary embeds the frontend bundle from `webui/dist/`.
@@ -96,10 +96,10 @@ Custom bind:
 ### CLI graph runner
 
 ```bash
-cargo build -p zihuan_graph_cli --release
+cargo build -p zihuan_cli --release
 
-./target/release/zihuan_graph_cli --file workflow_set/qq_agent_example.json
-./target/release/zihuan_graph_cli --workflow qq_agent_example
+./target/release/zihuan_cli --file workflow_set/qq_agent_example.json
+./target/release/zihuan_cli --workflow qq_agent_example
 ```
 
 ## How You Use It
@@ -297,16 +297,12 @@ This allows one deployment to mix:
 
 | Package | Responsibility |
 |---|---|
-| `zihuan_core` | Shared types, config, errors |
-| `zihuan_agent` | Brain tool-call loop engine |
-| `zihuan_graph_engine` | Synchronous DAG graph runtime |
-| `model_inference` | LLM, embedding, and inference-related nodes |
-| `storage_handler` | Connection-backed resource nodes and runtime connection management |
-| `ims_bot_adapter` | IMS / QQ adapter integration |
-| `zihuan_service` | Long-lived agent hosting and agent-facing nodes |
-| `zihuan_graph_cli` | CLI graph runner |
+| `zihuan_core` | Shared types, Brain runtime, DAG engine, inference, storage, NLP, and IMS adapter |
+| `zihuan_ims_agent` | QQ chat agent runtime and QQ-specific tools |
+| `zihuan_workspace_agent` | Workspace agent runtime, tools, and change-review APIs |
+| `zihuan_service` | `zihuan_next` binary, REST API, and long-lived service orchestration |
+| `zihuan_cli` | CLI graph runner |
 | `webui/` | Vue admin UI and LiteGraph editor |
-| `src/` | Main Salvo web server, API, and app runtime |
 
 ## Configuration Model
 

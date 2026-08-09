@@ -23,65 +23,48 @@ COPY Cargo.toml Cargo.lock ./
 COPY node_macros/Cargo.toml node_macros/Cargo.toml
 COPY general_wheel_cpp/Cargo.toml general_wheel_cpp/Cargo.toml
 COPY zihuan_core/Cargo.toml zihuan_core/Cargo.toml
-COPY zihuan_agent/Cargo.toml zihuan_agent/Cargo.toml
-COPY zihuan_graph_engine/Cargo.toml zihuan_graph_engine/Cargo.toml
-COPY zihuan_graph_cli/Cargo.toml zihuan_graph_cli/Cargo.toml
-COPY model_inference/Cargo.toml model_inference/Cargo.toml
-COPY ims_bot_adapter/Cargo.toml ims_bot_adapter/Cargo.toml
-COPY storage_handler/Cargo.toml storage_handler/Cargo.toml
 COPY zihuan_service/Cargo.toml zihuan_service/Cargo.toml
-COPY zihuan_nlp/Cargo.toml zihuan_nlp/Cargo.toml
+COPY zihuan_workspace_agent/Cargo.toml zihuan_workspace_agent/Cargo.toml
+COPY zihuan_ims_agent/Cargo.toml zihuan_ims_agent/Cargo.toml
+COPY zihuan_cli/Cargo.toml zihuan_cli/Cargo.toml
 
 # Create stub source files so cargo can resolve the workspace
-RUN mkdir -p node_macros/src general_wheel_cpp/src zihuan_core/src zihuan_agent/src \
-    zihuan_graph_engine/src zihuan_graph_cli/src model_inference/src \
-    ims_bot_adapter/src storage_handler/src zihuan_service/src zihuan_nlp/src src && \
+RUN mkdir -p node_macros/src general_wheel_cpp/src zihuan_core/src zihuan_service/src \
+    zihuan_workspace_agent/src zihuan_ims_agent/src zihuan_cli/src && \
     echo "fn main() {}" > node_macros/src/lib.rs && \
     echo "fn main() {}" > general_wheel_cpp/src/lib.rs && \
     echo "fn main() {}" > zihuan_core/src/lib.rs && \
-    echo "fn main() {}" > zihuan_agent/src/lib.rs && \
-    echo "fn main() {}" > zihuan_graph_engine/src/lib.rs && \
-    echo "fn main() {}" > zihuan_graph_cli/src/main.rs && \
-    echo "fn main() {}" > model_inference/src/lib.rs && \
-    echo "fn main() {}" > ims_bot_adapter/src/lib.rs && \
-    echo "fn main() {}" > storage_handler/src/lib.rs && \
     echo "fn main() {}" > zihuan_service/src/lib.rs && \
-    echo "fn main() {}" > zihuan_nlp/src/lib.rs && \
-    echo "fn main() {}" > src/main.rs
+    echo "fn main() {}" > zihuan_workspace_agent/src/lib.rs && \
+    echo "fn main() {}" > zihuan_ims_agent/src/lib.rs && \
+    echo "fn main() {}" > zihuan_cli/src/main.rs
 
 # Patch crate for third_party
 COPY third_party/ third_party/
 
-RUN cargo build --release 2>/dev/null || true
+RUN cargo build --release -p zihuan_service --bin zihuan_next 2>/dev/null || true
 
 # copy actual source and C++ native code, then do the real build
-COPY build.rs ./
+COPY build_support/ build_support/
 COPY general_wheel_cpp/build.rs general_wheel_cpp/build.rs
 COPY general_wheel_cpp/native/ general_wheel_cpp/native/
 COPY general_wheel_cpp/src/ general_wheel_cpp/src/
 COPY node_macros/src/ node_macros/src/
 COPY zihuan_core/src/ zihuan_core/src/
-COPY zihuan_agent/src/ zihuan_agent/src/
-COPY zihuan_graph_engine/src/ zihuan_graph_engine/src/
-COPY zihuan_graph_cli/src/ zihuan_graph_cli/src/
-COPY model_inference/src/ model_inference/src/
-COPY model_inference/build.rs model_inference/build.rs
-COPY model_inference/models/ model_inference/models/
-COPY ims_bot_adapter/src/ ims_bot_adapter/src/
-COPY storage_handler/src/ storage_handler/src/
 COPY zihuan_service/src/ zihuan_service/src/
 COPY zihuan_service/build.rs zihuan_service/build.rs
 COPY zihuan_service/tests/ zihuan_service/tests/
-COPY zihuan_nlp/src/ zihuan_nlp/src/
-COPY src/ src/
+COPY zihuan_workspace_agent/src/ zihuan_workspace_agent/src/
+COPY zihuan_ims_agent/src/ zihuan_ims_agent/src/
+COPY zihuan_cli/src/ zihuan_cli/src/
 
 # Copy pre-built frontend into webui/dist so the Rust build.rs can find it
 COPY --from=frontend-builder /build/webui/dist webui/dist
 
-# Touch main.rs to force re-link with real sources
-RUN find src -name "*.rs" -exec touch {} +
+# Avoid rebuilding an already-produced frontend bundle in the Rust builder image.
+ENV ZIHUAN_SKIP_FRONTEND_BUILD=1
 
-RUN cargo build --release
+RUN cargo build --release -p zihuan_service --bin zihuan_next
 
 # ---- Runtime ----
 FROM debian:bookworm-slim
@@ -95,7 +78,6 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY --from=backend-builder /build/target/release/zihuan_next /app/zihuan_next
-COPY config.yaml.example /app/config.yaml
 
 ENV ZIHUAN_HOST=0.0.0.0
 ENV ZIHUAN_PORT=9951

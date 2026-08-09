@@ -74,7 +74,7 @@ fn simple_result(reply: String, echo: Option<String>) -> CommandResult {
 
 impl CommandHandler for TaskCommand {
     fn handle(&self, ctx: &CommandContext, args: &[String]) -> CommandResult {
-        let runtime = match crate::command::global_task_runtime() {
+        let runtime = match zihuan_core::command::global_task_runtime() {
             Some(rt) => rt,
             None => return simple_result("暂无任务".to_string(), None),
         };

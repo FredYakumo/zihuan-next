@@ -1,6 +1,9 @@
 pub mod logging;
 pub mod models;
 pub mod natural_language_reply;
+pub mod runtime;
+
+pub use runtime::*;
 
 /// Opaque handle for the bot adapter, stored in DataValue.
 /// The concrete type is `Arc<TokioMutex<BotAdapter>>` in the main crate;
