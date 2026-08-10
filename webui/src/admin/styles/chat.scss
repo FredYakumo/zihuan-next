@@ -724,10 +724,10 @@
   padding: 0.55rem 0.7rem;
   overflow-x: hidden;
   overflow-y: auto;
-  border: 1px solid var(--chat-border-color, #e5e7eb);
+  border: 1px solid var(--admin-border);
   border-radius: 0.45rem;
-  background: var(--chat-code-background, #f6f7f9);
-  color: var(--chat-muted-color, #59636e);
+  background: var(--admin-bg-soft);
+  color: var(--admin-muted);
   font: 0.78rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
   white-space: pre-wrap;
   word-break: break-word;
