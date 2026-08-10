@@ -77,7 +77,7 @@
                       <span v-else class="chat-service-select-avatar chat-service-select-avatar--fallback">
                         {{ agentInitial(selectedService.name) }}
                       </span>
-                      <span>{{ selectedService.name }}</span>
+                      <span class="chat-service-select-value-name">{{ selectedService.name }}</span>
                     </div>
                   </template>
                   <t-option

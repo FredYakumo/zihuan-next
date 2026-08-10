@@ -298,7 +298,9 @@
   font-weight: 700;
 }
 
+.chat-service-select-value-name,
 .chat-service-select-option-name {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
