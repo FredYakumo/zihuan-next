@@ -1,17 +1,13 @@
 pub mod agent;
 pub mod command;
 pub mod nodes;
-pub mod python_runtime;
-mod resource_resolver;
-pub mod scheduled_task;
-pub mod storage;
 
 pub use agent::{AgentManager, AgentRuntimeInfo, AgentRuntimeStatus};
 
 use zihuan_core::error::Result;
 
 pub fn init_node_registry() -> Result<()> {
-    use zihuan_graph_engine::register_node;
+    use zihuan_core::register_node;
 
     use nodes::agent_embedding_model_node::AgentEmbeddingModelNode;
     use nodes::agent_image_db_ref::AgentImageDbRefNode;

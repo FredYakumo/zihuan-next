@@ -1,29 +1,19 @@
 pub mod http_stream_service;
 pub mod inference;
-pub mod qq_chat;
-pub mod tool_definitions;
-pub mod workspace_agent_service;
 
-mod agent_text_similarity;
-mod classify_intent;
-mod tools;
-#[cfg(test)]
-mod tests;
-pub(crate) use tools::execute_image_understand_tool;
-pub(crate) use tools::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use chrono::Local;
 use log::error;
-use model_inference::system_config::{load_agents, AgentConfig, AgentType};
+use zihuan_core::inference::system_config::{load_agents, AgentConfig, AgentType};
 use serde::Serialize;
-use storage_handler::{load_connections, ConnectionConfig};
+use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
-use zihuan_agent::brain::BrainObserver;
+use zihuan_core::agent_runtime::brain::BrainObserver;
 use zihuan_core::error::Result;
 use zihuan_core::llm::{LLMMessage, StreamToken};
 use zihuan_core::task_context::AgentTaskRuntime;
@@ -140,7 +130,7 @@ impl AgentManager {
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn BrainObserver>>,
-    ) -> Result<(Vec<LLMMessage>, zihuan_agent::brain::BrainStopReason)> {
+    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent_runtime::brain::BrainStopReason)> {
         self.infer_agent_response_streaming_with_model(agent_id, messages, token_tx, observer, None, None, None, None)
             .await
     }
@@ -152,16 +142,16 @@ impl AgentManager {
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn BrainObserver>>,
         model_config_id: Option<&str>,
-        thinking_type: Option<model_inference::system_config::ThinkingType>,
-        reasoning_effort: Option<model_inference::system_config::ReasoningEffort>,
+        thinking_type: Option<zihuan_core::inference::system_config::ThinkingType>,
+        reasoning_effort: Option<zihuan_core::inference::system_config::ReasoningEffort>,
         workspace_path: Option<String>,
-    ) -> Result<(Vec<LLMMessage>, zihuan_agent::brain::BrainStopReason)> {
+    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent_runtime::brain::BrainStopReason)> {
         let agent = self.running_agent(agent_id).ok_or_else(|| {
             zihuan_core::error::Error::ValidationError(format!("agent '{}' is not running", agent_id))
         })?;
         if let Some(model_id) = model_config_id {
-            let llm_refs = model_inference::system_config::load_llm_refs()?;
-            let mut llm_config = crate::resource_resolver::resolve_llm_service_config(
+            let llm_refs = zihuan_core::inference::system_config::load_llm_refs()?;
+            let mut llm_config = zihuan_core::agent_runtime::resource_resolver::resolve_llm_service_config(
                 Some(model_id),
                 &llm_refs,
                 &agent.agent_config().name,
@@ -172,7 +162,7 @@ impl AgentManager {
             if let Some(override_value) = reasoning_effort {
                 llm_config.reasoning_effort = Some(override_value);
             }
-            let llm = crate::resource_resolver::build_llm_model(&llm_config)?;
+            let llm = zihuan_core::agent_runtime::resource_resolver::build_llm_model(&llm_config)?;
             agent
                 .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, llm, workspace_path)
                 .await
@@ -192,7 +182,7 @@ impl AgentManager {
     ) -> Result<()> {
         self.stop_agent(&agent.id).await?;
         let start_result: Result<()> = async {
-            let llm_refs = model_inference::system_config::load_llm_refs()?;
+            let llm_refs = zihuan_core::inference::system_config::load_llm_refs()?;
             let tool_provider = build_inference_tool_provider(&agent, &connections)?;
             let loaded_agent = Arc::new(LoadedInferenceAgent::load_with_tools(&agent, &llm_refs, tool_provider)?);
 
@@ -211,12 +201,24 @@ impl AgentManager {
             match &agent.agent_type {
                 AgentType::QqChat(config) => {
                     let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
-                    let task = qq_chat::spawn(
-                        self,
+                    let manager = self.clone();
+                    let agent_id_for_callback = agent.id.clone();
+                    let callback = Arc::new(move |success: bool, error_message: Option<String>| {
+                        manager.update_state(
+                            &agent_id_for_callback,
+                            AgentRuntimeState {
+                                instance_id: None,
+                                status: if success { AgentRuntimeStatus::Stopped } else { AgentRuntimeStatus::Error },
+                                started_at: None,
+                                last_error: error_message,
+                            },
+                        );
+                    });
+                    let task = zihuan_ims_agent::qq_chat::spawn(
                         agent.clone(),
                         config.clone(),
                         connections,
-                        Arc::clone(&on_finish_shared),
+                        callback,
                         task_runtime.clone(),
                     )
                     .await?;
@@ -358,10 +360,10 @@ pub fn build_inference_tool_provider(
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     match &agent.agent_type {
-        AgentType::QqChat(config) => qq_chat::load_inference_tool_provider(agent, config, connections),
+        AgentType::QqChat(config) => zihuan_ims_agent::qq_chat::load_inference_tool_provider(agent, config, connections),
         AgentType::HttpStream(config) => http_stream_service::load_inference_tool_provider(agent, config, connections),
         AgentType::Workspace(config) => {
-            workspace_agent_service::load_inference_tool_provider(agent, config, connections)
+            zihuan_workspace_agent::workspace_agent_service::load_inference_tool_provider(agent, config, connections)
         }
     }
 }

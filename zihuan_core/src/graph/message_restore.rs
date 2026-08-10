@@ -1,0 +1,519 @@
+use crate::graph::data_value::RedisConfig;
+use log::{debug, warn};
+use once_cell::sync::Lazy;
+use redis::AsyncCommands;
+use sqlx::Row;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use tokio::task::block_in_place;
+use crate::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
+use crate::error::Result;
+use crate::ims_bot_adapter::models::event_model::MessageEvent;
+use crate::ims_bot_adapter::models::message::{
+    ImageMessage, Message, MessageMediaRecord, PersistedMedia, PersistedMediaSource, PlainTextMessage,
+};
+
+static RUNTIME_MESSAGE_INDEX: Lazy<RwLock<HashMap<String, Vec<Message>>>> = Lazy::new(|| RwLock::new(HashMap::new()));
+static LATEST_RDB_POOL: Lazy<RwLock<Option<RelationalDbConnection>>> = Lazy::new(|| RwLock::new(None));
+static LATEST_REDIS_REF: Lazy<RwLock<Option<Arc<RedisConfig>>>> = Lazy::new(|| RwLock::new(None));
+
+const LOOKUP_SQL: &str = r#"
+    SELECT content, media_json, raw_message_json
+    FROM message_record
+    WHERE message_id = ?
+    ORDER BY id ASC
+    "#;
+
+const MEDIA_RECORD_LOOKUP_SQL: &str = r#"
+    SELECT source, original_source, rustfs_path, name, description, mime_type
+    FROM media_record
+    WHERE media_id = ?
+    "#;
+
+const MEDIA_RECORD_INSERT_MYSQL: &str = r#"
+    INSERT INTO media_record (media_id, source, original_source, rustfs_path, name, description, mime_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+        source = VALUES(source),
+        original_source = VALUES(original_source),
+        rustfs_path = VALUES(rustfs_path),
+        name = VALUES(name),
+        description = VALUES(description),
+        mime_type = VALUES(mime_type)
+    "#;
+
+const MEDIA_RECORD_INSERT_SQLITE: &str = r#"
+    INSERT OR REPLACE INTO media_record (media_id, source, original_source, rustfs_path, name, description, mime_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    "#;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageRestoreSource {
+    RuntimeCache,
+    Redis,
+    MySql,
+    Sqlite,
+}
+
+impl MessageRestoreSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MessageRestoreSource::RuntimeCache => "cache",
+            MessageRestoreSource::Redis => "redis",
+            MessageRestoreSource::MySql => "mysql",
+            MessageRestoreSource::Sqlite => "sqlite",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RestoredMessageSnapshot {
+    pub messages: Vec<Message>,
+    pub source: MessageRestoreSource,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CachedMessageSnapshotPayload {
+    pub message_id: String,
+    pub content: String,
+    pub media_json: Option<String>,
+    pub raw_message_json: Option<String>,
+}
+
+pub fn cache_message_snapshot(event: &MessageEvent) {
+    if let Ok(mut guard) = RUNTIME_MESSAGE_INDEX.write() {
+        guard.insert(event.message_id.to_string(), event.message_list.clone());
+    }
+}
+
+pub fn register_rdb_pool(pool: RelationalDbConnection) {
+    if let Ok(mut guard) = LATEST_RDB_POOL.write() {
+        *guard = Some(pool);
+    }
+}
+
+pub fn register_redis_ref(config: Arc<RedisConfig>) {
+    if let Ok(mut guard) = LATEST_REDIS_REF.write() {
+        *guard = Some(config);
+    }
+}
+
+pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessageSnapshot>> {
+    let message_id_str = message_id.to_string();
+
+    if let Ok(guard) = RUNTIME_MESSAGE_INDEX.read() {
+        if let Some(messages) = guard.get(&message_id_str) {
+            return Ok(Some(RestoredMessageSnapshot {
+                messages: messages.clone(),
+                source: MessageRestoreSource::RuntimeCache,
+            }));
+        }
+    }
+
+    let rdb_pool = match LATEST_RDB_POOL.read() {
+        Ok(guard) => guard.clone(),
+        Err(_) => None,
+    };
+    let redis_config = match LATEST_REDIS_REF.read() {
+        Ok(guard) => guard.clone(),
+        Err(_) => None,
+    };
+
+    if let Some(redis_config) = redis_config {
+        if let Some(snapshot) = restore_message_snapshot_from_redis(&redis_config, &message_id_str)? {
+            if let Ok(mut guard) = RUNTIME_MESSAGE_INDEX.write() {
+                guard.insert(message_id_str.clone(), snapshot.messages.clone());
+            }
+            return Ok(Some(snapshot));
+        }
+    }
+
+    let (rows, source): (Vec<(String, Option<String>, Option<String>)>, MessageRestoreSource) =
+        if let Some(rdb_pool) = rdb_pool {
+            match rdb_pool {
+                RelationalDbConnection::MySql(config) => {
+                    let lookup_id = message_id_str.clone();
+                    let pool = mysql_pool(&config)?.clone();
+                    let run = async move { sqlx::query(LOOKUP_SQL).bind(&lookup_id).fetch_all(&pool).await };
+                    let rows = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                        block_in_place(|| handle.block_on(run))?
+                    } else {
+                        tokio::runtime::Runtime::new()?.block_on(run)?
+                    };
+
+                    (
+                        rows.into_iter()
+                            .map(|row| (row.get("content"), row.get("media_json"), row.get("raw_message_json")))
+                            .collect(),
+                        MessageRestoreSource::MySql,
+                    )
+                }
+                RelationalDbConnection::Sqlite(config) => {
+                    let lookup_id = message_id_str.clone();
+                    let pool = sqlite_pool(&config)?.clone();
+                    let run = async move { sqlx::query(LOOKUP_SQL).bind(&lookup_id).fetch_all(&pool).await };
+                    let rows = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                        block_in_place(|| handle.block_on(run))?
+                    } else {
+                        tokio::runtime::Runtime::new()?.block_on(run)?
+                    };
+
+                    (
+                        rows.into_iter()
+                            .map(|row| (row.get("content"), row.get("media_json"), row.get("raw_message_json")))
+                            .collect(),
+                        MessageRestoreSource::Sqlite,
+                    )
+                }
+            }
+        } else {
+            return Ok(None);
+        };
+
+    if rows.is_empty() {
+        return Ok(None);
+    }
+
+    let mut content = String::new();
+    let mut media_json = None;
+    let mut raw_message_json = None;
+    for (chunk_content, chunk_media_json, chunk_raw_message_json) in rows {
+        content.push_str(&chunk_content);
+        if media_json.is_none() {
+            media_json = chunk_media_json;
+        }
+        if raw_message_json.is_none() {
+            raw_message_json = chunk_raw_message_json;
+        }
+    }
+    let messages = raw_message_json
+        .as_deref()
+        .and_then(rebuild_message_list_from_raw_json)
+        .unwrap_or_else(|| rebuild_message_list(&content, media_json.as_deref()));
+
+    if messages.is_empty() {
+        warn!(
+            "[message_restore] message {} found in mysql but rebuilt into an empty message list",
+            message_id
+        );
+        return Ok(None);
+    }
+
+    if let Ok(mut guard) = RUNTIME_MESSAGE_INDEX.write() {
+        guard.insert(message_id_str, messages.clone());
+    }
+
+    Ok(Some(RestoredMessageSnapshot { messages, source }))
+}
+
+pub fn query_media_by_id(media_id: &str, rdb_ref: Option<&RelationalDbConnection>) -> Result<Option<PersistedMedia>> {
+    let media_id = media_id.trim();
+    if media_id.is_empty() {
+        return Ok(None);
+    }
+
+    let rdb_pool = match rdb_ref {
+        Some(pool) => pool,
+        None => return Ok(None),
+    };
+
+    let media_id_for_bind = media_id.to_string();
+    let row: Option<(String, String, String, Option<String>, Option<String>, Option<String>)> = match &rdb_pool {
+        RelationalDbConnection::MySql(config) => {
+            let pool = mysql_pool(config)?.clone();
+            let run = async move {
+                sqlx::query(MEDIA_RECORD_LOOKUP_SQL)
+                    .bind(&media_id_for_bind)
+                    .fetch_optional(&pool)
+                    .await
+            };
+            let row = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                block_in_place(|| handle.block_on(run))?
+            } else {
+                tokio::runtime::Runtime::new()?.block_on(run)?
+            };
+            row.map(|r| {
+                (
+                    r.get("source"),
+                    r.get("original_source"),
+                    r.get("rustfs_path"),
+                    r.get("name"),
+                    r.get("description"),
+                    r.get("mime_type"),
+                )
+            })
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            let pool = sqlite_pool(config)?.clone();
+            let run = async move {
+                sqlx::query(MEDIA_RECORD_LOOKUP_SQL)
+                    .bind(&media_id_for_bind)
+                    .fetch_optional(&pool)
+                    .await
+            };
+            let row = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                block_in_place(|| handle.block_on(run))?
+            } else {
+                tokio::runtime::Runtime::new()?.block_on(run)?
+            };
+            row.map(|r| {
+                (
+                    r.get("source"),
+                    r.get("original_source"),
+                    r.get("rustfs_path"),
+                    r.get("name"),
+                    r.get("description"),
+                    r.get("mime_type"),
+                )
+            })
+        }
+    };
+
+    let Some((source, original_source, rustfs_path, name, description, mime_type)) = row else {
+        return Ok(None);
+    };
+
+    let source: PersistedMediaSource = match source.as_str() {
+        "upload" => PersistedMediaSource::Upload,
+        "qq_chat" => PersistedMediaSource::QqChat,
+        "web_search" => PersistedMediaSource::WebSearch,
+        "agent_save" => PersistedMediaSource::AgentSave,
+        _ => PersistedMediaSource::Upload,
+    };
+
+    Ok(Some(PersistedMedia {
+        media_id: media_id.to_string(),
+        source,
+        original_source,
+        rustfs_path,
+        name,
+        description,
+        mime_type,
+    }))
+}
+
+pub fn persist_media_to_record(connection: &RelationalDbConnection, media: &PersistedMedia) -> Result<()> {
+    let source = media.source.to_string();
+    match connection {
+        RelationalDbConnection::MySql(config) => {
+            let pool = mysql_pool(config)?.clone();
+            let run = async move {
+                sqlx::query(MEDIA_RECORD_INSERT_MYSQL)
+                    .bind(&media.media_id)
+                    .bind(&source)
+                    .bind(&media.original_source)
+                    .bind(&media.rustfs_path)
+                    .bind(&media.name)
+                    .bind(&media.description)
+                    .bind(&media.mime_type)
+                    .execute(&pool)
+                    .await
+            };
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                block_in_place(|| handle.block_on(run))?;
+            } else {
+                tokio::runtime::Runtime::new()?.block_on(run)?;
+            }
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            let pool = sqlite_pool(config)?.clone();
+            let run = async move {
+                sqlx::query(MEDIA_RECORD_INSERT_SQLITE)
+                    .bind(&media.media_id)
+                    .bind(&source)
+                    .bind(&media.original_source)
+                    .bind(&media.rustfs_path)
+                    .bind(&media.name)
+                    .bind(&media.description)
+                    .bind(&media.mime_type)
+                    .execute(&pool)
+                    .await
+            };
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                block_in_place(|| handle.block_on(run))?;
+            } else {
+                tokio::runtime::Runtime::new()?.block_on(run)?;
+            }
+        }
+    };
+    Ok(())
+}
+
+fn mysql_pool(config: &Arc<MySqlConfig>) -> Result<&sqlx::mysql::MySqlPool> {
+    config.pool.as_ref().ok_or_else(|| {
+        crate::error::Error::ValidationError("message restore mysql pool is not initialized".to_string())
+    })
+}
+
+fn sqlite_pool(config: &Arc<SqliteConfig>) -> Result<&sqlx::sqlite::SqlitePool> {
+    config.pool.as_ref().ok_or_else(|| {
+        crate::error::Error::ValidationError("message restore sqlite pool is not initialized".to_string())
+    })
+}
+
+fn restore_message_snapshot_from_redis(
+    redis_ref: &Arc<RedisConfig>,
+    message_id: &str,
+) -> Result<Option<RestoredMessageSnapshot>> {
+    let Some(url) = redis_ref.url.clone() else {
+        return Ok(None);
+    };
+
+    let redis_ref = Arc::clone(redis_ref);
+    let message_id = message_id.to_string();
+    let message_id_for_get = message_id.clone();
+    let run = async move {
+        let mut cm_guard = redis_ref.redis_cm.lock().await;
+        let mut url_guard = redis_ref.cached_redis_url.lock().await;
+
+        if url_guard.as_deref() != Some(url.as_str()) {
+            *cm_guard = None;
+            *url_guard = Some(url.clone());
+        }
+
+        if cm_guard.is_none() {
+            let client = redis::Client::open(url.as_str())?;
+            *cm_guard = Some(client.get_tokio_connection().await?);
+        }
+
+        let Some(cm) = cm_guard.as_mut() else {
+            return Ok::<Option<String>, crate::error::Error>(None);
+        };
+
+        let payload: Option<String> = cm.get(&message_id_for_get).await?;
+        Ok::<Option<String>, crate::error::Error>(payload)
+    };
+
+    let payload = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        block_in_place(|| handle.block_on(run))
+    } else {
+        tokio::runtime::Runtime::new()?.block_on(run)
+    }?;
+
+    let Some(payload) = payload else {
+        return Ok(None);
+    };
+
+    let snapshot: CachedMessageSnapshotPayload = match serde_json::from_str(&payload) {
+        Ok(value) => value,
+        Err(error) => {
+            warn!(
+                "[message_restore] failed to parse Redis cached snapshot for message {}: {}",
+                message_id, error
+            );
+            return Ok(None);
+        }
+    };
+
+    let messages = snapshot
+        .raw_message_json
+        .as_deref()
+        .and_then(rebuild_message_list_from_raw_json)
+        .unwrap_or_else(|| rebuild_message_list(&snapshot.content, snapshot.media_json.as_deref()));
+
+    if messages.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(RestoredMessageSnapshot {
+        messages,
+        source: MessageRestoreSource::Redis,
+    }))
+}
+
+pub fn rebuild_message_list(content: &str, media_json: Option<&str>) -> Vec<Message> {
+    let mut messages = Vec::new();
+    let trimmed_content = content.trim();
+    if !trimmed_content.is_empty() {
+        messages.push(Message::PlainText(PlainTextMessage {
+            text: trimmed_content.to_string(),
+        }));
+    }
+
+    let Some(media_json) = media_json.filter(|value| !value.trim().is_empty()) else {
+        return messages;
+    };
+
+    let records: Vec<MessageMediaRecord> = match serde_json::from_str(media_json) {
+        Ok(records) => records,
+        Err(error) => {
+            warn!(
+                "[message_restore] failed to parse media_json while rebuilding message: {}",
+                error
+            );
+            return messages;
+        }
+    };
+
+    for record in records {
+        match record.r#type.as_str() {
+            "image" => {
+                let image = Message::Image(ImageMessage::new(PersistedMedia {
+                    media_id: record.media_id.clone(),
+                    source: record.source.clone(),
+                    original_source: record.original_source.clone(),
+                    rustfs_path: record.rustfs_path.clone(),
+                    name: record.name.clone(),
+                    description: record.description.clone(),
+                    mime_type: record.mime_type.clone(),
+                }));
+                let insert_at = record.segment_index.min(messages.len());
+                messages.insert(insert_at, image);
+            }
+            other => {
+                debug!(
+                    "[message_restore] skipping unsupported media record type={} during rebuild",
+                    other
+                );
+            }
+        }
+    }
+
+    messages
+}
+
+pub fn rebuild_message_list_from_raw_json(raw_message_json: &str) -> Option<Vec<Message>> {
+    if raw_message_json.trim().is_empty() {
+        return None;
+    }
+
+    match serde_json::from_str::<Vec<Message>>(raw_message_json) {
+        Ok(messages) if messages.is_empty() => None,
+        Ok(messages) => Some(messages),
+        Err(error) => {
+            warn!(
+                "[message_restore] failed to parse raw_message_json while rebuilding message: {}",
+                error
+            );
+            None
+        }
+    }
+}
+
+pub fn find_media_in_messages(messages: &[Message], media_id: &str) -> Option<PersistedMedia> {
+    for message in messages {
+        match message {
+            Message::Image(image) if image.media.media_id == media_id => {
+                return Some(image.media.clone());
+            }
+            Message::Reply(reply) => {
+                if let Some(source_messages) = reply.message_source.as_deref() {
+                    if let Some(media) = find_media_in_messages(source_messages, media_id) {
+                        return Some(media);
+                    }
+                }
+            }
+            Message::Forward(forward) => {
+                for node in &forward.content {
+                    if let Some(media) = find_media_in_messages(&node.content, media_id) {
+                        return Some(media);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+

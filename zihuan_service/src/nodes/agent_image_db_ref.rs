@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use storage_handler::{load_connections, resource_resolver, WeaviateCollectionSchema};
+use zihuan_core::storage::{load_connections, resource_resolver, WeaviateCollectionSchema};
 use zihuan_core::agent_config::qq_chat::current_qq_chat_agent_service_config;
 use zihuan_core::error::Result;
-use zihuan_graph_engine::{node_output, DataType, DataValue, Node, Port};
+use zihuan_core::graph::{node_output, DataType, DataValue, Node, NodeOutputFlow, Port};
 
 pub struct AgentImageDbRefNode {
     id: String,
@@ -38,7 +38,7 @@ impl Node for AgentImageDbRefNode {
 
     node_output![port! { name = "weaviate_ref", ty = WeaviateRef, desc = "Agent 图片向量库引用" },];
 
-    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_core::graph::NodeInputFlow) -> Result<zihuan_core::graph::NodeOutputFlow> {
         let config = current_qq_chat_agent_service_config()?;
         let weaviate_image_connection_id = config.weaviate_image_connection_id.as_deref();
         let weaviate_image_connection_id = weaviate_image_connection_id
@@ -56,8 +56,8 @@ impl Node for AgentImageDbRefNode {
         .ok_or_else(|| {
             zihuan_core::error::Error::ValidationError("weaviate_image_connection_id is required".to_string())
         })?;
-        storage_handler::ensure_collection_schema(&weaviate_ref, WeaviateCollectionSchema::ImageSemantic, false)?;
-        zihuan_graph_engine::return_with_node_output![self;
+        zihuan_core::storage::ensure_collection_schema(&weaviate_ref, WeaviateCollectionSchema::ImageSemantic, false)?;
+        zihuan_core::graph::return_with_node_output![self;
             "weaviate_ref" => DataValue::WeaviateRef(weaviate_ref),
         ]
     }

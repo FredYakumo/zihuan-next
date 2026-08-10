@@ -1,37 +1,23 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
-use model_inference::message_content_utils::sanitize_messages_for_inference;
-use model_inference::system_config::{AgentConfig, AgentType, LlmRefConfig};
-use storage_handler::{load_connections, ConnectionConfig};
+use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
+use zihuan_core::inference::message_content_utils::sanitize_messages_for_inference;
+use zihuan_core::inference::system_config::{AgentConfig, AgentType, LlmRefConfig};
+use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
-use zihuan_agent::brain::{
+use zihuan_core::agent_runtime::brain::{
     Brain, BrainObserver, BrainStopReason, BrainTool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS,
 };
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken};
-use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
+use zihuan_core::graph::brain_tool_spec::BrainToolDefinition;
 
-use crate::resource_resolver::{build_llm_model, resolve_llm_service_config};
+use zihuan_core::agent_runtime::resource_resolver::{build_llm_model, resolve_llm_service_config};
 
-#[derive(Clone)]
-pub struct InferenceToolContext {
-    pub last_user_text: String,
-    pub workspace_path: Option<String>,
-}
-
-pub trait InferenceToolProvider: Send + Sync {
-    fn augment_messages(&self, _messages: &mut Vec<LLMMessage>, _context: &InferenceToolContext) {}
-
-    fn build_default_tools(&self, _context: &InferenceToolContext) -> Vec<Box<dyn BrainTool>> {
-        Vec::new()
-    }
-
-    fn tool_definitions(&self) -> Vec<BrainToolDefinition>;
-}
+pub use zihuan_core::agent_runtime::inference_provider::{InferenceToolContext, InferenceToolProvider};
 
 #[derive(Clone, Default)]
 pub struct StaticInferenceToolProvider {
@@ -112,7 +98,7 @@ impl BrainTool for DynBrainToolWrapper {
 
 impl LoadedInferenceAgent {
     pub fn load(agent: &AgentConfig, connections: &[ConnectionConfig]) -> Result<Self> {
-        let llm_refs = model_inference::system_config::load_llm_refs()?;
+        let llm_refs = zihuan_core::inference::system_config::load_llm_refs()?;
         Self::load_with_refs(agent, &llm_refs, connections)
     }
 
@@ -345,6 +331,8 @@ fn build_brain(
                 shared_runtime_values: Arc::new(Mutex::new(HashMap::new())),
                 qq_chat_agent_config: None,
                 result_mode: ToolResultMode::JsonObject,
+                builtin_executor: Some(zihuan_ims_agent::qq_tool_subgraph_hooks::image_understand_executor()),
+                progress_notifier: Some(zihuan_ims_agent::qq_tool_subgraph_hooks::qq_progress_notifier()),
             },
         });
     }

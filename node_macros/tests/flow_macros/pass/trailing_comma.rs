@@ -1,4 +1,4 @@
-use zihuan_graph_engine::{node_output_flow, DataValue, NodeOutputFlow};
+use zihuan_core::graph::{node_output_flow, DataValue, NodeOutputFlow};
 
 fn main() {
     let value = DataValue::Boolean(true);

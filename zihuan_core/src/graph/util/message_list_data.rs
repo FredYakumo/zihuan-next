@@ -1,0 +1,58 @@
+use crate::graph::{node_output, DataType, DataValue, Node, Port};
+use std::collections::HashMap;
+use crate::error::Result;
+
+pub struct MessageListDataNode {
+    id: String,
+    name: String,
+}
+
+impl MessageListDataNode {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+}
+
+impl Node for MessageListDataNode {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("LLMMessage 列表数据源，支持内联 UI 编辑")
+    }
+
+    fn input_ports(&self) -> Vec<Port> {
+        vec![Port::new("messages", DataType::Vec(Box::new(DataType::LLMMessage)))
+            .with_description("Vec<LLMMessage> provided by UI inline editor")
+            .optional()
+            .hidden()]
+    }
+
+    node_output![
+        port! { name = "messages", ty = Vec(LLMMessage), desc = "Output Vec<LLMMessage> from UI data source" },
+    ];
+
+    fn execute(&mut self, inputs: crate::graph::NodeInputFlow) -> Result<crate::graph::NodeOutputFlow> {
+        self.validate_inputs(&inputs)?;
+
+        let mut outputs = HashMap::new();
+        let value = inputs
+            .get("messages")
+            .cloned()
+            .filter(|v| matches!(v, DataValue::Vec(..)))
+            .unwrap_or_else(|| DataValue::Vec(Box::new(crate::graph::DataType::LLMMessage), Vec::new()));
+        outputs.insert("messages".to_string(), value);
+
+        let outputs = crate::graph::NodeOutputFlow::from(outputs);
+        self.validate_outputs(&outputs)?;
+        Ok(outputs)
+    }
+}

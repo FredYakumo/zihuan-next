@@ -8,10 +8,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use model_inference::system_config::{AgentConfig, AgentType, WorkspaceAgentServiceConfig};
+use zihuan_core::inference::system_config::{AgentConfig, AgentType, WorkspaceAgentServiceConfig};
 use zihuan_core::llm::{LLMMessage, MessageRole};
 use zihuan_service::agent::inference::{InferenceToolContext, InferenceToolProvider};
-use zihuan_service::agent::workspace_agent_service::load_inference_tool_provider;
+use zihuan_workspace_agent::workspace_agent_service::load_inference_tool_provider;
 
 /// Serialize tests that mutate process-level environment variables.
 static ENV_MUTEX: Mutex<()> = Mutex::new(());
@@ -150,8 +150,10 @@ fn agents_md_enabled_missing_file_does_not_reference_agents_md() {
     let provider = build_provider(true);
     let workspace_path = workspace.path.to_string_lossy().to_string();
 
-    let prompt = augment_and_get_system_prompt(&provider, Some(workspace_path))
-        .expect("workspace context prompt should be injected");
+    let prompt = with_home_dir(&workspace.path, || {
+        augment_and_get_system_prompt(&provider, Some(workspace_path))
+    })
+    .expect("workspace context prompt should be injected");
 
     assert!(!prompt.contains("AGENTS.md"), "prompt should not mention AGENTS.md when file is absent");
 }

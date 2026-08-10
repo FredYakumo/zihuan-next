@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::sync::{OnceLock, RwLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -7,6 +8,47 @@ use crate::error::Result;
 use crate::validation_error;
 
 mod parser;
+
+static GLOBAL_COMMAND_REGISTRY: OnceLock<Arc<CommandRegistry>> = OnceLock::new();
+static GLOBAL_TASK_RUNTIME: RwLock<Option<Arc<dyn crate::task_context::AgentTaskRuntime>>> = RwLock::new(None);
+
+pub fn set_global_command_registry(registry: Arc<CommandRegistry>) -> Result<()> {
+    GLOBAL_COMMAND_REGISTRY
+        .set(registry)
+        .map_err(|_| crate::error::Error::StringError("command registry already initialized".to_string()))
+}
+
+pub fn set_global_task_runtime(runtime: Arc<dyn crate::task_context::AgentTaskRuntime>) {
+    *GLOBAL_TASK_RUNTIME.write().unwrap() = Some(runtime);
+}
+
+pub fn global_task_runtime() -> Option<Arc<dyn crate::task_context::AgentTaskRuntime>> {
+    GLOBAL_TASK_RUNTIME.read().unwrap().clone()
+}
+
+pub fn global_command_registry() -> Option<Arc<CommandRegistry>> {
+    GLOBAL_COMMAND_REGISTRY.get().cloned()
+}
+
+pub fn build_help_text() -> Option<String> {
+    let registry = global_command_registry()?;
+    let mut lines = registry
+        .list_commands()
+        .iter()
+        .map(|definition| {
+            let aliases = if definition.aliases.is_empty() {
+                String::new()
+            } else {
+                format!(" (别名: {})", definition.aliases.join(", "))
+            };
+            format!("/{} — {}{}", definition.name, definition.description, aliases)
+        })
+        .collect::<Vec<_>>();
+    if lines.is_empty() {
+        lines.push("暂无可用命令。".to_string());
+    }
+    Some(lines.join("\n"))
+}
 
 /// Defines which agent types a command is available for.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -1,8 +1,8 @@
-use storage_handler::RuntimeStorageConnectionManager;
+use zihuan_core::storage::RuntimeStorageConnectionManager;
 use zihuan_core::agent_config::qq_chat::current_qq_chat_agent_service_config;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::Result;
-use zihuan_graph_engine::{node_output, DataType, DataValue, Node, Port};
+use zihuan_core::graph::{node_output, DataType, DataValue, Node, NodeOutputFlow, Port};
 
 pub struct AgentRdbRefNode {
     id: String,
@@ -37,7 +37,7 @@ impl Node for AgentRdbRefNode {
 
     node_output![port! { name = "rdb_ref", ty = RdbRef, desc = "Agent 关系数据库连接引用" },];
 
-    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_core::graph::NodeInputFlow) -> Result<zihuan_core::graph::NodeOutputFlow> {
         let config = current_qq_chat_agent_service_config()?;
         let rdb_connection_id = config.resolved_rdb_id();
         let rdb_connection_id = rdb_connection_id
@@ -47,7 +47,7 @@ impl Node for AgentRdbRefNode {
         let rdb_ref = zihuan_core::runtime::block_async(
             RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(rdb_connection_id),
         )?;
-        zihuan_graph_engine::return_with_node_output![self;
+        zihuan_core::graph::return_with_node_output![self;
             "rdb_ref" => DataValue::RdbRef(RelationalDbConnection::MySql(rdb_ref)),
         ]
     }

@@ -4,7 +4,7 @@ use log::warn;
 use reqwest::Url;
 
 use zihuan_core::error::{Error, Result};
-use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
+use zihuan_core::graph::{node_input, node_output, DataType, DataValue, Node, Port};
 
 pub struct TavilyWebSearchNode {
     id: String,
@@ -42,7 +42,7 @@ impl Node for TavilyWebSearchNode {
 
     node_output![port! { name = "results", ty = Vec(String), desc = "搜索或抽取得到的文本结果列表" },];
 
-    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_core::graph::NodeInputFlow) -> Result<zihuan_core::graph::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let web_search_engine_ref = inputs
@@ -114,7 +114,7 @@ impl Node for TavilyWebSearchNode {
             "results".to_string(),
             DataValue::Vec(Box::new(DataType::String), results.into_iter().map(DataValue::String).collect()),
         );
-        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
+        let outputs = zihuan_core::graph::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
