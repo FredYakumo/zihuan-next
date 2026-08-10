@@ -2,18 +2,48 @@ param([switch]$Release)
 
 $ErrorActionPreference = 'Stop'
 
+function Get-CudaVersion {
+    $versionOutput = & nvcc --version 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return $null
+    }
+
+    $match = [regex]::Match(($versionOutput -join "`n"), 'release\s+(\d+\.\d+)')
+    if ($match.Success) {
+        return [Version]$match.Groups[1].Value
+    }
+
+    return $null
+}
+
+function Select-MsvcClPath {
+    param([System.IO.FileInfo[]]$Candidates, [Version]$CudaVersion)
+
+    $orderedCandidates = $Candidates | Sort-Object -Property FullName -Descending
+    if ($CudaVersion -and $CudaVersion -lt [Version]'13.2') {
+        $compatibleCandidate = $orderedCandidates | Where-Object {
+            $versionMatch = [regex]::Match($_.FullName, 'MSVC\\(\d+\.\d+)')
+            $versionMatch.Success -and [Version]$versionMatch.Groups[1].Value -lt [Version]'14.50'
+        } | Select-Object -First 1
+        if ($compatibleCandidate) {
+            return $compatibleCandidate.FullName
+        }
+    }
+
+    return ($orderedCandidates | Select-Object -First 1).FullName
+}
+
 function Get-MsvcClPath {
+    $cudaVersion = Get-CudaVersion
     $programFilesX86 = [Environment]::GetFolderPath('ProgramFilesX86')
     $vswhere = Join-Path $programFilesX86 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (Test-Path $vswhere) {
         $installPath = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath) | Select-Object -First 1
         if ($installPath) {
             $glob = Join-Path $installPath 'VC\Tools\MSVC\*\bin\Hostx64\x64\cl.exe'
-            $candidate = Get-ChildItem -Path $glob -File -ErrorAction SilentlyContinue |
-                Sort-Object -Property FullName -Descending |
-                Select-Object -First 1
-            if ($candidate) {
-                return $candidate.FullName
+            $candidates = @(Get-ChildItem -Path $glob -File -ErrorAction SilentlyContinue)
+            if ($candidates) {
+                return Select-MsvcClPath -Candidates $candidates -CudaVersion $cudaVersion
             }
         }
     }
@@ -24,11 +54,9 @@ function Get-MsvcClPath {
     )
 
     foreach ($g in $fallbackGlobs) {
-        $candidate = Get-ChildItem -Path $g -File -ErrorAction SilentlyContinue |
-            Sort-Object -Property FullName -Descending |
-            Select-Object -First 1
-        if ($candidate) {
-            return $candidate.FullName
+        $candidates = @(Get-ChildItem -Path $g -File -ErrorAction SilentlyContinue)
+        if ($candidates) {
+            return Select-MsvcClPath -Candidates $candidates -CudaVersion $cudaVersion
         }
     }
 
@@ -108,6 +136,14 @@ if (-not $clPath) {
 }
 
 $env:NVCC_CCBIN = $clPath
+$msvcRoot = (Get-Item -LiteralPath $clPath).Directory.Parent.Parent.Parent.FullName
+$msvcInclude = Join-Path $msvcRoot 'include'
+$env:VCToolsInstallDir = "$msvcRoot\"
+$env:VCToolsVersion = Split-Path -Path $msvcRoot -Leaf
+$env:VCINSTALLDIR = "$((Get-Item -LiteralPath $msvcRoot).Directory.Parent.Parent.Parent.FullName)\"
+if (Test-Path $msvcInclude) {
+    $env:INCLUDE = "$msvcInclude;$env:INCLUDE"
+}
 $rawArgs = @()
 if ($args -and $args.Count -gt 0) {
     $rawArgs = @($args | Where-Object { $_ -ne '-Release' })
@@ -116,6 +152,7 @@ if ($args -and $args.Count -gt 0) {
 $finalArgs = Ensure-CandleCudaFeature -Release:$Release -Args $rawArgs
 
 Write-Host "zihuan-next: NVCC_CCBIN=$clPath"
+Write-Host "zihuan-next: MSVC include=$msvcInclude"
 Write-Host "zihuan-next: cargo $($finalArgs -join ' ')"
 
 & cargo @finalArgs

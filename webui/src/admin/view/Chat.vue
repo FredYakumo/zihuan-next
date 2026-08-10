@@ -77,7 +77,7 @@
                       <span v-else class="chat-service-select-avatar chat-service-select-avatar--fallback">
                         {{ agentInitial(selectedService.name) }}
                       </span>
-                      <span>{{ selectedService.name }}</span>
+                      <span class="chat-service-select-value-name">{{ selectedService.name }}</span>
                     </div>
                   </template>
                   <t-option
@@ -877,9 +877,12 @@
                         </div>
                       </div>
                     </div>
-                    <button class="btn primary" :disabled="sending || !canSend" @click="sendMessage">
-                      {{ sending ? "推理中..." : "发送" }}
-                    </button>
+                    <t-tooltip v-if="sending" content="停止推理">
+                      <t-button theme="danger" shape="square" aria-label="停止推理" @click="stopInference">
+                        <StopIcon />
+                      </t-button>
+                    </t-tooltip>
+                    <button v-else class="btn primary" :disabled="!canSend" @click="sendMessage">发送</button>
                   </div>
                 </div>
               </template>
@@ -1263,6 +1266,7 @@ import {
   InfoCircleIcon,
   MoveIcon,
   ChatIcon,
+  StopIcon,
 } from "tdesign-icons-vue-next";
 
 import { computed, ref, watch } from "vue";
@@ -1408,6 +1412,7 @@ const {
   removeSession,
   applyStreamEvent,
   sendMessage,
+  stopInference,
   submitAskUserAnswer,
   sendMessageWithText,
   load,

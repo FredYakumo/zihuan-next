@@ -321,6 +321,7 @@ const imagePreviewAttachment = ref<ChatImageAttachment | null>(null);
 const workspacePath = ref("");
 const pickingDirectory = ref(false);
 const sending = ref(false);
+let activeStreamController: AbortController | null = null;
 const chatErrorMessage = ref("");
 const chatErrorDialogMessage = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
@@ -1699,6 +1700,14 @@ async function sendMessage() {
   await sendMessageWithText(draftMessage.value, false);
 }
 
+function stopInference() {
+  activeStreamController?.abort();
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 async function submitAskUserAnswer() {
   await sendMessageWithText(askUserAnswer.value, true);
 }
@@ -1788,6 +1797,8 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
     scrollToBottom();
   }
 
+  const streamController = new AbortController();
+  activeStreamController = streamController;
   try {
     await chat.stream(
       {
@@ -1801,14 +1812,23 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
         messages: requestMessages,
       },
       (event) => applyStreamEvent(event, streamState),
+      streamController.signal,
     );
     await reloadSessions();
     if (activeSessionId.value) {
       await openSession(activeSessionId.value);
     }
   } catch (error) {
-    applyInferenceFailure(streamState, (error as Error).message);
+    if (isAbortError(error)) {
+      // Keep streamed text in the local transcript so the next request includes it as context.
+      pruneFailedAssistantPlaceholder(streamState.assistantMessageId);
+    } else {
+      applyInferenceFailure(streamState, (error as Error).message);
+    }
   } finally {
+    if (activeStreamController === streamController) {
+      activeStreamController = null;
+    }
     sending.value = false;
   }
 }
@@ -1864,6 +1884,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  activeStreamController?.abort();
   document.removeEventListener("click", closePickersOnClickOutside);
   document.removeEventListener("keydown", handleDocumentKeydown);
 });
@@ -1999,6 +2020,7 @@ onUnmounted(() => {
     removeSession,
     applyStreamEvent,
     sendMessage,
+    stopInference,
     submitAskUserAnswer,
     sendMessageWithText,
     load,
