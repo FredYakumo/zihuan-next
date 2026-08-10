@@ -150,8 +150,10 @@ fn agents_md_enabled_missing_file_does_not_reference_agents_md() {
     let provider = build_provider(true);
     let workspace_path = workspace.path.to_string_lossy().to_string();
 
-    let prompt = augment_and_get_system_prompt(&provider, Some(workspace_path))
-        .expect("workspace context prompt should be injected");
+    let prompt = with_home_dir(&workspace.path, || {
+        augment_and_get_system_prompt(&provider, Some(workspace_path))
+    })
+    .expect("workspace context prompt should be injected");
 
     assert!(!prompt.contains("AGENTS.md"), "prompt should not mention AGENTS.md when file is absent");
 }
