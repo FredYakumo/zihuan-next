@@ -12,7 +12,7 @@ use zihuan_core::storage::{
     build_relational_db_connection_for_connection, create_memory_record_with_vector, delete_memory_record,
     get_memory_record, list_elasticsearch_memory_keys, list_recent_memory_keys,
     resource_resolver::{self, build_rdb_ref},
-    search_elasticsearch_images, search_elasticsearch_memory, search_memory_content, search_memory_content_by_vector,
+    search_elasticsearch_images, search_elasticsearch_memory, search_memory_content_by_vector,
     update_memory_record_with_vector,
     weaviate::build_weaviate_ref as build_storage_weaviate_ref,
     AgentMemoryAccessContext, AgentMemorySearchHit, AgentMemoryUpsert, ConnectionKind, WeaviateClient,
@@ -1117,28 +1117,32 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
             Ok(None) => return render_bad_request(res, "memory connection is not configured".into()),
             Err(error) => return render_internal_error(res, error),
         };
-        let keyword_hits = match query.as_deref() {
-            Some(value) => search_memory_content(&reference, &access, value, limit),
-            None => list_recent_memory_keys(&reference, &access, limit, None),
-        };
-        let mut items = match keyword_hits {
-            Ok(hits) => memory_items(hits, if query.is_some() { "keyword" } else { "recent" }, "weaviate", true),
-            Err(error) => return render_internal_error(res, error),
-        };
-        if let (Some(value), Some(model_id)) = (query.as_deref(), embedding_id.as_deref()) {
-            if let Ok(model) = RuntimeEmbeddingModelManager::shared()
-                .get_or_create_embedding_model(model_id)
-                .await
-            {
-                if let Ok(vector) = tokio::task::block_in_place(|| model.inference(value)) {
-                    if let Ok(hits) = search_memory_content_by_vector(&reference, &access, &vector, limit) {
-                        merge_memory_items(&mut items, memory_items(hits, "semantic", "weaviate", true));
-                    }
+        let hits = match query.as_deref() {
+            Some(value) => {
+                let Some(model_id) = embedding_id.as_deref() else {
+                    return render_bad_request(res, "Service has no memory embedding model configured".into());
+                };
+                let vector = match service_memory_query_vector(model_id, value).await {
+                    Ok(vector) => vector,
+                    Err(error) => return render_internal_error(res, error),
+                };
+                match search_memory_content_by_vector(&reference, &access, &vector, limit) {
+                    Ok(hits) => hits,
+                    Err(error) => return render_internal_error(res, error),
                 }
             }
-        }
+            None => match list_recent_memory_keys(&reference, &access, limit, None) {
+                Ok(hits) => hits,
+                Err(error) => return render_internal_error(res, error),
+            },
+        };
         res.render(Json(ServiceMemoryResponse {
-            items,
+            items: memory_items(
+                hits,
+                if query.is_some() { "semantic" } else { "recent" },
+                "weaviate",
+                true,
+            ),
             backend: "weaviate",
             mutable: true,
         }));
@@ -1156,30 +1160,32 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
         Ok(None) => return render_bad_request(res, "memory connection is not configured".into()),
         Err(error) => return render_internal_error(res, error),
     };
-    let keyword = match list_elasticsearch_memory_keys(&reference, &access, limit, query.as_deref()) {
-        Ok(hits) => hits,
-        Err(error) => return render_internal_error(res, error),
-    };
-    let mut items = memory_items(
-        keyword,
-        if query.is_some() { "keyword" } else { "recent" },
-        "elasticsearch",
-        false,
-    );
-    if let (Some(value), Some(model_id)) = (query.as_deref(), embedding_id.as_deref()) {
-        if let Ok(model) = RuntimeEmbeddingModelManager::shared()
-            .get_or_create_embedding_model(model_id)
-            .await
-        {
-            if let Ok(vector) = tokio::task::block_in_place(|| model.inference(value)) {
-                if let Ok(hits) = search_elasticsearch_memory(&reference, &access, value, &vector, limit) {
-                    merge_memory_items(&mut items, memory_items(hits, "semantic", "elasticsearch", false));
-                }
+    let hits = match query.as_deref() {
+        Some(value) => {
+            let Some(model_id) = embedding_id.as_deref() else {
+                return render_bad_request(res, "Service has no memory embedding model configured".into());
+            };
+            let vector = match service_memory_query_vector(model_id, value).await {
+                Ok(vector) => vector,
+                Err(error) => return render_internal_error(res, error),
+            };
+            match search_elasticsearch_memory(&reference, &access, value, &vector, limit) {
+                Ok(hits) => hits,
+                Err(error) => return render_internal_error(res, error),
             }
         }
-    }
+        None => match list_elasticsearch_memory_keys(&reference, &access, limit, None) {
+            Ok(hits) => hits,
+            Err(error) => return render_internal_error(res, error),
+        },
+    };
     res.render(Json(ServiceMemoryResponse {
-        items,
+        items: memory_items(
+            hits,
+            if query.is_some() { "hybrid" } else { "recent" },
+            "elasticsearch",
+            false,
+        ),
         backend: "elasticsearch",
         mutable: false,
     }));
@@ -1382,20 +1388,14 @@ fn memory_items(
         .collect()
 }
 
-fn merge_memory_items(target: &mut Vec<ServiceMemoryItem>, incoming: Vec<ServiceMemoryItem>) {
-    for item in incoming {
-        if let Some(existing) = target
-            .iter_mut()
-            .find(|current| current.record.object_id == item.record.object_id)
-        {
-            if !existing.match_kinds.contains(&item.match_kinds[0]) {
-                existing.match_kinds.push(item.match_kinds[0]);
-            }
-        } else {
-            target.push(item);
-        }
-    }
-    target.sort_by_key(|item| !item.match_kinds.contains(&"keyword"));
+async fn service_memory_query_vector(
+    embedding_model_id: &str,
+    query: &str,
+) -> zihuan_core::error::Result<Vec<f32>> {
+    let model = RuntimeEmbeddingModelManager::shared()
+        .get_or_create_embedding_model(embedding_model_id)
+        .await?;
+    tokio::task::block_in_place(|| model.inference(query))
 }
 
 fn image_property_names() -> Vec<String> {
