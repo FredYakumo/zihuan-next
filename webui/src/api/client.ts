@@ -997,11 +997,13 @@ export const chat = {
       }>;
     },
     onEvent: (event: ChatStreamEvent) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     const res = await fetch(`${BASE}/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal,
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));

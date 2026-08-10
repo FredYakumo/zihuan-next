@@ -610,12 +610,14 @@ async fn relay_inference_stream(
     assistant_message_id: &str,
     token_rx: &mut mpsc::UnboundedReceiver<StreamToken>,
     event_rx: &mut mpsc::UnboundedReceiver<Value>,
-) {
+) -> bool {
+    let mut client_connected = true;
     loop {
         tokio::select! {
             biased;
             Some(brain_event) = event_rx.recv() => {
                 if sender.send_data(format!("data: {brain_event}\n\n")).await.is_err() {
+                    client_connected = false;
                     break;
                 }
             }
@@ -632,12 +634,14 @@ async fn relay_inference_stream(
                             "token": token.as_str(),
                         });
                         if sender.send_data(format!("data: {delta_event}\n\n")).await.is_err() {
+                            client_connected = false;
                             break;
                         }
                     }
                     None => {
                         while let Ok(brain_event) = event_rx.try_recv() {
                             if sender.send_data(format!("data: {brain_event}\n\n")).await.is_err() {
+                                client_connected = false;
                                 break;
                             }
                         }
@@ -647,6 +651,7 @@ async fn relay_inference_stream(
             }
         }
     }
+    client_connected
 }
 
 /// Collect all inference tokens into a single payload, then emit one delta event.
@@ -985,10 +990,16 @@ async fn execute_chat_streaming(
         }
     });
 
-    if stream.unwrap_or(true) {
-        relay_inference_stream(&mut sender, &assistant_message_id, &mut token_rx, &mut event_rx).await;
+    let client_connected = if stream.unwrap_or(true) {
+        relay_inference_stream(&mut sender, &assistant_message_id, &mut token_rx, &mut event_rx).await
     } else {
         relay_collected_text(&mut sender, &assistant_message_id, &mut token_rx, &mut event_rx).await;
+        true
+    };
+
+    if !client_connected {
+        inference_handle.abort();
+        return;
     }
 
     let (output_messages, stop_reason) = match inference_handle.await {
