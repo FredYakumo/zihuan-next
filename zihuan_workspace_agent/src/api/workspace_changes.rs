@@ -38,6 +38,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use similar::{ChangeTag, TextDiff};
 use uuid::Uuid;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::system_config::app_data_dir;
@@ -117,6 +118,9 @@ pub struct WorkspaceDiffLine {
     pub kind: String,
     /// The source line captured from the before or after snapshot.
     pub line: String,
+    /// Identifies a contiguous change block without including unchanged context lines.
+    #[serde(default)]
+    pub hunk: usize,
 }
 
 /// One serialized file or directory entry inside a path snapshot.
@@ -369,11 +373,30 @@ fn fingerprint(items: &[PathSnapshot]) -> String { let json = serde_json::to_vec
 fn line_delta(before: &[PathSnapshot], after: &[PathSnapshot]) -> (usize, usize) { let old = line_count(before); let new = line_count(after); (new.saturating_sub(old), old.saturating_sub(new)) }
 fn line_count(items: &[PathSnapshot]) -> usize { items.iter().flat_map(|item| item.entries.iter()).filter_map(|entry| entry.content_hex.as_deref()).map(|hex| String::from_utf8_lossy(&hex_decode(hex)).lines().count()).sum() }
 fn build_diff(before: &[PathSnapshot], after: &[PathSnapshot]) -> Vec<WorkspaceDiffLine> {
-    let old = snapshot_lines(before);
-    let new = snapshot_lines(after);
-    let mut diff = old.into_iter().map(|line| WorkspaceDiffLine { kind: "removed".to_string(), line }).collect::<Vec<_>>();
-    diff.extend(new.into_iter().map(|line| WorkspaceDiffLine { kind: "added".to_string(), line }));
-    diff
+    let old = snapshot_lines(before).join("\n");
+    let new = snapshot_lines(after).join("\n");
+    let diff = TextDiff::from_lines(&old, &new);
+    let mut lines = Vec::new();
+
+    for (hunk, operations) in diff.grouped_ops(0).into_iter().enumerate() {
+        for operation in operations {
+            for change in diff.iter_changes(&operation) {
+                let kind = match change.tag() {
+                    ChangeTag::Delete => "removed",
+                    ChangeTag::Insert => "added",
+                    ChangeTag::Equal => continue,
+                };
+
+                lines.push(WorkspaceDiffLine {
+                    kind: kind.to_string(),
+                    line: change.value().trim_end_matches(['\r', '\n']).to_string(),
+                    hunk,
+                });
+            }
+        }
+    }
+
+    lines
 }
 fn snapshot_lines(items: &[PathSnapshot]) -> Vec<String> {
     items.iter().flat_map(|item| item.entries.iter()).filter_map(|entry| entry.content_hex.as_deref()).flat_map(|hex| String::from_utf8_lossy(&hex_decode(hex)).lines().map(ToOwned::to_owned).collect::<Vec<_>>()).collect()

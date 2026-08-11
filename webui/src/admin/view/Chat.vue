@@ -930,13 +930,21 @@
                 <div v-for="path in selectedWorkspaceChange.paths" :key="path">{{ path }}</div>
               </div>
               <div v-if="selectedWorkspaceChange.diff.length" class="workspace-change-diff">
+                <div class="workspace-change-diff-header">
+                  <span>更改前</span>
+                  <span>更改后</span>
+                </div>
                 <div
-                  v-for="(line, index) in selectedWorkspaceChange.diff"
-                  :key="`${line.kind}-${index}`"
-                  class="workspace-change-diff-line"
-                  :class="`workspace-change-diff-line--${line.kind}`"
+                  v-for="(row, index) in workspaceDiffRows(selectedWorkspaceChange.diff)"
+                  :key="index"
+                  class="workspace-change-diff-row"
                 >
-                  <span>{{ line.kind === "added" ? "+" : "−" }}</span>{{ line.line }}
+                  <div class="workspace-change-diff-cell workspace-change-diff-cell--removed" :class="{ empty: row.removed === undefined }">
+                    <template v-if="row.removed !== undefined"><span>−</span><code>{{ row.removed }}</code></template>
+                  </div>
+                  <div class="workspace-change-diff-cell workspace-change-diff-cell--added" :class="{ empty: row.added === undefined }">
+                    <template v-if="row.added !== undefined"><span>+</span><code>{{ row.added }}</code></template>
+                  </div>
                 </div>
               </div>
               <p class="workspace-change-note">文件已写入磁盘。Accept 只确认并移除记录，Cancel 会在文件未被外部修改时恢复。</p>
@@ -1442,6 +1450,35 @@ const {
 
 const agentsMdEditorRef = ref<HTMLTextAreaElement | null>(null);
 const agentsMdLineNumbersRef = ref<HTMLElement | null>(null);
+
+interface WorkspaceDiffRow {
+  removed?: string;
+  added?: string;
+}
+
+function workspaceDiffRows(diff: { kind: "added" | "removed"; line: string; hunk?: number }[]): WorkspaceDiffRow[] {
+  const rows: WorkspaceDiffRow[] = [];
+  let start = 0;
+
+  while (start < diff.length) {
+    const hunk = diff[start].hunk ?? 0;
+    let end = start;
+    while (end < diff.length && (diff[end].hunk ?? 0) === hunk) {
+      end += 1;
+    }
+
+    const removed = diff.slice(start, end).filter((line) => line.kind === "removed");
+    const added = diff.slice(start, end).filter((line) => line.kind === "added");
+    const rowCount = Math.max(removed.length, added.length);
+    for (let index = 0; index < rowCount; index += 1) {
+      rows.push({ removed: removed[index]?.line, added: added[index]?.line });
+    }
+
+    start = end;
+  }
+
+  return rows;
+}
 
 const agentsMdLineCount = computed(() => {
   const content = agentsMdEditorContent.value;
