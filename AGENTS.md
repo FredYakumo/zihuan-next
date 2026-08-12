@@ -127,6 +127,11 @@ See `/zihuan-frontend-dev` for detailed development instructions.
 - Prefer small, local edits over broad rewrites.
 - When instructions conflict, prefer the behavior described by the current code over older documentation.
 
+## Git Branching
+
+- Create a `features/<topic>` branch for each new feature.
+- Create a `fix/<topic>` branch for each bug fix.
+
 ## PR Guidelines
 
 - Keep PRs small — aim for focused changes. Separate cosmetic changes from functional ones.
