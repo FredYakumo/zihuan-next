@@ -1,15 +1,14 @@
 //! DeepSeek DSML tool-call marker parsing.
 //!
-//! Problem example:
-//!     Some OpenAI-compatible DeepSeek models emit tool calls as assistant text:
+//! Problem example: Some OpenAI-compatible DeepSeek models emit tool calls as assistant text:
 //!
-//!     ```text
-//!     <|DSML|tool_calls><|DSML|invoke name="read_file"><|DSML|parameter name="path" string="true">src/lib.rs</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>
-//!     ```
+//! ```text
+//! <|DSML|tool_calls><|DSML|invoke name="read_file"><|DSML|parameter name="path" string="true">src/lib.rs</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>
+//! ```
 //!
-//!     Without this parser, the protocol is shown to users and the tool is never invoked.
-//!     This module removes the marker from visible content and converts it to an internal
-//!     `ToolCalls { function: "read_file", arguments: { "path": "src/lib.rs" } }` value.
+//! Without this parser, the protocol is shown to users and the tool is never invoked.
+//! This module removes the marker from visible content and converts it to an internal
+//! `ToolCalls { function: "read_file", arguments: { "path": "src/lib.rs" } }` value.
 
 use serde_json::{Map, Value};
 
