@@ -27,6 +27,7 @@ use self::language_style_store::get_applicable_language_style_blocking;
 use crate::storage::message_rate_limit_store::{
     consume_message_rate_limit_blocking, MessageRateLimitBlockAction, MESSAGE_RATE_LIMIT_BLOCKED_REPLY,
 };
+pub use crate::storage::message_rate_limit_store::{list_message_rate_limit_usage, reset_message_rate_limit_usage};
 use self::model::{
     QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatAgentServiceRuntimeConfig,
     QqChatServiceReplyBatchBuilder, QqInferenceToolProvider, QqLoadedInferenceResources,
