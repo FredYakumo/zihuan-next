@@ -31,6 +31,10 @@
   gap: 8px;
   color: var(--admin-subtle);
   font-size: 13px;
+
+  svg {
+    color: var(--admin-warn);
+  }
 }
 
 .settings-python-error {

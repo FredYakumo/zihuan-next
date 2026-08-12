@@ -48,14 +48,17 @@
     <t-card title="Python 运行时" bordered header-bordered>
       <template #actions>
         <t-button variant="text" :disabled="pythonRuntimeLoading" @click="reloadPythonRuntime">
-          <t-loading v-if="pythonRuntimeLoading" size="small" />
-          {{ pythonRuntimeLoading ? "检测中…" : "重新检查" }}
+          重新检查
         </t-button>
       </template>
       <p class="muted">Python 工具默认使用的解释器，可由单个工具覆盖。</p>
 
       <div class="settings-python-body">
-        <div v-if="pythonRuntime" class="settings-python-status">
+        <div v-if="pythonRuntimeLoading" class="settings-python-pending">
+          <t-loading size="small" />
+          <span>检测中</span>
+        </div>
+        <div v-else-if="pythonRuntime" class="settings-python-status">
           <t-tag variant="light" :theme="pythonRuntime.available ? 'success' : 'warning'">
             {{ pythonRuntime.available ? "可用" : "不可用" }}
           </t-tag>
@@ -65,7 +68,7 @@
           <span v-if="pythonRuntime.diagnostic" class="settings-python-error">{{ pythonRuntime.diagnostic }}</span>
         </div>
         <div v-else class="settings-python-pending">
-          <t-loading size="small" />
+          <ErrorCircleIcon />
           <span>暂未检测到</span>
         </div>
 
@@ -156,6 +159,8 @@
 </template>
 
 <script setup lang="ts">
+import { ErrorCircleIcon } from "tdesign-icons-vue-next";
+
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useSettings } from "../composables/useSettings";
 

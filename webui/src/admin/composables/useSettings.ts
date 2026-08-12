@@ -159,6 +159,8 @@ export function useSettings() {
     }
   }
 
+  onMounted(reloadPythonRuntime);
+
   async function changePythonRuntime() {
     pythonRuntimeChanging.value = true;
     pythonRuntimeError.value = null;
