@@ -856,13 +856,15 @@ impl QqChatAgentServiceInner {
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
         let chat_preprompt_history_key = chat_preprompt_history_key(sender_id);
-        let preprompt_memory_backend = ctx
+        let preprompt_memory_backend = ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(|| ctx
             .elasticsearch_memory_ref
             .cloned()
             .map(AgentMemoryBackend::Elasticsearch)
-            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate));
-        let preprompt_memory_resources = match (preprompt_memory_backend, ctx.embedding_model.cloned()) {
-            (Some(memory_backend), Some(embedding_model)) => Some(AgentMemoryToolResources {
+            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)));
+        let preprompt_memory_resources = preprompt_memory_backend.and_then(|memory_backend| {
+            let embedding_model = ctx.embedding_model.cloned();
+            if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_)) && embedding_model.is_none() { return None; }
+            Some(AgentMemoryToolResources {
                 memory_backend,
                 embedding_model,
                 llm: Arc::clone(ctx.llm),
@@ -877,9 +879,8 @@ impl QqChatAgentServiceInner {
                     admin: false,
                     skip_expiry_extend: false,
                 },
-            }),
-            _ => None,
-        };
+            })
+        });
         let preprompt_context = run_chat_preprompt_agent(
             trace,
             ctx.natural_language_reply_llm,
@@ -1032,12 +1033,16 @@ impl QqChatAgentServiceInner {
             preprompt_context: preprompt_context.clone(),
         }));
 
-        let memory_backend = ctx
+        let memory_backend = ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(|| ctx
             .elasticsearch_memory_ref
             .cloned()
             .map(AgentMemoryBackend::Elasticsearch)
-            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate));
-        if let (Some(memory_backend), Some(embedding_model)) = (memory_backend, ctx.embedding_model.cloned()) {
+            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)));
+        if let Some(memory_backend) = memory_backend {
+            let embedding_model = ctx.embedding_model.cloned();
+            if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_)) && embedding_model.is_none() {
+                log::warn!("memory tools disabled because the configured backend has no embedding model");
+            } else {
             let memory_resources = AgentMemoryToolResources {
                 memory_backend,
                 embedding_model,
@@ -1066,6 +1071,7 @@ impl QqChatAgentServiceInner {
                     MemoryBrainAgentContextTool::new(memory_agent),
                     tool_quota.clone(),
                 ));
+            }
             }
         }
 
@@ -1105,29 +1111,33 @@ impl QqChatAgentServiceInner {
                 ctx.weaviate_image_ref.cloned(),
                 Some(prepared_input.event.clone()),
                 ToolNotificationTarget::dashboard(),
-                if let (Some(memory_backend), Some(embedding_model)) = (
+                if let Some(memory_backend) = ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(||
                     ctx.elasticsearch_memory_ref
                         .cloned()
                         .map(AgentMemoryBackend::Elasticsearch)
-                        .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)),
-                    ctx.embedding_model.cloned(),
-                ) {
-                    Some(AgentMemoryToolResources {
-                        memory_backend,
-                        embedding_model,
-                        llm: Arc::clone(turn_llm),
-                        access: AgentMemoryAccessContext {
-                            sender_id: Some(sender_id.to_string()),
-                            group_id: if is_group {
-                                Some(target_id.to_string())
-                            } else {
-                                prepared_input.event.group_id.map(|value| value.to_string())
+                        .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)))
+                {
+                    let embedding_model = ctx.embedding_model.cloned();
+                    if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_)) && embedding_model.is_none() {
+                        None
+                    } else {
+                        Some(AgentMemoryToolResources {
+                            memory_backend,
+                            embedding_model,
+                            llm: Arc::clone(turn_llm),
+                            access: AgentMemoryAccessContext {
+                                sender_id: Some(sender_id.to_string()),
+                                group_id: if is_group {
+                                    Some(target_id.to_string())
+                                } else {
+                                    prepared_input.event.group_id.map(|value| value.to_string())
+                                },
+                                is_group,
+                                admin: false,
+                                skip_expiry_extend: false,
                             },
-                            is_group,
-                            admin: false,
-                            skip_expiry_extend: false,
-                        },
-                    })
+                        })
+                    }
                 } else {
                     None
                 },

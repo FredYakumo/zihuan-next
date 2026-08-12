@@ -13,7 +13,7 @@ use crate::llm::{InferenceParam, LLMMessage, MessageRole};
 use crate::storage::{
     create_elasticsearch_memory_record, create_memory_record_with_vector, list_elasticsearch_memory_keys,
     list_recent_memory_keys, search_elasticsearch_memory, search_memory_content_by_vector, AgentMemoryAccessContext,
-    AgentMemoryUpsert, ElasticsearchRef,
+    AgentMemoryUpsert, ElasticsearchRef, LocalMemoryStore,
 };
 use crate::weaviate::WeaviateRef;
 
@@ -35,13 +35,14 @@ const UPDATE_OPERATION_PROMPT: &str = "\n\n[Memory Operation]\nUpdate memories: 
 #[derive(Clone)]
 pub struct MemoryAgentResources {
     pub memory_backend: MemoryBackend,
-    pub embedding_model: Arc<dyn EmbeddingBase>,
+    pub embedding_model: Option<Arc<dyn EmbeddingBase>>,
     pub llm: Arc<dyn LLMBase>,
     pub access: AgentMemoryAccessContext,
 }
 
 #[derive(Clone)]
 pub enum MemoryBackend {
+    LocalFile(Arc<LocalMemoryStore>),
     Weaviate(Arc<WeaviateRef>),
     Elasticsearch(Arc<ElasticsearchRef>),
 }
@@ -177,13 +178,14 @@ impl BrainTool for ListMemoryKeysTool {
             let top_n = memory_limit(arguments.get("top_n").and_then(Value::as_i64));
             let query = optional_string_argument(arguments, "query");
             let hits = if let Some(query) = query.as_deref() {
-                let vector = self.resources.embedding_model.inference(query)?;
                 let mut hits = match &self.resources.memory_backend {
-                    MemoryBackend::Weaviate(reference) => search_memory_content_by_vector(reference, &self.resources.access, &vector, top_n as usize)?,
-                    MemoryBackend::Elasticsearch(reference) => search_elasticsearch_memory(reference, &self.resources.access, query, &vector, top_n as usize)?,
+                    MemoryBackend::LocalFile(store) => store.list(Some(query), top_n as usize)?,
+                    MemoryBackend::Weaviate(reference) => search_memory_content_by_vector(reference, &self.resources.access, &embedding_vector(&self.resources, query)?, top_n as usize)?,
+                    MemoryBackend::Elasticsearch(reference) => search_elasticsearch_memory(reference, &self.resources.access, query, &embedding_vector(&self.resources, query)?, top_n as usize)?,
                 };
                 hits.sort_by(|left, right| right.record.updated_at.cmp(&left.record.updated_at)); hits
             } else { match &self.resources.memory_backend {
+                MemoryBackend::LocalFile(store) => store.list(None, top_n as usize)?,
                 MemoryBackend::Weaviate(reference) => list_recent_memory_keys(reference, &self.resources.access, top_n as usize, None)?,
                 MemoryBackend::Elasticsearch(reference) => list_elasticsearch_memory_keys(reference, &self.resources.access, top_n as usize, None)?,
             }};
@@ -198,10 +200,11 @@ impl BrainTool for SearchMemoryTool {
     fn spec(&self) -> Arc<dyn FunctionTool> { Arc::new(MemoryFunctionToolSpec::new("search_memory", "Search memories accessible in the current context and return their titles and content.", json!({"type":"object","properties":{"query":{"type":"string"},"top_n":{"type":"integer"}},"required":["query"],"additionalProperties":false}))) }
     fn execute(&self, _call_content: &str, arguments: &Value) -> String {
         let result = (|| -> Result<Value> {
-            let query = required_string_argument(arguments, "query")?; let top_n = memory_limit(arguments.get("top_n").and_then(Value::as_i64)); let vector = self.resources.embedding_model.inference(&query)?;
+            let query = required_string_argument(arguments, "query")?; let top_n = memory_limit(arguments.get("top_n").and_then(Value::as_i64));
             let hits = match &self.resources.memory_backend {
-                MemoryBackend::Weaviate(reference) => search_memory_content_by_vector(reference, &self.resources.access, &vector, top_n as usize)?,
-                MemoryBackend::Elasticsearch(reference) => search_elasticsearch_memory(reference, &self.resources.access, &query, &vector, top_n as usize)?,
+                MemoryBackend::LocalFile(store) => store.list(Some(&query), top_n as usize)?,
+                MemoryBackend::Weaviate(reference) => search_memory_content_by_vector(reference, &self.resources.access, &embedding_vector(&self.resources, &query)?, top_n as usize)?,
+                MemoryBackend::Elasticsearch(reference) => search_elasticsearch_memory(reference, &self.resources.access, &query, &embedding_vector(&self.resources, &query)?, top_n as usize)?,
             };
             Ok(json!({"ok":true,"items":hits.into_iter().map(|hit| json!({"object_id":hit.record.object_id,"title":hit.record.key,"value":hit.record.value,"updated_at":hit.record.updated_at,"expires_at":hit.record.expires_at,"sender_id_list":hit.record.sender_id_list,"group_id_list":hit.record.group_id_list})).collect::<Vec<_>>() }))
         })(); render_value_result(result)
@@ -217,7 +220,7 @@ impl BrainTool for RememberMemoryTool {
             let content = required_string_argument(arguments, "content")?; let items = split_memory_items(&self.resources, &content)?; let expires_at = (Utc::now() + Duration::days(2)).to_rfc3339();
             let sender_id_list: Vec<String> = self.resources.access.sender_id.clone().into_iter().collect();
             let group_id_list: Vec<String> = self.resources.access.group_id.clone().into_iter().collect();
-            let stored = items.into_iter().map(|item| { let vector = self.resources.embedding_model.inference(&format!("{}\n{}", item.title, item.value))?; let input = AgentMemoryUpsert { key:item.title, value:item.value, expires_at:Some(expires_at.clone()), sender_id_list:sender_id_list.clone(), group_id_list:group_id_list.clone() }; match &self.resources.memory_backend { MemoryBackend::Weaviate(reference) => create_memory_record_with_vector(reference, &input, Some(vector)), MemoryBackend::Elasticsearch(reference) => create_elasticsearch_memory_record(reference, &input, vector) } }).collect::<Result<Vec<_>>>()?;
+            let stored = items.into_iter().map(|item| { let input = AgentMemoryUpsert { key:item.title, value:item.value, expires_at:Some(expires_at.clone()), sender_id_list:sender_id_list.clone(), group_id_list:group_id_list.clone() }; match &self.resources.memory_backend { MemoryBackend::LocalFile(store) => store.create_or_update(&input), MemoryBackend::Weaviate(reference) => create_memory_record_with_vector(reference, &input, Some(embedding_vector(&self.resources, &format!("{}\n{}", input.key, input.value))?)), MemoryBackend::Elasticsearch(reference) => create_elasticsearch_memory_record(reference, &input, embedding_vector(&self.resources, &format!("{}\n{}", input.key, input.value))?) } }).collect::<Result<Vec<_>>>()?;
             Ok(json!({"ok":true,"items":stored.into_iter().map(|item| json!({"object_id":item.object_id,"title":item.key,"value":item.value,"expires_at":item.expires_at})).collect::<Vec<_>>() }))
         })(); render_value_result(result)
     }
@@ -233,6 +236,7 @@ fn parse_memory_json(text: &str) -> Option<Vec<MemoryDraftItem>> { let trimmed =
 fn normalize_draft_items(items: Vec<MemoryDraftItem>) -> Vec<MemoryDraftItem> { items.into_iter().filter_map(|item| { let title=item.title.trim(); let value=item.value.trim(); (!title.is_empty() && !value.is_empty()).then(|| MemoryDraftItem { title:title.to_string(), value:value.to_string() }) }).collect() }
 fn summarize_memory_key(content: &str) -> String { let normalized=content.split_whitespace().collect::<Vec<_>>().join(" "); let mut chars=normalized.chars(); let summary=chars.by_ref().take(32).collect::<String>(); if summary.is_empty() { "memory".to_string() } else { summary } }
 fn memory_limit(value: Option<i64>) -> i64 { value.unwrap_or(DEFAULT_MEMORY_TOP_N).clamp(1, MAX_MEMORY_TOP_N) }
+fn embedding_vector(resources: &MemoryAgentResources, text: &str) -> Result<Vec<f32>> { resources.embedding_model.as_ref().ok_or_else(|| Error::ValidationError("memory backend requires an embedding model".to_string()))?.inference(text) }
 fn optional_string_argument(arguments: &Value, name: &str) -> Option<String> { arguments.get(name).and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).map(ToOwned::to_owned) }
 fn required_string_argument(arguments: &Value, name: &str) -> Result<String> { optional_string_argument(arguments, name).ok_or_else(|| Error::ValidationError(format!("{name} is required"))) }
 fn render_result(result: Result<String>) -> String { result.unwrap_or_else(|error| json!({"ok":false,"error":error.to_string()}).to_string()) }

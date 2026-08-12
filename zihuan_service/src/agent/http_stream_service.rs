@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use log::info;
-use zihuan_core::inference::system_config::{load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamServiceConfig};
+use zihuan_core::inference::system_config::{load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamServiceConfig, MemoryBackendKind};
 use salvo::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use salvo::http::{HeaderValue, StatusCode};
 use salvo::prelude::*;
 use zihuan_core::storage::{
     build_elasticsearch_ref, build_weaviate_ref, build_web_search_engine_ref, AgentMemoryAccessContext,
-    ConnectionConfig, WeaviateCollectionSchema,
+    ConnectionConfig, LocalMemoryStore, WeaviateCollectionSchema,
 };
 use tokio::task::JoinHandle;
 use zihuan_core::agent_runtime::brain::BrainTool;
@@ -79,6 +79,7 @@ struct HttpStreamLoadedInferenceResources {
     default_tools_enabled: std::collections::HashMap<String, bool>,
     weaviate_memory_ref: Option<Arc<zihuan_core::weaviate::WeaviateRef>>,
     elasticsearch_memory_ref: Option<Arc<zihuan_core::storage::ElasticsearchRef>>,
+    local_memory_store: Option<Arc<LocalMemoryStore>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     memory_llm: Option<Arc<dyn LLMBase>>,
 }
@@ -99,6 +100,7 @@ impl InferenceToolProvider for HttpStreamInferenceToolProvider {
             None,
             self.resources.weaviate_memory_ref.clone(),
             self.resources.elasticsearch_memory_ref.clone(),
+            self.resources.local_memory_store.clone(),
             self.resources.embedding_model.clone(),
             self.resources.memory_llm.clone(),
             AgentMemoryAccessContext::default(),
@@ -137,7 +139,9 @@ fn load_http_stream_resources(
             None
         });
 
-    let weaviate_memory_ref = tokio::task::block_in_place(|| {
+    let local_memory_store = (config.memory_backend == Some(MemoryBackendKind::LocalFile))
+        .then(|| Arc::new(LocalMemoryStore::in_app_data_dir()));
+    let weaviate_memory_ref = if matches!(config.memory_backend, Some(MemoryBackendKind::LocalFile | MemoryBackendKind::Elasticsearch)) { None } else { tokio::task::block_in_place(|| {
         build_weaviate_ref(
             config
                 .weaviate_memory_connection_id
@@ -150,8 +154,8 @@ fn load_http_stream_resources(
     .unwrap_or_else(|error| {
         log::warn!("[inference][http_stream] weaviate memory connection unavailable: {error}");
         None
-    });
-    let elasticsearch_memory_ref = build_elasticsearch_ref(
+    }) };
+    let elasticsearch_memory_ref = if matches!(config.memory_backend, Some(MemoryBackendKind::LocalFile | MemoryBackendKind::Weaviate)) { None } else { build_elasticsearch_ref(
         config
             .elasticsearch_memory_connection_id
             .as_deref()
@@ -162,10 +166,10 @@ fn load_http_stream_resources(
     .unwrap_or_else(|error| {
         log::warn!("[inference][http_stream] elasticsearch memory connection unavailable: {error}");
         None
-    });
+    }) };
 
     let llm_refs = load_llm_refs().unwrap_or_default();
-    let embedding_model = config
+    let embedding_model = if local_memory_store.is_some() { None } else { config
         .embedding_model_ref_id
         .as_deref()
         .filter(|value| !value.trim().is_empty())
@@ -180,7 +184,7 @@ fn load_http_stream_resources(
                     None
                 }
             }
-        });
+        }) };
 
     let memory_llm = config
         .llm_ref_id
@@ -197,6 +201,7 @@ fn load_http_stream_resources(
         default_tools_enabled: config.default_tools_enabled.clone(),
         weaviate_memory_ref,
         elasticsearch_memory_ref,
+        local_memory_store,
         embedding_model,
         memory_llm,
     }

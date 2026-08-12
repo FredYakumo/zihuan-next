@@ -516,4 +516,3 @@ pub fn find_media_in_messages(messages: &[Message], media_id: &str) -> Option<Pe
 
     None
 }
-

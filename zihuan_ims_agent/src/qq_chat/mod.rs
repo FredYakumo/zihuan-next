@@ -50,10 +50,10 @@ use zihuan_core::ims_bot_adapter::models::event_model::MessageType;
 use zihuan_core::ims_bot_adapter::models::message::MessageProp;
 use log::{error, info, warn};
 use zihuan_core::inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_core::inference::system_config::{load_llm_refs, AgentConfig};
+use zihuan_core::inference::system_config::{load_llm_refs, AgentConfig, MemoryBackendKind};
 use zihuan_core::storage::{
     build_elasticsearch_ref, build_relational_db_connection_for_connection, build_s3_ref, build_weaviate_ref,
-    build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind, WeaviateCollectionSchema,
+    build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind, LocalMemoryStore, WeaviateCollectionSchema,
 };
 use tokio::task::JoinHandle;
 use zihuan_core::agent_runtime::brain::BrainTool;
@@ -128,6 +128,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
             self.resources.elasticsearch_image_ref.clone(),
             self.resources.weaviate_memory_ref.clone(),
             self.resources.elasticsearch_memory_ref.clone(),
+            self.resources.local_memory_store.clone(),
             self.resources.embedding_model.clone(),
             self.resources.memory_llm.clone(),
             zihuan_core::storage::AgentMemoryAccessContext::default(),
@@ -156,7 +157,7 @@ fn load_qq_resources(
     config: &QqChatAgentServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<QqLoadedInferenceResources> {
-    if config
+    if config.memory_backend != Some(MemoryBackendKind::LocalFile) && config
         .weaviate_memory_connection_id
         .as_deref()
         .is_some_and(|value| !value.trim().is_empty())
@@ -227,7 +228,9 @@ fn load_qq_resources(
         warn!("[inference][qq_agent] weaviate image connection unavailable: {e}");
         None
     });
-    let weaviate_memory_ref = tokio::task::block_in_place(|| {
+    let local_memory_store = (config.memory_backend == Some(MemoryBackendKind::LocalFile))
+        .then(|| Arc::new(LocalMemoryStore::in_app_data_dir()));
+    let weaviate_memory_ref = if matches!(config.memory_backend, Some(MemoryBackendKind::LocalFile | MemoryBackendKind::Elasticsearch)) { None } else { tokio::task::block_in_place(|| {
         build_weaviate_ref(
             config
                 .weaviate_memory_connection_id
@@ -240,7 +243,7 @@ fn load_qq_resources(
     .unwrap_or_else(|e| {
         warn!("[inference][qq_agent] weaviate memory connection unavailable: {e}");
         None
-    });
+    }) };
     let elasticsearch_image_ref = build_elasticsearch_ref(
         config
             .elasticsearch_image_connection_id
@@ -253,7 +256,7 @@ fn load_qq_resources(
         warn!("[inference][qq_agent] elasticsearch image connection unavailable: {error}");
         None
     });
-    let elasticsearch_memory_ref = build_elasticsearch_ref(
+    let elasticsearch_memory_ref = if matches!(config.memory_backend, Some(MemoryBackendKind::LocalFile | MemoryBackendKind::Weaviate)) { None } else { build_elasticsearch_ref(
         config
             .elasticsearch_memory_connection_id
             .as_deref()
@@ -264,9 +267,9 @@ fn load_qq_resources(
     .unwrap_or_else(|error| {
         warn!("[inference][qq_agent] elasticsearch memory connection unavailable: {error}");
         None
-    });
+    }) };
 
-    let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
+    let embedding_model = if local_memory_store.is_some() { None } else if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
         let llm_refs = zihuan_core::inference::system_config::load_llm_refs().unwrap_or_default();
         match resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name) {
             Ok(Some(_)) => {
@@ -310,6 +313,7 @@ fn load_qq_resources(
         elasticsearch_image_ref,
         weaviate_memory_ref,
         elasticsearch_memory_ref,
+        local_memory_store,
         embedding_model,
         memory_llm,
     })
@@ -455,6 +459,8 @@ pub async fn spawn(
         weaviate_image_ref,
         weaviate_memory_ref,
         elasticsearch_memory_ref,
+        local_memory_store: (config.memory_backend == Some(MemoryBackendKind::LocalFile))
+            .then(|| Arc::new(LocalMemoryStore::in_app_data_dir())),
         embedding_model,
         web_search_engine,
         s3_ref: object_storage.clone(),

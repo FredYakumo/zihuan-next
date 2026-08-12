@@ -18,6 +18,7 @@ struct StreamToolCallDelta {
     function_arguments: String,
 }
 
+
 fn collect_stream_tool_calls(streamed_tool_calls: BTreeMap<usize, StreamToolCallDelta>) -> Vec<ToolCalls> {
     streamed_tool_calls
         .into_iter()

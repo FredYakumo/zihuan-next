@@ -926,6 +926,7 @@ impl QqChatAgentService {
             weaviate_image_ref: self.config.weaviate_image_ref.as_ref(),
             weaviate_memory_ref: self.config.weaviate_memory_ref.as_ref(),
             elasticsearch_memory_ref: self.config.elasticsearch_memory_ref.as_ref(),
+            local_memory_store: self.config.local_memory_store.as_ref(),
             embedding_model: self.config.embedding_model.as_ref(),
             web_search_engine: &self.config.web_search_engine,
             s3_ref: self.config.s3_ref.as_ref(),

@@ -148,6 +148,7 @@ export interface ServiceFormState {
   weaviate_memory_connection_id: string;
   elasticsearch_image_connection_id: string;
   elasticsearch_memory_connection_id: string;
+  memory_backend: "" | "local_file" | "weaviate" | "elasticsearch";
   max_message_length: number;
   compact_context_length: number;
   dream_enabled: boolean;
@@ -168,6 +169,7 @@ export interface ServiceFormState {
   http_embedding_model_ref_id: string;
   http_weaviate_memory_connection_id: string;
   http_elasticsearch_memory_connection_id: string;
+  http_memory_backend: "" | "local_file" | "weaviate" | "elasticsearch";
   task_db_connection_id: string;
   agents_md_enabled: boolean;
   tools: ToolFormState[];
@@ -448,6 +450,7 @@ export function defaultServiceForm(): ServiceFormState {
     weaviate_memory_connection_id: "",
     elasticsearch_image_connection_id: "",
     elasticsearch_memory_connection_id: "",
+    memory_backend: "",
     max_message_length: 500,
     compact_context_length: 0,
     dream_enabled: false,
@@ -468,6 +471,7 @@ export function defaultServiceForm(): ServiceFormState {
     http_embedding_model_ref_id: "",
     http_weaviate_memory_connection_id: "",
     http_elasticsearch_memory_connection_id: "",
+    http_memory_backend: "",
     task_db_connection_id: "",
     agents_md_enabled: false,
     tools: [],
@@ -920,6 +924,7 @@ export function serviceFormFromConfig(
     );
     form.elasticsearch_image_connection_id = String(agentType.elasticsearch_image_connection_id ?? "");
     form.elasticsearch_memory_connection_id = String(agentType.elasticsearch_memory_connection_id ?? "");
+    form.memory_backend = agentType.memory_backend === "local_file" || agentType.memory_backend === "weaviate" || agentType.memory_backend === "elasticsearch" ? agentType.memory_backend : "";
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.compact_context_length = Number(agentType.compact_context_length ?? 0);
     form.dream_enabled = Boolean(agentType.dream_enabled ?? false);
@@ -1004,6 +1009,7 @@ export function serviceFormFromConfig(
       agentType.weaviate_memory_connection_id ?? "",
     );
     form.http_elasticsearch_memory_connection_id = String(agentType.elasticsearch_memory_connection_id ?? "");
+    form.http_memory_backend = agentType.memory_backend === "local_file" || agentType.memory_backend === "weaviate" || agentType.memory_backend === "elasticsearch" ? agentType.memory_backend : "";
     form.task_db_connection_id = String(agentType.task_db_connection_id ?? "");
     const source = (agentType.default_tools_enabled ?? {}) as Record<
       string,
@@ -1143,6 +1149,7 @@ export function buildServicePayload(form: ServiceFormState): {
           form.weaviate_memory_connection_id || null,
         elasticsearch_image_connection_id: form.elasticsearch_image_connection_id || null,
         elasticsearch_memory_connection_id: form.elasticsearch_memory_connection_id || null,
+        memory_backend: form.memory_backend || null,
         max_message_length: form.max_message_length,
         compact_context_length: form.compact_context_length,
         dream_enabled: form.dream_enabled,
@@ -1195,6 +1202,7 @@ export function buildServicePayload(form: ServiceFormState): {
           form.http_weaviate_memory_connection_id || null,
         elasticsearch_memory_connection_id:
           form.http_elasticsearch_memory_connection_id || null,
+        memory_backend: form.http_memory_backend || null,
         task_db_connection_id: form.task_db_connection_id || null,
         default_tools_enabled: Object.fromEntries(
           HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [

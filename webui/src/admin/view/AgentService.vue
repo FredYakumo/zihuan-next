@@ -147,7 +147,15 @@
                     <t-option v-for="item in imageWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item label="Weaviate Memory Connection">
+                <t-form-item label="Memory Backend">
+                  <t-select v-model="form.memory_backend" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option value="local_file" label="本地 Markdown 文件" />
+                    <t-option value="weaviate" label="Weaviate" />
+                    <t-option value="elasticsearch" label="Elasticsearch" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item v-if="form.memory_backend !== 'local_file'" label="Weaviate Memory Connection">
                   <t-select v-model="form.weaviate_memory_connection_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
@@ -159,7 +167,7 @@
                     <t-option v-for="item in imageElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item label="Elasticsearch Memory Connection">
+                <t-form-item v-if="form.memory_backend !== 'local_file'" label="Elasticsearch Memory Connection">
                   <t-select v-model="form.elasticsearch_memory_connection_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
@@ -260,13 +268,21 @@
                     <InfoCircleIcon /> 未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。如需持久化，请在 <t-link theme="primary" href="#/connections">连接管理</t-link> 中新建 MySQL 或 SQLite 连接。
                   </div>
                 </t-form-item>
-                <t-form-item label="Memory Embedding Model">
+                <t-form-item label="Memory Backend">
+                  <t-select v-model="form.http_memory_backend" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option value="local_file" label="本地 Markdown 文件" />
+                    <t-option value="weaviate" label="Weaviate" />
+                    <t-option value="elasticsearch" label="Elasticsearch" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item v-if="form.http_memory_backend !== 'local_file'" label="Memory Embedding Model">
                   <t-select v-model="form.http_embedding_model_ref_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item label="Weaviate Memory Connection">
+                <t-form-item v-if="form.http_memory_backend !== 'local_file'" label="Weaviate Memory Connection">
                   <t-select v-model="form.http_weaviate_memory_connection_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />

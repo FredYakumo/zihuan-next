@@ -1,0 +1,90 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use chrono::{DateTime, Utc};
+
+use crate::error::{Error, Result};
+use crate::storage::{AgentMemoryRecord, AgentMemorySearchHit, AgentMemoryUpsert};
+use crate::system_config::app_data_dir;
+
+#[derive(Debug)]
+pub struct LocalMemoryStore {
+    directory: PathBuf,
+    write_lock: Mutex<()>,
+}
+
+impl LocalMemoryStore {
+    pub fn in_app_data_dir() -> Self {
+        Self::new(app_data_dir().join("zihuan-next_aibot").join("memory"))
+    }
+
+    pub fn new(directory: PathBuf) -> Self {
+        Self { directory, write_lock: Mutex::new(()) }
+    }
+
+    pub fn create_or_update(&self, input: &AgentMemoryUpsert) -> Result<AgentMemoryRecord> {
+        let key = validate_memory_key(&input.key)?;
+        let _guard = self.write_lock.lock().map_err(|_| Error::StringError("local memory write lock poisoned".to_string()))?;
+        fs::create_dir_all(&self.directory)?;
+        let path = self.path_for_key(key);
+        let temporary = path.with_extension("md.tmp");
+        fs::write(&temporary, input.value.as_bytes())?;
+        fs::rename(&temporary, &path)?;
+        record_from_path(&path, key, input.value.clone())
+    }
+
+    pub fn list(&self, query: Option<&str>, top_n: usize) -> Result<Vec<AgentMemorySearchHit>> {
+        if !self.directory.exists() {
+            return Ok(Vec::new());
+        }
+        let query = query.map(normalize_search_query).filter(|value| !value.is_empty());
+        let mut records = Vec::new();
+        for entry in fs::read_dir(&self.directory)? {
+            let entry = match entry { Ok(entry) => entry, Err(_) => continue };
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("md") {
+                continue;
+            }
+            let Some(key) = path.file_stem().and_then(|stem| stem.to_str()) else { continue };
+            let value = match fs::read_to_string(&path) { Ok(value) => value, Err(_) => continue };
+            if query.as_ref().is_some_and(|query| !matches_query(key, &value, query)) {
+                continue;
+            }
+            if let Ok(record) = record_from_path(&path, key, value) {
+                records.push(AgentMemorySearchHit { record, distance: None });
+            }
+        }
+        records.sort_by(|left, right| right.record.updated_at.cmp(&left.record.updated_at));
+        records.truncate(top_n);
+        Ok(records)
+    }
+
+    fn path_for_key(&self, key: &str) -> PathBuf { self.directory.join(format!("{key}.md")) }
+}
+
+fn validate_memory_key(key: &str) -> Result<&str> {
+    let key = key.trim();
+    if key.is_empty() || key == "." || key == ".." || key.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) || key.ends_with('.') || key.ends_with(' ') {
+        return Err(Error::ValidationError("memory key must be a safe, descriptive file name without path separators or reserved characters".to_string()));
+    }
+    let reserved = ["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"];
+    if reserved.iter().any(|name| key.eq_ignore_ascii_case(name)) {
+        return Err(Error::ValidationError("memory key must not use a reserved file name".to_string()));
+    }
+    Ok(key)
+}
+
+fn record_from_path(path: &Path, key: &str, value: String) -> Result<AgentMemoryRecord> {
+    let metadata = fs::metadata(path)?;
+    let updated_at = system_time_to_rfc3339(metadata.modified().ok()).unwrap_or_else(|| Utc::now().to_rfc3339());
+    let created_at = system_time_to_rfc3339(metadata.created().ok()).unwrap_or_else(|| updated_at.clone());
+    Ok(AgentMemoryRecord { object_id: key.to_string(), key: key.to_string(), value, expires_at: None, sender_id_list: Vec::new(), group_id_list: Vec::new(), created_at, updated_at })
+}
+
+fn system_time_to_rfc3339(value: Option<std::time::SystemTime>) -> Option<String> {
+    value.map(|value| DateTime::<Utc>::from(value).to_rfc3339())
+}
+
+fn normalize_search_query(query: &str) -> String { query.trim().to_lowercase() }
+fn matches_query(key: &str, value: &str, query: &str) -> bool { key.to_lowercase().contains(query) || value.to_lowercase().contains(query) }

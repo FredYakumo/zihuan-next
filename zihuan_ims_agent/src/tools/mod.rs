@@ -6,6 +6,7 @@ use zihuan_core::memory_agent::{
 };
 use zihuan_core::storage::AgentMemoryAccessContext;
 use zihuan_core::storage::ElasticsearchRef;
+use zihuan_core::storage::LocalMemoryStore;
 use zihuan_core::agent_runtime::brain::BrainTool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -68,6 +69,7 @@ pub fn build_info_brain_tools(
     elasticsearch_image_ref: Option<Arc<ElasticsearchRef>>,
     weaviate_memory_ref: Option<Arc<WeaviateRef>>,
     elasticsearch_memory_ref: Option<Arc<ElasticsearchRef>>,
+    local_memory_store: Option<Arc<LocalMemoryStore>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     llm: Option<Arc<dyn LLMBase>>,
     memory_access: AgentMemoryAccessContext,
@@ -144,10 +146,12 @@ pub fn build_info_brain_tools(
         )));
     }
 
-    let memory_backend = elasticsearch_memory_ref
+    let memory_backend = local_memory_store
+        .map(MemoryBackend::LocalFile)
+        .or_else(|| elasticsearch_memory_ref
         .map(MemoryBackend::Elasticsearch)
-        .or_else(|| weaviate_memory_ref.map(MemoryBackend::Weaviate));
-    if let (Some(memory_backend), Some(embedding_model), Some(llm)) = (memory_backend, embedding_model.clone(), llm) {
+        .or_else(|| weaviate_memory_ref.map(MemoryBackend::Weaviate)));
+    if let (Some(memory_backend), Some(llm)) = (memory_backend, llm) {
         let memory_resources = MemoryAgentResources {
             memory_backend,
             embedding_model,

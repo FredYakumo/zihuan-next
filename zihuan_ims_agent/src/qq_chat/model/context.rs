@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use zihuan_core::storage::ElasticsearchRef;
+use zihuan_core::storage::LocalMemoryStore;
 use zihuan_core::agent_runtime::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent_config::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -37,6 +38,7 @@ pub(crate) struct QqChatAgentServiceContext<'a> {
     pub(crate) weaviate_image_ref: Option<&'a Arc<WeaviateRef>>,
     pub(crate) weaviate_memory_ref: Option<&'a Arc<WeaviateRef>>,
     pub(crate) elasticsearch_memory_ref: Option<&'a Arc<ElasticsearchRef>>,
+    pub(crate) local_memory_store: Option<&'a Arc<LocalMemoryStore>>,
     pub(crate) embedding_model: Option<&'a Arc<dyn EmbeddingBase>>,
     pub(crate) web_search_engine: &'a Arc<WebSearchEngineRef>,
     pub(crate) s3_ref: Option<&'a Arc<S3Ref>>,
@@ -89,6 +91,7 @@ pub struct QqChatAgentServiceRuntimeConfig {
     pub weaviate_image_ref: Option<Arc<WeaviateRef>>,
     pub weaviate_memory_ref: Option<Arc<WeaviateRef>>,
     pub elasticsearch_memory_ref: Option<Arc<ElasticsearchRef>>,
+    pub local_memory_store: Option<Arc<LocalMemoryStore>>,
     pub embedding_model: Option<Arc<dyn EmbeddingBase>>,
     pub web_search_engine: Arc<WebSearchEngineRef>,
     pub s3_ref: Option<Arc<S3Ref>>,

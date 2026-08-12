@@ -8,6 +8,7 @@ use super::{
     LLM_KIND_NATURAL_LANGUAGE_REPLY,
 };
 use crate::error::{Error, Result};
+use crate::inference::system_config::MemoryBackendKind;
 
 thread_local! {
     static CURRENT_QQ_CHAT_AGENT_SERVICE_CONFIG: RefCell<Vec<QqChatAgentServiceConfig>> =
@@ -212,6 +213,8 @@ pub struct QqChatAgentServiceConfig {
     pub weaviate_memory_connection_id: Option<String>,
     #[serde(default)]
     pub elasticsearch_memory_connection_id: Option<String>,
+    #[serde(default)]
+    pub memory_backend: Option<MemoryBackendKind>,
     #[serde(default = "default_max_message_length")]
     pub max_message_length: usize,
     #[serde(default)]
