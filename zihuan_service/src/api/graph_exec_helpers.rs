@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use zihuan_core::storage::{
     build_rdb_ref, build_redis_ref, build_s3_ref, build_weaviate_ref, build_web_search_engine_ref, load_connections,
-    ConnectionConfig, WeaviateCollectionSchema,
+    ConnectionConfig,
 };
 use zihuan_core::error::Result;
 use zihuan_core::graph::data_value::DataType;

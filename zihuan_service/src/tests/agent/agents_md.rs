@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
-use zihuan_core::inference::system_config::{AgentConfig, AgentType, WorkspaceAgentServiceConfig};
-use zihuan_core::llm::{LLMMessage, MessageRole};
+use zihuan_core::llm::llm_base::LLMBase;
+use zihuan_core::llm::{InferenceParam, LLMMessage, MessageRole};
 use zihuan_workspace_agent::workspace_agent_service::load_inference_tool_provider;
 
 static ENV_MUTEX: Mutex<()> = Mutex::new(());
@@ -24,7 +24,16 @@ impl TempDir {
 impl Drop for TempDir { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.path); } }
 
 fn provider(enabled: bool) -> Arc<dyn InferenceToolProvider> {
-    let config = WorkspaceAgentServiceConfig { llm_ref_id: None, agents_md_enabled: enabled, default_tools_enabled: HashMap::new() };
+    let config = WorkspaceAgentServiceConfig {
+        llm_ref_id: None,
+        agents_md_enabled: enabled,
+        memory_enabled: false,
+        embedding_model_ref_id: None,
+        weaviate_memory_connection_id: None,
+        elasticsearch_memory_connection_id: None,
+        memory_backend: None,
+        default_tools_enabled: HashMap::new(),
+    };
     let agent = AgentConfig {
         id: "test-agent".to_string(), config_id: "test-config".to_string(), name: "Test Agent".to_string(),
         agent_type: AgentType::Workspace(config.clone()), enabled: true, auto_start: false, is_default: false,
@@ -33,9 +42,28 @@ fn provider(enabled: bool) -> Arc<dyn InferenceToolProvider> {
     load_inference_tool_provider(&agent, &config, &[]).expect("load inference tool provider")
 }
 
+fn unused_llm() -> Arc<dyn LLMBase> {
+    #[derive(Debug)]
+    struct UnusedLlm;
+    impl LLMBase for UnusedLlm {
+        fn get_model_name(&self) -> &str {
+            "test"
+        }
+
+        fn inference(&self, _param: &InferenceParam) -> LLMMessage {
+            panic!("unused test LLM")
+        }
+    }
+    Arc::new(UnusedLlm)
+}
+
 fn system_prompt(provider: &Arc<dyn InferenceToolProvider>, workspace_path: Option<String>) -> Option<String> {
     let mut messages = vec![LLMMessage::user("hello")];
-    provider.augment_messages(&mut messages, &InferenceToolContext { last_user_text: "hello".to_string(), workspace_path });
+    provider.augment_messages(&mut messages, &InferenceToolContext {
+        last_user_text: "hello".to_string(),
+        workspace_path,
+        llm: unused_llm(),
+    });
     messages.into_iter().find(|message| matches!(message.role, MessageRole::System)).and_then(|message| message.content_text().map(ToOwned::to_owned))
 }
 

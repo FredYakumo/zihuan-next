@@ -5,7 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::json;
 use zihuan_core::agent::brain::BrainTool;
 
-use crate::tools::workspace_tools::{ExecCmdBrainTool, ListDirBrainTool, ReadFileBrainTool, RgBrainTool};
+use crate::tools::workspace_tools::{ListDirBrainTool, ReadFileBrainTool, RgBrainTool};
+#[cfg(windows)]
+use crate::tools::workspace_tools::ExecCmdBrainTool;
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
