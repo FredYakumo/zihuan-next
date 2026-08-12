@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::json;
 use zihuan_core::agent_runtime::brain::BrainTool;
 
-use crate::agent::tools::{GrepBrainTool, DEFAULT_TOOL_GREP};
+use crate::tools::workspace_tools::{GrepBrainTool, DEFAULT_TOOL_GREP};
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now()

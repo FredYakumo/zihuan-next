@@ -2,6 +2,9 @@ pub mod agent;
 pub mod command;
 pub mod nodes;
 
+#[cfg(test)]
+mod tests;
+
 pub use agent::{AgentManager, AgentRuntimeInfo, AgentRuntimeStatus};
 
 use zihuan_core::error::Result;

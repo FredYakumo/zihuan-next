@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use zihuan_workspace_agent::api::workspace_changes::{
+use crate::api::workspace_changes::{
     accept, cancel, WorkspaceChangeOperation, WorkspaceChangeRecorder,
 };
 
