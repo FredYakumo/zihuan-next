@@ -25,6 +25,14 @@
   border: 1px solid var(--admin-border);
 }
 
+.settings-python-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--admin-subtle);
+  font-size: 13px;
+}
+
 .settings-python-error {
   color: var(--admin-warn);
   font-size: 13px;

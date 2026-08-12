@@ -48,7 +48,8 @@
     <t-card title="Python 运行时" bordered header-bordered>
       <template #actions>
         <t-button variant="text" :disabled="pythonRuntimeLoading" @click="reloadPythonRuntime">
-          {{ pythonRuntimeLoading ? "检测中…" : "刷新" }}
+          <t-loading v-if="pythonRuntimeLoading" size="small" />
+          {{ pythonRuntimeLoading ? "检测中…" : "重新检查" }}
         </t-button>
       </template>
       <p class="muted">Python 工具默认使用的解释器，可由单个工具覆盖。</p>
@@ -63,7 +64,10 @@
           <span v-if="pythonRuntime.version" class="muted">{{ pythonRuntime.version }}</span>
           <span v-if="pythonRuntime.diagnostic" class="settings-python-error">{{ pythonRuntime.diagnostic }}</span>
         </div>
-        <div v-else-if="pythonRuntimeLoading" class="empty-state">加载中…</div>
+        <div v-else class="settings-python-pending">
+          <t-loading size="small" />
+          <span>暂未检测到</span>
+        </div>
 
         <div class="settings-backup-actions">
           <t-button theme="primary" :disabled="pythonRuntimeChanging" @click="changePythonRuntime">
