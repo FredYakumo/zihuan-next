@@ -5,7 +5,7 @@ use crate::inference::linalg::embedding_api::EmbeddingAPI;
 use crate::inference::nn::queued_embedding_model::QueuedEmbeddingModel;
 use crate::inference::nodes::llm_node::build_llm;
 use crate::inference::system_config::{LlmRefConfig, LlmServiceConfig, ModelRefSpec};
-use crate::agent_config::EmbeddingServiceConfig;
+use crate::agent::EmbeddingServiceConfig;
 use crate::error::{Error, Result};
 use crate::llm::embedding_base::EmbeddingBase;
 use crate::llm::llm_base::LLMBase;

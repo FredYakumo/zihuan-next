@@ -3,8 +3,7 @@ pub mod utils {
     pub mod hash_string;
     pub mod string_utils;
 }
-pub mod agent_config;
-pub mod agent_runtime;
+pub mod agent;
 pub mod command;
 pub mod config;
 pub mod connection_manager;
@@ -39,7 +38,7 @@ pub mod nlp;
 mod tests;
 
 pub use message_part::MessagePart;
-pub use agent_runtime::*;
+pub use agent::*;
 pub use graph::*;
 pub use inference::*;
 pub use nlp::*;

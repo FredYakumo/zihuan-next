@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use serde_json::Value;
-use zihuan_core::agent_runtime::brain::{BrainTool, ToolExecutionResource};
+use zihuan_core::agent::brain::{BrainTool, ToolExecutionResource};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
 use super::shared::{execute_search, json_error, path_resource, SearchArgs};

@@ -1,5 +1,5 @@
-use crate::agent_runtime::session_state::QqChatAgentServiceSessionState;
-use crate::agent_config::qq_chat::QqChatEmotionDimensionConfig;
+use crate::agent::session_state::QqChatAgentServiceSessionState;
+use crate::agent::qq_chat::QqChatEmotionDimensionConfig;
 
 const NOTICEABLE_EMOTION_THRESHOLD: f64 = 20.0;
 const STRONG_EMOTION_THRESHOLD: f64 = 60.0;

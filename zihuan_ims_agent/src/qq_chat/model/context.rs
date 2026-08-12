@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use zihuan_core::storage::ElasticsearchRef;
 use zihuan_core::storage::LocalMemoryStore;
-use zihuan_core::agent_runtime::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent_config::qq_chat::QqChatAgentServiceConfig;
+use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;

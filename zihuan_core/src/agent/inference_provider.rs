@@ -1,4 +1,4 @@
-use crate::agent_runtime::brain::BrainTool;
+use crate::agent::brain::BrainTool;
 use crate::graph::brain_tool_spec::BrainToolDefinition;
 use crate::llm::LLMMessage;
 

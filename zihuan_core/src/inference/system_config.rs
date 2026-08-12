@@ -1,7 +1,7 @@
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use crate::agent_config::qq_chat::QqChatAgentServiceConfig;
+use crate::agent::qq_chat::QqChatAgentServiceConfig;
 use crate::config::{ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord};
 use crate::error::Result;
 use crate::tool_runtime::ToolRunDuration;

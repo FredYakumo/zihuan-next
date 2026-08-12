@@ -6,7 +6,7 @@ use sqlx::mysql::MySqlRow;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{MySql, Row, Sqlite, Transaction};
 use tokio::task::block_in_place;
-use zihuan_core::agent_config::qq_chat::{
+use zihuan_core::agent::qq_chat::{
     QqChatAgentServiceConfig, QqChatMessageRateLimitRule, QqChatMessageRateLimitWindowUnit,
 };
 use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};

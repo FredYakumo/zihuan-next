@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
-use zihuan_core::agent_runtime::brain::BrainTool;
+use zihuan_core::agent::brain::BrainTool;
 
 use crate::tools::workspace_tools::{RgBrainTool, DEFAULT_TOOL_RG};
 

@@ -5,9 +5,9 @@ use std::time::Duration;
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 use log::{info, warn};
 use serde_json::Value;
-use zihuan_core::agent_runtime::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
-use zihuan_core::agent_runtime::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent_runtime::utils::build_state_system_prefix_lines;
+use zihuan_core::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
+use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::agent::utils::build_state_system_prefix_lines;
 
 pub(crate) use super::super::tools::build_info_brain_tools;
 use super::super::tools::{
@@ -25,8 +25,8 @@ use zihuan_core::tool_subgraph::{validate_shared_inputs, validate_tool_definitio
 use crate::storage::qq_chat_history_store::{clear_history, load_history};
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-use zihuan_core::agent_runtime::brain::LongTaskNotifier;
-use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
+use zihuan_core::agent::brain::LongTaskNotifier;
+use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
@@ -43,7 +43,7 @@ use zihuan_core::graph::object_storage::S3Ref;
 use zihuan_core::graph::DataValue;
 
 use super::tool_quota::{QqChatToolQuotaContext, SessionToolQuotaState};
-use super::chat_preprompt::run_dream_agent;
+use zihuan_core::agent::dream_agent::run_dream_agent;
 pub(crate) use super::user_input::{
     append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference, flush_text_part,
     prepare_current_turn_user_input, prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
@@ -952,7 +952,7 @@ impl QqChatAgentService {
             }),
         };
 
-        zihuan_core::agent_config::qq_chat::with_current_qq_chat_agent_service_config(
+        zihuan_core::agent::qq_chat::with_current_qq_chat_agent_service_config(
             self.config.qq_chat_config.clone(),
             || {
                 self.inner

@@ -1,8 +1,8 @@
 pub mod string_utils;
 
-use crate::agent_runtime::emotion::utils::emotion_expression_prompt;
-use crate::agent_runtime::session_state::QqChatAgentServiceSessionState;
-use crate::agent_config::qq_chat::QqChatEmotionDimensionConfig;
+use crate::agent::emotion::utils::emotion_expression_prompt;
+use crate::agent::session_state::QqChatAgentServiceSessionState;
+use crate::agent::qq_chat::QqChatEmotionDimensionConfig;
 
 /// Builds the prefix lines shared by all user-message construction paths:
 /// `[Agent State Snapshot]` + `[System Instructions]`.

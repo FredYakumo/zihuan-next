@@ -10,7 +10,7 @@ use zihuan_core::storage::{
     ConnectionConfig, LocalMemoryStore, WeaviateCollectionSchema,
 };
 use tokio::task::JoinHandle;
-use zihuan_core::agent_runtime::brain::BrainTool;
+use zihuan_core::agent::brain::BrainTool;
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -28,10 +28,10 @@ use super::inference::{
     resolve_agent_model_name_with_override,
 };
 use super::inference::{InferenceToolContext, InferenceToolProvider};
-use zihuan_core::agent_runtime::tool_definitions::build_enabled_tool_definitions;
+use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
 use zihuan_ims_agent::tools::build_info_brain_tools;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
-use zihuan_core::agent_runtime::resource_resolver::{
+use zihuan_core::agent::resource_resolver::{
     build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name,
 };
 use zihuan_core::inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;

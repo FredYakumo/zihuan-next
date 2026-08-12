@@ -13,7 +13,7 @@ use zihuan_core::storage::{
     WeaviateConnection,
     WebSearchEngineConnection,
 };
-use zihuan_core::agent_config::qq_chat::{DreamIntervalUnit, QqChatAgentServiceConfig};
+use zihuan_core::agent::qq_chat::{DreamIntervalUnit, QqChatAgentServiceConfig};
 use zihuan_core::weaviate::WeaviateCollectionSchema;
 
 pub async fn create_chat_assistant_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {

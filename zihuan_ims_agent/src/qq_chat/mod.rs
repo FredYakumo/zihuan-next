@@ -1,10 +1,8 @@
-mod chat_preprompt;
 mod core;
 pub mod ignore_store;
 mod inbox;
 pub mod language_style_store;
 pub(crate) mod logging;
-pub mod message_rate_limit_store;
 pub(crate) mod model;
 pub(crate) mod msg_send;
 pub mod privilege_gate;
@@ -26,7 +24,7 @@ use self::core::{
 use self::ignore_store::should_ignore_message_blocking;
 use self::inbox::QqChatAgentServiceInbox;
 use self::language_style_store::get_applicable_language_style_blocking;
-use self::message_rate_limit_store::{
+use crate::storage::message_rate_limit_store::{
     consume_message_rate_limit_blocking, MessageRateLimitBlockAction, MESSAGE_RATE_LIMIT_BLOCKED_REPLY,
 };
 use self::model::{
@@ -36,9 +34,9 @@ use self::model::{
 use self::msg_send::{
     build_reply_batch_builder as build_unified_reply_batch_builder, send_direct_notification_text_reply,
 };
-use zihuan_core::agent_runtime::inference_provider::{InferenceToolContext, InferenceToolProvider};
-use zihuan_core::agent_runtime::tool_definitions::build_enabled_tool_definitions;
-use zihuan_core::agent_runtime::resource_resolver::{
+use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
+use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
+use zihuan_core::agent::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name,
 };
 use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
@@ -56,9 +54,9 @@ use zihuan_core::storage::{
     build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind, LocalMemoryStore, WeaviateCollectionSchema,
 };
 use tokio::task::JoinHandle;
-use zihuan_core::agent_runtime::brain::BrainTool;
-use zihuan_core::agent_runtime::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent_config::qq_chat::{current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
+use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::agent::qq_chat::{current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;

@@ -3,13 +3,13 @@ use std::sync::Arc;
 
 use zihuan_core::inference::system_config::{AgentConfig, WorkspaceAgentServiceConfig};
 use zihuan_core::storage::ConnectionConfig;
-use zihuan_core::agent_runtime::brain::BrainTool;
+use zihuan_core::agent::brain::BrainTool;
 use zihuan_core::llm::LLMMessage;
 use zihuan_core::workspace::normalized_workspace_path;
 use zihuan_core::graph::brain_tool_spec::BrainToolDefinition;
 
-use zihuan_core::agent_runtime::inference_provider::{InferenceToolContext, InferenceToolProvider};
-use zihuan_core::agent_runtime::tool_definitions::build_enabled_tool_definitions;
+use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
+use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
 use crate::tools::{
     AskUserBrainTool, CreateFileBrainTool, DeleteFileBrainTool, EditFileBrainTool, ExecCmdBrainTool,
     CopyFileBrainTool, FileInfoBrainTool, FindFilesBrainTool, GitStatusBrainTool, GrepBrainTool, ListDirBrainTool, MoveFileBrainTool, ReadFileBrainTool, RgBrainTool, DEFAULT_TOOL_ASK_USER,

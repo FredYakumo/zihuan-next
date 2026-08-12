@@ -7,7 +7,7 @@ use zihuan_core::memory_agent::{
 use zihuan_core::storage::AgentMemoryAccessContext;
 use zihuan_core::storage::ElasticsearchRef;
 use zihuan_core::storage::LocalMemoryStore;
-use zihuan_core::agent_runtime::brain::BrainTool;
+use zihuan_core::agent::brain::BrainTool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;

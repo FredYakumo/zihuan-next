@@ -48,3 +48,14 @@ fn default_timeout_secs() -> u64 {
 fn default_retry_count() -> u32 {
     2
 }
+
+pub mod brain;
+pub mod dream_agent;
+pub mod emotion;
+pub mod inference_provider;
+pub mod resource_resolver;
+pub mod session_state;
+pub mod tool_definitions;
+pub mod utils;
+
+pub use crate::llm::tooling::FunctionTool;

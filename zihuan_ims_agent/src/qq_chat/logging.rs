@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::classify_intent::IntentClassificationTrace;
 use zihuan_core::ims_bot_adapter::models::message::Message;
-use zihuan_core::agent_runtime::brain::{BrainObserver, BrainStopReason};
+use zihuan_core::agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{LLMMessage, TokenUsage};
 use zihuan_core::graph::graph_io::{

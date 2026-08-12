@@ -17,7 +17,7 @@ use zihuan_core::storage::ConnectionConfig;
 use tokio::sync::mpsc;
 use tokio::task;
 use uuid::Uuid;
-use zihuan_core::agent_runtime::brain::{BrainObserver, BrainStopReason};
+use zihuan_core::agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
@@ -388,7 +388,7 @@ fn resolve_chat_agent(
     let running_agent = agent_manager
         .running_agent(agent_id)
         .ok_or_else(|| json!({ "type": "error", "error": format!("agent '{}' is not running", agent_id) }))?;
-    let agent = running_agent.agent_config().clone();
+    let agent = running_agent.agent().clone();
 
     let connections =
         crate::system_config::load_connections().map_err(|err| json!({ "type": "error", "error": err.to_string() }))?;

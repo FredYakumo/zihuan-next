@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
-use zihuan_core::agent_runtime::brain::ToolExecutionResource;
+use zihuan_core::agent::brain::ToolExecutionResource;
 use zihuan_core::error::Error;
 
 pub(crate) const DEFAULT_MAX_RESULTS: usize = 100;

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::agent_config::qq_chat::QqChatEmotionDimensionConfig;
+use crate::agent::qq_chat::QqChatEmotionDimensionConfig;
 use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use zihuan_core::agent_runtime::inference_provider::{InferenceToolContext, InferenceToolProvider};
+use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
 use zihuan_core::inference::system_config::{AgentConfig, AgentType, WorkspaceAgentServiceConfig};
 use zihuan_core::llm::{LLMMessage, MessageRole};
 use zihuan_workspace_agent::workspace_agent_service::load_inference_tool_provider;

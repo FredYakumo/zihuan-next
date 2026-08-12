@@ -6,8 +6,8 @@ use log::warn;
 use zihuan_core::inference::system_config::load_llm_refs;
 use serde_json::Value;
 use zihuan_core::storage::RuntimeStorageConnectionManager;
-use zihuan_core::agent_runtime::brain::{BrainTool, ToolExecutionOutput};
-use zihuan_core::agent_config::qq_chat::{current_qq_chat_agent_service_config, image_understand_llm_ref_id};
+use zihuan_core::agent::brain::{BrainTool, ToolExecutionOutput};
+use zihuan_core::agent::qq_chat::{current_qq_chat_agent_service_config, image_understand_llm_ref_id};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
@@ -17,7 +17,7 @@ use zihuan_core::graph::message_restore::{find_media_in_messages, query_media_by
 use zihuan_core::graph::object_storage::S3Ref;
 use zihuan_core::graph::DataValue;
 
-use zihuan_core::agent_runtime::resource_resolver::{build_llm_model, resolve_llm_service_config};
+use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
 
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
 
@@ -200,9 +200,9 @@ fn analyze_persisted_media(media: &PersistedMedia, focus_text: Option<&str>, s3_
 }
 
 fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::llm::llm_base::LLMBase>> {
-    let agent_config = current_qq_chat_agent_service_config()?;
+    let agent = current_qq_chat_agent_service_config()?;
     let llm_refs = load_llm_refs()?;
-    let llm_ref_id = image_understand_llm_ref_id(&agent_config)
+    let llm_ref_id = image_understand_llm_ref_id(&agent)
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
@@ -212,7 +212,7 @@ fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::llm::llm_base::LLMBase>>
         })?;
     let llm_config = resolve_llm_service_config(Some(llm_ref_id), &llm_refs, DEFAULT_TOOL_IMAGE_UNDERSTAND)?;
     if !llm_config.supports_multimodal_input {
-        let error_message = if agent_config
+        let error_message = if agent
             .image_understand_llm_ref_id
             .as_deref()
             .map(str::trim)

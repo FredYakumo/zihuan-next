@@ -3,7 +3,7 @@ use std::sync::Arc;
 use log::info;
 use serde_json::Value;
 
-use zihuan_core::agent_runtime::brain::{Brain, BrainTool};
+use zihuan_core::agent::brain::{Brain, BrainTool};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;

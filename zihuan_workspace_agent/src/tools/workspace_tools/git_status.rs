@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 use serde_json::Value;
-use zihuan_core::agent_runtime::brain::{BrainTool, ToolExecutionResource};
+use zihuan_core::agent::brain::{BrainTool, ToolExecutionResource};
 use zihuan_core::llm::tooling::FunctionTool;
 
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;

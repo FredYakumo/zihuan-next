@@ -32,7 +32,7 @@ use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::system_config;
 use zihuan_core::inference::system_config::load_llm_refs;
 use zihuan_core::inference::system_config::{AgentConfig, AgentToolConfig, AgentType, LlmRefConfig};
-use zihuan_core::agent_config::qq_chat::QqChatAgentServiceConfig;
+use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::error::{Error as CoreError, Result as CoreResult};
 use zihuan_service::agent::AgentRuntimeStatus;
 use zihuan_service::AgentRuntimeInfo;
