@@ -66,6 +66,16 @@ impl MemoryBrainAgent {
     }
 
     fn run(&self, user_message: String) -> Result<String> {
+        let agent = self.clone();
+        std::thread::Builder::new()
+            .name("memory-brain-agent".to_string())
+            .spawn(move || agent.run_inner(user_message))
+            .map_err(|error| Error::StringError(format!("failed to start Memory Brain Agent thread: {error}")))?
+            .join()
+            .map_err(|_| Error::StringError("Memory Brain Agent thread panicked".to_string()))?
+    }
+
+    fn run_inner(&self, user_message: String) -> Result<String> {
         let mut brain = Brain::new(Arc::clone(&self.resources.llm));
         brain.add_tool(ListMemoryKeysTool::new(self.resources.clone()));
         brain.add_tool(SearchMemoryTool::new(self.resources.clone()));

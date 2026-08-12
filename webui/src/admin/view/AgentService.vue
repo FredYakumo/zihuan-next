@@ -52,6 +52,38 @@
                 <t-checkbox v-model="form.agents_md_enabled">关注 AGENTS.md</t-checkbox>
                 <div class="agent-service-form-hint">让Agent关注 AGENTS.md</div>
               </t-form-item>
+              <t-form-item v-if="form.type === 'workspace'" label="Agent 记忆">
+                <t-checkbox v-model="form.workspace_memory_enabled">启用 Agent 记忆</t-checkbox>
+                <div class="agent-service-form-hint">启用后 Agent 会回想或者记忆对话中的信息，需要记忆库的支持</div>
+              </t-form-item>
+            </div>
+          </t-card>
+
+          <t-card v-if="form.type === 'workspace' && form.workspace_memory_enabled" class="agent-service-form-section" :bordered="false">
+            <template #title>记忆介质</template>
+            <div class="agent-service-form-grid">
+              <t-form-item label="记忆介质" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆介质。' : undefined">
+                <t-select v-model="form.workspace_memory_backend" placeholder="请选择记忆库">
+                  <t-option value="local_file" label="本地文件" />
+                  <t-option value="weaviate" label="Weaviate" />
+                  <t-option value="elasticsearch" label="Elasticsearch" />
+                </t-select>
+              </t-form-item>
+              <t-form-item v-if="form.workspace_memory_backend === 'weaviate' || form.workspace_memory_backend === 'elasticsearch'" label="文本向量模型" required :status="!form.workspace_embedding_model_ref_id ? 'error' : undefined" :help="!form.workspace_embedding_model_ref_id ? '必须选择文本向量模型。' : undefined">
+                <t-select v-model="form.workspace_embedding_model_ref_id" placeholder="请选择文本向量模型">
+                  <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item v-if="form.workspace_memory_backend === 'weaviate'" label="Weaviate Memory Connection" required :status="!form.workspace_weaviate_memory_connection_id ? 'error' : undefined" :help="!form.workspace_weaviate_memory_connection_id ? '必须选择记忆库连接。' : undefined">
+                <t-select v-model="form.workspace_weaviate_memory_connection_id" placeholder="请选择记忆库连接">
+                  <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item v-if="form.workspace_memory_backend === 'elasticsearch'" label="Elasticsearch Memory Connection" required :status="!form.workspace_elasticsearch_memory_connection_id ? 'error' : undefined" :help="!form.workspace_elasticsearch_memory_connection_id ? '必须选择记忆库连接。' : undefined">
+                <t-select v-model="form.workspace_elasticsearch_memory_connection_id" placeholder="请选择记忆库连接">
+                  <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
             </div>
           </t-card>
 
@@ -496,6 +528,38 @@
             <t-form-item v-if="form.type === 'workspace'" label="AGENTS.md">
               <t-checkbox v-model="form.agents_md_enabled">关注 AGENTS.md</t-checkbox>
               <div class="agent-service-form-hint">让Agent 关注 AGENTS.md</div>
+            </t-form-item>
+            <t-form-item v-if="form.type === 'workspace'" label="Agent 记忆">
+              <t-checkbox v-model="form.workspace_memory_enabled">启用 Agent 记忆</t-checkbox>
+              <div class="agent-service-form-hint">启用后 Agent 会回想或者记忆对话中的信息，需要记忆库的支持。</div>
+            </t-form-item>
+          </div>
+        </t-card>
+
+        <t-card v-if="form.type === 'workspace' && form.workspace_memory_enabled" class="agent-service-form-section" :bordered="false">
+          <template #title>Agent 记忆库</template>
+          <div class="agent-service-form-grid">
+            <t-form-item label="记忆库" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆库。' : undefined">
+              <t-select v-model="form.workspace_memory_backend" placeholder="请选择记忆库">
+                <t-option value="local_file" label="本地 Markdown 文件" />
+                <t-option value="weaviate" label="Weaviate" />
+                <t-option value="elasticsearch" label="Elasticsearch" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="form.workspace_memory_backend === 'weaviate' || form.workspace_memory_backend === 'elasticsearch'" label="文本向量模型" required :status="!form.workspace_embedding_model_ref_id ? 'error' : undefined" :help="!form.workspace_embedding_model_ref_id ? '必须选择文本向量模型。' : undefined">
+              <t-select v-model="form.workspace_embedding_model_ref_id" placeholder="请选择文本向量模型">
+                <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="form.workspace_memory_backend === 'weaviate'" label="Weaviate Memory Connection" required :status="!form.workspace_weaviate_memory_connection_id ? 'error' : undefined" :help="!form.workspace_weaviate_memory_connection_id ? '必须选择记忆库连接。' : undefined">
+              <t-select v-model="form.workspace_weaviate_memory_connection_id" placeholder="请选择记忆库连接">
+                <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="form.workspace_memory_backend === 'elasticsearch'" label="Elasticsearch Memory Connection" required :status="!form.workspace_elasticsearch_memory_connection_id ? 'error' : undefined" :help="!form.workspace_elasticsearch_memory_connection_id ? '必须选择记忆库连接。' : undefined">
+              <t-select v-model="form.workspace_elasticsearch_memory_connection_id" placeholder="请选择记忆库连接">
+                <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
             </t-form-item>
           </div>
         </t-card>

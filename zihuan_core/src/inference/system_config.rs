@@ -75,6 +75,16 @@ pub struct WorkspaceAgentServiceConfig {
     pub llm_ref_id: Option<String>,
     #[serde(default)]
     pub agents_md_enabled: bool,
+    #[serde(default)]
+    pub memory_enabled: bool,
+    #[serde(default)]
+    pub embedding_model_ref_id: Option<String>,
+    #[serde(default)]
+    pub weaviate_memory_connection_id: Option<String>,
+    #[serde(default)]
+    pub elasticsearch_memory_connection_id: Option<String>,
+    #[serde(default)]
+    pub memory_backend: Option<MemoryBackendKind>,
     #[serde(default = "default_workspace_default_tools_enabled")]
     pub default_tools_enabled: std::collections::HashMap<String, bool>,
 }

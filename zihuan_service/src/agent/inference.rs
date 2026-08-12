@@ -166,7 +166,7 @@ impl LoadedInferenceAgent {
         llm: Arc<dyn LLMBase>,
         workspace_path: Option<String>,
     ) -> Result<Vec<LLMMessage>> {
-        let context = build_inference_tool_context(&messages, workspace_path);
+        let context = build_inference_tool_context(&messages, workspace_path, Arc::clone(&llm));
 
         let mut conversation = sanitize_messages_for_inference(messages);
         if conversation.is_empty() {
@@ -212,7 +212,7 @@ impl LoadedInferenceAgent {
         llm: Arc<dyn LLMBase>,
         workspace_path: Option<String>,
     ) -> Result<(Vec<LLMMessage>, BrainStopReason)> {
-        let context = build_inference_tool_context(&messages, workspace_path);
+        let context = build_inference_tool_context(&messages, workspace_path, Arc::clone(&llm));
 
         let mut conversation = sanitize_messages_for_inference(messages);
         if conversation.is_empty() {
@@ -296,7 +296,11 @@ pub fn resolve_agent_model_name_with_override(
     Ok(resolve_llm_service_config(llm_ref_id, llm_refs, &agent.name)?.model_name)
 }
 
-fn build_inference_tool_context(messages: &[LLMMessage], workspace_path: Option<String>) -> InferenceToolContext {
+fn build_inference_tool_context(
+    messages: &[LLMMessage],
+    workspace_path: Option<String>,
+    llm: Arc<dyn LLMBase>,
+) -> InferenceToolContext {
     InferenceToolContext {
         last_user_text: messages
             .iter()
@@ -306,6 +310,7 @@ fn build_inference_tool_context(messages: &[LLMMessage], workspace_path: Option<
             .map(ToOwned::to_owned)
             .unwrap_or_default(),
         workspace_path,
+        llm,
     }
 }
 

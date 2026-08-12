@@ -118,6 +118,7 @@ type ToolCallKind =
   | { type: "list_dir"; dirname: string; entries: Array<{ name: string; path: string; type: string }>; truncated: boolean; tree?: string }
   | { type: "grep" | "rg"; pattern: string; matches: SearchMatch[]; totalMatches: number; matchedFiles: number; skippedBinary: number; truncated: boolean }
   | { type: "ask_user"; question: string }
+  | { type: "memory_agent"; action: "recall" | "remember"; content: string }
   | { type: "generic"; name: string };
 
 
@@ -137,6 +138,15 @@ function safeParseJson<T>(raw: unknown): T | null {
 }
 
 function classifyToolCall(name: string, arguments_: unknown, result?: string): ToolCallKind {
+  if (name === "memory_agent") {
+    const args = safeParseJson<{ content?: string }>(arguments_);
+    const content = args?.content?.trim() ?? "";
+    return {
+      type: "memory_agent",
+      action: /(?:remember|save|store|记录|保存|写入)/i.test(content) ? "remember" : "recall",
+      content,
+    };
+  }
   if (name === "create_file") {
     const args = safeParseJson<{ path?: string; content?: string }>(arguments_);
     if (args?.path != null && args?.content != null) {

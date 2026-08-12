@@ -10,6 +10,7 @@ import {
   GitBranchIcon,
   InfoCircleIcon,
   MoveIcon,
+  BookmarkIcon,
   SearchIcon,
   ChatIcon,
 } from "tdesign-icons-vue-next";
@@ -44,6 +45,7 @@ const { kind, loading } = useToolCallBadge(props, emit);
       'tool-badge--copy': kind.type === 'copy_file',
       'tool-badge--move': kind.type === 'move_file',
       'tool-badge--git': kind.type === 'git_status',
+      'tool-badge--memory': kind.type === 'memory_agent',
     }"
     @click="$emit('click')"
   >
@@ -112,6 +114,10 @@ const { kind, loading } = useToolCallBadge(props, emit);
     </template>
     <template v-else-if="kind.type === 'ask_user'">
       <ChatIcon class="badge-icon" /> {{ kind.question }}
+    </template>
+    <template v-else-if="kind.type === 'memory_agent'">
+      <BookmarkIcon class="badge-icon" />
+      {{ kind.action === 'remember' ? '记录记忆' : '回忆记忆' }}
     </template>
   </span>
 </template>

@@ -330,6 +330,11 @@ fn build_workspace_agent_service(id: &str, name: &str, llm_ref_id: Option<String
         agent_type: AgentType::Workspace(WorkspaceAgentServiceConfig {
             llm_ref_id,
             agents_md_enabled: true,
+            memory_enabled: false,
+            embedding_model_ref_id: None,
+            weaviate_memory_connection_id: None,
+            elasticsearch_memory_connection_id: None,
+            memory_backend: None,
             default_tools_enabled: default_workspace_tools(),
         }),
         enabled: true,

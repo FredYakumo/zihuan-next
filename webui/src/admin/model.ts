@@ -172,6 +172,11 @@ export interface ServiceFormState {
   http_memory_backend: "" | "local_file" | "weaviate" | "elasticsearch";
   task_db_connection_id: string;
   agents_md_enabled: boolean;
+  workspace_memory_enabled: boolean;
+  workspace_embedding_model_ref_id: string;
+  workspace_weaviate_memory_connection_id: string;
+  workspace_elasticsearch_memory_connection_id: string;
+  workspace_memory_backend: "" | "local_file" | "weaviate" | "elasticsearch";
   tools: ToolFormState[];
   avatar_url: string;
 }
@@ -474,6 +479,11 @@ export function defaultServiceForm(): ServiceFormState {
     http_memory_backend: "",
     task_db_connection_id: "",
     agents_md_enabled: false,
+    workspace_memory_enabled: false,
+    workspace_embedding_model_ref_id: "",
+    workspace_weaviate_memory_connection_id: "",
+    workspace_elasticsearch_memory_connection_id: "",
+    workspace_memory_backend: "",
     tools: [],
     avatar_url: "",
   };
@@ -1025,6 +1035,11 @@ export function serviceFormFromConfig(
   } else {
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
     form.agents_md_enabled = Boolean(agentType.agents_md_enabled ?? false);
+    form.workspace_memory_enabled = Boolean(agentType.memory_enabled ?? false);
+    form.workspace_embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
+    form.workspace_weaviate_memory_connection_id = String(agentType.weaviate_memory_connection_id ?? "");
+    form.workspace_elasticsearch_memory_connection_id = String(agentType.elasticsearch_memory_connection_id ?? "");
+    form.workspace_memory_backend = agentType.memory_backend === "local_file" || agentType.memory_backend === "weaviate" || agentType.memory_backend === "elasticsearch" ? agentType.memory_backend : "";
     const source = (agentType.default_tools_enabled ?? {}) as Record<
       string,
       unknown
@@ -1221,6 +1236,11 @@ export function buildServicePayload(form: ServiceFormState): {
       type: "workspace",
       llm_ref_id: form.llm_ref_id || null,
       agents_md_enabled: form.agents_md_enabled,
+      memory_enabled: form.workspace_memory_enabled,
+      embedding_model_ref_id: form.workspace_embedding_model_ref_id || null,
+      weaviate_memory_connection_id: form.workspace_weaviate_memory_connection_id || null,
+      elasticsearch_memory_connection_id: form.workspace_elasticsearch_memory_connection_id || null,
+      memory_backend: form.workspace_memory_backend || null,
       default_tools_enabled: Object.fromEntries(
         WORKSPACE_DEFAULT_TOOLS.map((tool) => [
           tool.id,
