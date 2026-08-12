@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
+use zihuan_core::inference::system_config::{AgentConfig, AgentType, WorkspaceAgentServiceConfig};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::{InferenceParam, LLMMessage, MessageRole};
 use zihuan_workspace_agent::workspace_agent_service::load_inference_tool_provider;
