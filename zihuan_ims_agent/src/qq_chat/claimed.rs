@@ -31,15 +31,16 @@ use zihuan_core::ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, Ge
 use super::super::super::tools::{
     format_public_info_message, review_and_rewrite_reply, AgentMemoryBackend, AgentMemoryToolResources,
     EditableQqAgentTool, GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
-    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool, ModelIdentityContext,
-    QqReplyReviewRequest, RememberContentBrainTool, ReplyMessageBrainTool, RunResearchSubagentBrainTool,
-    SaveImageBrainTool, SearchMemoryContentBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget,
+    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ModelIdentityContext, QqReplyReviewRequest,
+    ReplyMessageBrainTool, RunResearchSubagentBrainTool, SaveImageBrainTool, SearchSimilarImagesBrainTool,
+    ToolNotificationTarget,
     WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
     DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
-    DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS, DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SAVE_IMAGE,
-    DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
+    DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT, DEFAULT_TOOL_SAVE_IMAGE,
+    DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
     QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
+use zihuan_core::memory_agent::{MemoryBrainAgent, MemoryBrainAgentContextTool, MemoryBrainAgentTool};
 use zihuan_core::storage::AgentMemoryAccessContext;
 
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
@@ -1053,21 +1054,16 @@ impl QqChatAgentServiceInner {
                     skip_expiry_extend: false,
                 },
             };
-            if self.is_default_tool_enabled(DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS) {
+            let memory_agent = MemoryBrainAgent::new(memory_resources);
+            if self.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
                 brain.add_tool(wrap_brain_tool_with_quota(
-                    ListAvailableMemoryKeysBrainTool::new(memory_resources.clone()),
+                    MemoryBrainAgentTool::new(memory_agent.clone()),
                     tool_quota.clone(),
                 ));
             }
-            if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_MEMORY_CONTENT) {
+            if self.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT) {
                 brain.add_tool(wrap_brain_tool_with_quota(
-                    SearchMemoryContentBrainTool::new(memory_resources.clone()),
-                    tool_quota.clone(),
-                ));
-            }
-            if self.is_default_tool_enabled(DEFAULT_TOOL_REMEMBER_CONTENT) {
-                brain.add_tool(wrap_brain_tool_with_quota(
-                    RememberContentBrainTool::new(memory_resources),
+                    MemoryBrainAgentContextTool::new(memory_agent),
                     tool_quota.clone(),
                 ));
             }

@@ -15,7 +15,7 @@ use zihuan_core::tool_runtime::ToolRunDuration;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_core::graph::object_storage::S3Ref;
 
-use super::agent_memory::{AgentMemoryToolResources, SearchMemoryContentBrainTool};
+use zihuan_core::memory_agent::{MemoryAgentResources, MemoryBrainAgent, MemoryBrainAgentContextTool, MemoryBrainAgentTool};
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
 use super::image_understand::ImageUnderstandBrainTool;
 use super::web_search::WebSearchBrainTool;
@@ -30,14 +30,14 @@ Your task is to conduct in-depth research on the user's question and proactively
 \n\
 Research workflow requirements:\n\
 1. First determine which parts can be answered directly from existing knowledge and which parts genuinely require online verification.\n\
-2. If the missing information is the user's historical preferences, previously mentioned facts, or saved materials, prefer calling `search_memory_content` first; do not escalate to web research automatically.\n\
+2. If the missing information is the user's historical preferences, previously mentioned facts, or saved materials, prefer calling `memory_agent` first; do not escalate to web research automatically.\n\
 3. Use `web_search` mainly for the latest information, reading web pages, and verifying truthfulness/accuracy; do not treat it as a general background knowledge supplement.\n\
 4. If the question contains both inferable parts and parts that need verification, reserve web search only for the most critical and uncertain external fact.\n\
 5. Try to call `web_search` only once during a single research session; after one search, synthesize and answer first, and do not automatically continue to a second or third search.\n\
 6. If the first search is still insufficient, clearly state what information is missing or cannot be confirmed, and ask the user whether to continue searching.\n\
 \n\
 Tool usage rules:\n\
-1. `search_memory_content` retrieves long-term memories accessible in the current context, previously saved facts, historical preferences, and known materials.\n\
+1. `memory_agent` retrieves or updates long-term memories accessible in the current context, previously saved facts, historical preferences, and known materials.\n\
 2. `web_search` is for online searches of the latest materials, verifying key external facts, or extracting the main text of a single URL.\n\
 3. `image_understand` is used to understand image content via `media_id`.\n\
 4. Before each tool call, the assistant's content must include a short progress update; this sentence will be sent directly to the user, so do not include @ and do not leave it blank. Examples: `Let me check if this was recorded before`, `Let me verify this claim`, `Let me look at the image content first`.\n\
@@ -63,7 +63,7 @@ pub(crate) struct RunDeepResearchSubagentBrainTool {
     weaviate_ref: Option<Arc<WeaviateRef>>,
     current_message_event: Option<zihuan_core::ims_bot_adapter::models::MessageEvent>,
     notification_target: ToolNotificationTarget,
-    memory_resources: Option<AgentMemoryToolResources>,
+    memory_resources: Option<MemoryAgentResources>,
     tool_quota: Option<QqChatToolQuotaContext>,
 }
 
@@ -77,7 +77,7 @@ impl RunDeepResearchSubagentBrainTool {
         weaviate_ref: Option<Arc<WeaviateRef>>,
         current_message_event: Option<zihuan_core::ims_bot_adapter::models::MessageEvent>,
         notification_target: ToolNotificationTarget,
-        memory_resources: Option<AgentMemoryToolResources>,
+        memory_resources: Option<MemoryAgentResources>,
         tool_quota: Option<QqChatToolQuotaContext>,
     ) -> Self {
         Self {
@@ -162,7 +162,9 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
             // while still surfacing it in the task dashboard.
             let mut brain = Brain::new(Arc::clone(&self.llm));
             if let Some(memory_resources) = self.memory_resources.clone() {
-                brain.add_tool(SearchMemoryContentBrainTool::new(memory_resources));
+                let memory_agent = MemoryBrainAgent::new(memory_resources);
+                brain.add_tool(MemoryBrainAgentTool::new(memory_agent.clone()));
+                brain.add_tool(MemoryBrainAgentContextTool::new(memory_agent));
             }
             brain.add_tool(wrap_brain_tool_with_quota(
                 WebSearchBrainTool::new(Arc::clone(&self.web_search_engine), self.notification_target.clone()),

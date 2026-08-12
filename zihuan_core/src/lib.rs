@@ -16,6 +16,7 @@ pub mod graph;
 pub mod inference;
 pub mod llm;
 pub mod message_part;
+pub mod memory_agent;
 pub mod python_runtime;
 pub mod python_runtime_resolver;
 pub mod rag;

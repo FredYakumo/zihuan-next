@@ -263,9 +263,8 @@ fn build_qq_chat_agent_service() -> AgentConfig {
         "get_recent_user_messages",
         "search_similar_images",
         "image_understand",
-        "list_available_memory_keys",
-        "search_memory_content",
-        "remember_content",
+        "memory_agent",
+        "memory_agent_with_context",
         "remove_memory",
     ] {
         default_tools.insert(tool.to_string(), true);
@@ -359,9 +358,8 @@ fn parse_api_style(value: &str) -> zihuan_core::inference::system_config::LlmApi
 fn default_http_stream_tools() -> HashMap<String, bool> {
     [
         ("web_search".to_string(), true),
-        ("list_available_memory_keys".to_string(), true),
-        ("search_memory_content".to_string(), true),
-        ("remember_content".to_string(), true),
+        ("memory_agent".to_string(), true),
+        ("memory_agent_with_context".to_string(), true),
     ]
     .into_iter()
     .collect()

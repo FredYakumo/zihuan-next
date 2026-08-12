@@ -251,40 +251,14 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
     label: "image_understand",
     description: "按 media_id 理解图片内容",
   },
-  {
-    id: "list_available_memory_keys",
-    label: "list_available_memory_keys",
-    description: "列出当前可访问的记忆标题",
-  },
-  {
-    id: "search_memory_content",
-    label: "search_memory_content",
-    description: "搜索当前可访问的记忆内容",
-  },
-  {
-    id: "remember_content",
-    label: "remember_content",
-    description: "把内容整理后写入记忆",
-  },
+  { id: "memory_agent", label: "memory_agent", description: "由记忆 Agent 自动检索或更新记忆" },
+  { id: "memory_agent_with_context", label: "memory_agent_with_context", description: "按聊天上下文搜索或更新记忆" },
 ];
 
 export const HTTP_STREAM_DEFAULT_TOOLS: DefaultToolOption[] = [
   { id: "web_search", label: "web_search", description: "联网搜索" },
-  {
-    id: "list_available_memory_keys",
-    label: "list_available_memory_keys",
-    description: "列出当前可访问的记忆标题",
-  },
-  {
-    id: "search_memory_content",
-    label: "search_memory_content",
-    description: "搜索当前可访问的记忆内容",
-  },
-  {
-    id: "remember_content",
-    label: "remember_content",
-    description: "把内容整理后写入记忆",
-  },
+  { id: "memory_agent", label: "memory_agent", description: "由记忆 Agent 自动检索或更新记忆" },
+  { id: "memory_agent_with_context", label: "memory_agent_with_context", description: "按聊天上下文搜索或更新记忆" },
 ];
 
 export const WORKSPACE_DEFAULT_TOOLS: DefaultToolOption[] = [

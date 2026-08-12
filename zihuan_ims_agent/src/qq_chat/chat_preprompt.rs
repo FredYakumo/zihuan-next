@@ -29,11 +29,11 @@ use zihuan_core::graph::util::function::{
 use zihuan_core::graph::{DataType, DataValue};
 
 use crate::tools::{
-    AgentMemoryToolResources, GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool,
-    ListAvailableMemoryKeysBrainTool, SearchMemoryContentBrainTool, ToolNotificationTarget, UpdateAgentStateBrainTool,
-    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
-    DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT,
+    AgentMemoryToolResources, GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool, ToolNotificationTarget,
+    UpdateAgentStateBrainTool, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
+    DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT,
 };
+use zihuan_core::memory_agent::{MemoryBrainAgent, MemoryBrainAgentContextTool};
 use crate::storage::qq_chat_history_store::{load_history, save_history};
 
 use super::{logging::QqChatBrainObserver, PreparedCurrentTurnUserInput, QqChatTaskTrace};
@@ -61,7 +61,7 @@ fn build_chat_preprompt_agent_system_prompt(bot_name: &str, emotion_snapshot: &s
          Based on the current event and the independent emotion history, decide whether the emotion should be adjusted. Call `update_agent_state` only when a change is truly warranted; do not call any tool when no change is needed. When an adjustment is needed, specify an emotion dimension and `increase` or `decrease`. You may adjust multiple dimensions in the same event if each is genuinely necessary.\n\
          \n[Responsibility 2: Recall & consistency preprompt]\n\
          - Extract the key nouns / entities / proper nouns from the user's current message.\n\
-         - For each, call `search_memory_content` to check whether you have related memory or an existing stance.\n\
+         - For each, call `memory_agent_with_context` with the complete current chat context and `search_memory` to check whether you have related memory or an existing stance.\n\
          - When memory contains your prior stance on a topic, surface it so the main agent stays consistent and does not flip its likes/dislikes or opinions across turns.\n\
          - If a [Candidate Dream Memory] block is present, judge whether it is relevant to the current event. Only include relevant durable facts or continuity in the final context; omit unrelated Dream content completely.\n\
          - For nouns that have no related memory and that you do not already know, include in the final context block a line exactly like: 「xxx」这些名词没有相关内容，可能需要联网查询？\n\
@@ -404,11 +404,8 @@ pub(crate) fn run_chat_preprompt_agent(
     let is_enabled = |name: &str| *default_tools_enabled.get(name).unwrap_or(&true);
 
     if let Some(memory_resources) = memory_resources {
-        if is_enabled(DEFAULT_TOOL_SEARCH_MEMORY_CONTENT) {
-            brain.add_tool(SearchMemoryContentBrainTool::new(memory_resources.clone()));
-        }
-        if is_enabled(DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS) {
-            brain.add_tool(ListAvailableMemoryKeysBrainTool::new(memory_resources));
+        if is_enabled(DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT) {
+            brain.add_tool(MemoryBrainAgentContextTool::new(MemoryBrainAgent::new(memory_resources)));
         }
     }
 

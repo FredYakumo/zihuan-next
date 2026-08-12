@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use zihuan_core::memory_agent::{
+    MemoryAgentResources, MemoryBackend, MemoryBrainAgent, MemoryBrainAgentContextTool, MemoryBrainAgentTool,
+};
 use zihuan_core::storage::AgentMemoryAccessContext;
 use zihuan_core::storage::ElasticsearchRef;
 use zihuan_core::agent_runtime::brain::BrainTool;
@@ -11,7 +14,6 @@ use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_core::graph::object_storage::S3Ref;
 
-mod agent_memory;
 mod agent_state;
 mod common;
 mod deep_research;
@@ -26,10 +28,7 @@ mod reply_message;
 mod research;
 mod web_search;
 
-pub(crate) use agent_memory::{
-    AgentMemoryBackend, AgentMemoryToolResources, ListAvailableMemoryKeysBrainTool, RememberContentBrainTool,
-    SearchMemoryContentBrainTool,
-};
+pub(crate) use zihuan_core::memory_agent::{MemoryAgentResources as AgentMemoryToolResources, MemoryBackend as AgentMemoryBackend};
 pub(crate) use agent_state::UpdateAgentStateBrainTool;
 pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS};
 pub(crate) use deep_research::RunDeepResearchSubagentBrainTool;
@@ -54,9 +53,8 @@ pub(crate) const DEFAULT_TOOL_GET_RECENT_USER_MESSAGES: &str = "get_recent_user_
 pub(crate) const DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES: &str = "search_similar_images";
 pub(crate) const DEFAULT_TOOL_SAVE_IMAGE: &str = "save_image";
 pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
-pub(crate) const DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS: &str = "list_available_memory_keys";
-pub(crate) const DEFAULT_TOOL_SEARCH_MEMORY_CONTENT: &str = "search_memory_content";
-pub(crate) const DEFAULT_TOOL_REMEMBER_CONTENT: &str = "remember_content";
+pub(crate) const DEFAULT_TOOL_MEMORY_AGENT: &str = "memory_agent";
+pub(crate) const DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT: &str = "memory_agent_with_context";
 const AGENT_PUBLIC_NAME: &str = "紫幻zihuan-next";
 const AGENT_GITHUB_REPOSITORY: &str = "https://github.com/FredYakumo/zihuan-next";
 const AGENT_GIT_COMMIT_ID: &str = "unknown";
@@ -147,23 +145,21 @@ pub fn build_info_brain_tools(
     }
 
     let memory_backend = elasticsearch_memory_ref
-        .map(AgentMemoryBackend::Elasticsearch)
-        .or_else(|| weaviate_memory_ref.map(AgentMemoryBackend::Weaviate));
+        .map(MemoryBackend::Elasticsearch)
+        .or_else(|| weaviate_memory_ref.map(MemoryBackend::Weaviate));
     if let (Some(memory_backend), Some(embedding_model), Some(llm)) = (memory_backend, embedding_model.clone(), llm) {
-        let memory_resources = AgentMemoryToolResources {
+        let memory_resources = MemoryAgentResources {
             memory_backend,
             embedding_model,
             llm,
             access: memory_access,
         };
-        if is_enabled(default_tools_enabled, DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS) {
-            tools.push(Box::new(ListAvailableMemoryKeysBrainTool::new(memory_resources.clone())));
+        let memory_agent = MemoryBrainAgent::new(memory_resources);
+        if is_enabled(default_tools_enabled, DEFAULT_TOOL_MEMORY_AGENT) {
+            tools.push(Box::new(MemoryBrainAgentTool::new(memory_agent.clone())));
         }
-        if is_enabled(default_tools_enabled, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT) {
-            tools.push(Box::new(SearchMemoryContentBrainTool::new(memory_resources.clone())));
-        }
-        if is_enabled(default_tools_enabled, DEFAULT_TOOL_REMEMBER_CONTENT) {
-            tools.push(Box::new(RememberContentBrainTool::new(memory_resources)));
+        if is_enabled(default_tools_enabled, DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT) {
+            tools.push(Box::new(MemoryBrainAgentContextTool::new(memory_agent)));
         }
     }
 

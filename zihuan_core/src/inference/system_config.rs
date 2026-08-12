@@ -115,9 +115,8 @@ fn default_include_reasoning_content() -> bool {
 fn default_http_stream_default_tools_enabled() -> std::collections::HashMap<String, bool> {
     [
         ("web_search".to_string(), true),
-        ("list_available_memory_keys".to_string(), true),
-        ("search_memory_content".to_string(), true),
-        ("remember_content".to_string(), true),
+        ("memory_agent".to_string(), true),
+        ("memory_agent_with_context".to_string(), true),
     ]
     .into_iter()
     .collect()
