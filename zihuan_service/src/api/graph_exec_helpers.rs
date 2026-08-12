@@ -11,7 +11,7 @@ use zihuan_core::graph::function_graph::{embedded_function_config_from_node, FUN
 use zihuan_core::graph::graph_io::{NodeGraphDefinition, PortBindingKind};
 use zihuan_core::graph::{DataValue, NodeGraph};
 
-use crate::util::hyperparam_store;
+use zihuan_core::graph::hyperparam_store;
 
 pub fn apply_hyperparameter_bindings(graph: &mut NodeGraphDefinition, values: &HashMap<String, Value>) {
     for node in &mut graph.nodes {

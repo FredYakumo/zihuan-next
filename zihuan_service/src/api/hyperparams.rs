@@ -5,7 +5,7 @@ use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 
 use super::state::AppState;
-use crate::util::hyperparam_store;
+use zihuan_core::graph::hyperparam_store;
 
 // ─── Hyperparameters ──────────────────────────────────────────────────────────
 
