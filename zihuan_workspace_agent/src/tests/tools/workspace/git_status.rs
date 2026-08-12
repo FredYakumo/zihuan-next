@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::json;
 use zihuan_core::agent_runtime::brain::BrainTool;
 
-use crate::agent::tools::{GitStatusBrainTool, DEFAULT_TOOL_GIT_STATUS};
+use crate::tools::workspace_tools::{GitStatusBrainTool, DEFAULT_TOOL_GIT_STATUS};
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();

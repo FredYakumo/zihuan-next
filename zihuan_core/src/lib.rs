@@ -34,6 +34,9 @@ pub mod worker_pool;
 pub mod workspace;
 pub mod nlp;
 
+#[cfg(test)]
+mod tests;
+
 pub use message_part::MessagePart;
 pub use agent_runtime::*;
 pub use graph::*;

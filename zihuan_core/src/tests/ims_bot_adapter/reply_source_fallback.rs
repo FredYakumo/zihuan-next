@@ -1,6 +1,8 @@
-use zihuan_core::ims_bot_adapter::adapter::parse_reply_source_messages_from_get_msg_response;
-use zihuan_core::ims_bot_adapter::models::message::Message;
+use crate::ims_bot_adapter::models::message::Message;
+use crate::ims_bot_adapter::runtime::adapter::parse_reply_source_messages_from_get_msg_response;
 
+/// Purpose: Verify reply-source parsing reconstructs image segments.
+/// TestData: A successful NapCat get_msg response with one image segment.
 #[test]
 fn get_msg_reply_source_parser_extracts_image_segments() {
     let response = serde_json::json!({
@@ -9,20 +11,17 @@ fn get_msg_reply_source_parser_extracts_image_segments() {
         "data": {
             "message_id": 1001,
             "group_id": 3001,
-            "message": [
-                {
-                    "type": "image",
-                    "data": {
-                        "file": "demo.jpg",
-                        "url": "https://example.com/demo.jpg"
-                    }
+            "message": [{
+                "type": "image",
+                "data": {
+                    "file": "demo.jpg",
+                    "url": "https://example.com/demo.jpg"
                 }
-            ]
+            }]
         }
     });
 
     let messages = parse_reply_source_messages_from_get_msg_response(&response);
-
     assert_eq!(messages.len(), 1);
     match &messages[0] {
         Message::Image(image) => {
