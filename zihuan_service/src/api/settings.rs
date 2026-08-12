@@ -64,7 +64,7 @@ pub struct PythonRuntimeSelectionResponse {
     pub runtime: Option<PythonRuntimeResponse>,
 }
 
-fn python_runtime_response(config: PythonRuntimeConfig) -> PythonRuntimeResponse {
+async fn python_runtime_response(config: PythonRuntimeConfig) -> PythonRuntimeResponse {
     let workspace_root = match std::env::current_dir() {
         Ok(path) => path,
         Err(error) => {
@@ -79,7 +79,7 @@ fn python_runtime_response(config: PythonRuntimeConfig) -> PythonRuntimeResponse
         }
     };
 
-    match check_python_runtime(&workspace_root, &config) {
+    match check_python_runtime(&workspace_root, &config).await {
         Ok((command, version, executable_path)) => PythonRuntimeResponse {
             config,
             available: true,
@@ -109,7 +109,7 @@ pub async fn get_python_runtime(_req: &mut Request, res: &mut Response) {
             return;
         }
     };
-    res.render(Json(python_runtime_response(config)));
+    res.render(Json(python_runtime_response(config).await));
 }
 
 #[handler]
@@ -123,7 +123,7 @@ pub async fn update_python_runtime(req: &mut Request, res: &mut Response) {
         }
     };
 
-    match save_python_runtime(config) {
+    match save_python_runtime(config).await {
         Ok(runtime) => res.render(Json(runtime)),
         Err((status, error)) => {
             res.status_code(status);
@@ -149,7 +149,7 @@ pub async fn select_python_runtime(_req: &mut Request, res: &mut Response) {
         kind: zihuan_core::python_runtime::PythonRuntimeKind::CustomExecutable,
         executable_path: Some(path),
     };
-    match save_python_runtime(config) {
+    match save_python_runtime(config).await {
         Ok(runtime) => res.render(Json(PythonRuntimeSelectionResponse {
             cancelled: false,
             runtime: Some(runtime),
@@ -161,12 +161,14 @@ pub async fn select_python_runtime(_req: &mut Request, res: &mut Response) {
     }
 }
 
-fn save_python_runtime(
+async fn save_python_runtime(
     config: PythonRuntimeConfig,
 ) -> std::result::Result<PythonRuntimeResponse, (StatusCode, String)> {
     let workspace_root =
         std::env::current_dir().map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
-    check_python_runtime(&workspace_root, &config).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let (command, version, executable_path) = check_python_runtime(&workspace_root, &config)
+        .await
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
 
     let mut root = ConfigCenter::shared()
         .load_root()
@@ -176,7 +178,14 @@ fn save_python_runtime(
         .save_root(&root)
         .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
 
-    Ok(python_runtime_response(root.python_runtime))
+    Ok(PythonRuntimeResponse {
+        config: root.python_runtime,
+        available: true,
+        command: Some(command.display()),
+        executable_path: Some(executable_path),
+        version: Some(version),
+        diagnostic: None,
+    })
 }
 
 fn dir_size(path: &Path) -> u64 {

@@ -159,6 +159,8 @@ export function useSettings() {
     }
   }
 
+  onMounted(reloadPythonRuntime);
+
   async function changePythonRuntime() {
     pythonRuntimeChanging.value = true;
     pythonRuntimeError.value = null;
@@ -176,8 +178,6 @@ export function useSettings() {
       pythonRuntimeChanging.value = false;
     }
   }
-
-  onMounted(reloadPythonRuntime);
 
   function formatBytes(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;

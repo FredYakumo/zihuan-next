@@ -478,6 +478,7 @@ export type WorkspaceChangeStatus = "pending" | "accepted" | "canceled";
 export interface WorkspaceDiffLine {
   kind: "added" | "removed";
   line: string;
+  hunk?: number;
 }
 export interface WorkspaceChange {
   change_id: string;

@@ -72,10 +72,17 @@
 .workspace-change-detail-meta { display: flex; flex-wrap: wrap; gap: 14px; color: var(--admin-muted); font-size: 13px; }
 .workspace-change-paths { margin-top: 20px; padding: 12px; border-radius: 8px; background: var(--admin-bg-soft); font-family: monospace; font-size: 12px; overflow-x: auto; }
 .workspace-change-diff { margin-top: 14px; max-height: 300px; overflow: auto; border: 1px solid var(--admin-border); border-radius: 8px; font: 12px/1.55 monospace; }
-.workspace-change-diff-line { padding: 2px 10px; white-space: pre-wrap; }
-.workspace-change-diff-line span { display: inline-block; width: 16px; font-weight: 700; }
-.workspace-change-diff-line--added { color: #237a43; background: color-mix(in srgb, #3cad68 12%, transparent); }
-.workspace-change-diff-line--removed { color: #b03b46; background: color-mix(in srgb, #e06b76 12%, transparent); }
+.workspace-change-diff-header,
+.workspace-change-diff-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-width: 560px; }
+.workspace-change-diff-header { position: sticky; top: 0; z-index: 1; background: var(--admin-bg-soft); color: var(--admin-muted); font: 11px/1.4 var(--td-font-family); }
+.workspace-change-diff-header span { padding: 7px 10px; }
+.workspace-change-diff-header span + span,
+.workspace-change-diff-cell + .workspace-change-diff-cell { border-left: 1px solid var(--admin-border); }
+.workspace-change-diff-cell { min-width: 0; min-height: 24px; padding: 2px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workspace-change-diff-cell span { display: inline-block; width: 16px; font-weight: 700; }
+.workspace-change-diff-cell code { font: inherit; }
+.workspace-change-diff-cell--added:not(.empty) { color: #237a43; background: color-mix(in srgb, #3cad68 12%, transparent); }
+.workspace-change-diff-cell--removed:not(.empty) { color: #b03b46; background: color-mix(in srgb, #e06b76 12%, transparent); }
 .workspace-change-note { color: var(--admin-muted); line-height: 1.6; }
 .workspace-change-error { color: var(--admin-bad); }
 .workspace-change-dialog-actions { justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--admin-border); }

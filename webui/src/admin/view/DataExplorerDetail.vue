@@ -70,7 +70,9 @@ const { service, loadingService, unavailable, message, searchMessages, changeMes
 const pageTitle = computed(() => capability === "messages" ? "聊天记录" : capability === "memories" ? "记忆" : "图片库");
 const messageColumns: PrimaryTableCol<MysqlRecord>[] = [{ colKey: "message_id", title: "消息 ID", width: 160 }, { colKey: "sender", title: "发送者", width: 160 }, { colKey: "send_time", title: "发送时间", width: 180 }, { colKey: "group", title: "群组", width: 150 }, { colKey: "content", title: "内容" }];
 function serviceTypeLabel(type: string) { return type === "qq_chat" ? "QQ Chat" : type === "http_stream" ? "HTTP Stream" : "Workspace"; }
-function matchLabel(kind: string) { return kind === "keyword" ? "关键词" : kind === "semantic" ? "语义" : "最近更新"; }
+function matchLabel(kind: string) {
+  return kind === "keyword" ? "关键词" : kind === "semantic" ? "语义" : kind === "hybrid" ? "混合" : "最近更新";
+}
 function onMessagePaginationChange(info: { current: number; pageSize: number }) { message.value.pageSize = info.pageSize; changeMessagePage(info.current); }
 function returnToList() { void router.push("/data-explorer"); }
 function onImageError(event: Event) { (event.target as HTMLImageElement).style.display = "none"; }
