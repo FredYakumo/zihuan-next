@@ -102,14 +102,14 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
           cache-dependency-path: webui/pnpm-lock.yaml
 
       - name: Restore Cargo cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Install frontend dependencies
+      - name: Install webui dependencies
         working-directory: webui
         run: pnpm install --frozen-lockfile
 
@@ -166,5 +166,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
           files: release/*

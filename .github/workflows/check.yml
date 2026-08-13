@@ -4,12 +4,13 @@ permissions:
   contents: read
 
 on:
-  push:
-    branches:
-      - dev
+  # push:
+  #   branches:
+  #     - dev
   pull_request:
     branches:
       - master
+      - dev
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,8 +33,24 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: webui/pnpm-lock.yaml
+
       - name: Restore Cargo cache
         uses: Swatinem/rust-cache@v2
+
+      - name: Install webui dependencies
+        working-directory: webui
+        run: pnpm install --frozen-lockfile
 
       - name: Check workspace
         run: cargo check --workspace
