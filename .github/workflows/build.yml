@@ -1,4 +1,4 @@
-name: CI
+name: Build
 
 permissions:
   contents: read
@@ -6,13 +6,9 @@ permissions:
 on:
   push:
     branches:
-      - dev
       - master
     tags:
       - 'v*'
-  pull_request:
-    branches:
-      - master
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -59,7 +55,6 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     env:
-      # Hosted runners have the CUDA toolkit but no GPU for automatic detection.
       CUDA_COMPUTE_CAP: ${{ matrix.cuda_compute_cap }}
     strategy:
       fail-fast: false
@@ -149,53 +144,6 @@ jobs:
           path: target/release/zihuan_next${{ matrix.binary_extension }}
           if-no-files-found: error
 
-  check:
-    name: Check
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
-      github.event_name == 'pull_request'
-    runs-on: ubuntu-22.04
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.22.0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-          cache-dependency-path: webui/pnpm-lock.yaml
-
-      - name: Restore Cargo cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install frontend dependencies
-        working-directory: webui
-        run: pnpm install --frozen-lockfile
-
-      - name: Check workspace
-        run: cargo check --workspace
-
-      - name: Test workspace
-        run: cargo test --workspace
-
-      - name: Lint workspace
-        run: cargo clippy --workspace
-
-      - name: Check formatting
-        run: cargo fmt --check --all
-
   release:
     name: Publish GitHub Release
     needs: build-release
@@ -213,16 +161,11 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir release
-          cp artifacts/Windows-x86_64-cpu/zihuan_next.exe \
-            release/zihuan_next-Windows-x86_64-cpu.exe
-          cp artifacts/Linux-x86_64-cpu/zihuan_next \
-            release/zihuan_next-Linux-x86_64-cpu
-          cp artifacts/macOS-Apple-cpu/zihuan_next \
-            release/zihuan_next-macOS-Apple-cpu
-          cp artifacts/Windows-x86_64-candle-cuda-12.6/zihuan_next.exe \
-            release/zihuan_next-Windows-x86_64-candle-cuda-12.6.exe
-          cp artifacts/Linux-x86_64-candle-cuda-12.6/zihuan_next \
-            release/zihuan_next-Linux-x86_64-candle-cuda-12.6
+          cp artifacts/Windows-x86_64-cpu/zihuan_next.exe release/zihuan_next-Windows-x86_64-cpu.exe
+          cp artifacts/Linux-x86_64-cpu/zihuan_next release/zihuan_next-Linux-x86_64-cpu
+          cp artifacts/macOS-Apple-cpu/zihuan_next release/zihuan_next-macOS-Apple-cpu
+          cp artifacts/Windows-x86_64-candle-cuda-12.6/zihuan_next.exe release/zihuan_next-Windows-x86_64-candle-cuda-12.6.exe
+          cp artifacts/Linux-x86_64-candle-cuda-12.6/zihuan_next release/zihuan_next-Linux-x86_64-candle-cuda-12.6
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
