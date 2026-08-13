@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+use log::warn;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
@@ -35,7 +36,7 @@ pub enum ConfigKind {
     ConnectionSqlite,
     LlmRef,
     ServiceQqChat,
-    ServiceHttpStream,
+    ServiceWorkspace,
     CommandPermission,
 }
 
@@ -52,7 +53,7 @@ impl ConfigKind {
             | Self::ConnectionTokenizer
             | Self::ConnectionSqlite => ConfigCategory::Connection,
             Self::LlmRef => ConfigCategory::LlmRef,
-            Self::ServiceQqChat | Self::ServiceHttpStream => ConfigCategory::Service,
+            Self::ServiceQqChat | Self::ServiceWorkspace => ConfigCategory::Service,
             Self::CommandPermission => ConfigCategory::Service,
         }
     }
@@ -153,14 +154,29 @@ impl ConfigRoot {
             Value::Null => Ok(Self::default()),
             Value::Object(object) => {
                 if object.contains_key("configs") {
-                    serde_json::from_value::<Self>(Value::Object(object))
-                        .map_err(|err| Error::StringError(format!("failed to parse unified config root: {err}")))
+                    Self::from_unified_object(object)
                 } else {
                     Self::from_legacy_object(object)
                 }
             }
             _ => Err(Error::StringError("system config root must be a JSON object".to_string())),
         }
+    }
+
+    fn from_unified_object(mut object: Map<String, Value>) -> Result<Self> {
+        let configs = object.remove("configs").unwrap_or_default();
+        let mut root = serde_json::from_value::<Self>(Value::Object(object))
+            .map_err(|err| Error::StringError(format!("failed to parse unified config root: {err}")))?;
+        let configs = configs.as_object().ok_or_else(|| {
+            Error::StringError("failed to parse unified config root: configs must be an object".to_string())
+        })?;
+        root.configs = ConfigCollections {
+            connections: parse_config_collection(configs.get("connections"), "connections"),
+            llm_refs: parse_config_collection(configs.get("llm_refs"), "llm_refs"),
+            agents: parse_config_collection(configs.get("agents"), "agents"),
+            command_permissions: parse_config_collection(configs.get("command_permissions"), "command_permissions"),
+        };
+        Ok(root)
     }
 
     fn from_legacy_object(object: Map<String, Value>) -> Result<Self> {
@@ -178,6 +194,29 @@ impl ConfigRoot {
         serde_json::to_value(self)
             .map_err(|err| Error::StringError(format!("failed to serialize unified config root: {err}")))
     }
+}
+
+fn parse_config_collection(value: Option<&Value>, collection_name: &str) -> Vec<StoredConfigRecord> {
+    let Some(items) = value else { return Vec::new(); };
+    let Some(items) = items.as_array() else {
+        warn!("[config_center] skipping invalid config collection '{collection_name}': expected an array");
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|item| match serde_json::from_value::<StoredConfigRecord>(item.clone()) {
+            Ok(record) => Some(record),
+            Err(error) => {
+                let config_id = item.get("config_id").and_then(Value::as_str).unwrap_or("unknown");
+                let kind = item.get("kind").and_then(Value::as_str).unwrap_or("unknown");
+                warn!(
+                    "[config_center] skipping unsupported or invalid config collection={} config_id={} kind={}: {}",
+                    collection_name, config_id, kind, error
+                );
+                None
+            }
+        })
+        .collect()
 }
 
 fn migrate_legacy_collection(items: Option<&Vec<Value>>, category: ConfigCategory) -> Result<Vec<StoredConfigRecord>> {
@@ -246,7 +285,7 @@ fn infer_kind_from_legacy_object(category: ConfigCategory, object: &Map<String, 
             .and_then(Value::as_str)
         {
             Some("qq_chat") => Ok(ConfigKind::ServiceQqChat),
-            Some("http_stream") => Ok(ConfigKind::ServiceHttpStream),
+            Some("workspace") => Ok(ConfigKind::ServiceWorkspace),
             Some(other) => Err(Error::ValidationError(format!("unsupported legacy agent type '{other}'"))),
             None => Err(Error::ValidationError("legacy agent is missing agent_type.type".to_string())),
         },

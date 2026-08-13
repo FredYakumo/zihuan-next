@@ -5,7 +5,7 @@ use crate::setup_orchestrator::{ImsBotAdapterSetupConfig, LlmSetupConfig};
 use crate::system_config;
 use zihuan_core::ims_bot_adapter::BotAdapterConnection;
 use zihuan_core::inference::system_config::{
-    AgentConfig, AgentType, HttpStreamServiceConfig, LlmRefConfig, LlmServiceConfig, ModelRefSpec,
+    AgentConfig, AgentType, LlmRefConfig, LlmServiceConfig, ModelRefSpec,
     WorkspaceAgentServiceConfig,
 };
 use zihuan_core::storage::{
@@ -20,14 +20,10 @@ pub async fn create_chat_assistant_stack(llm_config: &LlmSetupConfig) -> Result<
     let llm_ref = build_llm_ref(llm_config, "setup-default-llm", "Default LLM");
     save_llm_ref(llm_ref)?;
 
-    let agent = build_http_stream_service(
+    let agent = build_workspace_agent_service(
         "setup-default-agent",
         "Chat Assistant",
         Some("setup-default-llm".to_string()),
-        None,
-        None,
-        None,
-        "setup-default-sqlite".to_string(),
     );
     save_agent(agent)?;
 
@@ -220,40 +216,6 @@ pub fn build_connection(id: &str, name: &str, kind: ConnectionKind) -> Connectio
     }
 }
 
-fn build_http_stream_service(
-    id: &str,
-    name: &str,
-    llm_ref_id: Option<String>,
-    embedding_model_ref_id: Option<String>,
-    web_search_engine_connection_id: Option<String>,
-    weaviate_memory_connection_id: Option<String>,
-    task_db_connection_id: String,
-) -> AgentConfig {
-    AgentConfig {
-        id: id.to_string(),
-        config_id: id.to_string(),
-        name: name.to_string(),
-        agent_type: AgentType::HttpStream(HttpStreamServiceConfig {
-            bind: "127.0.0.1:18080".to_string(),
-            api_key: None,
-            llm_ref_id,
-            embedding_model_ref_id,
-            web_search_engine_connection_id,
-            weaviate_memory_connection_id,
-            elasticsearch_memory_connection_id: None,
-            memory_backend: None,
-            task_db_connection_id,
-            default_tools_enabled: default_http_stream_tools(),
-        }),
-        enabled: true,
-        auto_start: false,
-        is_default: false,
-        updated_at: now_rfc3339(),
-        tools: vec![],
-        avatar_url: None,
-    }
-}
-
 fn build_qq_chat_agent_service() -> AgentConfig {
     let mut default_tools = HashMap::new();
     for tool in [
@@ -360,16 +322,6 @@ fn parse_api_style(value: &str) -> zihuan_core::inference::system_config::LlmApi
         }
         _ => zihuan_core::inference::system_config::LlmApiStyle::OpenAiChatCompletions,
     }
-}
-
-fn default_http_stream_tools() -> HashMap<String, bool> {
-    [
-        ("web_search".to_string(), true),
-        ("memory_agent".to_string(), true),
-        ("memory_agent_with_context".to_string(), true),
-    ]
-    .into_iter()
-    .collect()
 }
 
 fn default_workspace_tools() -> HashMap<String, bool> {

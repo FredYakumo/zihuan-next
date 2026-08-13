@@ -1328,11 +1328,6 @@ fn service_memory_config(
             config.elasticsearch_memory_connection_id.clone(),
             config.embedding_model_ref_id.clone(),
         ),
-        AgentType::HttpStream(config) => (
-            config.weaviate_memory_connection_id.clone(),
-            config.elasticsearch_memory_connection_id.clone(),
-            config.embedding_model_ref_id.clone(),
-        ),
         AgentType::Workspace(_) => (None, None, None),
     }
 }

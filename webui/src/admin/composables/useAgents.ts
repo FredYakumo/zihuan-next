@@ -12,12 +12,10 @@ import {
 import {
   serviceFormFromConfig,
   buildServicePayload,
-  HTTP_STREAM_DEFAULT_TOOLS,
   WORKSPACE_DEFAULT_TOOLS,
   isBotAdapterConnectionType,
   QQ_CHAT_DEFAULT_TOOLS,
   defaultServiceForm,
-  defaultHttpStreamDefaultToolsEnabled,
   defaultQqChatDefaultToolsEnabled,
   defaultToolForm,
   defaultQqChatMessageRateLimitRule,
@@ -48,11 +46,6 @@ const serviceTypes: ServiceTypeOption[] = [
     value: "qq_chat",
     label: "QQ Chat Agent Service",
     hint: "通过 QQ Bot Adapter 提供对话服务",
-  },
-  {
-    value: "http_stream",
-    label: "HTTP Stream Service",
-    hint: "通过 HTTP 流式接口对外提供服务",
   },
   {
     value: "workspace",
@@ -119,12 +112,10 @@ const { copiedId: serviceCopiedId, copyConfig: copyServiceConfig, handleFileChan
 });
 
 const qqChatDefaultTools = QQ_CHAT_DEFAULT_TOOLS;
-const httpStreamDefaultTools = HTTP_STREAM_DEFAULT_TOOLS;
 const workspaceDefaultTools = WORKSPACE_DEFAULT_TOOLS;
 
 const currentDefaultTools = computed(() => {
   if (form.type === "qq_chat") return qqChatDefaultTools;
-  if (form.type === "http_stream") return httpStreamDefaultTools;
   if (form.type === "workspace") return workspaceDefaultTools;
   return [];
 });
@@ -360,10 +351,6 @@ function pickCreateType(type: ServiceTypeName) {
   if (type === "qq_chat") {
     form.default_tools_enabled = defaultQqChatDefaultToolsEnabled();
     form.tool_session_call_limits = { web_search: 1 };
-    form.tool_session_limit_message = "";
-  } else if (type === "http_stream") {
-    form.default_tools_enabled = defaultHttpStreamDefaultToolsEnabled();
-    form.tool_session_call_limits = {};
     form.tool_session_limit_message = "";
   } else {
     form.default_tools_enabled = defaultWorkspaceDefaultToolsEnabled();
@@ -876,29 +863,11 @@ async function submitForm() {
       return;
     }
     if (
-      form.type === "http_stream" &&
-      form.default_tools_enabled.web_search !== false &&
-      !form.http_web_search_engine_connection_id
-    ) {
-      alert(
-        "启用 web_search 时，HTTP stream service 需要绑定 Web Search Engine 连接",
-      );
-      return;
-    }
-    if (
       form.type === "qq_chat" &&
       form.weaviate_memory_connection_id &&
       !form.embedding_model_ref_id
     ) {
       alert("QQ Chat Agent Service 启用记忆库时需要绑定文本向量模型");
-      return;
-    }
-    if (
-      form.type === "http_stream" &&
-      form.http_weaviate_memory_connection_id &&
-      !form.http_embedding_model_ref_id
-    ) {
-      alert("HTTP stream service 启用记忆库时需要绑定文本向量模型");
       return;
     }
     if (form.id) {
@@ -1011,7 +980,6 @@ onMounted(() => {
     emotionDimensionDraft,
     emotionDimensionEditingIndex,
     qqChatDefaultTools,
-    httpStreamDefaultTools,
     workspaceDefaultTools,
     currentDefaultTools,
     defaultToolSearchQuery,

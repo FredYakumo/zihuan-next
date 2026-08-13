@@ -121,7 +121,6 @@ impl LoadedInferenceAgent {
         }
 
         let llm_ref_id = match &agent.agent_type {
-            AgentType::HttpStream(config) => config.llm_ref_id.as_deref(),
             AgentType::QqChat(config) => config.llm_ref_id.as_deref(),
             AgentType::Workspace(config) => config.llm_ref_id.as_deref(),
         };
@@ -288,7 +287,6 @@ pub fn resolve_agent_model_name_with_override(
     let llm_ref_id = match model_override {
         Some(id) => Some(id),
         None => match &agent.agent_type {
-            AgentType::HttpStream(config) => config.llm_ref_id.as_deref(),
             AgentType::QqChat(config) => config.llm_ref_id.as_deref(),
             AgentType::Workspace(config) => config.llm_ref_id.as_deref(),
         },

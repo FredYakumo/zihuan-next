@@ -21,10 +21,10 @@ export type ConnectionType =
   | "tokenizer"
   | "sqlite";
 export type WeaviateCollectionSchema = "image_semantic" | "agent_memory";
-export type ServiceTypeName = "qq_chat" | "http_stream" | "workspace";
+export type ServiceTypeName = "qq_chat" | "workspace";
 
 /** Service types that support the Dashboard embedded Chat component. */
-export const CHAT_ELIGIBLE_SERVICE_TYPES: ReadonlySet<string> = new Set(["http_stream", "workspace"]);
+export const CHAT_ELIGIBLE_SERVICE_TYPES: ReadonlySet<string> = new Set(["workspace"]);
 export type ModelRefType = "chat_llm" | "text_embedding_local";
 export type ToolRunDuration = "Short" | "Long";
 export type LlmApiStyle =
@@ -262,12 +262,6 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
   { id: "memory_agent_with_context", label: "memory_agent_with_context", description: "按聊天上下文搜索或更新记忆" },
 ];
 
-export const HTTP_STREAM_DEFAULT_TOOLS: DefaultToolOption[] = [
-  { id: "web_search", label: "web_search", description: "联网搜索" },
-  { id: "memory_agent", label: "memory_agent", description: "由记忆 Agent 自动检索或更新记忆" },
-  { id: "memory_agent_with_context", label: "memory_agent_with_context", description: "按聊天上下文搜索或更新记忆" },
-];
-
 export const WORKSPACE_DEFAULT_TOOLS: DefaultToolOption[] = [
   { id: "read_file", label: "read_file", description: "读取文件内容" },
   { id: "list_dir", label: "list_dir", description: "列出目录内容" },
@@ -311,15 +305,6 @@ export function defaultQqChatMessageRateLimitRule(): QqChatMessageRateLimitRuleF
     max_calls: 20,
   };
 }
-export function defaultHttpStreamDefaultToolsEnabled(): Record<
-  string,
-  boolean
-> {
-  return Object.fromEntries(
-    HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [tool.id, true]),
-  );
-}
-
 export function defaultWorkspaceDefaultToolsEnabled(): Record<string, boolean> {
   return Object.fromEntries(
     WORKSPACE_DEFAULT_TOOLS.map((tool) => [tool.id, true]),
@@ -1005,33 +990,6 @@ export function serviceFormFromConfig(
           })
           .filter((item): item is QqChatMessageRateLimitUserFormItem => item != null)
       : [];
-  } else if (form.type === "http_stream") {
-    form.http_bind = String(agentType.bind ?? "127.0.0.1:18080");
-    form.http_api_key = String(agentType.api_key ?? "");
-    form.llm_ref_id = String(agentType.llm_ref_id ?? "");
-    form.http_web_search_engine_connection_id = String(
-      agentType.web_search_engine_connection_id ?? "",
-    );
-    form.http_embedding_model_ref_id = String(
-      agentType.embedding_model_ref_id ?? "",
-    );
-    form.http_weaviate_memory_connection_id = String(
-      agentType.weaviate_memory_connection_id ?? "",
-    );
-    form.http_elasticsearch_memory_connection_id = String(agentType.elasticsearch_memory_connection_id ?? "");
-    form.http_memory_backend = agentType.memory_backend === "local_file" || agentType.memory_backend === "weaviate" || agentType.memory_backend === "elasticsearch" ? agentType.memory_backend : "";
-    form.task_db_connection_id = String(agentType.task_db_connection_id ?? "");
-    const source = (agentType.default_tools_enabled ?? {}) as Record<
-      string,
-      unknown
-    >;
-    form.default_tools_enabled = defaultHttpStreamDefaultToolsEnabled();
-    for (const tool of HTTP_STREAM_DEFAULT_TOOLS) {
-      const value = source[tool.id];
-      if (typeof value === "boolean") {
-        form.default_tools_enabled[tool.id] = value;
-      }
-    }
   } else {
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
     form.agents_md_enabled = Boolean(agentType.agents_md_enabled ?? false);
@@ -1052,7 +1010,7 @@ export function serviceFormFromConfig(
       }
     }
   }
-  // avatar_url is at root level for http_stream and Workspace Agent Services
+  // avatar_url is at root level for Workspace Agent Services
   form.avatar_url = String((agent as ServiceWithRuntime).avatar_url ?? "");
   return form;
 }
@@ -1197,34 +1155,6 @@ export function buildServicePayload(form: ServiceFormState): {
             ...buildQqChatMessageRateLimitRulePayload(item),
           }))
           .filter((item) => item.sender_id),
-      },
-    };
-  }
-
-  if (form.type === "http_stream") {
-    return {
-      ...common,
-      avatar_url: form.avatar_url.trim() || null,
-      agent_type: {
-        type: "http_stream",
-        bind: form.http_bind.trim(),
-        api_key: form.http_api_key.trim() || null,
-        llm_ref_id: form.llm_ref_id || null,
-        embedding_model_ref_id: form.http_embedding_model_ref_id || null,
-        web_search_engine_connection_id:
-          form.http_web_search_engine_connection_id || null,
-        weaviate_memory_connection_id:
-          form.http_weaviate_memory_connection_id || null,
-        elasticsearch_memory_connection_id:
-          form.http_elasticsearch_memory_connection_id || null,
-        memory_backend: form.http_memory_backend || null,
-        task_db_connection_id: form.task_db_connection_id || null,
-        default_tools_enabled: Object.fromEntries(
-          HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [
-            tool.id,
-            form.default_tools_enabled[tool.id] !== false,
-          ]),
-        ),
       },
     };
   }
@@ -1419,7 +1349,7 @@ export function assertLlmConfig(json: unknown): LlmConfig {
   return obj as unknown as LlmConfig;
 }
 
-const SUPPORTED_SERVICE_TYPES = new Set(["qq_chat", "http_stream", "workspace"]);
+const SUPPORTED_SERVICE_TYPES = new Set(["qq_chat", "workspace"]);
 
 export function assertServiceConfig(json: unknown): ServiceWithRuntime {
   if (!json || typeof json !== "object") {

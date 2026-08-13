@@ -43,7 +43,40 @@
         <p class="muted">在导航栏"日志"旁显示未读错误数量红点。</p>
         <t-checkbox :checked="logErrorBadgeEnabled" @change="handleLogErrorBadgeToggle">显示错误提示</t-checkbox>
       </t-card>
+
+      <t-card title="模型 HTTP 服务" bordered header-bordered>
+        <template #actions>
+          <t-switch :value="modelHttpEnabled" :loading="modelHttpSaving" @change="setModelHttpEnabled" />
+        </template>
+        <p class="muted">启用主服务的 OpenAI 兼容接口：<code>/v1/chat/completions</code></p>
+        <t-button :disabled="!modelHttpEnabled" @click="modelHttpDialogVisible = true">模型配置</t-button>
+      </t-card>
     </div>
+
+    <t-card title="模型 HTTP API Keys" bordered header-bordered>
+      <template #actions><t-button theme="primary" @click="handleCreateModelHttpApiKey">创建 API Key</t-button></template>
+      <p class="muted">Key 仅在创建时显示明文；分组字段已预留给后续授权功能。</p>
+      <t-table :data="modelHttpApiKeys" :columns="modelHttpApiKeyColumns" row-key="id" :pagination="false" size="small">
+        <template #enabled="{ row }"><t-switch :value="row.enabled" @change="updateModelHttpApiKey(row, { enabled: $event })" /></template>
+        <template #actions="{ row }"><t-popconfirm content="确认删除此 API Key？" @confirm="deleteModelHttpApiKey(row.id)"><t-button variant="text" theme="danger">删除</t-button></t-popconfirm></template>
+      </t-table>
+    </t-card>
+
+    <t-dialog v-model:visible="modelHttpDialogVisible" header="公开模型配置" width="680px" :confirm-btn="{ content: '保存' }" @confirm="saveModelHttpSettings">
+      <p class="muted">请求中的 <code>model</code> 使用模型配置的底层 Model Name；同名模型不能同时公开。</p>
+      <div class="settings-backup-actions"><t-checkbox :checked="allPublicModelsSelected" @change="toggleAllPublicModels">全选</t-checkbox></div>
+      <t-checkbox-group v-model="publicModelConfigIds">
+        <div v-for="model in enabledChatModels" :key="model.config_id" class="settings-path-row">
+          <t-checkbox :value="model.config_id">{{ model.name }}（{{ model.model_name }}）</t-checkbox>
+        </div>
+      </t-checkbox-group>
+    </t-dialog>
+
+    <t-dialog v-model:visible="modelHttpSecretDialogVisible" header="请立即保存 API Key" :footer="false">
+      <p>此 Key 之后无法再次查看。</p>
+      <t-input :value="newModelHttpSecret" readonly />
+      <div class="settings-backup-actions"><t-button theme="primary" @click="copyModelHttpSecret">复制</t-button></div>
+    </t-dialog>
 
     <t-card title="Python 运行时" bordered header-bordered>
       <template #actions>
@@ -160,6 +193,7 @@
 
 <script setup lang="ts">
 import { ErrorCircleIcon } from "tdesign-icons-vue-next";
+import { ref } from "vue";
 
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useSettings } from "../composables/useSettings";
@@ -194,7 +228,38 @@ const {
   changePythonRuntime,
   logErrorBadgeEnabled,
   handleLogErrorBadgeToggle,
+  modelHttpEnabled,
+  modelHttpSaving,
+  publicModelConfigIds,
+  modelHttpApiKeys,
+  enabledChatModels,
+  allPublicModelsSelected,
+  newModelHttpSecret,
+  setModelHttpEnabled,
+  saveModelHttpSettings,
+  toggleAllPublicModels,
+  createModelHttpApiKey,
+  updateModelHttpApiKey,
+  deleteModelHttpApiKey,
+  copyModelHttpSecret,
 } = useSettings();
+
+const modelHttpDialogVisible = ref(false);
+const modelHttpSecretDialogVisible = ref(false);
+const modelHttpApiKeyColumns = [
+  { colKey: "name", title: "名称" },
+  { colKey: "secret_prefix", title: "Key 前缀" },
+  { colKey: "created_at", title: "创建时间" },
+  { colKey: "expires_at", title: "过期时间" },
+  { colKey: "group", title: "分组" },
+  { colKey: "enabled", title: "启用", width: 80 },
+  { colKey: "actions", title: "操作", width: 80 },
+];
+
+async function handleCreateModelHttpApiKey() {
+  await createModelHttpApiKey();
+  if (newModelHttpSecret.value) modelHttpSecretDialogVisible.value = true;
+}
 </script>
 
 <style scoped lang="scss">

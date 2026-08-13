@@ -43,6 +43,8 @@ thiserror = "2.0.17"
 tinyfiledialogs = "3.9"
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 zip = { version = "2", features = ["deflate"] }
+sha2 = "0.10"
+hex = "0.4"
 
 [dev-dependencies]
 uuid = { version = "1", features = ["v4"] }

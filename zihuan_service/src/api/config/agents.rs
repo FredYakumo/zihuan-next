@@ -419,7 +419,7 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
                 let runtime = state.agent_manager.runtime_info(&agent.id);
                 let qq_config = match &agent.agent_type {
                     AgentType::QqChat(config) => Some(config.clone()),
-                    AgentType::HttpStream(_) | AgentType::Workspace(_) => None,
+                    AgentType::Workspace(_) => None,
                 };
                 let qq_chat_profile = match qq_config.as_ref() {
                     Some(config) => resolve_qq_chat_profile(state, &mut agent, &connections, config, &runtime).await,
@@ -867,12 +867,6 @@ fn validate_agent_connection_schemas(agent_type: &AgentType, connections: &[Conn
             )?;
             Ok(())
         }
-        AgentType::HttpStream(config) => validate_weaviate_connection_schema(
-            connections,
-            config.weaviate_memory_connection_id.as_deref(),
-            WeaviateCollectionSchema::AgentMemory,
-            "weaviate_memory_connection_id",
-        ),
         AgentType::Workspace(_) => Ok(()),
     }
 }
@@ -945,9 +939,6 @@ fn validate_qq_chat_agent_service_llms(
                 "natural_language_reply_llm_ref_id",
             )?;
 
-            validate_embedding_model_ref(llm_refs, config.embedding_model_ref_id.as_deref(), agent_name)
-        }
-        AgentType::HttpStream(config) => {
             validate_embedding_model_ref(llm_refs, config.embedding_model_ref_id.as_deref(), agent_name)
         }
         AgentType::Workspace(config) => validate_chat_llm_ref(

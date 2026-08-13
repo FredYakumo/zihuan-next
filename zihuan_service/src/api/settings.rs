@@ -2,13 +2,18 @@ use std::io::{Cursor, Write};
 use std::path::Path;
 
 use chrono::Utc;
+use chrono::{DateTime, SecondsFormat};
 use salvo::http::StatusCode;
 use salvo::prelude::*;
 use salvo::writing::Json;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio::task;
 use zihuan_core::config::ConfigCenter;
 use zihuan_core::python_runtime::PythonRuntimeConfig;
+use zihuan_core::system_config::{GlobalSettingsSection, ModelHttpApiKey, ModelHttpServiceSettings};
+use zihuan_core::inference::system_config::{load_llm_refs, ModelRefSpec};
+use uuid::Uuid;
 
 use zihuan_core::python_runtime_resolver::check_python_runtime;
 use zip::write::SimpleFileOptions;
@@ -62,6 +67,199 @@ pub struct PythonRuntimeResponse {
 pub struct PythonRuntimeSelectionResponse {
     pub cancelled: bool,
     pub runtime: Option<PythonRuntimeResponse>,
+}
+
+#[derive(Serialize)]
+pub struct ModelHttpSettingsResponse {
+    pub enabled: bool,
+    pub public_model_config_ids: Vec<String>,
+    pub api_keys: Vec<ModelHttpApiKeyResponse>,
+}
+
+#[derive(Serialize)]
+pub struct ModelHttpApiKeyResponse {
+    pub id: String,
+    pub name: String,
+    pub secret_prefix: String,
+    pub created_at: String,
+    pub expires_at: Option<String>,
+    pub group: Option<String>,
+    pub enabled: bool,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateModelHttpSettingsRequest {
+    pub enabled: bool,
+    #[serde(default)]
+    pub public_model_config_ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateModelHttpApiKeyRequest {
+    pub name: String,
+    #[serde(default)]
+    pub expires_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub group: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateModelHttpApiKeyRequest {
+    pub name: String,
+    #[serde(default)]
+    pub expires_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub group: Option<String>,
+    pub enabled: bool,
+}
+
+#[derive(Serialize)]
+pub struct CreateModelHttpApiKeyResponse {
+    #[serde(flatten)]
+    pub key: ModelHttpApiKeyResponse,
+    pub secret: String,
+}
+
+fn model_http_key_response(key: &ModelHttpApiKey) -> ModelHttpApiKeyResponse {
+    ModelHttpApiKeyResponse {
+        id: key.id.clone(),
+        name: key.name.clone(),
+        secret_prefix: key.secret_prefix.clone(),
+        created_at: key.created_at.to_rfc3339_opts(SecondsFormat::Secs, true),
+        expires_at: key.expires_at.map(|value| value.to_rfc3339_opts(SecondsFormat::Secs, true)),
+        group: key.group.clone(),
+        enabled: key.enabled,
+    }
+}
+
+fn model_http_settings_response(settings: ModelHttpServiceSettings) -> ModelHttpSettingsResponse {
+    ModelHttpSettingsResponse {
+        enabled: settings.enabled,
+        public_model_config_ids: settings.public_model_config_ids,
+        api_keys: settings.api_keys.iter().map(model_http_key_response).collect(),
+    }
+}
+
+#[handler]
+pub async fn get_model_http_settings(_req: &mut Request, res: &mut Response) {
+    match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+        Ok(settings) => res.render(Json(model_http_settings_response(settings.model_http_service))),
+        Err(error) => render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    }
+}
+
+#[handler]
+pub async fn update_model_http_settings(req: &mut Request, res: &mut Response) {
+    let body: UpdateModelHttpSettingsRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(error) => return render_settings_error(res, StatusCode::BAD_REQUEST, error.to_string()),
+    };
+    let llm_refs = match load_llm_refs() {
+        Ok(items) => items,
+        Err(error) => return render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    };
+    let mut public_model_names = std::collections::HashSet::new();
+    for config_id in &body.public_model_config_ids {
+        let Some(llm_ref) = llm_refs.iter().find(|item| item.id == *config_id && item.enabled) else {
+            return render_settings_error(res, StatusCode::BAD_REQUEST, format!("public model '{config_id}' is not an enabled chat model"));
+        };
+        let ModelRefSpec::ChatLlm { llm } = &llm_ref.model else {
+            return render_settings_error(res, StatusCode::BAD_REQUEST, format!("public model '{}' is not a chat model", llm_ref.name));
+        };
+        if !public_model_names.insert(llm.model_name.clone()) {
+            return render_settings_error(res, StatusCode::BAD_REQUEST, format!("public models must use unique model_name: {}", llm.model_name));
+        }
+    }
+    let mut settings = match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+        Ok(settings) => settings,
+        Err(error) => return render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    };
+    settings.model_http_service.enabled = body.enabled;
+    settings.model_http_service.public_model_config_ids = body.public_model_config_ids;
+    match zihuan_core::system_config::save_section::<GlobalSettingsSection>(&settings) {
+        Ok(()) => res.render(Json(model_http_settings_response(settings.model_http_service))),
+        Err(error) => render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    }
+}
+
+#[handler]
+pub async fn create_model_http_api_key(req: &mut Request, res: &mut Response) {
+    let body: CreateModelHttpApiKeyRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(error) => return render_settings_error(res, StatusCode::BAD_REQUEST, error.to_string()),
+    };
+    if body.name.trim().is_empty() {
+        return render_settings_error(res, StatusCode::BAD_REQUEST, "API Key name must not be empty".to_string());
+    }
+    let mut settings = match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+        Ok(settings) => settings,
+        Err(error) => return render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    };
+    let secret = format!("zhk_{}", Uuid::new_v4().simple());
+    let secret_hash = hex::encode(Sha256::digest(secret.as_bytes()));
+    let key = ModelHttpApiKey {
+        id: Uuid::new_v4().to_string(),
+        name: body.name.trim().to_string(),
+        secret_hash,
+        secret_prefix: secret.chars().take(12).collect(),
+        created_at: Utc::now(),
+        expires_at: body.expires_at,
+        group: body.group.filter(|value| !value.trim().is_empty()),
+        enabled: true,
+    };
+    settings.model_http_service.api_keys.push(key.clone());
+    match zihuan_core::system_config::save_section::<GlobalSettingsSection>(&settings) {
+        Ok(()) => res.render(Json(CreateModelHttpApiKeyResponse { key: model_http_key_response(&key), secret })),
+        Err(error) => render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    }
+}
+
+#[handler]
+pub async fn update_model_http_api_key(req: &mut Request, res: &mut Response) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    let body: UpdateModelHttpApiKeyRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(error) => return render_settings_error(res, StatusCode::BAD_REQUEST, error.to_string()),
+    };
+    let mut settings = match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+        Ok(settings) => settings,
+        Err(error) => return render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    };
+    let Some(key) = settings.model_http_service.api_keys.iter_mut().find(|key| key.id == id) else {
+        return render_settings_error(res, StatusCode::NOT_FOUND, "API Key not found".to_string());
+    };
+    key.name = body.name.trim().to_string();
+    key.expires_at = body.expires_at;
+    key.group = body.group.filter(|value| !value.trim().is_empty());
+    key.enabled = body.enabled;
+    let response = model_http_key_response(key);
+    match zihuan_core::system_config::save_section::<GlobalSettingsSection>(&settings) {
+        Ok(()) => res.render(Json(response)),
+        Err(error) => render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    }
+}
+
+#[handler]
+pub async fn delete_model_http_api_key(req: &mut Request, res: &mut Response) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    let mut settings = match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+        Ok(settings) => settings,
+        Err(error) => return render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    };
+    let before = settings.model_http_service.api_keys.len();
+    settings.model_http_service.api_keys.retain(|key| key.id != id);
+    if before == settings.model_http_service.api_keys.len() {
+        return render_settings_error(res, StatusCode::NOT_FOUND, "API Key not found".to_string());
+    }
+    match zihuan_core::system_config::save_section::<GlobalSettingsSection>(&settings) {
+        Ok(()) => res.render(Json(serde_json::json!({ "ok": true }))),
+        Err(error) => render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    }
+}
+
+fn render_settings_error(res: &mut Response, status: StatusCode, error: String) {
+    res.status_code(status);
+    res.render(Json(serde_json::json!({ "error": error })));
 }
 
 async fn python_runtime_response(config: PythonRuntimeConfig) -> PythonRuntimeResponse {

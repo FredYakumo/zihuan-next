@@ -318,7 +318,6 @@ impl SideEffectContext for DashboardCommandSideEffectContext {
 fn extract_agent_snapshot(agent: &AgentConfig, connections: &[ConnectionConfig]) -> AgentSnapshot {
     let agent_type = match &agent.agent_type {
         AgentType::QqChat(_) => "qq_chat",
-        AgentType::HttpStream(_) => "http_stream",
         AgentType::Workspace(_) => "workspace",
     };
 
@@ -327,7 +326,7 @@ fn extract_agent_snapshot(agent: &AgentConfig, connections: &[ConnectionConfig])
             .ok()
             .flatten()
             .and_then(|profile| profile.avatar_url),
-        AgentType::HttpStream(_) | AgentType::Workspace(_) => agent.avatar_url.clone(),
+        AgentType::Workspace(_) => agent.avatar_url.clone(),
     };
 
     AgentSnapshot {
