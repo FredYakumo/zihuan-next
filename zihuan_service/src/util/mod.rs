@@ -1,7 +1,3 @@
-pub mod hyperparam_store;
-pub mod message_record;
-pub mod url_utils;
-
 /// Mask credentials in a connection URL (e.g., redis/mysql/http), preserving scheme/host while redacting password.
 /// Examples:
 /// - "mysql://user:secret@127.0.0.1:3306/db" -> "mysql://user:****@127.0.0.1:3306/db"

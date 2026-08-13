@@ -46,6 +46,7 @@ type ToolCallKind =
   | { type: "list_dir"; dirname: string; entries: Array<{ name: string; path: string; type: string }>; truncated: boolean; tree?: string }
   | { type: "grep" | "rg"; pattern: string; matches: SearchMatch[]; totalMatches: number; matchedFiles: number; skippedBinary: number; truncated: boolean }
   | { type: "ask_user"; question: string }
+  | { type: "memory_agent"; action: "recall" | "remember"; content: string }
   | { type: "generic"; name: string };
 
 export type { ToolCallKind, LineEditSpec };

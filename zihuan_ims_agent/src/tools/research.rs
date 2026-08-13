@@ -3,7 +3,7 @@ use std::sync::Arc;
 use log::info;
 use serde_json::Value;
 
-use zihuan_core::agent_runtime::brain::{Brain, BrainTool};
+use zihuan_core::agent::brain::{Brain, BrainTool};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
@@ -15,7 +15,7 @@ use zihuan_core::tool_runtime::ToolRunDuration;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_core::graph::object_storage::S3Ref;
 
-use super::agent_memory::AgentMemoryToolResources;
+use zihuan_core::memory_agent::{MemoryAgentResources, MemoryBrainAgent, MemoryBrainAgentContextTool, MemoryBrainAgentTool};
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
 use super::deep_research::RunDeepResearchSubagentBrainTool;
 use crate::qq_chat::tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
@@ -29,7 +29,7 @@ const RESEARCH_SYSTEM_PROMPT: &str = "\
     1. First assess the problem's complexity and information needs.\n\
     2. If the problem can be solved directly with your knowledge, reasoning, and general experience, provide an accurate, complete, and actionable answer.\n\
     3. For math, programming, logic analysis, and solution-design problems, default to offline reasoning; do not assume the web is required just because the problem looks hard.\n\
-    4. If the only gap is user context, historical preferences, or previously mentioned details, ask the main agent to use `search_memory_content` rather than escalating uncertainty into web research.\n\
+    4. If the only gap is user context, historical preferences, or previously mentioned details, use `memory_agent` rather than escalating uncertainty into web research.\n\
     5. Only call `run_deep_research_subagent` when the problem genuinely depends on the latest external sources, web content, or fact-checking and cannot be completed with existing knowledge alone.\n\
     \n\
     Output requirements:\n\
@@ -45,7 +45,7 @@ pub(crate) struct RunResearchSubagentBrainTool {
     weaviate_ref: Option<Arc<WeaviateRef>>,
     current_message_event: Option<zihuan_core::ims_bot_adapter::models::MessageEvent>,
     notification_target: ToolNotificationTarget,
-    memory_resources: Option<AgentMemoryToolResources>,
+    memory_resources: Option<MemoryAgentResources>,
     tool_quota: Option<QqChatToolQuotaContext>,
 }
 
@@ -59,7 +59,7 @@ impl RunResearchSubagentBrainTool {
         weaviate_ref: Option<Arc<WeaviateRef>>,
         current_message_event: Option<zihuan_core::ims_bot_adapter::models::MessageEvent>,
         notification_target: ToolNotificationTarget,
-        memory_resources: Option<AgentMemoryToolResources>,
+        memory_resources: Option<MemoryAgentResources>,
         tool_quota: Option<QqChatToolQuotaContext>,
     ) -> Self {
         Self {
@@ -137,6 +137,11 @@ impl BrainTool for RunResearchSubagentBrainTool {
             // The subagent evaluates the problem and either answers directly
             // or escalates to deep_research for multi-step web research.
             let mut brain = Brain::new(Arc::clone(&self.llm));
+            if let Some(memory_resources) = self.memory_resources.clone() {
+                let memory_agent = MemoryBrainAgent::new(memory_resources);
+                brain.add_tool(MemoryBrainAgentTool::new(memory_agent.clone()));
+                brain.add_tool(MemoryBrainAgentContextTool::new(memory_agent));
+            }
             brain.add_tool(wrap_brain_tool_with_quota(
                 RunDeepResearchSubagentBrainTool::new(
                     Arc::clone(&self.llm),

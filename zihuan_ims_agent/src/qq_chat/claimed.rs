@@ -7,12 +7,12 @@ use log::{info, warn};
 use zihuan_core::inference::inference_function::compact_message::{compact_message_history, estimate_messages_tokens};
 use zihuan_core::inference::message_content_utils::{downgrade_messages_for_model, sanitize_messages_for_inference};
 
-use zihuan_core::agent_runtime::brain::{Brain, BrainStopReason, LongTaskContext};
+use zihuan_core::agent::brain::{Brain, BrainStopReason, LongTaskContext};
 
-use zihuan_core::agent_runtime::emotion::utils::emotion_dimensions_snapshot_text;
-use zihuan_core::agent_runtime::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
-use zihuan_core::agent_config::qq_chat::current_qq_chat_agent_service_config;
-use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
+use zihuan_core::agent::emotion::utils::emotion_dimensions_snapshot_text;
+use zihuan_core::agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
+use zihuan_core::agent::qq_chat::current_qq_chat_agent_service_config;
+use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::{InferenceParam, LLMMessage, TokenUsage};
@@ -31,15 +31,16 @@ use zihuan_core::ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, Ge
 use super::super::super::tools::{
     format_public_info_message, review_and_rewrite_reply, AgentMemoryBackend, AgentMemoryToolResources,
     EditableQqAgentTool, GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
-    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool, ModelIdentityContext,
-    QqReplyReviewRequest, RememberContentBrainTool, ReplyMessageBrainTool, RunResearchSubagentBrainTool,
-    SaveImageBrainTool, SearchMemoryContentBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget,
+    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ModelIdentityContext, QqReplyReviewRequest,
+    ReplyMessageBrainTool, RunResearchSubagentBrainTool, SaveImageBrainTool, SearchSimilarImagesBrainTool,
+    ToolNotificationTarget,
     WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
     DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
-    DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS, DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SAVE_IMAGE,
-    DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
+    DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT, DEFAULT_TOOL_SAVE_IMAGE,
+    DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
     QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
+use zihuan_core::memory_agent::{MemoryBrainAgent, MemoryBrainAgentContextTool, MemoryBrainAgentTool};
 use zihuan_core::storage::AgentMemoryAccessContext;
 
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
@@ -60,7 +61,7 @@ use super::{
     QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 
-use super::super::chat_preprompt::run_chat_preprompt_agent;
+use crate::agent::preprompt_agent::run_chat_preprompt_agent;
 
 use super::super::steer::QqChatServiceSteerHook;
 use super::super::tool_quota::wrap_brain_tool_with_quota;
@@ -855,13 +856,15 @@ impl QqChatAgentServiceInner {
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
         let chat_preprompt_history_key = chat_preprompt_history_key(sender_id);
-        let preprompt_memory_backend = ctx
+        let preprompt_memory_backend = ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(|| ctx
             .elasticsearch_memory_ref
             .cloned()
             .map(AgentMemoryBackend::Elasticsearch)
-            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate));
-        let preprompt_memory_resources = match (preprompt_memory_backend, ctx.embedding_model.cloned()) {
-            (Some(memory_backend), Some(embedding_model)) => Some(AgentMemoryToolResources {
+            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)));
+        let preprompt_memory_resources = preprompt_memory_backend.and_then(|memory_backend| {
+            let embedding_model = ctx.embedding_model.cloned();
+            if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_)) && embedding_model.is_none() { return None; }
+            Some(AgentMemoryToolResources {
                 memory_backend,
                 embedding_model,
                 llm: Arc::clone(ctx.llm),
@@ -876,9 +879,8 @@ impl QqChatAgentServiceInner {
                     admin: false,
                     skip_expiry_extend: false,
                 },
-            }),
-            _ => None,
-        };
+            })
+        });
         let preprompt_context = run_chat_preprompt_agent(
             trace,
             ctx.natural_language_reply_llm,
@@ -1031,12 +1033,16 @@ impl QqChatAgentServiceInner {
             preprompt_context: preprompt_context.clone(),
         }));
 
-        let memory_backend = ctx
+        let memory_backend = ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(|| ctx
             .elasticsearch_memory_ref
             .cloned()
             .map(AgentMemoryBackend::Elasticsearch)
-            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate));
-        if let (Some(memory_backend), Some(embedding_model)) = (memory_backend, ctx.embedding_model.cloned()) {
+            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)));
+        if let Some(memory_backend) = memory_backend {
+            let embedding_model = ctx.embedding_model.cloned();
+            if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_)) && embedding_model.is_none() {
+                log::warn!("memory tools disabled because the configured backend has no embedding model");
+            } else {
             let memory_resources = AgentMemoryToolResources {
                 memory_backend,
                 embedding_model,
@@ -1053,23 +1059,19 @@ impl QqChatAgentServiceInner {
                     skip_expiry_extend: false,
                 },
             };
-            if self.is_default_tool_enabled(DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS) {
+            let memory_agent = MemoryBrainAgent::new(memory_resources);
+            if self.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
                 brain.add_tool(wrap_brain_tool_with_quota(
-                    ListAvailableMemoryKeysBrainTool::new(memory_resources.clone()),
+                    MemoryBrainAgentTool::new(memory_agent.clone()),
                     tool_quota.clone(),
                 ));
             }
-            if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_MEMORY_CONTENT) {
+            if self.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT) {
                 brain.add_tool(wrap_brain_tool_with_quota(
-                    SearchMemoryContentBrainTool::new(memory_resources.clone()),
+                    MemoryBrainAgentContextTool::new(memory_agent),
                     tool_quota.clone(),
                 ));
             }
-            if self.is_default_tool_enabled(DEFAULT_TOOL_REMEMBER_CONTENT) {
-                brain.add_tool(wrap_brain_tool_with_quota(
-                    RememberContentBrainTool::new(memory_resources),
-                    tool_quota.clone(),
-                ));
             }
         }
 
@@ -1109,29 +1111,33 @@ impl QqChatAgentServiceInner {
                 ctx.weaviate_image_ref.cloned(),
                 Some(prepared_input.event.clone()),
                 ToolNotificationTarget::dashboard(),
-                if let (Some(memory_backend), Some(embedding_model)) = (
+                if let Some(memory_backend) = ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(||
                     ctx.elasticsearch_memory_ref
                         .cloned()
                         .map(AgentMemoryBackend::Elasticsearch)
-                        .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)),
-                    ctx.embedding_model.cloned(),
-                ) {
-                    Some(AgentMemoryToolResources {
-                        memory_backend,
-                        embedding_model,
-                        llm: Arc::clone(turn_llm),
-                        access: AgentMemoryAccessContext {
-                            sender_id: Some(sender_id.to_string()),
-                            group_id: if is_group {
-                                Some(target_id.to_string())
-                            } else {
-                                prepared_input.event.group_id.map(|value| value.to_string())
+                        .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)))
+                {
+                    let embedding_model = ctx.embedding_model.cloned();
+                    if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_)) && embedding_model.is_none() {
+                        None
+                    } else {
+                        Some(AgentMemoryToolResources {
+                            memory_backend,
+                            embedding_model,
+                            llm: Arc::clone(turn_llm),
+                            access: AgentMemoryAccessContext {
+                                sender_id: Some(sender_id.to_string()),
+                                group_id: if is_group {
+                                    Some(target_id.to_string())
+                                } else {
+                                    prepared_input.event.group_id.map(|value| value.to_string())
+                                },
+                                is_group,
+                                admin: false,
+                                skip_expiry_extend: false,
                             },
-                            is_group,
-                            admin: false,
-                            skip_expiry_extend: false,
-                        },
-                    })
+                        })
+                    }
                 } else {
                     None
                 },
@@ -1241,7 +1247,7 @@ impl QqChatAgentServiceInner {
             tool_quota.clone(),
         ));
 
-        let qq_chat_agent_config = current_qq_chat_agent_service_config()?;
+        let qq_chat_agent = current_qq_chat_agent_service_config()?;
         for tool_def in &self.tool_definitions {
             brain.add_tool(wrap_brain_tool_with_quota(
                 EditableQqAgentTool {
@@ -1251,7 +1257,7 @@ impl QqChatAgentServiceInner {
                         shared_inputs: self.shared_inputs.clone(),
                         definition: tool_def.clone(),
                         shared_runtime_values: Arc::clone(&shared_runtime_values),
-                        qq_chat_agent_config: Some(qq_chat_agent_config.clone()),
+                        qq_chat_agent: Some(qq_chat_agent.clone()),
                         result_mode: ToolResultMode::SingleString,
                         builtin_executor: Some(crate::qq_tool_subgraph_hooks::image_understand_executor()),
                         progress_notifier: Some(crate::qq_tool_subgraph_hooks::qq_progress_notifier()),
@@ -1368,7 +1374,7 @@ impl QqChatAgentServiceInner {
         trace.record_llm_result_parsed(final_reply_text.as_deref());
         let suppress_send = final_reply_text
             .as_deref()
-            .map(zihuan_core::agent_runtime::utils::string_utils::is_no_reply_directive);
+            .map(zihuan_core::agent::utils::string_utils::is_no_reply_directive);
         trace.record_final_reply_decision(final_reply_text.as_deref(), suppress_send, None);
 
         let mut visible_assistant_history_text = None;
@@ -1389,7 +1395,7 @@ impl QqChatAgentServiceInner {
                 }
             }
         } else if let Some(candidate_message) = final_reply_text.as_ref() {
-            if zihuan_core::agent_runtime::utils::string_utils::is_no_reply_directive(candidate_message) {
+            if zihuan_core::agent::utils::string_utils::is_no_reply_directive(candidate_message) {
                 explicit_no_reply = true;
             } else {
                 let available_media = collect_available_media_from_brain_output(&brain_output);
@@ -1514,8 +1520,8 @@ impl QqChatAgentServiceInner {
         let (emotion_prompt, suppress_language_style) = {
             let session = turn_session_state.lock().unwrap();
             (
-                zihuan_core::agent_runtime::emotion::utils::emotion_expression_prompt(&session, emotion_dimensions),
-                zihuan_core::agent_runtime::emotion::utils::has_noticeable_emotion_expression(&session, emotion_dimensions),
+                zihuan_core::agent::emotion::utils::emotion_expression_prompt(&session, emotion_dimensions),
+                zihuan_core::agent::emotion::utils::has_noticeable_emotion_expression(&session, emotion_dimensions),
             )
         };
         let style_prompt = if suppress_language_style { None } else { style_prompt };
@@ -1543,7 +1549,7 @@ impl QqChatAgentServiceInner {
 
         trace.record_llm_result_parsed(Some(candidate_message));
 
-        if zihuan_core::agent_runtime::utils::string_utils::is_no_reply_directive(candidate_message) {
+        if zihuan_core::agent::utils::string_utils::is_no_reply_directive(candidate_message) {
             history.push(message_with_api_style(
                 LLMMessage::user(current_message.to_string()),
                 ctx.llm.api_style(),

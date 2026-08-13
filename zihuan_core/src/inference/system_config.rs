@@ -1,7 +1,7 @@
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use crate::agent_config::qq_chat::QqChatAgentServiceConfig;
+use crate::agent::qq_chat::QqChatAgentServiceConfig;
 use crate::config::{ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord};
 use crate::error::Result;
 use crate::tool_runtime::ToolRunDuration;
@@ -58,10 +58,16 @@ pub struct HttpStreamServiceConfig {
     #[serde(default)]
     pub elasticsearch_memory_connection_id: Option<String>,
     #[serde(default)]
+    pub memory_backend: Option<MemoryBackendKind>,
+    #[serde(default)]
     pub task_db_connection_id: String,
     #[serde(default = "default_http_stream_default_tools_enabled")]
     pub default_tools_enabled: std::collections::HashMap<String, bool>,
 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryBackendKind { LocalFile, Weaviate, Elasticsearch }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceAgentServiceConfig {
@@ -69,6 +75,16 @@ pub struct WorkspaceAgentServiceConfig {
     pub llm_ref_id: Option<String>,
     #[serde(default)]
     pub agents_md_enabled: bool,
+    #[serde(default)]
+    pub memory_enabled: bool,
+    #[serde(default)]
+    pub embedding_model_ref_id: Option<String>,
+    #[serde(default)]
+    pub weaviate_memory_connection_id: Option<String>,
+    #[serde(default)]
+    pub elasticsearch_memory_connection_id: Option<String>,
+    #[serde(default)]
+    pub memory_backend: Option<MemoryBackendKind>,
     #[serde(default = "default_workspace_default_tools_enabled")]
     pub default_tools_enabled: std::collections::HashMap<String, bool>,
 }
@@ -115,9 +131,8 @@ fn default_include_reasoning_content() -> bool {
 fn default_http_stream_default_tools_enabled() -> std::collections::HashMap<String, bool> {
     [
         ("web_search".to_string(), true),
-        ("list_available_memory_keys".to_string(), true),
-        ("search_memory_content".to_string(), true),
-        ("remember_content".to_string(), true),
+        ("memory_agent".to_string(), true),
+        ("memory_agent_with_context".to_string(), true),
     ]
     .into_iter()
     .collect()

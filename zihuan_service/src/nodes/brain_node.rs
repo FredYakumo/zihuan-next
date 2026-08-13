@@ -7,7 +7,7 @@ use zihuan_core::tool_subgraph::{
     shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool, ToolResultMode,
     ToolSubgraphRunner,
 };
-use zihuan_core::agent_runtime::brain::{
+use zihuan_core::agent::brain::{
     Brain, BrainStopReason, BrainTool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS,
 };
 use zihuan_core::error::{Error, Result};
@@ -245,7 +245,7 @@ impl Node for BrainNode {
                     shared_inputs: self.shared_inputs.clone(),
                     definition: tool_def.clone(),
                     shared_runtime_values: Arc::new(Mutex::new(shared_runtime_values.clone())),
-                    qq_chat_agent_config: None,
+                    qq_chat_agent: None,
                     result_mode: ToolResultMode::JsonObject,
                     builtin_executor: Some(zihuan_ims_agent::qq_tool_subgraph_hooks::image_understand_executor()),
                     progress_notifier: Some(zihuan_ims_agent::qq_tool_subgraph_hooks::qq_progress_notifier()),

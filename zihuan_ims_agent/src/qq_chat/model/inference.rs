@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use zihuan_core::storage::ElasticsearchRef;
+use zihuan_core::storage::LocalMemoryStore;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
@@ -22,6 +23,7 @@ pub(crate) struct QqLoadedInferenceResources {
     pub(crate) elasticsearch_image_ref: Option<Arc<ElasticsearchRef>>,
     pub(crate) weaviate_memory_ref: Option<Arc<WeaviateRef>>,
     pub(crate) elasticsearch_memory_ref: Option<Arc<ElasticsearchRef>>,
+    pub(crate) local_memory_store: Option<Arc<LocalMemoryStore>>,
     pub(crate) embedding_model: Option<Arc<dyn EmbeddingBase>>,
     pub(crate) memory_llm: Option<Arc<dyn LLMBase>>,
 }

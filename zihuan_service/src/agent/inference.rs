@@ -6,7 +6,7 @@ use zihuan_core::inference::message_content_utils::sanitize_messages_for_inferen
 use zihuan_core::inference::system_config::{AgentConfig, AgentType, LlmRefConfig};
 use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
-use zihuan_core::agent_runtime::brain::{
+use zihuan_core::agent::brain::{
     Brain, BrainObserver, BrainStopReason, BrainTool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS,
 };
 use zihuan_core::error::{Error, Result};
@@ -15,9 +15,9 @@ use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken};
 use zihuan_core::graph::brain_tool_spec::BrainToolDefinition;
 
-use zihuan_core::agent_runtime::resource_resolver::{build_llm_model, resolve_llm_service_config};
+use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
 
-pub use zihuan_core::agent_runtime::inference_provider::{InferenceToolContext, InferenceToolProvider};
+pub use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
 
 #[derive(Clone, Default)]
 pub struct StaticInferenceToolProvider {
@@ -137,7 +137,7 @@ impl LoadedInferenceAgent {
         })
     }
 
-    pub fn agent_config(&self) -> &AgentConfig {
+    pub fn agent(&self) -> &AgentConfig {
         &self.agent
     }
 
@@ -166,7 +166,7 @@ impl LoadedInferenceAgent {
         llm: Arc<dyn LLMBase>,
         workspace_path: Option<String>,
     ) -> Result<Vec<LLMMessage>> {
-        let context = build_inference_tool_context(&messages, workspace_path);
+        let context = build_inference_tool_context(&messages, workspace_path, Arc::clone(&llm));
 
         let mut conversation = sanitize_messages_for_inference(messages);
         if conversation.is_empty() {
@@ -212,7 +212,7 @@ impl LoadedInferenceAgent {
         llm: Arc<dyn LLMBase>,
         workspace_path: Option<String>,
     ) -> Result<(Vec<LLMMessage>, BrainStopReason)> {
-        let context = build_inference_tool_context(&messages, workspace_path);
+        let context = build_inference_tool_context(&messages, workspace_path, Arc::clone(&llm));
 
         let mut conversation = sanitize_messages_for_inference(messages);
         if conversation.is_empty() {
@@ -296,7 +296,11 @@ pub fn resolve_agent_model_name_with_override(
     Ok(resolve_llm_service_config(llm_ref_id, llm_refs, &agent.name)?.model_name)
 }
 
-fn build_inference_tool_context(messages: &[LLMMessage], workspace_path: Option<String>) -> InferenceToolContext {
+fn build_inference_tool_context(
+    messages: &[LLMMessage],
+    workspace_path: Option<String>,
+    llm: Arc<dyn LLMBase>,
+) -> InferenceToolContext {
     InferenceToolContext {
         last_user_text: messages
             .iter()
@@ -306,6 +310,7 @@ fn build_inference_tool_context(messages: &[LLMMessage], workspace_path: Option<
             .map(ToOwned::to_owned)
             .unwrap_or_default(),
         workspace_path,
+        llm,
     }
 }
 
@@ -329,7 +334,7 @@ fn build_brain(
                 shared_inputs: Vec::new(),
                 definition: tool_def,
                 shared_runtime_values: Arc::new(Mutex::new(HashMap::new())),
-                qq_chat_agent_config: None,
+                qq_chat_agent: None,
                 result_mode: ToolResultMode::JsonObject,
                 builtin_executor: Some(zihuan_ims_agent::qq_tool_subgraph_hooks::image_understand_executor()),
                 progress_notifier: Some(zihuan_ims_agent::qq_tool_subgraph_hooks::qq_progress_notifier()),

@@ -5,6 +5,7 @@ mod connection_manager;
 mod db_schema;
 mod elasticsearch;
 mod image_weaviate_persistence;
+mod local_memory;
 mod message_record;
 pub mod mysql;
 pub mod object_storage;
@@ -46,6 +47,7 @@ pub use elasticsearch::{
     search_elasticsearch_images, search_elasticsearch_memory, upsert_elasticsearch_image,
     ElasticsearchImageSearchHit, ElasticsearchIndexSchema, ElasticsearchRef,
 };
+pub use local_memory::LocalMemoryStore;
 pub use message_record::MessageRecord;
 pub use mysql::MySqlNode;
 pub use object_storage::{
@@ -68,6 +70,7 @@ pub use weaviate_persistence::{
 };
 pub use weaviate_schema::{collection_config_for_schema, ensure_collection_schema, validate_collection_schema};
 pub use crate::weaviate::WeaviateCollectionSchema;
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

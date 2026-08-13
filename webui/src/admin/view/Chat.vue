@@ -1100,6 +1100,9 @@
             <template v-else-if="toolPreviewState.kind.type === 'ask_user'">
               <ChatIcon class="badge-icon" /> 询问用户
             </template>
+            <template v-else-if="toolPreviewState.kind.type === 'memory_agent'">
+              <BookmarkIcon class="badge-icon" /> {{ toolPreviewState.kind.action === 'remember' ? '记录记忆' : '回忆记忆' }}
+            </template>
             <button class="tool-preview-close" aria-label="关闭" @click="closeToolPreview"><CloseIcon /></button>
           </div>
           <div class="tool-preview-body">
@@ -1114,6 +1117,12 @@
                 <p v-if="toolPreviewState.kind.lineCount != null">
                   共 {{ toolPreviewState.kind.lineCount }} 行
                 </p>
+              </div>
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'memory_agent'">
+              <div class="tool-preview-info">
+                <p>{{ toolPreviewState.kind.action === 'remember' ? '正在记录记忆。' : '正在回忆记忆。' }}</p>
+                <pre v-if="toolPreviewState.kind.content">{{ toolPreviewState.kind.content }}</pre>
               </div>
             </template>
             <template v-else-if="toolPreviewState.kind.type === 'edit_file'">
@@ -1274,6 +1283,7 @@ import {
   InfoCircleIcon,
   MoveIcon,
   ChatIcon,
+  BookmarkIcon,
   StopIcon,
 } from "tdesign-icons-vue-next";
 

@@ -13,7 +13,7 @@ use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
-use zihuan_core::agent_runtime::brain::BrainObserver;
+use zihuan_core::agent::brain::BrainObserver;
 use zihuan_core::error::Result;
 use zihuan_core::llm::{LLMMessage, StreamToken};
 use zihuan_core::task_context::AgentTaskRuntime;
@@ -130,7 +130,7 @@ impl AgentManager {
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn BrainObserver>>,
-    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent_runtime::brain::BrainStopReason)> {
+    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::brain::BrainStopReason)> {
         self.infer_agent_response_streaming_with_model(agent_id, messages, token_tx, observer, None, None, None, None)
             .await
     }
@@ -145,16 +145,16 @@ impl AgentManager {
         thinking_type: Option<zihuan_core::inference::system_config::ThinkingType>,
         reasoning_effort: Option<zihuan_core::inference::system_config::ReasoningEffort>,
         workspace_path: Option<String>,
-    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent_runtime::brain::BrainStopReason)> {
+    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::brain::BrainStopReason)> {
         let agent = self.running_agent(agent_id).ok_or_else(|| {
             zihuan_core::error::Error::ValidationError(format!("agent '{}' is not running", agent_id))
         })?;
         if let Some(model_id) = model_config_id {
             let llm_refs = zihuan_core::inference::system_config::load_llm_refs()?;
-            let mut llm_config = zihuan_core::agent_runtime::resource_resolver::resolve_llm_service_config(
+            let mut llm_config = zihuan_core::agent::resource_resolver::resolve_llm_service_config(
                 Some(model_id),
                 &llm_refs,
-                &agent.agent_config().name,
+                &agent.agent().name,
             )?;
             if let Some(override_value) = thinking_type {
                 llm_config.thinking_type = Some(override_value);
@@ -162,7 +162,7 @@ impl AgentManager {
             if let Some(override_value) = reasoning_effort {
                 llm_config.reasoning_effort = Some(override_value);
             }
-            let llm = zihuan_core::agent_runtime::resource_resolver::build_llm_model(&llm_config)?;
+            let llm = zihuan_core::agent::resource_resolver::build_llm_model(&llm_config)?;
             agent
                 .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, llm, workspace_path)
                 .await

@@ -67,6 +67,12 @@
   color: #0ea5e9;
 }
 
+.tool-badge--memory {
+  background: color-mix(in srgb, #f59e0b 15%, var(--admin-bg-elevated) 85%);
+  border-color: color-mix(in srgb, #f59e0b 34%, transparent);
+  color: #d97706;
+}
+
 .badge-icon {
   font-size: 13px;
   flex-shrink: 0;

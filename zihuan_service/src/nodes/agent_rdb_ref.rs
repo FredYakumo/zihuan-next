@@ -1,5 +1,5 @@
 use zihuan_core::storage::RuntimeStorageConnectionManager;
-use zihuan_core::agent_config::qq_chat::current_qq_chat_agent_service_config;
+use zihuan_core::agent::qq_chat::current_qq_chat_agent_service_config;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::Result;
 use zihuan_core::graph::{node_output, DataType, DataValue, Node, NodeOutputFlow, Port};

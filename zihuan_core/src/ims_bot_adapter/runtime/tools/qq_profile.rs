@@ -3,7 +3,7 @@ use std::sync::Arc;
 use log::{info, warn};
 use serde_json::Value;
 
-use crate::agent_runtime::brain::BrainTool;
+use crate::agent::brain::BrainTool;
 use crate::error::{Error, Result};
 use crate::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use crate::llm::tooling::{FunctionTool, StaticFunctionToolSpec};

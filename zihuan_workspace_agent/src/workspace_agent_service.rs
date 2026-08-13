@@ -1,15 +1,19 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use zihuan_core::inference::system_config::{AgentConfig, WorkspaceAgentServiceConfig};
-use zihuan_core::storage::ConnectionConfig;
-use zihuan_core::agent_runtime::brain::BrainTool;
+use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::resource_resolver::resolve_local_embedding_model_name;
+use zihuan_core::inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use zihuan_core::inference::system_config::{load_llm_refs, AgentConfig, MemoryBackendKind, WorkspaceAgentServiceConfig};
 use zihuan_core::llm::LLMMessage;
+use zihuan_core::memory_agent::{MemoryAgentResources, MemoryBackend, MemoryBrainAgent, MemoryBrainAgentTool};
+use zihuan_core::runtime::block_async;
+use zihuan_core::storage::{build_elasticsearch_ref, build_weaviate_ref, AgentMemoryAccessContext, ConnectionConfig, LocalMemoryStore, WeaviateCollectionSchema};
 use zihuan_core::workspace::normalized_workspace_path;
 use zihuan_core::graph::brain_tool_spec::BrainToolDefinition;
 
-use zihuan_core::agent_runtime::inference_provider::{InferenceToolContext, InferenceToolProvider};
-use zihuan_core::agent_runtime::tool_definitions::build_enabled_tool_definitions;
+use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
+use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
 use crate::tools::{
     AskUserBrainTool, CreateFileBrainTool, DeleteFileBrainTool, EditFileBrainTool, ExecCmdBrainTool,
     CopyFileBrainTool, FileInfoBrainTool, FindFilesBrainTool, GitStatusBrainTool, GrepBrainTool, ListDirBrainTool, MoveFileBrainTool, ReadFileBrainTool, RgBrainTool, DEFAULT_TOOL_ASK_USER,
@@ -18,14 +22,15 @@ use crate::tools::{
 };
 use zihuan_core::error::Result;
 
-// Prompt engineering
-
-
 fn workspace_context_prompt(service_name: &str, workspace_path: &str, capabilities: &str) -> String {
     format!(
         "You are {service_name}, an assistant operating in the workspace directory: {workspace_path}\n\
          {capabilities}"
     )
+}
+
+fn memory_prompt() -> &'static str {
+    "[Memory] You can use memory_agent to recall relevant long-term information before answering. When this conversation establishes durable facts, preferences, decisions, or relationships, call memory_agent before finishing to save them. Do not save transient details, sensitive data, or information without long-term value."
 }
 
 fn build_tool_capabilities(enabled: &std::collections::HashMap<String, bool>) -> String {
@@ -88,6 +93,7 @@ pub struct WorkspaceInferenceToolProvider {
     service_name: String,
     agents_md_enabled: bool,
     default_tools_enabled: std::collections::HashMap<String, bool>,
+    memory_resources: Option<WorkspaceMemoryResources>,
     tool_definitions: Vec<BrainToolDefinition>,
 }
 
@@ -112,6 +118,13 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
                     None => agents_prompt,
                 });
             }
+        }
+        if self.memory_resources.is_some() {
+            let memory_prompt = memory_prompt().to_string();
+            prompt = Some(match prompt {
+                Some(prompt) => format!("{prompt}\n{memory_prompt}"),
+                None => memory_prompt,
+            });
         }
         if let Some(prompt) = prompt {
             messages.insert(0, LLMMessage::system(prompt));
@@ -179,6 +192,11 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_ASK_USER) {
             tools.push(Box::new(AskUserBrainTool));
         }
+        if let Some(resources) = &self.memory_resources {
+            tools.push(Box::new(MemoryBrainAgentTool::new(MemoryBrainAgent::new(
+                resources.with_llm(Arc::clone(&context.llm)),
+            ))));
+        }
         tools
     }
 
@@ -190,14 +208,78 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
 pub fn load_inference_tool_provider(
     agent: &AgentConfig,
     config: &WorkspaceAgentServiceConfig,
-    _connections: &[ConnectionConfig],
+    connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     Ok(Arc::new(WorkspaceInferenceToolProvider {
         service_name: agent.name.clone(),
         agents_md_enabled: config.agents_md_enabled,
         default_tools_enabled: config.default_tools_enabled.clone(),
+        memory_resources: load_memory_resources(config, connections),
         tool_definitions: build_enabled_tool_definitions(&agent.tools)?,
     }))
+}
+
+#[derive(Clone)]
+struct WorkspaceMemoryResources {
+    memory_backend: MemoryBackend,
+    embedding_model: Option<Arc<dyn zihuan_core::llm::embedding_base::EmbeddingBase>>,
+}
+
+impl WorkspaceMemoryResources {
+    fn with_llm(&self, llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>) -> MemoryAgentResources {
+        MemoryAgentResources {
+            memory_backend: self.memory_backend.clone(),
+            embedding_model: self.embedding_model.clone(),
+            llm,
+            access: AgentMemoryAccessContext::default(),
+        }
+    }
+}
+
+fn load_memory_resources(
+    config: &WorkspaceAgentServiceConfig,
+    connections: &[ConnectionConfig],
+) -> Option<WorkspaceMemoryResources> {
+    if !config.memory_enabled {
+        return None;
+    }
+
+    let memory_backend = match config.memory_backend? {
+        MemoryBackendKind::LocalFile => MemoryBackend::LocalFile(Arc::new(LocalMemoryStore::in_app_data_dir())),
+        MemoryBackendKind::Weaviate => {
+            let reference = build_weaviate_ref(
+                config.weaviate_memory_connection_id.as_deref().filter(|value| !value.trim().is_empty()),
+                connections,
+                Some(WeaviateCollectionSchema::AgentMemory),
+            )
+            .ok()??;
+            MemoryBackend::Weaviate(reference)
+        }
+        MemoryBackendKind::Elasticsearch => {
+            let reference = build_elasticsearch_ref(
+                config.elasticsearch_memory_connection_id.as_deref().filter(|value| !value.trim().is_empty()),
+                connections,
+                Some(WeaviateCollectionSchema::AgentMemory),
+            )
+            .ok()??;
+            MemoryBackend::Elasticsearch(reference)
+        }
+    };
+
+    let llm_refs = load_llm_refs().ok()?;
+    let embedding_model = match config.memory_backend? {
+        MemoryBackendKind::LocalFile => None,
+        MemoryBackendKind::Weaviate | MemoryBackendKind::Elasticsearch => {
+            let model_ref_id = config.embedding_model_ref_id.as_deref().filter(|value| !value.trim().is_empty())?;
+            resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, "workspace").ok()??;
+            block_async(RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id)).ok()
+        }
+    };
+
+    Some(WorkspaceMemoryResources {
+        memory_backend,
+        embedding_model,
+    })
 }
 
 /// Location of an `AGENTS.md` candidate, listed in discovery priority order.

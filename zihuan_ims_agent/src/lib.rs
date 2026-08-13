@@ -1,6 +1,7 @@
 //! QQ/IMS Agent runtime.
 
 pub mod qq_chat;
+mod agent;
 mod agent_text_similarity;
 mod classify_intent;
 mod storage;

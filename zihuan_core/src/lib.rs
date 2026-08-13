@@ -3,8 +3,7 @@ pub mod utils {
     pub mod hash_string;
     pub mod string_utils;
 }
-pub mod agent_config;
-pub mod agent_runtime;
+pub mod agent;
 pub mod command;
 pub mod config;
 pub mod connection_manager;
@@ -16,6 +15,7 @@ pub mod graph;
 pub mod inference;
 pub mod llm;
 pub mod message_part;
+pub mod memory_agent;
 pub mod python_runtime;
 pub mod python_runtime_resolver;
 pub mod rag;
@@ -34,8 +34,11 @@ pub mod worker_pool;
 pub mod workspace;
 pub mod nlp;
 
+#[cfg(test)]
+mod tests;
+
 pub use message_part::MessagePart;
-pub use agent_runtime::*;
+pub use agent::*;
 pub use graph::*;
 pub use inference::*;
 pub use nlp::*;

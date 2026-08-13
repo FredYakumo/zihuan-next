@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use zihuan_core::agent_runtime::brain::BrainTool;
+use zihuan_core::agent::brain::BrainTool;
 use zihuan_core::llm::tooling::FunctionTool;
 
 use super::common::StaticFunctionToolSpec;

@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use zihuan_core::storage::{
     build_rdb_ref, build_redis_ref, build_s3_ref, build_weaviate_ref, build_web_search_engine_ref, load_connections,
-    ConnectionConfig, WeaviateCollectionSchema,
+    ConnectionConfig,
 };
 use zihuan_core::error::Result;
 use zihuan_core::graph::data_value::DataType;
@@ -11,7 +11,7 @@ use zihuan_core::graph::function_graph::{embedded_function_config_from_node, FUN
 use zihuan_core::graph::graph_io::{NodeGraphDefinition, PortBindingKind};
 use zihuan_core::graph::{DataValue, NodeGraph};
 
-use crate::util::hyperparam_store;
+use zihuan_core::graph::hyperparam_store;
 
 pub fn apply_hyperparameter_bindings(graph: &mut NodeGraphDefinition, values: &HashMap<String, Value>) {
     for node in &mut graph.nodes {

@@ -842,6 +842,26 @@ async function submitForm() {
       alert("请绑定一个模型配置");
       return;
     }
+    if (form.type === "workspace" && form.workspace_memory_enabled) {
+      if (!form.workspace_memory_backend) {
+        alert("启用 Agent 记忆后必须选择记忆库");
+        return;
+      }
+      if (
+        form.workspace_memory_backend === "weaviate" &&
+        (!form.workspace_weaviate_memory_connection_id || !form.workspace_embedding_model_ref_id)
+      ) {
+        alert("Weaviate 记忆库需要选择记忆库连接和文本向量模型");
+        return;
+      }
+      if (
+        form.workspace_memory_backend === "elasticsearch" &&
+        (!form.workspace_elasticsearch_memory_connection_id || !form.workspace_embedding_model_ref_id)
+      ) {
+        alert("Elasticsearch 记忆库需要选择记忆库连接和文本向量模型");
+        return;
+      }
+    }
     if (form.type === "qq_chat" && !form.ims_bot_adapter_connection_id) {
       alert("QQ Chat Agent Service 需要绑定 Bot Adapter");
       return;

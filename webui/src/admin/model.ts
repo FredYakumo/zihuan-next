@@ -148,6 +148,7 @@ export interface ServiceFormState {
   weaviate_memory_connection_id: string;
   elasticsearch_image_connection_id: string;
   elasticsearch_memory_connection_id: string;
+  memory_backend: "" | "local_file" | "weaviate" | "elasticsearch";
   max_message_length: number;
   compact_context_length: number;
   dream_enabled: boolean;
@@ -168,8 +169,14 @@ export interface ServiceFormState {
   http_embedding_model_ref_id: string;
   http_weaviate_memory_connection_id: string;
   http_elasticsearch_memory_connection_id: string;
+  http_memory_backend: "" | "local_file" | "weaviate" | "elasticsearch";
   task_db_connection_id: string;
   agents_md_enabled: boolean;
+  workspace_memory_enabled: boolean;
+  workspace_embedding_model_ref_id: string;
+  workspace_weaviate_memory_connection_id: string;
+  workspace_elasticsearch_memory_connection_id: string;
+  workspace_memory_backend: "" | "local_file" | "weaviate" | "elasticsearch";
   tools: ToolFormState[];
   avatar_url: string;
 }
@@ -251,40 +258,14 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
     label: "image_understand",
     description: "按 media_id 理解图片内容",
   },
-  {
-    id: "list_available_memory_keys",
-    label: "list_available_memory_keys",
-    description: "列出当前可访问的记忆标题",
-  },
-  {
-    id: "search_memory_content",
-    label: "search_memory_content",
-    description: "搜索当前可访问的记忆内容",
-  },
-  {
-    id: "remember_content",
-    label: "remember_content",
-    description: "把内容整理后写入记忆",
-  },
+  { id: "memory_agent", label: "memory_agent", description: "由记忆 Agent 自动检索或更新记忆" },
+  { id: "memory_agent_with_context", label: "memory_agent_with_context", description: "按聊天上下文搜索或更新记忆" },
 ];
 
 export const HTTP_STREAM_DEFAULT_TOOLS: DefaultToolOption[] = [
   { id: "web_search", label: "web_search", description: "联网搜索" },
-  {
-    id: "list_available_memory_keys",
-    label: "list_available_memory_keys",
-    description: "列出当前可访问的记忆标题",
-  },
-  {
-    id: "search_memory_content",
-    label: "search_memory_content",
-    description: "搜索当前可访问的记忆内容",
-  },
-  {
-    id: "remember_content",
-    label: "remember_content",
-    description: "把内容整理后写入记忆",
-  },
+  { id: "memory_agent", label: "memory_agent", description: "由记忆 Agent 自动检索或更新记忆" },
+  { id: "memory_agent_with_context", label: "memory_agent_with_context", description: "按聊天上下文搜索或更新记忆" },
 ];
 
 export const WORKSPACE_DEFAULT_TOOLS: DefaultToolOption[] = [
@@ -474,6 +455,7 @@ export function defaultServiceForm(): ServiceFormState {
     weaviate_memory_connection_id: "",
     elasticsearch_image_connection_id: "",
     elasticsearch_memory_connection_id: "",
+    memory_backend: "",
     max_message_length: 500,
     compact_context_length: 0,
     dream_enabled: false,
@@ -494,8 +476,14 @@ export function defaultServiceForm(): ServiceFormState {
     http_embedding_model_ref_id: "",
     http_weaviate_memory_connection_id: "",
     http_elasticsearch_memory_connection_id: "",
+    http_memory_backend: "",
     task_db_connection_id: "",
     agents_md_enabled: false,
+    workspace_memory_enabled: false,
+    workspace_embedding_model_ref_id: "",
+    workspace_weaviate_memory_connection_id: "",
+    workspace_elasticsearch_memory_connection_id: "",
+    workspace_memory_backend: "",
     tools: [],
     avatar_url: "",
   };
@@ -946,6 +934,7 @@ export function serviceFormFromConfig(
     );
     form.elasticsearch_image_connection_id = String(agentType.elasticsearch_image_connection_id ?? "");
     form.elasticsearch_memory_connection_id = String(agentType.elasticsearch_memory_connection_id ?? "");
+    form.memory_backend = agentType.memory_backend === "local_file" || agentType.memory_backend === "weaviate" || agentType.memory_backend === "elasticsearch" ? agentType.memory_backend : "";
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.compact_context_length = Number(agentType.compact_context_length ?? 0);
     form.dream_enabled = Boolean(agentType.dream_enabled ?? false);
@@ -1030,6 +1019,7 @@ export function serviceFormFromConfig(
       agentType.weaviate_memory_connection_id ?? "",
     );
     form.http_elasticsearch_memory_connection_id = String(agentType.elasticsearch_memory_connection_id ?? "");
+    form.http_memory_backend = agentType.memory_backend === "local_file" || agentType.memory_backend === "weaviate" || agentType.memory_backend === "elasticsearch" ? agentType.memory_backend : "";
     form.task_db_connection_id = String(agentType.task_db_connection_id ?? "");
     const source = (agentType.default_tools_enabled ?? {}) as Record<
       string,
@@ -1045,6 +1035,11 @@ export function serviceFormFromConfig(
   } else {
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
     form.agents_md_enabled = Boolean(agentType.agents_md_enabled ?? false);
+    form.workspace_memory_enabled = Boolean(agentType.memory_enabled ?? false);
+    form.workspace_embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
+    form.workspace_weaviate_memory_connection_id = String(agentType.weaviate_memory_connection_id ?? "");
+    form.workspace_elasticsearch_memory_connection_id = String(agentType.elasticsearch_memory_connection_id ?? "");
+    form.workspace_memory_backend = agentType.memory_backend === "local_file" || agentType.memory_backend === "weaviate" || agentType.memory_backend === "elasticsearch" ? agentType.memory_backend : "";
     const source = (agentType.default_tools_enabled ?? {}) as Record<
       string,
       unknown
@@ -1169,6 +1164,7 @@ export function buildServicePayload(form: ServiceFormState): {
           form.weaviate_memory_connection_id || null,
         elasticsearch_image_connection_id: form.elasticsearch_image_connection_id || null,
         elasticsearch_memory_connection_id: form.elasticsearch_memory_connection_id || null,
+        memory_backend: form.memory_backend || null,
         max_message_length: form.max_message_length,
         compact_context_length: form.compact_context_length,
         dream_enabled: form.dream_enabled,
@@ -1221,6 +1217,7 @@ export function buildServicePayload(form: ServiceFormState): {
           form.http_weaviate_memory_connection_id || null,
         elasticsearch_memory_connection_id:
           form.http_elasticsearch_memory_connection_id || null,
+        memory_backend: form.http_memory_backend || null,
         task_db_connection_id: form.task_db_connection_id || null,
         default_tools_enabled: Object.fromEntries(
           HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [
@@ -1239,6 +1236,11 @@ export function buildServicePayload(form: ServiceFormState): {
       type: "workspace",
       llm_ref_id: form.llm_ref_id || null,
       agents_md_enabled: form.agents_md_enabled,
+      memory_enabled: form.workspace_memory_enabled,
+      embedding_model_ref_id: form.workspace_embedding_model_ref_id || null,
+      weaviate_memory_connection_id: form.workspace_weaviate_memory_connection_id || null,
+      elasticsearch_memory_connection_id: form.workspace_elasticsearch_memory_connection_id || null,
+      memory_backend: form.workspace_memory_backend || null,
       default_tools_enabled: Object.fromEntries(
         WORKSPACE_DEFAULT_TOOLS.map((tool) => [
           tool.id,

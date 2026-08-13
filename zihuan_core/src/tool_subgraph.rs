@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use log::{info, warn};
 use serde_json::{json, Map, Value};
 
-use crate::agent_config::qq_chat::{with_current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
+use crate::agent::qq_chat::{with_current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
 use crate::config::ConfigCenter;
 use crate::error::{Error, Result};
 use crate::graph::brain_tool_spec::{
@@ -48,7 +48,7 @@ pub struct ToolSubgraphRunner {
     pub shared_inputs: Vec<FunctionPortDef>,
     pub definition: BrainToolDefinition,
     pub shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
-    pub qq_chat_agent_config: Option<QqChatAgentServiceConfig>,
+    pub qq_chat_agent: Option<QqChatAgentServiceConfig>,
     pub result_mode: ToolResultMode,
     pub builtin_executor: Option<BuiltinToolExecutor>,
     pub progress_notifier: Option<ToolProgressNotifier>,
@@ -453,7 +453,7 @@ impl ToolSubgraphRunner {
             .map_err(|e| self.wrap_error(format!("Tool '{}' 子图构建失败: {e}", tool.name)))?;
         inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values.into())
             .map_err(|e| self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name)))?;
-        let execution_result = if let Some(config) = self.qq_chat_agent_config.clone() {
+        let execution_result = if let Some(config) = self.qq_chat_agent.clone() {
             with_current_qq_chat_agent_service_config(config, || graph.execute_and_capture_results())
         } else {
             graph.execute_and_capture_results()

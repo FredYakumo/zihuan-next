@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use zihuan_core::agent_runtime::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
+use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::{InferenceParam, LLMMessage};
 
 use crate::qq_chat::logging::QqChatTaskTrace;
-use zihuan_core::agent_runtime::emotion::utils::emotion_expression_prompt;
+use zihuan_core::agent::emotion::utils::emotion_expression_prompt;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ModelIdentityContext {

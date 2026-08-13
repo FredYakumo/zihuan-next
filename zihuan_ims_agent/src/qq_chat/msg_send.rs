@@ -14,7 +14,7 @@ use zihuan_core::ims_bot_adapter::models::message::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use zihuan_core::agent_runtime::utils::string_utils::is_no_reply_directive;
+use zihuan_core::agent::utils::string_utils::is_no_reply_directive;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
 use zihuan_core::graph::data_value::DataValue;

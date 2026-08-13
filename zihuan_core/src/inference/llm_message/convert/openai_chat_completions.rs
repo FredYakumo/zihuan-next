@@ -18,6 +18,7 @@ struct StreamToolCallDelta {
     function_arguments: String,
 }
 
+
 fn collect_stream_tool_calls(streamed_tool_calls: BTreeMap<usize, StreamToolCallDelta>) -> Vec<ToolCalls> {
     streamed_tool_calls
         .into_iter()
@@ -175,21 +176,31 @@ pub fn parse_chat_completions_response(api_resp: &Value) -> Option<LLMMessage> {
     let choices = api_resp.get("choices")?.as_array()?;
     let choice = choices.first()?;
     let msg = choice.get("message")?;
-    let mut dsml_parser = DsmlContentParser::new();
+    let mut content_dsml_parser = DsmlContentParser::new();
+    let mut reasoning_dsml_parser = DsmlContentParser::new();
     let mut content = String::new();
     if let Some(text) = msg.get("content").and_then(Value::as_str) {
-        content.extend(dsml_parser.push(text));
+        content.extend(content_dsml_parser.push(text));
     }
-    content.extend(dsml_parser.finish());
+    content.extend(content_dsml_parser.finish());
+    let mut reasoning_content = String::new();
+    if let Some(text) = msg.get("reasoning_content").and_then(Value::as_str) {
+        reasoning_content.extend(reasoning_dsml_parser.push(text));
+    }
+    reasoning_content.extend(reasoning_dsml_parser.finish());
+    let tool_calls = merge_tool_calls(
+        merge_tool_calls(
+            msg.get("tool_calls").map(parse_tool_calls).unwrap_or_default(),
+            content_dsml_parser.tool_calls,
+        ),
+        reasoning_dsml_parser.tool_calls,
+    );
 
     Some(LLMMessage {
         role: str_to_role(msg.get("role")?.as_str().unwrap_or("assistant")),
         parts: text_parts(content),
-        reasoning_content: msg.get("reasoning_content").and_then(|v| v.as_str()).map(|s| s.to_string()),
-        tool_calls: merge_tool_calls(
-            msg.get("tool_calls").map(parse_tool_calls).unwrap_or_default(),
-            dsml_parser.tool_calls,
-        ),
+        reasoning_content: (!reasoning_content.is_empty()).then_some(reasoning_content),
+        tool_calls,
         tool_call_id: msg.get("tool_call_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
         usage: parse_token_usage(api_resp.get("usage")),
     })
@@ -201,7 +212,8 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
     let mut reasoning_content = String::new();
     let mut streamed_tool_calls: BTreeMap<usize, StreamToolCallDelta> = BTreeMap::new();
     let mut final_tool_calls: Option<Vec<ToolCalls>> = None;
-    let mut dsml_parser = DsmlContentParser::new();
+    let mut content_dsml_parser = DsmlContentParser::new();
+    let mut reasoning_dsml_parser = DsmlContentParser::new();
     let mut usage: Option<TokenUsage> = None;
 
     for line in response_text.lines() {
@@ -236,10 +248,10 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
                 role = Some(str_to_role(role_str));
             }
             if let Some(piece) = delta.get("content").and_then(|value| value.as_str()) {
-                content.extend(dsml_parser.push(piece));
+                content.extend(content_dsml_parser.push(piece));
             }
             if let Some(piece) = delta.get("reasoning_content").and_then(|value| value.as_str()) {
-                reasoning_content.push_str(piece);
+                reasoning_content.extend(reasoning_dsml_parser.push(piece));
             }
             if let Some(tool_calls) = delta.get("tool_calls").and_then(|value| value.as_array()) {
                 for tool_call in tool_calls {
@@ -275,10 +287,10 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
                 role = Some(str_to_role(role_str));
             }
             if let Some(text) = message.get("content").and_then(|value| value.as_str()) {
-                content.extend(dsml_parser.push(text));
+                content.extend(content_dsml_parser.push(text));
             }
             if let Some(text) = message.get("reasoning_content").and_then(|value| value.as_str()) {
-                reasoning_content.push_str(text);
+                reasoning_content.extend(reasoning_dsml_parser.push(text));
             }
             if let Some(tool_calls_value) = message.get("tool_calls") {
                 let parsed = parse_tool_calls(tool_calls_value);
@@ -289,13 +301,17 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
         }
     }
 
-    content.extend(dsml_parser.finish());
+    content.extend(content_dsml_parser.finish());
+    reasoning_content.extend(reasoning_dsml_parser.finish());
     let native_tool_calls = if let Some(tool_calls) = final_tool_calls {
         tool_calls
     } else {
         collect_stream_tool_calls(streamed_tool_calls)
     };
-    let tool_calls = merge_tool_calls(native_tool_calls, dsml_parser.tool_calls);
+    let tool_calls = merge_tool_calls(
+        merge_tool_calls(native_tool_calls, content_dsml_parser.tool_calls),
+        reasoning_dsml_parser.tool_calls,
+    );
 
     if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() {
         return None;
@@ -326,7 +342,8 @@ pub async fn parse_chat_completions_sse_stream_response(
     let mut reasoning_content = String::new();
     let mut streamed_tool_calls: BTreeMap<usize, StreamToolCallDelta> = BTreeMap::new();
     let mut final_tool_calls: Option<Vec<ToolCalls>> = None;
-    let mut dsml_parser = DsmlContentParser::new();
+    let mut content_dsml_parser = DsmlContentParser::new();
+    let mut reasoning_dsml_parser = DsmlContentParser::new();
     let mut usage: Option<TokenUsage> = None;
     let mut stream = response.bytes_stream();
     let mut sse_buffer = String::new();
@@ -370,15 +387,17 @@ pub async fn parse_chat_completions_sse_stream_response(
                 }
                 if let Some(piece) = delta.get("content").and_then(|v| v.as_str()) {
                     if !piece.is_empty() {
-                        for emitted in dsml_parser.push(piece) {
+                        for emitted in content_dsml_parser.push(piece) {
                             content.push_str(&emitted);
                             let _ = token_tx.send(StreamToken::content(emitted));
                         }
                     }
                 }
                 if let Some(piece) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
-                    reasoning_content.push_str(piece);
-                    let _ = token_tx.send(StreamToken::thinking(piece));
+                    for emitted in reasoning_dsml_parser.push(piece) {
+                        reasoning_content.push_str(&emitted);
+                        let _ = token_tx.send(StreamToken::thinking(emitted));
+                    }
                 }
                 if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                     for tool_call in tool_calls {
@@ -414,14 +433,16 @@ pub async fn parse_chat_completions_sse_stream_response(
                     role = Some(str_to_role(role_str));
                 }
                 if let Some(text) = message.get("content").and_then(|v| v.as_str()) {
-                    for emitted in dsml_parser.push(text) {
+                    for emitted in content_dsml_parser.push(text) {
                         content.push_str(&emitted);
                         let _ = token_tx.send(StreamToken::content(emitted));
                     }
                 }
                 if let Some(text) = message.get("reasoning_content").and_then(|v| v.as_str()) {
-                    reasoning_content.push_str(text);
-                    let _ = token_tx.send(StreamToken::thinking(text));
+                    for emitted in reasoning_dsml_parser.push(text) {
+                        reasoning_content.push_str(&emitted);
+                        let _ = token_tx.send(StreamToken::thinking(emitted));
+                    }
                 }
                 if let Some(tool_calls_value) = message.get("tool_calls") {
                     let parsed = parse_tool_calls(tool_calls_value);
@@ -433,9 +454,13 @@ pub async fn parse_chat_completions_sse_stream_response(
         }
     }
 
-    for emitted in dsml_parser.finish() {
+    for emitted in content_dsml_parser.finish() {
         content.push_str(&emitted);
         let _ = token_tx.send(StreamToken::content(emitted));
+    }
+    for emitted in reasoning_dsml_parser.finish() {
+        reasoning_content.push_str(&emitted);
+        let _ = token_tx.send(StreamToken::thinking(emitted));
     }
     drop(token_tx);
 
@@ -444,7 +469,10 @@ pub async fn parse_chat_completions_sse_stream_response(
     } else {
         collect_stream_tool_calls(streamed_tool_calls)
     };
-    let tool_calls = merge_tool_calls(native_tool_calls, dsml_parser.tool_calls);
+    let tool_calls = merge_tool_calls(
+        merge_tool_calls(native_tool_calls, content_dsml_parser.tool_calls),
+        reasoning_dsml_parser.tool_calls,
+    );
 
     if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() && usage.is_none() {
         return LLMMessage::assistant_text("");

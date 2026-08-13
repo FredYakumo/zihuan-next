@@ -13,7 +13,7 @@ use zihuan_core::storage::{
     WeaviateConnection,
     WebSearchEngineConnection,
 };
-use zihuan_core::agent_config::qq_chat::{DreamIntervalUnit, QqChatAgentServiceConfig};
+use zihuan_core::agent::qq_chat::{DreamIntervalUnit, QqChatAgentServiceConfig};
 use zihuan_core::weaviate::WeaviateCollectionSchema;
 
 pub async fn create_chat_assistant_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {
@@ -241,6 +241,7 @@ fn build_http_stream_service(
             web_search_engine_connection_id,
             weaviate_memory_connection_id,
             elasticsearch_memory_connection_id: None,
+            memory_backend: None,
             task_db_connection_id,
             default_tools_enabled: default_http_stream_tools(),
         }),
@@ -263,9 +264,8 @@ fn build_qq_chat_agent_service() -> AgentConfig {
         "get_recent_user_messages",
         "search_similar_images",
         "image_understand",
-        "list_available_memory_keys",
-        "search_memory_content",
-        "remember_content",
+        "memory_agent",
+        "memory_agent_with_context",
         "remove_memory",
     ] {
         default_tools.insert(tool.to_string(), true);
@@ -297,6 +297,7 @@ fn build_qq_chat_agent_service() -> AgentConfig {
             elasticsearch_image_connection_id: None,
             weaviate_memory_connection_id: Some("setup-default-weaviate-memory".to_string()),
             elasticsearch_memory_connection_id: None,
+            memory_backend: None,
             max_message_length: 500,
             compact_context_length: 0,
             dream_enabled: false,
@@ -329,6 +330,11 @@ fn build_workspace_agent_service(id: &str, name: &str, llm_ref_id: Option<String
         agent_type: AgentType::Workspace(WorkspaceAgentServiceConfig {
             llm_ref_id,
             agents_md_enabled: true,
+            memory_enabled: false,
+            embedding_model_ref_id: None,
+            weaviate_memory_connection_id: None,
+            elasticsearch_memory_connection_id: None,
+            memory_backend: None,
             default_tools_enabled: default_workspace_tools(),
         }),
         enabled: true,
@@ -359,9 +365,8 @@ fn parse_api_style(value: &str) -> zihuan_core::inference::system_config::LlmApi
 fn default_http_stream_tools() -> HashMap<String, bool> {
     [
         ("web_search".to_string(), true),
-        ("list_available_memory_keys".to_string(), true),
-        ("search_memory_content".to_string(), true),
-        ("remember_content".to_string(), true),
+        ("memory_agent".to_string(), true),
+        ("memory_agent_with_context".to_string(), true),
     ]
     .into_iter()
     .collect()

@@ -3,3 +3,6 @@
 pub mod api;
 pub mod tools;
 pub mod workspace_agent_service;
+
+#[cfg(test)]
+mod tests;

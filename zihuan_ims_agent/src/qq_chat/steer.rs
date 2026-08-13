@@ -4,12 +4,12 @@ use std::sync::{Arc, Mutex};
 use chrono::Local;
 use log::{info, warn};
 
-use zihuan_core::agent_runtime::brain::BrainIterationHook;
-use zihuan_core::agent_runtime::emotion::utils::has_noticeable_emotion_expression;
-use zihuan_core::agent_runtime::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent_runtime::utils::build_state_system_prefix_lines;
+use zihuan_core::agent::brain::BrainIterationHook;
+use zihuan_core::agent::emotion::utils::has_noticeable_emotion_expression;
+use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::agent::utils::build_state_system_prefix_lines;
 
-use zihuan_core::agent_config::qq_chat::QqChatEmotionDimensionConfig;
+use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::error::Result;
 use zihuan_core::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{

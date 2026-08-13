@@ -286,7 +286,7 @@ pub(crate) fn execute_style_learning_task(
                         sender_id: input.sender_id.clone(),
                         sender_nickname: input.inference_event.sender.nickname.clone(),
                         sender_card: input.inference_event.sender.card.clone(),
-                        session_state: zihuan_core::agent_runtime::session_state::QqChatAgentServiceSessionState::default(),
+                        session_state: zihuan_core::agent::session_state::QqChatAgentServiceSessionState::default(),
                         emotion_dimensions: Vec::new(),
                         model_identity_context: None,
                     },
