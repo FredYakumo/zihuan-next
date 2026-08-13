@@ -86,6 +86,18 @@
             </div>
           </t-card>
 
+          <t-card v-if="form.type === 'workspace' && form.default_tools_enabled.web_search" class="agent-service-form-section" :bordered="false">
+            <template #title>Web Search Engine</template>
+            <div class="agent-service-form-grid">
+              <t-form-item label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
+                <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择">
+                  <t-option value="" label="请选择" />
+                  <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+            </div>
+          </t-card>
+
           <!-- QQ Chat 专属字段 -->
           <template v-if="form.type === 'qq_chat'">
             <t-card class="agent-service-form-section" :bordered="false">
@@ -507,6 +519,18 @@
             <t-form-item v-if="form.workspace_memory_backend === 'elasticsearch'" label="Elasticsearch Memory Connection" required :status="!form.workspace_elasticsearch_memory_connection_id ? 'error' : undefined" :help="!form.workspace_elasticsearch_memory_connection_id ? '必须选择记忆库连接。' : undefined">
               <t-select v-model="form.workspace_elasticsearch_memory_connection_id" placeholder="请选择记忆库连接">
                 <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
+          </div>
+        </t-card>
+
+        <t-card v-if="form.type === 'workspace' && form.default_tools_enabled.web_search" class="agent-service-form-section" :bordered="false">
+          <template #title>Web Search Engine</template>
+          <div class="agent-service-form-grid">
+            <t-form-item label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
+              <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择">
+                <t-option value="" label="请选择" />
+                <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
               </t-select>
             </t-form-item>
           </div>

@@ -849,6 +849,10 @@ async function submitForm() {
         return;
       }
     }
+    if (form.type === "workspace" && form.default_tools_enabled.web_search && !form.web_search_engine_connection_id) {
+      alert("启用联网搜索后必须选择 Web Search Engine 连接");
+      return;
+    }
     if (form.type === "qq_chat" && !form.ims_bot_adapter_connection_id) {
       alert("QQ Chat Agent Service 需要绑定 Bot Adapter");
       return;

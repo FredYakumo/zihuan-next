@@ -1103,6 +1103,9 @@
             <template v-else-if="toolPreviewState.kind.type === 'memory_agent'">
               <BookmarkIcon class="badge-icon" /> {{ toolPreviewState.kind.action === 'remember' ? '记录记忆' : '回忆记忆' }}
             </template>
+            <template v-else-if="toolPreviewState.kind.type === 'web_search'">
+              <InternetIcon class="badge-icon" /> Web Search
+            </template>
             <button class="tool-preview-close" aria-label="关闭" @click="closeToolPreview"><CloseIcon /></button>
           </div>
           <div class="tool-preview-body">
@@ -1123,6 +1126,27 @@
               <div class="tool-preview-info">
                 <p>{{ toolPreviewState.kind.action === 'remember' ? '正在记录记忆。' : '正在回忆记忆。' }}</p>
                 <pre v-if="toolPreviewState.kind.content">{{ toolPreviewState.kind.content }}</pre>
+              </div>
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'web_search'">
+              <div v-if="toolPreviewState.kind.error" class="tool-preview-error">{{ toolPreviewState.kind.error }}</div>
+              <div v-else class="tool-preview-info">
+                <p v-if="toolPreviewState.kind.query">搜索: <code>{{ toolPreviewState.kind.query }}</code></p>
+                <p v-if="toolPreviewState.kind.url">URL: <code>{{ toolPreviewState.kind.url }}</code></p>
+                <p>返回 {{ toolPreviewState.kind.results.length }} 条结果</p>
+                <div v-if="toolPreviewState.kind.results.length" class="web-search-results-table">
+                  <div v-for="(item, index) in toolPreviewState.kind.results" :key="`${item.url}:${index}`" class="web-search-result-row">
+                    <div class="web-search-result-index">{{ index + 1 }}</div>
+                    <div class="web-search-result-main">
+                      <div class="web-search-result-title-row">
+                        <div class="web-search-result-title">{{ item.title }}</div>
+                        <span v-if="item.score != null" class="web-search-result-score">Score {{ item.score.toFixed(2) }}</span>
+                      </div>
+                      <a v-if="item.url" class="web-search-result-url" :href="item.url" target="_blank" rel="noreferrer">{{ item.url }}</a>
+                      <div class="web-search-result-content">{{ item.content }}</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </template>
             <template v-else-if="toolPreviewState.kind.type === 'edit_file'">
@@ -1284,6 +1308,7 @@ import {
   MoveIcon,
   ChatIcon,
   BookmarkIcon,
+  InternetIcon,
   StopIcon,
 } from "tdesign-icons-vue-next";
 

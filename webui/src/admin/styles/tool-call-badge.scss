@@ -73,6 +73,18 @@
   color: #d97706;
 }
 
+.tool-badge--web-search {
+  background: color-mix(in srgb, #0ea5e9 14%, var(--admin-bg-elevated) 86%);
+  border-color: color-mix(in srgb, #0ea5e9 32%, transparent);
+  color: #0ea5e9;
+}
+
+.tool-badge--error {
+  background: color-mix(in srgb, var(--admin-bad) 16%, var(--admin-bg-elevated) 84%);
+  border-color: color-mix(in srgb, var(--admin-bad) 35%, transparent);
+  color: var(--admin-bad);
+}
+
 .badge-icon {
   font-size: 13px;
   flex-shrink: 0;

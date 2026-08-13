@@ -29,6 +29,8 @@ struct BraveSearchItem {
     url: String,
     description: Option<String>,
     #[serde(default)]
+    score: Option<f64>,
+    #[serde(default)]
     extra_snippets: Option<Vec<String>>,
 }
 
@@ -84,7 +86,8 @@ impl BraveSearch {
                         content.push_str(&snippets.join("\n"));
                     }
                 }
-                format!("标题: {}\n链接: {}\n内容: {}", item.title, item.url, content)
+                let score = item.score.map(|value| format!("\nScore: {value:.4}")).unwrap_or_default();
+                format!("标题: {}\n链接: {}{}\n内容: {}", item.title, item.url, score, content)
             })
             .collect())
     }

@@ -28,3 +28,5 @@ pub(crate) use grep::{GrepBrainTool, DEFAULT_TOOL_GREP};
 pub(crate) use list_dir::{ListDirBrainTool, DEFAULT_TOOL_LIST_DIR};
 pub(crate) use read_file::{ReadFileBrainTool, DEFAULT_TOOL_READ_FILE};
 pub(crate) use rg::{RgBrainTool, DEFAULT_TOOL_RG};
+
+pub(crate) const DEFAULT_TOOL_WEB_SEARCH: &str = "web_search";

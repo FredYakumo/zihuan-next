@@ -853,6 +853,18 @@
   border: 1px solid color-mix(in srgb, var(--admin-bad) 25%, transparent);
 }
 
+.tool-preview-error {
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--admin-bad) 35%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--admin-bad) 12%, var(--admin-bg) 88%);
+  color: var(--admin-bad);
+  font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .tool-preview-info p {
   margin: 0 0 8px;
 }
@@ -873,6 +885,84 @@
   margin-top: 12px;
   background: color-mix(in srgb, var(--admin-accent) 8%, var(--admin-bg) 92%);
   border: 1px solid color-mix(in srgb, var(--admin-accent) 22%, transparent);
+}
+
+.web-search-results-table {
+  margin-top: 14px;
+  max-height: 52vh;
+  overflow-y: auto;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-bg);
+}
+
+.web-search-result-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.web-search-result-row:last-child {
+  border-bottom: 0;
+}
+
+.web-search-result-index {
+  color: var(--admin-subtle);
+  font-size: 12px;
+  text-align: center;
+}
+
+.web-search-result-main {
+  min-width: 0;
+}
+
+.web-search-result-title,
+.web-search-result-url,
+.web-search-result-content {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.web-search-result-title {
+  color: var(--admin-ink);
+  font-weight: 600;
+}
+
+.web-search-result-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.web-search-result-score {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--admin-accent) 30%, transparent);
+  border-radius: 999px;
+  color: var(--admin-accent);
+  font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.web-search-result-url {
+  display: block;
+  margin-top: 4px;
+  color: var(--admin-accent);
+  font-size: 12px;
+}
+
+.web-search-result-content {
+  max-height: 180px;
+  margin-top: 8px;
+  overflow-y: auto;
+  color: var(--admin-subtle);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 .tool-preview-list {

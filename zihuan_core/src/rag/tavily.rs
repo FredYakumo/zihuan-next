@@ -23,6 +23,8 @@ struct TavilySearchItem {
     title: String,
     url: String,
     content: String,
+    #[serde(default)]
+    score: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,7 +93,10 @@ impl TavilySearch {
         Ok(parsed
             .results
             .into_iter()
-            .map(|item| format!("标题: {}\n链接: {}\n内容: {}", item.title, item.url, item.content))
+            .map(|item| {
+                let score = item.score.map(|value| format!("\nScore: {value:.4}")).unwrap_or_default();
+                format!("标题: {}\n链接: {}{}\n内容: {}", item.title, item.url, score, item.content)
+            })
             .collect())
     }
 

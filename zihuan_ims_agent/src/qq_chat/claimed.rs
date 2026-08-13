@@ -1077,16 +1077,7 @@ impl QqChatAgentServiceInner {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
             brain.add_tool(wrap_brain_tool_with_quota(
-                WebSearchBrainTool::new(
-                    ctx.web_search_engine.clone(),
-                    ToolNotificationTarget::new(
-                        Some(ctx.adapter.clone()),
-                        target_id.to_string(),
-                        if is_group { Some(sender_id.to_string()) } else { None },
-                        is_group,
-                        false,
-                    ),
-                ),
+                WebSearchBrainTool::new(ctx.web_search_engine.clone()),
                 tool_quota.clone(),
             ));
         }

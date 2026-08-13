@@ -59,6 +59,8 @@ pub struct WorkspaceAgentServiceConfig {
     pub elasticsearch_memory_connection_id: Option<String>,
     #[serde(default)]
     pub memory_backend: Option<MemoryBackendKind>,
+    #[serde(default)]
+    pub web_search_engine_connection_id: Option<String>,
     #[serde(default = "default_workspace_default_tools_enabled")]
     pub default_tools_enabled: std::collections::HashMap<String, bool>,
 }
@@ -118,6 +120,7 @@ fn default_workspace_default_tools_enabled() -> std::collections::HashMap<String
         ("edit_file".to_string(), true),
         ("exec_cmd".to_string(), true),
         ("ask_user".to_string(), true),
+        ("web_search".to_string(), false),
     ]
     .into_iter()
     .collect()

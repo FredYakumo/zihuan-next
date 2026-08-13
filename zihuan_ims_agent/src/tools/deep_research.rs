@@ -167,7 +167,7 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
                 brain.add_tool(MemoryBrainAgentContextTool::new(memory_agent));
             }
             brain.add_tool(wrap_brain_tool_with_quota(
-                WebSearchBrainTool::new(Arc::clone(&self.web_search_engine), self.notification_target.clone()),
+                WebSearchBrainTool::new(Arc::clone(&self.web_search_engine)),
                 self.tool_quota.clone(),
             ));
             brain.add_tool(ImageUnderstandBrainTool::new(
