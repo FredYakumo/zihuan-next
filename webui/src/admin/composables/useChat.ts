@@ -97,6 +97,7 @@ type SearchMatch = {
   context_before?: string[];
   context_after?: string[];
 };
+type WebSearchResult = { title: string; url: string; content: string; score: number | null };
 type ToolCallKind =
   | { type: "create_file"; filename: string; lineCount: number; content: string }
   | { type: "delete_file"; filename: string; lineCount: number | null }
@@ -119,6 +120,7 @@ type ToolCallKind =
   | { type: "grep" | "rg"; pattern: string; matches: SearchMatch[]; totalMatches: number; matchedFiles: number; skippedBinary: number; truncated: boolean }
   | { type: "ask_user"; question: string }
   | { type: "memory_agent"; action: "recall" | "remember"; content: string }
+  | { type: "web_search"; query: string; url: string; results: WebSearchResult[]; error: string | null }
   | { type: "generic"; name: string };
 
 
@@ -137,7 +139,28 @@ function safeParseJson<T>(raw: unknown): T | null {
   }
 }
 
+function parseWebSearchResult(value: unknown): WebSearchResult {
+  const raw = typeof value === "string" ? value : JSON.stringify(value ?? "");
+  const title = raw.match(/标题:\s*(.*?)(?:\r?\n|$)/)?.[1]?.trim() ?? "";
+  const url = raw.match(/链接:\s*(https?:\/\/\S+)/)?.[1]?.trim() ?? "";
+  const scoreText = raw.match(/Score:\s*([-+]?\d*\.?\d+)/i)?.[1];
+  const parsedScore = scoreText == null ? null : Number(scoreText);
+  const content = raw.match(/内容:\s*([\s\S]*)$/)?.[1]?.trim() ?? raw.trim();
+  return { title: title || url || "搜索结果", url, content, score: Number.isFinite(parsedScore) ? parsedScore : null };
+}
+
 function classifyToolCall(name: string, arguments_: unknown, result?: string): ToolCallKind {
+  if (name === "web_search") {
+    const args = safeParseJson<{ query?: string; url?: string }>(arguments_);
+    const response = safeParseJson<{ results?: unknown[]; error?: string }>(result);
+    return {
+      type: "web_search",
+      query: args?.query?.trim() ?? "",
+      url: args?.url?.trim() ?? "",
+      results: Array.isArray(response?.results) ? response.results.map(parseWebSearchResult) : [],
+      error: response?.error?.trim() || null,
+    };
+  }
   if (name === "memory_agent") {
     const args = safeParseJson<{ content?: string }>(arguments_);
     const content = args?.content?.trim() ?? "";

@@ -8,17 +8,21 @@ use zihuan_core::inference::system_config::{load_llm_refs, AgentConfig, MemoryBa
 use zihuan_core::llm::LLMMessage;
 use zihuan_core::memory_agent::{MemoryAgentResources, MemoryBackend, MemoryBrainAgent, MemoryBrainAgentTool};
 use zihuan_core::runtime::block_async;
-use zihuan_core::storage::{build_elasticsearch_ref, build_weaviate_ref, AgentMemoryAccessContext, ConnectionConfig, LocalMemoryStore, WeaviateCollectionSchema};
+use zihuan_core::storage::{
+    build_elasticsearch_ref, build_web_search_engine_ref, build_weaviate_ref, AgentMemoryAccessContext,
+    ConnectionConfig, LocalMemoryStore, WeaviateCollectionSchema,
+};
 use zihuan_core::workspace::normalized_workspace_path;
 use zihuan_core::graph::brain_tool_spec::BrainToolDefinition;
 
 use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
 use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
+use zihuan_core::agent::tools::WebSearchBrainTool;
 use crate::tools::{
     AskUserBrainTool, CreateFileBrainTool, DeleteFileBrainTool, EditFileBrainTool, ExecCmdBrainTool,
     CopyFileBrainTool, FileInfoBrainTool, FindFilesBrainTool, GitStatusBrainTool, GrepBrainTool, ListDirBrainTool, MoveFileBrainTool, ReadFileBrainTool, RgBrainTool, DEFAULT_TOOL_ASK_USER,
     DEFAULT_TOOL_CREATE_FILE, DEFAULT_TOOL_DELETE_FILE, DEFAULT_TOOL_EDIT_FILE, DEFAULT_TOOL_EXEC_CMD,
-    DEFAULT_TOOL_COPY_FILE, DEFAULT_TOOL_FILE_INFO, DEFAULT_TOOL_FIND_FILES, DEFAULT_TOOL_GIT_STATUS, DEFAULT_TOOL_GREP, DEFAULT_TOOL_LIST_DIR, DEFAULT_TOOL_MOVE_FILE, DEFAULT_TOOL_READ_FILE, DEFAULT_TOOL_RG,
+    DEFAULT_TOOL_COPY_FILE, DEFAULT_TOOL_FILE_INFO, DEFAULT_TOOL_FIND_FILES, DEFAULT_TOOL_GIT_STATUS, DEFAULT_TOOL_GREP, DEFAULT_TOOL_LIST_DIR, DEFAULT_TOOL_MOVE_FILE, DEFAULT_TOOL_READ_FILE, DEFAULT_TOOL_RG, DEFAULT_TOOL_WEB_SEARCH,
 };
 use zihuan_core::error::Result;
 
@@ -33,7 +37,9 @@ fn memory_prompt() -> &'static str {
     "[Memory] You can use memory_agent to recall relevant long-term information before answering. When this conversation establishes durable facts, preferences, decisions, or relationships, call memory_agent before finishing to save them. Do not save transient details, sensitive data, or information without long-term value."
 }
 
-fn build_tool_capabilities(enabled: &std::collections::HashMap<String, bool>) -> String {
+fn build_tool_capabilities(
+    enabled: &std::collections::HashMap<String, bool>,
+) -> String {
     let mut capabilities = Vec::new();
     if is_enabled(enabled, DEFAULT_TOOL_READ_FILE) {
         capabilities.push("read files (read_file can read binary fragments as base64 when needed)");
@@ -74,6 +80,9 @@ fn build_tool_capabilities(enabled: &std::collections::HashMap<String, bool>) ->
     if is_enabled(enabled, DEFAULT_TOOL_ASK_USER) {
         capabilities.push("ask the user for clarification");
     }
+    if is_enabled(enabled, DEFAULT_TOOL_WEB_SEARCH) {
+        capabilities.push("search the web and read web pages");
+    }
     if capabilities.is_empty() {
         "You have no workspace tools enabled.".to_string()
     } else {
@@ -94,6 +103,7 @@ pub struct WorkspaceInferenceToolProvider {
     agents_md_enabled: bool,
     default_tools_enabled: std::collections::HashMap<String, bool>,
     memory_resources: Option<WorkspaceMemoryResources>,
+    web_search_engine: std::result::Result<Arc<zihuan_core::rag::WebSearchEngineRef>, String>,
     tool_definitions: Vec<BrainToolDefinition>,
 }
 
@@ -192,6 +202,13 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_ASK_USER) {
             tools.push(Box::new(AskUserBrainTool));
         }
+        if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_WEB_SEARCH) {
+            let tool = match &self.web_search_engine {
+                Ok(engine) => WebSearchBrainTool::new(Arc::clone(engine)),
+                Err(error) => WebSearchBrainTool::unavailable(error.clone()),
+            };
+            tools.push(Box::new(tool));
+        }
         if let Some(resources) = &self.memory_resources {
             tools.push(Box::new(MemoryBrainAgentTool::new(MemoryBrainAgent::new(
                 resources.with_llm(Arc::clone(&context.llm)),
@@ -215,8 +232,23 @@ pub fn load_inference_tool_provider(
         agents_md_enabled: config.agents_md_enabled,
         default_tools_enabled: config.default_tools_enabled.clone(),
         memory_resources: load_memory_resources(config, connections),
+        web_search_engine: load_web_search_engine(config, connections),
         tool_definitions: build_enabled_tool_definitions(&agent.tools)?,
     }))
+}
+
+fn load_web_search_engine(
+    config: &WorkspaceAgentServiceConfig,
+    connections: &[ConnectionConfig],
+) -> std::result::Result<Arc<zihuan_core::rag::WebSearchEngineRef>, String> {
+    let connection_id = config
+        .web_search_engine_connection_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "Web Search Engine connection is not configured".to_string())?;
+    build_web_search_engine_ref(Some(connection_id), connections)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Web Search Engine connection is not configured".to_string())
 }
 
 #[derive(Clone)]

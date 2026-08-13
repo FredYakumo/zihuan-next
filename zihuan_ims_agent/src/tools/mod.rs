@@ -84,7 +84,7 @@ pub fn build_info_brain_tools(
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_WEB_SEARCH) {
         if let Some(engine) = web_search_engine_ref.as_ref() {
-            tools.push(Box::new(WebSearchBrainTool::new(engine.clone(), dashboard_target.clone())));
+            tools.push(Box::new(WebSearchBrainTool::new(engine.clone())));
         }
     }
 

@@ -263,6 +263,7 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
 ];
 
 export const WORKSPACE_DEFAULT_TOOLS: DefaultToolOption[] = [
+  { id: "web_search", label: "web_search", description: "联网搜索并读取网页内容" },
   { id: "read_file", label: "read_file", description: "读取文件内容" },
   { id: "list_dir", label: "list_dir", description: "列出目录内容" },
   { id: "grep", label: "grep", description: "递归搜索文本" },
@@ -306,9 +307,7 @@ export function defaultQqChatMessageRateLimitRule(): QqChatMessageRateLimitRuleF
   };
 }
 export function defaultWorkspaceDefaultToolsEnabled(): Record<string, boolean> {
-  return Object.fromEntries(
-    WORKSPACE_DEFAULT_TOOLS.map((tool) => [tool.id, true]),
-  );
+  return Object.fromEntries(WORKSPACE_DEFAULT_TOOLS.map((tool) => [tool.id, tool.id !== "web_search"]));
 }
 
 export function defaultLlmConfig(): LlmServiceConfig {
@@ -998,6 +997,7 @@ export function serviceFormFromConfig(
     form.workspace_weaviate_memory_connection_id = String(agentType.weaviate_memory_connection_id ?? "");
     form.workspace_elasticsearch_memory_connection_id = String(agentType.elasticsearch_memory_connection_id ?? "");
     form.workspace_memory_backend = agentType.memory_backend === "local_file" || agentType.memory_backend === "weaviate" || agentType.memory_backend === "elasticsearch" ? agentType.memory_backend : "";
+    form.web_search_engine_connection_id = String(agentType.web_search_engine_connection_id ?? "");
     const source = (agentType.default_tools_enabled ?? {}) as Record<
       string,
       unknown
@@ -1171,6 +1171,7 @@ export function buildServicePayload(form: ServiceFormState): {
       weaviate_memory_connection_id: form.workspace_weaviate_memory_connection_id || null,
       elasticsearch_memory_connection_id: form.workspace_elasticsearch_memory_connection_id || null,
       memory_backend: form.workspace_memory_backend || null,
+      web_search_engine_connection_id: form.web_search_engine_connection_id || null,
       default_tools_enabled: Object.fromEntries(
         WORKSPACE_DEFAULT_TOOLS.map((tool) => [
           tool.id,

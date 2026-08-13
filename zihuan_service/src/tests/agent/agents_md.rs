@@ -33,6 +33,7 @@ fn provider(enabled: bool) -> Arc<dyn InferenceToolProvider> {
         weaviate_memory_connection_id: None,
         elasticsearch_memory_connection_id: None,
         memory_backend: None,
+        web_search_engine_connection_id: None,
         default_tools_enabled: HashMap::new(),
     };
     let agent = AgentConfig {

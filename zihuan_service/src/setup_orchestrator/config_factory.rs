@@ -297,6 +297,7 @@ fn build_workspace_agent_service(id: &str, name: &str, llm_ref_id: Option<String
             weaviate_memory_connection_id: None,
             elasticsearch_memory_connection_id: None,
             memory_backend: None,
+            web_search_engine_connection_id: None,
             default_tools_enabled: default_workspace_tools(),
         }),
         enabled: true,
@@ -335,6 +336,7 @@ fn default_workspace_tools() -> HashMap<String, bool> {
         ("edit_file".to_string(), true),
         ("exec_cmd".to_string(), true),
         ("ask_user".to_string(), true),
+        ("web_search".to_string(), false),
     ]
     .into_iter()
     .collect()
