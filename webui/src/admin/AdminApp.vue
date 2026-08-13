@@ -61,6 +61,10 @@
           <template #icon><SearchIcon /></template>
           数据检索
         </t-menu-item>
+        <t-menu-item value="/api-keys" to="/api-keys" @click="closeSidebar">
+          <template #icon><KeyIcon /></template>
+          API Key
+        </t-menu-item>
         <t-menu-item value="/settings" to="/settings" @click="closeSidebar">
           <template #icon><SettingIcon /></template>
           设置
@@ -93,6 +97,7 @@ import {
   ChatIcon,
   ControlPlatformIcon,
   DashboardIcon,
+  KeyIcon,
   LinkIcon,
   MenuFoldIcon,
   MenuUnfoldIcon,

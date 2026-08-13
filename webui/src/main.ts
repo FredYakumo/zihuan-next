@@ -19,6 +19,7 @@ import Chat from "./admin/view/Chat.vue";
 import DataExplorer from "./admin/view/DataExplorer.vue";
 import DataExplorerDetail from "./admin/view/DataExplorerDetail.vue";
 import Settings from "./admin/view/Settings.vue";
+import ApiKeys from "./admin/view/ApiKeys.vue";
 import SetupWizard from "./admin/view/SetupWizard.vue";
 import "./admin/admin.scss";
 import "./ui/theme.css";
@@ -55,6 +56,7 @@ async function main() {
       { path: "/data-explorer", component: DataExplorer },
       { path: "/data-explorer/:serviceId/:capability(messages|memories|images)", component: DataExplorerDetail },
       { path: "/settings", component: Settings },
+      { path: "/api-keys", component: ApiKeys },
       { path: "/setup", component: SetupWizard, meta: { public: true } },
     ],
   });
