@@ -66,6 +66,7 @@ interface ModelHttpApiKey {
 
 interface ModelHttpSettingsResponse {
   enabled: boolean;
+  endpoint: string;
   public_model_config_ids: string[];
   api_keys: ModelHttpApiKey[];
 }
@@ -74,6 +75,7 @@ interface PublicChatModel {
   config_id: string;
   name: string;
   model_name: string;
+  has_duplicate_model_name: boolean;
 }
 
 
@@ -186,6 +188,7 @@ export function useSettings() {
 
   const modelHttpEnabled = ref(false);
   const modelHttpSaving = ref(false);
+  const modelHttpEndpoint = ref("");
   const publicModelConfigIds = ref<string[]>([]);
   const modelHttpApiKeys = ref<ModelHttpApiKey[]>([]);
   const enabledChatModels = ref<PublicChatModel[]>([]);
@@ -201,14 +204,23 @@ export function useSettings() {
       request<LlmConfig[]>("GET", "/system/llm-refs"),
     ]);
     modelHttpEnabled.value = settings.enabled;
+    modelHttpEndpoint.value = settings.endpoint;
     publicModelConfigIds.value = settings.public_model_config_ids;
     modelHttpApiKeys.value = settings.api_keys;
-    enabledChatModels.value = llmConfigs
+    const chatModels = llmConfigs
       .filter(
         (item): item is LlmConfig & { model: Extract<LlmConfig["model"], { type: "chat_llm" }> } =>
           item.enabled && item.model.type === "chat_llm",
       )
       .map((item) => ({ config_id: item.config_id, name: item.name, model_name: item.model.llm.model_name }));
+    const modelNameCounts = new Map<string, number>();
+    for (const model of chatModels) {
+      modelNameCounts.set(model.name, (modelNameCounts.get(model.name) ?? 0) + 1);
+    }
+    enabledChatModels.value = chatModels.map((model) => ({
+      ...model,
+      has_duplicate_model_name: (modelNameCounts.get(model.name) ?? 0) > 1,
+    }));
   }
 
   async function saveModelHttpSettings() {
@@ -219,6 +231,7 @@ export function useSettings() {
         public_model_config_ids: publicModelConfigIds.value,
       });
       modelHttpEnabled.value = response.enabled;
+      modelHttpEndpoint.value = response.endpoint;
       publicModelConfigIds.value = response.public_model_config_ids;
       modelHttpApiKeys.value = response.api_keys;
     } finally {
@@ -265,6 +278,10 @@ export function useSettings() {
 
   async function copyModelHttpSecret() {
     await navigator.clipboard.writeText(newModelHttpSecret.value);
+  }
+
+  async function copyModelHttpEndpoint() {
+    await navigator.clipboard.writeText(modelHttpEndpoint.value);
   }
 
   onMounted(() => { void loadModelHttpSettings(); });
@@ -374,6 +391,7 @@ export function useSettings() {
     changePythonRuntime,
     modelHttpEnabled,
     modelHttpSaving,
+    modelHttpEndpoint,
     publicModelConfigIds,
     modelHttpApiKeys,
     enabledChatModels,
@@ -386,6 +404,7 @@ export function useSettings() {
     updateModelHttpApiKey,
     deleteModelHttpApiKey,
     copyModelHttpSecret,
+    copyModelHttpEndpoint,
     restoreFileInput,
     restoreLoading,
     restoreError,

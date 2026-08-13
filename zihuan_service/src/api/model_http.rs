@@ -177,7 +177,7 @@ fn public_models<'a>(ids: &[String], models: &'a [LlmRefConfig]) -> Vec<(&'a Llm
     models.iter().filter_map(|item| {
         if !item.enabled || !ids.iter().any(|id| id == &item.id) { return None; }
         match &item.model {
-            ModelRefSpec::ChatLlm { llm } => Some((item, llm.model_name.clone())),
+            ModelRefSpec::ChatLlm { .. } => Some((item, item.name.clone())),
             ModelRefSpec::TextEmbeddingLocal { .. } => None,
         }
     }).collect()

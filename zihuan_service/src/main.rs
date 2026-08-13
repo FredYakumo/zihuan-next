@@ -104,7 +104,13 @@ async fn main() {
     info!("Starting web server on http://{}", listen_addr);
     info!("Open your browser at  http://{}", display_addr);
 
-    let router = api::build_router(Arc::clone(&state), broadcast, canonical_local_origin);
+    let model_http_endpoint = format!("http://{display_addr}/v1/chat/completions");
+    let router = api::build_router(
+        Arc::clone(&state),
+        broadcast,
+        canonical_local_origin,
+        model_http_endpoint,
+    );
     let service = salvo::Service::new(router);
     let acceptor = salvo::conn::TcpListener::new(&listen_addr)
         .try_bind()

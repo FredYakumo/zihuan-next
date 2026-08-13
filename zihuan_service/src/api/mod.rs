@@ -33,7 +33,12 @@ use ws::{ws_handler, WsBroadcast};
 struct WebAssets;
 
 /// Build the Salvo router with all API endpoints and static file serving.
-pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_local_origin: Option<String>) -> Router {
+pub fn build_router(
+    state: Arc<AppState>,
+    broadcast: WsBroadcast,
+    canonical_local_origin: Option<String>,
+    model_http_endpoint: String,
+) -> Router {
     // API routes
     let api = Router::new()
         // Registry
@@ -250,6 +255,7 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
         .push(Router::with_path("settings/config-restore").post(settings::restore_config))
         .push(
             Router::with_path("settings/model-http")
+                .hoop(salvo::affix_state::inject(model_http_endpoint))
                 .get(settings::get_model_http_settings)
                 .put(settings::update_model_http_settings)
                 .push(Router::with_path("api-keys").post(settings::create_model_http_api_key))

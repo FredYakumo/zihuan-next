@@ -72,6 +72,7 @@ pub struct PythonRuntimeSelectionResponse {
 #[derive(Serialize)]
 pub struct ModelHttpSettingsResponse {
     pub enabled: bool,
+    pub endpoint: String,
     pub public_model_config_ids: Vec<String>,
     pub api_keys: Vec<ModelHttpApiKeyResponse>,
 }
@@ -132,24 +133,27 @@ fn model_http_key_response(key: &ModelHttpApiKey) -> ModelHttpApiKeyResponse {
     }
 }
 
-fn model_http_settings_response(settings: ModelHttpServiceSettings) -> ModelHttpSettingsResponse {
+fn model_http_settings_response(settings: ModelHttpServiceSettings, endpoint: String) -> ModelHttpSettingsResponse {
     ModelHttpSettingsResponse {
         enabled: settings.enabled,
+        endpoint,
         public_model_config_ids: settings.public_model_config_ids,
         api_keys: settings.api_keys.iter().map(model_http_key_response).collect(),
     }
 }
 
 #[handler]
-pub async fn get_model_http_settings(_req: &mut Request, res: &mut Response) {
+pub async fn get_model_http_settings(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let endpoint = depot.obtain::<String>().cloned().unwrap_or_default();
     match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
-        Ok(settings) => res.render(Json(model_http_settings_response(settings.model_http_service))),
+        Ok(settings) => res.render(Json(model_http_settings_response(settings.model_http_service, endpoint))),
         Err(error) => render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
     }
 }
 
 #[handler]
-pub async fn update_model_http_settings(req: &mut Request, res: &mut Response) {
+pub async fn update_model_http_settings(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let endpoint = depot.obtain::<String>().cloned().unwrap_or_default();
     let body: UpdateModelHttpSettingsRequest = match req.parse_json().await {
         Ok(body) => body,
         Err(error) => return render_settings_error(res, StatusCode::BAD_REQUEST, error.to_string()),
@@ -166,8 +170,8 @@ pub async fn update_model_http_settings(req: &mut Request, res: &mut Response) {
         let ModelRefSpec::ChatLlm { llm } = &llm_ref.model else {
             return render_settings_error(res, StatusCode::BAD_REQUEST, format!("public model '{}' is not a chat model", llm_ref.name));
         };
-        if !public_model_names.insert(llm.model_name.clone()) {
-            return render_settings_error(res, StatusCode::BAD_REQUEST, format!("public models must use unique model_name: {}", llm.model_name));
+        if !public_model_names.insert(llm_ref.name.clone()) {
+            return render_settings_error(res, StatusCode::BAD_REQUEST, format!("public models must use unique configuration names: {}", llm_ref.name));
         }
     }
     let mut settings = match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
@@ -177,7 +181,7 @@ pub async fn update_model_http_settings(req: &mut Request, res: &mut Response) {
     settings.model_http_service.enabled = body.enabled;
     settings.model_http_service.public_model_config_ids = body.public_model_config_ids;
     match zihuan_core::system_config::save_section::<GlobalSettingsSection>(&settings) {
-        Ok(()) => res.render(Json(model_http_settings_response(settings.model_http_service))),
+        Ok(()) => res.render(Json(model_http_settings_response(settings.model_http_service, endpoint))),
         Err(error) => render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
     }
 }
