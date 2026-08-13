@@ -64,15 +64,6 @@
       </t-card>
     </div>
 
-    <t-card title="模型 HTTP API Keys" bordered header-bordered>
-      <template #actions><t-button theme="primary" @click="handleCreateModelHttpApiKey">创建 API Key</t-button></template>
-      <p class="muted">Key 仅在创建时显示明文；分组字段已预留给后续授权功能。</p>
-      <t-table :data="modelHttpApiKeys" :columns="modelHttpApiKeyColumns" row-key="id" :pagination="false" size="small">
-        <template #enabled="{ row }"><t-switch :value="row.enabled" @change="updateModelHttpApiKey(row, { enabled: $event })" /></template>
-        <template #actions="{ row }"><t-popconfirm content="确认删除此 API Key？" @confirm="deleteModelHttpApiKey(row.id)"><t-button variant="text" theme="danger">删除</t-button></t-popconfirm></template>
-      </t-table>
-    </t-card>
-
     <t-dialog v-model:visible="modelHttpDialogVisible" header="启用模型" width="680px" :confirm-btn="{ content: '保存' }" @confirm="handleSaveModelHttpSettings">
       <div class="model-http-model-selection-header">
         <t-checkbox :checked="allPublicModelsSelected" @change="toggleAllPublicModels">全选</t-checkbox>
@@ -82,12 +73,6 @@
           {{ model.name }}<span v-if="model.has_duplicate_model_name">（{{ model.model_name }}）</span>
         </t-checkbox>
       </t-checkbox-group>
-    </t-dialog>
-
-    <t-dialog v-model:visible="modelHttpSecretDialogVisible" header="请立即保存 API Key" :footer="false">
-      <p>此 Key 之后无法再次查看。</p>
-      <t-input :value="newModelHttpSecret" readonly />
-      <div class="settings-backup-actions"><t-button theme="primary" @click="copyModelHttpSecret">复制</t-button></div>
     </t-dialog>
 
     <t-card title="Python 运行时" bordered header-bordered>
@@ -244,37 +229,15 @@ const {
   modelHttpSaving,
   modelHttpEndpoint,
   publicModelConfigIds,
-  modelHttpApiKeys,
   enabledChatModels,
   allPublicModelsSelected,
-  newModelHttpSecret,
   setModelHttpEnabled,
   saveModelHttpSettings,
   toggleAllPublicModels,
-  createModelHttpApiKey,
-  updateModelHttpApiKey,
-  deleteModelHttpApiKey,
-  copyModelHttpSecret,
   copyModelHttpEndpoint,
 } = useSettings();
 
 const modelHttpDialogVisible = ref(false);
-const modelHttpSecretDialogVisible = ref(false);
-const modelHttpApiKeyColumns = [
-  { colKey: "name", title: "名称" },
-  { colKey: "secret_prefix", title: "Key 前缀" },
-  { colKey: "created_at", title: "创建时间" },
-  { colKey: "expires_at", title: "过期时间" },
-  { colKey: "group", title: "分组" },
-  { colKey: "enabled", title: "启用", width: 80 },
-  { colKey: "actions", title: "操作", width: 80 },
-];
-
-async function handleCreateModelHttpApiKey() {
-  await createModelHttpApiKey();
-  if (newModelHttpSecret.value) modelHttpSecretDialogVisible.value = true;
-}
-
 async function handleSaveModelHttpSettings() {
   try {
     await saveModelHttpSettings();
