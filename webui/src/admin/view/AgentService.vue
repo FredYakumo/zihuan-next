@@ -27,7 +27,6 @@
               <t-form-item label="类型">
                 <t-select v-model="form.type" disabled>
                   <t-option value="qq_chat" label="QQ Chat Agent Service" />
-                  <t-option value="http_stream" label="HTTP stream service" />
                   <t-option value="workspace" label="Workspace Agent Service" />
                 </t-select>
               </t-form-item>
@@ -41,9 +40,9 @@
 
           <!-- 模型配置 -->
           <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>{{ form.type === 'http_stream' ? '默认模型配置' : form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
+            <template #title>{{ form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
             <div class="agent-service-form-grid">
-              <t-form-item :label="form.type === 'http_stream' ? '默认模型配置' : form.type === 'workspace' ? '默认模型' : '模型配置'" required>
+              <t-form-item :label="form.type === 'workspace' ? '默认模型' : '模型配置'" required>
                 <t-select v-model="form.llm_ref_id" placeholder="请选择">
                   <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
@@ -255,8 +254,8 @@
             </t-card>
           </template>
 
-          <!-- 头像编辑：http_stream 和 workspace -->
-          <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
+          <!-- Workspace 头像 -->
+          <template v-if="form.type === 'workspace'">
             <t-card class="agent-service-form-section" :bordered="false">
               <template #title>Service 头像</template>
               <t-form-item label="头像" class="agent-service-form-item-full">
@@ -271,56 +270,6 @@
                 </div>
                 <t-input v-model="form.avatar_url" placeholder="头像 URL（可选，或直接上传图片）" style="margin-top: 8px" />
               </t-form-item>
-            </t-card>
-          </template>
-
-          <!-- HTTP Stream 专属 -->
-          <template v-if="form.type === 'http_stream'">
-            <t-card class="agent-service-form-section" :bordered="false">
-              <template #title>HTTP Stream 配置</template>
-              <div class="agent-service-form-grid">
-                <t-form-item label="Bind">
-                  <t-input v-model="form.http_bind" placeholder="127.0.0.1:18080" />
-                </t-form-item>
-                <t-form-item label="API Key">
-                  <t-input v-model="form.http_api_key" />
-                </t-form-item>
-                <t-form-item label="Web Search Engine">
-                  <t-select v-model="form.http_web_search_engine_connection_id" placeholder="不使用" clearable>
-                    <t-option value="" label="不使用" />
-                    <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item label="Task DB Connection">
-                  <t-select v-model="form.task_db_connection_id" placeholder="不使用" clearable>
-                    <t-option value="" label="不使用" />
-                    <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                  <div v-if="!form.task_db_connection_id" class="agent-service-form-hint" style="margin-top: 4px">
-                    <InfoCircleIcon /> 未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。如需持久化，请在 <t-link theme="primary" href="#/connections">连接管理</t-link> 中新建 MySQL 或 SQLite 连接。
-                  </div>
-                </t-form-item>
-                <t-form-item label="Memory Backend">
-                  <t-select v-model="form.http_memory_backend" placeholder="不使用" clearable>
-                    <t-option value="" label="不使用" />
-                    <t-option value="local_file" label="本地 Markdown 文件" />
-                    <t-option value="weaviate" label="Weaviate" />
-                    <t-option value="elasticsearch" label="Elasticsearch" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item v-if="form.http_memory_backend !== 'local_file'" label="Memory Embedding Model">
-                  <t-select v-model="form.http_embedding_model_ref_id" placeholder="不使用" clearable>
-                    <t-option value="" label="不使用" />
-                    <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item v-if="form.http_memory_backend !== 'local_file'" label="Weaviate Memory Connection">
-                  <t-select v-model="form.http_weaviate_memory_connection_id" placeholder="不使用" clearable>
-                    <t-option value="" label="不使用" />
-                    <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-              </div>
             </t-card>
           </template>
 
@@ -504,7 +453,6 @@
             <t-form-item label="类型">
               <t-select v-model="form.type" disabled>
                 <t-option value="qq_chat" label="QQ Chat Agent Service" />
-                <t-option value="http_stream" label="HTTP stream service" />
                 <t-option value="workspace" label="Workspace Agent Service" />
               </t-select>
             </t-form-item>
@@ -518,9 +466,9 @@
 
         <!-- 模型配置 -->
         <t-card class="agent-service-form-section" :bordered="false">
-          <template #title>{{ form.type === 'http_stream' ? '默认模型配置' : form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
+          <template #title>{{ form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
           <div class="agent-service-form-grid">
-            <t-form-item :label="form.type === 'http_stream' ? '默认模型配置' : form.type === 'workspace' ? '默认模型' : '模型配置'" required>
+            <t-form-item :label="form.type === 'workspace' ? '默认模型' : '模型配置'" required>
               <t-select v-model="form.llm_ref_id" placeholder="请选择">
                 <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
               </t-select>
@@ -712,7 +660,7 @@
         </template>
 
         <!-- 头像编辑 -->
-        <template v-if="form.type === 'http_stream' || form.type === 'workspace'">
+        <template v-if="form.type === 'workspace'">
           <t-card class="agent-service-form-section" :bordered="false">
             <template #title>Service 头像</template>
             <t-form-item label="头像" class="agent-service-form-item-full">
@@ -727,48 +675,6 @@
               </div>
               <t-input v-model="form.avatar_url" placeholder="头像 URL（可选，或直接上传图片）" style="margin-top: 8px" />
             </t-form-item>
-          </t-card>
-        </template>
-
-        <!-- HTTP Stream 专属 -->
-        <template v-if="form.type === 'http_stream'">
-          <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>HTTP Stream 配置</template>
-            <div class="agent-service-form-grid">
-              <t-form-item label="Bind">
-                <t-input v-model="form.http_bind" placeholder="127.0.0.1:18080" />
-              </t-form-item>
-              <t-form-item label="API Key">
-                <t-input v-model="form.http_api_key" />
-              </t-form-item>
-              <t-form-item label="Web Search Engine">
-                <t-select v-model="form.http_web_search_engine_connection_id" placeholder="不使用" clearable>
-                  <t-option value="" label="不使用" />
-                  <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-              </t-form-item>
-              <t-form-item label="Task DB Connection">
-                <t-select v-model="form.task_db_connection_id" placeholder="不使用" clearable>
-                  <t-option value="" label="不使用" />
-                  <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-                <div v-if="!form.task_db_connection_id" class="agent-service-form-hint" style="margin-top: 4px">
-                  <InfoCircleIcon /> 未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。如需持久化，请在 <t-link theme="primary" href="#/connections">连接管理</t-link> 中新建 MySQL 或 SQLite 连接。
-                </div>
-              </t-form-item>
-              <t-form-item label="Memory Embedding Model">
-                <t-select v-model="form.http_embedding_model_ref_id" placeholder="不使用" clearable>
-                  <t-option value="" label="不使用" />
-                  <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-              </t-form-item>
-              <t-form-item label="Weaviate Memory Connection">
-                <t-select v-model="form.http_weaviate_memory_connection_id" placeholder="不使用" clearable>
-                  <t-option value="" label="不使用" />
-                  <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-              </t-form-item>
-            </div>
           </t-card>
         </template>
 
@@ -1278,7 +1184,6 @@
         <t-select v-model="filters.type">
           <t-option value="all" label="全部 Service 类型" />
           <t-option value="qq_chat" label="QQ Chat Agent Service" />
-          <t-option value="http_stream" label="HTTP Stream Service" />
           <t-option value="workspace" label="Workspace Agent Service" />
         </t-select>
         <t-select v-model="filters.status">
@@ -1353,7 +1258,6 @@ const {
   emotionDimensionDraft,
   emotionDimensionEditingIndex,
   qqChatDefaultTools,
-  httpStreamDefaultTools,
   workspaceDefaultTools,
   currentDefaultTools,
   defaultToolSearchQuery,
@@ -1497,7 +1401,6 @@ function triggerServiceImportFile() {
 function serviceTypeLabel(type: string): string {
   const labels: Record<string, string> = {
     qq_chat: "QQ Chat",
-    http_stream: "HTTP Stream",
     workspace: "Workspace",
   };
   return labels[type] ?? type;

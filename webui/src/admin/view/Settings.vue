@@ -43,7 +43,52 @@
         <p class="muted">在导航栏"日志"旁显示未读错误数量红点。</p>
         <t-checkbox :checked="logErrorBadgeEnabled" @change="handleLogErrorBadgeToggle">显示错误提示</t-checkbox>
       </t-card>
+
+      <t-card title="启用模型 HTTP 服务" bordered header-bordered>
+        <template #actions>
+          <t-switch :value="modelHttpEnabled" :loading="modelHttpSaving" @change="setModelHttpEnabled" />
+        </template>
+        <template v-if="modelHttpEnabled">
+          <div class="model-http-service-actions">
+            <div class="model-http-service-endpoint">
+              <code>{{ modelHttpEndpoint }}</code>
+              <t-button variant="text" shape="square" title="复制地址" @click="copyModelHttpEndpoint">
+                <FileCopyIcon />
+              </t-button>
+            </div>
+            <t-button class="model-http-service-config-button" @click="modelHttpDialogVisible = true">
+              模型配置
+            </t-button>
+          </div>
+        </template>
+      </t-card>
     </div>
+
+    <t-card title="模型 HTTP API Keys" bordered header-bordered>
+      <template #actions><t-button theme="primary" @click="handleCreateModelHttpApiKey">创建 API Key</t-button></template>
+      <p class="muted">Key 仅在创建时显示明文；分组字段已预留给后续授权功能。</p>
+      <t-table :data="modelHttpApiKeys" :columns="modelHttpApiKeyColumns" row-key="id" :pagination="false" size="small">
+        <template #enabled="{ row }"><t-switch :value="row.enabled" @change="updateModelHttpApiKey(row, { enabled: $event })" /></template>
+        <template #actions="{ row }"><t-popconfirm content="确认删除此 API Key？" @confirm="deleteModelHttpApiKey(row.id)"><t-button variant="text" theme="danger">删除</t-button></t-popconfirm></template>
+      </t-table>
+    </t-card>
+
+    <t-dialog v-model:visible="modelHttpDialogVisible" header="启用模型" width="680px" :confirm-btn="{ content: '保存' }" @confirm="handleSaveModelHttpSettings">
+      <div class="model-http-model-selection-header">
+        <t-checkbox :checked="allPublicModelsSelected" @change="toggleAllPublicModels">全选</t-checkbox>
+      </div>
+      <t-checkbox-group v-model="publicModelConfigIds" class="model-http-model-selection-list">
+        <t-checkbox v-for="model in enabledChatModels" :key="model.config_id" :value="model.config_id" class="model-http-model-option">
+          {{ model.name }}<span v-if="model.has_duplicate_model_name">（{{ model.model_name }}）</span>
+        </t-checkbox>
+      </t-checkbox-group>
+    </t-dialog>
+
+    <t-dialog v-model:visible="modelHttpSecretDialogVisible" header="请立即保存 API Key" :footer="false">
+      <p>此 Key 之后无法再次查看。</p>
+      <t-input :value="newModelHttpSecret" readonly />
+      <div class="settings-backup-actions"><t-button theme="primary" @click="copyModelHttpSecret">复制</t-button></div>
+    </t-dialog>
 
     <t-card title="Python 运行时" bordered header-bordered>
       <template #actions>
@@ -159,7 +204,8 @@
 </template>
 
 <script setup lang="ts">
-import { ErrorCircleIcon } from "tdesign-icons-vue-next";
+import { ErrorCircleIcon, FileCopyIcon } from "tdesign-icons-vue-next";
+import { ref } from "vue";
 
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useSettings } from "../composables/useSettings";
@@ -194,9 +240,120 @@ const {
   changePythonRuntime,
   logErrorBadgeEnabled,
   handleLogErrorBadgeToggle,
+  modelHttpEnabled,
+  modelHttpSaving,
+  modelHttpEndpoint,
+  publicModelConfigIds,
+  modelHttpApiKeys,
+  enabledChatModels,
+  allPublicModelsSelected,
+  newModelHttpSecret,
+  setModelHttpEnabled,
+  saveModelHttpSettings,
+  toggleAllPublicModels,
+  createModelHttpApiKey,
+  updateModelHttpApiKey,
+  deleteModelHttpApiKey,
+  copyModelHttpSecret,
+  copyModelHttpEndpoint,
 } = useSettings();
+
+const modelHttpDialogVisible = ref(false);
+const modelHttpSecretDialogVisible = ref(false);
+const modelHttpApiKeyColumns = [
+  { colKey: "name", title: "名称" },
+  { colKey: "secret_prefix", title: "Key 前缀" },
+  { colKey: "created_at", title: "创建时间" },
+  { colKey: "expires_at", title: "过期时间" },
+  { colKey: "group", title: "分组" },
+  { colKey: "enabled", title: "启用", width: 80 },
+  { colKey: "actions", title: "操作", width: 80 },
+];
+
+async function handleCreateModelHttpApiKey() {
+  await createModelHttpApiKey();
+  if (newModelHttpSecret.value) modelHttpSecretDialogVisible.value = true;
+}
+
+async function handleSaveModelHttpSettings() {
+  try {
+    await saveModelHttpSettings();
+    modelHttpDialogVisible.value = false;
+  } catch (error) {
+    window.alert(`保存模型配置失败：${String(error)}`);
+  }
+}
 </script>
 
 <style scoped lang="scss">
 @use "../styles/settings" as *;
+
+.model-http-service-actions {
+  display: grid;
+  grid-template-columns: 70% 20%;
+  column-gap: 10%;
+  align-items: center;
+}
+
+.model-http-service-endpoint {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 32px;
+  padding-left: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--td-radius-default);
+  background: var(--bg);
+
+  code {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :deep(.t-button) {
+    flex: none;
+    height: 30px;
+    margin-left: auto;
+  }
+}
+
+.model-http-service-config-button {
+  height: 32px;
+}
+
+.model-http-model-selection-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+.model-http-model-selection-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 4px 10px 4px 4px;
+}
+
+.model-http-model-option {
+  min-width: 0;
+  margin: 0;
+  min-height: 60px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--td-radius-default);
+  font-size: 16px;
+
+  :deep(.t-checkbox__label) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 18px;
+    line-height: 26px;
+  }
+
+}
 </style>

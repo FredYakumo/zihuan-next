@@ -1,4 +1,3 @@
-pub mod http_stream_service;
 pub mod inference;
 
 
@@ -236,30 +235,6 @@ impl AgentManager {
                     entry.on_finish = on_finish_shared;
                     Ok(())
                 }
-                AgentType::HttpStream(config) => {
-                    let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
-                    let task = http_stream_service::spawn(
-                        self,
-                        agent.clone(),
-                        config.clone(),
-                        Arc::clone(&on_finish_shared),
-                        task_runtime.clone(),
-                    )
-                    .await?;
-                    let started_at = Local::now().to_rfc3339();
-                    let mut guard = self.inner.lock().unwrap();
-                    let entry = guard.entry(agent.id.clone()).or_default();
-                    entry.loaded_agent = Some(Arc::clone(&loaded_agent));
-                    entry.state = AgentRuntimeState {
-                        instance_id: Some(runtime_instance_id),
-                        status: AgentRuntimeStatus::Running,
-                        started_at: Some(started_at),
-                        last_error: None,
-                    };
-                    entry.task = Some(task);
-                    entry.on_finish = on_finish_shared;
-                    Ok(())
-                }
                 AgentType::Workspace(_config) => {
                     let started_at = Local::now().to_rfc3339();
                     let mut guard = self.inner.lock().unwrap();
@@ -361,7 +336,6 @@ pub fn build_inference_tool_provider(
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     match &agent.agent_type {
         AgentType::QqChat(config) => zihuan_ims_agent::qq_chat::load_inference_tool_provider(agent, config, connections),
-        AgentType::HttpStream(config) => http_stream_service::load_inference_tool_provider(agent, config, connections),
         AgentType::Workspace(config) => {
             zihuan_workspace_agent::workspace_agent_service::load_inference_tool_provider(agent, config, connections)
         }

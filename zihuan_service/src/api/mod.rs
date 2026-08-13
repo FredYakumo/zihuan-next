@@ -7,6 +7,7 @@ pub mod graph;
 pub mod graph_exec_helpers;
 pub mod hyperparams;
 pub mod log;
+pub mod model_http;
 pub mod registry;
 pub mod settings;
 pub mod scheduled_tasks;
@@ -32,7 +33,12 @@ use ws::{ws_handler, WsBroadcast};
 struct WebAssets;
 
 /// Build the Salvo router with all API endpoints and static file serving.
-pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_local_origin: Option<String>) -> Router {
+pub fn build_router(
+    state: Arc<AppState>,
+    broadcast: WsBroadcast,
+    canonical_local_origin: Option<String>,
+    model_http_endpoint: String,
+) -> Router {
     // API routes
     let api = Router::new()
         // Registry
@@ -247,6 +253,18 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
         .push(Router::with_path("settings/python-runtime/select").post(settings::select_python_runtime))
         .push(Router::with_path("settings/config-export").get(settings::export_config))
         .push(Router::with_path("settings/config-restore").post(settings::restore_config))
+        .push(
+            Router::with_path("settings/model-http")
+                .hoop(salvo::affix_state::inject(model_http_endpoint))
+                .get(settings::get_model_http_settings)
+                .put(settings::update_model_http_settings)
+                .push(Router::with_path("api-keys").post(settings::create_model_http_api_key))
+                .push(
+                    Router::with_path("api-keys/<id>")
+                        .put(settings::update_model_http_api_key)
+                        .delete(settings::delete_model_http_api_key),
+                ),
+        )
         // Data Explorer
         .push(
             Router::with_path("explorer")
@@ -278,6 +296,11 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
         );
 
     let mut router = Router::new();
+    router = router.push(
+        Router::new()
+            .push(Router::with_path("v1/models").get(model_http::list_models))
+            .push(Router::with_path("v1/chat/completions").post(model_http::chat_completions)),
+    );
     if let Some(origin) = canonical_local_origin {
         router = router.hoop(CanonicalLocalRedirect::new(origin));
     }

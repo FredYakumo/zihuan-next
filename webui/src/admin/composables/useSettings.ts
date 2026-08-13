@@ -11,6 +11,7 @@ import {
   setTheme,
 } from "../../ui/theme";
 import { logErrorBadgeEnabled, setLogErrorBadgeEnabled } from "../state/logStream";
+import type { LlmConfig } from "../../api/client";
 
 interface StorageEntry {
   label: string;
@@ -51,6 +52,30 @@ interface PythonRuntimeResponse {
 interface PythonRuntimeSelectionResponse {
   cancelled: boolean;
   runtime: PythonRuntimeResponse | null;
+}
+
+interface ModelHttpApiKey {
+  id: string;
+  name: string;
+  secret_prefix: string;
+  created_at: string;
+  expires_at: string | null;
+  group: string | null;
+  enabled: boolean;
+}
+
+interface ModelHttpSettingsResponse {
+  enabled: boolean;
+  endpoint: string;
+  public_model_config_ids: string[];
+  api_keys: ModelHttpApiKey[];
+}
+
+interface PublicChatModel {
+  config_id: string;
+  name: string;
+  model_name: string;
+  has_duplicate_model_name: boolean;
 }
 
 
@@ -161,6 +186,106 @@ export function useSettings() {
 
   onMounted(reloadPythonRuntime);
 
+  const modelHttpEnabled = ref(false);
+  const modelHttpSaving = ref(false);
+  const modelHttpEndpoint = ref("");
+  const publicModelConfigIds = ref<string[]>([]);
+  const modelHttpApiKeys = ref<ModelHttpApiKey[]>([]);
+  const enabledChatModels = ref<PublicChatModel[]>([]);
+  const newModelHttpSecret = ref("");
+
+  const allPublicModelsSelected = computed(
+    () => enabledChatModels.value.length > 0 && publicModelConfigIds.value.length === enabledChatModels.value.length,
+  );
+
+  async function loadModelHttpSettings() {
+    const [settings, llmConfigs] = await Promise.all([
+      request<ModelHttpSettingsResponse>("GET", "/settings/model-http"),
+      request<LlmConfig[]>("GET", "/system/llm-refs"),
+    ]);
+    modelHttpEnabled.value = settings.enabled;
+    modelHttpEndpoint.value = settings.endpoint;
+    publicModelConfigIds.value = settings.public_model_config_ids;
+    modelHttpApiKeys.value = settings.api_keys;
+    const chatModels = llmConfigs
+      .filter(
+        (item): item is LlmConfig & { model: Extract<LlmConfig["model"], { type: "chat_llm" }> } =>
+          item.enabled && item.model.type === "chat_llm",
+      )
+      .map((item) => ({ config_id: item.config_id, name: item.name, model_name: item.model.llm.model_name }));
+    const modelNameCounts = new Map<string, number>();
+    for (const model of chatModels) {
+      modelNameCounts.set(model.name, (modelNameCounts.get(model.name) ?? 0) + 1);
+    }
+    enabledChatModels.value = chatModels.map((model) => ({
+      ...model,
+      has_duplicate_model_name: (modelNameCounts.get(model.name) ?? 0) > 1,
+    }));
+  }
+
+  async function saveModelHttpSettings() {
+    modelHttpSaving.value = true;
+    try {
+      const response = await request<ModelHttpSettingsResponse>("PUT", "/settings/model-http", {
+        enabled: modelHttpEnabled.value,
+        public_model_config_ids: publicModelConfigIds.value,
+      });
+      modelHttpEnabled.value = response.enabled;
+      modelHttpEndpoint.value = response.endpoint;
+      publicModelConfigIds.value = response.public_model_config_ids;
+      modelHttpApiKeys.value = response.api_keys;
+    } finally {
+      modelHttpSaving.value = false;
+    }
+  }
+
+  async function setModelHttpEnabled(enabled: boolean) {
+    modelHttpEnabled.value = enabled;
+    await saveModelHttpSettings();
+  }
+
+  function toggleAllPublicModels(checked: boolean) {
+    publicModelConfigIds.value = checked ? enabledChatModels.value.map((item) => item.config_id) : [];
+  }
+
+  async function createModelHttpApiKey() {
+    const name = window.prompt("API Key 名称");
+    if (!name?.trim()) return;
+    const expiresAt = window.prompt("过期时间（RFC3339，可留空表示永久）", "")?.trim() || null;
+    const group = window.prompt("分组（可留空）", "")?.trim() || null;
+    const response = await request<{ secret: string } & ModelHttpApiKey>("POST", "/settings/model-http/api-keys", {
+      name: name.trim(), expires_at: expiresAt, group,
+    });
+    modelHttpApiKeys.value.push(response);
+    newModelHttpSecret.value = response.secret;
+  }
+
+  async function updateModelHttpApiKey(key: ModelHttpApiKey, patch: Partial<ModelHttpApiKey>) {
+    const response = await request<ModelHttpApiKey>("PUT", `/settings/model-http/api-keys/${key.id}`, {
+      name: patch.name ?? key.name,
+      expires_at: patch.expires_at ?? key.expires_at,
+      group: patch.group ?? key.group,
+      enabled: patch.enabled ?? key.enabled,
+    });
+    const index = modelHttpApiKeys.value.findIndex((item) => item.id === key.id);
+    if (index >= 0) modelHttpApiKeys.value[index] = response;
+  }
+
+  async function deleteModelHttpApiKey(id: string) {
+    await request("DELETE", `/settings/model-http/api-keys/${id}`);
+    modelHttpApiKeys.value = modelHttpApiKeys.value.filter((item) => item.id !== id);
+  }
+
+  async function copyModelHttpSecret() {
+    await navigator.clipboard.writeText(newModelHttpSecret.value);
+  }
+
+  async function copyModelHttpEndpoint() {
+    await navigator.clipboard.writeText(modelHttpEndpoint.value);
+  }
+
+  onMounted(() => { void loadModelHttpSettings(); });
+
   async function changePythonRuntime() {
     pythonRuntimeChanging.value = true;
     pythonRuntimeError.value = null;
@@ -264,6 +389,22 @@ export function useSettings() {
     pythonRuntimeError,
     reloadPythonRuntime,
     changePythonRuntime,
+    modelHttpEnabled,
+    modelHttpSaving,
+    modelHttpEndpoint,
+    publicModelConfigIds,
+    modelHttpApiKeys,
+    enabledChatModels,
+    allPublicModelsSelected,
+    newModelHttpSecret,
+    setModelHttpEnabled,
+    saveModelHttpSettings,
+    toggleAllPublicModels,
+    createModelHttpApiKey,
+    updateModelHttpApiKey,
+    deleteModelHttpApiKey,
+    copyModelHttpSecret,
+    copyModelHttpEndpoint,
     restoreFileInput,
     restoreLoading,
     restoreError,

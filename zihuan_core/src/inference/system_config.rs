@@ -36,33 +36,7 @@ pub struct AgentConfig {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentType {
     QqChat(QqChatAgentServiceConfig),
-    HttpStream(HttpStreamServiceConfig),
     Workspace(WorkspaceAgentServiceConfig),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HttpStreamServiceConfig {
-    #[serde(default = "default_http_bind")]
-    pub bind: String,
-    #[serde(default)]
-    pub api_key: Option<String>,
-    #[serde(default)]
-    pub llm_ref_id: Option<String>,
-    #[serde(default)]
-    pub embedding_model_ref_id: Option<String>,
-    #[serde(default)]
-    #[serde(alias = "tavily_connection_id")]
-    pub web_search_engine_connection_id: Option<String>,
-    #[serde(default)]
-    pub weaviate_memory_connection_id: Option<String>,
-    #[serde(default)]
-    pub elasticsearch_memory_connection_id: Option<String>,
-    #[serde(default)]
-    pub memory_backend: Option<MemoryBackendKind>,
-    #[serde(default)]
-    pub task_db_connection_id: String,
-    #[serde(default = "default_http_stream_default_tools_enabled")]
-    pub default_tools_enabled: std::collections::HashMap<String, bool>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -126,16 +100,6 @@ fn default_llm_api_style() -> LlmApiStyle {
 
 fn default_include_reasoning_content() -> bool {
     false
-}
-
-fn default_http_stream_default_tools_enabled() -> std::collections::HashMap<String, bool> {
-    [
-        ("web_search".to_string(), true),
-        ("memory_agent".to_string(), true),
-        ("memory_agent_with_context".to_string(), true),
-    ]
-    .into_iter()
-    .collect()
 }
 
 fn default_workspace_default_tools_enabled() -> std::collections::HashMap<String, bool> {
@@ -283,10 +247,6 @@ pub struct LlmRefConfig {
     pub updated_at: String,
 }
 
-fn default_http_bind() -> String {
-    "127.0.0.1:18080".to_string()
-}
-
 fn default_timeout_secs() -> u64 {
     30
 }
@@ -346,8 +306,7 @@ impl ConfigRecord for AgentConfig {
     fn kind(&self) -> ConfigKind {
         match self.agent_type {
             AgentType::QqChat(_) => ConfigKind::ServiceQqChat,
-            AgentType::HttpStream(_) => ConfigKind::ServiceHttpStream,
-            AgentType::Workspace(_) => ConfigKind::ServiceHttpStream,
+            AgentType::Workspace(_) => ConfigKind::ServiceWorkspace,
         }
     }
 

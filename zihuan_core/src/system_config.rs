@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
+use chrono::{DateTime, Utc};
 
 use crate::error::{Error, Result};
 
@@ -137,14 +138,46 @@ fn default_task_ttl_hours() -> u64 {
 pub struct GlobalSettings {
     #[serde(default = "default_task_ttl_hours")]
     pub task_ttl_hours: u64,
+    #[serde(default)]
+    pub model_http_service: ModelHttpServiceSettings,
 }
 
 impl Default for GlobalSettings {
     fn default() -> Self {
         Self {
             task_ttl_hours: default_task_ttl_hours(),
+            model_http_service: ModelHttpServiceSettings::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ModelHttpServiceSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub public_model_config_ids: Vec<String>,
+    #[serde(default)]
+    pub api_keys: Vec<ModelHttpApiKey>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelHttpApiKey {
+    pub id: String,
+    pub name: String,
+    pub secret_hash: String,
+    pub secret_prefix: String,
+    pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub expires_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub group: Option<String>,
+    #[serde(default = "default_api_key_enabled")]
+    pub enabled: bool,
+}
+
+fn default_api_key_enabled() -> bool {
+    true
 }
 
 pub struct GlobalSettingsSection;
