@@ -36,13 +36,8 @@ jobs:
       - name: Validate tag commit
         shell: bash
         run: |
-          git fetch origin master dev --no-tags
-
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
-            source_ref="origin/dev"
-          else
-            source_ref="origin/master"
-          fi
+          git fetch origin master --no-tags
+          source_ref="origin/master"
 
           if ! git merge-base --is-ancestor "$GITHUB_SHA" "$source_ref"; then
             echo "Tag $GITHUB_REF_NAME does not point to a commit on $source_ref."
