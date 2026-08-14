@@ -44,7 +44,7 @@ impl QueuedEmbeddingModel {
         let mut guard = self
             .worker
             .lock()
-            .map_err(|_| Error::StringError("embedding worker state lock poisoned".to_string()))?;
+            .map_err(|_| crate::string_error!("embedding worker state lock poisoned"))?;
 
         if guard.is_none() {
             *guard = Some(EmbeddingWorkerHandle { sender: self.spawn_worker()? });
@@ -70,7 +70,7 @@ impl QueuedEmbeddingModel {
             .name(worker_name.clone())
             .spawn(move || run_embedding_worker(&worker_name_for_thread, &mut model, receiver))
             .map_err(|err| {
-                Error::StringError(format!("failed to spawn embedding worker '{}' : {}", worker_name, err))
+                crate::string_error!("failed to spawn embedding worker '{}' : {}", worker_name, err)
             })?;
 
         Ok(sender)
@@ -96,10 +96,10 @@ impl QueuedEmbeddingModel {
                         self.reset_worker();
                     }
                     Err(err) => {
-                        return Err(Error::StringError(format!(
+                        return Err(crate::string_error!(
                             "queued embedding worker stopped before replying for model '{}': {}",
                             self.model_name, err
-                        )));
+                        ));
                     }
                 },
                 Err(err) if attempt < 2 => {
@@ -110,18 +110,18 @@ impl QueuedEmbeddingModel {
                     self.reset_worker();
                 }
                 Err(err) => {
-                    return Err(Error::StringError(format!(
+                    return Err(crate::string_error!(
                         "failed to enqueue embedding request for model '{}': {}",
                         self.model_name, err
-                    )));
+                    ));
                 }
             }
         }
 
-        Err(Error::StringError(format!(
+        Err(crate::string_error!(
             "embedding worker restart attempts exhausted for model '{}'",
             self.model_name
-        )))
+        ))
     }
 }
 
@@ -142,10 +142,10 @@ fn run_embedding_worker(
             Ok(result) => result,
             Err(_) => {
                 if model.preferred_device().is_cpu() {
-                    let _ = request.response.send(Err(Error::StringError(format!(
+                    let _ = request.response.send(Err(crate::string_error!(
                         "embedding worker '{}' panicked during inference on CPU",
                         worker_name
-                    ))));
+                    )));
                     break;
                 }
 
@@ -159,10 +159,10 @@ fn run_embedding_worker(
                 match panic::catch_unwind(AssertUnwindSafe(|| model.batch_inference(&request.texts))) {
                     Ok(cpu_result) => cpu_result,
                     Err(_) => {
-                        let _ = request.response.send(Err(Error::StringError(format!(
+                        let _ = request.response.send(Err(crate::string_error!(
                             "embedding worker '{}' panicked during inference on CPU after device fallback",
                             worker_name
-                        ))));
+                        )));
                         break;
                     }
                 }
@@ -207,7 +207,7 @@ impl EmbeddingBase for QueuedEmbeddingModel {
         let mut embeddings = self.request_embeddings(vec![text.to_string()])?;
         embeddings
             .pop()
-            .ok_or_else(|| Error::StringError("embedding worker returned no vectors".to_string()))
+            .ok_or_else(|| crate::string_error!("embedding worker returned no vectors"))
     }
 
     fn batch_inference(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {

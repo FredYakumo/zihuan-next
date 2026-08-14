@@ -159,16 +159,16 @@ impl ConfigRoot {
                     Self::from_legacy_object(object)
                 }
             }
-            _ => Err(Error::StringError("system config root must be a JSON object".to_string())),
+            _ => Err(crate::string_error!("system config root must be a JSON object")),
         }
     }
 
     fn from_unified_object(mut object: Map<String, Value>) -> Result<Self> {
         let configs = object.remove("configs").unwrap_or_default();
         let mut root = serde_json::from_value::<Self>(Value::Object(object))
-            .map_err(|err| Error::StringError(format!("failed to parse unified config root: {err}")))?;
+            .map_err(|err| crate::string_error!("failed to parse unified config root: {err}"))?;
         let configs = configs.as_object().ok_or_else(|| {
-            Error::StringError("failed to parse unified config root: configs must be an object".to_string())
+            crate::string_error!("failed to parse unified config root: configs must be an object")
         })?;
         root.configs = ConfigCollections {
             connections: parse_config_collection(configs.get("connections"), "connections"),
@@ -192,7 +192,7 @@ impl ConfigRoot {
 
     pub fn to_value(&self) -> Result<Value> {
         serde_json::to_value(self)
-            .map_err(|err| Error::StringError(format!("failed to serialize unified config root: {err}")))
+            .map_err(|err| crate::string_error!("failed to serialize unified config root: {err}"))
     }
 }
 
@@ -340,7 +340,7 @@ impl ConfigRepository for FsConfigRepository {
 
         let content = fs::read_to_string(&self.path)?;
         let value = serde_json::from_str::<Value>(&content)
-            .map_err(|err| Error::StringError(format!("failed to parse {}: {err}", self.path.display())))?;
+            .map_err(|err| crate::string_error!("failed to parse {}: {err}", self.path.display()))?;
         ConfigRoot::from_value(value)
     }
 
@@ -350,7 +350,7 @@ impl ConfigRepository for FsConfigRepository {
         }
         let value = root.to_value()?;
         let content = serde_json::to_string_pretty(&value)
-            .map_err(|err| Error::StringError(format!("failed to serialize unified config root: {err}")))?;
+            .map_err(|err| crate::string_error!("failed to serialize unified config root: {err}"))?;
         let tmp_path = self.path.with_extension("json.tmp");
         fs::write(&tmp_path, content)?;
         fs::rename(&tmp_path, &self.path)?;

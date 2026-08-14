@@ -82,7 +82,7 @@ fn inspect_model_dir(model_dir: &Path) -> Result<LocalLlmModelInfo> {
     let model_name = model_dir
         .file_name()
         .and_then(|value| value.to_str())
-        .ok_or_else(|| Error::StringError(format!("invalid model directory '{}'", model_dir.display())))?
+        .ok_or_else(|| crate::string_error!("invalid model directory '{}'", model_dir.display()))?
         .to_string();
     let tokenizer_present = model_dir.join("tokenizer.json").is_file();
     let gguf_weight = find_first_weight_file(model_dir, "gguf");
@@ -126,20 +126,20 @@ fn inspect_model_dir(model_dir: &Path) -> Result<LocalLlmModelInfo> {
     }
 
     let config_text = fs::read_to_string(&config_path).map_err(|err| {
-        Error::StringError(format!(
+        crate::string_error!(
             "failed to read local llm config '{}' for '{}': {}",
             config_path.display(),
             model_name,
             err
-        ))
+        )
     })?;
     let config_json = serde_json::from_str::<Value>(&config_text).map_err(|err| {
-        Error::StringError(format!(
+        crate::string_error!(
             "failed to parse local llm config '{}' for '{}': {}",
             config_path.display(),
             model_name,
             err
-        ))
+        )
     })?;
 
     let is_vl = config_json.get("vision_config").is_some()

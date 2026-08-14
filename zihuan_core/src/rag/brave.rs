@@ -64,15 +64,15 @@ impl BraveSearch {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(crate::error::Error::StringError(format!(
+            return Err(crate::string_error!(
                 "Brave search request failed with status {}: {}",
                 status, body
-            )));
+            ));
         }
 
         let body = response.text().await?;
         let parsed: BraveSearchResponse = serde_json::from_str(&body)
-            .map_err(|err| crate::error::Error::StringError(format!("Failed to parse Brave search response: {err}")))?;
+            .map_err(|err| crate::string_error!("Failed to parse Brave search response: {err}"))?;
 
         Ok(parsed
             .web
@@ -103,10 +103,10 @@ impl BraveSearch {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(crate::error::Error::StringError(format!(
+            return Err(crate::string_error!(
                 "Direct web request failed with status {}: {}",
                 status, body
-            )));
+            ));
         }
 
         let body = response.text().await?;

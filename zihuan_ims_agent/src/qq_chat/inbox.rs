@@ -263,10 +263,10 @@ impl QqChatAgentServiceInbox {
             .blpop_value(&self.inner.redis_queue_key, REDIS_DEQUEUE_TIMEOUT_SECS)
             .await
             .map_err(|err| {
-                zihuan_core::error::Error::StringError(format!(
+                zihuan_core::string_error!(
                     "redis consumer {} failed to BLPOP from '{}': {}",
                     consumer_idx, self.inner.redis_queue_key, err
-                ))
+                )
             })?;
         let Some((_, payload)) = result else {
             return Ok(None);

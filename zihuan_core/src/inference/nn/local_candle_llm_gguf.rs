@@ -59,12 +59,12 @@ impl LocalCandleGgufLlm {
 
         let model_dir = resolve_model_dir(&config.model_name)?;
         let tokenizer = Tokenizer::from_file(model_dir.join("tokenizer.json")).map_err(|err| {
-            Error::StringError(format!(
+            crate::string_error!(
                 "failed to load tokenizer for local llm '{}' from '{}': {}",
                 config.model_name,
                 model_dir.join("tokenizer.json").display(),
                 err
-            ))
+            )
         })?;
 
         let weight_path = model_dir.join(
@@ -75,29 +75,29 @@ impl LocalCandleGgufLlm {
         );
         let device = select_preferred_device(&config.model_name);
         let mut reader = File::open(&weight_path).map_err(|err| {
-            Error::StringError(format!(
+            crate::string_error!(
                 "failed to open local llm weights '{}' for '{}': {}",
                 weight_path.display(),
                 config.model_name,
                 err
-            ))
+            )
         })?;
         let content = gguf_file::Content::read(&mut reader).map_err(|err| {
-            Error::StringError(format!(
+            crate::string_error!(
                 "failed to read GGUF metadata for '{}' from '{}': {}",
                 config.model_name,
                 weight_path.display(),
                 err
-            ))
+            )
         })?;
         let eos_token_ids = extract_eos_token_ids(&content);
         let model = ModelWeights::from_gguf(content, &mut reader, &device).map_err(|err| {
-            Error::StringError(format!(
+            crate::string_error!(
                 "failed to load local Candle GGUF model '{}' on device {}: {}",
                 config.model_name,
                 describe_device(&device),
                 err
-            ))
+            )
         })?;
 
         info!(
@@ -127,11 +127,11 @@ impl LocalCandleGgufLlm {
         let mut engine = self
             .engine
             .lock()
-            .map_err(|_| Error::StringError("local candle gguf engine lock poisoned".to_string()))?;
+            .map_err(|_| crate::string_error!("local candle gguf engine lock poisoned"))?;
         let prompt_encoding = engine
             .tokenizer
             .encode(prompt, true)
-            .map_err(|err| Error::StringError(format!("failed to tokenize local prompt: {err}")))?;
+            .map_err(|err| crate::string_error!("failed to tokenize local prompt: {err}"))?;
         let mut tokens = prompt_encoding.get_ids().iter().map(|value| *value as u32).collect::<Vec<_>>();
         if tokens.is_empty() {
             return Err(Error::ValidationError("model produced no tokens".to_string()));
@@ -150,18 +150,18 @@ impl LocalCandleGgufLlm {
                 Tensor::new(&[*tokens.last().expect("tokens not empty")], &engine.device)
             }
             .and_then(|tensor| tensor.unsqueeze(0))
-            .map_err(|err| Error::StringError(format!("failed to build gguf model input tensor: {err}")))?;
+            .map_err(|err| crate::string_error!("failed to build gguf model input tensor: {err}"))?;
             let logits = engine
                 .model
                 .forward(&input, if step == 0 { 0 } else { tokens.len().saturating_sub(1) })
-                .map_err(|err| Error::StringError(format!("gguf model forward failed: {err}")))?;
+                .map_err(|err| crate::string_error!("gguf model forward failed: {err}"))?;
             let next_token = logits_processor
                 .sample(
                     &logits
                         .squeeze(0)
-                        .map_err(|err| Error::StringError(format!("failed to squeeze logits: {err}")))?,
+                        .map_err(|err| crate::string_error!("failed to squeeze logits: {err}"))?,
                 )
-                .map_err(|err| Error::StringError(format!("failed to sample model token: {err}")))?;
+                .map_err(|err| crate::string_error!("failed to sample model token: {err}"))?;
             if engine.eos_token_ids.contains(&next_token) {
                 break;
             }
@@ -186,7 +186,7 @@ impl LocalCandleGgufLlm {
         let output_text = engine
             .tokenizer
             .decode(&generated, false)
-            .map_err(|err| Error::StringError(format!("failed to decode local llm output: {err}")))?;
+            .map_err(|err| crate::string_error!("failed to decode local llm output: {err}"))?;
         let parsed = parse_local_response(&output_text);
         if parsed.saw_tool_call_marker && !parsed.parsed_tool_call {
             warn!(

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use log::warn;
 
-use zihuan_core::error::{Error, Result};
+use zihuan_core::error::Result;
 use zihuan_core::llm::LLMMessage;
 use zihuan_core::runtime::block_async;
 use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
@@ -30,7 +30,7 @@ pub(crate) fn save_history(cache: &Arc<LLMMessageSessionCacheRef>, history_key: 
 fn clear_history_key(cache: &Arc<LLMMessageSessionCacheRef>, history_key: &str) -> Result<()> {
     block_async(cache.clear_messages(history_key))
         .map(|_| ())
-        .map_err(|err| Error::StringError(format!("failed to clear QQ chat history for key '{history_key}': {err}")))
+        .map_err(|err| zihuan_core::string_error!("failed to clear QQ chat history for key '{history_key}': {err}"))
 }
 
 pub(crate) fn clear_history(cache: &Arc<LLMMessageSessionCacheRef>, sender_id: &str) -> Result<()> {

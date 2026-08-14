@@ -151,7 +151,7 @@ impl LoadedInferenceAgent {
             .rev()
             .find(|message| matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty())
             .ok_or_else(|| {
-                Error::StringError(format!("agent '{}' did not produce a final assistant message", self.agent.name))
+                zihuan_core::string_error!("agent '{}' did not produce a final assistant message", self.agent.name)
             })
     }
 
@@ -263,7 +263,7 @@ pub fn infer_agent_response_with_model(
         .into_iter()
         .rev()
         .find(|message| matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty())
-        .ok_or_else(|| Error::StringError(format!("agent '{}' did not produce a final assistant message", agent.name)))
+        .ok_or_else(|| zihuan_core::string_error!("agent '{}' did not produce a final assistant message", agent.name))
 }
 
 pub fn infer_agent_response_with_trace(
@@ -350,14 +350,14 @@ fn handle_brain_result(
 ) -> Result<Vec<LLMMessage>> {
     match stop_reason {
         BrainStopReason::Done => Ok(output_messages),
-        BrainStopReason::TransportError(content) => Err(Error::StringError(format!(
+        BrainStopReason::TransportError(content) => Err(zihuan_core::string_error!(
             "chat stream LLM request failed for '{}': {}",
             agent_name, content
-        ))),
-        BrainStopReason::MaxIterationsReached => Err(Error::StringError(format!(
+        )),
+        BrainStopReason::MaxIterationsReached => Err(zihuan_core::string_error!(
             "chat stream exceeded max tool iterations ({MAX_TOOL_ITERATIONS}) for '{}'",
             agent_name
-        ))),
+        )),
         BrainStopReason::AwaitUserInput(request) => Ok(output_messages
             .into_iter()
             .chain(std::iter::once(LLMMessage::assistant_text(format!(
@@ -375,14 +375,14 @@ fn handle_brain_result_with_reason(
 ) -> Result<(Vec<LLMMessage>, BrainStopReason)> {
     match &stop_reason {
         BrainStopReason::Done | BrainStopReason::AwaitUserInput(_) => Ok((output_messages, stop_reason)),
-        BrainStopReason::TransportError(content) => Err(Error::StringError(format!(
+        BrainStopReason::TransportError(content) => Err(zihuan_core::string_error!(
             "chat stream LLM request failed for '{}': {}",
             agent_name, content
-        ))),
-        BrainStopReason::MaxIterationsReached => Err(Error::StringError(format!(
+        )),
+        BrainStopReason::MaxIterationsReached => Err(zihuan_core::string_error!(
             "chat stream exceeded max tool iterations ({MAX_TOOL_ITERATIONS}) for '{}'",
             agent_name
-        ))),
+        )),
     }
 }
 

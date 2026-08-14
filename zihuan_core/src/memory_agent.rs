@@ -70,9 +70,9 @@ impl MemoryBrainAgent {
         std::thread::Builder::new()
             .name("memory-brain-agent".to_string())
             .spawn(move || agent.run_inner(user_message))
-            .map_err(|error| Error::StringError(format!("failed to start Memory Brain Agent thread: {error}")))?
+            .map_err(|error| crate::string_error!("failed to start Memory Brain Agent thread: {error}"))?
             .join()
-            .map_err(|_| Error::StringError("Memory Brain Agent thread panicked".to_string()))?
+            .map_err(|_| crate::string_error!("Memory Brain Agent thread panicked"))?
     }
 
     fn run_inner(&self, user_message: String) -> Result<String> {
@@ -85,7 +85,7 @@ impl MemoryBrainAgent {
             LLMMessage::user(user_message),
         ]);
         if !matches!(stop_reason, BrainStopReason::Done) {
-            return Err(Error::StringError(format!("Memory Brain Agent did not complete normally: {stop_reason:?}")));
+            return Err(crate::string_error!("Memory Brain Agent did not complete normally: {stop_reason:?}"));
         }
         output
             .iter()
@@ -93,7 +93,7 @@ impl MemoryBrainAgent {
             .find(|message| matches!(message.role, MessageRole::Assistant))
             .and_then(LLMMessage::content_text_owned)
             .filter(|content| !content.trim().is_empty())
-            .ok_or_else(|| Error::StringError("Memory Brain Agent returned no text".to_string()))
+            .ok_or_else(|| crate::string_error!("Memory Brain Agent returned no text"))
     }
 
     fn run_content(&self, content: String) -> Result<String> {

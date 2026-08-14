@@ -36,7 +36,7 @@ pub fn build_weaviate_ref(
         std::time::Duration::from_secs(30),
     )?);
     if !weaviate_ref.ready()? {
-        return Err(Error::StringError("Weaviate is reachable but not ready yet".to_string()));
+        return Err(crate::string_error!("Weaviate is reachable but not ready yet"));
     }
     ensure_collection_schema(&weaviate_ref, collection_schema, true)?;
     Ok(weaviate_ref)

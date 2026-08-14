@@ -27,30 +27,22 @@ impl LocalCandleEmbeddingModel {
         let tokenizer_path = model_dir.join("tokenizer.json");
 
         let config_text = fs::read_to_string(&config_path).map_err(|err| {
-            Error::StringError(format!(
+            crate::string_error!(
                 "failed to read local embedding config '{}' for model '{}': {}",
-                config_path.display(),
-                model_name,
-                err
-            ))
+                config_path.display(), model_name, err
+            )
         })?;
         let config: Config = serde_json::from_str(&config_text).map_err(|err| {
-            Error::StringError(format!(
+            crate::string_error!(
                 "failed to parse local embedding config '{}' for model '{}': {}",
-                config_path.display(),
-                model_name,
-                err
-            ))
+                config_path.display(), model_name, err
+            )
         })?;
         let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|err| {
-            Error::StringError(format!(
+            crate::string_error!(
                 "failed to load local embedding tokenizer '{}' for model '{}' (model_dir='{}', cwd='{}'): {}",
-                tokenizer_path.display(),
-                model_name,
-                model_dir.display(),
-                current_dir_display(),
-                err
-            ))
+                tokenizer_path.display(), model_name, model_dir.display(), current_dir_display(), err
+            )
         })?;
 
         let preferred_device = select_preferred_device(model_name);
@@ -73,12 +65,10 @@ impl LocalCandleEmbeddingModel {
     fn load_runtime_model(&self, device: &Device) -> Result<Model> {
         let dtype = device.bf16_default_to_f32();
         let tensors = safetensors::load(self.model_dir.join("model.safetensors"), device).map_err(|err| {
-            Error::StringError(format!(
+            crate::string_error!(
                 "failed to load local embedding weights '{}' for model '{}': {}",
-                self.model_dir.join("model.safetensors").display(),
-                self.model_name,
-                err
-            ))
+                self.model_dir.join("model.safetensors").display(), self.model_name, err
+            )
         })?;
         let tensors: HashMap<String, Tensor> = tensors
             .into_iter()
@@ -86,7 +76,7 @@ impl LocalCandleEmbeddingModel {
             .collect();
         let vb = VarBuilder::from_tensors(tensors, dtype, device);
         Model::new(&self.config, vb).map_err(|err| {
-            Error::StringError(format!("failed to load Candle Qwen3 model for '{}': {}", self.model_name, err))
+            crate::string_error!("failed to load Candle Qwen3 model for '{}': {}", self.model_name, err)
         })
     }
 
@@ -115,11 +105,11 @@ impl LocalCandleEmbeddingModel {
                 max_length: self.max_length.min(32768),
                 ..Default::default()
             }))
-            .map_err(|err| Error::StringError(format!("failed to enable tokenizer truncation: {err}")))?;
+            .map_err(|err| crate::string_error!("failed to enable tokenizer truncation: {err}"))?;
 
         let encodings = tokenizer
             .encode_batch(texts.to_vec(), true)
-            .map_err(|err| Error::StringError(format!("failed to tokenize inputs: {err}")))?;
+            .map_err(|err| crate::string_error!("failed to tokenize inputs: {err}"))?;
 
         let token_rows = encodings
             .iter()
@@ -137,7 +127,7 @@ impl LocalCandleEmbeddingModel {
 
         let tokens = token_rows.concat();
         let input_ids = Tensor::from_vec(tokens, (texts.len(), max_len), device)
-            .map_err(|err| Error::StringError(format!("failed to build token tensor: {err}")))?;
+            .map_err(|err| crate::string_error!("failed to build token tensor: {err}"))?;
 
         Ok((input_ids, lengths))
     }
@@ -156,7 +146,7 @@ impl LocalCandleEmbeddingModel {
         let mut model = self.load_runtime_model(device)?;
         let hidden_states = model
             .forward(&input_ids, 0)
-            .map_err(|err| Error::StringError(format!("Candle embedding forward failed: {err}")))?;
+            .map_err(|err| crate::string_error!("Candle embedding forward failed: {err}"))?;
 
         let mut embeddings = Vec::with_capacity(lengths.len());
         for (batch_index, token_len) in lengths.into_iter().enumerate() {
@@ -165,7 +155,7 @@ impl LocalCandleEmbeddingModel {
                 .i((batch_index, token_index))
                 .and_then(|tensor| tensor.to_dtype(DType::F32))
                 .and_then(|tensor| tensor.to_vec1::<f32>())
-                .map_err(|err| Error::StringError(format!("failed to read embedding tensor: {err}")))?;
+                .map_err(|err| crate::string_error!("failed to read embedding tensor: {err}"))?;
             let mut embedding = embedding;
             Self::normalize_embedding(&mut embedding);
             embeddings.push(embedding);
@@ -216,7 +206,7 @@ impl EmbeddingBase for LocalCandleEmbeddingModel {
         let mut embeddings = self.infer_batch(&texts)?;
         embeddings
             .pop()
-            .ok_or_else(|| Error::StringError("embedding model returned no vectors".to_string()))
+            .ok_or_else(|| crate::string_error!("embedding model returned no vectors"))
     }
 
     fn batch_inference(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {

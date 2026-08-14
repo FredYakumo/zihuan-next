@@ -104,9 +104,7 @@ impl RedisNode {
         match catch_unwind(AssertUnwindSafe(execute)) {
             Ok(Ok(v)) => Ok(v),
             Ok(Err(e)) => Err(e.into()),
-            Err(_) => Err(crate::error::Error::StringError(
-                "Redis connection task terminated unexpectedly".to_string(),
-            )),
+            Err(_) => Err(crate::string_error!("Redis connection task terminated unexpectedly")),
         }
     }
 

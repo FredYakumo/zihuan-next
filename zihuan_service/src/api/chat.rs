@@ -1191,7 +1191,7 @@ fn append_history_record(record: &ChatHistoryRecord) -> Result<()> {
 
     let mut file = OpenOptions::new().create(true).append(true).open(path)?;
     serde_json::to_writer(&mut file, record)
-        .map_err(|err| Error::StringError(format!("failed to serialize chat record: {err}")))?;
+        .map_err(|err| zihuan_core::string_error!("failed to serialize chat record: {err}"))?;
     file.write_all(b"\n")?;
     file.flush()?;
     Ok(())
@@ -1232,7 +1232,7 @@ fn write_chat_session_records(session_id: &str, records: &[ChatHistoryRecord]) -
     let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
     for record in records {
         serde_json::to_writer(&mut file, record)
-            .map_err(|err| Error::StringError(format!("failed to serialize fork history record: {err}")))?;
+            .map_err(|err| zihuan_core::string_error!("failed to serialize fork history record: {err}"))?;
         file.write_all(b"\n")?;
     }
     file.flush()?;
@@ -1333,14 +1333,14 @@ fn load_fork_metadata(session_id: &str) -> Result<Option<ChatForkMetadata>> {
     let file = OpenOptions::new().read(true).open(path)?;
     serde_json::from_reader(file)
         .map(Some)
-        .map_err(|err| Error::StringError(format!("failed to parse chat fork metadata: {err}")))
+        .map_err(|err| zihuan_core::string_error!("failed to parse chat fork metadata: {err}"))
 }
 
 fn write_fork_metadata(session_id: &str, metadata: &ChatForkMetadata) -> Result<()> {
     let path = chat_fork_metadata_path(session_id)?;
     let file = OpenOptions::new().create_new(true).write(true).open(path)?;
     serde_json::to_writer(file, metadata)
-        .map_err(|err| Error::StringError(format!("failed to serialize chat fork metadata: {err}")))
+        .map_err(|err| zihuan_core::string_error!("failed to serialize chat fork metadata: {err}"))
 }
 
 fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSummary>> {
@@ -1412,7 +1412,7 @@ fn load_chat_session_messages(session_id: &str) -> Result<Vec<ChatHistoryRecord>
         }
         match serde_json::from_str::<ChatHistoryRecord>(&line) {
             Ok(record) => entries.push(record),
-            Err(err) => return Err(Error::StringError(format!("failed to parse chat record: {err}"))),
+            Err(err) => return Err(zihuan_core::string_error!("failed to parse chat record: {err}")),
         }
     }
     Ok(entries)
@@ -1428,7 +1428,7 @@ fn read_first_record(path: &Path) -> Result<Option<ChatHistoryRecord>> {
     }
 
     let record: ChatHistoryRecord = serde_json::from_str(line.trim())
-        .map_err(|err| Error::StringError(format!("failed to parse first chat history record: {err}")))?;
+        .map_err(|err| zihuan_core::string_error!("failed to parse first chat history record: {err}"))?;
     Ok(Some(record))
 }
 
@@ -1454,7 +1454,7 @@ fn read_first_user_message(path: &Path) -> Result<Option<String>> {
             Ok(record) if record.role == "user" => return Ok(Some(record.content)),
             Ok(_) => continue,
             Err(err) => {
-                return Err(Error::StringError(format!("failed to parse chat history record: {err}")));
+                return Err(zihuan_core::string_error!("failed to parse chat history record: {err}"));
             }
         }
     }

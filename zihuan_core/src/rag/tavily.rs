@@ -79,15 +79,15 @@ impl TavilySearch {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(crate::error::Error::StringError(format!(
+            return Err(crate::string_error!(
                 "Tavily search request failed with status {}: {}",
                 status, body
-            )));
+            ));
         }
 
         let body = response.text().await?;
         let parsed: TavilySearchResponse = serde_json::from_str(&body).map_err(|err| {
-            crate::error::Error::StringError(format!("Failed to parse Tavily search response: {err}"))
+            crate::string_error!("Failed to parse Tavily search response: {err}")
         })?;
 
         Ok(parsed
@@ -118,22 +118,22 @@ impl TavilySearch {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(crate::error::Error::StringError(format!(
+            return Err(crate::string_error!(
                 "Tavily extract request failed with status {}: {}",
                 status, body
-            )));
+            ));
         }
 
         let body = response.text().await?;
         let parsed: TavilyExtractResponse = serde_json::from_str(&body).map_err(|err| {
-            crate::error::Error::StringError(format!("Failed to parse Tavily extract response: {err}"))
+            crate::string_error!("Failed to parse Tavily extract response: {err}")
         })?;
 
         if parsed.results.is_empty() {
-            return Err(crate::error::Error::StringError(format!(
+            return Err(crate::string_error!(
                 "Tavily extract returned no successful results: {:?}",
                 parsed.failed_results
-            )));
+            ));
         }
 
         Ok(parsed
@@ -154,10 +154,10 @@ impl TavilySearch {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(crate::error::Error::StringError(format!(
+            return Err(crate::string_error!(
                 "Direct web request failed with status {}: {}",
                 status, body
-            )));
+            ));
         }
 
         let body = response.text().await?;
@@ -184,15 +184,15 @@ impl TavilySearch {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(crate::error::Error::StringError(format!(
+            return Err(crate::string_error!(
                 "Tavily search request failed with status {}: {}",
                 status, body
-            )));
+            ));
         }
 
         let body = response.text().await?;
         let parsed: TavilyImageSearchResponse = serde_json::from_str(&body).map_err(|err| {
-            crate::error::Error::StringError(format!("Failed to parse Tavily search response: {err}"))
+            crate::string_error!("Failed to parse Tavily search response: {err}")
         })?;
 
         Ok(parsed.images)
