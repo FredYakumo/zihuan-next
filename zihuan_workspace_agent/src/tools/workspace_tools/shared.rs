@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use zihuan_core::agent::brain::ToolExecutionResource;
 use zihuan_core::error::Error;
 
@@ -32,6 +33,19 @@ pub(crate) fn json_error(message: impl Into<String>) -> String {
 }
 
 pub(crate) fn success_json(value: Value) -> String { value.to_string() }
+
+// Symptom: an edit could report success while stale line numbers modified a different function.
+// Cause: numeric ranges carried no identity for the file snapshot from which they were calculated.
+// Hashing the exact UTF-8 bytes lets edit_file prove that its ranges still target the read snapshot.
+pub(crate) fn content_hash(content: &str) -> String {
+    format!("{:x}", Sha256::digest(content.as_bytes()))
+}
+
+// read_file and edit_file must split lines identically; otherwise the same reported line number
+// could address different text in each tool even when the content hash matches.
+pub(crate) fn text_lines(content: &str) -> Vec<&str> {
+    content.lines().collect()
+}
 
 pub(crate) fn path_resource(workspace_path: Option<&Path>, raw_path: &str, write: bool) -> ToolExecutionResource {
     match resolve_tool_path(workspace_path, raw_path) {

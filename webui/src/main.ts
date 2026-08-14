@@ -53,6 +53,14 @@ async function main() {
       { path: "/scheduled-tasks", component: ScheduledTasks },
       { path: "/logs", component: Logs },
       { path: "/commands", component: Commands },
+      {
+        path: "/chat",
+        component: Chat,
+        props: (route) => ({
+          agentId: typeof route.query.agent_id === "string" ? route.query.agent_id : undefined,
+          sessionId: typeof route.query.session_id === "string" ? route.query.session_id : undefined,
+        }),
+      },
       { path: "/data-explorer", component: DataExplorer },
       { path: "/data-explorer/:serviceId/:capability(messages|memories|images)", component: DataExplorerDetail },
       { path: "/settings", component: Settings },

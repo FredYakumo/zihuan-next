@@ -114,15 +114,20 @@ pub enum WorkspaceChangeStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceDiffLine {
-    /// Either `added` or `removed`.
+    /// `added`, `removed`, or unchanged `context`.
     pub kind: String,
     /// The source line captured from the before or after snapshot.
     pub line: String,
-    /// Identifies a contiguous change block without including unchanged context lines.
+    /// One-based line number in the before snapshot, when applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_line: Option<usize>,
+    /// One-based line number in the after snapshot, when applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_line: Option<usize>,
+    /// Identifies a contiguous change block and its surrounding context.
     #[serde(default)]
     pub hunk: usize,
 }
-
 /// One serialized file or directory entry inside a path snapshot.
 ///
 /// File bytes are hex encoded instead of interpreted as UTF-8, which makes rollback safe for
@@ -373,23 +378,31 @@ fn fingerprint(items: &[PathSnapshot]) -> String { let json = serde_json::to_vec
 fn line_delta(before: &[PathSnapshot], after: &[PathSnapshot]) -> (usize, usize) { let old = line_count(before); let new = line_count(after); (new.saturating_sub(old), old.saturating_sub(new)) }
 fn line_count(items: &[PathSnapshot]) -> usize { items.iter().flat_map(|item| item.entries.iter()).filter_map(|entry| entry.content_hex.as_deref()).map(|hex| String::from_utf8_lossy(&hex_decode(hex)).lines().count()).sum() }
 fn build_diff(before: &[PathSnapshot], after: &[PathSnapshot]) -> Vec<WorkspaceDiffLine> {
+    const CONTEXT_LINES: usize = 10;
+
     let old = snapshot_lines(before).join("\n");
     let new = snapshot_lines(after).join("\n");
     let diff = TextDiff::from_lines(&old, &new);
     let mut lines = Vec::new();
 
-    for (hunk, operations) in diff.grouped_ops(0).into_iter().enumerate() {
+    for (hunk, operations) in diff.grouped_ops(CONTEXT_LINES).into_iter().enumerate() {
         for operation in operations {
             for change in diff.iter_changes(&operation) {
-                let kind = match change.tag() {
-                    ChangeTag::Delete => "removed",
-                    ChangeTag::Insert => "added",
-                    ChangeTag::Equal => continue,
+                let (kind, before_line, after_line) = match change.tag() {
+                    ChangeTag::Delete => ("removed", change.old_index().map(|index| index + 1), None),
+                    ChangeTag::Insert => ("added", None, change.new_index().map(|index| index + 1)),
+                    ChangeTag::Equal => (
+                        "context",
+                        change.old_index().map(|index| index + 1),
+                        change.new_index().map(|index| index + 1),
+                    ),
                 };
 
                 lines.push(WorkspaceDiffLine {
                     kind: kind.to_string(),
                     line: change.value().trim_end_matches(['\r', '\n']).to_string(),
+                    before_line,
+                    after_line,
                     hunk,
                 });
             }
