@@ -21,6 +21,7 @@ import DataExplorerDetail from "./admin/view/DataExplorerDetail.vue";
 import Settings from "./admin/view/Settings.vue";
 import ApiKeys from "./admin/view/ApiKeys.vue";
 import SetupWizard from "./admin/view/SetupWizard.vue";
+import Plugins from "./admin/view/Plugins.vue";
 import "./admin/admin.scss";
 import "./ui/theme.css";
 import { initTheme, loadThemes } from "./ui/theme";
@@ -52,11 +53,12 @@ async function main() {
       { path: "/scheduled-tasks", component: ScheduledTasks },
       { path: "/logs", component: Logs },
       { path: "/commands", component: Commands },
-      { path: "/chat", component: Chat, props: (route) => ({ agentId: route.query.agent_id, sessionId: route.query.session_id }) },
       { path: "/data-explorer", component: DataExplorer },
       { path: "/data-explorer/:serviceId/:capability(messages|memories|images)", component: DataExplorerDetail },
       { path: "/settings", component: Settings },
       { path: "/api-keys", component: ApiKeys },
+      { path: "/plugins", component: Plugins },
+      { path: "/setup", component: SetupWizard, meta: { public: true } },
       { path: "/setup", component: SetupWizard, meta: { public: true } },
     ],
   });
