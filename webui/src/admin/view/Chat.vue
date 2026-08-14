@@ -363,14 +363,20 @@
                       ></div>
                     </div>
                     <div
-                      v-if="message.content.trim().length > 0 || message.streaming"
+                      v-if="
+                        message.content.trim().length > 0 ||
+                        message.streaming ||
+                        (!message.thinkingContent && message.toolCalls.length === 0 && !message.liveToolCalls?.length)
+                      "
                       class="chat-bubble"
                       :class="message.role"
                     >
                       <div
+                        v-if="message.content.trim().length > 0 || message.streaming"
                         class="chat-bubble-content markdown-body"
                         v-html="renderMessageContent(message.content, message.streaming)"
                       ></div>
+                      <div v-else class="chat-bubble-content chat-bubble-content--no-output">模型没有输出</div>
                       <div class="chat-bubble-footer">
                         <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
                         <div v-if="!message.streaming" class="chat-message-actions chat-message-actions--inside">
@@ -387,6 +393,23 @@
                             </t-button>
                           </t-tooltip>
                         </div>
+                      </div>
+                      <div
+                        v-if="message.role === 'assistant' && !message.streaming && hasMessageMetrics(message)"
+                        class="chat-message-metrics"
+                      >
+                        <span v-if="message.metrics?.time_to_first_token_ms != null">
+                          首 token {{ formatDuration(message.metrics.time_to_first_token_ms) }}
+                        </span>
+                        <span v-if="message.metrics?.output_tokens_per_second != null">
+                          输出 {{ formatOutputSpeed(message.metrics.output_tokens_per_second) }} tokens/s
+                        </span>
+                        <span v-if="message.metrics?.total_tokens != null">
+                          消耗 {{ formatTokenCount(message.metrics.total_tokens) }} tokens
+                        </span>
+                        <span v-if="message.metrics?.cache_hit_rate != null">
+                          缓存命中 {{ formatCacheHitRate(message.metrics.cache_hit_rate) }}
+                        </span>
                       </div>
                     </div>
                     <div
@@ -1587,6 +1610,39 @@ function syncAgentsMdScroll() {
   if (editor && gutter) {
     gutter.scrollTop = editor.scrollTop;
   }
+}
+
+type MetricsMessage = {
+  metrics?: {
+    time_to_first_token_ms?: number;
+    output_tokens_per_second?: number;
+    total_tokens?: number;
+    cache_hit_rate?: number;
+  };
+};
+
+function hasMessageMetrics(message: MetricsMessage) {
+  const metrics = message.metrics;
+  return metrics?.time_to_first_token_ms != null
+    || metrics?.output_tokens_per_second != null
+    || metrics?.total_tokens != null
+    || metrics?.cache_hit_rate != null;
+}
+
+function formatDuration(milliseconds: number) {
+  return `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 2 : 1)}s`;
+}
+
+function formatOutputSpeed(tokensPerSecond: number) {
+  return tokensPerSecond.toFixed(1);
+}
+
+function formatTokenCount(tokens: number) {
+  return new Intl.NumberFormat().format(tokens);
+}
+
+function formatCacheHitRate(rate: number) {
+  return `${(rate * 100).toFixed(1)}%`;
 }
 </script>
 

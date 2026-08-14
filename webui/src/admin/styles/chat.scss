@@ -625,6 +625,16 @@
   opacity: 1;
 }
 
+.chat-message-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  margin-top: 2px;
+  color: var(--admin-subtle);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .chat-bubble.user {
   background: var(--chat-user-bubble-bg);
   color: var(--chat-user-bubble-text);
@@ -1706,18 +1716,45 @@
   margin: 0;
 }
 
-.chat-bubble-content :deep(* + *) {
-  margin-top: 0.75em;
+.chat-bubble-content--no-output {
+  color: var(--admin-subtle);
+  font-style: italic;
+}
+
+.chat-bubble-content {
+  line-height: 1.5;
 }
 
 .chat-bubble-content :deep(p),
-.chat-bubble-content :deep(li) {
+.chat-bubble-content :deep(h1),
+.chat-bubble-content :deep(h2),
+.chat-bubble-content :deep(h3),
+.chat-bubble-content :deep(h4),
+.chat-bubble-content :deep(h5),
+.chat-bubble-content :deep(h6) {
+  margin: 0.45em 0;
+}
+
+.chat-bubble-content :deep(p) {
   white-space: pre-wrap;
+}
+
+.chat-bubble-content :deep(li) {
+  white-space: normal;
 }
 
 .chat-bubble-content :deep(ul),
 .chat-bubble-content :deep(ol) {
+  margin: 0.45em 0;
   padding-left: 1.4em;
+}
+
+.chat-bubble-content :deep(li + li) {
+  margin-top: 0.2em;
+}
+
+.chat-bubble-content :deep(li > p) {
+  margin: 0;
 }
 
 .chat-bubble-content :deep(blockquote) {

@@ -2,6 +2,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use zihuan_core::ims_bot_adapter::resolve_fallback_bot_profile;
@@ -21,7 +22,7 @@ use zihuan_core::agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken};
+use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken, TokenUsage};
 use zihuan_core::message_part::MessagePart;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
@@ -222,6 +223,36 @@ pub struct ChatHistoryRecord {
     pub workspace_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_ask_user: Option<AskUserRequest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<ChatResponseMetrics>,
+}
+
+/// Aggregated inference telemetry for one streamed dashboard chat reply.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatResponseMetrics {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_to_first_token_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation_duration_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_tokens_per_second: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_prompt_tokens: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_miss_tokens: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion_tokens: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_tokens: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_hit_rate: Option<f64>,
+}
+
+#[derive(Debug, Default)]
+struct RelayTiming {
+    first_token_after_start: Option<Duration>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -580,6 +611,7 @@ async fn emit_immediate_output(
             output_messages,
             workspace_path,
             None,
+            None,
         ) {
             let event = json!({ "type": "error", "error": err.to_string() });
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
@@ -609,8 +641,10 @@ async fn relay_inference_stream(
     assistant_message_id: &str,
     token_rx: &mut mpsc::UnboundedReceiver<StreamToken>,
     event_rx: &mut mpsc::UnboundedReceiver<Value>,
-) -> bool {
+    inference_started_at: Instant,
+) -> (bool, RelayTiming) {
     let mut client_connected = true;
+    let mut timing = RelayTiming::default();
     loop {
         tokio::select! {
             biased;
@@ -623,6 +657,9 @@ async fn relay_inference_stream(
             token_opt = token_rx.recv() => {
                 match token_opt {
                     Some(token) => {
+                        if timing.first_token_after_start.is_none() {
+                            timing.first_token_after_start = Some(inference_started_at.elapsed());
+                        }
                         let event_type = match &token {
                             StreamToken::Thinking(_) => "thinking_delta",
                             StreamToken::Content(_) => "delta",
@@ -650,7 +687,7 @@ async fn relay_inference_stream(
             }
         }
     }
-    client_connected
+    (client_connected, timing)
 }
 
 /// Collect all inference tokens into a single payload, then emit one delta event.
@@ -968,6 +1005,7 @@ async fn execute_chat_streaming(
     });
 
     let chat_workspace_path = effective_workspace_path.clone();
+    let inference_started_at = Instant::now();
     let inference_handle = tokio::spawn({
         let state = state.clone();
         let agent_id = agent_id.clone();
@@ -989,11 +1027,19 @@ async fn execute_chat_streaming(
         }
     });
 
-    let client_connected = if stream.unwrap_or(true) {
-        relay_inference_stream(&mut sender, &assistant_message_id, &mut token_rx, &mut event_rx).await
+    let stream_enabled = stream.unwrap_or(true);
+    let (client_connected, relay_timing) = if stream_enabled {
+        relay_inference_stream(
+            &mut sender,
+            &assistant_message_id,
+            &mut token_rx,
+            &mut event_rx,
+            inference_started_at,
+        )
+        .await
     } else {
         relay_collected_text(&mut sender, &assistant_message_id, &mut token_rx, &mut event_rx).await;
-        true
+        (true, RelayTiming::default())
     };
 
     if !client_connected {
@@ -1015,6 +1061,12 @@ async fn execute_chat_streaming(
         }
     };
 
+    let metrics = build_chat_response_metrics(
+        &output_messages,
+        stream_enabled.then_some(relay_timing.first_token_after_start).flatten(),
+        stream_enabled.then_some(inference_started_at.elapsed()),
+    );
+
     if let Err(err) = persist_chat_records(
         &session_id,
         &agent,
@@ -1028,10 +1080,22 @@ async fn execute_chat_streaming(
             BrainStopReason::AwaitUserInput(request) => Some(request.clone()),
             _ => None,
         },
+        metrics.as_ref(),
     ) {
         let event = json!({ "type": "error", "error": err.to_string() });
         let _ = sender.send_data(format!("data: {event}\n\n")).await;
         return;
+    }
+
+    if let Some(metrics) = &metrics {
+        let event = json!({
+            "type": "metrics",
+            "message_id": assistant_message_id,
+            "metrics": metrics,
+        });
+        if !send_sse(&mut sender, &event).await {
+            return;
+        }
     }
 
     if let BrainStopReason::AwaitUserInput(request) = stop_reason {
@@ -1069,6 +1133,92 @@ fn build_chat_stream_event(kind: &str, session_id: &str, message_id: Option<&str
             "session_id": session_id,
         }),
     }
+}
+
+fn build_chat_response_metrics(
+    output_messages: &[LLMMessage],
+    first_token_after_start: Option<Duration>,
+    total_duration: Option<Duration>,
+) -> Option<ChatResponseMetrics> {
+    let usage = aggregate_assistant_usage(output_messages);
+    let generation_duration = first_token_after_start
+        .and_then(|first_token| total_duration.and_then(|total| total.checked_sub(first_token)));
+    let output_tokens_per_second = match (
+        usage.as_ref().and_then(|usage| usage.completion_tokens),
+        generation_duration,
+    ) {
+        (Some(completion_tokens), Some(duration)) if !duration.is_zero() => {
+            Some(completion_tokens as f64 / duration.as_secs_f64())
+        }
+        _ => None,
+    };
+    let cache_hit_rate = match (
+        usage.as_ref().and_then(|usage| usage.cached_prompt_tokens),
+        usage.as_ref().and_then(|usage| usage.prompt_tokens),
+    ) {
+        (Some(cached_prompt_tokens), Some(prompt_tokens)) if prompt_tokens > 0 => {
+            Some(cached_prompt_tokens as f64 / prompt_tokens as f64)
+        }
+        _ => None,
+    };
+
+    let metrics = ChatResponseMetrics {
+        time_to_first_token_ms: first_token_after_start.map(duration_to_millis),
+        generation_duration_ms: generation_duration.map(duration_to_millis),
+        output_tokens_per_second,
+        prompt_tokens: usage.as_ref().and_then(|usage| usage.prompt_tokens),
+        cached_prompt_tokens: usage.as_ref().and_then(|usage| usage.cached_prompt_tokens),
+        prompt_cache_miss_tokens: usage
+            .as_ref()
+            .and_then(|usage| usage.prompt_cache_miss_tokens),
+        completion_tokens: usage.as_ref().and_then(|usage| usage.completion_tokens),
+        total_tokens: usage.as_ref().and_then(|usage| usage.total_tokens),
+        cache_hit_rate,
+    };
+
+    (metrics.time_to_first_token_ms.is_some()
+        || metrics.generation_duration_ms.is_some()
+        || metrics.prompt_tokens.is_some()
+        || metrics.cached_prompt_tokens.is_some()
+        || metrics.prompt_cache_miss_tokens.is_some()
+        || metrics.completion_tokens.is_some()
+        || metrics.total_tokens.is_some())
+    .then_some(metrics)
+}
+
+fn aggregate_assistant_usage(output_messages: &[LLMMessage]) -> Option<TokenUsage> {
+    let mut usage = TokenUsage::default();
+    let mut has_usage = false;
+
+    for message in output_messages {
+        if !matches!(message.role, MessageRole::Assistant) {
+            continue;
+        }
+        let Some(message_usage) = &message.usage else {
+            continue;
+        };
+        has_usage = true;
+        add_optional_token_count(&mut usage.prompt_tokens, message_usage.prompt_tokens);
+        add_optional_token_count(&mut usage.cached_prompt_tokens, message_usage.cached_prompt_tokens);
+        add_optional_token_count(
+            &mut usage.prompt_cache_miss_tokens,
+            message_usage.prompt_cache_miss_tokens,
+        );
+        add_optional_token_count(&mut usage.completion_tokens, message_usage.completion_tokens);
+        add_optional_token_count(&mut usage.total_tokens, message_usage.total_tokens);
+    }
+
+    has_usage.then_some(usage)
+}
+
+fn add_optional_token_count(total: &mut Option<usize>, value: Option<usize>) {
+    if let Some(value) = value {
+        *total = Some(total.unwrap_or(0) + value);
+    }
+}
+
+fn duration_to_millis(duration: Duration) -> u64 {
+    duration.as_millis().try_into().unwrap_or(u64::MAX)
 }
 
 /// Strip messages whose text content is empty/whitespace-only and has no tool calls.
@@ -1118,6 +1268,7 @@ fn persist_chat_records(
     output_messages: &[LLMMessage],
     workspace_path: Option<String>,
     pending_ask_user: Option<AskUserRequest>,
+    metrics: Option<&ChatResponseMetrics>,
 ) -> Result<()> {
     let now = Utc::now().to_rfc3339();
     if let Some(user_message) = latest_user_message {
@@ -1139,6 +1290,7 @@ fn persist_chat_records(
             tool_call_id: None,
             workspace_path: workspace_path.clone(),
             pending_ask_user: None,
+            metrics: None,
         };
         append_history_record(&user_record)?;
     }
@@ -1172,6 +1324,11 @@ fn persist_chat_records(
             tool_call_id: message.tool_call_id.clone(),
             workspace_path: workspace_path.clone(),
             pending_ask_user: pending_ask_user.clone(),
+            metrics: if matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty() {
+                metrics.cloned()
+            } else {
+                None
+            },
         };
         append_history_record(&record)?;
     }
