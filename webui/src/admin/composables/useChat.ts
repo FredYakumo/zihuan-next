@@ -363,6 +363,8 @@ const activeRequestCount = ref(0);
 const sending = computed(() => activeRequestCount.value > 0);
 let activeStreamController: AbortController | null = null;
 let sessionRefreshTimer: ReturnType<typeof setInterval> | null = null;
+const sessionsAwaitingHistoryRefresh = new Set<string>();
+const sessionsNeedingHistoryRefresh = new Set<string>();
 const chatErrorMessage = ref("");
 const chatErrorDialogMessage = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
@@ -1199,12 +1201,34 @@ async function reloadSessions() {
     .map((task) => [task.chat_session_id as string, task]));
   sessions.value = result.sessions.map((session) => {
     const task = runningBySession.get(session.session_id);
+    const wasRunning = sessionsAwaitingHistoryRefresh.has(session.session_id);
+    if (task) {
+      sessionsAwaitingHistoryRefresh.add(session.session_id);
+    } else if (wasRunning) {
+      sessionsAwaitingHistoryRefresh.delete(session.session_id);
+      sessionsNeedingHistoryRefresh.add(session.session_id);
+    }
     return {
       ...session,
       running_task_id: task?.id ?? null,
       task_status: task?.status ?? null,
     };
   });
+}
+
+async function refreshActiveSessionHistoryIfNeeded(): Promise<void> {
+  const sessionId = activeSessionId.value;
+  if (!sessionId || sending.value) return;
+  const session = sessions.value.find((item) => item.session_id === sessionId);
+  if (!session && !sessionsAwaitingHistoryRefresh.has(sessionId)) return;
+  if (!session?.running_task_id && !sessionsAwaitingHistoryRefresh.has(sessionId) && !sessionsNeedingHistoryRefresh.has(sessionId)) return;
+  const result = await chat.getSessionMessages(sessionId);
+  if (activeSessionId.value !== sessionId) return;
+  applyHistory(result.messages);
+  messageBranches.value = result.branches;
+  if (!session?.running_task_id) {
+    sessionsNeedingHistoryRefresh.delete(sessionId);
+  }
 }
 
 async function openSession(sessionId: string) {
@@ -1963,7 +1987,9 @@ onMounted(() => {
   document.addEventListener("keydown", handleDocumentKeydown);
   sessionRefreshTimer = setInterval(() => {
     if (selectedServiceId.value) {
-      reloadSessions().catch((error) => console.warn("Failed to refresh chat sessions:", error));
+      reloadSessions()
+        .then(() => refreshActiveSessionHistoryIfNeeded())
+        .catch((error) => console.warn("Failed to refresh chat sessions:", error));
     }
   }, 3000);
 });
