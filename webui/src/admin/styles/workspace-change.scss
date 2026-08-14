@@ -44,6 +44,7 @@
 .workspace-change-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-change-lines { flex-shrink: 0; color: var(--admin-muted); font-size: 11px; }
 .workspace-change-accept,
+.workspace-change-reject,
 .workspace-change-cancel {
   border: 1px solid var(--admin-border);
   border-radius: 5px;
@@ -51,11 +52,16 @@
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
+  transition: background-color .16s ease, border-color .16s ease, color .16s ease;
 }
-.workspace-change-accept { background: #2e9b59; border-color: #2e9b59; color: #fff; }
-.workspace-change-cancel { background: var(--admin-bg-panel); color: var(--admin-ink); }
-.workspace-change-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: rgba(8, 12, 20, .58); }
-.workspace-change-dialog { width: min(900px, 94vw); height: min(620px, 84vh); display: grid; grid-template-columns: 240px minmax(0, 1fr); overflow: hidden; border: 1px solid var(--admin-border); border-radius: 14px; background: var(--admin-bg-panel); box-shadow: 0 24px 80px rgba(0,0,0,.28); }
+.workspace-change-accept { background: var(--admin-good-bg); border-color: var(--admin-border); color: var(--admin-good); }
+.workspace-change-accept:hover { background: color-mix(in srgb, var(--admin-good-bg) 78%, var(--admin-good) 22%); }
+.workspace-change-reject { background: var(--admin-bad-bg); border-color: var(--admin-border); color: var(--admin-bad); }
+.workspace-change-reject:hover { background: color-mix(in srgb, var(--admin-bad-bg) 78%, var(--admin-bad) 22%); }
+.workspace-change-cancel { background: var(--admin-bg-panel); color: var(--admin-muted); }
+.workspace-change-cancel:hover { background: var(--admin-bg-soft); color: var(--admin-ink); }
+.workspace-change-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--admin-bg) 68%, transparent 32%); }
+.workspace-change-dialog { width: min(900px, 94vw); height: min(620px, 84vh); display: grid; grid-template-columns: 240px minmax(0, 1fr); overflow: hidden; border: 1px solid var(--admin-border); border-radius: 14px; background: var(--admin-bg-panel); box-shadow: 0 24px 80px color-mix(in srgb, var(--admin-bg) 58%, transparent 42%); }
 .workspace-change-dialog-sidebar { padding: 16px 10px; overflow-y: auto; border-right: 1px solid var(--admin-border); }
 .workspace-change-dialog-sidebar > strong { display: block; padding: 0 8px 12px; }
 .workspace-change-file { width: 100%; display: grid; gap: 3px; padding: 9px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--admin-ink); text-align: left; cursor: pointer; }
@@ -64,14 +70,15 @@
 .workspace-change-file-actions button { flex: 1; }
 .workspace-change-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-change-file small { color: var(--admin-muted); }
-.workspace-change-file.active, .workspace-change-file:hover { background: var(--admin-bg-soft); }
+.workspace-change-file.active { background: color-mix(in srgb, var(--admin-accent-soft) 58%, var(--admin-bg-elevated) 42%); color: var(--admin-ink); box-shadow: inset 3px 0 var(--admin-accent); }
+.workspace-change-file:hover { background: color-mix(in srgb, var(--admin-bg-soft) 72%, var(--admin-accent-soft) 28%); }
 .workspace-change-dialog-main { min-width: 0; display: flex; flex-direction: column; }
 .workspace-change-dialog-header { justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--admin-border); }
 .workspace-change-dialog-header button { border: 0; background: transparent; color: var(--admin-muted); cursor: pointer; }
-.workspace-change-detail { flex: 1; overflow-y: auto; padding: 20px; }
+.workspace-change-detail { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 20px; }
 .workspace-change-detail-meta { display: flex; flex-wrap: wrap; gap: 14px; color: var(--admin-muted); font-size: 13px; }
 .workspace-change-paths { margin-top: 20px; padding: 12px; border-radius: 8px; background: var(--admin-bg-soft); font-family: monospace; font-size: 12px; overflow-x: auto; }
-.workspace-change-diff { margin-top: 14px; max-height: 300px; overflow: auto; border: 1px solid var(--admin-border); border-radius: 8px; font: 12px/1.55 monospace; }
+.workspace-change-diff { flex: 1; min-height: 0; margin-top: 14px; overflow: auto; border: 1px solid var(--admin-border); border-radius: 8px; font: 12px/1.55 monospace; }
 .workspace-change-diff-header,
 .workspace-change-diff-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-width: 560px; }
 .workspace-change-diff-header { position: sticky; top: 0; z-index: 1; background: var(--admin-bg-soft); color: var(--admin-muted); font: 11px/1.4 var(--td-font-family); }
@@ -81,10 +88,9 @@
 .workspace-change-diff-cell { min-width: 0; min-height: 24px; padding: 2px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .workspace-change-diff-cell span { display: inline-block; width: 16px; font-weight: 700; }
 .workspace-change-diff-cell code { font: inherit; }
-.workspace-change-diff-cell--added:not(.empty) { color: #237a43; background: color-mix(in srgb, #3cad68 12%, transparent); }
-.workspace-change-diff-cell--removed:not(.empty) { color: #b03b46; background: color-mix(in srgb, #e06b76 12%, transparent); }
-.workspace-change-note { color: var(--admin-muted); line-height: 1.6; }
-.workspace-change-error { color: var(--admin-bad); }
+.workspace-change-diff-cell--added:not(.empty) { color: var(--admin-good); background: color-mix(in srgb, var(--admin-good-bg) 72%, transparent 28%); }
+.workspace-change-diff-cell--removed:not(.empty) { color: var(--admin-bad); background: color-mix(in srgb, var(--admin-bad-bg) 72%, transparent 28%); }
+.workspace-change-error { flex-shrink: 0; color: var(--admin-bad); }
 .workspace-change-dialog-actions { justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--admin-border); }
 .workspace-change-dialog-actions button { padding: 7px 14px; }
 @media (max-width: 640px) { .workspace-change-dialog { grid-template-columns: 1fr; grid-template-rows: 150px minmax(0, 1fr); } .workspace-change-dialog-sidebar { border-right: 0; border-bottom: 1px solid var(--admin-border); } }

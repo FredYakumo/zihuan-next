@@ -629,7 +629,7 @@
                         <span class="workspace-change-lines">+{{ change.added_lines }} / -{{ change.removed_lines }}</span>
                       </button>
                       <button class="workspace-change-accept" @click="acceptWorkspaceChange(change)">Accept</button>
-                      <button class="workspace-change-cancel" @click="cancelWorkspaceChange(change)">Cancel</button>
+                      <button class="workspace-change-reject" @click="cancelWorkspaceChange(change)">Reject</button>
                     </div>
                   </div>
                 </div>
@@ -911,7 +911,8 @@
               </button>
               <div class="workspace-change-file-actions">
                 <button class="workspace-change-accept" @click="acceptWorkspaceFile(group.path)">Accept</button>
-                <button class="workspace-change-cancel" @click="cancelWorkspaceFile(group.path)">Cancel</button>
+                <button class="workspace-change-reject" @click="cancelWorkspaceFile(group.path)">Reject</button>
+                <button class="workspace-change-cancel" @click="closeWorkspaceChange">Cancel</button>
               </div>
             </div>
           </aside>
@@ -947,12 +948,12 @@
                   </div>
                 </div>
               </div>
-              <p class="workspace-change-note">文件已写入磁盘。Accept 只确认并移除记录，Cancel 会在文件未被外部修改时恢复。</p>
               <p v-if="workspaceChangeError" class="workspace-change-error">{{ workspaceChangeError }}</p>
             </div>
             <footer v-if="selectedWorkspaceChange" class="workspace-change-dialog-actions">
               <button class="workspace-change-accept" @click="acceptWorkspaceChange(selectedWorkspaceChange)">Accept</button>
-              <button class="workspace-change-cancel" @click="cancelWorkspaceChange(selectedWorkspaceChange)">Cancel</button>
+              <button class="workspace-change-reject" @click="cancelWorkspaceChange(selectedWorkspaceChange)">Reject</button>
+              <button class="workspace-change-cancel" @click="closeWorkspaceChange">Cancel</button>
             </footer>
           </section>
         </div>
