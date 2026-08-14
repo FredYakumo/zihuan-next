@@ -337,6 +337,7 @@
                       </div>
                     </div>
                     <div
+                    <div
                       v-if="message.thinkingContent"
                       class="chat-thinking-block"
                       :class="{ collapsed: !message.thinkingExpanded }"
@@ -348,18 +349,18 @@
                         <span class="chat-thinking-icon">
                           <ChevronDownIcon v-if="message.thinkingExpanded" />
                           <ChevronRightIcon v-else />
+                        </span>
+                        思考过程
+                        <span
+                          v-if="message.streaming && message.thinkingExpanded"
+                          class="live-tool-spinner"
+                        ></span>
+                      </button>
                       <div
                         v-if="message.thinkingExpanded"
                         class="chat-thinking-content markdown-body"
                         v-html="renderMessageContent(message.thinkingContent, message.streaming)"
                       ></div>
-                          v-if="message.streaming && message.thinkingExpanded"
-                          class="live-tool-spinner"
-                        ></span>
-                      </button>
-                      <div v-if="message.thinkingExpanded" class="chat-thinking-content">
-                        {{ message.thinkingContent }}
-                      </div>
                     </div>
                     <div
                       v-if="message.content.trim().length > 0 || message.streaming"
