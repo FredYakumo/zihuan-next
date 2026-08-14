@@ -8,9 +8,10 @@ pub mod graph_exec_helpers;
 pub mod hyperparams;
 pub mod log;
 pub mod model_http;
+pub mod plugins;
 pub mod registry;
-pub mod settings;
 pub mod scheduled_tasks;
+pub mod settings;
 pub mod setup_wizard;
 pub mod state;
 pub mod task_store;
@@ -232,7 +233,18 @@ pub fn build_router(
                 .post(zihuan_workspace_agent::api::agents_md::save_agents_md)
                 .delete(zihuan_workspace_agent::api::agents_md::delete_agents_md),
         )
-        // Workflows directory
+        .push(Router::with_path("settings/config-restore").post(settings::restore_config))
+        // Plugins
+        .push(
+            Router::with_path("plugins")
+                .get(plugins::list_plugins)
+                .post(plugins::create_plugin)
+                .push(
+                    Router::with_path("<name>")
+                        .put(plugins::update_plugin)
+                        .delete(plugins::delete_plugin),
+                ),
+        )
         .push(Router::with_path("workflow_set").get(file_io::list_workflows))
         .push(Router::with_path("workflow_set/save").post(file_io::save_to_workflows))
         .push(Router::with_path("workflow_set/detailed").get(file_io::list_workflows_detailed))

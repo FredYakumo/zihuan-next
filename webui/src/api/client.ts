@@ -1268,21 +1268,44 @@ export const setup = {
   },
   streamProgress(taskId: string, onEvent: (event: SetupProgressEvent) => void): () => void {
     const es = new EventSource(`/api/setup/progress?task_id=${taskId}`);
-    es.onmessage = (e) => {
+    es.onmessage = (event) => {
       try {
-        const event = JSON.parse(e.data) as SetupProgressEvent;
-        onEvent(event);
-        if (event.step === "finished" || event.status === "error") {
+        const progress = JSON.parse(event.data) as SetupProgressEvent;
+        onEvent(progress);
+        if (progress.step === "finished" || progress.status === "error") {
           es.close();
         }
-      } catch (err) {
-        console.warn("Failed to parse setup progress event", err, e.data);
+      } catch (error) {
+        console.warn("Failed to parse setup progress event", error, event.data);
       }
     };
-    es.onerror = (err) => {
-      console.warn("Setup progress SSE error", err);
+    es.onerror = (error) => {
+      console.warn("Setup progress SSE error", error);
       es.close();
     };
     return () => es.close();
+  },
+};
+
+export interface PluginRecord {
+  name: string;
+  version: string;
+  installed_at: string;
+  installation_method: string;
+  extra_install_metadata: unknown;
+}
+
+export const pluginsApi = {
+  list(): Promise<PluginRecord[]> {
+    return request("GET", "/plugins");
+  },
+  create(plugin: PluginRecord): Promise<PluginRecord> {
+    return request("POST", "/plugins", plugin);
+  },
+  update(name: string, plugin: PluginRecord): Promise<PluginRecord> {
+    return request("PUT", `/plugins/${encodeURIComponent(name)}`, plugin);
+  },
+  remove(name: string): Promise<{ ok: boolean }> {
+    return request("DELETE", `/plugins/${encodeURIComponent(name)}`);
   },
 };
