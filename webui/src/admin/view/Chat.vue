@@ -943,11 +943,25 @@
                   :key="index"
                   class="workspace-change-diff-row"
                 >
-                  <div class="workspace-change-diff-cell workspace-change-diff-cell--removed" :class="{ empty: row.removed === undefined }">
-                    <template v-if="row.removed !== undefined"><span>−</span><code>{{ row.removed }}</code></template>
+                  <div
+                    class="workspace-change-diff-cell workspace-change-diff-cell--removed"
+                    :class="{ empty: !row.before, 'workspace-change-diff-cell--changed': row.before?.kind === 'removed' }"
+                  >
+                    <template v-if="row.before">
+                      <span class="workspace-change-line-number">{{ row.before.lineNumber }}</span>
+                      <span class="workspace-change-change-marker">{{ row.before.kind === "removed" ? "−" : "" }}</span>
+                      <code>{{ row.before.line }}</code>
+                    </template>
                   </div>
-                  <div class="workspace-change-diff-cell workspace-change-diff-cell--added" :class="{ empty: row.added === undefined }">
-                    <template v-if="row.added !== undefined"><span>+</span><code>{{ row.added }}</code></template>
+                  <div
+                    class="workspace-change-diff-cell workspace-change-diff-cell--added"
+                    :class="{ empty: !row.after, 'workspace-change-diff-cell--changed': row.after?.kind === 'added' }"
+                  >
+                    <template v-if="row.after">
+                      <span class="workspace-change-line-number">{{ row.after.lineNumber }}</span>
+                      <span class="workspace-change-change-marker">{{ row.after.kind === "added" ? "+" : "" }}</span>
+                      <code>{{ row.after.line }}</code>
+                    </template>
                   </div>
                 </div>
               </div>
@@ -1491,11 +1505,25 @@ const agentsMdEditorRef = ref<HTMLTextAreaElement | null>(null);
 const agentsMdLineNumbersRef = ref<HTMLElement | null>(null);
 
 interface WorkspaceDiffRow {
-  removed?: string;
-  added?: string;
+  before?: WorkspaceDiffCell;
+  after?: WorkspaceDiffCell;
 }
 
-function workspaceDiffRows(diff: { kind: "added" | "removed"; line: string; hunk?: number }[]): WorkspaceDiffRow[] {
+interface WorkspaceDiffCell {
+  kind: "added" | "removed" | "context";
+  line: string;
+  lineNumber?: number;
+}
+
+interface WorkspaceDiffLine {
+  kind: "added" | "removed" | "context";
+  line: string;
+  before_line?: number;
+  after_line?: number;
+  hunk?: number;
+}
+
+function workspaceDiffRows(diff: WorkspaceDiffLine[]): WorkspaceDiffRow[] {
   const rows: WorkspaceDiffRow[] = [];
   let start = 0;
 
@@ -1506,11 +1534,37 @@ function workspaceDiffRows(diff: { kind: "added" | "removed"; line: string; hunk
       end += 1;
     }
 
-    const removed = diff.slice(start, end).filter((line) => line.kind === "removed");
-    const added = diff.slice(start, end).filter((line) => line.kind === "added");
-    const rowCount = Math.max(removed.length, added.length);
-    for (let index = 0; index < rowCount; index += 1) {
-      rows.push({ removed: removed[index]?.line, added: added[index]?.line });
+    const hunkLines = diff.slice(start, end);
+    let changeStart = 0;
+    while (changeStart < hunkLines.length) {
+      const change = hunkLines[changeStart];
+      if (change.kind === "context") {
+        rows.push({
+          before: { kind: "context", line: change.line, lineNumber: change.before_line },
+          after: { kind: "context", line: change.line, lineNumber: change.after_line },
+        });
+        changeStart += 1;
+        continue;
+      }
+
+      let changeEnd = changeStart;
+      while (changeEnd < hunkLines.length && hunkLines[changeEnd].kind !== "context") {
+        changeEnd += 1;
+      }
+
+      const removed = hunkLines.slice(changeStart, changeEnd).filter((line) => line.kind === "removed");
+      const added = hunkLines.slice(changeStart, changeEnd).filter((line) => line.kind === "added");
+      const rowCount = Math.max(removed.length, added.length);
+      for (let index = 0; index < rowCount; index += 1) {
+        const before = removed[index];
+        const after = added[index];
+        rows.push({
+          before: before && { kind: before.kind, line: before.line, lineNumber: before.before_line },
+          after: after && { kind: after.kind, line: after.line, lineNumber: after.after_line },
+        });
+      }
+
+      changeStart = changeEnd;
     }
 
     start = end;

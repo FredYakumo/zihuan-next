@@ -378,7 +378,7 @@ fn fingerprint(items: &[PathSnapshot]) -> String { let json = serde_json::to_vec
 fn line_delta(before: &[PathSnapshot], after: &[PathSnapshot]) -> (usize, usize) { let old = line_count(before); let new = line_count(after); (new.saturating_sub(old), old.saturating_sub(new)) }
 fn line_count(items: &[PathSnapshot]) -> usize { items.iter().flat_map(|item| item.entries.iter()).filter_map(|entry| entry.content_hex.as_deref()).map(|hex| String::from_utf8_lossy(&hex_decode(hex)).lines().count()).sum() }
 fn build_diff(before: &[PathSnapshot], after: &[PathSnapshot]) -> Vec<WorkspaceDiffLine> {
-    const CONTEXT_LINES: usize = 3;
+    const CONTEXT_LINES: usize = 10;
 
     let old = snapshot_lines(before).join("\n");
     let new = snapshot_lines(after).join("\n");

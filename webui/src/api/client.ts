@@ -476,8 +476,10 @@ export interface ChatStreamEvent {
 export type WorkspaceChangeOperation = "create" | "edit" | "delete" | "copy" | "move";
 export type WorkspaceChangeStatus = "pending" | "accepted" | "canceled";
 export interface WorkspaceDiffLine {
-  kind: "added" | "removed";
+  kind: "added" | "removed" | "context";
   line: string;
+  before_line?: number;
+  after_line?: number;
   hunk?: number;
 }
 export interface WorkspaceChange {
