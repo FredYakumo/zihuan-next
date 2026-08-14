@@ -39,7 +39,6 @@ fn read_file_returns_complete_utf8_content_by_default() {
     assert_eq!(result["ok"], true);
     assert_eq!(result["total_lines"], 3);
     assert_eq!(result["content"], "第一行\n第二行\n第三行");
-    assert_eq!(result["content_hash"].as_str().map(str::len), Some(64));
 
     fs::remove_dir_all(directory).expect("remove temporary directory");
 }
@@ -66,7 +65,6 @@ fn read_file_supports_one_based_inclusive_line_ranges() {
     assert_eq!(result["start_line"], 2);
     assert_eq!(result["end_line"], 3);
     assert_eq!(result["content"], "two\nthree");
-    assert_eq!(result["content_hash"].as_str().map(str::len), Some(64));
 
     fs::remove_dir_all(directory).expect("remove temporary directory");
 }

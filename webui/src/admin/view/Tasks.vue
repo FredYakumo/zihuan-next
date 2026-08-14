@@ -26,8 +26,8 @@
           <template #task="{ row }">
             <div class="task-cell-title">
               <strong>{{ row.graph_name }}</strong>
-              <t-tag variant="light" :theme="row.task_type === 'agent_service' ? 'primary' : 'default'">
-                {{ row.task_type === "agent_service" ? "Agent 响应" : "节点图" }}
+              <t-tag variant="light" :theme="row.task_type !== 'node_graph' ? 'primary' : 'default'">
+                {{ row.task_type === "workspace_chat" ? "Workspace 对话" : row.task_type === "agent_service" ? "Agent 工具" : "节点图" }}
               </t-tag>
             </div>
             <div class="mono task-cell-id">{{ row.id }}</div>
@@ -35,7 +35,7 @@
           <template #start_time="{ row }">{{ formatTime(row.start_time) }}</template>
           <template #duration="{ row }">{{ formatTaskDuration(row) }}</template>
           <template #file_path="{ row }">
-            <span class="mono task-cell-ellipsis" :title="row.file_path ?? undefined">{{ row.file_path ?? "-" }}</span>
+            <span class="mono task-cell-ellipsis" :title="row.file_path ?? undefined">{{ row.file_path ?? (row.chat_session_id ?? "-") }}</span>
           </template>
           <template #summary="{ row }">
             <span class="task-cell-ellipsis">{{ row.result_summary ?? row.error_message ?? "-" }}</span>
@@ -49,7 +49,10 @@
             </t-button>
             <t-button variant="text" size="small" :disabled="!row.can_rerun" @click="rerunTask(row.id)">重跑</t-button>
             <t-button variant="text" size="small" @click="openLogViewer(row)">查看日志</t-button>
-            <t-button variant="text" size="small" :disabled="row.task_type !== 'agent_service' || !row.file_path" @click="openTaskGraph(row.id)">
+            <t-button v-if="row.task_type === 'workspace_chat'" variant="text" size="small" :disabled="!row.chat_session_id" @click="openChatSession(row)">
+              打开对话
+            </t-button>
+            <t-button v-else variant="text" size="small" :disabled="row.task_type !== 'agent_service' || !row.file_path" @click="openTaskGraph(row.id)">
               打开节点图
             </t-button>
             <t-button variant="text" theme="danger" size="small" @click="deleteSingleTask(row)">删除</t-button>
@@ -174,6 +177,12 @@ function onPaginationChange(pageInfo: { current: number; pageSize: number }) {
 
 function openTaskGraph(taskId: string) {
   window.open(`/editor?task_graph=${encodeURIComponent(taskId)}`, "_blank", "noopener");
+}
+
+function openChatSession(task: TaskEntry) {
+  if (!task.chat_session_id) return;
+  const query = new URLSearchParams({ session_id: task.chat_session_id, agent_id: task.graph_session_id });
+  window.open(`/chat?${query.toString()}`, "_blank", "noopener");
 }
 
 const columns: PrimaryTableCol<TaskEntry>[] = [

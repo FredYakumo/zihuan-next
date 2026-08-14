@@ -37,13 +37,6 @@ fn memory_prompt() -> &'static str {
     "[Memory] You can use memory_agent to recall relevant long-term information before answering. When this conversation establishes durable facts, preferences, decisions, or relationships, call memory_agent before finishing to save them. Do not save transient details, sensitive data, or information without long-term value."
 }
 
-// Tool-side checks prevent corruption, but the model also needs a recovery path. Without this protocol it
-// repeatedly retried stale ranges after a rejection; requiring a fresh read makes the next request carry
-// current coordinates, hash, and source anchors instead of reproducing the original drift.
-fn workspace_edit_safety_prompt() -> &'static str {
-    "[Mandatory File Edit Protocol] Before every edit_file call, use read_file on the target file and pass its latest full-file content_hash. Each edit must include expected_lines copied exactly from the requested 1-based inclusive range. Use the smallest complete range that expresses the intended change; never replace an entire function signature or block to change only one line. After any successful edit that changes the file hash or line count, read the file again before another edit. If edit_file returns stale_file, expected_lines_mismatch, or overlapping_edits, do not retry with old line numbers: read the current file and rebuild the edit request."
-}
-
 fn build_tool_capabilities(
     enabled: &std::collections::HashMap<String, bool>,
 ) -> String {
@@ -141,15 +134,6 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
             prompt = Some(match prompt {
                 Some(prompt) => format!("{prompt}\n{memory_prompt}"),
                 None => memory_prompt,
-            });
-        }
-        if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_READ_FILE)
-            && is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_EDIT_FILE)
-        {
-            let edit_prompt = workspace_edit_safety_prompt().to_string();
-            prompt = Some(match prompt {
-                Some(prompt) => format!("{prompt}\n{edit_prompt}"),
-                None => edit_prompt,
             });
         }
         if let Some(prompt) = prompt {

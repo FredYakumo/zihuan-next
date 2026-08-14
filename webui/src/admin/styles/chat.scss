@@ -406,6 +406,11 @@
   cursor: pointer;
 }
 
+.chat-session-running {
+  color: var(--td-brand-color, #0052d9);
+  margin-right: 6px;
+}
+
 .chat-session-main strong {
   font-size: 14px;
   white-space: nowrap;

@@ -3,6 +3,7 @@ import MarkdownIt from "markdown-it";
 
 import {
   chat,
+  tasks as tasksApi,
   fileIO,
   system,
   agentsMd,
@@ -343,6 +344,9 @@ type StreamState = {
   awaitingPostToolContent: boolean;
   pendingNewConversation: PendingNewConversationCommand | null;
   requestText: string;
+  requestedSessionId: string;
+  sessionId: string;
+  foreground: boolean;
 };
 
 const services = ref<ServiceWithRuntime[]>([]);
@@ -355,8 +359,12 @@ const draftImageAttachments = ref<ChatImageAttachment[]>([]);
 const imagePreviewAttachment = ref<ChatImageAttachment | null>(null);
 const workspacePath = ref("");
 const pickingDirectory = ref(false);
-const sending = ref(false);
+const activeRequestCount = ref(0);
+const sending = computed(() => activeRequestCount.value > 0);
 let activeStreamController: AbortController | null = null;
+let sessionRefreshTimer: ReturnType<typeof setInterval> | null = null;
+const sessionsAwaitingHistoryRefresh = new Set<string>();
+const sessionsNeedingHistoryRefresh = new Set<string>();
 const chatErrorMessage = ref("");
 const chatErrorDialogMessage = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
@@ -1184,8 +1192,43 @@ function applyInferenceFailure(streamState: StreamState, errorMessage: string) {
 }
 
 async function reloadSessions() {
-  const result = await chat.listSessions(selectedServiceId.value || undefined);
-  sessions.value = result.sessions;
+  const [result, taskItems] = await Promise.all([
+    chat.listSessions(selectedServiceId.value || undefined),
+    tasksApi.list(),
+  ]);
+  const runningBySession = new Map(taskItems
+    .filter((task) => task.task_type === "workspace_chat" && task.is_running && task.chat_session_id)
+    .map((task) => [task.chat_session_id as string, task]));
+  sessions.value = result.sessions.map((session) => {
+    const task = runningBySession.get(session.session_id);
+    const wasRunning = sessionsAwaitingHistoryRefresh.has(session.session_id);
+    if (task) {
+      sessionsAwaitingHistoryRefresh.add(session.session_id);
+    } else if (wasRunning) {
+      sessionsAwaitingHistoryRefresh.delete(session.session_id);
+      sessionsNeedingHistoryRefresh.add(session.session_id);
+    }
+    return {
+      ...session,
+      running_task_id: task?.id ?? null,
+      task_status: task?.status ?? null,
+    };
+  });
+}
+
+async function refreshActiveSessionHistoryIfNeeded(): Promise<void> {
+  const sessionId = activeSessionId.value;
+  if (!sessionId || sending.value) return;
+  const session = sessions.value.find((item) => item.session_id === sessionId);
+  if (!session && !sessionsAwaitingHistoryRefresh.has(sessionId)) return;
+  if (!session?.running_task_id && !sessionsAwaitingHistoryRefresh.has(sessionId) && !sessionsNeedingHistoryRefresh.has(sessionId)) return;
+  const result = await chat.getSessionMessages(sessionId);
+  if (activeSessionId.value !== sessionId) return;
+  applyHistory(result.messages);
+  messageBranches.value = result.branches;
+  if (!session?.running_task_id) {
+    sessionsNeedingHistoryRefresh.delete(sessionId);
+  }
 }
 
 async function openSession(sessionId: string) {
@@ -1541,6 +1584,10 @@ async function removeSession(sessionId: string) {
 }
 
 function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
+  if (event.type !== "start" && !streamState.foreground) {
+    return;
+  }
+
   if (event.type === "error") {
     applyInferenceFailure(streamState, event.error ?? "未知错误");
     return;
@@ -1562,6 +1609,16 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   }
 
   if (event.type === "start") {
+    if (streamState.requestedSessionId && activeSessionId.value !== streamState.requestedSessionId) {
+      streamState.foreground = false;
+    } else if (!streamState.requestedSessionId && activeSessionId.value) {
+      streamState.foreground = false;
+    }
+    if (!streamState.foreground) {
+      streamState.sessionId = event.session_id ?? "";
+      return;
+    }
+    streamState.sessionId = event.session_id ?? streamState.requestedSessionId;
     if (streamState.pendingNewConversation) {
       startNewSession();
       if (event.session_id) {
@@ -1757,7 +1814,7 @@ async function submitAskUserAnswer() {
 }
 
 async function sendMessageWithText(rawInput: string, fromAskUser: boolean, options: SendMessageOptions = {}) {
-  if (sending.value) {
+  if (sending.value && !isWorkspaceService.value) {
     return;
   }
 
@@ -1780,13 +1837,13 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
     return;
   }
   clearChatError();
-  sending.value = true;
+  activeRequestCount.value += 1;
   try {
     await resolveConversationImageUrls(options.attachments);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     showChatError(`图片准备失败: ${message}`);
-    sending.value = false;
+    activeRequestCount.value = Math.max(0, activeRequestCount.value - 1);
     return;
   }
   const pendingNewConversation = options.isEdit ? null : parseNewConversationCommand(userText);
@@ -1811,6 +1868,9 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
     awaitingPostToolContent: false,
     pendingNewConversation,
     requestText: userText,
+    requestedSessionId: activeSessionId.value,
+    sessionId: activeSessionId.value,
+    foreground: true,
   };
 
   if (!pendingNewConversation) {
@@ -1859,7 +1919,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
       streamController.signal,
     );
     await reloadSessions();
-    if (activeSessionId.value) {
+    if (streamState.foreground && activeSessionId.value) {
       await openSession(activeSessionId.value);
     }
   } catch (error) {
@@ -1873,7 +1933,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
     if (activeStreamController === streamController) {
       activeStreamController = null;
     }
-    sending.value = false;
+    activeRequestCount.value = Math.max(0, activeRequestCount.value - 1);
   }
 }
 
@@ -1925,10 +1985,21 @@ onMounted(() => {
   });
   document.addEventListener("click", closePickersOnClickOutside);
   document.addEventListener("keydown", handleDocumentKeydown);
+  sessionRefreshTimer = setInterval(() => {
+    if (selectedServiceId.value) {
+      reloadSessions()
+        .then(() => refreshActiveSessionHistoryIfNeeded())
+        .catch((error) => console.warn("Failed to refresh chat sessions:", error));
+    }
+  }, 3000);
 });
 
 onUnmounted(() => {
   activeStreamController?.abort();
+  if (sessionRefreshTimer) {
+    clearInterval(sessionRefreshTimer);
+    sessionRefreshTimer = null;
+  }
   document.removeEventListener("click", closePickersOnClickOutside);
   document.removeEventListener("keydown", handleDocumentKeydown);
 });

@@ -1,6 +1,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -27,6 +28,9 @@ use zihuan_core::message_part::MessagePart;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
 use zihuan_workspace_agent::api::workspace_changes;
+
+use crate::api::state::TaskStatus;
+use crate::api::ws::{ServerMessage, WsBroadcast};
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const APP_DIR_NAME: &str = "zihuan-next_aibot";
@@ -612,6 +616,7 @@ async fn emit_immediate_output(
             workspace_path,
             None,
             None,
+            true,
         ) {
             let event = json!({ "type": "error", "error": err.to_string() });
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
@@ -766,6 +771,7 @@ pub async fn stream_chat(req: &mut Request, res: &mut Response, depot: &mut Depo
     }
 
     let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
+    let broadcast_tx = depot.obtain::<WsBroadcast>().unwrap().clone();
 
     let (sender, receiver) = ResBody::channel();
     res.headers_mut()
@@ -773,7 +779,7 @@ pub async fn stream_chat(req: &mut Request, res: &mut Response, depot: &mut Depo
     res.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     res.body = receiver;
 
-    tokio::spawn(execute_chat_streaming(state, body, sender));
+    tokio::spawn(execute_chat_streaming(state, broadcast_tx, body, sender));
 }
 
 #[handler]
@@ -882,6 +888,7 @@ pub async fn select_directory(_req: &mut Request, res: &mut Response, _depot: &m
 /// half is passed into this function and never shared.
 async fn execute_chat_streaming(
     state: Arc<crate::api::state::AppState>,
+    broadcast_tx: WsBroadcast,
     body: ChatStreamRequest,
     mut sender: BodySender,
 ) {
@@ -952,12 +959,64 @@ async fn execute_chat_streaming(
 
     let assistant_message_id = requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
 
+    let workspace_task = if should_run_inference && matches!(agent.agent_type, AgentType::Workspace(_)) {
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let task_id = state.tasks.lock().unwrap().add_workspace_chat_task(
+            agent.id.clone(),
+            session_id.clone(),
+            agent_snapshot.name.clone(),
+            effective_workspace_path.clone(),
+            Arc::clone(&stop_flag),
+        );
+        let Some(task_id) = task_id else {
+            let event = json!({ "type": "error", "error": "当前会话已有正在运行的 Workspace 任务，请切换到新对话后再发送。" });
+            let _ = sender.send_data(format!("data: {event}\n\n")).await;
+            return;
+        };
+        let _ = broadcast_tx.send(ServerMessage::TaskStarted {
+            task_id: task_id.clone(),
+            graph_name: agent_snapshot.name.clone(),
+            graph_session_id: session_id.clone(),
+        });
+        append_workspace_task_log(&state, &task_id, "INFO", "Workspace 聊天任务已开始");
+        Some((task_id, stop_flag))
+    } else {
+        None
+    };
+
+    if workspace_task.is_some() {
+        if let Err(err) = persist_chat_records(
+            &session_id,
+            &agent,
+            &agent_snapshot,
+            &trace_id,
+            assistant_message_id.as_deref().unwrap_or(""),
+            latest_user_message.as_ref(),
+            &[],
+            effective_workspace_path.clone(),
+            None,
+            None,
+            true,
+        ) {
+            if let Some((task_id, _)) = &workspace_task {
+                finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Failed, Some(err.to_string()), None);
+            }
+            let event = json!({ "type": "error", "error": err.to_string() });
+            let _ = sender.send_data(format!("data: {event}\n\n")).await;
+            return;
+        }
+    }
+
     if !send_sse(
         &mut sender,
-        &build_chat_stream_event("start", &session_id, assistant_message_id.as_deref()),
+        &build_chat_stream_event(
+            "start",
+            &session_id,
+            assistant_message_id.as_deref(),
+            workspace_task.as_ref().map(|(task_id, _)| task_id.as_str()),
+        ),
     )
-    .await
-    {
+    .await && workspace_task.is_none() {
         return;
     }
 
@@ -983,7 +1042,7 @@ async fn execute_chat_streaming(
 
         let _ = send_sse(
             &mut sender,
-            &build_chat_stream_event("done", &session_id, assistant_message_id.as_deref()),
+            &build_chat_stream_event("done", &session_id, assistant_message_id.as_deref(), None),
         )
         .await;
         let _ = sender.send_data("data: [DONE]\n\n").await;
@@ -1027,6 +1086,17 @@ async fn execute_chat_streaming(
         }
     });
 
+    let stop_watch = workspace_task.as_ref().map(|(_, flag)| {
+        let flag = Arc::clone(flag);
+        let abort_handle = inference_handle.abort_handle();
+        tokio::spawn(async move {
+            while !flag.load(Ordering::Relaxed) {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            abort_handle.abort();
+        })
+    });
+
     let stream_enabled = stream.unwrap_or(true);
     let (client_connected, relay_timing) = if stream_enabled {
         relay_inference_stream(
@@ -1042,24 +1112,46 @@ async fn execute_chat_streaming(
         (true, RelayTiming::default())
     };
 
-    if !client_connected {
-        inference_handle.abort();
-        return;
-    }
+    // A disconnected SSE client must not cancel a Workspace task. The relay has
+    // already stopped consuming events, but the inference result is still awaited
+    // and persisted below.
 
     let (output_messages, stop_reason) = match inference_handle.await {
         Ok(Ok(result)) => result,
         Ok(Err(err)) => {
+            if let Some((task_id, _)) = &workspace_task {
+                finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Failed, Some(err.to_string()), None);
+            }
             let event = json!({ "type": "error", "error": err.to_string() });
-            let _ = sender.send_data(format!("data: {event}\n\n")).await;
+            if client_connected { let _ = sender.send_data(format!("data: {event}\n\n")).await; }
             return;
         }
         Err(err) => {
+            let stopped = workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
+            if let Some((task_id, _)) = &workspace_task {
+                finish_workspace_task(
+                    &state,
+                    &broadcast_tx,
+                    task_id,
+                    if stopped { TaskStatus::Stopped } else { TaskStatus::Failed },
+                    (!stopped).then(|| format!("failed to join chat task: {err}")),
+                    None,
+                );
+            }
+            if stopped { return; }
             let event = json!({ "type": "error", "error": format!("failed to join chat task: {err}") });
-            let _ = sender.send_data(format!("data: {event}\n\n")).await;
+            if client_connected { let _ = sender.send_data(format!("data: {event}\n\n")).await; }
             return;
         }
     };
+
+    if let Some(watch) = stop_watch { watch.abort(); }
+    if workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed)) {
+        if let Some((task_id, _)) = &workspace_task {
+            finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Stopped, None, None);
+        }
+        return;
+    }
 
     let metrics = build_chat_response_metrics(
         &output_messages,
@@ -1081,10 +1173,19 @@ async fn execute_chat_streaming(
             _ => None,
         },
         metrics.as_ref(),
+        workspace_task.is_none(),
     ) {
+        if let Some((task_id, _)) = &workspace_task {
+            finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Failed, Some(err.to_string()), None);
+        }
         let event = json!({ "type": "error", "error": err.to_string() });
-        let _ = sender.send_data(format!("data: {event}\n\n")).await;
+        if client_connected { let _ = sender.send_data(format!("data: {event}\n\n")).await; }
         return;
+    }
+
+    if let Some((task_id, _)) = &workspace_task {
+        let summary = output_messages.iter().rev().find_map(|message| message.content_text_owned());
+        finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Success, None, summary);
     }
 
     if let Some(metrics) = &metrics {
@@ -1093,7 +1194,7 @@ async fn execute_chat_streaming(
             "message_id": assistant_message_id,
             "metrics": metrics,
         });
-        if !send_sse(&mut sender, &event).await {
+        if client_connected && !send_sse(&mut sender, &event).await {
             return;
         }
     }
@@ -1107,31 +1208,70 @@ async fn execute_chat_streaming(
             "details": request.details,
             "placeholder": request.placeholder,
         });
-        if !send_sse(&mut sender, &event).await {
+        if client_connected && !send_sse(&mut sender, &event).await {
             return;
         }
     }
 
-    let _ = send_sse(
-        &mut sender,
-        &build_chat_stream_event("done", &session_id, Some(&assistant_message_id)),
-    )
-    .await;
-    let _ = sender.send_data("data: [DONE]\n\n").await;
+    if client_connected {
+        let _ = send_sse(
+            &mut sender,
+            &build_chat_stream_event("done", &session_id, Some(&assistant_message_id), None),
+        )
+        .await;
+        let _ = sender.send_data("data: [DONE]\n\n").await;
+    }
 }
 
 /// Build a top-level SSE event (`start` / `done`) with optional `message_id`.
-fn build_chat_stream_event(kind: &str, session_id: &str, message_id: Option<&str>) -> Value {
+fn build_chat_stream_event(kind: &str, session_id: &str, message_id: Option<&str>, task_id: Option<&str>) -> Value {
     match message_id {
         Some(message_id) => json!({
             "type": kind,
             "session_id": session_id,
             "message_id": message_id,
+            "task_id": task_id,
         }),
         None => json!({
             "type": kind,
             "session_id": session_id,
+            "task_id": task_id,
         }),
+    }
+}
+
+fn finish_workspace_task(
+    state: &crate::api::state::AppState,
+    broadcast_tx: &WsBroadcast,
+    task_id: &str,
+    status: TaskStatus,
+    error: Option<String>,
+    summary: Option<String>,
+) {
+    let level = match status {
+        TaskStatus::Success => "INFO",
+        TaskStatus::Stopped => "WARN",
+        _ => "ERROR",
+    };
+    let message = error.as_deref().unwrap_or_else(|| summary.as_deref().unwrap_or("Workspace 聊天任务已结束"));
+    append_workspace_task_log(state, task_id, level, message);
+    state.tasks.lock().unwrap().finish_task(task_id, status.clone(), error.clone(), summary);
+    match status {
+        TaskStatus::Success => { let _ = broadcast_tx.send(ServerMessage::TaskFinished { task_id: task_id.to_string(), success: true, error: None }); }
+        TaskStatus::Failed => { let _ = broadcast_tx.send(ServerMessage::TaskFinished { task_id: task_id.to_string(), success: false, error }); }
+        TaskStatus::Stopped => { let _ = broadcast_tx.send(ServerMessage::TaskStopped { task_id: task_id.to_string() }); }
+        _ => {}
+    }
+}
+
+fn append_workspace_task_log(state: &crate::api::state::AppState, task_id: &str, level: &str, message: &str) {
+    let entry = crate::api::state::TaskLogEntry {
+        timestamp: Utc::now().to_rfc3339(),
+        level: level.to_string(),
+        message: message.to_string(),
+    };
+    if let Err(err) = state.tasks.lock().unwrap().append_task_log(task_id, &entry) {
+        log::warn!("failed to append Workspace task log '{}': {}", task_id, err);
     }
 }
 
@@ -1269,9 +1409,11 @@ fn persist_chat_records(
     workspace_path: Option<String>,
     pending_ask_user: Option<AskUserRequest>,
     metrics: Option<&ChatResponseMetrics>,
+    include_user_message: bool,
 ) -> Result<()> {
     let now = Utc::now().to_rfc3339();
-    if let Some(user_message) = latest_user_message {
+    if include_user_message {
+        if let Some(user_message) = latest_user_message {
         let user_record = ChatHistoryRecord {
             session_id: session_id.to_string(),
             agent_id: agent.id.clone(),
@@ -1293,6 +1435,7 @@ fn persist_chat_records(
             metrics: None,
         };
         append_history_record(&user_record)?;
+    }
     }
 
     for message in output_messages {
