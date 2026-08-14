@@ -348,9 +348,11 @@
                         <span class="chat-thinking-icon">
                           <ChevronDownIcon v-if="message.thinkingExpanded" />
                           <ChevronRightIcon v-else />
-                        </span>
-                        思考过程
-                        <span
+                      <div
+                        v-if="message.thinkingExpanded"
+                        class="chat-thinking-content markdown-body"
+                        v-html="renderMessageContent(message.thinkingContent, message.streaming)"
+                      ></div>
                           v-if="message.streaming && message.thinkingExpanded"
                           class="live-tool-spinner"
                         ></span>

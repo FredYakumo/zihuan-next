@@ -574,8 +574,30 @@
   font-size: 13px;
   color: var(--admin-subtle);
   line-height: 1.5;
-  white-space: pre-wrap;
   border-top: 1px solid var(--admin-border);
+}
+
+.chat-thinking-content :deep(p),
+.chat-thinking-content :deep(ul),
+.chat-thinking-content :deep(ol),
+.chat-thinking-content :deep(pre),
+.chat-thinking-content :deep(blockquote) {
+  margin: 0 0 0.75em;
+}
+
+.chat-thinking-content :deep(:last-child) {
+  margin-bottom: 0;
+}
+
+.chat-thinking-content :deep(pre) {
+  overflow-x: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--admin-ink) 6%, transparent);
+}
+
+.chat-thinking-content :deep(code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .chat-bubble-footer {
