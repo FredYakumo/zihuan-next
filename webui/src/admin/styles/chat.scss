@@ -1735,8 +1735,12 @@
   margin: 0.45em 0;
 }
 
-.chat-bubble-content :deep(li) {
+.chat-bubble-content :deep(p) {
   white-space: pre-wrap;
+}
+
+.chat-bubble-content :deep(li) {
+  white-space: normal;
 }
 
 .chat-bubble-content :deep(ul),
