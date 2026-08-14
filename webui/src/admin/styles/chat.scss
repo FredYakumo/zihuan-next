@@ -1721,18 +1721,36 @@
   font-style: italic;
 }
 
-.chat-bubble-content :deep(* + *) {
-  margin-top: 0.75em;
+.chat-bubble-content {
+  line-height: 1.5;
 }
 
 .chat-bubble-content :deep(p),
+.chat-bubble-content :deep(h1),
+.chat-bubble-content :deep(h2),
+.chat-bubble-content :deep(h3),
+.chat-bubble-content :deep(h4),
+.chat-bubble-content :deep(h5),
+.chat-bubble-content :deep(h6) {
+  margin: 0.45em 0;
+}
+
 .chat-bubble-content :deep(li) {
   white-space: pre-wrap;
 }
 
 .chat-bubble-content :deep(ul),
 .chat-bubble-content :deep(ol) {
+  margin: 0.45em 0;
   padding-left: 1.4em;
+}
+
+.chat-bubble-content :deep(li + li) {
+  margin-top: 0.2em;
+}
+
+.chat-bubble-content :deep(li > p) {
+  margin: 0;
 }
 
 .chat-bubble-content :deep(blockquote) {
