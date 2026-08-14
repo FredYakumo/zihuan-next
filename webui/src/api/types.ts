@@ -163,9 +163,10 @@ export interface ValidationResult {
 
 export interface TaskEntry {
   id: string;
-  task_type: "node_graph" | "agent_service";
+  task_type: "node_graph" | "agent_service" | "workspace_chat";
   graph_name: string;
   graph_session_id: string;
+  chat_session_id: string | null;
   file_path: string | null;
   is_workflow_set: boolean;
   start_time: string;
@@ -173,7 +174,7 @@ export interface TaskEntry {
   end_time: string | null;
   duration_ms: number | null;
   user_ip: string | null;
-  status: "running" | "success" | "failed" | "stopped";
+  status: "running" | "success" | "failed" | "stopped" | "waiting_auth";
   error_message: string | null;
   result_summary: string | null;
   log_path: string | null;

@@ -148,7 +148,10 @@
               >
                 <button class="chat-session-main" @click="openSession(session.session_id)">
                   <strong>{{ session.title || session.session_id.slice(0, 8) }}</strong>
-                  <span class="muted">{{ formatTime(session.updated_at) }}</span>
+                  <span class="muted">
+                    <span v-if="session.running_task_id" class="chat-session-running">运行中</span>
+                    {{ formatTime(session.updated_at) }}
+                  </span>
                 </button>
                 <button
                   class="chat-session-delete"

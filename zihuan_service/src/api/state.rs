@@ -68,6 +68,7 @@ impl GraphSession {
 pub enum TaskType {
     NodeGraph,
     AgentService,
+    WorkspaceChat,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +77,8 @@ pub struct TaskEntry {
     pub task_type: TaskType,
     pub graph_name: String,
     pub graph_session_id: String,
+    #[serde(default)]
+    pub chat_session_id: Option<String>,
     pub file_path: Option<String>,
     pub is_workflow_set: bool,
     pub start_time: DateTime<Local>,
@@ -179,6 +182,50 @@ impl TaskManager {
         )
     }
 
+    pub fn add_workspace_chat_task(
+        &mut self,
+        agent_id: String,
+        session_id: String,
+        agent_name: String,
+        workspace_path: Option<String>,
+        stop_flag: Arc<AtomicBool>,
+    ) -> Option<String> {
+        if self.tasks.iter().any(|task| {
+            task.task_type == TaskType::WorkspaceChat
+                && task.is_running
+                && task.chat_session_id.as_deref() == Some(session_id.as_str())
+        }) {
+            return None;
+        }
+        let id = Uuid::new_v4().to_string();
+        let entry = TaskEntry {
+            id: id.clone(),
+            task_type: TaskType::WorkspaceChat,
+            graph_name: agent_name,
+            graph_session_id: agent_id,
+            chat_session_id: Some(session_id),
+            file_path: workspace_path,
+            is_workflow_set: false,
+            start_time: Local::now(),
+            is_running: true,
+            end_time: None,
+            duration_ms: None,
+            user_ip: None,
+            owner_id: None,
+            status: TaskStatus::Running,
+            error_message: None,
+            result_summary: None,
+            log_path: Self::task_log_path(&id).ok(),
+            can_rerun: false,
+            graph_snapshot: None,
+            task_db_connection_id: None,
+            stop_flag: Some(stop_flag),
+        };
+        self.tasks.push(entry);
+        self.persist_index();
+        Some(id)
+    }
+
     fn add_task_with_type(
         &mut self,
         task_type: TaskType,
@@ -200,6 +247,7 @@ impl TaskManager {
             task_type,
             graph_name,
             graph_session_id,
+            chat_session_id: None,
             can_rerun,
             file_path,
             is_workflow_set,
@@ -544,6 +592,7 @@ impl TaskManager {
                 task_type: TaskType::NodeGraph,
                 graph_name: format!("历史任务 {}", short_id),
                 graph_session_id: String::new(),
+                chat_session_id: None,
                 file_path: None,
                 is_workflow_set: false,
                 start_time: modified,

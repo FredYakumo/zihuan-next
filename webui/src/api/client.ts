@@ -457,6 +457,7 @@ export interface ChatStreamEvent {
   type: "start" | "delta" | "thinking_delta" | "metrics" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "ask_user";
   session_id?: string;
   message_id?: string;
+  task_id?: string;
   index?: number;
   token?: string;
   error?: string;
@@ -580,6 +581,8 @@ export interface ChatSessionSummary {
     placeholder?: string | null;
   } | null;
   title?: string | null;
+  running_task_id?: string | null;
+  task_status?: "running" | "success" | "failed" | "stopped" | "waiting_auth" | null;
 }
 
 export interface ChatBranchVersion {

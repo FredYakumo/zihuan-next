@@ -352,6 +352,7 @@ fn task_type_str(task_type: &TaskType) -> &'static str {
     match task_type {
         TaskType::NodeGraph => "node_graph",
         TaskType::AgentService => "agent_service",
+        TaskType::WorkspaceChat => "workspace_chat",
     }
 }
 
