@@ -454,7 +454,7 @@ export interface NotificationCard {
 }
 
 export interface ChatStreamEvent {
-  type: "start" | "delta" | "thinking_delta" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "ask_user";
+  type: "start" | "delta" | "thinking_delta" | "metrics" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "ask_user";
   session_id?: string;
   message_id?: string;
   index?: number;
@@ -471,6 +471,7 @@ export interface ChatStreamEvent {
   details?: string;
   placeholder?: string;
   change?: WorkspaceChange;
+  metrics?: ChatResponseMetrics;
 }
 
 export type WorkspaceChangeOperation = "create" | "edit" | "delete" | "copy" | "move";
@@ -528,6 +529,18 @@ export interface ChatMessagePart {
   };
 }
 
+export interface ChatResponseMetrics {
+  time_to_first_token_ms?: number;
+  generation_duration_ms?: number;
+  output_tokens_per_second?: number;
+  prompt_tokens?: number;
+  cached_prompt_tokens?: number;
+  prompt_cache_miss_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  cache_hit_rate?: number;
+}
+
 export interface ChatHistoryRecord {
   session_id: string;
   agent_id: string;
@@ -544,6 +557,7 @@ export interface ChatHistoryRecord {
   message_id: string;
   tool_calls?: ChatToolCall[];
   tool_call_id?: string | null;
+  metrics?: ChatResponseMetrics | null;
   workspace_path?: string | null;
   pending_ask_user?: {
     question: string;

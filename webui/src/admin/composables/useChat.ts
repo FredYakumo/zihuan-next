@@ -12,6 +12,7 @@ import {
   type ChatToolCall,
   type ChatSessionSummary,
   type ChatStreamEvent,
+  type ChatResponseMetrics,
   type ChatMessagePart,
   type ChatMessageBranch,
   type LlmConfig,
@@ -55,6 +56,7 @@ type ChatMessage = {
   linkedToolCall?: ChatToolCall | null;
   agentAvatarUrl?: string;
   agentName?: string;
+  metrics?: ChatResponseMetrics;
   liveToolCalls?: LiveToolCall[];
   imageAttachments?: ChatImageAttachment[];
 };
@@ -690,6 +692,7 @@ function applyHistory(records: ChatHistoryRecord[]) {
       linkedToolCall: null,
       agentAvatarUrl: messageAvatarUrl(item) || undefined,
       agentName: item.agent_name || undefined,
+      metrics: item.metrics ?? undefined,
     }));
   const toolCallMap = new Map<string, ChatToolCall>();
   for (const message of mapped) {
@@ -1634,6 +1637,14 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
       message.thinkingContent += event.token ?? "";
       message.streaming = true;
       scrollToBottom();
+    }
+  }
+
+  if (event.type === "metrics" && event.metrics) {
+    const targetId = streamState.assistantMessageId || event.message_id;
+    const message = targetId ? messages.value.find((item) => item.id === targetId) : undefined;
+    if (message) {
+      message.metrics = event.metrics;
     }
   }
 
