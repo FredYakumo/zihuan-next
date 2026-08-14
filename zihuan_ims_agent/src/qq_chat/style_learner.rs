@@ -55,7 +55,7 @@ pub async fn learn_language_style(
         })
     })
     .await
-    .map_err(|e| Error::StringError(format!("style learning LLM task panicked: {e}")))?;
+    .map_err(|e| zihuan_core::string_error!("style learning LLM task panicked: {e}"))?;
     let style_prompt = parse_style_learning_result(&response.content_text_owned().unwrap_or_default())?;
     let saved =
         upsert_language_style(connection, scope, &style_prompt, samples.len() as i32, learned_by_sender_id).await?;

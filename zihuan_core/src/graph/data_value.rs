@@ -271,8 +271,8 @@ impl LLMMessageSessionCacheRef {
 
         match catch_unwind(AssertUnwindSafe(run)) {
             Ok(result) => result,
-            Err(_) => Err(crate::error::Error::StringError(
-                "Redis connection driver unexpectedly terminated while reading session cache".to_string(),
+            Err(_) => Err(crate::string_error!(
+                "Redis connection driver unexpectedly terminated while reading session cache"
             )),
         }
     }
@@ -294,8 +294,8 @@ impl LLMMessageSessionCacheRef {
 
         match catch_unwind(AssertUnwindSafe(run)) {
             Ok(result) => result,
-            Err(_) => Err(crate::error::Error::StringError(
-                "Redis connection driver unexpectedly terminated while writing session cache".to_string(),
+            Err(_) => Err(crate::string_error!(
+                "Redis connection driver unexpectedly terminated while writing session cache"
             )),
         }
     }
@@ -317,8 +317,8 @@ impl LLMMessageSessionCacheRef {
 
         match catch_unwind(AssertUnwindSafe(run)) {
             Ok(result) => result,
-            Err(_) => Err(crate::error::Error::StringError(
-                "Redis connection driver unexpectedly terminated while appending session cache".to_string(),
+            Err(_) => Err(crate::string_error!(
+                "Redis connection driver unexpectedly terminated while appending session cache"
             )),
         }
     }

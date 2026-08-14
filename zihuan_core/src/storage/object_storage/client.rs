@@ -97,10 +97,10 @@ pub fn upload_remote_image_to_s3(s3_ref: &S3Ref, url: &str) -> Result<String> {
         .build()?;
     let resp = client.get(url).send()?;
     if !resp.status().is_success() {
-        return Err(crate::error::Error::StringError(format!(
+        return Err(crate::string_error!(
             "image download returned status {}",
             resp.status()
-        )));
+        ));
     }
     let response_content_type = resp
         .headers()
@@ -119,25 +119,25 @@ pub fn upload_remote_image_to_s3(s3_ref: &S3Ref, url: &str) -> Result<String> {
 
 fn verified_image_content_type(response_content_type: Option<&str>, bytes: &[u8]) -> Result<&'static str> {
     if bytes.is_empty() {
-        return Err(crate::error::Error::StringError(
-            "image download returned an empty body".to_string(),
+        return Err(crate::string_error!(
+            "image download returned an empty body"
         ));
     }
 
     let response_content_type = response_content_type.and_then(supported_image_content_type).ok_or_else(|| {
-        crate::error::Error::StringError("image download returned no supported image content type".to_string())
+        crate::string_error!("image download returned no supported image content type")
     })?;
     let detected_content_type = image_content_type_from_bytes(bytes).ok_or_else(|| {
-        crate::error::Error::StringError(
-            "image download body does not match a supported image signature".to_string(),
+        crate::string_error!(
+            "image download body does not match a supported image signature"
         )
     })?;
 
     if response_content_type != detected_content_type {
-        return Err(crate::error::Error::StringError(format!(
+        return Err(crate::string_error!(
             "image download content type mismatch: response={}, detected={}",
             response_content_type, detected_content_type
-        )));
+        ));
     }
 
     Ok(detected_content_type)

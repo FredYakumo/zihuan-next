@@ -293,7 +293,7 @@ impl WorkspaceChangeRecorder {
 /// a conversation.
 pub fn pending(session_id: &str) -> Result<Vec<WorkspaceChangeRecord>> {
     load_session(session_id)?;
-    let all = records().lock().map_err(|_| Error::StringError("workspace change lock poisoned".to_string()))?;
+    let all = records().lock().map_err(|_| zihuan_core::string_error!("workspace change lock poisoned"))?;
     Ok(all.get(session_id).cloned().unwrap_or_default().into_iter().filter(|item| matches!(item.status, WorkspaceChangeStatus::Pending)).collect())
 }
 
@@ -309,7 +309,7 @@ pub fn accept(session_id: &str, change_id: &str) -> Result<WorkspaceChangeRecord
 /// overwriting that newer state.
 pub fn cancel(session_id: &str, change_id: &str) -> Result<WorkspaceChangeRecord> {
     load_session(session_id)?;
-    let mut all = records().lock().map_err(|_| Error::StringError("workspace change lock poisoned".to_string()))?;
+    let mut all = records().lock().map_err(|_| zihuan_core::string_error!("workspace change lock poisoned"))?;
     let record = all.get_mut(session_id).and_then(|items| items.iter_mut().find(|item| item.change_id == change_id)).ok_or_else(|| Error::ValidationError("workspace change not found".to_string()))?;
     if !matches!(record.status, WorkspaceChangeStatus::Pending) { return Ok(record.clone()); }
     let current = record.after.iter().map(|item| snapshot(Path::new(&item.path))).collect::<Vec<_>>();
@@ -324,7 +324,7 @@ pub fn cancel(session_id: &str, change_id: &str) -> Result<WorkspaceChangeRecord
 
 fn update_status(session_id: &str, change_id: &str, status: WorkspaceChangeStatus, _write: bool) -> Result<WorkspaceChangeRecord> {
     load_session(session_id)?;
-    let mut all = records().lock().map_err(|_| Error::StringError("workspace change lock poisoned".to_string()))?;
+    let mut all = records().lock().map_err(|_| zihuan_core::string_error!("workspace change lock poisoned"))?;
     let items = all.get_mut(session_id).ok_or_else(|| Error::ValidationError("workspace change not found".to_string()))?;
     let record = items.iter_mut().find(|item| item.change_id == change_id).ok_or_else(|| Error::ValidationError("workspace change not found".to_string()))?;
     if matches!(record.status, WorkspaceChangeStatus::Pending) { record.status = status; }
@@ -421,13 +421,13 @@ fn storage_dir() -> PathBuf { app_data_dir().join(CHANGE_DIR_NAME) }
 fn session_file(session_id: &str) -> PathBuf { storage_dir().join(format!("{session_id}.json")) }
 
 /// Stores private before/after snapshots separately from the public record metadata.
-fn persist_snapshot(record: &WorkspaceChangeRecord) -> Result<()> { let path = storage_dir().join(format!("{}-snapshot.json", record.change_id)); fs::create_dir_all(storage_dir())?; let data = serde_json::to_vec(&(record.before.clone(), record.after.clone())).map_err(|e| Error::StringError(e.to_string()))?; fs::write(path, data)?; Ok(()) }
+fn persist_snapshot(record: &WorkspaceChangeRecord) -> Result<()> { let path = storage_dir().join(format!("{}-snapshot.json", record.change_id)); fs::create_dir_all(storage_dir())?; let data = serde_json::to_vec(&(record.before.clone(), record.after.clone())).map_err(|e| zihuan_core::string_error!("{}", e))?; fs::write(path, data)?; Ok(()) }
 
 /// Writes the session's complete record list so status changes and merge results survive restart.
-fn persist_session(session_id: &str, items: &[WorkspaceChangeRecord]) -> Result<()> { fs::create_dir_all(storage_dir())?; let data = serde_json::to_vec_pretty(items).map_err(|e| Error::StringError(e.to_string()))?; fs::write(session_file(session_id), data)?; Ok(()) }
+fn persist_session(session_id: &str, items: &[WorkspaceChangeRecord]) -> Result<()> { fs::create_dir_all(storage_dir())?; let data = serde_json::to_vec_pretty(items).map_err(|e| zihuan_core::string_error!("{}", e))?; fs::write(session_file(session_id), data)?; Ok(()) }
 
 /// Lazily reconstructs a session from its metadata file and snapshot sidecars.
-fn load_session(session_id: &str) -> Result<()> { let mut all = records().lock().map_err(|_| Error::StringError("workspace change lock poisoned".to_string()))?; if all.contains_key(session_id) { return Ok(()); } let path = session_file(session_id); if !path.exists() { all.insert(session_id.to_string(), Vec::new()); return Ok(()); } let mut items: Vec<WorkspaceChangeRecord> = serde_json::from_slice(&fs::read(path)?).map_err(|e| Error::StringError(e.to_string()))?; for item in &mut items { let snapshot_path = storage_dir().join(format!("{}-snapshot.json", item.change_id)); if snapshot_path.exists() { if let Ok((before, after)) = serde_json::from_slice(&fs::read(snapshot_path)?) { item.before = before; item.after = after; } } } all.insert(session_id.to_string(), items); Ok(()) }
+fn load_session(session_id: &str) -> Result<()> { let mut all = records().lock().map_err(|_| zihuan_core::string_error!("workspace change lock poisoned"))?; if all.contains_key(session_id) { return Ok(()); } let path = session_file(session_id); if !path.exists() { all.insert(session_id.to_string(), Vec::new()); return Ok(()); } let mut items: Vec<WorkspaceChangeRecord> = serde_json::from_slice(&fs::read(path)?).map_err(|e| zihuan_core::string_error!("{}", e))?; for item in &mut items { let snapshot_path = storage_dir().join(format!("{}-snapshot.json", item.change_id)); if snapshot_path.exists() { if let Ok((before, after)) = serde_json::from_slice(&fs::read(snapshot_path)?) { item.before = before; item.after = after; } } } all.insert(session_id.to_string(), items); Ok(()) }
 
 fn render_internal_error(res: &mut Response, err: impl ToString) {
     res.status_code(StatusCode::INTERNAL_SERVER_ERROR);

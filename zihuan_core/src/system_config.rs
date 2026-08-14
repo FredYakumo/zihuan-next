@@ -5,7 +5,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
 use chrono::{DateTime, Utc};
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 const APP_DIR_NAME: &str = "zihuan-next_aibot";
 const SYSTEM_CONFIG_DIR: &str = "system_config";
@@ -20,21 +20,18 @@ pub trait SystemConfigSection {
     fn read_from_root(root: &Value) -> Result<Self::Value> {
         let value = root.get(Self::SECTION_KEY).cloned().unwrap_or_else(|| Value::Array(Vec::new()));
         serde_json::from_value(value).map_err(|err| {
-            Error::StringError(format!("failed to parse system config section '{}': {err}", Self::SECTION_KEY))
+            crate::string_error!("failed to parse system config section '{}': {err}", Self::SECTION_KEY)
         })
     }
 
     fn write_to_root(root: &mut Value, value: &Self::Value) -> Result<()> {
         let object = root
             .as_object_mut()
-            .ok_or_else(|| Error::StringError("system config root must be a JSON object".to_string()))?;
+            .ok_or_else(|| crate::string_error!("system config root must be a JSON object"))?;
         object.insert(
             Self::SECTION_KEY.to_string(),
             serde_json::to_value(value).map_err(|err| {
-                Error::StringError(format!(
-                    "failed to serialize system config section '{}': {err}",
-                    Self::SECTION_KEY
-                ))
+                crate::string_error!("failed to serialize system config section '{}': {err}", Self::SECTION_KEY)
             })?,
         );
         ensure_version(object);
@@ -61,7 +58,7 @@ pub fn load_system_config_root() -> Result<Value> {
 
     let content = fs::read_to_string(&path)?;
     let mut root: Value = serde_json::from_str(&content)
-        .map_err(|err| Error::StringError(format!("failed to parse {}: {err}", path.display())))?;
+        .map_err(|err| crate::string_error!("failed to parse {}: {err}", path.display()))?;
     normalize_root(&mut root)?;
     Ok(root)
 }
@@ -76,7 +73,7 @@ pub fn save_system_config_root(root: &Value) -> Result<()> {
     }
 
     let content = serde_json::to_string_pretty(&normalized)
-        .map_err(|err| Error::StringError(format!("failed to serialize system config: {err}")))?;
+        .map_err(|err| crate::string_error!("failed to serialize system config: {err}"))?;
     let tmp_path = path.with_extension("json.tmp");
     fs::write(&tmp_path, content)?;
     fs::rename(&tmp_path, &path)?;
@@ -118,7 +115,7 @@ fn normalize_root(root: &mut Value) -> Result<()> {
             *root = default_system_config_root();
             return Ok(());
         }
-        _ => return Err(Error::StringError("system config root must be a JSON object".to_string())),
+        _ => return Err(crate::string_error!("system config root must be a JSON object")),
     };
     ensure_version(object);
     Ok(())

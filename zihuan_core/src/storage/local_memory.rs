@@ -34,7 +34,7 @@ impl LocalMemoryStore {
     pub fn create_or_update(&self, input: &AgentMemoryUpsert) -> Result<AgentMemoryRecord> {
         let key = validate_memory_key(&input.key)?;
         validate_expires_at(input.expires_at.as_deref())?;
-        let _guard = self.write_lock.lock().map_err(|_| Error::StringError("local memory write lock poisoned".to_string()))?;
+        let _guard = self.write_lock.lock().map_err(|_| crate::string_error!("local memory write lock poisoned"))?;
         fs::create_dir_all(&self.directory)?;
         let path = self.path_for_key(key);
         let metadata_path = self.metadata_path_for_key(key);

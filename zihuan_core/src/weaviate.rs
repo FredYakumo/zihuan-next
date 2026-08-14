@@ -188,10 +188,10 @@ impl WeaviateRef {
         }
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        Err(Error::StringError(format!(
+        Err(crate::string_error!(
             "Weaviate readiness probe failed with status {}: {}",
             status, body
-        )))
+        ))
     }
 
     pub async fn get_json_async(&self, path: &str) -> Result<Value> {
@@ -213,10 +213,10 @@ impl WeaviateRef {
         }
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        Err(Error::StringError(format!(
+        Err(crate::string_error!(
             "Weaviate request failed with status {}: {}",
             status, body
-        )))
+        ))
     }
 
     pub fn get_object_vector(&self, class_name: &str, id: &str) -> Result<Option<Vec<f32>>> {
@@ -246,16 +246,16 @@ impl WeaviateRef {
         let status = response.status();
         let body = response.text().await?;
         if !status.is_success() {
-            return Err(Error::StringError(format!(
+            return Err(crate::string_error!(
                 "Weaviate request failed with status {}: {}",
                 status, body
-            )));
+            ));
         }
         if body.trim().is_empty() {
             return Ok(Value::Null);
         }
         serde_json::from_str(&body)
-            .map_err(|err| Error::StringError(format!("Failed to parse Weaviate response as JSON: {err}; body={body}")))
+            .map_err(|err| crate::string_error!("Failed to parse Weaviate response as JSON: {err}; body={body}"))
     }
 }
 

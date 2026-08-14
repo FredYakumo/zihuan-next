@@ -58,7 +58,7 @@ impl Node for TopKSimilarityNode {
         };
 
         let top_results =
-            top_k_similar(&candidates, &query, top_k).map_err(|error| Error::StringError(error.to_string()))?;
+            top_k_similar(&candidates, &query, top_k).map_err(|error| crate::string_error!("{}", error))?;
 
         let indices = top_results
             .iter()

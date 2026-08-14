@@ -92,7 +92,7 @@ fn save_yaml_map(yaml_path: &Path, values: &HashMap<String, Value>) -> Result<()
         .collect();
 
     let content = serde_yaml::to_string(&yaml_map)
-        .map_err(|e| crate::error::Error::StringError(format!("yaml serialize error: {e}")))?;
+        .map_err(|e| crate::string_error!("yaml serialize error: {e}"))?;
     fs::write(yaml_path, content)?;
     Ok(())
 }

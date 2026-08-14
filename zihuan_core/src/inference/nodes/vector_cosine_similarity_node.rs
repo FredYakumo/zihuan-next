@@ -42,7 +42,7 @@ impl Node for VectorCosineSimilarityNode {
 
         let left = parse_float_vector(inputs.get("left"))?;
         let right = parse_float_vector(inputs.get("right"))?;
-        let similarity = cosine_similarity(&left, &right).map_err(|error| Error::StringError(error.to_string()))?;
+        let similarity = cosine_similarity(&left, &right).map_err(|error| crate::string_error!("{}", error))?;
 
         crate::graph::return_with_node_output![self;
             "similarity" => DataValue::Float(similarity as f64),

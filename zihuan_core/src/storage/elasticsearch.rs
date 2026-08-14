@@ -101,7 +101,7 @@ impl ElasticsearchRef {
         Ok(Self {
             client: builder
                 .build()
-                .map_err(|error| Error::StringError(format!("build elasticsearch client failed: {error}")))?,
+                .map_err(|error| crate::string_error!("build elasticsearch client failed: {error}"))?,
             base_url,
             index_name: config.index_name.trim().to_string(),
             schema: config.collection_schema.into(),
@@ -119,7 +119,7 @@ impl ElasticsearchRef {
         };
         let response = request
             .send()
-            .map_err(|error| Error::StringError(format!("elasticsearch request failed: {error}")))?;
+            .map_err(|error| crate::string_error!("elasticsearch request failed: {error}"))?;
         let status = response.status();
         let value = response.json::<Value>().unwrap_or(Value::Null);
         if !status.is_success() {
@@ -138,9 +138,9 @@ pub fn ensure_elasticsearch_index(reference: &ElasticsearchRef, create_missing: 
         match reference.client.head(&index_url).send() {
             Ok(response) => break response.status().is_success(),
             Err(error) if attempt + 1 == INDEX_CHECK_RETRY_ATTEMPTS => {
-                return Err(Error::StringError(format!(
+                return Err(crate::string_error!(
                     "elasticsearch index check failed after {INDEX_CHECK_RETRY_ATTEMPTS} attempts: {error}"
-                )));
+                ));
             }
             Err(_) => {
                 attempt += 1;

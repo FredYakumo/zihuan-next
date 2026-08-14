@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SetupWizardState {
@@ -29,9 +29,9 @@ pub fn load_setup_wizard_state() -> Result<SetupWizardState> {
     let path = setup_wizard_state_path();
     if path.exists() {
         let content = fs::read_to_string(&path)
-            .map_err(|e| Error::StringError(format!("failed to read setup wizard state: {e}")))?;
+            .map_err(|e| crate::string_error!("failed to read setup wizard state: {e}"))?;
         return serde_json::from_str(&content)
-            .map_err(|e| Error::StringError(format!("failed to parse setup wizard state: {e}")));
+            .map_err(|e| crate::string_error!("failed to parse setup wizard state: {e}"));
     }
 
     // Fallback: migrate from old system_config.json section.
@@ -58,7 +58,7 @@ pub fn save_setup_wizard_state(state: &SetupWizardState) -> Result<()> {
     }
 
     let content = serde_json::to_string_pretty(state)
-        .map_err(|e| Error::StringError(format!("failed to serialize setup wizard state: {e}")))?;
+        .map_err(|e| crate::string_error!("failed to serialize setup wizard state: {e}"))?;
     let tmp_path = path.with_extension("json.tmp");
     fs::write(&tmp_path, content)?;
     fs::rename(&tmp_path, &path)?;

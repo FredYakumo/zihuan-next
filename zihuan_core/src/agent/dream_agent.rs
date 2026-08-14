@@ -114,6 +114,6 @@ pub fn run_dream_agent(llm: Arc<dyn LLMBase>, previous_memory: &str, transcript:
     let mut brain = Brain::new(llm);
     for definition in tool_definitions.into_iter().filter(BrainToolDefinition::uses_subgraph) { brain.add_tool(DreamNodeGraphTool::new(definition)); }
     let (output, stop_reason) = brain.run(messages);
-    if !matches!(stop_reason, BrainStopReason::Done) { return Err(crate::error::Error::StringError("Dream Agent did not complete normally".to_string())); }
-    output.last().and_then(LLMMessage::content_text_owned).filter(|content| !content.trim().is_empty()).ok_or_else(|| crate::error::Error::StringError("Dream Agent returned no text".to_string()))
+    if !matches!(stop_reason, BrainStopReason::Done) { return Err(crate::string_error!("Dream Agent did not complete normally")); }
+    output.last().and_then(LLMMessage::content_text_owned).filter(|content| !content.trim().is_empty()).ok_or_else(|| crate::string_error!("Dream Agent returned no text"))
 }

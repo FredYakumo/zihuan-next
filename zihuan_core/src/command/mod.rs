@@ -15,7 +15,7 @@ static GLOBAL_TASK_RUNTIME: RwLock<Option<Arc<dyn crate::task_context::AgentTask
 pub fn set_global_command_registry(registry: Arc<CommandRegistry>) -> Result<()> {
     GLOBAL_COMMAND_REGISTRY
         .set(registry)
-        .map_err(|_| crate::error::Error::StringError("command registry already initialized".to_string()))
+        .map_err(|_| crate::string_error!("command registry already initialized"))
 }
 
 pub fn set_global_task_runtime(runtime: Arc<dyn crate::task_context::AgentTaskRuntime>) {

@@ -67,7 +67,7 @@ impl EmbeddingAPI {
         }
 
         Err(last_error
-            .unwrap_or_else(|| Error::StringError("embedding request failed without a concrete error".to_string())))
+            .unwrap_or_else(|| crate::string_error!("embedding request failed without a concrete error")))
     }
 
     fn try_execute_embedding_request(&self, client: &Client, texts: &[String]) -> Result<Vec<Vec<f32>>> {
@@ -96,10 +96,10 @@ impl EmbeddingAPI {
         let body = response.text()?;
 
         if !status.is_success() {
-            return Err(Error::StringError(format!(
+            return Err(crate::string_error!(
                 "embedding request failed with status {}: {}",
                 status, body
-            )));
+            ));
         }
 
         let mut parsed: EmbeddingResponse = serde_json::from_str(&body)?;
@@ -124,7 +124,7 @@ impl EmbeddingBase for EmbeddingAPI {
         let mut vectors = self.execute_embedding_request(&[text.to_string()])?;
         vectors
             .pop()
-            .ok_or_else(|| Error::StringError("embedding API returned an empty data list".to_string()))
+            .ok_or_else(|| crate::string_error!("embedding API returned an empty data list"))
     }
 
     fn batch_inference(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
