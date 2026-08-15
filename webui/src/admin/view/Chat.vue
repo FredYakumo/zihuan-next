@@ -287,7 +287,8 @@
                           <div v-if="liveCall.commandConfirmation" class="chat-command-confirmation">
                             <span v-if="liveCall.commandConfirmation.decision">用户{{ liveCall.commandConfirmation.decision === 'reject' ? '已拒绝' : '已确认执行' }}</span>
                             <template v-else>
-                              <span>允许执行此命令？</span>
+                              <span class="chat-command-confirmation-question">允许执行此命令？</span>
+                              <code class="chat-command-confirmation-command">{{ liveCall.commandConfirmation.shell }}&gt; {{ liveCall.commandConfirmation.command }}</code>
                               <button class="btn primary" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
                               <button class="btn secondary" @click="decideCommandConfirmation(liveCall, 'session')">本次对话允许类似指令</button>
                               <button class="btn danger" @click="decideCommandConfirmation(liveCall, 'reject')">拒绝</button>
@@ -504,7 +505,8 @@
                           <div v-if="liveCall.commandConfirmation" class="chat-command-confirmation">
                             <span v-if="liveCall.commandConfirmation.decision">用户{{ liveCall.commandConfirmation.decision === 'reject' ? '已拒绝' : '已确认执行' }}</span>
                             <template v-else>
-                              <span>允许执行此命令？</span>
+                              <span class="chat-command-confirmation-question">允许执行此命令？</span>
+                              <code class="chat-command-confirmation-command">{{ liveCall.commandConfirmation.shell }}&gt; {{ liveCall.commandConfirmation.command }}</code>
                               <button class="btn primary" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
                               <button class="btn secondary" @click="decideCommandConfirmation(liveCall, 'session')">本次对话允许类似指令</button>
                               <button class="btn danger" @click="decideCommandConfirmation(liveCall, 'reject')">拒绝</button>
@@ -688,17 +690,12 @@
                     </div>
                   </div>
                 </div>
-                <div v-if="pendingAskUser" class="ask-user-panel">
+                <div v-if="pendingAskUser && !pendingAskUser.commandConfirmation" class="ask-user-panel">
                   <div class="ask-user-question">{{ pendingAskUser.question }}</div>
                   <div v-if="pendingAskUser.details" class="ask-user-details">
                     {{ pendingAskUser.details }}
                   </div>
-                  <div v-if="pendingAskUser.commandConfirmation" class="ask-user-row">
-                    <button class="btn primary" :disabled="sending" @click="decideCommandConfirmation('once')">执行</button>
-                    <button class="btn secondary" :disabled="sending" @click="decideCommandConfirmation('session')">本次对话允许类似指令</button>
-                    <button class="btn danger" :disabled="sending" @click="decideCommandConfirmation('reject')">拒绝</button>
-                  </div>
-                  <div v-if="!pendingAskUser.commandConfirmation" class="ask-user-row">
+                  <div class="ask-user-row">
                     <input
                       v-model="askUserAnswer"
                       type="text"
@@ -1695,8 +1692,36 @@ function formatCacheHitRate(rate: number) {
   order: 1;
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 4px 6px;
   margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border, #d9d9d9);
+  border-radius: 4px;
+}
+
+.chat-command-confirmation-question {
+  font-weight: 600;
+}
+
+.chat-command-confirmation-command {
+  flex-basis: 100%;
+  overflow: hidden;
+  padding: 4px 6px;
+  border-radius: 3px;
+  background: var(--code-bg, #f3f4f6);
+  color: var(--text, #1f2937);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-command-confirmation .btn {
+  min-height: 28px;
+  padding: 3px 9px;
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .chat-tool-live-output {

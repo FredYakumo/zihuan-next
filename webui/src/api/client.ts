@@ -1141,6 +1141,9 @@ export const chat = {
   approveCommand(sessionId: string, command: string, decision: "once" | "session" | "reject"): Promise<{ ok: boolean }> {
     return request("POST", `/chat/sessions/${encodeURIComponent(sessionId)}/command-approval`, { command, decision });
   },
+  getPendingCommandApproval(sessionId: string): Promise<{ pending: { command: string; shell: string } | null }> {
+    return request("GET", `/chat/sessions/${encodeURIComponent(sessionId)}/command-pending`);
+  },
 };
 
 export const agentsMd = {
