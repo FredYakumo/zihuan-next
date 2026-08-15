@@ -382,6 +382,7 @@ const editingMessage = ref<EditingMessage | null>(null);
 const copiedMessageId = ref("");
 const activeToolCallId = ref("");
 const expandedLiveToolCalls = ref(new Set<string>());
+const pendingCommandConfirmations = new Map<string, { command: string; shell: string }>();
 const llmModels = ref<LlmConfig[]>([]);
 const selectedModelId = ref("");
 const selectedThinkingType = ref<"" | "enabled" | "disabled">("");
@@ -1507,6 +1508,7 @@ function startNewSession() {
   messages.value = [];
   activeToolCallId.value = "";
   expandedLiveToolCalls.value = new Set();
+  pendingCommandConfirmations.clear();
   messageBranches.value = [];
   editingMessage.value = null;
   clearChatError();
@@ -1600,9 +1602,14 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   }
 
   if (event.type === "command_confirmation" && event.call_id && event.command && event.shell) {
+    const confirmation = { command: event.command, shell: event.shell };
     const message = messages.value.find((item) => item.liveToolCalls?.some((call) => call.call_id === event.call_id));
     const call = message?.liveToolCalls?.find((item) => item.call_id === event.call_id);
-    if (call) call.commandConfirmation = { command: event.command, shell: event.shell };
+    if (call) {
+      call.commandConfirmation = confirmation;
+    } else {
+      pendingCommandConfirmations.set(event.call_id, confirmation);
+    }
     return;
   }
 
@@ -1758,7 +1765,9 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
         arguments: event.arguments,
         done: false,
         result: JSON.stringify({ stdout: "", stderr: "" }),
+        commandConfirmation: pendingCommandConfirmations.get(event.call_id),
       });
+      pendingCommandConfirmations.delete(event.call_id);
     }
     scrollToBottom();
   }
@@ -1791,6 +1800,7 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
       if (liveCall) {
         liveCall.result = event.result ?? "";
         liveCall.done = true;
+        pendingCommandConfirmations.delete(event.call_id);
       } else {
         message.liveToolCalls.push({
           call_id: event.call_id,
