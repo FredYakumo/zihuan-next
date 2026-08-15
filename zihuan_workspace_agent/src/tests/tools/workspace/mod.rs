@@ -1,5 +1,6 @@
 mod grep;
 mod enhanced_tools;
+mod edit_file;
 mod file_operations;
 mod find_files;
 mod git_status;
