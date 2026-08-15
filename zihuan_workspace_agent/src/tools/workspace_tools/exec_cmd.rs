@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use serde::Deserialize;
 use std::collections::HashMap;
 use serde_json::Value;
@@ -22,7 +22,27 @@ pub(crate) const DEFAULT_TOOL_EXEC_CMD:&str="exec_cmd";
 	#[serde(default)] max_output_bytes: Option<usize>,
 	#[serde(default)] shell: Option<String>,
 }
-#[derive(Debug,Clone)]pub(crate)struct ExecCmdBrainTool{pub(crate)workspace_path:Option<PathBuf>}
+#[derive(Debug,Clone)]pub(crate)struct ExecCmdBrainTool{pub(crate)workspace_path:Option<PathBuf>,pub(crate)session_id:Option<String>}
+
+#[derive(Default)] struct CommandApprovals { families: Vec<(String, String)>, decisions: HashMap<(String, String), bool> }
+static COMMAND_APPROVALS: OnceLock<(Mutex<CommandApprovals>, Condvar)> = OnceLock::new();
+
+pub fn approve_command(session_id: &str, command: &str, allow_similar: bool) {
+ let (lock, wake)=COMMAND_APPROVALS.get_or_init(||(Mutex::new(CommandApprovals::default()),Condvar::new())); let mut approvals=lock.lock().unwrap();
+ if allow_similar {approvals.families.push((session_id.to_string(),command_family(command)))}
+ approvals.decisions.insert((session_id.to_string(),command.to_string()),true);wake.notify_all();
+}
+
+pub fn reject_command(session_id: &str, command: &str) { let (lock,wake)=COMMAND_APPROVALS.get_or_init(||(Mutex::new(CommandApprovals::default()),Condvar::new()));lock.lock().unwrap().decisions.insert((session_id.to_string(),command.to_string()),false);wake.notify_all(); }
+
+fn is_approved(session_id: Option<&str>, command: &str) -> bool {
+ let Some(session_id)=session_id else{return false}; let (lock,_)=COMMAND_APPROVALS.get_or_init(||(Mutex::new(CommandApprovals::default()),Condvar::new())); let approvals=lock.lock().unwrap();
+ let family=command_family(command); approvals.families.iter().any(|(session,allowed)|session==session_id&&allowed==&family)
+}
+
+fn wait_for_command_decision(session_id: &str, command: &str) -> bool { let (lock,wake)=COMMAND_APPROVALS.get_or_init(||(Mutex::new(CommandApprovals::default()),Condvar::new()));let key=(session_id.to_string(),command.to_string());let mut approvals=lock.lock().unwrap();while !approvals.decisions.contains_key(&key){approvals=wake.wait(approvals).unwrap();}approvals.decisions.remove(&key).unwrap_or(false) }
+
+fn command_family(command: &str) -> String { command.split_whitespace().next().unwrap_or_default().to_ascii_lowercase() }
 impl BrainTool for ExecCmdBrainTool{
  fn spec(&self)->Arc<dyn FunctionTool>{Arc::new(StaticFunctionToolSpec{name:DEFAULT_TOOL_EXEC_CMD,description:"Execute a shell command with optional environment, stdin, shell, timeout, and bounded output",parameters:serde_json::json!({"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"timeout_secs":{"type":"integer","minimum":1},"env":{"type":"object","additionalProperties":{"type":"string"}},"input":{"type":"string"},"max_output_bytes":{"type":"integer","minimum":1},"shell":{"type":"string","enum":["powershell","bash"]}},"required":["command"]})})}
  fn execute(&self, call_content: &str, a: &Value)->String{
@@ -32,6 +52,7 @@ impl BrainTool for ExecCmdBrainTool{
       let args:ExecCmdArgs=match serde_json::from_value(a.clone()){Ok(v)=>v,Err(e)=>return zihuan_core::agent::brain::ToolExecutionOutput::text(json_error(format!("invalid exec_cmd arguments: {e}")))};
   let shell=args.shell.clone().unwrap_or_else(||if cfg!(windows){"powershell".to_string()}else{"bash".to_string()});
       if shell!="powershell"&&shell!="bash"{return zihuan_core::agent::brain::ToolExecutionOutput::text(json_error("shell must be powershell or bash"));}
+      if !is_approved(self.session_id.as_deref(),&args.command){let Some(session_id)=self.session_id.as_deref() else{return zihuan_core::agent::brain::ToolExecutionOutput::text(json_error("exec_cmd requires a chat session"))};(on_output)("command_confirmation",&serde_json::json!({"command":args.command,"shell":shell}).to_string());if !wait_for_command_decision(session_id,&args.command){return zihuan_core::agent::brain::ToolExecutionOutput::text(serde_json::json!({"ok":false,"rejected":true,"error":"command execution rejected by user"}).to_string())}}
       let cwd=if let Some(raw)=args.cwd.as_deref(){match resolve_tool_path(self.workspace_path.as_deref(),raw){Ok(v)=>Some(v),Err(e)=>return zihuan_core::agent::brain::ToolExecutionOutput::text(json_error(e.to_string()))}}else{self.workspace_path.clone()};
       let secs=args.timeout_secs.unwrap_or(30);let max_output=args.max_output_bytes.unwrap_or(32*1024);if max_output==0{return zihuan_core::agent::brain::ToolExecutionOutput::text(json_error("max_output_bytes must be greater than zero"));}
   let command_cwd=cwd.clone(); let input=args.input.clone(); let env=args.env.clone(); let command_text=args.command.clone(); let selected_shell=shell.clone();

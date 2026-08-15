@@ -454,7 +454,7 @@ export interface NotificationCard {
 }
 
 export interface ChatStreamEvent {
-  type: "start" | "delta" | "thinking_delta" | "metrics" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "ask_user";
+  type: "start" | "delta" | "thinking_delta" | "metrics" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "workspace_tasks" | "ask_user" | "command_confirmation";
   session_id?: string;
   message_id?: string;
   task_id?: string;
@@ -471,8 +471,24 @@ export interface ChatStreamEvent {
   question?: string;
   details?: string;
   placeholder?: string;
+  command?: string;
+  shell?: string;
+  command_confirmation?: { command: string; shell: string };
   change?: WorkspaceChange;
+  tasks?: WorkspaceTask[];
   metrics?: ChatResponseMetrics;
+}
+
+export type WorkspaceTaskStatus = "pending" | "in_progress" | "completed";
+export interface WorkspaceTask {
+  task_id: string;
+  subject: string;
+  description: string;
+  active_form: string;
+  metadata: Record<string, unknown>;
+  status: WorkspaceTaskStatus;
+  blocks: string[];
+  blocked_by: string[];
 }
 
 export type WorkspaceChangeOperation = "create" | "edit" | "delete" | "copy" | "move";
@@ -554,6 +570,8 @@ export interface ChatHistoryRecord {
   reasoning_content?: string | null;
   timestamp: string;
   stream_index?: number | null;
+  streaming?: boolean;
+  live_tool_calls?: ChatLiveToolCall[];
   trace_id: string;
   message_id: string;
   tool_calls?: ChatToolCall[];
@@ -564,7 +582,16 @@ export interface ChatHistoryRecord {
     question: string;
     details?: string | null;
     placeholder?: string | null;
+    command_confirmation?: { command: string; shell: string } | null;
   } | null;
+}
+
+export interface ChatLiveToolCall {
+  call_id: string;
+  name: string;
+  arguments: unknown;
+  result: string;
+  done: boolean;
 }
 
 export interface ChatSessionSummary {
@@ -579,6 +606,7 @@ export interface ChatSessionSummary {
     question: string;
     details?: string | null;
     placeholder?: string | null;
+    command_confirmation?: { command: string; shell: string } | null;
   } | null;
   title?: string | null;
   running_task_id?: string | null;
@@ -1085,7 +1113,7 @@ export const chat = {
     return request("GET", `/chat/sessions${qs}`);
   },
 
-  getSessionMessages(sessionId: string): Promise<{ messages: ChatHistoryRecord[]; branches: ChatMessageBranch[] }> {
+  getSessionMessages(sessionId: string): Promise<{ messages: ChatHistoryRecord[]; branches: ChatMessageBranch[]; tasks: WorkspaceTask[] }> {
     return request("GET", `/chat/sessions/${sessionId}/messages`);
   },
 
@@ -1107,6 +1135,9 @@ export const chat = {
 
   cancelWorkspaceChange(sessionId: string, changeId: string): Promise<{ change: WorkspaceChange }> {
     return request("POST", `/chat/sessions/${encodeURIComponent(sessionId)}/changes/${encodeURIComponent(changeId)}/cancel`);
+  },
+  approveCommand(sessionId: string, command: string, decision: "once" | "session" | "reject"): Promise<{ ok: boolean }> {
+    return request("POST", `/chat/sessions/${encodeURIComponent(sessionId)}/command-approval`, { command, decision });
   },
 };
 

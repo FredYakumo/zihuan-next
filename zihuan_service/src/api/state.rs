@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -21,6 +22,7 @@ pub struct AppState {
     pub tasks: Mutex<TaskManager>,
     pub agent_manager: AgentManager,
     pub setup_tasks: Mutex<HashMap<String, broadcast::Sender<SetupProgressEvent>>>,
+    pub running_chat_messages: Mutex<HashMap<String, Arc<Mutex<RunningChatMessage>>>>,
 }
 
 impl AppState {
@@ -30,8 +32,33 @@ impl AppState {
             tasks: Mutex::new(TaskManager::new()),
             agent_manager: AgentManager::new(),
             setup_tasks: Mutex::new(HashMap::new()),
+            running_chat_messages: Mutex::new(HashMap::new()),
         }
     }
+}
+
+#[derive(Clone)]
+pub struct RunningChatMessage {
+    pub message_id: String,
+    pub agent_id: String,
+    pub agent_name: String,
+    pub agent_type: String,
+    pub agent_avatar_url: Option<String>,
+    pub trace_id: String,
+    pub workspace_path: Option<String>,
+    pub timestamp: String,
+    pub content: String,
+    pub reasoning_content: String,
+    pub live_tool_calls: Vec<RunningChatToolCall>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunningChatToolCall {
+    pub call_id: String,
+    pub name: String,
+    pub arguments: Value,
+    pub result: String,
+    pub done: bool,
 }
 
 pub struct GraphSession {

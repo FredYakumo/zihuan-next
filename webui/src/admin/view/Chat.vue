@@ -181,6 +181,14 @@
                 {{ workspacePath || '未选择工作目录' }}
               </span>
             </div>
+            <aside v-if="isWorkspaceService && workspaceTasks.length" class="workspace-task-panel" aria-label="当前任务">
+              <div class="workspace-task-panel-title">TODO</div>
+              <div v-for="task in workspaceTasks" :key="task.task_id" class="workspace-task-item" :class="{ completed: task.status === 'completed' }">
+                <CheckCircleIcon v-if="task.status === 'completed'" />
+                <TimeIcon v-else />
+                <span>{{ task.subject }}</span>
+              </div>
+            </aside>
             <div class="chat-messages" ref="messagesContainer" @scroll="handleMessagesScroll">
               <div v-if="messages.length === 0" class="empty-state"></div>
               <div
@@ -276,6 +284,15 @@
                             :ref="(element) => setLiveOutputElement(liveCall.call_id, element)"
                             @scroll="handleLiveOutputScroll(liveCall.call_id)"
                           >{{ liveExecOutput(liveCall) }}</pre>
+                          <div v-if="liveCall.commandConfirmation" class="chat-command-confirmation">
+                            <span v-if="liveCall.commandConfirmation.decision">用户{{ liveCall.commandConfirmation.decision === 'reject' ? '已拒绝' : '已确认执行' }}</span>
+                            <template v-else>
+                              <span>允许执行此命令？</span>
+                              <button class="btn primary" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
+                              <button class="btn secondary" @click="decideCommandConfirmation(liveCall, 'session')">本次对话允许类似指令</button>
+                              <button class="btn danger" @click="decideCommandConfirmation(liveCall, 'reject')">拒绝</button>
+                            </template>
+                          </div>
                         </div>
                       </div>
                       <div v-if="message.toolCalls.length > 0" class="chat-tool-inline-list">
@@ -484,6 +501,15 @@
                             :ref="(element) => setLiveOutputElement(liveCall.call_id, element)"
                             @scroll="handleLiveOutputScroll(liveCall.call_id)"
                           >{{ liveExecOutput(liveCall) }}</pre>
+                          <div v-if="liveCall.commandConfirmation" class="chat-command-confirmation">
+                            <span v-if="liveCall.commandConfirmation.decision">用户{{ liveCall.commandConfirmation.decision === 'reject' ? '已拒绝' : '已确认执行' }}</span>
+                            <template v-else>
+                              <span>允许执行此命令？</span>
+                              <button class="btn primary" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
+                              <button class="btn secondary" @click="decideCommandConfirmation(liveCall, 'session')">本次对话允许类似指令</button>
+                              <button class="btn danger" @click="decideCommandConfirmation(liveCall, 'reject')">拒绝</button>
+                            </template>
+                          </div>
                         </div>
                       </div>
                       <div v-if="message.toolCalls.length > 0" class="chat-tool-inline-list">
@@ -667,7 +693,12 @@
                   <div v-if="pendingAskUser.details" class="ask-user-details">
                     {{ pendingAskUser.details }}
                   </div>
-                  <div class="ask-user-row">
+                  <div v-if="pendingAskUser.commandConfirmation" class="ask-user-row">
+                    <button class="btn primary" :disabled="sending" @click="decideCommandConfirmation('once')">执行</button>
+                    <button class="btn secondary" :disabled="sending" @click="decideCommandConfirmation('session')">本次对话允许类似指令</button>
+                    <button class="btn danger" :disabled="sending" @click="decideCommandConfirmation('reject')">拒绝</button>
+                  </div>
+                  <div v-if="!pendingAskUser.commandConfirmation" class="ask-user-row">
                     <input
                       v-model="askUserAnswer"
                       type="text"
@@ -1354,6 +1385,8 @@ import {
   BookmarkIcon,
   InternetIcon,
   StopIcon,
+  CheckCircleIcon,
+  TimeIcon,
 } from "tdesign-icons-vue-next";
 
 import { computed, ref, watch } from "vue";
@@ -1428,6 +1461,7 @@ const {
   selectedAgentAvatarFallback,
   pendingAskUser,
   workspaceChanges,
+  workspaceTasks,
   workspaceFileGroups,
   selectedWorkspaceChange,
   workspaceChangeDialogOpen,
@@ -1501,6 +1535,7 @@ const {
   sendMessage,
   stopInference,
   submitAskUserAnswer,
+  decideCommandConfirmation,
   sendMessageWithText,
   load,
   formatTime,
@@ -1651,4 +1686,21 @@ function formatCacheHitRate(rate: number) {
 
 <style scoped lang="scss">
 @use "../styles/chat" as *;
+
+.chat-live-tool-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-command-confirmation {
+  order: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.chat-tool-live-output {
+  order: 2;
+}
 </style>

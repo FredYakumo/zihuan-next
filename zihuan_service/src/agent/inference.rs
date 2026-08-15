@@ -165,7 +165,7 @@ impl LoadedInferenceAgent {
         llm: Arc<dyn LLMBase>,
         workspace_path: Option<String>,
     ) -> Result<Vec<LLMMessage>> {
-        let context = build_inference_tool_context(&messages, workspace_path, Arc::clone(&llm));
+        let context = build_inference_tool_context(&messages, workspace_path, None, Arc::clone(&llm));
 
         let mut conversation = sanitize_messages_for_inference(messages);
         if conversation.is_empty() {
@@ -192,6 +192,7 @@ impl LoadedInferenceAgent {
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn BrainObserver>>,
         workspace_path: Option<String>,
+        session_id: Option<String>,
     ) -> Result<(Vec<LLMMessage>, BrainStopReason)> {
         self.infer_response_streaming_with_trace_and_llm(
             messages,
@@ -199,6 +200,7 @@ impl LoadedInferenceAgent {
             observer,
             Arc::clone(&self.llm),
             workspace_path,
+            session_id,
         )
         .await
     }
@@ -210,8 +212,9 @@ impl LoadedInferenceAgent {
         observer: Option<Arc<dyn BrainObserver>>,
         llm: Arc<dyn LLMBase>,
         workspace_path: Option<String>,
+        session_id: Option<String>,
     ) -> Result<(Vec<LLMMessage>, BrainStopReason)> {
-        let context = build_inference_tool_context(&messages, workspace_path, Arc::clone(&llm));
+        let context = build_inference_tool_context(&messages, workspace_path, session_id, Arc::clone(&llm));
 
         let mut conversation = sanitize_messages_for_inference(messages);
         if conversation.is_empty() {
@@ -297,6 +300,7 @@ pub fn resolve_agent_model_name_with_override(
 fn build_inference_tool_context(
     messages: &[LLMMessage],
     workspace_path: Option<String>,
+    session_id: Option<String>,
     llm: Arc<dyn LLMBase>,
 ) -> InferenceToolContext {
     InferenceToolContext {
@@ -308,6 +312,7 @@ fn build_inference_tool_context(
             .map(ToOwned::to_owned)
             .unwrap_or_default(),
         workspace_path,
+        session_id,
         llm,
     }
 }

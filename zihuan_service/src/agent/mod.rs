@@ -130,7 +130,7 @@ impl AgentManager {
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn BrainObserver>>,
     ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::brain::BrainStopReason)> {
-        self.infer_agent_response_streaming_with_model(agent_id, messages, token_tx, observer, None, None, None, None)
+        self.infer_agent_response_streaming_with_model(agent_id, messages, token_tx, observer, None, None, None, None, None)
             .await
     }
 
@@ -144,6 +144,7 @@ impl AgentManager {
         thinking_type: Option<zihuan_core::inference::system_config::ThinkingType>,
         reasoning_effort: Option<zihuan_core::inference::system_config::ReasoningEffort>,
         workspace_path: Option<String>,
+        session_id: Option<String>,
     ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::brain::BrainStopReason)> {
         let agent = self.running_agent(agent_id).ok_or_else(|| {
             zihuan_core::error::Error::ValidationError(format!("agent '{}' is not running", agent_id))
@@ -163,11 +164,11 @@ impl AgentManager {
             }
             let llm = zihuan_core::agent::resource_resolver::build_llm_model(&llm_config)?;
             agent
-                .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, llm, workspace_path)
+                .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, llm, workspace_path, session_id)
                 .await
         } else {
             agent
-                .infer_response_streaming_with_trace(messages, token_tx, observer, workspace_path)
+                .infer_response_streaming_with_trace(messages, token_tx, observer, workspace_path, session_id)
                 .await
         }
     }

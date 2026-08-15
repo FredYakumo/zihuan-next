@@ -18,6 +18,7 @@ import {
   type ChatMessageBranch,
   type LlmConfig,
   type WorkspaceChange,
+  type WorkspaceTask,
 } from "../../api/client";
 import {
   formatTime,
@@ -43,6 +44,7 @@ type LiveToolCall = {
   arguments: unknown;
   result?: string;
   done: boolean;
+  commandConfirmation?: { command: string; shell: string; decision?: "once" | "session" | "reject" };
 };
 type ChatMessage = {
   id: string;
@@ -337,6 +339,7 @@ type PendingAskUser = {
   question: string;
   details?: string;
   placeholder?: string;
+  commandConfirmation?: { command: string; shell: string };
 };
 type StreamState = {
   assistantMessageId: string | null;
@@ -358,6 +361,7 @@ const draftMessage = ref("");
 const draftImageAttachments = ref<ChatImageAttachment[]>([]);
 const imagePreviewAttachment = ref<ChatImageAttachment | null>(null);
 const workspacePath = ref("");
+const workspaceTasks = ref<WorkspaceTask[]>([]);
 const pickingDirectory = ref(false);
 const activeRequestCount = ref(0);
 const sending = computed(() => activeRequestCount.value > 0);
@@ -691,6 +695,8 @@ function applyHistory(records: ChatHistoryRecord[]) {
       id: item.message_id,
       role: item.role as ChatRole,
       content: item.content,
+      streaming: item.streaming === true,
+      liveToolCalls: item.live_tool_calls,
       imageAttachments: imageAttachmentsFromParts(item.parts),
       thinkingContent: item.reasoning_content ?? undefined,
       thinkingExpanded: !autoCollapseThinking.value && !!item.reasoning_content,
@@ -1226,6 +1232,7 @@ async function refreshActiveSessionHistoryIfNeeded(): Promise<void> {
   if (activeSessionId.value !== sessionId) return;
   applyHistory(result.messages);
   messageBranches.value = result.branches;
+  workspaceTasks.value = result.tasks;
   if (!session?.running_task_id) {
     sessionsNeedingHistoryRefresh.delete(sessionId);
   }
@@ -1237,6 +1244,7 @@ async function openSession(sessionId: string) {
   clearChatError();
   clearPendingAskUser();
   const result = await chat.getSessionMessages(sessionId);
+  workspaceTasks.value = result.tasks;
   workspaceChanges.value = (await chat.listWorkspaceChanges(sessionId)).changes;
   selectedWorkspaceChangeId.value = workspaceChanges.value[0]?.change_id ?? null;
   const firstRecord = result.messages[0];
@@ -1253,6 +1261,7 @@ async function openSession(sessionId: string) {
       question: latestRecord.pending_ask_user.question,
       details: latestRecord.pending_ask_user.details ?? undefined,
       placeholder: latestRecord.pending_ask_user.placeholder ?? undefined,
+      commandConfirmation: latestRecord.pending_ask_user.command_confirmation ?? undefined,
     };
   }
   applyHistory(result.messages);
@@ -1518,6 +1527,7 @@ function startNewSession() {
   clearChatError();
   clearPendingAskUser();
   workspaceChanges.value = [];
+  workspaceTasks.value = [];
   selectedWorkspaceChangeId.value = null;
   workspaceChangeDialogOpen.value = false;
   workspaceChangeError.value = "";
@@ -1598,13 +1608,26 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
       question: event.question,
       details: event.details ?? undefined,
       placeholder: event.placeholder ?? undefined,
+      commandConfirmation: event.command_confirmation,
     };
     askUserAnswer.value = "";
     return;
   }
 
+  if (event.type === "command_confirmation" && event.call_id && event.command && event.shell) {
+    const message = messages.value.find((item) => item.liveToolCalls?.some((call) => call.call_id === event.call_id));
+    const call = message?.liveToolCalls?.find((item) => item.call_id === event.call_id);
+    if (call) call.commandConfirmation = { command: event.command, shell: event.shell };
+    return;
+  }
+
   if (event.type === "workspace_change" && event.change) {
     applyWorkspaceChange(event.change);
+    return;
+  }
+
+  if (event.type === "workspace_tasks" && event.tasks) {
+    workspaceTasks.value = event.tasks;
     return;
   }
 
@@ -1813,6 +1836,17 @@ async function submitAskUserAnswer() {
   await sendMessageWithText(askUserAnswer.value, true);
 }
 
+async function decideCommandConfirmation(liveCall: LiveToolCall, decision: "once" | "session" | "reject") {
+  const confirmation = liveCall.commandConfirmation;
+  if (!confirmation || !activeSessionId.value) return;
+  try {
+    await chat.approveCommand(activeSessionId.value, confirmation.command, decision);
+    confirmation.decision = decision;
+  } catch (error) {
+    showChatError(`命令确认失败: ${(error as Error).message}`);
+  }
+}
+
 async function sendMessageWithText(rawInput: string, fromAskUser: boolean, options: SendMessageOptions = {}) {
   if (sending.value && !isWorkspaceService.value) {
     return;
@@ -2014,6 +2048,7 @@ onUnmounted(() => {
     draftImageAttachments,
     imagePreviewAttachment,
     workspacePath,
+    workspaceTasks,
     pickingDirectory,
     sending,
     chatErrorMessage,
@@ -2137,6 +2172,7 @@ onUnmounted(() => {
     sendMessage,
     stopInference,
     submitAskUserAnswer,
+    decideCommandConfirmation,
     sendMessageWithText,
     load,
     formatTime,
