@@ -967,7 +967,6 @@
                 @click="openWorkspaceChange(change)"
               >
                 <span>{{ workspaceChangePathLabel(change) }}</span>
-                <small>合并 {{ change.merged_count }} 次</small>
               </button>
               <div class="workspace-change-file-actions">
                 <button class="workspace-change-accept" @click="acceptWorkspaceChange(change)">Accept</button>
@@ -987,7 +986,6 @@
                 <span v-if="selectedWorkspaceChange.source_path && selectedWorkspaceChange.destination_path">
                   {{ selectedWorkspaceChange.source_path }} → {{ selectedWorkspaceChange.destination_path }}
                 </span>
-                <span>合并：{{ selectedWorkspaceChange.merged_count }} 次</span>
                 <span>行数：+{{ selectedWorkspaceChange.added_lines }} / -{{ selectedWorkspaceChange.removed_lines }}</span>
               </div>
               <div class="workspace-change-paths">
