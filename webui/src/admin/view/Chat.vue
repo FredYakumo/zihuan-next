@@ -181,6 +181,14 @@
                 {{ workspacePath || '未选择工作目录' }}
               </span>
             </div>
+            <aside v-if="isWorkspaceService && workspaceTasks.length" class="workspace-task-panel" aria-label="当前任务">
+              <div class="workspace-task-panel-title">TODO</div>
+              <div v-for="task in workspaceTasks" :key="task.task_id" class="workspace-task-item" :class="{ completed: task.status === 'completed' }">
+                <CheckCircleIcon v-if="task.status === 'completed'" />
+                <TimeIcon v-else />
+                <span>{{ task.subject }}</span>
+              </div>
+            </aside>
             <div class="chat-messages" ref="messagesContainer" @scroll="handleMessagesScroll">
               <div v-if="messages.length === 0" class="empty-state"></div>
               <div
@@ -1354,6 +1362,8 @@ import {
   BookmarkIcon,
   InternetIcon,
   StopIcon,
+  CheckCircleIcon,
+  TimeIcon,
 } from "tdesign-icons-vue-next";
 
 import { computed, ref, watch } from "vue";
@@ -1428,6 +1438,7 @@ const {
   selectedAgentAvatarFallback,
   pendingAskUser,
   workspaceChanges,
+  workspaceTasks,
   workspaceFileGroups,
   selectedWorkspaceChange,
   workspaceChangeDialogOpen,

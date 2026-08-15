@@ -9,6 +9,7 @@ use crate::llm::LLMMessage;
 pub struct InferenceToolContext {
     pub last_user_text: String,
     pub workspace_path: Option<String>,
+    pub session_id: Option<String>,
     pub llm: Arc<dyn LLMBase>,
 }
 

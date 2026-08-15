@@ -64,6 +64,7 @@ fn system_prompt(provider: &Arc<dyn InferenceToolProvider>, workspace_path: Opti
     provider.augment_messages(&mut messages, &InferenceToolContext {
         last_user_text: "hello".to_string(),
         workspace_path,
+        session_id: None,
         llm: unused_llm(),
     });
     messages.into_iter().find(|message| matches!(message.role, MessageRole::System)).and_then(|message| message.content_text().map(ToOwned::to_owned))

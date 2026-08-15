@@ -454,7 +454,7 @@ export interface NotificationCard {
 }
 
 export interface ChatStreamEvent {
-  type: "start" | "delta" | "thinking_delta" | "metrics" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "ask_user";
+  type: "start" | "delta" | "thinking_delta" | "metrics" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "workspace_tasks" | "ask_user";
   session_id?: string;
   message_id?: string;
   task_id?: string;
@@ -472,7 +472,20 @@ export interface ChatStreamEvent {
   details?: string;
   placeholder?: string;
   change?: WorkspaceChange;
+  tasks?: WorkspaceTask[];
   metrics?: ChatResponseMetrics;
+}
+
+export type WorkspaceTaskStatus = "pending" | "in_progress" | "completed";
+export interface WorkspaceTask {
+  task_id: string;
+  subject: string;
+  description: string;
+  active_form: string;
+  metadata: Record<string, unknown>;
+  status: WorkspaceTaskStatus;
+  blocks: string[];
+  blocked_by: string[];
 }
 
 export type WorkspaceChangeOperation = "create" | "edit" | "delete" | "copy" | "move";
@@ -1085,7 +1098,7 @@ export const chat = {
     return request("GET", `/chat/sessions${qs}`);
   },
 
-  getSessionMessages(sessionId: string): Promise<{ messages: ChatHistoryRecord[]; branches: ChatMessageBranch[] }> {
+  getSessionMessages(sessionId: string): Promise<{ messages: ChatHistoryRecord[]; branches: ChatMessageBranch[]; tasks: WorkspaceTask[] }> {
     return request("GET", `/chat/sessions/${sessionId}/messages`);
   },
 

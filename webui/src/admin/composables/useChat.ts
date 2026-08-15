@@ -18,6 +18,7 @@ import {
   type ChatMessageBranch,
   type LlmConfig,
   type WorkspaceChange,
+  type WorkspaceTask,
 } from "../../api/client";
 import {
   formatTime,
@@ -358,6 +359,7 @@ const draftMessage = ref("");
 const draftImageAttachments = ref<ChatImageAttachment[]>([]);
 const imagePreviewAttachment = ref<ChatImageAttachment | null>(null);
 const workspacePath = ref("");
+const workspaceTasks = ref<WorkspaceTask[]>([]);
 const pickingDirectory = ref(false);
 const activeRequestCount = ref(0);
 const sending = computed(() => activeRequestCount.value > 0);
@@ -1226,6 +1228,7 @@ async function refreshActiveSessionHistoryIfNeeded(): Promise<void> {
   if (activeSessionId.value !== sessionId) return;
   applyHistory(result.messages);
   messageBranches.value = result.branches;
+  workspaceTasks.value = result.tasks;
   if (!session?.running_task_id) {
     sessionsNeedingHistoryRefresh.delete(sessionId);
   }
@@ -1237,6 +1240,7 @@ async function openSession(sessionId: string) {
   clearChatError();
   clearPendingAskUser();
   const result = await chat.getSessionMessages(sessionId);
+  workspaceTasks.value = result.tasks;
   workspaceChanges.value = (await chat.listWorkspaceChanges(sessionId)).changes;
   selectedWorkspaceChangeId.value = workspaceChanges.value[0]?.change_id ?? null;
   const firstRecord = result.messages[0];
@@ -1518,6 +1522,7 @@ function startNewSession() {
   clearChatError();
   clearPendingAskUser();
   workspaceChanges.value = [];
+  workspaceTasks.value = [];
   selectedWorkspaceChangeId.value = null;
   workspaceChangeDialogOpen.value = false;
   workspaceChangeError.value = "";
@@ -1605,6 +1610,11 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
 
   if (event.type === "workspace_change" && event.change) {
     applyWorkspaceChange(event.change);
+    return;
+  }
+
+  if (event.type === "workspace_tasks" && event.tasks) {
+    workspaceTasks.value = event.tasks;
     return;
   }
 
@@ -2014,6 +2024,7 @@ onUnmounted(() => {
     draftImageAttachments,
     imagePreviewAttachment,
     workspacePath,
+    workspaceTasks,
     pickingDirectory,
     sending,
     chatErrorMessage,

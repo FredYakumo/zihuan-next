@@ -28,6 +28,7 @@ use zihuan_core::message_part::MessagePart;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
 use zihuan_workspace_agent::api::workspace_changes;
+use zihuan_workspace_agent::task_tracking::{delete_workspace_tasks, load_workspace_tasks};
 
 use crate::api::state::TaskStatus;
 use crate::api::ws::{ServerMessage, WsBroadcast};
@@ -93,6 +94,17 @@ impl BrainObserver for SseBrainObserver {
             "result": result,
         });
         let _ = self.event_tx.send(event);
+        if matches!(name, "TaskCreate" | "TaskUpdate" | "TaskGet" | "TaskList") {
+            if let Ok(payload) = serde_json::from_str::<Value>(result) {
+                if let Some(tasks) = payload.get("tasks") {
+                    let _ = self.event_tx.send(json!({
+                        "type": "workspace_tasks",
+                        "message_id": self.message_id,
+                        "tasks": tasks,
+                    }));
+                }
+            }
+        }
         if let Some(change) = self.change_recorder.finish(call_id, result) {
             let _ = self.event_tx.send(json!({
                 "type": "workspace_change",
@@ -801,7 +813,10 @@ pub async fn get_chat_session_messages(req: &mut Request, res: &mut Response, _d
 
     match load_chat_session_messages(&session_id) {
         Ok(messages) => match load_message_branches(&session_id, &messages) {
-            Ok(branches) => res.render(Json(json!({ "messages": messages, "branches": branches }))),
+            Ok(branches) => match load_workspace_tasks(&session_id) {
+                Ok(snapshot) => res.render(Json(json!({ "messages": messages, "branches": branches, "tasks": snapshot.tasks }))),
+                Err(err) => render_internal_error(res, zihuan_core::string_error!("failed to load workspace tasks: {err}")),
+            },
             Err(err) => render_internal_error(res, err),
         },
         Err(err) => render_internal_error(res, err),
@@ -840,7 +855,9 @@ pub async fn delete_chat_session(req: &mut Request, res: &mut Response, _depot: 
         return;
     }
 
-    match delete_chat_session_file(&session_id) {
+    match delete_chat_session_file(&session_id).and_then(|_| {
+        delete_workspace_tasks(&session_id).map_err(Error::ValidationError)
+    }) {
         Ok(()) => res.render(Json(json!({ "ok": true }))),
         Err(err) => render_internal_error(res, err),
     }
@@ -1064,6 +1081,7 @@ async fn execute_chat_streaming(
     });
 
     let chat_workspace_path = effective_workspace_path.clone();
+    let inference_session_id = session_id.clone();
     let inference_started_at = Instant::now();
     let inference_handle = tokio::spawn({
         let state = state.clone();
@@ -1081,6 +1099,7 @@ async fn execute_chat_streaming(
                     thinking_type,
                     reasoning_effort,
                     chat_workspace_path.clone(),
+                    Some(inference_session_id.clone()),
                 )
                 .await
         }

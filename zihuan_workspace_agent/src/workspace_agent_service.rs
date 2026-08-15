@@ -23,13 +23,14 @@ use crate::tools::{
     CopyFileBrainTool, FileInfoBrainTool, FindFilesBrainTool, GitStatusBrainTool, GrepBrainTool, ListDirBrainTool, MoveFileBrainTool, ReadFileBrainTool, RgBrainTool, DEFAULT_TOOL_ASK_USER,
     DEFAULT_TOOL_CREATE_FILE, DEFAULT_TOOL_DELETE_FILE, DEFAULT_TOOL_EDIT_FILE, DEFAULT_TOOL_EXEC_CMD,
     DEFAULT_TOOL_COPY_FILE, DEFAULT_TOOL_FILE_INFO, DEFAULT_TOOL_FIND_FILES, DEFAULT_TOOL_GIT_STATUS, DEFAULT_TOOL_GREP, DEFAULT_TOOL_LIST_DIR, DEFAULT_TOOL_MOVE_FILE, DEFAULT_TOOL_READ_FILE, DEFAULT_TOOL_RG, DEFAULT_TOOL_WEB_SEARCH,
+    WorkspaceTaskBrainTool, DEFAULT_TOOL_TASK_CREATE, DEFAULT_TOOL_TASK_GET, DEFAULT_TOOL_TASK_LIST, DEFAULT_TOOL_TASK_UPDATE,
 };
 use zihuan_core::error::Result;
 
 fn workspace_context_prompt(service_name: &str, workspace_path: &str, capabilities: &str) -> String {
     format!(
         "You are {service_name}, an assistant operating in the workspace directory: {workspace_path}\n\
-         {capabilities}"
+         {capabilities}\nTask tracking: for any task requiring multiple meaningful steps, first create a concise task list with TaskCreate, keep exactly one task in progress, and mark tasks completed as work finishes."
     )
 }
 
@@ -144,6 +145,11 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
     fn build_default_tools(&self, context: &InferenceToolContext) -> Vec<Box<dyn BrainTool>> {
         let workspace_path = normalized_workspace_path(context.workspace_path.as_deref()).map(PathBuf::from);
         let mut tools: Vec<Box<dyn BrainTool>> = Vec::new();
+        if let Some(session_id) = context.session_id.as_deref().filter(|value| !value.is_empty()) {
+            for name in [DEFAULT_TOOL_TASK_CREATE, DEFAULT_TOOL_TASK_UPDATE, DEFAULT_TOOL_TASK_GET, DEFAULT_TOOL_TASK_LIST] {
+                tools.push(Box::new(WorkspaceTaskBrainTool::new(session_id.to_string(), name)));
+            }
+        }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_CREATE_FILE) {
             tools.push(Box::new(CreateFileBrainTool {
                 workspace_path: workspace_path.clone(),
