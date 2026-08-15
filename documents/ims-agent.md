@@ -1,8 +1,12 @@
-# 紫幻QQ聊天Agent的设计思路
+# 紫幻聊天Agent的设计思路
 
 ## Agent概念
-
+首先需要了解Agent概念
 请参阅 [agent_concept.md](agent_concept.md)
+
+## 关键名词
+
+preprompt agent, emotion state, 
 
 ## QQ Chat Agent逻辑
 
