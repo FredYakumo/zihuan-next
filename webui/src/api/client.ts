@@ -567,6 +567,7 @@ export interface ChatHistoryRecord {
   reasoning_content?: string | null;
   timestamp: string;
   stream_index?: number | null;
+  streaming?: boolean;
   trace_id: string;
   message_id: string;
   tool_calls?: ChatToolCall[];

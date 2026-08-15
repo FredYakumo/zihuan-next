@@ -30,7 +30,7 @@ use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 use zihuan_workspace_agent::api::workspace_changes;
 use zihuan_workspace_agent::task_tracking::{delete_workspace_tasks, load_workspace_tasks};
 
-use crate::api::state::TaskStatus;
+use crate::api::state::{RunningChatMessage, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
@@ -229,6 +229,8 @@ pub struct ChatHistoryRecord {
     pub timestamp: String,
     #[serde(default)]
     pub stream_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub streaming: bool,
     pub trace_id: String,
     pub message_id: String,
     #[serde(default)]
@@ -659,6 +661,7 @@ async fn relay_inference_stream(
     token_rx: &mut mpsc::UnboundedReceiver<StreamToken>,
     event_rx: &mut mpsc::UnboundedReceiver<Value>,
     inference_started_at: Instant,
+    running_chat_message: Option<&Arc<Mutex<RunningChatMessage>>>,
 ) -> (bool, RelayTiming) {
     let mut client_connected = true;
     let mut timing = RelayTiming::default();
@@ -681,6 +684,13 @@ async fn relay_inference_stream(
                             StreamToken::Thinking(_) => "thinking_delta",
                             StreamToken::Content(_) => "delta",
                         };
+                        if let Some(snapshot) = running_chat_message {
+                            let mut snapshot = snapshot.lock().unwrap();
+                            match &token {
+                                StreamToken::Thinking(value) => snapshot.reasoning_content.push_str(value),
+                                StreamToken::Content(value) => snapshot.content.push_str(value),
+                            }
+                        }
                         let delta_event = json!({
                             "type": event_type,
                             "message_id": assistant_message_id,
@@ -755,6 +765,10 @@ async fn send_sse(sender: &mut BodySender, event: &Value) -> bool {
     sender.send_data(format!("data: {event}\n\n")).await.is_ok()
 }
 
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
 /// HTTP handler for `POST /chat/stream`.
 ///
 /// **Purpose:** Validates the request body, sets up the SSE response channel, and spawns the
@@ -804,21 +818,25 @@ pub async fn list_chat_sessions(req: &mut Request, res: &mut Response, _depot: &
 }
 
 #[handler]
-pub async fn get_chat_session_messages(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn get_chat_session_messages(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let session_id = req.param::<String>("session_id").unwrap_or_default();
     if session_id.trim().is_empty() {
         render_bad_request(res, "session_id must not be empty".to_string());
         return;
     }
 
+    let state = depot.obtain::<Arc<crate::api::state::AppState>>().unwrap();
     match load_chat_session_messages(&session_id) {
-        Ok(messages) => match load_message_branches(&session_id, &messages) {
+        Ok(mut messages) => {
+            append_running_chat_message(&mut messages, &session_id, state);
+            match load_message_branches(&session_id, &messages) {
             Ok(branches) => match load_workspace_tasks(&session_id) {
                 Ok(snapshot) => res.render(Json(json!({ "messages": messages, "branches": branches, "tasks": snapshot.tasks }))),
                 Err(err) => render_internal_error(res, zihuan_core::string_error!("failed to load workspace tasks: {err}")),
             },
             Err(err) => render_internal_error(res, err),
-        },
+            }
+        }
         Err(err) => render_internal_error(res, err),
     }
 }
@@ -1068,6 +1086,26 @@ async fn execute_chat_streaming(
 
     let assistant_message_id =
         assistant_message_id.expect("assistant_message_id must exist when inference is required");
+    let running_chat_message = workspace_task.as_ref().map(|_| {
+        let snapshot = Arc::new(Mutex::new(RunningChatMessage {
+            message_id: assistant_message_id.clone(),
+            agent_id: agent.id.clone(),
+            agent_name: agent_snapshot.name.clone(),
+            agent_type: agent_snapshot.agent_type.clone(),
+            agent_avatar_url: agent_snapshot.avatar_url.clone(),
+            trace_id: trace_id.clone(),
+            workspace_path: effective_workspace_path.clone(),
+            timestamp: Utc::now().to_rfc3339(),
+            content: String::new(),
+            reasoning_content: String::new(),
+        }));
+        state
+            .running_chat_messages
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), Arc::clone(&snapshot));
+        snapshot
+    });
 
     let (token_tx, mut token_rx) = mpsc::unbounded_channel::<StreamToken>();
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
@@ -1124,6 +1162,7 @@ async fn execute_chat_streaming(
             &mut token_rx,
             &mut event_rx,
             inference_started_at,
+            running_chat_message.as_ref(),
         )
         .await
     } else {
@@ -1138,6 +1177,7 @@ async fn execute_chat_streaming(
     let (output_messages, stop_reason) = match inference_handle.await {
         Ok(Ok(result)) => result,
         Ok(Err(err)) => {
+            clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
             if let Some((task_id, _)) = &workspace_task {
                 finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Failed, Some(err.to_string()), None);
             }
@@ -1146,6 +1186,7 @@ async fn execute_chat_streaming(
             return;
         }
         Err(err) => {
+            clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
             let stopped = workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
             if let Some((task_id, _)) = &workspace_task {
                 finish_workspace_task(
@@ -1166,6 +1207,7 @@ async fn execute_chat_streaming(
 
     if let Some(watch) = stop_watch { watch.abort(); }
     if workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed)) {
+        clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
         if let Some((task_id, _)) = &workspace_task {
             finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Stopped, None, None);
         }
@@ -1194,6 +1236,7 @@ async fn execute_chat_streaming(
         metrics.as_ref(),
         workspace_task.is_none(),
     ) {
+        clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
         if let Some((task_id, _)) = &workspace_task {
             finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Failed, Some(err.to_string()), None);
         }
@@ -1206,6 +1249,7 @@ async fn execute_chat_streaming(
         let summary = output_messages.iter().rev().find_map(|message| message.content_text_owned());
         finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Success, None, summary);
     }
+    clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
 
     if let Some(metrics) = &metrics {
         let event = json!({
@@ -1380,6 +1424,65 @@ fn duration_to_millis(duration: Duration) -> u64 {
     duration.as_millis().try_into().unwrap_or(u64::MAX)
 }
 
+fn append_running_chat_message(
+    messages: &mut Vec<ChatHistoryRecord>,
+    session_id: &str,
+    state: &crate::api::state::AppState,
+) {
+    let snapshot = state
+        .running_chat_messages
+        .lock()
+        .unwrap()
+        .get(session_id)
+        .map(|snapshot| snapshot.lock().unwrap().clone());
+    let Some(snapshot) = snapshot else {
+        return;
+    };
+
+    if messages.iter().any(|message| message.message_id == snapshot.message_id) {
+        return;
+    }
+
+    messages.push(ChatHistoryRecord {
+        session_id: session_id.to_string(),
+        agent_id: snapshot.agent_id,
+        agent_name: snapshot.agent_name,
+        agent_type: snapshot.agent_type,
+        agent_avatar_url: snapshot.agent_avatar_url,
+        role: "assistant".to_string(),
+        content: snapshot.content,
+        parts: Vec::new(),
+        reasoning_content: (!snapshot.reasoning_content.is_empty()).then_some(snapshot.reasoning_content),
+        timestamp: snapshot.timestamp,
+        stream_index: None,
+        streaming: true,
+        trace_id: snapshot.trace_id,
+        message_id: snapshot.message_id,
+        tool_calls: Vec::new(),
+        tool_call_id: None,
+        workspace_path: snapshot.workspace_path,
+        pending_ask_user: None,
+        metrics: None,
+    });
+}
+
+fn clear_running_chat_message(
+    state: &crate::api::state::AppState,
+    session_id: &str,
+    snapshot: Option<&Arc<Mutex<RunningChatMessage>>>,
+) {
+    let Some(snapshot) = snapshot else {
+        return;
+    };
+    let mut running_messages = state.running_chat_messages.lock().unwrap();
+    if running_messages
+        .get(session_id)
+        .is_some_and(|current| Arc::ptr_eq(current, snapshot))
+    {
+        running_messages.remove(session_id);
+    }
+}
+
 /// Strip messages whose text content is empty/whitespace-only and has no tool calls.
 ///
 /// **Purpose:** Prevents degenerate inputs (e.g. trailing empty user messages) from reaching
@@ -1445,6 +1548,7 @@ fn persist_chat_records(
             reasoning_content: None,
             timestamp: now.clone(),
             stream_index: None,
+            streaming: false,
             trace_id: trace_id.to_string(),
             message_id: format!("msg_{}", Uuid::new_v4().simple()),
             tool_calls: Vec::new(),
@@ -1476,6 +1580,7 @@ fn persist_chat_records(
             reasoning_content: message.reasoning_content.clone(),
             timestamp: now.clone(),
             stream_index: None,
+            streaming: false,
             trace_id: trace_id.to_string(),
             message_id: if matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty() {
                 assistant_message_id.to_string()
