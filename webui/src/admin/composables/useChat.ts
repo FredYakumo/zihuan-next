@@ -511,15 +511,6 @@ const agentsMdEditorContent = ref("");
 const selectedWorkspaceChange = computed(() =>
   workspaceChanges.value.find((item) => item.change_id === selectedWorkspaceChangeId.value) ?? workspaceChanges.value[0] ?? null,
 );
-const workspaceFileGroups = computed(() => {
-  const groups = new Map<string, WorkspaceChange[]>();
-  for (const change of workspaceChanges.value) {
-    const group = groups.get(change.display_path) ?? [];
-    group.push(change);
-    groups.set(change.display_path, group);
-  }
-  return Array.from(groups, ([path, changes]) => ({ path, changes }));
-});
 const askUserAnswer = ref("");
 const canSubmitAskUser = computed(() =>
   isChatEligible.value &&
@@ -1271,14 +1262,23 @@ async function openSession(sessionId: string) {
 
 function applyWorkspaceChange(change: WorkspaceChange) {
   const index = workspaceChanges.value.findIndex((item) => item.change_id === change.change_id);
-  if (index >= 0) {
+  if (change.status !== "pending") {
+    if (index >= 0) workspaceChanges.value.splice(index, 1);
+  } else if (index >= 0) {
     workspaceChanges.value[index] = change;
-  } else if (change.status === "pending") {
+  } else {
     workspaceChanges.value.push(change);
   }
-  if (!selectedWorkspaceChangeId.value) {
-    selectedWorkspaceChangeId.value = change.change_id;
+  if (!selectedWorkspaceChangeId.value || selectedWorkspaceChangeId.value === change.change_id) {
+    selectedWorkspaceChangeId.value = workspaceChanges.value[0]?.change_id ?? null;
   }
+}
+
+function workspaceChangePathLabel(change: WorkspaceChange): string {
+  if (change.source_path && change.destination_path) {
+    return `${change.source_path} → ${change.destination_path}`;
+  }
+  return change.display_path;
 }
 
 function openWorkspaceChange(change: WorkspaceChange) {
@@ -1316,21 +1316,6 @@ async function cancelWorkspaceChange(change: WorkspaceChange) {
     workspaceChangeDialogOpen.value = false;
   } catch (error) {
     workspaceChangeError.value = `撤销失败: ${(error as Error).message}`;
-  }
-}
-
-async function acceptWorkspaceFile(path: string) {
-  const changes = workspaceChanges.value.filter((item) => item.display_path === path);
-  for (const change of changes) {
-    await acceptWorkspaceChange(change);
-  }
-}
-
-async function cancelWorkspaceFile(path: string) {
-  const changes = workspaceChanges.value.filter((item) => item.display_path === path);
-  for (const change of changes) {
-    await cancelWorkspaceChange(change);
-    if (workspaceChangeError.value) break;
   }
 }
 
@@ -2084,7 +2069,6 @@ onUnmounted(() => {
     selectedAgentAvatarFallback,
     pendingAskUser,
     workspaceChanges,
-    workspaceFileGroups,
     selectedWorkspaceChange,
     selectedWorkspaceChangeId,
     workspaceChangeDialogOpen,
@@ -2150,8 +2134,7 @@ onUnmounted(() => {
     closeWorkspaceChange,
     acceptWorkspaceChange,
     cancelWorkspaceChange,
-    acceptWorkspaceFile,
-    cancelWorkspaceFile,
+    workspaceChangePathLabel,
     pruneFailedAssistantPlaceholder,
     applyInferenceFailure,
     reloadSessions,
