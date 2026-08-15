@@ -14,6 +14,12 @@ fn temp_dir() -> PathBuf {
     path
 }
 
+/// Purpose: Verify that the flat edit_file contract can both replace and delete
+/// a one-based inclusive line range while preserving a trailing newline.
+///
+/// Test Data: A four-line UTF-8 file. First replaces lines 2-3 with two new
+/// lines, then deletes those two lines using an empty replacement_lines array.
+/// Both calls use top-level path, start_line, end_line, and replacement_lines.
 #[test]
 fn test_edit_file_replaces_and_deletes_with_flat_arguments() {
     let directory = temp_dir();
@@ -52,6 +58,12 @@ fn test_edit_file_replaces_and_deletes_with_flat_arguments() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+/// Purpose: Verify that the LLM-facing edit_file schema exposes the flat
+/// contract needed by models that do not reliably populate nested objects.
+///
+/// Test Data: An EditFileBrainTool without a workspace path. Its specification
+/// must require path, start_line, end_line, and replacement_lines at the top
+/// level, and must not include the previous edits array property.
 #[test]
 fn test_edit_file_spec_uses_flat_required_arguments() {
     let tool = EditFileBrainTool {
@@ -84,6 +96,11 @@ fn test_edit_file_spec_uses_flat_required_arguments() {
         .any(|value| value == "replacement_lines"));
 }
 
+/// Purpose: Verify that an incomplete flat edit_file request returns a clear
+/// validation error before reading or writing the target file.
+///
+/// Test Data: A two-line UTF-8 file and an edit request omitting start_line.
+/// Expects a missing-field error and the original file content to remain intact.
 #[test]
 fn test_edit_file_rejects_missing_start_line_without_changing_file() {
     let directory = temp_dir();
