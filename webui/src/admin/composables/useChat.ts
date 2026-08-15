@@ -695,6 +695,7 @@ function applyHistory(records: ChatHistoryRecord[]) {
       role: item.role as ChatRole,
       content: item.content,
       streaming: item.streaming === true,
+      liveToolCalls: item.live_tool_calls,
       imageAttachments: imageAttachmentsFromParts(item.parts),
       thinkingContent: item.reasoning_content ?? undefined,
       thinkingExpanded: !autoCollapseThinking.value && !!item.reasoning_content,

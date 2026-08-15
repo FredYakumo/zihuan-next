@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -48,6 +49,16 @@ pub struct RunningChatMessage {
     pub timestamp: String,
     pub content: String,
     pub reasoning_content: String,
+    pub live_tool_calls: Vec<RunningChatToolCall>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunningChatToolCall {
+    pub call_id: String,
+    pub name: String,
+    pub arguments: Value,
+    pub result: String,
+    pub done: bool,
 }
 
 pub struct GraphSession {

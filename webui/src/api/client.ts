@@ -569,6 +569,7 @@ export interface ChatHistoryRecord {
   timestamp: string;
   stream_index?: number | null;
   streaming?: boolean;
+  live_tool_calls?: ChatLiveToolCall[];
   trace_id: string;
   message_id: string;
   tool_calls?: ChatToolCall[];
@@ -581,6 +582,14 @@ export interface ChatHistoryRecord {
     placeholder?: string | null;
     command_confirmation?: { command: string; shell: string } | null;
   } | null;
+}
+
+export interface ChatLiveToolCall {
+  call_id: string;
+  name: string;
+  arguments: unknown;
+  result: string;
+  done: boolean;
 }
 
 export interface ChatSessionSummary {

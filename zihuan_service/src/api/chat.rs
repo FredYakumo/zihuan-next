@@ -30,7 +30,7 @@ use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 use zihuan_workspace_agent::api::workspace_changes;
 use zihuan_workspace_agent::task_tracking::{delete_workspace_tasks, load_workspace_tasks};
 
-use crate::api::state::{RunningChatMessage, TaskStatus};
+use crate::api::state::{RunningChatMessage, RunningChatToolCall, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
@@ -56,10 +56,20 @@ struct SseBrainObserver {
     event_tx: mpsc::UnboundedSender<Value>,
     message_id: String,
     change_recorder: Arc<workspace_changes::WorkspaceChangeRecorder>,
+    running_chat_message: Option<Arc<Mutex<RunningChatMessage>>>,
 }
 
 impl BrainObserver for SseBrainObserver {
     fn on_tool_start(&self, name: &str, call_id: &str, arguments: &Value) {
+        if let Some(snapshot) = &self.running_chat_message {
+            snapshot.lock().unwrap().live_tool_calls.push(RunningChatToolCall {
+                call_id: call_id.to_string(),
+                name: name.to_string(),
+                arguments: arguments.clone(),
+                result: serde_json::to_string(&json!({ "stdout": "", "stderr": "" })).unwrap(),
+                done: false,
+            });
+        }
         let event = json!({
             "type": "tool_call_start",
             "message_id": self.message_id,
@@ -74,6 +84,16 @@ impl BrainObserver for SseBrainObserver {
     }
 
     fn on_tool_output(&self, name: &str, call_id: &str, stream: &str, chunk: &str) {
+        if let Some(snapshot) = &self.running_chat_message {
+            let mut snapshot = snapshot.lock().unwrap();
+            if let Some(tool_call) = snapshot.live_tool_calls.iter_mut().find(|item| item.call_id == call_id) {
+                let mut output = serde_json::from_str::<Value>(&tool_call.result).unwrap_or_else(|_| json!({}));
+                let key = if stream == "stderr" { "stderr" } else { "stdout" };
+                let content = output[key].as_str().unwrap_or_default();
+                output[key] = Value::String(format!("{content}{chunk}"));
+                tool_call.result = serde_json::to_string(&output).unwrap();
+            }
+        }
         let event = json!({
             "type": "tool_call_output",
             "message_id": self.message_id,
@@ -86,6 +106,13 @@ impl BrainObserver for SseBrainObserver {
     }
 
     fn on_tool_finish(&self, name: &str, call_id: &str, result: &str) {
+        if let Some(snapshot) = &self.running_chat_message {
+            let mut snapshot = snapshot.lock().unwrap();
+            if let Some(tool_call) = snapshot.live_tool_calls.iter_mut().find(|item| item.call_id == call_id) {
+                tool_call.result = result.to_string();
+                tool_call.done = true;
+            }
+        }
         let event = json!({
             "type": "tool_call_result",
             "message_id": self.message_id,
@@ -231,6 +258,8 @@ pub struct ChatHistoryRecord {
     pub stream_index: Option<usize>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub streaming: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub live_tool_calls: Vec<RunningChatToolCall>,
     pub trace_id: String,
     pub message_id: String,
     #[serde(default)]
@@ -1098,6 +1127,7 @@ async fn execute_chat_streaming(
             timestamp: Utc::now().to_rfc3339(),
             content: String::new(),
             reasoning_content: String::new(),
+            live_tool_calls: Vec::new(),
         }));
         state
             .running_chat_messages
@@ -1116,6 +1146,7 @@ async fn execute_chat_streaming(
             session_id.clone(),
             effective_workspace_path.clone(),
         ),
+        running_chat_message: running_chat_message.clone(),
     });
 
     let chat_workspace_path = effective_workspace_path.clone();
@@ -1457,6 +1488,7 @@ fn append_running_chat_message(
         timestamp: snapshot.timestamp,
         stream_index: None,
         streaming: true,
+        live_tool_calls: snapshot.live_tool_calls,
         trace_id: snapshot.trace_id,
         message_id: snapshot.message_id,
         tool_calls: Vec::new(),
@@ -1550,6 +1582,7 @@ fn persist_chat_records(
             timestamp: now.clone(),
             stream_index: None,
             streaming: false,
+            live_tool_calls: Vec::new(),
             trace_id: trace_id.to_string(),
             message_id: format!("msg_{}", Uuid::new_v4().simple()),
             tool_calls: Vec::new(),
@@ -1582,6 +1615,7 @@ fn persist_chat_records(
             timestamp: now.clone(),
             stream_index: None,
             streaming: false,
+            live_tool_calls: Vec::new(),
             trace_id: trace_id.to_string(),
             message_id: if matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty() {
                 assistant_message_id.to_string()
