@@ -492,7 +492,7 @@ export interface WorkspaceTask {
 }
 
 export type WorkspaceChangeOperation = "create" | "edit" | "delete" | "copy" | "move";
-export type WorkspaceChangeStatus = "pending" | "accepted" | "canceled";
+export type WorkspaceChangeStatus = "pending" | "resolved" | "accepted" | "canceled";
 export interface WorkspaceDiffLine {
   kind: "added" | "removed" | "context";
   line: string;
@@ -506,6 +506,8 @@ export interface WorkspaceChange {
   operation: WorkspaceChangeOperation;
   paths: string[];
   display_path: string;
+  source_path?: string;
+  destination_path?: string;
   added_lines: number;
   removed_lines: number;
   before_fingerprint: string;

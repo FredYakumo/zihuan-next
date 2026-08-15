@@ -680,7 +680,7 @@
                     <div v-for="change in workspaceChanges" :key="change.change_id" class="workspace-change-row">
                       <button class="workspace-change-summary" @click="openWorkspaceChange(change)">
                         <span class="workspace-change-operation">{{ change.operation }}</span>
-                        <span class="workspace-change-path" :title="change.paths.join(' → ')">{{ change.display_path }}</span>
+                        <span class="workspace-change-path" :title="workspaceChangePathLabel(change)">{{ workspaceChangePathLabel(change) }}</span>
                         <span class="workspace-change-lines">+{{ change.added_lines }} / -{{ change.removed_lines }}</span>
                       </button>
                       <button class="workspace-change-accept" @click="acceptWorkspaceChange(change)">Accept</button>
@@ -960,31 +960,32 @@
         <div class="workspace-change-dialog" role="dialog" aria-modal="true" aria-label="文件更改">
           <aside class="workspace-change-dialog-sidebar">
             <strong>文件更改</strong>
-            <div v-for="group in workspaceFileGroups" :key="group.path" class="workspace-change-file-row">
+            <div v-for="change in workspaceChanges" :key="change.change_id" class="workspace-change-file-row">
               <button
                 class="workspace-change-file"
-                :class="{ active: selectedWorkspaceChange?.display_path === group.path }"
-                @click="openWorkspaceChange(group.changes[0])"
+                :class="{ active: selectedWorkspaceChange?.change_id === change.change_id }"
+                @click="openWorkspaceChange(change)"
               >
-                <span>{{ group.path }}</span>
-                <small>{{ group.changes.length }} 处更改</small>
+                <span>{{ workspaceChangePathLabel(change) }}</span>
               </button>
               <div class="workspace-change-file-actions">
-                <button class="workspace-change-accept" @click="acceptWorkspaceFile(group.path)">Accept</button>
-                <button class="workspace-change-reject" @click="cancelWorkspaceFile(group.path)">Reject</button>
+                <button class="workspace-change-accept" @click="acceptWorkspaceChange(change)">Accept</button>
+                <button class="workspace-change-reject" @click="cancelWorkspaceChange(change)">Reject</button>
                 <button class="workspace-change-cancel" @click="closeWorkspaceChange">Cancel</button>
               </div>
             </div>
           </aside>
           <section class="workspace-change-dialog-main">
             <header class="workspace-change-dialog-header">
-              <strong>{{ selectedWorkspaceChange?.display_path || "文件更改" }}</strong>
+              <strong>{{ selectedWorkspaceChange ? workspaceChangePathLabel(selectedWorkspaceChange) : "文件更改" }}</strong>
               <button aria-label="关闭文件更改" @click="closeWorkspaceChange"><CloseIcon /></button>
             </header>
             <div v-if="selectedWorkspaceChange" class="workspace-change-detail">
               <div class="workspace-change-detail-meta">
                 <span>操作：{{ selectedWorkspaceChange.operation }}</span>
-                <span>合并：{{ selectedWorkspaceChange.merged_count }} 次</span>
+                <span v-if="selectedWorkspaceChange.source_path && selectedWorkspaceChange.destination_path">
+                  {{ selectedWorkspaceChange.source_path }} → {{ selectedWorkspaceChange.destination_path }}
+                </span>
                 <span>行数：+{{ selectedWorkspaceChange.added_lines }} / -{{ selectedWorkspaceChange.removed_lines }}</span>
               </div>
               <div class="workspace-change-paths">
@@ -1462,7 +1463,6 @@ const {
   pendingAskUser,
   workspaceChanges,
   workspaceTasks,
-  workspaceFileGroups,
   selectedWorkspaceChange,
   workspaceChangeDialogOpen,
   workspaceChangeError,
@@ -1513,8 +1513,7 @@ const {
   closeWorkspaceChange,
   acceptWorkspaceChange,
   cancelWorkspaceChange,
-  acceptWorkspaceFile,
-  cancelWorkspaceFile,
+  workspaceChangePathLabel,
   pruneFailedAssistantPlaceholder,
   applyInferenceFailure,
   reloadSessions,

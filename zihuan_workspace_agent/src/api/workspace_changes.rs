@@ -15,9 +15,10 @@
 //!    successful writes are compared with a new after-snapshot.
 //! 4. A [`WorkspaceChangeRecord`] is created, persisted, and emitted as a structured SSE event.
 //!    The frontend uses that event to update the compact review panel and the detail dialog.
-//! 5. Consecutive pending edits for the same file are folded into one logical record. The first
-//!    before-snapshot is retained, while the latest after-snapshot, fingerprint, line counts, and
-//!    diff replace the previous values. Accepting or canceling a record ends that merge window.
+//! 5. Pending records whose affected paths overlap are folded into one logical record across chat
+//!    rounds. The first before-snapshot for every path is retained, while the latest after-state,
+//!    fingerprint, line counts, and diff replace the previous values. Accepting or canceling a
+//!    record ends that merge window.
 //! 6. Accept only changes the record state. Cancel first compares the current filesystem state
 //!    with the recorded after-fingerprint; if another process changed the file, rollback is
 //!    rejected to avoid overwriting external work. Otherwise the before-snapshot is restored.
@@ -30,7 +31,7 @@
 //! paths. Directory snapshots recursively capture entries, so restoration can recreate files,
 //! directories, and the original non-existent state.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -106,6 +107,8 @@ pub enum WorkspaceChangeOperation {
 pub enum WorkspaceChangeStatus {
     /// The change is still visible in the dashboard review panel and can be handled by the user.
     Pending,
+    /// The final filesystem state matches the original snapshot, so no review is needed unless a later write reopens it.
+    Resolved,
     /// The user accepted the already-written filesystem state.
     Accepted,
     /// The user canceled the change and the before-snapshot was restored.
@@ -162,6 +165,12 @@ pub struct WorkspaceChangeRecord {
     pub paths: Vec<String>,
     /// Primary path shown in compact lists and as the file grouping key.
     pub display_path: String,
+    /// Original source path for a copy or move operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
+    /// Final destination path for a copy or move operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination_path: Option<String>,
     /// Number of lines present only in the after-state summary.
     pub added_lines: usize,
     /// Number of lines present only in the before-state summary.
@@ -172,7 +181,7 @@ pub struct WorkspaceChangeRecord {
     pub after_fingerprint: String,
     /// Current review state.
     pub status: WorkspaceChangeStatus,
-    /// Number of edit tool calls folded into this logical record.
+    /// Number of successful workspace tool calls folded into this logical record.
     pub merged_count: usize,
     /// Coarse unified-style line list used by the dashboard detail dialog.
     #[serde(default)]
@@ -191,6 +200,8 @@ struct PendingOperation {
     session_id: String,
     operation: WorkspaceChangeOperation,
     paths: Vec<PathBuf>,
+    source_path: Option<PathBuf>,
+    destination_path: Option<PathBuf>,
     before: Vec<PathSnapshot>,
 }
 
@@ -230,18 +241,25 @@ impl WorkspaceChangeRecorder {
             .into_iter()
             .filter_map(|path| resolve_path(self.workspace_path.as_deref(), &path))
             .collect::<Vec<_>>();
+        let source_path = matches!(operation, WorkspaceChangeOperation::Copy | WorkspaceChangeOperation::Move)
+            .then(|| paths.first().cloned())
+            .flatten();
+        let destination_path = matches!(operation, WorkspaceChangeOperation::Copy | WorkspaceChangeOperation::Move)
+            .then(|| paths.get(1).cloned())
+            .flatten();
         let before = paths.iter().map(|path| snapshot(path)).collect::<Vec<_>>();
         started().lock().expect("workspace change lock poisoned").insert(call_id.to_string(), PendingOperation {
-            session_id: self.session_id.clone(), operation, paths, before,
+            session_id: self.session_id.clone(), operation, paths, source_path, destination_path, before,
         });
     }
 
     /// Finalizes a tool call after the tool has written to disk.
     ///
     /// A valid successful JSON result must contain `{"ok": true}`. The method then snapshots the
-    /// affected paths again, ignores no-op changes, merges compatible pending edits, persists the
-    /// record and returns it for SSE emission. Persistence errors are intentionally best-effort
-    /// here because the existing tool result must not be changed after the tool has completed.
+    /// affected paths again, ignores no-op changes, merges overlapping pending changes, persists
+    /// the record and returns it for SSE emission. Persistence errors are intentionally
+    /// best-effort here because the existing tool result must not be changed after the tool has
+    /// completed.
     pub fn finish(&self, call_id: &str, result: &str) -> Option<WorkspaceChangeRecord> {
         let operation = started().lock().ok()?.remove(call_id)?;
         let result_json: Value = serde_json::from_str(result).ok()?;
@@ -258,6 +276,8 @@ impl WorkspaceChangeRecorder {
             operation: operation.operation,
             paths: operation.paths.iter().map(|path| display_path(self.workspace_path.as_deref(), path)).collect(),
             display_path: operation.paths.first().map(|path| display_path(self.workspace_path.as_deref(), path)).unwrap_or_default(),
+            source_path: operation.source_path.as_deref().map(|path| display_path(self.workspace_path.as_deref(), path)),
+            destination_path: operation.destination_path.as_deref().map(|path| display_path(self.workspace_path.as_deref(), path)),
             added_lines: line_delta(&operation.before, &after).0,
             removed_lines: line_delta(&operation.before, &after).1,
             before_fingerprint: fingerprint(&operation.before),
@@ -271,23 +291,143 @@ impl WorkspaceChangeRecorder {
 
         let mut all = records().lock().expect("workspace change lock poisoned");
         let list = all.entry(self.session_id.clone()).or_default();
-        if let Some(index) = list.iter().rposition(|item| matches!(item.status, WorkspaceChangeStatus::Pending) && item.paths == record.paths && matches!(item.operation, WorkspaceChangeOperation::Edit) && matches!(record.operation, WorkspaceChangeOperation::Edit)) {
-            let previous = &mut list[index];
-            previous.after = record.after.clone();
-            previous.after_fingerprint = record.after_fingerprint.clone();
-            previous.added_lines += record.added_lines;
-            previous.removed_lines += record.removed_lines;
-            previous.diff = record.diff.clone();
-            previous.merged_count += 1;
-            let output = previous.clone();
-            persist_snapshot(&output).ok();
-            persist_session(&self.session_id, list).ok();
-            return Some(output);
+        let matching_indices = matching_pending_indices(list, &record.paths);
+        if !matching_indices.is_empty() {
+            return merge_pending_records(list, matching_indices, record, self.workspace_path.as_deref(), &self.session_id);
         }
         persist_snapshot(&record).ok();
         list.push(record.clone());
         persist_session(&self.session_id, list).ok();
         Some(record)
+    }
+}
+
+fn matching_pending_indices(records: &[WorkspaceChangeRecord], paths: &[String]) -> Vec<usize> {
+    let paths = paths.iter().collect::<HashSet<_>>();
+    records
+        .iter()
+        .enumerate()
+        .filter_map(|(index, record)| {
+            (matches!(record.status, WorkspaceChangeStatus::Pending | WorkspaceChangeStatus::Resolved)
+                && record.paths.iter().any(|path| paths.contains(path)))
+            .then_some(index)
+        })
+        .collect()
+}
+
+fn merge_pending_records(
+    records: &mut Vec<WorkspaceChangeRecord>,
+    matching_indices: Vec<usize>,
+    incoming: WorkspaceChangeRecord,
+    workspace: Option<&Path>,
+    session_id: &str,
+) -> Option<WorkspaceChangeRecord> {
+    let insertion_index = *matching_indices.first()?;
+    let mut merged_records = matching_indices
+        .iter()
+        .rev()
+        .map(|index| records.remove(*index))
+        .collect::<Vec<_>>();
+    merged_records.reverse();
+
+    let change_id = merged_records.first()?.change_id.clone();
+    let removed_change_ids = merged_records
+        .iter()
+        .skip(1)
+        .map(|record| record.change_id.clone())
+        .collect::<Vec<_>>();
+    let before = merge_before_snapshots(&merged_records, &incoming.before);
+    let after = before
+        .iter()
+        .map(|snapshot_item| snapshot(Path::new(&snapshot_item.path)))
+        .collect::<Vec<_>>();
+    let (operation, source_path, destination_path) = merged_operation(&merged_records, &incoming, &before, &after);
+    let paths = before
+        .iter()
+        .map(|snapshot_item| display_path(workspace, Path::new(&snapshot_item.path)))
+        .collect::<Vec<_>>();
+    let display_path = source_path.clone().unwrap_or_else(|| paths.first().cloned().unwrap_or_default());
+    let mut merged = WorkspaceChangeRecord {
+        change_id,
+        session_id: incoming.session_id.clone(),
+        operation,
+        paths,
+        display_path,
+        source_path,
+        destination_path,
+        added_lines: line_delta(&before, &after).0,
+        removed_lines: line_delta(&before, &after).1,
+        before_fingerprint: fingerprint(&before),
+        after_fingerprint: fingerprint(&after),
+        status: WorkspaceChangeStatus::Pending,
+        merged_count: merged_records.iter().map(|record| record.merged_count).sum::<usize>() + incoming.merged_count,
+        diff: build_diff(&before, &after),
+        before,
+        after,
+    };
+
+    if snapshots_equal(&merged.before, &merged.after) {
+        merged.status = WorkspaceChangeStatus::Resolved;
+    }
+
+    persist_snapshot(&merged).ok();
+    for change_id in removed_change_ids {
+        remove_snapshot(&change_id);
+    }
+    records.insert(insertion_index, merged.clone());
+    persist_session(session_id, records).ok();
+    Some(merged)
+}
+
+fn merge_before_snapshots(records: &[WorkspaceChangeRecord], incoming: &[PathSnapshot]) -> Vec<PathSnapshot> {
+    let mut snapshots = BTreeMap::new();
+    for record in records {
+        for snapshot_item in &record.before {
+            snapshots.entry(snapshot_item.path.clone()).or_insert_with(|| snapshot_item.clone());
+        }
+    }
+    for snapshot_item in incoming {
+        snapshots.entry(snapshot_item.path.clone()).or_insert_with(|| snapshot_item.clone());
+    }
+    snapshots.into_values().collect()
+}
+
+fn merged_operation(
+    records: &[WorkspaceChangeRecord],
+    incoming: &WorkspaceChangeRecord,
+    before: &[PathSnapshot],
+    after: &[PathSnapshot],
+) -> (WorkspaceChangeOperation, Option<String>, Option<String>) {
+    if matches!(incoming.operation, WorkspaceChangeOperation::Copy) {
+        return (WorkspaceChangeOperation::Copy, incoming.source_path.clone(), incoming.destination_path.clone());
+    }
+    if matches!(incoming.operation, WorkspaceChangeOperation::Move) {
+        let source_path = records
+            .iter()
+            .rev()
+            .find(|record| {
+                matches!(record.operation, WorkspaceChangeOperation::Move)
+                    && record.destination_path == incoming.source_path
+            })
+            .and_then(|record| record.source_path.clone())
+            .or_else(|| incoming.source_path.clone());
+        return (WorkspaceChangeOperation::Move, source_path, incoming.destination_path.clone());
+    }
+    if let Some(record) = records.iter().rev().find(|record| {
+        matches!(record.operation, WorkspaceChangeOperation::Copy | WorkspaceChangeOperation::Move)
+    }) {
+        return (record.operation.clone(), record.source_path.clone(), record.destination_path.clone());
+    }
+    (derived_operation(before, after), None, None)
+}
+
+fn derived_operation(before: &[PathSnapshot], after: &[PathSnapshot]) -> WorkspaceChangeOperation {
+    let existed_before = before.iter().any(|snapshot_item| snapshot_item.exists);
+    let exists_after = after.iter().any(|snapshot_item| snapshot_item.exists);
+    match (existed_before, exists_after) {
+        (false, true) => WorkspaceChangeOperation::Create,
+        (true, false) => WorkspaceChangeOperation::Delete,
+        _ => WorkspaceChangeOperation::Edit,
     }
 }
 
@@ -435,6 +575,11 @@ fn session_file(session_id: &str) -> PathBuf { storage_dir().join(format!("{sess
 
 /// Stores private before/after snapshots separately from the public record metadata.
 fn persist_snapshot(record: &WorkspaceChangeRecord) -> Result<()> { let path = storage_dir().join(format!("{}-snapshot.json", record.change_id)); fs::create_dir_all(storage_dir())?; let data = serde_json::to_vec(&(record.before.clone(), record.after.clone())).map_err(|e| zihuan_core::string_error!("{}", e))?; fs::write(path, data)?; Ok(()) }
+
+fn remove_snapshot(change_id: &str) {
+    let path = storage_dir().join(format!("{change_id}-snapshot.json"));
+    let _ = fs::remove_file(path);
+}
 
 /// Writes the session's complete record list so status changes and merge results survive restart.
 fn persist_session(session_id: &str, items: &[WorkspaceChangeRecord]) -> Result<()> { fs::create_dir_all(storage_dir())?; let data = serde_json::to_vec_pretty(items).map_err(|e| zihuan_core::string_error!("{}", e))?; fs::write(session_file(session_id), data)?; Ok(()) }
