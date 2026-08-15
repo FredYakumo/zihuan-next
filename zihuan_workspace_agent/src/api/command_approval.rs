@@ -2,7 +2,7 @@ use salvo::prelude::*;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::tools::workspace_tools::{approve_command, reject_command};
+use crate::tools::workspace_tools::{approve_command, pending_command_approval, reject_command};
 
 #[derive(Deserialize)]
 struct CommandApprovalRequest {
@@ -37,4 +37,15 @@ pub async fn approve_command_execution(req: &mut Request, res: &mut Response) {
         }
     }
     res.render(Json(json!({ "ok": true })));
+}
+
+#[handler]
+pub async fn get_pending_command_approval(req: &mut Request, res: &mut Response) {
+    let session_id = req.param::<String>("session_id").unwrap_or_default();
+    if session_id.trim().is_empty() {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(json!({ "error": "session_id must not be empty" })));
+        return;
+    }
+    res.render(Json(json!({ "pending": pending_command_approval(&session_id) })));
 }

@@ -1,344 +1,65 @@
-# zihuan-next
+<img src="public/zihuan.png" alt="ZiHuan" width="200" height="200">
 
+## ZiHuan Next
+
+---
 [![Rust](https://img.shields.io/badge/built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/FredYakumo/zihuan-next/blob/master/LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/FredYakumo/zihuan-next?label=release)](https://github.com/FredYakumo/zihuan-next/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/FredYakumo/zihuan-next)](https://github.com/FredYakumo/zihuan-next/stargazers)
 [![Downloads](https://img.shields.io/github/downloads/FredYakumo/zihuan-next/total)](https://github.com/FredYakumo/zihuan-next/releases)
 
+Zihuan is a high-performance, highly customizable Rust-based AI Agent platform. Zihuan Impls a **interesting** **Workspace Agent** (zihuan code for coding) and an **IM Agent** (QQ bots, etc.) ~~*(I think these two cover pretty much all scenarios, but I'll add more if new use cases come up)*~~ as the basic framework.
+And Zihuan can easily tweak agent behavior and model inference details—whether using **Candle**, **llama.cpp**, or **online APIs in various formats**.
 
-`zihuan-next` is a multi-tier AI agent development and runtime framework built in Rust. It unifies local inference (Candle, Llama.cpp) and cloud model APIs (OpenAI, Anthropic) under a single abstraction, then layers on a **Brain** tool-calling agent runtime, a **visual node-graph engine** for workflow orchestration, and **IMS-native adapters** for real-world bot deployment.
 
-The framework is built around two ideas:
+紫幻是一个高性能和高可定制化的Rust的AI Agent平台，现在紫幻实现了一套我觉得比较有趣的**Workspace Agent(zihuan code，写代码的)**和**即时通讯软件Agent(QQ机器人啥的)** ~~*(我觉得目前这两种Agent场景已经覆盖完全了，当然如果以后还有新的方式，也会支持)*~~作为基础能力框架.
+然后，紫幻还可以更容易的定制Agent运行的行为细节，和Agent的大脑-模型 推理运行的细节(可以使用多种多样的模型，无论是使用Candle或者llama.cpp，还是各种格式的在线API)。
 
-- Agents run as persistent services.
-- Node graphs define reusable workflows and tools.
+你可以参考文档查看Agent细节。
 
-The graph stays focused on data flow. Long-lived behavior such as chat agents, HTTP-facing agents, task hosting, connection reuse, and runtime orchestration is hosted by the service layer.
-
-<img width="1248" height="880" alt="zihuan-next" src="https://github.com/user-attachments/assets/3b781e53-1fcf-4b77-91ba-2d63299181c4" />
 
 ## Quick Start
 
-### Use a prebuilt release (recommended)
+直接下载符合你操作系统响应的版本 [latest release](https://github.com/FredYakumo/zihuan-next/releases/latest)，然后运行即可
 
-Download the executable for your platform from the [latest release](https://github.com/FredYakumo/zihuan-next/releases/latest):
+*如果你不需要模型推理加速(你的模型不使用zihuan来跑)，直接下载cpu版本最好
 
-- Use the `cpu` artifact for standard Windows, Linux, or Apple Silicon macOS deployments.
-- Use the `candle-cuda-12.6` artifact only when you need NVIDIA CUDA acceleration and have CUDA 12.6 installed.
+*如果需要模型推理加速，需要下载指定gpu加速版本的，然后需要安装对应版本的gpu运行时依赖，例如cuda12.6。*
 
-On Linux and macOS, mark the downloaded executable as runnable before starting it:
+紫幻启动的时候会在用户数据目录创建或者读取紫幻运行时的相关配置文件，你至少需要一个基础Agent来让你蹬紫幻，所以紫幻首次运行时还会引导你安装和配置一个Agent。
 
-```bash
-chmod +x ./zihuan_next-Linux-x86_64-cpu
-./zihuan_next-Linux-x86_64-cpu
-```
 
-On Windows, run the downloaded `.exe` directly.
+## Features
+### 聊天
 
-### Build from source
+I think the most interesting part of designing a bot is giving it long-term memory and personal likes/dislikes.
 
-Requirements:
+It can't like Millet today and then like  chrysanthemum tomorrow, nor can it forget the people it has interacted with. Those bots that just call an LLM (plus various tools) to spew out tons of output are obviously boring.
 
-- Rust stable
-- Node.js 18+
-- `pnpm`
+While Zihuan supports all the tools you can think of, or tools you develop for it, it also tries to remember every day.
 
-Optional services, depending on your setup:
+我觉得设计一个机器人最有趣的事情还是让它有自己的长期记忆和偏好好恶，
 
-- MySQL
-- Redis
-- Weaviate
-- RustFS
+它不能今天喜欢~~某谷物公司~~明天又喜欢~~某为~~，也不能记不住跟它产生交集的人，那种只会调用LLM(然后加上各种tool)产生一大堆输出的机器人显然很无聊。
 
-```bash
-git clone https://github.com/FredYakumo/zihuan-next.git
-cd zihuan-next
-git submodule update --init --recursive
+紫幻在支持了各种你能想到的工具，或者你为它开发能力工具的同时，它还会尝试记住每天。
 
-cd webui
-pnpm install
-cd ..
-
-cargo build --release -p zihuan_service --bin zihuan_next
-```
-
-The main binary embeds the frontend bundle from `webui/dist/`.
-
-### Run with services
-
-```bash
-docker compose -f docker/docker-compose.yaml up -d
-./zihuan_next-Linux-x86_64-cpu
-```
-
-For a source build, run `./target/release/zihuan_next` instead.
-
-Default address:
-
-```text
-http://127.0.0.1:9951
-```
-
-Custom bind:
-
-```bash
-./zihuan_next-Linux-x86_64-cpu --host 0.0.0.0 --port 9000
-```
-
-## Highlights
-
-- Simple Agent capabilities are available out of the box.
-- Node graphs are used to design and reuse more complex workflows.
-- The same workflow can run directly as a task or be exposed as an Agent tool.
-- Connections and model refs are configured once and reused across Agents and graphs.
-
-### CLI graph runner
-
-```bash
-cargo build -p zihuan_cli --release
-
-./target/release/zihuan_cli --file workflow_set/qq_agent_example.json
-./target/release/zihuan_cli --workflow qq_agent_example
-```
-
-## How You Use It
-
-### 1. Configure shared resources
-
-In the admin UI, create:
-
-- `connections`
-- `llm_refs`
-- `agents`
-
-These are stored in the system config file under a unified config center.
-
-### 2. Build a workflow graph
-
-Use `/editor` to define:
-
-- workflow steps
-- node parameters
-- function subgraphs
-- tool subgraphs
-- graph-local variables and inline values
-
-### 3. Attach the workflow to an Agent
-
-Use graph-backed tools in an Agent definition so the Agent can call them during inference. Simple Agent behavior can stay lightweight, while more complex multi-step logic can be moved into reusable graph workflows.
-
-### 4. Operate the runtime
-
-From the admin UI you can:
-
-- inspect tasks
-- watch logs
-- manage saved connections
-- inspect runtime connection instances
-- start or stop agents
-
-## Screenshots
-
-<img width="1248" height="880" alt="main-ui" src="https://github.com/user-attachments/assets/01fae35b-3284-4081-b7f6-f5be5881dc1f" />
-<img width="1248" height="880" alt="graph-editor" src="https://github.com/user-attachments/assets/d407db1c-2d5c-472e-8689-0ab636dbd7b8" />
-<img width="1248" height="880" alt="workflow" src="https://github.com/user-attachments/assets/40e9d5dc-7383-4f7f-aded-52640edeed8e" />
-<img width="1248" height="880" alt="qq" src="https://github.com/user-attachments/assets/7cc1f27d-9556-4bd7-8741-05904c536490" />
-<img width="1248" height="880" alt="agent" src="https://github.com/user-attachments/assets/6d56ffd6-846f-4ced-9d98-0f57bb8f7d31" />
-<img width="2382" height="1647" alt="editor-large" src="https://github.com/user-attachments/assets/2409f7a6-94a9-46a1-aca8-d21c0fa4347c" />
-<img width="600" alt="shot-1" src="https://github.com/user-attachments/assets/0d25ce93-0f97-4d8c-8375-63b99f6dcd14" />
-<img width="1080" alt="shot-2" src="https://github.com/user-attachments/assets/60b3b145-7ce7-4a76-9742-b975578a9556" />
 <img width="1080" alt="shot-3" src="https://github.com/user-attachments/assets/137e4808-5ce3-4714-a0e3-6f5ddaf9f9cb" />
-<img width="1440" alt="shot-4" src="https://github.com/user-attachments/assets/994472eb-2d37-4160-811d-c5b4856e3239" />
-<img width="600" alt="shot-5" src="https://github.com/user-attachments/assets/12c27199-2b1e-41ab-8215-0baced40dff9" />
-<img width="600" alt="shot-6" src="https://github.com/user-attachments/assets/b30bcef5-cb81-4173-8aa9-cefa5da9e690" />
-<img width="600" alt="shot-7" src="https://github.com/user-attachments/assets/91da8e34-6feb-4c7b-be45-efd8bf599d1f" />
+<img width="1080" alt="shot-4" src="https://github.com/user-attachments/assets/994472eb-2d37-4160-811d-c5b4856e3239" />
 
-## What This Project Is
 
-`zihuan-next` is a full-stack AI agent framework that spans four layers:
 
-- **Inference** — Unifies local inference (Candle, Llama.cpp) and cloud APIs (OpenAI, Anthropic) behind reusable `llm_refs`
-- **Agent Runtime** — Hosts persistent agents with a shared Brain tool-calling loop and Harness-mode extensibility
-- **Orchestration** — DAG graph engine and visual node-graph editor for designing reusable workflows and tools
-- **Integration** — IMS-native bot adapters, REST API, and WebSocket event streams for real-world deployment
+## Contribute
 
-In practice, you use it in three connected ways:
+welcome your feedback on usage, bug reports, or suggestions for new features in the [Issues](https://github.com/FredYakumo/zihuan-next/issues).
 
-1. Run agents as always-on services.
-2. Build workflows with the node graph editor.
-3. Expose those workflows as callable tools for agents.
+If you find Zihuan is interesting, fun, you are also welcome to join our development team and contribute code in the [PR](https://github.com/FredYakumo/zihuan-next/pulls).
 
-This keeps graph topology simple while allowing complex behavior to live inside nodes, subgraphs, and agent tool loops.
 
-## Core Model
+欢迎在[Issues](https://github.com/FredYakumo/zihuan-next/issues)里提出使用意见，Bug反馈，或者如果你希望加入什么新功能等。
 
-### 1. Agent service is the primary runtime
-
-The main binary hosts long-lived agents such as:
-
-- `qq_chat`
-- `http_stream`
-
-Agents can be enabled, disabled, started, stopped, and auto-started from the admin UI. They are not one-shot scripts; they are hosted services managed by the server runtime.
-
-### 2. Node graphs are workflows
-
-The graph engine executes a DAG synchronously. A graph run is ideal for:
-
-- data transformation
-- message processing
-- retrieval and storage steps
-- calling models
-- preparing tool results
-- encapsulating business logic in reusable subgraphs
-
-The graph is intentionally not the place for long-lived listeners or service lifecycles.
-
-### 3. Workflows can also become Agent tools
-
-This is a central design point of `zihuan-next`.
-
-The same node-graph logic can be used in two roles:
-
-- run directly as a workflow
-- mounted into an Agent as a callable tool
-
-Agents can call graph-backed tools through the shared Brain/tool loop. This makes workflows reusable across interactive agents, service endpoints, and graph-driven automations without rewriting the same logic twice.
-
-## Unified Connections And Resources
-
-Connections are first-class system configuration, not ad-hoc values hidden inside one workflow.
-
-You define connection configs once in the admin UI, then reuse them from both:
-
-- agents
-- node graphs
-
-Current resource types in the project include:
-
-- MySQL
-- Redis
-- Weaviate
-- RustFS / S3-style object storage
-- IMS Bot Adapter connections
-- Tavily
-- Tokenizer (for NLP text segmentation)
-
-### Tokenizer model recommendation (QQ segmentation)
-
-When using QQ Chat Agent text segmentation with the new `tokenizer` connection type, place models under:
-
-```text
-models/tokenizer/<model_name>/tokenizer.json
-```
-
-Recommended options:
-
-1. **Quick start (no extra download)**
-   - Reuse existing file:
-     - `models/text_embedding/Qwen3-Embedding-0.6B/tokenizer.json`
-   - Copy it to:
-     - `models/tokenizer/qwen3-embedding-0.6b/tokenizer.json`
-
-2. **Highest-accuracy recommendation (current priority)**
-   - Use tokenizer from `Qwen/Qwen3-235B-A22B`
-   - Download command:
-
-```bash
-huggingface-cli download Qwen/Qwen3-235B-A22B tokenizer.json --local-dir models/tokenizer/qwen3-235b-a22b
-```
-
-After download:
-
-1. Open Admin UI -> **Connections** -> create a new `Tokenizer` connection.
-2. Select the model folder name (for example `qwen3-235b-a22b`).
-3. Open **Agents** -> QQ Chat Agent -> set **Tokenizer connection**.
-
-The runtime distinguishes between:
-
-- persistent connection configuration identified by `config_id`
-- live runtime connection instances identified by `instance_id`
-
-Graphs and agents refer to `config_id`. The runtime creates or reuses live instances as needed. This makes database and service connections easy to manage centrally while still being directly consumable from graph nodes and agent runtimes.
-
-## Model Access
-
-`zihuan-next` supports several ways to use LLM and embedding capabilities:
-
-- local inference with Candle-based models
-- local or self-hosted inference through `llama.cpp`
-- online model APIs
-- OpenAI Chat Completions compatible endpoints
-- OpenAI Responses compatible endpoints
-
-Model endpoints are defined as reusable `llm_refs` in system configuration, then attached where needed by agents or graphs.
-
-This allows one deployment to mix:
-
-- local inference for cost control or privacy
-- self-hosted inference for internal services
-- hosted APIs for general-purpose reasoning
-
-## Main Capabilities
-
-- Browser admin UI at `/`
-- Browser graph editor at `/editor`
-- Persistent agent hosting
-- Graph execution as task runs
-- Graph-backed Agent tools
-- Shared Brain tool-call loop
-- Reusable connection and model configuration
-- REST API and WebSocket event stream
-- Task logs and runtime inspection
-- Workflow-set loading and CLI execution
-
-## Workspace Layout
-
-| Package | Responsibility |
-|---|---|
-| `zihuan_core` | Shared types, Brain runtime, DAG engine, inference, storage, NLP, and IMS adapter |
-| `zihuan_ims_agent` | QQ chat agent runtime and QQ-specific tools |
-| `zihuan_workspace_agent` | Workspace agent runtime, tools, and change-review APIs |
-| `zihuan_service` | `zihuan_next` binary, REST API, and long-lived service orchestration |
-| `zihuan_cli` | CLI graph runner |
-| `webui/` | Vue admin UI and LiteGraph editor |
-
-## Configuration Model
-
-System-level configuration is stored in:
-
-- Windows: `%APPDATA%/zihuan-next_aibot/system_config/system_config.json`
-- Linux/macOS: `$XDG_CONFIG_HOME` or `$HOME/.config/zihuan-next_aibot/system_config/system_config.json`
-
-Current shape:
-
-```json
-{
-  "version": 2,
-  "configs": {
-    "connections": [],
-    "llm_refs": [],
-    "agents": []
-  }
-}
-```
-
-Graph structure, inline values, variables, and embedded subgraphs live in graph JSON files or workflow-set files under `workflow_set/`.
-
-Database tables are created automatically when a MySQL or SQLite connection is added via the Connections UI.
-
-## Documentation
-
-- [User Guide](document/user-guide.md)
-- [Program Execution Flow](document/program-execute-flow.md)
-- [Configuration And Connection Instances](document/config-and-connection-instances.md)
-- [Node System](document/dev-guides/node-system.md)
-- [Code Conventions](document/dev-guides/code-conventions.md)
-- [UI Architecture](document/dev-guides/ui-architecture.md)
-- [Function Subgraphs](document/node/function-subgraphs.md)
-- [Node Development Guide](document/node/node-development.md)
-- [Brain](document/llm/brain.md)
+如果你觉得紫幻很有趣很好玩，也欢迎你加入一起开发，在[PR](https://github.com/FredYakumo/zihuan-next/pulls)里贡献代码。
 
 ## License
 

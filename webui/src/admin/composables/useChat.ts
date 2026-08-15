@@ -339,7 +339,7 @@ type PendingAskUser = {
   question: string;
   details?: string;
   placeholder?: string;
-  commandConfirmation?: { command: string; shell: string };
+  commandConfirmation?: { command: string; shell: string; decision?: "once" | "session" | "reject" };
 };
 type StreamState = {
   assistantMessageId: string | null;
@@ -382,6 +382,7 @@ const editingMessage = ref<EditingMessage | null>(null);
 const copiedMessageId = ref("");
 const activeToolCallId = ref("");
 const expandedLiveToolCalls = ref(new Set<string>());
+const pendingCommandConfirmations = new Map<string, { command: string; shell: string }>();
 const llmModels = ref<LlmConfig[]>([]);
 const selectedModelId = ref("");
 const selectedThinkingType = ref<"" | "enabled" | "disabled">("");
@@ -1229,6 +1230,43 @@ async function refreshActiveSessionHistoryIfNeeded(): Promise<void> {
   }
 }
 
+async function refreshPendingCommandApproval(): Promise<void> {
+  const sessionId = activeSessionId.value;
+  if (!sessionId) return;
+  const { pending } = await chat.getPendingCommandApproval(sessionId);
+  if (pending) {
+    const existingCall = messages.value
+      .flatMap((message) => message.liveToolCalls ?? [])
+      .find((call) => {
+        const argumentsValue = safeParseJson<{ command?: string }>(call.arguments);
+        return call.name === "exec_cmd" && argumentsValue?.command === pending.command;
+      });
+    if (existingCall) {
+      existingCall.commandConfirmation = pending;
+      return;
+    }
+
+    const message = [...messages.value].reverse().find((item) => item.role === "assistant");
+    if (!message) return;
+    if (!message.liveToolCalls) message.liveToolCalls = [];
+    const callId = `recovered-command-${pending.command}`;
+    if (!message.liveToolCalls.some((call) => call.call_id === callId)) {
+      message.liveToolCalls.push({
+        call_id: callId,
+        name: "exec_cmd",
+        arguments: { command: pending.command, shell: pending.shell },
+        done: false,
+        result: JSON.stringify({ stdout: "", stderr: "" }),
+        commandConfirmation: pending,
+      });
+    }
+  } else {
+    for (const message of messages.value) {
+      message.liveToolCalls = message.liveToolCalls?.filter((call) => !call.call_id.startsWith("recovered-command-"));
+    }
+  }
+}
+
 async function openSession(sessionId: string) {
   activeSessionId.value = sessionId;
   emit("update:sessionId", sessionId);
@@ -1507,6 +1545,7 @@ function startNewSession() {
   messages.value = [];
   activeToolCallId.value = "";
   expandedLiveToolCalls.value = new Set();
+  pendingCommandConfirmations.clear();
   messageBranches.value = [];
   editingMessage.value = null;
   clearChatError();
@@ -1579,6 +1618,40 @@ async function removeSession(sessionId: string) {
 }
 
 function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
+  if (event.type === "command_confirmation" && event.call_id && event.command && event.shell) {
+    const confirmation = { command: event.command, shell: event.shell };
+    let message = messages.value.find((item) => item.liveToolCalls?.some((call) => call.call_id === event.call_id));
+    if (!message && event.message_id) {
+      message = messages.value.find((item) => item.id === event.message_id);
+    }
+    if (!message && streamState.foreground) {
+      message = appendStreamingAssistantMessage(streamState);
+      streamState.toolMessageId = message.id;
+    }
+    if (message) {
+      if (!message.liveToolCalls) {
+        message.liveToolCalls = [];
+      }
+      const call = message.liveToolCalls.find((item) => item.call_id === event.call_id);
+      if (call) {
+        call.commandConfirmation = confirmation;
+      } else {
+        message.liveToolCalls.push({
+          call_id: event.call_id,
+          name: event.name ?? "exec_cmd",
+          arguments: { command: event.command, shell: event.shell },
+          done: false,
+          result: JSON.stringify({ stdout: "", stderr: "" }),
+          commandConfirmation: confirmation,
+        });
+      }
+      scrollToBottom();
+    } else {
+      pendingCommandConfirmations.set(event.call_id, confirmation);
+    }
+    return;
+  }
+
   if (event.type !== "start" && !streamState.foreground) {
     return;
   }
@@ -1596,13 +1669,6 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
       commandConfirmation: event.command_confirmation,
     };
     askUserAnswer.value = "";
-    return;
-  }
-
-  if (event.type === "command_confirmation" && event.call_id && event.command && event.shell) {
-    const message = messages.value.find((item) => item.liveToolCalls?.some((call) => call.call_id === event.call_id));
-    const call = message?.liveToolCalls?.find((item) => item.call_id === event.call_id);
-    if (call) call.commandConfirmation = { command: event.command, shell: event.shell };
     return;
   }
 
@@ -1758,7 +1824,9 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
         arguments: event.arguments,
         done: false,
         result: JSON.stringify({ stdout: "", stderr: "" }),
+        commandConfirmation: pendingCommandConfirmations.get(event.call_id),
       });
+      pendingCommandConfirmations.delete(event.call_id);
     }
     scrollToBottom();
   }
@@ -1791,6 +1859,7 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
       if (liveCall) {
         liveCall.result = event.result ?? "";
         liveCall.done = true;
+        pendingCommandConfirmations.delete(event.call_id);
       } else {
         message.liveToolCalls.push({
           call_id: event.call_id,
@@ -2007,7 +2076,10 @@ onMounted(() => {
   sessionRefreshTimer = setInterval(() => {
     if (selectedServiceId.value) {
       reloadSessions()
-        .then(() => refreshActiveSessionHistoryIfNeeded())
+        .then(async () => {
+          await refreshActiveSessionHistoryIfNeeded();
+          await refreshPendingCommandApproval();
+        })
         .catch((error) => console.warn("Failed to refresh chat sessions:", error));
     }
   }, 3000);
