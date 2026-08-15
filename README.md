@@ -49,6 +49,18 @@ While Zihuan supports all the tools you can think of, or tools you develop for i
 <img width="1080" alt="shot-4" src="https://github.com/user-attachments/assets/994472eb-2d37-4160-811d-c5b4856e3239" />
 
 
+
+## Contribute
+
+welcome your feedback on usage, bug reports, or suggestions for new features in the [Issues](https://github.com/FredYakumo/zihuan-next/issues).
+
+If you find Zihuan is interesting, fun, you are also welcome to join our development team and contribute code in the [PR](https://github.com/FredYakumo/zihuan-next/pulls).
+
+
+欢迎在[Issues](https://github.com/FredYakumo/zihuan-next/issues)里提出使用意见，Bug反馈，或者如果你希望加入什么新功能等。
+
+如果你觉得紫幻很有趣很好玩，也欢迎你加入一起开发，在[PR](https://github.com/FredYakumo/zihuan-next/pulls)里贡献代码。
+
 ## License
 
 AGPL-3.0. See [LICENSE](LICENSE).
