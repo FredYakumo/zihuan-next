@@ -2,7 +2,7 @@ use salvo::prelude::*;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::tools::workspace_tools::approve_command;
+use crate::tools::workspace_tools::{approve_command, reject_command};
 
 #[derive(Deserialize)]
 struct CommandApprovalRequest {
@@ -29,10 +29,7 @@ pub async fn approve_command_execution(req: &mut Request, res: &mut Response) {
     match body.decision.as_str() {
         "once" => approve_command(&session_id, &body.command, false),
         "session" => approve_command(&session_id, &body.command, true),
-        "reject" => {
-            res.render(Json(json!({ "ok": true })));
-            return;
-        }
+        "reject" => reject_command(&session_id, &body.command),
         _ => {
             res.status_code(StatusCode::BAD_REQUEST);
             res.render(Json(json!({ "error": "decision must be once, session, or reject" })));

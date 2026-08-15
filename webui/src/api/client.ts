@@ -454,7 +454,7 @@ export interface NotificationCard {
 }
 
 export interface ChatStreamEvent {
-  type: "start" | "delta" | "thinking_delta" | "metrics" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "workspace_tasks" | "ask_user";
+  type: "start" | "delta" | "thinking_delta" | "metrics" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "workspace_tasks" | "ask_user" | "command_confirmation";
   session_id?: string;
   message_id?: string;
   task_id?: string;
@@ -471,6 +471,8 @@ export interface ChatStreamEvent {
   question?: string;
   details?: string;
   placeholder?: string;
+  command?: string;
+  shell?: string;
   command_confirmation?: { command: string; shell: string };
   change?: WorkspaceChange;
   tasks?: WorkspaceTask[];

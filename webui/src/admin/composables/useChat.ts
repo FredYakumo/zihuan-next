@@ -44,6 +44,7 @@ type LiveToolCall = {
   arguments: unknown;
   result?: string;
   done: boolean;
+  commandConfirmation?: { command: string; shell: string; decision?: "once" | "session" | "reject" };
 };
 type ChatMessage = {
   id: string;
@@ -1613,6 +1614,13 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
     return;
   }
 
+  if (event.type === "command_confirmation" && event.call_id && event.command && event.shell) {
+    const message = messages.value.find((item) => item.liveToolCalls?.some((call) => call.call_id === event.call_id));
+    const call = message?.liveToolCalls?.find((item) => item.call_id === event.call_id);
+    if (call) call.commandConfirmation = { command: event.command, shell: event.shell };
+    return;
+  }
+
   if (event.type === "workspace_change" && event.change) {
     applyWorkspaceChange(event.change);
     return;
@@ -1828,16 +1836,12 @@ async function submitAskUserAnswer() {
   await sendMessageWithText(askUserAnswer.value, true);
 }
 
-async function decideCommandConfirmation(decision: "once" | "session" | "reject") {
-  const confirmation = pendingAskUser.value?.commandConfirmation;
+async function decideCommandConfirmation(liveCall: LiveToolCall, decision: "once" | "session" | "reject") {
+  const confirmation = liveCall.commandConfirmation;
   if (!confirmation || !activeSessionId.value) return;
   try {
     await chat.approveCommand(activeSessionId.value, confirmation.command, decision);
-    const message = decision === "reject"
-      ? "用户拒绝执行该命令。请停止此操作。"
-      : "用户已确认执行该命令。请继续调用 exec_cmd。";
-    askUserAnswer.value = message;
-    await sendMessageWithText(message, true);
+    confirmation.decision = decision;
   } catch (error) {
     showChatError(`命令确认失败: ${(error as Error).message}`);
   }

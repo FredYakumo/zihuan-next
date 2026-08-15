@@ -84,6 +84,19 @@ impl BrainObserver for SseBrainObserver {
     }
 
     fn on_tool_output(&self, name: &str, call_id: &str, stream: &str, chunk: &str) {
+        if stream == "command_confirmation" {
+            let payload = serde_json::from_str::<Value>(chunk).unwrap_or_else(|_| json!({}));
+            let event = json!({
+                "type": "command_confirmation",
+                "message_id": self.message_id,
+                "call_id": call_id,
+                "name": name,
+                "command": payload.get("command"),
+                "shell": payload.get("shell"),
+            });
+            let _ = self.event_tx.send(event);
+            return;
+        }
         if let Some(snapshot) = &self.running_chat_message {
             let mut snapshot = snapshot.lock().unwrap();
             if let Some(tool_call) = snapshot.live_tool_calls.iter_mut().find(|item| item.call_id == call_id) {
