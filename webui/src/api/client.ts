@@ -471,6 +471,7 @@ export interface ChatStreamEvent {
   question?: string;
   details?: string;
   placeholder?: string;
+  command_confirmation?: { command: string; shell: string };
   change?: WorkspaceChange;
   tasks?: WorkspaceTask[];
   metrics?: ChatResponseMetrics;
@@ -578,6 +579,7 @@ export interface ChatHistoryRecord {
     question: string;
     details?: string | null;
     placeholder?: string | null;
+    command_confirmation?: { command: string; shell: string } | null;
   } | null;
 }
 
@@ -593,6 +595,7 @@ export interface ChatSessionSummary {
     question: string;
     details?: string | null;
     placeholder?: string | null;
+    command_confirmation?: { command: string; shell: string } | null;
   } | null;
   title?: string | null;
   running_task_id?: string | null;
@@ -1121,6 +1124,9 @@ export const chat = {
 
   cancelWorkspaceChange(sessionId: string, changeId: string): Promise<{ change: WorkspaceChange }> {
     return request("POST", `/chat/sessions/${encodeURIComponent(sessionId)}/changes/${encodeURIComponent(changeId)}/cancel`);
+  },
+  approveCommand(sessionId: string, command: string, decision: "once" | "session" | "reject"): Promise<{ ok: boolean }> {
+    return request("POST", `/chat/sessions/${encodeURIComponent(sessionId)}/command-approval`, { command, decision });
   },
 };
 

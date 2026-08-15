@@ -222,6 +222,7 @@ pub fn build_router(
                 .push(Router::with_path("sessions/<session_id>/changes").get(zihuan_workspace_agent::api::workspace_changes::list_workspace_changes))
                 .push(Router::with_path("sessions/<session_id>/changes/<change_id>/accept").post(zihuan_workspace_agent::api::workspace_changes::accept_workspace_change))
                 .push(Router::with_path("sessions/<session_id>/changes/<change_id>/cancel").post(zihuan_workspace_agent::api::workspace_changes::cancel_workspace_change))
+                .push(Router::with_path("sessions/<session_id>/command-approval").post(zihuan_workspace_agent::api::command_approval::approve_command_execution))
                 .push(
                     Router::with_path("sessions/<session_id>/messages")
                         .get(chat::get_chat_session_messages),

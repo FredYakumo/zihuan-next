@@ -675,7 +675,12 @@
                   <div v-if="pendingAskUser.details" class="ask-user-details">
                     {{ pendingAskUser.details }}
                   </div>
-                  <div class="ask-user-row">
+                  <div v-if="pendingAskUser.commandConfirmation" class="ask-user-row">
+                    <button class="btn primary" :disabled="sending" @click="decideCommandConfirmation('once')">执行</button>
+                    <button class="btn secondary" :disabled="sending" @click="decideCommandConfirmation('session')">本次对话允许类似指令</button>
+                    <button class="btn danger" :disabled="sending" @click="decideCommandConfirmation('reject')">拒绝</button>
+                  </div>
+                  <div v-if="!pendingAskUser.commandConfirmation" class="ask-user-row">
                     <input
                       v-model="askUserAnswer"
                       type="text"
@@ -1512,6 +1517,7 @@ const {
   sendMessage,
   stopInference,
   submitAskUserAnswer,
+  decideCommandConfirmation,
   sendMessageWithText,
   load,
   formatTime,

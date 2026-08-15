@@ -203,6 +203,7 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_EXEC_CMD) {
             tools.push(Box::new(ExecCmdBrainTool {
                 workspace_path: workspace_path.clone(),
+                session_id: context.session_id.clone(),
             }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_ASK_USER) {

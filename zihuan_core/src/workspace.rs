@@ -16,6 +16,14 @@ pub struct AskUserRequest {
     pub details: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_confirmation: Option<CommandConfirmationRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandConfirmationRequest {
+    pub command: String,
+    pub shell: String,
 }
 
 #[derive(Debug, Clone)]

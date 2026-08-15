@@ -1270,6 +1270,7 @@ async fn execute_chat_streaming(
             "question": request.question,
             "details": request.details,
             "placeholder": request.placeholder,
+            "command_confirmation": request.command_confirmation,
         });
         if client_connected && !send_sse(&mut sender, &event).await {
             return;

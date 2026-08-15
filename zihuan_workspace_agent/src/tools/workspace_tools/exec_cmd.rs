@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use serde::Deserialize;
 use std::collections::HashMap;
 use serde_json::Value;
@@ -10,6 +10,7 @@ use tokio::time::{timeout, Duration};
 use zihuan_core::agent::brain::{BrainTool, ToolExecutionResource};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::runtime::block_async;
+use zihuan_core::workspace::{AskUserRequest, CommandConfirmationRequest};
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
 use super::shared::{json_error, resolve_tool_path, success_json};
 pub(crate) const DEFAULT_TOOL_EXEC_CMD:&str="exec_cmd";
@@ -22,7 +23,24 @@ pub(crate) const DEFAULT_TOOL_EXEC_CMD:&str="exec_cmd";
 	#[serde(default)] max_output_bytes: Option<usize>,
 	#[serde(default)] shell: Option<String>,
 }
-#[derive(Debug,Clone)]pub(crate)struct ExecCmdBrainTool{pub(crate)workspace_path:Option<PathBuf>}
+#[derive(Debug,Clone)]pub(crate)struct ExecCmdBrainTool{pub(crate)workspace_path:Option<PathBuf>,pub(crate)session_id:Option<String>}
+
+#[derive(Default)] struct CommandApprovals { once: Vec<(String, String)>, families: Vec<(String, String)> }
+static COMMAND_APPROVALS: OnceLock<Mutex<CommandApprovals>> = OnceLock::new();
+
+pub fn approve_command(session_id: &str, command: &str, allow_similar: bool) {
+ let mut approvals=COMMAND_APPROVALS.get_or_init(||Mutex::new(CommandApprovals::default())).lock().unwrap();
+ let entry=(session_id.to_string(),if allow_similar {command_family(command)} else {command.to_string()});
+ if allow_similar {approvals.families.push(entry)} else {approvals.once.push(entry)}
+}
+
+fn is_approved(session_id: Option<&str>, command: &str) -> bool {
+ let Some(session_id)=session_id else{return false}; let mut approvals=COMMAND_APPROVALS.get_or_init(||Mutex::new(CommandApprovals::default())).lock().unwrap();
+ if let Some(index)=approvals.once.iter().position(|(session,allowed)|session==session_id&&allowed==command){approvals.once.remove(index);return true}
+ let family=command_family(command); approvals.families.iter().any(|(session,allowed)|session==session_id&&allowed==&family)
+}
+
+fn command_family(command: &str) -> String { command.split_whitespace().next().unwrap_or_default().to_ascii_lowercase() }
 impl BrainTool for ExecCmdBrainTool{
  fn spec(&self)->Arc<dyn FunctionTool>{Arc::new(StaticFunctionToolSpec{name:DEFAULT_TOOL_EXEC_CMD,description:"Execute a shell command with optional environment, stdin, shell, timeout, and bounded output",parameters:serde_json::json!({"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"timeout_secs":{"type":"integer","minimum":1},"env":{"type":"object","additionalProperties":{"type":"string"}},"input":{"type":"string"},"max_output_bytes":{"type":"integer","minimum":1},"shell":{"type":"string","enum":["powershell","bash"]}},"required":["command"]})})}
  fn execute(&self, call_content: &str, a: &Value)->String{
@@ -32,6 +50,7 @@ impl BrainTool for ExecCmdBrainTool{
       let args:ExecCmdArgs=match serde_json::from_value(a.clone()){Ok(v)=>v,Err(e)=>return zihuan_core::agent::brain::ToolExecutionOutput::text(json_error(format!("invalid exec_cmd arguments: {e}")))};
   let shell=args.shell.clone().unwrap_or_else(||if cfg!(windows){"powershell".to_string()}else{"bash".to_string()});
       if shell!="powershell"&&shell!="bash"{return zihuan_core::agent::brain::ToolExecutionOutput::text(json_error("shell must be powershell or bash"));}
+      if !is_approved(self.session_id.as_deref(),&args.command){let request=AskUserRequest{question:"允许执行此命令吗？".to_string(),details:Some(format!("{shell}> {}",args.command)),placeholder:None,command_confirmation:Some(CommandConfirmationRequest{command:args.command.clone(),shell:shell.clone()})};return zihuan_core::agent::brain::ToolExecutionOutput::ask_user(serde_json::json!({"ok":true,"awaiting_command_confirmation":true,"command":args.command}).to_string(),request)}
       let cwd=if let Some(raw)=args.cwd.as_deref(){match resolve_tool_path(self.workspace_path.as_deref(),raw){Ok(v)=>Some(v),Err(e)=>return zihuan_core::agent::brain::ToolExecutionOutput::text(json_error(e.to_string()))}}else{self.workspace_path.clone()};
       let secs=args.timeout_secs.unwrap_or(30);let max_output=args.max_output_bytes.unwrap_or(32*1024);if max_output==0{return zihuan_core::agent::brain::ToolExecutionOutput::text(json_error("max_output_bytes must be greater than zero"));}
   let command_cwd=cwd.clone(); let input=args.input.clone(); let env=args.env.clone(); let command_text=args.command.clone(); let selected_shell=shell.clone();

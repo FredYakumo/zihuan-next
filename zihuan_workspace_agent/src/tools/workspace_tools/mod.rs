@@ -20,6 +20,7 @@ pub(crate) use create_file::{CreateFileBrainTool, DEFAULT_TOOL_CREATE_FILE};
 pub(crate) use delete_file::{DeleteFileBrainTool, DEFAULT_TOOL_DELETE_FILE};
 pub(crate) use edit_file::{EditFileBrainTool, DEFAULT_TOOL_EDIT_FILE};
 pub(crate) use exec_cmd::{ExecCmdBrainTool, DEFAULT_TOOL_EXEC_CMD};
+pub use exec_cmd::approve_command;
 pub(crate) use file_info::{FileInfoBrainTool, DEFAULT_TOOL_FILE_INFO};
 pub(crate) use find_files::{FindFilesBrainTool, DEFAULT_TOOL_FIND_FILES};
 pub(crate) use git_status::{GitStatusBrainTool, DEFAULT_TOOL_GIT_STATUS};

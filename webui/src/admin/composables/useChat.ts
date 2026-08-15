@@ -338,6 +338,7 @@ type PendingAskUser = {
   question: string;
   details?: string;
   placeholder?: string;
+  commandConfirmation?: { command: string; shell: string };
 };
 type StreamState = {
   assistantMessageId: string | null;
@@ -1258,6 +1259,7 @@ async function openSession(sessionId: string) {
       question: latestRecord.pending_ask_user.question,
       details: latestRecord.pending_ask_user.details ?? undefined,
       placeholder: latestRecord.pending_ask_user.placeholder ?? undefined,
+      commandConfirmation: latestRecord.pending_ask_user.command_confirmation ?? undefined,
     };
   }
   applyHistory(result.messages);
@@ -1604,6 +1606,7 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
       question: event.question,
       details: event.details ?? undefined,
       placeholder: event.placeholder ?? undefined,
+      commandConfirmation: event.command_confirmation,
     };
     askUserAnswer.value = "";
     return;
@@ -1822,6 +1825,21 @@ function isAbortError(error: unknown): boolean {
 
 async function submitAskUserAnswer() {
   await sendMessageWithText(askUserAnswer.value, true);
+}
+
+async function decideCommandConfirmation(decision: "once" | "session" | "reject") {
+  const confirmation = pendingAskUser.value?.commandConfirmation;
+  if (!confirmation || !activeSessionId.value) return;
+  try {
+    await chat.approveCommand(activeSessionId.value, confirmation.command, decision);
+    const message = decision === "reject"
+      ? "用户拒绝执行该命令。请停止此操作。"
+      : "用户已确认执行该命令。请继续调用 exec_cmd。";
+    askUserAnswer.value = message;
+    await sendMessageWithText(message, true);
+  } catch (error) {
+    showChatError(`命令确认失败: ${(error as Error).message}`);
+  }
 }
 
 async function sendMessageWithText(rawInput: string, fromAskUser: boolean, options: SendMessageOptions = {}) {
@@ -2149,6 +2167,7 @@ onUnmounted(() => {
     sendMessage,
     stopInference,
     submitAskUserAnswer,
+    decideCommandConfirmation,
     sendMessageWithText,
     load,
     formatTime,
