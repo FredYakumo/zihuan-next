@@ -1,190 +1,116 @@
 <template>
   <section class="page plugins-page">
     <AdminPageHeader title="插件" />
-
     <t-card title="已安装插件" bordered header-bordered>
-      <template #actions>
-        <t-button theme="primary" @click="openCreateDialog">新增插件</t-button>
-      </template>
-
-      <t-table
-        :data="plugins"
-        :columns="columns"
-        row-key="name"
-        :loading="loading"
-        :pagination="false"
-        size="small"
-      >
-        <template #extra_install_metadata="{ row }">
-          <code class="metadata-preview">{{ formatMetadata(row.extra_install_metadata) }}</code>
-        </template>
-        <template #actions="{ row }">
-          <t-space size="small">
-            <t-button variant="text" @click="openEditDialog(row)">编辑</t-button>
-            <t-popconfirm :content="`确认删除插件“${row.name}”？`" @confirm="removePlugin(row.name)">
-              <t-button variant="text" theme="danger">删除</t-button>
-            </t-popconfirm>
-          </t-space>
-        </template>
+      <template #actions><t-button theme="primary" @click="openInstall">安装插件</t-button></template>
+      <t-table :data="plugins" :columns="columns" row-key="id" :loading="loading" :pagination="false" size="small">
+        <template #status="{ row }"><t-tag :theme="statusTheme(row.status)" variant="light">{{ statusLabel(row.status) }}</t-tag></template>
+        <template #connection_ids="{ row }"><span>{{ row.connection_ids?.length ?? 0 }} 个连接</span></template>
+        <template #actions="{ row }"><t-space size="small"><t-button v-if="row.status === 'installed'" variant="text" @click="toggle(row)">停用</t-button><t-button v-else-if="row.status === 'disabled'" variant="text" @click="toggle(row)">启用</t-button><t-popconfirm content="确认卸载插件并删除关联连接吗？" @confirm="removePlugin(row.id)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></t-space></template>
       </t-table>
     </t-card>
-
-    <t-dialog
-      v-model:visible="dialogVisible"
-      :header="editingName ? '编辑插件' : '新增插件'"
-      :confirm-btn="{ content: '保存', loading: saving }"
-      @confirm="savePlugin"
-    >
+    <t-dialog v-model:visible="installVisible" header="安装插件" width="720px" :confirm-btn="{ content: '开始安装', loading: saving }" @confirm="install">
       <t-form label-align="top">
-        <t-form-item label="插件名称" required>
-          <t-input v-model="form.name" placeholder="例如：示例插件" />
-        </t-form-item>
-        <t-form-item label="版本号" required>
-          <t-input v-model="form.version" placeholder="例如：1.0.0" />
-        </t-form-item>
-        <t-form-item label="安装日期" required>
-          <t-date-picker v-model="form.installed_at" format="YYYY-MM-DD" value-type="YYYY-MM-DD" />
-        </t-form-item>
-        <t-form-item label="安装方式" required>
-          <t-input v-model="form.installation_method" placeholder="例如：手动安装、市场安装" />
-        </t-form-item>
-        <t-form-item label="额外安装信息元数据（JSON）" required>
-          <t-textarea v-model="form.extra_install_metadata" :autosize="{ minRows: 5 }" />
-        </t-form-item>
+        <div class="form-grid">
+          <t-form-item label="组件类型" required><t-select v-model="form.component_type"><t-option v-for="item in componentOptions" :key="item.value" :value="item.value" :label="item.label" /></t-select></t-form-item>
+          <t-form-item label="插件名称" required><t-input v-model="form.name" :placeholder="`${selectedComponent.label} 服务`" /></t-form-item>
+          <t-form-item label="安装方式" required><t-select v-model="form.install_method"><t-option value="docker" label="Docker" /><t-option value="binary" label="二进制" /><t-option value="command_docker" label="Docker（命令）" /><t-option value="command_binary" label="二进制（命令）" /></t-select></t-form-item>
+        </div>
+        <div class="global-config">
+          <label><input v-model="config.expose_public_access" type="checkbox" /> 暴露公网访问</label>
+          <label v-if="config.expose_public_access"><input v-model="config.use_target_machine_address" type="checkbox" /> 使用目标机器地址</label>
+          <SetupField v-if="config.expose_public_access && config.use_target_machine_address" label="目标机器地址（可选）"><input v-model="config.target_machine_address" placeholder="例如 203.0.113.10" /></SetupField>
+        </div>
+        <div v-if="form.component_type === 'mysql'" class="form-grid">
+          <SetupSourceChoice v-model="config.relational.source" />
+          <SetupDeploymentFields v-if="config.relational.source === 'install'" v-model="config.relational.deployment" />
+          <SetupField label="主机"><input v-model="config.relational.host" /></SetupField>
+          <SetupField label="端口"><input v-model.number="config.relational.deployment.port" type="number" min="1" /></SetupField>
+          <SetupField label="用户名"><input v-model="config.relational.username" /></SetupField>
+          <SetupField label="密码"><SetupCredentialInput v-model="config.relational.password" /></SetupField>
+          <SetupField label="数据库"><input v-model="config.relational.database" /></SetupField>
+          <SetupField label="最大连接数"><input v-model.number="config.relational.max_connections" type="number" min="1" /></SetupField>
+          <SetupField label="获取连接超时（秒）"><input v-model.number="config.relational.acquire_timeout_secs" type="number" min="1" /></SetupField>
+        </div>
+        <div v-else-if="form.component_type === 'redis'" class="form-grid">
+          <SetupSourceChoice v-model="config.redis.source" />
+          <SetupDeploymentFields v-if="config.redis.source === 'install'" v-model="config.redis.deployment" />
+          <SetupField label="Redis URL"><input v-model="config.redis.url" /></SetupField>
+          <SetupField label="用户名"><input v-model="config.redis.username" /></SetupField>
+          <SetupField label="密码"><SetupCredentialInput v-model="config.redis.password" /></SetupField>
+        </div>
+        <div v-else-if="form.component_type === 'rustfs'" class="form-grid">
+          <SetupSourceChoice v-model="config.rustfs.source" />
+          <SetupDeploymentFields v-if="config.rustfs.source === 'install'" v-model="config.rustfs.deployment" />
+          <SetupField label="Endpoint"><input v-model="config.rustfs.endpoint" /></SetupField>
+          <SetupField label="Bucket"><input v-model="config.rustfs.bucket" /></SetupField>
+          <SetupField label="Region"><input v-model="config.rustfs.region" /></SetupField>
+          <SetupField label="Access Key"><SetupCredentialInput v-model="config.rustfs.access_key" input-type="text" /></SetupField>
+          <SetupField label="Secret Key"><SetupCredentialInput v-model="config.rustfs.secret_key" /></SetupField>
+          <label><input v-model="config.rustfs.path_style" type="checkbox" /> 使用 path-style</label>
+        </div>
+        <div v-else class="form-grid">
+          <SetupSourceChoice v-model="config.search.source" />
+          <SetupDeploymentFields v-if="config.search.source === 'install'" v-model="config.search.deployment" />
+          <SetupField label="Base URL"><input v-model="config.search.base_url" /></SetupField>
+          <SetupField v-if="form.component_type === 'elasticsearch'" label="用户名"><input v-model="config.search.username" :disabled="config.search.source === 'install'" /></SetupField>
+          <SetupField :label="form.component_type === 'elasticsearch' ? '密码' : 'API Key'"><SetupCredentialInput v-if="form.component_type === 'elasticsearch'" v-model="config.search.password" /><SetupCredentialInput v-else v-model="config.search.api_key" /></SetupField>
+          <SetupField label="向量维度"><input v-model.number="config.search.vector_dimensions" type="number" min="1" /></SetupField>
+        </div>
+        <p v-if="progress.length" class="progress-line">{{ progress[progress.length - 1]?.message }}</p>
+        <t-alert v-if="command" theme="info" title="远程安装命令"><textarea readonly :value="command" /></t-alert>
+        <t-alert v-if="error" theme="error" :message="error" />
       </t-form>
     </t-dialog>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
-
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
-import { pluginsApi, type PluginRecord } from "../../api/client";
+import { pluginsApi, setup as setupApi, type DetailedSetupConfig, type PluginRecord, type SetupProgressEvent } from "../../api/client";
+import SetupCredentialInput from "../setup/SetupCredentialInput.vue";
+import SetupDeploymentFields from "../setup/SetupDeploymentFields.vue";
+import SetupField from "../setup/SetupField.vue";
+import SetupSourceChoice from "../setup/SetupSourceChoice.vue";
 
-interface PluginForm {
-  name: string;
-  version: string;
-  installed_at: string;
-  installation_method: string;
-  extra_install_metadata: string;
+const route = useRoute();
+const plugins = ref<PluginRecord[]>([]); const loading = ref(false); const saving = ref(false); const installVisible = ref(false);
+const command = ref(""); const error = ref(""); const progress = ref<SetupProgressEvent[]>([]);
+const componentOptions = [{ value: "mysql", label: "MySQL" }, { value: "redis", label: "Redis" }, { value: "weaviate", label: "Weaviate" }, { value: "elasticsearch", label: "Elasticsearch" }, { value: "rustfs", label: "RustFS" }] as const;
+const form = reactive({ name: "", version: "latest", component_type: "mysql", install_method: "docker" as "docker" | "binary" | "command_docker" | "command_binary" });
+const selectedComponent = computed(() => componentOptions.find((item) => item.value === form.component_type) ?? componentOptions[0]);
+const config = reactive<DetailedSetupConfig>({ install_method: "docker", target_machine_address: "", expose_public_access: false, use_target_machine_address: false,
+  relational: { enabled: true, source: "install", type: "mysql", deployment: { image: "mysql:8.4", port: 3306, data_dir: "./data/plugin-mysql", container_name: "zihuan-plugin-mysql", restart_policy: "unless-stopped" }, host: "127.0.0.1", username: "root", password: "", database: "zihuan", sqlite_path: "", max_connections: 32, acquire_timeout_secs: 30 },
+  rustfs: { enabled: false, source: "install", deployment: { image: "rustfs/rustfs:latest", port: 9000, data_dir: "./data/plugin-rustfs", container_name: "zihuan-plugin-rustfs", restart_policy: "unless-stopped" }, endpoint: "http://127.0.0.1:9000", bucket: "zihuan", region: "us-east-1", access_key: "", secret_key: "", public_base_url: null, path_style: true },
+  search: { enabled: false, source: "install", type: "weaviate", deployment: { image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./data/plugin-search", container_name: "zihuan-plugin-search", restart_policy: "unless-stopped" }, base_url: "http://127.0.0.1:8080", username: null, password: null, api_key: null, auth_method: "api_key", vector_dimensions: 1024 },
+  redis: { enabled: false, source: "install", deployment: { image: "redis:7", port: 6379, data_dir: "./data/plugin-redis", container_name: "zihuan-plugin-redis", restart_policy: "unless-stopped" }, url: "redis://127.0.0.1:6379", username: null, password: null } });
+const columns = [{ colKey: "name", title: "插件名称" }, { colKey: "component_type", title: "组件", width: 130 }, { colKey: "installation_method", title: "安装方式", width: 150 }, { colKey: "status", title: "状态", width: 110 }, { colKey: "connection_ids", title: "关联连接", width: 100 }, { colKey: "actions", title: "操作", width: 180 }];
+function statusLabel(value: string) { return ({ installing: "安装中", installed: "已启用", disabled: "已停用", failed: "失败", command_generated: "命令已生成" } as Record<string, string>)[value] ?? value; }
+function statusTheme(value: string) { return value === "installed" ? "success" : value === "failed" ? "danger" : value === "disabled" ? "warning" : "primary"; }
+async function load() { loading.value = true; try { plugins.value = await pluginsApi.list(); } catch (e) { error.value = String(e); } finally { loading.value = false; } }
+function resetConfig() { config.relational.enabled = form.component_type === "mysql"; config.redis.enabled = form.component_type === "redis"; config.search.enabled = form.component_type === "weaviate" || form.component_type === "elasticsearch"; config.rustfs.enabled = form.component_type === "rustfs"; config.search.type = form.component_type === "elasticsearch" ? "elasticsearch" : "weaviate"; config.install_method = form.install_method.endsWith("docker") ? "docker" : "binary"; }
+function applyComponentDefaults() {
+  const component = form.component_type;
+  if (component === "mysql") Object.assign(config.relational, { type: "mysql", deployment: { image: "mysql:8.4", port: 3306, data_dir: "./data/plugin-mysql", container_name: "zihuan-plugin-mysql", restart_policy: "unless-stopped" }, host: "127.0.0.1", username: "root", password: "", database: "zihuan" });
+  if (component === "redis") Object.assign(config.redis, { deployment: { image: "redis:7", port: 6379, data_dir: "./data/plugin-redis", container_name: "zihuan-plugin-redis", restart_policy: "unless-stopped" }, url: "redis://127.0.0.1:6379", username: null, password: null });
+  if (component === "rustfs") Object.assign(config.rustfs, { deployment: { image: "rustfs/rustfs:latest", port: 9000, data_dir: "./data/plugin-rustfs", container_name: "zihuan-plugin-rustfs", restart_policy: "unless-stopped" }, endpoint: "http://127.0.0.1:9000", bucket: "zihuan", access_key: "", secret_key: "" });
+  if (component === "weaviate") Object.assign(config.search, { type: "weaviate", deployment: { image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./data/plugin-weaviate", container_name: "zihuan-plugin-weaviate", restart_policy: "unless-stopped" }, base_url: "http://127.0.0.1:8080", username: null, password: null, api_key: "", auth_method: "api_key" });
+  if (component === "elasticsearch") Object.assign(config.search, { type: "elasticsearch", deployment: { image: "docker.elastic.co/elasticsearch/elasticsearch:8.15.0", port: 9200, data_dir: "./data/plugin-elasticsearch", container_name: "zihuan-plugin-elasticsearch", restart_policy: "unless-stopped" }, base_url: "http://127.0.0.1:9200", username: "elastic", password: "", api_key: null, auth_method: "password" });
+  resetConfig();
 }
-
-const plugins = ref<PluginRecord[]>([]);
-const loading = ref(false);
-const saving = ref(false);
-const dialogVisible = ref(false);
-const editingName = ref<string | null>(null);
-const form = reactive<PluginForm>(emptyForm());
-
-const columns = [
-  { colKey: "name", title: "插件名称" },
-  { colKey: "version", title: "版本号", width: 120 },
-  { colKey: "installed_at", title: "安装日期", width: 140 },
-  { colKey: "installation_method", title: "安装方式", width: 160 },
-  { colKey: "extra_install_metadata", title: "额外安装信息", ellipsis: true },
-  { colKey: "actions", title: "操作", width: 130 },
-];
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function emptyForm(): PluginForm {
-  return {
-    name: "",
-    version: "",
-    installed_at: today(),
-    installation_method: "",
-    extra_install_metadata: "{}",
-  };
-}
-
-function assignForm(value: PluginForm) {
-  Object.assign(form, value);
-}
-
-function formatMetadata(metadata: unknown): string {
-  return JSON.stringify(metadata);
-}
-
-async function loadPlugins() {
-  loading.value = true;
-  try {
-    plugins.value = await pluginsApi.list();
-  } catch (error) {
-    window.alert(`加载插件列表失败：${String(error)}`);
-  } finally {
-    loading.value = false;
-  }
-}
-
-function openCreateDialog() {
-  editingName.value = null;
-  assignForm(emptyForm());
-  dialogVisible.value = true;
-}
-
-function openEditDialog(plugin: PluginRecord) {
-  editingName.value = plugin.name;
-  assignForm({ ...plugin, extra_install_metadata: JSON.stringify(plugin.extra_install_metadata, null, 2) });
-  dialogVisible.value = true;
-}
-
-async function savePlugin() {
-  let extraInstallMetadata: unknown;
-  try {
-    extraInstallMetadata = JSON.parse(form.extra_install_metadata);
-  } catch {
-    window.alert("额外安装信息元数据必须是有效 JSON。");
-    return;
-  }
-
-  const plugin: PluginRecord = {
-    name: form.name.trim(),
-    version: form.version.trim(),
-    installed_at: form.installed_at,
-    installation_method: form.installation_method.trim(),
-    extra_install_metadata: extraInstallMetadata,
-  };
-  if (!plugin.name || !plugin.version || !plugin.installed_at || !plugin.installation_method) {
-    window.alert("请填写所有必填字段。");
-    return;
-  }
-
-  saving.value = true;
-  try {
-    if (editingName.value) {
-      await pluginsApi.update(editingName.value, plugin);
-    } else {
-      await pluginsApi.create(plugin);
-    }
-    dialogVisible.value = false;
-    await loadPlugins();
-  } catch (error) {
-    window.alert(`保存插件失败：${String(error)}`);
-  } finally {
-    saving.value = false;
-  }
-}
-
-async function removePlugin(name: string) {
-  try {
-    await pluginsApi.remove(name);
-    await loadPlugins();
-  } catch (error) {
-    window.alert(`删除插件失败：${String(error)}`);
-  }
-}
-
-onMounted(loadPlugins);
+watch(() => form.component_type, applyComponentDefaults);
+function openInstall() { installVisible.value = true; command.value = ""; error.value = ""; progress.value = []; applyComponentDefaults(); }
+async function install() { if (!form.name.trim()) { error.value = "请填写插件名称"; return; } saving.value = true; error.value = ""; command.value = ""; resetConfig(); try { const result = await pluginsApi.install({ ...form, detailed_config: config }); if (result.install_command) command.value = result.install_command; if (result.task_id) { let cleanup = () => {}; cleanup = setupApi.streamProgress(result.task_id, (event) => { progress.value.push(event); if (event.status === "error") error.value = event.error ?? event.message; if (event.step === "finished") cleanup(); }); } await load(); } catch (e) { error.value = String(e); } finally { saving.value = false; } }
+async function toggle(plugin: PluginRecord) { try { const result = plugin.status === "installed" ? await pluginsApi.disable(plugin.id) : await pluginsApi.enable(plugin.id); if (result.command) { await navigator.clipboard.writeText(result.command); window.alert(`命令已复制：\n${result.command}`); } await load(); } catch (e) { error.value = String(e); } }
+async function removePlugin(id: string) { try { await pluginsApi.remove(id); await load(); } catch (e) { error.value = String(e); } }
+onMounted(() => { load(); if (route.query.install === "1") openInstall(); });
 </script>
 
 <style scoped lang="scss">
-.metadata-preview {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.global-config { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.progress-line { color: var(--admin-muted); }
+textarea { width: 100%; min-height: 140px; font-family: ui-monospace, monospace; }
 </style>

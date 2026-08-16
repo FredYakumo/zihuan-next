@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use salvo::http::StatusCode;
 use salvo::prelude::*;
@@ -7,17 +8,33 @@ use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::api::state::AppState;
+use crate::setup_orchestrator::{generate_detailed_install_command, DetailedSetupConfig, SetupOrchestrator};
+use zihuan_core::storage::{self, ConnectionConfig};
+
 const APP_DIR_NAME: &str = "zihuan-next_aibot";
 const PLUGINS_FILE_NAME: &str = "plugins.json";
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct PluginRecord {
+    #[serde(default = "default_plugin_id")]
+    pub id: String,
     pub name: String,
     pub version: String,
     pub installed_at: String,
     pub installation_method: String,
     pub extra_install_metadata: Value,
+    #[serde(default)]
+    pub component_type: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub connection_ids: Vec<String>,
+    #[serde(default)]
+    pub updated_at: String,
 }
+
+fn default_plugin_id() -> String { uuid::Uuid::new_v4().to_string() }
 
 fn plugins_file_path() -> PathBuf {
     zihuan_core::system_config::app_data_dir()
@@ -66,6 +83,51 @@ fn validate_plugin(plugin: &PluginRecord) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Deserialize)]
+pub struct InstallPluginRequest {
+    pub name: String,
+    pub version: String,
+    pub component_type: String,
+    pub install_method: String,
+    pub detailed_config: DetailedSetupConfig,
+    #[serde(default)]
+    pub extra_install_metadata: Value,
+}
+
+fn plugin_from_request(request: &InstallPluginRequest, status: &str) -> PluginRecord {
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut metadata = request.extra_install_metadata.clone();
+    if !metadata.is_object() { metadata = serde_json::json!({}); }
+    metadata["detailed_config"] = serde_json::to_value(&request.detailed_config).unwrap_or(Value::Null);
+    metadata["install_method"] = Value::String(request.install_method.clone());
+    metadata["compose_path"] = Value::String(zihuan_core::system_config::app_data_dir().join(APP_DIR_NAME).join(format!("plugin-{}.yaml", request.name.trim().replace(' ', "-"))).to_string_lossy().to_string());
+    PluginRecord {
+        id: default_plugin_id(), name: request.name.trim().to_string(), version: request.version.trim().to_string(),
+        installed_at: now.clone(), installation_method: request.install_method.clone(), extra_install_metadata: metadata,
+        component_type: request.component_type.clone(), status: status.to_string(), connection_ids: Vec::new(), updated_at: now,
+    }
+}
+
+fn save_plugin_record(plugin: &PluginRecord) -> Result<(), String> {
+    let mut plugins = load_plugins()?;
+    if let Some(existing) = plugins.iter_mut().find(|item| item.id == plugin.id) { *existing = plugin.clone(); }
+    else { plugins.push(plugin.clone()); }
+    save_plugins(&plugins)
+}
+
+fn find_plugin(id: &str) -> Result<PluginRecord, String> {
+    load_plugins()?.into_iter().find(|item| item.id == id).ok_or_else(|| format!("Plugin '{id}' was not found"))
+}
+
+fn plugin_config(plugin: &PluginRecord) -> Result<DetailedSetupConfig, String> {
+    serde_json::from_value(plugin.extra_install_metadata.get("detailed_config").cloned().ok_or("Plugin install configuration is missing")?)
+        .map_err(|err| format!("Invalid plugin install configuration: {err}"))
+}
+
+fn plugin_connections(plugin: &PluginRecord) -> Result<Vec<ConnectionConfig>, String> {
+    Ok(storage::load_connections().map_err(|err| err.to_string())?.into_iter().filter(|c| plugin.connection_ids.contains(&c.config_id)).collect())
+}
+
 fn render_error(res: &mut Response, status: StatusCode, error: String) {
     res.status_code(status);
     res.render(Json(serde_json::json!({ "error": error })));
@@ -104,8 +166,104 @@ pub async fn create_plugin(req: &mut Request, res: &mut Response) {
 }
 
 #[handler]
+pub async fn install_plugin(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let request: InstallPluginRequest = match req.parse_json().await { Ok(value) => value, Err(err) => return render_error(res, StatusCode::BAD_REQUEST, err.to_string()) };
+    if request.name.trim().is_empty() || request.version.trim().is_empty() || request.component_type.trim().is_empty() {
+        return render_error(res, StatusCode::BAD_REQUEST, "Plugin name, version and component type are required".to_string());
+    }
+    if !matches!(request.install_method.as_str(), "docker" | "binary" | "command_docker" | "command_binary") {
+        return render_error(res, StatusCode::BAD_REQUEST, "Unsupported plugin installation method".to_string());
+    }
+    let mut plugin = plugin_from_request(&request, if request.install_method.starts_with("command_") { "command_generated" } else { "installing" });
+    if let Err(error) = save_plugin_record(&plugin) { return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error); }
+
+    if request.install_method.starts_with("command_") {
+        let mut config = request.detailed_config.clone();
+        config.install_method = if request.install_method.ends_with("docker") { crate::setup_orchestrator::DetailedInstallMethod::Docker } else { crate::setup_orchestrator::DetailedInstallMethod::Binary };
+        match generate_detailed_install_command(&config) {
+            Ok(result) => {
+                let connections = result.connections;
+                for connection in &connections {
+                    if let Err(error) = storage::upsert_connection(connection.clone()) {
+                        return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string());
+                    }
+                }
+                plugin.connection_ids = connections.iter().map(|c| c.config_id.clone()).collect();
+                plugin.extra_install_metadata["install_command"] = Value::String(result.install_command.clone());
+                plugin.status = "command_generated".to_string();
+                plugin.updated_at = chrono::Utc::now().to_rfc3339();
+                if let Err(error) = save_plugin_record(&plugin) { return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error); }
+                return res.render(Json(serde_json::json!({ "plugin": plugin, "install_command": result.install_command, "connections": connections })));
+            }
+            Err(error) => return render_error(res, StatusCode::BAD_REQUEST, error),
+        }
+    }
+
+    let state = match depot.obtain::<Arc<AppState>>() { Ok(state) => state.clone(), Err(_) => return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, "failed to obtain app state".to_string()) };
+    let task_id = uuid::Uuid::new_v4().to_string();
+    let task_id_for_task = task_id.clone();
+    let (progress_tx, _rx) = tokio::sync::broadcast::channel(256);
+    state.setup_tasks.lock().unwrap().insert(task_id.clone(), progress_tx.clone());
+    let orchestrator = SetupOrchestrator::new(task_id.clone(), progress_tx);
+    let plugin_id = plugin.id.clone();
+    tokio::spawn(async move {
+        let result = orchestrator.run_detailed(request.detailed_config).await;
+        let mut current = match find_plugin(&plugin_id) { Ok(value) => value, Err(_) => return };
+        match result {
+            Ok(()) => {
+                if let Some(path) = current.extra_install_metadata.get("compose_path").and_then(Value::as_str) {
+                    let source = zihuan_core::system_config::app_data_dir().join(APP_DIR_NAME).join("detailed-compose.yaml");
+                    let _ = tokio::fs::copy(source, path).await;
+                }
+                if let Ok(connections) = storage::load_connections() { current.connection_ids = connections.iter().filter(|c| c.name.starts_with("setup-detailed-")).map(|c| c.config_id.clone()).collect(); }
+                current.status = "installed".to_string(); current.updated_at = chrono::Utc::now().to_rfc3339();
+                let _ = save_plugin_record(&current);
+            }
+            Err(error) => { current.status = "failed".to_string(); current.extra_install_metadata["last_error"] = Value::String(error); current.updated_at = chrono::Utc::now().to_rfc3339(); let _ = save_plugin_record(&current); }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        state.setup_tasks.lock().unwrap().remove(&task_id_for_task);
+    });
+    res.render(Json(serde_json::json!({ "accepted": true, "task_id": task_id, "plugin": plugin })))
+}
+
+#[handler]
+pub async fn enable_plugin(req: &mut Request, res: &mut Response) { lifecycle_plugin(req, res, true).await; }
+#[handler]
+pub async fn disable_plugin(req: &mut Request, res: &mut Response) { lifecycle_plugin(req, res, false).await; }
+
+async fn lifecycle_plugin(req: &mut Request, res: &mut Response, enabled: bool) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    let mut plugin = match find_plugin(&id) { Ok(value) => value, Err(error) => return render_error(res, StatusCode::NOT_FOUND, error) };
+    let method = plugin.installation_method.clone();
+    let command = if method.starts_with("command_") {
+        let action = if enabled { "up -d" } else { "stop" };
+        Some(format!("docker compose -f {} {}", plugin.extra_install_metadata.get("compose_path").and_then(Value::as_str).unwrap_or("docker-compose.yaml"), action))
+    } else {
+        let action = if enabled { "up" } else { "stop" };
+        if method == "docker" {
+            if let Some(path) = plugin.extra_install_metadata.get("compose_path").and_then(Value::as_str) {
+                let mut command_process = tokio::process::Command::new("docker");
+                command_process.args(["compose", "-f", path, action]);
+                if enabled { command_process.arg("-d"); }
+                let output = command_process.output().await;
+                if let Ok(output) = output { if !output.status.success() { return render_error(res, StatusCode::BAD_REQUEST, String::from_utf8_lossy(&output.stderr).trim().to_string()); } }
+            }
+        }
+        None
+    };
+    plugin.status = if enabled { "installed" } else { "disabled" }.to_string(); plugin.updated_at = chrono::Utc::now().to_rfc3339();
+    if let Err(error) = save_plugin_record(&plugin) { return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error); }
+    if let Ok(mut connections) = storage::load_connections() {
+        for connection in &mut connections { if plugin.connection_ids.contains(&connection.config_id) { connection.enabled = enabled; } }
+        let _ = storage::save_connections(connections);
+    }
+    res.render(Json(serde_json::json!({ "plugin": plugin, "command": command })))
+}
+
+#[handler]
 pub async fn update_plugin(req: &mut Request, res: &mut Response) {
-    let name = req.param::<String>("name").unwrap_or_default();
+    let name = req.param::<String>("id").or_else(|| req.param::<String>("name")).unwrap_or_default();
     let plugin: PluginRecord = match req.parse_json().await {
         Ok(plugin) => plugin,
         Err(error) => return render_error(res, StatusCode::BAD_REQUEST, error.to_string()),
@@ -118,7 +276,7 @@ pub async fn update_plugin(req: &mut Request, res: &mut Response) {
         Ok(plugins) => plugins,
         Err(error) => return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error),
     };
-    let Some(index) = plugins.iter().position(|item| item.name == name) else {
+    let Some(index) = plugins.iter().position(|item| item.id == name || item.name == name) else {
         return render_error(res, StatusCode::NOT_FOUND, format!("Plugin '{name}' was not found"));
     };
     if plugin.name != name && plugins.iter().any(|item| item.name == plugin.name) {
@@ -133,16 +291,27 @@ pub async fn update_plugin(req: &mut Request, res: &mut Response) {
 
 #[handler]
 pub async fn delete_plugin(req: &mut Request, res: &mut Response) {
-    let name = req.param::<String>("name").unwrap_or_default();
+    let id = req.param::<String>("id").or_else(|| req.param::<String>("name")).unwrap_or_default();
     let mut plugins = match load_plugins() {
         Ok(plugins) => plugins,
         Err(error) => return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error),
     };
     let previous_count = plugins.len();
-    plugins.retain(|item| item.name != name);
-    if plugins.len() == previous_count {
-        return render_error(res, StatusCode::NOT_FOUND, format!("Plugin '{name}' was not found"));
+    let target = plugins.iter().find(|item| item.id == id || item.name == id).cloned();
+    let Some(target) = target else {
+        return render_error(res, StatusCode::NOT_FOUND, format!("Plugin '{id}' was not found"));
+    };
+    if let Some(config) = target.extra_install_metadata.get("detailed_config") {
+        if target.installation_method == "docker" {
+            if let Some(path) = target.extra_install_metadata.get("compose_path").and_then(Value::as_str) {
+                let _ = tokio::process::Command::new("docker").args(["compose", "-f", path, "down"]).output().await;
+            }
+        }
+        let _ = config;
     }
+    for connection_id in &target.connection_ids { let _ = storage::delete_connection(connection_id); }
+    plugins.retain(|item| item.id != target.id && item.name != target.name);
+    if plugins.len() == previous_count { return render_error(res, StatusCode::NOT_FOUND, format!("Plugin '{id}' was not found")); }
     if let Err(error) = save_plugins(&plugins) {
         return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error);
     }
