@@ -33,10 +33,9 @@ And Zihuan can easily tweak agent behavior and model inference details—whether
 | Linux x86_64 + NVIDIA GPU | CUDA 12.6 | [Download](https://github.com/FredYakumo/zihuan-next/releases/latest/download/zihuan_next-Linux-x86_64-candle-cuda-12.6) |
 | macOS Apple Silicon | CPU | [Download](https://github.com/FredYakumo/zihuan-next/releases/latest/download/zihuan_next-macOS-Apple-cpu) |
 
-- 不需要使用 Zihuan 运行本地模型时，可以选择 **CPU 版本**。
-- CUDA 版本仅适用于 NVIDIA GPU，并且需要安装与 CUDA 12.6 兼容的运行时依赖。
-- macOS 当前提供 Apple Silicon（`arm64`）CPU 版本；其他架构或历史版本请前往 [Release](https://github.com/FredYakumo/zihuan-next/releases)。
-- Windows 下载后可以直接运行；Linux 和 macOS 首次运行前可能需要添加可执行权限：`chmod +x zihuan_next-*`。
+- 不需要使用 Zihuan 运行本地模型时，可以选择 **CPU 版本**
+- CUDA 版本仅适用于 NVIDIA GPU，并且需要安装与 CUDA 12.6 兼容的运行时依赖
+- 其他架构或历史版本： [Release](https://github.com/FredYakumo/zihuan-next/releases)。
 
 紫幻启动的时候会在用户数据目录创建或者读取紫幻运行时的相关配置文件，你至少需要一个基础Agent来让你蹬紫幻，所以紫幻首次运行时还会引导你安装和配置一个Agent。
 
