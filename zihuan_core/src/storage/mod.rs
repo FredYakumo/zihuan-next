@@ -330,8 +330,25 @@ impl ConfigRecord for ConnectionConfig {
                 elasticsearch.api_key.as_deref(),
                 "elasticsearch",
             )?;
-            let reference = crate::storage::ElasticsearchRef::new(elasticsearch.clone())?;
-            let _ = reference;
+            // validate the configuration
+            // let reference = crate::storage::ElasticsearchRef::new(elasticsearch.clone())?;
+            // let _ = reference;
+
+            
+            // This validation is also reached from async request handlers. Do not
+            // construct a blocking HTTP client here; the API layer performs live
+            // Elasticsearch checks inside spawn_blocking.
+            let base_url = elasticsearch.base_url.trim();
+            if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
+                return Err(crate::string_error!(
+                    "elasticsearch base_url must use http:// or https://"
+                ));
+            }
+            if elasticsearch.index_name.trim().is_empty() || elasticsearch.vector_dimensions == 0 {
+                return Err(crate::string_error!(
+                    "elasticsearch index_name and vector_dimensions are required"
+                ));
+            }
         }
         if let ConnectionKind::Weaviate(weaviate) = &self.kind {
             validate_connection_authentication(

@@ -201,9 +201,24 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
         Err(err) => return render_bad_request(res, err.to_string()),
     };
 
-    let collection_created = match validate_connection(&body.kind, body.allow_create_collection) {
-        Ok(collection_created) => collection_created,
-        Err(err) => return render_connection_validation_error(res, err),
+    let validation_kind = body.kind.clone();
+    let allow_create_collection = body.allow_create_collection;
+
+    // let collection_created = match validate_connection(&body.kind, body.allow_create_collection) {
+    //     Ok(collection_created) => collection_created,
+    //     Err(err) => return render_connection_validation_error(res, err),
+    // };
+    
+    // Elasticsearch/Weaviate validation uses blocking HTTP clients. Keep both
+    // construction and drop on a blocking thread instead of a Tokio worker.
+    let collection_created = match tokio::task::spawn_blocking(move || {
+        validate_connection(&validation_kind, allow_create_collection)
+    })
+    .await
+    {
+        Ok(Ok(collection_created)) => collection_created,
+        Ok(Err(err)) => return render_connection_validation_error(res, err),
+        Err(err) => return render_internal_error(res, err),
     };
 
     let connection = ConnectionConfig {
@@ -238,9 +253,22 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
         Err(err) => return render_bad_request(res, err.to_string()),
     };
 
-    let collection_created = match validate_connection(&body.kind, body.allow_create_collection) {
-        Ok(collection_created) => collection_created,
-        Err(err) => return render_connection_validation_error(res, err),
+    let validation_kind = body.kind.clone();
+    let allow_create_collection = body.allow_create_collection;
+    // Previous implementation ran the same blocking validation directly here.
+    // let collection_created = match validate_connection(&body.kind, body.allow_create_collection) {
+    //     Ok(collection_created) => collection_created,
+    //     Err(err) => return render_connection_validation_error(res, err),
+    // };
+    // The update path has the same blocking-client lifetime constraint as create.
+    let collection_created = match tokio::task::spawn_blocking(move || {
+        validate_connection(&validation_kind, allow_create_collection)
+    })
+    .await
+    {
+        Ok(Ok(collection_created)) => collection_created,
+        Ok(Err(err)) => return render_connection_validation_error(res, err),
+        Err(err) => return render_internal_error(res, err),
     };
 
     let exists = match connection_exists(&id) {
