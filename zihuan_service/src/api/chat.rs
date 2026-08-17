@@ -34,7 +34,6 @@ use crate::api::state::{RunningChatMessage, RunningChatToolCall, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
-const APP_DIR_NAME: &str = "zihuan-next_aibot";
 const CHAT_STREAM_MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 const CHAT_FORK_METADATA_SUFFIX: &str = ".fork.json";
 
@@ -1982,9 +1981,7 @@ fn resolve_effective_workspace_path(
 }
 
 fn chat_history_dir() -> Result<PathBuf> {
-    let root = zihuan_core::system_config::app_data_dir()
-        .join(APP_DIR_NAME)
-        .join(CHAT_HISTORY_DIR_NAME);
+    let root = zihuan_core::system_config::application_data_dir().join(CHAT_HISTORY_DIR_NAME);
     Ok(root)
 }
 

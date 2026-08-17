@@ -13,19 +13,7 @@ use crate::error::Result;
 /// Windows : `%APPDATA%\zihuan-next_aibot\hyperparams\`
 /// Linux/macOS : `$XDG_CONFIG_HOME/zihuan-next_aibot/hyperparams/` (or `~/.config/…`)
 fn hp_data_dir() -> Option<PathBuf> {
-    let base = if cfg!(target_os = "windows") {
-        std::env::var("APPDATA")
-            .or_else(|_| std::env::var("LOCALAPPDATA"))
-            .ok()
-            .map(PathBuf::from)
-    } else {
-        std::env::var("XDG_CONFIG_HOME")
-            .ok()
-            .map(PathBuf::from)
-            .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".config")))
-    }?;
-
-    Some(base.join("zihuan-next_aibot").join("hyperparams"))
+    Some(crate::system_config::application_data_dir().join("hyperparams"))
 }
 
 fn shared_hyperparam_yaml_path() -> Option<PathBuf> {

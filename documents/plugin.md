@@ -1,0 +1,3 @@
+# TODO 完成这个文档
+
+关系型数据库连接，Redis, 检索数据库(Elasticsearch、Weaviate)，RustFS可以作为插件安装。

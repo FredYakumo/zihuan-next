@@ -3,7 +3,7 @@
     <AdminPageHeader title="连接配置">
       <t-button variant="outline" @click="triggerImportFile">导入配置</t-button>
       <input ref="importFileInput" type="file" accept=".json" class="connection-import-input" @change="handleFileChange" />
-      <t-button theme="primary" @click="startCreate">新建连接</t-button>
+      <t-button theme="primary" @click="openCreateChoice">新建连接</t-button>
     </AdminPageHeader>
 
     <t-card class="connections-card" bordered>
@@ -68,6 +68,13 @@
         </template>
       </t-table>
     </t-card>
+
+    <t-dialog v-model:visible="createChoiceVisible" header="新建连接" :footer="false">
+      <div class="create-choice-grid">
+        <button class="create-choice" @click="chooseExistingConnection"><strong>现有连接</strong><span>使用当前连接配置逻辑</span></button>
+        <button class="create-choice" @click="choosePluginConnection"><strong>安装插件</strong><span>安装基础设施并自动创建连接</span></button>
+      </div>
+    </t-dialog>
 
     <t-drawer
       v-model:visible="drawerVisible"
@@ -176,6 +183,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
+import { useRouter } from "vue-router";
 
 import type { ConnectionConfig } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
@@ -209,6 +217,12 @@ const {
 } = useConnections();
 
 const importFileInput = ref<HTMLInputElement | null>(null);
+const router = useRouter();
+const createChoiceVisible = ref(false);
+
+function openCreateChoice() { createChoiceVisible.value = true; }
+function chooseExistingConnection() { createChoiceVisible.value = false; startCreate(); }
+function choosePluginConnection() { createChoiceVisible.value = false; router.push("/plugins?install=1"); }
 
 const columns = [
   { colKey: "name", title: "连接名称", width: 210 },
@@ -235,4 +249,9 @@ function copyConnectionConfig(connection: ConnectionConfig) {
 
 <style scoped lang="scss">
 @use "../styles/connections" as *;
+
+.create-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.create-choice { display: grid; gap: 8px; padding: 20px; text-align: left; border: 1px solid var(--admin-border); background: var(--admin-surface); border-radius: 8px; cursor: pointer; color: inherit; }
+.create-choice:hover { border-color: var(--td-brand-color); }
+.create-choice span { color: var(--admin-muted); font-size: 13px; }
 </style>

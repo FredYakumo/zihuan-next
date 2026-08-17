@@ -103,6 +103,7 @@ export type ToolRunDuration = "Short" | "Long";
 ## Running the dev server
 
 ```bash
+nvm use 22       # Required: switch to Node.js 22 before using pnpm
 cd webui
 pnpm install
 pnpm run dev     # HMR dev server on localhost:5173
@@ -113,6 +114,7 @@ The Vite dev server proxies API requests to the Rust backend (default `localhost
 ## Building for production
 
 ```bash
+nvm use 22       # Required: switch to Node.js 22 before using pnpm
 cd webui
 pnpm run build   # tsc --noEmit + vite build → webui/dist/
 ```
@@ -121,6 +123,8 @@ This is also triggered automatically by the Rust `build.rs` script when building
 
 ## Agent tips
 
+- **Icons: use TDesign Icon first** — use `tdesign-icons-vue-next` for recognizable actions, status, and feedback. Reserve text-only buttons for clear textual commands; never use emoji as icons.
+- **Plugin installation completion feedback** — successful plugin installation flows must reuse `admin/components/InstallationSuccessDialog.vue`, including flows that generate remote installation commands. Show it only after the authoritative completion signal (the completed API response, task completion event, or command-generation result), and have each caller define where the confirmation action navigates or returns.
 - **Two separate UIs** — the admin panel (`/`) and graph editor (`/editor`) are completely independent code paths with separate entry points. Changes to one don't affect the other.
 - **Use `pnpm dev` for frontend-only iteration** — much faster than full Rust rebuilds, with Vue HMR.
 - **Admin model types live in `admin/model.ts`** — add new shared types here rather than scattering them across view components.

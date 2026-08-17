@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::storage::{is_memory_expired, AgentMemoryRecord, AgentMemorySearchHit, AgentMemoryUpsert};
-use crate::system_config::app_data_dir;
+use crate::system_config::application_data_dir;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct LocalMemoryMetadata {
@@ -24,7 +24,7 @@ pub struct LocalMemoryStore {
 
 impl LocalMemoryStore {
     pub fn in_app_data_dir() -> Self {
-        Self::new(app_data_dir().join("zihuan-next_aibot").join("memory"))
+        Self::new(application_data_dir().join("memory"))
     }
 
     pub fn new(directory: PathBuf) -> Self {

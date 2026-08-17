@@ -242,9 +242,17 @@ pub fn build_router(
                 .get(plugins::list_plugins)
                 .post(plugins::create_plugin)
                 .push(
-                    Router::with_path("<name>")
+                    Router::with_path("install").post(plugins::install_plugin)
+                )
+                .push(
+                    Router::with_path("progress").get(setup_wizard::stream_setup_progress)
+                )
+                .push(
+                    Router::with_path("<id>")
                         .put(plugins::update_plugin)
-                        .delete(plugins::delete_plugin),
+                        .delete(plugins::delete_plugin)
+                        .push(Router::with_path("enable").post(plugins::enable_plugin))
+                        .push(Router::with_path("disable").post(plugins::disable_plugin)),
                 ),
         )
         .push(Router::with_path("workflow_set").get(file_io::list_workflows))

@@ -12,7 +12,7 @@
         <t-select v-model="filters.modelType">
           <t-option value="all" label="全部模型类型" />
           <t-option value="chat_llm" label="聊天模型" />
-          <t-option value="text_embedding_local" label="本地文本向量模型" />
+          <t-option value="text_embedding_local" label="文本向量模型" />
         </t-select>
         <t-select v-model="filters.enabled">
           <t-option value="all" label="全部状态" />
@@ -62,7 +62,7 @@
           <h3>基本信息</h3>
           <div class="llm-form-grid">
             <t-form-item label="名称" required><t-input v-model="form.name" placeholder="例如：OpenAI 主模型" /></t-form-item>
-            <t-form-item label="模型类型" required><t-select v-model="form.model_type" :disabled="!isCreating"><t-option value="chat_llm" label="聊天模型" /><t-option value="text_embedding_local" label="本地文本向量模型" /></t-select></t-form-item>
+            <t-form-item label="模型类型" required><t-select v-model="form.model_type" :disabled="!isCreating"><t-option value="chat_llm" label="聊天模型" /><t-option value="text_embedding_local" label="文本向量模型" /></t-select></t-form-item>
           </div>
           <t-checkbox v-model="form.enabled">启用该模型配置</t-checkbox>
         </div>
@@ -130,7 +130,7 @@ const columns = [
 ];
 
 function triggerImportFile() { importFileInput.value?.click(); }
-function modelTypeLabel(type: string) { return type === "chat_llm" ? "聊天模型" : "本地文本向量模型"; }
+function modelTypeLabel(type: string) { return type === "chat_llm" ? "聊天模型" : "文本向量模型"; }
 function modelName(item: LlmConfig) { return item.model.type === "chat_llm" ? item.model.llm.model_name : item.model.model_name; }
 function isCandleStyle(apiStyle: string) { return apiStyle === "candle_gguf" || apiStyle === "candle_hf"; }
 function apiStyleLabel(apiStyle: string) {

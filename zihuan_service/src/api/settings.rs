@@ -19,7 +19,6 @@ use zihuan_core::python_runtime_resolver::check_python_runtime;
 use zip::write::SimpleFileOptions;
 use zip::ZipArchive;
 
-const APP_DIR_NAME: &str = "zihuan-next_aibot";
 const CHAT_HISTORY_DIR: &str = "chat_history";
 const UPLOADED_IMAGES_DIR: &str = "uploaded_images";
 const TEXT_EMBEDDING_MODEL_DIR: &str = "models/text_embedding";
@@ -420,7 +419,7 @@ fn abs_path_str(path: &Path) -> String {
 
 #[handler]
 pub async fn get_storage_info(_req: &mut Request, res: &mut Response) {
-    let data_dir = zihuan_core::system_config::app_data_dir().join(APP_DIR_NAME);
+    let data_dir = zihuan_core::system_config::application_data_dir();
 
     let chat_history_path = data_dir.join(CHAT_HISTORY_DIR);
     let uploaded_images_path = Path::new(UPLOADED_IMAGES_DIR);

@@ -1343,11 +1343,24 @@ export const setup = {
 };
 
 export interface PluginRecord {
+  id: string;
   name: string;
   version: string;
   installed_at: string;
   installation_method: string;
   extra_install_metadata: unknown;
+  component_type: string;
+  status: "installing" | "installed" | "disabled" | "failed" | "command_generated" | string;
+  connection_ids: string[];
+  updated_at: string;
+}
+
+export interface PluginInstallResponse {
+  accepted?: boolean;
+  task_id?: string;
+  plugin: PluginRecord;
+  install_command?: string;
+  connections?: ConnectionConfig[];
 }
 
 export const pluginsApi = {
@@ -1362,5 +1375,21 @@ export const pluginsApi = {
   },
   remove(name: string): Promise<{ ok: boolean }> {
     return request("DELETE", `/plugins/${encodeURIComponent(name)}`);
+  },
+  install(payload: {
+    name: string;
+    version: string;
+    component_type: string;
+    install_method?: "docker" | "binary" | "command_docker" | "command_binary";
+    detailed_config?: DetailedSetupConfig;
+    extra_install_metadata?: unknown;
+  }): Promise<PluginInstallResponse> {
+    return request("POST", "/plugins/install", payload);
+  },
+  enable(id: string): Promise<{ plugin: PluginRecord; command?: string | null }> {
+    return request("POST", `/plugins/${encodeURIComponent(id)}/enable`);
+  },
+  disable(id: string): Promise<{ plugin: PluginRecord; command?: string | null }> {
+    return request("POST", `/plugins/${encodeURIComponent(id)}/disable`);
   },
 };
