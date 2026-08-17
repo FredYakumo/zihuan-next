@@ -65,7 +65,10 @@
             <template #title>记忆介质</template>
             <div class="agent-service-form-grid">
               <t-form-item label="记忆介质" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆介质。' : undefined">
-                <t-select v-model="form.workspace_memory_backend" placeholder="请选择记忆库">
+                <t-select v-model="form.workspace_memory_backend" placeholder="请选择记忆库" @change="handleMemoryBackendChange">
+                  <t-option class="agent-service-add-retrieval-option" value="__add_retrieval_database__" label="新增检索数据库">
+                    <span class="agent-service-add-model-option-content"><AddIcon />新增检索数据库</span>
+                  </t-option>
                   <t-option value="local_file" label="本地文件" />
                   <t-option value="weaviate" label="Weaviate" />
                   <t-option value="elasticsearch" label="Elasticsearch" />
@@ -506,7 +509,10 @@
           <template #title>Agent 记忆库</template>
           <div class="agent-service-form-grid">
             <t-form-item label="记忆库" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆库。' : undefined">
-              <t-select v-model="form.workspace_memory_backend" placeholder="请选择记忆库">
+              <t-select v-model="form.workspace_memory_backend" placeholder="请选择记忆库" @change="handleMemoryBackendChange">
+                <t-option class="agent-service-add-retrieval-option" value="__add_retrieval_database__" label="新增检索数据库">
+                  <span class="agent-service-add-model-option-content"><AddIcon />新增检索数据库</span>
+                </t-option>
                 <t-option value="local_file" label="本地 Markdown 文件" />
                 <t-option value="weaviate" label="Weaviate" />
                 <t-option value="elasticsearch" label="Elasticsearch" />
@@ -1267,6 +1273,20 @@
         <input ref="modelImportFileInput" type="file" accept=".json,application/json" class="agent-service-import-input" @change="handleModelFileChange" />
       </div>
     </t-dialog>
+    <t-dialog
+      v-model:visible="showRetrievalDatabaseDialog"
+      header="新增检索数据库"
+      :confirm-btn="null"
+      cancel-btn="取消"
+      :close-on-overlay-click="false"
+    >
+      <div class="agent-service-model-config-actions">
+        <t-button block theme="primary" @click="openRetrievalDatabaseCreatePage">新增检索数据库</t-button>
+        <t-button block variant="outline" :loading="retrievalDatabaseImporting" @click="importRetrievalDatabaseFromClipboard">从剪贴板导入</t-button>
+        <t-button block variant="outline" :loading="retrievalDatabaseImporting" @click="triggerRetrievalDatabaseImportFile">从 JSON 导入</t-button>
+        <input ref="retrievalDatabaseImportFileInput" type="file" accept=".json,application/json" class="agent-service-import-input" @change="handleRetrievalDatabaseFileChange" />
+      </div>
+    </t-dialog>
   </section>
 </template>
 
@@ -1277,7 +1297,7 @@ import { AddIcon, CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
 import { system, type ServiceWithRuntime } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useAgents } from "../composables/useAgents";
-import { assertLlmConfig } from "../model";
+import { assertConnectionConfig, assertLlmConfig } from "../model";
 
 const {
   serviceTypes,
@@ -1403,6 +1423,9 @@ const router = useRouter();
 const showModelConfigDialog = ref(false);
 const modelImportFileInput = ref<HTMLInputElement | null>(null);
 const modelImporting = ref(false);
+const showRetrievalDatabaseDialog = ref(false);
+const retrievalDatabaseImportFileInput = ref<HTMLInputElement | null>(null);
+const retrievalDatabaseImporting = ref(false);
 
 function handlePrimaryModelChange(value: string | number) {
   if (String(value) !== "__add_model__") return;
@@ -1410,9 +1433,20 @@ function handlePrimaryModelChange(value: string | number) {
   showModelConfigDialog.value = true;
 }
 
+function handleMemoryBackendChange(value: string | number) {
+  if (String(value) !== "__add_retrieval_database__") return;
+  form.workspace_memory_backend = "";
+  showRetrievalDatabaseDialog.value = true;
+}
+
 function openModelCreatePage() {
   showModelConfigDialog.value = false;
   router.push({ path: "/llm", query: { action: "create" } });
+}
+
+function openRetrievalDatabaseCreatePage() {
+  showRetrievalDatabaseDialog.value = false;
+  router.push({ path: "/connections", query: { action: "create" } });
 }
 
 async function importModelFromText(raw: string) {
@@ -1446,6 +1480,47 @@ function handleModelFileChange(event: Event) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => { void importModelFromText(String(reader.result)); input.value = ""; };
+  reader.onerror = () => { alert("文件读取失败"); input.value = ""; };
+  reader.readAsText(file);
+}
+
+async function importRetrievalDatabaseFromText(raw: string) {
+  if (retrievalDatabaseImporting.value) return;
+  retrievalDatabaseImporting.value = true;
+  try {
+    const config = assertConnectionConfig(JSON.parse(raw));
+    const type = String(config.kind.type);
+    if (type !== "weaviate" && type !== "elasticsearch") {
+      throw new Error("检索数据库仅支持 Weaviate 或 Elasticsearch 连接配置");
+    }
+    const created = await system.connections.create({ name: config.name, enabled: config.enabled, kind: config.kind });
+    await load();
+    form.workspace_memory_backend = type;
+    if (type === "weaviate") form.workspace_weaviate_memory_connection_id = created.config_id;
+    else form.workspace_elasticsearch_memory_connection_id = created.config_id;
+    showRetrievalDatabaseDialog.value = false;
+  } catch (error) {
+    alert(`检索数据库导入失败：${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    retrievalDatabaseImporting.value = false;
+  }
+}
+
+async function importRetrievalDatabaseFromClipboard() {
+  try {
+    await importRetrievalDatabaseFromText(await navigator.clipboard.readText());
+  } catch (error) {
+    alert(`读取剪贴板失败：${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function triggerRetrievalDatabaseImportFile() { retrievalDatabaseImportFileInput.value?.click(); }
+function handleRetrievalDatabaseFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { void importRetrievalDatabaseFromText(String(reader.result)); input.value = ""; };
   reader.onerror = () => { alert("文件读取失败"); input.value = ""; };
   reader.readAsText(file);
 }
@@ -1682,6 +1757,13 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   font-weight: 600;
 }
 
+:global(.t-select-option.agent-service-add-retrieval-option) {
+  position: relative;
+  margin-bottom: 6px;
+  color: var(--td-brand-color);
+  font-weight: 600;
+}
+
 :global(.agent-service-add-model-option-content) {
   display: inline-flex;
   align-items: center;
@@ -1698,6 +1780,15 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
 }
 
 :global(.t-select-option.agent-service-add-model-option::after) {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: -4px;
+  left: 8px;
+  border-bottom: 1px solid var(--td-component-border);
+}
+
+:global(.t-select-option.agent-service-add-retrieval-option::after) {
   content: "";
   position: absolute;
   right: 8px;

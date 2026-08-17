@@ -183,7 +183,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import type { ConnectionConfig } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
@@ -217,10 +217,12 @@ const {
 } = useConnections();
 
 const importFileInput = ref<HTMLInputElement | null>(null);
+const route = useRoute();
 const router = useRouter();
 const createChoiceVisible = ref(false);
 
 function openCreateChoice() { createChoiceVisible.value = true; }
+if (route.query.action === "create") openCreateChoice();
 function chooseExistingConnection() { createChoiceVisible.value = false; startCreate(); }
 function choosePluginConnection() { createChoiceVisible.value = false; router.push("/plugins?install=1"); }
 
