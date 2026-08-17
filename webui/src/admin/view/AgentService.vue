@@ -43,7 +43,10 @@
             <template #title>{{ form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
             <div class="agent-service-form-grid">
               <t-form-item :label="form.type === 'workspace' ? '默认模型' : '模型配置'" required>
-                <t-select v-model="form.llm_ref_id" placeholder="请选择">
+                <t-select v-model="form.llm_ref_id" placeholder="请选择" @change="handlePrimaryModelChange">
+                  <t-option class="agent-service-add-model-option" value="__add_model__" label="新增模型配置">
+                    <span class="agent-service-add-model-option-content"><AddIcon />新增模型配置</span>
+                  </t-option>
                   <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
@@ -481,7 +484,10 @@
           <template #title>{{ form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
           <div class="agent-service-form-grid">
             <t-form-item :label="form.type === 'workspace' ? '默认模型' : '模型配置'" required>
-              <t-select v-model="form.llm_ref_id" placeholder="请选择">
+              <t-select v-model="form.llm_ref_id" placeholder="请选择" @change="handlePrimaryModelChange">
+                <t-option class="agent-service-add-model-option" value="__add_model__" label="新增模型配置">
+                  <span class="agent-service-add-model-option-content"><AddIcon />新增模型配置</span>
+                </t-option>
                 <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
               </t-select>
             </t-form-item>
@@ -1247,15 +1253,31 @@
         <template #empty><div class="agent-service-empty">暂无匹配的 Service。</div></template>
       </t-table>
     </t-card>
+    <t-dialog
+      v-model:visible="showModelConfigDialog"
+      header="新增模型配置"
+      :confirm-btn="null"
+      cancel-btn="取消"
+      :close-on-overlay-click="false"
+    >
+      <div class="agent-service-model-config-actions">
+        <t-button block theme="primary" @click="openModelCreatePage">新增模型配置</t-button>
+        <t-button block variant="outline" :loading="modelImporting" @click="importModelFromClipboard">从剪贴板导入</t-button>
+        <t-button block variant="outline" :loading="modelImporting" @click="triggerModelImportFile">从 JSON 导入</t-button>
+        <input ref="modelImportFileInput" type="file" accept=".json,application/json" class="agent-service-import-input" @change="handleModelFileChange" />
+      </div>
+    </t-dialog>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
-import { CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
-import type { ServiceWithRuntime } from "../../api/client";
+import { useRouter } from "vue-router";
+import { AddIcon, CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
+import { system, type ServiceWithRuntime } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useAgents } from "../composables/useAgents";
+import { assertLlmConfig } from "../model";
 
 const {
   serviceTypes,
@@ -1376,6 +1398,57 @@ const {
   copyServiceConfig,
   handleServiceFileChange,
 } = useAgents();
+
+const router = useRouter();
+const showModelConfigDialog = ref(false);
+const modelImportFileInput = ref<HTMLInputElement | null>(null);
+const modelImporting = ref(false);
+
+function handlePrimaryModelChange(value: string | number) {
+  if (String(value) !== "__add_model__") return;
+  form.llm_ref_id = "";
+  showModelConfigDialog.value = true;
+}
+
+function openModelCreatePage() {
+  showModelConfigDialog.value = false;
+  router.push({ path: "/llm", query: { action: "create" } });
+}
+
+async function importModelFromText(raw: string) {
+  if (modelImporting.value) return;
+  modelImporting.value = true;
+  try {
+    const config = assertLlmConfig(JSON.parse(raw));
+    const created = await system.llm.create({ name: config.name, enabled: config.enabled, model: config.model });
+    await load();
+    form.llm_ref_id = created.config_id;
+    showModelConfigDialog.value = false;
+  } catch (error) {
+    alert(`模型配置导入失败：${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    modelImporting.value = false;
+  }
+}
+
+async function importModelFromClipboard() {
+  try {
+    await importModelFromText(await navigator.clipboard.readText());
+  } catch (error) {
+    alert(`读取剪贴板失败：${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function triggerModelImportFile() { modelImportFileInput.value?.click(); }
+function handleModelFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { void importModelFromText(String(reader.result)); input.value = ""; };
+  reader.onerror = () => { alert("文件读取失败"); input.value = ""; };
+  reader.readAsText(file);
+}
 
 const serviceImportFileInput = ref<HTMLInputElement | null>(null);
 const filters = reactive({
@@ -1595,6 +1668,42 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   gap: 24px;
   margin-top: 12px;
   flex-wrap: wrap;
+}
+
+.agent-service-model-config-actions {
+  display: grid;
+  gap: 12px;
+}
+
+:global(.t-select-option.agent-service-add-model-option) {
+  position: relative;
+  margin-bottom: 6px;
+  color: var(--td-brand-color);
+  font-weight: 600;
+}
+
+:global(.agent-service-add-model-option-content) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+:global(.agent-service-add-model-option-content .t-icon) {
+  width: 16px;
+  height: 16px;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--td-brand-color);
+  color: var(--td-text-color-anti);
+}
+
+:global(.t-select-option.agent-service-add-model-option::after) {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: -4px;
+  left: 8px;
+  border-bottom: 1px solid var(--td-component-border);
 }
 
 .agent-service-section-title-row {

@@ -111,6 +111,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
+import { useRoute } from "vue-router";
 
 import type { LlmConfig } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
@@ -119,6 +120,7 @@ import ConnectionCredentialInput from "./ConnectionCredentialInput.vue";
 
 const { filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, isCandleMode, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, updateEnabled, updatingEnabledIds, localLlmOptionLabel, compactId, formatTime, copiedId, copyConfig, handleFileChange } = useLlm();
 
+const route = useRoute();
 const importFileInput = ref<HTMLInputElement | null>(null);
 const columns = [
   { colKey: "name", title: "配置名称", width: 210 },
@@ -130,6 +132,7 @@ const columns = [
 ];
 
 function triggerImportFile() { importFileInput.value?.click(); }
+if (route.query.action === "create") startCreate();
 function modelTypeLabel(type: string) { return type === "chat_llm" ? "聊天模型" : "文本向量模型"; }
 function modelName(item: LlmConfig) { return item.model.type === "chat_llm" ? item.model.llm.model_name : item.model.model_name; }
 function isCandleStyle(apiStyle: string) { return apiStyle === "candle_gguf" || apiStyle === "candle_hf"; }
