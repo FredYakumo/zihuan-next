@@ -9,7 +9,13 @@
         <template #actions="{ row }"><t-space size="small"><t-button v-if="row.status === 'installed'" variant="text" @click="toggle(row)">停用</t-button><t-button v-else-if="row.status === 'disabled'" variant="text" @click="toggle(row)">启用</t-button><t-popconfirm content="确认卸载插件并删除关联连接吗？" @confirm="removePlugin(row.id)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></t-space></template>
       </t-table>
     </t-card>
-    <t-dialog v-model:visible="installVisible" header="安装插件" width="720px" :confirm-btn="{ content: '开始安装', loading: saving, disabled: !componentChosen || environmentLoading }" @confirm="install">
+    <t-dialog v-model:visible="installVisible" width="720px">
+      <template #header>
+        <div class="dialog-header">
+          <t-button v-if="componentChosen" variant="text" size="small" class="dialog-back" @click="componentChosen = false"><ChevronLeftIcon /></t-button>
+          <span class="dialog-title">安装插件</span>
+        </div>
+      </template>
       <div v-if="!componentChosen" class="component-picker">
         <p class="component-picker-title">选择组件类型</p>
         <div class="component-grid">
@@ -27,7 +33,6 @@
           <strong>{{ selectedComponent.label }}</strong>
           <span>{{ selectedComponent.desc }}</span>
         </div>
-        <t-button variant="text" size="small" @click="componentChosen = false">重新选择</t-button>
       </div>
       <t-form label-align="top">
         <div class="form-grid">
@@ -92,6 +97,12 @@
         </template>
       </t-form>
       </div>
+      <template #footer>
+        <div class="dialog-footer">
+          <t-button variant="outline" @click="installVisible = false">取消</t-button>
+          <t-button theme="primary" :loading="saving" :disabled="!componentChosen || environmentLoading" @click="install">开始安装</t-button>
+        </div>
+      </template>
     </t-dialog>
   </section>
 </template>
@@ -99,6 +110,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
+import { ChevronLeftIcon } from "tdesign-icons-vue-next";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { pluginsApi, setup as setupApi, type DetailedSetupConfig, type EnvironmentInfo, type PluginRecord, type SetupProgressEvent } from "../../api/client";
 import SetupCredentialInput from "../setup/SetupCredentialInput.vue";
@@ -188,6 +200,9 @@ onMounted(() => { load(); if (route.query.install === "1") openInstall(); });
 .component-card-name { font-size: 14px; }
 .component-card-desc { font-size: 12px; color: var(--admin-muted); text-align: center; }
 .selected-component-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding: 10px 12px; border: 1px solid var(--admin-border); border-radius: 8px; background: var(--admin-bg-panel); }
+.dialog-header { display: flex; align-items: center; gap: 4px; }
+.dialog-back { margin-left: -8px; }
+.dialog-footer { display: flex; justify-content: flex-end; gap: 8px; }
 .selected-component-icon { width: 28px; height: 28px; object-fit: contain; }
 .selected-component-info { display: flex; flex-direction: column; flex: 1; line-height: 1.4;
   span { font-size: 12px; color: var(--admin-muted); }
