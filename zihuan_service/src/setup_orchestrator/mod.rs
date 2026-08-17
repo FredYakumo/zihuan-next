@@ -715,7 +715,7 @@ async fn run_detailed_binary(_config: &DetailedSetupConfig, services: &[&str]) -
     }
 }
 
-fn detailed_compose_path() -> PathBuf { zihuan_core::system_config::app_data_dir().join("zihuan-next_aibot").join("detailed-compose.yaml") }
+fn detailed_compose_path() -> PathBuf { zihuan_core::system_config::application_data_dir().join("detailed-compose.yaml") }
 
 fn detailed_data_dirs(config: &DetailedSetupConfig) -> Vec<String> {
     let mut data_dirs = Vec::new();
@@ -1278,8 +1278,7 @@ const NAPCAT_WIN_ONEKEY_URL: &str =
 async fn install_napcat_native(http_proxy: Option<&str>, qq_id: Option<&str>) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {
-        let data_dir = zihuan_core::system_config::app_data_dir();
-        let install_root = data_dir.join("zihuan-next_aibot").join("napcat_install");
+        let install_root = zihuan_core::system_config::application_data_dir().join("napcat_install");
         let zip_path = install_root.join("NapCat.OneKey.zip");
         let extract_dir = install_root.join("NapCat");
 

@@ -18,11 +18,11 @@ pub struct SetupWizardState {
 }
 
 fn setup_wizard_state_path() -> PathBuf {
-    app_data_dir().join("zihuan-next_aibot").join("setup_wizard_state.json")
+    crate::system_config::application_data_dir().join("setup_wizard_state.json")
 }
 
 fn setup_completed_flag_path() -> PathBuf {
-    app_data_dir().join("zihuan-next_aibot").join(".setup_completed")
+    crate::system_config::application_data_dir().join(".setup_completed")
 }
 
 pub fn load_setup_wizard_state() -> Result<SetupWizardState> {
@@ -79,18 +79,4 @@ pub fn clear_setup_wizard_state() -> Result<()> {
     let _ = fs::remove_file(setup_wizard_state_path());
     let _ = fs::remove_file(setup_completed_flag_path());
     Ok(())
-}
-
-fn app_data_dir() -> PathBuf {
-    if cfg!(target_os = "windows") {
-        std::env::var("APPDATA")
-            .or_else(|_| std::env::var("LOCALAPPDATA"))
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("."))
-    } else {
-        std::env::var("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|_| std::env::var("HOME").map(|home| PathBuf::from(home).join(".config")))
-            .unwrap_or_else(|_| PathBuf::from("."))
-    }
 }

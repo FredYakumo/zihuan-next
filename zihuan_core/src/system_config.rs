@@ -85,7 +85,7 @@ pub fn system_config_file_path() -> PathBuf {
 }
 
 pub fn system_config_dir() -> PathBuf {
-    app_data_dir().join(APP_DIR_NAME).join(SYSTEM_CONFIG_DIR)
+    application_data_dir().join(SYSTEM_CONFIG_DIR)
 }
 
 pub fn app_data_dir() -> PathBuf {
@@ -100,6 +100,10 @@ pub fn app_data_dir() -> PathBuf {
             .or_else(|_| std::env::var("HOME").map(|home| PathBuf::from(home).join(".config")))
             .unwrap_or_else(|_| PathBuf::from("."))
     }
+}
+
+pub fn application_data_dir() -> PathBuf {
+    app_data_dir().join(APP_DIR_NAME)
 }
 
 fn default_system_config_root() -> Value {

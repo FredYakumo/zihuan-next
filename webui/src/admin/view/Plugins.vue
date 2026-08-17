@@ -36,11 +36,10 @@
       </div>
       <t-form label-align="top">
         <div class="form-grid">
-          <t-form-item label="插件名称" required><t-input v-model="form.name" :placeholder="`${selectedComponent.label} 服务`" /></t-form-item>
-          <t-form-item label="安装方式" required class="install-method-item">
+          <t-form-item label="插件名称" required><t-input v-model="form.name" /></t-form-item>
+          <t-form-item v-if="form.component_type !== 'sqlite'" label="安装方式" required class="install-method-item">
             <div class="install-method">
-              <span v-if="form.component_type === 'sqlite'" class="install-method-status">SQLite 为嵌入式数据库，安装时直接创建数据库文件，无需部署服务</span>
-              <span v-else-if="environmentLoading" class="install-method-status">正在检测本机安装能力...</span>
+              <span v-if="environmentLoading" class="install-method-status">正在检测本机安装能力...</span>
               <template v-else>
                 <label :class="{ unavailable: !dockerSupported }" :title="dockerUnsupportedReason"><input v-model="form.install_method" type="radio" value="docker" :disabled="!dockerSupported" /> 本机 Docker <small v-if="!dockerSupported">（不可用）</small></label>
                 <label :class="{ unavailable: !binarySupported }" :title="binaryUnsupportedReason"><input v-model="form.install_method" type="radio" value="binary" :disabled="!binarySupported" /> 本机 native 程序 <small v-if="!binarySupported">（不可用）</small></label>
@@ -56,10 +55,7 @@
           <label v-if="config.expose_public_access"><input v-model="config.use_target_machine_address" type="checkbox" /> 使用目标机器地址</label>
           <SetupField v-if="config.expose_public_access && config.use_target_machine_address" label="目标机器地址（可选）"><input v-model="config.target_machine_address" placeholder="例如 203.0.113.10" /></SetupField>
         </div>
-        <div v-if="form.component_type === 'sqlite'" class="form-grid">
-          <SetupField label="数据库文件路径"><input v-model="config.relational.sqlite_path" placeholder="./data/plugin-sqlite.db" /></SetupField>
-        </div>
-        <div v-else-if="form.component_type === 'mysql'" class="form-grid">
+        <div v-if="form.component_type === 'mysql'" class="form-grid">
           <SetupDeploymentFields v-model="config.relational.deployment" />
           <SetupField label="主机"><input v-model="config.relational.host" /></SetupField>
           <SetupField label="端口"><input v-model.number="config.relational.deployment.port" type="number" min="1" /></SetupField>
@@ -84,7 +80,7 @@
           <SetupField label="Secret Key"><SetupCredentialInput v-model="config.rustfs.secret_key" /></SetupField>
           <label><input v-model="config.rustfs.path_style" type="checkbox" /> 使用 path-style</label>
         </div>
-        <div v-else class="form-grid">
+        <div v-else-if="form.component_type === 'weaviate' || form.component_type === 'elasticsearch'" class="form-grid">
           <SetupDeploymentFields v-model="config.search.deployment" />
           <SetupField label="Base URL"><input v-model="config.search.base_url" /></SetupField>
           <SetupField v-if="form.component_type === 'elasticsearch'" label="用户名"><input v-model="config.search.username" disabled /></SetupField>
@@ -100,7 +96,7 @@
       <template #footer>
         <div class="dialog-footer">
           <t-button variant="outline" @click="installVisible = false">取消</t-button>
-          <t-button theme="primary" :loading="saving" :disabled="!componentChosen || environmentLoading" @click="install">开始安装</t-button>
+          <t-button theme="primary" :loading="saving" :disabled="!componentChosen || (form.component_type !== 'sqlite' && environmentLoading)" @click="install">开始安装</t-button>
         </div>
       </template>
     </t-dialog>
@@ -156,12 +152,12 @@ function resetConfig() { config.relational.enabled = form.component_type === "my
 function applyComponentDefaults() {
   const component = form.component_type;
   if (component === "mysql") Object.assign(config.relational, { type: "mysql", deployment: { image: "mysql:8.4", port: 3306, data_dir: "./data/plugin-mysql", container_name: "zihuan-plugin-mysql", restart_policy: "unless-stopped" }, host: "127.0.0.1", username: "root", password: "", database: "zihuan" });
-  if (component === "sqlite") Object.assign(config.relational, { type: "sqlite", sqlite_path: "./data/plugin-sqlite.db" });
+  if (component === "sqlite") Object.assign(config.relational, { type: "sqlite", sqlite_path: "" });
   if (component === "redis") Object.assign(config.redis, { deployment: { image: "redis:7", port: 6379, data_dir: "./data/plugin-redis", container_name: "zihuan-plugin-redis", restart_policy: "unless-stopped" }, url: "redis://127.0.0.1:6379", username: null, password: null });
   if (component === "rustfs") Object.assign(config.rustfs, { deployment: { image: "rustfs/rustfs:latest", port: 9000, data_dir: "./data/plugin-rustfs", container_name: "zihuan-plugin-rustfs", restart_policy: "unless-stopped" }, endpoint: "http://127.0.0.1:9000", bucket: "zihuan", access_key: "", secret_key: "" });
   if (component === "weaviate") Object.assign(config.search, { type: "weaviate", deployment: { image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./data/plugin-weaviate", container_name: "zihuan-plugin-weaviate", restart_policy: "unless-stopped" }, base_url: "http://127.0.0.1:8080", username: null, password: null, api_key: "", auth_method: "api_key" });
   if (component === "elasticsearch") Object.assign(config.search, { type: "elasticsearch", deployment: { image: "docker.elastic.co/elasticsearch/elasticsearch:8.15.0", port: 9200, data_dir: "./data/plugin-elasticsearch", container_name: "zihuan-plugin-elasticsearch", restart_policy: "unless-stopped" }, base_url: "http://127.0.0.1:9200", username: "elastic", password: "", api_key: null, auth_method: "password" });
-  form.install_method = component === "sqlite" ? "binary" : getPreferredInstallMethod();
+  form.install_method = getPreferredInstallMethod();
   resetConfig();
 }
 watch(() => form.component_type, applyComponentDefaults);
@@ -181,9 +177,10 @@ async function detectEnvironment() {
     environmentLoading.value = false;
   }
 }
-function selectComponent(value: string) { form.component_type = value; componentChosen.value = true; }
+function randomPluginName() { return `${selectedComponent.value.value}-plugin-${Math.floor(1000 + Math.random() * 9000)}`; }
+function selectComponent(value: string) { form.component_type = value; form.name = randomPluginName(); componentChosen.value = true; }
 function openInstall() { installVisible.value = true; command.value = ""; error.value = ""; progress.value = []; componentChosen.value = false; applyComponentDefaults(); detectEnvironment(); }
-async function install() { if (!form.name.trim()) { error.value = "请填写插件名称"; return; } saving.value = true; error.value = ""; command.value = ""; resetConfig(); try { const result = await pluginsApi.install({ ...form, detailed_config: config }); if (result.install_command) command.value = result.install_command; if (result.task_id) { let cleanup = () => {}; cleanup = setupApi.streamProgress(result.task_id, (event) => { progress.value.push(event); if (event.status === "error") error.value = event.error ?? event.message; if (event.step === "finished") cleanup(); }); } await load(); } catch (e) { error.value = String(e); } finally { saving.value = false; } }
+async function install() { if (!form.name.trim()) { error.value = "请填写插件名称"; return; } saving.value = true; error.value = ""; command.value = ""; resetConfig(); try { const { install_method, ...plugin } = form; const result = await pluginsApi.install({ ...plugin, ...(form.component_type === "sqlite" ? {} : { install_method, detailed_config: config }) }); if (result.install_command) command.value = result.install_command; if (result.task_id) { let cleanup = () => {}; cleanup = setupApi.streamProgress(result.task_id, (event) => { progress.value.push(event); if (event.status === "error") error.value = event.error ?? event.message; if (event.step === "finished") cleanup(); }); } await load(); } catch (e) { error.value = String(e); } finally { saving.value = false; } }
 async function toggle(plugin: PluginRecord) { try { const result = plugin.status === "installed" ? await pluginsApi.disable(plugin.id) : await pluginsApi.enable(plugin.id); if (result.command) { await navigator.clipboard.writeText(result.command); window.alert(`命令已复制：\n${result.command}`); } await load(); } catch (e) { error.value = String(e); } }
 async function removePlugin(id: string) { try { await pluginsApi.remove(id); await load(); } catch (e) { error.value = String(e); } }
 onMounted(() => { load(); if (route.query.install === "1") openInstall(); });

@@ -12,7 +12,8 @@ use crate::api::state::AppState;
 use crate::setup_orchestrator::{generate_detailed_install_command, DetailedSetupConfig, SetupOrchestrator};
 use zihuan_core::storage::{self, ConnectionConfig};
 
-const APP_DIR_NAME: &str = "zihuan-next_aibot";
+mod special_installers;
+
 const PLUGINS_FILE_NAME: &str = "plugins.json";
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -37,9 +38,7 @@ pub struct PluginRecord {
 fn default_plugin_id() -> String { uuid::Uuid::new_v4().to_string() }
 
 fn plugins_file_path() -> PathBuf {
-    zihuan_core::system_config::app_data_dir()
-        .join(APP_DIR_NAME)
-        .join(PLUGINS_FILE_NAME)
+    zihuan_core::system_config::application_data_dir().join(PLUGINS_FILE_NAME)
 }
 
 fn load_plugins() -> Result<Vec<PluginRecord>, String> {
@@ -88,19 +87,23 @@ pub struct InstallPluginRequest {
     pub name: String,
     pub version: String,
     pub component_type: String,
+    #[serde(default)]
     pub install_method: String,
-    pub detailed_config: DetailedSetupConfig,
+    #[serde(default)]
+    pub detailed_config: Option<DetailedSetupConfig>,
     #[serde(default)]
     pub extra_install_metadata: Value,
 }
 
-fn plugin_from_request(request: &InstallPluginRequest, status: &str) -> PluginRecord {
+pub(crate) fn plugin_from_request(request: &InstallPluginRequest, status: &str) -> PluginRecord {
     let now = chrono::Utc::now().to_rfc3339();
     let mut metadata = request.extra_install_metadata.clone();
     if !metadata.is_object() { metadata = serde_json::json!({}); }
-    metadata["detailed_config"] = serde_json::to_value(&request.detailed_config).unwrap_or(Value::Null);
-    metadata["install_method"] = Value::String(request.install_method.clone());
-    metadata["compose_path"] = Value::String(zihuan_core::system_config::app_data_dir().join(APP_DIR_NAME).join(format!("plugin-{}.yaml", request.name.trim().replace(' ', "-"))).to_string_lossy().to_string());
+    if let Some(config) = &request.detailed_config {
+        metadata["detailed_config"] = serde_json::to_value(config).unwrap_or(Value::Null);
+        metadata["install_method"] = Value::String(request.install_method.clone());
+        metadata["compose_path"] = Value::String(zihuan_core::system_config::application_data_dir().join(format!("plugin-{}.yaml", request.name.trim().replace(' ', "-"))).to_string_lossy().to_string());
+    }
     PluginRecord {
         id: default_plugin_id(), name: request.name.trim().to_string(), version: request.version.trim().to_string(),
         installed_at: now.clone(), installation_method: request.install_method.clone(), extra_install_metadata: metadata,
@@ -108,7 +111,7 @@ fn plugin_from_request(request: &InstallPluginRequest, status: &str) -> PluginRe
     }
 }
 
-fn save_plugin_record(plugin: &PluginRecord) -> Result<(), String> {
+pub(crate) fn save_plugin_record(plugin: &PluginRecord) -> Result<(), String> {
     let mut plugins = load_plugins()?;
     if let Some(existing) = plugins.iter_mut().find(|item| item.id == plugin.id) { *existing = plugin.clone(); }
     else { plugins.push(plugin.clone()); }
@@ -171,14 +174,24 @@ pub async fn install_plugin(req: &mut Request, res: &mut Response, depot: &mut D
     if request.name.trim().is_empty() || request.version.trim().is_empty() || request.component_type.trim().is_empty() {
         return render_error(res, StatusCode::BAD_REQUEST, "Plugin name, version and component type are required".to_string());
     }
+    if let Some(installer) = special_installers::installer_for(&request.component_type) {
+        return match installer.install(&request).await {
+            Ok(plugin) => res.render(Json(serde_json::json!({ "plugin": plugin }))),
+            Err(error) => render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error),
+        };
+    }
     if !matches!(request.install_method.as_str(), "docker" | "binary" | "command_docker" | "command_binary") {
         return render_error(res, StatusCode::BAD_REQUEST, "Unsupported plugin installation method".to_string());
     }
+    let detailed_config = match request.detailed_config.clone() {
+        Some(config) => config,
+        None => return render_error(res, StatusCode::BAD_REQUEST, "Detailed plugin configuration is required".to_string()),
+    };
     let mut plugin = plugin_from_request(&request, if request.install_method.starts_with("command_") { "command_generated" } else { "installing" });
     if let Err(error) = save_plugin_record(&plugin) { return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error); }
 
     if request.install_method.starts_with("command_") {
-        let mut config = request.detailed_config.clone();
+        let mut config = detailed_config;
         config.install_method = if request.install_method.ends_with("docker") { crate::setup_orchestrator::DetailedInstallMethod::Docker } else { crate::setup_orchestrator::DetailedInstallMethod::Binary };
         match generate_detailed_install_command(&config) {
             Ok(result) => {
@@ -207,12 +220,12 @@ pub async fn install_plugin(req: &mut Request, res: &mut Response, depot: &mut D
     let orchestrator = SetupOrchestrator::new(task_id.clone(), progress_tx);
     let plugin_id = plugin.id.clone();
     tokio::spawn(async move {
-        let result = orchestrator.run_detailed(request.detailed_config).await;
+        let result = orchestrator.run_detailed(detailed_config).await;
         let mut current = match find_plugin(&plugin_id) { Ok(value) => value, Err(_) => return };
         match result {
             Ok(()) => {
                 if let Some(path) = current.extra_install_metadata.get("compose_path").and_then(Value::as_str) {
-                    let source = zihuan_core::system_config::app_data_dir().join(APP_DIR_NAME).join("detailed-compose.yaml");
+                    let source = zihuan_core::system_config::application_data_dir().join("detailed-compose.yaml");
                     let _ = tokio::fs::copy(source, path).await;
                 }
                 if let Ok(connections) = storage::load_connections() { current.connection_ids = connections.iter().filter(|c| c.name.starts_with("setup-detailed-")).map(|c| c.config_id.clone()).collect(); }
@@ -301,6 +314,11 @@ pub async fn delete_plugin(req: &mut Request, res: &mut Response) {
     let Some(target) = target else {
         return render_error(res, StatusCode::NOT_FOUND, format!("Plugin '{id}' was not found"));
     };
+    if let Some(installer) = special_installers::installer_for(&target.component_type) {
+        if let Err(error) = installer.uninstall(&target).await {
+            return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error);
+        }
+    }
     if let Some(config) = target.extra_install_metadata.get("detailed_config") {
         if target.installation_method == "docker" {
             if let Some(path) = target.extra_install_metadata.get("compose_path").and_then(Value::as_str) {

@@ -48,7 +48,7 @@ pub fn delete_workspace_tasks(session_id: &str) -> Result<(), String> {
 
 fn task_file_path(session_id: &str) -> Result<std::path::PathBuf, String> {
     if session_id.trim().is_empty() { return Err("Workspace task tools require a chat session".to_string()); }
-    Ok(zihuan_core::system_config::app_data_dir().join("zihuan-next_aibot").join("chat_history").join(format!("{session_id}.tasks.json")))
+    Ok(zihuan_core::system_config::application_data_dir().join("chat_history").join(format!("{session_id}.tasks.json")))
 }
 
 fn save_workspace_tasks(session_id: &str, snapshot: &WorkspaceTaskSnapshot) -> Result<(), String> {

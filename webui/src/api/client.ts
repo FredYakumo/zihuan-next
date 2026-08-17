@@ -1380,8 +1380,8 @@ export const pluginsApi = {
     name: string;
     version: string;
     component_type: string;
-    install_method: "docker" | "binary" | "command_docker" | "command_binary";
-    detailed_config: DetailedSetupConfig;
+    install_method?: "docker" | "binary" | "command_docker" | "command_binary";
+    detailed_config?: DetailedSetupConfig;
     extra_install_metadata?: unknown;
   }): Promise<PluginInstallResponse> {
     return request("POST", "/plugins/install", payload);
