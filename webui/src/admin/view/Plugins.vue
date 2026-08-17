@@ -6,7 +6,7 @@
       <t-table :data="plugins" :columns="columns" row-key="id" :loading="loading" :pagination="false" size="small">
         <template #status="{ row }"><t-tag :theme="statusTheme(row.status)" variant="light">{{ statusLabel(row.status) }}</t-tag></template>
         <template #connection_ids="{ row }"><span>{{ row.connection_ids?.length ?? 0 }} 个连接</span></template>
-        <template #actions="{ row }"><t-space size="small"><t-button v-if="row.status === 'installed'" variant="text" @click="toggle(row)">停用</t-button><t-button v-else-if="row.status === 'disabled'" variant="text" @click="toggle(row)">启用</t-button><t-popconfirm content="确认卸载插件并删除关联连接吗？" @confirm="removePlugin(row.id)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></t-space></template>
+        <template #actions="{ row }"><t-space size="small"><t-button v-if="installCommand(row)" variant="text" @click="copyPluginValue(installCommand(row)!, '安装命令')"><template #icon><CopyIcon /></template>复制安装命令</t-button><t-button v-if="connectionConfigJson(row)" variant="text" @click="copyPluginValue(connectionConfigJson(row)!, '连接 JSON')"><template #icon><CopyIcon /></template>复制连接 JSON</t-button><t-button v-if="row.status === 'installed'" variant="text" @click="toggle(row)">停用</t-button><t-button v-else-if="row.status === 'disabled'" variant="text" @click="toggle(row)">启用</t-button><t-popconfirm content="确认卸载插件并删除关联连接吗？" @confirm="removePlugin(row.id)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></t-space></template>
       </t-table>
     </t-card>
     <t-dialog v-model:visible="installVisible" width="720px">
@@ -105,13 +105,19 @@
       :connection-config="successConnectionConfig"
       @confirm="confirmInstallationSuccess"
     />
+    <t-dialog v-model:visible="uninstallCommandVisible" header="卸载命令" :confirm-btn="null" cancel-btn="关闭">
+      <div class="plugin-command-dialog">
+        <t-button variant="text" shape="square" @click="copyPluginValue(uninstallCommand, '卸载命令')"><template #icon><CopyIcon /></template></t-button>
+        <t-textarea :value="uninstallCommand" readonly autosize />
+      </div>
+    </t-dialog>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { ChevronLeftIcon } from "tdesign-icons-vue-next";
+import { ChevronLeftIcon, CopyIcon } from "tdesign-icons-vue-next";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import InstallationSuccessDialog from "../components/InstallationSuccessDialog.vue";
 import { pluginsApi, setup as setupApi, type DetailedSetupConfig, type EnvironmentInfo, type PluginRecord, type SetupProgressEvent } from "../../api/client";
@@ -128,6 +134,7 @@ import weaviateIcon from "../../assets/icons/weaviate.svg";
 const route = useRoute();
 const plugins = ref<PluginRecord[]>([]); const loading = ref(false); const saving = ref(false); const installVisible = ref(false); const componentChosen = ref(false);
 const successVisible = ref(false); const successInstallCommand = ref<string | null>(null); const successConnectionConfig = ref<unknown>(undefined);
+const uninstallCommandVisible = ref(false); const uninstallCommand = ref("");
 const error = ref(""); const progress = ref<SetupProgressEvent[]>([]);
 const componentOptions = [
   { value: "mysql", label: "MySQL", desc: "关系数据库", icon: mysqlIcon },
@@ -151,7 +158,7 @@ const config = reactive<DetailedSetupConfig>({ install_method: "docker", target_
   rustfs: { enabled: false, source: "install", deployment: { image: "rustfs/rustfs:latest", port: 9000, data_dir: "./data/plugin-rustfs", container_name: "zihuan-plugin-rustfs", restart_policy: "unless-stopped" }, endpoint: "http://127.0.0.1:9000", bucket: "zihuan", region: "us-east-1", access_key: "", secret_key: "", public_base_url: null, path_style: true },
   search: { enabled: false, source: "install", type: "weaviate", deployment: { image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./data/plugin-search", container_name: "zihuan-plugin-search", restart_policy: "unless-stopped" }, base_url: "http://127.0.0.1:8080", username: null, password: null, api_key: null, auth_method: "api_key", vector_dimensions: 1024 },
   redis: { enabled: false, source: "install", deployment: { image: "redis:7", port: 6379, data_dir: "./data/plugin-redis", container_name: "zihuan-plugin-redis", restart_policy: "unless-stopped" }, url: "redis://127.0.0.1:6379", username: null, password: null } });
-const columns = [{ colKey: "name", title: "插件名称" }, { colKey: "component_type", title: "组件", width: 130 }, { colKey: "installation_method", title: "安装方式", width: 150 }, { colKey: "status", title: "状态", width: 110 }, { colKey: "connection_ids", title: "关联连接", width: 100 }, { colKey: "actions", title: "操作", width: 180 }];
+const columns = [{ colKey: "name", title: "插件名称" }, { colKey: "component_type", title: "组件", width: 130 }, { colKey: "installation_method", title: "安装方式", width: 150 }, { colKey: "status", title: "状态", width: 110 }, { colKey: "connection_ids", title: "关联连接", width: 100 }, { colKey: "actions", title: "操作", width: 370 }];
 function statusLabel(value: string) { return ({ installing: "安装中", installed: "已启用", disabled: "已停用", failed: "失败", command_generated: "命令已生成" } as Record<string, string>)[value] ?? value; }
 function statusTheme(value: string) { return value === "installed" ? "success" : value === "failed" ? "danger" : value === "disabled" ? "warning" : "primary"; }
 async function load() { loading.value = true; try { plugins.value = await pluginsApi.list(); } catch (e) { error.value = String(e); } finally { loading.value = false; } }
@@ -225,7 +232,11 @@ async function install() {
   }
 }
 async function toggle(plugin: PluginRecord) { try { const result = plugin.status === "installed" ? await pluginsApi.disable(plugin.id) : await pluginsApi.enable(plugin.id); if (result.command) { await navigator.clipboard.writeText(result.command); window.alert(`命令已复制：\n${result.command}`); } await load(); } catch (e) { error.value = String(e); } }
-async function removePlugin(id: string) { try { await pluginsApi.remove(id); await load(); } catch (e) { error.value = String(e); } }
+function metadataString(plugin: PluginRecord, key: string): string | null { const value = plugin.extra_install_metadata?.[key]; return typeof value === "string" && value.trim() ? value : null; }
+function installCommand(plugin: PluginRecord): string | null { return metadataString(plugin, "install_command"); }
+function connectionConfigJson(plugin: PluginRecord): string | null { const value = plugin.extra_install_metadata?.connection_config; return value == null ? null : JSON.stringify(value, null, 2); }
+async function copyPluginValue(value: string, label: string) { try { await navigator.clipboard.writeText(value); } catch (e) { error.value = `复制${label}失败：${String(e)}`; } }
+async function removePlugin(id: string) { try { const result = await pluginsApi.remove(id); await load(); if (result.uninstall_command) { uninstallCommand.value = result.uninstall_command; uninstallCommandVisible.value = true; } } catch (e) { error.value = String(e); } }
 onMounted(() => { load(); if (route.query.install === "1") openInstall(); });
 </script>
 
@@ -258,4 +269,6 @@ onMounted(() => { load(); if (route.query.install === "1") openInstall(); });
 .global-config { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
 .progress-line { color: var(--admin-muted); }
 textarea { width: 100%; min-height: 140px; font-family: ui-monospace, monospace; }
+.plugin-command-dialog { display: grid; gap: 8px; }
+.plugin-command-dialog > :first-child { justify-self: end; }
 </style>

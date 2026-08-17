@@ -1348,7 +1348,7 @@ export interface PluginRecord {
   version: string;
   installed_at: string;
   installation_method: string;
-  extra_install_metadata: unknown;
+  extra_install_metadata: Record<string, unknown>;
   component_type: string;
   status: "installing" | "installed" | "disabled" | "failed" | "command_generated" | string;
   connection_ids: string[];
@@ -1373,7 +1373,7 @@ export const pluginsApi = {
   update(name: string, plugin: PluginRecord): Promise<PluginRecord> {
     return request("PUT", `/plugins/${encodeURIComponent(name)}`, plugin);
   },
-  remove(name: string): Promise<{ ok: boolean }> {
+  remove(name: string): Promise<{ ok: boolean; uninstall_command?: string | null }> {
     return request("DELETE", `/plugins/${encodeURIComponent(name)}`);
   },
   install(payload: {
