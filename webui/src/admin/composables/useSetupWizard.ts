@@ -7,11 +7,11 @@ import {
   type LlmSetupConfig,
   type SetupProgressEvent,
   type DetailedSetupConfig,
-  type DetailedInstallCommandResult,
 } from "../../api/client";
 
-type Step = "mode" | "detailed" | "detailed_result" | "role" | "environment" | "llm" | "ims_bot_adapter" | "install" | "complete";
+type Step = "mode" | "detailed" | "role" | "environment" | "llm" | "ims_bot_adapter" | "install";
 type SetupRole = "chat_assistant" | "code_dev_assistant" | "qq_chat_bot" | "ai_butler";
+type InstallationSuccess = { installCommand?: string; connectionConfig?: unknown };
 
 
 export function useSetupWizard() {
@@ -60,8 +60,8 @@ export function useSetupWizard() {
       url: "redis://127.0.0.1:6379", username: null, password: null,
     },
   });
-  const detailedInstallResult = ref<DetailedInstallCommandResult | null>(null);
   const detailedInstallError = ref<string | null>(null);
+  const installationSuccess = ref<InstallationSuccess | null>(null);
   const taskId = ref("");
   const installationMode = ref<"role_based" | "detailed">("role_based");
   const installLogs = ref<SetupProgressEvent[]>([]);
@@ -70,7 +70,7 @@ export function useSetupWizard() {
   let completionTimer: ReturnType<typeof setTimeout> | null = null;
 
   const showProgressBar = computed(() =>
-    ["detailed", "environment", "llm", "ims_bot_adapter", "install", "complete"].includes(step.value),
+    ["detailed", "environment", "llm", "ims_bot_adapter", "install"].includes(step.value),
   );
 
   const progressPercent = computed(() => {
@@ -85,8 +85,6 @@ export function useSetupWizard() {
         return 55;
       case "install":
         return 70;
-      case "complete":
-        return 100;
       default:
         return 0;
     }
@@ -110,12 +108,13 @@ export function useSetupWizard() {
       startInstallation("detailed");
       return;
     }
-    detailedInstallResult.value = null;
     detailedInstallError.value = null;
     setupApi.generateDetailedInstallCommand(detailedConfig.value)
       .then((result) => {
-        detailedInstallResult.value = result;
-        step.value = "detailed_result";
+        installationSuccess.value = {
+          installCommand: result.install_command,
+          connectionConfig: result.connections,
+        };
       })
       .catch((error: unknown) => {
         detailedInstallError.value = error instanceof Error ? error.message : String(error);
@@ -178,7 +177,7 @@ export function useSetupWizard() {
         if (event.step === "finished") {
           cleanupProgress();
           completionTimer = setTimeout(() => {
-            step.value = "complete";
+            installationSuccess.value = {};
           }, 500);
         }
       });
@@ -205,6 +204,11 @@ export function useSetupWizard() {
     router.push("/");
   }
 
+  function confirmInstallationSuccess() {
+    installationSuccess.value = null;
+    finishSetup();
+  }
+
   return {
     step,
     selectedMode,
@@ -212,8 +216,8 @@ export function useSetupWizard() {
     llmConfig,
     imsBotAdapterConfig,
     detailedConfig,
-    detailedInstallResult,
     detailedInstallError,
+    installationSuccess,
     taskId,
     installLogs,
     installError,
@@ -227,6 +231,7 @@ export function useSetupWizard() {
     startInstallation,
     backFromInstallation,
     finishSetup,
+    confirmInstallationSuccess,
   };
 }
 

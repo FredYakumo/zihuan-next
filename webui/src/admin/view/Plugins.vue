@@ -88,7 +88,6 @@
           <SetupField label="向量维度"><input v-model.number="config.search.vector_dimensions" type="number" min="1" /></SetupField>
         </div>
         <p v-if="progress.length" class="progress-line">{{ progress[progress.length - 1]?.message }}</p>
-        <t-alert v-if="command" theme="info" title="远程安装命令"><textarea readonly :value="command" /></t-alert>
         <t-alert v-if="error" theme="error" :message="error" />
         </template>
       </t-form>
@@ -100,6 +99,12 @@
         </div>
       </template>
     </t-dialog>
+    <InstallationSuccessDialog
+      :visible="successVisible"
+      :install-command="successInstallCommand"
+      :connection-config="successConnectionConfig"
+      @confirm="confirmInstallationSuccess"
+    />
   </section>
 </template>
 
@@ -108,6 +113,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { ChevronLeftIcon } from "tdesign-icons-vue-next";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
+import InstallationSuccessDialog from "../components/InstallationSuccessDialog.vue";
 import { pluginsApi, setup as setupApi, type DetailedSetupConfig, type EnvironmentInfo, type PluginRecord, type SetupProgressEvent } from "../../api/client";
 import SetupCredentialInput from "../setup/SetupCredentialInput.vue";
 import SetupDeploymentFields from "../setup/SetupDeploymentFields.vue";
@@ -121,7 +127,8 @@ import weaviateIcon from "../../assets/icons/weaviate.svg";
 
 const route = useRoute();
 const plugins = ref<PluginRecord[]>([]); const loading = ref(false); const saving = ref(false); const installVisible = ref(false); const componentChosen = ref(false);
-const command = ref(""); const error = ref(""); const progress = ref<SetupProgressEvent[]>([]);
+const successVisible = ref(false); const successInstallCommand = ref<string | null>(null); const successConnectionConfig = ref<unknown>(undefined);
+const error = ref(""); const progress = ref<SetupProgressEvent[]>([]);
 const componentOptions = [
   { value: "mysql", label: "MySQL", desc: "关系数据库", icon: mysqlIcon },
   { value: "sqlite", label: "SQLite3", desc: "关系数据库", icon: sqliteIcon },
@@ -179,8 +186,44 @@ async function detectEnvironment() {
 }
 function randomPluginName() { return `${selectedComponent.value.value}-plugin-${Math.floor(1000 + Math.random() * 9000)}`; }
 function selectComponent(value: string) { form.component_type = value; form.name = randomPluginName(); componentChosen.value = true; }
-function openInstall() { installVisible.value = true; command.value = ""; error.value = ""; progress.value = []; componentChosen.value = false; applyComponentDefaults(); detectEnvironment(); }
-async function install() { if (!form.name.trim()) { error.value = "请填写插件名称"; return; } saving.value = true; error.value = ""; command.value = ""; resetConfig(); try { const { install_method, ...plugin } = form; const result = await pluginsApi.install({ ...plugin, ...(form.component_type === "sqlite" ? {} : { install_method, detailed_config: config }) }); if (result.install_command) command.value = result.install_command; if (result.task_id) { let cleanup = () => {}; cleanup = setupApi.streamProgress(result.task_id, (event) => { progress.value.push(event); if (event.status === "error") error.value = event.error ?? event.message; if (event.step === "finished") cleanup(); }); } await load(); } catch (e) { error.value = String(e); } finally { saving.value = false; } }
+function openInstall() { installVisible.value = true; successVisible.value = false; error.value = ""; progress.value = []; componentChosen.value = false; applyComponentDefaults(); detectEnvironment(); }
+async function showInstallationSuccess(installCommand?: string, connectionConfig?: unknown) { await load(); installVisible.value = false; successInstallCommand.value = installCommand ?? null; successConnectionConfig.value = connectionConfig; successVisible.value = true; }
+function confirmInstallationSuccess() { successVisible.value = false; successInstallCommand.value = null; successConnectionConfig.value = undefined; error.value = ""; progress.value = []; componentChosen.value = false; }
+async function install() {
+  if (!form.name.trim()) { error.value = "请填写插件名称"; return; }
+  saving.value = true;
+  error.value = "";
+  resetConfig();
+  let waitingForTask = false;
+  try {
+    const { install_method, ...plugin } = form;
+    const result = await pluginsApi.install({ ...plugin, ...(form.component_type === "sqlite" ? {} : { install_method, detailed_config: config }) });
+    if (result.task_id) {
+      waitingForTask = true;
+      let cleanup = () => {};
+      cleanup = setupApi.streamProgress(result.task_id, (event) => {
+        progress.value.push(event);
+        if (event.status === "error") {
+          error.value = event.error ?? event.message;
+          saving.value = false;
+          cleanup();
+          return;
+        }
+        if (event.step === "finished") {
+          cleanup();
+          saving.value = false;
+          void showInstallationSuccess(result.install_command, result.connections);
+        }
+      });
+      return;
+    }
+    await showInstallationSuccess(result.install_command, result.connections);
+  } catch (e) {
+    error.value = String(e);
+  } finally {
+    if (!waitingForTask) saving.value = false;
+  }
+}
 async function toggle(plugin: PluginRecord) { try { const result = plugin.status === "installed" ? await pluginsApi.disable(plugin.id) : await pluginsApi.enable(plugin.id); if (result.command) { await navigator.clipboard.writeText(result.command); window.alert(`命令已复制：\n${result.command}`); } await load(); } catch (e) { error.value = String(e); } }
 async function removePlugin(id: string) { try { await pluginsApi.remove(id); await load(); } catch (e) { error.value = String(e); } }
 onMounted(() => { load(); if (route.query.install === "1") openInstall(); });

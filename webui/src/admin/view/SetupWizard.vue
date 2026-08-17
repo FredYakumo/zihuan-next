@@ -34,12 +34,6 @@
         @back="step = 'mode'"
       />
 
-      <DetailedInstallCommandResult
-        v-else-if="step === 'detailed_result' && detailedInstallResult"
-        :result="detailedInstallResult"
-        @back="step = 'detailed'"
-      />
-
       <EnvironmentCheck
         v-else-if="step === 'environment'"
         :role="selectedRole"
@@ -71,11 +65,14 @@
         @back="backFromInstallation"
       />
 
-      <SetupComplete
-        v-else-if="step === 'complete'"
-        @finish="finishSetup"
-      />
     </div>
+    <InstallationSuccessDialog
+      v-if="installationSuccess"
+      :visible="true"
+      :install-command="installationSuccess.installCommand"
+      :connection-config="installationSuccess.connectionConfig"
+      @confirm="confirmInstallationSuccess"
+    />
   </div>
 </template>
 
@@ -84,12 +81,11 @@ import brandIconSrc from "../../assets/brand-icon.png";
 import ModeSelection from "../setup/ModeSelection.vue";
 import RoleSelection from "../setup/RoleSelection.vue";
 import DetailedConfigStep from "../setup/DetailedConfigStep.vue";
-import DetailedInstallCommandResult from "../setup/DetailedInstallCommandResult.vue";
 import EnvironmentCheck from "../setup/EnvironmentCheck.vue";
 import LlmConfigStep from "../setup/LlmConfigStep.vue";
 import ImsBotAdapterConfigStep from "../setup/ImsBotAdapterConfigStep.vue";
 import InstallationProgress from "../setup/InstallationProgress.vue";
-import SetupComplete from "../setup/SetupComplete.vue";
+import InstallationSuccessDialog from "../components/InstallationSuccessDialog.vue";
 import { useSetupWizard } from "../composables/useSetupWizard";
 
 const {
@@ -99,8 +95,8 @@ const {
   llmConfig,
   imsBotAdapterConfig,
   detailedConfig,
-  detailedInstallResult,
   detailedInstallError,
+  installationSuccess,
   taskId,
   installationMode,
   installLogs,
@@ -114,7 +110,7 @@ const {
   startDetailedInstallation,
   startInstallation,
   backFromInstallation,
-  finishSetup,
+  confirmInstallationSuccess,
 } = useSetupWizard();
 </script>
 
