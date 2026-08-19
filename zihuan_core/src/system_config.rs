@@ -29,7 +29,12 @@ pub trait SystemConfigSection {
     /// Purpose: Deserializes this section from a loaded configuration root, using the section default
     /// representation when the key is absent.
     fn read_from_root(root: &Value) -> Result<Self::Value> {
-        let value = root.get(Self::SECTION_KEY).cloned().unwrap_or_else(|| Value::Array(Vec::new()));
+        let value = match root.get(Self::SECTION_KEY) {
+            Some(value) => value.clone(),
+            None => serde_json::to_value(Self::Value::default()).map_err(|err| {
+                crate::string_error!("failed to serialize default system config section '{}': {err}", Self::SECTION_KEY)
+            })?,
+        };
         serde_json::from_value(value).map_err(|err| {
             crate::string_error!("failed to parse system config section '{}': {err}", Self::SECTION_KEY)
         })
@@ -220,4 +225,17 @@ pub struct GlobalSettingsSection;
 impl SystemConfigSection for GlobalSettingsSection {
     const SECTION_KEY: &'static str = "global_settings";
     type Value = GlobalSettings;
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkspaceDirectoryHistory {
+    #[serde(default)]
+    pub paths: Vec<String>,
+}
+
+pub struct WorkspaceDirectoryHistorySection;
+
+impl SystemConfigSection for WorkspaceDirectoryHistorySection {
+    const SECTION_KEY: &'static str = "workspace_directory_history";
+    type Value = WorkspaceDirectoryHistory;
 }

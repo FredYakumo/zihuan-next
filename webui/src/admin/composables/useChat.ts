@@ -19,6 +19,7 @@ import {
   type LlmConfig,
   type WorkspaceChange,
   type WorkspaceTask,
+  type WorkspaceDirectoryBrowser,
 } from "../../api/client";
 import {
   formatTime,
@@ -363,7 +364,12 @@ const draftImageAttachments = ref<ChatImageAttachment[]>([]);
 const imagePreviewAttachment = ref<ChatImageAttachment | null>(null);
 const workspacePath = ref("");
 const workspaceTasks = ref<WorkspaceTask[]>([]);
-const pickingDirectory = ref(false);
+const directoryPickerOpen = ref(false);
+const directoryPickerLoading = ref(false);
+const directoryPickerSelecting = ref(false);
+const directoryPickerPath = ref("");
+const directoryPickerData = ref<WorkspaceDirectoryBrowser | null>(null);
+const directoryPickerError = ref("");
 const activeRequestCount = ref(0);
 const sending = computed(() => activeRequestCount.value > 0);
 let activeStreamController: AbortController | null = null;
@@ -1427,17 +1433,41 @@ async function submitEditingMessage() {
   }
 }
 
-async function pickDirectory() {
-  pickingDirectory.value = true;
+async function loadDirectoryPicker(path?: string) {
+  directoryPickerLoading.value = true;
+  directoryPickerError.value = "";
   try {
-    const result = await system.selectDirectory();
-    if (result.path) {
-      workspacePath.value = result.path;
-    }
+    const result = await system.browseWorkspaceDirectories(path);
+    directoryPickerData.value = result;
+    directoryPickerPath.value = result.current_path ?? "";
   } catch (error) {
-    chatErrorMessage.value = `选择目录失败: ${(error as Error).message}`;
+    directoryPickerError.value = error instanceof Error ? error.message : String(error);
   } finally {
-    pickingDirectory.value = false;
+    directoryPickerLoading.value = false;
+  }
+}
+
+async function pickDirectory() {
+  directoryPickerOpen.value = true;
+  await loadDirectoryPicker(workspacePath.value || undefined);
+}
+
+function closeDirectoryPicker() {
+  if (!directoryPickerSelecting.value) directoryPickerOpen.value = false;
+}
+
+async function selectDirectoryPickerPath() {
+  if (!directoryPickerPath.value.trim()) return;
+  directoryPickerSelecting.value = true;
+  directoryPickerError.value = "";
+  try {
+    const result = await system.selectWorkspaceDirectory(directoryPickerPath.value);
+    workspacePath.value = result.path;
+    directoryPickerOpen.value = false;
+  } catch (error) {
+    directoryPickerError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    directoryPickerSelecting.value = false;
   }
 }
 
@@ -2107,7 +2137,12 @@ onUnmounted(() => {
     imagePreviewAttachment,
     workspacePath,
     workspaceTasks,
-    pickingDirectory,
+    directoryPickerOpen,
+    directoryPickerLoading,
+    directoryPickerSelecting,
+    directoryPickerPath,
+    directoryPickerData,
+    directoryPickerError,
     sending,
     chatErrorMessage,
     chatErrorDialogMessage,
@@ -2218,6 +2253,9 @@ onUnmounted(() => {
     submitEditingMessage,
     switchMessageBranch,
     pickDirectory,
+    loadDirectoryPicker,
+    closeDirectoryPicker,
+    selectDirectoryPickerPath,
     startNewSession,
     selectModel,
     selectThinkingType,

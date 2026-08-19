@@ -754,10 +754,27 @@ export const system = {
       return request("POST", `/system/services/${configId}/stop`);
     },
   },
-  selectDirectory(): Promise<{ path: string | null }> {
-    return request("GET", "/system/select-directory");
+  browseWorkspaceDirectories(path?: string): Promise<WorkspaceDirectoryBrowser> {
+    const suffix = path ? `?path=${encodeURIComponent(path)}` : "";
+    return request("GET", `/system/workspace-directories${suffix}`);
+  },
+  selectWorkspaceDirectory(path: string): Promise<{ path: string; recent_directories: string[] }> {
+    return request("POST", "/system/workspace-directories/select", { path });
   },
 };
+
+export interface WorkspaceDirectoryEntry {
+  name: string;
+  path: string;
+}
+
+export interface WorkspaceDirectoryBrowser {
+  current_path: string | null;
+  parent_path: string | null;
+  roots: WorkspaceDirectoryEntry[];
+  directories: WorkspaceDirectoryEntry[];
+  recent_directories: string[];
+}
 
 // Data Explorer
 export interface MysqlRecord {
