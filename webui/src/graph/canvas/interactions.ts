@@ -14,6 +14,7 @@ import {
 import type { CanvasFacade } from "./types";
 import { findInlineInputAtPosition } from "./rendering";
 import { isCompatibleTypes, visibleInputPorts } from "./type_utils";
+import { createUuid } from "../../ui/uuid";
 
 const PROTECTED_BOUNDARY_NODE_IDS = new Set([
   "__function_inputs__",
@@ -747,7 +748,7 @@ export class CanvasInteractions {
       } as NodeGraphDefinition,
     };
 
-    const fnNodeId = crypto.randomUUID();
+    const fnNodeId = createUuid();
     const functionNode: NodeDefinition = {
       id: fnNodeId,
       name: "New Function",

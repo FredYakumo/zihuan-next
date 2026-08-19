@@ -17,6 +17,7 @@ pub mod state;
 pub mod task_store;
 pub mod themes;
 pub mod ws;
+pub mod workspace_directories;
 
 use std::sync::Arc;
 
@@ -127,7 +128,11 @@ pub fn build_router(
                 .push(Router::with_path("commands").push(
                     Router::with_path("registry").get(config::commands::get_registered_commands),
                 ))
-                .push(Router::with_path("select-directory").get(chat::select_directory)),
+                .push(
+                    Router::with_path("workspace-directories")
+                        .get(workspace_directories::browse_workspace_directories)
+                        .push(Router::with_path("select").post(workspace_directories::select_workspace_directory)),
+                ),
         )
         // Setup wizard
         .push(

@@ -19,6 +19,7 @@ import {
   type LlmConfig,
   type WorkspaceChange,
   type WorkspaceTask,
+  type WorkspaceDirectoryBrowser,
 } from "../../api/client";
 import {
   formatTime,
@@ -27,6 +28,7 @@ import {
   getAvatarDisplayUrl,
   CHAT_ELIGIBLE_SERVICE_TYPES,
 } from "../model";
+import { createUuid } from "../../ui/uuid";
 
 export interface ChatProps {
   agentId?: string;
@@ -362,7 +364,12 @@ const draftImageAttachments = ref<ChatImageAttachment[]>([]);
 const imagePreviewAttachment = ref<ChatImageAttachment | null>(null);
 const workspacePath = ref("");
 const workspaceTasks = ref<WorkspaceTask[]>([]);
-const pickingDirectory = ref(false);
+const directoryPickerOpen = ref(false);
+const directoryPickerLoading = ref(false);
+const directoryPickerSelecting = ref(false);
+const directoryPickerPath = ref("");
+const directoryPickerData = ref<WorkspaceDirectoryBrowser | null>(null);
+const directoryPickerError = ref("");
 const activeRequestCount = ref(0);
 const sending = computed(() => activeRequestCount.value > 0);
 let activeStreamController: AbortController | null = null;
@@ -934,7 +941,7 @@ function showChatError(message: string) {
 
 function createStreamingAssistantMessage(): ChatMessage {
   return {
-    id: `local-assistant-${crypto.randomUUID()}`,
+    id: `local-assistant-${createUuid()}`,
     role: "assistant",
     content: "",
     streaming: true,
@@ -1031,7 +1038,7 @@ function addImageFilesTo(target: ChatImageAttachment[], files: File[]) {
       continue;
     }
     const attachment: ChatImageAttachment = {
-      id: crypto.randomUUID(),
+      id: createUuid(),
       url: URL.createObjectURL(file),
       key: "",
       mediaId: "",
@@ -1426,17 +1433,41 @@ async function submitEditingMessage() {
   }
 }
 
-async function pickDirectory() {
-  pickingDirectory.value = true;
+async function loadDirectoryPicker(path?: string) {
+  directoryPickerLoading.value = true;
+  directoryPickerError.value = "";
   try {
-    const result = await system.selectDirectory();
-    if (result.path) {
-      workspacePath.value = result.path;
-    }
+    const result = await system.browseWorkspaceDirectories(path);
+    directoryPickerData.value = result;
+    directoryPickerPath.value = result.current_path ?? "";
   } catch (error) {
-    chatErrorMessage.value = `选择目录失败: ${(error as Error).message}`;
+    directoryPickerError.value = error instanceof Error ? error.message : String(error);
   } finally {
-    pickingDirectory.value = false;
+    directoryPickerLoading.value = false;
+  }
+}
+
+async function pickDirectory() {
+  directoryPickerOpen.value = true;
+  await loadDirectoryPicker(workspacePath.value || undefined);
+}
+
+function closeDirectoryPicker() {
+  if (!directoryPickerSelecting.value) directoryPickerOpen.value = false;
+}
+
+async function selectDirectoryPickerPath() {
+  if (!directoryPickerPath.value.trim()) return;
+  directoryPickerSelecting.value = true;
+  directoryPickerError.value = "";
+  try {
+    const result = await system.selectWorkspaceDirectory(directoryPickerPath.value);
+    workspacePath.value = result.path;
+    directoryPickerOpen.value = false;
+  } catch (error) {
+    directoryPickerError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    directoryPickerSelecting.value = false;
   }
 }
 
@@ -1703,7 +1734,7 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
       const passthroughText = streamState.pendingNewConversation.passthroughText;
       if (passthroughText) {
         messages.value.push({
-          id: `local-user-${crypto.randomUUID()}`,
+          id: `local-user-${createUuid()}`,
           role: "user",
           content: passthroughText,
           timestamp: new Date().toISOString(),
@@ -1712,7 +1743,7 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
           linkedToolCall: null,
         });
 
-        const assistantMessageId = event.message_id ?? `local-assistant-${crypto.randomUUID()}`;
+        const assistantMessageId = event.message_id ?? `local-assistant-${createUuid()}`;
         messages.value.push({
           id: assistantMessageId,
           role: "assistant",
@@ -1963,7 +1994,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
 
   if (!pendingNewConversation) {
     const userMessage = {
-      id: `local-user-${crypto.randomUUID()}`,
+      id: `local-user-${createUuid()}`,
       role: "user" as const,
       content: userText,
       timestamp: new Date().toISOString(),
@@ -1974,7 +2005,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
     };
     messages.value.push(userMessage);
 
-    const assistantTempId = `local-assistant-${crypto.randomUUID()}`;
+    const assistantTempId = `local-assistant-${createUuid()}`;
     messages.value.push({
       id: assistantTempId,
       role: "assistant",
@@ -2106,7 +2137,12 @@ onUnmounted(() => {
     imagePreviewAttachment,
     workspacePath,
     workspaceTasks,
-    pickingDirectory,
+    directoryPickerOpen,
+    directoryPickerLoading,
+    directoryPickerSelecting,
+    directoryPickerPath,
+    directoryPickerData,
+    directoryPickerError,
     sending,
     chatErrorMessage,
     chatErrorDialogMessage,
@@ -2217,6 +2253,9 @@ onUnmounted(() => {
     submitEditingMessage,
     switchMessageBranch,
     pickDirectory,
+    loadDirectoryPicker,
+    closeDirectoryPicker,
+    selectDirectoryPickerPath,
     startNewSession,
     selectModel,
     selectThinkingType,

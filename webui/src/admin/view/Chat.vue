@@ -49,10 +49,9 @@
           <button
             v-if="isWorkspaceService"
             class="btn ghost"
-            :disabled="pickingDirectory"
             @click="pickDirectory"
           >
-            {{ pickingDirectory ? "选择中..." : "打开目录" }}
+            <FolderOpenIcon /> 选择目录
           </button>
         </div>
 
@@ -119,10 +118,9 @@
                 <button
                   v-if="isWorkspaceService"
                   class="chat-sessions-action"
-                  :disabled="pickingDirectory"
                   @click="pickDirectory"
                 >
-                  {{ pickingDirectory ? "选择中..." : "打开目录" }}
+                  <FolderOpenIcon /> 选择目录
                 </button>
               </template>
               <button
@@ -1353,12 +1351,67 @@
         </div>
       </div>
     </Teleport>
+    <Teleport to="body">
+      <div v-if="directoryPickerOpen" class="directory-picker-backdrop" @click.self="closeDirectoryPicker">
+        <section class="directory-picker" role="dialog" aria-modal="true" aria-label="选择工作目录">
+          <header class="directory-picker-header">
+            <div class="directory-picker-title"><FolderOpenIcon /> 选择工作目录</div>
+            <button class="chat-modal-close" aria-label="关闭" :disabled="directoryPickerSelecting" @click="closeDirectoryPicker">
+              <CloseIcon />
+            </button>
+          </header>
+          <form class="directory-picker-path" @submit.prevent="loadDirectoryPicker(directoryPickerPath)">
+            <input v-model="directoryPickerPath" aria-label="目录路径" placeholder="输入服务器目录路径" :disabled="directoryPickerLoading || directoryPickerSelecting" />
+            <button class="directory-picker-icon-button" type="submit" title="打开路径" aria-label="打开路径" :disabled="directoryPickerLoading || directoryPickerSelecting">
+              <ChevronRightIcon />
+            </button>
+          </form>
+          <div class="directory-picker-toolbar">
+            <button class="directory-picker-tool" title="返回上级目录" aria-label="返回上级目录" :disabled="!directoryPickerData?.parent_path || directoryPickerLoading" @click="loadDirectoryPicker(directoryPickerData?.parent_path ?? undefined)">
+              <ArrowLeftIcon />
+            </button>
+            <button class="directory-picker-tool" title="刷新目录" aria-label="刷新目录" :disabled="directoryPickerLoading" @click="loadDirectoryPicker(directoryPickerPath || undefined)">
+              <RefreshIcon />
+            </button>
+            <span class="directory-picker-current" :title="directoryPickerData?.current_path ?? undefined">{{ directoryPickerData?.current_path || '选择根目录或输入路径' }}</span>
+          </div>
+          <p v-if="directoryPickerError" class="directory-picker-error" role="alert">{{ directoryPickerError }}</p>
+          <div class="directory-picker-content">
+            <section v-if="directoryPickerData?.recent_directories.length" class="directory-picker-section">
+              <h4>最近目录</h4>
+              <button v-for="path in directoryPickerData.recent_directories" :key="path" class="directory-picker-row" :title="path" @click="loadDirectoryPicker(path)">
+                <FolderOpenIcon /><span>{{ path }}</span>
+              </button>
+            </section>
+            <section class="directory-picker-section">
+              <h4>根目录</h4>
+              <button v-for="root in directoryPickerData?.roots ?? []" :key="root.path" class="directory-picker-row" @click="loadDirectoryPicker(root.path)">
+                <FolderIcon /><span>{{ root.name }}</span>
+              </button>
+            </section>
+            <section class="directory-picker-section directory-picker-section--directories">
+              <h4>文件夹</h4>
+              <div v-if="directoryPickerLoading" class="directory-picker-empty">目录加载中...</div>
+              <button v-for="directory in directoryPickerData?.directories ?? []" :key="directory.path" class="directory-picker-row" @click="loadDirectoryPicker(directory.path)">
+                <FolderIcon /><span>{{ directory.name }}</span>
+              </button>
+              <div v-if="!directoryPickerLoading && directoryPickerData?.current_path && !directoryPickerData.directories.length" class="directory-picker-empty">此目录没有可访问的子文件夹</div>
+            </section>
+          </div>
+          <footer class="directory-picker-footer">
+            <button class="btn" :disabled="directoryPickerSelecting" @click="closeDirectoryPicker">取消</button>
+            <button class="btn primary" :disabled="!directoryPickerData?.current_path || directoryPickerSelecting" @click="selectDirectoryPickerPath">{{ directoryPickerSelecting ? '选择中...' : '选择此文件夹' }}</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
   </section>
 </template>
 
 <script setup lang="ts">
 import {
   CheckIcon,
+  ArrowLeftIcon,
   ChevronLeftIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -1370,6 +1423,7 @@ import {
   FileIcon,
   FileSearchIcon,
   FolderIcon,
+  FolderOpenIcon,
   FolderSearchIcon,
   GitBranchIcon,
   ImageAddIcon,
@@ -1385,6 +1439,7 @@ import {
   StopIcon,
   CheckCircleIcon,
   TimeIcon,
+  RefreshIcon,
 } from "tdesign-icons-vue-next";
 
 import { computed, ref, watch } from "vue";
@@ -1425,7 +1480,12 @@ const {
   draftImageAttachments,
   imagePreviewAttachment,
   workspacePath,
-  pickingDirectory,
+  directoryPickerOpen,
+  directoryPickerLoading,
+  directoryPickerSelecting,
+  directoryPickerPath,
+  directoryPickerData,
+  directoryPickerError,
   sending,
   chatErrorMessage,
   chatErrorDialogMessage,
@@ -1521,6 +1581,9 @@ const {
   submitEditingMessage,
   switchMessageBranch,
   pickDirectory,
+  loadDirectoryPicker,
+  closeDirectoryPicker,
+  selectDirectoryPickerPath,
   startNewSession,
   selectModel,
   selectThinkingType,
@@ -1726,5 +1789,72 @@ function formatCacheHitRate(rate: number) {
 
 .chat-tool-live-output {
   order: 2;
+}
+
+.directory-picker {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+  overflow: hidden;
+  border: 1px solid var(--admin-border);
+  border-radius: 6px;
+  background: var(--admin-bg-panel);
+  color: var(--admin-ink);
+  box-shadow: var(--admin-card-shadow);
+}
+
+.directory-picker-backdrop {
+  position: fixed;
+  z-index: 1400;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg) 55%, transparent 45%);
+  backdrop-filter: blur(12px);
+}
+
+.directory-picker-header,
+.directory-picker-toolbar,
+.directory-picker-footer,
+.directory-picker-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.directory-picker-header {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.directory-picker-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.directory-picker-path { padding-bottom: 8px; }
+.directory-picker-path input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--admin-border); border-radius: 4px; background: var(--admin-bg-soft); color: var(--admin-ink); }
+.directory-picker-path input::placeholder { color: var(--admin-muted); }
+.directory-picker-icon-button, .directory-picker-tool { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--admin-border); border-radius: 4px; background: var(--admin-bg-soft); color: var(--admin-ink); cursor: pointer; }
+.directory-picker-icon-button:hover:not(:disabled), .directory-picker-tool:hover:not(:disabled) { border-color: var(--admin-accent); color: var(--admin-accent); }
+.directory-picker-icon-button:disabled, .directory-picker-tool:disabled { cursor: not-allowed; opacity: .5; }
+.directory-picker-toolbar { padding-top: 0; border-bottom: 1px solid var(--admin-border); }
+.directory-picker-current { min-width: 0; overflow: hidden; color: var(--admin-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.directory-picker-error { margin: 8px 16px 0; color: var(--admin-bad); font-size: 13px; }
+.directory-picker-content { display: grid; flex: 1; grid-template-columns: minmax(170px, .8fr) minmax(170px, .8fr) minmax(220px, 1.4fr); min-height: 220px; overflow: auto; }
+.directory-picker-section { min-width: 0; padding: 12px; border-right: 1px solid var(--admin-border); }
+.directory-picker-section:last-child { border-right: 0; }
+.directory-picker-section h4 { margin: 0 0 8px; color: var(--admin-muted); font-size: 12px; font-weight: 600; }
+.directory-picker-row { display: flex; width: 100%; align-items: center; gap: 8px; overflow: hidden; padding: 7px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--admin-ink); cursor: pointer; text-align: left; }
+.directory-picker-row:hover { background: var(--admin-accent-soft); }
+.directory-picker-row svg { flex: 0 0 auto; color: var(--admin-accent); }
+.directory-picker-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.directory-picker-empty { padding: 8px; color: var(--admin-muted); font-size: 13px; }
+.directory-picker-footer { justify-content: flex-end; border-top: 1px solid var(--admin-border); }
+
+@media (max-width: 640px) {
+  .directory-picker-content { display: block; }
+  .directory-picker-section { border-right: 0; border-bottom: 1px solid var(--admin-border); }
+  .directory-picker-section:last-child { border-bottom: 0; }
 }
 </style>

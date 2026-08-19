@@ -23,13 +23,14 @@ pub struct S3Ref {
 }
 
 impl S3Ref {
-    /// Generate URL for accessing the object. If public_base_url is configured, use it (assuming it's publicly accessible). Otherwise, generate a presigned URL for private buckets.
+    /// Generate URL for accessing the object. If public_base_url is configured, use it (assuming it's publicly accessible). 
+    /// Otherwise, generate a presigned URL for private buckets.
     pub async fn object_url_for_key(&self, key: &str) -> Result<String> {
         if self.public_base_url.is_some() {
             return self.build_public_url(key);
         }
 
-        // 生成带鉴权的预签名 URL，过期时间为 1 小时
+
         self.generate_presigned_url(key, Duration::from_secs(3600)).await
     }
 

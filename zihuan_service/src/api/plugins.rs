@@ -131,6 +131,28 @@ fn plugin_connections(plugin: &PluginRecord) -> Result<Vec<ConnectionConfig>, St
     Ok(storage::load_connections().map_err(|err| err.to_string())?.into_iter().filter(|c| plugin.connection_ids.contains(&c.config_id)).collect())
 }
 
+fn command_uninstall_command() -> String {
+    "cd ~/zihuan-next-install && docker compose -f docker-compose.yaml down --volumes --remove-orphans".to_string()
+}
+
+fn binary_uninstall_command(component_type: &str) -> Option<String> {
+    let (brew_package, apt_package, dnf_package, pacman_package) = match component_type {
+        "mysql" => ("mysql", "mysql-server", "mysql-server", "mysql-server"),
+        "redis" => ("redis", "redis", "redis", "redis"),
+        "elasticsearch" => ("elasticsearch", "elasticsearch", "elasticsearch", "elasticsearch"),
+        _ => return None,
+    };
+    Some(format!(
+        "# Remove the locally installed {component_type} package\n\
+if command -v brew >/dev/null 2>&1; then\n  brew uninstall {brew_package}\n\
+elif command -v apt-get >/dev/null 2>&1; then\n  sudo apt-get purge -y {apt_package}\n\
+elif command -v dnf >/dev/null 2>&1; then\n  sudo dnf remove -y {dnf_package}\n\
+elif command -v pacman >/dev/null 2>&1; then\n  sudo pacman -Rns --noconfirm {pacman_package}\n\
+else\n  echo 'No supported package manager was found. Remove {component_type} manually.'\n\
+fi"
+    ))
+}
+
 fn render_error(res: &mut Response, status: StatusCode, error: String) {
     res.status_code(status);
     res.render(Json(serde_json::json!({ "error": error })));
@@ -188,6 +210,11 @@ pub async fn install_plugin(req: &mut Request, res: &mut Response, depot: &mut D
         None => return render_error(res, StatusCode::BAD_REQUEST, "Detailed plugin configuration is required".to_string()),
     };
     let mut plugin = plugin_from_request(&request, if request.install_method.starts_with("command_") { "command_generated" } else { "installing" });
+    if request.install_method == "binary" {
+        if let Some(command) = binary_uninstall_command(&request.component_type) {
+            plugin.extra_install_metadata["uninstall_command"] = Value::String(command);
+        }
+    }
     if let Err(error) = save_plugin_record(&plugin) { return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error); }
 
     if request.install_method.starts_with("command_") {
@@ -203,6 +230,8 @@ pub async fn install_plugin(req: &mut Request, res: &mut Response, depot: &mut D
                 }
                 plugin.connection_ids = connections.iter().map(|c| c.config_id.clone()).collect();
                 plugin.extra_install_metadata["install_command"] = Value::String(result.install_command.clone());
+                plugin.extra_install_metadata["connection_config"] = serde_json::to_value(&connections).unwrap_or(Value::Null);
+                plugin.extra_install_metadata["uninstall_command"] = Value::String(command_uninstall_command());
                 plugin.status = "command_generated".to_string();
                 plugin.updated_at = chrono::Utc::now().to_rfc3339();
                 if let Err(error) = save_plugin_record(&plugin) { return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error); }
@@ -322,7 +351,10 @@ pub async fn delete_plugin(req: &mut Request, res: &mut Response) {
     if let Some(config) = target.extra_install_metadata.get("detailed_config") {
         if target.installation_method == "docker" {
             if let Some(path) = target.extra_install_metadata.get("compose_path").and_then(Value::as_str) {
-                let _ = tokio::process::Command::new("docker").args(["compose", "-f", path, "down"]).output().await;
+                let _ = tokio::process::Command::new("docker")
+                    .args(["compose", "-f", path, "down", "--volumes", "--remove-orphans"])
+                    .output()
+                    .await;
             }
         }
         let _ = config;
@@ -333,5 +365,10 @@ pub async fn delete_plugin(req: &mut Request, res: &mut Response) {
     if let Err(error) = save_plugins(&plugins) {
         return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error);
     }
-    res.render(Json(serde_json::json!({ "ok": true })));
+    let uninstall_command = target
+        .extra_install_metadata
+        .get("uninstall_command")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    res.render(Json(serde_json::json!({ "ok": true, "uninstall_command": uninstall_command })));
 }

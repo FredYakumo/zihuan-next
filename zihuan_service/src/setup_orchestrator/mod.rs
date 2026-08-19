@@ -892,20 +892,54 @@ async fn save_detailed_connections(config: &DetailedSetupConfig) -> Result<(), S
                     collection_schema: schema,
                 })
             };
-            match &kind {
-                ConnectionKind::Elasticsearch(elasticsearch) => {
-                    let reference = ElasticsearchRef::new(elasticsearch.clone()).map_err(|err| err.to_string())?;
-                    ensure_elasticsearch_index(&reference, true).map_err(|err| err.to_string())?;
+            let initialization_kind = kind.clone();
+
+            // match &kind {
+            //     ConnectionKind::Elasticsearch(elasticsearch) => {
+            //         let reference = ElasticsearchRef::new(elasticsearch.clone())?;
+            //         ensure_elasticsearch_index(&reference, true)?;
+            //     }
+            //     ConnectionKind::Weaviate(weaviate) => {
+            //         let reference = WeaviateRef::new(
+            //             weaviate.base_url.clone(), weaviate.class_name.clone(),
+            //             weaviate.username.clone(), weaviate.password.clone(),
+            //             weaviate.api_key.clone(), Duration::from_secs(30),
+            //         )?;
+            //         ensure_collection_schema(&reference, schema, true)?;
+            //     }
+            //     _ => {}
+            // }
+
+            // initialized search indexes directly in this
+            // async task, causing reqwest::blocking's runtime to drop on Tokio
+
+
+            // Index setup uses blocking HTTP clients; keep their runtime lifetime
+            // entirely inside the blocking pool rather than an async worker.
+            tokio::task::spawn_blocking(move || -> Result<(), String> {
+                match initialization_kind {
+                    ConnectionKind::Elasticsearch(elasticsearch) => {
+                        let reference = ElasticsearchRef::new(elasticsearch).map_err(|err| err.to_string())?;
+                        ensure_elasticsearch_index(&reference, true).map_err(|err| err.to_string())?;
+                    }
+                    ConnectionKind::Weaviate(weaviate) => {
+                        let reference = WeaviateRef::new(
+                            weaviate.base_url,
+                            weaviate.class_name,
+                            weaviate.username,
+                            weaviate.password,
+                            weaviate.api_key,
+                            Duration::from_secs(30),
+                        )
+                        .map_err(|err| err.to_string())?;
+                        ensure_collection_schema(&reference, schema, true).map_err(|err| err.to_string())?;
+                    }
+                    _ => {}
                 }
-                ConnectionKind::Weaviate(weaviate) => {
-                    let reference = WeaviateRef::new(
-                        weaviate.base_url.clone(), weaviate.class_name.clone(), weaviate.username.clone(),
-                        weaviate.password.clone(), weaviate.api_key.clone(), Duration::from_secs(30),
-                    ).map_err(|err| err.to_string())?;
-                    ensure_collection_schema(&reference, schema, true).map_err(|err| err.to_string())?;
-                }
-                _ => {}
-            }
+                Ok(())
+            })
+            .await
+            .map_err(|err| format!("search database initialization task failed: {err}"))??;
             config_factory::save_connection(config_factory::build_connection(&id, &name, kind))?;
         }
     }

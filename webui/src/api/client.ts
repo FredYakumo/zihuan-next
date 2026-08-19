@@ -754,10 +754,27 @@ export const system = {
       return request("POST", `/system/services/${configId}/stop`);
     },
   },
-  selectDirectory(): Promise<{ path: string | null }> {
-    return request("GET", "/system/select-directory");
+  browseWorkspaceDirectories(path?: string): Promise<WorkspaceDirectoryBrowser> {
+    const suffix = path ? `?path=${encodeURIComponent(path)}` : "";
+    return request("GET", `/system/workspace-directories${suffix}`);
+  },
+  selectWorkspaceDirectory(path: string): Promise<{ path: string; recent_directories: string[] }> {
+    return request("POST", "/system/workspace-directories/select", { path });
   },
 };
+
+export interface WorkspaceDirectoryEntry {
+  name: string;
+  path: string;
+}
+
+export interface WorkspaceDirectoryBrowser {
+  current_path: string | null;
+  parent_path: string | null;
+  roots: WorkspaceDirectoryEntry[];
+  directories: WorkspaceDirectoryEntry[];
+  recent_directories: string[];
+}
 
 // Data Explorer
 export interface MysqlRecord {
@@ -1348,7 +1365,7 @@ export interface PluginRecord {
   version: string;
   installed_at: string;
   installation_method: string;
-  extra_install_metadata: unknown;
+  extra_install_metadata: Record<string, unknown>;
   component_type: string;
   status: "installing" | "installed" | "disabled" | "failed" | "command_generated" | string;
   connection_ids: string[];
@@ -1373,7 +1390,7 @@ export const pluginsApi = {
   update(name: string, plugin: PluginRecord): Promise<PluginRecord> {
     return request("PUT", `/plugins/${encodeURIComponent(name)}`, plugin);
   },
-  remove(name: string): Promise<{ ok: boolean }> {
+  remove(name: string): Promise<{ ok: boolean; uninstall_command?: string | null }> {
     return request("DELETE", `/plugins/${encodeURIComponent(name)}`);
   },
   install(payload: {
