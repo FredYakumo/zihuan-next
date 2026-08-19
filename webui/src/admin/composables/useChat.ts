@@ -27,6 +27,7 @@ import {
   getAvatarDisplayUrl,
   CHAT_ELIGIBLE_SERVICE_TYPES,
 } from "../model";
+import { createUuid } from "../../ui/uuid";
 
 export interface ChatProps {
   agentId?: string;
@@ -934,7 +935,7 @@ function showChatError(message: string) {
 
 function createStreamingAssistantMessage(): ChatMessage {
   return {
-    id: `local-assistant-${crypto.randomUUID()}`,
+    id: `local-assistant-${createUuid()}`,
     role: "assistant",
     content: "",
     streaming: true,
@@ -1031,7 +1032,7 @@ function addImageFilesTo(target: ChatImageAttachment[], files: File[]) {
       continue;
     }
     const attachment: ChatImageAttachment = {
-      id: crypto.randomUUID(),
+      id: createUuid(),
       url: URL.createObjectURL(file),
       key: "",
       mediaId: "",
@@ -1703,7 +1704,7 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
       const passthroughText = streamState.pendingNewConversation.passthroughText;
       if (passthroughText) {
         messages.value.push({
-          id: `local-user-${crypto.randomUUID()}`,
+          id: `local-user-${createUuid()}`,
           role: "user",
           content: passthroughText,
           timestamp: new Date().toISOString(),
@@ -1712,7 +1713,7 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
           linkedToolCall: null,
         });
 
-        const assistantMessageId = event.message_id ?? `local-assistant-${crypto.randomUUID()}`;
+        const assistantMessageId = event.message_id ?? `local-assistant-${createUuid()}`;
         messages.value.push({
           id: assistantMessageId,
           role: "assistant",
@@ -1963,7 +1964,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
 
   if (!pendingNewConversation) {
     const userMessage = {
-      id: `local-user-${crypto.randomUUID()}`,
+      id: `local-user-${createUuid()}`,
       role: "user" as const,
       content: userText,
       timestamp: new Date().toISOString(),
@@ -1974,7 +1975,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
     };
     messages.value.push(userMessage);
 
-    const assistantTempId = `local-assistant-${crypto.randomUUID()}`;
+    const assistantTempId = `local-assistant-${createUuid()}`;
     messages.value.push({
       id: assistantTempId,
       role: "assistant",

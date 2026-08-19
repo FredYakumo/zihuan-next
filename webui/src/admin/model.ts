@@ -8,6 +8,7 @@ import type {
   ModelRefSpec,
   LlmServiceConfig,
 } from "../api/client";
+import { createUuid } from "../ui/uuid";
 
 export type ConnectionType =
   | "mysql"
@@ -392,7 +393,7 @@ export function defaultLlmForm(): LlmFormState {
 
 export function defaultToolForm(): ToolFormState {
   return {
-    id: crypto.randomUUID(),
+    id: createUuid(),
     name: "",
     description: "",
     enabled: true,
