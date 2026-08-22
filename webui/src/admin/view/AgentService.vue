@@ -73,10 +73,10 @@
             </div>
           </t-card>
 
-          <t-card v-if="form.type === 'workspace' && form.workspace_memory_enabled" class="agent-service-form-section" :bordered="false">
-            <template #title>记忆介质</template>
+          <t-card v-if="form.type === 'workspace' && (form.workspace_memory_enabled || form.default_tools_enabled.web_search)" class="agent-service-form-section" :bordered="false">
+            <template #title>检索增强生成</template>
             <div class="agent-service-form-grid">
-              <t-form-item label="记忆介质" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆介质。' : undefined">
+              <t-form-item v-if="form.workspace_memory_enabled" label="记忆介质" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆介质。' : undefined">
                 <t-select v-model="form.workspace_memory_backend" placeholder="请选择记忆库" @change="handleMemoryBackendChange">
                   <t-option class="agent-service-add-retrieval-option" value="__add_retrieval_database__" label="新增检索数据库">
                     <span class="agent-service-add-model-option-content"><AddIcon />新增检索数据库</span>
@@ -101,13 +101,7 @@
                   <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
-            </div>
-          </t-card>
-
-          <t-card v-if="form.type === 'workspace' && form.default_tools_enabled.web_search" class="agent-service-form-section" :bordered="false">
-            <template #title>Web Search Engine</template>
-            <div class="agent-service-form-grid">
-              <t-form-item label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
+              <t-form-item v-if="form.default_tools_enabled.web_search" label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
                 <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择" @change="handleWebSearchChange">
                   <t-option class="agent-service-add-web-search-option" value="__add_web_search__" label="新增 Web Search">
                     <span class="agent-service-add-model-option-content"><AddIcon />新增 Web Search</span>
@@ -516,10 +510,10 @@
           </div>
         </t-card>
 
-        <t-card v-if="form.type === 'workspace' && form.workspace_memory_enabled" class="agent-service-form-section" :bordered="false">
-          <template #title>Agent 记忆库</template>
+        <t-card v-if="form.type === 'workspace' && (form.workspace_memory_enabled || form.default_tools_enabled.web_search)" class="agent-service-form-section" :bordered="false">
+          <template #title>检索增强生成</template>
           <div class="agent-service-form-grid">
-            <t-form-item label="记忆库" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆库。' : undefined">
+            <t-form-item v-if="form.workspace_memory_enabled" label="记忆库" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆库。' : undefined">
               <t-select v-model="form.workspace_memory_backend" placeholder="请选择记忆库" @change="handleMemoryBackendChange">
                 <t-option class="agent-service-add-retrieval-option" value="__add_retrieval_database__" label="新增检索数据库">
                   <span class="agent-service-add-model-option-content"><AddIcon />新增检索数据库</span>
@@ -544,13 +538,7 @@
                 <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
               </t-select>
             </t-form-item>
-          </div>
-        </t-card>
-
-        <t-card v-if="form.type === 'workspace' && form.default_tools_enabled.web_search" class="agent-service-form-section" :bordered="false">
-          <template #title>Web Search Engine</template>
-          <div class="agent-service-form-grid">
-            <t-form-item label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
+            <t-form-item v-if="form.default_tools_enabled.web_search" label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
               <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择" @change="handleWebSearchChange">
                 <t-option class="agent-service-add-web-search-option" value="__add_web_search__" label="新增 Web Search">
                   <span class="agent-service-add-model-option-content"><AddIcon />新增 Web Search</span>
