@@ -36,6 +36,18 @@
               <t-checkbox v-model="form.auto_start">开机自动启动</t-checkbox>
               <t-checkbox v-model="form.is_default">默认 Service</t-checkbox>
             </div>
+            <t-form-item v-if="form.type === 'workspace'" label="头像" class="agent-service-form-item-full">
+              <div class="agent-service-avatar-row">
+                <img v-if="form.avatar_url" :src="getAvatarDisplayUrl(form.avatar_url)" alt="Avatar preview" class="agent-service-avatar-preview" />
+                <div v-else class="agent-service-avatar-placeholder">{{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}</div>
+                <div class="agent-service-avatar-actions">
+                  <input ref="createAvatarFileInput" type="file" accept="image/*" style="display: none" @change="handleAvatarFileSelect" />
+                  <t-button variant="text" @click="$refs.createAvatarFileInput?.click()">{{ form.avatar_url ? '更换头像' : '上传头像' }}</t-button>
+                  <t-button v-if="form.avatar_url" variant="text" theme="danger" @click="clearAvatar">删除</t-button>
+                </div>
+              </div>
+              <t-input v-model="form.avatar_url" placeholder="头像 URL（可选，或直接上传图片）" style="margin-top: 8px" />
+            </t-form-item>
           </t-card>
 
           <!-- 模型配置 -->
@@ -278,25 +290,6 @@
             </t-card>
           </template>
 
-          <!-- Workspace 头像 -->
-          <template v-if="form.type === 'workspace'">
-            <t-card class="agent-service-form-section" :bordered="false">
-              <template #title>Service 头像</template>
-              <t-form-item label="头像" class="agent-service-form-item-full">
-                <div class="agent-service-avatar-row">
-                  <img v-if="form.avatar_url" :src="getAvatarDisplayUrl(form.avatar_url)" alt="Avatar preview" class="agent-service-avatar-preview" />
-                  <div v-else class="agent-service-avatar-placeholder">{{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}</div>
-                  <div class="agent-service-avatar-actions">
-                    <input ref="createAvatarFileInput" type="file" accept="image/*" style="display: none" @change="handleAvatarFileSelect" />
-                    <t-button variant="text" @click="$refs.createAvatarFileInput?.click()">{{ form.avatar_url ? '更换头像' : '上传头像' }}</t-button>
-                    <t-button v-if="form.avatar_url" variant="text" theme="danger" @click="clearAvatar">删除</t-button>
-                  </div>
-                </div>
-                <t-input v-model="form.avatar_url" placeholder="头像 URL（可选，或直接上传图片）" style="margin-top: 8px" />
-              </t-form-item>
-            </t-card>
-          </template>
-
           <!-- 默认工具 -->
           <t-card v-if="currentDefaultTools.length > 0" class="agent-service-form-section" :bordered="false">
             <template #title>默认工具</template>
@@ -486,6 +479,18 @@
             <t-checkbox v-model="form.auto_start">开机自动启动</t-checkbox>
             <t-checkbox v-model="form.is_default">默认 Service</t-checkbox>
           </div>
+          <t-form-item v-if="form.type === 'workspace'" label="头像" class="agent-service-form-item-full">
+            <div class="agent-service-avatar-row">
+              <img v-if="form.avatar_url" :src="getAvatarDisplayUrl(form.avatar_url)" alt="Avatar preview" class="agent-service-avatar-preview" />
+              <div v-else class="agent-service-avatar-placeholder">{{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}</div>
+              <div class="agent-service-avatar-actions">
+                <input ref="avatarFileInput" type="file" accept="image/*" style="display: none" @change="handleAvatarFileSelect" />
+                <t-button variant="text" @click="$refs.avatarFileInput?.click()">{{ form.avatar_url ? '更换头像' : '上传头像' }}</t-button>
+                <t-button v-if="form.avatar_url" variant="text" theme="danger" @click="clearAvatar">删除</t-button>
+              </div>
+            </div>
+            <t-input v-model="form.avatar_url" placeholder="头像 URL（可选，或直接上传图片）" style="margin-top: 8px" />
+          </t-form-item>
         </t-card>
 
         <!-- 模型配置 -->
@@ -704,25 +709,6 @@
                 </div>
               </t-form-item>
             </div>
-          </t-card>
-        </template>
-
-        <!-- 头像编辑 -->
-        <template v-if="form.type === 'workspace'">
-          <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>Service 头像</template>
-            <t-form-item label="头像" class="agent-service-form-item-full">
-              <div class="agent-service-avatar-row">
-                <img v-if="form.avatar_url" :src="getAvatarDisplayUrl(form.avatar_url)" alt="Avatar preview" class="agent-service-avatar-preview" />
-                <div v-else class="agent-service-avatar-placeholder">{{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}</div>
-                <div class="agent-service-avatar-actions">
-                  <input ref="avatarFileInput" type="file" accept="image/*" style="display: none" @change="handleAvatarFileSelect" />
-                  <t-button variant="text" @click="$refs.avatarFileInput?.click()">{{ form.avatar_url ? '更换头像' : '上传头像' }}</t-button>
-                  <t-button v-if="form.avatar_url" variant="text" theme="danger" @click="clearAvatar">删除</t-button>
-                </div>
-              </div>
-              <t-input v-model="form.avatar_url" placeholder="头像 URL（可选，或直接上传图片）" style="margin-top: 8px" />
-            </t-form-item>
           </t-card>
         </template>
 
