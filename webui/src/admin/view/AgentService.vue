@@ -96,7 +96,10 @@
             <template #title>Web Search Engine</template>
             <div class="agent-service-form-grid">
               <t-form-item label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
-                <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择">
+                <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择" @change="handleWebSearchChange">
+                  <t-option class="agent-service-add-web-search-option" value="__add_web_search__" label="新增 Web Search">
+                    <span class="agent-service-add-model-option-content"><AddIcon />新增 Web Search</span>
+                  </t-option>
                   <t-option value="" label="请选择" />
                   <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
@@ -179,7 +182,10 @@
                   </t-select>
                 </t-form-item>
                 <t-form-item label="Web Search Engine" required>
-                  <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择">
+                  <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择" @change="handleWebSearchChange">
+                    <t-option class="agent-service-add-web-search-option" value="__add_web_search__" label="新增 Web Search">
+                      <span class="agent-service-add-model-option-content"><AddIcon />新增 Web Search</span>
+                    </t-option>
                     <t-option value="" label="请选择" />
                     <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
@@ -540,7 +546,10 @@
           <template #title>Web Search Engine</template>
           <div class="agent-service-form-grid">
             <t-form-item label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
-              <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择">
+              <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择" @change="handleWebSearchChange">
+                <t-option class="agent-service-add-web-search-option" value="__add_web_search__" label="新增 Web Search">
+                  <span class="agent-service-add-model-option-content"><AddIcon />新增 Web Search</span>
+                </t-option>
                 <t-option value="" label="请选择" />
                 <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
               </t-select>
@@ -623,7 +632,10 @@
                 </t-select>
               </t-form-item>
               <t-form-item label="Web Search Engine" required>
-                <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择">
+                <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择" @change="handleWebSearchChange">
+                  <t-option class="agent-service-add-web-search-option" value="__add_web_search__" label="新增 Web Search">
+                    <span class="agent-service-add-model-option-content"><AddIcon />新增 Web Search</span>
+                  </t-option>
                   <t-option value="" label="请选择" />
                   <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
@@ -1287,6 +1299,20 @@
         <input ref="retrievalDatabaseImportFileInput" type="file" accept=".json,application/json" class="agent-service-import-input" @change="handleRetrievalDatabaseFileChange" />
       </div>
     </t-dialog>
+    <t-dialog
+      v-model:visible="showWebSearchDialog"
+      header="新增 Web Search"
+      :confirm-btn="null"
+      cancel-btn="取消"
+      :close-on-overlay-click="false"
+    >
+      <div class="agent-service-model-config-actions">
+        <t-button block theme="primary" @click="openWebSearchCreatePage">新增 Web Search</t-button>
+        <t-button block variant="outline" :loading="webSearchImporting" @click="importWebSearchFromClipboard">从剪贴板导入</t-button>
+        <t-button block variant="outline" :loading="webSearchImporting" @click="triggerWebSearchImportFile">从 JSON 导入</t-button>
+        <input ref="webSearchImportFileInput" type="file" accept=".json,application/json" class="agent-service-import-input" @change="handleWebSearchFileChange" />
+      </div>
+    </t-dialog>
   </section>
 </template>
 
@@ -1426,6 +1452,9 @@ const modelImporting = ref(false);
 const showRetrievalDatabaseDialog = ref(false);
 const retrievalDatabaseImportFileInput = ref<HTMLInputElement | null>(null);
 const retrievalDatabaseImporting = ref(false);
+const showWebSearchDialog = ref(false);
+const webSearchImportFileInput = ref<HTMLInputElement | null>(null);
+const webSearchImporting = ref(false);
 
 function handlePrimaryModelChange(value: string | number) {
   if (String(value) !== "__add_model__") return;
@@ -1439,6 +1468,12 @@ function handleMemoryBackendChange(value: string | number) {
   showRetrievalDatabaseDialog.value = true;
 }
 
+function handleWebSearchChange(value: string | number) {
+  if (String(value) !== "__add_web_search__") return;
+  form.web_search_engine_connection_id = "";
+  showWebSearchDialog.value = true;
+}
+
 function openModelCreatePage() {
   showModelConfigDialog.value = false;
   router.push({ path: "/llm", query: { action: "create" } });
@@ -1447,6 +1482,11 @@ function openModelCreatePage() {
 function openRetrievalDatabaseCreatePage() {
   showRetrievalDatabaseDialog.value = false;
   router.push({ path: "/connections", query: { action: "create" } });
+}
+
+function openWebSearchCreatePage() {
+  showWebSearchDialog.value = false;
+  router.push({ path: "/connections", query: { action: "create", type: "web_search_engine" } });
 }
 
 async function importModelFromText(raw: string) {
@@ -1521,6 +1561,44 @@ function handleRetrievalDatabaseFileChange(event: Event) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => { void importRetrievalDatabaseFromText(String(reader.result)); input.value = ""; };
+  reader.onerror = () => { alert("文件读取失败"); input.value = ""; };
+  reader.readAsText(file);
+}
+
+async function importWebSearchFromText(raw: string) {
+  if (webSearchImporting.value) return;
+  webSearchImporting.value = true;
+  try {
+    const config = assertConnectionConfig(JSON.parse(raw));
+    if (config.kind.type !== "web_search_engine") {
+      throw new Error("Web Search 仅支持 Web Search Engine 连接配置");
+    }
+    const created = await system.connections.create({ name: config.name, enabled: config.enabled, kind: config.kind });
+    await load();
+    form.web_search_engine_connection_id = created.config_id;
+    showWebSearchDialog.value = false;
+  } catch (error) {
+    alert(`Web Search 导入失败：${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    webSearchImporting.value = false;
+  }
+}
+
+async function importWebSearchFromClipboard() {
+  try {
+    await importWebSearchFromText(await navigator.clipboard.readText());
+  } catch (error) {
+    alert(`读取剪贴板失败：${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function triggerWebSearchImportFile() { webSearchImportFileInput.value?.click(); }
+function handleWebSearchFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { void importWebSearchFromText(String(reader.result)); input.value = ""; };
   reader.onerror = () => { alert("文件读取失败"); input.value = ""; };
   reader.readAsText(file);
 }
@@ -1764,6 +1842,13 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   font-weight: 600;
 }
 
+:global(.t-select-option.agent-service-add-web-search-option) {
+  position: relative;
+  margin-bottom: 6px;
+  color: var(--td-brand-color);
+  font-weight: 600;
+}
+
 :global(.agent-service-add-model-option-content) {
   display: inline-flex;
   align-items: center;
@@ -1789,6 +1874,15 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
 }
 
 :global(.t-select-option.agent-service-add-retrieval-option::after) {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: -4px;
+  left: 8px;
+  border-bottom: 1px solid var(--td-component-border);
+}
+
+:global(.t-select-option.agent-service-add-web-search-option::after) {
   content: "";
   position: absolute;
   right: 8px;

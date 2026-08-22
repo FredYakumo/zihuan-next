@@ -222,7 +222,13 @@ const router = useRouter();
 const createChoiceVisible = ref(false);
 
 function openCreateChoice() { createChoiceVisible.value = true; }
-if (route.query.action === "create") openCreateChoice();
+if (route.query.action === "create") {
+  if (route.query.type === "web_search_engine") {
+    startCreate("web_search_engine");
+  } else {
+    openCreateChoice();
+  }
+}
 function chooseExistingConnection() { createChoiceVisible.value = false; startCreate(); }
 function choosePluginConnection() { createChoiceVisible.value = false; router.push("/plugins?install=1"); }
 
