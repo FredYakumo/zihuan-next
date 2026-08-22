@@ -288,7 +288,7 @@
           <t-card v-if="currentDefaultTools.length > 0" class="agent-service-form-section" :bordered="false">
             <template #title>默认工具</template>
             <div class="agent-service-default-tools-search">
-              <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具名称、ID 或说明" clearable>
+              <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具" clearable>
                 <template v-if="defaultToolSearchQuery" #suffixIcon>
                   <t-button variant="text" size="small" @click="defaultToolSearchQuery = ''">清空</t-button>
                 </template>
@@ -704,7 +704,7 @@
         <t-card class="agent-service-form-section" :bordered="false">
           <template #title>默认工具</template>
           <div class="agent-service-default-tools-search">
-            <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具名称、ID 或说明" clearable />
+            <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具" clearable />
           </div>
           <div v-if="filteredDefaultTools.length === 0" class="agent-service-empty-state">没有匹配的工具。</div>
           <t-table v-else :data="filteredDefaultTools" :columns="defaultToolColumns" :hover="true" :pagination="false" row-key="id" table-layout="fixed">
