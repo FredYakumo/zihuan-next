@@ -9,12 +9,21 @@
     <!-- 新建 Service 抽屉 -->
     <t-drawer
       v-model:visible="showCreatePicker"
-      :header="showCreateForm ? '新建 Service' : '选择 Service 类型'"
       size="960px"
       :close-on-overlay-click="false"
       :footer="false"
       @close="closeCreatePicker"
     >
+      <template #header>
+        <div class="agent-service-create-drawer-header">
+          <strong>{{ showCreateForm ? '新建 Service' : '选择 Service 类型' }}</strong>
+          <t-tooltip content="关闭">
+            <t-button variant="text" shape="square" aria-label="关闭" @click="closeCreatePicker">
+              <CloseIcon />
+            </t-button>
+          </t-tooltip>
+        </div>
+      </template>
       <div v-if="showCreateForm" class="agent-service-drawer-body">
         <t-form class="agent-service-form" label-align="top">
           <!-- 基本信息 -->
@@ -439,20 +448,10 @@
       v-model:visible="showEditModal"
       :header="form.name || '编辑 Service'"
       size="960px"
+      :close-btn="true"
       :close-on-overlay-click="false"
       @close="closeEditModal"
     >
-      <template #header>
-        <div class="agent-service-edit-drawer-header">
-          <div class="agent-service-edit-badges">
-            <t-tag variant="light">{{ form.type }}</t-tag>
-            <t-tag :theme="form.enabled ? 'success' : 'default'" variant="light">{{ form.enabled ? '已启用' : '已停用' }}</t-tag>
-            <t-tag v-if="form.is_default" theme="warning" variant="light">default</t-tag>
-          </div>
-          <strong>{{ form.name || '编辑 Service' }}</strong>
-        </div>
-      </template>
-
       <t-form class="agent-service-form" label-align="top">
         <!-- 基本信息 -->
         <t-card class="agent-service-form-section" :bordered="false">
@@ -1307,7 +1306,6 @@ const {
   llm,
   workflows,
   form,
-  editingServiceId,
   showCreatePicker,
   showCreateForm,
   showEditModal,
@@ -1754,6 +1752,13 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   padding-bottom: 80px;
 }
 
+.agent-service-create-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
 .agent-service-drawer-footer {
   display: flex;
   justify-content: flex-end;
@@ -1926,16 +1931,6 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
 .agent-service-avatar-actions {
   display: flex;
   gap: 8px;
-}
-
-.agent-service-edit-drawer-header {
-  display: grid;
-  gap: 8px;
-}
-
-.agent-service-edit-badges {
-  display: flex;
-  gap: 6px;
 }
 
 .agent-service-type-grid {
