@@ -13,7 +13,7 @@ use zihuan_core::storage::{
     WeaviateConnection,
     WebSearchEngineConnection,
 };
-use zihuan_core::agent::qq_chat::{DreamIntervalUnit, QqChatAgentServiceConfig};
+use zihuan_core::agent::qq_chat::{DreamIntervalUnit, QqChatAgentServiceConfig, RetrievalStoreConfig};
 use zihuan_core::weaviate::WeaviateCollectionSchema;
 
 pub async fn create_chat_assistant_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {
@@ -252,6 +252,9 @@ fn build_qq_chat_agent_service() -> AgentConfig {
             tokenizer_connection_id: None,
             web_search_engine_connection_id: "setup-default-web-search".to_string(),
             rdb_id: Some("setup-default-sqlite".to_string()),
+            retrieval_store: Some(RetrievalStoreConfig::Connection {
+                connection_id: "setup-default-weaviate-memory".to_string(),
+            }),
             embedding: None,
             mysql_connection_id: None,
             task_db_connection_id: None,

@@ -26,9 +26,9 @@
       </template>
       <div v-if="showCreateForm" class="agent-service-drawer-body">
         <t-form class="agent-service-form" label-align="top">
-          <!-- 基本信息 -->
+          <!-- Agent 配置 -->
           <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>基本信息</template>
+            <template #title>{{ form.type === 'qq_chat' ? 'Agent 配置' : '基本信息' }}</template>
             <div class="agent-service-form-grid">
               <t-form-item label="名称" required>
                 <t-input v-model="form.name" />
@@ -39,11 +39,20 @@
                   <t-option value="workspace" label="Workspace Agent Service" />
                 </t-select>
               </t-form-item>
+              <t-form-item v-if="form.type === 'qq_chat'" label="Bot Adapter" required>
+                <t-select v-model="form.ims_bot_adapter_connection_id" placeholder="请选择">
+                  <t-option value="" label="请选择" />
+                  <t-option v-for="item in botConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item v-if="form.type === 'qq_chat'" label="Bot 名称">
+                <t-input v-model="form.bot_name" placeholder="用户与 Bot 对话时显示的名称" />
+              </t-form-item>
             </div>
             <div class="agent-service-check-row">
               <t-checkbox v-model="form.enabled">启用</t-checkbox>
               <t-checkbox v-model="form.auto_start">开机自动启动</t-checkbox>
-              <t-checkbox v-model="form.is_default">默认 Service</t-checkbox>
+              <t-checkbox v-if="form.type === 'workspace'" v-model="form.is_default">默认 Service</t-checkbox>
             </div>
             <t-form-item v-if="form.type === 'workspace'" label="头像" class="agent-service-form-item-full">
               <div class="agent-service-avatar-row">
@@ -63,7 +72,7 @@
           <t-card class="agent-service-form-section" :bordered="false">
             <template #title>{{ form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
             <div class="agent-service-form-grid">
-              <t-form-item :label="form.type === 'workspace' ? '默认模型' : '模型配置'" required>
+              <t-form-item :label="form.type === 'workspace' ? '默认模型' : '主 Brain 模型'" required>
                 <t-select v-model="form.llm_ref_id" placeholder="请选择" @change="handlePrimaryModelChange">
                   <t-option class="agent-service-add-model-option" value="__add_model__" label="新增模型配置">
                     <span class="agent-service-add-model-option-content"><AddIcon />新增模型配置</span>
@@ -78,6 +87,30 @@
               <t-form-item v-if="form.type === 'workspace'" label="Agent 记忆">
                 <t-checkbox v-model="form.workspace_memory_enabled">启用 Agent 记忆</t-checkbox>
                 <div class="agent-service-form-hint">启用后 Agent 会回想或者记忆对话中的信息，需要记忆库的支持</div>
+              </t-form-item>
+              <t-form-item v-if="form.type === 'qq_chat'" label="数学/编程模型">
+                <t-select v-model="form.math_programming_llm_ref_id" placeholder="回退主 Brain 模型" clearable>
+                  <t-option value="" label="回退主 Brain 模型" />
+                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item v-if="form.type === 'qq_chat'" label="Preprompt 模型">
+                <t-select v-model="form.intent_classification_llm_ref_id" placeholder="回退主 Brain 模型" clearable>
+                  <t-option value="" label="回退主 Brain 模型" />
+                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item v-if="form.type === 'qq_chat'" label="自然语言回复模型">
+                <t-select v-model="form.natural_language_reply_llm_ref_id" placeholder="请选择" clearable>
+                  <t-option value="" label="请选择" />
+                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item v-if="form.type === 'qq_chat'" label="分词配置">
+                <t-select v-model="form.tokenizer_connection_id" placeholder="不使用（标点分段）" clearable>
+                  <t-option value="" label="不使用（标点分段）" />
+                  <t-option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
               </t-form-item>
             </div>
           </t-card>
@@ -125,72 +158,15 @@
           <!-- QQ Chat 专属字段 -->
           <template v-if="form.type === 'qq_chat'">
             <t-card class="agent-service-form-section" :bordered="false">
-              <template #title>QQ Chat 模型配置</template>
+              <template #title>RAG 配置</template>
               <div class="agent-service-form-grid">
-                <t-form-item label="数学编程模型">
-                  <t-select v-model="form.math_programming_llm_ref_id" placeholder="回退主模型" clearable>
-                    <t-option value="" label="回退主模型" />
-                    <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item label="意图分类模型">
-                  <t-select v-model="form.intent_classification_llm_ref_id" placeholder="回退主模型" clearable>
-                    <t-option value="" label="回退主模型" />
-                    <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item label="自然语言回复模型">
-                  <t-select v-model="form.natural_language_reply_llm_ref_id" placeholder="请选择" clearable>
-                    <t-option value="" label="请选择" />
-                    <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item label="自然语言回复 Prompt" class="agent-service-form-item-full">
-                  <t-textarea v-model="form.natural_language_reply_system_prompt" placeholder="可选。专门给自然语言回复模型使用的系统提示词。" />
-                </t-form-item>
-              </div>
-            </t-card>
-
-            <t-card class="agent-service-form-section" :bordered="false">
-              <template #title>向量与分词</template>
-              <div class="agent-service-form-grid">
-                <t-form-item label="文本向量模型">
-                  <t-select v-model="form.embedding_model_ref_id" placeholder="不使用" clearable>
+                <t-form-item label="关系型数据库">
+                  <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
-                    <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                    <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item label="分词 Tokenizer 连接">
-                  <t-select v-model="form.tokenizer_connection_id" placeholder="不使用（标点分段）" clearable>
-                    <t-option value="" label="不使用（标点分段）" />
-                    <t-option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-              </div>
-            </t-card>
-
-            <t-card class="agent-service-form-section" :bordered="false">
-              <template #title>Bot 配置</template>
-              <div class="agent-service-form-grid">
-                <t-form-item label="Bot Adapter" required>
-                  <t-select v-model="form.ims_bot_adapter_connection_id" placeholder="请选择">
-                    <t-option value="" label="请选择" />
-                    <t-option v-for="item in botConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item label="Bot Name">
-                  <t-input v-model="form.bot_name" />
-                </t-form-item>
-                <t-form-item label="System Prompt" class="agent-service-form-item-full">
-                  <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。" />
-                </t-form-item>
-              </div>
-            </t-card>
-
-            <t-card class="agent-service-form-section" :bordered="false">
-              <template #title>外部连接</template>
-              <div class="agent-service-form-grid">
-                <t-form-item label="RustFS Connection">
+                <t-form-item label="RustFS">
                   <t-select v-model="form.rustfs_connection_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in rustfsConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
@@ -205,39 +181,38 @@
                     <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item label="RDB Connection">
-                  <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
+                <t-form-item label="检索数据库">
+                  <t-select v-model="form.retrieval_store_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
-                    <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                    <t-option value="__local_markdown__" label="本地 Markdown" />
+                    <t-option v-for="item in retrievalConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item label="Weaviate Image Connection">
+                <t-form-item label="Embedding 模型">
+                  <t-select v-model="form.embedding_model_ref_id" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item v-if="false" label="Weaviate 图片检索连接">
                   <t-select v-model="form.weaviate_image_connection_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in imageWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item label="Memory Backend">
-                  <t-select v-model="form.memory_backend" placeholder="不使用" clearable>
-                    <t-option value="" label="不使用" />
-                    <t-option value="local_file" label="本地 Markdown 文件" />
-                    <t-option value="weaviate" label="Weaviate" />
-                    <t-option value="elasticsearch" label="Elasticsearch" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item v-if="form.memory_backend !== 'local_file'" label="Weaviate Memory Connection">
+                <t-form-item v-if="false" label="Weaviate 记忆连接">
                   <t-select v-model="form.weaviate_memory_connection_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item label="Elasticsearch Image Connection">
+                <t-form-item v-if="false" label="Elasticsearch 图片检索连接">
                   <t-select v-model="form.elasticsearch_image_connection_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in imageElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item v-if="form.memory_backend !== 'local_file'" label="Elasticsearch Memory Connection">
+                <t-form-item v-if="false" label="Elasticsearch 记忆连接">
                   <t-select v-model="form.elasticsearch_memory_connection_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
@@ -247,16 +222,28 @@
             </t-card>
 
             <t-card class="agent-service-form-section" :bordered="false">
-              <template #title>高级设置</template>
+              <template #title>Prompt engineering</template>
               <div class="agent-service-form-grid">
-                <t-form-item label="Max Message Length">
+                <t-form-item label="System Prompt" class="agent-service-form-item-full">
+                  <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。" />
+                </t-form-item>
+                <t-form-item label="自然语言回复 Prompt" class="agent-service-form-item-full">
+                  <t-textarea v-model="form.natural_language_reply_system_prompt" placeholder="可选。专门给自然语言回复模型使用的系统提示词。" />
+                </t-form-item>
+              </div>
+            </t-card>
+
+            <t-card class="agent-service-form-section" :bordered="false">
+              <template #title>行为控制</template>
+              <div class="agent-service-form-grid">
+                <t-form-item label="最长输出消息长度">
                   <t-input-number v-model="form.max_message_length" :min="1" />
                 </t-form-item>
-                <t-form-item label="Max Steer Count">
+                <t-form-item label="用户最多 Steer 次数">
                   <t-input-number v-model="form.max_steer_count" :min="0" />
                   <div class="agent-service-form-hint">当 Service 还没发出最终回复时，用户继续发消息会被视为"插嘴 / steer"。这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出会被丢弃并写入日志。</div>
                 </t-form-item>
-                <t-form-item label="Compact Context Length">
+                <t-form-item label="达到上下文长度时压缩">
                   <t-input-number v-model="form.compact_context_length" :min="0" />
                 </t-form-item>
                 <t-form-item label="Dream">
@@ -295,7 +282,7 @@
 
           <!-- 默认工具 -->
           <t-card v-if="currentDefaultTools.length > 0" class="agent-service-form-section" :bordered="false">
-            <template #title>默认工具</template>
+            <template #title>工具和能力</template>
             <div class="agent-service-default-tools-search">
               <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具" clearable>
                 <template v-if="defaultToolSearchQuery" #suffixIcon>
@@ -453,9 +440,9 @@
       @close="closeEditModal"
     >
       <t-form class="agent-service-form" label-align="top">
-        <!-- 基本信息 -->
+        <!-- Agent 配置 -->
         <t-card class="agent-service-form-section" :bordered="false">
-          <template #title>基本信息</template>
+          <template #title>{{ form.type === 'qq_chat' ? 'Agent 配置' : '基本信息' }}</template>
           <div class="agent-service-form-grid">
             <t-form-item label="名称" required>
               <t-input v-model="form.name" />
@@ -466,11 +453,20 @@
                 <t-option value="workspace" label="Workspace Agent Service" />
               </t-select>
             </t-form-item>
+            <t-form-item v-if="form.type === 'qq_chat'" label="Bot Adapter" required>
+              <t-select v-model="form.ims_bot_adapter_connection_id" placeholder="请选择">
+                <t-option value="" label="请选择" />
+                <t-option v-for="item in botConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="form.type === 'qq_chat'" label="Bot 名称">
+              <t-input v-model="form.bot_name" placeholder="用户与 Bot 对话时显示的名称" />
+            </t-form-item>
           </div>
           <div class="agent-service-check-row">
             <t-checkbox v-model="form.enabled">启用</t-checkbox>
             <t-checkbox v-model="form.auto_start">开机自动启动</t-checkbox>
-            <t-checkbox v-model="form.is_default">默认 Service</t-checkbox>
+            <t-checkbox v-if="form.type === 'workspace'" v-model="form.is_default">默认 Service</t-checkbox>
           </div>
           <t-form-item v-if="form.type === 'workspace'" label="头像" class="agent-service-form-item-full">
             <div class="agent-service-avatar-row">
@@ -490,7 +486,7 @@
         <t-card class="agent-service-form-section" :bordered="false">
           <template #title>{{ form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
           <div class="agent-service-form-grid">
-            <t-form-item :label="form.type === 'workspace' ? '默认模型' : '模型配置'" required>
+            <t-form-item :label="form.type === 'workspace' ? '默认模型' : '主 Brain 模型'" required>
               <t-select v-model="form.llm_ref_id" placeholder="请选择" @change="handlePrimaryModelChange">
                 <t-option class="agent-service-add-model-option" value="__add_model__" label="新增模型配置">
                   <span class="agent-service-add-model-option-content"><AddIcon />新增模型配置</span>
@@ -505,6 +501,30 @@
             <t-form-item v-if="form.type === 'workspace'" label="Agent 记忆">
               <t-checkbox v-model="form.workspace_memory_enabled">启用 Agent 记忆</t-checkbox>
               <div class="agent-service-form-hint">启用后 Agent 会回想或者记忆对话中的信息，需要记忆库的支持。</div>
+            </t-form-item>
+            <t-form-item v-if="form.type === 'qq_chat'" label="数学/编程模型">
+              <t-select v-model="form.math_programming_llm_ref_id" placeholder="回退主 Brain 模型" clearable>
+                <t-option value="" label="回退主 Brain 模型" />
+                <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="form.type === 'qq_chat'" label="Preprompt 模型">
+              <t-select v-model="form.intent_classification_llm_ref_id" placeholder="回退主 Brain 模型" clearable>
+                <t-option value="" label="回退主 Brain 模型" />
+                <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="form.type === 'qq_chat'" label="自然语言回复模型">
+              <t-select v-model="form.natural_language_reply_llm_ref_id" placeholder="请选择" clearable>
+                <t-option value="" label="请选择" />
+                <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="form.type === 'qq_chat'" label="分词配置">
+              <t-select v-model="form.tokenizer_connection_id" placeholder="不使用（标点分段）" clearable>
+                <t-option value="" label="不使用（标点分段）" />
+                <t-option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
             </t-form-item>
           </div>
         </t-card>
@@ -551,7 +571,7 @@
 
         <!-- QQ Chat 专属 -->
         <template v-if="form.type === 'qq_chat'">
-          <t-card class="agent-service-form-section" :bordered="false">
+          <t-card v-if="false" class="agent-service-form-section" :bordered="false">
             <template #title>QQ Chat 模型配置</template>
             <div class="agent-service-form-grid">
               <t-form-item label="数学编程模型">
@@ -578,7 +598,7 @@
             </div>
           </t-card>
 
-          <t-card class="agent-service-form-section" :bordered="false">
+          <t-card v-if="false" class="agent-service-form-section" :bordered="false">
             <template #title>向量与分词</template>
             <div class="agent-service-form-grid">
               <t-form-item label="文本向量模型">
@@ -596,7 +616,7 @@
             </div>
           </t-card>
 
-          <t-card class="agent-service-form-section" :bordered="false">
+          <t-card v-if="false" class="agent-service-form-section" :bordered="false">
             <template #title>Bot 配置</template>
             <div class="agent-service-form-grid">
               <t-form-item label="Bot Adapter" required>
@@ -615,9 +635,9 @@
           </t-card>
 
           <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>外部连接</template>
+            <template #title>RAG 配置</template>
             <div class="agent-service-form-grid">
-              <t-form-item label="RustFS Connection">
+              <t-form-item label="RustFS">
                 <t-select v-model="form.rustfs_connection_id" placeholder="不使用" clearable>
                   <t-option value="" label="不使用" />
                   <t-option v-for="item in rustfsConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
@@ -632,31 +652,44 @@
                   <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
-              <t-form-item label="RDB Connection">
+              <t-form-item label="关系型数据库">
                 <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
                   <t-option value="" label="不使用" />
                   <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
-              <t-form-item label="Weaviate Image Connection">
+              <t-form-item label="检索数据库">
+                <t-select v-model="form.retrieval_store_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option value="__local_markdown__" label="本地 Markdown" />
+                  <t-option v-for="item in retrievalConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="Embedding 模型">
+                <t-select v-model="form.embedding_model_ref_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item v-if="false" label="Weaviate 图片检索连接">
                 <t-select v-model="form.weaviate_image_connection_id" placeholder="不使用" clearable>
                   <t-option value="" label="不使用" />
                   <t-option v-for="item in imageWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
-              <t-form-item label="Weaviate Memory Connection">
+              <t-form-item v-if="false" label="Weaviate 记忆连接">
                 <t-select v-model="form.weaviate_memory_connection_id" placeholder="不使用" clearable>
                   <t-option value="" label="不使用" />
                   <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
-              <t-form-item label="Elasticsearch Image Connection">
+              <t-form-item v-if="false" label="Elasticsearch 图片检索连接">
                 <t-select v-model="form.elasticsearch_image_connection_id" placeholder="不使用" clearable>
                   <t-option value="" label="不使用" />
                   <t-option v-for="item in imageElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
-              <t-form-item label="Elasticsearch Memory Connection">
+              <t-form-item v-if="false" label="Elasticsearch 记忆连接">
                 <t-select v-model="form.elasticsearch_memory_connection_id" placeholder="不使用" clearable>
                   <t-option value="" label="不使用" />
                   <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
@@ -666,16 +699,28 @@
           </t-card>
 
           <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>高级设置</template>
+            <template #title>Prompt engineering</template>
             <div class="agent-service-form-grid">
-              <t-form-item label="Max Message Length">
+              <t-form-item label="System Prompt" class="agent-service-form-item-full">
+                <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。" />
+              </t-form-item>
+              <t-form-item label="自然语言回复 Prompt" class="agent-service-form-item-full">
+                <t-textarea v-model="form.natural_language_reply_system_prompt" placeholder="可选。专门给自然语言回复模型使用的系统提示词。" />
+              </t-form-item>
+            </div>
+          </t-card>
+
+          <t-card class="agent-service-form-section" :bordered="false">
+            <template #title>行为控制</template>
+            <div class="agent-service-form-grid">
+              <t-form-item label="最长输出消息长度">
                 <t-input-number v-model="form.max_message_length" :min="1" />
               </t-form-item>
-              <t-form-item label="Max Steer Count">
+              <t-form-item label="用户最多 Steer 次数">
                 <t-input-number v-model="form.max_steer_count" :min="0" />
                 <div class="agent-service-form-hint">当 Service 还没发出最终回复时，用户继续发消息会被视为"插嘴 / steer"。这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出的消息会被丢弃。</div>
               </t-form-item>
-              <t-form-item label="Compact Context Length">
+              <t-form-item label="达到上下文长度时压缩">
                 <t-input-number v-model="form.compact_context_length" :min="0" />
               </t-form-item>
             </div>
@@ -701,7 +746,7 @@
 
         <!-- 默认工具 -->
         <t-card class="agent-service-form-section" :bordered="false">
-          <template #title>默认工具</template>
+          <template #title>工具和能力</template>
           <div class="agent-service-default-tools-search">
             <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具" clearable />
           </div>
@@ -1347,6 +1392,7 @@ const {
   memoryWeaviateConnections,
   imageElasticsearchConnections,
   memoryElasticsearchConnections,
+  retrievalConnections,
   ignoreRulesDisabledReason,
   resetForm,
   avatarUploading,

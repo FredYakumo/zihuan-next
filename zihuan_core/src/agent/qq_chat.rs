@@ -10,6 +10,13 @@ use super::{
 use crate::error::{Error, Result};
 use crate::inference::system_config::MemoryBackendKind;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RetrievalStoreConfig {
+    LocalMarkdown,
+    Connection { connection_id: String },
+}
+
 thread_local! {
     static CURRENT_QQ_CHAT_AGENT_SERVICE_CONFIG: RefCell<Vec<QqChatAgentServiceConfig>> =
         const { RefCell::new(Vec::new()) };
@@ -197,6 +204,8 @@ pub struct QqChatAgentServiceConfig {
     pub web_search_engine_connection_id: String,
     #[serde(default)]
     pub rdb_id: Option<String>,
+    #[serde(default)]
+    pub retrieval_store: Option<RetrievalStoreConfig>,
     #[serde(default)]
     pub embedding: Option<EmbeddingServiceConfig>,
     #[serde(default)]
