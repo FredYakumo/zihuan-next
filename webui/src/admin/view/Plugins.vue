@@ -9,14 +9,19 @@
         <template #actions="{ row }"><t-space size="small"><t-button v-if="installCommand(row)" variant="text" @click="copyPluginValue(installCommand(row)!, '安装命令')"><template #icon><CopyIcon /></template>复制安装命令</t-button><t-button v-if="connectionConfigJson(row)" variant="text" @click="copyPluginValue(connectionConfigJson(row)!, '连接 JSON')"><template #icon><CopyIcon /></template>复制连接 JSON</t-button><t-button v-if="row.status === 'installed'" variant="text" @click="toggle(row)">停用</t-button><t-button v-else-if="row.status === 'disabled'" variant="text" @click="toggle(row)">启用</t-button><t-popconfirm content="确认卸载插件并删除关联连接吗？" @confirm="removePlugin(row.id)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></t-space></template>
       </t-table>
     </t-card>
-    <t-dialog v-model:visible="installVisible" width="720px">
+    <t-dialog
+      :visible="installVisible"
+      width="720px"
+      :close-on-overlay-click="false"
+      @close="requestCloseInstall"
+    >
       <template #header>
         <div class="dialog-header">
-          <t-button v-if="componentChosen" variant="text" size="small" class="dialog-back" @click="componentChosen = false"><ChevronLeftIcon /></t-button>
-          <span class="dialog-title">安装插件</span>
+          <t-button v-if="installStep === 'config'" variant="text" size="small" class="dialog-back" @click="backFromConfig"><ChevronLeftIcon /></t-button>
+          <span class="dialog-title">{{ installStep === "progress" ? "安装进度" : "安装插件" }}</span>
         </div>
       </template>
-      <div v-if="!componentChosen" class="component-picker">
+      <div v-if="installStep === 'picker'" class="component-picker">
         <p class="component-picker-title">选择组件类型</p>
         <div class="component-grid">
           <button v-for="item in componentOptions" :key="item.value" type="button" :class="['component-card', { active: form.component_type === item.value }]" @click="selectComponent(item.value)">
@@ -26,7 +31,7 @@
           </button>
         </div>
       </div>
-      <div v-else class="install-config">
+      <div v-else-if="installStep === 'config'" class="install-config">
       <div class="selected-component-bar">
         <img class="selected-component-icon" :src="selectedComponent.icon" :alt="selectedComponent.label" />
         <div class="selected-component-info">
@@ -87,17 +92,37 @@
           <SetupField :label="form.component_type === 'elasticsearch' ? '密码' : 'API Key'"><SetupCredentialInput v-if="form.component_type === 'elasticsearch'" v-model="config.search.password" /><SetupCredentialInput v-else v-model="config.search.api_key" /></SetupField>
           <SetupField label="向量维度"><input v-model.number="config.search.vector_dimensions" type="number" min="1" /></SetupField>
         </div>
-        <p v-if="progress.length" class="progress-line">{{ progress[progress.length - 1]?.message }}</p>
         <t-alert v-if="error" theme="error" :message="error" />
         </template>
       </t-form>
       </div>
-      <template #footer>
+      <InstallationProgress
+        v-else
+        :task-id="taskId"
+        :logs="progress"
+        :error="error || null"
+        title="正在安装插件..."
+        subtitle="请稍候，系统正在执行安装和连接配置"
+        back-label="返回配置"
+        @retry="install"
+        @back="backFromProgress"
+      />
+      <template v-if="installStep !== 'progress'" #footer>
         <div class="dialog-footer">
-          <t-button variant="outline" @click="installVisible = false">取消</t-button>
-          <t-button theme="primary" :loading="saving" :disabled="!componentChosen || (form.component_type !== 'sqlite' && environmentLoading)" @click="install">开始安装</t-button>
+          <t-button variant="outline" @click="requestCloseInstall">取消</t-button>
+          <t-button theme="primary" :loading="saving" :disabled="installStep !== 'config' || (form.component_type !== 'sqlite' && environmentLoading)" @click="install">开始安装</t-button>
         </div>
       </template>
+    </t-dialog>
+    <t-dialog
+      v-model:visible="exitConfirmVisible"
+      header="退出安装界面？"
+      confirm-btn="退出"
+      cancel-btn="继续等待"
+      :close-on-overlay-click="false"
+      @confirm="confirmExitInstallation"
+    >
+      安装任务会继续在后台运行。退出后可以在插件列表中查看当前状态，请勿重复提交安装。
     </t-dialog>
     <InstallationSuccessDialog
       :visible="successVisible"
@@ -115,12 +140,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { ChevronLeftIcon, CopyIcon } from "tdesign-icons-vue-next";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import InstallationSuccessDialog from "../components/InstallationSuccessDialog.vue";
 import { pluginsApi, setup as setupApi, type DetailedSetupConfig, type EnvironmentInfo, type PluginRecord, type SetupProgressEvent } from "../../api/client";
+import InstallationProgress from "../setup/InstallationProgress.vue";
 import SetupCredentialInput from "../setup/SetupCredentialInput.vue";
 import SetupDeploymentFields from "../setup/SetupDeploymentFields.vue";
 import SetupField from "../setup/SetupField.vue";
@@ -132,10 +158,15 @@ import sqliteIcon from "../../assets/icons/sqlite.svg";
 import weaviateIcon from "../../assets/icons/weaviate.svg";
 
 const route = useRoute();
-const plugins = ref<PluginRecord[]>([]); const loading = ref(false); const saving = ref(false); const installVisible = ref(false); const componentChosen = ref(false);
+type InstallStep = "picker" | "config" | "progress";
+
+const plugins = ref<PluginRecord[]>([]); const loading = ref(false); const saving = ref(false); const installVisible = ref(false); const installStep = ref<InstallStep>("picker");
 const successVisible = ref(false); const successInstallCommand = ref<string | null>(null); const successConnectionConfig = ref<unknown>(undefined);
 const uninstallCommandVisible = ref(false); const uninstallCommand = ref("");
-const error = ref(""); const progress = ref<SetupProgressEvent[]>([]);
+const exitConfirmVisible = ref(false); const error = ref(""); const progress = ref<SetupProgressEvent[]>([]); const taskId = ref("");
+let cleanupProgress = (() => {}) as () => void;
+let completionTimer: ReturnType<typeof setTimeout> | null = null;
+let installAttempt = 0;
 const componentOptions = [
   { value: "mysql", label: "MySQL", desc: "关系数据库", icon: mysqlIcon },
   { value: "sqlite", label: "SQLite3", desc: "关系数据库", icon: sqliteIcon },
@@ -192,12 +223,87 @@ async function detectEnvironment() {
   }
 }
 function randomPluginName() { return `${selectedComponent.value.value}-plugin-${Math.floor(1000 + Math.random() * 9000)}`; }
-function selectComponent(value: string) { form.component_type = value; form.name = randomPluginName(); componentChosen.value = true; }
-function openInstall() { installVisible.value = true; successVisible.value = false; error.value = ""; progress.value = []; componentChosen.value = false; applyComponentDefaults(); detectEnvironment(); }
-async function showInstallationSuccess(installCommand?: string, connectionConfig?: unknown) { await load(); installVisible.value = false; successInstallCommand.value = installCommand ?? null; successConnectionConfig.value = connectionConfig; successVisible.value = true; }
-function confirmInstallationSuccess() { successVisible.value = false; successInstallCommand.value = null; successConnectionConfig.value = undefined; error.value = ""; progress.value = []; componentChosen.value = false; }
+function selectComponent(value: string) { form.component_type = value; form.name = randomPluginName(); installStep.value = "config"; }
+function clearInstallationSideEffects() {
+  cleanupProgress();
+  cleanupProgress = () => {};
+  if (completionTimer !== null) {
+    clearTimeout(completionTimer);
+    completionTimer = null;
+  }
+}
+function resetInstallationState() {
+  clearInstallationSideEffects();
+  saving.value = false;
+  error.value = "";
+  progress.value = [];
+  taskId.value = "";
+  installStep.value = "picker";
+}
+function openInstall() {
+  installAttempt += 1;
+  resetInstallationState();
+  installVisible.value = true;
+  successVisible.value = false;
+  applyComponentDefaults();
+  void detectEnvironment();
+}
+function closeInstall() {
+  installAttempt += 1;
+  resetInstallationState();
+  exitConfirmVisible.value = false;
+  installVisible.value = false;
+  void load();
+}
+function requestCloseInstall() {
+  if (saving.value) {
+    exitConfirmVisible.value = true;
+    return;
+  }
+  closeInstall();
+}
+function backFromConfig() {
+  if (saving.value) {
+    exitConfirmVisible.value = true;
+    return;
+  }
+  installStep.value = "picker";
+}
+function confirmExitInstallation() { closeInstall(); }
+function backFromProgress() {
+  if (saving.value) {
+    exitConfirmVisible.value = true;
+    return;
+  }
+  clearInstallationSideEffects();
+  error.value = "";
+  progress.value = [];
+  taskId.value = "";
+  installStep.value = "config";
+}
+async function showInstallationSuccess(attempt: number, installCommand?: string, connectionConfig?: unknown) {
+  await load();
+  if (attempt !== installAttempt) return;
+  clearInstallationSideEffects();
+  installVisible.value = false;
+  successInstallCommand.value = installCommand ?? null;
+  successConnectionConfig.value = connectionConfig;
+  successVisible.value = true;
+}
+function confirmInstallationSuccess() {
+  successVisible.value = false;
+  successInstallCommand.value = null;
+  successConnectionConfig.value = undefined;
+  resetInstallationState();
+}
 async function install() {
   if (!form.name.trim()) { error.value = "请填写插件名称"; return; }
+  const showProgress = form.component_type !== "sqlite" && (form.install_method === "docker" || form.install_method === "binary");
+  const attempt = ++installAttempt;
+  clearInstallationSideEffects();
+  if (showProgress) installStep.value = "progress";
+  progress.value = [];
+  taskId.value = "";
   saving.value = true;
   error.value = "";
   resetConfig();
@@ -205,30 +311,45 @@ async function install() {
   try {
     const { install_method, ...plugin } = form;
     const result = await pluginsApi.install({ ...plugin, ...(form.component_type === "sqlite" ? {} : { install_method, detailed_config: config }) });
+    if (attempt !== installAttempt) {
+      void load();
+      return;
+    }
     if (result.task_id) {
       waitingForTask = true;
-      let cleanup = () => {};
-      cleanup = setupApi.streamProgress(result.task_id, (event) => {
+      taskId.value = result.task_id;
+      cleanupProgress = setupApi.streamProgress(result.task_id, (event) => {
+        if (attempt !== installAttempt) return;
         progress.value.push(event);
         if (event.status === "error") {
           error.value = event.error ?? event.message;
           saving.value = false;
-          cleanup();
+          clearInstallationSideEffects();
           return;
         }
         if (event.step === "finished") {
-          cleanup();
+          clearInstallationSideEffects();
           saving.value = false;
-          void showInstallationSuccess(result.install_command, result.connections);
+          completionTimer = setTimeout(() => {
+            completionTimer = null;
+            void showInstallationSuccess(attempt, result.install_command, result.connections);
+          }, 500);
         }
+      }, () => {
+        if (attempt !== installAttempt || !saving.value) return;
+        clearInstallationSideEffects();
+        saving.value = false;
+        error.value = "安装进度连接已断开。后台任务可能仍在运行，请返回插件列表确认状态后再重试。";
       });
       return;
     }
-    await showInstallationSuccess(result.install_command, result.connections);
+    saving.value = false;
+    await showInstallationSuccess(attempt, result.install_command, result.connections);
   } catch (e) {
+    if (attempt !== installAttempt) return;
     error.value = String(e);
   } finally {
-    if (!waitingForTask) saving.value = false;
+    if (attempt === installAttempt && !waitingForTask) saving.value = false;
   }
 }
 async function toggle(plugin: PluginRecord) { try { const result = plugin.status === "installed" ? await pluginsApi.disable(plugin.id) : await pluginsApi.enable(plugin.id); if (result.command) { await navigator.clipboard.writeText(result.command); window.alert(`命令已复制：\n${result.command}`); } await load(); } catch (e) { error.value = String(e); } }
@@ -237,7 +358,11 @@ function installCommand(plugin: PluginRecord): string | null { return metadataSt
 function connectionConfigJson(plugin: PluginRecord): string | null { const value = plugin.extra_install_metadata?.connection_config; return value == null ? null : JSON.stringify(value, null, 2); }
 async function copyPluginValue(value: string, label: string) { try { await navigator.clipboard.writeText(value); } catch (e) { error.value = `复制${label}失败：${String(e)}`; } }
 async function removePlugin(id: string) { try { const result = await pluginsApi.remove(id); await load(); if (result.uninstall_command) { uninstallCommand.value = result.uninstall_command; uninstallCommandVisible.value = true; } } catch (e) { error.value = String(e); } }
-onMounted(() => { load(); if (route.query.install === "1") openInstall(); });
+onMounted(() => { void load(); if (route.query.install === "1") openInstall(); });
+onBeforeUnmount(() => {
+  installAttempt += 1;
+  clearInstallationSideEffects();
+});
 </script>
 
 <style scoped lang="scss">

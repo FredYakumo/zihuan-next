@@ -1,9 +1,9 @@
 <template>
   <div class="installation-progress">
-    <h2>正在配置...</h2>
-    <p class="subtitle">请稍候，系统正在自动安装和配置</p>
+    <h2>{{ title }}</h2>
+    <p class="subtitle">{{ subtitle }}</p>
 
-    <div class="log-console">
+    <div ref="consoleElement" class="log-console" aria-live="polite">
       <div
         v-for="(log, i) in logs"
         :key="i"
@@ -26,7 +26,7 @@
     </div>
 
     <div class="actions">
-      <button class="btn ghost" @click="$emit('back')">返回</button>
+      <button class="btn ghost" @click="$emit('back')">{{ backLabel }}</button>
       <button v-if="error" class="btn primary" @click="$emit('retry')">
         重试
       </button>
@@ -35,18 +35,35 @@
 </template>
 
 <script setup lang="ts">
+import { nextTick, ref, watch } from "vue";
+
 import type { SetupProgressEvent } from "../../api/client";
 import { useInstallationProgress } from "../composables/useInstallationProgress";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   taskId: string;
   logs: SetupProgressEvent[];
   error: string | null;
-}>();
+  title?: string;
+  subtitle?: string;
+  backLabel?: string;
+}>(), {
+  title: "正在配置...",
+  subtitle: "请稍候，系统正在自动安装和配置",
+  backLabel: "返回",
+});
 
 defineEmits<{ (e: "done"): void; (e: "retry"): void; (e: "back"): void }>();
 
 const { logs, error } = useInstallationProgress(props);
+const consoleElement = ref<HTMLElement | null>(null);
+
+watch(() => logs.value.length, async () => {
+  await nextTick();
+  if (consoleElement.value) {
+    consoleElement.value.scrollTop = consoleElement.value.scrollHeight;
+  }
+});
 </script>
 
 <style scoped lang="scss">
