@@ -1,6 +1,6 @@
 import type { NodeGraphDefinition, DataTypeMetaData } from "../../api/types";
 
-export type BrainToolImplementation = "node_graph" | "built_in" | "python_script";
+export type ToolImplementation = "node_graph" | "built_in" | "python_script";
 export type PythonToolMode = "uv_project" | "project_venv" | "custom_executable";
 
 export interface PythonRuntimeConfig {
@@ -37,11 +37,11 @@ export interface PythonScriptToolConfig {
   timeout_secs: number;
 }
 
-export interface BrainToolDefinition {
+export interface ToolDefinition {
   id: string;
   name: string;
   description: string;
-  implementation?: BrainToolImplementation;
+  implementation?: ToolImplementation;
   run_duration?: "Short" | "Long";
   built_in_kind?: "image_understand";
   python_config?: PythonScriptToolConfig | null;

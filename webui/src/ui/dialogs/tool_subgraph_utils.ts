@@ -1,11 +1,11 @@
 import type { DataTypeMetaData, EdgeDefinition, NodeDefinition, NodeGraphDefinition, Port } from "../../api/types";
-import type { BrainToolDefinition, FunctionPortDef } from "./types";
+import type { ToolDefinition, FunctionPortDef } from "./types";
 
 const FUNCTION_INPUTS_NODE_ID = "__function_inputs__";
 const FUNCTION_OUTPUTS_NODE_ID = "__function_outputs__";
 const FUNCTION_INPUTS_NODE_TYPE = "function_inputs";
 const FUNCTION_OUTPUTS_NODE_TYPE = "function_outputs";
-const BRAIN_TOOL_FIXED_CONTENT_INPUT = "content";
+const TOOL_CALLING_FIXED_CONTENT_INPUT = "content";
 const QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT = "message_event";
 const QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT = "qq_ims_bot_adapter";
 const QQ_AGENT_TOOL_OWNER_TYPE = "qq_chat";
@@ -54,7 +54,7 @@ function defaultGraphMetadata() {
   };
 }
 
-function getToolOutputs(ownerNodeType: string, tool: BrainToolDefinition): FunctionPortDef[] {
+function getToolOutputs(ownerNodeType: string, tool: ToolDefinition): FunctionPortDef[] {
   if (isQqAgentOwnerType(ownerNodeType)) {
     return [{ name: QQ_AGENT_TOOL_OUTPUT_NAME, data_type: "String", description: "工具返回给 Agent 的文本结果" }];
   }
@@ -64,12 +64,12 @@ function getToolOutputs(ownerNodeType: string, tool: BrainToolDefinition): Funct
 export function getToolInputSignature(
   ownerNodeType: string,
   sharedInputs: FunctionPortDef[],
-  tool: BrainToolDefinition,
+  tool: ToolDefinition,
 ): FunctionPortDef[] {
   return [
     ...sharedInputs.map(clonePortDef),
     {
-      name: BRAIN_TOOL_FIXED_CONTENT_INPUT,
+      name: TOOL_CALLING_FIXED_CONTENT_INPUT,
       data_type: "String" as DataTypeMetaData,
       description: "触发此次工具调用的上下文文本内容",
     },
@@ -205,8 +205,8 @@ function pruneInvalidEdges(graph: NodeGraphDefinition): EdgeDefinition[] {
 export function ensureToolSubgraphSignature(
   ownerNodeType: string,
   sharedInputs: FunctionPortDef[],
-  tool: BrainToolDefinition,
-): BrainToolDefinition {
+  tool: ToolDefinition,
+): ToolDefinition {
   const subgraph = cloneGraph(tool.subgraph ?? {
     nodes: [],
     edges: [],

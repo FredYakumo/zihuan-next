@@ -4,7 +4,7 @@ import { logger } from "../../api/logger";
 import type { EdgeDefinition, NodeDefinition, NodeGraphDefinition } from "../../api/types";
 import { getBoundaryNodeColors, getDisabledNodeColors, getPortColor } from "../../ui/theme";
 import { setupNodeWidgets } from "../widgets";
-import type { BrainToolDefinition, EmbeddedFunctionConfig } from "../../ui/dialogs/types";
+import type { ToolDefinition, EmbeddedFunctionConfig } from "../../ui/dialogs/types";
 import type { CanvasFacade } from "./types";
 import { resolveConcretePortType, visibleInputPorts } from "./type_utils";
 import {
@@ -455,9 +455,9 @@ export class CanvasGraphOps {
       () => { this.reloadCurrentSession().catch(console.error); },
       (
         parentNodeDef: NodeDefinition,
-        mode: "function" | "brain-tool",
+        mode: "function" | "tool-calling-tool",
         toolIndex?: number,
-        toolDef?: BrainToolDefinition,
+        toolDef?: ToolDefinition,
         functionConfig?: EmbeddedFunctionConfig,
       ) => {
         this.canvas.enterSubgraph(parentNodeDef, mode, toolIndex, toolDef, functionConfig).catch(console.error);

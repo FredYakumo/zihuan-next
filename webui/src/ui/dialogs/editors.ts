@@ -6,8 +6,8 @@ import { cloneDataTypeMetaData, dataTypeSelect, parseDisplayDataType } from "./d
 import { ensureToolSubgraphSignature } from "./tool_subgraph_utils";
 import type { DataTypeMetaData } from "../../api/types";
 import type {
-  BrainToolImplementation,
-  BrainToolDefinition,
+  ToolImplementation,
+  ToolDefinition,
   EmbeddedFunctionConfig,
   FunctionPortDef,
   LLMMessageItem,
@@ -413,20 +413,20 @@ export function openFunctionSignatureEditor(
   dialog.appendChild(btns);
 }
 
-export function openBrainToolsEditor(
+export function openToolCallingToolsEditor(
   nodeDef: NodeDefinition,
   sessionId: string,
   onSaved: () => void,
-  onEditToolSubgraph: (toolIndex: number, tool: BrainToolDefinition) => void,
+  onEditToolSubgraph: (toolIndex: number, tool: ToolDefinition) => void,
 ): void {
   const { dialog, close } = openOverlay();
   const isQqMessageAgent = nodeDef.node_type === "qq_chat";
   const ownerLabel = isQqMessageAgent ? "QQ Message Agent" : "Brain";
 
-  const rawTools = (nodeDef.inline_values?.["tools_config"] as BrainToolDefinition[] | undefined) ?? [];
+  const rawTools = (nodeDef.inline_values?.["tools_config"] as ToolDefinition[] | undefined) ?? [];
   const rawSharedInputs = (nodeDef.inline_values?.["shared_inputs"] as FunctionPortDef[] | undefined) ?? [];
 
-  const tools: BrainToolDefinition[] = JSON.parse(JSON.stringify(rawTools));
+  const tools: ToolDefinition[] = JSON.parse(JSON.stringify(rawTools));
   const sharedInputs: FunctionPortDef[] = JSON.parse(JSON.stringify(rawSharedInputs));
   let readSharedInputs = (): FunctionPortDef[] => JSON.parse(JSON.stringify(sharedInputs));
 
@@ -480,7 +480,7 @@ export function openBrainToolsEditor(
         } as any,
       }));
       close();
-      openBrainToolsEditor(
+      openToolCallingToolsEditor(
         { ...nodeDef, inline_values: { ...nodeDef.inline_values, tools_config: tools, shared_inputs: readSharedInputs() } },
         sessionId,
         onSaved,
@@ -526,7 +526,7 @@ export function openBrainToolsEditor(
     dialog.appendChild(btns);
   };
 
-  const buildToolCard = (tool: BrainToolDefinition, idx: number): HTMLElement => {
+  const buildToolCard = (tool: ToolDefinition, idx: number): HTMLElement => {
     const card = document.createElement("div");
     card.className = "zh-tool-card";
 
@@ -606,7 +606,7 @@ export function openBrainToolsEditor(
       implementationSelect.appendChild(opt);
     });
     implementationSelect.addEventListener("change", () => {
-      const nextImplementation = implementationSelect.value as BrainToolImplementation;
+      const nextImplementation = implementationSelect.value as ToolImplementation;
       tools[idx].implementation = nextImplementation;
       if (nextImplementation === "python_script" && !tools[idx].python_config) {
         tools[idx].python_config = {
@@ -616,7 +616,7 @@ export function openBrainToolsEditor(
         };
       }
       close();
-      openBrainToolsEditor(
+      openToolCallingToolsEditor(
         { ...nodeDef, inline_values: { ...nodeDef.inline_values, tools_config: tools, shared_inputs: readSharedInputs() } },
         sessionId,
         onSaved,
@@ -679,7 +679,7 @@ export function openBrainToolsEditor(
         const runtime = modeSelect.value === "inherit" ? null : { kind: modeSelect.value as PythonToolMode };
         tools[idx].python_config = { ...pythonConfig, python_runtime: runtime, python_mode: undefined };
         close();
-        openBrainToolsEditor(
+        openToolCallingToolsEditor(
           { ...nodeDef, inline_values: { ...nodeDef.inline_values, tools_config: tools, shared_inputs: readSharedInputs() } },
           sessionId,
           onSaved,

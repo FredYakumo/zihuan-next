@@ -1,7 +1,7 @@
 import { graphs } from "../../api/client";
 import type { NodeDefinition, NodeGraphDefinition } from "../../api/types";
 import { ensureToolSubgraphSignature } from "../../ui/dialogs/tool_subgraph_utils";
-import type { BrainToolDefinition, EmbeddedFunctionConfig, FunctionPortDef } from "../../ui/dialogs/types";
+import type { ToolDefinition, EmbeddedFunctionConfig, FunctionPortDef } from "../../ui/dialogs/types";
 import type { CanvasFacade } from "./types";
 import { hasVisibleSubgraphContent, isNodeGraphDefinitionLike } from "./type_utils";
 
@@ -10,9 +10,9 @@ export class CanvasSubgraphController {
 
   async enterSubgraph(
     parentNodeDef: NodeDefinition,
-    mode: "function" | "brain-tool",
+    mode: "function" | "tool-calling-tool",
     toolIndex?: number,
-    toolDef?: BrainToolDefinition,
+    toolDef?: ToolDefinition,
     functionConfig?: EmbeddedFunctionConfig,
   ): Promise<void> {
     const parentSessionId = this.canvas.state.sessionId;
@@ -24,7 +24,7 @@ export class CanvasSubgraphController {
     if (mode === "function" && functionConfig) {
       subgraphDef = functionConfig.subgraph;
       label = functionConfig.name || parentNodeDef.name;
-    } else if (mode === "brain-tool" && toolDef != null) {
+    } else if (mode === "tool-calling-tool" && toolDef != null) {
       const sharedInputs = (parentNodeDef.inline_values?.shared_inputs as FunctionPortDef[] | undefined) ?? [];
       subgraphDef = ensureToolSubgraphSignature(parentNodeDef.node_type, sharedInputs, toolDef).subgraph;
       label = `${parentNodeDef.name} / ${toolDef.name}`;
@@ -33,7 +33,7 @@ export class CanvasSubgraphController {
     }
 
     const shouldRejectEmptySubgraph = !isNodeGraphDefinitionLike(subgraphDef) || (
-      mode !== "brain-tool" &&
+      mode !== "tool-calling-tool" &&
       subgraphDef.nodes.length === 0 &&
       (parentNodeDef.input_ports.length > 0 || parentNodeDef.output_ports.length > 0)
     );
@@ -73,12 +73,12 @@ export class CanvasSubgraphController {
           };
           await graphs.put(parentSessionId, parentGraph);
         }
-      } else if (mode === "brain-tool" && toolDef != null && toolIndex != null) {
+      } else if (mode === "tool-calling-tool" && toolDef != null && toolIndex != null) {
         const parentGraph = await graphs.get(parentSessionId);
         const nodeIdx = parentGraph.nodes.findIndex((node) => node.id === parentNodeDef.id);
         if (nodeIdx >= 0) {
           const sharedInputs = (parentGraph.nodes[nodeIdx].inline_values?.shared_inputs as FunctionPortDef[] | undefined) ?? [];
-          const tools: BrainToolDefinition[] = JSON.parse(
+          const tools: ToolDefinition[] = JSON.parse(
             JSON.stringify(parentGraph.nodes[nodeIdx].inline_values?.tools_config ?? []),
           );
           if (tools[toolIndex]) {

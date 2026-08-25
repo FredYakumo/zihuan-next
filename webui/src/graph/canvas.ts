@@ -1,6 +1,6 @@
 import { LGraph, LGraphCanvas, LiteGraph } from "litegraph.js";
 import type { NodeGraphDefinition, NodeDefinition, NodeTypeInfo } from "../api/types";
-import type { BrainToolDefinition, EmbeddedFunctionConfig } from "../ui/dialogs/types";
+import type { ToolDefinition, EmbeddedFunctionConfig } from "../ui/dialogs/types";
 import { HistoryManager } from "./history";
 import { installLiteGraphPatches } from "./canvas/patches";
 import { bindCanvasRendering, bindThemeLifecycle } from "./canvas/rendering";
@@ -179,9 +179,9 @@ export class ZihuanCanvas implements CanvasFacade {
 
   async enterSubgraph(
     parentNodeDef: NodeDefinition,
-    mode: "function" | "brain-tool",
+    mode: "function" | "tool-calling-tool",
     toolIndex?: number,
-    toolDef?: BrainToolDefinition,
+    toolDef?: ToolDefinition,
     functionConfig?: EmbeddedFunctionConfig,
   ): Promise<void> {
     await this.subgraphs.enterSubgraph(parentNodeDef, mode, toolIndex, toolDef, functionConfig);

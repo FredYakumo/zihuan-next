@@ -47,7 +47,7 @@ export interface CanvasFacade {
   addLGraphNodeDirect(nodeDef: NodeDefinition): void;
   enterSubgraph(
     parentNodeDef: NodeDefinition,
-    mode: "function" | "brain-tool",
+    mode: "function" | "tool-calling-tool",
     toolIndex?: number,
     toolDef?: unknown,
     functionConfig?: unknown,

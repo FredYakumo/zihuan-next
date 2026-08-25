@@ -1,7 +1,7 @@
 // Node widget setup adds inline value widgets and special editor buttons to LiteGraph nodes.
 
 import type { NodeDefinition } from "../api/types";
-import { setupBrainWidgets } from "./node_widgets/brain";
+import { setupToolCallingWidgets } from "./node_widgets/tool_calling";
 import { setupFormatStringWidgets } from "./node_widgets/format_string";
 import { setupFunctionWidgets } from "./node_widgets/function_node";
 import { setupJsonExtractWidgets } from "./node_widgets/json_extract";
@@ -37,9 +37,9 @@ export function setupNodeWidgets(
     case "function":
       setupFunctionWidgets(lNode, nodeDef, getSessionId, onRefresh, onEnterSubgraph);
       break;
-    case "brain":
+    case "tool_calling":
     case "qq_chat":
-      setupBrainWidgets(lNode, nodeDef, getSessionId, onRefresh, onEnterSubgraph);
+      setupToolCallingWidgets(lNode, nodeDef, getSessionId, onRefresh, onEnterSubgraph);
       break;
     case "string_data":
       setupStringDataWidgets(lNode, nodeDef, getSessionId, onMutated);

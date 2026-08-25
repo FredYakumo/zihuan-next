@@ -1,6 +1,6 @@
 import type { NodeDefinition } from "../../api/types";
 import type {
-  BrainToolDefinition,
+  ToolDefinition,
   EmbeddedFunctionConfig,
 } from "../../ui/dialogs/index";
 
@@ -8,8 +8,8 @@ export type WidgetMutationCallback = (pending?: Promise<unknown>) => void;
 
 export type EnterSubgraphCallback = (
   parentNodeDef: NodeDefinition,
-  mode: "function" | "brain-tool",
+  mode: "function" | "tool-calling-tool",
   toolIndex?: number,
-  toolDef?: BrainToolDefinition,
+  toolDef?: ToolDefinition,
   functionConfig?: EmbeddedFunctionConfig
 ) => void;
