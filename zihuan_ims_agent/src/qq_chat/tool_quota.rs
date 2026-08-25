@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
-use zihuan_core::agent::brain::{BrainTool, ToolExecutionOutput};
+use zihuan_core::agent::tool_calling::{Tool, ToolExecutionOutput};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::tool_runtime::ToolRunDuration;
@@ -49,12 +49,12 @@ impl QqChatToolQuotaContext {
     }
 }
 
-pub(crate) struct QuotaMaybeWrappedBrainTool<T> {
+pub(crate) struct QuotaMaybeWrappedTool<T> {
     tool: T,
     quota: Option<QqChatToolQuotaContext>,
 }
 
-impl<T> QuotaMaybeWrappedBrainTool<T> {
+impl<T> QuotaMaybeWrappedTool<T> {
     fn limit_message(quota: &QqChatToolQuotaContext, scope: &str) -> String {
         match quota.session_limit_message.as_deref() {
             Some(msg) if !msg.is_empty() => msg.replace("{limit_scope}", scope),
@@ -88,16 +88,16 @@ impl<T> QuotaMaybeWrappedBrainTool<T> {
     }
 }
 
-pub(crate) fn wrap_brain_tool_with_quota<T>(tool: T, quota: Option<QqChatToolQuotaContext>) -> impl BrainTool
+pub(crate) fn wrap_brain_tool_with_quota<T>(tool: T, quota: Option<QqChatToolQuotaContext>) -> impl Tool
 where
-    T: BrainTool,
+    T: Tool,
 {
-    QuotaMaybeWrappedBrainTool { tool, quota }
+    QuotaMaybeWrappedTool { tool, quota }
 }
 
-impl<T> BrainTool for QuotaMaybeWrappedBrainTool<T>
+impl<T> Tool for QuotaMaybeWrappedTool<T>
 where
-    T: BrainTool,
+    T: Tool,
 {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         self.tool.spec()
@@ -139,13 +139,13 @@ mod tests {
         wrap_brain_tool_with_quota, QqChatToolQuotaContext, SessionToolQuotaState, TOOL_LIMIT_SCOPE_SESSION,
         TOOL_LIMIT_SCOPE_USER,
     };
-    use zihuan_core::agent::brain::BrainTool;
+    use zihuan_core::agent::tool_calling::Tool;
     use zihuan_core::llm::tooling::FunctionTool;
 
     #[derive(Debug)]
     struct EchoTool;
 
-    impl BrainTool for EchoTool {
+    impl Tool for EchoTool {
         fn spec(&self) -> Arc<dyn FunctionTool> {
             Arc::new(EchoToolSpec)
         }
@@ -217,7 +217,7 @@ mod tests {
             session_limit_message: None,
             session_state: Arc::new(std::sync::Mutex::new(SessionToolQuotaState::default())),
         };
-        let message = super::QuotaMaybeWrappedBrainTool::<EchoTool>::limit_message(&quota, TOOL_LIMIT_SCOPE_USER);
+        let message = super::QuotaMaybeWrappedTool::<EchoTool>::limit_message(&quota, TOOL_LIMIT_SCOPE_USER);
         assert!(message.contains(TOOL_LIMIT_SCOPE_USER));
     }
 

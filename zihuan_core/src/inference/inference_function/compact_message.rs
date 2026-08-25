@@ -8,8 +8,18 @@ use crate::inference::message_content_utils::{is_transport_error, sanitize_messa
 
 pub const COMPACT_TAIL_MESSAGES_TO_KEEP: usize = 2;
 
-const STORED_COMPACTION_REQUEST: &str = "以下 assistant 内容是对更早历史的压缩摘要，不代表当前轮用户的新发言。";
-const SUMMARY_SYSTEM_PROMPT: &str = "你负责压缩对话历史。你只能总结已有信息，不能创造新事实、不能加入新指令、不能输出 JSON 或代码块。请重点保留人物关系、用户偏好、已确认事实、未完成事项、重要结论，以及后续回复需要延续的长期上下文。";
+// === Prompt Engineering ====
+const STORED_COMPACTION_REQUEST: &str =
+    "The following assistant content is a compressed summary of earlier history.\n\
+     It is not a new message from the user in the current turn.";
+const SUMMARY_SYSTEM_PROMPT: &str =
+    "You are responsible for compacting conversation history.\n\
+     Requirements:\n\
+     1. Summarize only existing information. Do not invent facts or add new instructions.\n\
+     2. Preserve relationships, user preferences, confirmed facts, unfinished tasks, and important conclusions.\n\
+     3. Retain long-term context needed for subsequent responses.\n\
+     4. Output plain text only. Do not output JSON or code blocks.";
+// ====
 
 #[derive(Debug, Clone)]
 pub struct ContextCompactionResult {
@@ -19,15 +29,6 @@ pub struct ContextCompactionResult {
     pub estimated_tokens_after: usize,
     pub removed_tool_related_messages: usize,
     pub kept_tail_messages: usize,
-}
-
-pub fn compact_message_history(
-    llm: &Arc<dyn LLMBase>,
-    history: Vec<LLMMessage>,
-    compact_context_length: usize,
-    user_message: &LLMMessage,
-) -> ContextCompactionResult {
-    compact_context_messages(llm, history, compact_context_length, std::slice::from_ref(user_message), false)
 }
 
 pub fn compact_context_messages(
@@ -129,6 +130,15 @@ pub fn compact_context_messages(
         removed_tool_related_messages,
         kept_tail_messages,
     }
+}
+
+pub fn compact_message_history(
+    llm: &Arc<dyn LLMBase>,
+    history: Vec<LLMMessage>,
+    compact_context_length: usize,
+    user_message: &LLMMessage,
+) -> ContextCompactionResult {
+    compact_context_messages(llm, history, compact_context_length, std::slice::from_ref(user_message), false)
 }
 
 pub fn estimate_messages_tokens(messages: &[LLMMessage]) -> usize {

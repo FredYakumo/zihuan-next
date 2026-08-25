@@ -6,7 +6,7 @@ use log::warn;
 use zihuan_core::inference::system_config::load_llm_refs;
 use serde_json::Value;
 use zihuan_core::storage::RuntimeStorageConnectionManager;
-use zihuan_core::agent::brain::{BrainTool, ToolExecutionOutput};
+use zihuan_core::agent::tool_calling::{Tool, ToolExecutionOutput};
 use zihuan_core::agent::qq_chat::{current_qq_chat_agent_service_config, image_understand_llm_ref_id};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
@@ -24,14 +24,14 @@ use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotifi
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
 
-pub(crate) struct ImageUnderstandBrainTool {
+pub(crate) struct ImageUnderstandTool {
     current_event: Option<zihuan_core::ims_bot_adapter::models::MessageEvent>,
     rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
     notification_target: ToolNotificationTarget,
 }
 
-impl ImageUnderstandBrainTool {
+impl ImageUnderstandTool {
     pub(crate) fn new(
         current_event: Option<zihuan_core::ims_bot_adapter::models::MessageEvent>,
         rdb_pool: Option<RelationalDbConnection>,
@@ -47,7 +47,7 @@ impl ImageUnderstandBrainTool {
     }
 }
 
-impl BrainTool for ImageUnderstandBrainTool {
+impl Tool for ImageUnderstandTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(build_image_understand_spec())
     }

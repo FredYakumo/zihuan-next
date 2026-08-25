@@ -1,18 +1,18 @@
 import type { NodeDefinition } from "../../api/types";
 import {
-  openBrainToolsEditor,
-  type BrainToolDefinition,
+  openToolCallingToolsEditor,
+  type ToolDefinition,
 } from "../../ui/dialogs/index";
 import type { EnterSubgraphCallback } from "./types";
 
-export function setupBrainWidgets(
+export function setupToolCallingWidgets(
   lNode: any,
   nodeDef: NodeDefinition,
   getSessionId: () => string | null,
   onRefresh: () => void,
   onEnterSubgraph: EnterSubgraphCallback
 ): void {
-  const tools = (nodeDef.inline_values?.["tools_config"] as BrainToolDefinition[] | undefined) ?? [];
+  const tools = (nodeDef.inline_values?.["tools_config"] as ToolDefinition[] | undefined) ?? [];
   const isQqChatAgent = nodeDef.node_type === "qq_chat";
   const labelPrefix = isQqChatAgent ? "管理 Agent 工具" : "管理工具";
   lNode.addWidget("button", `${labelPrefix} (${tools.length})`, null, () => {
@@ -21,8 +21,8 @@ export function setupBrainWidgets(
       alert("请先打开一个图。");
       return;
     }
-    openBrainToolsEditor(nodeDef, sid, onRefresh, (toolIndex, toolDef) => {
-      onEnterSubgraph(nodeDef, "brain-tool", toolIndex, toolDef, undefined);
+    openToolCallingToolsEditor(nodeDef, sid, onRefresh, (toolIndex, toolDef) => {
+      onEnterSubgraph(nodeDef, "tool-calling-tool", toolIndex, toolDef, undefined);
     });
   });
 }

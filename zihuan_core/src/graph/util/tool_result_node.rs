@@ -31,12 +31,12 @@ impl Node for ToolResultNode {
     }
 
     node_input![
-        port! { name = "tool_call", ty = Json, desc = "BrainNode 工具端口输出的 {tool_call_id, arguments} JSON" },
+        port! { name = "tool_call", ty = Json, desc = "ToolCallingNode 工具端口输出的 {tool_call_id, arguments} JSON" },
         port! { name = "content", ty = String, desc = "工具执行结果内容" },
     ];
 
     node_output![
-        port! { name = "message", ty = LLMMessage, desc = "role=tool 的结果消息，可拼入对话列表后重新送入 BrainNode" },
+        port! { name = "message", ty = LLMMessage, desc = "role=tool 的结果消息，可拼入对话列表后重新送入 ToolCallingNode" },
     ];
 
     fn execute(&mut self, inputs: crate::graph::NodeInputFlow) -> Result<crate::graph::NodeOutputFlow> {

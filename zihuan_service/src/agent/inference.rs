@@ -6,14 +6,14 @@ use zihuan_core::inference::message_content_utils::sanitize_messages_for_inferen
 use zihuan_core::inference::system_config::{AgentConfig, AgentType, LlmRefConfig};
 use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
-use zihuan_core::agent::brain::{
-    Brain, BrainObserver, BrainStopReason, BrainTool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS,
+use zihuan_core::agent::tool_calling::{
+    ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason, Tool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS,
 };
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken};
-use zihuan_core::graph::brain_tool_spec::BrainToolDefinition;
+use zihuan_core::graph::tool_spec::ToolDefinition;
 
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
 
@@ -21,17 +21,17 @@ pub use zihuan_core::agent::inference_provider::{InferenceToolContext, Inference
 
 #[derive(Clone, Default)]
 pub struct StaticInferenceToolProvider {
-    tool_definitions: Vec<BrainToolDefinition>,
+    tool_definitions: Vec<ToolDefinition>,
 }
 
 impl StaticInferenceToolProvider {
-    pub fn new(tool_definitions: Vec<BrainToolDefinition>) -> Self {
+    pub fn new(tool_definitions: Vec<ToolDefinition>) -> Self {
         Self { tool_definitions }
     }
 }
 
 impl InferenceToolProvider for StaticInferenceToolProvider {
-    fn tool_definitions(&self) -> Vec<BrainToolDefinition> {
+    fn tool_definitions(&self) -> Vec<ToolDefinition> {
         self.tool_definitions.clone()
     }
 }
@@ -44,11 +44,11 @@ pub struct LoadedInferenceAgent {
     tools: Arc<dyn InferenceToolProvider>,
 }
 
-struct ServiceSubgraphBrainTool {
+struct ServiceSubgraphTool {
     runner: ToolSubgraphRunner,
 }
 
-impl BrainTool for ServiceSubgraphBrainTool {
+impl Tool for ServiceSubgraphTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         self.runner.spec()
     }
@@ -67,9 +67,9 @@ impl BrainTool for ServiceSubgraphBrainTool {
 
 }
 
-struct DynBrainToolWrapper(Box<dyn BrainTool>);
+struct DynToolWrapper(Box<dyn Tool>);
 
-impl BrainTool for DynBrainToolWrapper {
+impl Tool for DynToolWrapper {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         self.0.spec()
     }
@@ -177,7 +177,7 @@ impl LoadedInferenceAgent {
         self.tools.augment_messages(&mut conversation, &context);
         let default_brain_tools = self.tools.build_default_tools(&context);
 
-        run_agent_brain(
+        run_agent_tool_calling(
             &self.agent,
             llm,
             default_brain_tools,
@@ -190,10 +190,10 @@ impl LoadedInferenceAgent {
         &self,
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
-        observer: Option<Arc<dyn BrainObserver>>,
+        observer: Option<Arc<dyn ToolCallingObserver>>,
         workspace_path: Option<String>,
         session_id: Option<String>,
-    ) -> Result<(Vec<LLMMessage>, BrainStopReason)> {
+    ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
         self.infer_response_streaming_with_trace_and_llm(
             messages,
             token_tx,
@@ -209,11 +209,11 @@ impl LoadedInferenceAgent {
         &self,
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
-        observer: Option<Arc<dyn BrainObserver>>,
+        observer: Option<Arc<dyn ToolCallingObserver>>,
         llm: Arc<dyn LLMBase>,
         workspace_path: Option<String>,
         session_id: Option<String>,
-    ) -> Result<(Vec<LLMMessage>, BrainStopReason)> {
+    ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
         let context = build_inference_tool_context(&messages, workspace_path, session_id, Arc::clone(&llm));
 
         let mut conversation = sanitize_messages_for_inference(messages);
@@ -226,7 +226,7 @@ impl LoadedInferenceAgent {
         self.tools.augment_messages(&mut conversation, &context);
         let default_brain_tools = self.tools.build_default_tools(&context);
 
-        run_agent_brain_streaming(
+        run_agent_tool_calling_streaming(
             &self.agent,
             llm,
             default_brain_tools,
@@ -317,23 +317,23 @@ fn build_inference_tool_context(
     }
 }
 
-fn build_brain(
+fn build_tool_calling_engine(
     agent: &AgentConfig,
     llm: Arc<dyn LLMBase>,
-    default_tools: Vec<Box<dyn BrainTool>>,
-    tool_definitions: Vec<BrainToolDefinition>,
-) -> Brain {
-    let mut brain = Brain::new(llm);
+    default_tools: Vec<Box<dyn Tool>>,
+    tool_definitions: Vec<ToolDefinition>,
+) -> ToolCallingEngine {
+    let mut brain = ToolCallingEngine::new(llm);
 
     for tool in default_tools {
-        brain.add_tool(DynBrainToolWrapper(tool));
+        brain.add_tool(DynToolWrapper(tool));
     }
 
     for tool_def in tool_definitions {
-        brain.add_tool(ServiceSubgraphBrainTool {
+        brain.add_tool(ServiceSubgraphTool {
             runner: ToolSubgraphRunner {
                 node_id: format!("agent_inference_{}", agent.id),
-                owner_node_type: "brain".to_string(),
+                owner_node_type: "tool_calling".to_string(),
                 shared_inputs: Vec::new(),
                 definition: tool_def,
                 shared_runtime_values: Arc::new(Mutex::new(HashMap::new())),
@@ -348,22 +348,22 @@ fn build_brain(
     brain
 }
 
-fn handle_brain_result(
+fn handle_tool_calling_result(
     agent_name: &str,
     output_messages: Vec<LLMMessage>,
-    stop_reason: BrainStopReason,
+    stop_reason: ToolCallingStopReason,
 ) -> Result<Vec<LLMMessage>> {
     match stop_reason {
-        BrainStopReason::Done => Ok(output_messages),
-        BrainStopReason::TransportError(content) => Err(zihuan_core::string_error!(
+        ToolCallingStopReason::Done => Ok(output_messages),
+        ToolCallingStopReason::TransportError(content) => Err(zihuan_core::string_error!(
             "chat stream LLM request failed for '{}': {}",
             agent_name, content
         )),
-        BrainStopReason::MaxIterationsReached => Err(zihuan_core::string_error!(
+        ToolCallingStopReason::MaxIterationsReached => Err(zihuan_core::string_error!(
             "chat stream exceeded max tool iterations ({MAX_TOOL_ITERATIONS}) for '{}'",
             agent_name
         )),
-        BrainStopReason::AwaitUserInput(request) => Ok(output_messages
+        ToolCallingStopReason::AwaitUserInput(request) => Ok(output_messages
             .into_iter()
             .chain(std::iter::once(LLMMessage::assistant_text(format!(
                 "需要用户补充信息: {}",
@@ -373,49 +373,49 @@ fn handle_brain_result(
     }
 }
 
-fn handle_brain_result_with_reason(
+fn handle_tool_calling_result_with_reason(
     agent_name: &str,
     output_messages: Vec<LLMMessage>,
-    stop_reason: BrainStopReason,
-) -> Result<(Vec<LLMMessage>, BrainStopReason)> {
+    stop_reason: ToolCallingStopReason,
+) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
     match &stop_reason {
-        BrainStopReason::Done | BrainStopReason::AwaitUserInput(_) => Ok((output_messages, stop_reason)),
-        BrainStopReason::TransportError(content) => Err(zihuan_core::string_error!(
+        ToolCallingStopReason::Done | ToolCallingStopReason::AwaitUserInput(_) => Ok((output_messages, stop_reason)),
+        ToolCallingStopReason::TransportError(content) => Err(zihuan_core::string_error!(
             "chat stream LLM request failed for '{}': {}",
             agent_name, content
         )),
-        BrainStopReason::MaxIterationsReached => Err(zihuan_core::string_error!(
+        ToolCallingStopReason::MaxIterationsReached => Err(zihuan_core::string_error!(
             "chat stream exceeded max tool iterations ({MAX_TOOL_ITERATIONS}) for '{}'",
             agent_name
         )),
     }
 }
 
-fn run_agent_brain(
+fn run_agent_tool_calling(
     agent: &AgentConfig,
     llm: Arc<dyn LLMBase>,
-    default_tools: Vec<Box<dyn BrainTool>>,
-    tool_definitions: Vec<BrainToolDefinition>,
+    default_tools: Vec<Box<dyn Tool>>,
+    tool_definitions: Vec<ToolDefinition>,
     messages: Vec<LLMMessage>,
 ) -> Result<Vec<LLMMessage>> {
-    let brain = build_brain(agent, llm, default_tools, tool_definitions);
+    let brain = build_tool_calling_engine(agent, llm, default_tools, tool_definitions);
     let (output_messages, stop_reason) = brain.run(messages);
-    handle_brain_result(&agent.name, output_messages, stop_reason)
+    handle_tool_calling_result(&agent.name, output_messages, stop_reason)
 }
 
-async fn run_agent_brain_streaming(
+async fn run_agent_tool_calling_streaming(
     agent: &AgentConfig,
     llm: Arc<dyn LLMBase>,
-    default_tools: Vec<Box<dyn BrainTool>>,
-    tool_definitions: Vec<BrainToolDefinition>,
+    default_tools: Vec<Box<dyn Tool>>,
+    tool_definitions: Vec<ToolDefinition>,
     messages: Vec<LLMMessage>,
     token_tx: mpsc::UnboundedSender<StreamToken>,
-    observer: Option<Arc<dyn BrainObserver>>,
-) -> Result<(Vec<LLMMessage>, BrainStopReason)> {
-    let mut brain = build_brain(agent, llm, default_tools, tool_definitions);
+    observer: Option<Arc<dyn ToolCallingObserver>>,
+) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
+    let mut brain = build_tool_calling_engine(agent, llm, default_tools, tool_definitions);
     if let Some(obs) = observer {
         brain.set_observer(obs);
     }
     let (output_messages, stop_reason) = brain.run_streaming(messages, token_tx).await;
-    handle_brain_result_with_reason(&agent.name, output_messages, stop_reason)
+    handle_tool_calling_result_with_reason(&agent.name, output_messages, stop_reason)
 }

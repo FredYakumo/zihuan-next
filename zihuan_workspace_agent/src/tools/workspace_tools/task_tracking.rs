@@ -4,7 +4,7 @@ use std::fs::{self, OpenOptions};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
-use zihuan_core::agent::brain::{BrainTool, ToolExecutionResource};
+use zihuan_core::agent::tool_calling::{Tool, ToolExecutionResource};
 use zihuan_core::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
 
 use super::shared::json_error;
@@ -93,10 +93,10 @@ fn response(snapshot: &WorkspaceTaskSnapshot, task: Option<&WorkspaceTask>) -> S
     serde_json::json!({ "ok": true, "task": task, "tasks": snapshot.tasks }).to_string()
 }
 
-#[derive(Clone)] pub(crate) struct WorkspaceTaskBrainTool { session_id: String, name: &'static str }
-impl WorkspaceTaskBrainTool { pub(crate) fn new(session_id: String, name: &'static str) -> Self { Self { session_id, name } } }
+#[derive(Clone)] pub(crate) struct WorkspaceTaskTool { session_id: String, name: &'static str }
+impl WorkspaceTaskTool { pub(crate) fn new(session_id: String, name: &'static str) -> Self { Self { session_id, name } } }
 
-impl BrainTool for WorkspaceTaskBrainTool {
+impl Tool for WorkspaceTaskTool {
     fn spec(&self) -> std::sync::Arc<dyn FunctionTool> {
         let parameters = match self.name {
             DEFAULT_TOOL_TASK_CREATE => serde_json::json!({"type":"object","properties":{"subject":{"type":"string"},"description":{"type":"string"},"activeForm":{"type":"string"},"metadata":{"type":"object"},"blocks":{"type":"array","items":{"type":"string"}},"blockedBy":{"type":"array","items":{"type":"string"}}},"required":["subject","activeForm"]}),

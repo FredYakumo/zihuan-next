@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::classify_intent::IntentClassificationTrace;
 use zihuan_core::ims_bot_adapter::models::message::Message;
-use zihuan_core::agent::brain::{BrainObserver, BrainStopReason};
+use zihuan_core::agent::tool_calling::{ToolCallingObserver, ToolCallingStopReason};
 use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{LLMMessage, TokenUsage};
 use zihuan_core::graph::graph_io::{
@@ -244,7 +244,7 @@ impl QqChatTaskTrace {
 
     pub(crate) fn log_llm_conversation(&self, conversation: &[LLMMessage], prompt_tokens_estimated: usize) {
         self.record_graph_step(
-            "主 Brain 提示词",
+            "主 ToolCallingEngine 提示词",
             "qq_chat_brain_prompt",
             serde_json::json!({
                 "messages": conversation, "prompt_tokens_estimated": prompt_tokens_estimated,
@@ -338,9 +338,9 @@ impl QqChatTaskTrace {
         );
     }
 
-    pub(crate) fn record_llm_final_result(&self, stop_reason: &BrainStopReason, brain_output: &[LLMMessage]) {
+    pub(crate) fn record_llm_final_result(&self, stop_reason: &ToolCallingStopReason, brain_output: &[LLMMessage]) {
         self.record_graph_step(
-            "主 Brain 输出",
+            "主 ToolCallingEngine 输出",
             "qq_chat_brain_result",
             serde_json::json!({
                 "stop_reason": format!("{stop_reason:?}"), "messages": brain_output,
@@ -372,7 +372,7 @@ impl QqChatTaskTrace {
 
     pub(crate) fn record_llm_result_parsed(&self, final_assistant_text: Option<&str>) {
         self.record_graph_step(
-            "主 Brain 回复解析",
+            "主 ToolCallingEngine 回复解析",
             "qq_chat_reply_parse",
             serde_json::json!({
                 "final_assistant_text": final_assistant_text,
@@ -785,11 +785,11 @@ fn task_graph_node_visual_height(node: &NodeDefinition) -> f32 {
     TASK_GRAPH_BASE_NODE_HEIGHT
 }
 
-pub(crate) struct QqChatBrainObserver {
+pub(crate) struct QqChatToolCallingObserver {
     pub(crate) trace: QqChatTaskTrace,
 }
 
-impl BrainObserver for QqChatBrainObserver {
+impl ToolCallingObserver for QqChatToolCallingObserver {
     fn on_assistant_tool_request(&self, iteration: usize, content: &str, tool_calls: &[ToolCalls]) {
         self.trace.record_tool_request(iteration, content, tool_calls);
     }

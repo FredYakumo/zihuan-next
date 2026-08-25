@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::graph::DataValue;
@@ -12,17 +12,17 @@ use crate::qq_chat::msg_send::{store_reply_directive, QqChatServiceReplyDirectiv
 
 use super::common::StaticFunctionToolSpec;
 
-pub(crate) struct ReplyMessageBrainTool {
+pub(crate) struct ReplyMessageTool {
     shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
 }
 
-impl ReplyMessageBrainTool {
+impl ReplyMessageTool {
     pub(crate) fn new(shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>) -> Self {
         Self { shared_runtime_values }
     }
 }
 
-impl BrainTool for ReplyMessageBrainTool {
+impl Tool for ReplyMessageTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "reply_message",

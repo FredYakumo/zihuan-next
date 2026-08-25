@@ -7,7 +7,7 @@ use zihuan_core::memory_agent::{
 use zihuan_core::storage::AgentMemoryAccessContext;
 use zihuan_core::storage::ElasticsearchRef;
 use zihuan_core::storage::LocalMemoryStore;
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
@@ -30,21 +30,21 @@ mod research;
 mod web_search;
 
 pub(crate) use zihuan_core::memory_agent::{MemoryAgentResources as AgentMemoryToolResources, MemoryBackend as AgentMemoryBackend};
-pub(crate) use agent_state::UpdateAgentStateBrainTool;
+pub(crate) use agent_state::UpdateAgentStateTool;
 pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS};
-pub(crate) use deep_research::RunDeepResearchSubagentBrainTool;
+pub(crate) use deep_research::RunDeepResearchSubagentTool;
 pub(crate) use editable_qq_agent_tool::EditableQqAgentTool;
-pub(crate) use image_save::SaveImageBrainTool;
-pub(crate) use image_search::SearchSimilarImagesBrainTool;
-pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstandBrainTool};
-pub(crate) use info_tools::{GetAgentPublicInfoBrainTool, GetFunctionListBrainTool};
+pub(crate) use image_save::SaveImageTool;
+pub(crate) use image_search::SearchSimilarImagesTool;
+pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstandTool};
+pub(crate) use info_tools::{GetAgentPublicInfoTool, GetFunctionListTool};
 pub(crate) use natural_language_reply::{
     review_and_rewrite_reply, ModelIdentityContext, QqReplyReviewRequest, QqReplyReviewResult,
 };
-pub(crate) use recent_messages::{GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool};
-pub(crate) use reply_message::ReplyMessageBrainTool;
-pub(crate) use research::RunResearchSubagentBrainTool;
-pub(crate) use web_search::WebSearchBrainTool;
+pub(crate) use recent_messages::{GetRecentGroupMessagesTool, GetRecentUserMessagesTool};
+pub(crate) use reply_message::ReplyMessageTool;
+pub(crate) use research::RunResearchSubagentTool;
+pub(crate) use web_search::WebSearchTool;
 
 pub(crate) const DEFAULT_TOOL_WEB_SEARCH: &str = "web_search";
 pub(crate) const DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO: &str = "get_agent_public_info";
@@ -74,37 +74,37 @@ pub fn build_info_brain_tools(
     llm: Option<Arc<dyn LLMBase>>,
     memory_access: AgentMemoryAccessContext,
     current_message: String,
-) -> Vec<Box<dyn BrainTool>> {
+) -> Vec<Box<dyn Tool>> {
     fn is_enabled(map: &HashMap<String, bool>, name: &str) -> bool {
         *map.get(name).unwrap_or(&true)
     }
 
-    let mut tools: Vec<Box<dyn BrainTool>> = Vec::new();
+    let mut tools: Vec<Box<dyn Tool>> = Vec::new();
     let dashboard_target = ToolNotificationTarget::dashboard();
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_WEB_SEARCH) {
         if let Some(engine) = web_search_engine_ref.as_ref() {
-            tools.push(Box::new(WebSearchBrainTool::new(engine.clone())));
+            tools.push(Box::new(WebSearchTool::new(engine.clone())));
         }
     }
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
-        tools.push(Box::new(GetAgentPublicInfoBrainTool::new(current_message)));
+        tools.push(Box::new(GetAgentPublicInfoTool::new(current_message)));
     }
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_FUNCTION_LIST) {
-        tools.push(Box::new(GetFunctionListBrainTool));
+        tools.push(Box::new(GetFunctionListTool));
     }
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
-        tools.push(Box::new(GetRecentGroupMessagesBrainTool::new(
+        tools.push(Box::new(GetRecentGroupMessagesTool::new(
             rdb_pool.clone(),
             dashboard_target.clone(),
         )));
     }
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
-        tools.push(Box::new(GetRecentUserMessagesBrainTool::new(
+        tools.push(Box::new(GetRecentUserMessagesTool::new(
             rdb_pool.clone(),
             dashboard_target.clone(),
         )));
@@ -112,7 +112,7 @@ pub fn build_info_brain_tools(
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
         if let Some(engine) = web_search_engine_ref {
-            tools.push(Box::new(SearchSimilarImagesBrainTool::new(
+            tools.push(Box::new(SearchSimilarImagesTool::new(
                 weaviate_image_ref.clone(),
                 embedding_model.clone(),
                 engine,
@@ -127,7 +127,7 @@ pub fn build_info_brain_tools(
             && (weaviate_image_ref.is_some() || elasticsearch_image_ref.is_some())
             && embedding_model.is_some()
         {
-            tools.push(Box::new(SaveImageBrainTool::new(
+            tools.push(Box::new(SaveImageTool::new(
                 weaviate_image_ref.clone(),
                 elasticsearch_image_ref.clone(),
                 embedding_model.clone(),
@@ -138,7 +138,7 @@ pub fn build_info_brain_tools(
     }
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_IMAGE_UNDERSTAND) {
-        tools.push(Box::new(ImageUnderstandBrainTool::new(
+        tools.push(Box::new(ImageUnderstandTool::new(
             None,
             rdb_pool,
             s3_ref,

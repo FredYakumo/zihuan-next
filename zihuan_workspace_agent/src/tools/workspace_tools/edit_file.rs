@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 use serde_json::Value;
-use zihuan_core::agent::brain::{BrainTool, ToolExecutionResource};
+use zihuan_core::agent::tool_calling::{Tool, ToolExecutionResource};
 use zihuan_core::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
 
 use super::shared::{json_error, path_resource, resolve_tool_path, success_json};
@@ -20,11 +20,11 @@ struct EditFileArgs {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct EditFileBrainTool {
+pub(crate) struct EditFileTool {
     pub(crate) workspace_path: Option<PathBuf>,
 }
 
-impl BrainTool for EditFileBrainTool {
+impl Tool for EditFileTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: DEFAULT_TOOL_EDIT_FILE,

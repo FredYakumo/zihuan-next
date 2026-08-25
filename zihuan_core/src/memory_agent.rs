@@ -4,7 +4,7 @@ use chrono::{Duration, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::agent::brain::{Brain, BrainStopReason, BrainTool};
+use crate::agent::tool_calling::{ToolCallingEngine, ToolCallingStopReason, Tool};
 use crate::error::{Error, Result};
 use crate::llm::embedding_base::EmbeddingBase;
 use crate::llm::llm_base::LLMBase;
@@ -70,13 +70,13 @@ impl MemoryBrainAgent {
         std::thread::Builder::new()
             .name("memory-brain-agent".to_string())
             .spawn(move || agent.run_inner(user_message))
-            .map_err(|error| crate::string_error!("failed to start Memory Brain Agent thread: {error}"))?
+            .map_err(|error| crate::string_error!("failed to start Memory ToolCallingEngine Agent thread: {error}"))?
             .join()
-            .map_err(|_| crate::string_error!("Memory Brain Agent thread panicked"))?
+            .map_err(|_| crate::string_error!("Memory ToolCallingEngine Agent thread panicked"))?
     }
 
     fn run_inner(&self, user_message: String) -> Result<String> {
-        let mut brain = Brain::new(Arc::clone(&self.resources.llm));
+        let mut brain = ToolCallingEngine::new(Arc::clone(&self.resources.llm));
         brain.add_tool(ListMemoryKeysTool::new(self.resources.clone()));
         brain.add_tool(SearchMemoryTool::new(self.resources.clone()));
         brain.add_tool(RememberMemoryTool::new(self.resources.clone()));
@@ -84,8 +84,8 @@ impl MemoryBrainAgent {
             LLMMessage::system(MEMORY_AGENT_SYSTEM_PROMPT),
             LLMMessage::user(user_message),
         ]);
-        if !matches!(stop_reason, BrainStopReason::Done) {
-            return Err(crate::string_error!("Memory Brain Agent did not complete normally: {stop_reason:?}"));
+        if !matches!(stop_reason, ToolCallingStopReason::Done) {
+            return Err(crate::string_error!("Memory ToolCallingEngine Agent did not complete normally: {stop_reason:?}"));
         }
         output
             .iter()
@@ -93,7 +93,7 @@ impl MemoryBrainAgent {
             .find(|message| matches!(message.role, MessageRole::Assistant))
             .and_then(LLMMessage::content_text_owned)
             .filter(|content| !content.trim().is_empty())
-            .ok_or_else(|| crate::string_error!("Memory Brain Agent returned no text"))
+            .ok_or_else(|| crate::string_error!("Memory ToolCallingEngine Agent returned no text"))
     }
 
     fn run_content(&self, content: String) -> Result<String> {
@@ -135,11 +135,11 @@ impl MemoryBrainAgentTool {
     }
 }
 
-impl BrainTool for MemoryBrainAgentTool {
+impl Tool for MemoryBrainAgentTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(MemoryFunctionToolSpec::new(
             "memory_agent",
-            "Call the Memory Brain Agent. Given content, it independently decides whether to retrieve relevant memories, update memories worth saving, or report that no relevant memories exist.",
+            "Call the Memory ToolCallingEngine Agent. Given content, it independently decides whether to retrieve relevant memories, update memories worth saving, or report that no relevant memories exist.",
             json!({"type":"object","properties":{"content":{"type":"string","description":"Content for the memory agent to process"}},"required":["content"],"additionalProperties":false}),
         ))
     }
@@ -160,11 +160,11 @@ impl MemoryBrainAgentContextTool {
     }
 }
 
-impl BrainTool for MemoryBrainAgentContextTool {
+impl Tool for MemoryBrainAgentContextTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(MemoryFunctionToolSpec::new(
             "memory_agent_with_context",
-            "Call the Memory Brain Agent with chat context. Search returns relevant memories; update extracts and saves memories worth retaining long term.",
+            "Call the Memory ToolCallingEngine Agent with chat context. Search returns relevant memories; update extracts and saves memories worth retaining long term.",
             json!({"type":"object","properties":{"chat_context":{"type":"string","description":"Complete chat context"},"operation":{"type":"string","enum":["search_memory","update_memory"],"description":"Memory operation"}},"required":["chat_context","operation"],"additionalProperties":false}),
         ))
     }
@@ -181,7 +181,7 @@ impl BrainTool for MemoryBrainAgentContextTool {
 
 struct ListMemoryKeysTool { resources: MemoryAgentResources }
 impl ListMemoryKeysTool { fn new(resources: MemoryAgentResources) -> Self { Self { resources } } }
-impl BrainTool for ListMemoryKeysTool {
+impl Tool for ListMemoryKeysTool {
     fn spec(&self) -> Arc<dyn FunctionTool> { Arc::new(MemoryFunctionToolSpec::new("list_memory_keys", "List titles of memories accessible in the current context; optionally filter by query.", json!({"type":"object","properties":{"top_n":{"type":"integer"},"query":{"type":"string"}},"additionalProperties":false}))) }
     fn execute(&self, _call_content: &str, arguments: &Value) -> String {
         let result = (|| -> Result<Value> {
@@ -206,7 +206,7 @@ impl BrainTool for ListMemoryKeysTool {
 
 struct SearchMemoryTool { resources: MemoryAgentResources }
 impl SearchMemoryTool { fn new(resources: MemoryAgentResources) -> Self { Self { resources } } }
-impl BrainTool for SearchMemoryTool {
+impl Tool for SearchMemoryTool {
     fn spec(&self) -> Arc<dyn FunctionTool> { Arc::new(MemoryFunctionToolSpec::new("search_memory", "Search memories accessible in the current context and return their titles and content.", json!({"type":"object","properties":{"query":{"type":"string"},"top_n":{"type":"integer"}},"required":["query"],"additionalProperties":false}))) }
     fn execute(&self, _call_content: &str, arguments: &Value) -> String {
         let result = (|| -> Result<Value> {
@@ -223,7 +223,7 @@ impl BrainTool for SearchMemoryTool {
 
 struct RememberMemoryTool { resources: MemoryAgentResources }
 impl RememberMemoryTool { fn new(resources: MemoryAgentResources) -> Self { Self { resources } } }
-impl BrainTool for RememberMemoryTool {
+impl Tool for RememberMemoryTool {
     fn spec(&self) -> Arc<dyn FunctionTool> { Arc::new(MemoryFunctionToolSpec::new("update_memory", "Organize and write information that should be remembered long term.", json!({"type":"object","properties":{"content":{"type":"string"}},"required":["content"],"additionalProperties":false}))) }
     fn execute(&self, _call_content: &str, arguments: &Value) -> String {
         let result = (|| -> Result<Value> {

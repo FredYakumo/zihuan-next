@@ -4,15 +4,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use serde::Deserialize;
 use serde_json::Value;
-use zihuan_core::agent::brain::{BrainTool, ToolExecutionResource};
+use zihuan_core::agent::tool_calling::{Tool, ToolExecutionResource};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
 use super::shared::{json_error, path_resource, resolve_tool_path, success_json, wildcard_matches, DEFAULT_MAX_ENTRIES};
 
 pub(crate) const DEFAULT_TOOL_LIST_DIR: &str = "list_dir";
 #[derive(Debug, Clone, Deserialize)] struct ListDirArgs { path: String, #[serde(default)] recursive: bool, #[serde(default)] include_hidden: bool, #[serde(default)] max_entries: Option<usize>, #[serde(default)] name_glob: Option<String>, #[serde(default)] format: Option<String> }
-#[derive(Debug, Clone)] pub(crate) struct ListDirBrainTool { pub(crate) workspace_path: Option<PathBuf> }
-impl BrainTool for ListDirBrainTool {
+#[derive(Debug, Clone)] pub(crate) struct ListDirTool { pub(crate) workspace_path: Option<PathBuf> }
+impl Tool for ListDirTool {
     fn spec(&self) -> Arc<dyn FunctionTool> { Arc::new(StaticFunctionToolSpec { name: DEFAULT_TOOL_LIST_DIR, description: "List files and directories, optionally filtered by name and rendered as a tree", parameters: serde_json::json!({"type":"object","properties":{"path":{"type":"string"},"recursive":{"type":"boolean"},"include_hidden":{"type":"boolean"},"max_entries":{"type":"integer","minimum":1},"name_glob":{"type":"string"},"format":{"type":"string","enum":["json","tree"]}},"required":["path"]}) }) }
     fn execute(&self, _: &str, arguments: &Value) -> String {
         let args: ListDirArgs = match serde_json::from_value(arguments.clone()) { Ok(value) => value, Err(err) => return json_error(format!("invalid list_dir arguments: {err}")) };

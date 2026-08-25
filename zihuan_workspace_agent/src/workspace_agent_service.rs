@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 use zihuan_core::agent::resource_resolver::resolve_local_embedding_model_name;
 use zihuan_core::inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::inference::system_config::{load_llm_refs, AgentConfig, MemoryBackendKind, WorkspaceAgentServiceConfig};
@@ -13,17 +13,17 @@ use zihuan_core::storage::{
     ConnectionConfig, LocalMemoryStore, WeaviateCollectionSchema,
 };
 use zihuan_core::workspace::normalized_workspace_path;
-use zihuan_core::graph::brain_tool_spec::BrainToolDefinition;
+use zihuan_core::graph::tool_spec::ToolDefinition;
 
 use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
 use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
-use zihuan_core::agent::tools::WebSearchBrainTool;
+use zihuan_core::agent::tools::WebSearchTool;
 use crate::tools::{
-    AskUserBrainTool, CreateFileBrainTool, DeleteFileBrainTool, EditFileBrainTool, ExecCmdBrainTool,
-    CopyFileBrainTool, FileInfoBrainTool, FindFilesBrainTool, GitStatusBrainTool, GrepBrainTool, ListDirBrainTool, MoveFileBrainTool, ReadFileBrainTool, RgBrainTool, DEFAULT_TOOL_ASK_USER,
+    AskUserTool, CreateFileTool, DeleteFileTool, EditFileTool, ExecCmdTool,
+    CopyFileTool, FileInfoTool, FindFilesTool, GitStatusTool, GrepTool, ListDirTool, MoveFileTool, ReadFileTool, RgTool, DEFAULT_TOOL_ASK_USER,
     DEFAULT_TOOL_CREATE_FILE, DEFAULT_TOOL_DELETE_FILE, DEFAULT_TOOL_EDIT_FILE, DEFAULT_TOOL_EXEC_CMD,
     DEFAULT_TOOL_COPY_FILE, DEFAULT_TOOL_FILE_INFO, DEFAULT_TOOL_FIND_FILES, DEFAULT_TOOL_GIT_STATUS, DEFAULT_TOOL_GREP, DEFAULT_TOOL_LIST_DIR, DEFAULT_TOOL_MOVE_FILE, DEFAULT_TOOL_READ_FILE, DEFAULT_TOOL_RG, DEFAULT_TOOL_WEB_SEARCH,
-    WorkspaceTaskBrainTool, DEFAULT_TOOL_TASK_CREATE, DEFAULT_TOOL_TASK_GET, DEFAULT_TOOL_TASK_LIST, DEFAULT_TOOL_TASK_UPDATE,
+    WorkspaceTaskTool, DEFAULT_TOOL_TASK_CREATE, DEFAULT_TOOL_TASK_GET, DEFAULT_TOOL_TASK_LIST, DEFAULT_TOOL_TASK_UPDATE,
 };
 use zihuan_core::error::Result;
 
@@ -105,7 +105,7 @@ pub struct WorkspaceInferenceToolProvider {
     default_tools_enabled: std::collections::HashMap<String, bool>,
     memory_resources: Option<WorkspaceMemoryResources>,
     web_search_engine: std::result::Result<Arc<zihuan_core::rag::WebSearchEngineRef>, String>,
-    tool_definitions: Vec<BrainToolDefinition>,
+    tool_definitions: Vec<ToolDefinition>,
 }
 
 impl InferenceToolProvider for WorkspaceInferenceToolProvider {
@@ -142,77 +142,77 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
         }
     }
 
-    fn build_default_tools(&self, context: &InferenceToolContext) -> Vec<Box<dyn BrainTool>> {
+    fn build_default_tools(&self, context: &InferenceToolContext) -> Vec<Box<dyn Tool>> {
         let workspace_path = normalized_workspace_path(context.workspace_path.as_deref()).map(PathBuf::from);
-        let mut tools: Vec<Box<dyn BrainTool>> = Vec::new();
+        let mut tools: Vec<Box<dyn Tool>> = Vec::new();
         if let Some(session_id) = context.session_id.as_deref().filter(|value| !value.is_empty()) {
             for name in [DEFAULT_TOOL_TASK_CREATE, DEFAULT_TOOL_TASK_UPDATE, DEFAULT_TOOL_TASK_GET, DEFAULT_TOOL_TASK_LIST] {
-                tools.push(Box::new(WorkspaceTaskBrainTool::new(session_id.to_string(), name)));
+                tools.push(Box::new(WorkspaceTaskTool::new(session_id.to_string(), name)));
             }
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_CREATE_FILE) {
-            tools.push(Box::new(CreateFileBrainTool {
+            tools.push(Box::new(CreateFileTool {
                 workspace_path: workspace_path.clone(),
             }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_DELETE_FILE) {
-            tools.push(Box::new(DeleteFileBrainTool {
+            tools.push(Box::new(DeleteFileTool {
                 workspace_path: workspace_path.clone(),
             }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_EDIT_FILE) {
-            tools.push(Box::new(EditFileBrainTool {
+            tools.push(Box::new(EditFileTool {
                 workspace_path: workspace_path.clone(),
             }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_READ_FILE) {
-            tools.push(Box::new(ReadFileBrainTool {
+            tools.push(Box::new(ReadFileTool {
                 workspace_path: workspace_path.clone(),
             }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_LIST_DIR) {
-            tools.push(Box::new(ListDirBrainTool {
+            tools.push(Box::new(ListDirTool {
                 workspace_path: workspace_path.clone(),
             }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_GREP) {
-            tools.push(Box::new(GrepBrainTool {
+            tools.push(Box::new(GrepTool {
                 workspace_path: workspace_path.clone(),
             }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_RG) {
-            tools.push(Box::new(RgBrainTool {
+            tools.push(Box::new(RgTool {
                 workspace_path: workspace_path.clone(),
             }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_FIND_FILES) {
-            tools.push(Box::new(FindFilesBrainTool { workspace_path: workspace_path.clone() }));
+            tools.push(Box::new(FindFilesTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_COPY_FILE) {
-            tools.push(Box::new(CopyFileBrainTool { workspace_path: workspace_path.clone() }));
+            tools.push(Box::new(CopyFileTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_MOVE_FILE) {
-            tools.push(Box::new(MoveFileBrainTool { workspace_path: workspace_path.clone() }));
+            tools.push(Box::new(MoveFileTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_FILE_INFO) {
-            tools.push(Box::new(FileInfoBrainTool { workspace_path: workspace_path.clone() }));
+            tools.push(Box::new(FileInfoTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_GIT_STATUS) {
-            tools.push(Box::new(GitStatusBrainTool { workspace_path: workspace_path.clone() }));
+            tools.push(Box::new(GitStatusTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_EXEC_CMD) {
-            tools.push(Box::new(ExecCmdBrainTool {
+            tools.push(Box::new(ExecCmdTool {
                 workspace_path: workspace_path.clone(),
                 session_id: context.session_id.clone(),
             }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_ASK_USER) {
-            tools.push(Box::new(AskUserBrainTool));
+            tools.push(Box::new(AskUserTool));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_WEB_SEARCH) {
             let tool = match &self.web_search_engine {
-                Ok(engine) => WebSearchBrainTool::new(Arc::clone(engine)),
-                Err(error) => WebSearchBrainTool::unavailable(error.clone()),
+                Ok(engine) => WebSearchTool::new(Arc::clone(engine)),
+                Err(error) => WebSearchTool::unavailable(error.clone()),
             };
             tools.push(Box::new(tool));
         }
@@ -224,7 +224,7 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
         tools
     }
 
-    fn tool_definitions(&self) -> Vec<BrainToolDefinition> {
+    fn tool_definitions(&self) -> Vec<ToolDefinition> {
         self.tool_definitions.clone()
     }
 }

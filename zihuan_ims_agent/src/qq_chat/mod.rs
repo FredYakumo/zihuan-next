@@ -55,7 +55,7 @@ use zihuan_core::storage::{
     build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind, LocalMemoryStore, WeaviateCollectionSchema,
 };
 use tokio::task::JoinHandle;
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent::qq_chat::{current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -71,7 +71,7 @@ use zihuan_core::task_context::{
 };
 use zihuan_core::utils::string_utils::shorten_text;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_core::graph::brain_tool_spec::BrainToolDefinition;
+use zihuan_core::graph::tool_spec::ToolDefinition;
 use zihuan_core::graph::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
 use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::graph::message_persistence::persist_message_event;
@@ -117,7 +117,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
         );
     }
 
-    fn build_default_tools(&self, context: &InferenceToolContext) -> Vec<Box<dyn BrainTool>> {
+    fn build_default_tools(&self, context: &InferenceToolContext) -> Vec<Box<dyn Tool>> {
         build_info_brain_tools(
             &self.resources.default_tools_enabled,
             self.resources.web_search_engine_ref.clone(),
@@ -135,7 +135,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
         )
     }
 
-    fn tool_definitions(&self) -> Vec<BrainToolDefinition> {
+    fn tool_definitions(&self) -> Vec<ToolDefinition> {
         self.tool_definitions.clone()
     }
 }

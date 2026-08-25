@@ -33,7 +33,7 @@ pub fn apply_hyperparameter_bindings(graph: &mut NodeGraphDefinition, values: &H
 
         if let Some(tools_value) = node.inline_values.get("tools_config").cloned() {
             if let Ok(mut tools) =
-                serde_json::from_value::<Vec<zihuan_core::graph::brain_tool_spec::BrainToolDefinition>>(tools_value)
+                serde_json::from_value::<Vec<zihuan_core::graph::tool_spec::ToolDefinition>>(tools_value)
             {
                 for tool in &mut tools {
                     apply_hyperparameter_bindings(&mut tool.subgraph, values);

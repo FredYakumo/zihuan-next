@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 use zihuan_core::llm::tooling::FunctionTool;
 
 use super::common::StaticFunctionToolSpec;
 use super::format_public_info_message;
 
-pub(crate) struct GetFunctionListBrainTool;
+pub(crate) struct GetFunctionListTool;
 
-impl BrainTool for GetFunctionListBrainTool {
+impl Tool for GetFunctionListTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "get_function_list",
@@ -28,17 +28,17 @@ impl BrainTool for GetFunctionListBrainTool {
     }
 }
 
-pub(crate) struct GetAgentPublicInfoBrainTool {
+pub(crate) struct GetAgentPublicInfoTool {
     message: String,
 }
 
-impl GetAgentPublicInfoBrainTool {
+impl GetAgentPublicInfoTool {
     pub(crate) fn new(message: String) -> Self {
         Self { message }
     }
 }
 
-impl BrainTool for GetAgentPublicInfoBrainTool {
+impl Tool for GetAgentPublicInfoTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "get_agent_public_info",

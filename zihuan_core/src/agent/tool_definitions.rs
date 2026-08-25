@@ -4,14 +4,14 @@ use crate::inference::system_config::{
     AgentToolConfig, AgentToolType, NodeGraphToolConfig, PythonScriptAgentToolConfig,
 };
 use crate::error::{Error, Result};
-use crate::graph::brain_tool_spec::{
-    fixed_tool_runtime_inputs, BrainToolDefinition, BrainToolImplementation, ToolParamDef, QQ_AGENT_TOOL_OWNER_TYPE,
+use crate::graph::tool_spec::{
+    fixed_tool_runtime_inputs, ToolDefinition, ToolImplementation, ToolParamDef, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use crate::graph::function_graph::FunctionPortDef;
 use crate::graph::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
 use crate::graph::DataType;
 
-pub fn build_enabled_tool_definitions(tools: &[AgentToolConfig]) -> Result<Vec<BrainToolDefinition>> {
+pub fn build_enabled_tool_definitions(tools: &[AgentToolConfig]) -> Result<Vec<ToolDefinition>> {
     let mut definitions = Vec::new();
     for tool in tools.iter().filter(|tool| tool.enabled) {
         match &tool.tool_type {
@@ -29,7 +29,7 @@ pub fn build_enabled_tool_definitions(tools: &[AgentToolConfig]) -> Result<Vec<B
 fn build_node_graph_tool_definition(
     tool: &AgentToolConfig,
     config: &NodeGraphToolConfig,
-) -> Result<BrainToolDefinition> {
+) -> Result<ToolDefinition> {
     let (mut graph, parameters, outputs) = match config {
         NodeGraphToolConfig::FilePath { path, parameters, outputs } => {
             (load_graph_from_path(PathBuf::from(path))?, parameters.clone(), outputs.clone())
@@ -61,12 +61,12 @@ fn build_node_graph_tool_definition(
     let parameters = merge_parameter_descriptions_from_graph(&parameters, &graph.graph_inputs);
     let outputs = merge_output_descriptions_from_graph(&outputs, &graph.graph_outputs);
 
-    Ok(BrainToolDefinition {
+    Ok(ToolDefinition {
         id: tool.id.clone(),
         name: tool.name.clone(),
         description: tool.description.clone(),
         run_duration: tool.run_duration,
-        implementation: BrainToolImplementation::NodeGraph,
+        implementation: ToolImplementation::NodeGraph,
         built_in_kind: None,
         python_config: None,
         parameters,
@@ -78,7 +78,7 @@ fn build_node_graph_tool_definition(
 fn build_python_script_tool_definition(
     tool: &AgentToolConfig,
     config: &PythonScriptAgentToolConfig,
-) -> Result<BrainToolDefinition> {
+) -> Result<ToolDefinition> {
     let python_config = config.to_runtime_config();
     if python_config.script_path.trim().is_empty() {
         return Err(Error::ValidationError(format!(
@@ -103,12 +103,12 @@ fn build_python_script_tool_definition(
         validate_python_parameter(tool, parameter)?;
     }
 
-    Ok(BrainToolDefinition {
+    Ok(ToolDefinition {
         id: tool.id.clone(),
         name: tool.name.clone(),
         description: tool.description.clone(),
         run_duration: tool.run_duration,
-        implementation: BrainToolImplementation::PythonScript,
+        implementation: ToolImplementation::PythonScript,
         built_in_kind: None,
         python_config: Some(python_config),
         parameters: config.parameters.clone(),
@@ -226,7 +226,7 @@ fn validate_python_parameter(tool: &AgentToolConfig, param: &ToolParamDef) -> Re
 
 fn reserved_tool_graph_input_type(name: &str) -> Option<DataType> {
     let trimmed = name.trim();
-    for owner_type in ["brain", QQ_AGENT_TOOL_OWNER_TYPE] {
+    for owner_type in ["tool_calling", QQ_AGENT_TOOL_OWNER_TYPE] {
         for port in fixed_tool_runtime_inputs(owner_type) {
             if port.name == trimmed {
                 return Some(port.data_type);

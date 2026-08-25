@@ -6,11 +6,11 @@
 //!
 //! mechanism:
 //!
-//! 1. `SseBrainObserver::on_tool_start` identifies a mutating workspace tool and calls
+//! 1. `SseToolCallingObserver::on_tool_start` identifies a mutating workspace tool and calls
 //!    [`WorkspaceChangeRecorder::start`]. The recorder resolves every affected path and captures
 //!    its complete before-snapshot.
 //! 2. The workspace tool executes normally and writes to disk.
-//! 3. `SseBrainObserver::on_tool_finish` passes the tool result to
+//! 3. `SseToolCallingObserver::on_tool_finish` passes the tool result to
 //!    [`WorkspaceChangeRecorder::finish`]. Failed tool results and no-op writes are ignored;
 //!    successful writes are compared with a new after-snapshot.
 //! 4. A [`WorkspaceChangeRecord`] is created, persisted, and emitted as a structured SSE event.
@@ -224,7 +224,7 @@ pub struct WorkspaceChangeRecorder {
 impl WorkspaceChangeRecorder {
     /// Creates a recorder for one chat session and loads any persisted records for that session.
     ///
-    /// The recorder is request-scoped and shared with the Brain observer through an `Arc`. The
+    /// The recorder is request-scoped and shared with the ToolCallingEngine observer through an `Arc`. The
     /// session-level store is global so the REST handlers can access the same records later.
     pub fn new(session_id: impl Into<String>, workspace_path: Option<String>) -> Arc<Self> {
         let recorder = Arc::new(Self { session_id: session_id.into(), workspace_path: workspace_path.map(PathBuf::from) });
@@ -485,7 +485,7 @@ fn operation_paths(operation: &WorkspaceChangeOperation, args: &Value) -> Vec<St
     }
 }
 
-/// Maps a Brain tool name to the set of operations that can create review records.
+/// Maps a ToolCallingEngine tool name to the set of operations that can create review records.
 ///
 /// `exec_cmd` is deliberately excluded because arbitrary command side effects cannot be safely
 /// reconstructed from its output.

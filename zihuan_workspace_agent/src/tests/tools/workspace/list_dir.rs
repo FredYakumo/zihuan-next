@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 
-use crate::tools::workspace_tools::{ListDirBrainTool, DEFAULT_TOOL_LIST_DIR};
+use crate::tools::workspace_tools::{ListDirTool, DEFAULT_TOOL_LIST_DIR};
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now()
@@ -30,7 +30,7 @@ fn list_dir_returns_stably_sorted_entries() {
     fs::create_dir(directory.join("z-dir")).expect("create directory");
     fs::write(directory.join("a.txt"), "a").expect("write file");
     fs::write(directory.join("m.txt"), "m").expect("write file");
-    let tool = ListDirBrainTool {
+    let tool = ListDirTool {
         workspace_path: Some(directory.clone()),
     };
 
@@ -61,7 +61,7 @@ fn list_dir_can_recurse_and_skip_hidden_entries() {
     fs::create_dir(&nested).expect("create nested directory");
     fs::write(nested.join("child.txt"), "child").expect("write child");
     fs::write(directory.join(".hidden"), "hidden").expect("write hidden file");
-    let tool = ListDirBrainTool {
+    let tool = ListDirTool {
         workspace_path: Some(directory.clone()),
     };
 

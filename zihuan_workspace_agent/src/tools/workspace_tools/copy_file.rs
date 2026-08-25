@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 use serde_json::Value;
-use zihuan_core::agent::brain::{BrainTool, ToolExecutionResource};
+use zihuan_core::agent::tool_calling::{Tool, ToolExecutionResource};
 use zihuan_core::llm::tooling::FunctionTool;
 
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
@@ -20,9 +20,9 @@ struct CopyFileArgs {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct CopyFileBrainTool { pub(crate) workspace_path: Option<PathBuf> }
+pub(crate) struct CopyFileTool { pub(crate) workspace_path: Option<PathBuf> }
 
-impl BrainTool for CopyFileBrainTool {
+impl Tool for CopyFileTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec { name: DEFAULT_TOOL_COPY_FILE, description: "Copy a file or directory", parameters: serde_json::json!({"type":"object","properties":{"src":{"type":"string"},"dest":{"type":"string"},"overwrite":{"type":"boolean"}},"required":["src","dest"]}) })
     }

@@ -43,17 +43,17 @@ pub async fn process_message(ims_bot_adapter: SharedBotAdapter, event: MessageEv
         }
     }
 
-    let brain_agent = {
+    let event_handler = {
         let ims_bot_adapter_guard = ims_bot_adapter.lock().await;
-        ims_bot_adapter_guard.get_brain_agent().cloned()
+        ims_bot_adapter_guard.event_handler().cloned()
     };
 
-    if let Some(brain) = brain_agent {
+    if let Some(handler) = event_handler {
         let ims_bot_adapter_clone = ims_bot_adapter.clone();
         tokio::spawn(async move {
             let mut ims_bot_adapter_guard = ims_bot_adapter_clone.lock().await;
-            if let Err(e) = brain.on_event(&mut ims_bot_adapter_guard, &event) {
-                error!("[Brain Agent] Error processing event: {}", e);
+            if let Err(e) = handler.on_event(&mut ims_bot_adapter_guard, &event) {
+                error!("[Bot Event Handler] Error processing event: {}", e);
             }
         });
     }

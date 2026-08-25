@@ -112,7 +112,7 @@ fn build_review_messages(
     request: &QqReplyReviewRequest,
     candidate_message: &str,
 ) -> Vec<LLMMessage> {
-    let session_hint = build_session_state_snapshot(&request.session_state, &request.emotion_dimensions);
+    let session_hint = build_session_state_hint(&request.session_state, &request.emotion_dimensions);
     let sender_name = display_sender_name(&request.sender_nickname, &request.sender_card);
     let mode = if request.is_group {
         "QQ group chat"
@@ -166,7 +166,7 @@ fn build_rewrite_messages(
     request: &QqReplyReviewRequest,
     candidate_message: &str,
 ) -> Vec<LLMMessage> {
-    let session_hint = build_session_state_snapshot(&request.session_state, &request.emotion_dimensions);
+    let session_hint = build_session_state_hint(&request.session_state, &request.emotion_dimensions);
     let sender_name = display_sender_name(&request.sender_nickname, &request.sender_card);
     let mode = if request.is_group {
         "QQ group chat"
@@ -339,7 +339,7 @@ fn strip_image_protocol_placeholders(message: &str) -> String {
     stripped
 }
 
-fn build_session_state_snapshot(
+fn build_session_state_hint(
     session_state: &QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> String {

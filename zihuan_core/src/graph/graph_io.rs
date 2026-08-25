@@ -14,9 +14,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
 
-use crate::graph::brain_tool_spec::{
-    brain_shared_inputs_from_value, brain_tool_input_signature, is_tool_subgraph_owner,
-    normalized_tool_outputs_for_owner, BrainToolDefinition, BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT,
+use crate::graph::tool_spec::{
+    tool_calling_shared_inputs_from_value, tool_calling_tool_input_signature, is_tool_calling_subgraph_owner,
+    normalized_tool_outputs_for_owner, ToolDefinition, TOOL_CALLING_SHARED_INPUTS_PORT, TOOL_CALLING_TOOLS_CONFIG_PORT,
 };
 use crate::graph::data_value::DataType;
 use crate::graph::function_graph::{
@@ -700,20 +700,20 @@ fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
             continue;
         }
 
-        if !is_tool_subgraph_owner(&node.node_type) {
+        if !is_tool_calling_subgraph_owner(&node.node_type) {
             continue;
         }
 
         let shared_inputs = node
             .inline_values
-            .get(BRAIN_SHARED_INPUTS_PORT)
-            .and_then(brain_shared_inputs_from_value)
+            .get(TOOL_CALLING_SHARED_INPUTS_PORT)
+            .and_then(tool_calling_shared_inputs_from_value)
             .unwrap_or_default();
 
-        let Some(value) = node.inline_values.get(BRAIN_TOOLS_CONFIG_PORT).cloned() else {
+        let Some(value) = node.inline_values.get(TOOL_CALLING_TOOLS_CONFIG_PORT).cloned() else {
             continue;
         };
-        let Ok(mut tools) = serde_json::from_value::<Vec<BrainToolDefinition>>(value) else {
+        let Ok(mut tools) = serde_json::from_value::<Vec<ToolDefinition>>(value) else {
             continue;
         };
 
@@ -723,13 +723,13 @@ fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
                 continue;
             }
             refresh_port_types_internal(&mut tool.subgraph);
-            let input_signature = brain_tool_input_signature(&node.node_type, &shared_inputs, tool);
+            let input_signature = tool_calling_tool_input_signature(&node.node_type, &shared_inputs, tool);
             let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);
             sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &outputs);
         }
 
         if let Ok(value) = serde_json::to_value(&tools) {
-            node.inline_values.insert(BRAIN_TOOLS_CONFIG_PORT.to_string(), value);
+            node.inline_values.insert(TOOL_CALLING_TOOLS_CONFIG_PORT.to_string(), value);
         }
     }
 }
@@ -752,12 +752,12 @@ fn validate_embedded_subgraphs(graph: &NodeGraphDefinition) -> Vec<ValidationIss
             }
         }
 
-        if !is_tool_subgraph_owner(&node.node_type) {
+        if !is_tool_calling_subgraph_owner(&node.node_type) {
             continue;
         }
 
-        if let Some(value) = node.inline_values.get(BRAIN_TOOLS_CONFIG_PORT) {
-            match serde_json::from_value::<Vec<BrainToolDefinition>>(value.clone()) {
+        if let Some(value) = node.inline_values.get(TOOL_CALLING_TOOLS_CONFIG_PORT) {
+            match serde_json::from_value::<Vec<ToolDefinition>>(value.clone()) {
                 Ok(tools) => {
                     for tool in tools {
                         if !tool.uses_subgraph() {
@@ -794,20 +794,20 @@ fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
             continue;
         }
 
-        if !is_tool_subgraph_owner(&node.node_type) {
+        if !is_tool_calling_subgraph_owner(&node.node_type) {
             continue;
         }
 
         let shared_inputs = node
             .inline_values
-            .get(BRAIN_SHARED_INPUTS_PORT)
-            .and_then(brain_shared_inputs_from_value)
+            .get(TOOL_CALLING_SHARED_INPUTS_PORT)
+            .and_then(tool_calling_shared_inputs_from_value)
             .unwrap_or_default();
 
-        let Some(value) = node.inline_values.get(BRAIN_TOOLS_CONFIG_PORT).cloned() else {
+        let Some(value) = node.inline_values.get(TOOL_CALLING_TOOLS_CONFIG_PORT).cloned() else {
             continue;
         };
-        let Ok(mut tools) = serde_json::from_value::<Vec<BrainToolDefinition>>(value) else {
+        let Ok(mut tools) = serde_json::from_value::<Vec<ToolDefinition>>(value) else {
             continue;
         };
 
@@ -817,13 +817,13 @@ fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
                 continue;
             }
             auto_fix_graph_definition(&mut tool.subgraph);
-            let input_signature = brain_tool_input_signature(&node.node_type, &shared_inputs, tool);
+            let input_signature = tool_calling_tool_input_signature(&node.node_type, &shared_inputs, tool);
             let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);
             sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &outputs);
         }
 
         if let Ok(value) = serde_json::to_value(&tools) {
-            node.inline_values.insert(BRAIN_TOOLS_CONFIG_PORT.to_string(), value);
+            node.inline_values.insert(TOOL_CALLING_TOOLS_CONFIG_PORT.to_string(), value);
         }
     }
 }
@@ -993,7 +993,7 @@ fn calc_node_height(node: &NodeDefinition) -> f32 {
     let default_min = GRID * (3.0f32.max(2.0 + port_rows) + 0.8);
     let min_h = match node.node_type.as_str() {
         "message_list_data" | "qq_message_list_data" => default_min.max(GRID * 8.0),
-        "brain" => default_min.max(GRID * 6.2),
+        "tool_calling" => default_min.max(GRID * 6.2),
         _ => default_min,
     };
     node.size.as_ref().map_or(min_h, |s| s.height.max(min_h))

@@ -4,9 +4,9 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 
-use crate::tools::workspace_tools::{GitStatusBrainTool, DEFAULT_TOOL_GIT_STATUS};
+use crate::tools::workspace_tools::{GitStatusTool, DEFAULT_TOOL_GIT_STATUS};
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
@@ -29,7 +29,7 @@ fn git_status_returns_branch_and_worktree_changes_without_a_shell() {
     let init = Command::new("git").args(["-C", directory.to_str().unwrap(), "init", "-q"]).output().unwrap();
     assert!(init.status.success(), "git init failed: {}", String::from_utf8_lossy(&init.stderr));
     fs::write(directory.join("changed.txt"), "changed").unwrap();
-    let tool = GitStatusBrainTool { workspace_path: Some(directory.clone()) };
+    let tool = GitStatusTool { workspace_path: Some(directory.clone()) };
 
     assert_eq!(tool.spec().name(), DEFAULT_TOOL_GIT_STATUS);
     let result = serde_json::from_str::<serde_json::Value>(&tool.execute("", &json!({"path":"."}))).unwrap();

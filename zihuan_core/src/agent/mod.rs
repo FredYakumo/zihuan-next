@@ -7,6 +7,7 @@ pub const LLM_KIND_MATH_PROGRAMMING: &str = "math_programming";
 pub const LLM_KIND_NATURAL_LANGUAGE_REPLY: &str = "natural_language_reply";
 
 pub mod qq_chat;
+pub mod agent;
 
 pub fn normalize_llm_kind(llm_kind: Option<&str>) -> crate::error::Result<&'static str> {
     match llm_kind
@@ -49,7 +50,7 @@ fn default_retry_count() -> u32 {
     2
 }
 
-pub mod brain;
+pub mod tool_calling;
 pub mod dream_agent;
 pub mod emotion;
 pub mod inference_provider;
@@ -60,3 +61,5 @@ pub mod tools;
 pub mod utils;
 
 pub use crate::llm::tooling::FunctionTool;
+pub use agent::{Agent, AgentCancellation, AgentContext, AgentDescriptor};
+pub use tool_calling::{AgentExecutor, ToolCallingEngine, ToolCallingRequest, ToolCallingResult};

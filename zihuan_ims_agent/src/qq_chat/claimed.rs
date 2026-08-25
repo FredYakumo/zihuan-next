@@ -7,9 +7,11 @@ use log::{info, warn};
 use zihuan_core::inference::inference_function::compact_message::{compact_message_history, estimate_messages_tokens};
 use zihuan_core::inference::message_content_utils::{downgrade_messages_for_model, sanitize_messages_for_inference};
 
-use zihuan_core::agent::brain::{Brain, BrainStopReason, LongTaskContext};
+use zihuan_core::agent::tool_calling::{ToolCallingEngine, ToolCallingStopReason, LongTaskContext};
 
-use zihuan_core::agent::emotion::utils::emotion_dimensions_snapshot_text;
+use zihuan_core::agent::emotion::utils::{
+    emotion_dimensions_text, emotion_expression_prompt, has_noticeable_emotion_expression,
+};
 use zihuan_core::agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
 use zihuan_core::agent::qq_chat::current_qq_chat_agent_service_config;
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
@@ -19,22 +21,22 @@ use zihuan_core::llm::{InferenceParam, LLMMessage, TokenUsage};
 use zihuan_core::steer::message_with_api_style;
 use zihuan_core::task_context::AgentTaskRequest;
 
-use zihuan_core::graph::brain_tool_spec::{
+use zihuan_core::graph::tool_spec::{
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_core::graph::DataValue;
 
-use super::super::logging::QqChatBrainObserver;
-use zihuan_core::ims_bot_adapter::tools::group_members::GetCurrentGroupMembersBrainTool;
-use zihuan_core::ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
+use super::super::logging::QqChatToolCallingObserver;
+use zihuan_core::ims_bot_adapter::tools::group_members::GetCurrentGroupMembersTool;
+use zihuan_core::ims_bot_adapter::tools::qq_profile::{GetBotProfileTool, GetQqUserProfileTool};
 
 use super::super::super::tools::{
     format_public_info_message, review_and_rewrite_reply, AgentMemoryBackend, AgentMemoryToolResources,
-    EditableQqAgentTool, GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
-    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ModelIdentityContext, QqReplyReviewRequest,
-    ReplyMessageBrainTool, RunResearchSubagentBrainTool, SaveImageBrainTool, SearchSimilarImagesBrainTool,
+    EditableQqAgentTool, GetAgentPublicInfoTool, GetFunctionListTool, GetRecentGroupMessagesTool,
+    GetRecentUserMessagesTool, ImageUnderstandTool, ModelIdentityContext, QqReplyReviewRequest,
+    ReplyMessageTool, RunResearchSubagentTool, SaveImageTool, SearchSimilarImagesTool,
     ToolNotificationTarget,
-    WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
+    WebSearchTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
     DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
     DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT, DEFAULT_TOOL_SAVE_IMAGE,
     DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
@@ -61,7 +63,7 @@ use super::{
     QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 
-use crate::agent::preprompt_agent::run_chat_preprompt_agent;
+use crate::agent::preprompt_agent::{PrepromptAgent, PrepromptContext};
 
 use super::super::steer::QqChatServiceSteerHook;
 use super::super::tool_quota::wrap_brain_tool_with_quota;
@@ -89,7 +91,7 @@ fn execute_privileged_emotion_command(
             session_state.sync_emotion_dimensions(emotion_dimensions);
             format!(
                 "当前 Agent 情绪维度：\n{}",
-                emotion_dimensions_snapshot_text(&session_state, emotion_dimensions)
+                emotion_dimensions_text(&session_state, emotion_dimensions)
             )
         }
         QqPrivilegedCommand::AdjustEmotion => {
@@ -289,10 +291,10 @@ impl QqChatAgentServiceInner {
 
     /// Returns the last assistant text that carries no tool calls, skipping transport
     /// errors and awaiting-user-input stops. Empty or whitespace-only text yields `None`.
-    fn parse_final_reply_text(&self, stop_reason: &BrainStopReason, brain_output: &[LLMMessage]) -> Option<String> {
+    fn parse_final_reply_text(&self, stop_reason: &ToolCallingStopReason, brain_output: &[LLMMessage]) -> Option<String> {
         if matches!(
             stop_reason,
-            BrainStopReason::TransportError(_) | BrainStopReason::AwaitUserInput(_)
+            ToolCallingStopReason::TransportError(_) | ToolCallingStopReason::AwaitUserInput(_)
         ) {
             return None;
         }
@@ -331,7 +333,7 @@ impl QqChatAgentServiceInner {
     /// - **Intent classification** — selects the appropriate LLM (general vs math/programming).
     /// - **Short-circuit replies** — answers meta-queries (model name, tool list, etc.) directly.
     /// - **History compaction** — compresses conversation context when it exceeds budget.
-    /// - **Brain loop** — builds system prompt + conversation messages, attaches tools, and
+    /// - **ToolCallingEngine loop** — builds system prompt + conversation messages, attaches tools, and
     ///   runs the LLM inference loop with steer support.
     /// - **Reply delivery** — parses the final assistant output and sends it back to the user
     ///   (group or private chat), persisting message history along the way.
@@ -850,8 +852,7 @@ impl QqChatAgentServiceInner {
             }
         }
 
-        let current_session_state = { ctx.session_state_store.lock().unwrap().clone() };
-        let mut current_session_state = current_session_state;
+        let mut current_session_state = ctx.session_state_store.lock().unwrap().clone();
         current_session_state.sync_emotion_dimensions(&emotion_dimensions);
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
@@ -881,25 +882,26 @@ impl QqChatAgentServiceInner {
                 },
             })
         });
-        let preprompt_context = run_chat_preprompt_agent(
+        let preprompt_context = PrepromptAgent::new(PrepromptContext {
             trace,
-            ctx.natural_language_reply_llm,
-            ctx.cache,
-            &chat_preprompt_history_key,
-            &prepared_input,
-            ctx.bot_name,
+            llm: ctx.natural_language_reply_llm,
+            cache: ctx.cache,
+            history_key: &chat_preprompt_history_key,
+            input: &prepared_input,
+            bot_name: ctx.bot_name,
             bot_id,
-            ctx.agent_id,
+            agent_id: ctx.agent_id,
             sender_id,
             target_id,
             is_group,
-            Arc::clone(&turn_session_state),
-            emotion_dimensions.clone(),
-            ctx.compact_context_length,
-            preprompt_memory_resources,
-            ctx.rdb_pool.cloned(),
-            &self.default_tools_enabled,
-        );
+            session_state: Arc::clone(&turn_session_state),
+            emotion_dimensions: emotion_dimensions.clone(),
+            compact_context_length: ctx.compact_context_length,
+            memory_resources: preprompt_memory_resources,
+            rdb_pool: ctx.rdb_pool.cloned(),
+            default_tools_enabled: &self.default_tools_enabled,
+        })
+        .execute();
         trace.record_graph_phase(
             "Preprompt 阶段",
             serde_json::json!({
@@ -1011,8 +1013,8 @@ impl QqChatAgentServiceInner {
 
         let consumed_steer_messages = Arc::new(Mutex::new(Vec::new()));
         let tool_quota = ctx.tool_quota.clone();
-        let mut brain = Brain::new(Arc::clone(turn_llm));
-        brain.set_observer(Arc::new(QqChatBrainObserver { trace: trace.clone() }));
+        let mut brain = ToolCallingEngine::new(Arc::clone(turn_llm));
+        brain.set_observer(Arc::new(QqChatToolCallingObserver { trace: trace.clone() }));
         brain.set_iteration_hook(Arc::new(QqChatServiceSteerHook {
             pending_steer: Arc::clone(ctx.pending_steer),
             sender_id: sender_id.to_string(),
@@ -1077,24 +1079,24 @@ impl QqChatAgentServiceInner {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
             brain.add_tool(wrap_brain_tool_with_quota(
-                WebSearchBrainTool::new(ctx.web_search_engine.clone()),
+                WebSearchTool::new(ctx.web_search_engine.clone()),
                 tool_quota.clone(),
             ));
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
             brain.add_tool(wrap_brain_tool_with_quota(
-                GetAgentPublicInfoBrainTool::new(current_message.clone()),
+                GetAgentPublicInfoTool::new(current_message.clone()),
                 tool_quota.clone(),
             ));
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_FUNCTION_LIST) {
-            brain.add_tool(wrap_brain_tool_with_quota(GetFunctionListBrainTool, tool_quota.clone()));
+            brain.add_tool(wrap_brain_tool_with_quota(GetFunctionListTool, tool_quota.clone()));
         }
 
         brain.add_tool(wrap_brain_tool_with_quota(
-            RunResearchSubagentBrainTool::new(
+            RunResearchSubagentTool::new(
                 Arc::clone(ctx.math_programming_llm),
                 Arc::clone(ctx.web_search_engine),
                 ctx.rdb_pool.cloned(),
@@ -1137,13 +1139,13 @@ impl QqChatAgentServiceInner {
             tool_quota.clone(),
         ));
         brain.add_tool(wrap_brain_tool_with_quota(
-            ReplyMessageBrainTool::new(Arc::clone(&shared_runtime_values)),
+            ReplyMessageTool::new(Arc::clone(&shared_runtime_values)),
             tool_quota.clone(),
         ));
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
             brain.add_tool(wrap_brain_tool_with_quota(
-                GetRecentGroupMessagesBrainTool::new(
+                GetRecentGroupMessagesTool::new(
                     ctx.rdb_pool.cloned(),
                     ToolNotificationTarget::new(
                         Some(ctx.adapter.clone()),
@@ -1159,7 +1161,7 @@ impl QqChatAgentServiceInner {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
             brain.add_tool(wrap_brain_tool_with_quota(
-                GetRecentUserMessagesBrainTool::new(
+                GetRecentUserMessagesTool::new(
                     ctx.rdb_pool.cloned(),
                     ToolNotificationTarget::new(
                         Some(ctx.adapter.clone()),
@@ -1175,7 +1177,7 @@ impl QqChatAgentServiceInner {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
             brain.add_tool(wrap_brain_tool_with_quota(
-                SearchSimilarImagesBrainTool::new(
+                SearchSimilarImagesTool::new(
                     ctx.weaviate_image_ref.cloned(),
                     ctx.embedding_model.cloned(),
                     ctx.web_search_engine.clone(),
@@ -1195,7 +1197,7 @@ impl QqChatAgentServiceInner {
         if self.is_default_tool_enabled(DEFAULT_TOOL_SAVE_IMAGE) {
             if ctx.s3_ref.is_some() && ctx.weaviate_image_ref.is_some() && ctx.embedding_model.is_some() {
                 brain.add_tool(wrap_brain_tool_with_quota(
-                    SaveImageBrainTool::new(
+                    SaveImageTool::new(
                         ctx.weaviate_image_ref.cloned(),
                         None,
                         ctx.embedding_model.cloned(),
@@ -1209,7 +1211,7 @@ impl QqChatAgentServiceInner {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_IMAGE_UNDERSTAND) {
             brain.add_tool(wrap_brain_tool_with_quota(
-                ImageUnderstandBrainTool::new(
+                ImageUnderstandTool::new(
                     Some(prepared_input.event.clone()),
                     ctx.rdb_pool.cloned(),
                     ctx.s3_ref.cloned(),
@@ -1226,15 +1228,15 @@ impl QqChatAgentServiceInner {
         }
 
         brain.add_tool(wrap_brain_tool_with_quota(
-            GetBotProfileBrainTool::new(ctx.adapter.clone(), prepared_input.event.clone(), ctx.s3_ref.cloned()),
+            GetBotProfileTool::new(ctx.adapter.clone(), prepared_input.event.clone(), ctx.s3_ref.cloned()),
             tool_quota.clone(),
         ));
         brain.add_tool(wrap_brain_tool_with_quota(
-            GetQqUserProfileBrainTool::new(ctx.adapter.clone(), prepared_input.event.clone(), ctx.s3_ref.cloned()),
+            GetQqUserProfileTool::new(ctx.adapter.clone(), prepared_input.event.clone(), ctx.s3_ref.cloned()),
             tool_quota.clone(),
         ));
         brain.add_tool(wrap_brain_tool_with_quota(
-            GetCurrentGroupMembersBrainTool::new(ctx.adapter.clone(), prepared_input.event.clone()),
+            GetCurrentGroupMembersTool::new(ctx.adapter.clone(), prepared_input.event.clone()),
             tool_quota.clone(),
         ));
 
@@ -1342,9 +1344,9 @@ impl QqChatAgentServiceInner {
 
         let mut final_reply_text = self.parse_final_reply_text(&stop_reason, &brain_output);
 
-        if final_reply_text.is_none() && matches!(stop_reason, BrainStopReason::Done) {
+        if final_reply_text.is_none() && matches!(stop_reason, ToolCallingStopReason::Done) {
             info!(
-                "{LOG_PREFIX} Brain finished without sendable final reply text; requesting one more internal reflection for sender={sender_id}"
+                "{LOG_PREFIX} ToolCallingEngine finished without sendable final reply text; requesting one more internal reflection for sender={sender_id}"
             );
             brain_conversation.extend(brain_output.iter().cloned());
             brain_conversation.push(message_with_api_style(
@@ -1372,17 +1374,17 @@ impl QqChatAgentServiceInner {
         let mut explicit_no_reply = false;
         if final_reply_text.is_none() {
             match stop_reason {
-                BrainStopReason::TransportError(ref err) => {
-                    warn!("{LOG_PREFIX} Brain transport error without reply: {err}");
+                ToolCallingStopReason::TransportError(ref err) => {
+                    warn!("{LOG_PREFIX} ToolCallingEngine transport error without reply: {err}");
                 }
-                BrainStopReason::MaxIterationsReached => {
-                    warn!("{LOG_PREFIX} Brain exceeded max tool iterations without reply");
+                ToolCallingStopReason::MaxIterationsReached => {
+                    warn!("{LOG_PREFIX} ToolCallingEngine exceeded max tool iterations without reply");
                 }
-                BrainStopReason::Done => {
-                    warn!("{LOG_PREFIX} Brain finished without any sendable reply content");
+                ToolCallingStopReason::Done => {
+                    warn!("{LOG_PREFIX} ToolCallingEngine finished without any sendable reply content");
                 }
-                BrainStopReason::AwaitUserInput(ref request) => {
-                    warn!("{LOG_PREFIX} Brain paused for user input without reply: {}", request.question);
+                ToolCallingStopReason::AwaitUserInput(ref request) => {
+                    warn!("{LOG_PREFIX} ToolCallingEngine paused for user input without reply: {}", request.question);
                 }
             }
         } else if let Some(candidate_message) = final_reply_text.as_ref() {
@@ -1471,7 +1473,7 @@ impl QqChatAgentServiceInner {
             )
         } else if explicit_no_reply {
             format!("已处理[{sender_id}]的消息，显式选择不回复")
-        } else if matches!(stop_reason, BrainStopReason::TransportError(_)) {
+        } else if matches!(stop_reason, ToolCallingStopReason::TransportError(_)) {
             format!("回复[{sender_id}]失败：模型请求异常")
         } else {
             format!("已处理[{sender_id}]的消息，但未发送回复")
@@ -1511,8 +1513,8 @@ impl QqChatAgentServiceInner {
         let (emotion_prompt, suppress_language_style) = {
             let session = turn_session_state.lock().unwrap();
             (
-                zihuan_core::agent::emotion::utils::emotion_expression_prompt(&session, emotion_dimensions),
-                zihuan_core::agent::emotion::utils::has_noticeable_emotion_expression(&session, emotion_dimensions),
+                emotion_expression_prompt(&session, emotion_dimensions),
+                has_noticeable_emotion_expression(&session, emotion_dimensions),
             )
         };
         let style_prompt = if suppress_language_style { None } else { style_prompt };

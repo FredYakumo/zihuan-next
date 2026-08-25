@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 
-use crate::tools::workspace_tools::{RgBrainTool, DEFAULT_TOOL_RG};
+use crate::tools::workspace_tools::{RgTool, DEFAULT_TOOL_RG};
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now()
@@ -28,7 +28,7 @@ fn temp_dir() -> PathBuf {
 fn rg_finds_regular_expression_matches() {
     let directory = temp_dir();
     fs::write(directory.join("numbers.txt"), "item-1\nitem-20\nother").expect("write sample");
-    let tool = RgBrainTool {
+    let tool = RgTool {
         workspace_path: Some(directory.clone()),
     };
 
@@ -51,7 +51,7 @@ fn rg_finds_regular_expression_matches() {
 fn rg_returns_a_clear_error_for_invalid_regular_expressions() {
     let directory = temp_dir();
     fs::write(directory.join("sample.txt"), "text").expect("write sample");
-    let tool = RgBrainTool {
+    let tool = RgTool {
         workspace_path: Some(directory.clone()),
     };
 

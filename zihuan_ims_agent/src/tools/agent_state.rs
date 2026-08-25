@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 use zihuan_core::agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::error::{Error, Result};
@@ -11,14 +11,14 @@ use zihuan_core::llm::{InferenceParam, LLMMessage};
 
 use super::common::{optional_string_argument, StaticFunctionToolSpec};
 
-pub(crate) struct UpdateAgentStateBrainTool {
+pub(crate) struct UpdateAgentStateTool {
     session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
     emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     llm: Arc<dyn LLMBase>,
     current_user_message: String,
 }
 
-impl UpdateAgentStateBrainTool {
+impl UpdateAgentStateTool {
     pub(crate) fn new(
         session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
         emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
@@ -34,7 +34,7 @@ impl UpdateAgentStateBrainTool {
     }
 }
 
-impl BrainTool for UpdateAgentStateBrainTool {
+impl Tool for UpdateAgentStateTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "update_agent_state",
@@ -109,7 +109,7 @@ impl BrainTool for UpdateAgentStateBrainTool {
     }
 }
 
-impl UpdateAgentStateBrainTool {
+impl UpdateAgentStateTool {
     fn emotion_prompt_for(&self, dimension_name: &str, direction: EmotionAdjustmentDirection) -> Result<String> {
         let dimension = self
             .emotion_dimensions

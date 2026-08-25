@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 use serde_json::Value;
-use zihuan_core::agent::brain::{BrainTool, ToolExecutionResource};
+use zihuan_core::agent::tool_calling::{Tool, ToolExecutionResource};
 use zihuan_core::llm::tooling::FunctionTool;
 
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
@@ -24,9 +24,9 @@ struct GitStatusArgs {
 fn default_path() -> String { ".".to_string() }
 
 #[derive(Debug, Clone)]
-pub(crate) struct GitStatusBrainTool { pub(crate) workspace_path: Option<PathBuf> }
+pub(crate) struct GitStatusTool { pub(crate) workspace_path: Option<PathBuf> }
 
-impl BrainTool for GitStatusBrainTool {
+impl Tool for GitStatusTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: DEFAULT_TOOL_GIT_STATUS,

@@ -12,7 +12,7 @@ use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
-use zihuan_core::agent::brain::BrainObserver;
+use zihuan_core::agent::tool_calling::ToolCallingObserver;
 use zihuan_core::error::Result;
 use zihuan_core::llm::{LLMMessage, StreamToken};
 use zihuan_core::task_context::AgentTaskRuntime;
@@ -128,8 +128,8 @@ impl AgentManager {
         agent_id: &str,
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
-        observer: Option<Arc<dyn BrainObserver>>,
-    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::brain::BrainStopReason)> {
+        observer: Option<Arc<dyn ToolCallingObserver>>,
+    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::tool_calling::ToolCallingStopReason)> {
         self.infer_agent_response_streaming_with_model(agent_id, messages, token_tx, observer, None, None, None, None, None)
             .await
     }
@@ -139,13 +139,13 @@ impl AgentManager {
         agent_id: &str,
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
-        observer: Option<Arc<dyn BrainObserver>>,
+        observer: Option<Arc<dyn ToolCallingObserver>>,
         model_config_id: Option<&str>,
         thinking_type: Option<zihuan_core::inference::system_config::ThinkingType>,
         reasoning_effort: Option<zihuan_core::inference::system_config::ReasoningEffort>,
         workspace_path: Option<String>,
         session_id: Option<String>,
-    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::brain::BrainStopReason)> {
+    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::tool_calling::ToolCallingStopReason)> {
         let agent = self.running_agent(agent_id).ok_or_else(|| {
             zihuan_core::error::Error::ValidationError(format!("agent '{}' is not running", agent_id))
         })?;

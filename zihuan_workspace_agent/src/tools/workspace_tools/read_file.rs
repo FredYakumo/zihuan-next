@@ -4,7 +4,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 use serde_json::Value;
 use base64::Engine;
-use zihuan_core::agent::brain::{BrainTool, ToolExecutionResource};
+use zihuan_core::agent::tool_calling::{Tool, ToolExecutionResource};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
 use super::shared::{json_error, path_resource, resolve_tool_path, success_json};
@@ -18,8 +18,8 @@ pub(crate) const DEFAULT_TOOL_READ_FILE: &str = "read_file";
     #[serde(default)] byte_start: Option<usize>,
     #[serde(default)] byte_end: Option<usize>,
 }
-#[derive(Debug, Clone)] pub(crate) struct ReadFileBrainTool { pub(crate) workspace_path: Option<PathBuf> }
-impl BrainTool for ReadFileBrainTool {
+#[derive(Debug, Clone)] pub(crate) struct ReadFileTool { pub(crate) workspace_path: Option<PathBuf> }
+impl Tool for ReadFileTool {
     fn spec(&self) -> Arc<dyn FunctionTool> { Arc::new(StaticFunctionToolSpec { name: DEFAULT_TOOL_READ_FILE, description: "Read a UTF-8 text file by line range or a binary-safe base64 byte range", parameters: serde_json::json!({"type":"object","properties":{"path":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1},"encoding":{"type":"string","enum":["utf8","base64"]},"byte_start":{"type":"integer","minimum":0},"byte_end":{"type":"integer","minimum":0}},"required":["path"]}) }) }
     fn execute(&self, _: &str, arguments: &Value) -> String {
         let args: ReadFileArgs = match serde_json::from_value(arguments.clone()) { Ok(value) => value, Err(err) => return json_error(format!("invalid read_file arguments: {err}")) };

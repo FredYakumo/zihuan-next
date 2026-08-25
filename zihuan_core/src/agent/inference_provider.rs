@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::agent::brain::BrainTool;
-use crate::graph::brain_tool_spec::BrainToolDefinition;
+use crate::agent::tool_calling::Tool;
+use crate::graph::tool_spec::ToolDefinition;
 use crate::llm::llm_base::LLMBase;
 use crate::llm::LLMMessage;
 
@@ -16,9 +16,9 @@ pub struct InferenceToolContext {
 pub trait InferenceToolProvider: Send + Sync {
     fn augment_messages(&self, _messages: &mut Vec<LLMMessage>, _context: &InferenceToolContext) {}
 
-    fn build_default_tools(&self, _context: &InferenceToolContext) -> Vec<Box<dyn BrainTool>> {
+    fn build_default_tools(&self, _context: &InferenceToolContext) -> Vec<Box<dyn Tool>> {
         Vec::new()
     }
 
-    fn tool_definitions(&self) -> Vec<BrainToolDefinition>;
+    fn tool_definitions(&self) -> Vec<ToolDefinition>;
 }

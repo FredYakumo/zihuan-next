@@ -11,9 +11,9 @@ use serde_json::{json, Map, Value};
 use crate::agent::qq_chat::{with_current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
 use crate::config::ConfigCenter;
 use crate::error::{Error, Result};
-use crate::graph::brain_tool_spec::{
-    brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition, BrainToolImplementation,
-    BuiltInBrainToolKind, PythonScriptToolConfig, ToolParamDef, BRAIN_TOOL_FIXED_CONTENT_INPUT,
+use crate::graph::tool_spec::{
+    tool_calling_tool_input_signature, fixed_tool_runtime_inputs, ToolDefinition, ToolImplementation,
+    BuiltInToolKind, PythonScriptToolConfig, ToolParamDef, TOOL_CALLING_FIXED_CONTENT_INPUT,
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use crate::graph::function_graph::{
@@ -46,7 +46,7 @@ pub struct ToolSubgraphRunner {
     pub node_id: String,
     pub owner_node_type: String,
     pub shared_inputs: Vec<FunctionPortDef>,
-    pub definition: BrainToolDefinition,
+    pub definition: ToolDefinition,
     pub shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
     pub qq_chat_agent: Option<QqChatAgentServiceConfig>,
     pub result_mode: ToolResultMode,
@@ -56,11 +56,11 @@ pub struct ToolSubgraphRunner {
 
 #[derive(Debug, Clone)]
 pub struct SubgraphFunctionTool {
-    definition: BrainToolDefinition,
+    definition: ToolDefinition,
 }
 
 impl SubgraphFunctionTool {
-    pub fn new(definition: BrainToolDefinition) -> Self {
+    pub fn new(definition: ToolDefinition) -> Self {
         Self { definition }
     }
 }
@@ -181,7 +181,7 @@ pub fn validate_shared_inputs(shared_inputs: &[FunctionPortDef], owner_label: &s
     Ok(normalized)
 }
 
-fn normalize_outputs_for_mode(tool: &mut BrainToolDefinition, result_mode: ToolResultMode) -> Result<()> {
+fn normalize_outputs_for_mode(tool: &mut ToolDefinition, result_mode: ToolResultMode) -> Result<()> {
     if result_mode == ToolResultMode::SingleString {
         if tool.outputs.len() != 1 {
             return Err(Error::ValidationError(format!(
@@ -202,17 +202,17 @@ fn normalize_outputs_for_mode(tool: &mut BrainToolDefinition, result_mode: ToolR
     Ok(())
 }
 
-fn validate_tool_implementation(tool: &BrainToolDefinition) -> Result<()> {
+fn validate_tool_implementation(tool: &ToolDefinition) -> Result<()> {
     match tool.implementation {
-        BrainToolImplementation::NodeGraph => Ok(()),
-        BrainToolImplementation::BuiltIn => match tool.builtin_kind() {
-            Some(BuiltInBrainToolKind::ImageUnderstand) => Ok(()),
+        ToolImplementation::NodeGraph => Ok(()),
+        ToolImplementation::BuiltIn => match tool.builtin_kind() {
+            Some(BuiltInToolKind::ImageUnderstand) => Ok(()),
             None => Err(Error::ValidationError(format!(
                 "Tool '{}' 使用 built_in implementation 时必须声明 built_in_kind",
                 tool.name.trim()
             ))),
         },
-        BrainToolImplementation::PythonScript => {
+        ToolImplementation::PythonScript => {
             let python_config = tool.python_config().ok_or_else(|| {
                 Error::ValidationError(format!(
                     "Tool '{}' 使用 python_script implementation 时必须声明 python_config",
@@ -253,12 +253,12 @@ fn validate_python_tool_config(tool_name: &str, config: &PythonScriptToolConfig)
 }
 
 pub fn validate_tool_definitions(
-    tool_definitions: &[BrainToolDefinition],
+    tool_definitions: &[ToolDefinition],
     shared_inputs: &[FunctionPortDef],
     result_mode: ToolResultMode,
     owner_node_type: &str,
     owner_label: &str,
-) -> Result<Vec<BrainToolDefinition>> {
+) -> Result<Vec<ToolDefinition>> {
     let mut seen_ids = HashSet::new();
     let mut seen_names = HashSet::new();
     let shared_input_names = shared_inputs
@@ -322,7 +322,7 @@ pub fn validate_tool_definitions(
         normalize_outputs_for_mode(&mut tool, result_mode)?;
         validate_tool_implementation(&tool)?;
         if tool.uses_subgraph() {
-            let input_signature = brain_tool_input_signature(owner_node_type, shared_inputs, &tool);
+            let input_signature = tool_calling_tool_input_signature(owner_node_type, shared_inputs, &tool);
             sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
         }
         normalized.push(tool);
@@ -382,12 +382,12 @@ impl ToolSubgraphRunner {
 
         let mut runtime_values = self.shared_runtime_values.lock().unwrap().clone();
         runtime_values.insert(
-            BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
+            TOOL_CALLING_FIXED_CONTENT_INPUT.to_string(),
             DataValue::String(tool_call_content.clone()),
         );
         if self.owner_node_type == QQ_AGENT_TOOL_OWNER_TYPE {
             for fixed_name in [
-                BRAIN_TOOL_FIXED_CONTENT_INPUT,
+                TOOL_CALLING_FIXED_CONTENT_INPUT,
                 QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
                 QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
             ] {
@@ -420,7 +420,7 @@ impl ToolSubgraphRunner {
             runtime_values.insert(key, parsed_value);
         }
 
-        let input_signature = brain_tool_input_signature(&self.owner_node_type, &self.shared_inputs, tool);
+        let input_signature = tool_calling_tool_input_signature(&self.owner_node_type, &self.shared_inputs, tool);
         if !tool.uses_subgraph() {
             return self.run_non_subgraph_tool(tool, &tool_call_content, &builtin_arguments, &runtime_values);
         }
@@ -525,15 +525,15 @@ impl ToolSubgraphRunner {
 
     fn run_non_subgraph_tool(
         &self,
-        tool: &BrainToolDefinition,
+        tool: &ToolDefinition,
         tool_call_content: &str,
         builtin_arguments: &Value,
         runtime_values: &HashMap<String, DataValue>,
     ) -> Result<String> {
         match tool.implementation {
-            BrainToolImplementation::BuiltIn => {
+            ToolImplementation::BuiltIn => {
                 let result = match tool.builtin_kind() {
-                    Some(BuiltInBrainToolKind::ImageUnderstand) => self
+                    Some(BuiltInToolKind::ImageUnderstand) => self
                         .builtin_executor
                         .as_ref()
                         .ok_or_else(|| {
@@ -546,17 +546,17 @@ impl ToolSubgraphRunner {
                 }?;
                 self.format_scalar_result(tool, result)
             }
-            BrainToolImplementation::PythonScript => {
+            ToolImplementation::PythonScript => {
                 let result = self.run_python_script_tool(tool, tool_call_content, builtin_arguments, runtime_values)?;
                 self.format_python_result(tool, result)
             }
-            BrainToolImplementation::NodeGraph => {
+            ToolImplementation::NodeGraph => {
                 Err(self.wrap_error(format!("Tool '{}' 非预期地进入了非子图分支", tool.name)))
             }
         }
     }
 
-    fn format_scalar_result(&self, tool: &BrainToolDefinition, result: String) -> Result<String> {
+    fn format_scalar_result(&self, tool: &ToolDefinition, result: String) -> Result<String> {
         match self.result_mode {
             ToolResultMode::JsonObject => {
                 let output = tool
@@ -581,7 +581,7 @@ impl ToolSubgraphRunner {
         }
     }
 
-    fn format_python_result(&self, tool: &BrainToolDefinition, result: Value) -> Result<String> {
+    fn format_python_result(&self, tool: &ToolDefinition, result: Value) -> Result<String> {
         match self.result_mode {
             ToolResultMode::JsonObject => {
                 let object = result
@@ -617,7 +617,7 @@ impl ToolSubgraphRunner {
 
     fn run_python_script_tool(
         &self,
-        tool: &BrainToolDefinition,
+        tool: &ToolDefinition,
         tool_call_content: &str,
         builtin_arguments: &Value,
         runtime_values: &HashMap<String, DataValue>,
@@ -678,7 +678,7 @@ impl ToolSubgraphRunner {
 
     fn execute_python_process(
         &self,
-        tool: &BrainToolDefinition,
+        tool: &ToolDefinition,
         config: &PythonScriptToolConfig,
         request: &Value,
     ) -> Result<String> {

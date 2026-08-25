@@ -3,7 +3,7 @@ use std::sync::Arc;
 use log::info;
 use serde_json::Value;
 
-use zihuan_core::agent::brain::{Brain, BrainTool};
+use zihuan_core::agent::tool_calling::{ToolCallingEngine, Tool};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
@@ -17,7 +17,7 @@ use zihuan_core::graph::object_storage::S3Ref;
 
 use zihuan_core::memory_agent::{MemoryAgentResources, MemoryBrainAgent, MemoryBrainAgentContextTool, MemoryBrainAgentTool};
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
-use super::deep_research::RunDeepResearchSubagentBrainTool;
+use super::deep_research::RunDeepResearchSubagentTool;
 use crate::qq_chat::tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
 
 const LOG_PREFIX: &str = "[ResearchSubagent]";
@@ -37,7 +37,7 @@ const RESEARCH_SYSTEM_PROMPT: &str = "\
     - Structure must be clear and logic rigorous.\n\
     - If deep research is invoked, synthesize the results and present a complete conclusion.";
 
-pub(crate) struct RunResearchSubagentBrainTool {
+pub(crate) struct RunResearchSubagentTool {
     llm: Arc<dyn LLMBase>,
     web_search_engine: Arc<WebSearchEngineRef>,
     rdb_pool: Option<RelationalDbConnection>,
@@ -49,7 +49,7 @@ pub(crate) struct RunResearchSubagentBrainTool {
     tool_quota: Option<QqChatToolQuotaContext>,
 }
 
-impl RunResearchSubagentBrainTool {
+impl RunResearchSubagentTool {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         llm: Arc<dyn LLMBase>,
@@ -76,7 +76,7 @@ impl RunResearchSubagentBrainTool {
     }
 }
 
-impl BrainTool for RunResearchSubagentBrainTool {
+impl Tool for RunResearchSubagentTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "run_research_subagent",
@@ -133,17 +133,17 @@ impl BrainTool for RunResearchSubagentBrainTool {
                 LLMMessage::user(user_prompt),
             ];
 
-            // Build inner Brain with deep_research as the escalation tool.
+            // Build inner ToolCallingEngine with deep_research as the escalation tool.
             // The subagent evaluates the problem and either answers directly
             // or escalates to deep_research for multi-step web research.
-            let mut brain = Brain::new(Arc::clone(&self.llm));
+            let mut brain = ToolCallingEngine::new(Arc::clone(&self.llm));
             if let Some(memory_resources) = self.memory_resources.clone() {
                 let memory_agent = MemoryBrainAgent::new(memory_resources);
                 brain.add_tool(MemoryBrainAgentTool::new(memory_agent.clone()));
                 brain.add_tool(MemoryBrainAgentContextTool::new(memory_agent));
             }
             brain.add_tool(wrap_brain_tool_with_quota(
-                RunDeepResearchSubagentBrainTool::new(
+                RunDeepResearchSubagentTool::new(
                     Arc::clone(&self.llm),
                     Arc::clone(&self.web_search_engine),
                     self.rdb_pool.clone(),

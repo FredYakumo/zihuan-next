@@ -8,7 +8,7 @@ use crate::tool_runtime::ToolRunDuration;
 use crate::graph::function_graph::FunctionPortDef;
 use crate::graph::graph_io::NodeGraphDefinition;
 
-use crate::graph::brain_tool_spec::{PythonScriptToolConfig, ToolParamDef};
+use crate::graph::tool_spec::{PythonScriptToolConfig, ToolParamDef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
@@ -183,7 +183,7 @@ pub struct PythonScriptAgentToolConfig {
     #[serde(default)]
     pub module_entry: Option<String>,
     #[serde(default)]
-    pub python_mode: Option<crate::graph::brain_tool_spec::PythonToolMode>,
+    pub python_mode: Option<crate::graph::tool_spec::PythonToolMode>,
     #[serde(default)]
     pub python_runtime: Option<crate::python_runtime::PythonRuntimeConfig>,
     #[serde(default)]

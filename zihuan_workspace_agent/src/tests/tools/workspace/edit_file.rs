@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 
-use crate::tools::workspace_tools::{EditFileBrainTool, DEFAULT_TOOL_EDIT_FILE};
+use crate::tools::workspace_tools::{EditFileTool, DEFAULT_TOOL_EDIT_FILE};
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
@@ -25,7 +25,7 @@ fn test_edit_file_replaces_and_deletes_with_flat_arguments() {
     let directory = temp_dir();
     let file_path = directory.join("sample.txt");
     fs::write(&file_path, "one\ntwo\nthree\nfour\n").unwrap();
-    let tool = EditFileBrainTool {
+    let tool = EditFileTool {
         workspace_path: Some(directory.clone()),
     };
 
@@ -61,12 +61,12 @@ fn test_edit_file_replaces_and_deletes_with_flat_arguments() {
 /// Purpose: Verify that the LLM-facing edit_file schema exposes the flat
 /// contract needed by models that do not reliably populate nested objects.
 ///
-/// Test Data: An EditFileBrainTool without a workspace path. Its specification
+/// Test Data: An EditFileTool without a workspace path. Its specification
 /// must require path, start_line, end_line, and replacement_lines at the top
 /// level, and must not include the previous edits array property.
 #[test]
 fn test_edit_file_spec_uses_flat_required_arguments() {
-    let tool = EditFileBrainTool {
+    let tool = EditFileTool {
         workspace_path: None,
     };
     let specification = tool.spec();
@@ -106,7 +106,7 @@ fn test_edit_file_rejects_missing_start_line_without_changing_file() {
     let directory = temp_dir();
     let file_path = directory.join("sample.txt");
     fs::write(&file_path, "one\ntwo\n").unwrap();
-    let tool = EditFileBrainTool {
+    let tool = EditFileTool {
         workspace_path: Some(directory.clone()),
     };
 

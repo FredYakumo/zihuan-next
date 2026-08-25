@@ -3,18 +3,18 @@ use std::sync::Arc;
 use log::warn;
 use serde_json::Value;
 
-use crate::agent::brain::BrainTool;
+use crate::agent::tool_calling::Tool;
 use crate::error::Result;
 use crate::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
 use crate::rag::WebSearchEngineRef;
 
-const LOG_PREFIX: &str = "[WebSearchBrainTool]";
+const LOG_PREFIX: &str = "[WebSearchTool]";
 
-pub struct WebSearchBrainTool {
+pub struct WebSearchTool {
     web_search_engine: std::result::Result<Arc<WebSearchEngineRef>, String>,
 }
 
-impl WebSearchBrainTool {
+impl WebSearchTool {
     pub fn new(web_search_engine_ref: Arc<WebSearchEngineRef>) -> Self {
         Self {
             web_search_engine: Ok(web_search_engine_ref),
@@ -58,7 +58,7 @@ impl WebSearchBrainTool {
     }
 }
 
-impl BrainTool for WebSearchBrainTool {
+impl Tool for WebSearchTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "web_search",
