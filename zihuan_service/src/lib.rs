@@ -20,7 +20,7 @@ pub fn init_node_registry() -> Result<()> {
     use nodes::agent_task_progress_node::AgentTaskProgressNode;
     use nodes::agent_tavily_ref::AgentTavilyRefNode;
     use nodes::agent_tool_task_node::AgentToolTaskNode;
-    use nodes::brain_node::BrainNode;
+    use nodes::tool_calling_node::ToolCallingNode;
     use nodes::tavily_web_search::TavilyWebSearchNode;
 
     register_node!(
@@ -52,11 +52,11 @@ pub fn init_node_registry() -> Result<()> {
         AgentTaskProgressNode
     );
     register_node!(
-        "brain",
-        "Brain",
+        "tool_calling",
+        "ToolCallingEngine",
         "AI",
         "使用 LLM + system prompt + user message 触发带可编辑 Tools 的函数调用推理",
-        BrainNode
+        ToolCallingNode
     );
     register_node!(
         "agent_rdb_ref",

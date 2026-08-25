@@ -6,5 +6,5 @@ pub mod agent_rustfs_ref;
 pub mod agent_task_progress_node;
 pub mod agent_tavily_ref;
 pub mod agent_tool_task_node;
-pub mod brain_node;
+pub mod tool_calling_node;
 pub mod tavily_web_search;

@@ -100,7 +100,7 @@ use crate::error::Result;
 type OutputPool = HashMap<String, NodeOutputFlow>;
 type InputSourceMap = HashMap<String, HashMap<String, (String, String)>>;
 
-pub mod brain_tool_spec;
+pub mod tool_spec;
 pub mod data_value;
 pub mod database;
 pub mod function_graph;
