@@ -25,7 +25,7 @@ use zihuan_core::tool_subgraph::{validate_shared_inputs, validate_tool_definitio
 use crate::storage::qq_chat_history_store::{clear_history, load_history};
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-use zihuan_core::agent::brain::LongTaskNotifier;
+use zihuan_core::agent::tool_calling::LongTaskNotifier;
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -36,7 +36,7 @@ use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
 use zihuan_core::utils::string_utils::extract_string_field;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_core::graph::brain_tool_spec::{BrainToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
+use zihuan_core::graph::tool_spec::{ToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
 use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
 use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::graph::object_storage::S3Ref;
@@ -291,7 +291,7 @@ pub(crate) fn merge_character_and_style_prompt(character_instructions: &str, sty
 ///
 /// Called at the start of every agent inference turn (both the initial `handle` and
 /// steer-injection via `QqChatServiceSteerHook::on_before_inference`). The returned
-/// `LLMMessage` is pushed into the conversation cache and fed to the Brain tool-call
+/// `LLMMessage` is pushed into the conversation cache and fed to the ToolCallingEngine tool-call
 /// loop.
 ///
 /// # Parameters
@@ -664,7 +664,7 @@ pub(crate) fn collect_available_media_from_brain_output(messages: &[LLMMessage])
 }
 
 /// Builds the system prompt for the isolated meta-query LLM call (`handle_meta_query_turn`),
-/// which is deliberately kept out of the normal tool-calling Brain loop and receives no tool
+/// which is deliberately kept out of the normal tool-calling ToolCallingEngine loop and receives no tool
 /// specs — this keeps real tool/command names and internal architecture out of the model's
 /// context so they can't leak into a user-facing "what can you do / what model are you" answer.
 pub(crate) fn build_meta_query_system_prompt(bot_name: &str, style_prompt: Option<&str>, emotion_text: &str) -> String {
@@ -799,7 +799,7 @@ impl QqChatAgentServiceInner {
         Ok(())
     }
 
-    fn set_tool_definitions(&mut self, tool_definitions: Vec<BrainToolDefinition>) -> Result<()> {
+    fn set_tool_definitions(&mut self, tool_definitions: Vec<ToolDefinition>) -> Result<()> {
         self.tool_definitions = validate_tool_definitions(
             &tool_definitions,
             &self.shared_inputs,

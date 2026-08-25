@@ -12,7 +12,7 @@ use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::steer::PendingSteerStore;
 use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_core::graph::brain_tool_spec::BrainToolDefinition;
+use zihuan_core::graph::tool_spec::ToolDefinition;
 use zihuan_core::graph::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
 use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::graph::object_storage::S3Ref;
@@ -101,7 +101,7 @@ pub struct QqChatAgentServiceRuntimeConfig {
     pub reply_batch_builder: Option<QqChatServiceReplyBatchBuilder>,
     pub default_tools_enabled: HashMap<String, bool>,
     pub shared_inputs: Vec<FunctionPortDef>,
-    pub tool_definitions: Vec<BrainToolDefinition>,
+    pub tool_definitions: Vec<ToolDefinition>,
     pub shared_runtime_values: HashMap<String, DataValue>,
     pub session_state_store: Arc<Mutex<QqChatAgentServiceSessionState>>,
     pub task_runtime: Option<Arc<dyn AgentTaskRuntime>>,

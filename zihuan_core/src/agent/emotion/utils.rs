@@ -8,7 +8,7 @@ const STRONG_EMOTION_THRESHOLD: f64 = 60.0;
 ///
 /// Each line follows the pattern: `{name}: {value}`.
 /// Returns `[No emotion dimensions]` when no dimensions are configured.
-pub fn emotion_dimensions_snapshot_text(
+pub fn emotion_dimensions_text(
     session_state: &QqChatAgentServiceSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> String {

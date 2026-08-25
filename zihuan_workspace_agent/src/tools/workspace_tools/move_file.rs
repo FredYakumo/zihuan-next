@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 use serde_json::Value;
-use zihuan_core::agent::brain::{BrainTool, ToolExecutionResource};
+use zihuan_core::agent::tool_calling::{Tool, ToolExecutionResource};
 use zihuan_core::llm::tooling::FunctionTool;
 
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
@@ -16,9 +16,9 @@ pub(crate) const DEFAULT_TOOL_MOVE_FILE: &str = "move_file";
 struct MoveFileArgs { src: String, dest: String, #[serde(default)] overwrite: bool }
 
 #[derive(Debug, Clone)]
-pub(crate) struct MoveFileBrainTool { pub(crate) workspace_path: Option<PathBuf> }
+pub(crate) struct MoveFileTool { pub(crate) workspace_path: Option<PathBuf> }
 
-impl BrainTool for MoveFileBrainTool {
+impl Tool for MoveFileTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec { name: DEFAULT_TOOL_MOVE_FILE, description: "Move or rename a file or directory", parameters: serde_json::json!({"type":"object","properties":{"src":{"type":"string"},"dest":{"type":"string"},"overwrite":{"type":"boolean"}},"required":["src","dest"]}) })
     }

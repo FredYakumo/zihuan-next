@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 
-use crate::tools::workspace_tools::{ReadFileBrainTool, DEFAULT_TOOL_READ_FILE};
+use crate::tools::workspace_tools::{ReadFileTool, DEFAULT_TOOL_READ_FILE};
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now()
@@ -29,7 +29,7 @@ fn read_file_returns_complete_utf8_content_by_default() {
     let directory = temp_dir();
     let path = directory.join("sample.txt");
     fs::write(&path, "第一行\n第二行\n第三行").expect("write sample");
-    let tool = ReadFileBrainTool {
+    let tool = ReadFileTool {
         workspace_path: Some(directory.clone()),
     };
 
@@ -53,7 +53,7 @@ fn read_file_returns_complete_utf8_content_by_default() {
 fn read_file_supports_one_based_inclusive_line_ranges() {
     let directory = temp_dir();
     fs::write(directory.join("sample.txt"), "one\ntwo\nthree\nfour").expect("write sample");
-    let tool = ReadFileBrainTool {
+    let tool = ReadFileTool {
         workspace_path: Some(directory.clone()),
     };
 
@@ -79,7 +79,7 @@ fn read_file_supports_one_based_inclusive_line_ranges() {
 fn read_file_rejects_out_of_bounds_ranges() {
     let directory = temp_dir();
     fs::write(directory.join("sample.txt"), "one\ntwo").expect("write sample");
-    let tool = ReadFileBrainTool {
+    let tool = ReadFileTool {
         workspace_path: Some(directory.clone()),
     };
 

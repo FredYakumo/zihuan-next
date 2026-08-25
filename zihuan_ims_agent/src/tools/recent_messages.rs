@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
@@ -20,18 +20,18 @@ use super::common::{
 const DEFAULT_HISTORY_TOOL_LIMIT: i64 = 10;
 const MAX_HISTORY_TOOL_LIMIT: i64 = 50;
 
-pub(crate) struct GetRecentGroupMessagesBrainTool {
+pub(crate) struct GetRecentGroupMessagesTool {
     rdb_pool: Option<RelationalDbConnection>,
     notification_target: ToolNotificationTarget,
 }
 
-impl GetRecentGroupMessagesBrainTool {
+impl GetRecentGroupMessagesTool {
     pub(crate) fn new(rdb_pool: Option<RelationalDbConnection>, notification_target: ToolNotificationTarget) -> Self {
         Self { rdb_pool, notification_target }
     }
 }
 
-impl BrainTool for GetRecentGroupMessagesBrainTool {
+impl Tool for GetRecentGroupMessagesTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         let dashboard_mode = self.notification_target.target_id().is_empty();
         let mut properties = serde_json::json!({
@@ -110,12 +110,12 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
     }
 }
 
-pub(crate) struct GetRecentUserMessagesBrainTool {
+pub(crate) struct GetRecentUserMessagesTool {
     rdb_pool: Option<RelationalDbConnection>,
     _notification_target: ToolNotificationTarget,
 }
 
-impl GetRecentUserMessagesBrainTool {
+impl GetRecentUserMessagesTool {
     pub(crate) fn new(rdb_pool: Option<RelationalDbConnection>, notification_target: ToolNotificationTarget) -> Self {
         Self {
             rdb_pool,
@@ -124,7 +124,7 @@ impl GetRecentUserMessagesBrainTool {
     }
 }
 
-impl BrainTool for GetRecentUserMessagesBrainTool {
+impl Tool for GetRecentUserMessagesTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "get_recent_user_messages",

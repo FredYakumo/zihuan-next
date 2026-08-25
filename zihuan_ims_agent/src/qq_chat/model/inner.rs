@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use zihuan_core::steer::PendingSteerStore;
-use zihuan_core::graph::brain_tool_spec::BrainToolDefinition;
+use zihuan_core::graph::tool_spec::ToolDefinition;
 use zihuan_core::graph::function_graph::FunctionPortDef;
 
 use crate::qq_chat::model::context::QqChatAgentServiceRuntimeConfig;
@@ -12,7 +12,7 @@ pub struct QqChatAgentServiceInner {
     pub(crate) id: String,
     pub(crate) default_tools_enabled: HashMap<String, bool>,
     pub(crate) shared_inputs: Vec<FunctionPortDef>,
-    pub(crate) tool_definitions: Vec<BrainToolDefinition>,
+    pub(crate) tool_definitions: Vec<ToolDefinition>,
 }
 
 /// Top-level QQ chat agent service that owns the runtime config and dispatches events.

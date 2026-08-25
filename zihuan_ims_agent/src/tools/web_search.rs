@@ -1,1 +1,1 @@
-pub(crate) use zihuan_core::agent::tools::WebSearchBrainTool;
+pub(crate) use zihuan_core::agent::tools::WebSearchTool;

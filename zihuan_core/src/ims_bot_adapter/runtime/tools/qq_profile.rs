@@ -3,7 +3,7 @@ use std::sync::Arc;
 use log::{info, warn};
 use serde_json::Value;
 
-use crate::agent::brain::BrainTool;
+use crate::agent::tool_calling::Tool;
 use crate::error::{Error, Result};
 use crate::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use crate::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
@@ -41,19 +41,19 @@ struct MemberInfo {
     role: String,
 }
 
-pub struct GetBotProfileBrainTool {
+pub struct GetBotProfileTool {
     adapter: SharedBotAdapter,
     event: MessageEvent,
     s3_ref: Option<Arc<S3Ref>>,
 }
 
-impl GetBotProfileBrainTool {
+impl GetBotProfileTool {
     pub fn new(adapter: SharedBotAdapter, event: MessageEvent, s3_ref: Option<Arc<S3Ref>>) -> Self {
         Self { adapter, event, s3_ref }
     }
 }
 
-impl BrainTool for GetBotProfileBrainTool {
+impl Tool for GetBotProfileTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "get_bot_profile",
@@ -76,19 +76,19 @@ impl BrainTool for GetBotProfileBrainTool {
     }
 }
 
-pub struct GetQqUserProfileBrainTool {
+pub struct GetQqUserProfileTool {
     adapter: SharedBotAdapter,
     event: MessageEvent,
     s3_ref: Option<Arc<S3Ref>>,
 }
 
-impl GetQqUserProfileBrainTool {
+impl GetQqUserProfileTool {
     pub fn new(adapter: SharedBotAdapter, event: MessageEvent, s3_ref: Option<Arc<S3Ref>>) -> Self {
         Self { adapter, event, s3_ref }
     }
 }
 
-impl BrainTool for GetQqUserProfileBrainTool {
+impl Tool for GetQqUserProfileTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "get_qq_user_profile",

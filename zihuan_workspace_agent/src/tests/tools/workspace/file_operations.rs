@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 
-use crate::tools::workspace_tools::{CopyFileBrainTool, FileInfoBrainTool, MoveFileBrainTool, DEFAULT_TOOL_COPY_FILE, DEFAULT_TOOL_FILE_INFO, DEFAULT_TOOL_MOVE_FILE};
+use crate::tools::workspace_tools::{CopyFileTool, FileInfoTool, MoveFileTool, DEFAULT_TOOL_COPY_FILE, DEFAULT_TOOL_FILE_INFO, DEFAULT_TOOL_MOVE_FILE};
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
@@ -27,9 +27,9 @@ fn temp_dir() -> PathBuf {
 fn copy_move_and_file_info_support_common_file_workflow() {
     let directory = temp_dir();
     fs::write(directory.join("source.txt"), "one\ntwo\n").unwrap();
-    let copy = CopyFileBrainTool { workspace_path: Some(directory.clone()) };
-    let move_tool = MoveFileBrainTool { workspace_path: Some(directory.clone()) };
-    let info = FileInfoBrainTool { workspace_path: Some(directory.clone()) };
+    let copy = CopyFileTool { workspace_path: Some(directory.clone()) };
+    let move_tool = MoveFileTool { workspace_path: Some(directory.clone()) };
+    let info = FileInfoTool { workspace_path: Some(directory.clone()) };
 
     assert_eq!(copy.spec().name(), DEFAULT_TOOL_COPY_FILE);
     assert_eq!(move_tool.spec().name(), DEFAULT_TOOL_MOVE_FILE);

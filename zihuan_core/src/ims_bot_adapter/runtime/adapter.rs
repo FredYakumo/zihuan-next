@@ -20,16 +20,19 @@ use crate::url_utils::extract_host;
 use crate::graph::message_restore::restore_message_snapshot;
 use crate::graph::object_storage::S3Ref;
 
-/// Trait for brain agents that handle event processing
-pub trait BrainAgentTrait: Send + Sync {
+/// Transport boundary for handlers that consume QQ events.
+///
+/// This is intentionally distinct from `agent::Agent`: adapters own protocol
+/// translation, while domain agents own business execution.
+pub trait BotEventHandler: Send + Sync {
     fn on_event(&self, ims_bot_adapter: &mut BotAdapter, event: &super::models::MessageEvent) -> Result<()>;
     fn name(&self) -> &'static str;
-    fn clone_box(&self) -> AgentBox;
+    fn clone_box(&self) -> BotEventHandlerBox;
 }
 
-pub type AgentBox = Box<dyn BrainAgentTrait>;
+pub type BotEventHandlerBox = Box<dyn BotEventHandler>;
 
-impl Clone for AgentBox {
+impl Clone for BotEventHandlerBox {
     fn clone(&self) -> Self {
         self.clone_box()
     }
@@ -40,7 +43,7 @@ pub struct BotAdapterConfig {
     pub url: String,
     pub token: String,
     pub qq_id: String,
-    pub brain_agent: Option<AgentBox>,
+    pub event_handler: Option<BotEventHandlerBox>,
     pub object_storage: Option<Arc<S3Ref>>,
 }
 
@@ -50,13 +53,13 @@ impl BotAdapterConfig {
             url: url.into(),
             token: token.into(),
             qq_id: qq_id.into(),
-            brain_agent: None,
+            event_handler: None,
             object_storage: None,
         }
     }
 
-    pub fn with_brain_agent(mut self, agent: Option<AgentBox>) -> Self {
-        self.brain_agent = agent;
+    pub fn with_event_handler(mut self, handler: Option<BotEventHandlerBox>) -> Self {
+        self.event_handler = handler;
         self
     }
 
@@ -74,7 +77,7 @@ pub struct BotAdapter {
     url: String,
     token: String,
     bot_profile: Option<Profile>,
-    brain_agent: Option<AgentBox>,
+    event_handler: Option<BotEventHandlerBox>,
     event_handlers: HashMap<String, event::EventHandler>,
     /// Sender half for outbound WebSocket actions (set once the connection is live).
     pub action_tx: Option<mpsc::UnboundedSender<String>>,
@@ -143,7 +146,7 @@ impl BotAdapter {
                 qq_id: config.qq_id,
                 ..Default::default()
             }),
-            brain_agent: config.brain_agent,
+            event_handler: config.event_handler,
             event_handlers: HashMap::new(),
             action_tx: None,
             pending_actions: Arc::new(TokioMutex::new(HashMap::new())),
@@ -213,8 +216,8 @@ impl BotAdapter {
         }
     }
 
-    pub fn get_brain_agent(&self) -> Option<&AgentBox> {
-        self.brain_agent.as_ref()
+    pub fn event_handler(&self) -> Option<&BotEventHandlerBox> {
+        self.event_handler.as_ref()
     }
 
     pub fn register_event_handler(&mut self, handler: event::EventHandler) -> String {

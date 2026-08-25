@@ -8,7 +8,7 @@ use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_core::graph::brain_tool_spec::BrainToolDefinition;
+use zihuan_core::graph::tool_spec::ToolDefinition;
 use zihuan_core::graph::object_storage::S3Ref;
 
 /// Loaded inference resources for the QQ chat agent.
@@ -31,5 +31,5 @@ pub(crate) struct QqLoadedInferenceResources {
 /// Inference tool provider for the QQ chat agent.
 pub struct QqInferenceToolProvider {
     pub(crate) resources: QqLoadedInferenceResources,
-    pub(crate) tool_definitions: Vec<BrainToolDefinition>,
+    pub(crate) tool_definitions: Vec<ToolDefinition>,
 }

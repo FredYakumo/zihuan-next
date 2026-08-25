@@ -5,7 +5,7 @@ use std::time::UNIX_EPOCH;
 
 use serde::Deserialize;
 use serde_json::Value;
-use zihuan_core::agent::brain::{BrainTool, ToolExecutionResource};
+use zihuan_core::agent::tool_calling::{Tool, ToolExecutionResource};
 use zihuan_core::llm::tooling::FunctionTool;
 
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;
@@ -14,9 +14,9 @@ use super::shared::{json_error, path_resource, resolve_tool_path, success_json};
 pub(crate) const DEFAULT_TOOL_FILE_INFO: &str = "file_info";
 
 #[derive(Debug, Clone, Deserialize)] struct FileInfoArgs { path: String }
-#[derive(Debug, Clone)] pub(crate) struct FileInfoBrainTool { pub(crate) workspace_path: Option<PathBuf> }
+#[derive(Debug, Clone)] pub(crate) struct FileInfoTool { pub(crate) workspace_path: Option<PathBuf> }
 
-impl BrainTool for FileInfoBrainTool {
+impl Tool for FileInfoTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec { name: DEFAULT_TOOL_FILE_INFO, description: "Return file, directory, and symlink metadata", parameters: serde_json::json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}) })
     }

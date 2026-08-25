@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use log::{info, warn};
 use crate::inference::message_content_utils::{is_transport_error, sanitize_messages_for_inference};
 use serde_json::Value;
@@ -18,9 +19,30 @@ use crate::task_context::{
 };
 pub use crate::tool_runtime::ToolRunDuration;
 use crate::workspace::AskUserRequest;
+use crate::agent::AgentContext;
 
 pub const MAX_TOOL_ITERATIONS: usize = 25;
 const LOG_PREVIEW_CHARS: usize = 600;
+
+/// Input to a tool-calling execution. Domain agents own prompt construction;
+/// the executor only owns the model/tool loop.
+#[derive(Debug, Clone)]
+pub struct ToolCallingRequest {
+    pub messages: Vec<LLMMessage>,
+}
+
+/// Complete output of a tool-calling execution.
+#[derive(Debug)]
+pub struct ToolCallingResult {
+    pub messages: Vec<LLMMessage>,
+    pub stop_reason: ToolCallingStopReason,
+}
+
+/// Object-safe execution boundary used by domain agents.
+#[async_trait]
+pub trait AgentExecutor: Send + Sync {
+    async fn execute(&self, context: AgentContext, request: ToolCallingRequest) -> crate::error::Result<ToolCallingResult>;
+}
 
 thread_local! {
     static TOOL_PROGRESS_SCOPE_STACK: RefCell<Vec<ToolProgressScopeState>> = const { RefCell::new(Vec::new()) };
@@ -109,17 +131,17 @@ pub fn current_task_progress_message(call_content: &str) -> Option<String> {
 /// Notification hook for long-running tool calls.
 ///
 /// Purpose: host runtimes can expose task lifecycle updates to the user while
-/// the Brain still waits synchronously for the real tool result.
+/// the ToolCallingEngine still waits synchronously for the real tool result.
 pub trait LongTaskNotifier: Send + Sync + 'static {
     fn on_start(&self, _task_id: &str, _task_name: &str, _call_content: &str) {}
 
     fn on_complete(&self, _task_id: &str, _task_name: &str, _result: &str) {}
 }
 
-/// Context required to track long-running tools inside the Brain loop.
+/// Context required to track long-running tools inside the ToolCallingEngine loop.
 ///
 /// Purpose: carries the task runtime and notifier needed when a tool opts into
-/// [`ToolRunDuration::Long`]. The Brain still returns the actual tool result to
+/// [`ToolRunDuration::Long`]. The ToolCallingEngine still returns the actual tool result to
 /// the LLM in the same turn.
 #[derive(Clone)]
 pub struct LongTaskContext {
@@ -131,8 +153,8 @@ pub struct LongTaskContext {
     pub task_db_connection_id: Option<String>,
 }
 
-/// A tool that [`Brain`] can invoke during an inference loop.
-pub trait BrainTool: Send + Sync + 'static {
+/// A tool that [`ToolCallingEngine`] can invoke during an inference loop.
+pub trait Tool: Send + Sync + 'static {
     /// Returns the LLM-facing function specification (name, description, parameters).
     fn spec(&self) -> Arc<dyn FunctionTool>;
     /// Execute the tool call. `call_content` is the assistant's text for this turn
@@ -177,7 +199,7 @@ struct PreparedToolCall {
     call_id: String,
     name: String,
     arguments: Value,
-    tool: Option<Arc<dyn BrainTool>>,
+    tool: Option<Arc<dyn Tool>>,
 }
 
 struct PreparedToolResult {
@@ -188,7 +210,7 @@ struct PreparedToolResult {
 }
 
 fn tool_output_callback(
-    observer: Option<&Arc<dyn BrainObserver>>,
+    observer: Option<&Arc<dyn ToolCallingObserver>>,
     tool_name: &str,
     call_id: &str,
 ) -> Arc<dyn Fn(&str, &str) + Send + Sync> {
@@ -201,7 +223,7 @@ fn tool_output_callback(
     Arc::new(move |stream, chunk| observer.on_tool_output(&tool_name, &call_id, stream, chunk))
 }
 
-pub trait BrainObserver: Send + Sync + 'static {
+pub trait ToolCallingObserver: Send + Sync + 'static {
     fn on_assistant_tool_request(&self, _iteration: usize, _content: &str, _tool_calls: &[ToolCalls]) {}
 
     fn on_tool_start(&self, _name: &str, _call_id: &str, _arguments: &Value) {}
@@ -212,18 +234,18 @@ pub trait BrainObserver: Send + Sync + 'static {
 
     fn on_ask_user(&self, _call_id: &str, _request: &AskUserRequest) {}
 
-    fn on_final_assistant(&self, _response: &LLMMessage, _stop_reason: &BrainStopReason) {}
+    fn on_final_assistant(&self, _response: &LLMMessage, _stop_reason: &ToolCallingStopReason) {}
 }
 
-pub trait BrainIterationHook: Send + Sync + 'static {
+pub trait ToolCallingMiddleware: Send + Sync + 'static {
     fn on_before_inference(&self, _iteration: usize, _conversation: &[LLMMessage]) -> Vec<LLMMessage> {
         Vec::new()
     }
 }
 
-/// The reason a [`Brain::run`] call returned.
+/// The reason a [`ToolCallingEngine::run`] call returned.
 #[derive(Debug)]
-pub enum BrainStopReason {
+pub enum ToolCallingStopReason {
     /// Normal completion: the last response had no tool calls.
     Done,
     /// Transport-level LLM error detected in response content.
@@ -256,19 +278,19 @@ impl ToolExecutionOutput {
     }
 }
 
-/// Orchestrates a multi-turn LLM ↔ tool call loop.
+/// Orchestrates a multi-turn LLM tool call loop.
 ///
-/// Create a `Brain`, register tools with [`Brain::with_tool`] or [`Brain::add_tool`],
-/// then call [`Brain::run`] with the initial conversation messages.
-pub struct Brain {
+/// Create a `ToolCallingEngine`, register tools with [`ToolCallingEngine::with_tool`] or [`ToolCallingEngine::add_tool`],
+/// then call [`ToolCallingEngine::run`] with the initial conversation messages.
+pub struct ToolCallingEngine {
     llm: Arc<dyn LLMBase>,
-    tools: Vec<Arc<dyn BrainTool>>,
-    observer: Option<Arc<dyn BrainObserver>>,
-    iteration_hook: Option<Arc<dyn BrainIterationHook>>,
+    tools: Vec<Arc<dyn Tool>>,
+    observer: Option<Arc<dyn ToolCallingObserver>>,
+    iteration_hook: Option<Arc<dyn ToolCallingMiddleware>>,
     long_task_context: Option<LongTaskContext>,
 }
 
-impl Brain {
+impl ToolCallingEngine {
     pub fn new(llm: Arc<dyn LLMBase>) -> Self {
         Self {
             llm,
@@ -280,13 +302,13 @@ impl Brain {
     }
 
     /// Register a tool, consuming and returning `self` for builder-style chaining.
-    pub fn with_tool(mut self, tool: impl BrainTool) -> Self {
+    pub fn with_tool(mut self, tool: impl Tool) -> Self {
         self.tools.push(Arc::new(tool));
         self
     }
 
     /// Register a tool in-place.
-    pub fn add_tool(&mut self, tool: impl BrainTool) {
+    pub fn add_tool(&mut self, tool: impl Tool) {
         self.tools.push(Arc::new(tool));
     }
 
@@ -295,33 +317,33 @@ impl Brain {
         self.long_task_context = Some(ctx);
     }
 
-    pub fn with_observer(mut self, observer: Arc<dyn BrainObserver>) -> Self {
+    pub fn with_observer(mut self, observer: Arc<dyn ToolCallingObserver>) -> Self {
         self.observer = Some(observer);
         self
     }
 
-    pub fn set_observer(&mut self, observer: Arc<dyn BrainObserver>) {
+    pub fn set_observer(&mut self, observer: Arc<dyn ToolCallingObserver>) {
         self.observer = Some(observer);
     }
 
-    pub fn with_iteration_hook(mut self, hook: Arc<dyn BrainIterationHook>) -> Self {
+    pub fn with_iteration_hook(mut self, hook: Arc<dyn ToolCallingMiddleware>) -> Self {
         self.iteration_hook = Some(hook);
         self
     }
 
-    pub fn set_iteration_hook(&mut self, hook: Arc<dyn BrainIterationHook>) {
+    pub fn set_iteration_hook(&mut self, hook: Arc<dyn ToolCallingMiddleware>) {
         self.iteration_hook = Some(hook);
     }
 
     /// Execute a single tool call, creating a tracked task entry when the tool's
     /// run duration is `Long` and a [`LongTaskContext`] is available.
     fn execute_tool_call_with_context(
-        tool: &Arc<dyn BrainTool>,
+        tool: &Arc<dyn Tool>,
         call_content: &str,
         arguments: &Value,
         tool_name: &str,
         call_id: &str,
-        observer: Option<&Arc<dyn BrainObserver>>,
+        observer: Option<&Arc<dyn ToolCallingObserver>>,
         long_task_context: Option<&LongTaskContext>,
     ) -> ToolExecutionOutput {
         if tool.run_duration() == ToolRunDuration::Long {
@@ -350,7 +372,7 @@ impl Brain {
                     error_message: None,
                 });
                 long_ctx.notifier.on_complete(&task_id, &task_name, &result.result);
-                info!("[Brain] tool '{}' completed as long task_id={}", tool_name, task_id);
+                info!("[ToolCallingEngine] tool '{}' completed as long task_id={}", tool_name, task_id);
                 return result;
             }
         }
@@ -414,7 +436,7 @@ impl Brain {
         call_content: &str,
         call: PreparedToolCall,
         long_task_context: Option<&LongTaskContext>,
-        observer: Option<&Arc<dyn BrainObserver>>,
+        observer: Option<&Arc<dyn ToolCallingObserver>>,
     ) -> PreparedToolResult {
         let result = if let Some(tool) = call.tool.as_ref() {
             Self::execute_tool_call_with_context(
@@ -428,7 +450,7 @@ impl Brain {
             )
         } else {
             warn!(
-                "[Brain] Tool '{}' not found for call id={} arguments={}",
+                "[ToolCallingEngine] Tool '{}' not found for call id={} arguments={}",
                 call.name, call.call_id, call.arguments
             );
             ToolExecutionOutput::text(
@@ -445,7 +467,7 @@ impl Brain {
 
     fn notify_tool_finish(&self, call: &PreparedToolResult) {
         info!(
-            "[Brain] tool call id={} name={} result: {}",
+            "[ToolCallingEngine] tool call id={} name={} result: {}",
             call.call_id,
             call.name,
             truncate_for_log(&call.result.result, LOG_PREVIEW_CHARS)
@@ -480,14 +502,14 @@ impl Brain {
 
         if let Some(reasoning) = &response.reasoning_content {
             info!(
-                "[Brain] llm reasoning ({} chars): {}",
+                "[ToolCallingEngine] llm reasoning ({} chars): {}",
                 reasoning.len(),
                 truncate_for_log(reasoning, LOG_PREVIEW_CHARS)
             );
         }
 
         info!(
-            "[Brain] llm usage model={} prompt_tokens={} cached_prompt_tokens={} prompt_cache_miss_tokens={} completion_tokens={} total_tokens={} cache_hit_rate={}",
+            "[ToolCallingEngine] llm usage model={} prompt_tokens={} cached_prompt_tokens={} prompt_cache_miss_tokens={} completion_tokens={} total_tokens={} cache_hit_rate={}",
             self.llm.get_model_name(),
             usage
                 .prompt_tokens
@@ -525,7 +547,7 @@ impl Brain {
     ///
     /// `new_messages` contains all assistant and tool-result messages produced
     /// during this run. The caller's original `messages` are not included.
-    pub fn run(&self, messages: Vec<LLMMessage>) -> (Vec<LLMMessage>, BrainStopReason) {
+    pub fn run(&self, messages: Vec<LLMMessage>) -> (Vec<LLMMessage>, ToolCallingStopReason) {
         let tool_specs: Vec<Arc<dyn FunctionTool>> = self.tools.iter().map(|t| t.spec()).collect();
         let mut conversation = sanitize_messages_for_inference(messages);
         let mut output: Vec<LLMMessage> = Vec::new();
@@ -551,13 +573,13 @@ impl Brain {
 
             if let Some(content) = response.content_text() {
                 if is_transport_error(content) {
-                    warn!("[Brain] Transport error on iteration {iteration}: {content}");
+                    warn!("[ToolCallingEngine] Transport error on iteration {iteration}: {content}");
                     let msg = content.to_string();
                     if let Some(observer) = self.observer.as_ref() {
-                        observer.on_final_assistant(&response, &BrainStopReason::TransportError(msg.clone()));
+                        observer.on_final_assistant(&response, &ToolCallingStopReason::TransportError(msg.clone()));
                     }
                     output.push(response);
-                    return (output, BrainStopReason::TransportError(msg));
+                    return (output, ToolCallingStopReason::TransportError(msg));
                 }
             }
 
@@ -565,24 +587,24 @@ impl Brain {
 
             if response.tool_calls.is_empty() {
                 if let Some(observer) = self.observer.as_ref() {
-                    observer.on_final_assistant(&response, &BrainStopReason::Done);
+                    observer.on_final_assistant(&response, &ToolCallingStopReason::Done);
                 }
                 output.push(response);
-                return (output, BrainStopReason::Done);
+                return (output, ToolCallingStopReason::Done);
             }
 
             if is_last_iteration {
                 if let Some(observer) = self.observer.as_ref() {
-                    observer.on_final_assistant(&response, &BrainStopReason::MaxIterationsReached);
+                    observer.on_final_assistant(&response, &ToolCallingStopReason::MaxIterationsReached);
                 }
                 output.push(response);
-                return (output, BrainStopReason::MaxIterationsReached);
+                return (output, ToolCallingStopReason::MaxIterationsReached);
             }
 
             let tool_call_content = response.content_text_owned().unwrap_or_default();
             if let Some(reasoning) = &response.reasoning_content {
                 info!(
-                    "[Brain] iteration {} reasoning ({} chars): {}",
+                    "[ToolCallingEngine] iteration {} reasoning ({} chars): {}",
                     iteration + 1,
                     reasoning.len(),
                     truncate_for_log(reasoning, LOG_PREVIEW_CHARS)
@@ -590,13 +612,13 @@ impl Brain {
             }
             if !tool_call_content.is_empty() {
                 info!(
-                    "[Brain] iteration {} assistant content: {}",
+                    "[ToolCallingEngine] iteration {} assistant content: {}",
                     iteration + 1,
                     truncate_for_log(&tool_call_content, LOG_PREVIEW_CHARS)
                 );
             }
             info!(
-                "[Brain] iteration {} processing {} tool call(s)",
+                "[ToolCallingEngine] iteration {} processing {} tool call(s)",
                 iteration + 1,
                 response.tool_calls.len()
             );
@@ -610,7 +632,7 @@ impl Brain {
             let prepared_calls = self.prepare_tool_calls(&response.tool_calls);
             for call in &prepared_calls {
                 info!(
-                    "[Brain] tool call id={} name={} arguments={}",
+                    "[ToolCallingEngine] tool call id={} name={} arguments={}",
                     call.call_id,
                     call.name,
                     truncate_for_log(&call.arguments.to_string(), LOG_PREVIEW_CHARS)
@@ -649,19 +671,19 @@ impl Brain {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_ask_user(&call_id, &request);
                 }
-                return (output, BrainStopReason::AwaitUserInput(request));
+                return (output, ToolCallingStopReason::AwaitUserInput(request));
             }
         }
 
-        warn!("[Brain] Tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})");
-        (output, BrainStopReason::MaxIterationsReached)
+        warn!("[ToolCallingEngine] Tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})");
+        (output, ToolCallingStopReason::MaxIterationsReached)
     }
 
     pub async fn run_streaming(
         &self,
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
-    ) -> (Vec<LLMMessage>, BrainStopReason) {
+    ) -> (Vec<LLMMessage>, ToolCallingStopReason) {
         let tool_specs: Vec<Arc<dyn FunctionTool>> = self.tools.iter().map(|t| t.spec()).collect();
         let mut conversation = sanitize_messages_for_inference(messages);
         let mut output: Vec<LLMMessage> = Vec::new();
@@ -704,13 +726,13 @@ impl Brain {
 
             if let Some(content) = response.content_text() {
                 if is_transport_error(content) {
-                    warn!("[Brain] Transport error on iteration {iteration}: {content}");
+                    warn!("[ToolCallingEngine] Transport error on iteration {iteration}: {content}");
                     let msg = content.to_string();
                     if let Some(observer) = self.observer.as_ref() {
-                        observer.on_final_assistant(&response, &BrainStopReason::TransportError(msg.clone()));
+                        observer.on_final_assistant(&response, &ToolCallingStopReason::TransportError(msg.clone()));
                     }
                     output.push(response);
-                    return (output, BrainStopReason::TransportError(msg));
+                    return (output, ToolCallingStopReason::TransportError(msg));
                 }
             }
 
@@ -720,29 +742,29 @@ impl Brain {
                 let response_preview = response.content_text_owned().unwrap_or_default();
                 if !response_preview.is_empty() {
                     info!(
-                        "[Brain] final assistant response: {}",
+                        "[ToolCallingEngine] final assistant response: {}",
                         truncate_for_log(&response_preview, LOG_PREVIEW_CHARS)
                     );
                 }
                 if let Some(observer) = self.observer.as_ref() {
-                    observer.on_final_assistant(&response, &BrainStopReason::Done);
+                    observer.on_final_assistant(&response, &ToolCallingStopReason::Done);
                 }
                 output.push(response);
-                return (output, BrainStopReason::Done);
+                return (output, ToolCallingStopReason::Done);
             }
 
             if is_last_iteration {
                 if let Some(observer) = self.observer.as_ref() {
-                    observer.on_final_assistant(&response, &BrainStopReason::MaxIterationsReached);
+                    observer.on_final_assistant(&response, &ToolCallingStopReason::MaxIterationsReached);
                 }
                 output.push(response);
-                return (output, BrainStopReason::MaxIterationsReached);
+                return (output, ToolCallingStopReason::MaxIterationsReached);
             }
 
             let tool_call_content = response.content_text_owned().unwrap_or_default();
             if let Some(reasoning) = &response.reasoning_content {
                 info!(
-                    "[Brain] iteration {} reasoning ({} chars): {}",
+                    "[ToolCallingEngine] iteration {} reasoning ({} chars): {}",
                     iteration + 1,
                     reasoning.len(),
                     truncate_for_log(reasoning, LOG_PREVIEW_CHARS)
@@ -750,13 +772,13 @@ impl Brain {
             }
             if !tool_call_content.is_empty() {
                 info!(
-                    "[Brain] iteration {} assistant content: {}",
+                    "[ToolCallingEngine] iteration {} assistant content: {}",
                     iteration + 1,
                     truncate_for_log(&tool_call_content, LOG_PREVIEW_CHARS)
                 );
             }
             info!(
-                "[Brain] iteration {} processing {} tool call(s)",
+                "[ToolCallingEngine] iteration {} processing {} tool call(s)",
                 iteration + 1,
                 response.tool_calls.len()
             );
@@ -770,7 +792,7 @@ impl Brain {
             let prepared_calls = self.prepare_tool_calls(&response.tool_calls);
             for call in &prepared_calls {
                 info!(
-                    "[Brain] tool call id={} name={} arguments={}",
+                    "[ToolCallingEngine] tool call id={} name={} arguments={}",
                     call.call_id,
                     call.name,
                     truncate_for_log(&call.arguments.to_string(), LOG_PREVIEW_CHARS)
@@ -819,12 +841,12 @@ impl Brain {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_ask_user(&call_id, &request);
                 }
-                return (output, BrainStopReason::AwaitUserInput(request));
+                return (output, ToolCallingStopReason::AwaitUserInput(request));
             }
         }
 
-        warn!("[Brain] Tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})");
-        (output, BrainStopReason::MaxIterationsReached)
+        warn!("[ToolCallingEngine] Tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})");
+        (output, ToolCallingStopReason::MaxIterationsReached)
     }
 
     fn append_iteration_messages(&self, iteration: usize, conversation: &mut Vec<LLMMessage>) {
@@ -838,11 +860,23 @@ impl Brain {
         }
 
         info!(
-            "[Brain] iteration {} appended {} external message(s) before inference",
+            "[ToolCallingEngine] iteration {} appended {} external message(s) before inference",
             iteration,
             appended.len()
         );
         conversation.append(&mut appended);
+    }
+}
+
+#[async_trait]
+impl AgentExecutor for ToolCallingEngine {
+    async fn execute(&self, context: AgentContext, request: ToolCallingRequest) -> crate::error::Result<ToolCallingResult> {
+        if context.is_cancelled() {
+            return Err(crate::string_error!("tool-calling execution cancelled before inference"));
+        }
+
+        let (messages, stop_reason) = self.run(request.messages);
+        Ok(ToolCallingResult { messages, stop_reason })
     }
 }
 
@@ -912,7 +946,7 @@ mod tests {
         resource: ToolExecutionResource,
     }
 
-    impl BrainTool for TestTool {
+    impl Tool for TestTool {
         fn spec(&self) -> Arc<dyn FunctionTool> {
             Arc::new(StaticFunctionToolSpec {
                 name: self.name,
@@ -946,7 +980,7 @@ mod tests {
             prepared(0, TestTool { name: "read_a", resource: ToolExecutionResource::Read("a".into()) }, Value::Null),
             prepared(1, TestTool { name: "read_b", resource: ToolExecutionResource::Read("b".into()) }, Value::Null),
         ];
-        assert!(Brain::can_execute_in_parallel(&calls));
+        assert!(ToolCallingEngine::can_execute_in_parallel(&calls));
     }
 
     #[test]
@@ -955,7 +989,7 @@ mod tests {
             prepared(0, TestTool { name: "read", resource: ToolExecutionResource::Read("workspace".into()) }, Value::Null),
             prepared(1, TestTool { name: "write", resource: ToolExecutionResource::Write("workspace/file.txt".into()) }, Value::Null),
         ];
-        assert!(!Brain::can_execute_in_parallel(&calls));
+        assert!(!ToolCallingEngine::can_execute_in_parallel(&calls));
     }
 
     #[test]
@@ -964,12 +998,12 @@ mod tests {
             prepared(0, TestTool { name: "one", resource: ToolExecutionResource::Concurrent }, Value::Null),
             prepared(1, TestTool { name: "two", resource: ToolExecutionResource::Exclusive }, Value::Null),
         ];
-        assert!(!Brain::can_execute_in_parallel(&calls));
+        assert!(!ToolCallingEngine::can_execute_in_parallel(&calls));
     }
 
     #[test]
     fn tool_results_are_appended_in_original_call_order() {
-        let brain = Brain {
+        let brain = ToolCallingEngine {
             llm: panic_llm_for_test(),
             tools: Vec::new(),
             observer: None,

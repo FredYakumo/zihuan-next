@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::agent::brain::BrainTool;
+use crate::agent::tool_calling::Tool;
 use crate::error::{Error, Result};
 use crate::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
 use crate::utils::bm25::rank_bm25_matches;
@@ -52,18 +52,18 @@ impl GroupMemberEntry {
     }
 }
 
-pub struct GetCurrentGroupMembersBrainTool {
+pub struct GetCurrentGroupMembersTool {
     adapter: SharedBotAdapter,
     event: MessageEvent,
 }
 
-impl GetCurrentGroupMembersBrainTool {
+impl GetCurrentGroupMembersTool {
     pub fn new(adapter: SharedBotAdapter, event: MessageEvent) -> Self {
         Self { adapter, event }
     }
 }
 
-impl BrainTool for GetCurrentGroupMembersBrainTool {
+impl Tool for GetCurrentGroupMembersTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "get_current_group_members",

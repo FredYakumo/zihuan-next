@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use zihuan_core::storage::ConnectionConfig;
 use tokio::sync::mpsc;
 use uuid::Uuid;
-use zihuan_core::agent::brain::{BrainObserver, BrainStopReason};
+use zihuan_core::agent::tool_calling::{ToolCallingObserver, ToolCallingStopReason};
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
@@ -36,9 +36,9 @@ const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const CHAT_STREAM_MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 const CHAT_FORK_METADATA_SUFFIX: &str = ".fork.json";
 
-/// Bridges BrainObserver callbacks into the SSE event stream.
+/// Bridges ToolCallingObserver callbacks into the SSE event stream.
 ///
-/// **Purpose:** The Brain tool-call loop emits structured events (tool start/finish) that the
+/// **Purpose:** The ToolCallingEngine tool-call loop emits structured events (tool start/finish) that the
 /// dashboard needs to display in real time. This observer translates those callbacks into JSON
 /// payloads and pushes them onto the same unbounded channel that the token stream uses, so the
 /// relay loop can multiplex both onto a single SSE connection.
@@ -49,15 +49,15 @@ const CHAT_FORK_METADATA_SUFFIX: &str = ".fork.json";
 /// has disconnected and the entire streaming task will tear down.
 ///
 /// **Architecture:** Created per-request inside `execute_chat_streaming`, passed as
-/// `Arc<dyn BrainObserver>` into `infer_agent_response_streaming`.
-struct SseBrainObserver {
+/// `Arc<dyn ToolCallingObserver>` into `infer_agent_response_streaming`.
+struct SseToolCallingObserver {
     event_tx: mpsc::UnboundedSender<Value>,
     message_id: String,
     change_recorder: Arc<workspace_changes::WorkspaceChangeRecorder>,
     running_chat_message: Option<Arc<Mutex<RunningChatMessage>>>,
 }
 
-impl BrainObserver for SseBrainObserver {
+impl ToolCallingObserver for SseToolCallingObserver {
     fn on_tool_start(&self, name: &str, call_id: &str, arguments: &Value) {
         if let Some(snapshot) = &self.running_chat_message {
             snapshot.lock().unwrap().live_tool_calls.push(RunningChatToolCall {
@@ -1136,7 +1136,7 @@ async fn execute_chat_streaming(
 
     let (token_tx, mut token_rx) = mpsc::unbounded_channel::<StreamToken>();
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
-    let observer: Arc<dyn BrainObserver> = Arc::new(SseBrainObserver {
+    let observer: Arc<dyn ToolCallingObserver> = Arc::new(SseToolCallingObserver {
         event_tx,
         message_id: assistant_message_id.clone(),
         change_recorder: workspace_changes::WorkspaceChangeRecorder::new(
@@ -1258,7 +1258,7 @@ async fn execute_chat_streaming(
         &output_messages,
         effective_workspace_path.clone(),
         match &stop_reason {
-            BrainStopReason::AwaitUserInput(request) => Some(request.clone()),
+            ToolCallingStopReason::AwaitUserInput(request) => Some(request.clone()),
             _ => None,
         },
         metrics.as_ref(),
@@ -1290,7 +1290,7 @@ async fn execute_chat_streaming(
         }
     }
 
-    if let BrainStopReason::AwaitUserInput(request) = stop_reason {
+    if let ToolCallingStopReason::AwaitUserInput(request) = stop_reason {
         let event = json!({
             "type": "ask_user",
             "session_id": session_id,

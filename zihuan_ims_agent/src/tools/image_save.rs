@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use zihuan_core::storage::{upload_remote_image_to_s3, upsert_elasticsearch_image, upsert_image_record, ElasticsearchRef};
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -19,7 +19,7 @@ use super::common::{optional_string_argument, StaticFunctionToolSpec};
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 
-pub(crate) struct SaveImageBrainTool {
+pub(crate) struct SaveImageTool {
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
     elasticsearch_image_ref: Option<Arc<ElasticsearchRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
@@ -27,7 +27,7 @@ pub(crate) struct SaveImageBrainTool {
     rdb_pool: Option<RelationalDbConnection>,
 }
 
-impl SaveImageBrainTool {
+impl SaveImageTool {
     pub(crate) fn new(
         weaviate_image_ref: Option<Arc<WeaviateRef>>,
         elasticsearch_image_ref: Option<Arc<ElasticsearchRef>>,
@@ -45,7 +45,7 @@ impl SaveImageBrainTool {
     }
 }
 
-impl BrainTool for SaveImageBrainTool {
+impl Tool for SaveImageTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "save_image",

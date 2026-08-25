@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use zihuan_core::storage::{upload_remote_image_to_s3, upsert_image_record};
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::tooling::FunctionTool;
@@ -25,14 +25,14 @@ const DEFAULT_SEMANTIC_SEARCH_LIMIT: i64 = 5;
 const MAX_SEMANTIC_SEARCH_LIMIT: i64 = 20;
 const WEAVIATE_IMAGE_MAX_GOOD_DISTANCE: f64 = 0.55;
 
-pub(crate) struct SearchSimilarImagesBrainTool {
+pub(crate) struct SearchSimilarImagesTool {
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     web_search_engine_ref: Arc<WebSearchEngineRef>,
     s3_ref: Option<Arc<S3Ref>>,
 }
 
-impl SearchSimilarImagesBrainTool {
+impl SearchSimilarImagesTool {
     pub(crate) fn new(
         weaviate_image_ref: Option<Arc<WeaviateRef>>,
         embedding_model: Option<Arc<dyn EmbeddingBase>>,
@@ -49,7 +49,7 @@ impl SearchSimilarImagesBrainTool {
     }
 }
 
-impl BrainTool for SearchSimilarImagesBrainTool {
+impl Tool for SearchSimilarImagesTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "search_similar_images",

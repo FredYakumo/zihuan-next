@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use serde_json::{json, Map, Value};
 
-use crate::agent::brain::{Brain, BrainStopReason, BrainTool, ToolExecutionOutput, ToolRunDuration};
-use crate::graph::brain_tool_spec::{brain_tool_input_signature, BrainToolDefinition, ToolParamDef};
+use crate::agent::tool_calling::{ToolCallingEngine, ToolCallingStopReason, Tool, ToolExecutionOutput, ToolRunDuration};
+use crate::graph::tool_spec::{tool_calling_tool_input_signature, ToolDefinition, ToolParamDef};
 use crate::graph::function_graph::{sync_function_subgraph_signature, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID};
 use crate::graph::graph_io::refresh_port_types;
 use crate::graph::registry::build_node_graph_from_definition;
@@ -24,11 +24,11 @@ fn build_dream_user_prompt(previous_memory: &str, transcript: &str) -> String {
 }
 
 struct DreamNodeGraphTool {
-    definition: BrainToolDefinition,
+    definition: ToolDefinition,
 }
 
 impl DreamNodeGraphTool {
-    fn new(definition: BrainToolDefinition) -> Self { Self { definition } }
+    fn new(definition: ToolDefinition) -> Self { Self { definition } }
 
     fn run_node_graph(&self, call_content: &str, arguments: &Value) -> crate::error::Result<String> {
         let arguments = arguments.as_object().ok_or_else(|| crate::error::Error::ValidationError(format!(
@@ -51,7 +51,7 @@ impl DreamNodeGraphTool {
             };
             runtime_values.insert(parameter.name.clone(), data_value_from_json_with_declared_type(&port, value)?);
         }
-        let input_signature = brain_tool_input_signature("brain", &[], &self.definition);
+        let input_signature = tool_calling_tool_input_signature("tool_calling", &[], &self.definition);
         let mut subgraph = self.definition.subgraph.clone();
         sync_function_subgraph_signature(&mut subgraph, &input_signature, &self.definition.outputs);
         refresh_port_types(&mut subgraph);
@@ -78,7 +78,7 @@ impl DreamNodeGraphTool {
     }
 }
 
-impl BrainTool for DreamNodeGraphTool {
+impl Tool for DreamNodeGraphTool {
     fn spec(&self) -> Arc<dyn FunctionTool> { Arc::new(DreamNodeGraphFunctionTool { definition: self.definition.clone() }) }
     fn run_duration(&self) -> ToolRunDuration { self.definition.run_duration }
     fn execute(&self, call_content: &str, arguments: &Value) -> String { self.run_node_graph(call_content, arguments).unwrap_or_else(|error| format!("Dream node graph tool '{}' failed: {error}", self.definition.name)) }
@@ -86,7 +86,7 @@ impl BrainTool for DreamNodeGraphTool {
 }
 
 #[derive(Debug)]
-struct DreamNodeGraphFunctionTool { definition: BrainToolDefinition }
+struct DreamNodeGraphFunctionTool { definition: ToolDefinition }
 
 impl FunctionTool for DreamNodeGraphFunctionTool {
     fn name(&self) -> &str { &self.definition.name }
@@ -109,11 +109,11 @@ fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
     match data_type { DataType::String | DataType::Password | DataType::Binary => "string", DataType::Integer => "integer", DataType::Float => "number", DataType::Boolean => "boolean", DataType::Vec(_) | DataType::Vector => "array", _ => "object" }
 }
 
-pub fn run_dream_agent(llm: Arc<dyn LLMBase>, previous_memory: &str, transcript: &str, tool_definitions: Vec<BrainToolDefinition>) -> crate::error::Result<String> {
+pub fn run_dream_agent(llm: Arc<dyn LLMBase>, previous_memory: &str, transcript: &str, tool_definitions: Vec<ToolDefinition>) -> crate::error::Result<String> {
     let messages = vec![LLMMessage::system(DREAM_SYSTEM_PROMPT), LLMMessage::user(build_dream_user_prompt(previous_memory, transcript))];
-    let mut brain = Brain::new(llm);
-    for definition in tool_definitions.into_iter().filter(BrainToolDefinition::uses_subgraph) { brain.add_tool(DreamNodeGraphTool::new(definition)); }
+    let mut brain = ToolCallingEngine::new(llm);
+    for definition in tool_definitions.into_iter().filter(ToolDefinition::uses_subgraph) { brain.add_tool(DreamNodeGraphTool::new(definition)); }
     let (output, stop_reason) = brain.run(messages);
-    if !matches!(stop_reason, BrainStopReason::Done) { return Err(crate::string_error!("Dream Agent did not complete normally")); }
+    if !matches!(stop_reason, ToolCallingStopReason::Done) { return Err(crate::string_error!("Dream Agent did not complete normally")); }
     output.last().and_then(LLMMessage::content_text_owned).filter(|content| !content.trim().is_empty()).ok_or_else(|| crate::string_error!("Dream Agent returned no text"))
 }

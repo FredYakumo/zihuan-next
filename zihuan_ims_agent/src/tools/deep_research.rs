@@ -3,7 +3,7 @@ use std::sync::Arc;
 use log::info;
 use serde_json::Value;
 
-use zihuan_core::agent::brain::{Brain, BrainTool};
+use zihuan_core::agent::tool_calling::{ToolCallingEngine, Tool};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
@@ -17,8 +17,8 @@ use zihuan_core::graph::object_storage::S3Ref;
 
 use zihuan_core::memory_agent::{MemoryAgentResources, MemoryBrainAgent, MemoryBrainAgentContextTool, MemoryBrainAgentTool};
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
-use super::image_understand::ImageUnderstandBrainTool;
-use super::web_search::WebSearchBrainTool;
+use super::image_understand::ImageUnderstandTool;
+use super::web_search::WebSearchTool;
 use crate::qq_chat::tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
 
 const LOG_PREFIX: &str = "[DeepResearch]";
@@ -55,7 +55,7 @@ Output requirements:\n\
 \n\
 If information is insufficient, clearly state the missing information and what cannot be confirmed.";
 
-pub(crate) struct RunDeepResearchSubagentBrainTool {
+pub(crate) struct RunDeepResearchSubagentTool {
     llm: Arc<dyn LLMBase>,
     web_search_engine: Arc<WebSearchEngineRef>,
     rdb_pool: Option<RelationalDbConnection>,
@@ -67,7 +67,7 @@ pub(crate) struct RunDeepResearchSubagentBrainTool {
     tool_quota: Option<QqChatToolQuotaContext>,
 }
 
-impl RunDeepResearchSubagentBrainTool {
+impl RunDeepResearchSubagentTool {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         llm: Arc<dyn LLMBase>,
@@ -94,7 +94,7 @@ impl RunDeepResearchSubagentBrainTool {
     }
 }
 
-impl BrainTool for RunDeepResearchSubagentBrainTool {
+impl Tool for RunDeepResearchSubagentTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "run_deep_research_subagent",
@@ -156,21 +156,21 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
                 LLMMessage::user(user_prompt),
             ];
 
-            // Build the inner Brain with research tools.
+            // Build the inner ToolCallingEngine with research tools.
             // Internal tools use the stored notification target (typically
             // dashboard-only) to keep internal tool progress out of QQ chat
             // while still surfacing it in the task dashboard.
-            let mut brain = Brain::new(Arc::clone(&self.llm));
+            let mut brain = ToolCallingEngine::new(Arc::clone(&self.llm));
             if let Some(memory_resources) = self.memory_resources.clone() {
                 let memory_agent = MemoryBrainAgent::new(memory_resources);
                 brain.add_tool(MemoryBrainAgentTool::new(memory_agent.clone()));
                 brain.add_tool(MemoryBrainAgentContextTool::new(memory_agent));
             }
             brain.add_tool(wrap_brain_tool_with_quota(
-                WebSearchBrainTool::new(Arc::clone(&self.web_search_engine)),
+                WebSearchTool::new(Arc::clone(&self.web_search_engine)),
                 self.tool_quota.clone(),
             ));
-            brain.add_tool(ImageUnderstandBrainTool::new(
+            brain.add_tool(ImageUnderstandTool::new(
                 self.current_message_event.clone(),
                 self.rdb_pool.clone(),
                 self.s3_ref.clone(),

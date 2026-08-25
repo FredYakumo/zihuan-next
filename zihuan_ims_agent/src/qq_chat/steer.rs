@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use chrono::Local;
 use log::{info, warn};
 
-use zihuan_core::agent::brain::BrainIterationHook;
+use zihuan_core::agent::tool_calling::ToolCallingMiddleware;
 use zihuan_core::agent::emotion::utils::has_noticeable_emotion_expression;
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent::utils::build_state_system_prefix_lines;
@@ -17,7 +17,7 @@ use zihuan_core::steer::{
 };
 use zihuan_core::utils::string_utils::shorten_text;
 
-use zihuan_core::graph::brain_tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT;
+use zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT;
 use zihuan_core::graph::object_storage::S3Ref;
 use zihuan_core::graph::DataValue;
 
@@ -232,7 +232,7 @@ pub(crate) struct QqChatServiceSteerHook {
     pub(crate) preprompt_context: Option<String>,
 }
 
-impl BrainIterationHook for QqChatServiceSteerHook {
+impl ToolCallingMiddleware for QqChatServiceSteerHook {
     fn on_before_inference(&self, _iteration: usize, _conversation: &[LLMMessage]) -> Vec<LLMMessage> {
         let (pending, remaining_queue_len, accepted_steer_count) = self.pending_steer.drain_all(&self.sender_id);
         if pending.is_empty() {

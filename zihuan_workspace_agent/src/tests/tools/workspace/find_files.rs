@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
-use zihuan_core::agent::brain::BrainTool;
+use zihuan_core::agent::tool_calling::Tool;
 
-use crate::tools::workspace_tools::{FindFilesBrainTool, DEFAULT_TOOL_FIND_FILES};
+use crate::tools::workspace_tools::{FindFilesTool, DEFAULT_TOOL_FIND_FILES};
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
@@ -29,7 +29,7 @@ fn find_files_filters_name_type_and_excluded_directories() {
     fs::create_dir_all(directory.join("src")).unwrap();
     fs::write(directory.join("src/lib.rs"), "lib").unwrap();
     fs::write(directory.join("target/nested/lib.rs"), "ignored").unwrap();
-    let tool = FindFilesBrainTool { workspace_path: Some(directory.clone()) };
+    let tool = FindFilesTool { workspace_path: Some(directory.clone()) };
 
     assert_eq!(tool.spec().name(), DEFAULT_TOOL_FIND_FILES);
     let result = tool.execute("", &json!({"path":".","name":"*.rs","type":"file","exclude":["target"]}));
