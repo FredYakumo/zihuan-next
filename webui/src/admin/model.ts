@@ -145,11 +145,7 @@ export interface ServiceFormState {
   tokenizer_connection_id: string;
   web_search_engine_connection_id: string;
   rdb_id: string;
-  weaviate_image_connection_id: string;
-  weaviate_memory_connection_id: string;
-  elasticsearch_image_connection_id: string;
-  elasticsearch_memory_connection_id: string;
-  memory_backend: "" | "local_file" | "weaviate" | "elasticsearch";
+  retrieval_store_id: string;
   max_message_length: number;
   compact_context_length: number;
   dream_enabled: boolean;
@@ -436,11 +432,7 @@ export function defaultServiceForm(): ServiceFormState {
     tokenizer_connection_id: "",
     web_search_engine_connection_id: "",
     rdb_id: "",
-    weaviate_image_connection_id: "",
-    weaviate_memory_connection_id: "",
-    elasticsearch_image_connection_id: "",
-    elasticsearch_memory_connection_id: "",
-    memory_backend: "",
+    retrieval_store_id: "",
     max_message_length: 500,
     compact_context_length: 0,
     dream_enabled: false,
@@ -911,15 +903,10 @@ export function serviceFormFromConfig(
         agentType.task_db_connection_id ??
         "",
     );
-    form.weaviate_image_connection_id = String(
-      agentType.weaviate_image_connection_id ?? "",
-    );
-    form.weaviate_memory_connection_id = String(
-      agentType.weaviate_memory_connection_id ?? "",
-    );
-    form.elasticsearch_image_connection_id = String(agentType.elasticsearch_image_connection_id ?? "");
-    form.elasticsearch_memory_connection_id = String(agentType.elasticsearch_memory_connection_id ?? "");
-    form.memory_backend = agentType.memory_backend === "local_file" || agentType.memory_backend === "weaviate" || agentType.memory_backend === "elasticsearch" ? agentType.memory_backend : "";
+    const retrievalStore = agentType.retrieval_store as { type?: string; connection_id?: string } | undefined;
+    form.retrieval_store_id = retrievalStore?.type === "local_markdown"
+      ? "__local_markdown__"
+      : String(retrievalStore?.connection_id ?? "");
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.compact_context_length = Number(agentType.compact_context_length ?? 0);
     form.dream_enabled = Boolean(agentType.dream_enabled ?? false);
@@ -1118,12 +1105,11 @@ export function buildServicePayload(form: ServiceFormState): {
         web_search_engine_connection_id: form.web_search_engine_connection_id,
         embedding: null,
         rdb_id: form.rdb_id || null,
-        weaviate_image_connection_id: form.weaviate_image_connection_id || null,
-        weaviate_memory_connection_id:
-          form.weaviate_memory_connection_id || null,
-        elasticsearch_image_connection_id: form.elasticsearch_image_connection_id || null,
-        elasticsearch_memory_connection_id: form.elasticsearch_memory_connection_id || null,
-        memory_backend: form.memory_backend || null,
+        retrieval_store: form.retrieval_store_id === "__local_markdown__"
+          ? { type: "local_markdown" }
+          : form.retrieval_store_id
+            ? { type: "connection", connection_id: form.retrieval_store_id }
+            : null,
         max_message_length: form.max_message_length,
         compact_context_length: form.compact_context_length,
         dream_enabled: form.dream_enabled,

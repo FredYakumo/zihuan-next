@@ -26,6 +26,8 @@
   font-size: 13px;
   line-height: 1.6;
   margin-bottom: 20px;
+  min-height: 180px;
+  box-sizing: border-box;
 }
 
 .log-line {
@@ -57,6 +59,8 @@
 
 .log-message {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .log-pct {
@@ -78,4 +82,20 @@
   display: flex;
   justify-content: center;
   gap: 12px;
+}
+
+@media (max-width: 600px) {
+  .log-console {
+    min-height: 220px;
+    padding: 12px;
+    font-size: 12px;
+  }
+
+  .log-line {
+    flex-wrap: wrap;
+  }
+
+  .log-message {
+    flex-basis: calc(100% - 96px);
+  }
 }

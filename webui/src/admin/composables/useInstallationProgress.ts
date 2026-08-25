@@ -1,3 +1,5 @@
+import { toRefs } from "vue";
+
 import type { SetupProgressEvent } from "../../api/client";
 
 export interface UseInstallationProgressProps {
@@ -7,10 +9,8 @@ export interface UseInstallationProgressProps {
 }
 
 export function useInstallationProgress(props: UseInstallationProgressProps) {
-  return {
-    logs: props.logs,
-    error: props.error,
-  };
+  const { logs, error } = toRefs(props);
+  return { logs, error };
 }
 
 export type UseInstallationProgressReturn = ReturnType<typeof useInstallationProgress>;

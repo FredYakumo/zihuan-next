@@ -95,8 +95,11 @@ export function useConnections() {
     Object.assign(form, defaultConnectionForm());
   }
 
-  function startCreate() {
+  function startCreate(initialType?: ConnectionFormState["type"]) {
     resetForm();
+    if (initialType) {
+      form.type = initialType;
+    }
     drawerVisible.value = true;
   }
 

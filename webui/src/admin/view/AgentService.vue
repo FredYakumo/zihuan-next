@@ -9,17 +9,26 @@
     <!-- 新建 Service 抽屉 -->
     <t-drawer
       v-model:visible="showCreatePicker"
-      :header="showCreateForm ? '新建 Service' : '选择 Service 类型'"
       size="960px"
       :close-on-overlay-click="false"
       :footer="false"
       @close="closeCreatePicker"
     >
+      <template #header>
+        <div class="agent-service-create-drawer-header">
+          <strong>{{ showCreateForm ? '新建 Service' : '选择 Service 类型' }}</strong>
+          <t-tooltip content="关闭">
+            <t-button variant="text" shape="square" aria-label="关闭" @click="closeCreatePicker">
+              <CloseIcon />
+            </t-button>
+          </t-tooltip>
+        </div>
+      </template>
       <div v-if="showCreateForm" class="agent-service-drawer-body">
         <t-form class="agent-service-form" label-align="top">
-          <!-- 基本信息 -->
+          <!-- Agent 配置 -->
           <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>基本信息</template>
+            <template #title>{{ form.type === 'qq_chat' ? 'Agent 配置' : '基本信息' }}</template>
             <div class="agent-service-form-grid">
               <t-form-item label="名称" required>
                 <t-input v-model="form.name" />
@@ -30,19 +39,40 @@
                   <t-option value="workspace" label="Workspace Agent Service" />
                 </t-select>
               </t-form-item>
+              <t-form-item v-if="form.type === 'qq_chat'" label="Bot Adapter" required>
+                <t-select v-model="form.ims_bot_adapter_connection_id" placeholder="请选择">
+                  <t-option value="" label="请选择" />
+                  <t-option v-for="item in botConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item v-if="form.type === 'qq_chat'" label="Bot 名称">
+                <t-input v-model="form.bot_name" placeholder="用户与 Bot 对话时显示的名称" />
+              </t-form-item>
             </div>
             <div class="agent-service-check-row">
               <t-checkbox v-model="form.enabled">启用</t-checkbox>
               <t-checkbox v-model="form.auto_start">开机自动启动</t-checkbox>
-              <t-checkbox v-model="form.is_default">默认 Service</t-checkbox>
+              <t-checkbox v-if="form.type === 'workspace'" v-model="form.is_default">默认 Service</t-checkbox>
             </div>
+            <t-form-item v-if="form.type === 'workspace'" label="头像" class="agent-service-form-item-full">
+              <div class="agent-service-avatar-row">
+                <img v-if="form.avatar_url" :src="getAvatarDisplayUrl(form.avatar_url)" alt="Avatar preview" class="agent-service-avatar-preview" />
+                <div v-else class="agent-service-avatar-placeholder">{{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}</div>
+                <div class="agent-service-avatar-actions">
+                  <input ref="createAvatarFileInput" type="file" accept="image/*" style="display: none" @change="handleAvatarFileSelect" />
+                  <t-button variant="text" @click="$refs.createAvatarFileInput?.click()">{{ form.avatar_url ? '更换头像' : '上传头像' }}</t-button>
+                  <t-button v-if="form.avatar_url" variant="text" theme="danger" @click="clearAvatar">删除</t-button>
+                </div>
+              </div>
+              <t-input v-model="form.avatar_url" placeholder="头像 URL（可选，或直接上传图片）" style="margin-top: 8px" />
+            </t-form-item>
           </t-card>
 
           <!-- 模型配置 -->
           <t-card class="agent-service-form-section" :bordered="false">
             <template #title>{{ form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
             <div class="agent-service-form-grid">
-              <t-form-item :label="form.type === 'workspace' ? '默认模型' : '模型配置'" required>
+              <t-form-item :label="form.type === 'workspace' ? '默认模型' : '主 Brain 模型'" required>
                 <t-select v-model="form.llm_ref_id" placeholder="请选择" @change="handlePrimaryModelChange">
                   <t-option class="agent-service-add-model-option" value="__add_model__" label="新增模型配置">
                     <span class="agent-service-add-model-option-content"><AddIcon />新增模型配置</span>
@@ -58,13 +88,37 @@
                 <t-checkbox v-model="form.workspace_memory_enabled">启用 Agent 记忆</t-checkbox>
                 <div class="agent-service-form-hint">启用后 Agent 会回想或者记忆对话中的信息，需要记忆库的支持</div>
               </t-form-item>
+              <t-form-item v-if="form.type === 'qq_chat'" label="数学/编程模型">
+                <t-select v-model="form.math_programming_llm_ref_id" placeholder="回退主 Brain 模型" clearable>
+                  <t-option value="" label="回退主 Brain 模型" />
+                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item v-if="form.type === 'qq_chat'" label="Preprompt 模型">
+                <t-select v-model="form.intent_classification_llm_ref_id" placeholder="回退主 Brain 模型" clearable>
+                  <t-option value="" label="回退主 Brain 模型" />
+                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item v-if="form.type === 'qq_chat'" label="自然语言回复模型">
+                <t-select v-model="form.natural_language_reply_llm_ref_id" placeholder="请选择" clearable>
+                  <t-option value="" label="请选择" />
+                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item v-if="form.type === 'qq_chat'" label="分词配置">
+                <t-select v-model="form.tokenizer_connection_id" placeholder="不使用（标点分段）" clearable>
+                  <t-option value="" label="不使用（标点分段）" />
+                  <t-option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
             </div>
           </t-card>
 
-          <t-card v-if="form.type === 'workspace' && form.workspace_memory_enabled" class="agent-service-form-section" :bordered="false">
-            <template #title>记忆介质</template>
+          <t-card v-if="form.type === 'workspace' && (form.workspace_memory_enabled || form.default_tools_enabled.web_search)" class="agent-service-form-section" :bordered="false">
+            <template #title>检索增强生成</template>
             <div class="agent-service-form-grid">
-              <t-form-item label="记忆介质" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆介质。' : undefined">
+              <t-form-item v-if="form.workspace_memory_enabled" label="记忆介质" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆介质。' : undefined">
                 <t-select v-model="form.workspace_memory_backend" placeholder="请选择记忆库" @change="handleMemoryBackendChange">
                   <t-option class="agent-service-add-retrieval-option" value="__add_retrieval_database__" label="新增检索数据库">
                     <span class="agent-service-add-model-option-content"><AddIcon />新增检索数据库</span>
@@ -89,14 +143,11 @@
                   <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
-            </div>
-          </t-card>
-
-          <t-card v-if="form.type === 'workspace' && form.default_tools_enabled.web_search" class="agent-service-form-section" :bordered="false">
-            <template #title>Web Search Engine</template>
-            <div class="agent-service-form-grid">
-              <t-form-item label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
-                <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择">
+              <t-form-item v-if="form.default_tools_enabled.web_search" label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
+                <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择" @change="handleWebSearchChange">
+                  <t-option class="agent-service-add-web-search-option" value="__add_web_search__" label="新增 Web Search">
+                    <span class="agent-service-add-model-option-content"><AddIcon />新增 Web Search</span>
+                  </t-option>
                   <t-option value="" label="请选择" />
                   <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
@@ -107,116 +158,61 @@
           <!-- QQ Chat 专属字段 -->
           <template v-if="form.type === 'qq_chat'">
             <t-card class="agent-service-form-section" :bordered="false">
-              <template #title>QQ Chat 模型配置</template>
+              <template #title>RAG 配置</template>
               <div class="agent-service-form-grid">
-                <t-form-item label="数学编程模型">
-                  <t-select v-model="form.math_programming_llm_ref_id" placeholder="回退主模型" clearable>
-                    <t-option value="" label="回退主模型" />
-                    <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item label="意图分类模型">
-                  <t-select v-model="form.intent_classification_llm_ref_id" placeholder="回退主模型" clearable>
-                    <t-option value="" label="回退主模型" />
-                    <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item label="自然语言回复模型">
-                  <t-select v-model="form.natural_language_reply_llm_ref_id" placeholder="请选择" clearable>
-                    <t-option value="" label="请选择" />
-                    <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item label="自然语言回复 Prompt" class="agent-service-form-item-full">
-                  <t-textarea v-model="form.natural_language_reply_system_prompt" placeholder="可选。专门给自然语言回复模型使用的系统提示词。" />
-                </t-form-item>
-              </div>
-            </t-card>
-
-            <t-card class="agent-service-form-section" :bordered="false">
-              <template #title>向量与分词</template>
-              <div class="agent-service-form-grid">
-                <t-form-item label="文本向量模型">
-                  <t-select v-model="form.embedding_model_ref_id" placeholder="不使用" clearable>
+                <t-form-item label="关系型数据库">
+                  <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
-                    <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                    <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item label="分词 Tokenizer 连接">
-                  <t-select v-model="form.tokenizer_connection_id" placeholder="不使用（标点分段）" clearable>
-                    <t-option value="" label="不使用（标点分段）" />
-                    <t-option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-              </div>
-            </t-card>
-
-            <t-card class="agent-service-form-section" :bordered="false">
-              <template #title>Bot 配置</template>
-              <div class="agent-service-form-grid">
-                <t-form-item label="Bot Adapter" required>
-                  <t-select v-model="form.ims_bot_adapter_connection_id" placeholder="请选择">
-                    <t-option value="" label="请选择" />
-                    <t-option v-for="item in botConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item label="Bot Name">
-                  <t-input v-model="form.bot_name" />
-                </t-form-item>
-                <t-form-item label="System Prompt" class="agent-service-form-item-full">
-                  <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。" />
-                </t-form-item>
-              </div>
-            </t-card>
-
-            <t-card class="agent-service-form-section" :bordered="false">
-              <template #title>外部连接</template>
-              <div class="agent-service-form-grid">
-                <t-form-item label="RustFS Connection">
+                <t-form-item label="RustFS">
                   <t-select v-model="form.rustfs_connection_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in rustfsConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
                 <t-form-item label="Web Search Engine" required>
-                  <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择">
+                  <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择" @change="handleWebSearchChange">
+                    <t-option class="agent-service-add-web-search-option" value="__add_web_search__" label="新增 Web Search">
+                      <span class="agent-service-add-model-option-content"><AddIcon />新增 Web Search</span>
+                    </t-option>
                     <t-option value="" label="请选择" />
                     <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item label="RDB Connection">
-                  <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
+                <t-form-item label="检索数据库">
+                  <t-select v-model="form.retrieval_store_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
-                    <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                    <t-option value="__local_markdown__" label="本地 Markdown" />
+                    <t-option v-for="item in retrievalConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item label="Weaviate Image Connection">
+                <t-form-item label="Embedding 模型">
+                  <t-select v-model="form.embedding_model_ref_id" placeholder="不使用" clearable>
+                    <t-option value="" label="不使用" />
+                    <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                  </t-select>
+                </t-form-item>
+                <t-form-item v-if="false" label="Weaviate 图片检索连接">
                   <t-select v-model="form.weaviate_image_connection_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in imageWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item label="Memory Backend">
-                  <t-select v-model="form.memory_backend" placeholder="不使用" clearable>
-                    <t-option value="" label="不使用" />
-                    <t-option value="local_file" label="本地 Markdown 文件" />
-                    <t-option value="weaviate" label="Weaviate" />
-                    <t-option value="elasticsearch" label="Elasticsearch" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item v-if="form.memory_backend !== 'local_file'" label="Weaviate Memory Connection">
+                <t-form-item v-if="false" label="Weaviate 记忆连接">
                   <t-select v-model="form.weaviate_memory_connection_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item label="Elasticsearch Image Connection">
+                <t-form-item v-if="false" label="Elasticsearch 图片检索连接">
                   <t-select v-model="form.elasticsearch_image_connection_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in imageElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
-                <t-form-item v-if="form.memory_backend !== 'local_file'" label="Elasticsearch Memory Connection">
+                <t-form-item v-if="false" label="Elasticsearch 记忆连接">
                   <t-select v-model="form.elasticsearch_memory_connection_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
@@ -226,16 +222,28 @@
             </t-card>
 
             <t-card class="agent-service-form-section" :bordered="false">
-              <template #title>高级设置</template>
+              <template #title>Prompt engineering</template>
               <div class="agent-service-form-grid">
-                <t-form-item label="Max Message Length">
+                <t-form-item label="System Prompt" class="agent-service-form-item-full">
+                  <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。" />
+                </t-form-item>
+                <t-form-item label="自然语言回复 Prompt" class="agent-service-form-item-full">
+                  <t-textarea v-model="form.natural_language_reply_system_prompt" placeholder="可选。专门给自然语言回复模型使用的系统提示词。" />
+                </t-form-item>
+              </div>
+            </t-card>
+
+            <t-card class="agent-service-form-section" :bordered="false">
+              <template #title>行为控制</template>
+              <div class="agent-service-form-grid">
+                <t-form-item label="最长输出消息长度">
                   <t-input-number v-model="form.max_message_length" :min="1" />
                 </t-form-item>
-                <t-form-item label="Max Steer Count">
+                <t-form-item label="用户最多 Steer 次数">
                   <t-input-number v-model="form.max_steer_count" :min="0" />
                   <div class="agent-service-form-hint">当 Service 还没发出最终回复时，用户继续发消息会被视为"插嘴 / steer"。这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出会被丢弃并写入日志。</div>
                 </t-form-item>
-                <t-form-item label="Compact Context Length">
+                <t-form-item label="达到上下文长度时压缩">
                   <t-input-number v-model="form.compact_context_length" :min="0" />
                 </t-form-item>
                 <t-form-item label="Dream">
@@ -272,30 +280,11 @@
             </t-card>
           </template>
 
-          <!-- Workspace 头像 -->
-          <template v-if="form.type === 'workspace'">
-            <t-card class="agent-service-form-section" :bordered="false">
-              <template #title>Service 头像</template>
-              <t-form-item label="头像" class="agent-service-form-item-full">
-                <div class="agent-service-avatar-row">
-                  <img v-if="form.avatar_url" :src="getAvatarDisplayUrl(form.avatar_url)" alt="Avatar preview" class="agent-service-avatar-preview" />
-                  <div v-else class="agent-service-avatar-placeholder">{{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}</div>
-                  <div class="agent-service-avatar-actions">
-                    <input ref="createAvatarFileInput" type="file" accept="image/*" style="display: none" @change="handleAvatarFileSelect" />
-                    <t-button variant="text" @click="$refs.createAvatarFileInput?.click()">{{ form.avatar_url ? '更换头像' : '上传头像' }}</t-button>
-                    <t-button v-if="form.avatar_url" variant="text" theme="danger" @click="clearAvatar">删除</t-button>
-                  </div>
-                </div>
-                <t-input v-model="form.avatar_url" placeholder="头像 URL（可选，或直接上传图片）" style="margin-top: 8px" />
-              </t-form-item>
-            </t-card>
-          </template>
-
           <!-- 默认工具 -->
           <t-card v-if="currentDefaultTools.length > 0" class="agent-service-form-section" :bordered="false">
-            <template #title>默认工具</template>
+            <template #title>工具和能力</template>
             <div class="agent-service-default-tools-search">
-              <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具名称、ID 或说明" clearable>
+              <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具" clearable>
                 <template v-if="defaultToolSearchQuery" #suffixIcon>
                   <t-button variant="text" size="small" @click="defaultToolSearchQuery = ''">清空</t-button>
                 </template>
@@ -446,24 +435,14 @@
       v-model:visible="showEditModal"
       :header="form.name || '编辑 Service'"
       size="960px"
+      :close-btn="true"
       :close-on-overlay-click="false"
       @close="closeEditModal"
     >
-      <template #header>
-        <div class="agent-service-edit-drawer-header">
-          <div class="agent-service-edit-badges">
-            <t-tag variant="light">{{ form.type }}</t-tag>
-            <t-tag :theme="form.enabled ? 'success' : 'default'" variant="light">{{ form.enabled ? '已启用' : '已停用' }}</t-tag>
-            <t-tag v-if="form.is_default" theme="warning" variant="light">default</t-tag>
-          </div>
-          <strong>{{ form.name || '编辑 Service' }}</strong>
-        </div>
-      </template>
-
       <t-form class="agent-service-form" label-align="top">
-        <!-- 基本信息 -->
+        <!-- Agent 配置 -->
         <t-card class="agent-service-form-section" :bordered="false">
-          <template #title>基本信息</template>
+          <template #title>{{ form.type === 'qq_chat' ? 'Agent 配置' : '基本信息' }}</template>
           <div class="agent-service-form-grid">
             <t-form-item label="名称" required>
               <t-input v-model="form.name" />
@@ -474,19 +453,40 @@
                 <t-option value="workspace" label="Workspace Agent Service" />
               </t-select>
             </t-form-item>
+            <t-form-item v-if="form.type === 'qq_chat'" label="Bot Adapter" required>
+              <t-select v-model="form.ims_bot_adapter_connection_id" placeholder="请选择">
+                <t-option value="" label="请选择" />
+                <t-option v-for="item in botConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="form.type === 'qq_chat'" label="Bot 名称">
+              <t-input v-model="form.bot_name" placeholder="用户与 Bot 对话时显示的名称" />
+            </t-form-item>
           </div>
           <div class="agent-service-check-row">
             <t-checkbox v-model="form.enabled">启用</t-checkbox>
             <t-checkbox v-model="form.auto_start">开机自动启动</t-checkbox>
-            <t-checkbox v-model="form.is_default">默认 Service</t-checkbox>
+            <t-checkbox v-if="form.type === 'workspace'" v-model="form.is_default">默认 Service</t-checkbox>
           </div>
+          <t-form-item v-if="form.type === 'workspace'" label="头像" class="agent-service-form-item-full">
+            <div class="agent-service-avatar-row">
+              <img v-if="form.avatar_url" :src="getAvatarDisplayUrl(form.avatar_url)" alt="Avatar preview" class="agent-service-avatar-preview" />
+              <div v-else class="agent-service-avatar-placeholder">{{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}</div>
+              <div class="agent-service-avatar-actions">
+                <input ref="avatarFileInput" type="file" accept="image/*" style="display: none" @change="handleAvatarFileSelect" />
+                <t-button variant="text" @click="$refs.avatarFileInput?.click()">{{ form.avatar_url ? '更换头像' : '上传头像' }}</t-button>
+                <t-button v-if="form.avatar_url" variant="text" theme="danger" @click="clearAvatar">删除</t-button>
+              </div>
+            </div>
+            <t-input v-model="form.avatar_url" placeholder="头像 URL（可选，或直接上传图片）" style="margin-top: 8px" />
+          </t-form-item>
         </t-card>
 
         <!-- 模型配置 -->
         <t-card class="agent-service-form-section" :bordered="false">
           <template #title>{{ form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
           <div class="agent-service-form-grid">
-            <t-form-item :label="form.type === 'workspace' ? '默认模型' : '模型配置'" required>
+            <t-form-item :label="form.type === 'workspace' ? '默认模型' : '主 Brain 模型'" required>
               <t-select v-model="form.llm_ref_id" placeholder="请选择" @change="handlePrimaryModelChange">
                 <t-option class="agent-service-add-model-option" value="__add_model__" label="新增模型配置">
                   <span class="agent-service-add-model-option-content"><AddIcon />新增模型配置</span>
@@ -502,13 +502,37 @@
               <t-checkbox v-model="form.workspace_memory_enabled">启用 Agent 记忆</t-checkbox>
               <div class="agent-service-form-hint">启用后 Agent 会回想或者记忆对话中的信息，需要记忆库的支持。</div>
             </t-form-item>
+            <t-form-item v-if="form.type === 'qq_chat'" label="数学/编程模型">
+              <t-select v-model="form.math_programming_llm_ref_id" placeholder="回退主 Brain 模型" clearable>
+                <t-option value="" label="回退主 Brain 模型" />
+                <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="form.type === 'qq_chat'" label="Preprompt 模型">
+              <t-select v-model="form.intent_classification_llm_ref_id" placeholder="回退主 Brain 模型" clearable>
+                <t-option value="" label="回退主 Brain 模型" />
+                <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="form.type === 'qq_chat'" label="自然语言回复模型">
+              <t-select v-model="form.natural_language_reply_llm_ref_id" placeholder="请选择" clearable>
+                <t-option value="" label="请选择" />
+                <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="form.type === 'qq_chat'" label="分词配置">
+              <t-select v-model="form.tokenizer_connection_id" placeholder="不使用（标点分段）" clearable>
+                <t-option value="" label="不使用（标点分段）" />
+                <t-option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
           </div>
         </t-card>
 
-        <t-card v-if="form.type === 'workspace' && form.workspace_memory_enabled" class="agent-service-form-section" :bordered="false">
-          <template #title>Agent 记忆库</template>
+        <t-card v-if="form.type === 'workspace' && (form.workspace_memory_enabled || form.default_tools_enabled.web_search)" class="agent-service-form-section" :bordered="false">
+          <template #title>检索增强生成</template>
           <div class="agent-service-form-grid">
-            <t-form-item label="记忆库" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆库。' : undefined">
+            <t-form-item v-if="form.workspace_memory_enabled" label="记忆库" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆库。' : undefined">
               <t-select v-model="form.workspace_memory_backend" placeholder="请选择记忆库" @change="handleMemoryBackendChange">
                 <t-option class="agent-service-add-retrieval-option" value="__add_retrieval_database__" label="新增检索数据库">
                   <span class="agent-service-add-model-option-content"><AddIcon />新增检索数据库</span>
@@ -533,14 +557,11 @@
                 <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
               </t-select>
             </t-form-item>
-          </div>
-        </t-card>
-
-        <t-card v-if="form.type === 'workspace' && form.default_tools_enabled.web_search" class="agent-service-form-section" :bordered="false">
-          <template #title>Web Search Engine</template>
-          <div class="agent-service-form-grid">
-            <t-form-item label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
-              <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择">
+            <t-form-item v-if="form.default_tools_enabled.web_search" label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
+              <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择" @change="handleWebSearchChange">
+                <t-option class="agent-service-add-web-search-option" value="__add_web_search__" label="新增 Web Search">
+                  <span class="agent-service-add-model-option-content"><AddIcon />新增 Web Search</span>
+                </t-option>
                 <t-option value="" label="请选择" />
                 <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
               </t-select>
@@ -550,7 +571,7 @@
 
         <!-- QQ Chat 专属 -->
         <template v-if="form.type === 'qq_chat'">
-          <t-card class="agent-service-form-section" :bordered="false">
+          <t-card v-if="false" class="agent-service-form-section" :bordered="false">
             <template #title>QQ Chat 模型配置</template>
             <div class="agent-service-form-grid">
               <t-form-item label="数学编程模型">
@@ -577,7 +598,7 @@
             </div>
           </t-card>
 
-          <t-card class="agent-service-form-section" :bordered="false">
+          <t-card v-if="false" class="agent-service-form-section" :bordered="false">
             <template #title>向量与分词</template>
             <div class="agent-service-form-grid">
               <t-form-item label="文本向量模型">
@@ -595,7 +616,7 @@
             </div>
           </t-card>
 
-          <t-card class="agent-service-form-section" :bordered="false">
+          <t-card v-if="false" class="agent-service-form-section" :bordered="false">
             <template #title>Bot 配置</template>
             <div class="agent-service-form-grid">
               <t-form-item label="Bot Adapter" required>
@@ -614,45 +635,61 @@
           </t-card>
 
           <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>外部连接</template>
+            <template #title>RAG 配置</template>
             <div class="agent-service-form-grid">
-              <t-form-item label="RustFS Connection">
+              <t-form-item label="RustFS">
                 <t-select v-model="form.rustfs_connection_id" placeholder="不使用" clearable>
                   <t-option value="" label="不使用" />
                   <t-option v-for="item in rustfsConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
               <t-form-item label="Web Search Engine" required>
-                <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择">
+                <t-select v-model="form.web_search_engine_connection_id" placeholder="请选择" @change="handleWebSearchChange">
+                  <t-option class="agent-service-add-web-search-option" value="__add_web_search__" label="新增 Web Search">
+                    <span class="agent-service-add-model-option-content"><AddIcon />新增 Web Search</span>
+                  </t-option>
                   <t-option value="" label="请选择" />
                   <t-option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
-              <t-form-item label="RDB Connection">
+              <t-form-item label="关系型数据库">
                 <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
                   <t-option value="" label="不使用" />
                   <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
-              <t-form-item label="Weaviate Image Connection">
+              <t-form-item label="检索数据库">
+                <t-select v-model="form.retrieval_store_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option value="__local_markdown__" label="本地 Markdown" />
+                  <t-option v-for="item in retrievalConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item label="Embedding 模型">
+                <t-select v-model="form.embedding_model_ref_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+              <t-form-item v-if="false" label="Weaviate 图片检索连接">
                 <t-select v-model="form.weaviate_image_connection_id" placeholder="不使用" clearable>
                   <t-option value="" label="不使用" />
                   <t-option v-for="item in imageWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
-              <t-form-item label="Weaviate Memory Connection">
+              <t-form-item v-if="false" label="Weaviate 记忆连接">
                 <t-select v-model="form.weaviate_memory_connection_id" placeholder="不使用" clearable>
                   <t-option value="" label="不使用" />
                   <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
-              <t-form-item label="Elasticsearch Image Connection">
+              <t-form-item v-if="false" label="Elasticsearch 图片检索连接">
                 <t-select v-model="form.elasticsearch_image_connection_id" placeholder="不使用" clearable>
                   <t-option value="" label="不使用" />
                   <t-option v-for="item in imageElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
-              <t-form-item label="Elasticsearch Memory Connection">
+              <t-form-item v-if="false" label="Elasticsearch 记忆连接">
                 <t-select v-model="form.elasticsearch_memory_connection_id" placeholder="不使用" clearable>
                   <t-option value="" label="不使用" />
                   <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
@@ -662,16 +699,28 @@
           </t-card>
 
           <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>高级设置</template>
+            <template #title>Prompt engineering</template>
             <div class="agent-service-form-grid">
-              <t-form-item label="Max Message Length">
+              <t-form-item label="System Prompt" class="agent-service-form-item-full">
+                <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。" />
+              </t-form-item>
+              <t-form-item label="自然语言回复 Prompt" class="agent-service-form-item-full">
+                <t-textarea v-model="form.natural_language_reply_system_prompt" placeholder="可选。专门给自然语言回复模型使用的系统提示词。" />
+              </t-form-item>
+            </div>
+          </t-card>
+
+          <t-card class="agent-service-form-section" :bordered="false">
+            <template #title>行为控制</template>
+            <div class="agent-service-form-grid">
+              <t-form-item label="最长输出消息长度">
                 <t-input-number v-model="form.max_message_length" :min="1" />
               </t-form-item>
-              <t-form-item label="Max Steer Count">
+              <t-form-item label="用户最多 Steer 次数">
                 <t-input-number v-model="form.max_steer_count" :min="0" />
                 <div class="agent-service-form-hint">当 Service 还没发出最终回复时，用户继续发消息会被视为"插嘴 / steer"。这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出的消息会被丢弃。</div>
               </t-form-item>
-              <t-form-item label="Compact Context Length">
+              <t-form-item label="达到上下文长度时压缩">
                 <t-input-number v-model="form.compact_context_length" :min="0" />
               </t-form-item>
             </div>
@@ -695,30 +744,11 @@
           </t-card>
         </template>
 
-        <!-- 头像编辑 -->
-        <template v-if="form.type === 'workspace'">
-          <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>Service 头像</template>
-            <t-form-item label="头像" class="agent-service-form-item-full">
-              <div class="agent-service-avatar-row">
-                <img v-if="form.avatar_url" :src="getAvatarDisplayUrl(form.avatar_url)" alt="Avatar preview" class="agent-service-avatar-preview" />
-                <div v-else class="agent-service-avatar-placeholder">{{ form.name ? form.name.slice(0, 1).toUpperCase() : 'A' }}</div>
-                <div class="agent-service-avatar-actions">
-                  <input ref="avatarFileInput" type="file" accept="image/*" style="display: none" @change="handleAvatarFileSelect" />
-                  <t-button variant="text" @click="$refs.avatarFileInput?.click()">{{ form.avatar_url ? '更换头像' : '上传头像' }}</t-button>
-                  <t-button v-if="form.avatar_url" variant="text" theme="danger" @click="clearAvatar">删除</t-button>
-                </div>
-              </div>
-              <t-input v-model="form.avatar_url" placeholder="头像 URL（可选，或直接上传图片）" style="margin-top: 8px" />
-            </t-form-item>
-          </t-card>
-        </template>
-
         <!-- 默认工具 -->
         <t-card class="agent-service-form-section" :bordered="false">
-          <template #title>默认工具</template>
+          <template #title>工具和能力</template>
           <div class="agent-service-default-tools-search">
-            <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具名称、ID 或说明" clearable />
+            <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具" clearable />
           </div>
           <div v-if="filteredDefaultTools.length === 0" class="agent-service-empty-state">没有匹配的工具。</div>
           <t-table v-else :data="filteredDefaultTools" :columns="defaultToolColumns" :hover="true" :pagination="false" row-key="id" table-layout="fixed">
@@ -1287,6 +1317,20 @@
         <input ref="retrievalDatabaseImportFileInput" type="file" accept=".json,application/json" class="agent-service-import-input" @change="handleRetrievalDatabaseFileChange" />
       </div>
     </t-dialog>
+    <t-dialog
+      v-model:visible="showWebSearchDialog"
+      header="新增 Web Search"
+      :confirm-btn="null"
+      cancel-btn="取消"
+      :close-on-overlay-click="false"
+    >
+      <div class="agent-service-model-config-actions">
+        <t-button block theme="primary" @click="openWebSearchCreatePage">新增 Web Search</t-button>
+        <t-button block variant="outline" :loading="webSearchImporting" @click="importWebSearchFromClipboard">从剪贴板导入</t-button>
+        <t-button block variant="outline" :loading="webSearchImporting" @click="triggerWebSearchImportFile">从 JSON 导入</t-button>
+        <input ref="webSearchImportFileInput" type="file" accept=".json,application/json" class="agent-service-import-input" @change="handleWebSearchFileChange" />
+      </div>
+    </t-dialog>
   </section>
 </template>
 
@@ -1307,7 +1351,6 @@ const {
   llm,
   workflows,
   form,
-  editingServiceId,
   showCreatePicker,
   showCreateForm,
   showEditModal,
@@ -1349,6 +1392,7 @@ const {
   memoryWeaviateConnections,
   imageElasticsearchConnections,
   memoryElasticsearchConnections,
+  retrievalConnections,
   ignoreRulesDisabledReason,
   resetForm,
   avatarUploading,
@@ -1426,6 +1470,9 @@ const modelImporting = ref(false);
 const showRetrievalDatabaseDialog = ref(false);
 const retrievalDatabaseImportFileInput = ref<HTMLInputElement | null>(null);
 const retrievalDatabaseImporting = ref(false);
+const showWebSearchDialog = ref(false);
+const webSearchImportFileInput = ref<HTMLInputElement | null>(null);
+const webSearchImporting = ref(false);
 
 function handlePrimaryModelChange(value: string | number) {
   if (String(value) !== "__add_model__") return;
@@ -1439,6 +1486,12 @@ function handleMemoryBackendChange(value: string | number) {
   showRetrievalDatabaseDialog.value = true;
 }
 
+function handleWebSearchChange(value: string | number) {
+  if (String(value) !== "__add_web_search__") return;
+  form.web_search_engine_connection_id = "";
+  showWebSearchDialog.value = true;
+}
+
 function openModelCreatePage() {
   showModelConfigDialog.value = false;
   router.push({ path: "/llm", query: { action: "create" } });
@@ -1447,6 +1500,11 @@ function openModelCreatePage() {
 function openRetrievalDatabaseCreatePage() {
   showRetrievalDatabaseDialog.value = false;
   router.push({ path: "/connections", query: { action: "create" } });
+}
+
+function openWebSearchCreatePage() {
+  showWebSearchDialog.value = false;
+  router.push({ path: "/connections", query: { action: "create", type: "web_search_engine" } });
 }
 
 async function importModelFromText(raw: string) {
@@ -1521,6 +1579,44 @@ function handleRetrievalDatabaseFileChange(event: Event) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => { void importRetrievalDatabaseFromText(String(reader.result)); input.value = ""; };
+  reader.onerror = () => { alert("文件读取失败"); input.value = ""; };
+  reader.readAsText(file);
+}
+
+async function importWebSearchFromText(raw: string) {
+  if (webSearchImporting.value) return;
+  webSearchImporting.value = true;
+  try {
+    const config = assertConnectionConfig(JSON.parse(raw));
+    if (config.kind.type !== "web_search_engine") {
+      throw new Error("Web Search 仅支持 Web Search Engine 连接配置");
+    }
+    const created = await system.connections.create({ name: config.name, enabled: config.enabled, kind: config.kind });
+    await load();
+    form.web_search_engine_connection_id = created.config_id;
+    showWebSearchDialog.value = false;
+  } catch (error) {
+    alert(`Web Search 导入失败：${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    webSearchImporting.value = false;
+  }
+}
+
+async function importWebSearchFromClipboard() {
+  try {
+    await importWebSearchFromText(await navigator.clipboard.readText());
+  } catch (error) {
+    alert(`读取剪贴板失败：${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function triggerWebSearchImportFile() { webSearchImportFileInput.value?.click(); }
+function handleWebSearchFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { void importWebSearchFromText(String(reader.result)); input.value = ""; };
   reader.onerror = () => { alert("文件读取失败"); input.value = ""; };
   reader.readAsText(file);
 }
@@ -1702,6 +1798,13 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   padding-bottom: 80px;
 }
 
+.agent-service-create-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
 .agent-service-drawer-footer {
   display: flex;
   justify-content: flex-end;
@@ -1764,6 +1867,13 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   font-weight: 600;
 }
 
+:global(.t-select-option.agent-service-add-web-search-option) {
+  position: relative;
+  margin-bottom: 6px;
+  color: var(--td-brand-color);
+  font-weight: 600;
+}
+
 :global(.agent-service-add-model-option-content) {
   display: inline-flex;
   align-items: center;
@@ -1789,6 +1899,15 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
 }
 
 :global(.t-select-option.agent-service-add-retrieval-option::after) {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: -4px;
+  left: 8px;
+  border-bottom: 1px solid var(--td-component-border);
+}
+
+:global(.t-select-option.agent-service-add-web-search-option::after) {
   content: "";
   position: absolute;
   right: 8px;
@@ -1858,16 +1977,6 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
 .agent-service-avatar-actions {
   display: flex;
   gap: 8px;
-}
-
-.agent-service-edit-drawer-header {
-  display: grid;
-  gap: 8px;
-}
-
-.agent-service-edit-badges {
-  display: flex;
-  gap: 6px;
 }
 
 .agent-service-type-grid {

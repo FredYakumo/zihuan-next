@@ -236,6 +236,9 @@ const imageElasticsearchConnections = computed(() =>
 const memoryElasticsearchConnections = computed(() =>
   connections.value.filter((item) => item.kind.type === "elasticsearch" && item.kind.collection_schema === "agent_memory"),
 );
+const retrievalConnections = computed(() =>
+  connections.value.filter((item) => item.kind.type === "weaviate" || item.kind.type === "elasticsearch"),
+);
 const ignoreRulesDisabledReason = computed(() => {
   if (!editingServiceId.value) {
     return "请先保存当前 Service，再管理 Ignore Rules。";
@@ -868,7 +871,8 @@ async function submitForm() {
     }
     if (
       form.type === "qq_chat" &&
-      form.weaviate_memory_connection_id &&
+      form.retrieval_store_id &&
+      form.retrieval_store_id !== "__local_markdown__" &&
       !form.embedding_model_ref_id
     ) {
       alert("QQ Chat Agent Service 启用记忆库时需要绑定文本向量模型");
@@ -1009,6 +1013,7 @@ onMounted(() => {
     memoryWeaviateConnections,
     imageElasticsearchConnections,
     memoryElasticsearchConnections,
+    retrievalConnections,
     ignoreRulesDisabledReason,
     resetForm,
     avatarUploading,

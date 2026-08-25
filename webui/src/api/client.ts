@@ -1338,7 +1338,11 @@ export const setup = {
   reset(): Promise<{ ok: boolean }> {
     return request("POST", "/setup/reset");
   },
-  streamProgress(taskId: string, onEvent: (event: SetupProgressEvent) => void): () => void {
+  streamProgress(
+    taskId: string,
+    onEvent: (event: SetupProgressEvent) => void,
+    onError?: (error: Event) => void,
+  ): () => void {
     const es = new EventSource(`/api/setup/progress?task_id=${taskId}`);
     es.onmessage = (event) => {
       try {
@@ -1354,6 +1358,7 @@ export const setup = {
     es.onerror = (error) => {
       console.warn("Setup progress SSE error", error);
       es.close();
+      onError?.(error);
     };
     return () => es.close();
   },
