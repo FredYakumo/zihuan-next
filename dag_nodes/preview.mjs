@@ -1,6 +1,6 @@
-import { port } from "../graph_engine/zihuan_sdk.mjs";
+import { port } from "#zihuan-sdk";
 
-/** @type {import("../graph_engine/zihuan_sdk.mjs").NodeDefinition[]} */
+/** @type {import("#zihuan-sdk").NodeDefinition[]} */
 export const nodes = [
   {
     type_id: "preview_string", display_name: "Preview String", category: "工具", description: "在节点卡片内预览输入字符串",

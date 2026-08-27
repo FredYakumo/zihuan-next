@@ -1,4 +1,4 @@
-import { port } from "../graph_engine/zihuan_sdk.mjs";
+import { port } from "#zihuan-sdk";
 
 const toMessage = (content, role) => ({
   role: ["system", "user", "assistant", "tool"].includes(String(role).toLowerCase()) ? String(role).toLowerCase() : "system",
@@ -6,7 +6,7 @@ const toMessage = (content, role) => ({
   tool_calls: [],
 });
 
-/** @type {import("../graph_engine/zihuan_sdk.mjs").NodeDefinition[]} */
+/** @type {import("#zihuan-sdk").NodeDefinition[]} */
 export const nodes = [
   {
     type_id: "string_to_llm_message", display_name: "字符串转 LLMMessage", category: "消息", description: "将字符串封装为可选 role 的 LLMMessage",

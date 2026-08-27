@@ -1,6 +1,6 @@
-import { port } from "../graph_engine/zihuan_sdk.mjs";
+import { port } from "#zihuan-sdk";
 
-/** @type {import("../graph_engine/zihuan_sdk.mjs").NodeDefinition[]} */
+/** @type {import("#zihuan-sdk").NodeDefinition[]} */
 export const nodes = [
   {
     type_id: "current_time", display_name: "当前时间", category: "数据", description: "输出当前本地时间字符串",

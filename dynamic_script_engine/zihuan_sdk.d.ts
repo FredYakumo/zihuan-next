@@ -111,7 +111,7 @@ export interface NodeExecutionContext {
   readonly nodeName: string;
   readonly inputs: NodeInputs;
   readonly inline_values: Record<string, JsonValue | undefined>;
-  readonly sdk: ZihuanSdk;
+  readonly zihuan: ZihuanSdk;
 }
 export interface NodeDefinition {
   type_id: string;

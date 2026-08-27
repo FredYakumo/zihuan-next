@@ -1,4 +1,4 @@
-import { port } from "../graph_engine/zihuan_sdk.mjs";
+import { port } from "#zihuan-sdk";
 
 const variables = (template) => {
   const result = [];
@@ -20,7 +20,7 @@ const display = (value) => {
   return String(value);
 };
 
-/** @type {import("../graph_engine/zihuan_sdk.mjs").NodeDefinition[]} */
+/** @type {import("#zihuan-sdk").NodeDefinition[]} */
 export const nodes = [{
   type_id: "format_string", display_name: "格式化字符串", category: "工具", description: "通过 ${变量名} 模板语法将输入变量格式化为字符串",
   dynamic_input_ports: true,

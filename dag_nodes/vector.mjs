@@ -1,4 +1,4 @@
-import { port } from "../graph_engine/zihuan_sdk.mjs";
+import { port } from "#zihuan-sdk";
 
 function cosine(left, right) {
   if (!Array.isArray(left) || !Array.isArray(right) || left.length === 0 || right.length === 0 || left.length !== right.length) {
@@ -19,7 +19,7 @@ function cosine(left, right) {
   return dot / Math.sqrt(leftNorm * rightNorm);
 }
 
-/** @type {import("../graph_engine/zihuan_sdk.mjs").NodeDefinition[]} */
+/** @type {import("#zihuan-sdk").NodeDefinition[]} */
 export const nodes = [
   {
     type_id: "vector_cosine_similarity", display_name: "向量余弦相似度", category: "AI", description: "计算两个向量的余弦相似度",

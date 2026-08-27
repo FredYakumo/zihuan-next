@@ -3,8 +3,9 @@ use std::cell::RefCell;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use once_cell::sync::Lazy;
 use tokio::task::block_in_place;
 
 use serde::Deserialize;
@@ -19,9 +20,10 @@ use super::registry::{NodeFactory, NodeRegistry};
 use super::{DataValue, Node, NodeConfigField, NodeConfigFlow, NodeInputFlow, NodeOutputFlow, Port, RuntimeVariableStore};
 
 thread_local! {
-    static GRAPH_WORKER: RefCell<Option<ScriptWorker>> = const { RefCell::new(None) };
     static SCRIPT_RESOURCES: RefCell<ScriptResourceStore> = RefCell::new(ScriptResourceStore::default());
 }
+
+static DYNAMIC_SCRIPT_RUNTIME: Lazy<Mutex<Option<DynamicScriptRuntime>>> = Lazy::new(|| Mutex::new(None));
 
 #[derive(Default)]
 struct ScriptResourceStore {
@@ -29,18 +31,49 @@ struct ScriptResourceStore {
     values: HashMap<String, DataValue>,
 }
 
-pub fn with_graph_worker<T>(operation: impl FnOnce() -> T) -> T {
+pub fn with_dynamic_script_resources<T>(operation: impl FnOnce() -> T) -> T {
     SCRIPT_RESOURCES.with(|store| *store.borrow_mut() = ScriptResourceStore::default());
-    GRAPH_WORKER.with(|slot| *slot.borrow_mut() = ScriptWorker::start().ok());
     let result = operation();
-    GRAPH_WORKER.with(|slot| {
-        if let Some(mut worker) = slot.borrow_mut().take() {
-            let _ = worker.child.kill();
-            let _ = worker.child.wait();
-        }
-    });
     SCRIPT_RESOURCES.with(|store| *store.borrow_mut() = ScriptResourceStore::default());
     result
+}
+
+/// Start the process-wide dynamic script runtime.
+///
+/// The worker owns a line-oriented stdin/stdout protocol, so requests are
+/// serialized through a mutex while the process itself remains alive.
+pub fn start_dynamic_script_runtime() -> Result<()> {
+    let mut slot = DYNAMIC_SCRIPT_RUNTIME
+        .lock()
+        .map_err(|_| Error::ValidationError("动态脚本运行时互斥锁不可用".to_string()))?;
+    ensure_dynamic_script_runtime(&mut slot)
+}
+
+fn request_dynamic_script_runtime(
+    request: &Value,
+    host: &mut dyn FnMut(&str, &Value) -> Result<Value>,
+) -> Result<Value> {
+    let mut slot = DYNAMIC_SCRIPT_RUNTIME
+        .lock()
+        .map_err(|_| Error::ValidationError("动态脚本运行时互斥锁不可用".to_string()))?;
+    ensure_dynamic_script_runtime(&mut slot)?;
+
+    let result = slot.as_mut().expect("worker is initialized").request(request, host);
+    if result.is_err() {
+        *slot = None;
+    }
+    result
+}
+
+fn ensure_dynamic_script_runtime(slot: &mut Option<DynamicScriptRuntime>) -> Result<()> {
+    let needs_restart = match slot.as_mut() {
+        Some(worker) => !worker.is_running()?,
+        None => true,
+    };
+    if needs_restart {
+        *slot = Some(DynamicScriptRuntime::start()?);
+    }
+    Ok(())
 }
 
 fn is_opaque_script_resource(value: &DataValue) -> bool {
@@ -256,25 +289,25 @@ fn required_string(params: &Value, name: &str) -> Result<String> {
         .ok_or_else(|| Error::ValidationError(format!("{name} is required")))
 }
 
-struct ScriptWorker {
+struct DynamicScriptRuntime {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
 }
 
-impl ScriptWorker {
+impl DynamicScriptRuntime {
     fn start() -> Result<Self> {
         let workspace_root = std::env::current_dir().map_err(|error| Error::ValidationError(error.to_string()))?;
         let runtime = crate::config::ConfigCenter::shared().load_root()?.node_runtime;
         let command_spec = resolve_node_runtime(&workspace_root, &runtime)?;
         let mut child = command_spec.to_command()
-            .arg(workspace_root.join("graph_engine").join("engine.mjs"))
+            .arg(workspace_root.join("dynamic_script_engine").join("engine.mjs"))
             .arg("--serve")
-            .current_dir(workspace_root.join("graph_engine"))
+            .current_dir(workspace_root.join("dynamic_script_engine"))
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
         Ok(Self {
-            stdin: child.stdin.take().ok_or_else(|| Error::ValidationError("无法打开 DAG Node worker stdin".to_string()))?,
-            stdout: BufReader::new(child.stdout.take().ok_or_else(|| Error::ValidationError("无法打开 DAG Node worker stdout".to_string()))?),
+            stdin: child.stdin.take().ok_or_else(|| Error::ValidationError("无法打开动态脚本运行时 stdin".to_string()))?,
+            stdout: BufReader::new(child.stdout.take().ok_or_else(|| Error::ValidationError("无法打开动态脚本运行时 stdout".to_string()))?),
             child,
         })
     }
@@ -290,10 +323,10 @@ impl ScriptWorker {
         loop {
             let mut line = String::new();
             if self.stdout.read_line(&mut line)? == 0 {
-                return Err(Error::ValidationError("DAG Node worker 在响应前退出".to_string()));
+                return Err(Error::ValidationError("动态脚本运行时在响应前退出".to_string()));
             }
             let response: Value = serde_json::from_str(&line)
-                .map_err(|error| Error::ValidationError(format!("DAG Node worker 响应无效: {error}")))?;
+                .map_err(|error| Error::ValidationError(format!("动态脚本运行时响应无效: {error}")))?;
             if response.get("kind").and_then(Value::as_str) == Some("host_request") {
                 let id = response.get("id").cloned().unwrap_or(Value::Null);
                 let method = response.get("method").and_then(Value::as_str).unwrap_or_default();
@@ -309,6 +342,10 @@ impl ScriptWorker {
             }
             return Ok(response);
         }
+    }
+
+    fn is_running(&mut self) -> Result<bool> {
+        Ok(self.child.try_wait()?.is_none())
     }
 }
 
@@ -339,26 +376,26 @@ struct ScriptNodePorts {
 
 pub fn load_script_catalog(workspace_root: &Path, config: &NodeRuntimeConfig) -> Result<Vec<ScriptNodeDefinition>> {
     let command_spec = resolve_node_runtime(workspace_root, config)?;
-    let worker = workspace_root.join("graph_engine").join("engine.mjs");
+    let worker = workspace_root.join("dynamic_script_engine").join("engine.mjs");
     let output = command_spec
         .to_command()
         .arg(worker)
         .arg("--catalog")
-        .current_dir(workspace_root.join("graph_engine"))
+        .current_dir(workspace_root.join("dynamic_script_engine"))
         .output()
-        .map_err(|error| Error::ValidationError(format!("无法启动 DAG Node catalog: {error}")))?;
+        .map_err(|error| Error::ValidationError(format!("无法启动动态脚本运行时目录读取器: {error}")))?;
     if !output.status.success() {
         return Err(Error::ValidationError(format!(
-            "加载 DAG Node catalog 失败: {}",
+            "加载动态脚本运行时目录失败: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         )));
     }
     let definitions: Vec<ScriptNodeDefinition> = serde_json::from_slice(&output.stdout)
-        .map_err(|error| Error::ValidationError(format!("DAG Node catalog 不是合法 JSON: {error}")))?;
+        .map_err(|error| Error::ValidationError(format!("动态脚本运行时目录不是合法 JSON: {error}")))?;
     let mut ids = std::collections::HashSet::new();
     for definition in &definitions {
         if definition.type_id.trim().is_empty() || !ids.insert(definition.type_id.clone()) {
-            return Err(Error::ValidationError(format!("DAG Node catalog 包含无效或重复类型: {}", definition.type_id)));
+            return Err(Error::ValidationError(format!("动态脚本运行时目录包含无效或重复类型: {}", definition.type_id)));
         }
     }
     Ok(definitions)
@@ -383,34 +420,34 @@ pub fn register_script_catalog(registry: &NodeRegistry, workspace_root: &Path, c
 
 fn resolve_script_ports(type_id: &str, inline_values: &HashMap<String, Value>) -> Result<ScriptNodePorts> {
     let workspace_root = std::env::current_dir()
-        .map_err(|error| Error::ValidationError(format!("无法获取 DAG Node 工作目录: {error}")))?;
+        .map_err(|error| Error::ValidationError(format!("无法获取动态脚本运行时工作目录: {error}")))?;
     let runtime = crate::config::ConfigCenter::shared().load_root()?.node_runtime;
     let command_spec = resolve_node_runtime(&workspace_root, &runtime)?;
     let mut child = command_spec
         .to_command()
-        .arg(workspace_root.join("graph_engine").join("engine.mjs"))
+        .arg(workspace_root.join("dynamic_script_engine").join("engine.mjs"))
         .arg("--ports")
-        .current_dir(workspace_root.join("graph_engine"))
+        .current_dir(workspace_root.join("dynamic_script_engine"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| Error::ValidationError(format!("无法启动 DAG Node 端口解析器: {error}")))?;
+        .map_err(|error| Error::ValidationError(format!("无法启动动态脚本运行时端口解析器: {error}")))?;
     let request = json!({ "type_id": type_id, "inline_values": inline_values });
     serde_json::to_writer(
-        child.stdin.as_mut().ok_or_else(|| Error::ValidationError("无法打开 DAG Node 端口解析器 stdin".to_string()))?,
+        child.stdin.as_mut().ok_or_else(|| Error::ValidationError("无法打开动态脚本运行时端口解析器 stdin".to_string()))?,
         &request,
     )?;
     let output = child.wait_with_output()?;
     if !output.status.success() {
         return Err(Error::ValidationError(format!(
-            "解析 DAG Node '{}' 动态端口失败: {}",
+            "解析动态脚本节点 '{}' 的动态端口失败: {}",
             type_id,
             String::from_utf8_lossy(&output.stderr).trim()
         )));
     }
     serde_json::from_slice(&output.stdout)
-        .map_err(|error| Error::ValidationError(format!("DAG Node '{}' 动态端口响应无效: {error}", type_id)))
+        .map_err(|error| Error::ValidationError(format!("动态脚本节点 '{}' 的端口响应无效: {error}", type_id)))
 }
 
 struct ScriptNode {
@@ -471,10 +508,7 @@ impl Node for ScriptNode {
             "inputs": inputs.iter().map(|(name, value)| (name.clone(), script_value_to_json(value))).collect::<serde_json::Map<_, _>>(),
         });
         let variables = self.runtime_variables.clone();
-        let response = GRAPH_WORKER.with(|slot| {
-            let mut slot = slot.borrow_mut();
-            if slot.is_none() { *slot = Some(ScriptWorker::start()?); }
-            slot.as_mut().expect("worker is initialized").request(&request, &mut |method, params| {
+        let response = request_dynamic_script_runtime(&request, &mut |method, params| {
                 match method {
                     "variables.get" => {
                         let name = params.get("name").and_then(Value::as_str)
@@ -1107,27 +1141,26 @@ impl Node for ScriptNode {
                         };
                         Ok(json!({"results": results}))
                     }
-                    _ => Err(Error::ValidationError(format!("不支持的 DAG Node 宿主调用: {method}"))),
+                    _ => Err(Error::ValidationError(format!("动态脚本运行时不支持宿主调用: {method}"))),
                 }
-            })
-        })?;
+            })?;
         if let Some(error) = response.get("error").and_then(Value::as_str) {
             return Err(Error::ValidationError(format!(
-                "DAG Node '{}' 执行失败: {error}",
+                "动态脚本节点 '{}' 执行失败: {error}",
                 self.definition.type_id
             )));
         }
         let outputs = response.get("outputs").and_then(Value::as_object)
-            .ok_or_else(|| Error::ValidationError(format!("DAG Node '{}' 输出缺少 outputs 对象", self.definition.type_id)))?;
+            .ok_or_else(|| Error::ValidationError(format!("动态脚本节点 '{}' 输出缺少 outputs 对象", self.definition.type_id)))?;
         let declared = self.output_ports.iter()
             .map(|port| (port.name.as_str(), &port.data_type)).collect::<HashMap<_, _>>();
         let mut result = NodeOutputFlow::new();
         for (name, value) in outputs {
             let Some(data_type) = declared.get(name.as_str()) else {
-                return Err(Error::ValidationError(format!("DAG Node '{}' 返回了未声明输出 '{name}'", self.definition.type_id)));
+                return Err(Error::ValidationError(format!("动态脚本节点 '{}' 返回了未声明输出 '{name}'", self.definition.type_id)));
             };
             let parsed = script_json_to_value(value, data_type)
-                .ok_or_else(|| Error::ValidationError(format!("DAG Node '{}' 输出 '{name}' 类型不匹配", self.definition.type_id)))?;
+                .ok_or_else(|| Error::ValidationError(format!("动态脚本节点 '{}' 输出 '{name}' 类型不匹配", self.definition.type_id)))?;
             result.insert(name.clone(), parsed);
         }
         Ok(result)

@@ -1,6 +1,6 @@
-import { port } from "../graph_engine/zihuan_sdk.mjs";
+import { port } from "#zihuan-sdk";
 
-/** @type {import("../graph_engine/zihuan_sdk.mjs").NodeDefinition[]} */
+/** @type {import("#zihuan-sdk").NodeDefinition[]} */
 export const nodes = [
   {
     type_id: "concat_vec", display_name: "拼接两个列表", category: "工具", description: "将 vec2 拼接到 vec1 后面",

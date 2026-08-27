@@ -1,15 +1,15 @@
-import { port } from "../graph_engine/zihuan_sdk.mjs";
+import { port } from "#zihuan-sdk";
 
-/** @type {import("../graph_engine/zihuan_sdk.mjs").NodeDefinition[]} */
+/** @type {import("#zihuan-sdk").NodeDefinition[]} */
 export const nodes = [
   {
     type_id: "set_variable", display_name: "设置变量", category: "工具", description: "将输入值写入运行期节点图变量",
     dynamic_input_ports: true,
     input_ports: [port("variable_name", "String", { required: false }), port("variable_type", "String", { required: false }), port("value", "Any", { required: false })], output_ports: [],
-    execute: async ({ inputs, inline_values, sdk }) => {
+    execute: async ({ inputs, inline_values, zihuan }) => {
       const name = inputs.variable_name ?? inline_values.variable_name;
       if (!name) throw new Error("未选择变量");
-      await sdk.variables.set(name, inputs.value);
+      await zihuan.variables.set(name, inputs.value);
       return {};
     },
   },

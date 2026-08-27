@@ -1,4 +1,4 @@
-import { port } from "../graph_engine/zihuan_sdk.mjs";
+import { port } from "#zihuan-sdk";
 
 const baseInputs = () => [
   port("json", "Json", { description: "待提取字段的 JSON 对象" }),
@@ -18,7 +18,7 @@ const fields = (value) => {
   });
 };
 
-/** @type {import("../graph_engine/zihuan_sdk.mjs").NodeDefinition[]} */
+/** @type {import("#zihuan-sdk").NodeDefinition[]} */
 export const nodes = [{
   type_id: "json_extract", display_name: "提取 JSON 字段", category: "工具", description: "通过字段编辑器配置要提取的字段列表，并动态输出对应类型的字段值",
   dynamic_output_ports: true,

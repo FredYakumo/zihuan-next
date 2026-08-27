@@ -441,7 +441,7 @@ pub fn init_node_registry_with_extensions(extra_registrars: &[RegistryInitFn]) -
         init()?;
     }
     let workspace_root = std::env::current_dir()
-        .map_err(|error| crate::error::Error::ValidationError(format!("无法获取 DAG Node 工作目录: {error}")))?;
+        .map_err(|error| crate::error::Error::ValidationError(format!("无法获取动态脚本运行时工作目录: {error}")))?;
     let config = crate::config::ConfigCenter::shared()
         .load_root()
         .map(|root| root.node_runtime)

@@ -14,6 +14,7 @@ use log::{error, info};
 use log_util::log_util::LogUtil;
 use salvo::Listener;
 use zihuan_core::config::ConfigRepository;
+use zihuan_core::node_runtime_resolver::check_node_runtime;
 
 lazy_static! {
     static ref BASE_LOG: LogUtil = LogUtil::new_with_path("zihuan_next", "logs");
@@ -37,6 +38,11 @@ async fn main() {
         error!("Failed to initialize node registry: {}", e);
     } else {
         info!("Node registry initialized");
+    }
+
+    match start_node_worker().await {
+        Ok(()) => info!("Dynamic Script Runtime started"),
+        Err(error) => error!("Failed to start Dynamic Script Runtime: {error}"),
     }
 
     // Initialize global command registry and sync persisted permissions
@@ -121,6 +127,15 @@ async fn main() {
         .await
         .expect("Failed to bind TCP listener");
     salvo::Server::new(acceptor).serve(service).await;
+}
+
+async fn start_node_worker() -> zihuan_core::error::Result<()> {
+    let workspace_root = std::env::current_dir()
+        .map_err(|error| zihuan_core::error::Error::ValidationError(format!("无法获取动态脚本运行时工作目录: {error}")))?;
+    let config = zihuan_core::config::ConfigCenter::shared().load_root()?.node_runtime;
+    let (_command, version, executable) = check_node_runtime(&workspace_root, &config).await?;
+    info!("Dynamic Script Runtime ready: {executable} ({version})");
+    zihuan_core::graph::script_node::start_dynamic_script_runtime()
 }
 
 async fn startup_recover_orphan_tasks(state: &api::state::AppState) {

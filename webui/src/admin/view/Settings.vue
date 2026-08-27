@@ -111,11 +111,11 @@
       </div>
     </t-card>
 
-    <t-card title="Node.js 运行时" bordered header-bordered>
+    <t-card title="Dynamic Script Runtime" bordered header-bordered>
       <template #actions>
         <t-button variant="text" :disabled="nodeRuntimeLoading" @click="reloadNodeRuntime">重新检查</t-button>
       </template>
-      <p class="muted">DAG 脚本节点默认使用的 Node.js 运行时。</p>
+      <p class="muted">用于执行动态脚本节点</p>
       <div class="settings-python-body">
         <div v-if="nodeRuntimeLoading" class="settings-python-pending"><t-loading size="small" /><span>检测中</span></div>
         <div v-else-if="nodeRuntime" class="settings-python-status">

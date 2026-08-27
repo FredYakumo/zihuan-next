@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-/// Selects the executable used for script-backed DAG nodes.
+/// Selects the Node.js executable used by the dynamic script runtime.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeRuntimeKind {
-    /// Resolve `node` from PATH and run the checked-in `graph_engine` project.
+    /// Resolve `node` from PATH and run the checked-in `dynamic_script_engine` project.
     #[default]
     ProjectNode,
     CustomExecutable,

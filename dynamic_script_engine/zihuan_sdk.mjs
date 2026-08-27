@@ -1,6 +1,14 @@
 /** @typedef {import("./zihuan_sdk.d.ts").NodeDefinition} NodeDefinition */
 /** @typedef {import("./zihuan_sdk.d.ts").ZihuanSdk} ZihuanSdkContract */
 
+/**
+ * Declares a static or dynamically resolved port on a script node.
+ *
+ * @param {string} name Stable port name used by graph edges and inputs.
+ * @param {import("./zihuan_sdk.d.ts").DataType} data_type Runtime data type.
+ * @param {{ required?: boolean, hidden?: boolean, description?: string | null }} [options={}] UI and validation options.
+ * @returns {import("./zihuan_sdk.d.ts").PortDefinition} Serializable port definition.
+ */
 export const port = (name, data_type, options = {}) => ({
   name,
   data_type,
@@ -9,13 +17,28 @@ export const port = (name, data_type, options = {}) => ({
   description: options.description ?? null,
 });
 
+/**
+ * Opaque reference to a Rust-owned resource exposed to dynamic scripts.
+ *
+ * Handles are intentionally immutable. They may be passed back through ZiHuan
+ * calls, but must not be dereferenced or reconstructed by script code.
+ */
 export class ResourceHandle {
+  /**
+   * @param {string} handle Runtime-scoped opaque handle ID.
+   * @param {string} dataType ZiHuan data type associated with the handle.
+   */
   constructor(handle, dataType) {
     this.handle = handle;
     this.dataType = dataType;
     Object.freeze(this);
   }
 
+  /**
+   * Converts this handle to the JSON wire format understood by the Rust host.
+   *
+   * @returns {{ $zihuan_handle: string, data_type: string }} Opaque resource handle payload.
+   */
   toJSON() {
     return { $zihuan_handle: this.handle, data_type: this.dataType };
   }
@@ -39,12 +62,29 @@ const resourceTypes = new Map([
   ["EmbeddingModel", EmbeddingModel], ["BotAdapterRef", BotAdapterRef],
 ]);
 
+/**
+ * Converts one Rust wire-format resource handle to its typed ZiHuan wrapper.
+ *
+ * Non-resource values are returned unchanged so this function can be used as
+ * the base case of recursive hydration.
+ *
+ * @template T
+ * @param {T} value Value received from the Rust host.
+ * @returns {T | ResourceHandle} Original value or a typed resource handle.
+ */
 export function resourceFromWire(value) {
   if (!value || typeof value !== "object" || !value.$zihuan_handle || !value.data_type) return value;
   const Resource = resourceTypes.get(value.data_type) ?? ResourceHandle;
   return new Resource(value.$zihuan_handle, value.data_type);
 }
 
+/**
+ * Recursively replaces Rust resource-handle payloads within arrays and objects.
+ *
+ * @template T
+ * @param {T} value Value received from the Rust host.
+ * @returns {T | ResourceHandle} Value tree containing typed resource handles.
+ */
 export function hydrateResources(value) {
   const resource = resourceFromWire(value);
   if (resource !== value) return resource;
@@ -53,6 +93,15 @@ export function hydrateResources(value) {
   return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, hydrateResources(nested)]));
 }
 
+/**
+ * Validates that a ZiHuan API argument is the expected resource-handle subclass.
+ *
+ * @param {unknown} value Candidate resource handle.
+ * @param {typeof ResourceHandle} Resource Expected handle constructor.
+ * @param {string} dataType Expected ZiHuan data type for error reporting.
+ * @returns {ResourceHandle} Validated handle.
+ * @throws {TypeError} When the supplied value has an incompatible type.
+ */
 function requireResource(value, Resource, dataType) {
   if (!(value instanceof Resource)) throw new TypeError(`expected ${dataType} resource handle`);
   return value;
@@ -60,6 +109,12 @@ function requireResource(value, Resource, dataType) {
 
 /** @implements {ZihuanSdkContract} */
 export class ZihuanSdk {
+  /**
+   * Creates the capability facade injected into a dynamic script node.
+   *
+   * @param {(method: string, params?: Record<string, unknown>) => Promise<unknown>} request
+   * transports a named ZiHuan capability call to the Rust host.
+   */
   constructor(request) {
     this._request = async (method, params = {}) => hydrateResources(await request(method, params));
     this.variables = Object.freeze({
@@ -149,6 +204,13 @@ export class ZihuanSdk {
   }
 }
 
+/**
+ * Creates the ZiHuan runtime facade for one node execution context.
+ *
+ * @param {(method: string, params?: Record<string, unknown>) => Promise<unknown>} request
+ * Function that transports a named ZiHuan capability call to the Rust host.
+ * @returns {ZihuanSdk} Frozen ZiHuan namespace tree for the executing node.
+ */
 export function createZihuanSdk(request) {
   return new ZihuanSdk(request);
 }

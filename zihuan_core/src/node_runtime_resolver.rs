@@ -33,9 +33,9 @@ impl NodeRuntimeCommand {
 pub fn resolve_node_runtime(workspace_root: &Path, config: &NodeRuntimeConfig) -> Result<NodeRuntimeCommand> {
     match config.kind {
         NodeRuntimeKind::ProjectNode => {
-            let package = workspace_root.join("graph_engine").join("package.json");
+            let package = workspace_root.join("dynamic_script_engine").join("package.json");
             if !package.is_file() {
-                return Err(Error::ValidationError(format!("未检测到 DAG Node 项目: {}", package.display())));
+                return Err(Error::ValidationError(format!("未检测到动态脚本运行时项目: {}", package.display())));
             }
             Ok(NodeRuntimeCommand { program: PathBuf::from("node"), args: Vec::new() })
         }
@@ -45,10 +45,10 @@ pub fn resolve_node_runtime(workspace_root: &Path, config: &NodeRuntimeConfig) -
                 .as_deref()
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
-                .ok_or_else(|| Error::ValidationError("自定义 Node.js 可执行文件路径不能为空".to_string()))?;
+                .ok_or_else(|| Error::ValidationError("动态脚本运行时的 Node.js 可执行文件路径不能为空".to_string()))?;
             let executable = resolve_workspace_path(workspace_root, raw);
             if !executable.is_file() {
-                return Err(Error::ValidationError(format!("自定义 Node.js 可执行文件不存在: {}", executable.display())));
+                return Err(Error::ValidationError(format!("动态脚本运行时的 Node.js 可执行文件不存在: {}", executable.display())));
             }
             Ok(NodeRuntimeCommand { program: executable, args: Vec::new() })
         }
@@ -61,14 +61,14 @@ pub async fn check_node_runtime(
 ) -> Result<(NodeRuntimeCommand, String, String)> {
     let command_spec = resolve_node_runtime(workspace_root, config)?;
     let mut command = command_spec.to_command();
-    command.arg("--version").current_dir(workspace_root.join("graph_engine"));
+    command.arg("--version").current_dir(workspace_root.join("dynamic_script_engine"));
     let output = timeout(RUNTIME_CHECK_TIMEOUT, tokio::process::Command::from(command).output())
         .await
-        .map_err(|_| Error::ValidationError("Node.js 运行时检测超时（10 秒）".to_string()))?
-        .map_err(|error| Error::ValidationError(format!("无法启动 Node.js 运行时: {error}")))?;
+        .map_err(|_| Error::ValidationError("动态脚本运行时检测超时（10 秒）".to_string()))?
+        .map_err(|error| Error::ValidationError(format!("无法启动动态脚本运行时: {error}")))?;
     if !output.status.success() {
         return Err(Error::ValidationError(format!(
-            "Node.js 运行时检测失败: {}",
+            "动态脚本运行时检测失败: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         )));
     }
