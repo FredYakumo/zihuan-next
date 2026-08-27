@@ -6,9 +6,9 @@ use log::warn;
 use super::agent_text_similarity::{
     compare_similarity_match_desc, rank_matches, HybridSimilarityConfig, SimilarityCandidate, SimilarityMatch,
 };
-use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::llm::InferenceParam;
-use zihuan_core::llm::{LLMMessage, MessageRole};
+use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
+use zihuan_core::model_inference::llm::InferenceParam;
+use zihuan_core::model_inference::llm::{LLMMessage, MessageRole};
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 const CLASSIFY_INTENT_PROMPT: &str = r#"You are a message intent classifier. You must output exactly one of the 9 labels below, and nothing else — no explanations, punctuation, quotes, code blocks, or extra text.
@@ -515,7 +515,7 @@ fn format_recent_history_for_intent(messages: &[LLMMessage], max_tokens: usize) 
 }
 
 pub fn classify_intent_with_trace(
-    llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    llm: &Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>,
     embedding_model: Option<&Arc<dyn EmbeddingBase>>,
     message: &str,
     history: Option<&[LLMMessage]>,
@@ -583,7 +583,7 @@ pub fn classify_intent_with_trace(
 }
 
 pub fn classify_intent(
-    llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    llm: &Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>,
     embedding_model: Option<&Arc<dyn EmbeddingBase>>,
     message: &str,
     history: Option<&[LLMMessage]>,

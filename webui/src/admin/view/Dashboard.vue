@@ -48,7 +48,7 @@
               <div class="dashboard-service-identity-text">
                 <div class="dashboard-service-name-row">
                   <h4>{{ service.name }}</h4>
-                  <span class="dashboard-service-tag">{{ service.agent_type.type }}</span>
+                  <span class="dashboard-service-tag">{{ service.role_service_type.type }}</span>
                   <span v-if="service.is_default" class="dashboard-service-tag">default</span>
                 </div>
                 <div class="dashboard-service-status-line">
@@ -61,7 +61,7 @@
             </div>
             <div class="dashboard-service-actions">
               <button
-                v-if="CHAT_ELIGIBLE_SERVICE_TYPES.has(service.agent_type.type)"
+                v-if="CHAT_ELIGIBLE_SERVICE_TYPES.has(service.role_service_type.type)"
                 class="btn primary dashboard-service-row-btn"
                 :disabled="service.runtime.status !== 'running' || operatingId === service.config_id"
                 @click="openChatModal(service.config_id)"
@@ -94,11 +94,11 @@
               <span class="dashboard-service-spec-label">模型</span>
               <span>{{ llmName(service) }}</span>
             </span>
-            <span v-if="service.agent_type.type === 'http_stream'" class="dashboard-service-spec">
+            <span v-if="service.role_service_type.type === 'http_stream'" class="dashboard-service-spec">
               <span class="dashboard-service-spec-label">Bind</span>
-              <span class="mono">{{ (service.agent_type as Record<string, unknown>).bind || '127.0.0.1:18080' }}</span>
+              <span class="mono">{{ (service.role_service_type as Record<string, unknown>).bind || '127.0.0.1:18080' }}</span>
             </span>
-            <span v-else-if="service.agent_type.type === 'qq_chat'" class="dashboard-service-spec">
+            <span v-else-if="service.role_service_type.type === 'qq_chat'" class="dashboard-service-spec">
               <span class="dashboard-service-spec-label">Bot QQ</span>
               <span class="mono">{{ service.qq_chat_profile?.bot_user_id || '未知' }}</span>
             </span>

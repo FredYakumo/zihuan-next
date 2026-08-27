@@ -11,7 +11,7 @@
         <div class="service-card-title">
           <t-button variant="outline" @click="returnToList">返回 Service 列表</t-button>
           <span class="service-name">{{ service.name }}</span>
-          <t-tag variant="light">{{ serviceTypeLabel(service.agent_type.type) }}</t-tag>
+          <t-tag variant="light">{{ serviceTypeLabel(service.role_service_type.type) }}</t-tag>
         </div>
       </template>
 

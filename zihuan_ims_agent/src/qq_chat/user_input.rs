@@ -13,7 +13,7 @@ use zihuan_core::ims_bot_adapter::{
     REPLAY_CONTENT_LABEL, REPLY_END_MARKER, REPLY_MESSAGE_LABEL, REPLY_START_MARKER, SENDER_LABEL,
 };
 use log::{info, warn};
-use zihuan_core::llm::MessagePart;
+use zihuan_core::model_inference::llm::MessagePart;
 use zihuan_core::runtime::block_async;
 use zihuan_core::graph::object_storage::S3Ref;
 

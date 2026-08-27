@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use zihuan_core::agent::tool_calling::{consume_tool_progress_notification, current_task_progress_message};
+use zihuan_core::agent::tools::{consume_tool_progress_notification, current_task_progress_message};
 use zihuan_core::graph::tool_spec::{
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
 };

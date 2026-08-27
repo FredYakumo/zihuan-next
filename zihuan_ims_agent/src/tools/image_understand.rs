@@ -3,15 +3,16 @@ use std::sync::Arc;
 
 use zihuan_core::ims_bot_adapter::models::message::{ImageMessage, PersistedMedia};
 use log::warn;
-use zihuan_core::inference::system_config::load_llm_refs;
+use zihuan_core::config::llm_refs::load_llm_refs;
 use serde_json::Value;
 use zihuan_core::storage::RuntimeStorageConnectionManager;
-use zihuan_core::agent::tool_calling::{Tool, ToolExecutionOutput};
-use zihuan_core::agent::qq_chat::{current_qq_chat_agent_service_config, image_understand_llm_ref_id};
+use zihuan_core::agent::tools::{Tool, ToolExecutionOutput};
+use zihuan_core::agent::qq_chat::image_understand_llm_ref_id;
+use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart};
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage, MessagePart};
 use zihuan_core::runtime::block_async;
 use zihuan_core::graph::message_restore::{find_media_in_messages, query_media_by_id};
 use zihuan_core::graph::object_storage::S3Ref;
@@ -199,7 +200,7 @@ fn analyze_persisted_media(media: &PersistedMedia, focus_text: Option<&str>, s3_
     Ok(trimmed.to_string())
 }
 
-fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::llm::llm_base::LLMBase>> {
+fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>> {
     let agent = current_qq_chat_agent_service_config()?;
     let llm_refs = load_llm_refs()?;
     let llm_ref_id = image_understand_llm_ref_id(&agent)

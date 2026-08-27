@@ -1,11 +1,11 @@
-pub mod agent;
 pub mod command;
 pub mod nodes;
+pub mod role;
 
 #[cfg(test)]
 mod tests;
 
-pub use agent::{AgentManager, AgentRuntimeInfo, AgentRuntimeStatus};
+pub use role::{RoleServiceManager, RoleServiceRuntimeInfo, RoleServiceRuntimeStatus};
 
 use zihuan_core::error::Result;
 

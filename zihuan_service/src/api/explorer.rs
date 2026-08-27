@@ -1,5 +1,6 @@
-use zihuan_core::inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_core::inference::system_config::{load_agents, AgentType};
+use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::config::role_services::load_role_services;
 use redis::AsyncCommands;
 use salvo::prelude::*;
 use salvo::writing::Json;
@@ -1309,10 +1310,10 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
 fn load_service_and_connections(
     service_id: &str,
 ) -> zihuan_core::error::Result<(
-    zihuan_core::inference::system_config::AgentConfig,
+    zihuan_core::agent::service_config::RoleServiceConfig,
     Vec<zihuan_core::storage::ConnectionConfig>,
 )> {
-    let agent = load_agents()?
+    let agent = load_role_services()?
         .into_iter()
         .find(|item| item.id == service_id)
         .ok_or_else(|| zihuan_core::string_error!("Service '{}' not found", service_id))?;
@@ -1320,23 +1321,23 @@ fn load_service_and_connections(
 }
 
 fn service_memory_config(
-    agent: &zihuan_core::inference::system_config::AgentConfig,
+    agent: &zihuan_core::agent::service_config::RoleServiceConfig,
 ) -> (Option<String>, Option<String>, Option<String>) {
-    match &agent.agent_type {
-        AgentType::QqChat(config) => (
+    match &agent.role_service_type {
+        RoleServiceType::QqChat(config) => (
             config.weaviate_memory_connection_id.clone(),
             config.elasticsearch_memory_connection_id.clone(),
             config.embedding_model_ref_id.clone(),
         ),
-        AgentType::Workspace(_) => (None, None, None),
+        RoleServiceType::Workspace(_) => (None, None, None),
     }
 }
 
 fn service_image_config(
-    agent: &zihuan_core::inference::system_config::AgentConfig,
+    agent: &zihuan_core::agent::service_config::RoleServiceConfig,
 ) -> (Option<String>, Option<String>, Option<String>) {
-    match &agent.agent_type {
-        AgentType::QqChat(config) => (
+    match &agent.role_service_type {
+        RoleServiceType::QqChat(config) => (
             config.weaviate_image_connection_id.clone(),
             config.elasticsearch_image_connection_id.clone(),
             config.embedding_model_ref_id.clone(),
@@ -1470,12 +1471,12 @@ fn merge_image_items(target: &mut Vec<ServiceImageItem>, incoming: Vec<ServiceIm
 async fn resolve_agent_rdb_connection(
     agent_id: &str,
 ) -> zihuan_core::error::Result<zihuan_core::data_refs::RelationalDbConnection> {
-    let agents = load_agents()?;
+    let agents = load_role_services()?;
     let agent = agents
         .into_iter()
         .find(|item| item.id == agent_id)
         .ok_or_else(|| zihuan_core::string_error!("agent '{}' not found", agent_id))?;
-    let AgentType::QqChat(config) = agent.agent_type else {
+    let RoleServiceType::QqChat(config) = agent.role_service_type else {
         return Err(zihuan_core::string_error!(
             "agent '{}' is not a QQ Chat Agent Service",
             agent_id

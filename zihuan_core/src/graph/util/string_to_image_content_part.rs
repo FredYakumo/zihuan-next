@@ -1,7 +1,7 @@
 use crate::graph::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 use crate::error::{Error, Result};
-use crate::llm::MessagePart;
+use crate::model_inference::llm::MessagePart;
 
 /// Wraps a String URL (or `data:` URL) into a multimodal `MessagePart`.
 pub struct StringToImageMessagePartNode {

@@ -1,19 +1,11 @@
 ---
 name: zihuan-python-dev
-description: Develop Python utilities and database code in zihuan-next. Use when changing files under database/ or utils/, Python dependencies, formatting, or virtual environments.
+description: Develop ZiHuan Next Python utilities and database code. Use for files in database/ or utils/, Python dependencies, virtual environments, formatting, and Python tests.
 ---
 
-# Python Development in zihuan-next
+# Python Development
 
-- Python code belongs in `database/` and `utils/`.
-- Use `uv` for dependencies and environments:
-
-```powershell
-uv venv
-.\.venv\Scripts\Activate.ps1
-uv pip install -e .
-```
-
-- Follow PEP 8 with lines near 120 characters or shorter.
-- Use `ruff` for formatting and linting, following the repository `pyproject.toml` configuration.
-- Add type hints where they improve clarity; they are encouraged, not mandatory.
+- Keep Python code in `database/` or `utils/` unless an existing package establishes another location.
+- Manage the environment and dependencies with `uv`; use the repository `.venv` when available.
+- Follow `pyproject.toml`, use type hints where they clarify boundaries, and keep error handling contextual.
+- Format and lint with `ruff` when it is installed for the environment. Run the narrowest relevant test or script after edits.

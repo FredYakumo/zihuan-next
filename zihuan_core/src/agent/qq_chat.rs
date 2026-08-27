@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -7,38 +6,13 @@ use super::{
     EmbeddingServiceConfig, LLM_KIND_INTENT_CLASSIFICATION, LLM_KIND_MAIN, LLM_KIND_MATH_PROGRAMMING,
     LLM_KIND_NATURAL_LANGUAGE_REPLY,
 };
-use crate::error::{Error, Result};
-use crate::inference::system_config::MemoryBackendKind;
+use crate::agent::service_config::MemoryBackendKind;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RetrievalStoreConfig {
     LocalMarkdown,
     Connection { connection_id: String },
-}
-
-thread_local! {
-    static CURRENT_QQ_CHAT_AGENT_SERVICE_CONFIG: RefCell<Vec<QqChatAgentServiceConfig>> =
-        const { RefCell::new(Vec::new()) };
-}
-
-pub fn with_current_qq_chat_agent_service_config<T>(config: QqChatAgentServiceConfig, f: impl FnOnce() -> T) -> T {
-    CURRENT_QQ_CHAT_AGENT_SERVICE_CONFIG.with(|slot| {
-        slot.borrow_mut().push(config);
-    });
-    let result = f();
-    CURRENT_QQ_CHAT_AGENT_SERVICE_CONFIG.with(|slot| {
-        slot.borrow_mut().pop();
-    });
-    result
-}
-
-pub fn current_qq_chat_agent_service_config() -> Result<QqChatAgentServiceConfig> {
-    CURRENT_QQ_CHAT_AGENT_SERVICE_CONFIG.with(|slot| {
-        slot.borrow().last().cloned().ok_or_else(|| {
-            Error::ValidationError("当前节点不在 Agent 工具调用上下文中，无法读取 Agent 配置".to_string())
-        })
-    })
 }
 
 pub fn llm_ref_id_for_kind<'a>(config: &'a QqChatAgentServiceConfig, llm_kind: &str) -> Option<&'a str> {

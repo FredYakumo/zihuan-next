@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use serde::Deserialize;
 use serde_json::Value;
-use zihuan_core::agent::tool_calling::{Tool, ToolExecutionResource};
-use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::tooling::StaticFunctionToolSpec;
+use zihuan_core::agent::tools::{Tool, ToolExecutionResource};
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::tooling::StaticFunctionToolSpec;
 use super::shared::{json_error, path_resource, resolve_tool_path, success_json, wildcard_matches, DEFAULT_MAX_ENTRIES};
 
 pub(crate) const DEFAULT_TOOL_LIST_DIR: &str = "list_dir";

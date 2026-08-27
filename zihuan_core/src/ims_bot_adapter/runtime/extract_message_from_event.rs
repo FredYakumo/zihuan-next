@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use tokio::task::block_in_place;
 use crate::error::{Error, Result};
 use crate::ims_bot_adapter::logging::{LOG_DATA_URL_PREVIEW_CHARS, LOG_MESSAGE_PREVIEW_CHARS};
-use crate::llm::{LLMMessage, MessagePart};
+use crate::model_inference::llm::{LLMMessage, MessagePart};
 use crate::graph::object_storage::S3Ref;
 use crate::graph::{node_input, node_output, DataType, DataValue, Node, NodeInputFlow, Port};
 

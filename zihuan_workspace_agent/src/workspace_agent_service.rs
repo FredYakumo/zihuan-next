@@ -1,11 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use zihuan_core::agent::tool_calling::Tool;
+use zihuan_core::agent::tools::Tool;
 use zihuan_core::agent::resource_resolver::resolve_local_embedding_model_name;
-use zihuan_core::inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_core::inference::system_config::{load_llm_refs, AgentConfig, MemoryBackendKind, WorkspaceAgentServiceConfig};
-use zihuan_core::llm::LLMMessage;
+use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use zihuan_core::agent::service_config::{MemoryBackendKind, RoleServiceConfig, WorkspaceAgentServiceConfig};
+use zihuan_core::config::llm_refs::load_llm_refs;
+use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::memory_agent::{MemoryAgentResources, MemoryBackend, MemoryBrainAgent, MemoryBrainAgentTool};
 use zihuan_core::runtime::block_async;
 use zihuan_core::storage::{
@@ -104,7 +105,7 @@ pub struct WorkspaceInferenceToolProvider {
     agents_md_enabled: bool,
     default_tools_enabled: std::collections::HashMap<String, bool>,
     memory_resources: Option<WorkspaceMemoryResources>,
-    web_search_engine: std::result::Result<Arc<zihuan_core::rag::WebSearchEngineRef>, String>,
+    web_search_engine: std::result::Result<Arc<dyn zihuan_core::rag::WebSearchEngine>, String>,
     tool_definitions: Vec<ToolDefinition>,
 }
 
@@ -230,7 +231,7 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
 }
 
 pub fn load_inference_tool_provider(
-    agent: &AgentConfig,
+    agent: &RoleServiceConfig,
     config: &WorkspaceAgentServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
@@ -247,7 +248,7 @@ pub fn load_inference_tool_provider(
 fn load_web_search_engine(
     config: &WorkspaceAgentServiceConfig,
     connections: &[ConnectionConfig],
-) -> std::result::Result<Arc<zihuan_core::rag::WebSearchEngineRef>, String> {
+) -> std::result::Result<Arc<dyn zihuan_core::rag::WebSearchEngine>, String> {
     let connection_id = config
         .web_search_engine_connection_id
         .as_deref()
@@ -261,11 +262,11 @@ fn load_web_search_engine(
 #[derive(Clone)]
 struct WorkspaceMemoryResources {
     memory_backend: MemoryBackend,
-    embedding_model: Option<Arc<dyn zihuan_core::llm::embedding_base::EmbeddingBase>>,
+    embedding_model: Option<Arc<dyn zihuan_core::model_inference::llm::embedding_base::EmbeddingBase>>,
 }
 
 impl WorkspaceMemoryResources {
-    fn with_llm(&self, llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>) -> MemoryAgentResources {
+    fn with_llm(&self, llm: Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>) -> MemoryAgentResources {
         MemoryAgentResources {
             memory_backend: self.memory_backend.clone(),
             embedding_model: self.embedding_model.clone(),

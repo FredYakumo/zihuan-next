@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
-use zihuan_core::agent::tool_calling::{Tool, ToolExecutionOutput};
+use zihuan_core::agent::tools::{Tool, ToolExecutionOutput};
 use zihuan_core::data_refs::RelationalDbConnection;
-use zihuan_core::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::tool_runtime::ToolRunDuration;
 
 use super::tool_quota_store::decrement_tool_quota_if_needed_blocking;
@@ -139,8 +139,8 @@ mod tests {
         wrap_brain_tool_with_quota, QqChatToolQuotaContext, SessionToolQuotaState, TOOL_LIMIT_SCOPE_SESSION,
         TOOL_LIMIT_SCOPE_USER,
     };
-    use zihuan_core::agent::tool_calling::Tool;
-    use zihuan_core::llm::tooling::FunctionTool;
+    use zihuan_core::agent::tools::Tool;
+    use zihuan_core::model_inference::llm::tooling::FunctionTool;
 
     #[derive(Debug)]
     struct EchoTool;

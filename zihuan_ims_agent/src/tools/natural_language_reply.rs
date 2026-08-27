@@ -3,8 +3,8 @@ use std::sync::Arc;
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::llm::{InferenceParam, LLMMessage};
+use zihuan_core::model_inference::llm::llm_base::LLMBase;
+use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 
 use crate::qq_chat::logging::QqChatTaskTrace;
 use zihuan_core::agent::emotion::utils::emotion_expression_prompt;
@@ -34,6 +34,21 @@ pub(crate) struct QqReplyReviewResult {
     pub final_message: String,
     pub rewritten: bool,
     pub reason: String,
+}
+
+/// Fixed QQ hook executed after the primary BrainAgent produces a candidate reply.
+pub(crate) struct AfterBrainAgent;
+
+impl AfterBrainAgent {
+    pub(crate) fn run(
+        review_llm: &Arc<dyn LLMBase>,
+        rewrite_llm: &Arc<dyn LLMBase>,
+        reply_system_prompt: Option<&str>,
+        request: &QqReplyReviewRequest,
+        trace: &QqChatTaskTrace,
+    ) -> Result<QqReplyReviewResult> {
+        review_and_rewrite_reply(review_llm, rewrite_llm, reply_system_prompt, request, trace)
+    }
 }
 
 pub(crate) fn review_and_rewrite_reply(

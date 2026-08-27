@@ -3,16 +3,16 @@ use std::sync::Arc;
 
 use serde_json::{json, Map, Value};
 
-use crate::agent::tool_calling::{ToolCallingEngine, ToolCallingStopReason, Tool, ToolExecutionOutput, ToolRunDuration};
+use crate::agent::tools::{ToolCallingEngine, ToolCallingStopReason, Tool, ToolExecutionOutput, ToolRunDuration};
 use crate::graph::tool_spec::{tool_calling_tool_input_signature, ToolDefinition, ToolParamDef};
 use crate::graph::function_graph::{sync_function_subgraph_signature, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID};
 use crate::graph::graph_io::refresh_port_types;
 use crate::graph::registry::build_node_graph_from_definition;
 use crate::graph::util::function::{data_value_from_json_with_declared_type, inject_runtime_values_into_function_inputs_node};
 use crate::graph::{DataType, DataValue};
-use crate::llm::llm_base::LLMBase;
-use crate::llm::tooling::FunctionTool;
-use crate::llm::LLMMessage;
+use crate::model_inference::llm::llm_base::LLMBase;
+use crate::model_inference::llm::tooling::FunctionTool;
+use crate::model_inference::llm::LLMMessage;
 
 const DREAM_SYSTEM_PROMPT: &str =
     "You are the Dream memory consolidation agent. Produce concise long-term memories in English. Do not address the user. Use the available node graph tools synchronously when they are relevant to consolidating the memory.";

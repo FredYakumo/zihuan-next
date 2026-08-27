@@ -1,6 +1,8 @@
 <template>
   <section class="page agent-service-page">
     <AdminPageHeader title="Service 管理">
+      <t-button variant="outline" @click="openSubagent('memory')">Memory SubAgent</t-button>
+      <t-button variant="outline" @click="openSubagent('dream')">Dream SubAgent</t-button>
       <t-button variant="outline" @click="triggerServiceImportFile">导入配置</t-button>
       <input ref="serviceImportFileInput" type="file" accept=".json" class="agent-service-import-input" @change="handleServiceFileChange" />
       <t-button theme="primary" @click="startCreate">新建 Service</t-button>
@@ -26,17 +28,17 @@
       </template>
       <div v-if="showCreateForm" class="agent-service-drawer-body">
         <t-form class="agent-service-form" label-align="top">
-          <!-- Agent 配置 -->
+          <!-- RoleService 配置 -->
           <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>{{ form.type === 'qq_chat' ? 'Agent 配置' : '基本信息' }}</template>
+            <template #title>{{ form.type === 'qq_chat' ? 'RoleService 配置' : '基本信息' }}</template>
             <div class="agent-service-form-grid">
               <t-form-item label="名称" required>
                 <t-input v-model="form.name" />
               </t-form-item>
               <t-form-item label="类型">
                 <t-select v-model="form.type" disabled>
-                  <t-option value="qq_chat" label="QQ Chat Agent Service" />
-                  <t-option value="workspace" label="Workspace Agent Service" />
+                  <t-option value="qq_chat" label="QQ Chat RoleService" />
+                  <t-option value="workspace" label="Workspace RoleService" />
                 </t-select>
               </t-form-item>
               <t-form-item v-if="form.type === 'qq_chat'" label="Bot Adapter" required>
@@ -225,7 +227,7 @@
               <template #title>Prompt engineering</template>
               <div class="agent-service-form-grid">
                 <t-form-item label="System Prompt" class="agent-service-form-item-full">
-                  <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。" />
+                  <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat RoleService 的通用系统规则后面。" />
                 </t-form-item>
                 <t-form-item label="自然语言回复 Prompt" class="agent-service-form-item-full">
                   <t-textarea v-model="form.natural_language_reply_system_prompt" placeholder="可选。专门给自然语言回复模型使用的系统提示词。" />
@@ -440,17 +442,17 @@
       @close="closeEditModal"
     >
       <t-form class="agent-service-form" label-align="top">
-        <!-- Agent 配置 -->
+        <!-- RoleService 配置 -->
         <t-card class="agent-service-form-section" :bordered="false">
-          <template #title>{{ form.type === 'qq_chat' ? 'Agent 配置' : '基本信息' }}</template>
+          <template #title>{{ form.type === 'qq_chat' ? 'RoleService 配置' : '基本信息' }}</template>
           <div class="agent-service-form-grid">
             <t-form-item label="名称" required>
               <t-input v-model="form.name" />
             </t-form-item>
             <t-form-item label="类型">
               <t-select v-model="form.type" disabled>
-                <t-option value="qq_chat" label="QQ Chat Agent Service" />
-                <t-option value="workspace" label="Workspace Agent Service" />
+                <t-option value="qq_chat" label="QQ Chat RoleService" />
+                <t-option value="workspace" label="Workspace RoleService" />
               </t-select>
             </t-form-item>
             <t-form-item v-if="form.type === 'qq_chat'" label="Bot Adapter" required>
@@ -496,11 +498,11 @@
             </t-form-item>
             <t-form-item v-if="form.type === 'workspace'" label="AGENTS.md">
               <t-checkbox v-model="form.agents_md_enabled">关注 AGENTS.md</t-checkbox>
-              <div class="agent-service-form-hint">让Agent 关注 AGENTS.md</div>
+              <div class="agent-service-form-hint">让 RoleService 的 Workspace Agent 关注 AGENTS.md</div>
             </t-form-item>
-            <t-form-item v-if="form.type === 'workspace'" label="Agent 记忆">
-              <t-checkbox v-model="form.workspace_memory_enabled">启用 Agent 记忆</t-checkbox>
-              <div class="agent-service-form-hint">启用后 Agent 会回想或者记忆对话中的信息，需要记忆库的支持。</div>
+            <t-form-item v-if="form.type === 'workspace'" label="RoleService 记忆">
+              <t-checkbox v-model="form.workspace_memory_enabled">启用 RoleService 记忆</t-checkbox>
+              <div class="agent-service-form-hint">启用后 RoleService 的 Agent 会回想或者记忆对话中的信息，需要记忆库的支持。</div>
             </t-form-item>
             <t-form-item v-if="form.type === 'qq_chat'" label="数学/编程模型">
               <t-select v-model="form.math_programming_llm_ref_id" placeholder="回退主 Brain 模型" clearable>
@@ -629,7 +631,7 @@
                 <t-input v-model="form.bot_name" />
               </t-form-item>
               <t-form-item label="System Prompt" class="agent-service-form-item-full">
-                <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。" />
+                <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat RoleService 的通用系统规则后面。" />
               </t-form-item>
             </div>
           </t-card>
@@ -702,7 +704,7 @@
             <template #title>Prompt engineering</template>
             <div class="agent-service-form-grid">
               <t-form-item label="System Prompt" class="agent-service-form-item-full">
-                <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat Agent Service 的通用系统规则后面。" />
+                <t-textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat RoleService 的通用系统规则后面。" />
               </t-form-item>
               <t-form-item label="自然语言回复 Prompt" class="agent-service-form-item-full">
                 <t-textarea v-model="form.natural_language_reply_system_prompt" placeholder="可选。专门给自然语言回复模型使用的系统提示词。" />
@@ -1249,8 +1251,8 @@
         <t-input v-model="filters.keyword" clearable placeholder="搜索名称或 Config ID" />
         <t-select v-model="filters.type">
           <t-option value="all" label="全部 Service 类型" />
-          <t-option value="qq_chat" label="QQ Chat Agent Service" />
-          <t-option value="workspace" label="Workspace Agent Service" />
+          <t-option value="qq_chat" label="QQ Chat RoleService" />
+          <t-option value="workspace" label="Workspace RoleService" />
         </t-select>
         <t-select v-model="filters.status">
           <t-option value="all" label="全部运行状态" />
@@ -1272,7 +1274,7 @@
             <div><strong>{{ row.name }}</strong><small class="mono">{{ compactId(row.config_id) }}</small></div>
           </div>
         </template>
-        <template #type="{ row }"><t-tag variant="light">{{ serviceTypeLabel(row.agent_type.type) }}</t-tag></template>
+        <template #type="{ row }"><t-tag variant="light">{{ serviceTypeLabel(row.role_service_type.type) }}</t-tag></template>
         <template #model="{ row }"><span :title="llmName(row)">{{ llmName(row) }}</span></template>
         <template #runtime="{ row }"><t-tag :theme="runtimeTheme(row.runtime.status)" variant="light">{{ runtimeBadgeText(row) }}</t-tag></template>
         <template #enabled="{ row }"><t-tag :theme="row.enabled ? 'success' : 'default'" variant="light">{{ row.enabled ? '已启用' : '已停用' }}</t-tag></template>
@@ -1289,6 +1291,26 @@
         <template #empty><div class="agent-service-empty">暂无匹配的 Service。</div></template>
       </t-table>
     </t-card>
+    <t-dialog
+      v-model:visible="subagentDialogVisible"
+      :header="`${subagentForm.id || 'SubAgent'} 配置`"
+      :confirm-btn="{ content: '保存', loading: subagentSaving }"
+      cancel-btn="取消"
+      width="720px"
+      @confirm="saveSubagent"
+    >
+      <t-form label-align="top">
+        <div class="agent-service-form-grid">
+          <t-form-item label="ID"><t-input v-model="subagentForm.id" disabled /></t-form-item>
+          <t-form-item label="名称"><t-input v-model="subagentForm.name" /></t-form-item>
+        </div>
+        <t-form-item label="System Prompt"><t-textarea v-model="subagentForm.system_prompt" :autosize="{ minRows: 5, maxRows: 12 }" /></t-form-item>
+        <t-form-item label="输入端口 JSON"><t-textarea v-model="subagentInputsText" :autosize="{ minRows: 4, maxRows: 10 }" /></t-form-item>
+        <t-form-item label="输出端口 JSON"><t-textarea v-model="subagentOutputsText" :autosize="{ minRows: 4, maxRows: 10 }" /></t-form-item>
+        <t-form-item label="允许工具"><t-checkbox-group v-model="subagentForm.tool_ids"><t-checkbox v-for="tool in availableSubagentTools" :key="tool.id" :value="tool.id">{{ tool.name }}</t-checkbox></t-checkbox-group></t-form-item>
+        <div v-if="subagentError" class="agent-service-form-hint" style="color: var(--td-error-color)">{{ subagentError }}</div>
+      </t-form>
+    </t-dialog>
     <t-dialog
       v-model:visible="showModelConfigDialog"
       header="新增模型配置"
@@ -1338,7 +1360,7 @@
 import { computed, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { AddIcon, CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
-import { system, type ServiceWithRuntime } from "../../api/client";
+import { system, type ServiceWithRuntime, type SubAgentDefinition } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useAgents } from "../composables/useAgents";
 import { assertConnectionConfig, assertLlmConfig } from "../model";
@@ -1462,6 +1484,46 @@ const {
   copyServiceConfig,
   handleServiceFileChange,
 } = useAgents();
+
+const subagentDialogVisible = ref(false);
+const subagentSaving = ref(false);
+const subagentError = ref("");
+const subagentInputsText = ref("[]");
+const subagentOutputsText = ref("[]");
+const subagentForm = reactive<SubAgentDefinition>({ id: "", name: "", inputs: [], outputs: [], system_prompt: "", tool_ids: [] });
+const availableSubagentTools = computed(() => [
+  ...qqChatDefaultTools.map((tool) => ({ id: tool.id, name: tool.name })),
+  ...workspaceDefaultTools.filter((tool) => !qqChatDefaultTools.some((item) => item.id === tool.id)).map((tool) => ({ id: tool.id, name: tool.name })),
+]);
+
+async function openSubagent(id: "memory" | "dream") {
+  subagentError.value = "";
+  try {
+    const definition = await system.subagents.get(id, availableSubagentTools.value.map((tool) => tool.id));
+    Object.assign(subagentForm, definition);
+    subagentInputsText.value = JSON.stringify(definition.inputs, null, 2);
+    subagentOutputsText.value = JSON.stringify(definition.outputs, null, 2);
+    subagentDialogVisible.value = true;
+  } catch (error) {
+    subagentError.value = error instanceof Error ? error.message : String(error);
+    subagentDialogVisible.value = true;
+  }
+}
+
+async function saveSubagent() {
+  subagentError.value = "";
+  try {
+    subagentForm.inputs = JSON.parse(subagentInputsText.value) as SubAgentDefinition["inputs"];
+    subagentForm.outputs = JSON.parse(subagentOutputsText.value) as SubAgentDefinition["outputs"];
+    subagentSaving.value = true;
+    await system.subagents.save(subagentForm.id, { ...subagentForm }, availableSubagentTools.value.map((tool) => tool.id));
+    subagentDialogVisible.value = false;
+  } catch (error) {
+    subagentError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    subagentSaving.value = false;
+  }
+}
 
 const router = useRouter();
 const showModelConfigDialog = ref(false);
@@ -1631,7 +1693,7 @@ const filters = reactive({
 const filteredServices = computed(() => {
   const keyword = filters.keyword.trim().toLowerCase();
   return services.value.filter((service) => {
-    if (filters.type !== "all" && service.agent_type.type !== filters.type) {
+    if (filters.type !== "all" && service.role_service_type.type !== filters.type) {
       return false;
     }
     if (filters.status !== "all" && service.runtime.status !== filters.status) {
@@ -1693,7 +1755,7 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
     enabled: service.enabled,
     auto_start: service.auto_start,
     is_default: service.is_default,
-    agent_type: service.agent_type,
+    role_service_type: service.role_service_type,
     tools: service.tools,
     ...(service.avatar_url ? { avatar_url: service.avatar_url } : {}),
   };

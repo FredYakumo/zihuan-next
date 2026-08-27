@@ -1,5 +1,5 @@
 use zihuan_core::zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
-use zihuan_core::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::Serialize;
 use serde_json::Value;
@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
 pub use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
-pub use zihuan_core::rag::WebSearchEngineRef;
+pub use zihuan_core::rag::WebSearchEngine;
 
 tokio::task_local! {
     pub static SESSION_CLAIM_CONTEXT: Arc<SessionClaimContext>;
@@ -203,7 +203,7 @@ impl fmt::Debug for SessionStateRef {
 #[derive(Clone)]
 pub struct LLMMessageSessionCacheRef {
     pub node_id: String,
-    pub memory_cache: Arc<TokioMutex<HashMap<String, Vec<zihuan_core::llm::LLMMessage>>>>,
+    pub memory_cache: Arc<TokioMutex<HashMap<String, Vec<zihuan_core::model_inference::llm::LLMMessage>>>>,
     pub redis_cm: Arc<TokioMutex<Option<ConnectionManager>>>,
     pub cached_redis_url: Arc<TokioMutex<Option<String>>>,
     pub sender_bucket_map: Arc<TokioMutex<HashMap<String, String>>>,
@@ -250,7 +250,7 @@ impl LLMMessageSessionCacheRef {
     pub async fn get_messages(
         &self,
         sender_id: &str,
-    ) -> crate::error::Result<Vec<zihuan_core::llm::LLMMessage>> {
+    ) -> crate::error::Result<Vec<zihuan_core::model_inference::llm::LLMMessage>> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
             let sender_bucket_map = self.sender_bucket_map.lock().await;
@@ -288,7 +288,7 @@ impl LLMMessageSessionCacheRef {
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
                 if let Some(raw) = existing_json {
-                    let messages: Vec<zihuan_core::llm::LLMMessage> = serde_json::from_str(&raw)?;
+                    let messages: Vec<zihuan_core::model_inference::llm::LLMMessage> = serde_json::from_str(&raw)?;
                     return Ok(messages);
                 }
             }
@@ -353,7 +353,7 @@ impl LLMMessageSessionCacheRef {
     pub async fn set_messages(
         &self,
         sender_id: &str,
-        messages: Vec<zihuan_core::llm::LLMMessage>,
+        messages: Vec<zihuan_core::model_inference::llm::LLMMessage>,
     ) -> crate::error::Result<()> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
@@ -413,7 +413,7 @@ impl LLMMessageSessionCacheRef {
     pub async fn append_messages(
         &self,
         sender_id: &str,
-        incoming_messages: Vec<zihuan_core::llm::LLMMessage>,
+        incoming_messages: Vec<zihuan_core::model_inference::llm::LLMMessage>,
     ) -> crate::error::Result<()> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
@@ -451,7 +451,7 @@ impl LLMMessageSessionCacheRef {
 
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
-                let mut existing_messages: Vec<zihuan_core::llm::LLMMessage> = existing_json
+                let mut existing_messages: Vec<zihuan_core::model_inference::llm::LLMMessage> = existing_json
                     .as_deref()
                     .map(serde_json::from_str)
                     .transpose()?
@@ -718,17 +718,17 @@ pub enum DataValue {
     Binary(Vec<u8>),
     Vec(Box<DataType>, std::vec::Vec<DataValue>),
     MessageEvent(MessageEvent),
-    LLMMessage(zihuan_core::llm::LLMMessage),
+    LLMMessage(zihuan_core::model_inference::llm::LLMMessage),
     QQMessage(zihuan_core::zihuan_core::ims_bot_adapter::models::message::Message),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
     BotAdapterRef(zihuan_core::zihuan_core::ims_bot_adapter::BotAdapterHandle),
     RedisRef(Arc<RedisConfig>),
     RdbRef(RelationalDbConnection),
-    WebSearchEngineRef(Arc<WebSearchEngineRef>),
+    WebSearchEngineRef(Arc<dyn WebSearchEngine>),
     SessionStateRef(Arc<SessionStateRef>),
     LLMMessageSessionCacheRef(Arc<LLMMessageSessionCacheRef>),
     Password(String),
-    LLModel(Arc<dyn zihuan_core::llm::llm_base::LLMBase>),
+    LLModel(Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>),
     LoopControlRef(Arc<LoopControl>),
 }
 
@@ -788,7 +788,7 @@ impl DataValue {
             }
             DataValue::LLMMessage(m) => {
                 serde_json::json!({
-                    "role": zihuan_core::llm::util::role_to_str::role_to_str(&m.role),
+                    "role": zihuan_core::model_inference::llm::util::role_to_str::role_to_str(&m.role),
                     "content": m.content,
                     "tool_calls": m.tool_calls,
                 })

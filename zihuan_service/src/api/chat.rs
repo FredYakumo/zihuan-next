@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use zihuan_core::ims_bot_adapter::resolve_fallback_bot_profile;
-use zihuan_core::inference::system_config::{AgentConfig, AgentType};
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
 use salvo::http::body::BodySender;
 use salvo::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use salvo::http::HeaderValue;
@@ -18,11 +18,11 @@ use serde_json::{json, Value};
 use zihuan_core::storage::ConnectionConfig;
 use tokio::sync::mpsc;
 use uuid::Uuid;
-use zihuan_core::agent::tool_calling::{ToolCallingObserver, ToolCallingStopReason};
+use zihuan_core::agent::tools::{ToolCallingObserver, ToolCallingStopReason};
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken, TokenUsage};
+use zihuan_core::model_inference::llm::tooling::ToolCalls;
+use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken, TokenUsage};
 use zihuan_core::message_part::MessagePart;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
@@ -49,7 +49,7 @@ const CHAT_FORK_METADATA_SUFFIX: &str = ".fork.json";
 /// has disconnected and the entire streaming task will tear down.
 ///
 /// **Architecture:** Created per-request inside `execute_chat_streaming`, passed as
-/// `Arc<dyn ToolCallingObserver>` into `infer_agent_response_streaming`.
+/// `Arc<dyn ToolCallingObserver>` into `infer_role_response_streaming`.
 struct SseToolCallingObserver {
     event_tx: mpsc::UnboundedSender<Value>,
     message_id: String,
@@ -209,9 +209,9 @@ pub struct ChatStreamRequest {
     #[serde(default)]
     pub model_config_id: Option<String>,
     #[serde(default)]
-    pub thinking_type: Option<zihuan_core::inference::system_config::ThinkingType>,
+    pub thinking_type: Option<zihuan_core::model_inference::model_config::ThinkingType>,
     #[serde(default)]
-    pub reasoning_effort: Option<zihuan_core::inference::system_config::ReasoningEffort>,
+    pub reasoning_effort: Option<zihuan_core::model_inference::model_config::ReasoningEffort>,
     #[serde(default)]
     pub workspace_path: Option<String>,
 }
@@ -229,7 +229,7 @@ pub struct ChatSessionSummary {
     pub updated_at: String,
     pub agent_id: Option<String>,
     pub agent_name: Option<String>,
-    pub agent_type: Option<String>,
+    pub role_service_type: Option<String>,
     pub agent_avatar_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
@@ -255,7 +255,7 @@ pub struct ChatHistoryRecord {
     pub session_id: String,
     pub agent_id: String,
     pub agent_name: String,
-    pub agent_type: String,
+    pub role_service_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_avatar_url: Option<String>,
     pub role: String,
@@ -346,14 +346,14 @@ struct ChatMessageBranch {
     versions: Vec<ChatBranchVersion>,
 }
 
-/// Lightweight display metadata extracted from an `AgentConfig`.
+/// Lightweight display metadata extracted from an `RoleServiceConfig`.
 ///
-/// **Purpose:** Avoids passing the full `AgentConfig` (which contains LLM credentials and
+/// **Purpose:** Avoids passing the full `RoleServiceConfig` (which contains LLM credentials and
 /// connections) into the persistence and SSE layers that only need name/type/avatar.
 #[derive(Debug, Clone)]
 struct AgentSnapshot {
     name: String,
-    agent_type: String,
+    role_service_type: String,
     avatar_url: Option<String>,
 }
 
@@ -404,29 +404,29 @@ impl SideEffectContext for DashboardCommandSideEffectContext {
     }
 }
 
-fn extract_agent_snapshot(agent: &AgentConfig, connections: &[ConnectionConfig]) -> AgentSnapshot {
-    let agent_type = match &agent.agent_type {
-        AgentType::QqChat(_) => "qq_chat",
-        AgentType::Workspace(_) => "workspace",
+fn extract_agent_snapshot(agent: &RoleServiceConfig, connections: &[ConnectionConfig]) -> AgentSnapshot {
+    let role_service_type = match &agent.role_service_type {
+        RoleServiceType::QqChat(_) => "qq_chat",
+        RoleServiceType::Workspace(_) => "workspace",
     };
 
-    let avatar_url = match &agent.agent_type {
-        AgentType::QqChat(config) => resolve_fallback_bot_profile(connections, &config.ims_bot_adapter_connection_id)
+    let avatar_url = match &agent.role_service_type {
+        RoleServiceType::QqChat(config) => resolve_fallback_bot_profile(connections, &config.ims_bot_adapter_connection_id)
             .ok()
             .flatten()
             .and_then(|profile| profile.avatar_url),
-        AgentType::Workspace(_) => agent.avatar_url.clone(),
+        RoleServiceType::Workspace(_) => agent.avatar_url.clone(),
     };
 
     AgentSnapshot {
         name: agent.name.clone(),
-        agent_type: agent_type.to_string(),
+        role_service_type: role_service_type.to_string(),
         avatar_url,
     }
 }
 
 ///
-/// **Purpose:** Bundles the fully resolved `AgentConfig` and its display snapshot (name, type,
+/// **Purpose:** Bundles the fully resolved `RoleServiceConfig` and its display snapshot (name, type,
 /// avatar) so that downstream stages don't need to look up connections again.
 ///
 /// **Design:** Produced by `resolve_chat_agent` and consumed exclusively by the orchestrator
@@ -437,7 +437,7 @@ fn extract_agent_snapshot(agent: &AgentConfig, connections: &[ConnectionConfig])
 /// logic (command dispatch, inference, persistence). Not persisted — only lives for the
 /// duration of a single streaming request.
 struct ChatAgentInfo {
-    agent: AgentConfig,
+    agent: RoleServiceConfig,
     agent_snapshot: AgentSnapshot,
 }
 
@@ -470,19 +470,22 @@ struct CommandDispatchOutcome {
 /// `ChatAgentInfo` is then threaded into command dispatch, persistence, and SSE event
 /// construction.
 fn resolve_chat_agent(
-    agent_manager: &zihuan_service::agent::AgentManager,
+    role_service_manager: &zihuan_service::RoleServiceManager,
     agent_id: &str,
 ) -> std::result::Result<ChatAgentInfo, Value> {
-    let running_agent = agent_manager
-        .running_agent(agent_id)
+    let running_role_service = role_service_manager
+        .running_role_service(agent_id)
         .ok_or_else(|| json!({ "type": "error", "error": format!("agent '{}' is not running", agent_id) }))?;
-    let agent = running_agent.agent().clone();
+    let role_service = running_role_service.agent().clone();
 
     let connections =
         crate::system_config::load_connections().map_err(|err| json!({ "type": "error", "error": err.to_string() }))?;
-    let agent_snapshot = extract_agent_snapshot(&agent, &connections);
+    let agent_snapshot = extract_agent_snapshot(&role_service, &connections);
 
-    Ok(ChatAgentInfo { agent, agent_snapshot })
+    Ok(ChatAgentInfo {
+        agent: role_service,
+        agent_snapshot,
+    })
 }
 
 /// Attempt to match and execute a dashboard slash-command against the user's latest message.
@@ -503,7 +506,7 @@ fn resolve_chat_agent(
 /// the global `CommandRegistry` from `zihuan_service`. Does **not** touch the SSE sender —
 /// errors are returned as `Err(Value)` for the orchestrator to forward.
 fn try_dispatch_dashboard_command(
-    agent: &AgentConfig,
+    agent: &RoleServiceConfig,
     agent_snapshot: &AgentSnapshot,
     requested_session_id: &Option<String>,
     messages: Vec<LLMMessage>,
@@ -547,7 +550,7 @@ fn try_dispatch_dashboard_command(
     };
 
     let command_context = CommandContext {
-        agent_type: agent_snapshot.agent_type.clone(),
+        agent_type: agent_snapshot.role_service_type.clone(),
         agent_id: agent.id.clone(),
         caller_id: requested_session_id
             .map(|s| s.to_string())
@@ -636,7 +639,7 @@ async fn emit_immediate_output(
     assistant_message_id: &str,
     output_messages: &[LLMMessage],
     should_persist: bool,
-    agent: &AgentConfig,
+    agent: &RoleServiceConfig,
     agent_snapshot: &AgentSnapshot,
     trace_id: &str,
     latest_user_message: Option<&LLMMessage>,
@@ -935,7 +938,7 @@ pub async fn delete_chat_session(req: &mut Request, res: &mut Response, _depot: 
 /// 2. **Command dispatch** (`try_dispatch_dashboard_command`) — intercepts slash-commands
 ///    before inference; may short-circuit the pipeline with an immediate reply or a session
 ///    switch.
-/// 3. **Inference + relay** — if inference is required, spawns `infer_agent_response_streaming`
+/// 3. **Inference + relay** — if inference is required, spawns `infer_role_response_streaming`
 ///    in a background task and either `relay_inference_stream` (token-by-token) or
 ///    `relay_collected_text` (batch) to forward results to the client.
 /// 4. **Persistence** (`persist_chat_records`) — writes the user message and all output
@@ -965,7 +968,7 @@ async fn execute_chat_streaming(
     } = body;
     let mut messages: Vec<LLMMessage> = raw_messages.into_iter().map(Into::into).collect();
 
-    let ChatAgentInfo { agent, agent_snapshot } = match resolve_chat_agent(&state.agent_manager, &agent_id) {
+    let ChatAgentInfo { agent, agent_snapshot } = match resolve_chat_agent(&state.role_service_manager, &agent_id) {
         Ok(info) => info,
         Err(event) => {
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
@@ -1020,7 +1023,7 @@ async fn execute_chat_streaming(
 
     let assistant_message_id = requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
 
-    let workspace_task = if should_run_inference && matches!(agent.agent_type, AgentType::Workspace(_)) {
+    let workspace_task = if should_run_inference && matches!(agent.role_service_type, RoleServiceType::Workspace(_)) {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let task_id = state.tasks.lock().unwrap().add_workspace_chat_task(
             agent.id.clone(),
@@ -1117,7 +1120,7 @@ async fn execute_chat_streaming(
             message_id: assistant_message_id.clone(),
             agent_id: agent.id.clone(),
             agent_name: agent_snapshot.name.clone(),
-            agent_type: agent_snapshot.agent_type.clone(),
+            agent_type: agent_snapshot.role_service_type.clone(),
             agent_avatar_url: agent_snapshot.avatar_url.clone(),
             trace_id: trace_id.clone(),
             workspace_path: effective_workspace_path.clone(),
@@ -1155,8 +1158,8 @@ async fn execute_chat_streaming(
         let model_config_id = model_config_id.clone();
         async move {
             state
-                .agent_manager
-                .infer_agent_response_streaming_with_model(
+                .role_service_manager
+                .infer_role_response_streaming_with_model(
                     &agent_id,
                     messages,
                     token_tx,
@@ -1476,7 +1479,7 @@ fn append_running_chat_message(
         session_id: session_id.to_string(),
         agent_id: snapshot.agent_id,
         agent_name: snapshot.agent_name,
-        agent_type: snapshot.agent_type,
+        role_service_type: snapshot.agent_type,
         agent_avatar_url: snapshot.agent_avatar_url,
         role: "assistant".to_string(),
         content: snapshot.content,
@@ -1552,7 +1555,7 @@ fn replace_last_user_message(messages: &mut Vec<LLMMessage>, replacement: LLMMes
 /// individually.
 fn persist_chat_records(
     session_id: &str,
-    agent: &AgentConfig,
+    agent: &RoleServiceConfig,
     agent_snapshot: &AgentSnapshot,
     trace_id: &str,
     assistant_message_id: &str,
@@ -1570,7 +1573,7 @@ fn persist_chat_records(
             session_id: session_id.to_string(),
             agent_id: agent.id.clone(),
             agent_name: agent_snapshot.name.clone(),
-            agent_type: agent_snapshot.agent_type.clone(),
+            role_service_type: agent_snapshot.role_service_type.clone(),
             agent_avatar_url: agent_snapshot.avatar_url.clone(),
             role: "user".to_string(),
             content: user_message.content_text_owned().unwrap_or_default(),
@@ -1603,7 +1606,7 @@ fn persist_chat_records(
             session_id: session_id.to_string(),
             agent_id: agent.id.clone(),
             agent_name: agent_snapshot.name.clone(),
-            agent_type: agent_snapshot.agent_type.clone(),
+            role_service_type: agent_snapshot.role_service_type.clone(),
             agent_avatar_url: agent_snapshot.avatar_url.clone(),
             role: role.to_string(),
             content: message.content_text_owned().unwrap_or_default(),
@@ -1840,7 +1843,7 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
             updated_at,
             agent_id: first_record.as_ref().map(|r| r.agent_id.clone()),
             agent_name: first_record.as_ref().map(|r| r.agent_name.clone()),
-            agent_type: first_record.as_ref().map(|r| r.agent_type.clone()),
+            role_service_type: first_record.as_ref().map(|r| r.role_service_type.clone()),
             agent_avatar_url: first_record.as_ref().and_then(|r| r.agent_avatar_url.clone()),
             workspace_path: read_last_record(&path).ok().flatten().and_then(|r| r.workspace_path),
             pending_ask_user: read_last_record(&path).ok().flatten().and_then(|r| r.pending_ask_user),
@@ -1936,11 +1939,11 @@ fn build_session_title(raw: Option<&str>, session_id: &str) -> String {
 }
 
 fn resolve_effective_workspace_path(
-    agent: &AgentConfig,
+    agent: &RoleServiceConfig,
     session_id: Option<&str>,
     requested_workspace_path: Option<&str>,
 ) -> Result<Option<String>> {
-    if !matches!(agent.agent_type, AgentType::Workspace(_)) {
+    if !matches!(agent.role_service_type, RoleServiceType::Workspace(_)) {
         return Ok(None);
     }
 

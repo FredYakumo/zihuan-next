@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use crate::agent::tool_calling::Tool;
+use crate::agent::tools::Tool;
 use crate::graph::tool_spec::ToolDefinition;
-use crate::llm::llm_base::LLMBase;
-use crate::llm::LLMMessage;
+use crate::model_inference::llm::llm_base::LLMBase;
+use crate::model_inference::llm::LLMMessage;
 
 #[derive(Clone)]
 pub struct InferenceToolContext {

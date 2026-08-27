@@ -411,11 +411,11 @@ const markdown = new MarkdownIt({
 const selectedService = computed(
   () => services.value.find((agent) => agent.config_id === selectedServiceId.value) ?? null,
 );
-const selectedServiceType = computed(() => selectedService.value?.agent_type?.type ?? "");
+const selectedServiceType = computed(() => selectedService.value?.role_service_type?.type ?? "");
 const isChatEligible = computed(() => CHAT_ELIGIBLE_SERVICE_TYPES.has(selectedServiceType.value));
 const isWorkspaceService = computed(() => selectedServiceType.value === "workspace");
 const agentsMdEnabled = computed(() => {
-  const agentType = selectedService.value?.agent_type as Record<string, unknown> | undefined;
+  const agentType = selectedService.value?.role_service_type as Record<string, unknown> | undefined;
   return agentType?.agents_md_enabled === true;
 });
 const agentsMdAppliedKeys = computed(() => {
@@ -465,7 +465,7 @@ const defaultAgentModelId = computed(() => {
   if (!agent) {
     return "";
   }
-  const agentType = agent.agent_type as Record<string, unknown>;
+  const agentType = agent.role_service_type as Record<string, unknown>;
   return String(agentType.llm_ref_id ?? "");
 });
 const selectedModelLabel = computed(() => {
@@ -612,9 +612,9 @@ function readableAgentType(type: string): string {
     return "HTTP stream service";
   }
   if (type === "workspace") {
-    return "Workspace Agent Service";
+    return "Workspace RoleService";
   }
-  return "QQ Chat Agent Service";
+  return "QQ Chat RoleService";
 }
 
 function imageAttachmentToPart(attachment: ChatImageAttachment): ChatMessagePart {
@@ -2070,12 +2070,12 @@ async function load() {
     services.value = loadedAgents;
     llmModels.value = llm;
 
-    const eligible = loadedAgents.filter((agent) => CHAT_ELIGIBLE_SERVICE_TYPES.has(agent.agent_type.type));
+    const eligible = loadedAgents.filter((agent) => CHAT_ELIGIBLE_SERVICE_TYPES.has(agent.role_service_type.type));
     const requestedAgent = props.agentId
       ? loadedAgents.find((agent) => agent.config_id === props.agentId)
       : null;
 
-    if (requestedAgent && CHAT_ELIGIBLE_SERVICE_TYPES.has(requestedAgent.agent_type.type)) {
+    if (requestedAgent && CHAT_ELIGIBLE_SERVICE_TYPES.has(requestedAgent.role_service_type.type)) {
       selectedServiceId.value = requestedAgent.config_id;
     } else if (
       !selectedServiceId.value ||

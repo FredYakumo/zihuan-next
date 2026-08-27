@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::error::{Error, Result};
 use crate::ims_bot_adapter::models::event_model::MessageEvent;
 use crate::ims_bot_adapter::models::message::{collect_media_records, Message, PersistedMedia};
-use crate::llm::embedding_base::EmbeddingBase;
+use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::weaviate::WeaviateRef;
 
 use crate::storage::WeaviateClient;

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::inference::system_config::{
+use crate::agent::tool_config::{
     AgentToolConfig, AgentToolType, NodeGraphToolConfig, PythonScriptAgentToolConfig,
 };
 use crate::error::{Error, Result};

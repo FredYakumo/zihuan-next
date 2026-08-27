@@ -6,14 +6,14 @@ use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::llm::{InferenceParam, LLMMessage};
+use zihuan_core::model_inference::llm::llm_base::LLMBase;
+use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 use zihuan_core::task_context::{scope_task_id, scope_task_runtime, AgentTaskResult, AgentTaskStatus};
 
 use crate::qq_chat::language_style_store::{upsert_language_style, LanguageStyleScope};
 use crate::qq_chat::logging::QqChatTaskTrace;
 use crate::qq_chat::msg_send::{build_reply_result, send_planned_batches, QqChatServiceSendContext};
-use crate::tools::{review_and_rewrite_reply, QqReplyReviewRequest};
+use crate::tools::{AfterBrainAgent, QqReplyReviewRequest};
 
 const STYLE_LEARNING_SAMPLE_LIMIT: i64 = 200;
 const STYLE_LEARNING_MIN_SAMPLES: usize = 20;
@@ -222,8 +222,8 @@ fn run_blocking_future<T>(future: impl std::future::Future<Output = Result<T>>) 
 pub(crate) struct OwnedStyleLearningTaskContext {
     pub adapter: zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
     pub bot_name: String,
-    pub natural_language_reply_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    pub intent_classification_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    pub natural_language_reply_llm: Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>,
+    pub intent_classification_llm: Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>,
     pub rdb_pool: RelationalDbConnection,
     pub max_message_length: usize,
     pub reply_batch_builder: Option<crate::qq_chat::model::QqChatServiceReplyBatchBuilder>,
@@ -275,7 +275,7 @@ pub(crate) fn execute_style_learning_task(
                     },
                     learning.sample_count
                 );
-                let review_result = review_and_rewrite_reply(
+                let review_result = AfterBrainAgent::run(
                     &owned.intent_classification_llm,
                     &owned.natural_language_reply_llm,
                     Some("请确保反馈消息也符合刚刚学到的语言风格。"),

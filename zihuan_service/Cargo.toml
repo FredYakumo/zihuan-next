@@ -28,6 +28,7 @@ zihuan_workspace_agent = { path = "../zihuan_workspace_agent" }
 zihuan_ims_agent = { path = "../zihuan_ims_agent" }
 general_wheel_cpp = { path = "../general_wheel_cpp" }
 base64 = "0.22"
+async-trait = "0.1"
 reqwest = { version = "0.12.25", features = ["blocking", "json", "stream"] }
 rand = "0.8"
 regex = "1"

@@ -1,14 +1,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::inference::linalg::embedding_api::EmbeddingAPI;
-use crate::inference::nn::queued_embedding_model::QueuedEmbeddingModel;
-use crate::inference::nodes::llm_node::build_llm;
-use crate::inference::system_config::{LlmRefConfig, LlmServiceConfig, ModelRefSpec};
+use crate::model_inference::linalg::embedding_api::EmbeddingAPI;
+use crate::model_inference::nn::queued_embedding_model::QueuedEmbeddingModel;
+use crate::model_inference::nodes::llm_node::build_llm;
+use crate::config::llm_refs::LlmRefConfig;
+use crate::model_inference::model_config::{LlmServiceConfig, ModelRefSpec};
 use crate::agent::EmbeddingServiceConfig;
 use crate::error::{Error, Result};
-use crate::llm::embedding_base::EmbeddingBase;
-use crate::llm::llm_base::LLMBase;
+use crate::model_inference::llm::embedding_base::EmbeddingBase;
+use crate::model_inference::llm::llm_base::LLMBase;
 
 pub fn resolve_llm_service_config(
     llm_ref_id: Option<&str>,

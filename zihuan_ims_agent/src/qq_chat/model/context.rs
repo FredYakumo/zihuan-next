@@ -6,9 +6,9 @@ use zihuan_core::storage::LocalMemoryStore;
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::data_refs::RelationalDbConnection;
-use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::rag::WebSearchEngineRef;
+use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
+use zihuan_core::model_inference::llm::llm_base::LLMBase;
+use zihuan_core::rag::WebSearchEngine;
 use zihuan_core::steer::PendingSteerStore;
 use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::weaviate::WeaviateRef;
@@ -40,7 +40,7 @@ pub(crate) struct QqChatAgentServiceContext<'a> {
     pub(crate) elasticsearch_memory_ref: Option<&'a Arc<ElasticsearchRef>>,
     pub(crate) local_memory_store: Option<&'a Arc<LocalMemoryStore>>,
     pub(crate) embedding_model: Option<&'a Arc<dyn EmbeddingBase>>,
-    pub(crate) web_search_engine: &'a Arc<WebSearchEngineRef>,
+    pub(crate) web_search_engine: &'a Arc<dyn WebSearchEngine>,
     pub(crate) s3_ref: Option<&'a Arc<S3Ref>>,
     pub(crate) max_message_length: usize,
     pub(crate) compact_context_length: usize,
@@ -93,7 +93,7 @@ pub struct QqChatAgentServiceRuntimeConfig {
     pub elasticsearch_memory_ref: Option<Arc<ElasticsearchRef>>,
     pub local_memory_store: Option<Arc<LocalMemoryStore>>,
     pub embedding_model: Option<Arc<dyn EmbeddingBase>>,
-    pub web_search_engine: Arc<WebSearchEngineRef>,
+    pub web_search_engine: Arc<dyn WebSearchEngine>,
     pub s3_ref: Option<Arc<S3Ref>>,
     pub max_message_length: usize,
     pub compact_context_length: usize,

@@ -1,13 +1,13 @@
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
-use zihuan_core::agent::tool_calling::Tool;
+use zihuan_core::agent::tools::Tool;
 use zihuan_core::agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{InferenceParam, LLMMessage};
+use zihuan_core::model_inference::llm::llm_base::LLMBase;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 
 use super::common::{optional_string_argument, StaticFunctionToolSpec};
 

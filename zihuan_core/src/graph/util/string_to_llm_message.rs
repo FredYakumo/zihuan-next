@@ -1,7 +1,7 @@
 use crate::graph::NodeOutputFlow;
 use crate::graph::{node_input, node_output, DataType, DataValue, Node, Port};
 use crate::error::{Error, Result};
-use crate::llm::{str_to_role, LLMMessage, MessagePart};
+use crate::model_inference::llm::{str_to_role, LLMMessage, MessagePart};
 
 /// Converts a plain string into an `LLMMessage` with the selected role.
 pub struct StringToLLMMessageNode {

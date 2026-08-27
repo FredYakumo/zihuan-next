@@ -1,7 +1,7 @@
 use crate::graph::NodeOutputFlow;
 use crate::graph::{node_input, node_output, DataType, DataValue, Node, Port};
 use crate::error::{Error, Result};
-use crate::llm::LLMMessage;
+use crate::model_inference::llm::LLMMessage;
 
 pub struct ToolResultNode {
     id: String,

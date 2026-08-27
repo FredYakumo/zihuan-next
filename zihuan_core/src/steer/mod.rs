@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 
 use crate::ims_bot_adapter::models::MessageEvent;
-use crate::llm::{LLMMessage, MessagePart};
+use crate::model_inference::llm::{LLMMessage, MessagePart};
 
 pub const STEER_PREFIX: &str = "[User-STEER Message] User steer a new message:";
 

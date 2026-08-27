@@ -3,10 +3,10 @@ use std::net::TcpListener;
 
 use serde_json::json;
 
-use crate::inference::llm_message::convert::{
+use crate::model_inference::llm::message::convert::{
     parse_chat_completions_response, parse_chat_completions_sse_stream_response,
 };
-use crate::llm::{LLMMessage, MessagePart};
+use crate::model_inference::llm::{LLMMessage, MessagePart};
 
 fn message_text(message: &LLMMessage) -> String {
     message

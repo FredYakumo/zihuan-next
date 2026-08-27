@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::error::{Error, Result};
-use zihuan_core::llm::LLMMessage;
+use zihuan_core::model_inference::llm::LLMMessage;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 
 pub struct ToolResultNode {

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use crate::error::Result;
 
-/// Stable metadata for a domain agent.
+/// stable metadata for a domain agent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentDescriptor {
     pub id: &'static str,
@@ -22,7 +22,7 @@ impl AgentDescriptor {
     }
 }
 
-/// Request-scoped services shared by domain agents.
+/// request-scoped services shared by domain agents.
 ///
 /// Domain-specific inputs belong in each agent's `Input` type. This context
 /// intentionally only carries correlation and cancellation concerns.

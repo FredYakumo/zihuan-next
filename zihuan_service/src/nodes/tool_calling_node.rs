@@ -7,12 +7,12 @@ use zihuan_core::tool_subgraph::{
     shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool, ToolResultMode,
     ToolSubgraphRunner,
 };
-use zihuan_core::agent::tool_calling::{
+use zihuan_core::agent::tools::{
     ToolCallingEngine, ToolCallingStopReason, Tool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS,
 };
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::LLMMessage;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::graph::tool_spec::{
     tool_calling_shared_inputs_from_value, ToolDefinition, TOOL_CALLING_SHARED_INPUTS_PORT, TOOL_CALLING_TOOLS_CONFIG_PORT,
 };

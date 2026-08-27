@@ -4,7 +4,7 @@ use base64::Engine;
 
 use crate::graph::{node_input, node_output, DataType, DataValue, Node, Port};
 use crate::error::{Error, Result};
-use crate::llm::MessagePart;
+use crate::model_inference::llm::MessagePart;
 
 /// Encodes raw `Vec<u8>` bytes as a base64 data URL and wraps them as a multimodal `MessagePart`.
 pub struct BinaryToImageMessagePartNode {

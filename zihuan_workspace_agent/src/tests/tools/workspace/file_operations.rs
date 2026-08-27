@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
-use zihuan_core::agent::tool_calling::Tool;
+use zihuan_core::agent::tools::Tool;
 
 use crate::tools::workspace_tools::{CopyFileTool, FileInfoTool, MoveFileTool, DEFAULT_TOOL_COPY_FILE, DEFAULT_TOOL_FILE_INFO, DEFAULT_TOOL_MOVE_FILE};
 

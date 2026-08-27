@@ -3,21 +3,21 @@ use std::sync::Arc;
 use log::warn;
 use serde_json::Value;
 
-use crate::agent::tool_calling::Tool;
+use crate::agent::tools::Tool;
 use crate::error::Result;
-use crate::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
-use crate::rag::WebSearchEngineRef;
+use crate::model_inference::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
+use crate::rag::WebSearchEngine;
 
 const LOG_PREFIX: &str = "[WebSearchTool]";
 
 pub struct WebSearchTool {
-    web_search_engine: std::result::Result<Arc<WebSearchEngineRef>, String>,
+    web_search_engine: std::result::Result<Arc<dyn WebSearchEngine>, String>,
 }
 
 impl WebSearchTool {
-    pub fn new(web_search_engine_ref: Arc<WebSearchEngineRef>) -> Self {
+    pub fn new(web_search_engine: Arc<dyn WebSearchEngine>) -> Self {
         Self {
-            web_search_engine: Ok(web_search_engine_ref),
+            web_search_engine: Ok(web_search_engine),
         }
     }
 
@@ -27,23 +27,23 @@ impl WebSearchTool {
         }
     }
 
-    fn extract_url_with_fallback(&self, engine: &WebSearchEngineRef, url: &str) -> Result<Vec<String>> {
-        match engine.engine.extract_url(url) {
+    fn extract_url_with_fallback(&self, engine: &dyn WebSearchEngine, url: &str) -> Result<Vec<String>> {
+        match engine.extract_url(url) {
             Ok(items) => Ok(items),
             Err(error) => {
                 warn!("{LOG_PREFIX} extract failed for url='{url}': {error}; trying direct web request");
-                engine.engine.fetch_url_direct(url)
+                engine.fetch_url_direct(url)
             }
         }
     }
 
     fn search_with_fallback(
         &self,
-        engine: &WebSearchEngineRef,
+        engine: &dyn WebSearchEngine,
         query: &str,
         search_count: i64,
     ) -> Result<Vec<String>> {
-        match engine.engine.search(query, search_count) {
+        match engine.search(query, search_count) {
             Ok(items) => Ok(items),
             Err(error) => {
                 let trimmed = query.trim();
@@ -51,8 +51,10 @@ impl WebSearchTool {
                     return Err(error);
                 }
 
+
+
                 warn!("{LOG_PREFIX} search failed for url-like query='{trimmed}': {error}; trying direct web request");
-                engine.engine.fetch_url_direct(trimmed)
+                engine.fetch_url_direct(trimmed)
             }
         }
     }
@@ -92,9 +94,9 @@ impl Tool for WebSearchTool {
             }
         };
         let result = if !url.is_empty() {
-            self.extract_url_with_fallback(engine, url)
+            self.extract_url_with_fallback(engine.as_ref(), url)
         } else {
-            self.search_with_fallback(engine, query, search_count)
+            self.search_with_fallback(engine.as_ref(), query, search_count)
         };
         match result {
             Ok(items) => serde_json::json!({ "results": items }).to_string(),

@@ -5,9 +5,11 @@ use uuid::Uuid;
 
 use crate::system_config;
 use log::{info, warn};
-use zihuan_core::inference::nn::embedding::embedding_runtime_manager::close_runtime_embedding_instances_for_config;
-use zihuan_core::inference::system_config::{AgentConfig, AgentType, LlmRefConfig, ModelRefSpec};
-use zihuan_service::AgentRuntimeStatus;
+use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::close_runtime_embedding_instances_for_config;
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::config::llm_refs::LlmRefConfig;
+use zihuan_core::model_inference::model_config::ModelRefSpec;
+use zihuan_service::RoleServiceRuntimeStatus;
 
 use super::{now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found};
 
@@ -130,7 +132,7 @@ pub async fn delete_llm_ref(req: &mut Request, res: &mut Response, depot: &mut D
 }
 
 async fn hot_reload_agents_for_llm_ref(state: &crate::api::state::AppState, llm_ref_id: &str) {
-    let agents = match system_config::load_agents() {
+    let agents = match system_config::load_role_services() {
         Ok(agents) => agents,
         Err(err) => {
             warn!(
@@ -153,8 +155,8 @@ async fn hot_reload_agents_for_llm_ref(state: &crate::api::state::AppState, llm_
     };
 
     for agent in agents.into_iter().filter(|agent| agent_uses_llm_ref(agent, llm_ref_id)) {
-        let runtime = state.agent_manager.runtime_info(&agent.id);
-        if runtime.status != AgentRuntimeStatus::Running {
+        let runtime = state.role_service_manager.runtime_info(&agent.id);
+        if runtime.status != RoleServiceRuntimeStatus::Running {
             continue;
         }
 
@@ -164,8 +166,8 @@ async fn hot_reload_agents_for_llm_ref(state: &crate::api::state::AppState, llm_
         );
 
         if let Err(err) = state
-            .agent_manager
-            .start_agent(agent.clone(), connections.clone(), None, None)
+            .role_service_manager
+            .start_role_service(&agent, connections.clone(), None, None)
             .await
         {
             warn!(
@@ -176,14 +178,14 @@ async fn hot_reload_agents_for_llm_ref(state: &crate::api::state::AppState, llm_
     }
 }
 
-fn agent_uses_llm_ref(agent: &AgentConfig, llm_ref_id: &str) -> bool {
-    match &agent.agent_type {
-        AgentType::QqChat(config) => {
+fn agent_uses_llm_ref(agent: &RoleServiceConfig, llm_ref_id: &str) -> bool {
+    match &agent.role_service_type {
+        RoleServiceType::QqChat(config) => {
             config.llm_ref_id.as_deref() == Some(llm_ref_id)
                 || config.math_programming_llm_ref_id.as_deref() == Some(llm_ref_id)
                 || config.natural_language_reply_llm_ref_id.as_deref() == Some(llm_ref_id)
                 || config.embedding_model_ref_id.as_deref() == Some(llm_ref_id)
         }
-        AgentType::Workspace(config) => config.llm_ref_id.as_deref() == Some(llm_ref_id),
+        RoleServiceType::Workspace(config) => config.llm_ref_id.as_deref() == Some(llm_ref_id),
     }
 }

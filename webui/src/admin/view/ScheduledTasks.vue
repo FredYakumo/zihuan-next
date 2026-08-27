@@ -32,8 +32,8 @@ import type { ScheduledTaskEntry } from "../../api/types";
 const serviceId = ref("");
 const status = ref("");
 const items = ref<ScheduledTaskEntry[]>([]);
-const serviceItems = ref<Array<{ config_id: string; name: string; agent_type: { type: string } }>>([]);
-const qqServices = computed(() => serviceItems.value.filter((service) => service.agent_type.type === "qq_chat"));
+const serviceItems = ref<Array<{ config_id: string; name: string; role_service_type: { type: string } }>>([]);
+const qqServices = computed(() => serviceItems.value.filter((service) => service.role_service_type.type === "qq_chat"));
 function formatTime(value: string) { return new Date(value).toLocaleString(); }
 async function load() { if (serviceId.value) items.value = await scheduledTasks.list(serviceId.value, status.value || undefined); }
 async function cancel(taskId: string) { await scheduledTasks.cancel(serviceId.value, taskId); await load(); }
