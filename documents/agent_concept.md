@@ -28,7 +28,7 @@ Brain本身不负责具体业务能力：搜索、发送消息、运行工作流
 核心实现位于[`zihuan_core/src/agent/brain.rs`](../zihuan_core/src/agent/brain.rs)，其基本结构如下：
 
 ```rust
-/// Orchestrates a multi-turn LLM ↔ tool call loop.
+/// Orchestrates a multi-turn LLM <-> tool call loop.
 ///
 /// Create a `Brain`, register tools with [`Brain::with_tool`] or [`Brain::add_tool`],
 /// then call [`Brain::run`] with the initial conversation messages.
