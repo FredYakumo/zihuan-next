@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use zihuan_core::ims_bot_adapter::resolve_fallback_bot_profile;
-use zihuan_core::inference::system_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
 use salvo::http::body::BodySender;
 use salvo::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use salvo::http::HeaderValue;
@@ -21,8 +21,8 @@ use uuid::Uuid;
 use zihuan_core::agent::tools::{ToolCallingObserver, ToolCallingStopReason};
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken, TokenUsage};
+use zihuan_core::model_inference::llm::tooling::ToolCalls;
+use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken, TokenUsage};
 use zihuan_core::message_part::MessagePart;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
@@ -209,9 +209,9 @@ pub struct ChatStreamRequest {
     #[serde(default)]
     pub model_config_id: Option<String>,
     #[serde(default)]
-    pub thinking_type: Option<zihuan_core::inference::system_config::ThinkingType>,
+    pub thinking_type: Option<zihuan_core::model_inference::model_config::ThinkingType>,
     #[serde(default)]
-    pub reasoning_effort: Option<zihuan_core::inference::system_config::ReasoningEffort>,
+    pub reasoning_effort: Option<zihuan_core::model_inference::model_config::ReasoningEffort>,
     #[serde(default)]
     pub workspace_path: Option<String>,
 }

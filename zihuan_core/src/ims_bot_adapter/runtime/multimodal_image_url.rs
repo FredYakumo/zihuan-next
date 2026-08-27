@@ -4,7 +4,7 @@ use reqwest::header::CONTENT_TYPE;
 use std::path::Path;
 use std::time::Duration;
 use tokio::task::block_in_place;
-use crate::llm::MessagePart;
+use crate::model_inference::llm::MessagePart;
 use crate::graph::object_storage::S3Ref;
 
 use crate::ims_bot_adapter::runtime::models::message::ImageMessage;

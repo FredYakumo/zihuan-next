@@ -3,7 +3,9 @@ use std::sync::{Arc, Mutex};
 
 use chrono::Local;
 use log::error;
-use zihuan_core::inference::system_config::{load_role_services, RoleServiceConfig, RoleServiceType};
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::config::llm_refs::load_llm_refs;
+use zihuan_core::config::role_services::load_role_services;
 use serde::Serialize;
 use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
@@ -11,7 +13,7 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 use zihuan_core::agent::tools::ToolCallingObserver;
 use zihuan_core::error::Result;
-use zihuan_core::llm::{LLMMessage, StreamToken};
+use zihuan_core::model_inference::llm::{LLMMessage, StreamToken};
 use zihuan_core::task_context::AgentTaskRuntime;
 
 use crate::role::{InferenceToolProvider, RoleBrainAgent};
@@ -139,8 +141,8 @@ impl RoleServiceManager {
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn ToolCallingObserver>>,
         model_config_id: Option<&str>,
-        thinking_type: Option<zihuan_core::inference::system_config::ThinkingType>,
-        reasoning_effort: Option<zihuan_core::inference::system_config::ReasoningEffort>,
+        thinking_type: Option<zihuan_core::model_inference::model_config::ThinkingType>,
+        reasoning_effort: Option<zihuan_core::model_inference::model_config::ReasoningEffort>,
         workspace_path: Option<String>,
         session_id: Option<String>,
     ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::tools::ToolCallingStopReason)> {
@@ -148,7 +150,7 @@ impl RoleServiceManager {
             zihuan_core::error::Error::ValidationError(format!("role service '{}' is not running", role_service_id))
         })?;
         if let Some(model_id) = model_config_id {
-            let llm_refs = zihuan_core::inference::system_config::load_llm_refs()?;
+            let llm_refs = load_llm_refs()?;
             let mut llm_config = zihuan_core::agent::resource_resolver::resolve_llm_service_config(
                 Some(model_id),
                 &llm_refs,
@@ -180,7 +182,7 @@ impl RoleServiceManager {
     ) -> Result<()> {
         self.stop_role_service(&agent.id).await?;
         let start_result: Result<()> = async {
-            let llm_refs = zihuan_core::inference::system_config::load_llm_refs()?;
+            let llm_refs = load_llm_refs()?;
             let tool_provider = build_role_tool_provider(&agent, &connections)?;
             let role_service = Arc::new(RoleBrainAgent::load_with_tools(&agent, &llm_refs, tool_provider)?);
 

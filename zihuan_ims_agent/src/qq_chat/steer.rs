@@ -11,7 +11,7 @@ use zihuan_core::agent::utils::build_state_system_prefix_lines;
 
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::error::Result;
-use zihuan_core::llm::{LLMMessage, MessagePart};
+use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{
     apply_steer_prefix, build_merged_follow_up_event, PendingSteerEvent, PendingSteerStore, PROCESSING_INSTRUCTION,
 };

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 use serde_json::Value;
 use zihuan_core::agent::tools::{Tool, ToolExecutionResource};
-use zihuan_core::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
+use zihuan_core::model_inference::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
 
 use super::shared::{json_error, path_resource, resolve_tool_path, success_json};
 

@@ -10,8 +10,8 @@ use serde_json::Value;
 use crate::classify_intent::IntentClassificationTrace;
 use zihuan_core::ims_bot_adapter::models::message::Message;
 use zihuan_core::agent::tools::{ToolCallingObserver, ToolCallingStopReason};
-use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{LLMMessage, TokenUsage};
+use zihuan_core::model_inference::llm::tooling::ToolCalls;
+use zihuan_core::model_inference::llm::{LLMMessage, TokenUsage};
 use zihuan_core::graph::graph_io::{
     EdgeDefinition, GraphMetadata, GraphPosition, NodeDefinition, NodeGraphDefinition,
 };

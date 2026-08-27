@@ -1,5 +1,5 @@
 use crate::error::Result;
-use zihuan_core::llm::LLMMessage;
+use zihuan_core::model_inference::llm::LLMMessage;
 use crate::node::data_value::LLMMessageSessionCacheRef;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;

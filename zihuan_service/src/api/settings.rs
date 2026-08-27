@@ -12,7 +12,8 @@ use tokio::task;
 use zihuan_core::config::ConfigCenter;
 use zihuan_core::python_runtime::PythonRuntimeConfig;
 use zihuan_core::system_config::{GlobalSettingsSection, ModelHttpApiKey, ModelHttpServiceSettings};
-use zihuan_core::inference::system_config::{load_llm_refs, ModelRefSpec};
+use zihuan_core::config::llm_refs::load_llm_refs;
+use zihuan_core::model_inference::model_config::ModelRefSpec;
 use uuid::Uuid;
 
 use zihuan_core::python_runtime_resolver::check_python_runtime;

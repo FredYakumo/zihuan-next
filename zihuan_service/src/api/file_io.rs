@@ -3,8 +3,10 @@ use std::sync::Arc;
 
 use chrono::{Datelike, Utc};
 use log::{info, warn};
-use zihuan_core::inference::nn::local_llm_registry::list_local_llm_models as scan_local_llm_models;
-use zihuan_core::inference::system_config::{load_role_services, RoleServiceConfig, AgentToolType, NodeGraphToolConfig};
+use zihuan_core::model_inference::nn::local_llm_registry::list_local_llm_models as scan_local_llm_models;
+use zihuan_core::agent::service_config::RoleServiceConfig;
+use zihuan_core::agent::tool_config::{AgentToolType, NodeGraphToolConfig};
+use zihuan_core::config::role_services::load_role_services;
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};

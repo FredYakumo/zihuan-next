@@ -1,7 +1,7 @@
 use crate::graph::NodeOutputFlow;
 use crate::graph::{node_input, node_output, DataType, DataValue, Node, Port};
 use crate::error::{Error, Result};
-use crate::llm::{str_to_role, LLMMessage, MessagePart};
+use crate::model_inference::llm::{str_to_role, LLMMessage, MessagePart};
 
 /// Combines an optional text segment with a list of `MessagePart`s into a multimodal `LLMMessage`.
 pub struct BuildMultimodalUserMessageNode {

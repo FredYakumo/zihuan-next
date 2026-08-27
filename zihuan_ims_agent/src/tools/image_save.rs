@@ -8,8 +8,8 @@ use zihuan_core::storage::{upload_remote_image_to_s3, upsert_elasticsearch_image
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::url_utils::content_type_from_url;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_core::graph::message_restore::{persist_media_to_record, query_media_by_id};

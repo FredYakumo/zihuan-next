@@ -9,7 +9,10 @@ pub const LLM_KIND_NATURAL_LANGUAGE_REPLY: &str = "natural_language_reply";
 pub mod qq_chat;
 pub mod agent;
 pub mod brain_agent;
+pub mod runtime_context;
+pub mod service_config;
 pub mod sub_agent;
+pub mod tool_config;
 
 pub fn normalize_llm_kind(llm_kind: Option<&str>) -> crate::error::Result<&'static str> {
     match llm_kind
@@ -62,7 +65,7 @@ pub mod tool_definitions;
 pub mod tools;
 pub mod utils;
 
-pub use crate::llm::tooling::FunctionTool;
+pub use crate::model_inference::llm::tooling::FunctionTool;
 pub use agent::{Agent, AgentCancellation, AgentContext, AgentDescriptor};
 pub use brain_agent::BrainAgent;
 pub use sub_agent::{SubAgent, SubAgentDefinition, SubAgentTool};

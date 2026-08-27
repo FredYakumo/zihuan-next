@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::error::{Error, Result};
-use zihuan_core::llm::LLMMessage;
-use zihuan_core::llm::util::str_to_role::str_to_role;
+use zihuan_core::model_inference::llm::LLMMessage;
+use zihuan_core::model_inference::llm::util::str_to_role::str_to_role;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 
 /// Converts a plain string into an `LLMMessage` with the selected role.

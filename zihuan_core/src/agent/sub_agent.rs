@@ -14,9 +14,9 @@ use crate::error::{Error, Result};
 use crate::graph::function_graph::FunctionPortDef;
 use crate::graph::util::function::data_value_from_json_with_declared_type;
 use crate::graph::DataValue;
-use crate::llm::llm_base::LLMBase;
-use crate::llm::tooling::FunctionTool;
-use crate::llm::LLMMessage;
+use crate::model_inference::llm::llm_base::LLMBase;
+use crate::model_inference::llm::tooling::FunctionTool;
+use crate::model_inference::llm::LLMMessage;
 use crate::system_config::application_data_dir;
 
 const DEFAULT_MEMORY_ID: &str = "memory";

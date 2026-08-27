@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-use zihuan_core::inference::agent_config_support::{build_llm_from_ref_id, LLM_KIND_FIELD};
-use zihuan_core::agent::qq_chat::{current_qq_chat_agent_service_config, llm_ref_id_for_kind};
+use zihuan_core::model_inference::agent_config_support::{build_llm_from_ref_id, LLM_KIND_FIELD};
+use zihuan_core::agent::qq_chat::llm_ref_id_for_kind;
+use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
 use zihuan_core::agent::{normalize_llm_kind, LLM_KIND_MAIN};
 use zihuan_core::error::Result;
 use zihuan_core::graph::{node_output, DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, NodeOutputFlow, Port};

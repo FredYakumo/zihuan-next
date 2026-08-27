@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::llm::tooling::FunctionTool;
+use crate::model_inference::llm::tooling::FunctionTool;
 use crate::workspace::AskUserRequest;
 pub use crate::tool_runtime::ToolRunDuration;
 

@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::agent::tools::Tool;
 use crate::error::{Error, Result};
 use crate::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-use crate::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
+use crate::model_inference::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
 use crate::graph::object_storage::S3Ref;
 
 use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;

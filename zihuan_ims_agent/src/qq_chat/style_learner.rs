@@ -6,8 +6,8 @@ use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::llm::{InferenceParam, LLMMessage};
+use zihuan_core::model_inference::llm::llm_base::LLMBase;
+use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 use zihuan_core::task_context::{scope_task_id, scope_task_runtime, AgentTaskResult, AgentTaskStatus};
 
 use crate::qq_chat::language_style_store::{upsert_language_style, LanguageStyleScope};
@@ -222,8 +222,8 @@ fn run_blocking_future<T>(future: impl std::future::Future<Output = Result<T>>) 
 pub(crate) struct OwnedStyleLearningTaskContext {
     pub adapter: zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
     pub bot_name: String,
-    pub natural_language_reply_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    pub intent_classification_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    pub natural_language_reply_llm: Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>,
+    pub intent_classification_llm: Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>,
     pub rdb_pool: RelationalDbConnection,
     pub max_message_length: usize,
     pub reply_batch_builder: Option<crate::qq_chat::model::QqChatServiceReplyBatchBuilder>,

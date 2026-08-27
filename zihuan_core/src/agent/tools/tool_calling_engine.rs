@@ -3,16 +3,16 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use log::{info, warn};
-use crate::inference::message_content_utils::{is_transport_error, sanitize_messages_for_inference};
+use crate::model_inference::message_content_utils::{is_transport_error, sanitize_messages_for_inference};
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
-use crate::llm::llm_base::LLMBase;
+use crate::model_inference::llm::llm_base::LLMBase;
 use crate::agent::tools::{Tool, ToolExecutionOutput, ToolExecutionResource, ToolRunDuration};
-use crate::llm::tooling::FunctionTool;
-use crate::llm::tooling::ToolCalls;
-use crate::llm::{InferenceParam, LLMMessage, MessagePart, MessageRole, StreamToken};
+use crate::model_inference::llm::tooling::FunctionTool;
+use crate::model_inference::llm::tooling::ToolCalls;
+use crate::model_inference::llm::{InferenceParam, LLMMessage, MessagePart, MessageRole, StreamToken};
 use crate::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskStatus,
 };

@@ -10,7 +10,7 @@ use zihuan_core::ims_bot_adapter::{
     parse_ims_bot_adapter_connection, sync_enabled_bot_adapters,
 };
 use log::info;
-use zihuan_core::inference::nn::embedding::embedding_runtime_manager::{
+use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::{
     close_runtime_embedding_instance, list_runtime_embedding_instances,
 };
 use zihuan_core::storage::{

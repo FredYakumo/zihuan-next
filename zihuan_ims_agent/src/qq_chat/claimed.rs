@@ -4,8 +4,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::{info, warn};
 
-use zihuan_core::inference::inference_function::compact_message::{compact_message_history, estimate_messages_tokens};
-use zihuan_core::inference::message_content_utils::{downgrade_messages_for_model, sanitize_messages_for_inference};
+use zihuan_core::model_inference::inference_function::compact_message::{compact_message_history, estimate_messages_tokens};
+use zihuan_core::model_inference::message_content_utils::{downgrade_messages_for_model, sanitize_messages_for_inference};
 
 use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingStopReason, LongTaskContext};
 
@@ -13,11 +13,11 @@ use zihuan_core::agent::emotion::utils::{
     emotion_dimensions_text, emotion_expression_prompt, has_noticeable_emotion_expression,
 };
 use zihuan_core::agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
-use zihuan_core::agent::qq_chat::current_qq_chat_agent_service_config;
+use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::{InferenceParam, LLMMessage, TokenUsage};
+use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage, TokenUsage};
 use zihuan_core::steer::message_with_api_style;
 use zihuan_core::task_context::AgentTaskRequest;
 
@@ -303,7 +303,7 @@ impl QqChatAgentServiceInner {
             .iter()
             .rev()
             .find(|message| {
-                matches!(message.role, zihuan_core::llm::MessageRole::Assistant) && message.tool_calls.is_empty()
+                matches!(message.role, zihuan_core::model_inference::llm::MessageRole::Assistant) && message.tool_calls.is_empty()
             })
             .and_then(|message| message.content_text())
             .map(str::trim)
@@ -315,7 +315,7 @@ impl QqChatAgentServiceInner {
         &self,
         ctx: &'a QqChatAgentServiceContext<'_>,
         intent_category: IntentCategory,
-    ) -> (&'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>, &'a str) {
+    ) -> (&'a Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>, &'a str) {
         match intent_category {
             IntentCategory::SolveComplexProblem | IntentCategory::WriteCode => {
                 (ctx.math_programming_llm, "math_programming")

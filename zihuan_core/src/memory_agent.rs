@@ -6,10 +6,10 @@ use serde_json::{json, Value};
 
 use crate::agent::tools::{ToolCallingEngine, ToolCallingStopReason, Tool};
 use crate::error::{Error, Result};
-use crate::llm::embedding_base::EmbeddingBase;
-use crate::llm::llm_base::LLMBase;
-use crate::llm::tooling::FunctionTool;
-use crate::llm::{InferenceParam, LLMMessage, MessageRole};
+use crate::model_inference::llm::embedding_base::EmbeddingBase;
+use crate::model_inference::llm::llm_base::LLMBase;
+use crate::model_inference::llm::tooling::FunctionTool;
+use crate::model_inference::llm::{InferenceParam, LLMMessage, MessageRole};
 use crate::storage::{
     create_elasticsearch_memory_record, create_memory_record_with_vector, list_elasticsearch_memory_keys,
     list_recent_memory_keys, search_elasticsearch_memory, search_memory_content_by_vector, AgentMemoryAccessContext,

@@ -1,5 +1,6 @@
-use zihuan_core::inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_core::inference::system_config::{load_role_services, RoleServiceType};
+use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::config::role_services::load_role_services;
 use redis::AsyncCommands;
 use salvo::prelude::*;
 use salvo::writing::Json;
@@ -1309,7 +1310,7 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
 fn load_service_and_connections(
     service_id: &str,
 ) -> zihuan_core::error::Result<(
-    zihuan_core::inference::system_config::RoleServiceConfig,
+    zihuan_core::agent::service_config::RoleServiceConfig,
     Vec<zihuan_core::storage::ConnectionConfig>,
 )> {
     let agent = load_role_services()?
@@ -1320,7 +1321,7 @@ fn load_service_and_connections(
 }
 
 fn service_memory_config(
-    agent: &zihuan_core::inference::system_config::RoleServiceConfig,
+    agent: &zihuan_core::agent::service_config::RoleServiceConfig,
 ) -> (Option<String>, Option<String>, Option<String>) {
     match &agent.role_service_type {
         RoleServiceType::QqChat(config) => (
@@ -1333,7 +1334,7 @@ fn service_memory_config(
 }
 
 fn service_image_config(
-    agent: &zihuan_core::inference::system_config::RoleServiceConfig,
+    agent: &zihuan_core::agent::service_config::RoleServiceConfig,
 ) -> (Option<String>, Option<String>, Option<String>) {
     match &agent.role_service_type {
         RoleServiceType::QqChat(config) => (

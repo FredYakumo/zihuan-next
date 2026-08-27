@@ -7,9 +7,10 @@ use salvo::prelude::*;
 use salvo::writing::Json;
 use sha2::{Digest, Sha256};
 use zihuan_core::agent::resource_resolver::build_llm_model;
-use zihuan_core::inference::system_config::{load_llm_refs, LlmRefConfig, ModelRefSpec};
-use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{InferenceParam, LLMMessage, MessageRole};
+use zihuan_core::config::llm_refs::{load_llm_refs, LlmRefConfig};
+use zihuan_core::model_inference::model_config::ModelRefSpec;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage, MessageRole};
 use zihuan_core::system_config::{GlobalSettingsSection, ModelHttpApiKey};
 
 #[derive(serde::Deserialize)]
@@ -147,10 +148,10 @@ fn parse_openai_messages(messages: Vec<serde_json::Value>) -> Result<Vec<LLMMess
         };
         if let Some(tool_calls) = value.get("tool_calls").and_then(serde_json::Value::as_array) {
             message.tool_calls = tool_calls.iter().filter_map(|call| {
-                Some(zihuan_core::llm::tooling::ToolCalls {
+                Some(zihuan_core::model_inference::llm::tooling::ToolCalls {
                     id: call.get("id")?.as_str()?.to_string(),
                     type_name: call.get("type").and_then(serde_json::Value::as_str).unwrap_or("function").to_string(),
-                    function: zihuan_core::llm::tooling::ToolCallsFuncSpec {
+                    function: zihuan_core::model_inference::llm::tooling::ToolCallsFuncSpec {
                         name: call.get("function")?.get("name")?.as_str()?.to_string(),
                         arguments: call.get("function")?.get("arguments").and_then(serde_json::Value::as_str).and_then(|value| serde_json::from_str(value).ok()).unwrap_or(serde_json::Value::Null),
                     },
@@ -196,7 +197,7 @@ fn openai_message(message: &LLMMessage) -> serde_json::Value {
     value
 }
 
-fn openai_usage(usage: &zihuan_core::llm::TokenUsage) -> serde_json::Value {
+fn openai_usage(usage: &zihuan_core::model_inference::llm::TokenUsage) -> serde_json::Value {
     serde_json::json!({ "prompt_tokens": usage.prompt_tokens.unwrap_or(0), "completion_tokens": usage.completion_tokens.unwrap_or(0), "total_tokens": usage.total_tokens.unwrap_or(0) })
 }
 

@@ -286,20 +286,20 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
 
         // Single LLMMessage from a JSON object: {"role": "user", "content": "..."}
         (Value::Object(map), DataType::LLMMessage) => {
-            fn parse_role(v: &Value) -> zihuan_core::llm::MessageRole {
+            fn parse_role(v: &Value) -> zihuan_core::model_inference::llm::MessageRole {
                 let s = v.as_str().unwrap_or("user").to_ascii_lowercase();
                 match s.as_str() {
-                    "system" => zihuan_core::llm::MessageRole::System,
-                    "assistant" => zihuan_core::llm::MessageRole::Assistant,
-                    "tool" => zihuan_core::llm::MessageRole::Tool,
-                    _ => zihuan_core::llm::MessageRole::User,
+                    "system" => zihuan_core::model_inference::llm::MessageRole::System,
+                    "assistant" => zihuan_core::model_inference::llm::MessageRole::Assistant,
+                    "tool" => zihuan_core::model_inference::llm::MessageRole::Tool,
+                    _ => zihuan_core::model_inference::llm::MessageRole::User,
                 }
             }
 
             let role = map
                 .get("role")
                 .map(|v| parse_role(v))
-                .unwrap_or(zihuan_core::llm::MessageRole::User);
+                .unwrap_or(zihuan_core::model_inference::llm::MessageRole::User);
             let content = match map.get("content") {
                 Some(Value::String(s)) => Some(s.clone()),
                 Some(Value::Null) | None => None,
@@ -309,7 +309,7 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 .get("api_style")
                 .and_then(|value| value.as_str())
                 .map(ToOwned::to_owned);
-            Some(DataValue::LLMMessage(zihuan_core::llm::LLMMessage {
+            Some(DataValue::LLMMessage(zihuan_core::model_inference::llm::LLMMessage {
                 role,
                 api_style,
                 content,

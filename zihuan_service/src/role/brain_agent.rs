@@ -3,17 +3,18 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
-use zihuan_core::inference::message_content_utils::sanitize_messages_for_inference;
-use zihuan_core::inference::system_config::{RoleServiceConfig, RoleServiceType, LlmRefConfig};
+use zihuan_core::model_inference::message_content_utils::sanitize_messages_for_inference;
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::config::llm_refs::{load_llm_refs, LlmRefConfig};
 use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
 use zihuan_core::agent::tools::{
     ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason, Tool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS,
 };
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken};
+use zihuan_core::model_inference::llm::llm_base::LLMBase;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken};
 use zihuan_core::graph::tool_spec::ToolDefinition;
 
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
@@ -101,7 +102,7 @@ impl Tool for DynToolWrapper {
 
 impl RoleBrainAgent {
     pub fn load(agent: &RoleServiceConfig, connections: &[ConnectionConfig]) -> Result<Self> {
-        let llm_refs = zihuan_core::inference::system_config::load_llm_refs()?;
+        let llm_refs = load_llm_refs()?;
         Self::load_with_refs(agent, &llm_refs, connections)
     }
 

@@ -277,35 +277,35 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
 
         // Single LLMMessage from a JSON object: {"role": "user", "content": "..."}
         (Value::Object(map), DataType::LLMMessage) => {
-            fn parse_role(v: &Value) -> crate::llm::MessageRole {
+            fn parse_role(v: &Value) -> crate::model_inference::llm::MessageRole {
                 let s = v.as_str().unwrap_or("user").to_ascii_lowercase();
                 match s.as_str() {
-                    "system" => crate::llm::MessageRole::System,
-                    "assistant" => crate::llm::MessageRole::Assistant,
-                    "tool" => crate::llm::MessageRole::Tool,
-                    _ => crate::llm::MessageRole::User,
+                    "system" => crate::model_inference::llm::MessageRole::System,
+                    "assistant" => crate::model_inference::llm::MessageRole::Assistant,
+                    "tool" => crate::model_inference::llm::MessageRole::Tool,
+                    _ => crate::model_inference::llm::MessageRole::User,
                 }
             }
 
             let role = map
                 .get("role")
                 .map(|v| parse_role(v))
-                .unwrap_or(crate::llm::MessageRole::User);
+                .unwrap_or(crate::model_inference::llm::MessageRole::User);
             let parts = match map.get("parts") {
                 Some(Value::Array(parts)) => parts
                     .iter()
-                    .filter_map(|part| serde_json::from_value::<crate::llm::MessagePart>(part.clone()).ok())
+                    .filter_map(|part| serde_json::from_value::<crate::model_inference::llm::MessagePart>(part.clone()).ok())
                     .collect(),
                 Some(Value::Null) | None => map
                     .get("content")
                     .and_then(Value::as_str)
-                    .map(|content| vec![crate::llm::MessagePart::text(content)])
+                    .map(|content| vec![crate::model_inference::llm::MessagePart::text(content)])
                     .unwrap_or_default(),
-                Some(other) => serde_json::from_value::<crate::llm::MessagePart>(other.clone())
+                Some(other) => serde_json::from_value::<crate::model_inference::llm::MessagePart>(other.clone())
                     .map(|part| vec![part])
                     .unwrap_or_default(),
             };
-            Some(DataValue::LLMMessage(crate::llm::LLMMessage {
+            Some(DataValue::LLMMessage(crate::model_inference::llm::LLMMessage {
                 role,
                 parts,
                 reasoning_content: None,

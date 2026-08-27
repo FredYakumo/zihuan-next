@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use general_wheel_cpp::cosine_similarity;
 use zihuan_core::error::Result;
-use zihuan_core::llm::embedding_base::EmbeddingBase;
+use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 
 const BM25_K1: f64 = 1.5;
 const BM25_B: f64 = 0.75;

@@ -12,6 +12,9 @@ use crate::error::{Error, Result};
 use crate::python_runtime::PythonRuntimeConfig;
 use crate::system_config::system_config_file_path;
 
+pub mod llm_refs;
+pub mod role_services;
+
 const CONFIG_ROOT_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]

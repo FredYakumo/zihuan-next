@@ -30,8 +30,8 @@ use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::llm::{LLMMessage, MessagePart, MessageRole};
+use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
+use zihuan_core::model_inference::llm::{LLMMessage, MessagePart, MessageRole};
 use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
 use zihuan_core::utils::string_utils::extract_string_field;
 use zihuan_core::weaviate::WeaviateRef;
@@ -951,8 +951,8 @@ impl QqChatAgentService {
             }),
         };
 
-        zihuan_core::agent::qq_chat::with_current_qq_chat_agent_service_config(
-            self.config.qq_chat_config.clone(),
+        zihuan_core::agent::runtime_context::with_current_agent_runtime_context(
+            zihuan_core::agent::runtime_context::AgentRuntimeContext::QqChat(self.config.qq_chat_config.clone()),
             || {
                 self.inner
                     .handle(event, time, &self.config.agent_id, &self.config.session, None, &ctx)

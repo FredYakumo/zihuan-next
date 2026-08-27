@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::tools::{Tool, ToolExecutionOutput, ToolExecutionResource, ToolRunDuration};
-use crate::llm::tooling::FunctionTool;
+use crate::model_inference::llm::tooling::FunctionTool;
 use serde_json::Value;
 
 /// Adapts a shared `Arc<dyn Tool>` to the `Tool` value expected by the engine.

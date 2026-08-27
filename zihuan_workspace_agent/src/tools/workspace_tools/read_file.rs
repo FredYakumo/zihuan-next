@@ -5,8 +5,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use base64::Engine;
 use zihuan_core::agent::tools::{Tool, ToolExecutionResource};
-use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::tooling::StaticFunctionToolSpec;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::tooling::StaticFunctionToolSpec;
 use super::shared::{json_error, path_resource, resolve_tool_path, success_json};
 
 pub(crate) const DEFAULT_TOOL_READ_FILE: &str = "read_file";

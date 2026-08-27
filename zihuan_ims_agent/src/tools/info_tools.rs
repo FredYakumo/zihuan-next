@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use zihuan_core::agent::tools::Tool;
-use zihuan_core::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
 
 use super::common::StaticFunctionToolSpec;
 use super::format_public_info_message;

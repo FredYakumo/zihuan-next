@@ -235,4 +235,4 @@ pub(crate) fn extract_string_list_output(outputs: &HashMap<String, DataValue>, k
     }
 }
 
-pub(crate) use zihuan_core::llm::tooling::StaticFunctionToolSpec;
+pub(crate) use zihuan_core::model_inference::llm::tooling::StaticFunctionToolSpec;

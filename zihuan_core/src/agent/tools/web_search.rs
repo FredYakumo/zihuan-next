@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::agent::tools::Tool;
 use crate::error::Result;
-use crate::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
+use crate::model_inference::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
 use crate::rag::WebSearchEngine;
 
 const LOG_PREFIX: &str = "[WebSearchTool]";

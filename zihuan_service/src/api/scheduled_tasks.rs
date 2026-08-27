@@ -10,7 +10,7 @@ use crate::system_config;
 async fn connection_for_service(service_id: &str) -> Result<zihuan_core::data_refs::RelationalDbConnection, String> {
     let agents = system_config::load_role_services().map_err(|err| err.to_string())?;
     let agent = agents.into_iter().find(|agent| agent.id == service_id).ok_or_else(|| "Service not found".to_string())?;
-    let zihuan_core::inference::system_config::RoleServiceType::QqChat(config) = agent.role_service_type else {
+    let zihuan_core::agent::service_config::RoleServiceType::QqChat(config) = agent.role_service_type else {
         return Err("计划任务目前仅支持 QQ Chat Service".to_string());
     };
     let rdb_id = config.resolved_rdb_id().ok_or_else(|| "该 Service 未配置关系数据库".to_string())?;

@@ -8,7 +8,8 @@ use std::time::{Duration, Instant};
 use log::{info, warn};
 use serde_json::{json, Map, Value};
 
-use crate::agent::qq_chat::{with_current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
+use crate::agent::qq_chat::QqChatAgentServiceConfig;
+use crate::agent::runtime_context::{with_current_agent_runtime_context, AgentRuntimeContext};
 use crate::config::ConfigCenter;
 use crate::error::{Error, Result};
 use crate::graph::tool_spec::{
@@ -25,7 +26,7 @@ use crate::graph::util::function::{
     data_value_from_json_with_declared_type, inject_runtime_values_into_function_inputs_node,
 };
 use crate::graph::{DataType, DataValue, Port};
-use crate::llm::tooling::FunctionTool;
+use crate::model_inference::llm::tooling::FunctionTool;
 use crate::python_runtime_resolver::resolve_python_runtime;
 
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
@@ -454,7 +455,9 @@ impl ToolSubgraphRunner {
         inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values.into())
             .map_err(|e| self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name)))?;
         let execution_result = if let Some(config) = self.qq_chat_agent.clone() {
-            with_current_qq_chat_agent_service_config(config, || graph.execute_and_capture_results())
+            with_current_agent_runtime_context(AgentRuntimeContext::QqChat(config), || {
+                graph.execute_and_capture_results()
+            })
         } else {
             graph.execute_and_capture_results()
         };

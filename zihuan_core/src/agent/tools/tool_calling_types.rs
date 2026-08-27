@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::agent::AgentContext;
-use crate::llm::tooling::ToolCalls;
-use crate::llm::LLMMessage;
+use crate::model_inference::llm::tooling::ToolCalls;
+use crate::model_inference::llm::LLMMessage;
 use crate::task_context::AgentTaskRuntime;
 use crate::workspace::AskUserRequest;
 

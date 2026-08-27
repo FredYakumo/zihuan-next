@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::graph::DataValue;
 
 use crate::qq_chat::msg_send::{store_reply_directive, QqChatServiceReplyDirective};

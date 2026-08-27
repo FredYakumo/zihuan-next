@@ -13,8 +13,8 @@ pub use crate::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
 use crate::ims_bot_adapter::models::event_model::MessageEvent;
 use crate::ims_bot_adapter::models::message::ImageMessage;
 use crate::ims_bot_adapter::models::sender_model::Sender as GraphSender;
-use crate::llm::tooling::FunctionTool;
-use crate::llm::MessagePart;
+use crate::model_inference::llm::tooling::FunctionTool;
+use crate::model_inference::llm::MessagePart;
 pub use crate::rag::{WebSearchEngine, WebSearchImage};
 pub use crate::weaviate::WeaviateRef;
 
@@ -214,7 +214,7 @@ impl fmt::Debug for SessionStateRef {
 #[derive(Clone)]
 pub struct LLMMessageSessionCacheRef {
     pub node_id: String,
-    pub memory_cache: Arc<TokioMutex<HashMap<String, Vec<crate::llm::LLMMessage>>>>,
+    pub memory_cache: Arc<TokioMutex<HashMap<String, Vec<crate::model_inference::llm::LLMMessage>>>>,
     pub redis_cm: Arc<TokioMutex<Option<Connection>>>,
     pub cached_redis_url: Arc<TokioMutex<Option<String>>>,
     pub sender_bucket_map: Arc<TokioMutex<HashMap<String, String>>>,
@@ -258,7 +258,7 @@ impl LLMMessageSessionCacheRef {
     pub fn get_messages_blocking(
         &self,
         sender_id: &str,
-    ) -> crate::error::Result<Vec<crate::llm::LLMMessage>> {
+    ) -> crate::error::Result<Vec<crate::model_inference::llm::LLMMessage>> {
         let sender_id = sender_id.to_string();
         let fut = self.get_messages(&sender_id);
         let run = || {
@@ -280,7 +280,7 @@ impl LLMMessageSessionCacheRef {
     pub fn set_messages_blocking(
         &self,
         sender_id: &str,
-        messages: Vec<crate::llm::LLMMessage>,
+        messages: Vec<crate::model_inference::llm::LLMMessage>,
     ) -> crate::error::Result<()> {
         let sender_id = sender_id.to_string();
         let fut = self.set_messages(&sender_id, messages);
@@ -303,7 +303,7 @@ impl LLMMessageSessionCacheRef {
     pub fn append_messages_blocking(
         &self,
         sender_id: &str,
-        incoming_messages: Vec<crate::llm::LLMMessage>,
+        incoming_messages: Vec<crate::model_inference::llm::LLMMessage>,
     ) -> crate::error::Result<()> {
         let sender_id = sender_id.to_string();
         let fut = self.append_messages(&sender_id, incoming_messages);
@@ -323,7 +323,7 @@ impl LLMMessageSessionCacheRef {
         }
     }
 
-    pub async fn get_messages(&self, sender_id: &str) -> crate::error::Result<Vec<crate::llm::LLMMessage>> {
+    pub async fn get_messages(&self, sender_id: &str) -> crate::error::Result<Vec<crate::model_inference::llm::LLMMessage>> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
             let sender_bucket_map = self.sender_bucket_map.lock().await;
@@ -358,7 +358,7 @@ impl LLMMessageSessionCacheRef {
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
                 if let Some(raw) = existing_json {
-                    let messages: Vec<crate::llm::LLMMessage> = serde_json::from_str(&raw)?;
+                    let messages: Vec<crate::model_inference::llm::LLMMessage> = serde_json::from_str(&raw)?;
                     return Ok(messages);
                 }
             }
@@ -418,7 +418,7 @@ impl LLMMessageSessionCacheRef {
     pub async fn set_messages(
         &self,
         sender_id: &str,
-        messages: Vec<crate::llm::LLMMessage>,
+        messages: Vec<crate::model_inference::llm::LLMMessage>,
     ) -> crate::error::Result<()> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
@@ -473,7 +473,7 @@ impl LLMMessageSessionCacheRef {
     pub async fn append_messages(
         &self,
         sender_id: &str,
-        incoming_messages: Vec<crate::llm::LLMMessage>,
+        incoming_messages: Vec<crate::model_inference::llm::LLMMessage>,
     ) -> crate::error::Result<()> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
@@ -511,7 +511,7 @@ impl LLMMessageSessionCacheRef {
 
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
-                let mut existing_messages: Vec<crate::llm::LLMMessage> = existing_json
+                let mut existing_messages: Vec<crate::model_inference::llm::LLMMessage> = existing_json
                     .as_deref()
                     .map(serde_json::from_str)
                     .transpose()?
@@ -811,7 +811,7 @@ pub enum DataValue {
     Vector(Vec<f32>),
     MessageEvent(MessageEvent),
     Sender(GraphSender),
-    LLMMessage(crate::llm::LLMMessage),
+    LLMMessage(crate::model_inference::llm::LLMMessage),
     QQMessage(crate::ims_bot_adapter::models::message::Message),
     Image(ImageData),
     MessagePart(MessagePart),
@@ -825,8 +825,8 @@ pub enum DataValue {
     SessionStateRef(Arc<SessionStateRef>),
     LLMMessageSessionCacheRef(Arc<LLMMessageSessionCacheRef>),
     Password(String),
-    LLModel(Arc<dyn crate::llm::llm_base::LLMBase>),
-    EmbeddingModel(Arc<dyn crate::llm::embedding_base::EmbeddingBase>),
+    LLModel(Arc<dyn crate::model_inference::llm::llm_base::LLMBase>),
+    EmbeddingModel(Arc<dyn crate::model_inference::llm::embedding_base::EmbeddingBase>),
     LoopControlRef(Arc<LoopControl>),
 }
 

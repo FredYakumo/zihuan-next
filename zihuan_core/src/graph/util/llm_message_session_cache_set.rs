@@ -3,7 +3,7 @@ use crate::graph::data_value::LLMMessageSessionCacheRef;
 use crate::graph::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::sync::Arc;
 use crate::error::Result;
-use crate::llm::LLMMessage;
+use crate::model_inference::llm::LLMMessage;
 
 pub struct LLMMessageSessionCacheSetNode {
     id: String,

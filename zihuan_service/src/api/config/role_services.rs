@@ -32,8 +32,9 @@ use zihuan_ims_agent::qq_chat::privilege_store::{delete_all_notifications, list_
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::system_config;
-use zihuan_core::inference::system_config::load_llm_refs;
-use zihuan_core::inference::system_config::{RoleServiceConfig, AgentToolConfig, RoleServiceType, LlmRefConfig};
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::agent::tool_config::AgentToolConfig;
+use zihuan_core::config::llm_refs::{load_llm_refs, LlmRefConfig};
 use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::error::{Error as CoreError, Result as CoreResult};
 use zihuan_service::{RoleServiceRuntimeInfo, RoleServiceRuntimeStatus};
@@ -944,7 +945,7 @@ fn validate_qq_chat_agent_service_llms(
                 return Err(format!("agent '{}' references disabled llm_ref '{}'", agent_name, llm_ref.name));
             }
             match &llm_ref.model {
-                zihuan_core::inference::system_config::ModelRefSpec::ChatLlm { llm } => {
+                zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlm { llm } => {
                     if llm.supports_multimodal_input {
                         Ok(())
                     } else if config
@@ -965,7 +966,7 @@ fn validate_qq_chat_agent_service_llms(
                         ))
                     }
                 }
-                zihuan_core::inference::system_config::ModelRefSpec::TextEmbeddingLocal { .. } => Err(format!(
+                zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal { .. } => Err(format!(
                     "agent '{}' references non-chat model_ref '{}' as image_understand_llm_ref_id",
                     agent_name, llm_ref.name
                 )),
@@ -1011,8 +1012,8 @@ fn validate_chat_llm_ref(
         ));
     }
     match llm_ref.model {
-        zihuan_core::inference::system_config::ModelRefSpec::ChatLlm { .. } => Ok(()),
-        zihuan_core::inference::system_config::ModelRefSpec::TextEmbeddingLocal { .. } => Err(format!(
+        zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlm { .. } => Ok(()),
+        zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal { .. } => Err(format!(
             "agent '{}' references non-chat model_ref '{}' as {}",
             agent_name, llm_ref.name, field_name
         )),
@@ -1044,8 +1045,8 @@ fn validate_embedding_model_ref(
         ));
     }
     match llm_ref.model {
-        zihuan_core::inference::system_config::ModelRefSpec::TextEmbeddingLocal { .. } => Ok(()),
-        zihuan_core::inference::system_config::ModelRefSpec::ChatLlm { .. } => Err(format!(
+        zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal { .. } => Ok(()),
+        zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlm { .. } => Err(format!(
             "agent '{}' references chat model_ref '{}' as embedding_model_ref_id",
             agent_name, llm_ref.name
         )),

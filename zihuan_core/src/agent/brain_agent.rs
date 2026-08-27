@@ -6,8 +6,8 @@ use super::SharedTool;
 use crate::agent::agent::{Agent, AgentContext, AgentDescriptor};
 use crate::agent::tools::{Tool, ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason};
 use crate::error::{Error, Result};
-use crate::llm::llm_base::LLMBase;
-use crate::llm::{LLMMessage, MessageRole, StreamToken};
+use crate::model_inference::llm::llm_base::LLMBase;
+use crate::model_inference::llm::{LLMMessage, MessageRole, StreamToken};
 use tokio::sync::mpsc;
 
 /// The primary request-scoped intelligence of a RoleService.

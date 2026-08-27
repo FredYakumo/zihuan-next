@@ -8,8 +8,8 @@ use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMed
 use zihuan_core::storage::{upload_remote_image_to_s3, upsert_image_record};
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::rag::{WebSearchEngine, WebSearchImage};
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_core::graph::object_storage::S3Ref;

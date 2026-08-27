@@ -40,7 +40,7 @@ impl Node for ImageWeaviatePersistenceNode {
         port! { name = "object_storage_path", ty = String, desc = "Object storage path (object_key/object_url)" },
         port! { name = "description", ty = String, desc = "Image summary description" },
         port! { name = "weaviate_ref", ty = crate::weaviate::WeaviateRef, desc = "Weaviate connection reference" },
-        port! { name = "embedding_model", ty = crate::llm::embedding_base::EmbeddingModel, desc = "Embedding model for generating name and description vectors", optional },
+        port! { name = "embedding_model", ty = crate::model_inference::llm::embedding_base::EmbeddingModel, desc = "Embedding model for generating name and description vectors", optional },
         port! { name = "vector", ty = Vector, desc = "Image semantic vector (deprecated, prefer embedding_model)", optional },
         port! { name = "source", ty = String, desc = "Optional: image source (qq/tavily/etc)", optional },
         port! { name = "media_id", ty = String, desc = "Optional: persisted media ID", optional },

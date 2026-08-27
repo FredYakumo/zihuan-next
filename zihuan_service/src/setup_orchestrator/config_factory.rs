@@ -4,10 +4,9 @@ use crate::api::config::now_rfc3339;
 use crate::setup_orchestrator::{ImsBotAdapterSetupConfig, LlmSetupConfig};
 use crate::system_config;
 use zihuan_core::ims_bot_adapter::BotAdapterConnection;
-use zihuan_core::inference::system_config::{
-    RoleServiceConfig, RoleServiceType, LlmRefConfig, LlmServiceConfig, ModelRefSpec,
-    WorkspaceAgentServiceConfig,
-};
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType, WorkspaceAgentServiceConfig};
+use zihuan_core::config::llm_refs::LlmRefConfig;
+use zihuan_core::model_inference::model_config::{LlmApiStyle, LlmServiceConfig, ModelRefSpec};
 use zihuan_core::storage::{
     ConnectionAuthMethod, ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection, SqliteConnection,
     WeaviateConnection,
@@ -312,19 +311,19 @@ fn build_workspace_agent_service(id: &str, name: &str, llm_ref_id: Option<String
     }
 }
 
-fn parse_api_style(value: &str) -> zihuan_core::inference::system_config::LlmApiStyle {
+fn parse_api_style(value: &str) -> LlmApiStyle {
     match value {
-        "candle" | "candle_gguf" => zihuan_core::inference::system_config::LlmApiStyle::CandleGguf,
-        "candle_hf" => zihuan_core::inference::system_config::LlmApiStyle::CandleHf,
-        "open_ai_responses" => zihuan_core::inference::system_config::LlmApiStyle::OpenAiResponses,
-        "open_ai_responses_message_compat" => zihuan_core::inference::system_config::LlmApiStyle::OpenAiResponsesMessageCompat,
+        "candle" | "candle_gguf" => LlmApiStyle::CandleGguf,
+        "candle_hf" => LlmApiStyle::CandleHf,
+        "open_ai_responses" => LlmApiStyle::OpenAiResponses,
+        "open_ai_responses_message_compat" => LlmApiStyle::OpenAiResponsesMessageCompat,
         "open_ai_responses_image_url_object_compat" => {
-            zihuan_core::inference::system_config::LlmApiStyle::OpenAiResponsesImageUrlObjectCompat
+            LlmApiStyle::OpenAiResponsesImageUrlObjectCompat
         }
         "open_ai_chat_completions_tencent_multimodal_compat" => {
-            zihuan_core::inference::system_config::LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat
+            LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat
         }
-        _ => zihuan_core::inference::system_config::LlmApiStyle::OpenAiChatCompletions,
+        _ => LlmApiStyle::OpenAiChatCompletions,
     }
 }
 

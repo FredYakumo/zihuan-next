@@ -8,9 +8,9 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio::time::{timeout, Duration};
 use zihuan_core::agent::tools::{Tool, ToolExecutionOutput, ToolExecutionResource};
-use zihuan_core::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::runtime::block_async;
-use zihuan_core::llm::tooling::StaticFunctionToolSpec;
+use zihuan_core::model_inference::llm::tooling::StaticFunctionToolSpec;
 use super::shared::{json_error, resolve_tool_path, success_json};
 pub(crate) const DEFAULT_TOOL_EXEC_CMD:&str="exec_cmd";
 #[derive(Debug,Deserialize)]struct ExecCmdArgs {

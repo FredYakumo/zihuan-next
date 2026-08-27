@@ -48,8 +48,10 @@ use zihuan_core::ims_bot_adapter::message_helpers::get_bot_id;
 use zihuan_core::ims_bot_adapter::models::event_model::MessageType;
 use zihuan_core::ims_bot_adapter::models::message::MessageProp;
 use log::{error, info, warn};
-use zihuan_core::inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_core::inference::system_config::{load_llm_refs, RoleServiceConfig, MemoryBackendKind};
+use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
+use zihuan_core::agent::service_config::{MemoryBackendKind, RoleServiceConfig};
+use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::storage::{
     build_elasticsearch_ref, build_relational_db_connection_for_connection, build_s3_ref, build_weaviate_ref,
     build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind, LocalMemoryStore, WeaviateCollectionSchema,
@@ -57,12 +59,12 @@ use zihuan_core::storage::{
 use tokio::task::JoinHandle;
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent::qq_chat::{current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
+use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::llm::LLMMessage;
+use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
+use zihuan_core::model_inference::llm::llm_base::LLMBase;
+use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::runtime::block_async;
 use zihuan_core::steer::PendingSteerEvent;
 use zihuan_core::task_context::{
@@ -268,7 +270,7 @@ fn load_qq_resources(
     }) };
 
     let embedding_model = if local_memory_store.is_some() { None } else if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
-        let llm_refs = zihuan_core::inference::system_config::load_llm_refs().unwrap_or_default();
+        let llm_refs = load_llm_refs().unwrap_or_default();
         match resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name) {
             Ok(Some(_)) => {
                 block_async(RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id)).ok()
