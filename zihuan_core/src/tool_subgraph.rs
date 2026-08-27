@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -595,7 +595,9 @@ impl ToolSubgraphRunner {
                     let value = object.get(&port.name).ok_or_else(|| {
                         self.wrap_error(format!("Tool '{}' 输出 '{}' 未在 python result 中提供", tool.name, port.name))
                     })?;
-                    let parsed = data_value_from_json_with_declared_type(port, value)?;
+                    let parsed = crate::graph::script_node::host_json_to_value(value, &port.data_type)
+                        .map(Ok)
+                        .unwrap_or_else(|| data_value_from_json_with_declared_type(port, value))?;
                     result_payload.insert(port.name.clone(), parsed.to_json());
                 }
                 let encoded = Value::Object(result_payload).to_string();
@@ -662,9 +664,9 @@ impl ToolSubgraphRunner {
         let mut fixed_runtime_inputs = Map::new();
         for (key, value) in runtime_values {
             if shared_input_names.contains(key.as_str()) {
-                shared_inputs.insert(key.clone(), value.to_json());
+                shared_inputs.insert(key.clone(), crate::graph::script_node::host_value_to_json(value));
             } else if fixed_input_names.contains(key) {
-                fixed_runtime_inputs.insert(key.clone(), value.to_json());
+                fixed_runtime_inputs.insert(key.clone(), crate::graph::script_node::host_value_to_json(value));
             }
         }
 
@@ -735,38 +737,97 @@ impl ToolSubgraphRunner {
             .spawn()
             .map_err(|e| self.wrap_error(format!("Tool '{}' 启动 python 进程失败: {e}", tool.name)))?;
 
-        if let Some(mut stdin) = child.stdin.take() {
-            let payload = serde_json::to_vec(request)
-                .map_err(|e| self.wrap_error(format!("Tool '{}' 序列化 python 请求失败: {e}", tool.name)))?;
-            stdin
-                .write_all(&payload)
-                .map_err(|e| self.wrap_error(format!("Tool '{}' 写入 python stdin 失败: {e}", tool.name)))?;
-        }
+        let mut stdin = child.stdin.take().ok_or_else(|| self.wrap_error(format!("Tool '{}' 无法写入 python stdin", tool.name)))?;
+        serde_json::to_writer(&mut stdin, request)
+            .map_err(|e| self.wrap_error(format!("Tool '{}' 序列化 python 请求失败: {e}", tool.name)))?;
+        stdin.write_all(b"\n").map_err(|e| self.wrap_error(format!("Tool '{}' 写入 python stdin 失败: {e}", tool.name)))?;
+        stdin.flush().map_err(|e| self.wrap_error(format!("Tool '{}' 刷新 python stdin 失败: {e}", tool.name)))?;
 
+        let stdout = child.stdout.take().ok_or_else(|| self.wrap_error(format!("Tool '{}' 无法读取 python stdout", tool.name)))?;
+        let mut stdout = BufReader::new(stdout);
         let deadline = Instant::now() + Duration::from_secs(config.timeout_secs);
-        loop {
-            match child.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) => {
-                    if Instant::now() >= deadline {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        return Err(self.wrap_error(format!(
-                            "Tool '{}' 的 python 执行超时（{} 秒）",
-                            tool.name, config.timeout_secs
-                        )));
-                    }
-                    std::thread::sleep(Duration::from_millis(50));
-                }
-                Err(e) => {
-                    return Err(self.wrap_error(format!("Tool '{}' 等待 python 进程失败: {e}", tool.name)));
-                }
+        let response = loop {
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                return Err(self.wrap_error(format!("Tool '{}' 的 python 执行超时（{} 秒）", tool.name, config.timeout_secs)));
             }
-        }
-
-        let output = child
-            .wait_with_output()
-            .map_err(|e| self.wrap_error(format!("Tool '{}' 读取 python 输出失败: {e}", tool.name)))?;
+            let mut line = String::new();
+            if stdout.read_line(&mut line).map_err(|e| self.wrap_error(format!("Tool '{}' 读取 python 输出失败: {e}", tool.name)))? == 0 {
+                break None;
+            }
+            let message: Value = serde_json::from_str(&line)
+                .map_err(|e| self.wrap_error(format!("Tool '{}' 的 python 协议输出不是 JSON: {e}", tool.name)))?;
+            if message.get("kind").and_then(Value::as_str) == Some("host_request") {
+                let id = message.get("id").cloned().unwrap_or(Value::Null);
+                let method = message.get("method").and_then(Value::as_str).unwrap_or_default();
+                let reply = match method {
+                    "variables.get" => {
+                        let name = message.get("params").and_then(|value| value.get("name")).and_then(Value::as_str);
+                        match name.filter(|name| !name.trim().is_empty()) {
+                            Some(name) => match self.shared_runtime_values.lock() {
+                                Ok(values) => json!({"kind":"host_response", "id":id, "result":values.get(name).map(crate::graph::script_node::host_value_to_json).unwrap_or(Value::Null)}),
+                                Err(_) => json!({"kind":"host_response", "id":id, "error":"运行时变量存储不可用"}),
+                            },
+                            None => json!({"kind":"host_response", "id":id, "error":"variables.get 缺少 name"}),
+                        }
+                    }
+                    "variables.set" => {
+                        let name = message.get("params").and_then(|value| value.get("name")).and_then(Value::as_str);
+                        let value = message.get("params").and_then(|value| value.get("value"));
+                        match (name.filter(|name| !name.trim().is_empty()), value) {
+                            (Some(name), Some(value)) => match crate::graph::registry::json_to_data_value(value, &DataType::Any) {
+                                Some(value) => match self.shared_runtime_values.lock() {
+                                    Ok(mut values) => {
+                                        values.insert(name.to_string(), value);
+                                        json!({"kind":"host_response", "id":id, "result":true})
+                                    }
+                                    Err(_) => json!({"kind":"host_response", "id":id, "error":"运行时变量存储不可用"}),
+                                },
+                                None => json!({"kind":"host_response", "id":id, "error":"variables.set value 无效"}),
+                            },
+                            _ => json!({"kind":"host_response", "id":id, "error":"variables.set 缺少 name 或 value"}),
+                        }
+                    }
+                    "task.progress" => {
+                        let progress = message.get("params").and_then(|value| value.get("message")).and_then(Value::as_str);
+                        match (crate::task_context::current_task_id(), crate::command::global_task_runtime(), progress) {
+                            (Some(task_id), Some(runtime), Some(progress)) if !task_id.trim().is_empty() && !progress.trim().is_empty() => {
+                                runtime.append_task_progress(&task_id, progress.to_string());
+                                json!({"kind":"host_response", "id":id, "result":true})
+                            }
+                            _ => json!({"kind":"host_response", "id":id, "error":"任务运行时不可用"}),
+                        }
+                    }
+                    "task.append" => {
+                        let task_id = message
+                            .get("params")
+                            .and_then(|value| value.get("task_id"))
+                            .and_then(Value::as_str)
+                            .filter(|value| !value.trim().is_empty());
+                        let progress = message
+                            .get("params")
+                            .and_then(|value| value.get("message"))
+                            .and_then(Value::as_str)
+                            .filter(|value| !value.trim().is_empty());
+                        match (task_id, progress, crate::command::global_task_runtime()) {
+                            (Some(task_id), Some(progress), Some(runtime)) => {
+                                runtime.append_task_progress(task_id, progress.to_string());
+                                json!({"kind":"host_response", "id":id, "result":true})
+                            }
+                            _ => json!({"kind":"host_response", "id":id, "result":false}),
+                        }
+                    }
+                    _ => json!({"kind":"host_response", "id":id, "error":format!("不支持的 Python 宿主调用: {method}")}),
+                };
+                serde_json::to_writer(&mut stdin, &reply)?;
+                stdin.write_all(b"\n")?;
+                stdin.flush()?;
+                continue;
+            }
+            break Some(message);
+        };
+        drop(stdin);
+        let output = child.wait_with_output().map_err(|e| self.wrap_error(format!("Tool '{}' 读取 python 输出失败: {e}", tool.name)))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             return Err(self.wrap_error(format!(
@@ -780,9 +841,9 @@ impl ToolSubgraphRunner {
             )));
         }
 
-        let stdout = String::from_utf8(output.stdout)
-            .map_err(|e| self.wrap_error(format!("Tool '{}' 的 python stdout 不是有效 UTF-8: {e}", tool.name)))?;
-        Ok(stdout)
+        let response = response.ok_or_else(|| self.wrap_error(format!("Tool '{}' 未返回 python 响应", tool.name)))?;
+        let payload = response.get("response").cloned().unwrap_or(response);
+        serde_json::to_string(&payload).map_err(|e| self.wrap_error(format!("Tool '{}' 序列化 python 响应失败: {e}", tool.name)))
     }
 }
 

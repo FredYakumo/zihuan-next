@@ -23,7 +23,7 @@ def main() -> int:
 
     script_path = Path(args.script).resolve()
     try:
-      request = json.load(sys.stdin)
+      request = json.loads(sys.stdin.readline())
       module = load_module(script_path)
       entry = getattr(module, args.entry, None)
       if entry is None or not callable(entry):
@@ -43,7 +43,8 @@ def main() -> int:
           "error": f"{exc}\n{traceback.format_exc()}",
       }
 
-    json.dump(response, sys.stdout, ensure_ascii=False)
+    json.dump({"kind": "result", "response": response}, sys.stdout, ensure_ascii=False)
+    sys.stdout.write("\n")
     return 0
 
 

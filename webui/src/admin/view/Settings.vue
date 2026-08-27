@@ -111,6 +111,28 @@
       </div>
     </t-card>
 
+    <t-card title="Node.js 运行时" bordered header-bordered>
+      <template #actions>
+        <t-button variant="text" :disabled="nodeRuntimeLoading" @click="reloadNodeRuntime">重新检查</t-button>
+      </template>
+      <p class="muted">DAG 脚本节点默认使用的 Node.js 运行时。</p>
+      <div class="settings-python-body">
+        <div v-if="nodeRuntimeLoading" class="settings-python-pending"><t-loading size="small" /><span>检测中</span></div>
+        <div v-else-if="nodeRuntime" class="settings-python-status">
+          <t-tag variant="light" :theme="nodeRuntime.available ? 'success' : 'warning'">{{ nodeRuntime.available ? "可用" : "不可用" }}</t-tag>
+          <span v-if="nodeRuntime.executable_path" class="settings-path-label">Node 路径</span>
+          <code v-if="nodeRuntime.executable_path" class="settings-path-value">{{ nodeRuntime.executable_path }}</code>
+          <span v-if="nodeRuntime.version" class="muted">{{ nodeRuntime.version }}</span>
+          <span v-if="nodeRuntime.diagnostic" class="settings-python-error">{{ nodeRuntime.diagnostic }}</span>
+        </div>
+        <div class="settings-backup-actions">
+          <t-button variant="outline" :disabled="nodeRuntimeChanging" @click="setNodeRuntime({ kind: 'project_node' })">使用项目 Node</t-button>
+          <t-button theme="primary" :disabled="nodeRuntimeChanging" @click="chooseNodeRuntime">{{ nodeRuntimeChanging ? "更改中…" : "更改" }}</t-button>
+          <span v-if="nodeRuntimeError" class="settings-python-error">{{ nodeRuntimeError }}</span>
+        </div>
+      </div>
+    </t-card>
+
     <t-card title="数据目录" bordered header-bordered>
       <template #actions>
         <t-button variant="text" @click="reloadStorageInfo">刷新</t-button>
@@ -223,6 +245,13 @@ const {
   pythonRuntimeError,
   reloadPythonRuntime,
   changePythonRuntime,
+  nodeRuntime,
+  nodeRuntimeLoading,
+  nodeRuntimeChanging,
+  nodeRuntimeError,
+  reloadNodeRuntime,
+  setNodeRuntime,
+  chooseNodeRuntime,
   logErrorBadgeEnabled,
   handleLogErrorBadgeToggle,
   modelHttpEnabled,

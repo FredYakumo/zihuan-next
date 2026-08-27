@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::connection_manager::{RuntimeConnectionInstanceSummary, RuntimeConnectionStatus};
 use crate::error::{Error, Result};
 use crate::python_runtime::PythonRuntimeConfig;
+use crate::node_runtime::NodeRuntimeConfig;
 use crate::system_config::system_config_file_path;
 
 pub mod llm_refs;
@@ -135,6 +136,8 @@ pub struct ConfigRoot {
     pub configs: ConfigCollections,
     #[serde(default)]
     pub python_runtime: PythonRuntimeConfig,
+    #[serde(default)]
+    pub node_runtime: NodeRuntimeConfig,
 }
 
 impl Default for ConfigRoot {
@@ -143,6 +146,7 @@ impl Default for ConfigRoot {
             version: default_config_root_version(),
             configs: ConfigCollections::default(),
             python_runtime: PythonRuntimeConfig::default(),
+            node_runtime: NodeRuntimeConfig::default(),
         }
     }
 }

@@ -1,145 +1,58 @@
-use crate::graph::NodeOutputFlow;
-use crate::storage::weaviate_persistence::upsert_qq_message_list;
+use std::sync::Arc;
+
 use log::error;
-use std::collections::HashMap;
+
 use crate::error::{Error, Result};
 use crate::ims_bot_adapter::models::message::Message;
-use crate::graph::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
+use crate::model_inference::llm::embedding_base::EmbeddingBase;
+use crate::storage::weaviate_persistence::upsert_qq_message_list;
+use crate::weaviate::WeaviateRef;
 
-pub struct QQMessageListWeaviatePersistenceNode {
-    id: String,
-    name: String,
-}
+pub fn persist_qq_message_list(
+    weaviate_ref: &Arc<WeaviateRef>,
+    embedding_model: &dyn EmbeddingBase,
+    messages: &[Message],
+    message_id: &str,
+    sender_id: &str,
+    sender_name: &str,
+    group_id: Option<&str>,
+    group_name: Option<&str>,
+) -> Result<bool> {
+    let message_id = required_string(message_id, "message_id")?;
+    let sender_id = required_string(sender_id, "sender_id")?;
+    let sender_name = required_string(sender_name, "sender_name")?;
+    let group_id = optional_non_empty_string(group_id);
+    let group_name = optional_non_empty_string(group_name);
 
-impl QQMessageListWeaviatePersistenceNode {
-    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            name: name.into(),
+    match upsert_qq_message_list(
+        weaviate_ref,
+        messages,
+        &message_id,
+        &sender_id,
+        &sender_name,
+        group_id.as_deref(),
+        group_name.as_deref(),
+        embedding_model,
+    ) {
+        Ok(_) => Ok(true),
+        Err(error) => {
+            error!("[qq_message_list_weaviate_persistence] failed to persist message vector: {error}");
+            Ok(false)
         }
     }
 }
 
-impl Node for QQMessageListWeaviatePersistenceNode {
-    fn node_type(&self) -> NodeType {
-        NodeType::Simple
-    }
-
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn description(&self) -> Option<&str> {
-        Some("QQMessage list vector persistence - vectorizes Vec<QQMessage> and metadata into Weaviate")
-    }
-
-    node_input![
-        port! { name = "qq_message_list", ty = Vec(QQMessage), desc = "QQ message list to persist" },
-        port! { name = "message_id", ty = String, desc = "Message ID" },
-        port! { name = "sender_id", ty = String, desc = "Sender ID" },
-        port! { name = "sender_name", ty = String, desc = "Sender name" },
-        port! { name = "group_id", ty = String, desc = "Group ID (optional)", optional },
-        port! { name = "group_name", ty = String, desc = "Group name (optional)", optional },
-        port! { name = "weaviate_ref", ty = crate::weaviate::WeaviateRef, desc = "Weaviate connection reference" },
-        port! { name = "embedding_model", ty = EmbeddingModel, desc = "Embedding model reference" },
-    ];
-
-    node_output![
-        port! { name = "success", ty = Boolean, desc = "Whether storage succeeded" },
-        port! { name = "qq_message_list", ty = Vec(QQMessage), desc = "Pass-through input message list" },
-    ];
-
-    fn execute(&mut self, inputs: crate::graph::NodeInputFlow) -> Result<crate::graph::NodeOutputFlow> {
-        let (msg_item_type, msg_items) = inputs
-            .get("qq_message_list")
-            .and_then(|v| match v {
-                DataValue::Vec(ty, items) => Some((ty.clone(), items.clone())),
-                _ => None,
-            })
-            .ok_or_else(|| Error::InvalidNodeInput("qq_message_list is required".to_string()))?;
-
-        let message_id = required_string(&inputs, "message_id")?;
-        let sender_id = required_string(&inputs, "sender_id")?;
-        let sender_name = required_string(&inputs, "sender_name")?;
-        let group_id = optional_non_empty_string(&inputs, "group_id");
-        let group_name = optional_non_empty_string(&inputs, "group_name");
-
-        let weaviate_ref = inputs
-            .get("weaviate_ref")
-            .and_then(|v| match v {
-                DataValue::WeaviateRef(r) => Some(r.clone()),
-                _ => None,
-            })
-            .ok_or_else(|| Error::InvalidNodeInput("weaviate_ref is required".to_string()))?;
-
-        let embedding_model = inputs
-            .get("embedding_model")
-            .and_then(|v| match v {
-                DataValue::EmbeddingModel(model) => Some(model.clone()),
-                _ => None,
-            })
-            .ok_or_else(|| Error::InvalidNodeInput("embedding_model is required".to_string()))?;
-
-        let passthrough = DataValue::Vec(msg_item_type, msg_items.clone());
-
-        let messages: Vec<Message> = msg_items
-            .iter()
-            .filter_map(|v| match v {
-                DataValue::QQMessage(m) => Some(m.clone()),
-                _ => None,
-            })
-            .collect();
-
-        let success = match upsert_qq_message_list(
-            &weaviate_ref,
-            &messages,
-            &message_id,
-            &sender_id,
-            &sender_name,
-            group_id.as_deref(),
-            group_name.as_deref(),
-            embedding_model.as_ref(),
-        ) {
-            Ok(_) => true,
-            Err(err) => {
-                error!(
-                    "[QQMessageListWeaviatePersistenceNode] Failed to persist message vector: {}",
-                    err
-                );
-                false
-            }
-        };
-
-        crate::graph::return_with_node_output![self;
-            "success" => DataValue::Boolean(success),
-            "qq_message_list" => passthrough,
-        ]
-    }
-}
-
-fn required_string(inputs: &HashMap<String, DataValue>, key: &str) -> Result<String> {
-    let value = inputs
-        .get(key)
-        .and_then(|v| match v {
-            DataValue::String(s) => Some(s.trim().to_string()),
-            _ => None,
-        })
-        .ok_or_else(|| Error::InvalidNodeInput(format!("{key} is required")))?;
-
+fn required_string(value: &str, key: &str) -> Result<String> {
+    let value = value.trim();
     if value.is_empty() {
         return Err(Error::ValidationError(format!("{key} must not be empty")));
     }
-
-    Ok(value)
+    Ok(value.to_string())
 }
 
-fn optional_non_empty_string(inputs: &HashMap<String, DataValue>, key: &str) -> Option<String> {
-    inputs.get(key).and_then(|v| match v {
-        DataValue::String(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
-        _ => None,
-    })
+fn optional_non_empty_string(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
 }

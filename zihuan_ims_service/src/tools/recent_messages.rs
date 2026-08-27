@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -7,15 +6,9 @@ use zihuan_core::agent::tools::Tool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
-use zihuan_core::graph::data_value::DataValue;
-use zihuan_core::graph::message_rdb_get_group_history::MessageRdbGetGroupHistoryNode;
-use zihuan_core::graph::message_rdb_get_user_history::MessageRdbGetUserHistoryNode;
-use zihuan_core::graph::Node;
+use zihuan_core::graph::message_rdb_history_common::{load_group_history, load_user_history};
 
-use super::common::{
-    extract_string_list_output, optional_string_argument, sanitize_positive_limit, StaticFunctionToolSpec,
-    ToolNotificationTarget,
-};
+use super::common::{optional_string_argument, sanitize_positive_limit, StaticFunctionToolSpec, ToolNotificationTarget};
 
 const DEFAULT_HISTORY_TOOL_LIMIT: i64 = 10;
 const MAX_HISTORY_TOOL_LIMIT: i64 = 50;
@@ -87,16 +80,10 @@ impl Tool for GetRecentGroupMessagesTool {
                 DEFAULT_HISTORY_TOOL_LIMIT,
                 MAX_HISTORY_TOOL_LIMIT,
             );
-            let mut node = MessageRdbGetGroupHistoryNode::new("__tool__", "__tool__");
-            let outputs = node.execute(
-                HashMap::from([
-                    ("mysql_ref".to_string(), DataValue::RdbRef(rdb_pool.clone())),
-                    ("group_id".to_string(), DataValue::String(group_id)),
-                    ("limit".to_string(), DataValue::Integer(limit as i64)),
-                ])
-                .into(),
-            )?;
-            let items = extract_string_list_output(&outputs, "messages")?;
+            let RelationalDbConnection::MySql(mysql) = rdb_pool else {
+                return Err(Error::ValidationError("rdb_pool must be a MySQL connection".to_string()));
+            };
+            let items = load_group_history(mysql, group_id, limit as u32)?;
             Ok(serde_json::json!({
                 "ok": true,
                 "messages": items,
@@ -156,17 +143,10 @@ impl Tool for GetRecentUserMessagesTool {
                 DEFAULT_HISTORY_TOOL_LIMIT,
                 MAX_HISTORY_TOOL_LIMIT,
             );
-            let mut node = MessageRdbGetUserHistoryNode::new("__tool__", "__tool__");
-            let mut payload = HashMap::from([
-                ("mysql_ref".to_string(), DataValue::RdbRef(rdb_pool.clone())),
-                ("sender_id".to_string(), DataValue::String(sender_id)),
-                ("limit".to_string(), DataValue::Integer(limit as i64)),
-            ]);
-            if let Some(group_id) = group_id {
-                payload.insert("group_id".to_string(), DataValue::String(group_id));
-            }
-            let outputs = node.execute(payload.into())?;
-            let items = extract_string_list_output(&outputs, "messages")?;
+            let RelationalDbConnection::MySql(mysql) = rdb_pool else {
+                return Err(Error::ValidationError("rdb_pool must be a MySQL connection".to_string()));
+            };
+            let items = load_user_history(mysql, sender_id, group_id, limit as u32)?;
             Ok(serde_json::json!({
                 "ok": true,
                 "messages": items,

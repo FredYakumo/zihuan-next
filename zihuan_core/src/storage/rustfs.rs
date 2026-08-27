@@ -1,14 +1,7 @@
-use crate::graph::NodeOutputFlow;
 use std::sync::Arc;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::graph::object_storage::S3Ref;
-use crate::graph::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
-
-use crate::storage::RuntimeStorageConnectionManager;
-
-const CONFIG_ID_FIELD: &str = "config_id";
-const LEGACY_CONNECTION_ID_FIELD: &str = "connection_id";
 
 pub async fn build_s3_ref(
     endpoint: &str,
@@ -80,83 +73,5 @@ fn extract_host(endpoint: &str) -> Option<String> {
         None
     } else {
         Some(host.to_string())
-    }
-}
-
-pub struct RustfsNode {
-    id: String,
-    name: String,
-    config_id: Option<String>,
-}
-
-impl RustfsNode {
-    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            name: name.into(),
-            config_id: None,
-        }
-    }
-
-    fn connection_select_field() -> NodeConfigField {
-        NodeConfigField::new(CONFIG_ID_FIELD, DataType::String, NodeConfigWidget::ConnectionSelect)
-            .with_connection_kind("rustfs")
-            .with_description("选择系统中的 RustFS 对象存储连接配置")
-    }
-
-    fn selected_config_id(&self) -> Result<&str> {
-        self.config_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| Error::ValidationError("config_id is required".to_string()))
-    }
-}
-
-impl Node for RustfsNode {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn description(&self) -> Option<&str> {
-        Some("RustFS 对象存储配置 - 从系统连接中选择并输出 S3Ref")
-    }
-
-    fn input_ports(&self) -> Vec<Port> {
-        Vec::new()
-    }
-
-    fn output_ports(&self) -> Vec<Port> {
-        vec![Port::new("s3_ref", DataType::S3Ref).with_description("对象存储引用")]
-    }
-
-    fn config_fields(&self) -> Vec<NodeConfigField> {
-        vec![Self::connection_select_field()]
-    }
-
-    fn apply_inline_config(&mut self, inline_values: &crate::graph::NodeConfigFlow) -> Result<()> {
-        self.config_id = inline_values
-            .get(CONFIG_ID_FIELD)
-            .or_else(|| inline_values.get(LEGACY_CONNECTION_ID_FIELD))
-            .and_then(|value| match value {
-                DataValue::String(value) => Some(value.clone()),
-                _ => None,
-            });
-        Ok(())
-    }
-
-    fn execute(&mut self, _inputs: crate::graph::NodeInputFlow) -> Result<crate::graph::NodeOutputFlow> {
-        let config_id = self.selected_config_id()?;
-        let s3_ref = crate::runtime::block_async(
-            RuntimeStorageConnectionManager::shared().get_or_create_s3_ref(config_id),
-        )?;
-
-        crate::graph::return_with_node_output![self;
-            "s3_ref" => DataValue::S3Ref(s3_ref),
-        ]
     }
 }

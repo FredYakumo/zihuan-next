@@ -1,5 +1,3 @@
-use crate::graph::NodeOutputFlow;
-use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
 
@@ -11,17 +9,11 @@ use crate::ims_bot_adapter::runtime::ws_action::{
 };
 use log::{info, warn};
 use crate::error::{Error, Result};
-use crate::graph::{node_input, node_output, DataType, DataValue, Node, Port};
 
 pub const TARGET_TYPE_FRIEND: &str = "friend";
 pub const TARGET_TYPE_GROUP: &str = "group";
 const DEFAULT_LOG_PREFIX: &str = "[SendQQMessageBatchesNode]";
 const FORWARD_MESSAGE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(120);
-
-pub struct SendQQMessageBatchesNode {
-    id: String,
-    name: String,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendBatchResult {
@@ -34,57 +26,6 @@ pub struct SendBatchResult {
     pub wording: Option<String>,
     pub text_length: usize,
     pub segment_count: usize,
-}
-
-impl SendQQMessageBatchesNode {
-    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            name: name.into(),
-        }
-    }
-}
-
-fn normalize_target_type(value: Option<&DataValue>) -> &'static str {
-    match value {
-        Some(DataValue::String(target_type)) if target_type.eq_ignore_ascii_case(TARGET_TYPE_GROUP) => {
-            TARGET_TYPE_GROUP
-        }
-        _ => TARGET_TYPE_FRIEND,
-    }
-}
-
-pub fn qq_messages_from_data_value(value: Option<&DataValue>, input_name: &str) -> Result<Vec<Message>> {
-    match value {
-        Some(DataValue::Vec(_, items)) => Ok(items
-            .iter()
-            .filter_map(|item| match item {
-                DataValue::QQMessage(message) => Some(message.clone()),
-                _ => None,
-            })
-            .collect()),
-        _ => Err(Error::InvalidNodeInput(format!("{input_name} input is required"))),
-    }
-}
-
-pub fn qq_message_batches_from_data_value(value: Option<&DataValue>, input_name: &str) -> Result<Vec<Vec<Message>>> {
-    match value {
-        Some(DataValue::Vec(_, batch_values)) => batch_values
-            .iter()
-            .map(|batch_value| qq_messages_from_data_value(Some(batch_value), input_name))
-            .collect(),
-        _ => Err(Error::InvalidNodeInput(format!("{input_name} input is required"))),
-    }
-}
-
-pub fn delay_millis_from_data_value(value: Option<&DataValue>, input_name: &str) -> Result<u64> {
-    match value {
-        Some(DataValue::Integer(delay)) => Ok((*delay).max(0) as u64),
-        None => Ok(0),
-        _ => Err(Error::InvalidNodeInput(format!(
-            "{input_name} must be an integer when provided"
-        ))),
-    }
 }
 
 pub fn qq_message_text_length(messages: &[Message]) -> usize {
@@ -462,92 +403,5 @@ pub fn build_send_summary(target_type: &str, target_id: &str, results: &[SendBat
             total = results.len(),
             sent = sent_results.len(),
         )
-    }
-}
-
-pub fn execute_fixed_target_batch_send(
-    inputs: &HashMap<String, DataValue>,
-    target_type: &str,
-    log_prefix: &str,
-) -> Result<HashMap<String, DataValue>> {
-    let ims_bot_adapter = match inputs.get("ims_bot_adapter") {
-        Some(DataValue::BotAdapterRef(handle)) => crate::ims_bot_adapter::runtime::adapter::shared_from_handle(handle),
-        _ => return Err(Error::InvalidNodeInput("ims_bot_adapter is required".to_string())),
-    };
-    let target_id = match inputs.get("target_id") {
-        Some(DataValue::String(value)) => value.clone(),
-        _ => return Err(Error::InvalidNodeInput("target_id is required".to_string())),
-    };
-    let batches = qq_message_batches_from_data_value(inputs.get("message_batches"), "message_batches")?;
-    let delay_millis = delay_millis_from_data_value(inputs.get("delay_millis"), "delay_millis")?;
-    let results = send_qq_message_batches_with_delay(
-        &ims_bot_adapter,
-        target_type,
-        &target_id,
-        &batches,
-        delay_millis,
-        log_prefix,
-    );
-
-    Ok(HashMap::from([
-        (
-            "summary".to_string(),
-            DataValue::String(build_send_summary(target_type, &target_id, &results)),
-        ),
-        ("success".to_string(), DataValue::Boolean(actual_sends_all_successful(&results))),
-        (
-            "message_ids".to_string(),
-            DataValue::Vec(
-                Box::new(DataType::Integer),
-                message_ids_from_results(&results).into_iter().map(DataValue::Integer).collect(),
-            ),
-        ),
-    ]))
-}
-
-impl Node for SendQQMessageBatchesNode {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn description(&self) -> Option<&str> {
-        Some("将 QQ 消息批次逐批发送到好友或群组，并输出发送汇总")
-    }
-
-    node_input![
-        port! { name = "ims_bot_adapter_ref", ty = BotAdapterRef, desc = "Bot 适配器引用" },
-        port! { name = "target_id", ty = String, desc = "目标 QQ 号或群号" },
-        port! { name = "target_type", ty = String, desc = "目标类型：friend 或 group", optional },
-        port! { name = "message_batches", ty = Vec(Vec(QQMessage)), desc = "要发送的 QQ 消息批次列表" },
-    ];
-
-    node_output![
-        port! { name = "summary", ty = String, desc = "已发送消息的一句话总结" },
-        port! { name = "success", ty = Boolean, desc = "是否全部发送成功" },
-    ];
-
-    fn execute(&mut self, inputs: crate::graph::NodeInputFlow) -> Result<crate::graph::NodeOutputFlow> {
-        self.validate_inputs(&inputs)?;
-
-        let ims_bot_adapter_ref = match inputs.get("ims_bot_adapter_ref") {
-            Some(DataValue::BotAdapterRef(handle)) => crate::ims_bot_adapter::runtime::adapter::shared_from_handle(handle),
-            _ => return Err(Error::InvalidNodeInput("ims_bot_adapter_ref is required".to_string())),
-        };
-        let target_id = match inputs.get("target_id") {
-            Some(DataValue::String(value)) => value.clone(),
-            _ => return Err(Error::InvalidNodeInput("target_id is required".to_string())),
-        };
-        let target_type = normalize_target_type(inputs.get("target_type"));
-        let batches = qq_message_batches_from_data_value(inputs.get("message_batches"), "message_batches")?;
-        let results = send_qq_message_batches(&ims_bot_adapter_ref, target_type, &target_id, &batches);
-
-        crate::graph::return_with_node_output![self;
-            "summary" => DataValue::String(build_send_summary(target_type, &target_id, &results)),
-            "success" => DataValue::Boolean(actual_sends_all_successful(&results)),
-        ]
     }
 }

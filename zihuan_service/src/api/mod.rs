@@ -282,6 +282,11 @@ pub fn build_router(
                 .put(settings::update_python_runtime),
         )
         .push(Router::with_path("settings/python-runtime/select").post(settings::select_python_runtime))
+        .push(
+            Router::with_path("settings/node-runtime")
+                .get(settings::get_node_runtime)
+                .put(settings::update_node_runtime),
+        )
         .push(Router::with_path("settings/config-export").get(settings::export_config))
         .push(Router::with_path("settings/config-restore").post(settings::restore_config))
         .push(
