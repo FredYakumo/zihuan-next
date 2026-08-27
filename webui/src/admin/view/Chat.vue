@@ -16,7 +16,7 @@
               </div>
               <template v-else>
                 <button
-                  v-for="agent in services.filter((a) => CHAT_ELIGIBLE_SERVICE_TYPES.has(a.agent_type.type))"
+                  v-for="agent in services.filter((a) => CHAT_ELIGIBLE_SERVICE_TYPES.has(a.role_service_type.type))"
                   :key="agent.config_id"
                   class="chat-agent-card"
                   :class="{
@@ -36,7 +36,7 @@
                   </div>
                   <div class="chat-agent-card-meta">
                     <strong>{{ agent.name }}</strong>
-                    <span>{{ readableAgentType(agent.agent_type.type) }}</span>
+                    <span>{{ readableAgentType(agent.role_service_type.type) }}</span>
                   </div>
                   <span v-if="agent.runtime.status !== 'running'" class="agent-status-badge">
                     未运行
@@ -80,7 +80,7 @@
                     </div>
                   </template>
                   <t-option
-                    v-for="agent in services.filter((item) => CHAT_ELIGIBLE_SERVICE_TYPES.has(item.agent_type.type))"
+                    v-for="agent in services.filter((item) => CHAT_ELIGIBLE_SERVICE_TYPES.has(item.role_service_type.type))"
                     :key="agent.config_id"
                     :value="agent.config_id"
                     :label="agent.name"

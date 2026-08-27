@@ -27,7 +27,7 @@
             <div class="task-cell-title">
               <strong>{{ row.graph_name }}</strong>
               <t-tag variant="light" :theme="row.task_type !== 'node_graph' ? 'primary' : 'default'">
-                {{ row.task_type === "workspace_chat" ? "Workspace 对话" : row.task_type === "agent_service" ? "Agent 工具" : "节点图" }}
+                {{ row.task_type === "workspace_chat" ? "Workspace 对话" : row.task_type === "agent_service" ? "RoleService 工具" : "节点图" }}
               </t-tag>
             </div>
             <div class="mono task-cell-id">{{ row.id }}</div>

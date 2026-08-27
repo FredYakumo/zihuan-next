@@ -44,13 +44,13 @@ type ServiceTypeOption = {
 const serviceTypes: ServiceTypeOption[] = [
   {
     value: "qq_chat",
-    label: "QQ Chat Agent Service",
+    label: "QQ Chat RoleService",
     hint: "通过 QQ Bot Adapter 提供对话服务",
   },
   {
     value: "workspace",
-    label: "Workspace Agent Service",
-    hint: "面向项目目录的开发型 Agent Service",
+    label: "Workspace RoleService",
+    hint: "面向项目目录的开发型 RoleService",
   },
 ];
 
@@ -857,11 +857,11 @@ async function submitForm() {
       return;
     }
     if (form.type === "qq_chat" && !form.ims_bot_adapter_connection_id) {
-      alert("QQ Chat Agent Service 需要绑定 Bot Adapter");
+      alert("QQ Chat RoleService 需要绑定 Bot Adapter");
       return;
     }
     if (form.type === "qq_chat" && !form.web_search_engine_connection_id) {
-      alert("QQ Chat Agent Service 需要绑定 Web Search Engine 连接");
+      alert("QQ Chat RoleService 需要绑定 Web Search Engine 连接");
       return;
     }
     const imageUnderstandError = validateImageUnderstandModelSelection();
@@ -875,7 +875,7 @@ async function submitForm() {
       form.retrieval_store_id !== "__local_markdown__" &&
       !form.embedding_model_ref_id
     ) {
-      alert("QQ Chat Agent Service 启用记忆库时需要绑定文本向量模型");
+      alert("QQ Chat RoleService 启用记忆库时需要绑定文本向量模型");
       return;
     }
     if (form.id) {
@@ -930,7 +930,7 @@ async function toggleServiceRuntime(service: ServiceWithRuntime) {
 }
 
 function llmName(service: ServiceWithRuntime): string {
-  const serviceType = service.agent_type as Record<string, unknown>;
+  const serviceType = service.role_service_type as Record<string, unknown>;
   const llmId = String(serviceType.llm_ref_id ?? "");
   return llmRefName(llmId) || "未绑定";
 }

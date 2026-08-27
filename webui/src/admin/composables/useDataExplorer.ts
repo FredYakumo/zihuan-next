@@ -12,12 +12,12 @@ import {
 export type ServiceCapability = "messages" | "memories" | "images";
 
 function stringConfig(service: ServiceWithRuntime, key: string): string {
-  const value = service.agent_type[key];
+  const value = service.role_service_type[key];
   return typeof value === "string" ? value.trim() : "";
 }
 
 export function serviceCapabilities(service: ServiceWithRuntime): ServiceCapability[] {
-  const type = service.agent_type.type;
+  const type = service.role_service_type.type;
   const hasMessages = type === "qq_chat" && Boolean(
     stringConfig(service, "rdb_id") || stringConfig(service, "mysql_connection_id") || stringConfig(service, "task_db_connection_id"),
   );

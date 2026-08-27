@@ -415,8 +415,24 @@ export interface ServiceConfig {
   auto_start: boolean;
   is_default: boolean;
   updated_at: string;
-  agent_type: Record<string, unknown> & { type: string };
+  role_service_type: Record<string, unknown> & { type: string };
   tools: ServiceToolConfig[];
+}
+
+export interface SubAgentPort {
+  name: string;
+  data_type: string | Record<string, unknown>;
+  description: string;
+  required: boolean;
+}
+
+export interface SubAgentDefinition {
+  id: string;
+  name: string;
+  inputs: SubAgentPort[];
+  outputs: SubAgentPort[];
+  system_prompt: string;
+  tool_ids: string[];
 }
 
 export interface ServiceWithRuntime extends ServiceConfig {
@@ -564,7 +580,7 @@ export interface ChatHistoryRecord {
   session_id: string;
   agent_id: string;
   agent_name: string;
-  agent_type: string;
+  role_service_type: string;
   agent_avatar_url: string | null;
   role: string;
   content: string;
@@ -601,7 +617,7 @@ export interface ChatSessionSummary {
   updated_at: string;
   agent_id?: string | null;
   agent_name?: string | null;
-  agent_type?: string | null;
+  role_service_type?: string | null;
   agent_avatar_url?: string | null;
   workspace_path?: string | null;
   pending_ask_user?: {
@@ -704,7 +720,7 @@ export const system = {
       enabled: boolean;
       auto_start: boolean;
       is_default: boolean;
-      agent_type: Record<string, unknown>;
+      role_service_type: Record<string, unknown>;
       tools: ServiceToolConfig[];
     }): Promise<ServiceConfig> {
       return request("POST", "/system/services", payload);
@@ -714,7 +730,7 @@ export const system = {
       enabled: boolean;
       auto_start: boolean;
       is_default: boolean;
-      agent_type: Record<string, unknown>;
+      role_service_type: Record<string, unknown>;
       tools: ServiceToolConfig[];
     }): Promise<ServiceConfig> {
       return request("PUT", `/system/services/${configId}`, payload);
@@ -752,6 +768,15 @@ export const system = {
     },
     stop(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo }> {
       return request("POST", `/system/services/${configId}/stop`);
+    },
+  },
+  subagents: {
+    get(id: string, availableToolIds: string[] = []): Promise<SubAgentDefinition> {
+      const query = availableToolIds.length ? `?available_tool_ids=${encodeURIComponent(availableToolIds.join(","))}` : "";
+      return request("GET", `/system/subagents/${encodeURIComponent(id)}${query}`);
+    },
+    save(id: string, definition: SubAgentDefinition, availableToolIds: string[] = []): Promise<SubAgentDefinition> {
+      return request("PUT", `/system/subagents/${encodeURIComponent(id)}`, { definition, available_tool_ids: availableToolIds });
     },
   },
   browseWorkspaceDirectories(path?: string): Promise<WorkspaceDirectoryBrowser> {

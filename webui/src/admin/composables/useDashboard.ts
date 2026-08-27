@@ -43,7 +43,7 @@ export function useDashboard() {
   );
 
   function llmName(service: ServiceWithRuntime): string {
-    const agentType = service.agent_type as Record<string, unknown>;
+    const agentType = service.role_service_type as Record<string, unknown>;
     const llmId = String(agentType.llm_ref_id ?? "");
     if (!llmId) {
       return "未绑定";
@@ -117,7 +117,7 @@ export function useDashboard() {
     }
     clearingNotifications.value = true;
     try {
-      const qqServices = services.value.filter((item) => item.agent_type.type === "qq_chat");
+      const qqServices = services.value.filter((item) => item.role_service_type.type === "qq_chat");
       await Promise.all(
         qqServices.map((service) =>
           system.services.deleteNotifications(service.config_id)
@@ -161,7 +161,7 @@ export function useDashboard() {
       stats.agents = loadedAgents.length;
       services.value = loadedAgents;
       llmModels.value = llm;
-      const qqServices = loadedAgents.filter((item) => item.agent_type.type === "qq_chat");
+      const qqServices = loadedAgents.filter((item) => item.role_service_type.type === "qq_chat");
       const cardGroups = await Promise.all(
         qqServices.map(async (service) => {
           const cards = await system.services.listNotifications(service.config_id);

@@ -863,7 +863,7 @@ export function serviceFormFromConfig(
   form.auto_start = agent.auto_start;
   form.is_default = agent.is_default;
   form.tools = agent.tools.map(toolFormFromConfig);
-  const agentType = agent.agent_type as Record<string, unknown>;
+  const agentType = agent.role_service_type as Record<string, unknown>;
   form.type = String(agentType.type) as ServiceTypeName;
   if (form.type === "qq_chat") {
     form.ims_bot_adapter_connection_id = String(
@@ -1064,7 +1064,7 @@ export function buildServicePayload(form: ServiceFormState): {
   enabled: boolean;
   auto_start: boolean;
   is_default: boolean;
-  agent_type: Record<string, unknown>;
+  role_service_type: Record<string, unknown>;
   tools: ServiceToolConfig[];
   avatar_url?: string | null;
 } {
@@ -1085,7 +1085,7 @@ export function buildServicePayload(form: ServiceFormState): {
     );
     return {
       ...common,
-      agent_type: {
+      role_service_type: {
         type: "qq_chat",
         ims_bot_adapter_connection_id: form.ims_bot_adapter_connection_id,
         rustfs_connection_id: form.rustfs_connection_id || null,
@@ -1149,7 +1149,7 @@ export function buildServicePayload(form: ServiceFormState): {
   return {
     ...common,
     avatar_url: form.avatar_url.trim() || null,
-    agent_type: {
+    role_service_type: {
       type: "workspace",
       llm_ref_id: form.llm_ref_id || null,
       agents_md_enabled: form.agents_md_enabled,
@@ -1356,9 +1356,9 @@ export function assertServiceConfig(json: unknown): ServiceWithRuntime {
   if (typeof obj.is_default !== "boolean") {
     throw new Error("配置缺少有效的 is_default 字段");
   }
-  const agentType = obj.agent_type;
+  const agentType = obj.role_service_type;
   if (!agentType || typeof agentType !== "object") {
-    throw new Error("配置缺少 agent_type 字段");
+    throw new Error("配置缺少 role_service_type 字段");
   }
   const agentTypeObj = agentType as Record<string, unknown>;
   const type = String(agentTypeObj.type ?? "");
@@ -1451,7 +1451,7 @@ export function agentAvatarUrl(
     return persisted;
   }
 
-  if (agent.agent_type.type === "qq_chat") {
+  if (agent.role_service_type.type === "qq_chat") {
     const explicit = String(agent.qq_chat_profile?.bot_avatar_url ?? "").trim();
     if (explicit) {
       return explicit;

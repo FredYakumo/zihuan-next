@@ -8,7 +8,7 @@
           <strong>{{ row.name }}</strong>
           <div class="mono service-id">{{ row.config_id }}</div>
         </template>
-        <template #type="{ row }"><t-tag variant="light">{{ serviceTypeLabel(row.agent_type.type) }}</t-tag></template>
+        <template #type="{ row }"><t-tag variant="light">{{ serviceTypeLabel(row.role_service_type.type) }}</t-tag></template>
         <template #status="{ row }"><t-tag variant="light" :theme="row.enabled ? 'success' : 'default'">{{ row.enabled ? row.runtime.status : '已停用' }}</t-tag></template>
         <template #actions="{ row }">
           <t-button v-for="capability in serviceCapabilities(row)" :key="capability" class="action-button" size="small" variant="outline" @click="openDetail(row.config_id, capability)">
