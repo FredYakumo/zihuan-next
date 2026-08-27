@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::Utc;
+use zihuan_core::config::ConfigRecord;
 use zihuan_core::ims_bot_adapter::{resolve_active_or_fallback_bot_profile, resolve_fallback_bot_profile};
 use salvo::prelude::*;
 use salvo::writing::Json;
@@ -17,6 +18,7 @@ use zihuan_core::storage::{
     first_available_agent_avatar_store, AgentAvatarStore, ConnectionConfig, ConnectionKind, WeaviateCollectionSchema,
 };
 use uuid::Uuid;
+use zihuan_core::agent::sub_agent::{load_subagent_definition, save_subagent_definition, SubAgentDefinition};
 use zihuan_core::task_context::{
     AgentTaskHandle, AgentTaskInfo, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
@@ -31,11 +33,10 @@ use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::system_config;
 use zihuan_core::inference::system_config::load_llm_refs;
-use zihuan_core::inference::system_config::{AgentConfig, AgentToolConfig, AgentType, LlmRefConfig};
+use zihuan_core::inference::system_config::{RoleServiceConfig, AgentToolConfig, RoleServiceType, LlmRefConfig};
 use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::error::{Error as CoreError, Result as CoreResult};
-use zihuan_service::agent::AgentRuntimeStatus;
-use zihuan_service::AgentRuntimeInfo;
+use zihuan_service::{RoleServiceRuntimeInfo, RoleServiceRuntimeStatus};
 
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found, render_unprocessable_entity,
@@ -44,8 +45,8 @@ use super::{
 #[derive(Serialize)]
 struct AgentWithRuntime {
     #[serde(flatten)]
-    agent: AgentConfig,
-    runtime: AgentRuntimeInfo,
+    agent: RoleServiceConfig,
+    runtime: RoleServiceRuntimeInfo,
     #[serde(skip_serializing_if = "Option::is_none")]
     qq_chat_profile: Option<QqChatProfile>,
 }
@@ -348,18 +349,18 @@ pub fn build_agent_task_runtime(state: Arc<AppState>, broadcast_tx: WsBroadcast)
     runtime
 }
 
-pub async fn start_agent_runtime(
+pub async fn start_role_service(
     state: Arc<AppState>,
     broadcast_tx: WsBroadcast,
-    agent: AgentConfig,
+    role: &RoleServiceConfig,
     connections: Vec<ConnectionConfig>,
 ) -> CoreResult<()> {
-    let agent_name = agent.name.clone();
+    let role_name = role.name().to_string();
     let on_finish: Box<dyn FnOnce(bool, Option<String>) + Send + 'static> = Box::new(move |success, error_message| {
         if !success {
             log::warn!(
                 "[agents] agent '{}' stopped with error: {}",
-                agent_name,
+                role_name,
                 error_message.unwrap_or_else(|| "stopped".to_string())
             );
         }
@@ -367,8 +368,8 @@ pub async fn start_agent_runtime(
 
     let task_runtime = build_agent_task_runtime(state.clone(), broadcast_tx.clone());
     state
-        .agent_manager
-        .start_agent(agent, connections, Some(on_finish), Some(task_runtime))
+        .role_service_manager
+        .start_role_service(role, connections, Some(on_finish), Some(task_runtime))
         .await
 }
 
@@ -381,7 +382,7 @@ pub struct CreateAgentRequest {
     pub auto_start: bool,
     #[serde(default)]
     pub is_default: bool,
-    pub agent_type: AgentType,
+    pub role_service_type: RoleServiceType,
     #[serde(default)]
     pub tools: Vec<AgentToolConfig>,
     #[serde(default)]
@@ -397,17 +398,59 @@ pub struct UpdateAgentRequest {
     pub auto_start: bool,
     #[serde(default)]
     pub is_default: bool,
-    pub agent_type: AgentType,
+    pub role_service_type: RoleServiceType,
     #[serde(default)]
     pub tools: Vec<AgentToolConfig>,
     #[serde(default)]
     pub avatar_url: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct SubAgentMutationRequest {
+    pub definition: SubAgentDefinition,
+    #[serde(default)]
+    pub available_tool_ids: Vec<String>,
+}
+
+#[handler]
+pub async fn get_subagent(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    let available_tool_ids = req
+        .query::<String>("available_tool_ids")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .chain(["search_memory".to_string(), "update_memory".to_string(), "list_memory_keys".to_string()])
+        .collect();
+    match load_subagent_definition(&id, &available_tool_ids) {
+        Ok(definition) => res.render(Json(definition)),
+        Err(error) => render_unprocessable_entity(res, error.to_string()),
+    }
+}
+
+#[handler]
+pub async fn save_subagent(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let body: SubAgentMutationRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(error) => return render_bad_request(res, error.to_string()),
+    };
+    let available_tool_ids = body
+        .available_tool_ids
+        .into_iter()
+        .chain(["search_memory".to_string(), "update_memory".to_string(), "list_memory_keys".to_string()])
+        .collect();
+    match save_subagent_definition(&body.definition, &available_tool_ids) {
+        Ok(()) => res.render(Json(body.definition)),
+        Err(error) => render_unprocessable_entity(res, error.to_string()),
+    }
+}
+
 #[handler]
 pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap();
-    match system_config::load_agents() {
+    match system_config::load_role_services() {
         Ok(agents) => {
             let connections = match system_config::load_connections() {
                 Ok(connections) => connections,
@@ -416,10 +459,10 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
 
             let mut items = Vec::with_capacity(agents.len());
             for mut agent in agents {
-                let runtime = state.agent_manager.runtime_info(&agent.id);
-                let qq_config = match &agent.agent_type {
-                    AgentType::QqChat(config) => Some(config.clone()),
-                    AgentType::Workspace(_) => None,
+                let runtime = state.role_service_manager.runtime_info(&agent.id);
+                let qq_config = match &agent.role_service_type {
+                    RoleServiceType::QqChat(config) => Some(config.clone()),
+                    RoleServiceType::Workspace(_) => None,
                 };
                 let qq_chat_profile = match qq_config.as_ref() {
                     Some(config) => resolve_qq_chat_profile(state, &mut agent, &connections, config, &runtime).await,
@@ -441,12 +484,12 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
 
 async fn resolve_qq_chat_profile(
     _state: &Arc<AppState>,
-    agent: &mut AgentConfig,
+    agent: &mut RoleServiceConfig,
     connections: &[ConnectionConfig],
     config: &QqChatAgentServiceConfig,
-    runtime: &AgentRuntimeInfo,
+    runtime: &RoleServiceRuntimeInfo,
 ) -> Option<QqChatProfile> {
-    let profile = if runtime.status == AgentRuntimeStatus::Running {
+    let profile = if runtime.status == RoleServiceRuntimeStatus::Running {
         resolve_active_or_fallback_bot_profile(connections, &config.ims_bot_adapter_connection_id)
             .await
             .ok()
@@ -474,21 +517,21 @@ async fn resolve_qq_chat_profile(
 }
 
 fn resolve_qq_chat_agent_service_config<'a>(
-    agents: &'a [AgentConfig],
+    agents: &'a [RoleServiceConfig],
     agent_id: &str,
 ) -> Result<&'a QqChatAgentServiceConfig, String> {
     let agent = agents
         .iter()
         .find(|item| item.id == agent_id)
         .ok_or_else(|| "Agent not found".to_string())?;
-    let AgentType::QqChat(config) = &agent.agent_type else {
+    let RoleServiceType::QqChat(config) = &agent.role_service_type else {
         return Err("Agent is not a QQ Chat Agent Service".to_string());
     };
     Ok(config)
 }
 
 async fn resolve_agent_rdb_connection(agent_id: &str) -> CoreResult<zihuan_core::data_refs::RelationalDbConnection> {
-    let agents = system_config::load_agents()?;
+    let agents = system_config::load_role_services()?;
     let config =
         resolve_qq_chat_agent_service_config(&agents, agent_id).map_err(|err| zihuan_core::string_error!("{}", err))?;
     let rdb_id = config
@@ -640,7 +683,7 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Err(err) => return render_bad_request(res, err.to_string()),
     };
 
-    let mut agents = match system_config::load_agents() {
+    let mut agents = match system_config::load_role_services() {
         Ok(agents) => agents,
         Err(err) => return render_internal_error(res, err),
     };
@@ -652,22 +695,22 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Ok(connections) => connections,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_agent_connection_schemas(&body.agent_type, &connections) {
+    if let Err(message) = validate_agent_connection_schemas(&body.role_service_type, &connections) {
         return render_unprocessable_entity(res, message);
     }
     let llm_refs = match load_llm_refs() {
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_qq_chat_agent_service_llms(&body.agent_type, &llm_refs, &body.name) {
+    if let Err(message) = validate_qq_chat_agent_service_llms(&body.role_service_type, &llm_refs, &body.name) {
         return render_unprocessable_entity(res, message);
     }
 
-    let agent = AgentConfig {
+    let agent = RoleServiceConfig {
         id: Uuid::new_v4().to_string(),
         config_id: String::new(),
         name: body.name,
-        agent_type: body.agent_type,
+        role_service_type: body.role_service_type,
         enabled: body.enabled,
         auto_start: body.auto_start,
         is_default: body.is_default,
@@ -679,7 +722,7 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
     agent.config_id = agent.id.clone();
     agents.push(agent.clone());
 
-    match system_config::save_agents(agents) {
+    match system_config::save_role_services(agents) {
         Ok(()) => {
             info!("[agents] created agent '{}' (id={})", agent.name, agent.id);
             res.render(Json(agent));
@@ -696,7 +739,7 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Err(err) => return render_bad_request(res, err.to_string()),
     };
 
-    let mut agents = match system_config::load_agents() {
+    let mut agents = match system_config::load_role_services() {
         Ok(agents) => agents,
         Err(err) => return render_internal_error(res, err),
     };
@@ -708,14 +751,14 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Ok(connections) => connections,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_agent_connection_schemas(&body.agent_type, &connections) {
+    if let Err(message) = validate_agent_connection_schemas(&body.role_service_type, &connections) {
         return render_unprocessable_entity(res, message);
     }
     let llm_refs = match load_llm_refs() {
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_qq_chat_agent_service_llms(&body.agent_type, &llm_refs, &body.name) {
+    if let Err(message) = validate_qq_chat_agent_service_llms(&body.role_service_type, &llm_refs, &body.name) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -724,7 +767,7 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
     };
 
     agent.name = body.name;
-    agent.agent_type = body.agent_type;
+    agent.role_service_type = body.role_service_type;
     agent.enabled = body.enabled;
     agent.auto_start = body.auto_start;
     agent.is_default = body.is_default;
@@ -733,7 +776,7 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
     agent.avatar_url = body.avatar_url.filter(|v| !v.is_empty());
     let response = agent.clone();
 
-    match system_config::save_agents(agents) {
+    match system_config::save_role_services(agents) {
         Ok(()) => {
             info!("[agents] updated agent '{}' (id={})", response.name, response.id);
             res.render(Json(response));
@@ -747,7 +790,7 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
     let state = depot.obtain::<Arc<AppState>>().unwrap().clone();
     let broadcast_tx = depot.obtain::<WsBroadcast>().unwrap().clone();
     let id = req.param::<String>("id").unwrap_or_default();
-    let agents = match system_config::load_agents() {
+    let agents = match system_config::load_role_services() {
         Ok(agents) => agents,
         Err(err) => return render_internal_error(res, err),
     };
@@ -758,25 +801,25 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
         Ok(connections) => connections,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_agent_connection_schemas(&agent.agent_type, &connections) {
+    if let Err(message) = validate_agent_connection_schemas(&agent.role_service_type, &connections) {
         return render_unprocessable_entity(res, message);
     }
     let llm_refs = match load_llm_refs() {
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_qq_chat_agent_service_llms(&agent.agent_type, &llm_refs, &agent.name) {
+    if let Err(message) = validate_qq_chat_agent_service_llms(&agent.role_service_type, &llm_refs, &agent.name) {
         return render_unprocessable_entity(res, message);
     }
 
     info!("[agents] starting agent '{}' (id={})", agent.name, id,);
-    if let Err(err) = start_agent_runtime(state.clone(), broadcast_tx, agent.clone(), connections).await {
+    if let Err(err) = start_role_service(state.clone(), broadcast_tx, &agent, connections).await {
         log::error!("[agents] failed to start agent '{}' (id={}): {}", agent.name, id, err);
         return render_internal_error(res, err);
     }
     res.render(Json(serde_json::json!({
         "ok": true,
-        "runtime": state.agent_manager.runtime_info(&id),
+        "runtime": state.role_service_manager.runtime_info(&id),
     })));
 }
 
@@ -785,10 +828,10 @@ pub async fn stop_agent(req: &mut Request, res: &mut Response, depot: &mut Depot
     let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap();
     let id = req.param::<String>("id").unwrap_or_default();
     info!("[agents] stopping agent (id={})", id);
-    match state.agent_manager.stop_agent(&id).await {
+    match state.role_service_manager.stop_role_service(&id).await {
         Ok(()) => res.render(Json(serde_json::json!({
             "ok": true,
-            "runtime": state.agent_manager.runtime_info(&id),
+            "runtime": state.role_service_manager.runtime_info(&id),
         }))),
         Err(err) => render_internal_error(res, err),
     }
@@ -798,7 +841,7 @@ pub async fn stop_agent(req: &mut Request, res: &mut Response, depot: &mut Depot
 pub async fn delete_agent(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let _state = depot.obtain::<Arc<AppState>>().unwrap().clone();
     let id = req.param::<String>("id").unwrap_or_default();
-    let mut agents = match system_config::load_agents() {
+    let mut agents = match system_config::load_role_services() {
         Ok(agents) => agents,
         Err(err) => return render_internal_error(res, err),
     };
@@ -809,7 +852,7 @@ pub async fn delete_agent(req: &mut Request, res: &mut Response, depot: &mut Dep
         return render_not_found(res, "Agent not found");
     }
 
-    match system_config::save_agents(agents) {
+    match system_config::save_role_services(agents) {
         Ok(()) => {
             if let Err(err) = delete_avatar_by_agent_id(&id).await {
                 warn!("[agents] failed to delete avatar for agent '{}': {}", id, err);
@@ -822,7 +865,7 @@ pub async fn delete_agent(req: &mut Request, res: &mut Response, depot: &mut Dep
 }
 
 fn validate_default_agent_flag(
-    agents: &[AgentConfig],
+    agents: &[RoleServiceConfig],
     current_id: Option<&str>,
     new_is_default: bool,
 ) -> Result<(), String> {
@@ -841,9 +884,9 @@ fn validate_default_agent_flag(
     }
 }
 
-fn validate_agent_connection_schemas(agent_type: &AgentType, connections: &[ConnectionConfig]) -> Result<(), String> {
-    match agent_type {
-        AgentType::QqChat(config) => {
+fn validate_agent_connection_schemas(role_service_type: &RoleServiceType, connections: &[ConnectionConfig]) -> Result<(), String> {
+    match role_service_type {
+        RoleServiceType::QqChat(config) => {
             validate_rdb_connection(connections, config.resolved_rdb_id())?;
             if config.dream_enabled {
                 if config.dream_interval_seconds().is_none() {
@@ -867,17 +910,17 @@ fn validate_agent_connection_schemas(agent_type: &AgentType, connections: &[Conn
             )?;
             Ok(())
         }
-        AgentType::Workspace(_) => Ok(()),
+        RoleServiceType::Workspace(_) => Ok(()),
     }
 }
 
 fn validate_qq_chat_agent_service_llms(
-    agent_type: &AgentType,
+    role_service_type: &RoleServiceType,
     llm_refs: &[LlmRefConfig],
     agent_name: &str,
 ) -> Result<(), String> {
-    match agent_type {
-        AgentType::QqChat(config) => {
+    match role_service_type {
+        RoleServiceType::QqChat(config) => {
             let llm_ref_id = config
                 .llm_ref_id
                 .as_deref()
@@ -941,7 +984,7 @@ fn validate_qq_chat_agent_service_llms(
 
             validate_embedding_model_ref(llm_refs, config.embedding_model_ref_id.as_deref(), agent_name)
         }
-        AgentType::Workspace(config) => validate_chat_llm_ref(
+        RoleServiceType::Workspace(config) => validate_chat_llm_ref(
             llm_refs,
             config.llm_ref_id.as_deref().map(str::trim).filter(|value| !value.is_empty()),
             agent_name,
@@ -1182,7 +1225,7 @@ async fn delete_avatar_by_agent_id(agent_id: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-async fn persist_qq_avatar_for_agent(agent: &mut AgentConfig, user_id: &str) -> Result<(), String> {
+async fn persist_qq_avatar_for_agent(agent: &mut RoleServiceConfig, user_id: &str) -> Result<(), String> {
     let avatar_url = zihuan_core::ims_bot_adapter::qq_avatar_url(user_id).ok_or_else(|| "QQ avatar URL is empty".to_string())?;
     let response = reqwest::get(&avatar_url)
         .await
@@ -1217,11 +1260,11 @@ async fn persist_qq_avatar_for_agent(agent: &mut AgentConfig, user_id: &str) -> 
     agent.avatar_url = Some(persisted_avatar_url.clone());
     agent.updated_at = Utc::now().to_rfc3339();
 
-    let mut agents = system_config::load_agents().map_err(|e| e.to_string())?;
+    let mut agents = system_config::load_role_services().map_err(|e| e.to_string())?;
     if let Some(stored_agent) = agents.iter_mut().find(|item| item.id == agent.id) {
         stored_agent.avatar_url = Some(persisted_avatar_url);
         stored_agent.updated_at = agent.updated_at.clone();
-        system_config::save_agents(agents).map_err(|e| e.to_string())?;
+        system_config::save_role_services(agents).map_err(|e| e.to_string())?;
     }
 
     Ok(())

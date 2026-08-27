@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use zihuan_core::agent::tool_calling::Tool;
+use zihuan_core::agent::tools::Tool;
 use zihuan_core::agent::resource_resolver::resolve_local_embedding_model_name;
 use zihuan_core::inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_core::inference::system_config::{load_llm_refs, AgentConfig, MemoryBackendKind, WorkspaceAgentServiceConfig};
+use zihuan_core::inference::system_config::{load_llm_refs, RoleServiceConfig, MemoryBackendKind, WorkspaceAgentServiceConfig};
 use zihuan_core::llm::LLMMessage;
 use zihuan_core::memory_agent::{MemoryAgentResources, MemoryBackend, MemoryBrainAgent, MemoryBrainAgentTool};
 use zihuan_core::runtime::block_async;
@@ -104,7 +104,7 @@ pub struct WorkspaceInferenceToolProvider {
     agents_md_enabled: bool,
     default_tools_enabled: std::collections::HashMap<String, bool>,
     memory_resources: Option<WorkspaceMemoryResources>,
-    web_search_engine: std::result::Result<Arc<zihuan_core::rag::WebSearchEngineRef>, String>,
+    web_search_engine: std::result::Result<Arc<dyn zihuan_core::rag::WebSearchEngine>, String>,
     tool_definitions: Vec<ToolDefinition>,
 }
 
@@ -230,7 +230,7 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
 }
 
 pub fn load_inference_tool_provider(
-    agent: &AgentConfig,
+    agent: &RoleServiceConfig,
     config: &WorkspaceAgentServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
@@ -247,7 +247,7 @@ pub fn load_inference_tool_provider(
 fn load_web_search_engine(
     config: &WorkspaceAgentServiceConfig,
     connections: &[ConnectionConfig],
-) -> std::result::Result<Arc<zihuan_core::rag::WebSearchEngineRef>, String> {
+) -> std::result::Result<Arc<dyn zihuan_core::rag::WebSearchEngine>, String> {
     let connection_id = config
         .web_search_engine_connection_id
         .as_deref()

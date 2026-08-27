@@ -5,7 +5,10 @@ use std::time::Duration;
 
 use crate::runtime::block_async;
 
-use super::web_search_engine::{strip_html_tags, WebSearchEngine, WebSearchImage};
+use crate::utils::string_utils::strip_html_tags;
+
+
+use super::web_search_engine::{WebSearchEngine, WebSearchImage};
 
 pub struct TavilySearch {
     api_token: String,

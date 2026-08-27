@@ -5,7 +5,7 @@ use crate::setup_orchestrator::{ImsBotAdapterSetupConfig, LlmSetupConfig};
 use crate::system_config;
 use zihuan_core::ims_bot_adapter::BotAdapterConnection;
 use zihuan_core::inference::system_config::{
-    AgentConfig, AgentType, LlmRefConfig, LlmServiceConfig, ModelRefSpec,
+    RoleServiceConfig, RoleServiceType, LlmRefConfig, LlmServiceConfig, ModelRefSpec,
     WorkspaceAgentServiceConfig,
 };
 use zihuan_core::storage::{
@@ -216,7 +216,7 @@ pub fn build_connection(id: &str, name: &str, kind: ConnectionKind) -> Connectio
     }
 }
 
-fn build_qq_chat_agent_service() -> AgentConfig {
+fn build_qq_chat_agent_service() -> RoleServiceConfig {
     let mut default_tools = HashMap::new();
     for tool in [
         "web_search",
@@ -233,11 +233,11 @@ fn build_qq_chat_agent_service() -> AgentConfig {
         default_tools.insert(tool.to_string(), true);
     }
 
-    AgentConfig {
+    RoleServiceConfig {
         id: "setup-default-agent".to_string(),
         config_id: "setup-default-agent".to_string(),
         name: "QQ Chat Bot".to_string(),
-        agent_type: AgentType::QqChat(QqChatAgentServiceConfig {
+        role_service_type: RoleServiceType::QqChat(QqChatAgentServiceConfig {
             ims_bot_adapter_connection_id: "setup-default-bot-adapter".to_string(),
             rustfs_connection_id: Some("setup-default-rustfs".to_string()),
             bot_name: "ZihuanBot".to_string(),
@@ -287,12 +287,12 @@ fn build_qq_chat_agent_service() -> AgentConfig {
     }
 }
 
-fn build_workspace_agent_service(id: &str, name: &str, llm_ref_id: Option<String>) -> AgentConfig {
-    AgentConfig {
+fn build_workspace_agent_service(id: &str, name: &str, llm_ref_id: Option<String>) -> RoleServiceConfig {
+    RoleServiceConfig {
         id: id.to_string(),
         config_id: id.to_string(),
         name: name.to_string(),
-        agent_type: AgentType::Workspace(WorkspaceAgentServiceConfig {
+        role_service_type: RoleServiceType::Workspace(WorkspaceAgentServiceConfig {
             llm_ref_id,
             agents_md_enabled: true,
             memory_enabled: false,
@@ -352,11 +352,11 @@ fn save_llm_ref(llm_ref: LlmRefConfig) -> Result<(), String> {
     system_config::save_llm_refs(llm_refs).map_err(|e| e.to_string())
 }
 
-fn save_agent(agent: AgentConfig) -> Result<(), String> {
-    let mut agents = system_config::load_agents().map_err(|e| e.to_string())?;
+fn save_agent(agent: RoleServiceConfig) -> Result<(), String> {
+    let mut agents = system_config::load_role_services().map_err(|e| e.to_string())?;
     agents.retain(|a| a.id != agent.id);
     agents.push(agent);
-    system_config::save_agents(agents).map_err(|e| e.to_string())
+    system_config::save_role_services(agents).map_err(|e| e.to_string())
 }
 
 pub fn save_connection(connection: ConnectionConfig) -> Result<(), String> {

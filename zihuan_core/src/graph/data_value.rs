@@ -15,7 +15,7 @@ use crate::ims_bot_adapter::models::message::ImageMessage;
 use crate::ims_bot_adapter::models::sender_model::Sender as GraphSender;
 use crate::llm::tooling::FunctionTool;
 use crate::llm::MessagePart;
-pub use crate::rag::{WebSearchEngineRef, WebSearchImage};
+pub use crate::rag::{WebSearchEngine, WebSearchImage};
 pub use crate::weaviate::WeaviateRef;
 
 tokio::task_local! {
@@ -821,7 +821,7 @@ pub enum DataValue {
     RedisRef(Arc<RedisConfig>),
     RdbRef(RelationalDbConnection),
     WeaviateRef(Arc<WeaviateRef>),
-    WebSearchEngineRef(Arc<WebSearchEngineRef>),
+    WebSearchEngineRef(Arc<dyn WebSearchEngine>),
     SessionStateRef(Arc<SessionStateRef>),
     LLMMessageSessionCacheRef(Arc<LLMMessageSessionCacheRef>),
     Password(String),
@@ -997,7 +997,7 @@ impl fmt::Debug for DataValue {
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::RdbRef(connection) => f.debug_tuple("RdbRef").field(connection).finish(),
             DataValue::WeaviateRef(weaviate_ref) => f.debug_tuple("WeaviateRef").field(weaviate_ref).finish(),
-            DataValue::WebSearchEngineRef(tavily_ref) => f.debug_tuple("WebSearchEngineRef").field(tavily_ref).finish(),
+            DataValue::WebSearchEngineRef(_) => f.debug_tuple("WebSearchEngineRef").finish(),
             DataValue::SessionStateRef(session_ref) => f.debug_tuple("SessionStateRef").field(session_ref).finish(),
             DataValue::LLMMessageSessionCacheRef(cache_ref) => {
                 f.debug_tuple("LLMMessageSessionCacheRef").field(cache_ref).finish()

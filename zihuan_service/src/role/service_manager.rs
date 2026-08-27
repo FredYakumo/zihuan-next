@@ -1,27 +1,24 @@
-pub mod inference;
-
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use chrono::Local;
 use log::error;
-use zihuan_core::inference::system_config::{load_agents, AgentConfig, AgentType};
+use zihuan_core::inference::system_config::{load_role_services, RoleServiceConfig, RoleServiceType};
 use serde::Serialize;
 use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
-use zihuan_core::agent::tool_calling::ToolCallingObserver;
+use zihuan_core::agent::tools::ToolCallingObserver;
 use zihuan_core::error::Result;
 use zihuan_core::llm::{LLMMessage, StreamToken};
 use zihuan_core::task_context::AgentTaskRuntime;
 
-use self::inference::{InferenceToolProvider, LoadedInferenceAgent};
+use crate::role::{InferenceToolProvider, RoleBrainAgent};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum AgentRuntimeStatus {
+pub enum RoleServiceRuntimeStatus {
     Stopped,
     Starting,
     Running,
@@ -29,27 +26,28 @@ pub enum AgentRuntimeStatus {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct AgentRuntimeInfo {
-    pub agent_id: String,
+pub struct RoleServiceRuntimeInfo {
+    #[serde(rename = "agent_id")]
+    pub role_service_id: String,
     pub instance_id: Option<String>,
-    pub status: AgentRuntimeStatus,
+    pub status: RoleServiceRuntimeStatus,
     pub started_at: Option<String>,
     pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone)]
-pub struct AgentRuntimeState {
+pub struct RoleServiceRuntimeState {
     pub instance_id: Option<String>,
-    pub status: AgentRuntimeStatus,
+    pub status: RoleServiceRuntimeStatus,
     pub started_at: Option<String>,
     pub last_error: Option<String>,
 }
 
-impl Default for AgentRuntimeState {
+impl Default for RoleServiceRuntimeState {
     fn default() -> Self {
         Self {
             instance_id: None,
-            status: AgentRuntimeStatus::Stopped,
+            status: RoleServiceRuntimeStatus::Stopped,
             started_at: None,
             last_error: None,
         }
@@ -58,18 +56,18 @@ impl Default for AgentRuntimeState {
 
 pub(super) type OnFinishShared = Arc<Mutex<Option<Box<dyn FnOnce(bool, Option<String>) + Send + 'static>>>>;
 
-pub(super) struct AgentRuntimeEntry {
-    pub loaded_agent: Option<Arc<LoadedInferenceAgent>>,
-    pub state: AgentRuntimeState,
+pub(super) struct RoleServiceRuntimeEntry {
+    pub role_service: Option<Arc<RoleBrainAgent>>,
+    pub state: RoleServiceRuntimeState,
     pub task: Option<JoinHandle<()>>,
     pub on_finish: OnFinishShared,
 }
 
-impl Default for AgentRuntimeEntry {
+impl Default for RoleServiceRuntimeEntry {
     fn default() -> Self {
         Self {
-            loaded_agent: None,
-            state: AgentRuntimeState::default(),
+            role_service: None,
+            state: RoleServiceRuntimeState::default(),
             task: None,
             on_finish: Arc::new(Mutex::new(None)),
         }
@@ -77,25 +75,25 @@ impl Default for AgentRuntimeEntry {
 }
 
 #[derive(Clone, Default)]
-pub struct AgentManager {
-    pub(super) inner: Arc<Mutex<HashMap<String, AgentRuntimeEntry>>>,
+pub struct RoleServiceManager {
+    pub(super) inner: Arc<Mutex<HashMap<String, RoleServiceRuntimeEntry>>>,
 }
 
-impl AgentManager {
+impl RoleServiceManager {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn runtime_info(&self, agent_id: &str) -> AgentRuntimeInfo {
+    pub fn runtime_info(&self, role_service_id: &str) -> RoleServiceRuntimeInfo {
         let state = self
             .inner
             .lock()
             .unwrap()
-            .get(agent_id)
+            .get(role_service_id)
             .map(|entry| entry.state.clone())
             .unwrap_or_default();
-        AgentRuntimeInfo {
-            agent_id: agent_id.to_string(),
+        RoleServiceRuntimeInfo {
+            role_service_id: role_service_id.to_string(),
             instance_id: state.instance_id,
             status: state.status,
             started_at: state.started_at,
@@ -103,40 +101,40 @@ impl AgentManager {
         }
     }
 
-    pub fn running_agent(&self, agent_id: &str) -> Option<Arc<LoadedInferenceAgent>> {
+    pub fn running_role_service(&self, role_service_id: &str) -> Option<Arc<RoleBrainAgent>> {
         let guard = self.inner.lock().unwrap();
-        let entry = guard.get(agent_id)?;
-        if entry.state.status != AgentRuntimeStatus::Running {
+        let entry = guard.get(role_service_id)?;
+        if entry.state.status != RoleServiceRuntimeStatus::Running {
             return None;
         }
-        entry.loaded_agent.clone()
+        entry.role_service.clone()
     }
 
-    pub fn infer_agent_response_with_trace(
+    pub fn infer_role_response_with_trace(
         &self,
-        agent_id: &str,
+        role_service_id: &str,
         messages: Vec<LLMMessage>,
     ) -> Result<Vec<LLMMessage>> {
-        let agent = self.running_agent(agent_id).ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError(format!("agent '{}' is not running", agent_id))
+        let agent = self.running_role_service(role_service_id).ok_or_else(|| {
+            zihuan_core::error::Error::ValidationError(format!("role service '{}' is not running", role_service_id))
         })?;
         agent.infer_response_with_trace(messages)
     }
 
-    pub async fn infer_agent_response_streaming(
+    pub async fn infer_role_response_streaming(
         &self,
-        agent_id: &str,
+        role_service_id: &str,
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn ToolCallingObserver>>,
-    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::tool_calling::ToolCallingStopReason)> {
-        self.infer_agent_response_streaming_with_model(agent_id, messages, token_tx, observer, None, None, None, None, None)
+    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::tools::ToolCallingStopReason)> {
+        self.infer_role_response_streaming_with_model(role_service_id, messages, token_tx, observer, None, None, None, None, None)
             .await
     }
 
-    pub async fn infer_agent_response_streaming_with_model(
+    pub async fn infer_role_response_streaming_with_model(
         &self,
-        agent_id: &str,
+        role_service_id: &str,
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn ToolCallingObserver>>,
@@ -145,9 +143,9 @@ impl AgentManager {
         reasoning_effort: Option<zihuan_core::inference::system_config::ReasoningEffort>,
         workspace_path: Option<String>,
         session_id: Option<String>,
-    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::tool_calling::ToolCallingStopReason)> {
-        let agent = self.running_agent(agent_id).ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError(format!("agent '{}' is not running", agent_id))
+    ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::tools::ToolCallingStopReason)> {
+        let agent = self.running_role_service(role_service_id).ok_or_else(|| {
+            zihuan_core::error::Error::ValidationError(format!("role service '{}' is not running", role_service_id))
         })?;
         if let Some(model_id) = model_config_id {
             let llm_refs = zihuan_core::inference::system_config::load_llm_refs()?;
@@ -173,24 +171,24 @@ impl AgentManager {
         }
     }
 
-    pub async fn start_agent(
+    pub async fn start_role_service(
         &self,
-        agent: AgentConfig,
+        agent: &RoleServiceConfig,
         connections: Vec<ConnectionConfig>,
         on_finish: Option<Box<dyn FnOnce(bool, Option<String>) + Send + 'static>>,
         task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     ) -> Result<()> {
-        self.stop_agent(&agent.id).await?;
+        self.stop_role_service(&agent.id).await?;
         let start_result: Result<()> = async {
             let llm_refs = zihuan_core::inference::system_config::load_llm_refs()?;
-            let tool_provider = build_inference_tool_provider(&agent, &connections)?;
-            let loaded_agent = Arc::new(LoadedInferenceAgent::load_with_tools(&agent, &llm_refs, tool_provider)?);
+            let tool_provider = build_role_tool_provider(&agent, &connections)?;
+            let role_service = Arc::new(RoleBrainAgent::load_with_tools(&agent, &llm_refs, tool_provider)?);
 
             self.update_state(
                 &agent.id,
-                AgentRuntimeState {
+                RoleServiceRuntimeState {
                     instance_id: None,
-                    status: AgentRuntimeStatus::Starting,
+                    status: RoleServiceRuntimeStatus::Starting,
                     started_at: None,
                     last_error: None,
                 },
@@ -198,17 +196,17 @@ impl AgentManager {
 
             let runtime_instance_id = Uuid::new_v4().to_string();
 
-            match &agent.agent_type {
-                AgentType::QqChat(config) => {
+            match &agent.role_service_type {
+                RoleServiceType::QqChat(config) => {
                     let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
                     let manager = self.clone();
                     let agent_id_for_callback = agent.id.clone();
                     let callback = Arc::new(move |success: bool, error_message: Option<String>| {
                         manager.update_state(
                             &agent_id_for_callback,
-                            AgentRuntimeState {
+                            RoleServiceRuntimeState {
                                 instance_id: None,
-                                status: if success { AgentRuntimeStatus::Stopped } else { AgentRuntimeStatus::Error },
+                                status: if success { RoleServiceRuntimeStatus::Stopped } else { RoleServiceRuntimeStatus::Error },
                                 started_at: None,
                                 last_error: error_message,
                             },
@@ -225,10 +223,10 @@ impl AgentManager {
                     let started_at = Local::now().to_rfc3339();
                     let mut guard = self.inner.lock().unwrap();
                     let entry = guard.entry(agent.id.clone()).or_default();
-                    entry.loaded_agent = Some(Arc::clone(&loaded_agent));
-                    entry.state = AgentRuntimeState {
+                    entry.role_service = Some(Arc::clone(&role_service));
+                    entry.state = RoleServiceRuntimeState {
                         instance_id: Some(runtime_instance_id),
-                        status: AgentRuntimeStatus::Running,
+                        status: RoleServiceRuntimeStatus::Running,
                         started_at: Some(started_at),
                         last_error: None,
                     };
@@ -236,14 +234,14 @@ impl AgentManager {
                     entry.on_finish = on_finish_shared;
                     Ok(())
                 }
-                AgentType::Workspace(_config) => {
+                RoleServiceType::Workspace(_config) => {
                     let started_at = Local::now().to_rfc3339();
                     let mut guard = self.inner.lock().unwrap();
                     let entry = guard.entry(agent.id.clone()).or_default();
-                    entry.loaded_agent = Some(Arc::clone(&loaded_agent));
-                    entry.state = AgentRuntimeState {
+                    entry.role_service = Some(Arc::clone(&role_service));
+                    entry.state = RoleServiceRuntimeState {
                         instance_id: Some(runtime_instance_id),
-                        status: AgentRuntimeStatus::Running,
+                        status: RoleServiceRuntimeStatus::Running,
                         started_at: Some(started_at),
                         last_error: None,
                     };
@@ -258,9 +256,9 @@ impl AgentManager {
         if let Err(err) = &start_result {
             self.update_state(
                 &agent.id,
-                AgentRuntimeState {
+                RoleServiceRuntimeState {
                     instance_id: None,
-                    status: AgentRuntimeStatus::Error,
+                    status: RoleServiceRuntimeStatus::Error,
                     started_at: None,
                     last_error: Some(err.to_string()),
                 },
@@ -270,10 +268,10 @@ impl AgentManager {
         start_result
     }
 
-    pub async fn stop_agent(&self, agent_id: &str) -> Result<()> {
+    pub async fn stop_role_service(&self, role_service_id: &str) -> Result<()> {
         let (task, on_finish_shared) = {
             let mut guard = self.inner.lock().unwrap();
-            match guard.get_mut(agent_id) {
+            match guard.get_mut(role_service_id) {
                 Some(entry) => (entry.task.take(), Arc::clone(&entry.on_finish)),
                 None => (None, Arc::new(Mutex::new(None))),
             }
@@ -286,10 +284,10 @@ impl AgentManager {
             task.abort();
         }
         self.update_state(
-            agent_id,
-            AgentRuntimeState {
+            role_service_id,
+            RoleServiceRuntimeState {
                 instance_id: None,
-                status: AgentRuntimeStatus::Stopped,
+                status: RoleServiceRuntimeStatus::Stopped,
                 started_at: None,
                 last_error: None,
             },
@@ -297,11 +295,11 @@ impl AgentManager {
         Ok(())
     }
 
-    pub async fn auto_start_enabled_agents(&self) {
-        let agents = match load_agents() {
-            Ok(agents) => agents,
+    pub async fn auto_start_enabled_role_services(&self) {
+        let role_services = match load_role_services() {
+            Ok(role_services) => role_services,
             Err(err) => {
-                error!("Failed to load agents for auto start: {err}");
+                error!("Failed to load role services for auto start: {err}");
                 return;
             }
         };
@@ -313,31 +311,34 @@ impl AgentManager {
             }
         };
 
-        for agent in agents.into_iter().filter(|agent| agent.enabled && agent.auto_start) {
-            if let Err(err) = self.start_agent(agent.clone(), connections.clone(), None, None).await {
-                error!("Failed to auto start agent '{}': {}", agent.name, err);
+        for agent in role_services.into_iter().filter(|agent| agent.enabled && agent.auto_start) {
+            if let Err(err) = self
+                .start_role_service(&agent, connections.clone(), None, None)
+                .await
+            {
+                error!("Failed to auto start role service '{}': {}", agent.name, err);
             }
         }
     }
 
-    pub(crate) fn update_state(&self, agent_id: &str, state: AgentRuntimeState) {
+    pub(crate) fn update_state(&self, role_service_id: &str, state: RoleServiceRuntimeState) {
         let mut guard = self.inner.lock().unwrap();
-        let entry = guard.entry(agent_id.to_string()).or_default();
+        let entry = guard.entry(role_service_id.to_string()).or_default();
         entry.state = state;
-        if entry.state.status != AgentRuntimeStatus::Running {
-            entry.loaded_agent = None;
+        if entry.state.status != RoleServiceRuntimeStatus::Running {
+            entry.role_service = None;
             entry.task = None;
         }
     }
 }
 
-pub fn build_inference_tool_provider(
-    agent: &AgentConfig,
+pub fn build_role_tool_provider(
+    agent: &RoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
-    match &agent.agent_type {
-        AgentType::QqChat(config) => zihuan_ims_agent::qq_chat::load_inference_tool_provider(agent, config, connections),
-        AgentType::Workspace(config) => {
+    match &agent.role_service_type {
+        RoleServiceType::QqChat(config) => zihuan_ims_agent::qq_chat::load_inference_tool_provider(agent, config, connections),
+        RoleServiceType::Workspace(config) => {
             zihuan_workspace_agent::workspace_agent_service::load_inference_tool_provider(agent, config, connections)
         }
     }

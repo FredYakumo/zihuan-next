@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::agent::tool_calling::Tool;
+use crate::agent::tools::Tool;
 use crate::error::{Error, Result};
 use crate::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
 use crate::utils::bm25::rank_bm25_matches;

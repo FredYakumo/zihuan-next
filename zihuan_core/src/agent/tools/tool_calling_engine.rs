@@ -1,6 +1,4 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -11,48 +9,20 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
 use crate::llm::llm_base::LLMBase;
+use crate::agent::tools::{Tool, ToolExecutionOutput, ToolExecutionResource, ToolRunDuration};
 use crate::llm::tooling::FunctionTool;
 use crate::llm::tooling::ToolCalls;
 use crate::llm::{InferenceParam, LLMMessage, MessagePart, MessageRole, StreamToken};
 use crate::task_context::{
-    scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
+    scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskStatus,
 };
-pub use crate::tool_runtime::ToolRunDuration;
 use crate::workspace::AskUserRequest;
 use crate::agent::AgentContext;
+use super::tool_calling_types::{AgentExecutor, LongTaskContext, ToolCallingMiddleware, ToolCallingObserver, ToolCallingRequest, ToolCallingResult, ToolCallingStopReason};
+use super::tool_progress::{current_task_progress_message, ToolProgressScopeGuard};
 
 pub const MAX_TOOL_ITERATIONS: usize = 25;
 const LOG_PREVIEW_CHARS: usize = 600;
-
-/// Input to a tool-calling execution. Domain agents own prompt construction;
-/// the executor only owns the model/tool loop.
-#[derive(Debug, Clone)]
-pub struct ToolCallingRequest {
-    pub messages: Vec<LLMMessage>,
-}
-
-/// Complete output of a tool-calling execution.
-#[derive(Debug)]
-pub struct ToolCallingResult {
-    pub messages: Vec<LLMMessage>,
-    pub stop_reason: ToolCallingStopReason,
-}
-
-/// Object-safe execution boundary used by domain agents.
-#[async_trait]
-pub trait AgentExecutor: Send + Sync {
-    async fn execute(&self, context: AgentContext, request: ToolCallingRequest) -> crate::error::Result<ToolCallingResult>;
-}
-
-thread_local! {
-    static TOOL_PROGRESS_SCOPE_STACK: RefCell<Vec<ToolProgressScopeState>> = const { RefCell::new(Vec::new()) };
-}
-
-#[derive(Debug, Clone)]
-struct ToolProgressScopeState {
-    call_content: String,
-    consumed: bool,
-}
 
 fn truncate_for_log(text: &str, max_chars: usize) -> String {
     let total_chars = text.chars().count();
@@ -71,126 +41,6 @@ fn format_cache_hit_rate(cached_prompt_tokens: Option<usize>, prompt_tokens: Opt
         }
         _ => "unavailable".to_string(),
     }
-}
-
-struct ToolProgressScopeGuard;
-
-impl ToolProgressScopeGuard {
-    fn enter(call_content: &str) -> Self {
-        TOOL_PROGRESS_SCOPE_STACK.with(|stack| {
-            stack.borrow_mut().push(ToolProgressScopeState {
-                call_content: call_content.to_string(),
-                consumed: false,
-            });
-        });
-        Self
-    }
-}
-
-impl Drop for ToolProgressScopeGuard {
-    fn drop(&mut self) {
-        TOOL_PROGRESS_SCOPE_STACK.with(|stack| {
-            stack.borrow_mut().pop();
-        });
-    }
-}
-
-pub fn consume_tool_progress_notification(call_content: &str) -> bool {
-    let trimmed = call_content.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
-
-    TOOL_PROGRESS_SCOPE_STACK.with(|stack| {
-        let mut stack = stack.borrow_mut();
-        let Some(scope) = stack.last_mut() else {
-            return true;
-        };
-        if scope.call_content.trim() != trimmed {
-            return true;
-        }
-        if scope.consumed {
-            return false;
-        }
-        scope.consumed = true;
-        true
-    })
-}
-
-pub fn current_task_progress_message(call_content: &str) -> Option<String> {
-    let trimmed = call_content.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if !consume_tool_progress_notification(trimmed) {
-        return None;
-    }
-    Some(trimmed.to_string())
-}
-
-/// Notification hook for long-running tool calls.
-///
-/// Purpose: host runtimes can expose task lifecycle updates to the user while
-/// the ToolCallingEngine still waits synchronously for the real tool result.
-pub trait LongTaskNotifier: Send + Sync + 'static {
-    fn on_start(&self, _task_id: &str, _task_name: &str, _call_content: &str) {}
-
-    fn on_complete(&self, _task_id: &str, _task_name: &str, _result: &str) {}
-}
-
-/// Context required to track long-running tools inside the ToolCallingEngine loop.
-///
-/// Purpose: carries the task runtime and notifier needed when a tool opts into
-/// [`ToolRunDuration::Long`]. The ToolCallingEngine still returns the actual tool result to
-/// the LLM in the same turn.
-#[derive(Clone)]
-pub struct LongTaskContext {
-    pub task_runtime: Arc<dyn AgentTaskRuntime>,
-    pub owner_id: Option<String>,
-    pub agent_id: String,
-    pub agent_name: String,
-    pub notifier: Arc<dyn LongTaskNotifier>,
-    pub task_db_connection_id: Option<String>,
-}
-
-/// A tool that [`ToolCallingEngine`] can invoke during an inference loop.
-pub trait Tool: Send + Sync + 'static {
-    /// Returns the LLM-facing function specification (name, description, parameters).
-    fn spec(&self) -> Arc<dyn FunctionTool>;
-    /// Execute the tool call. `call_content` is the assistant's text for this turn
-    /// (used e.g. to send a progress notification before doing the actual work).
-    fn execute(&self, call_content: &str, arguments: &Value) -> String;
-    fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
-        ToolExecutionOutput::text(self.execute(call_content, arguments))
-    }
-    fn execute_with_progress(
-        &self,
-        call_content: &str,
-        arguments: &Value,
-        _on_output: Arc<dyn Fn(&str, &str) + Send + Sync>,
-    ) -> ToolExecutionOutput {
-        self.execute_with_outcome(call_content, arguments)
-    }
-    /// Declares whether this tool should be treated as short or long running.
-    /// Long tools may emit task lifecycle updates, but still execute
-    /// synchronously so the LLM receives the real result immediately.
-    fn run_duration(&self) -> ToolRunDuration {
-        ToolRunDuration::Short
-    }
-
-    /// Describes the resource touched by a call so independent calls can run concurrently.
-    /// Tools default to concurrent execution until they explicitly opt into a conflicting resource class.
-    fn execution_resource(&self, _arguments: &Value) -> ToolExecutionResource {
-        ToolExecutionResource::Concurrent
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ToolExecutionResource {
-    Concurrent,
-    Read(PathBuf),
-    Write(PathBuf),
-    Exclusive,
 }
 
 #[derive(Clone)]
@@ -221,61 +71,6 @@ fn tool_output_callback(
     let tool_name = tool_name.to_string();
     let call_id = call_id.to_string();
     Arc::new(move |stream, chunk| observer.on_tool_output(&tool_name, &call_id, stream, chunk))
-}
-
-pub trait ToolCallingObserver: Send + Sync + 'static {
-    fn on_assistant_tool_request(&self, _iteration: usize, _content: &str, _tool_calls: &[ToolCalls]) {}
-
-    fn on_tool_start(&self, _name: &str, _call_id: &str, _arguments: &Value) {}
-
-    fn on_tool_output(&self, _name: &str, _call_id: &str, _stream: &str, _chunk: &str) {}
-
-    fn on_tool_finish(&self, _name: &str, _call_id: &str, _result: &str) {}
-
-    fn on_ask_user(&self, _call_id: &str, _request: &AskUserRequest) {}
-
-    fn on_final_assistant(&self, _response: &LLMMessage, _stop_reason: &ToolCallingStopReason) {}
-}
-
-pub trait ToolCallingMiddleware: Send + Sync + 'static {
-    fn on_before_inference(&self, _iteration: usize, _conversation: &[LLMMessage]) -> Vec<LLMMessage> {
-        Vec::new()
-    }
-}
-
-/// The reason a [`ToolCallingEngine::run`] call returned.
-#[derive(Debug)]
-pub enum ToolCallingStopReason {
-    /// Normal completion: the last response had no tool calls.
-    Done,
-    /// Transport-level LLM error detected in response content.
-    TransportError(String),
-    /// Reached [`MAX_TOOL_ITERATIONS`] without a final assistant message.
-    MaxIterationsReached,
-    /// A tool needs follow-up user input before the next LLM iteration can continue.
-    AwaitUserInput(AskUserRequest),
-}
-
-#[derive(Debug, Clone)]
-pub struct ToolExecutionOutput {
-    pub result: String,
-    pub ask_user: Option<AskUserRequest>,
-}
-
-impl ToolExecutionOutput {
-    pub fn text(result: impl Into<String>) -> Self {
-        Self {
-            result: result.into(),
-            ask_user: None,
-        }
-    }
-
-    pub fn ask_user(result: impl Into<String>, request: AskUserRequest) -> Self {
-        Self {
-            result: result.into(),
-            ask_user: Some(request),
-        }
-    }
 }
 
 /// Orchestrates a multi-turn LLM tool call loop.
@@ -933,120 +728,4 @@ fn append_tool_summary_to_system(messages: &mut Vec<LLMMessage>, counts: &HashMa
     }
 
     messages.push(LLMMessage::system(summary));
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::llm::tooling::StaticFunctionToolSpec;
-
-    #[derive(Debug)]
-    struct TestTool {
-        name: &'static str,
-        resource: ToolExecutionResource,
-    }
-
-    impl Tool for TestTool {
-        fn spec(&self) -> Arc<dyn FunctionTool> {
-            Arc::new(StaticFunctionToolSpec {
-                name: self.name,
-                description: "test tool",
-                parameters: serde_json::json!({"type": "object"}),
-            })
-        }
-
-        fn execute(&self, _call_content: &str, _arguments: &Value) -> String {
-            "ok".to_string()
-        }
-
-        fn execution_resource(&self, _arguments: &Value) -> ToolExecutionResource {
-            self.resource.clone()
-        }
-    }
-
-    fn prepared(index: usize, tool: TestTool, arguments: Value) -> PreparedToolCall {
-        PreparedToolCall {
-            index,
-            call_id: format!("call-{index}"),
-            name: tool.name.to_string(),
-            arguments,
-            tool: Some(Arc::new(tool)),
-        }
-    }
-
-    #[test]
-    fn independent_reads_can_run_in_parallel() {
-        let calls = vec![
-            prepared(0, TestTool { name: "read_a", resource: ToolExecutionResource::Read("a".into()) }, Value::Null),
-            prepared(1, TestTool { name: "read_b", resource: ToolExecutionResource::Read("b".into()) }, Value::Null),
-        ];
-        assert!(ToolCallingEngine::can_execute_in_parallel(&calls));
-    }
-
-    #[test]
-    fn overlapping_read_write_calls_are_serialized() {
-        let calls = vec![
-            prepared(0, TestTool { name: "read", resource: ToolExecutionResource::Read("workspace".into()) }, Value::Null),
-            prepared(1, TestTool { name: "write", resource: ToolExecutionResource::Write("workspace/file.txt".into()) }, Value::Null),
-        ];
-        assert!(!ToolCallingEngine::can_execute_in_parallel(&calls));
-    }
-
-    #[test]
-    fn exclusive_calls_are_serialized() {
-        let calls = vec![
-            prepared(0, TestTool { name: "one", resource: ToolExecutionResource::Concurrent }, Value::Null),
-            prepared(1, TestTool { name: "two", resource: ToolExecutionResource::Exclusive }, Value::Null),
-        ];
-        assert!(!ToolCallingEngine::can_execute_in_parallel(&calls));
-    }
-
-    #[test]
-    fn tool_results_are_appended_in_original_call_order() {
-        let brain = ToolCallingEngine {
-            llm: panic_llm_for_test(),
-            tools: Vec::new(),
-            observer: None,
-            iteration_hook: None,
-            long_task_context: None,
-        };
-        let mut results = vec![
-            PreparedToolResult {
-                index: 1,
-                call_id: "call-1".to_string(),
-                name: "second".to_string(),
-                result: ToolExecutionOutput::text("second result"),
-            },
-            PreparedToolResult {
-                index: 0,
-                call_id: "call-0".to_string(),
-                name: "first".to_string(),
-                result: ToolExecutionOutput::text("first result"),
-            },
-        ];
-        let mut conversation = Vec::new();
-        let mut output = Vec::new();
-        assert!(brain.append_tool_results(&mut results, &mut conversation, &mut output).is_none());
-        assert_eq!(conversation[0].tool_call_id.as_deref(), Some("call-0"));
-        assert_eq!(conversation[1].tool_call_id.as_deref(), Some("call-1"));
-    }
-
-    fn panic_llm_for_test() -> Arc<dyn LLMBase> {
-        #[derive(Debug)]
-        struct UnusedLlm;
-        impl LLMBase for UnusedLlm {
-            fn get_model_name(&self) -> &str {
-                "test"
-            }
-
-            fn inference(&self, _param: &InferenceParam) -> LLMMessage {
-                panic!("unused test LLM")
-            }
-
-            fn as_streaming(&self) -> Option<&dyn crate::llm::llm_base::StreamingLLMBase> {
-                None
-            }
-        }
-        Arc::new(UnusedLlm)
-    }
 }

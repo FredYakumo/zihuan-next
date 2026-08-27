@@ -13,7 +13,7 @@ use zihuan_core::task_context::{scope_task_id, scope_task_runtime, AgentTaskResu
 use crate::qq_chat::language_style_store::{upsert_language_style, LanguageStyleScope};
 use crate::qq_chat::logging::QqChatTaskTrace;
 use crate::qq_chat::msg_send::{build_reply_result, send_planned_batches, QqChatServiceSendContext};
-use crate::tools::{review_and_rewrite_reply, QqReplyReviewRequest};
+use crate::tools::{AfterBrainAgent, QqReplyReviewRequest};
 
 const STYLE_LEARNING_SAMPLE_LIMIT: i64 = 200;
 const STYLE_LEARNING_MIN_SAMPLES: usize = 20;
@@ -275,7 +275,7 @@ pub(crate) fn execute_style_learning_task(
                     },
                     learning.sample_count
                 );
-                let review_result = review_and_rewrite_reply(
+                let review_result = AfterBrainAgent::run(
                     &owned.intent_classification_llm,
                     &owned.natural_language_reply_llm,
                     Some("请确保反馈消息也符合刚刚学到的语言风格。"),

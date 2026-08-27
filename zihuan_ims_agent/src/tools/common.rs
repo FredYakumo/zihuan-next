@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use zihuan_core::ims_bot_adapter::adapter::{shared_from_handle, SharedBotAdapter};
 use zihuan_core::ims_bot_adapter::models::event_model::MessageType;
-use zihuan_core::agent::tool_calling::{consume_tool_progress_notification, current_task_progress_message};
+use zihuan_core::agent::tools::{consume_tool_progress_notification, current_task_progress_message};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_core::graph::{DataType, DataValue};

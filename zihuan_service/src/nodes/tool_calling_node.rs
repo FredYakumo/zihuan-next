@@ -7,7 +7,7 @@ use zihuan_core::tool_subgraph::{
     shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool, ToolResultMode,
     ToolSubgraphRunner,
 };
-use zihuan_core::agent::tool_calling::{
+use zihuan_core::agent::tools::{
     ToolCallingEngine, ToolCallingStopReason, Tool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS,
 };
 use zihuan_core::error::{Error, Result};

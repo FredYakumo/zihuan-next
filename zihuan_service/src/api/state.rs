@@ -13,14 +13,14 @@ use uuid::Uuid;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::graph::graph_io::NodeGraphDefinition;
 
-use zihuan_service::AgentManager;
+use zihuan_service::RoleServiceManager;
 
 use crate::setup_orchestrator::SetupProgressEvent;
 
 pub struct AppState {
     pub sessions: RwLock<HashMap<String, GraphSession>>,
     pub tasks: Mutex<TaskManager>,
-    pub agent_manager: AgentManager,
+    pub role_service_manager: RoleServiceManager,
     pub setup_tasks: Mutex<HashMap<String, broadcast::Sender<SetupProgressEvent>>>,
     pub running_chat_messages: Mutex<HashMap<String, Arc<Mutex<RunningChatMessage>>>>,
 }
@@ -30,7 +30,7 @@ impl AppState {
         Self {
             sessions: RwLock::new(HashMap::new()),
             tasks: Mutex::new(TaskManager::new()),
-            agent_manager: AgentManager::new(),
+            role_service_manager: RoleServiceManager::new(),
             setup_tasks: Mutex::new(HashMap::new()),
             running_chat_messages: Mutex::new(HashMap::new()),
         }

@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use zihuan_core::inference::message_content_utils::sanitize_messages_for_inference;
-use zihuan_core::inference::system_config::{AgentConfig, AgentType, LlmRefConfig};
+use zihuan_core::inference::system_config::{RoleServiceConfig, RoleServiceType, LlmRefConfig};
 use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
-use zihuan_core::agent::tool_calling::{
+use zihuan_core::agent::tools::{
     ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason, Tool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS,
 };
 use zihuan_core::error::{Error, Result};
@@ -16,6 +17,7 @@ use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken};
 use zihuan_core::graph::tool_spec::ToolDefinition;
 
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
+use zihuan_core::role::{RoleService, RoleServiceContext, RoleServiceDescriptor, RoleServiceKind};
 
 pub use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
 
@@ -37,8 +39,9 @@ impl InferenceToolProvider for StaticInferenceToolProvider {
 }
 
 #[derive(Clone)]
-pub struct LoadedInferenceAgent {
-    agent: AgentConfig,
+/// The primary BrainAgent assembled for a configured RoleService.
+pub struct RoleBrainAgent {
+    agent: RoleServiceConfig,
     model_name: String,
     llm: Arc<dyn LLMBase>,
     tools: Arc<dyn InferenceToolProvider>,
@@ -96,23 +99,23 @@ impl Tool for DynToolWrapper {
     }
 }
 
-impl LoadedInferenceAgent {
-    pub fn load(agent: &AgentConfig, connections: &[ConnectionConfig]) -> Result<Self> {
+impl RoleBrainAgent {
+    pub fn load(agent: &RoleServiceConfig, connections: &[ConnectionConfig]) -> Result<Self> {
         let llm_refs = zihuan_core::inference::system_config::load_llm_refs()?;
         Self::load_with_refs(agent, &llm_refs, connections)
     }
 
     pub fn load_with_refs(
-        agent: &AgentConfig,
+        agent: &RoleServiceConfig,
         llm_refs: &[LlmRefConfig],
         connections: &[ConnectionConfig],
     ) -> Result<Self> {
-        let tools = super::build_inference_tool_provider(agent, connections)?;
+        let tools = crate::role::build_role_tool_provider(agent, connections)?;
         Self::load_with_tools(agent, llm_refs, tools)
     }
 
     pub fn load_with_tools(
-        agent: &AgentConfig,
+        agent: &RoleServiceConfig,
         llm_refs: &[LlmRefConfig],
         tools: Arc<dyn InferenceToolProvider>,
     ) -> Result<Self> {
@@ -120,9 +123,9 @@ impl LoadedInferenceAgent {
             return Err(Error::ValidationError(format!("agent '{}' is disabled", agent.name)));
         }
 
-        let llm_ref_id = match &agent.agent_type {
-            AgentType::QqChat(config) => config.llm_ref_id.as_deref(),
-            AgentType::Workspace(config) => config.llm_ref_id.as_deref(),
+        let llm_ref_id = match &agent.role_service_type {
+            RoleServiceType::QqChat(config) => config.llm_ref_id.as_deref(),
+            RoleServiceType::Workspace(config) => config.llm_ref_id.as_deref(),
         };
         let llm_config = resolve_llm_service_config(llm_ref_id, llm_refs, &agent.name)?;
         let model_name = llm_config.model_name.clone();
@@ -136,7 +139,7 @@ impl LoadedInferenceAgent {
         })
     }
 
-    pub fn agent(&self) -> &AgentConfig {
+    pub fn agent(&self) -> &RoleServiceConfig {
         &self.agent
     }
 
@@ -239,22 +242,47 @@ impl LoadedInferenceAgent {
     }
 }
 
-pub fn infer_agent_response(
-    agent: &AgentConfig,
+#[async_trait]
+impl RoleService for RoleBrainAgent {
+    type Input = Vec<LLMMessage>;
+    type Output = Vec<LLMMessage>;
+
+    fn descriptor(&self) -> RoleServiceDescriptor {
+        RoleServiceDescriptor {
+            id: self.agent.id.clone(),
+            name: self.agent.name.clone(),
+            kind: match self.agent.role_service_type {
+                RoleServiceType::QqChat(_) => RoleServiceKind::QqChat,
+                RoleServiceType::Workspace(_) => RoleServiceKind::Workspace,
+            },
+        }
+    }
+
+    async fn handle(
+        &self,
+        _context: RoleServiceContext,
+        input: Self::Input,
+    ) -> Result<Self::Output> {
+        self.infer_response_with_trace(input)
+    }
+}
+
+pub fn infer_role_response(
+    agent: &RoleServiceConfig,
     llm_refs: &[LlmRefConfig],
     messages: Vec<LLMMessage>,
 ) -> Result<LLMMessage> {
-    infer_agent_response_with_model(agent, llm_refs, messages, None)
+    infer_role_response_with_model(agent, llm_refs, messages, None)
 }
 
-pub fn infer_agent_response_with_model(
-    agent: &AgentConfig,
+pub fn infer_role_response_with_model(
+    agent: &RoleServiceConfig,
     llm_refs: &[LlmRefConfig],
     messages: Vec<LLMMessage>,
     model_override: Option<&str>,
 ) -> Result<LLMMessage> {
     let connections = load_connections().unwrap_or_default();
-    let loaded = LoadedInferenceAgent::load_with_refs(agent, llm_refs, &connections)?;
+    let loaded = RoleBrainAgent::load_with_refs(agent, llm_refs, &connections)?;
     let output_messages = if let Some(model_id) = model_override {
         let llm_config = resolve_llm_service_config(Some(model_id), llm_refs, &agent.name)?;
         let llm = build_llm_model(&llm_config)?;
@@ -269,29 +297,29 @@ pub fn infer_agent_response_with_model(
         .ok_or_else(|| zihuan_core::string_error!("agent '{}' did not produce a final assistant message", agent.name))
 }
 
-pub fn infer_agent_response_with_trace(
-    agent: &AgentConfig,
+pub fn infer_role_response_with_trace(
+    agent: &RoleServiceConfig,
     llm_refs: &[LlmRefConfig],
     messages: Vec<LLMMessage>,
 ) -> Result<Vec<LLMMessage>> {
     let connections = load_connections().unwrap_or_default();
-    LoadedInferenceAgent::load_with_refs(agent, llm_refs, &connections)?.infer_response_with_trace(messages)
+    RoleBrainAgent::load_with_refs(agent, llm_refs, &connections)?.infer_response_with_trace(messages)
 }
 
-pub fn resolve_agent_model_name(agent: &AgentConfig, llm_refs: &[LlmRefConfig]) -> Result<String> {
-    resolve_agent_model_name_with_override(agent, llm_refs, None)
+pub fn resolve_role_model_name(agent: &RoleServiceConfig, llm_refs: &[LlmRefConfig]) -> Result<String> {
+    resolve_role_model_name_with_override(agent, llm_refs, None)
 }
 
-pub fn resolve_agent_model_name_with_override(
-    agent: &AgentConfig,
+pub fn resolve_role_model_name_with_override(
+    agent: &RoleServiceConfig,
     llm_refs: &[LlmRefConfig],
     model_override: Option<&str>,
 ) -> Result<String> {
     let llm_ref_id = match model_override {
         Some(id) => Some(id),
-        None => match &agent.agent_type {
-            AgentType::QqChat(config) => config.llm_ref_id.as_deref(),
-            AgentType::Workspace(config) => config.llm_ref_id.as_deref(),
+        None => match &agent.role_service_type {
+            RoleServiceType::QqChat(config) => config.llm_ref_id.as_deref(),
+            RoleServiceType::Workspace(config) => config.llm_ref_id.as_deref(),
         },
     };
     Ok(resolve_llm_service_config(llm_ref_id, llm_refs, &agent.name)?.model_name)
@@ -318,7 +346,7 @@ fn build_inference_tool_context(
 }
 
 fn build_tool_calling_engine(
-    agent: &AgentConfig,
+    agent: &RoleServiceConfig,
     llm: Arc<dyn LLMBase>,
     default_tools: Vec<Box<dyn Tool>>,
     tool_definitions: Vec<ToolDefinition>,
@@ -392,7 +420,7 @@ fn handle_tool_calling_result_with_reason(
 }
 
 fn run_agent_tool_calling(
-    agent: &AgentConfig,
+    agent: &RoleServiceConfig,
     llm: Arc<dyn LLMBase>,
     default_tools: Vec<Box<dyn Tool>>,
     tool_definitions: Vec<ToolDefinition>,
@@ -404,7 +432,7 @@ fn run_agent_tool_calling(
 }
 
 async fn run_agent_tool_calling_streaming(
-    agent: &AgentConfig,
+    agent: &RoleServiceConfig,
     llm: Arc<dyn LLMBase>,
     default_tools: Vec<Box<dyn Tool>>,
     tool_definitions: Vec<ToolDefinition>,

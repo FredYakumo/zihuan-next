@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
-use zihuan_core::inference::system_config::{AgentConfig, AgentType, WorkspaceAgentServiceConfig};
+use zihuan_core::inference::system_config::{RoleServiceConfig, RoleServiceType, WorkspaceAgentServiceConfig};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::{InferenceParam, LLMMessage, MessageRole};
 use zihuan_workspace_agent::workspace_agent_service::load_inference_tool_provider;
@@ -36,9 +36,9 @@ fn provider(enabled: bool) -> Arc<dyn InferenceToolProvider> {
         web_search_engine_connection_id: None,
         default_tools_enabled: HashMap::new(),
     };
-    let agent = AgentConfig {
+    let agent = RoleServiceConfig {
         id: "test-agent".to_string(), config_id: "test-config".to_string(), name: "Test Agent".to_string(),
-        agent_type: AgentType::Workspace(config.clone()), enabled: true, auto_start: false, is_default: false,
+        role_service_type: RoleServiceType::Workspace(config.clone()), enabled: true, auto_start: false, is_default: false,
         updated_at: String::new(), tools: Vec::new(), avatar_url: None,
     };
     load_inference_tool_provider(&agent, &config, &[]).expect("load inference tool provider")

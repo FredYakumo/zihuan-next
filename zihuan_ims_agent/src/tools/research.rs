@@ -3,13 +3,13 @@ use std::sync::Arc;
 use log::info;
 use serde_json::Value;
 
-use zihuan_core::agent::tool_calling::{ToolCallingEngine, Tool};
+use zihuan_core::agent::tools::{ToolCallingEngine, Tool};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{LLMMessage, MessageRole};
-use zihuan_core::rag::WebSearchEngineRef;
+use zihuan_core::rag::WebSearchEngine;
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_core::tool_runtime::ToolRunDuration;
 use zihuan_core::weaviate::WeaviateRef;
@@ -39,7 +39,7 @@ const RESEARCH_SYSTEM_PROMPT: &str = "\
 
 pub(crate) struct RunResearchSubagentTool {
     llm: Arc<dyn LLMBase>,
-    web_search_engine: Arc<WebSearchEngineRef>,
+    web_search_engine: Arc<dyn WebSearchEngine>,
     rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
     weaviate_ref: Option<Arc<WeaviateRef>>,
@@ -53,7 +53,7 @@ impl RunResearchSubagentTool {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         llm: Arc<dyn LLMBase>,
-        web_search_engine: Arc<WebSearchEngineRef>,
+        web_search_engine: Arc<dyn WebSearchEngine>,
         rdb_pool: Option<RelationalDbConnection>,
         s3_ref: Option<Arc<S3Ref>>,
         weaviate_ref: Option<Arc<WeaviateRef>>,

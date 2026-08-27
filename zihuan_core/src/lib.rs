@@ -19,6 +19,7 @@ pub mod memory_agent;
 pub mod python_runtime;
 pub mod python_runtime_resolver;
 pub mod rag;
+pub mod role;
 pub mod runtime;
 pub mod scheduled_task;
 pub mod storage;

@@ -11,13 +11,13 @@ use crate::graph::graph_io::NodeGraphDefinition;
 use crate::graph::tool_spec::{PythonScriptToolConfig, ToolParamDef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentConfig {
+pub struct RoleServiceConfig {
     #[serde(default, skip_serializing)]
     pub id: String,
     #[serde(default)]
     pub config_id: String,
     pub name: String,
-    pub agent_type: AgentType,
+    pub role_service_type: RoleServiceType,
     #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
@@ -34,7 +34,7 @@ pub struct AgentConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum AgentType {
+pub enum RoleServiceType {
     QqChat(QqChatAgentServiceConfig),
     Workspace(WorkspaceAgentServiceConfig),
 }
@@ -262,7 +262,7 @@ fn default_stream() -> bool {
     false
 }
 
-impl AgentConfig {
+impl RoleServiceConfig {
     pub fn canonical_config_id(&self) -> &str {
         if self.config_id.trim().is_empty() {
             &self.id
@@ -289,7 +289,7 @@ impl LlmRefConfig {
     }
 }
 
-impl ConfigRecord for AgentConfig {
+impl ConfigRecord for RoleServiceConfig {
     fn config_id(&self) -> &str {
         self.canonical_config_id()
     }
@@ -307,9 +307,9 @@ impl ConfigRecord for AgentConfig {
     }
 
     fn kind(&self) -> ConfigKind {
-        match self.agent_type {
-            AgentType::QqChat(_) => ConfigKind::ServiceQqChat,
-            AgentType::Workspace(_) => ConfigKind::ServiceWorkspace,
+        match self.role_service_type {
+            RoleServiceType::QqChat(_) => ConfigKind::ServiceQqChat,
+            RoleServiceType::Workspace(_) => ConfigKind::ServiceWorkspace,
         }
     }
 
@@ -406,7 +406,7 @@ impl ConfigRecord for LlmRefConfig {
     }
 }
 
-pub fn load_agents() -> Result<Vec<AgentConfig>> {
+pub fn load_role_services() -> Result<Vec<RoleServiceConfig>> {
     let agents = ConfigCenter::shared()
         .list_configs(ConfigCategory::Service)?
         .into_iter()
@@ -423,7 +423,7 @@ pub fn load_agents() -> Result<Vec<AgentConfig>> {
     Ok(agents)
 }
 
-pub fn save_agents(agents: Vec<AgentConfig>) -> Result<()> {
+pub fn save_role_services(agents: Vec<RoleServiceConfig>) -> Result<()> {
     save_records(ConfigCategory::Service, agents, normalize_agent_identity, agent_to_record)
 }
 
@@ -477,7 +477,7 @@ fn save_records<T>(
     Ok(())
 }
 
-fn normalize_agent_identity(mut agent: AgentConfig, fallback_id: String) -> AgentConfig {
+fn normalize_agent_identity(mut agent: RoleServiceConfig, fallback_id: String) -> RoleServiceConfig {
     let canonical = if agent.config_id.trim().is_empty() {
         if agent.id.trim().is_empty() {
             fallback_id
@@ -507,10 +507,10 @@ fn normalize_llm_ref_identity(mut llm_ref: LlmRefConfig, fallback_id: String) ->
     llm_ref
 }
 
-fn agent_to_record(agent: &AgentConfig) -> Result<StoredConfigRecord> {
+fn agent_to_record(agent: &RoleServiceConfig) -> Result<StoredConfigRecord> {
     agent.validate()?;
     let mut spec = Map::new();
-    spec.insert("agent_type".to_string(), serde_json::to_value(&agent.agent_type)?);
+    spec.insert("role_service_type".to_string(), serde_json::to_value(&agent.role_service_type)?);
     spec.insert("auto_start".to_string(), Value::Bool(agent.auto_start));
     spec.insert("is_default".to_string(), Value::Bool(agent.is_default));
     spec.insert("tools".to_string(), serde_json::to_value(&agent.tools)?);
@@ -528,7 +528,7 @@ fn agent_to_record(agent: &AgentConfig) -> Result<StoredConfigRecord> {
     })
 }
 
-fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
+fn agent_from_record(record: StoredConfigRecord) -> Result<RoleServiceConfig> {
     if record.kind.category() != ConfigCategory::Service {
         return Err(crate::string_error!(
             "config '{}' is not an agent config",
@@ -539,8 +539,8 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
         .spec
         .as_object()
         .ok_or_else(|| crate::string_error!("agent config '{}' spec must be an object", record.config_id))?;
-    let mut agent_type = serde_json::from_value(spec.get("agent_type").cloned().unwrap_or(Value::Null))?;
-    if let AgentType::QqChat(config) = &mut agent_type {
+    let mut role_service_type = serde_json::from_value(spec.get("role_service_type").cloned().unwrap_or(Value::Null))?;
+    if let RoleServiceType::QqChat(config) = &mut role_service_type {
         let rdb_id = config
             .rdb_id
             .as_deref()
@@ -581,11 +581,11 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
         .map(str::to_string)
         .filter(|v| !v.is_empty());
 
-    Ok(AgentConfig {
+    Ok(RoleServiceConfig {
         id: record.config_id.clone(),
         config_id: record.config_id.clone(),
         name: record.name,
-        agent_type,
+        role_service_type,
         enabled: record.enabled,
         auto_start: spec.get("auto_start").and_then(Value::as_bool).unwrap_or(false),
         is_default: spec.get("is_default").and_then(Value::as_bool).unwrap_or(false),

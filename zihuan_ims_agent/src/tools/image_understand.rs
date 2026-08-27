@@ -6,7 +6,7 @@ use log::warn;
 use zihuan_core::inference::system_config::load_llm_refs;
 use serde_json::Value;
 use zihuan_core::storage::RuntimeStorageConnectionManager;
-use zihuan_core::agent::tool_calling::{Tool, ToolExecutionOutput};
+use zihuan_core::agent::tools::{Tool, ToolExecutionOutput};
 use zihuan_core::agent::qq_chat::{current_qq_chat_agent_service_config, image_understand_llm_ref_id};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};

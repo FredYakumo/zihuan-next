@@ -4,7 +4,7 @@ use std::sync::Arc;
 use chrono::{Datelike, Utc};
 use log::{info, warn};
 use zihuan_core::inference::nn::local_llm_registry::list_local_llm_models as scan_local_llm_models;
-use zihuan_core::inference::system_config::{load_agents, AgentConfig, AgentToolType, NodeGraphToolConfig};
+use zihuan_core::inference::system_config::{load_role_services, RoleServiceConfig, AgentToolType, NodeGraphToolConfig};
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
@@ -226,7 +226,7 @@ pub struct SaveToWorkflowsRequest {
 }
 
 async fn hot_reload_agents_for_saved_graph(state: Arc<AppState>, broadcast_tx: WsBroadcast, saved_path: &str) {
-    let agents = match load_agents() {
+    let agents = match load_role_services() {
         Ok(agents) => agents,
         Err(err) => {
             warn!(
@@ -255,8 +255,8 @@ async fn hot_reload_agents_for_saved_graph(state: Arc<AppState>, broadcast_tx: W
         .into_iter()
         .filter(|agent| agent_uses_saved_graph(agent, &normalized_saved_path, saved_workflow_name))
     {
-        let runtime = state.agent_manager.runtime_info(&agent.id);
-        if runtime.status != zihuan_service::AgentRuntimeStatus::Running {
+        let runtime = state.role_service_manager.runtime_info(&agent.id);
+        if runtime.status != zihuan_service::RoleServiceRuntimeStatus::Running {
             continue;
         }
 
@@ -264,10 +264,10 @@ async fn hot_reload_agents_for_saved_graph(state: Arc<AppState>, broadcast_tx: W
             "[workflow_save] hot reloading running agent '{}' after graph save: {}",
             agent.name, saved_path
         );
-        if let Err(err) = crate::api::config::agents::start_agent_runtime(
+        if let Err(err) = crate::api::config::role_services::start_role_service(
             state.clone(),
             broadcast_tx.clone(),
-            agent.clone(),
+            &agent,
             connections.clone(),
         )
         .await
@@ -282,7 +282,7 @@ async fn hot_reload_agents_for_saved_graph(state: Arc<AppState>, broadcast_tx: W
     }
 }
 
-fn agent_uses_saved_graph(agent: &AgentConfig, normalized_saved_path: &str, saved_workflow_name: Option<&str>) -> bool {
+fn agent_uses_saved_graph(agent: &RoleServiceConfig, normalized_saved_path: &str, saved_workflow_name: Option<&str>) -> bool {
     agent
         .tools
         .iter()

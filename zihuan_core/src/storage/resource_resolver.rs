@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use crate::data_refs::RelationalDbConnection;
 use crate::error::{Error, Result};
-use crate::rag::{BraveSearch, TavilySearch, WebSearchEngine, WebSearchEngineRef};
+use crate::rag::{BraveSearch, TavilySearch, WebSearchEngine};
 use crate::weaviate::WeaviateRef;
 use crate::graph::data_value::RedisConfig;
 use crate::graph::object_storage::S3Ref;
@@ -141,7 +141,7 @@ pub async fn build_s3_ref(connection_id: Option<&str>, connections: &[Connection
 pub fn build_web_search_engine_ref(
     connection_id: Option<&str>,
     connections: &[ConnectionConfig],
-) -> Result<Option<Arc<WebSearchEngineRef>>> {
+) -> Result<Option<Arc<dyn WebSearchEngine>>> {
     let Some(connection_id) = connection_id else {
         return Ok(None);
     };
@@ -174,7 +174,7 @@ pub fn build_web_search_engine_ref(
             )))
         }
     };
-    Ok(Some(Arc::new(WebSearchEngineRef::new(engine_ref))))
+    Ok(Some(engine_ref))
 }
 
 pub async fn resolve_connection_data_value(

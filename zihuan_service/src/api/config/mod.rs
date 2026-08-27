@@ -1,4 +1,4 @@
-pub mod agents;
+pub mod role_services;
 pub mod commands;
 pub mod connections;
 pub mod llm_refs;

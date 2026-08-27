@@ -7,7 +7,7 @@ use log::{info, warn};
 use zihuan_core::inference::inference_function::compact_message::{compact_message_history, estimate_messages_tokens};
 use zihuan_core::inference::message_content_utils::{downgrade_messages_for_model, sanitize_messages_for_inference};
 
-use zihuan_core::agent::tool_calling::{ToolCallingEngine, ToolCallingStopReason, LongTaskContext};
+use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingStopReason, LongTaskContext};
 
 use zihuan_core::agent::emotion::utils::{
     emotion_dimensions_text, emotion_expression_prompt, has_noticeable_emotion_expression,
@@ -31,7 +31,7 @@ use zihuan_core::ims_bot_adapter::tools::group_members::GetCurrentGroupMembersTo
 use zihuan_core::ims_bot_adapter::tools::qq_profile::{GetBotProfileTool, GetQqUserProfileTool};
 
 use super::super::super::tools::{
-    format_public_info_message, review_and_rewrite_reply, AgentMemoryBackend, AgentMemoryToolResources,
+    format_public_info_message, AfterBrainAgent, AgentMemoryBackend, AgentMemoryToolResources,
     EditableQqAgentTool, GetAgentPublicInfoTool, GetFunctionListTool, GetRecentGroupMessagesTool,
     GetRecentUserMessagesTool, ImageUnderstandTool, ModelIdentityContext, QqReplyReviewRequest,
     ReplyMessageTool, RunResearchSubagentTool, SaveImageTool, SearchSimilarImagesTool,
@@ -63,7 +63,7 @@ use super::{
     QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 
-use crate::agent::preprompt_agent::{PrepromptAgent, PrepromptContext};
+use crate::agent::before_brain_agent::{BeforeBrainAgent, PrepromptContext};
 
 use super::super::steer::QqChatServiceSteerHook;
 use super::super::tool_quota::wrap_brain_tool_with_quota;
@@ -882,7 +882,7 @@ impl QqChatAgentServiceInner {
                 },
             })
         });
-        let preprompt_context = PrepromptAgent::new(PrepromptContext {
+        let preprompt_context = BeforeBrainAgent::new(PrepromptContext {
             trace,
             llm: ctx.natural_language_reply_llm,
             cache: ctx.cache,
@@ -1392,7 +1392,7 @@ impl QqChatAgentServiceInner {
                 explicit_no_reply = true;
             } else {
                 let available_media = collect_available_media_from_brain_output(&brain_output);
-                let review_result = review_and_rewrite_reply(
+                let review_result = AfterBrainAgent::run(
                     ctx.intent_classification_llm,
                     ctx.natural_language_reply_llm,
                     ctx.natural_language_reply_system_prompt,
@@ -1555,7 +1555,7 @@ impl QqChatAgentServiceInner {
             });
         }
 
-        let review_result = review_and_rewrite_reply(
+        let review_result = AfterBrainAgent::run(
             ctx.intent_classification_llm,
             ctx.natural_language_reply_llm,
             ctx.natural_language_reply_system_prompt,

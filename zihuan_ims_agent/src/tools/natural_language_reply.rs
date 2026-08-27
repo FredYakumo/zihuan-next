@@ -36,6 +36,21 @@ pub(crate) struct QqReplyReviewResult {
     pub reason: String,
 }
 
+/// Fixed QQ hook executed after the primary BrainAgent produces a candidate reply.
+pub(crate) struct AfterBrainAgent;
+
+impl AfterBrainAgent {
+    pub(crate) fn run(
+        review_llm: &Arc<dyn LLMBase>,
+        rewrite_llm: &Arc<dyn LLMBase>,
+        reply_system_prompt: Option<&str>,
+        request: &QqReplyReviewRequest,
+        trace: &QqChatTaskTrace,
+    ) -> Result<QqReplyReviewResult> {
+        review_and_rewrite_reply(review_llm, rewrite_llm, reply_system_prompt, request, trace)
+    }
+}
+
 pub(crate) fn review_and_rewrite_reply(
     review_llm: &Arc<dyn LLMBase>,
     rewrite_llm: &Arc<dyn LLMBase>,

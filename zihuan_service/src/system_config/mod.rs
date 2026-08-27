@@ -1,7 +1,7 @@
-pub mod agents {
+pub mod role_services {
     #[allow(unused_imports)]
     pub use zihuan_core::inference::system_config::{
-        AgentConfig, AgentToolConfig, AgentToolType, AgentType, LlmServiceConfig,
+        RoleServiceConfig, AgentToolConfig, AgentToolType, RoleServiceType, LlmServiceConfig,
         NodeGraphToolConfig, WorkspaceAgentServiceConfig,
     };
     pub use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
@@ -24,7 +24,7 @@ pub mod llm_refs {
 }
 
 #[allow(unused_imports)]
-pub use zihuan_core::inference::system_config::{load_agents, load_llm_refs, save_agents, save_llm_refs};
+pub use zihuan_core::inference::system_config::{load_role_services, load_llm_refs, save_role_services, save_llm_refs};
 #[allow(unused_imports)]
 pub use zihuan_core::storage::{load_connections, save_connections};
 #[allow(unused_imports)]

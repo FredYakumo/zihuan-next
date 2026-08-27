@@ -1,7 +1,3 @@
-pub mod brave;
-pub mod tavily;
-pub mod web_search_engine;
+pub mod web_search;
 
-pub use brave::BraveSearch;
-pub use tavily::TavilySearch;
-pub use web_search_engine::{WebSearchEngine, WebSearchEngineRef, WebSearchImage};
+pub use web_search::{BraveSearch, TavilySearch, WebSearchEngine, WebSearchImage};

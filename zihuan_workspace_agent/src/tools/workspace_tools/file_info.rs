@@ -5,7 +5,7 @@ use std::time::UNIX_EPOCH;
 
 use serde::Deserialize;
 use serde_json::Value;
-use zihuan_core::agent::tool_calling::{Tool, ToolExecutionResource};
+use zihuan_core::agent::tools::{Tool, ToolExecutionResource};
 use zihuan_core::llm::tooling::FunctionTool;
 
 use zihuan_core::llm::tooling::StaticFunctionToolSpec;

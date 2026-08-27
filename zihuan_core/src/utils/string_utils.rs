@@ -136,3 +136,35 @@ pub fn parse_at_segment(chars: &[char], start: usize) -> Option<(String, usize)>
 
     Some((chars[start + 1..end].iter().collect(), end))
 }
+
+pub fn strip_html_tags(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut in_tag = false;
+    let mut previous_was_whitespace = false;
+
+    for ch in input.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+                if !previous_was_whitespace {
+                    output.push(' ');
+                    previous_was_whitespace = true;
+                }
+            }
+            _ if in_tag => {}
+            _ if ch.is_whitespace() => {
+                if !previous_was_whitespace {
+                    output.push(' ');
+                    previous_was_whitespace = true;
+                }
+            }
+            _ => {
+                output.push(ch);
+                previous_was_whitespace = false;
+            }
+        }
+    }
+
+    output.trim().to_string()
+}

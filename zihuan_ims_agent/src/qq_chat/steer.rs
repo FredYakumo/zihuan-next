@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use chrono::Local;
 use log::{info, warn};
 
-use zihuan_core::agent::tool_calling::ToolCallingMiddleware;
+use zihuan_core::agent::tools::ToolCallingMiddleware;
 use zihuan_core::agent::emotion::utils::has_noticeable_emotion_expression;
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent::utils::build_state_system_prefix_lines;

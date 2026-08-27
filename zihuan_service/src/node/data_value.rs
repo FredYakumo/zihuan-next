@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
 pub use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
-pub use zihuan_core::rag::WebSearchEngineRef;
+pub use zihuan_core::rag::WebSearchEngine;
 
 tokio::task_local! {
     pub static SESSION_CLAIM_CONTEXT: Arc<SessionClaimContext>;
@@ -724,7 +724,7 @@ pub enum DataValue {
     BotAdapterRef(zihuan_core::zihuan_core::ims_bot_adapter::BotAdapterHandle),
     RedisRef(Arc<RedisConfig>),
     RdbRef(RelationalDbConnection),
-    WebSearchEngineRef(Arc<WebSearchEngineRef>),
+    WebSearchEngineRef(Arc<dyn WebSearchEngine>),
     SessionStateRef(Arc<SessionStateRef>),
     LLMMessageSessionCacheRef(Arc<LLMMessageSessionCacheRef>),
     Password(String),

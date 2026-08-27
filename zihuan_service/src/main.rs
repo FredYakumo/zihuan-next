@@ -58,6 +58,10 @@ async fn main() {
 
     let args = Args::parse();
 
+    if let Err(error) = zihuan_core::agent::sub_agent::bootstrap_default_subagents() {
+        error!("Failed to initialize default SubAgents: {error}");
+    }
+
     let state = Arc::new(api::state::AppState::new());
     let broadcast = api::ws::create_broadcast();
     log_forwarder::set_app_state(Arc::clone(&state));
@@ -67,7 +71,7 @@ async fn main() {
     spawn_task_ttl_cleanup(Arc::clone(&state));
 
     {
-        let agents = crate::system_config::load_agents().unwrap_or_else(|e| {
+        let agents = crate::system_config::load_role_services().unwrap_or_else(|e| {
             error!("Failed to load agents for auto start: {e}");
             Vec::new()
         });
@@ -76,10 +80,10 @@ async fn main() {
             Vec::new()
         });
         for agent in agents.into_iter().filter(|a| a.enabled && a.auto_start) {
-            if let Err(err) = api::config::agents::start_agent_runtime(
+            if let Err(err) = api::config::role_services::start_role_service(
                 Arc::clone(&state),
                 broadcast.clone(),
-                agent.clone(),
+                &agent,
                 connections.clone(),
             )
             .await

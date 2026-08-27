@@ -49,13 +49,13 @@ use zihuan_core::ims_bot_adapter::models::event_model::MessageType;
 use zihuan_core::ims_bot_adapter::models::message::MessageProp;
 use log::{error, info, warn};
 use zihuan_core::inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_core::inference::system_config::{load_llm_refs, AgentConfig, MemoryBackendKind};
+use zihuan_core::inference::system_config::{load_llm_refs, RoleServiceConfig, MemoryBackendKind};
 use zihuan_core::storage::{
     build_elasticsearch_ref, build_relational_db_connection_for_connection, build_s3_ref, build_weaviate_ref,
     build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind, LocalMemoryStore, WeaviateCollectionSchema,
 };
 use tokio::task::JoinHandle;
-use zihuan_core::agent::tool_calling::Tool;
+use zihuan_core::agent::tools::Tool;
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent::qq_chat::{current_qq_chat_agent_service_config, QqChatAgentServiceConfig};
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -63,7 +63,6 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::LLMMessage;
-use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
 use zihuan_core::steer::PendingSteerEvent;
 use zihuan_core::task_context::{
@@ -141,7 +140,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
 }
 
 pub fn load_inference_tool_provider(
-    agent: &AgentConfig,
+    agent: &RoleServiceConfig,
     config: &QqChatAgentServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
@@ -152,7 +151,7 @@ pub fn load_inference_tool_provider(
 }
 
 fn load_qq_resources(
-    agent: &AgentConfig,
+    agent: &RoleServiceConfig,
     config: &QqChatAgentServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<QqLoadedInferenceResources> {
@@ -336,7 +335,7 @@ fn load_qq_resources(
 pub type RuntimeFinishedCallback = Arc<dyn Fn(bool, Option<String>) + Send + Sync>;
 
 pub async fn spawn(
-    agent: AgentConfig,
+    agent: RoleServiceConfig,
     config: QqChatAgentServiceConfig,
     connections: Vec<ConnectionConfig>,
     on_finish: RuntimeFinishedCallback,

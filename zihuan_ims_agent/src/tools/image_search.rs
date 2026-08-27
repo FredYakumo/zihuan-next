@@ -6,11 +6,11 @@ use serde_json::Value;
 
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use zihuan_core::storage::{upload_remote_image_to_s3, upsert_image_record};
-use zihuan_core::agent::tool_calling::Tool;
+use zihuan_core::agent::tools::Tool;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::rag::{WebSearchEngineRef, WebSearchImage};
+use zihuan_core::rag::{WebSearchEngine, WebSearchImage};
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_core::graph::object_storage::S3Ref;
 
@@ -28,7 +28,7 @@ const WEAVIATE_IMAGE_MAX_GOOD_DISTANCE: f64 = 0.55;
 pub(crate) struct SearchSimilarImagesTool {
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
-    web_search_engine_ref: Arc<WebSearchEngineRef>,
+    web_search_engine_ref: Arc<dyn WebSearchEngine>,
     s3_ref: Option<Arc<S3Ref>>,
 }
 
@@ -36,7 +36,7 @@ impl SearchSimilarImagesTool {
     pub(crate) fn new(
         weaviate_image_ref: Option<Arc<WeaviateRef>>,
         embedding_model: Option<Arc<dyn EmbeddingBase>>,
-        web_search_engine_ref: Arc<WebSearchEngineRef>,
+        web_search_engine_ref: Arc<dyn WebSearchEngine>,
         s3_ref: Option<Arc<S3Ref>>,
         _notification_target: ToolNotificationTarget,
     ) -> Self {
@@ -150,7 +150,6 @@ impl Tool for SearchSimilarImagesTool {
             let fallback_count = limit.min(10) as i64;
             let web_images: Vec<WebSearchImage> = self
                 .web_search_engine_ref
-                .engine
                 .search_images(&format!("{} 图片", query), fallback_count)?;
 
             let Some(s3_ref) = self.s3_ref.as_ref() else {

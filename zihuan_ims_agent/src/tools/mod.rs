@@ -7,11 +7,11 @@ use zihuan_core::memory_agent::{
 use zihuan_core::storage::AgentMemoryAccessContext;
 use zihuan_core::storage::ElasticsearchRef;
 use zihuan_core::storage::LocalMemoryStore;
-use zihuan_core::agent::tool_calling::Tool;
+use zihuan_core::agent::tools::Tool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::rag::WebSearchEngineRef;
+use zihuan_core::rag::WebSearchEngine;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_core::graph::object_storage::S3Ref;
 
@@ -39,7 +39,7 @@ pub(crate) use image_search::SearchSimilarImagesTool;
 pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstandTool};
 pub(crate) use info_tools::{GetAgentPublicInfoTool, GetFunctionListTool};
 pub(crate) use natural_language_reply::{
-    review_and_rewrite_reply, ModelIdentityContext, QqReplyReviewRequest, QqReplyReviewResult,
+    AfterBrainAgent, ModelIdentityContext, QqReplyReviewRequest, QqReplyReviewResult,
 };
 pub(crate) use recent_messages::{GetRecentGroupMessagesTool, GetRecentUserMessagesTool};
 pub(crate) use reply_message::ReplyMessageTool;
@@ -62,7 +62,7 @@ const AGENT_GIT_COMMIT_ID: &str = "unknown";
 
 pub fn build_info_brain_tools(
     default_tools_enabled: &HashMap<String, bool>,
-    web_search_engine_ref: Option<Arc<WebSearchEngineRef>>,
+    web_search_engine_ref: Option<Arc<dyn WebSearchEngine>>,
     rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
     weaviate_image_ref: Option<Arc<WeaviateRef>>,

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use log::{info, warn};
-use zihuan_core::agent::tool_calling::{ToolCallingEngine, ToolCallingStopReason};
+use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingStopReason};
 use zihuan_core::agent::{Agent, AgentContext, AgentDescriptor};
 use zihuan_core::agent::emotion::utils::emotion_dimensions_text;
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
@@ -25,7 +25,7 @@ use crate::tools::{
     DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT,
 };
 
-const LOG_PREFIX: &str = "[QqChatPrepromptAgent]";
+const LOG_PREFIX: &str = "[QqBeforeBrainAgent]";
 
 
 
@@ -90,11 +90,11 @@ pub(crate) struct PrepromptContext<'a> {
 }
 
 /// QQ turn sub-agent that prepares continuity and emotion context for the reply agent.
-pub(crate) struct PrepromptAgent<'a> {
+pub(crate) struct BeforeBrainAgent<'a> {
     context: PrepromptContext<'a>,
 }
 
-impl<'a> PrepromptAgent<'a> {
+impl<'a> BeforeBrainAgent<'a> {
     pub(crate) fn new(context: PrepromptContext<'a>) -> Self {
         Self { context }
     }
@@ -105,7 +105,7 @@ impl<'a> PrepromptAgent<'a> {
 }
 
 #[async_trait::async_trait]
-impl Agent for PrepromptAgent<'_> {
+impl Agent for BeforeBrainAgent<'_> {
     type Input = ();
     type Output = Option<String>;
 

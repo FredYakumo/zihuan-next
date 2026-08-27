@@ -5,7 +5,10 @@ use std::time::Duration;
 
 use crate::runtime::block_async;
 
-use super::web_search_engine::{strip_html_tags, WebSearchEngine, WebSearchImage};
+use crate::utils::string_utils::strip_html_tags;
+use crate::error::Result;
+
+use super::web_search_engine::{WebSearchEngine, WebSearchImage};
 
 pub struct BraveSearch {
     api_token: String,
@@ -92,7 +95,7 @@ impl BraveSearch {
             .collect())
     }
 
-    async fn fetch_url_direct_async(&self, url: &str) -> crate::error::Result<Vec<String>> {
+    async fn fetch_url_direct_async(&self, url: &str) -> Result<Vec<String>> {
         let response = self
             .client
             .get(url)
