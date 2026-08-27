@@ -9,8 +9,7 @@ use uuid::Uuid;
 
 use crate::connection_manager::{RuntimeConnectionInstanceSummary, RuntimeConnectionStatus};
 use crate::error::{Error, Result};
-use crate::python_runtime::PythonRuntimeConfig;
-use crate::node_runtime::NodeRuntimeConfig;
+use dynamic_script_engine::{NodeRuntimeConfig, PythonRuntimeConfig};
 use crate::system_config::system_config_file_path;
 
 pub mod llm_refs;

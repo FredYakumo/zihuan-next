@@ -22,6 +22,7 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY node_macros/Cargo.toml node_macros/Cargo.toml
 COPY general_wheel_cpp/Cargo.toml general_wheel_cpp/Cargo.toml
+COPY dynamic_script_engine/Cargo.toml dynamic_script_engine/Cargo.toml
 COPY zihuan_core/Cargo.toml zihuan_core/Cargo.toml
 COPY zihuan_service/Cargo.toml zihuan_service/Cargo.toml
 COPY zihuan_workspace_service/Cargo.toml zihuan_workspace_service/Cargo.toml
@@ -29,10 +30,11 @@ COPY zihuan_ims_service/Cargo.toml zihuan_ims_service/Cargo.toml
 COPY zihuan_cli/Cargo.toml zihuan_cli/Cargo.toml
 
 # Create stub source files so cargo can resolve the workspace
-RUN mkdir -p node_macros/src general_wheel_cpp/src zihuan_core/src zihuan_service/src \
+RUN mkdir -p node_macros/src general_wheel_cpp/src dynamic_script_engine/src zihuan_core/src zihuan_service/src \
     zihuan_workspace_service/src zihuan_ims_service/src zihuan_cli/src && \
     echo "fn main() {}" > node_macros/src/lib.rs && \
     echo "fn main() {}" > general_wheel_cpp/src/lib.rs && \
+    echo "fn main() {}" > dynamic_script_engine/src/lib.rs && \
     echo "fn main() {}" > zihuan_core/src/lib.rs && \
     echo "fn main() {}" > zihuan_service/src/lib.rs && \
     echo "fn main() {}" > zihuan_workspace_service/src/lib.rs && \
@@ -49,6 +51,7 @@ COPY build_support/ build_support/
 COPY general_wheel_cpp/build.rs general_wheel_cpp/build.rs
 COPY general_wheel_cpp/native/ general_wheel_cpp/native/
 COPY general_wheel_cpp/src/ general_wheel_cpp/src/
+COPY dynamic_script_engine/ dynamic_script_engine/
 COPY node_macros/src/ node_macros/src/
 COPY zihuan_core/src/ zihuan_core/src/
 COPY zihuan_service/src/ zihuan_service/src/

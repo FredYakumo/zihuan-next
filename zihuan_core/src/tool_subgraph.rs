@@ -1,9 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
 use log::{info, warn};
 use serde_json::{json, Map, Value};
@@ -27,7 +23,6 @@ use crate::graph::util::function::{
 };
 use crate::graph::{DataType, DataValue, Port};
 use crate::model_inference::llm::tooling::FunctionTool;
-use crate::python_runtime_resolver::resolve_python_runtime;
 
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 
@@ -689,24 +684,6 @@ impl ToolSubgraphRunner {
     ) -> Result<String> {
         let workspace_root = std::env::current_dir()
             .map_err(|e| self.wrap_error(format!("Tool '{}' 无法获取当前工作目录: {e}", tool.name)))?;
-        let script_path = resolve_path(&workspace_root, &config.script_path);
-        if !script_path.exists() {
-            return Err(self.wrap_error(format!(
-                "Tool '{}' 的 python 脚本不存在: {}",
-                tool.name,
-                script_path.display()
-            )));
-        }
-
-        let bootstrap = workspace_root.join("utils").join("python_tool_runtime.py");
-        if !bootstrap.exists() {
-            return Err(self.wrap_error(format!(
-                "Tool '{}' 缺少 python bootstrap: {}",
-                tool.name,
-                bootstrap.display()
-            )));
-        }
-
         let runtime_config = match config.runtime_override() {
             Some(runtime) => runtime,
             None => {
@@ -718,140 +695,39 @@ impl ToolSubgraphRunner {
                     .python_runtime
             }
         };
-        let command_spec = resolve_python_runtime(&workspace_root, &runtime_config)
-            .map_err(|error| self.wrap_error(format!("Tool '{}' 无法解析 Python 运行时: {error}", tool.name)))?;
-        let mut command = command_spec.to_command();
-
-        command
-            .arg(&bootstrap)
-            .arg("--script")
-            .arg(&script_path)
-            .arg("--entry")
-            .arg(&config.module_entry)
-            .current_dir(&workspace_root)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        let mut child = command
-            .spawn()
-            .map_err(|e| self.wrap_error(format!("Tool '{}' 启动 python 进程失败: {e}", tool.name)))?;
-
-        let mut stdin = child.stdin.take().ok_or_else(|| self.wrap_error(format!("Tool '{}' 无法写入 python stdin", tool.name)))?;
-        serde_json::to_writer(&mut stdin, request)
-            .map_err(|e| self.wrap_error(format!("Tool '{}' 序列化 python 请求失败: {e}", tool.name)))?;
-        stdin.write_all(b"\n").map_err(|e| self.wrap_error(format!("Tool '{}' 写入 python stdin 失败: {e}", tool.name)))?;
-        stdin.flush().map_err(|e| self.wrap_error(format!("Tool '{}' 刷新 python stdin 失败: {e}", tool.name)))?;
-
-        let stdout = child.stdout.take().ok_or_else(|| self.wrap_error(format!("Tool '{}' 无法读取 python stdout", tool.name)))?;
-        let mut stdout = BufReader::new(stdout);
-        let deadline = Instant::now() + Duration::from_secs(config.timeout_secs);
-        let response = loop {
-            if Instant::now() >= deadline {
-                let _ = child.kill();
-                return Err(self.wrap_error(format!("Tool '{}' 的 python 执行超时（{} 秒）", tool.name, config.timeout_secs)));
-            }
-            let mut line = String::new();
-            if stdout.read_line(&mut line).map_err(|e| self.wrap_error(format!("Tool '{}' 读取 python 输出失败: {e}", tool.name)))? == 0 {
-                break None;
-            }
-            let message: Value = serde_json::from_str(&line)
-                .map_err(|e| self.wrap_error(format!("Tool '{}' 的 python 协议输出不是 JSON: {e}", tool.name)))?;
-            if message.get("kind").and_then(Value::as_str) == Some("host_request") {
-                let id = message.get("id").cloned().unwrap_or(Value::Null);
-                let method = message.get("method").and_then(Value::as_str).unwrap_or_default();
-                let reply = match method {
-                    "variables.get" => {
-                        let name = message.get("params").and_then(|value| value.get("name")).and_then(Value::as_str);
-                        match name.filter(|name| !name.trim().is_empty()) {
-                            Some(name) => match self.shared_runtime_values.lock() {
-                                Ok(values) => json!({"kind":"host_response", "id":id, "result":values.get(name).map(crate::graph::script_node::host_value_to_json).unwrap_or(Value::Null)}),
-                                Err(_) => json!({"kind":"host_response", "id":id, "error":"运行时变量存储不可用"}),
-                            },
-                            None => json!({"kind":"host_response", "id":id, "error":"variables.get 缺少 name"}),
-                        }
-                    }
-                    "variables.set" => {
-                        let name = message.get("params").and_then(|value| value.get("name")).and_then(Value::as_str);
-                        let value = message.get("params").and_then(|value| value.get("value"));
-                        match (name.filter(|name| !name.trim().is_empty()), value) {
-                            (Some(name), Some(value)) => match crate::graph::registry::json_to_data_value(value, &DataType::Any) {
-                                Some(value) => match self.shared_runtime_values.lock() {
-                                    Ok(mut values) => {
-                                        values.insert(name.to_string(), value);
-                                        json!({"kind":"host_response", "id":id, "result":true})
-                                    }
-                                    Err(_) => json!({"kind":"host_response", "id":id, "error":"运行时变量存储不可用"}),
-                                },
-                                None => json!({"kind":"host_response", "id":id, "error":"variables.set value 无效"}),
-                            },
-                            _ => json!({"kind":"host_response", "id":id, "error":"variables.set 缺少 name 或 value"}),
-                        }
-                    }
-                    "task.progress" => {
-                        let progress = message.get("params").and_then(|value| value.get("message")).and_then(Value::as_str);
-                        match (crate::task_context::current_task_id(), crate::command::global_task_runtime(), progress) {
-                            (Some(task_id), Some(runtime), Some(progress)) if !task_id.trim().is_empty() && !progress.trim().is_empty() => {
-                                runtime.append_task_progress(&task_id, progress.to_string());
-                                json!({"kind":"host_response", "id":id, "result":true})
-                            }
-                            _ => json!({"kind":"host_response", "id":id, "error":"任务运行时不可用"}),
-                        }
-                    }
-                    "task.append" => {
-                        let task_id = message
-                            .get("params")
-                            .and_then(|value| value.get("task_id"))
-                            .and_then(Value::as_str)
-                            .filter(|value| !value.trim().is_empty());
-                        let progress = message
-                            .get("params")
-                            .and_then(|value| value.get("message"))
-                            .and_then(Value::as_str)
-                            .filter(|value| !value.trim().is_empty());
-                        match (task_id, progress, crate::command::global_task_runtime()) {
-                            (Some(task_id), Some(progress), Some(runtime)) => {
-                                runtime.append_task_progress(task_id, progress.to_string());
-                                json!({"kind":"host_response", "id":id, "result":true})
-                            }
-                            _ => json!({"kind":"host_response", "id":id, "result":false}),
-                        }
-                    }
-                    _ => json!({"kind":"host_response", "id":id, "error":format!("不支持的 Python 宿主调用: {method}")}),
-                };
-                serde_json::to_writer(&mut stdin, &reply)?;
-                stdin.write_all(b"\n")?;
-                stdin.flush()?;
-                continue;
-            }
-            break Some(message);
+        let script_path = {
+            let path = std::path::PathBuf::from(&config.script_path);
+            if path.is_absolute() { path } else { workspace_root.join(path) }
         };
-        drop(stdin);
-        let output = child.wait_with_output().map_err(|e| self.wrap_error(format!("Tool '{}' 读取 python 输出失败: {e}", tool.name)))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(self.wrap_error(format!(
-                "Tool '{}' 的 python 进程退出失败: {}",
-                tool.name,
-                if stderr.is_empty() {
-                    "unknown error".to_string()
-                } else {
-                    stderr
+        let response = dynamic_script_engine::execute_python_script(
+            &workspace_root, &runtime_config, &script_path, &config.module_entry, config.timeout_secs, request,
+            &mut |method, params| match method {
+                "variables.get" => {
+                    let name = params.get("name").and_then(Value::as_str).filter(|name| !name.trim().is_empty()).ok_or_else(|| "variables.get 缺少 name".to_string())?;
+                    Ok(self.shared_runtime_values.lock().map_err(|_| "运行时变量存储不可用".to_string())?.get(name).map(crate::graph::script_node::host_value_to_json).unwrap_or(Value::Null))
                 }
-            )));
-        }
-
-        let response = response.ok_or_else(|| self.wrap_error(format!("Tool '{}' 未返回 python 响应", tool.name)))?;
+                "variables.set" => {
+                    let name = params.get("name").and_then(Value::as_str).filter(|name| !name.trim().is_empty()).ok_or_else(|| "variables.set 缺少 name".to_string())?;
+                    let value = params.get("value").ok_or_else(|| "variables.set 缺少 value".to_string())?;
+                    let value = crate::graph::registry::json_to_data_value(value, &DataType::Any).ok_or_else(|| "variables.set value 无效".to_string())?;
+                    self.shared_runtime_values.lock().map_err(|_| "运行时变量存储不可用".to_string())?.insert(name.to_string(), value);
+                    Ok(Value::Bool(true))
+                }
+                "task.progress" => {
+                    let progress = params.get("message").and_then(Value::as_str).filter(|value| !value.trim().is_empty()).ok_or_else(|| "task.progress 缺少 message".to_string())?;
+                    let task_id = crate::task_context::current_task_id().filter(|value| !value.trim().is_empty()).ok_or_else(|| "当前节点未关联任务".to_string())?;
+                    crate::command::global_task_runtime().ok_or_else(|| "任务运行时不可用".to_string())?.append_task_progress(&task_id, progress.to_string());
+                    Ok(Value::Bool(true))
+                }
+                "task.append" => {
+                    let task_id = params.get("task_id").and_then(Value::as_str).filter(|value| !value.trim().is_empty());
+                    let progress = params.get("message").and_then(Value::as_str).filter(|value| !value.trim().is_empty());
+                    Ok(Value::Bool(matches!((task_id, progress, crate::command::global_task_runtime()), (Some(task_id), Some(progress), Some(runtime)) if { runtime.append_task_progress(task_id, progress.to_string()); true })))
+                }
+                _ => Err(format!("不支持的 Python 宿主调用: {method}")),
+            },
+        ).map_err(|error| self.wrap_error(format!("Tool '{}' Python 执行失败: {error}", tool.name)))?;
         let payload = response.get("response").cloned().unwrap_or(response);
         serde_json::to_string(&payload).map_err(|e| self.wrap_error(format!("Tool '{}' 序列化 python 响应失败: {e}", tool.name)))
-    }
-}
-
-fn resolve_path(root: &Path, raw: &str) -> PathBuf {
-    let path = PathBuf::from(raw);
-    if path.is_absolute() {
-        path
-    } else {
-        root.join(path)
     }
 }

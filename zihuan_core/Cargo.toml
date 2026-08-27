@@ -24,6 +24,7 @@ async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 node_macros = { path = "../node_macros" }
+dynamic_script_engine = { path = "../dynamic_script_engine" }
 general_wheel_cpp = { path = "../general_wheel_cpp" }
 async-recursion = "1"
 futures-util = "0.3"

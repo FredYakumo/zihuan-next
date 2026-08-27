@@ -1,11 +1,8 @@
 use std::collections::HashMap;
 use std::cell::RefCell;
-use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdin, ChildStdout, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use once_cell::sync::Lazy;
 use tokio::task::block_in_place;
 
 use serde::Deserialize;
@@ -13,8 +10,7 @@ use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
 use crate::graph::data_value::{LLMMessageSessionCacheRef, SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT};
-use crate::node_runtime::NodeRuntimeConfig;
-use crate::node_runtime_resolver::resolve_node_runtime;
+use dynamic_script_engine::{NodeRuntimeConfig, ScriptLanguage};
 
 use super::registry::{NodeFactory, NodeRegistry};
 use super::{DataValue, Node, NodeConfigField, NodeConfigFlow, NodeInputFlow, NodeOutputFlow, Port, RuntimeVariableStore};
@@ -23,7 +19,6 @@ thread_local! {
     static SCRIPT_RESOURCES: RefCell<ScriptResourceStore> = RefCell::new(ScriptResourceStore::default());
 }
 
-static DYNAMIC_SCRIPT_RUNTIME: Lazy<Mutex<Option<DynamicScriptRuntime>>> = Lazy::new(|| Mutex::new(None));
 
 #[derive(Default)]
 struct ScriptResourceStore {
@@ -43,37 +38,47 @@ pub fn with_dynamic_script_resources<T>(operation: impl FnOnce() -> T) -> T {
 /// The worker owns a line-oriented stdin/stdout protocol, so requests are
 /// serialized through a mutex while the process itself remains alive.
 pub fn start_dynamic_script_runtime() -> Result<()> {
-    let mut slot = DYNAMIC_SCRIPT_RUNTIME
-        .lock()
-        .map_err(|_| Error::ValidationError("动态脚本运行时互斥锁不可用".to_string()))?;
-    ensure_dynamic_script_runtime(&mut slot)
+    let workspace_root = std::env::current_dir()
+        .map_err(|error| Error::ValidationError(error.to_string()))?;
+    let config = crate::config::ConfigCenter::shared().load_root()?;
+    let catalog = dynamic_script_engine::load_script_catalog(
+        &workspace_root,
+        &config.node_runtime,
+        &config.python_runtime,
+    )
+    .map_err(|error| Error::ValidationError(error.to_string()))?;
+    for diagnostic in catalog.diagnostics {
+        log::warn!("dynamic script {:?}: {}", diagnostic.language, diagnostic.message);
+    }
+    for language in catalog
+        .nodes
+        .iter()
+        .filter_map(|node| node.get("language").cloned())
+        .filter_map(|language| serde_json::from_value::<ScriptLanguage>(language).ok())
+        .collect::<std::collections::HashSet<_>>()
+    {
+        dynamic_script_engine::start_script_runtime(
+            &workspace_root,
+            language,
+            &config.node_runtime,
+            &config.python_runtime,
+        )
+        .map_err(|error| Error::ValidationError(error.to_string()))?;
+    }
+    Ok(())
 }
 
 fn request_dynamic_script_runtime(
+    language: ScriptLanguage,
     request: &Value,
     host: &mut dyn FnMut(&str, &Value) -> Result<Value>,
 ) -> Result<Value> {
-    let mut slot = DYNAMIC_SCRIPT_RUNTIME
-        .lock()
-        .map_err(|_| Error::ValidationError("动态脚本运行时互斥锁不可用".to_string()))?;
-    ensure_dynamic_script_runtime(&mut slot)?;
-
-    let result = slot.as_mut().expect("worker is initialized").request(request, host);
-    if result.is_err() {
-        *slot = None;
-    }
-    result
-}
-
-fn ensure_dynamic_script_runtime(slot: &mut Option<DynamicScriptRuntime>) -> Result<()> {
-    let needs_restart = match slot.as_mut() {
-        Some(worker) => !worker.is_running()?,
-        None => true,
-    };
-    if needs_restart {
-        *slot = Some(DynamicScriptRuntime::start()?);
-    }
-    Ok(())
+    let workspace_root = std::env::current_dir()
+        .map_err(|error| Error::ValidationError(error.to_string()))?;
+    let config = crate::config::ConfigCenter::shared().load_root()?;
+    dynamic_script_engine::request_script_runtime(&workspace_root, language, &config.node_runtime, &config.python_runtime, request, &mut |method, params| {
+        host(method, params).map_err(|error| error.to_string())
+    }).map_err(|error| Error::ValidationError(error.to_string()))
 }
 
 fn is_opaque_script_resource(value: &DataValue) -> bool {
@@ -289,68 +294,9 @@ fn required_string(params: &Value, name: &str) -> Result<String> {
         .ok_or_else(|| Error::ValidationError(format!("{name} is required")))
 }
 
-struct DynamicScriptRuntime {
-    child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
-}
-
-impl DynamicScriptRuntime {
-    fn start() -> Result<Self> {
-        let workspace_root = std::env::current_dir().map_err(|error| Error::ValidationError(error.to_string()))?;
-        let runtime = crate::config::ConfigCenter::shared().load_root()?.node_runtime;
-        let command_spec = resolve_node_runtime(&workspace_root, &runtime)?;
-        let mut child = command_spec.to_command()
-            .arg(workspace_root.join("dynamic_script_engine").join("engine.mjs"))
-            .arg("--serve")
-            .current_dir(workspace_root.join("dynamic_script_engine"))
-            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
-        Ok(Self {
-            stdin: child.stdin.take().ok_or_else(|| Error::ValidationError("无法打开动态脚本运行时 stdin".to_string()))?,
-            stdout: BufReader::new(child.stdout.take().ok_or_else(|| Error::ValidationError("无法打开动态脚本运行时 stdout".to_string()))?),
-            child,
-        })
-    }
-
-    fn request(
-        &mut self,
-        request: &Value,
-        host: &mut dyn FnMut(&str, &Value) -> Result<Value>,
-    ) -> Result<Value> {
-        serde_json::to_writer(&mut self.stdin, request)?;
-        self.stdin.write_all(b"\n")?;
-        self.stdin.flush()?;
-        loop {
-            let mut line = String::new();
-            if self.stdout.read_line(&mut line)? == 0 {
-                return Err(Error::ValidationError("动态脚本运行时在响应前退出".to_string()));
-            }
-            let response: Value = serde_json::from_str(&line)
-                .map_err(|error| Error::ValidationError(format!("动态脚本运行时响应无效: {error}")))?;
-            if response.get("kind").and_then(Value::as_str) == Some("host_request") {
-                let id = response.get("id").cloned().unwrap_or(Value::Null);
-                let method = response.get("method").and_then(Value::as_str).unwrap_or_default();
-                let params = response.get("params").unwrap_or(&Value::Null);
-                let reply = match host(method, params) {
-                    Ok(result) => json!({"kind":"host_response", "id": id, "result": result}),
-                    Err(error) => json!({"kind":"host_response", "id": id, "error": error.to_string()}),
-                };
-                serde_json::to_writer(&mut self.stdin, &reply)?;
-                self.stdin.write_all(b"\n")?;
-                self.stdin.flush()?;
-                continue;
-            }
-            return Ok(response);
-        }
-    }
-
-    fn is_running(&mut self) -> Result<bool> {
-        Ok(self.child.try_wait()?.is_none())
-    }
-}
-
 #[derive(Debug, Clone, Deserialize)]
-pub struct ScriptNodeDefinition {
+pub struct DynamicScriptNodeDefinition {
+    pub language: ScriptLanguage,
     pub type_id: String,
     pub display_name: String,
     pub category: String,
@@ -369,28 +315,19 @@ pub struct ScriptNodeDefinition {
 }
 
 #[derive(Debug, Deserialize)]
-struct ScriptNodePorts {
+struct DynamicScriptNodePorts {
     input_ports: Vec<Port>,
     output_ports: Vec<Port>,
 }
 
-pub fn load_script_catalog(workspace_root: &Path, config: &NodeRuntimeConfig) -> Result<Vec<ScriptNodeDefinition>> {
-    let command_spec = resolve_node_runtime(workspace_root, config)?;
-    let worker = workspace_root.join("dynamic_script_engine").join("engine.mjs");
-    let output = command_spec
-        .to_command()
-        .arg(worker)
-        .arg("--catalog")
-        .current_dir(workspace_root.join("dynamic_script_engine"))
-        .output()
-        .map_err(|error| Error::ValidationError(format!("无法启动动态脚本运行时目录读取器: {error}")))?;
-    if !output.status.success() {
-        return Err(Error::ValidationError(format!(
-            "加载动态脚本运行时目录失败: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
+pub fn load_script_catalog(workspace_root: &Path, config: &NodeRuntimeConfig) -> Result<Vec<DynamicScriptNodeDefinition>> {
+    let python = crate::config::ConfigCenter::shared().load_root()?.python_runtime;
+    let catalog = dynamic_script_engine::load_script_catalog(workspace_root, config, &python)
+        .map_err(|error| Error::ValidationError(error.to_string()))?;
+    for diagnostic in catalog.diagnostics {
+        log::warn!("dynamic script {:?}: {}", diagnostic.language, diagnostic.message);
     }
-    let definitions: Vec<ScriptNodeDefinition> = serde_json::from_slice(&output.stdout)
+    let definitions: Vec<DynamicScriptNodeDefinition> = serde_json::from_value(Value::Array(catalog.nodes))
         .map_err(|error| Error::ValidationError(format!("动态脚本运行时目录不是合法 JSON: {error}")))?;
     let mut ids = std::collections::HashSet::new();
     for definition in &definitions {
@@ -405,7 +342,7 @@ pub fn register_script_catalog(registry: &NodeRegistry, workspace_root: &Path, c
     for definition in load_script_catalog(workspace_root, config)? {
         let factory_definition = definition.clone();
         let factory: NodeFactory = Arc::new(move |id, name| {
-            Box::new(ScriptNode::new(id, name, factory_definition.clone()))
+            Box::new(DynamicScriptNode::new(id, name, factory_definition.clone()))
         });
         registry.register(
             definition.type_id,
@@ -418,50 +355,29 @@ pub fn register_script_catalog(registry: &NodeRegistry, workspace_root: &Path, c
     Ok(())
 }
 
-fn resolve_script_ports(type_id: &str, inline_values: &HashMap<String, Value>) -> Result<ScriptNodePorts> {
+fn resolve_script_ports(language: ScriptLanguage, type_id: &str, inline_values: &HashMap<String, Value>) -> Result<DynamicScriptNodePorts> {
     let workspace_root = std::env::current_dir()
         .map_err(|error| Error::ValidationError(format!("无法获取动态脚本运行时工作目录: {error}")))?;
-    let runtime = crate::config::ConfigCenter::shared().load_root()?.node_runtime;
-    let command_spec = resolve_node_runtime(&workspace_root, &runtime)?;
-    let mut child = command_spec
-        .to_command()
-        .arg(workspace_root.join("dynamic_script_engine").join("engine.mjs"))
-        .arg("--ports")
-        .current_dir(workspace_root.join("dynamic_script_engine"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| Error::ValidationError(format!("无法启动动态脚本运行时端口解析器: {error}")))?;
+    let runtime = crate::config::ConfigCenter::shared().load_root()?;
     let request = json!({ "type_id": type_id, "inline_values": inline_values });
-    serde_json::to_writer(
-        child.stdin.as_mut().ok_or_else(|| Error::ValidationError("无法打开动态脚本运行时端口解析器 stdin".to_string()))?,
-        &request,
-    )?;
-    let output = child.wait_with_output()?;
-    if !output.status.success() {
-        return Err(Error::ValidationError(format!(
-            "解析动态脚本节点 '{}' 的动态端口失败: {}",
-            type_id,
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    serde_json::from_slice(&output.stdout)
+    let response = dynamic_script_engine::resolve_script_ports(&workspace_root, language, &runtime.node_runtime, &runtime.python_runtime, &request)
+        .map_err(|error| Error::ValidationError(format!("解析动态脚本节点 '{type_id}' 的动态端口失败: {error}")))?;
+    serde_json::from_value(response)
         .map_err(|error| Error::ValidationError(format!("动态脚本节点 '{}' 的端口响应无效: {error}", type_id)))
 }
 
-struct ScriptNode {
+struct DynamicScriptNode {
     id: String,
     name: String,
-    definition: ScriptNodeDefinition,
+    definition: DynamicScriptNodeDefinition,
     inline_values: HashMap<String, Value>,
     input_ports: Vec<Port>,
     output_ports: Vec<Port>,
     runtime_variables: Option<RuntimeVariableStore>,
 }
 
-impl ScriptNode {
-    fn new(id: String, name: String, definition: ScriptNodeDefinition) -> Self {
+impl DynamicScriptNode {
+    fn new(id: String, name: String, definition: DynamicScriptNodeDefinition) -> Self {
         Self {
             id,
             name,
@@ -474,7 +390,7 @@ impl ScriptNode {
     }
 }
 
-impl Node for ScriptNode {
+impl Node for DynamicScriptNode {
     fn id(&self) -> &str { &self.id }
     fn name(&self) -> &str { &self.name }
     fn description(&self) -> Option<&str> { Some(&self.definition.description) }
@@ -487,7 +403,7 @@ impl Node for ScriptNode {
     fn apply_inline_config(&mut self, values: &NodeConfigFlow) -> Result<()> {
         self.inline_values = values.iter().map(|(name, value)| (name.clone(), value.to_json())).collect();
         if self.definition.dynamic_input_ports || self.definition.dynamic_output_ports {
-            let ports = resolve_script_ports(&self.definition.type_id, &self.inline_values)?;
+            let ports = resolve_script_ports(self.definition.language, &self.definition.type_id, &self.inline_values)?;
             self.input_ports = ports.input_ports;
             self.output_ports = ports.output_ports;
         }
@@ -508,7 +424,7 @@ impl Node for ScriptNode {
             "inputs": inputs.iter().map(|(name, value)| (name.clone(), script_value_to_json(value))).collect::<serde_json::Map<_, _>>(),
         });
         let variables = self.runtime_variables.clone();
-        let response = request_dynamic_script_runtime(&request, &mut |method, params| {
+        let response = request_dynamic_script_runtime(self.definition.language, &request, &mut |method, params| {
                 match method {
                     "variables.get" => {
                         let name = params.get("name").and_then(Value::as_str)

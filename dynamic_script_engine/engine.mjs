@@ -41,16 +41,19 @@ async function nodeModuleFiles(directory) {
  */
 async function loadNodes() {
     const catalog = [];
+    const diagnostics = [];
     for (const file of await nodeModuleFiles(nodeDirectory)) {
         let module;
         try {
             module = await import(pathToFileURL(file).href);
         } catch (error) {
-            throw new Error(`failed to load DAG node module ${path.relative(nodeDirectory, file)}: ${error.message}`);
+            diagnostics.push({ language: "javascript", message: `failed to load ${path.relative(nodeDirectory, file)}: ${error.message}` });
+            continue;
         }
         if (module.nodes === undefined) continue;
         if (!Array.isArray(module.nodes)) {
-            throw new Error(`DAG node module ${path.relative(nodeDirectory, file)} must export a nodes array`);
+            diagnostics.push({ language: "javascript", message: `${path.relative(nodeDirectory, file)} must export a nodes array` });
+            continue;
         }
         catalog.push(...module.nodes);
     }
@@ -62,7 +65,7 @@ async function loadNodes() {
         if (seen.has(node.type_id)) throw new Error(`duplicate DAG node type_id: ${node.type_id}`);
         seen.add(node.type_id);
     }
-    return catalog;
+    return { nodes: catalog, diagnostics };
 }
 
 /**
@@ -100,7 +103,7 @@ function executionContext(request) {
     };
 }
 
-const nodes = await loadNodes();
+const { nodes, diagnostics } = await loadNodes();
 const nodeByType = new Map(nodes.map((node) => [node.type_id, node]));
 
 /**
@@ -122,7 +125,7 @@ function resolvedPorts(node, inlineValues) {
 }
 
 if (argument === "--catalog") {
-    process.stdout.write(JSON.stringify(nodes.map(({ execute, ...definition }) => definition)));
+    process.stdout.write(JSON.stringify({ nodes: nodes.map(({ execute, ...definition }) => definition), diagnostics }));
 } else if (argument === "--ports") {
     const request = JSON.parse(fs.readFileSync(0, "utf8"));
     const node = nodeByType.get(request.type_id);

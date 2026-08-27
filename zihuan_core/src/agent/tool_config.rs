@@ -33,7 +33,7 @@ pub struct PythonScriptAgentToolConfig {
     #[serde(default)]
     pub python_mode: Option<crate::graph::tool_spec::PythonToolMode>,
     #[serde(default)]
-    pub python_runtime: Option<crate::python_runtime::PythonRuntimeConfig>,
+    pub python_runtime: Option<dynamic_script_engine::PythonRuntimeConfig>,
     #[serde(default)]
     pub timeout_secs: Option<u64>,
     #[serde(default)]
