@@ -26,8 +26,8 @@ use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken, To
 use zihuan_core::message_part::MessagePart;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
-use zihuan_workspace_agent::api::workspace_changes;
-use zihuan_workspace_agent::task_tracking::{delete_workspace_tasks, load_workspace_tasks};
+use zihuan_workspace_service::api::workspace_changes;
+use zihuan_workspace_service::task_tracking::{delete_workspace_tasks, load_workspace_tasks};
 
 use crate::api::state::{RunningChatMessage, RunningChatToolCall, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};

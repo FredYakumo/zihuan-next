@@ -368,8 +368,8 @@ fn build_tool_calling_engine(
                 shared_runtime_values: Arc::new(Mutex::new(HashMap::new())),
                 qq_chat_agent: None,
                 result_mode: ToolResultMode::JsonObject,
-                builtin_executor: Some(zihuan_ims_agent::qq_tool_subgraph_hooks::image_understand_executor()),
-                progress_notifier: Some(zihuan_ims_agent::qq_tool_subgraph_hooks::qq_progress_notifier()),
+                builtin_executor: Some(zihuan_ims_service::qq_tool_subgraph_hooks::image_understand_executor()),
+                progress_notifier: Some(zihuan_ims_service::qq_tool_subgraph_hooks::qq_progress_notifier()),
             },
         });
     }

@@ -24,8 +24,8 @@ salvo = { version = "0.75", features = ["websocket", "affix-state", "serve-stati
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 
 zihuan_core = { path = "../zihuan_core" }
-zihuan_workspace_agent = { path = "../zihuan_workspace_agent" }
-zihuan_ims_agent = { path = "../zihuan_ims_agent" }
+zihuan_workspace_service = { path = "../zihuan_workspace_service" }
+zihuan_ims_service = { path = "../zihuan_ims_service" }
 general_wheel_cpp = { path = "../general_wheel_cpp" }
 base64 = "0.22"
 async-trait = "0.1"

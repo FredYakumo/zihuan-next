@@ -1,5 +1,5 @@
 [package]
-name = "zihuan_ims_agent"
+name = "zihuan_ims_service"
 version = "0.1.0"
 edition = "2021"
 

@@ -214,7 +214,7 @@ impl RoleServiceManager {
                             },
                         );
                     });
-                    let task = zihuan_ims_agent::qq_chat::spawn(
+                    let task = zihuan_ims_service::qq_chat::spawn(
                         agent.clone(),
                         config.clone(),
                         connections,
@@ -339,9 +339,9 @@ pub fn build_role_tool_provider(
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     match &agent.role_service_type {
-        RoleServiceType::QqChat(config) => zihuan_ims_agent::qq_chat::load_inference_tool_provider(agent, config, connections),
+        RoleServiceType::QqChat(config) => zihuan_ims_service::qq_chat::load_inference_tool_provider(agent, config, connections),
         RoleServiceType::Workspace(config) => {
-            zihuan_workspace_agent::workspace_agent_service::load_inference_tool_provider(agent, config, connections)
+            zihuan_workspace_service::workspace_agent_service::load_inference_tool_provider(agent, config, connections)
         }
     }
 }

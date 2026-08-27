@@ -24,10 +24,10 @@ use zihuan_core::task_context::{
 };
 
 use log::{info, warn};
-use zihuan_ims_agent::qq_chat::ignore_store::{
+use zihuan_ims_service::qq_chat::ignore_store::{
     create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule, QqChatAgentServiceIgnoreRuleUpsert,
 };
-use zihuan_ims_agent::qq_chat::privilege_store::{delete_all_notifications, list_recent_notifications};
+use zihuan_ims_service::qq_chat::privilege_store::{delete_all_notifications, list_recent_notifications};
 
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};

@@ -20,7 +20,7 @@ use zihuan_core::storage::{
     WeaviateCollectionSchema,
 };
 use zihuan_core::data_refs::RelationalDbConnection;
-use zihuan_ims_agent::qq_chat::{list_message_rate_limit_usage, reset_message_rate_limit_usage};
+use zihuan_ims_service::qq_chat::{list_message_rate_limit_usage, reset_message_rate_limit_usage};
 
 use super::config::{render_bad_request, render_internal_error};
 
