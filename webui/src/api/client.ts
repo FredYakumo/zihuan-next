@@ -771,12 +771,19 @@ export const system = {
     },
   },
   subagents: {
+    list(availableToolIds: string[] = []): Promise<SubAgentDefinition[]> {
+      const query = availableToolIds.length ? `?available_tool_ids=${encodeURIComponent(availableToolIds.join(","))}` : "";
+      return request("GET", `/system/subagents${query}`);
+    },
     get(id: string, availableToolIds: string[] = []): Promise<SubAgentDefinition> {
       const query = availableToolIds.length ? `?available_tool_ids=${encodeURIComponent(availableToolIds.join(","))}` : "";
       return request("GET", `/system/subagents/${encodeURIComponent(id)}${query}`);
     },
     save(id: string, definition: SubAgentDefinition, availableToolIds: string[] = []): Promise<SubAgentDefinition> {
       return request("PUT", `/system/subagents/${encodeURIComponent(id)}`, { definition, available_tool_ids: availableToolIds });
+    },
+    remove(id: string): Promise<{ ok: boolean }> {
+      return request("DELETE", `/system/subagents/${encodeURIComponent(id)}`);
     },
   },
   browseWorkspaceDirectories(path?: string): Promise<WorkspaceDirectoryBrowser> {

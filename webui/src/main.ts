@@ -9,7 +9,8 @@ import Dashboard from "./admin/view/Dashboard.vue";
 import Connections from "./admin/view/Connections.vue";
 import ConnectionManager from "./admin/view/ConnectionManager.vue";
 import Llm from "./admin/view/Llm.vue";
-import RoleService from "./admin/view/AgentService.vue";
+import AgentConfig from "./admin/view/AgentConfig.vue";
+import RoleService from "./admin/view/RoleService.vue";
 import Graphs from "./admin/view/Graphs.vue";
 import Tasks from "./admin/view/Tasks.vue";
 import ScheduledTasks from "./admin/view/ScheduledTasks.vue";
@@ -47,6 +48,7 @@ async function main() {
       { path: "/connections", component: Connections },
       { path: "/connection-manager", component: ConnectionManager },
       { path: "/llm", component: Llm },
+      { path: "/agent-config", component: AgentConfig },
       { path: "/services", component: RoleService },
       { path: "/graphs", component: Graphs },
       { path: "/tasks", component: Tasks },

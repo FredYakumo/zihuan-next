@@ -14,6 +14,7 @@
         <t-menu-item value="/chat" to="/chat" @click="closeSidebar"><template #icon><ChatIcon /></template>对话</t-menu-item>
         <t-menu-item value="/connections" to="/connections" @click="closeSidebar"><template #icon><LinkIcon /></template>连接配置</t-menu-item>
         <t-menu-item value="/llm" to="/llm" @click="closeSidebar"><template #icon><MindMapIcon /></template>模型配置</t-menu-item>
+        <t-menu-item value="/agent-config" to="/agent-config" @click="closeSidebar"><template #icon><MindMapIcon /></template>Agent 配置</t-menu-item>
         <t-menu-item value="/services" to="/services" @click="closeSidebar"><template #icon><ServerIcon /></template>Service 管理</t-menu-item>
         <t-menu-item value="/graphs" to="/graphs" @click="closeSidebar"><template #icon><SitemapIcon /></template>节点图与工作流</t-menu-item>
         <t-menu-item value="/tasks" to="/tasks" @click="closeSidebar"><template #icon><TaskIcon /></template>任务管理器</t-menu-item>
