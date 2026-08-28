@@ -12,6 +12,7 @@ pub mod brain_agent;
 pub mod runtime_context;
 pub mod service_config;
 pub mod sub_agent;
+pub mod sub_agent_manager;
 pub mod tool_config;
 
 pub fn normalize_llm_kind(llm_kind: Option<&str>) -> crate::error::Result<&'static str> {

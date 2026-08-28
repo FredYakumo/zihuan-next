@@ -64,7 +64,7 @@ async fn main() {
 
     let args = Args::parse();
 
-    if let Err(error) = zihuan_core::agent::sub_agent::bootstrap_default_subagents() {
+    if let Err(error) = zihuan_core::agent::sub_agent_manager::ensure_default_subagents() {
         error!("Failed to initialize default SubAgents: {error}");
     }
 
