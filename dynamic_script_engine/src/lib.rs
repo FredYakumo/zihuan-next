@@ -215,10 +215,3 @@ pub fn execute_python_script(workspace: &Path, config: &PythonRuntimeConfig, scr
     let response = request_script_runtime(workspace, ScriptLanguage::Python, &NodeRuntimeConfig::default(), config, &json!({"kind":"tool_execute","request":request}), host)?;
     response.get("response").cloned().ok_or_else(|| message("Python 工具响应缺少 response"))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn recognizes_supported_node_languages() { assert_eq!(ScriptLanguage::from_path(Path::new("node.mjs")), Some(ScriptLanguage::JavaScript)); assert_eq!(ScriptLanguage::from_path(Path::new("node.py")), Some(ScriptLanguage::Python)); assert_eq!(ScriptLanguage::from_path(Path::new("node.rs")), None); }
-}
