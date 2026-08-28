@@ -5,7 +5,7 @@ use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::model_inference::llm::llm_base::LLMBase;
 
 use crate::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use crate::model_inference::nodes::llm_node::build_llm;
+use crate::model_inference::model_factory::build_llm;
 use crate::config::llm_refs::load_llm_refs;
 use crate::model_inference::model_config::ModelRefSpec;
 

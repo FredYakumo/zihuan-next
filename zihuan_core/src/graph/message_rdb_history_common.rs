@@ -210,6 +210,52 @@ pub(crate) fn format_history_messages(mut records: Vec<MessageHistoryRecord>) ->
     messages
 }
 
+pub fn load_group_history(mysql: &Arc<MySqlConfig>, group_id: String, limit: u32) -> Result<Vec<String>> {
+    let rows = run_mysql_query(mysql, move |pool| {
+        Box::pin(async move {
+            sqlx::query(group_history_query())
+                .bind(group_id)
+                .bind(history_query_row_limit(limit))
+                .fetch_all(pool)
+                .await
+        })
+    })?;
+    Ok(format_history_messages(aggregate_history_rows(
+        rows.into_iter().map(message_history_chunk_row_from_row).collect(),
+        limit as usize,
+    )))
+}
+
+pub fn load_user_history(
+    mysql: &Arc<MySqlConfig>,
+    sender_id: String,
+    group_id: Option<String>,
+    limit: u32,
+) -> Result<Vec<String>> {
+    let rows = run_mysql_query(mysql, move |pool| {
+        Box::pin(async move {
+            if let Some(group_id) = group_id {
+                sqlx::query(user_history_query(Some(&group_id)))
+                    .bind(sender_id)
+                    .bind(group_id)
+                    .bind(history_query_row_limit(limit))
+                    .fetch_all(pool)
+                    .await
+            } else {
+                sqlx::query(user_history_query(None))
+                    .bind(sender_id)
+                    .bind(history_query_row_limit(limit))
+                    .fetch_all(pool)
+                    .await
+            }
+        })
+    })?;
+    Ok(format_history_messages(aggregate_history_rows(
+        rows.into_iter().map(message_history_chunk_row_from_row).collect(),
+        limit as usize,
+    )))
+}
+
 pub(crate) struct SearchMessagesQueryBuilder {
     pub sender_id: Option<String>,
     pub group_id: Option<String>,

@@ -6,7 +6,7 @@ use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceTool
 use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType, WorkspaceAgentServiceConfig};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage, MessageRole};
-use zihuan_workspace_agent::workspace_agent_service::load_inference_tool_provider;
+use zihuan_workspace_service::workspace_agent_service::load_inference_tool_provider;
 
 static ENV_MUTEX: Mutex<()> = Mutex::new(());
 

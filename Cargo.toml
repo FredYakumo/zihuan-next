@@ -5,8 +5,8 @@ members = [
     "general_wheel_cpp",
     "zihuan_core",
     "zihuan_service",
-    "zihuan_workspace_agent",
-    "zihuan_ims_agent",
+    "zihuan_workspace_service",
+    "zihuan_ims_service",
     "zihuan_cli",
 ]
 default-members = ["zihuan_service", "zihuan_cli"]

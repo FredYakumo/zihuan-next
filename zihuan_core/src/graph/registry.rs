@@ -275,8 +275,13 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
             .collect::<Option<Vec<_>>>()
             .map(DataValue::Vector),
 
-        // Single LLMMessage from a JSON object: {"role": "user", "content": "..."}
+        // Prefer the canonical serialized message so scripts preserve tool calls, usage and media.
         (Value::Object(map), DataType::LLMMessage) => {
+            if let Ok(message) = serde_json::from_value::<crate::model_inference::llm::LLMMessage>(json.clone()) {
+                return Some(DataValue::LLMMessage(message));
+            }
+
+            // Compatibility with concise script input: {"role": "user", "content": "..."}.
             fn parse_role(v: &Value) -> crate::model_inference::llm::MessageRole {
                 let s = v.as_str().unwrap_or("user").to_ascii_lowercase();
                 match s.as_str() {
@@ -321,12 +326,43 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 .map(DataValue::Sender)
         }
 
+        (_, DataType::MessageEvent) => {
+            serde_json::from_value::<crate::ims_bot_adapter::models::event_model::MessageEvent>(json.clone())
+                .ok()
+                .map(DataValue::MessageEvent)
+        }
+
         // Single QQ Message from a JSON object: {"type": "text", "data": {"text": "..."}}
         (_, DataType::QQMessage) => {
             serde_json::from_value::<crate::ims_bot_adapter::models::message::Message>(json.clone())
                 .ok()
                 .map(DataValue::QQMessage)
         }
+
+        (_, DataType::MessagePart) => {
+            if let Ok(part) = serde_json::from_value::<crate::model_inference::llm::MessagePart>(json.clone()) {
+                return Some(DataValue::MessagePart(part));
+            }
+            let part_type = json.get("type").and_then(Value::as_str)?;
+            let url = json
+                .pointer("/media/original_source")
+                .or_else(|| json.get("url"))
+                .and_then(Value::as_str)?;
+            match part_type {
+                "image" => Some(DataValue::MessagePart(crate::model_inference::llm::MessagePart::image_url_string(url))),
+                "video" => Some(DataValue::MessagePart(crate::model_inference::llm::MessagePart::video_url_string(url))),
+                "text" => json.get("text").and_then(Value::as_str)
+                    .map(crate::model_inference::llm::MessagePart::text)
+                    .map(DataValue::MessagePart),
+                _ => None,
+            }
+        }
+
+        (Value::Array(bytes), DataType::Binary) => bytes
+            .iter()
+            .map(|byte| byte.as_u64().filter(|byte| *byte <= u8::MAX as u64).map(|byte| byte as u8))
+            .collect::<Option<Vec<_>>>()
+            .map(DataValue::Binary),
 
         // Single Image payload from a JSON object.
         (_, DataType::Image) => serde_json::from_value::<crate::graph::data_value::ImageData>(json.clone())
@@ -358,40 +394,9 @@ fn infer_any_data_value(json: &Value) -> Option<DataValue> {
 /// in-crate tests that need the registry populated.
 pub fn init_node_registry() -> crate::error::Result<()> {
     use crate::graph::util::{
-        AndThenNode, AnyOfNode, ArrayGetNode, AtQQTargetMessageNode, BinaryToImageMessagePartNode, BooleanBranchNode,
-        BooleanNotNode, BuildMultimodalUserMessageNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode,
-        CurrentTimeNode, FormatStringNode, FunctionInputsNode, FunctionNode, FunctionOutputsNode, GraphInputsNode,
-        GraphOutputsNode, JoinStringNode, JsonExtractNode, JsonParserNode, JsonToQQMessageVecNode,
-        LLMMessageContentAsJsonNode, LLMMessageSessionCacheClearNode, LLMMessageSessionCacheGetNode,
-        LLMMessageSessionCacheNode, LLMMessageSessionCacheSetNode, LLMMessageToStringNode, MessageContentNode,
-        MessageListDataNode, PreviewMessageListNode, PreviewQQMessageListNode, PreviewStringNode, PushBackVecNode,
-        QQMessageListDataNode, QQMessageToImageNode, SessionStateClearNode, SessionStateGetNode,
-        SessionStateReleaseNode, SessionStateTryClaimNode, SetVariableNode, StackNode, StringDataNode,
-        StringIsNotEmptyNode, StringToImageMessagePartNode, StringToLLMMessageNode, StringToPlainTextNode, SwitchNode,
-        ToolResultNode,
+        FunctionInputsNode, FunctionNode, FunctionOutputsNode, GraphInputsNode, GraphOutputsNode,
     };
 
-    register_node!(
-        "and_then",
-        "And Then",
-        "工具",
-        "等待两个输入都到齐后，原样透传第二个输入",
-        AndThenNode
-    );
-    register_node!(
-        "any_of",
-        "Any Of",
-        "工具",
-        "任意一个输入到齐后就原样透传该输入，适用于多个输入中只需要一个到齐即可继续执行的场景",
-        AnyOfNode
-    );
-    register_node!(
-        "format_string",
-        "格式化字符串",
-        "工具",
-        "通过 ${变量名} 模板语法将输入变量格式化为字符串",
-        FormatStringNode
-    );
     register_node!(
         "function",
         "函数",
@@ -427,283 +432,6 @@ pub fn init_node_registry() -> crate::error::Result<()> {
         "主节点图内部边界节点，汇总主图结果作为返回值",
         GraphOutputsNode
     );
-    register_node!("conditional", "条件分支", "工具", "根据条件选择不同的输出分支", ConditionalNode);
-    register_node!(
-        "conditional_router",
-        "变量分拣器",
-        "工具",
-        "按布尔条件在两路输入间选择一路输出，适合循环状态切换",
-        ConditionalRouterNode
-    );
-    register_node!(
-        "switch_gate",
-        "开关器",
-        "工具",
-        "当 enabled 为 true 时透传输入，否则阻断后续数据流",
-        SwitchNode
-    );
-    register_node!(
-        "set_variable",
-        "设置变量",
-        "工具",
-        "将输入值写入运行期节点图变量，变量会在每次重新运行时回到初始值",
-        SetVariableNode
-    );
-    register_node!(
-        "boolean_branch",
-        "布尔分路",
-        "工具",
-        "根据 condition 将 input 送到 true 或 false 分支，未选中的分支不会输出",
-        BooleanBranchNode
-    );
-    register_node!("boolean_not", "布尔取反", "工具", "对输入的 Boolean 值取反", BooleanNotNode);
-    register_node!(
-        "array_get",
-        "列表取元素",
-        "工具",
-        "从列表中按下标取元素，支持负数下标（-1为最后一个）",
-        ArrayGetNode
-    );
-    register_node!("stack", "封装元素为数组", "工具", "将单个元素封装为单元素 List", StackNode);
-    register_node!(
-        "concat_vec",
-        "拼接两个列表",
-        "工具",
-        "将 vec2 拼接到 vec1 后面，要求两个列表的元素类型一致",
-        ConcatVecNode
-    );
-    register_node!(
-        "join_string",
-        "拼接字符串列表",
-        "工具",
-        "使用分隔符将 Vec<String> 拼接为单个字符串",
-        JoinStringNode
-    );
-    register_node!(
-        "push_back_vec",
-        "列表尾部追加元素",
-        "工具",
-        "将单个元素追加到列表末尾，要求元素类型与列表元素类型一致",
-        PushBackVecNode
-    );
-    register_node!(
-        "json_parser",
-        "JSON解析器",
-        "工具",
-        "将JSON字符串解析为结构化数据",
-        JsonParserNode
-    );
-    register_node!(
-        "json_extract",
-        "提取 JSON 字段",
-        "工具",
-        "通过字段编辑器配置要提取的字段列表，并动态输出对应类型的字段值",
-        JsonExtractNode
-    );
-    register_node!(
-        "message_content",
-        "提取 LLMMessage 内容",
-        "消息",
-        "从 LLMMessage 中提取 content 字段，以字符串形式输出",
-        MessageContentNode
-    );
-    register_node!(
-        "string_to_llm_message",
-        "字符串转 LLMMessage",
-        "消息",
-        "将字符串封装为可选 role 的 LLMMessage",
-        StringToLLMMessageNode
-    );
-    register_node!(
-        "llm_message_content_as_json",
-        "LLMMessage内容转JSON",
-        "消息",
-        "将 LLMMessage 的 content 字符串解析为 JSON",
-        LLMMessageContentAsJsonNode
-    );
-    register_node!(
-        "llm_message_to_string",
-        "LLMMessage转字符串",
-        "消息",
-        "将 LLMMessage 的 reasoning_content（如有）与 content 拼接为字符串",
-        LLMMessageToStringNode
-    );
-    register_node!(
-        "as_system_llm_message",
-        "字符串转 LLMMessage",
-        "消息",
-        "兼容旧节点类型 ID：将字符串封装为可选 role 的 LLMMessage，默认 role=system",
-        StringToLLMMessageNode
-    );
-    register_node!(
-        "preview_string",
-        "Preview String",
-        "工具",
-        "在节点卡片内预览输入字符串",
-        PreviewStringNode
-    );
-    register_node!(
-        "string_data",
-        "String Data",
-        "数据",
-        "字符串数据源，通过UI输入框提供字符串",
-        StringDataNode
-    );
-    register_node!(
-        "string_is_not_empty",
-        "字符串非空判断",
-        "工具",
-        "判断字符串是否非空，可选 trim_before_check 决定是否先 trim 再判断",
-        StringIsNotEmptyNode
-    );
-    register_node!(
-        "current_time",
-        "当前时间",
-        "数据",
-        "输出当前本地时间字符串，无需输入",
-        CurrentTimeNode
-    );
-    register_node!(
-        "preview_message_list",
-        "Preview LLMMessage List",
-        "工具",
-        "在节点卡片内预览 LLMMessage 列表",
-        PreviewMessageListNode
-    );
-    register_node!(
-        "qq_message_preview",
-        "Preview QQ Messages",
-        "工具",
-        "在节点卡片内实时预览 QQMessage 列表（含图片）",
-        PreviewQQMessageListNode
-    );
-    register_node!(
-        "message_list_data",
-        "LLMMessage List Data",
-        "数据",
-        "LLMMessage 列表数据源，通过 UI 容器编辑器提供列表数据",
-        MessageListDataNode
-    );
-    register_node!(
-        "qq_message_list_data",
-        "QQMessageList Data",
-        "数据",
-        "QQ消息列表数据源，通过UI容器编辑器提供QQMessageList",
-        QQMessageListDataNode
-    );
-    register_node!(
-        "string_to_plain_text",
-        "字符串转QQ纯文本",
-        "消息",
-        "将字符串转换为 QQ 消息中的纯文本（PlainText）消息段",
-        StringToPlainTextNode
-    );
-    register_node!(
-        "at_qq_target_message",
-        "构造QQAt消息",
-        "消息",
-        "输入 QQ 目标 id 字符串，输出 @ 目标的 QQ 消息段",
-        AtQQTargetMessageNode
-    );
-    register_node!(
-        "qq_message_to_image",
-        "QQ消息转图片数据",
-        "消息",
-        "将 QQMessage(Image) 转为 Image 数据，并输出对象存储路径",
-        QQMessageToImageNode
-    );
-    register_node!(
-        "json_to_qq_message_vec",
-        "JSON转QQMessage列表",
-        "消息",
-        "将 LLM 输出的 QQ 消息 JSON 二维数组转换为 Vec<Vec<QQMessage>>",
-        JsonToQQMessageVecNode
-    );
-    register_node!(
-        "tool_result",
-        "Tool 结果消息",
-        "AI",
-        "将工具执行结果封装为 role=tool 的 LLMMessage，供 agentic loop 回写对话列表",
-        ToolResultNode
-    );
-    register_node!(
-        "llm_message_session_cache",
-        "LLMMessage 会话暂存",
-        "消息存储",
-        "根据缓存 Ref、sender_id 和消息列表向当前运行期会话历史追加 Vec<LLMMessage>",
-        LLMMessageSessionCacheNode
-    );
-    register_node!(
-        "llm_message_session_cache_get",
-        "获取 LLMMessage 历史",
-        "消息存储",
-        "根据 LLMMessage 会话缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<LLMMessage>",
-        LLMMessageSessionCacheGetNode
-    );
-    register_node!(
-        "llm_message_session_cache_set",
-        "覆写 LLMMessage 历史",
-        "消息存储",
-        "根据 LLMMessage 会话缓存 Ref、sender_id 和消息列表覆写当前运行期累计的 Vec<LLMMessage>",
-        LLMMessageSessionCacheSetNode
-    );
-    register_node!(
-        "llm_message_session_cache_clear",
-        "清空 LLMMessage 历史",
-        "消息存储",
-        "根据 LLMMessage 会话缓存 Ref 和 sender_id 清空当前运行期累计的历史消息",
-        LLMMessageSessionCacheClearNode
-    );
-    register_node!(
-        "session_state_get",
-        "读取会话状态",
-        "消息存储",
-        "读取 sender_id 当前是否处于会话中以及附加状态",
-        SessionStateGetNode
-    );
-    register_node!(
-        "session_state_clear",
-        "清除会话状态",
-        "消息存储",
-        "清除 sender_id 当前会话状态",
-        SessionStateClearNode
-    );
-    register_node!(
-        "session_state_try_claim",
-        "尝试占用会话",
-        "消息存储",
-        "原子检查并占用 sender_id 会话状态",
-        SessionStateTryClaimNode
-    );
-    register_node!(
-        "session_state_release",
-        "释放会话占用",
-        "消息存储",
-        "释放 sender_id 当前持有的会话占用",
-        SessionStateReleaseNode
-    );
-    register_node!(
-        "string_to_image_content_part",
-        "字符串转图片/视频 MessagePart",
-        "消息",
-        "将字符串 URL（或 data: URL）封装为 LLM 多模态 MessagePart，用于装配多模态 LLMMessage",
-        StringToImageMessagePartNode
-    );
-    register_node!(
-        "binary_to_image_content_part",
-        "二进制转图片/视频 MessagePart",
-        "消息",
-        "将二进制字节 + MIME 编码为 base64 data URL，并封装为 LLM 多模态 MessagePart",
-        BinaryToImageMessagePartNode
-    );
-    register_node!(
-        "build_multimodal_user_message",
-        "构建多模态 LLMMessage",
-        "消息",
-        "将可选文本和若干 MessagePart 拼接为多模态 LLMMessage，下游 LLM 推理节点直接消费",
-        BuildMultimodalUserMessageNode
-    );
-
     Ok(())
 }
 
@@ -712,5 +440,12 @@ pub fn init_node_registry_with_extensions(extra_registrars: &[RegistryInitFn]) -
     for init in extra_registrars {
         init()?;
     }
+    let workspace_root = std::env::current_dir()
+        .map_err(|error| crate::error::Error::ValidationError(format!("无法获取动态脚本运行时工作目录: {error}")))?;
+    let config = crate::config::ConfigCenter::shared()
+        .load_root()
+        .map(|root| root.node_runtime)
+        .unwrap_or_default();
+    crate::graph::script_node::register_script_catalog(&NODE_REGISTRY, &workspace_root, &config)?;
     Ok(())
 }

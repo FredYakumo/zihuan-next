@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use crate::model_inference::linalg::embedding_api::EmbeddingAPI;
 use crate::model_inference::nn::queued_embedding_model::QueuedEmbeddingModel;
-use crate::model_inference::nodes::llm_node::build_llm;
+use crate::model_inference::model_factory::build_llm;
 use crate::config::llm_refs::LlmRefConfig;
 use crate::model_inference::model_config::{LlmServiceConfig, ModelRefSpec};
 use crate::agent::EmbeddingServiceConfig;

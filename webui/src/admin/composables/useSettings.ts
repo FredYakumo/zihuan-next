@@ -39,6 +39,7 @@ interface StorageInfoResponse {
 }
 
 type PythonRuntimeKind = "uv_project" | "project_venv" | "custom_executable";
+type NodeRuntimeKind = "project_node" | "custom_executable";
 
 interface PythonRuntimeResponse {
   config: { kind: PythonRuntimeKind; executable_path?: string | null };
@@ -52,6 +53,15 @@ interface PythonRuntimeResponse {
 interface PythonRuntimeSelectionResponse {
   cancelled: boolean;
   runtime: PythonRuntimeResponse | null;
+}
+
+interface NodeRuntimeResponse {
+  config: { kind: NodeRuntimeKind; executable_path?: string | null };
+  available: boolean;
+  command: string | null;
+  executable_path: string | null;
+  version: string | null;
+  diagnostic: string | null;
 }
 
 interface ModelHttpApiKey {
@@ -185,6 +195,35 @@ export function useSettings() {
   }
 
   onMounted(reloadPythonRuntime);
+
+  const nodeRuntime = ref<NodeRuntimeResponse | null>(null);
+  const nodeRuntimeLoading = ref(false);
+  const nodeRuntimeChanging = ref(false);
+  const nodeRuntimeError = ref<string | null>(null);
+
+  async function reloadNodeRuntime() {
+    nodeRuntimeLoading.value = true;
+    nodeRuntimeError.value = null;
+    try { nodeRuntime.value = await request<NodeRuntimeResponse>("GET", "/settings/node-runtime"); }
+    catch (error) { nodeRuntimeError.value = String(error); }
+    finally { nodeRuntimeLoading.value = false; }
+  }
+
+  async function setNodeRuntime(config: NodeRuntimeResponse["config"]) {
+    nodeRuntimeChanging.value = true;
+    nodeRuntimeError.value = null;
+    try { nodeRuntime.value = await request<NodeRuntimeResponse>("PUT", "/settings/node-runtime", config); }
+    catch (error) { nodeRuntimeError.value = String(error); }
+    finally { nodeRuntimeChanging.value = false; }
+  }
+
+  async function chooseNodeRuntime() {
+    const executablePath = window.prompt("Node.js 可执行文件路径", nodeRuntime.value?.config.executable_path ?? "");
+    if (!executablePath?.trim()) return;
+    await setNodeRuntime({ kind: "custom_executable", executable_path: executablePath.trim() });
+  }
+
+  onMounted(reloadNodeRuntime);
 
   const modelHttpEnabled = ref(false);
   const modelHttpSaving = ref(false);
@@ -389,6 +428,13 @@ export function useSettings() {
     pythonRuntimeError,
     reloadPythonRuntime,
     changePythonRuntime,
+    nodeRuntime,
+    nodeRuntimeLoading,
+    nodeRuntimeChanging,
+    nodeRuntimeError,
+    reloadNodeRuntime,
+    setNodeRuntime,
+    chooseNodeRuntime,
     modelHttpEnabled,
     modelHttpSaving,
     modelHttpEndpoint,

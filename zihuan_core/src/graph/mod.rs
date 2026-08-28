@@ -102,21 +102,18 @@ type InputSourceMap = HashMap<String, HashMap<String, (String, String)>>;
 
 pub mod tool_spec;
 pub mod data_value;
-pub mod database;
 pub mod function_graph;
 pub mod graph_boundary;
 pub mod graph_io;
 pub mod hyperparam_store;
 pub mod message_persistence;
 pub mod message_rdb_chunking;
-pub mod message_rdb_get_group_history;
-pub mod message_rdb_get_user_history;
 pub mod message_rdb_history_common;
-pub mod message_rdb_search;
 pub mod message_restore;
 pub mod object_storage;
 pub mod qq_message_list_rdb_persistence;
 pub mod registry;
+pub mod script_node;
 pub mod util;
 
 pub type RuntimeVariableStore = Arc<RwLock<RuntimeValueFlow>>;
@@ -763,7 +760,7 @@ impl NodeGraph {
         let mut node_results: HashMap<String, NodeOutputFlow> = HashMap::new();
 
         // Try to execute, if error occurs, return early with error info
-        match self.execute_and_capture_results_internal(&mut node_results) {
+        match crate::graph::script_node::with_dynamic_script_resources(|| self.execute_and_capture_results_internal(&mut node_results)) {
             Ok(()) => ExecutionResult::success(node_results),
             Err(e) => {
                 // Extract node ID from error if possible

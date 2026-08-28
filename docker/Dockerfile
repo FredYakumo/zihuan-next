@@ -24,19 +24,19 @@ COPY node_macros/Cargo.toml node_macros/Cargo.toml
 COPY general_wheel_cpp/Cargo.toml general_wheel_cpp/Cargo.toml
 COPY zihuan_core/Cargo.toml zihuan_core/Cargo.toml
 COPY zihuan_service/Cargo.toml zihuan_service/Cargo.toml
-COPY zihuan_workspace_agent/Cargo.toml zihuan_workspace_agent/Cargo.toml
-COPY zihuan_ims_agent/Cargo.toml zihuan_ims_agent/Cargo.toml
+COPY zihuan_workspace_service/Cargo.toml zihuan_workspace_service/Cargo.toml
+COPY zihuan_ims_service/Cargo.toml zihuan_ims_service/Cargo.toml
 COPY zihuan_cli/Cargo.toml zihuan_cli/Cargo.toml
 
 # Create stub source files so cargo can resolve the workspace
 RUN mkdir -p node_macros/src general_wheel_cpp/src zihuan_core/src zihuan_service/src \
-    zihuan_workspace_agent/src zihuan_ims_agent/src zihuan_cli/src && \
+    zihuan_workspace_service/src zihuan_ims_service/src zihuan_cli/src && \
     echo "fn main() {}" > node_macros/src/lib.rs && \
     echo "fn main() {}" > general_wheel_cpp/src/lib.rs && \
     echo "fn main() {}" > zihuan_core/src/lib.rs && \
     echo "fn main() {}" > zihuan_service/src/lib.rs && \
-    echo "fn main() {}" > zihuan_workspace_agent/src/lib.rs && \
-    echo "fn main() {}" > zihuan_ims_agent/src/lib.rs && \
+    echo "fn main() {}" > zihuan_workspace_service/src/lib.rs && \
+    echo "fn main() {}" > zihuan_ims_service/src/lib.rs && \
     echo "fn main() {}" > zihuan_cli/src/main.rs
 
 # Patch crate for third_party
@@ -54,8 +54,8 @@ COPY zihuan_core/src/ zihuan_core/src/
 COPY zihuan_service/src/ zihuan_service/src/
 COPY zihuan_service/build.rs zihuan_service/build.rs
 COPY zihuan_service/tests/ zihuan_service/tests/
-COPY zihuan_workspace_agent/src/ zihuan_workspace_agent/src/
-COPY zihuan_ims_agent/src/ zihuan_ims_agent/src/
+COPY zihuan_workspace_service/src/ zihuan_workspace_service/src/
+COPY zihuan_ims_service/src/ zihuan_ims_service/src/
 COPY zihuan_cli/src/ zihuan_cli/src/
 
 # Copy pre-built frontend into webui/dist so the Rust build.rs can find it

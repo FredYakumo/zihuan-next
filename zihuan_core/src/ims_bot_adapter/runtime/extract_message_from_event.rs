@@ -1,30 +1,18 @@
-use crate::ims_bot_adapter::runtime::adapter::{restore_message_list_for_message_id, shared_from_handle};
+use crate::ims_bot_adapter::runtime::adapter::restore_message_list_for_message_id;
 use crate::ims_bot_adapter::runtime::models::message::MessageProp;
 use log::{info, warn};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::task::block_in_place;
 use crate::error::{Error, Result};
 use crate::ims_bot_adapter::logging::{LOG_DATA_URL_PREVIEW_CHARS, LOG_MESSAGE_PREVIEW_CHARS};
 use crate::model_inference::llm::{LLMMessage, MessagePart};
 use crate::graph::object_storage::S3Ref;
-use crate::graph::{node_input, node_output, DataType, DataValue, Node, NodeInputFlow, Port};
 
 use crate::ims_bot_adapter::runtime::models::message::Message;
 use crate::ims_bot_adapter::runtime::multimodal_image_url::{resolve_image_message_part, resolve_plain_text_segments, ResolvedTextSegment};
 
-/// Node that converts a MessageEvent to an LLM prompt message list
-///
-/// Inputs:
-///   - message_event: MessageEvent containing message data
-///   - ims_bot_adapter: BotAdapterRef for building context-aware system message
-///
-/// Outputs:
-///   - messages: Vec<LLMMessage>: One user message
-pub struct ExtractMessageFromEventNode {
-    id: String,
-    name: String,
-}
+pub struct MessageEventExtractor;
 
 pub(crate) struct ExtractedMessageOutputs {
     pub user_message: LLMMessage,
@@ -34,15 +22,8 @@ pub(crate) struct ExtractedMessageOutputs {
     pub at_target_list: Vec<String>,
 }
 
-impl ExtractMessageFromEventNode {
-    const LOG_PREFIX: &str = "[ExtractMessageFromEventNode]";
-
-    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            name: name.into(),
-        }
-    }
+impl MessageEventExtractor {
+    const LOG_PREFIX: &str = "[MessageEventExtractor]";
 
     fn append_text_segment(buffer: &mut String, segment: &str) {
         let segment = segment.trim();
@@ -283,7 +264,7 @@ impl ExtractMessageFromEventNode {
         }
     }
 
-    pub fn build_extracted_message_outputs(
+    pub(crate) fn build_extracted_message_outputs(
         messages: &[Message],
         bot_id: &str,
         s3_ref: Option<&S3Ref>,
@@ -300,167 +281,72 @@ impl ExtractMessageFromEventNode {
         }
     }
 
-    fn extract_target_message_id(inputs: &NodeInputFlow) -> Option<i64> {
-        match inputs.get("message_id") {
-            Some(DataValue::Integer(value)) if *value > 0 => Some(*value),
-            _ => None,
-        }
-    }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::ExtractMessageFromEventNode;
-    use crate::ims_bot_adapter::runtime::models::message::{ImageMessage, Message, PersistedMedia, PersistedMediaSource, PlainTextMessage};
-}
-
-impl Node for ExtractMessageFromEventNode {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn description(&self) -> Option<&str> {
-        Some("从消息事件或指定消息ID恢复消息，并提取 LLMMessage 列表")
-    }
-
-    node_input![
-        port! { name = "message_event", ty = MessageEvent, desc = "MessageEvent containing message data" },
-        port! { name = "ims_bot_adapter", ty = BotAdapterRef, desc = "BotAdapter reference for context-aware system message", required = true },
-        port! { name = "message_id", ty = Integer, desc = "可选：要恢复并分析的目标消息 ID", optional },
-        port! { name = "rdb_ref", ty = RdbRef, desc = "可选：显式注册给消息恢复链路的关系数据库连接", optional },
-        port! { name = "s3_ref", ty = S3Ref, desc = "可选：显式传入对象存储引用，优先用于多模态图片提取", optional }
-    ];
-
-    node_output![
-        port! { name = "messages", ty = Vec(LLMMessage), desc = "Vec<LLMMessage> containing system and user messages" },
-        port! { name = "content", ty = String, desc = "Merged readable message body" },
-        port! { name = "ref_content", ty = String, desc = "Referenced/replied message content" },
-        port! { name = "is_at_me", ty = Boolean, desc = "Whether the message @'s the bot" },
-        port! { name = "at_target_list", ty = Vec(String), desc = "List of all @ targets in the message" },
-    ];
-
-    fn execute(&mut self, inputs: crate::graph::NodeInputFlow) -> Result<crate::graph::NodeOutputFlow> {
-        self.validate_inputs(&inputs)?;
-
-        let event = match inputs.get("message_event") {
-            Some(DataValue::MessageEvent(event)) => event,
-            _ => {
-                return Err(Error::InvalidNodeInput(
-                    "message_event input is required and must be MessageEvent type".to_string(),
-                ))
-            }
-        };
-
-        let ims_bot_adapter_ref = inputs
-            .get("ims_bot_adapter")
-            .and_then(|v| {
-                if let DataValue::BotAdapterRef(handle) = v {
-                    Some(shared_from_handle(handle))
-                } else {
-                    None
-                }
-            })
-            .ok_or("ims_bot_adapter input is required")?;
-
-        let explicit_s3_ref = inputs.get("s3_ref").and_then(|value| match value {
-            DataValue::S3Ref(s3_ref) => Some(s3_ref.clone()),
-            _ => None,
-        });
-
-        let (bot_id, adapter_object_storage) = if tokio::runtime::Handle::try_current().is_ok() {
-            block_in_place(|| {
-                let adapter = ims_bot_adapter_ref.blocking_lock();
-                (adapter.get_bot_id().to_string(), adapter.get_object_storage())
-            })
-        } else {
+pub(crate) fn extract_message_outputs(
+    event: &crate::ims_bot_adapter::runtime::models::event_model::MessageEvent,
+    ims_bot_adapter_ref: &crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter,
+    target_message_id: Option<i64>,
+    explicit_s3_ref: Option<Arc<S3Ref>>,
+) -> Result<ExtractedMessageOutputs> {
+    let (bot_id, adapter_object_storage) = if tokio::runtime::Handle::try_current().is_ok() {
+        block_in_place(|| {
             let adapter = ims_bot_adapter_ref.blocking_lock();
             (adapter.get_bot_id().to_string(), adapter.get_object_storage())
-        };
-        let object_storage = explicit_s3_ref.or(adapter_object_storage);
+        })
+    } else {
+        let adapter = ims_bot_adapter_ref.blocking_lock();
+        (adapter.get_bot_id().to_string(), adapter.get_object_storage())
+    };
+    let object_storage = explicit_s3_ref.or(adapter_object_storage);
 
-        let target_message_id = Self::extract_target_message_id(&inputs);
+    info!(
+        "[MessageEventExtractor] resolving message content: target_message_id={target_message_id:?} explicit_s3_ref_present={}",
+        object_storage.is_some(),
+    );
 
-        info!(
-            "{} resolving message content: target_message_id={:?} explicit_s3_ref_present={}",
-            Self::LOG_PREFIX,
-            target_message_id,
-            inputs.contains_key("s3_ref"),
-        );
-
-        let message_list = if let Some(message_id) = target_message_id {
-            let resolved = if tokio::runtime::Handle::try_current().is_ok() {
-                block_in_place(|| {
-                    tokio::runtime::Handle::current()
-                        .block_on(restore_message_list_for_message_id(&ims_bot_adapter_ref, message_id))
-                })
-            } else {
-                tokio::runtime::Runtime::new()?
-                    .block_on(restore_message_list_for_message_id(&ims_bot_adapter_ref, message_id))
-            }?;
-
-            match resolved {
-                Some(resolved) => {
-                    info!(
-                        "{} restored target message_id={} via {} (segments={})",
-                        Self::LOG_PREFIX,
-                        message_id,
-                        resolved.source_label,
-                        resolved.messages.len()
-                    );
-                    resolved.messages
-                }
-                None if event.message_id == message_id && !event.message_list.is_empty() => {
-                    info!(
-                        "{} target message_id={} not found in backends; falling back to event message_list (segments={})",
-                        Self::LOG_PREFIX,
-                        message_id,
-                        event.message_list.len()
-                    );
-                    event.message_list.clone()
-                }
-                None => {
-                    return Err(Error::ValidationError(format!(
-                        "message_id {} could not be restored from cache/redis/mysql/get_msg",
-                        message_id
-                    )));
-                }
-            }
+    let message_list = if let Some(message_id) = target_message_id {
+        let resolved = if tokio::runtime::Handle::try_current().is_ok() {
+            block_in_place(|| {
+                tokio::runtime::Handle::current()
+                    .block_on(restore_message_list_for_message_id(ims_bot_adapter_ref, message_id))
+            })
         } else {
-            event.message_list.clone()
-        };
+            tokio::runtime::Runtime::new()?
+                .block_on(restore_message_list_for_message_id(ims_bot_adapter_ref, message_id))
+        }?;
 
-        let extracted = Self::build_extracted_message_outputs(&message_list, &bot_id, object_storage.as_deref());
-        info!(
-            "{} output user message={}",
-            Self::LOG_PREFIX,
-            Self::json_for_log(&extracted.user_message)
-        );
+        match resolved {
+            Some(resolved) => {
+                info!(
+                    "[MessageEventExtractor] restored target message_id={} via {} (segments={})",
+                    message_id,
+                    resolved.source_label,
+                    resolved.messages.len()
+                );
+                resolved.messages
+            }
+            None if event.message_id == message_id && !event.message_list.is_empty() => {
+                event.message_list.clone()
+            }
+            None => {
+                return Err(Error::ValidationError(format!(
+                    "message_id {message_id} could not be restored from cache/redis/mysql/get_msg"
+                )));
+            }
+        }
+    } else {
+        event.message_list.clone()
+    };
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "messages".to_string(),
-            DataValue::Vec(
-                Box::new(crate::graph::DataType::LLMMessage),
-                vec![DataValue::LLMMessage(extracted.user_message)],
-            ),
-        );
-        outputs.insert("content".to_string(), DataValue::String(extracted.content));
-        outputs.insert("ref_content".to_string(), DataValue::String(extracted.ref_content));
-        outputs.insert("is_at_me".to_string(), DataValue::Boolean(extracted.is_at_me));
-        outputs.insert(
-            "at_target_list".to_string(),
-            DataValue::Vec(
-                Box::new(DataType::String),
-                extracted.at_target_list.into_iter().map(DataValue::String).collect(),
-            ),
-        );
-
-        let outputs = crate::graph::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
-    }
+    let extracted = MessageEventExtractor::build_extracted_message_outputs(
+        &message_list,
+        &bot_id,
+        object_storage.as_deref(),
+    );
+    info!(
+        "[MessageEventExtractor] output user message={}",
+        MessageEventExtractor::json_for_log(&extracted.user_message)
+    );
+    Ok(extracted)
 }

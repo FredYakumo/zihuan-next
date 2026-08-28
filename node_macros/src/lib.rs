@@ -60,7 +60,7 @@ pub fn node_output_flow(input: TokenStream) -> TokenStream {
 /// Usage: `return_with_node_output![self; "key" => value, ...]`
 ///
 /// Expands to a block that constructs the flow, calls
-/// [`self.validate_outputs`](zihuan_graph_engine::Node::validate_outputs),
+/// [`self.validate_outputs`](zihuan_core::graph::Node::validate_outputs),
 /// and evaluates to `Ok(flow)`.
 #[proc_macro]
 pub fn return_with_node_output(input: TokenStream) -> TokenStream {

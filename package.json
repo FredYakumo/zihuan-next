@@ -1,0 +1,8 @@
+{
+  "name": "zihuan-next",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#zihuan-sdk": "./dynamic_script_engine/zihuan_sdk.mjs"
+  }
+}

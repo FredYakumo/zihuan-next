@@ -14,6 +14,8 @@ pub mod ims_bot_adapter;
 pub mod graph;
 pub mod model_inference;
 pub mod message_part;
+pub mod node_runtime;
+pub mod node_runtime_resolver;
 pub mod memory_agent;
 pub mod python_runtime;
 pub mod python_runtime_resolver;

@@ -11,12 +11,14 @@ use sha2::{Digest, Sha256};
 use tokio::task;
 use zihuan_core::config::ConfigCenter;
 use zihuan_core::python_runtime::PythonRuntimeConfig;
+use zihuan_core::node_runtime::NodeRuntimeConfig;
 use zihuan_core::system_config::{GlobalSettingsSection, ModelHttpApiKey, ModelHttpServiceSettings};
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::model_inference::model_config::ModelRefSpec;
 use uuid::Uuid;
 
 use zihuan_core::python_runtime_resolver::check_python_runtime;
+use zihuan_core::node_runtime_resolver::check_node_runtime;
 use zip::write::SimpleFileOptions;
 use zip::ZipArchive;
 
@@ -67,6 +69,16 @@ pub struct PythonRuntimeResponse {
 pub struct PythonRuntimeSelectionResponse {
     pub cancelled: bool,
     pub runtime: Option<PythonRuntimeResponse>,
+}
+
+#[derive(Serialize)]
+pub struct NodeRuntimeResponse {
+    pub config: NodeRuntimeConfig,
+    pub available: bool,
+    pub command: Option<String>,
+    pub executable_path: Option<String>,
+    pub version: Option<String>,
+    pub diagnostic: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -301,6 +313,26 @@ async fn python_runtime_response(config: PythonRuntimeConfig) -> PythonRuntimeRe
     }
 }
 
+async fn node_runtime_response(config: NodeRuntimeConfig) -> NodeRuntimeResponse {
+    let workspace_root = match std::env::current_dir() {
+        Ok(path) => path,
+        Err(error) => return NodeRuntimeResponse {
+            config, available: false, command: None, executable_path: None, version: None,
+            diagnostic: Some(format!("无法获取当前工作目录: {error}")),
+        },
+    };
+    match check_node_runtime(&workspace_root, &config).await {
+        Ok((command, version, executable_path)) => NodeRuntimeResponse {
+            config, available: true, command: Some(command.display()), executable_path: Some(executable_path),
+            version: Some(version), diagnostic: None,
+        },
+        Err(error) => NodeRuntimeResponse {
+            config, available: false, command: None, executable_path: None, version: None,
+            diagnostic: Some(error.to_string()),
+        },
+    }
+}
+
 #[handler]
 pub async fn get_python_runtime(_req: &mut Request, res: &mut Response) {
     let config = match ConfigCenter::shared().load_root() {
@@ -312,6 +344,59 @@ pub async fn get_python_runtime(_req: &mut Request, res: &mut Response) {
         }
     };
     res.render(Json(python_runtime_response(config).await));
+}
+
+#[handler]
+pub async fn get_node_runtime(_req: &mut Request, res: &mut Response) {
+    let config = match ConfigCenter::shared().load_root() {
+        Ok(root) => root.node_runtime,
+        Err(error) => {
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            res.render(Json(serde_json::json!({ "error": error.to_string() })));
+            return;
+        }
+    };
+    res.render(Json(node_runtime_response(config).await));
+}
+
+#[handler]
+pub async fn update_node_runtime(req: &mut Request, res: &mut Response) {
+    let config: NodeRuntimeConfig = match req.parse_json().await {
+        Ok(config) => config,
+        Err(error) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(serde_json::json!({ "error": error.to_string() })));
+            return;
+        }
+    };
+    let workspace_root = match std::env::current_dir() {
+        Ok(path) => path,
+        Err(error) => {
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            res.render(Json(serde_json::json!({ "error": error.to_string() })));
+            return;
+        }
+    };
+    if let Err(error) = check_node_runtime(&workspace_root, &config).await {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({ "error": error.to_string() })));
+        return;
+    }
+    let mut root = match ConfigCenter::shared().load_root() {
+        Ok(root) => root,
+        Err(error) => {
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            res.render(Json(serde_json::json!({ "error": error.to_string() })));
+            return;
+        }
+    };
+    root.node_runtime = config;
+    if let Err(error) = ConfigCenter::shared().save_root(&root) {
+        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+        res.render(Json(serde_json::json!({ "error": error.to_string() })));
+        return;
+    }
+    res.render(Json(node_runtime_response(root.node_runtime).await));
 }
 
 #[handler]

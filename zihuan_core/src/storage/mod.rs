@@ -15,11 +15,13 @@ pub mod redis;
 pub mod resource_resolver;
 pub mod rustfs;
 pub mod sqlite;
-mod tavily_provider_node;
-mod tavily_search_node;
 pub mod weaviate;
 mod weaviate_client;
 mod weaviate_image_search_node;
+
+pub(crate) use image_weaviate_persistence::{persist_image_record, ImagePersistenceRequest};
+pub(crate) use qq_message_list_weaviate_persistence::persist_qq_message_list;
+pub(crate) use weaviate_image_search_node::{search_images, DEFAULT_MAX_DISTANCE};
 mod weaviate_persistence;
 mod weaviate_schema;
 
@@ -49,20 +51,15 @@ pub use elasticsearch::{
 };
 pub use local_memory::LocalMemoryStore;
 pub use message_record::MessageRecord;
-pub use mysql::MySqlNode;
 pub use object_storage::{
     enrich_event_images, enrich_message_images, save_image_to_object_storage, upload_remote_image_to_s3,
     ImageCacheAdapter, ImageObjectStorageInput, ObjectStorageConfig, PendingImageUpload, SavedImageObject,
 };
 pub use rdb::{build_relational_db_connection_for_connection, build_relational_db_connection_for_kind};
-pub use redis::RedisNode;
 pub use resource_resolver::{
     build_elasticsearch_ref, build_rdb_ref, build_redis_ref, build_s3_ref, build_weaviate_ref,
     build_web_search_engine_ref, find_connection, resolve_connection_data_value,
 };
-pub use rustfs::RustfsNode;
-pub use sqlite::SqliteNode;
-pub use weaviate::WeaviateNode;
 pub use weaviate_client::WeaviateClient;
 pub use weaviate_persistence::{
     build_image_record_properties, deterministic_media_object_id, deterministic_message_object_id, upsert_image_record,
@@ -566,112 +563,5 @@ pub fn infer_weaviate_collection_schema(connection_name: &str, class_name: &str)
 }
 
 pub fn init_node_registry() -> Result<()> {
-    use crate::storage::image_weaviate_persistence::ImageWeaviatePersistenceNode;
-    use crate::storage::qq_message_list_weaviate_persistence::QQMessageListWeaviatePersistenceNode;
-    use crate::graph::message_rdb_get_group_history::MessageRdbGetGroupHistoryNode;
-    use crate::graph::message_rdb_get_user_history::MessageRdbGetUserHistoryNode;
-    use crate::graph::message_rdb_search::MessageRdbSearchNode;
-    use crate::graph::qq_message_list_rdb_persistence::QQMessageListRdbPersistenceNode;
-    use crate::register_node;
-
-    register_node!(
-        "redis",
-        "Redis连接",
-        "数据库",
-        "从系统连接配置中选择 Redis 并输出 RedisRef 引用",
-        RedisNode
-    );
-    register_node!(
-        "mysql",
-        "MySQL连接",
-        "数据库",
-        "从系统连接配置中选择 MySQL 并输出 MySqlRef 引用",
-        MySqlNode
-    );
-    register_node!(
-        "sqlite",
-        "SQLite连接",
-        "数据库",
-        "从系统连接配置中选择 SQLite 并输出 SqliteRef 引用",
-        SqliteNode
-    );
-    register_node!(
-        "rustfs",
-        "RustFS对象存储",
-        "数据库",
-        "从系统连接配置中选择 RustFS 并输出 S3Ref 引用",
-        RustfsNode
-    );
-    register_node!(
-        "weaviate",
-        "Weaviate向量数据库",
-        "数据库",
-        "从系统连接配置中选择 Weaviate 并输出 WeaviateRef 引用",
-        WeaviateNode
-    );
-    register_node!(
-        "qq_message_list_rdb_persistence",
-        "QQMessage列表RDB持久化",
-        "消息存储",
-        "将Vec<QQMessage>及调用方提供的元数据持久化到关系数据库",
-        QQMessageListRdbPersistenceNode
-    );
-    register_node!(
-        "qq_message_list_weaviate_persistence",
-        "QQMessage列表向量持久化",
-        "消息存储",
-        "将Vec<QQMessage>及调用方提供的元数据向量化后持久化到Weaviate数据库",
-        QQMessageListWeaviatePersistenceNode
-    );
-    register_node!(
-        "image_weaviate_persistence",
-        "图片向量持久化",
-        "消息存储",
-        "将对象存储路径、图片总结与向量持久化到Weaviate数据库",
-        ImageWeaviatePersistenceNode
-    );
-    register_node!(
-        "message_rdb_get_user_history",
-        "获取QQ号消息历史",
-        "消息存储",
-        "根据 sender_id 读取最近消息历史，可选限定某个群",
-        MessageRdbGetUserHistoryNode
-    );
-    register_node!(
-        "message_rdb_get_group_history",
-        "获取QQ群聊消息历史",
-        "消息存储",
-        "根据 group_id 读取最近消息历史",
-        MessageRdbGetGroupHistoryNode
-    );
-    register_node!(
-        "message_rdb_search",
-        "搜索消息记录",
-        "消息存储",
-        "在消息记录中搜索，支持发送者、群组、内容关键词、时间范围过滤",
-        MessageRdbSearchNode
-    );
-    register_node!(
-        "tavily_provider",
-        "Web Search Engine Provider",
-        "AI",
-        "从系统连接中选择 Web Search Engine 配置，输出 WebSearchEngineRef 引用",
-        tavily_provider_node::TavilyProviderNode
-    );
-    register_node!(
-        "tavily_search",
-        "网页搜索",
-        "AI",
-        "使用 WebSearchEngineRef 执行网页搜索并输出包含标题、链接和内容的 Vec<String>",
-        tavily_search_node::TavilySearchNode
-    );
-    register_node!(
-        "weaviate_image_search",
-        "Weaviate 图片检索",
-        "AI",
-        "使用本地 Weaviate 图片库做语义检索，输出标准化图片结果 JSON",
-        weaviate_image_search_node::WeaviateImageSearchNode
-    );
-
     Ok(())
 }
