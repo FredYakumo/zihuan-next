@@ -57,7 +57,6 @@ fn default_retry_count() -> u32 {
 }
 
 pub mod dream_agent;
-pub mod emotion;
 pub mod inference_provider;
 pub mod resource_resolver;
 pub mod session_state;

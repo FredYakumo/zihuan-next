@@ -5,9 +5,9 @@ use std::time::Duration;
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 use log::{info, warn};
 use serde_json::Value;
-use zihuan_core::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
+use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent::utils::build_state_system_prefix_lines;
+use crate::agent::utils::build_state_system_prefix_lines;
 
 pub(crate) use super::super::tools::build_info_brain_tools;
 use super::super::tools::{
@@ -326,8 +326,8 @@ pub(crate) fn build_user_message(
         style_prompt
     };
     let merged_character_instructions = merge_character_and_style_prompt(character_instructions, style_prompt);
-    let state_lines =
-        build_state_system_prefix_lines(session_state, emotion_dimensions, &merged_character_instructions, preprompt_context);
+    let emotion_prompt = emotion_expression_prompt(session_state, emotion_dimensions);
+    let state_lines = build_state_system_prefix_lines(&emotion_prompt, &merged_character_instructions, preprompt_context);
     let sender_name = zihuan_core::ims_bot_adapter::utils::sender_display_name!(
         &current_input.event.sender.nickname,
         &current_input.event.sender.card

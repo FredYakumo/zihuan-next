@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use log::{info, warn};
 use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingStopReason};
 use zihuan_core::agent::{Agent, AgentContext, AgentDescriptor};
-use zihuan_core::agent::emotion::utils::emotion_dimensions_text;
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -17,6 +16,7 @@ use zihuan_core::steer::message_with_api_style;
 use zihuan_core::memory_agent::{MemoryBrainAgent, MemoryBrainAgentContextTool};
 
 use crate::qq_chat::logging::{QqChatToolCallingObserver, QqChatTaskTrace};
+use crate::agent::emotion::utils::emotion_dimensions_text;
 use crate::qq_chat::PreparedCurrentTurnUserInput;
 use crate::storage::qq_chat_history_store::{load_history, save_history};
 use crate::tools::{

@@ -9,7 +9,7 @@ use zihuan_core::model_inference::message_content_utils::{downgrade_messages_for
 
 use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingStopReason, LongTaskContext};
 
-use zihuan_core::agent::emotion::utils::{
+use crate::agent::emotion::utils::{
     emotion_dimensions_text, emotion_expression_prompt, has_noticeable_emotion_expression,
 };
 use zihuan_core::agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
