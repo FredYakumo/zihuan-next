@@ -1945,7 +1945,9 @@ async function submitAskUserAnswer() {
 
 async function decideToolCallLimit(continuation: "continue" | "stop") {
   if (!activeSessionId.value || !selectedServiceId.value || !pendingAskUser.value?.toolCallLimit || toolCallLimitDecisionLoading.value) return;
+  const pendingRequest = pendingAskUser.value;
   toolCallLimitDecisionLoading.value = true;
+  clearPendingAskUser();
   activeRequestCount.value += 1;
   try {
     await chat.stream({
@@ -1965,6 +1967,7 @@ async function decideToolCallLimit(continuation: "continue" | "stop") {
     await reloadSessions();
     await openSession(activeSessionId.value);
   } catch (error) {
+    pendingAskUser.value = pendingRequest;
     showChatError(`处理工具调用上限失败: ${(error as Error).message}`);
   } finally {
     toolCallLimitDecisionLoading.value = false;
