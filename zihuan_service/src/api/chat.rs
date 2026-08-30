@@ -1238,6 +1238,19 @@ async fn execute_chat_streaming(
 
     if let Some(watch) = stop_watch { watch.abort(); }
     if workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed)) {
+        if let Some(snapshot) = running_chat_message.as_ref() {
+            if let Err(err) = persist_interrupted_running_chat_message(
+                &session_id,
+                &agent,
+                &agent_snapshot,
+                snapshot,
+            ) {
+                if client_connected {
+                    let event = json!({ "type": "error", "error": err.to_string() });
+                    let _ = sender.send_data(format!("data: {event}\n\n")).await;
+                }
+            }
+        }
         clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
         if let Some((task_id, _)) = &workspace_task {
             finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Stopped, None, None);
@@ -1514,6 +1527,46 @@ fn clear_running_chat_message(
     {
         running_messages.remove(session_id);
     }
+}
+
+/// Persist the assistant output observed before a Workspace task was stopped.
+///
+/// The user message is persisted when the task starts, while the assistant record normally
+/// waits for inference to finish. On interruption, retain the live snapshot instead of
+/// clearing it so a history reload does not discard streamed text or tool activity.
+fn persist_interrupted_running_chat_message(
+    session_id: &str,
+    agent: &RoleServiceConfig,
+    agent_snapshot: &AgentSnapshot,
+    snapshot: &Arc<Mutex<RunningChatMessage>>,
+) -> Result<()> {
+    let snapshot = snapshot.lock().unwrap().clone();
+    if snapshot.content.is_empty() && snapshot.reasoning_content.is_empty() && snapshot.live_tool_calls.is_empty() {
+        return Ok(());
+    }
+
+    append_history_record(&ChatHistoryRecord {
+        session_id: session_id.to_string(),
+        agent_id: agent.id.clone(),
+        agent_name: agent_snapshot.name.clone(),
+        role_service_type: agent_snapshot.role_service_type.clone(),
+        agent_avatar_url: agent_snapshot.avatar_url.clone(),
+        role: "assistant".to_string(),
+        content: snapshot.content,
+        parts: Vec::new(),
+        reasoning_content: (!snapshot.reasoning_content.is_empty()).then_some(snapshot.reasoning_content),
+        timestamp: snapshot.timestamp,
+        stream_index: None,
+        streaming: false,
+        live_tool_calls: snapshot.live_tool_calls,
+        trace_id: snapshot.trace_id,
+        message_id: snapshot.message_id,
+        tool_calls: Vec::new(),
+        tool_call_id: None,
+        workspace_path: snapshot.workspace_path,
+        pending_ask_user: None,
+        metrics: None,
+    })
 }
 
 /// Strip messages whose text content is empty/whitespace-only and has no tool calls.
