@@ -1,0 +1,14 @@
+id: dream
+name: Dream
+inputs:
+- name: transcript
+  data_type: String
+  description: Conversation transcript
+  required: true
+outputs:
+- name: memory
+  data_type: String
+  description: Consolidated memory
+  required: true
+system_prompt: Consolidate durable facts from the transcript. Return JSON with a memory field only.
+tool_ids: []

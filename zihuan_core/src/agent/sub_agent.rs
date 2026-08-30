@@ -68,34 +68,55 @@ fn validate_ports(kind: &str, ports: &[FunctionPortDef]) -> Result<()> {
     Ok(())
 }
 
-pub fn load_subagent_definition(id: &str, available_tool_ids: &HashSet<String>) -> Result<SubAgentDefinition> {
+pub fn load_subagent_definition(
+    id: &str,
+    available_tool_ids: &HashSet<String>,
+) -> Result<SubAgentDefinition> {
     validate_subagent_id(id)?;
     let path = subagent_dir().join(format!("{id}.yaml"));
-    let content = fs::read_to_string(&path).map_err(|error| Error::ValidationError(format!("failed to read subagent '{}': {error}", path.display())))?;
-    let definition: SubAgentDefinition = serde_yaml::from_str(&content).map_err(|error| Error::ValidationError(format!("invalid subagent '{}': {error}", path.display())))?;
+    let content = fs::read_to_string(&path).map_err(|error| {
+        Error::ValidationError(format!("failed to read subagent '{}': {error}", path.display()))
+    })?;
+    let definition: SubAgentDefinition = serde_yaml::from_str(&content).map_err(|error| {
+        Error::ValidationError(format!("invalid subagent '{}': {error}", path.display()))
+    })?;
     definition.validate(available_tool_ids)?;
     Ok(definition)
 }
 
-pub fn save_subagent_definition(definition: &SubAgentDefinition, available_tool_ids: &HashSet<String>) -> Result<()> {
+pub fn save_subagent_definition(
+    definition: &SubAgentDefinition,
+    available_tool_ids: &HashSet<String>,
+) -> Result<()> {
     definition.validate(available_tool_ids)?;
-    fs::create_dir_all(subagent_dir()).map_err(|error| Error::ValidationError(format!("failed to create subagent directory: {error}")))?;
-    save_subagent_definition_at(&subagent_dir().join(format!("{}.yaml", definition.id)), definition)
+    let directory = subagent_dir();
+    fs::create_dir_all(&directory).map_err(|error| {
+        Error::ValidationError(format!("failed to create subagent directory: {error}"))
+    })?;
+    save_subagent_definition_at(&directory.join(format!("{}.yaml", definition.id)), definition)
 }
 
-pub fn list_subagent_definitions(available_tool_ids: &HashSet<String>) -> Result<Vec<SubAgentDefinition>> {
+pub fn list_subagent_definitions(
+    available_tool_ids: &HashSet<String>,
+) -> Result<Vec<SubAgentDefinition>> {
     let directory = subagent_dir();
     if !directory.exists() {
         return Ok(Vec::new());
     }
     let mut definitions = fs::read_dir(&directory)
-        .map_err(|error| Error::ValidationError(format!("failed to read subagent directory: {error}")))?
+        .map_err(|error| {
+            Error::ValidationError(format!("failed to read subagent directory: {error}"))
+        })?
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("yaml"))
         .map(|entry| {
             let path = entry.path();
-            let content = fs::read_to_string(&path).map_err(|error| Error::ValidationError(format!("failed to read subagent '{}': {error}", path.display())))?;
-            let definition: SubAgentDefinition = serde_yaml::from_str(&content).map_err(|error| Error::ValidationError(format!("invalid subagent '{}': {error}", path.display())))?;
+            let content = fs::read_to_string(&path).map_err(|error| {
+                Error::ValidationError(format!("failed to read subagent '{}': {error}", path.display()))
+            })?;
+            let definition: SubAgentDefinition = serde_yaml::from_str(&content).map_err(|error| {
+                Error::ValidationError(format!("invalid subagent '{}': {error}", path.display()))
+            })?;
             definition.validate(available_tool_ids)?;
             Ok(definition)
         })
@@ -110,12 +131,18 @@ pub fn delete_subagent_definition(id: &str) -> Result<()> {
     if !path.exists() {
         return Err(Error::ValidationError(format!("subagent '{id}' not found")));
     }
-    fs::remove_file(&path).map_err(|error| Error::ValidationError(format!("failed to delete subagent '{}': {error}", path.display())))
+    fs::remove_file(&path).map_err(|error| {
+        Error::ValidationError(format!("failed to delete subagent '{}': {error}", path.display()))
+    })
 }
 
 fn save_subagent_definition_at(path: &Path, definition: &SubAgentDefinition) -> Result<()> {
-    let yaml = serde_yaml::to_string(definition).map_err(|error| Error::ValidationError(format!("failed to serialize subagent '{}': {error}", definition.id)))?;
-    fs::write(path, yaml).map_err(|error| Error::ValidationError(format!("failed to write subagent '{}': {error}", path.display())))
+    let yaml = serde_yaml::to_string(definition).map_err(|error| {
+        Error::ValidationError(format!("failed to serialize subagent '{}': {error}", definition.id))
+    })?;
+    fs::write(path, yaml).map_err(|error| {
+        Error::ValidationError(format!("failed to write subagent '{}': {error}", path.display()))
+    })
 }
 
 

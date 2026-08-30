@@ -5,6 +5,7 @@
     </AdminPageHeader>
     <t-card bordered>
       <t-table :data="subagents" :columns="columns" row-key="id" :loading="loading">
+        <template #name="{ row }"><div class="agent-name-cell"><span>{{ row.name }}</span><t-tag size="small" variant="light" theme="primary">SubAgent</t-tag></div></template>
         <template #tools="{ row }">{{ row.tool_ids.length }} 个工具</template>
         <template #actions="{ row }"><t-button variant="text" size="small" @click="openEditor(row.id)">编辑</t-button><t-popconfirm content="确认删除这个 SubAgent 吗？默认 Agent 将在下次启动时自动恢复。" @confirm="remove(row.id)"><t-button variant="text" theme="danger" size="small">删除</t-button></t-popconfirm></template>
         <template #empty><div class="agent-config-empty">暂无 SubAgent。</div></template>
@@ -43,5 +44,5 @@ void load();
 </script>
 
 <style scoped lang="scss">
-.agent-config-hint { margin-bottom: 12px; color: var(--td-text-color-placeholder); font-size: 12px; }.agent-config-empty { padding: 48px; text-align: center; color: var(--td-text-color-placeholder); }.agent-type-card { display: grid; gap: 8px; padding: 20px; text-align: left; }.agent-type-card span { color: var(--td-text-color-placeholder); font-size: 13px; }.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }.port-list { display: grid; gap: 8px; width: 100%; }.port-row { display: grid; grid-template-columns: minmax(110px, 1fr) 120px minmax(150px, 2fr) auto auto; align-items: center; gap: 8px; }.agent-error { color: var(--td-error-color); font-size: 12px; } @media (max-width: 720px) { .form-grid, .port-row { grid-template-columns: 1fr; } }
+.agent-config-hint { margin-bottom: 12px; color: var(--td-text-color-placeholder); font-size: 12px; }.agent-config-empty { padding: 48px; text-align: center; color: var(--td-text-color-placeholder); }.agent-type-card { display: grid; gap: 8px; padding: 20px; text-align: left; }.agent-type-card span { color: var(--td-text-color-placeholder); font-size: 13px; }.agent-name-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }.agent-name-cell > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }.port-list { display: grid; gap: 8px; width: 100%; }.port-row { display: grid; grid-template-columns: minmax(110px, 1fr) 120px minmax(150px, 2fr) auto auto; align-items: center; gap: 8px; }.agent-error { color: var(--td-error-color); font-size: 12px; } @media (max-width: 720px) { .form-grid, .port-row { grid-template-columns: 1fr; } }
 </style>
