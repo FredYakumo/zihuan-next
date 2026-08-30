@@ -477,8 +477,9 @@
 }
 
 .workspace-task-panel-title { margin-bottom: 6px; font-size: 12px; font-weight: 700; color: var(--admin-text-muted); }
-.workspace-task-item { display: flex; column-gap: 9px; align-items: center; min-width: 0; padding: 3px 0; color: var(--admin-text-muted); font-size: 13px; }
-.workspace-task-item svg { flex: 0 0 auto; width: 15px; height: 15px; }
+.workspace-task-item { display: flex; align-items: center; min-width: 0; padding: 3px 0; color: var(--admin-text-muted); font-size: 13px; }
+.workspace-task-icon { display: inline-flex; flex: 0 0 15px; width: 15px; height: 15px; margin-right: 9px; }
+.workspace-task-icon svg { width: 15px; height: 15px; }
 .workspace-task-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-task-item.completed { color: var(--td-success-color, #2ba471); text-decoration: line-through; }
 .workspace-task-item.pending { color: var(--td-warning-color, #e8a317); }
@@ -487,7 +488,7 @@
 .workspace-task-loading { animation: workspace-task-spin 1s linear infinite; }
 
 .workspace-task-list--tool,
-.workspace-task-inline-panel {
+.workspace-task-list--interrupted-message {
   margin-top: 8px;
   padding: 10px;
   border: 1px solid var(--admin-border);
@@ -505,7 +506,11 @@
   margin-bottom: 4px;
 }
 
-.workspace-task-inline-panel { margin: 12px 24px 0; }
+.workspace-task-list--interrupted-message {
+  width: min(280px, 100%);
+  box-sizing: border-box;
+  margin-top: 12px;
+}
 
 @keyframes workspace-task-spin {
   to { transform: rotate(360deg); }

@@ -580,6 +580,12 @@
                         </div>
                       </div>
                     </div>
+                    <WorkspaceTaskList
+                      v-if="showInterruptedWorkspaceTasks && message.id === lastAssistantMessageId"
+                      class="workspace-task-list--interrupted-message"
+                      :tasks="workspaceTasks"
+                      interrupted
+                    />
                   </div>
                 </div>
                 <div v-if="group.role !== 'assistant'" class="chat-bubble-col">
@@ -951,12 +957,6 @@
               <div v-if="chatErrorMessage" class="chat-error-box" role="alert">
                 {{ chatErrorMessage }}
               </div>
-              <WorkspaceTaskList
-                v-if="showInterruptedWorkspaceTasks"
-                class="workspace-task-inline-panel"
-                :tasks="workspaceTasks"
-                interrupted
-              />
             </div>
           </div>
         </div>
@@ -1483,6 +1483,9 @@ const showWorkspaceTaskPanel = computed(
 );
 const showInterruptedWorkspaceTasks = computed(
   () => isWorkspaceService.value && workspaceTasks.value.some((task) => task.status !== "completed") && workspaceTaskInterrupted.value,
+);
+const lastAssistantMessageId = computed(
+  () => [...messages.value].reverse().find((message) => message.role === "assistant")?.id ?? "",
 );
 
 function hasWorkspaceTaskToolCall(message: { toolCalls: Array<{ function: { name: string } }>; liveToolCalls?: Array<{ name: string }> }) {
