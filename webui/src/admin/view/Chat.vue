@@ -667,6 +667,11 @@
                                 <EditIcon />
                               </t-button>
                             </t-tooltip>
+                            <t-tooltip content="重发并创建新分支">
+                              <t-button variant="text" size="small" shape="square" :disabled="sending || message.id.startsWith('local-')" aria-label="重发消息" @click="resendMessage(message)">
+                                <RefreshIcon />
+                              </t-button>
+                            </t-tooltip>
                             <template v-if="messageBranchMap.has(message.id)">
                               <t-button variant="text" size="small" shape="square" :disabled="sending || messageBranchMap.get(message.id)?.current_index === 0" aria-label="上一版本" @click="switchMessageBranch(message.id, -1)">
                                 <ChevronLeftIcon />
@@ -1622,6 +1627,7 @@ const {
   startEditingMessage,
   cancelEditingMessage,
   submitEditingMessage,
+  resendMessage,
   switchMessageBranch,
   pickDirectory,
   loadDirectoryPicker,

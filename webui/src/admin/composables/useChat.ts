@@ -1423,6 +1423,28 @@ async function submitEditingMessage() {
   }
 }
 
+async function resendMessage(message: ChatMessage) {
+  if (sending.value || message.role !== "user" || message.id.startsWith("local-") || !activeSessionId.value) {
+    return;
+  }
+  const content = message.content.trim();
+  const attachments = message.imageAttachments ?? [];
+  if (!content && attachments.length === 0) {
+    return;
+  }
+  if (!supportsMultimodalInput.value && attachments.length > 0) {
+    showChatError("当前模型不支持多模态输入，无法发送图片。");
+    return;
+  }
+  try {
+    const forked = await chat.forkSession(activeSessionId.value, message.id);
+    await openSession(forked.session_id);
+    await sendMessageWithText(content, false, { attachments, isEdit: true });
+  } catch (error) {
+    showChatError(`创建对话分支失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 async function loadDirectoryPicker(path?: string) {
   directoryPickerLoading.value = true;
   directoryPickerError.value = "";
@@ -2283,6 +2305,7 @@ onUnmounted(() => {
     startEditingMessage,
     cancelEditingMessage,
     submitEditingMessage,
+    resendMessage,
     switchMessageBranch,
     pickDirectory,
     loadDirectoryPicker,
