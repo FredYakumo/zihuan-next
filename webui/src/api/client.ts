@@ -359,6 +359,7 @@ export interface LlmServiceConfig {
   include_reasoning_content: boolean;
   thinking_type?: "enabled" | "disabled" | null;
   reasoning_effort?: "low" | "medium" | "high" | "max" | null;
+  context_length?: number | null;
   timeout_secs: number;
   retry_count: number;
 }

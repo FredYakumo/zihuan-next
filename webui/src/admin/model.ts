@@ -318,6 +318,7 @@ export function defaultLlmConfig(): LlmServiceConfig {
     include_reasoning_content: false,
     thinking_type: null,
     reasoning_effort: null,
+    context_length: null,
     timeout_secs: 30,
     retry_count: 2,
   };
@@ -796,6 +797,7 @@ export function llmFormFromConfig(config: LlmConfig): LlmFormState {
       ),
       thinking_type: config.model.llm.thinking_type ?? null,
       reasoning_effort: config.model.llm.reasoning_effort ?? null,
+      context_length: config.model.llm.context_length ?? null,
       timeout_secs: config.model.llm.timeout_secs,
       retry_count: config.model.llm.retry_count,
     },
