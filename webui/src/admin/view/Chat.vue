@@ -277,15 +277,12 @@
                             :ref="(element) => setLiveOutputElement(liveCall.call_id, element)"
                             @scroll="handleLiveOutputScroll(liveCall.call_id)"
                           >{{ liveExecOutput(liveCall) }}</pre>
-                          <div v-if="liveCall.commandConfirmation" class="chat-command-confirmation">
-                            <span v-if="liveCall.commandConfirmation.decision">用户{{ liveCall.commandConfirmation.decision === 'reject' ? '已拒绝' : '已确认执行' }}</span>
-                            <template v-else>
-                              <span class="chat-command-confirmation-question">允许执行此命令？</span>
-                              <code class="chat-command-confirmation-command">{{ liveCall.commandConfirmation.shell }}&gt; {{ liveCall.commandConfirmation.command }}</code>
-                              <button class="btn primary" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
-                              <button class="btn secondary" @click="decideCommandConfirmation(liveCall, 'session')">本次对话允许类似指令</button>
-                              <button class="btn danger" @click="decideCommandConfirmation(liveCall, 'reject')">拒绝</button>
-                            </template>
+                          <div v-if="liveCall.commandConfirmation && !liveCall.commandConfirmation.decision" class="chat-command-confirmation">
+                            <span class="chat-command-confirmation-question">允许执行此命令？</span>
+                            <code class="chat-command-confirmation-command">{{ liveCall.commandConfirmation.shell }}&gt; {{ liveCall.commandConfirmation.command }}</code>
+                            <button class="btn primary" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
+                            <button class="btn secondary" @click="decideCommandConfirmation(liveCall, 'session')">本次对话允许类似指令</button>
+                            <button class="btn danger" @click="decideCommandConfirmation(liveCall, 'reject')">拒绝</button>
                           </div>
                         </div>
                       </div>
@@ -501,15 +498,12 @@
                             :ref="(element) => setLiveOutputElement(liveCall.call_id, element)"
                             @scroll="handleLiveOutputScroll(liveCall.call_id)"
                           >{{ liveExecOutput(liveCall) }}</pre>
-                          <div v-if="liveCall.commandConfirmation" class="chat-command-confirmation">
-                            <span v-if="liveCall.commandConfirmation.decision">用户{{ liveCall.commandConfirmation.decision === 'reject' ? '已拒绝' : '已确认执行' }}</span>
-                            <template v-else>
-                              <span class="chat-command-confirmation-question">允许执行此命令？</span>
-                              <code class="chat-command-confirmation-command">{{ liveCall.commandConfirmation.shell }}&gt; {{ liveCall.commandConfirmation.command }}</code>
-                              <button class="btn primary" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
-                              <button class="btn secondary" @click="decideCommandConfirmation(liveCall, 'session')">本次对话允许类似指令</button>
-                              <button class="btn danger" @click="decideCommandConfirmation(liveCall, 'reject')">拒绝</button>
-                            </template>
+                          <div v-if="liveCall.commandConfirmation && !liveCall.commandConfirmation.decision" class="chat-command-confirmation">
+                            <span class="chat-command-confirmation-question">允许执行此命令？</span>
+                            <code class="chat-command-confirmation-command">{{ liveCall.commandConfirmation.shell }}&gt; {{ liveCall.commandConfirmation.command }}</code>
+                            <button class="btn primary" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
+                            <button class="btn secondary" @click="decideCommandConfirmation(liveCall, 'session')">本次对话允许类似指令</button>
+                            <button class="btn danger" @click="decideCommandConfirmation(liveCall, 'reject')">拒绝</button>
                           </div>
                         </div>
                       </div>
