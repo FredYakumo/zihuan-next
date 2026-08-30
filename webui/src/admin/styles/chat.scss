@@ -477,7 +477,7 @@
 }
 
 .workspace-task-panel-title { margin-bottom: 6px; font-size: 12px; font-weight: 700; color: var(--admin-text-muted); }
-.workspace-task-item { display: flex; gap: 7px; align-items: center; min-width: 0; padding: 3px 0; color: var(--admin-text-muted); font-size: 13px; }
+.workspace-task-item { display: flex; column-gap: 9px; align-items: center; min-width: 0; padding: 3px 0; color: var(--admin-text-muted); font-size: 13px; }
 .workspace-task-item svg { flex: 0 0 auto; width: 15px; height: 15px; }
 .workspace-task-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-task-item.completed { color: var(--td-success-color, #2ba471); text-decoration: line-through; }
@@ -493,6 +493,16 @@
   border: 1px solid var(--admin-border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--admin-bg-panel) 94%, transparent);
+}
+
+.workspace-task-list--tool {
+  width: min(280px, 100%);
+  box-sizing: border-box;
+  margin-bottom: 10px;
+}
+
+.workspace-task-list--compact .workspace-task-panel-title {
+  margin-bottom: 4px;
 }
 
 .workspace-task-inline-panel { margin: 12px 24px 0; }

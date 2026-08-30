@@ -1,5 +1,5 @@
 <template>
-  <div class="workspace-task-list">
+  <div class="workspace-task-list" :class="{ 'workspace-task-list--compact': compact }">
     <div class="workspace-task-panel-title">{{ interrupted ? "TODO（未完成）" : "TODO" }}</div>
     <div
       v-for="task in tasks"
@@ -23,5 +23,6 @@ import type { WorkspaceTask } from "../../api/client";
 defineProps<{
   tasks: WorkspaceTask[];
   interrupted?: boolean;
+  compact?: boolean;
 }>();
 </script>

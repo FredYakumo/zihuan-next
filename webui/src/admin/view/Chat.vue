@@ -330,6 +330,7 @@
                         v-if="hasWorkspaceTaskToolCall(message)"
                         class="workspace-task-list--tool"
                         :tasks="workspaceTasks"
+                        compact
                       />
                       <div
                         v-if="activeToolDetail?.messageId === message.id"
@@ -553,6 +554,7 @@
                         v-if="hasWorkspaceTaskToolCall(message)"
                         class="workspace-task-list--tool"
                         :tasks="workspaceTasks"
+                        compact
                       />
                       <div
                         v-if="activeToolDetail?.messageId === message.id"
@@ -1472,8 +1474,12 @@ const historyCollapsed = ref(!props.embedded && localStorage.getItem(HISTORY_COL
 
 const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskUpdate", "TaskGet", "TaskList"]);
 
+const activeSessionRunning = computed(() => {
+  const session = sessions.value.find((item) => item.session_id === activeSessionId.value);
+  return sending.value || session?.running_task_id != null || session?.task_status === "running";
+});
 const showWorkspaceTaskPanel = computed(
-  () => isWorkspaceService.value && workspaceTasks.value.length > 0 && sending.value,
+  () => isWorkspaceService.value && workspaceTasks.value.length > 0 && activeSessionRunning.value,
 );
 const showInterruptedWorkspaceTasks = computed(
   () => isWorkspaceService.value && workspaceTasks.value.some((task) => task.status !== "completed") && workspaceTaskInterrupted.value,
