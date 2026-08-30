@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -42,6 +43,7 @@ pub fn load_workspace_tasks(session_id: &str) -> Result<WorkspaceTaskSnapshot, S
 
 pub fn delete_workspace_tasks(session_id: &str) -> Result<(), String> {
     let path = task_file_path(session_id)?;
+    let _lock = lock_workspace_tasks(&path)?;
     if path.exists() { fs::remove_file(path).map_err(|err| format!("failed to delete task snapshot: {err}"))?; }
     Ok(())
 }
@@ -51,14 +53,41 @@ fn task_file_path(session_id: &str) -> Result<std::path::PathBuf, String> {
     Ok(zihuan_core::system_config::application_data_dir().join("chat_history").join(format!("{session_id}.tasks.json")))
 }
 
+fn lock_workspace_tasks(path: &std::path::Path) -> Result<File, String> {
+    let parent = path.parent().ok_or_else(|| "task snapshot has no parent directory".to_string())?;
+    fs::create_dir_all(parent).map_err(|err| format!("failed to create task snapshot directory: {err}"))?;
+    let lock_path = path.with_extension("tasks.lock");
+    let lock = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(lock_path)
+        .map_err(|err| format!("failed to open task snapshot lock: {err}"))?;
+    lock.lock_exclusive().map_err(|err| format!("failed to lock task snapshot: {err}"))?;
+    Ok(lock)
+}
+
 fn save_workspace_tasks(session_id: &str, snapshot: &WorkspaceTaskSnapshot) -> Result<(), String> {
     let path = task_file_path(session_id)?;
     let parent = path.parent().ok_or_else(|| "task snapshot has no parent directory".to_string())?;
     fs::create_dir_all(parent).map_err(|err| format!("failed to create task snapshot directory: {err}"))?;
-    let temporary = path.with_extension("tasks.json.tmp");
-    let file = OpenOptions::new().create(true).truncate(true).write(true).open(&temporary).map_err(|err| format!("failed to write task snapshot: {err}"))?;
-    serde_json::to_writer(file, snapshot).map_err(|err| format!("failed to serialize task snapshot: {err}"))?;
-    fs::rename(temporary, path).map_err(|err| format!("failed to replace task snapshot: {err}"))
+    let file_name = path.file_name().and_then(|name| name.to_str()).ok_or_else(|| "task snapshot has no file name".to_string())?;
+    let temporary = parent.join(format!(".{file_name}.{}.tmp", Uuid::new_v4().simple()));
+    let result = (|| {
+        let file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)
+            .map_err(|err| format!("failed to write task snapshot: {err}"))?;
+        serde_json::to_writer(&file, snapshot).map_err(|err| format!("failed to serialize task snapshot: {err}"))?;
+        file.sync_all().map_err(|err| format!("failed to sync task snapshot: {err}"))?;
+        drop(file);
+        fs::rename(&temporary, &path).map_err(|err| format!("failed to replace task snapshot: {err}"))
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
 
 fn validate(snapshot: &WorkspaceTaskSnapshot) -> Result<(), String> {
@@ -107,13 +136,24 @@ impl Tool for WorkspaceTaskTool {
         std::sync::Arc::new(StaticFunctionToolSpec { name: self.name, description: "Track the current Workspace Chat task plan. Create a task list before non-trivial work; update one task at a time as work progresses.", parameters })
     }
     fn execute(&self, _: &str, arguments: &Value) -> String {
-        let mut snapshot = match load_workspace_tasks(&self.session_id) { Ok(value) => value, Err(err) => return json_error(err) };
         match self.name {
-            DEFAULT_TOOL_TASK_LIST => return response(&snapshot, None),
+            DEFAULT_TOOL_TASK_LIST => {
+                let snapshot = match load_workspace_tasks(&self.session_id) { Ok(value) => value, Err(err) => return json_error(err) };
+                return response(&snapshot, None);
+            }
             DEFAULT_TOOL_TASK_GET => {
+                let snapshot = match load_workspace_tasks(&self.session_id) { Ok(value) => value, Err(err) => return json_error(err) };
                 let Some(id) = arguments.get("taskId").and_then(Value::as_str) else { return json_error("taskId is required"); };
                 return match snapshot.tasks.iter().find(|task| task.task_id == id) { Some(task) => response(&snapshot, Some(task)), None => json_error(format!("task '{id}' was not found")) };
             }
+            DEFAULT_TOOL_TASK_CREATE | DEFAULT_TOOL_TASK_UPDATE => {}
+            _ => return json_error("unknown task tool"),
+        }
+
+        let path = match task_file_path(&self.session_id) { Ok(path) => path, Err(err) => return json_error(err) };
+        let _lock = match lock_workspace_tasks(&path) { Ok(lock) => lock, Err(err) => return json_error(err) };
+        let mut snapshot = match load_workspace_tasks(&self.session_id) { Ok(value) => value, Err(err) => return json_error(err) };
+        match self.name {
             DEFAULT_TOOL_TASK_CREATE => {
                 let Some(subject) = arguments.get("subject").and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty()) else { return json_error("subject is required"); };
                 let Some(active_form) = arguments.get("activeForm").and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty()) else { return json_error("activeForm is required"); };
@@ -133,7 +173,7 @@ impl Tool for WorkspaceTaskTool {
                     if let Some(status) = arguments.get("status").and_then(Value::as_str) { task.status = match status { "pending" => WorkspaceTaskStatus::Pending, "in_progress" => WorkspaceTaskStatus::InProgress, "completed" => WorkspaceTaskStatus::Completed, _ => return json_error("status must be pending, in_progress, completed, or deleted") }; }
                 }
             }
-            _ => return json_error("unknown task tool"),
+            _ => unreachable!("read-only task tools returned before entering the write transaction"),
         }
         if let Err(err) = validate(&snapshot) { return json_error(err); }
         if let Err(err) = save_workspace_tasks(&self.session_id, &snapshot) { return json_error(err); }
