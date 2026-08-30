@@ -760,7 +760,7 @@ impl NodeGraph {
         let mut node_results: HashMap<String, NodeOutputFlow> = HashMap::new();
 
         // Try to execute, if error occurs, return early with error info
-        match crate::graph::script_node::with_dynamic_script_resources(|| self.execute_and_capture_results_internal(&mut node_results)) {
+        match crate::graph::script_node::with_dynamic_script_resources(|| self.execute_and_collect_node_results(&mut node_results)) {
             Ok(()) => ExecutionResult::success(node_results),
             Err(e) => {
                 // Extract node ID from error if possible
@@ -792,7 +792,7 @@ impl NodeGraph {
         None
     }
 
-    fn execute_and_capture_results_internal(
+    fn execute_and_collect_node_results(
         &mut self,
         node_results: &mut HashMap<String, NodeOutputFlow>,
     ) -> Result<()> {

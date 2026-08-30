@@ -14,7 +14,7 @@ use log::{error, info};
 use log_util::log_util::LogUtil;
 use salvo::Listener;
 use zihuan_core::config::ConfigRepository;
-use zihuan_core::node_runtime_resolver::check_node_runtime;
+use dynamic_script_engine::check_node_runtime;
 
 lazy_static! {
     static ref BASE_LOG: LogUtil = LogUtil::new_with_path("zihuan_next", "logs");
@@ -64,7 +64,7 @@ async fn main() {
 
     let args = Args::parse();
 
-    if let Err(error) = zihuan_core::agent::sub_agent::bootstrap_default_subagents() {
+    if let Err(error) = zihuan_core::agent::sub_agent_manager::ensure_default_subagents() {
         error!("Failed to initialize default SubAgents: {error}");
     }
 
@@ -133,7 +133,9 @@ async fn start_node_worker() -> zihuan_core::error::Result<()> {
     let workspace_root = std::env::current_dir()
         .map_err(|error| zihuan_core::error::Error::ValidationError(format!("无法获取动态脚本运行时工作目录: {error}")))?;
     let config = zihuan_core::config::ConfigCenter::shared().load_root()?.node_runtime;
-    let (_command, version, executable) = check_node_runtime(&workspace_root, &config).await?;
+    let (_command, version, executable) = check_node_runtime(&workspace_root, &config)
+        .await
+        .map_err(|error| zihuan_core::error::Error::ValidationError(error.to_string()))?;
     info!("Dynamic Script Runtime ready: {executable} ({version})");
     zihuan_core::graph::script_node::start_dynamic_script_runtime()
 }

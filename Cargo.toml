@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "dynamic_script_engine",
     "node_macros",
     "general_wheel_cpp",
     "zihuan_core",

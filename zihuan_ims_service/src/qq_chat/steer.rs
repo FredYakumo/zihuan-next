@@ -5,9 +5,9 @@ use chrono::Local;
 use log::{info, warn};
 
 use zihuan_core::agent::tools::ToolCallingMiddleware;
-use zihuan_core::agent::emotion::utils::has_noticeable_emotion_expression;
+use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent::utils::build_state_system_prefix_lines;
+use crate::agent::utils::build_state_system_prefix_lines;
 
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::error::Result;
@@ -87,9 +87,9 @@ fn build_merged_steer_user_message(
         style_prompt
     };
     let merged_prompt = merge_character_and_style_prompt(system_prompt, style_prompt);
+    let emotion_prompt = emotion_expression_prompt(session_state, emotion_dimensions);
     let prefix_lines = build_state_system_prefix_lines(
-        session_state,
-        emotion_dimensions,
+        &emotion_prompt,
         &merged_prompt,
         preprompt_context,
     );

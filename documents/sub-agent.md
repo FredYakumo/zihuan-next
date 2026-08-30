@@ -4,21 +4,13 @@
 
 ## 配置文件
 
-每个定义保存为应用数据目录下的独立 YAML 文件：
+每个定义保存为程序目录下 `sub_agents` 文件夹中的独立 YAML 文件：
 
 ```text
-<用户目录>/subagent/<id>.yaml
-```
-
-其中 `<用户目录>` 由 `zihuan_core::system_config::application_data_dir()` 决定。文件名由 `id` 决定，例如 Memory 的默认文件为：
-
-```text
-<application_data_dir>/subagent/memory.yaml
+<程序目录>/sub_agents/<id>.yaml
 ```
 
 配置定义如下：
-
-字段含义：
 
 - `id`：唯一标识，同时决定 YAML 文件名和 `SubAgentTool` 的工具名。
 - `name`：名称

@@ -141,8 +141,10 @@ function apiStyleLabel(apiStyle: string) {
   return labels[apiStyle] ?? apiStyle;
 }
 function copyLlmConfig(item: LlmConfig) { copyConfig({ name: item.name, enabled: item.enabled, model: item.model }, item.config_id); }
+
 </script>
 
 <style scoped lang="scss">
 @use "../styles/llm" as *;
+
 </style>

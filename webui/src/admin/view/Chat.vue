@@ -179,13 +179,8 @@
                 {{ workspacePath || '未选择工作目录' }}
               </span>
             </div>
-            <aside v-if="isWorkspaceService && workspaceTasks.length" class="workspace-task-panel" aria-label="当前任务">
-              <div class="workspace-task-panel-title">TODO</div>
-              <div v-for="task in workspaceTasks" :key="task.task_id" class="workspace-task-item" :class="{ completed: task.status === 'completed' }">
-                <CheckCircleIcon v-if="task.status === 'completed'" />
-                <TimeIcon v-else />
-                <span>{{ task.subject }}</span>
-              </div>
+            <aside v-if="showWorkspaceTaskPanel" class="workspace-task-panel" aria-label="当前任务">
+              <WorkspaceTaskList :tasks="workspaceTasks" />
             </aside>
             <div class="chat-messages" ref="messagesContainer" @scroll="handleMessagesScroll">
               <div v-if="messages.length === 0" class="empty-state"></div>
@@ -331,6 +326,12 @@
                           />
                         </template>
                       </div>
+                      <WorkspaceTaskList
+                        v-if="hasWorkspaceTaskToolCall(message)"
+                        class="workspace-task-list--tool"
+                        :tasks="workspaceTasks"
+                        compact
+                      />
                       <div
                         v-if="activeToolDetail?.messageId === message.id"
                         class="chat-tool-detail-inline"
@@ -549,6 +550,12 @@
                           />
                         </template>
                       </div>
+                      <WorkspaceTaskList
+                        v-if="hasWorkspaceTaskToolCall(message)"
+                        class="workspace-task-list--tool"
+                        :tasks="workspaceTasks"
+                        compact
+                      />
                       <div
                         v-if="activeToolDetail?.messageId === message.id"
                         class="chat-tool-detail-inline"
@@ -573,6 +580,12 @@
                         </div>
                       </div>
                     </div>
+                    <WorkspaceTaskList
+                      v-if="showInterruptedWorkspaceTasks && message.id === lastAssistantMessageId"
+                      class="workspace-task-list--interrupted-message"
+                      :tasks="workspaceTasks"
+                      interrupted
+                    />
                   </div>
                 </div>
                 <div v-if="group.role !== 'assistant'" class="chat-bubble-col">
@@ -1437,8 +1450,6 @@ import {
   BookmarkIcon,
   InternetIcon,
   StopIcon,
-  CheckCircleIcon,
-  TimeIcon,
   RefreshIcon,
 } from "tdesign-icons-vue-next";
 
@@ -1446,6 +1457,7 @@ import { computed, ref, watch } from "vue";
 
 import { useChat } from "../composables/useChat";
 import ToolCallBadge from "./ToolCallBadge.vue";
+import WorkspaceTaskList from "./WorkspaceTaskList.vue";
 
 const props = defineProps<{
   agentId?: string;
@@ -1459,6 +1471,27 @@ const emit = defineEmits<{
 
 const HISTORY_COLLAPSED_KEY = "zihuan.chat.history-collapsed";
 const historyCollapsed = ref(!props.embedded && localStorage.getItem(HISTORY_COLLAPSED_KEY) === "1");
+
+const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskUpdate", "TaskGet", "TaskList"]);
+
+const activeSessionRunning = computed(() => {
+  const session = sessions.value.find((item) => item.session_id === activeSessionId.value);
+  return sending.value || session?.running_task_id != null || session?.task_status === "running";
+});
+const showWorkspaceTaskPanel = computed(
+  () => isWorkspaceService.value && workspaceTasks.value.length > 0 && activeSessionRunning.value,
+);
+const showInterruptedWorkspaceTasks = computed(
+  () => isWorkspaceService.value && workspaceTasks.value.some((task) => task.status !== "completed") && workspaceTaskInterrupted.value,
+);
+const lastAssistantMessageId = computed(
+  () => [...messages.value].reverse().find((message) => message.role === "assistant")?.id ?? "",
+);
+
+function hasWorkspaceTaskToolCall(message: { toolCalls: Array<{ function: { name: string } }>; liveToolCalls?: Array<{ name: string }> }) {
+  return message.toolCalls.some((call) => TASK_TOOL_NAMES.has(call.function.name)) ||
+    message.liveToolCalls?.some((call) => TASK_TOOL_NAMES.has(call.name)) === true;
+}
 
 function toggleHistory() {
   historyCollapsed.value = !historyCollapsed.value;
@@ -1520,6 +1553,7 @@ const {
   pendingAskUser,
   workspaceChanges,
   workspaceTasks,
+  workspaceTaskInterrupted,
   selectedWorkspaceChange,
   workspaceChangeDialogOpen,
   workspaceChangeError,

@@ -1,8 +1,6 @@
 <template>
   <section class="page agent-service-page">
     <AdminPageHeader title="Service 管理">
-      <t-button variant="outline" @click="openSubagent('memory')">Memory SubAgent</t-button>
-      <t-button variant="outline" @click="openSubagent('dream')">Dream SubAgent</t-button>
       <t-button variant="outline" @click="triggerServiceImportFile">导入配置</t-button>
       <input ref="serviceImportFileInput" type="file" accept=".json" class="agent-service-import-input" @change="handleServiceFileChange" />
       <t-button theme="primary" @click="startCreate">新建 Service</t-button>
@@ -1292,26 +1290,6 @@
       </t-table>
     </t-card>
     <t-dialog
-      v-model:visible="subagentDialogVisible"
-      :header="`${subagentForm.id || 'SubAgent'} 配置`"
-      :confirm-btn="{ content: '保存', loading: subagentSaving }"
-      cancel-btn="取消"
-      width="720px"
-      @confirm="saveSubagent"
-    >
-      <t-form label-align="top">
-        <div class="agent-service-form-grid">
-          <t-form-item label="ID"><t-input v-model="subagentForm.id" disabled /></t-form-item>
-          <t-form-item label="名称"><t-input v-model="subagentForm.name" /></t-form-item>
-        </div>
-        <t-form-item label="System Prompt"><t-textarea v-model="subagentForm.system_prompt" :autosize="{ minRows: 5, maxRows: 12 }" /></t-form-item>
-        <t-form-item label="输入端口 JSON"><t-textarea v-model="subagentInputsText" :autosize="{ minRows: 4, maxRows: 10 }" /></t-form-item>
-        <t-form-item label="输出端口 JSON"><t-textarea v-model="subagentOutputsText" :autosize="{ minRows: 4, maxRows: 10 }" /></t-form-item>
-        <t-form-item label="允许工具"><t-checkbox-group v-model="subagentForm.tool_ids"><t-checkbox v-for="tool in availableSubagentTools" :key="tool.id" :value="tool.id">{{ tool.name }}</t-checkbox></t-checkbox-group></t-form-item>
-        <div v-if="subagentError" class="agent-service-form-hint" style="color: var(--td-error-color)">{{ subagentError }}</div>
-      </t-form>
-    </t-dialog>
-    <t-dialog
       v-model:visible="showModelConfigDialog"
       header="新增模型配置"
       :confirm-btn="null"
@@ -1360,7 +1338,7 @@
 import { computed, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { AddIcon, CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
-import { system, type ServiceWithRuntime, type SubAgentDefinition } from "../../api/client";
+import { system, type ServiceWithRuntime } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useAgents } from "../composables/useAgents";
 import { assertConnectionConfig, assertLlmConfig } from "../model";
@@ -1484,46 +1462,6 @@ const {
   copyServiceConfig,
   handleServiceFileChange,
 } = useAgents();
-
-const subagentDialogVisible = ref(false);
-const subagentSaving = ref(false);
-const subagentError = ref("");
-const subagentInputsText = ref("[]");
-const subagentOutputsText = ref("[]");
-const subagentForm = reactive<SubAgentDefinition>({ id: "", name: "", inputs: [], outputs: [], system_prompt: "", tool_ids: [] });
-const availableSubagentTools = computed(() => [
-  ...qqChatDefaultTools.map((tool) => ({ id: tool.id, name: tool.name })),
-  ...workspaceDefaultTools.filter((tool) => !qqChatDefaultTools.some((item) => item.id === tool.id)).map((tool) => ({ id: tool.id, name: tool.name })),
-]);
-
-async function openSubagent(id: "memory" | "dream") {
-  subagentError.value = "";
-  try {
-    const definition = await system.subagents.get(id, availableSubagentTools.value.map((tool) => tool.id));
-    Object.assign(subagentForm, definition);
-    subagentInputsText.value = JSON.stringify(definition.inputs, null, 2);
-    subagentOutputsText.value = JSON.stringify(definition.outputs, null, 2);
-    subagentDialogVisible.value = true;
-  } catch (error) {
-    subagentError.value = error instanceof Error ? error.message : String(error);
-    subagentDialogVisible.value = true;
-  }
-}
-
-async function saveSubagent() {
-  subagentError.value = "";
-  try {
-    subagentForm.inputs = JSON.parse(subagentInputsText.value) as SubAgentDefinition["inputs"];
-    subagentForm.outputs = JSON.parse(subagentOutputsText.value) as SubAgentDefinition["outputs"];
-    subagentSaving.value = true;
-    await system.subagents.save(subagentForm.id, { ...subagentForm }, availableSubagentTools.value.map((tool) => tool.id));
-    subagentDialogVisible.value = false;
-  } catch (error) {
-    subagentError.value = error instanceof Error ? error.message : String(error);
-  } finally {
-    subagentSaving.value = false;
-  }
-}
 
 const router = useRouter();
 const showModelConfigDialog = ref(false);
@@ -2167,6 +2105,7 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   .agent-service-form-grid {
     grid-template-columns: 1fr;
   }
+
 }
 
 @media (max-width: 560px) {

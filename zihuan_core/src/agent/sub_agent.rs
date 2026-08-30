@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -17,10 +17,7 @@ use crate::graph::DataValue;
 use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::tooling::FunctionTool;
 use crate::model_inference::llm::LLMMessage;
-use crate::system_config::application_data_dir;
-
-const DEFAULT_MEMORY_ID: &str = "memory";
-const DEFAULT_DREAM_ID: &str = "dream";
+use crate::agent::sub_agent_manager::subagent_dir;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SubAgentDefinition {
@@ -37,7 +34,9 @@ pub struct SubAgentDefinition {
 
 impl SubAgentDefinition {
     pub fn validate(&self, available_tool_ids: &HashSet<String>) -> Result<()> {
-        if self.id.trim().is_empty() || self.name.trim().is_empty() { return Err(Error::ValidationError("subagent id and name must not be empty".to_string())); }
+        validate_subagent_id(&self.id)?;
+        if self.name.trim().is_empty() { return Err(Error::ValidationError("subagent name must not be empty".to_string())); }
+        if available_tool_ids.contains(&self.id) { return Err(Error::ValidationError(format!("subagent id '{}' conflicts with an available tool id", self.id))); }
         validate_ports("input", &self.inputs)?;
         validate_ports("output", &self.outputs)?;
         let mut seen = HashSet::new();
@@ -49,6 +48,17 @@ impl SubAgentDefinition {
     }
 }
 
+pub fn validate_subagent_id(id: &str) -> Result<()> {
+    let mut characters = id.chars();
+    let Some(first) = characters.next() else {
+        return Err(Error::ValidationError("subagent id must not be empty".to_string()));
+    };
+    if !first.is_ascii_lowercase() || !characters.all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_') {
+        return Err(Error::ValidationError("subagent id must start with a lowercase letter and contain only lowercase letters, numbers, or underscores".to_string()));
+    }
+    Ok(())
+}
+
 fn validate_ports(kind: &str, ports: &[FunctionPortDef]) -> Result<()> {
     let mut names = HashSet::new();
     for port in ports {
@@ -58,48 +68,83 @@ fn validate_ports(kind: &str, ports: &[FunctionPortDef]) -> Result<()> {
     Ok(())
 }
 
-pub fn subagent_dir() -> PathBuf { application_data_dir().join("subagent") }
-
-pub fn bootstrap_default_subagents() -> Result<()> {
-    bootstrap_default_subagents_at(&subagent_dir())
-}
-
-fn bootstrap_default_subagents_at(directory: &Path) -> Result<()> {
-    fs::create_dir_all(directory).map_err(|error| Error::ValidationError(format!("failed to create subagent directory: {error}")))?;
-    for definition in [default_memory_definition(), default_dream_definition()] {
-        let path = directory.join(format!("{}.yaml", definition.id));
-        if !path.exists() { save_subagent_definition_at(&path, &definition)?; }
-    }
-    Ok(())
-}
-
-pub fn load_subagent_definition(id: &str, available_tool_ids: &HashSet<String>) -> Result<SubAgentDefinition> {
-    bootstrap_default_subagents()?;
+pub fn load_subagent_definition(
+    id: &str,
+    available_tool_ids: &HashSet<String>,
+) -> Result<SubAgentDefinition> {
+    validate_subagent_id(id)?;
     let path = subagent_dir().join(format!("{id}.yaml"));
-    let content = fs::read_to_string(&path).map_err(|error| Error::ValidationError(format!("failed to read subagent '{}': {error}", path.display())))?;
-    let definition: SubAgentDefinition = serde_yaml::from_str(&content).map_err(|error| Error::ValidationError(format!("invalid subagent '{}': {error}", path.display())))?;
+    let content = fs::read_to_string(&path).map_err(|error| {
+        Error::ValidationError(format!("failed to read subagent '{}': {error}", path.display()))
+    })?;
+    let definition: SubAgentDefinition = serde_yaml::from_str(&content).map_err(|error| {
+        Error::ValidationError(format!("invalid subagent '{}': {error}", path.display()))
+    })?;
     definition.validate(available_tool_ids)?;
     Ok(definition)
 }
 
-pub fn save_subagent_definition(definition: &SubAgentDefinition, available_tool_ids: &HashSet<String>) -> Result<()> {
+pub fn save_subagent_definition(
+    definition: &SubAgentDefinition,
+    available_tool_ids: &HashSet<String>,
+) -> Result<()> {
     definition.validate(available_tool_ids)?;
-    fs::create_dir_all(subagent_dir()).map_err(|error| Error::ValidationError(format!("failed to create subagent directory: {error}")))?;
-    save_subagent_definition_at(&subagent_dir().join(format!("{}.yaml", definition.id)), definition)
+    let directory = subagent_dir();
+    fs::create_dir_all(&directory).map_err(|error| {
+        Error::ValidationError(format!("failed to create subagent directory: {error}"))
+    })?;
+    save_subagent_definition_at(&directory.join(format!("{}.yaml", definition.id)), definition)
+}
+
+pub fn list_subagent_definitions(
+    available_tool_ids: &HashSet<String>,
+) -> Result<Vec<SubAgentDefinition>> {
+    let directory = subagent_dir();
+    if !directory.exists() {
+        return Ok(Vec::new());
+    }
+    let mut definitions = fs::read_dir(&directory)
+        .map_err(|error| {
+            Error::ValidationError(format!("failed to read subagent directory: {error}"))
+        })?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("yaml"))
+        .map(|entry| {
+            let path = entry.path();
+            let content = fs::read_to_string(&path).map_err(|error| {
+                Error::ValidationError(format!("failed to read subagent '{}': {error}", path.display()))
+            })?;
+            let definition: SubAgentDefinition = serde_yaml::from_str(&content).map_err(|error| {
+                Error::ValidationError(format!("invalid subagent '{}': {error}", path.display()))
+            })?;
+            definition.validate(available_tool_ids)?;
+            Ok(definition)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    definitions.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(definitions)
+}
+
+pub fn delete_subagent_definition(id: &str) -> Result<()> {
+    validate_subagent_id(id)?;
+    let path = subagent_dir().join(format!("{id}.yaml"));
+    if !path.exists() {
+        return Err(Error::ValidationError(format!("subagent '{id}' not found")));
+    }
+    fs::remove_file(&path).map_err(|error| {
+        Error::ValidationError(format!("failed to delete subagent '{}': {error}", path.display()))
+    })
 }
 
 fn save_subagent_definition_at(path: &Path, definition: &SubAgentDefinition) -> Result<()> {
-    let yaml = serde_yaml::to_string(definition).map_err(|error| Error::ValidationError(format!("failed to serialize subagent '{}': {error}", definition.id)))?;
-    fs::write(path, yaml).map_err(|error| Error::ValidationError(format!("failed to write subagent '{}': {error}", path.display())))
+    let yaml = serde_yaml::to_string(definition).map_err(|error| {
+        Error::ValidationError(format!("failed to serialize subagent '{}': {error}", definition.id))
+    })?;
+    fs::write(path, yaml).map_err(|error| {
+        Error::ValidationError(format!("failed to write subagent '{}': {error}", path.display()))
+    })
 }
 
-fn default_memory_definition() -> SubAgentDefinition {
-    SubAgentDefinition { id: DEFAULT_MEMORY_ID.to_string(), name: "Memory".to_string(), inputs: vec![FunctionPortDef { name: "content".to_string(), data_type: crate::graph::DataType::String, description: "Memory request or chat context".to_string(), required: true }], outputs: vec![FunctionPortDef { name: "result".to_string(), data_type: crate::graph::DataType::String, description: "Memory result".to_string(), required: true }], system_prompt: "You manage durable role memory. Return JSON with a result field only.".to_string(), tool_ids: vec!["search_memory".to_string(), "update_memory".to_string(), "list_memory_keys".to_string()] }
-}
-
-fn default_dream_definition() -> SubAgentDefinition {
-    SubAgentDefinition { id: DEFAULT_DREAM_ID.to_string(), name: "Dream".to_string(), inputs: vec![FunctionPortDef { name: "transcript".to_string(), data_type: crate::graph::DataType::String, description: "Conversation transcript".to_string(), required: true }], outputs: vec![FunctionPortDef { name: "memory".to_string(), data_type: crate::graph::DataType::String, description: "Consolidated memory".to_string(), required: true }], system_prompt: "Consolidate durable facts from the transcript. Return JSON with a memory field only.".to_string(), tool_ids: Vec::new() }
-}
 
 pub struct SubAgent {
     definition: SubAgentDefinition,
@@ -184,8 +229,6 @@ impl FunctionTool for SubAgentToolSpec {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-    use std::fs;
-
     use super::*;
     use crate::graph::DataType;
 
@@ -198,7 +241,7 @@ mod tests {
 
     #[test]
     fn definition_round_trips_through_yaml() {
-        let definition = default_memory_definition();
+        let definition = SubAgentDefinition { id: "memory".to_string(), name: "Memory".to_string(), inputs: vec![], outputs: vec![], system_prompt: String::new(), tool_ids: vec!["search_memory".to_string()] };
         let yaml = serde_yaml::to_string(&definition).unwrap();
         let parsed: SubAgentDefinition = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed, definition);
@@ -207,32 +250,21 @@ mod tests {
 
     #[test]
     fn validation_rejects_duplicate_ports_and_unauthorized_tools() {
-        let mut definition = default_memory_definition();
+        let mut definition = SubAgentDefinition { id: "memory".to_string(), name: "Memory".to_string(), inputs: vec![FunctionPortDef { name: "content".to_string(), data_type: DataType::String, description: String::new(), required: true }], outputs: vec![], system_prompt: String::new(), tool_ids: vec!["search_memory".to_string()] };
         definition.inputs.push(FunctionPortDef { name: "content".to_string(), data_type: DataType::String, description: String::new(), required: true });
         assert!(definition.validate(&available_tools()).is_err());
 
-        let mut definition = default_memory_definition();
+        let mut definition = SubAgentDefinition { id: "memory".to_string(), name: "Memory".to_string(), inputs: vec![], outputs: vec![], system_prompt: String::new(), tool_ids: vec!["search_memory".to_string()] };
         definition.tool_ids.push("not_allowed".to_string());
         assert!(definition.validate(&available_tools()).is_err());
     }
 
     #[test]
-    fn default_files_are_created_without_overwriting_user_edits() {
-        let directory = std::env::temp_dir().join(format!("zihuan-subagent-test-{}", uuid::Uuid::new_v4()));
-        bootstrap_default_subagents_at(&directory).unwrap();
-        let memory_path = directory.join("memory.yaml");
-        assert!(memory_path.exists());
-        assert!(directory.join("dream.yaml").exists());
-
-        fs::write(&memory_path, "user-edited: true\n").unwrap();
-        bootstrap_default_subagents_at(&directory).unwrap();
-        assert_eq!(fs::read_to_string(&memory_path).unwrap(), "user-edited: true\n");
-
-        fs::remove_file(&memory_path).unwrap();
-        bootstrap_default_subagents_at(&directory).unwrap();
-        let restored: SubAgentDefinition = serde_yaml::from_str(&fs::read_to_string(&memory_path).unwrap()).unwrap();
-        assert_eq!(restored.id, DEFAULT_MEMORY_ID);
-        fs::remove_dir_all(directory).unwrap();
+    fn validation_rejects_invalid_and_conflicting_ids() {
+        assert!(validate_subagent_id("Research").is_err());
+        assert!(validate_subagent_id("../research").is_err());
+        let definition = SubAgentDefinition { id: "search_memory".to_string(), name: "Search".to_string(), inputs: vec![], outputs: vec![], system_prompt: String::new(), tool_ids: vec![] };
+        assert!(definition.validate(&available_tools()).is_err());
     }
 
     #[test]

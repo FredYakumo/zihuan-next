@@ -7,7 +7,7 @@ use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 
 use crate::qq_chat::logging::QqChatTaskTrace;
-use zihuan_core::agent::emotion::utils::emotion_expression_prompt;
+use crate::agent::emotion::utils::emotion_expression_prompt;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ModelIdentityContext {

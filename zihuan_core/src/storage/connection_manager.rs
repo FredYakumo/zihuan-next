@@ -11,7 +11,7 @@ use sqlx::sqlite::SqlitePoolOptions;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 use crate::connection_manager::{
-    ConnectionManager as ConnectionManagerTrait, RuntimeConnectionInstanceSummary, RuntimeConnectionStatus,
+    ConnectionManager as ConnectionManagerTrait, RuntimeConnectionStatus, RuntimeInstanceInfo,
 };
 use crate::data_refs::{MySqlConfig, SqliteConfig};
 use crate::error::{Error, Result};
@@ -66,7 +66,7 @@ impl StorageRuntimePayload {
 
 #[derive(Clone)]
 struct StorageRuntimeInstance {
-    summary: RuntimeConnectionInstanceSummary,
+    summary: RuntimeInstanceInfo,
     payload: StorageRuntimePayload,
     _runtime: Option<Arc<tokio::runtime::Runtime>>,
 }
@@ -291,7 +291,7 @@ impl RuntimeStorageConnectionManager {
             }
         };
 
-        let summary = RuntimeConnectionInstanceSummary {
+        let summary = RuntimeInstanceInfo {
             instance_id: Uuid::new_v4().to_string(),
             config_id: connection.id.clone(),
             name: connection.name.clone(),
@@ -371,7 +371,7 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
         Ok(handle)
     }
 
-    async fn list_instances(&self) -> Result<Vec<RuntimeConnectionInstanceSummary>> {
+    async fn list_instances(&self) -> Result<Vec<RuntimeInstanceInfo>> {
         self.cleanup_stale_instances().await?;
         let instances = self.instances.read().await;
         let mut items = instances
@@ -440,7 +440,7 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
     }
 }
 
-pub fn list_runtime_storage_instances() -> Result<Vec<RuntimeConnectionInstanceSummary>> {
+pub fn list_runtime_storage_instances() -> Result<Vec<RuntimeInstanceInfo>> {
     crate::runtime::block_async(RuntimeStorageConnectionManager::shared().list_instances())
 }
 
@@ -492,7 +492,7 @@ mod tests {
                 guard.insert(
                     "cfg-1".to_string(),
                     vec![StorageRuntimeInstance {
-                        summary: RuntimeConnectionInstanceSummary {
+                        summary: RuntimeInstanceInfo {
                             instance_id: "inst-1".to_string(),
                             config_id: "cfg-1".to_string(),
                             name: "MySQL Default".to_string(),

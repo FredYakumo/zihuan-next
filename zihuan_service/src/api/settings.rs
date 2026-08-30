@@ -10,15 +10,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::task;
 use zihuan_core::config::ConfigCenter;
-use zihuan_core::python_runtime::PythonRuntimeConfig;
-use zihuan_core::node_runtime::NodeRuntimeConfig;
+use dynamic_script_engine::{NodeRuntimeConfig, PythonRuntimeConfig};
 use zihuan_core::system_config::{GlobalSettingsSection, ModelHttpApiKey, ModelHttpServiceSettings};
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::model_inference::model_config::ModelRefSpec;
 use uuid::Uuid;
 
-use zihuan_core::python_runtime_resolver::check_python_runtime;
-use zihuan_core::node_runtime_resolver::check_node_runtime;
+use dynamic_script_engine::{check_node_runtime, check_python_runtime};
 use zip::write::SimpleFileOptions;
 use zip::ZipArchive;
 
@@ -433,7 +431,7 @@ pub async fn select_python_runtime(_req: &mut Request, res: &mut Response) {
     };
 
     let config = PythonRuntimeConfig {
-        kind: zihuan_core::python_runtime::PythonRuntimeKind::CustomExecutable,
+        kind: dynamic_script_engine::PythonRuntimeKind::CustomExecutable,
         executable_path: Some(path),
     };
     match save_python_runtime(config).await {

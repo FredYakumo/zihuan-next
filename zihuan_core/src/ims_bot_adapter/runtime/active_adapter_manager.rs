@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use crate::connection_manager::{
-    ConnectionManager as ConnectionManagerTrait, RuntimeConnectionInstanceSummary, RuntimeConnectionStatus,
+    ConnectionManager as ConnectionManagerTrait, RuntimeConnectionStatus, RuntimeInstanceInfo,
 };
 use crate::error::{Error, Result};
 use crate::graph::object_storage::S3Ref;
@@ -25,7 +25,7 @@ const BOT_ADAPTER_HEARTBEAT_INTERVAL_SECS: u64 = 30;
 
 #[derive(Clone)]
 struct ActiveBotAdapterInstance {
-    summary: RuntimeConnectionInstanceSummary,
+    summary: RuntimeInstanceInfo,
     config_updated_at: String,
     adapter: SharedBotAdapter,
     task: Arc<JoinHandle<()>>,
@@ -134,7 +134,7 @@ impl ActiveAdapterManager {
 
         let now = Utc::now();
         let instance = ActiveBotAdapterInstance {
-            summary: RuntimeConnectionInstanceSummary {
+            summary: RuntimeInstanceInfo {
                 instance_id,
                 config_id: connection.id.clone(),
                 name: connection.name.clone(),
@@ -216,7 +216,7 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
         Ok(handle)
     }
 
-    async fn list_instances(&self) -> Result<Vec<RuntimeConnectionInstanceSummary>> {
+    async fn list_instances(&self) -> Result<Vec<RuntimeInstanceInfo>> {
         self.cleanup_stale_instances().await?;
         let instances = self.instances.read().await;
         let mut items = instances
@@ -401,7 +401,7 @@ pub async fn ensure_active_bot_adapter(connection: &ConnectionConfig) -> bool {
         .unwrap_or(false)
 }
 
-pub async fn list_runtime_bot_adapter_instances() -> Result<Vec<RuntimeConnectionInstanceSummary>> {
+pub async fn list_runtime_bot_adapter_instances() -> Result<Vec<RuntimeInstanceInfo>> {
     ActiveAdapterManager::shared().list_instances().await
 }
 

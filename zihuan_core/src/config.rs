@@ -7,10 +7,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
-use crate::connection_manager::{RuntimeConnectionInstanceSummary, RuntimeConnectionStatus};
+use crate::connection_manager::RuntimeConnectionStatus;
 use crate::error::{Error, Result};
-use crate::python_runtime::PythonRuntimeConfig;
-use crate::node_runtime::NodeRuntimeConfig;
+use dynamic_script_engine::{NodeRuntimeConfig, PythonRuntimeConfig};
 use crate::system_config::system_config_file_path;
 
 pub mod llm_refs;
@@ -83,8 +82,6 @@ pub trait RuntimeInstance {
     fn keep_alive(&self) -> bool;
     fn heartbeat_interval_secs(&self) -> Option<u64>;
 }
-
-pub type RuntimeInstanceSummary = RuntimeConnectionInstanceSummary;
 
 pub trait InstanceFactory<C, I> {
     fn create(&self, config: &C) -> Result<I>;

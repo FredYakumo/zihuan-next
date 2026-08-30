@@ -1,0 +1,8 @@
+{
+  "name": "zihuan-dynamic-script-engine",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#zihuan-sdk": "./zihuan_sdk.mjs"
+  }
+}
