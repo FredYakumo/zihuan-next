@@ -26,6 +26,17 @@ pub struct RuntimeInstanceInfo {
     pub status: RuntimeConnectionStatus,
 }
 
+/// Defines the common runtime lifecycle contract for ZiHuan Next configuration managers.
+///
+/// Each active configuration is represented by a [`RuntimeInstanceInfo`]
+/// containing its runtime instance ID, source configuration ID, display name, kind,
+/// keep-alive and heartbeat settings, start and last-use timestamps, and current status.
+///
+/// Implementations must provide the following capabilities:
+/// - Reuse an existing runtime handle for a configuration or create one on demand.
+/// - List the summaries of all active runtime instances.
+/// - Close one instance or every instance created from a configuration.
+/// - Remove instances that have become idle, disabled, or otherwise stale.
 #[async_trait]
 pub trait ConnectionManager: Send + Sync {
     type Handle: Clone + Send + Sync + 'static;
