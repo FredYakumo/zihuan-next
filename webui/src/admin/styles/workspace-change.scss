@@ -83,6 +83,7 @@
 .workspace-change-diff-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-width: 560px; }
 .workspace-change-diff-header { position: sticky; top: 0; z-index: 1; background: var(--admin-bg-soft); color: var(--admin-muted); font: 11px/1.4 var(--td-font-family); }
 .workspace-change-diff-header span { padding: 7px 10px; }
+.workspace-change-diff-file-path { grid-column: 1 / -1; padding: 6px 10px; border-top: 1px solid var(--admin-border); background: var(--admin-bg-soft); color: var(--admin-muted); font-weight: 600; }
 .workspace-change-diff-header span + span,
 .workspace-change-diff-cell + .workspace-change-diff-cell { border-left: 1px solid var(--admin-border); }
 .workspace-change-diff-cell { display: grid; grid-template-columns: 4.5em 16px minmax(0, 1fr); min-width: 0; min-height: 24px; padding: 2px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }

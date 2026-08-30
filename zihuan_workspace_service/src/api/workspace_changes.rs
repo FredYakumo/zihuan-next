@@ -31,7 +31,7 @@
 //! paths. Directory snapshots recursively capture entries, so restoration can recreate files,
 //! directories, and the original non-existent state.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -117,6 +117,9 @@ pub enum WorkspaceChangeStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceDiffLine {
+    /// Workspace-relative file path containing this line.
+    #[serde(default)]
+    pub path: String,
     /// `added`, `removed`, or unchanged `context`.
     pub kind: String,
     /// The source line captured from the before or after snapshot.
@@ -278,13 +281,13 @@ impl WorkspaceChangeRecorder {
             display_path: operation.paths.first().map(|path| display_path(self.workspace_path.as_deref(), path)).unwrap_or_default(),
             source_path: operation.source_path.as_deref().map(|path| display_path(self.workspace_path.as_deref(), path)),
             destination_path: operation.destination_path.as_deref().map(|path| display_path(self.workspace_path.as_deref(), path)),
-            added_lines: line_delta(&operation.before, &after).0,
-            removed_lines: line_delta(&operation.before, &after).1,
+            added_lines: diff_stats(&operation.before, &after).0,
+            removed_lines: diff_stats(&operation.before, &after).1,
             before_fingerprint: fingerprint(&operation.before),
             after_fingerprint: fingerprint(&after),
             status: WorkspaceChangeStatus::Pending,
             merged_count: 1,
-            diff: build_diff(&operation.before, &after),
+            diff: build_diff(&operation.before, &after, self.workspace_path.as_deref()),
             before: operation.before,
             after,
         };
@@ -355,13 +358,13 @@ fn merge_pending_records(
         display_path,
         source_path,
         destination_path,
-        added_lines: line_delta(&before, &after).0,
-        removed_lines: line_delta(&before, &after).1,
+        added_lines: diff_stats(&before, &after).0,
+        removed_lines: diff_stats(&before, &after).1,
         before_fingerprint: fingerprint(&before),
         after_fingerprint: fingerprint(&after),
         status: WorkspaceChangeStatus::Pending,
         merged_count: merged_records.iter().map(|record| record.merged_count).sum::<usize>() + incoming.merged_count,
-        diff: build_diff(&before, &after),
+        diff: build_diff(&before, &after, workspace),
         before,
         after,
     };
@@ -511,49 +514,86 @@ fn snapshot(path: &Path) -> PathSnapshot {
 }
 
 /// Recursively appends directory entries to a path snapshot.
-fn collect_entries(root: &Path, current: &Path, entries: &mut Vec<SnapshotEntry>) { if let Ok(read_dir) = fs::read_dir(current) { for item in read_dir.flatten() { let path = item.path(); let relative_path = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().to_string(); if path.is_dir() { entries.push(SnapshotEntry { relative_path: relative_path.clone(), is_directory: true, content_hex: None }); collect_entries(root, &path, entries); } else if path.is_file() { entries.push(SnapshotEntry { relative_path, is_directory: false, content_hex: fs::read(&path).ok().map(|bytes| hex_encode(&bytes)) }); } } } }
+fn collect_entries(root: &Path, current: &Path, entries: &mut Vec<SnapshotEntry>) {
+    let Ok(read_dir) = fs::read_dir(current) else { return; };
+    let mut paths = read_dir.flatten().map(|item| item.path()).collect::<Vec<_>>();
+    paths.sort();
+    for path in paths {
+        let relative_path = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().to_string();
+        if path.is_dir() {
+            entries.push(SnapshotEntry { relative_path: relative_path.clone(), is_directory: true, content_hex: None });
+            collect_entries(root, &path, entries);
+        } else if path.is_file() {
+            entries.push(SnapshotEntry { relative_path, is_directory: false, content_hex: fs::read(&path).ok().map(|bytes| hex_encode(&bytes)) });
+        }
+    }
+}
 fn snapshots_equal(before: &[PathSnapshot], after: &[PathSnapshot]) -> bool { fingerprint(before) == fingerprint(after) }
 
 /// Produces the stable fingerprint used to compare complete multi-path states.
 fn fingerprint(items: &[PathSnapshot]) -> String { let json = serde_json::to_vec(items).unwrap_or_default(); hex_encode(&json) }
-fn line_delta(before: &[PathSnapshot], after: &[PathSnapshot]) -> (usize, usize) { let old = line_count(before); let new = line_count(after); (new.saturating_sub(old), old.saturating_sub(new)) }
-fn line_count(items: &[PathSnapshot]) -> usize { items.iter().flat_map(|item| item.entries.iter()).filter_map(|entry| entry.content_hex.as_deref()).map(|hex| String::from_utf8_lossy(&hex_decode(hex)).lines().count()).sum() }
-fn build_diff(before: &[PathSnapshot], after: &[PathSnapshot]) -> Vec<WorkspaceDiffLine> {
+fn diff_stats(before: &[PathSnapshot], after: &[PathSnapshot]) -> (usize, usize) {
+    build_diff(before, after, None).into_iter().fold((0, 0), |(added, removed), line| match line.kind.as_str() {
+        "added" => (added + 1, removed),
+        "removed" => (added, removed + 1),
+        _ => (added, removed),
+    })
+}
+
+fn build_diff(before: &[PathSnapshot], after: &[PathSnapshot], workspace: Option<&Path>) -> Vec<WorkspaceDiffLine> {
     const CONTEXT_LINES: usize = 10;
-
-    let old = snapshot_lines(before).join("\n");
-    let new = snapshot_lines(after).join("\n");
-    let diff = TextDiff::from_lines(&old, &new);
     let mut lines = Vec::new();
+    let before_files = snapshot_files(before);
+    let after_files = snapshot_files(after);
+    let paths = before_files.keys().chain(after_files.keys()).collect::<BTreeSet<_>>();
 
-    for (hunk, operations) in diff.grouped_ops(CONTEXT_LINES).into_iter().enumerate() {
-        for operation in operations {
-            for change in diff.iter_changes(&operation) {
-                let (kind, before_line, after_line) = match change.tag() {
-                    ChangeTag::Delete => ("removed", change.old_index().map(|index| index + 1), None),
-                    ChangeTag::Insert => ("added", None, change.new_index().map(|index| index + 1)),
-                    ChangeTag::Equal => (
-                        "context",
-                        change.old_index().map(|index| index + 1),
-                        change.new_index().map(|index| index + 1),
-                    ),
-                };
+    for (file_index, path) in paths.into_iter().enumerate() {
+        let old = before_files.get(path).map(String::as_str).unwrap_or_default();
+        let new = after_files.get(path).map(String::as_str).unwrap_or_default();
+        let diff = TextDiff::from_lines(old, new);
+        let display_path = display_path(workspace, Path::new(path));
+        for (hunk, operations) in diff.grouped_ops(CONTEXT_LINES).into_iter().enumerate() {
+            for operation in operations {
+                for change in diff.iter_changes(&operation) {
+                    let (kind, before_line, after_line) = match change.tag() {
+                        ChangeTag::Delete => ("removed", change.old_index().map(|index| index + 1), None),
+                        ChangeTag::Insert => ("added", None, change.new_index().map(|index| index + 1)),
+                        ChangeTag::Equal => (
+                            "context",
+                            change.old_index().map(|index| index + 1),
+                            change.new_index().map(|index| index + 1),
+                        ),
+                    };
 
-                lines.push(WorkspaceDiffLine {
-                    kind: kind.to_string(),
-                    line: change.value().trim_end_matches(['\r', '\n']).to_string(),
-                    before_line,
-                    after_line,
-                    hunk,
-                });
+                    lines.push(WorkspaceDiffLine {
+                        path: display_path.clone(),
+                        kind: kind.to_string(),
+                        line: change.value().trim_end_matches(['\r', '\n']).to_string(),
+                        before_line,
+                        after_line,
+                        hunk: file_index * 1_000_000 + hunk,
+                    });
+                }
             }
         }
     }
 
     lines
 }
-fn snapshot_lines(items: &[PathSnapshot]) -> Vec<String> {
-    items.iter().flat_map(|item| item.entries.iter()).filter_map(|entry| entry.content_hex.as_deref()).flat_map(|hex| String::from_utf8_lossy(&hex_decode(hex)).lines().map(ToOwned::to_owned).collect::<Vec<_>>()).collect()
+fn snapshot_files(items: &[PathSnapshot]) -> BTreeMap<String, String> {
+    let mut files = BTreeMap::new();
+    for item in items {
+        for entry in &item.entries {
+            let Some(content_hex) = &entry.content_hex else { continue; };
+            let path = if entry.relative_path.is_empty() {
+                item.path.clone()
+            } else {
+                Path::new(&item.path).join(&entry.relative_path).to_string_lossy().to_string()
+            };
+            files.insert(path, String::from_utf8_lossy(&hex_decode(content_hex)).to_string());
+        }
+    }
+    files
 }
 fn hex_encode(bytes: &[u8]) -> String { bytes.iter().map(|byte| format!("{byte:02x}")).collect() }
 fn hex_decode(value: &str) -> Vec<u8> { value.as_bytes().chunks(2).filter_map(|chunk| u8::from_str_radix(std::str::from_utf8(chunk).ok()?, 16).ok()).collect() }

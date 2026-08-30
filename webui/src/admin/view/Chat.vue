@@ -1016,6 +1016,7 @@
                   :key="index"
                   class="workspace-change-diff-row"
                 >
+                  <div v-if="row.showPath" class="workspace-change-diff-file-path">{{ row.path }}</div>
                   <div
                     class="workspace-change-diff-cell workspace-change-diff-cell--removed"
                     :class="{ empty: !row.before, 'workspace-change-diff-cell--changed': row.before?.kind === 'removed' }"
@@ -1669,6 +1670,8 @@ const agentsMdEditorRef = ref<HTMLTextAreaElement | null>(null);
 const agentsMdLineNumbersRef = ref<HTMLElement | null>(null);
 
 interface WorkspaceDiffRow {
+  path?: string;
+  showPath?: boolean;
   before?: WorkspaceDiffCell;
   after?: WorkspaceDiffCell;
 }
@@ -1680,6 +1683,7 @@ interface WorkspaceDiffCell {
 }
 
 interface WorkspaceDiffLine {
+  path?: string;
   kind: "added" | "removed" | "context";
   line: string;
   before_line?: number;
@@ -1689,6 +1693,7 @@ interface WorkspaceDiffLine {
 
 function workspaceDiffRows(diff: WorkspaceDiffLine[]): WorkspaceDiffRow[] {
   const rows: WorkspaceDiffRow[] = [];
+  let previousPath: string | undefined;
   let start = 0;
 
   while (start < diff.length) {
@@ -1704,9 +1709,12 @@ function workspaceDiffRows(diff: WorkspaceDiffLine[]): WorkspaceDiffRow[] {
       const change = hunkLines[changeStart];
       if (change.kind === "context") {
         rows.push({
+          path: change.path,
+          showPath: change.path !== previousPath,
           before: { kind: "context", line: change.line, lineNumber: change.before_line },
           after: { kind: "context", line: change.line, lineNumber: change.after_line },
         });
+        previousPath = change.path;
         changeStart += 1;
         continue;
       }
@@ -1723,9 +1731,12 @@ function workspaceDiffRows(diff: WorkspaceDiffLine[]): WorkspaceDiffRow[] {
         const before = removed[index];
         const after = added[index];
         rows.push({
+          path: before?.path ?? after?.path,
+          showPath: (before?.path ?? after?.path) !== previousPath,
           before: before && { kind: before.kind, line: before.line, lineNumber: before.before_line },
           after: after && { kind: after.kind, line: after.line, lineNumber: after.after_line },
         });
+        previousPath = before?.path ?? after?.path;
       }
 
       changeStart = changeEnd;

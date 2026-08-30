@@ -511,6 +511,7 @@ export interface WorkspaceTask {
 export type WorkspaceChangeOperation = "create" | "edit" | "delete" | "copy" | "move";
 export type WorkspaceChangeStatus = "pending" | "resolved" | "accepted" | "canceled";
 export interface WorkspaceDiffLine {
+  path?: string;
   kind: "added" | "removed" | "context";
   line: string;
   before_line?: number;
