@@ -14,7 +14,7 @@ pub enum RuntimeConnectionStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RuntimeConnectionInstanceSummary {
+pub struct RuntimeInstanceInfo {
     pub instance_id: String,
     pub config_id: String,
     pub name: String,
@@ -32,7 +32,7 @@ pub trait ConnectionManager: Send + Sync {
 
     async fn get_or_create(&self, config_id: &str) -> Result<Self::Handle>;
 
-    async fn list_instances(&self) -> Result<Vec<RuntimeConnectionInstanceSummary>>;
+    async fn list_instances(&self) -> Result<Vec<RuntimeInstanceInfo>>;
 
     async fn close_instance(&self, instance_id: &str) -> Result<bool>;
 

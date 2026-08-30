@@ -323,7 +323,7 @@ pub async fn delete_connection(req: &mut Request, res: &mut Response, depot: &mu
 
 #[derive(serde::Serialize)]
 pub struct RuntimeInstancesResponse {
-    pub items: Vec<zihuan_core::connection_manager::RuntimeConnectionInstanceSummary>,
+    pub items: Vec<zihuan_core::connection_manager::RuntimeInstanceInfo>,
     pub total: usize,
     pub page: usize,
     pub page_size: usize,

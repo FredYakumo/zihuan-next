@@ -7,7 +7,7 @@ use std::time::Instant;
 use chrono::Utc;
 use log::info;
 use tokio::sync::RwLock;
-use crate::connection_manager::{RuntimeConnectionInstanceSummary, RuntimeConnectionStatus};
+use crate::connection_manager::{RuntimeConnectionStatus, RuntimeInstanceInfo};
 use crate::error::{Error, Result};
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
 
@@ -41,7 +41,7 @@ fn preview_text(text: &str) -> String {
 
 #[derive(Clone)]
 struct EmbeddingRuntimeInstance {
-    summary: RuntimeConnectionInstanceSummary,
+    summary: RuntimeInstanceInfo,
     model: Arc<dyn EmbeddingBase>,
 }
 
@@ -134,7 +134,7 @@ impl RuntimeEmbeddingModelManager {
         let started_at = Utc::now();
         let instance_id = next_instance_id();
         let model: Arc<dyn EmbeddingBase> = Arc::new(LoggedEmbeddingModel::new(instance_id.clone(), inner_model));
-        let summary = RuntimeConnectionInstanceSummary {
+        let summary = RuntimeInstanceInfo {
             instance_id,
             config_id: llm_ref.id.clone(),
             name: llm_ref.name.clone(),
@@ -176,7 +176,7 @@ impl RuntimeEmbeddingModelManager {
         Ok(handle)
     }
 
-    async fn list_instances(&self) -> Result<Vec<RuntimeConnectionInstanceSummary>> {
+    async fn list_instances(&self) -> Result<Vec<RuntimeInstanceInfo>> {
         self.cleanup_stale_instances().await?;
         let instances = self.instances.read().await;
         let mut items = instances
@@ -253,7 +253,7 @@ fn local_model_name(llm_ref: &LlmRefConfig) -> Result<String> {
     }
 }
 
-pub fn list_runtime_embedding_instances() -> Result<Vec<RuntimeConnectionInstanceSummary>> {
+pub fn list_runtime_embedding_instances() -> Result<Vec<RuntimeInstanceInfo>> {
     crate::runtime::block_async(RuntimeEmbeddingModelManager::shared().list_instances())
 }
 

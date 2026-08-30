@@ -29,7 +29,7 @@ pub use zihuan_core::config::role_services::{load_role_services, save_role_servi
 pub use zihuan_core::storage::{load_connections, save_connections};
 #[allow(unused_imports)]
 pub use zihuan_core::config::{
-    ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, RuntimeInstance, RuntimeInstanceSummary, StoredConfigRecord,
+    ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, RuntimeInstance, StoredConfigRecord,
 };
 #[allow(unused_imports)]
 pub use zihuan_core::system_config::{load_system_config_root, save_system_config_root};
