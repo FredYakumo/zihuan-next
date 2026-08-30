@@ -586,6 +586,14 @@
                       :tasks="workspaceTasks"
                       interrupted
                     />
+                    <div v-if="pendingAskUser?.toolCallLimit && message.id === lastAssistantMessageId" class="ask-user-panel tool-call-limit-panel">
+                      <div class="ask-user-question">{{ pendingAskUser.question }}</div>
+                      <div v-if="pendingAskUser.details" class="ask-user-details">{{ pendingAskUser.details }}</div>
+                      <div class="ask-user-row">
+                        <button class="btn tool-call-limit-continue" :disabled="toolCallLimitDecisionLoading" @click="decideToolCallLimit('continue')">继续</button>
+                        <button class="btn tool-call-limit-stop" :disabled="toolCallLimitDecisionLoading" @click="decideToolCallLimit('stop')">停止</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div v-if="group.role !== 'assistant'" class="chat-bubble-col">
@@ -701,7 +709,7 @@
                     </div>
                   </div>
                 </div>
-                <div v-if="pendingAskUser && !pendingAskUser.commandConfirmation" class="ask-user-panel">
+                <div v-if="pendingAskUser && !pendingAskUser.commandConfirmation && !pendingAskUser.toolCallLimit" class="ask-user-panel">
                   <div class="ask-user-question">{{ pendingAskUser.question }}</div>
                   <div v-if="pendingAskUser.details" class="ask-user-details">
                     {{ pendingAskUser.details }}
@@ -1236,7 +1244,7 @@
             <template v-else-if="toolPreviewState.kind.type === 'edit_file'">
               <div class="tool-preview-diff">
                 <div
-                  v-for="(hunk, idx) in editHunks(toolPreviewState.kind.edits)"
+                  v-for="(hunk, idx) in editHunks(toolPreviewState.kind.patch)"
                   :key="idx"
                   class="tool-preview-hunk"
                 >
@@ -1559,6 +1567,7 @@ const {
   workspaceChangeError,
   askUserAnswer,
   canSubmitAskUser,
+  toolCallLimitDecisionLoading,
   messageGroups,
   activeToolDetail,
   toolPreviewState,
@@ -1628,6 +1637,7 @@ const {
   sendMessage,
   stopInference,
   submitAskUserAnswer,
+  decideToolCallLimit,
   decideCommandConfirmation,
   sendMessageWithText,
   load,
@@ -1820,6 +1830,13 @@ function formatCacheHitRate(rate: number) {
   font-size: 13px;
   line-height: 20px;
 }
+
+.tool-call-limit-panel {
+  margin: 8px 0;
+}
+
+.tool-call-limit-continue { background: #2ba471; color: #fff; }
+.tool-call-limit-stop { background: #d54941; color: #fff; }
 
 .chat-tool-live-output {
   order: 2;

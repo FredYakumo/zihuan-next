@@ -480,7 +480,8 @@ fn update_status(session_id: &str, change_id: &str, status: WorkspaceChangeStatu
 
 fn operation_paths(operation: &WorkspaceChangeOperation, args: &Value) -> Vec<String> {
     match operation {
-        WorkspaceChangeOperation::Create | WorkspaceChangeOperation::Edit | WorkspaceChangeOperation::Delete => args.get("path").and_then(Value::as_str).map(|v| vec![v.to_string()]).unwrap_or_default(),
+        WorkspaceChangeOperation::Edit => args.get("patch").and_then(Value::as_str).map(|patch| patch.lines().filter_map(|line| line.strip_prefix("*** Update File: ")).map(|path| path.trim().to_string()).collect()).unwrap_or_default(),
+        WorkspaceChangeOperation::Create | WorkspaceChangeOperation::Delete => args.get("path").and_then(Value::as_str).map(|v| vec![v.to_string()]).unwrap_or_default(),
         WorkspaceChangeOperation::Copy | WorkspaceChangeOperation::Move => [args.get("src").and_then(Value::as_str), args.get("dest").and_then(Value::as_str)].into_iter().flatten().map(ToOwned::to_owned).collect(),
     }
 }

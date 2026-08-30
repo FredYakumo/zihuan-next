@@ -470,7 +470,7 @@ export interface NotificationCard {
 }
 
 export interface ChatStreamEvent {
-  type: "start" | "delta" | "thinking_delta" | "metrics" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "workspace_tasks" | "ask_user" | "command_confirmation";
+  type: "start" | "delta" | "thinking_delta" | "metrics" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "workspace_tasks" | "ask_user" | "command_confirmation" | "tool_call_limit_stopped";
   session_id?: string;
   message_id?: string;
   task_id?: string;
@@ -490,12 +490,13 @@ export interface ChatStreamEvent {
   command?: string;
   shell?: string;
   command_confirmation?: { command: string; shell: string };
+  tool_call_limit?: { used_calls: number };
   change?: WorkspaceChange;
   tasks?: WorkspaceTask[];
   metrics?: ChatResponseMetrics;
 }
 
-export type WorkspaceTaskStatus = "pending" | "in_progress" | "completed";
+export type WorkspaceTaskStatus = "pending" | "in_progress" | "completed" | "interrupted";
 export interface WorkspaceTask {
   task_id: string;
   subject: string;
@@ -601,6 +602,7 @@ export interface ChatHistoryRecord {
     details?: string | null;
     placeholder?: string | null;
     command_confirmation?: { command: string; shell: string } | null;
+    tool_call_limit?: { used_calls: number } | null;
   } | null;
 }
 
@@ -625,6 +627,7 @@ export interface ChatSessionSummary {
     details?: string | null;
     placeholder?: string | null;
     command_confirmation?: { command: string; shell: string } | null;
+    tool_call_limit?: { used_calls: number } | null;
   } | null;
   title?: string | null;
   running_task_id?: string | null;
@@ -1087,6 +1090,7 @@ export const chat = {
       thinking_type?: "enabled" | "disabled" | null;
       reasoning_effort?: "low" | "medium" | "high" | "max" | null;
       workspace_path?: string | null;
+      continuation?: "continue" | "stop";
       messages: Array<{
         role: string;
         content: string;

@@ -80,7 +80,7 @@ impl Agent for BrainAgent {
     async fn run(&self, _context: AgentContext, messages: Self::Input) -> Result<Self::Output> {
         let (output, reason) = self.engine(Arc::clone(&self.llm), None).run(self.prepare_messages(messages));
         match reason {
-            ToolCallingStopReason::Done | ToolCallingStopReason::AwaitUserInput(_) => Ok(output),
+            ToolCallingStopReason::Done | ToolCallingStopReason::AwaitUserInput(_) | ToolCallingStopReason::ToolCallLimitReached(_) => Ok(output),
             ToolCallingStopReason::TransportError(error) => Err(Error::ValidationError(format!("BrainAgent '{}' transport error: {error}", self.name))),
             ToolCallingStopReason::MaxIterationsReached => Err(Error::ValidationError(format!("BrainAgent '{}' exceeded tool iterations", self.name))),
         }

@@ -16,7 +16,7 @@ use crate::model_inference::llm::{InferenceParam, LLMMessage, MessagePart, Messa
 use crate::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskStatus,
 };
-use crate::workspace::AskUserRequest;
+use crate::workspace::{AskUserRequest, ToolCallLimitRequest};
 use crate::agent::AgentContext;
 use super::tool_calling_types::{AgentExecutor, LongTaskContext, ToolCallingMiddleware, ToolCallingObserver, ToolCallingRequest, ToolCallingResult, ToolCallingStopReason};
 use super::tool_progress::{current_task_progress_message, ToolProgressScopeGuard};
@@ -350,16 +350,9 @@ impl ToolCallingEngine {
             if iteration > 0 {
                 self.append_iteration_messages(iteration + 1, &mut conversation);
             }
-            let is_last_iteration = iteration == MAX_TOOL_ITERATIONS - 1;
-
-            if is_last_iteration {
-                let counts = count_tool_calls(&conversation);
-                append_tool_summary_to_system(&mut conversation, &counts);
-            }
-
             let response = self.llm.inference(&InferenceParam {
                 messages: &conversation,
-                tools: if is_last_iteration || tool_specs.is_empty() {
+                tools: if tool_specs.is_empty() {
                     None
                 } else {
                     Some(&tool_specs)
@@ -386,14 +379,6 @@ impl ToolCallingEngine {
                 }
                 output.push(response);
                 return (output, ToolCallingStopReason::Done);
-            }
-
-            if is_last_iteration {
-                if let Some(observer) = self.observer.as_ref() {
-                    observer.on_final_assistant(&response, &ToolCallingStopReason::MaxIterationsReached);
-                }
-                output.push(response);
-                return (output, ToolCallingStopReason::MaxIterationsReached);
             }
 
             let tool_call_content = response.content_text_owned().unwrap_or_default();
@@ -468,6 +453,17 @@ impl ToolCallingEngine {
                 }
                 return (output, ToolCallingStopReason::AwaitUserInput(request));
             }
+            if iteration + 1 == MAX_TOOL_ITERATIONS {
+                let request = AskUserRequest {
+                    question: "工具调用已达到本段上限，是否继续执行？".to_string(),
+                    details: Some(format!("本段已执行 {MAX_TOOL_ITERATIONS} 次工具调用。")),
+                    placeholder: None,
+                    command_confirmation: None,
+                    tool_call_limit: Some(ToolCallLimitRequest { used_calls: MAX_TOOL_ITERATIONS }),
+                };
+                if let Some(observer) = self.observer.as_ref() { observer.on_ask_user("tool_call_limit", &request); }
+                return (output, ToolCallingStopReason::ToolCallLimitReached(request));
+            }
         }
 
         warn!("[ToolCallingEngine] Tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})");
@@ -489,14 +485,7 @@ impl ToolCallingEngine {
             if iteration > 0 {
                 self.append_iteration_messages(iteration + 1, &mut conversation);
             }
-            let is_last_iteration = iteration == MAX_TOOL_ITERATIONS - 1;
-
-            if is_last_iteration {
-                let counts = count_tool_calls(&conversation);
-                append_tool_summary_to_system(&mut conversation, &counts);
-            }
-
-            let tools_param: Option<&Vec<Arc<dyn FunctionTool>>> = if is_last_iteration || tool_specs.is_empty() {
+            let tools_param: Option<&Vec<Arc<dyn FunctionTool>>> = if tool_specs.is_empty() {
                 None
             } else {
                 Some(&tool_specs)
@@ -546,14 +535,6 @@ impl ToolCallingEngine {
                 }
                 output.push(response);
                 return (output, ToolCallingStopReason::Done);
-            }
-
-            if is_last_iteration {
-                if let Some(observer) = self.observer.as_ref() {
-                    observer.on_final_assistant(&response, &ToolCallingStopReason::MaxIterationsReached);
-                }
-                output.push(response);
-                return (output, ToolCallingStopReason::MaxIterationsReached);
             }
 
             let tool_call_content = response.content_text_owned().unwrap_or_default();
@@ -637,6 +618,17 @@ impl ToolCallingEngine {
                     observer.on_ask_user(&call_id, &request);
                 }
                 return (output, ToolCallingStopReason::AwaitUserInput(request));
+            }
+            if iteration + 1 == MAX_TOOL_ITERATIONS {
+                let request = AskUserRequest {
+                    question: "工具调用已达到本段上限，是否继续执行？".to_string(),
+                    details: Some(format!("本段已执行 {MAX_TOOL_ITERATIONS} 次工具调用。")),
+                    placeholder: None,
+                    command_confirmation: None,
+                    tool_call_limit: Some(ToolCallLimitRequest { used_calls: MAX_TOOL_ITERATIONS }),
+                };
+                if let Some(observer) = self.observer.as_ref() { observer.on_ask_user("tool_call_limit", &request); }
+                return (output, ToolCallingStopReason::ToolCallLimitReached(request));
             }
         }
 

@@ -392,7 +392,7 @@ fn handle_tool_calling_result(
             "chat stream exceeded max tool iterations ({MAX_TOOL_ITERATIONS}) for '{}'",
             agent_name
         )),
-        ToolCallingStopReason::AwaitUserInput(request) => Ok(output_messages
+        ToolCallingStopReason::AwaitUserInput(request) | ToolCallingStopReason::ToolCallLimitReached(request) => Ok(output_messages
             .into_iter()
             .chain(std::iter::once(LLMMessage::assistant_text(format!(
                 "需要用户补充信息: {}",
@@ -408,7 +408,7 @@ fn handle_tool_calling_result_with_reason(
     stop_reason: ToolCallingStopReason,
 ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
     match &stop_reason {
-        ToolCallingStopReason::Done | ToolCallingStopReason::AwaitUserInput(_) => Ok((output_messages, stop_reason)),
+        ToolCallingStopReason::Done | ToolCallingStopReason::AwaitUserInput(_) | ToolCallingStopReason::ToolCallLimitReached(_) => Ok((output_messages, stop_reason)),
         ToolCallingStopReason::TransportError(content) => Err(zihuan_core::string_error!(
             "chat stream LLM request failed for '{}': {}",
             agent_name, content
