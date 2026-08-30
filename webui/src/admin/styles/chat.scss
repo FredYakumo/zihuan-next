@@ -480,7 +480,26 @@
 .workspace-task-item { display: flex; gap: 7px; align-items: center; min-width: 0; padding: 3px 0; color: var(--admin-text-muted); font-size: 13px; }
 .workspace-task-item svg { flex: 0 0 auto; width: 15px; height: 15px; }
 .workspace-task-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-task-item.completed { text-decoration: line-through; }
+.workspace-task-item.completed { color: var(--td-success-color, #2ba471); text-decoration: line-through; }
+.workspace-task-item.pending { color: var(--td-warning-color, #e8a317); }
+.workspace-task-item.in_progress { color: var(--admin-text-muted); }
+.workspace-task-item.interrupted { color: var(--td-text-color-disabled, #9aa0a6); }
+.workspace-task-loading { animation: workspace-task-spin 1s linear infinite; }
+
+.workspace-task-list--tool,
+.workspace-task-inline-panel {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--admin-bg-panel) 94%, transparent);
+}
+
+.workspace-task-inline-panel { margin: 12px 24px 0; }
+
+@keyframes workspace-task-spin {
+  to { transform: rotate(360deg); }
+}
 
 .chat-messages {
   flex: 1;

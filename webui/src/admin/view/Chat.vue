@@ -179,13 +179,8 @@
                 {{ workspacePath || '未选择工作目录' }}
               </span>
             </div>
-            <aside v-if="isWorkspaceService && workspaceTasks.length" class="workspace-task-panel" aria-label="当前任务">
-              <div class="workspace-task-panel-title">TODO</div>
-              <div v-for="task in workspaceTasks" :key="task.task_id" class="workspace-task-item" :class="{ completed: task.status === 'completed' }">
-                <CheckCircleIcon v-if="task.status === 'completed'" />
-                <TimeIcon v-else />
-                <span>{{ task.subject }}</span>
-              </div>
+            <aside v-if="showWorkspaceTaskPanel" class="workspace-task-panel" aria-label="当前任务">
+              <WorkspaceTaskList :tasks="workspaceTasks" />
             </aside>
             <div class="chat-messages" ref="messagesContainer" @scroll="handleMessagesScroll">
               <div v-if="messages.length === 0" class="empty-state"></div>
@@ -331,6 +326,11 @@
                           />
                         </template>
                       </div>
+                      <WorkspaceTaskList
+                        v-if="hasWorkspaceTaskToolCall(message)"
+                        class="workspace-task-list--tool"
+                        :tasks="workspaceTasks"
+                      />
                       <div
                         v-if="activeToolDetail?.messageId === message.id"
                         class="chat-tool-detail-inline"
@@ -549,6 +549,11 @@
                           />
                         </template>
                       </div>
+                      <WorkspaceTaskList
+                        v-if="hasWorkspaceTaskToolCall(message)"
+                        class="workspace-task-list--tool"
+                        :tasks="workspaceTasks"
+                      />
                       <div
                         v-if="activeToolDetail?.messageId === message.id"
                         class="chat-tool-detail-inline"
@@ -944,6 +949,12 @@
               <div v-if="chatErrorMessage" class="chat-error-box" role="alert">
                 {{ chatErrorMessage }}
               </div>
+              <WorkspaceTaskList
+                v-if="showInterruptedWorkspaceTasks"
+                class="workspace-task-inline-panel"
+                :tasks="workspaceTasks"
+                interrupted
+              />
             </div>
           </div>
         </div>
@@ -1437,8 +1448,6 @@ import {
   BookmarkIcon,
   InternetIcon,
   StopIcon,
-  CheckCircleIcon,
-  TimeIcon,
   RefreshIcon,
 } from "tdesign-icons-vue-next";
 
@@ -1446,6 +1455,7 @@ import { computed, ref, watch } from "vue";
 
 import { useChat } from "../composables/useChat";
 import ToolCallBadge from "./ToolCallBadge.vue";
+import WorkspaceTaskList from "./WorkspaceTaskList.vue";
 
 const props = defineProps<{
   agentId?: string;
@@ -1459,6 +1469,20 @@ const emit = defineEmits<{
 
 const HISTORY_COLLAPSED_KEY = "zihuan.chat.history-collapsed";
 const historyCollapsed = ref(!props.embedded && localStorage.getItem(HISTORY_COLLAPSED_KEY) === "1");
+
+const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskUpdate", "TaskGet", "TaskList"]);
+
+const showWorkspaceTaskPanel = computed(
+  () => isWorkspaceService.value && workspaceTasks.value.length > 0 && sending.value,
+);
+const showInterruptedWorkspaceTasks = computed(
+  () => isWorkspaceService.value && workspaceTasks.value.some((task) => task.status !== "completed") && workspaceTaskInterrupted.value,
+);
+
+function hasWorkspaceTaskToolCall(message: { toolCalls: Array<{ function: { name: string } }>; liveToolCalls?: Array<{ name: string }> }) {
+  return message.toolCalls.some((call) => TASK_TOOL_NAMES.has(call.function.name)) ||
+    message.liveToolCalls?.some((call) => TASK_TOOL_NAMES.has(call.name)) === true;
+}
 
 function toggleHistory() {
   historyCollapsed.value = !historyCollapsed.value;
@@ -1520,6 +1544,7 @@ const {
   pendingAskUser,
   workspaceChanges,
   workspaceTasks,
+  workspaceTaskInterrupted,
   selectedWorkspaceChange,
   workspaceChangeDialogOpen,
   workspaceChangeError,

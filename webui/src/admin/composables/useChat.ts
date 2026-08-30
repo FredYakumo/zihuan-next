@@ -364,6 +364,7 @@ const draftImageAttachments = ref<ChatImageAttachment[]>([]);
 const imagePreviewAttachment = ref<ChatImageAttachment | null>(null);
 const workspacePath = ref("");
 const workspaceTasks = ref<WorkspaceTask[]>([]);
+const workspaceTaskInterrupted = ref(false);
 const directoryPickerOpen = ref(false);
 const directoryPickerLoading = ref(false);
 const directoryPickerSelecting = ref(false);
@@ -1232,6 +1233,8 @@ async function refreshActiveSessionHistoryIfNeeded(): Promise<void> {
   applyHistory(result.messages);
   messageBranches.value = result.branches;
   workspaceTasks.value = result.tasks;
+  workspaceTaskInterrupted.value = result.tasks.some((task) => task.status !== "completed") &&
+    (session?.task_status === "stopped" || session?.task_status === "failed");
   if (!session?.running_task_id) {
     sessionsNeedingHistoryRefresh.delete(sessionId);
   }
@@ -1281,6 +1284,9 @@ async function openSession(sessionId: string) {
   clearPendingAskUser();
   const result = await chat.getSessionMessages(sessionId);
   workspaceTasks.value = result.tasks;
+  const session = sessions.value.find((item) => item.session_id === sessionId);
+  workspaceTaskInterrupted.value = result.tasks.some((task) => task.status !== "completed") &&
+    (session?.task_status === "stopped" || session?.task_status === "failed");
   workspaceChanges.value = (await chat.listWorkspaceChanges(sessionId)).changes;
   selectedWorkspaceChangeId.value = workspaceChanges.value[0]?.change_id ?? null;
   const firstRecord = result.messages[0];
@@ -1583,6 +1589,7 @@ function startNewSession() {
   clearPendingAskUser();
   workspaceChanges.value = [];
   workspaceTasks.value = [];
+  workspaceTaskInterrupted.value = false;
   selectedWorkspaceChangeId.value = null;
   workspaceChangeDialogOpen.value = false;
   workspaceChangeError.value = "";
@@ -1910,6 +1917,7 @@ async function sendMessage() {
 }
 
 function stopInference() {
+  workspaceTaskInterrupted.value = true;
   activeStreamController?.abort();
 }
 
@@ -1991,6 +1999,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
     sessionId: activeSessionId.value,
     foreground: true,
   };
+  workspaceTaskInterrupted.value = false;
 
   if (!pendingNewConversation) {
     const userMessage = {
@@ -2046,6 +2055,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
       // Keep streamed text in the local transcript so the next request includes it as context.
       pruneFailedAssistantPlaceholder(streamState.assistantMessageId);
     } else {
+      workspaceTaskInterrupted.value = true;
       applyInferenceFailure(streamState, (error as Error).message);
     }
   } finally {
@@ -2137,6 +2147,7 @@ onUnmounted(() => {
     imagePreviewAttachment,
     workspacePath,
     workspaceTasks,
+    workspaceTaskInterrupted,
     directoryPickerOpen,
     directoryPickerLoading,
     directoryPickerSelecting,
