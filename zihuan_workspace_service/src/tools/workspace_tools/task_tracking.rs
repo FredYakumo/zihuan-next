@@ -157,7 +157,12 @@ impl Tool for WorkspaceTaskTool {
             DEFAULT_TOOL_TASK_CREATE => {
                 let Some(subject) = arguments.get("subject").and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty()) else { return json_error("subject is required"); };
                 let Some(active_form) = arguments.get("activeForm").and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty()) else { return json_error("activeForm is required"); };
-                snapshot.tasks.push(WorkspaceTask { task_id: format!("task_{}", Uuid::new_v4().simple()), subject: subject.to_string(), description: arguments.get("description").and_then(Value::as_str).unwrap_or_default().trim().to_string(), active_form: active_form.to_string(), metadata: arguments.get("metadata").cloned().unwrap_or_else(|| serde_json::json!({})), status: WorkspaceTaskStatus::Pending, blocks: string_list(arguments, "blocks"), blocked_by: string_list(arguments, "blockedBy") });
+                let status = if snapshot.tasks.iter().any(|task| task.status == WorkspaceTaskStatus::InProgress) {
+                    WorkspaceTaskStatus::Pending
+                } else {
+                    WorkspaceTaskStatus::InProgress
+                };
+                snapshot.tasks.push(WorkspaceTask { task_id: format!("task_{}", Uuid::new_v4().simple()), subject: subject.to_string(), description: arguments.get("description").and_then(Value::as_str).unwrap_or_default().trim().to_string(), active_form: active_form.to_string(), metadata: arguments.get("metadata").cloned().unwrap_or_else(|| serde_json::json!({})), status, blocks: string_list(arguments, "blocks"), blocked_by: string_list(arguments, "blockedBy") });
             }
             DEFAULT_TOOL_TASK_UPDATE => {
                 let Some(id) = arguments.get("taskId").and_then(Value::as_str) else { return json_error("taskId is required"); };
