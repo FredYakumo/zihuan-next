@@ -208,6 +208,16 @@
                     :key="message.id + '-' + idx"
                     class="chat-message-item"
                   >
+                    <div v-if="message.contextCompaction" class="context-compaction-status">
+                      <template v-if="message.contextCompaction.status === 'running'">
+                        <t-loading size="small" />
+                        <span>上下文压缩中...</span>
+                      </template>
+                      <span v-else-if="message.contextCompaction.status === 'completed'">
+                        上下文已压缩, 原 context: {{ formatTokenCount(message.contextCompaction.estimatedTokensBefore ?? 0) }} tokens, 压缩后: {{ formatTokenCount(message.contextCompaction.estimatedTokensAfter ?? 0) }} tokens，耗时: {{ formatDuration(message.contextCompaction.durationMs ?? 0) }}
+                      </span>
+                      <span v-else>上下文压缩未完成</span>
+                    </div>
                     <div
                       v-if="
                         idx === group.messages.length - 1 &&
@@ -913,6 +923,19 @@
                         </div>
                       </div>
 
+                      <div
+                        v-if="contextTokenUsage"
+                        class="context-usage"
+                        :style="{ '--context-usage': `${contextTokenUsage.usagePercent}%` }"
+                        :title="`context ${formatTokenCount(contextTokenUsage.usedTokens)}/${formatTokenCount(contextTokenUsage.contextLength)} tokens (可用上限: ${formatTokenCount(contextTokenUsage.compactionThreshold)} tokens)`"
+                      >
+                        <span class="context-usage-chart" aria-hidden="true" />
+                        <span>
+                          context {{ formatTokenCount(contextTokenUsage.usedTokens) }}/{{ formatTokenCount(contextTokenUsage.contextLength) }} tokens
+                          (可用上限: {{ formatTokenCount(contextTokenUsage.compactionThreshold) }} tokens)
+                        </span>
+                      </div>
+
                       <button
                         v-if="isWorkspaceService"
                         class="model-chip agents-md-chip"
@@ -1561,6 +1584,7 @@ const {
   selectedModelLabel,
   selectedThinkingLabel,
   selectedEffortLabel,
+  contextTokenUsage,
   canSend,
   selectedAgentAvatarUrl,
   selectedAgentAvatarFallback,

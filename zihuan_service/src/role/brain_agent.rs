@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
@@ -15,12 +16,27 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken};
+use zihuan_core::model_inference::inference_function::compact_message::{compact_message_history, compaction_threshold, estimate_messages_tokens};
+use zihuan_core::system_config::current_context_compaction_percent;
 use zihuan_core::graph::tool_spec::ToolDefinition;
 
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
 use zihuan_core::role::{RoleService, RoleServiceContext, RoleServiceDescriptor, RoleServiceKind};
 
 pub use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
+
+#[derive(Debug, Clone)]
+pub enum ContextCompactionEvent {
+    Started,
+    Completed {
+        estimated_tokens_before: usize,
+        estimated_tokens_after: usize,
+        duration: Duration,
+    },
+    Failed,
+}
+
+pub type ContextCompactionObserver = Arc<dyn Fn(ContextCompactionEvent) + Send + Sync>;
 
 #[derive(Clone, Default)]
 pub struct StaticInferenceToolProvider {
@@ -195,6 +211,7 @@ impl RoleBrainAgent {
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn ToolCallingObserver>>,
+        compaction_observer: Option<ContextCompactionObserver>,
         workspace_path: Option<String>,
         session_id: Option<String>,
     ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
@@ -202,6 +219,7 @@ impl RoleBrainAgent {
             messages,
             token_tx,
             observer,
+            compaction_observer,
             Arc::clone(&self.llm),
             workspace_path,
             session_id,
@@ -214,6 +232,7 @@ impl RoleBrainAgent {
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn ToolCallingObserver>>,
+        compaction_observer: Option<ContextCompactionObserver>,
         llm: Arc<dyn LLMBase>,
         workspace_path: Option<String>,
         session_id: Option<String>,
@@ -225,6 +244,43 @@ impl RoleBrainAgent {
             return Err(Error::ValidationError(
                 "messages must not be empty after sanitization".to_string(),
             ));
+        }
+
+        if matches!(self.agent.role_service_type, RoleServiceType::Workspace(_)) {
+            if let (Some(observer), Some(latest_user_index)) = (
+                compaction_observer,
+                conversation.iter().rposition(|message| matches!(message.role, MessageRole::User)),
+            ) {
+                let latest_user_message = conversation.remove(latest_user_index);
+                let estimated_tokens_before = estimate_messages_tokens(&conversation)
+                    + estimate_messages_tokens(std::slice::from_ref(&latest_user_message));
+                let threshold = compaction_threshold(
+                    llm.context_length(),
+                    current_context_compaction_percent(),
+                );
+                if estimated_tokens_before > threshold {
+                    observer(ContextCompactionEvent::Started);
+                    let started_at = Instant::now();
+                    let compact_result = compact_message_history(
+                        &llm,
+                        conversation,
+                        threshold,
+                        &latest_user_message,
+                    );
+                    conversation = compact_result.messages;
+                    if compact_result.did_compact {
+                        observer(ContextCompactionEvent::Completed {
+                            estimated_tokens_before,
+                            estimated_tokens_after: compact_result.estimated_tokens_after
+                                + estimate_messages_tokens(std::slice::from_ref(&latest_user_message)),
+                            duration: started_at.elapsed(),
+                        });
+                    } else {
+                        observer(ContextCompactionEvent::Failed);
+                    }
+                }
+                conversation.push(latest_user_message);
+            }
         }
 
         self.tools.augment_messages(&mut conversation, &context);

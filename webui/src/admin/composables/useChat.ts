@@ -7,6 +7,7 @@ import {
   fileIO,
   system,
   agentsMd,
+  getContextCompactionSettings,
   type AgentsMdFile,
   type ServiceWithRuntime,
   type ChatHistoryRecord,
@@ -64,6 +65,13 @@ type ChatMessage = {
   metrics?: ChatResponseMetrics;
   liveToolCalls?: LiveToolCall[];
   imageAttachments?: ChatImageAttachment[];
+  contextCompaction?: ContextCompactionStatus;
+};
+type ContextCompactionStatus = {
+  status: "running" | "completed" | "failed";
+  estimatedTokensBefore?: number;
+  estimatedTokensAfter?: number;
+  durationMs?: number;
 };
 type ChatImageAttachment = {
   id: string;
@@ -387,6 +395,7 @@ const llmModels = ref<LlmConfig[]>([]);
 const selectedModelId = ref("");
 const selectedThinkingType = ref<"" | "enabled" | "disabled">("");
 const selectedReasoningEffort = ref<"" | "low" | "medium" | "high" | "max">("");
+const contextCompactionPercent = ref(80);
 const openPicker = ref<"model" | "thinking" | "effort" | "settings" | null>(null);
 const autoCollapseThinking = ref(true);
 const stats = reactive({
@@ -483,6 +492,29 @@ const selectedEffortLabel = computed(() => {
     return `默认${defaultLabel}`;
   }
   return selectedReasoningEffort.value;
+});
+const contextTokenUsage = computed(() => {
+  const contextLength = selectedModelLlmConfig.value?.context_length;
+  if (!contextLength || contextLength < 1) {
+    return null;
+  }
+
+  const usedTokens = messages.value
+    .filter(
+      (message) =>
+        message.content.trim().length > 0 ||
+        message.imageAttachments?.length ||
+        message.toolCalls.length > 0 ||
+        !!message.toolCallId,
+    )
+    .reduce((total, message) => total + estimateChatMessageTokens(message), 0);
+
+  return {
+    usedTokens,
+    contextLength,
+    compactionThreshold: Math.floor(contextLength * contextCompactionPercent.value / 100),
+    usagePercent: Math.min((usedTokens / contextLength) * 100, 100),
+  };
 });
 const canSend = computed(() =>
   !!selectedService.value &&
@@ -661,6 +693,24 @@ function messageParts(content: string, attachments: ChatImageAttachment[] | unde
   }
   parts.push(...attachments.map(imageAttachmentToPart));
   return parts;
+}
+
+function estimateChatMessageTokens(message: ChatMessage): number {
+  const roleTokenCount = message.role === "assistant" ? 5 : 4;
+  let characterCount = roleTokenCount * 4 + message.content.length;
+
+  if (message.toolCallId) {
+    characterCount += message.toolCallId.length;
+  }
+
+  for (const toolCall of message.toolCalls) {
+    characterCount += toolCall.id.length;
+    characterCount += toolCall.type_name.length;
+    characterCount += toolCall.function.name.length;
+    characterCount += JSON.stringify(toolCall.function.arguments)?.length ?? 0;
+  }
+
+  return Math.max(Math.floor(characterCount / 4), 1) + 6;
 }
 
 function toApiMessages() {
@@ -1705,6 +1755,26 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
     return;
   }
 
+  if (event.type.startsWith("context_compaction_")) {
+    const targetId = event.message_id || streamState.assistantMessageId;
+    const message = targetId ? messages.value.find((item) => item.id === targetId) : undefined;
+    if (!message) return;
+    if (event.type === "context_compaction_start") {
+      message.contextCompaction = { status: "running" };
+    } else if (event.type === "context_compaction_complete") {
+      message.contextCompaction = {
+        status: "completed",
+        estimatedTokensBefore: event.estimated_tokens_before,
+        estimatedTokensAfter: event.estimated_tokens_after,
+        durationMs: event.duration_ms,
+      };
+    } else {
+      message.contextCompaction = { status: "failed" };
+    }
+    scrollToBottom();
+    return;
+  }
+
   if (event.type === "ask_user" && event.question) {
     pendingAskUser.value = {
       question: event.question,
@@ -2115,16 +2185,18 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
 async function load() {
   servicesLoading.value = true;
   try {
-    const [connections, llm, loadedAgents] = await Promise.all([
+    const [connections, llm, loadedAgents, contextCompactionSettings] = await Promise.all([
       system.connections.list(),
       system.llm.list(),
       system.services.list(),
+      getContextCompactionSettings(),
     ]);
     stats.connections = connections.length;
     stats.llm = llm.length;
     stats.services = loadedAgents.length;
     services.value = loadedAgents;
     llmModels.value = llm;
+    contextCompactionPercent.value = contextCompactionSettings.percent;
 
     const eligible = loadedAgents.filter((agent) => CHAT_ELIGIBLE_SERVICE_TYPES.has(agent.role_service_type.type));
     const requestedAgent = props.agentId
@@ -2229,6 +2301,7 @@ onUnmounted(() => {
     selectedModelLabel,
     selectedThinkingLabel,
     selectedEffortLabel,
+    contextTokenUsage,
     canSend,
     selectedAgentAvatarUrl,
     selectedAgentAvatarFallback,

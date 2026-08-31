@@ -4,8 +4,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::{info, warn};
 
-use zihuan_core::model_inference::inference_function::compact_message::{compact_message_history, estimate_messages_tokens};
+use zihuan_core::model_inference::inference_function::compact_message::{compact_message_history, compaction_threshold, estimate_messages_tokens};
 use zihuan_core::model_inference::message_content_utils::{downgrade_messages_for_model, sanitize_messages_for_inference};
+use zihuan_core::system_config::current_context_compaction_percent;
 
 use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingStopReason, LongTaskContext};
 
@@ -896,7 +897,6 @@ impl QqChatAgentServiceInner {
             is_group,
             session_state: Arc::clone(&turn_session_state),
             emotion_dimensions: emotion_dimensions.clone(),
-            compact_context_length: ctx.compact_context_length,
             memory_resources: preprompt_memory_resources,
             rdb_pool: ctx.rdb_pool.cloned(),
             default_tools_enabled: &self.default_tools_enabled,
@@ -953,7 +953,12 @@ impl QqChatAgentServiceInner {
         };
 
         let mut history = sanitize_messages_for_inference(history);
-        let compact_result = compact_message_history(turn_llm, history.clone(), ctx.compact_context_length, &user_msg);
+        let compact_result = compact_message_history(
+            turn_llm,
+            history.clone(),
+            compaction_threshold(turn_llm.context_length(), current_context_compaction_percent()),
+            &user_msg,
+        );
         if compact_result.did_compact {
             info!(
                 "{LOG_PREFIX} history compacted for {history_key}: tokens {} -> {}",

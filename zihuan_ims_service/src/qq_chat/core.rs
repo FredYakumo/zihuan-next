@@ -930,7 +930,6 @@ impl QqChatAgentService {
             web_search_engine: &self.config.web_search_engine,
             s3_ref: self.config.s3_ref.as_ref(),
             max_message_length: self.config.max_message_length,
-            compact_context_length: self.config.compact_context_length,
             max_steer_count: self.config.max_steer_count,
             reply_batch_builder: self.config.reply_batch_builder.as_ref(),
             shared_runtime_values: self.config.shared_runtime_values.clone(),

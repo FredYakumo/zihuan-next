@@ -44,6 +44,16 @@
         <t-checkbox :checked="logErrorBadgeEnabled" @change="handleLogErrorBadgeToggle">显示错误提示</t-checkbox>
       </t-card>
 
+      <t-card title="上下文压缩" bordered header-bordered>
+        <p class="muted">会话上下文达到该比例时自动压缩，适用于所有聊天服务。</p>
+        <div class="settings-backup-actions">
+          <t-input-number v-model="contextCompactionPercent" :min="40" :max="99" :step="1" :disabled="contextCompactionSaving">
+            <template #suffix>%</template>
+          </t-input-number>
+          <t-button theme="primary" :loading="contextCompactionSaving" @click="saveContextCompactionSettings">保存</t-button>
+        </div>
+      </t-card>
+
       <t-card title="启用模型 HTTP 服务" bordered header-bordered>
         <template #actions>
           <t-switch :value="modelHttpEnabled" :loading="modelHttpSaving" @change="setModelHttpEnabled" />
@@ -264,6 +274,9 @@ const {
   saveModelHttpSettings,
   toggleAllPublicModels,
   copyModelHttpEndpoint,
+  contextCompactionPercent,
+  contextCompactionSaving,
+  saveContextCompactionSettings,
 } = useSettings();
 
 const modelHttpDialogVisible = ref(false);

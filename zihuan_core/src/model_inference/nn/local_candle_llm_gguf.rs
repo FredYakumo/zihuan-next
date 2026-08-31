@@ -28,6 +28,7 @@ pub fn build_local_candle_gguf_llm(config: LlmServiceConfig) -> Result<Arc<dyn L
 #[derive(Debug)]
 pub struct LocalCandleGgufLlm {
     model_name: String,
+    context_length: usize,
     engine: Mutex<LocalCandleGgufLlmEngine>,
 }
 
@@ -109,6 +110,7 @@ impl LocalCandleGgufLlm {
 
         Ok(Self {
             model_name: config.model_name,
+            context_length: config.context_length,
             engine: Mutex::new(LocalCandleGgufLlmEngine {
                 tokenizer,
                 model,
@@ -212,6 +214,10 @@ impl std::fmt::Debug for LocalCandleGgufLlmEngine {
 impl LLMBase for LocalCandleGgufLlm {
     fn get_model_name(&self) -> &str {
         &self.model_name
+    }
+
+    fn context_length(&self) -> usize {
+        self.context_length
     }
 
     fn api_style(&self) -> Option<&str> {

@@ -70,6 +70,9 @@ impl ConfigRecord for LlmRefConfig {
                 if llm.model_name.trim().is_empty() {
                     return Err(crate::string_error!("chat_llm model_name must not be empty"));
                 }
+                if llm.context_length == 0 {
+                    return Err(crate::string_error!("chat_llm context_length must be greater than zero"));
+                }
                 if !matches!(llm.api_style, LlmApiStyle::CandleGguf | LlmApiStyle::CandleHf)
                     && llm.api_endpoint.trim().is_empty()
                 {

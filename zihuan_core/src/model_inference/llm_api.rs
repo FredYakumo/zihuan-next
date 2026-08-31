@@ -49,6 +49,7 @@ pub struct LLMAPI {
     include_reasoning_content: bool,
     thinking_type: Option<ThinkingType>,
     reasoning_effort: Option<ReasoningEffort>,
+    context_length: usize,
     pub timeout: Duration,
     retry_count: u32,
 }
@@ -116,6 +117,7 @@ impl LLMAPI {
         include_reasoning_content: bool,
         thinking_type: Option<ThinkingType>,
         reasoning_effort: Option<ReasoningEffort>,
+        context_length: usize,
         timeout: Duration,
     ) -> Self {
         Self {
@@ -128,6 +130,7 @@ impl LLMAPI {
             include_reasoning_content,
             thinking_type,
             reasoning_effort,
+            context_length,
             timeout,
             retry_count: DEFAULT_RETRY_COUNT,
         }
@@ -377,6 +380,10 @@ impl LLMAPI {
 impl LLMBase for LLMAPI {
     fn get_model_name(&self) -> &str {
         &self.model_name
+    }
+
+    fn context_length(&self) -> usize {
+        self.context_length
     }
 
     fn api_style(&self) -> Option<&str> {

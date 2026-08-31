@@ -283,6 +283,11 @@ pub fn build_router(
         // Settings
         .push(Router::with_path("settings/storage-info").get(settings::get_storage_info))
         .push(
+            Router::with_path("settings/context-compaction")
+                .get(settings::get_context_compaction_settings)
+                .put(settings::update_context_compaction_settings),
+        )
+        .push(
             Router::with_path("settings/python-runtime")
                 .get(settings::get_python_runtime)
                 .put(settings::update_python_runtime),

@@ -11,7 +11,10 @@ use sha2::{Digest, Sha256};
 use tokio::task;
 use zihuan_core::config::ConfigCenter;
 use dynamic_script_engine::{NodeRuntimeConfig, PythonRuntimeConfig};
-use zihuan_core::system_config::{GlobalSettingsSection, ModelHttpApiKey, ModelHttpServiceSettings};
+use zihuan_core::system_config::{
+    GlobalSettingsSection, ModelHttpApiKey, ModelHttpServiceSettings,
+    MAX_CONTEXT_COMPACTION_PERCENT, MIN_CONTEXT_COMPACTION_PERCENT,
+};
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::model_inference::model_config::ModelRefSpec;
 use uuid::Uuid;
@@ -105,6 +108,16 @@ pub struct UpdateModelHttpSettingsRequest {
     pub public_model_config_ids: Vec<String>,
 }
 
+#[derive(Serialize)]
+pub struct ContextCompactionSettingsResponse {
+    pub percent: u8,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateContextCompactionSettingsRequest {
+    pub percent: u8,
+}
+
 #[derive(Deserialize)]
 pub struct CreateModelHttpApiKeyRequest {
     pub name: String,
@@ -192,6 +205,42 @@ pub async fn update_model_http_settings(req: &mut Request, res: &mut Response, d
     settings.model_http_service.public_model_config_ids = body.public_model_config_ids;
     match zihuan_core::system_config::save_section::<GlobalSettingsSection>(&settings) {
         Ok(()) => res.render(Json(model_http_settings_response(settings.model_http_service, endpoint))),
+        Err(error) => render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    }
+}
+
+#[handler]
+pub async fn get_context_compaction_settings(_req: &mut Request, res: &mut Response) {
+    match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+        Ok(settings) => res.render(Json(ContextCompactionSettingsResponse {
+            percent: settings.context_compaction_percent(),
+        })),
+        Err(error) => render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    }
+}
+
+#[handler]
+pub async fn update_context_compaction_settings(req: &mut Request, res: &mut Response) {
+    let body: UpdateContextCompactionSettingsRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(error) => return render_settings_error(res, StatusCode::BAD_REQUEST, error.to_string()),
+    };
+    if !(MIN_CONTEXT_COMPACTION_PERCENT..=MAX_CONTEXT_COMPACTION_PERCENT).contains(&body.percent) {
+        return render_settings_error(
+            res,
+            StatusCode::BAD_REQUEST,
+            format!(
+                "context compaction percent must be between {MIN_CONTEXT_COMPACTION_PERCENT} and {MAX_CONTEXT_COMPACTION_PERCENT}",
+            ),
+        );
+    }
+    let mut settings = match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+        Ok(settings) => settings,
+        Err(error) => return render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    };
+    settings.context_compaction_percent = body.percent;
+    match zihuan_core::system_config::save_section::<GlobalSettingsSection>(&settings) {
+        Ok(()) => res.render(Json(ContextCompactionSettingsResponse { percent: body.percent })),
         Err(error) => render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
     }
 }

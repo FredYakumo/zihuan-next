@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
-import { request } from "../../api/client";
+import { getContextCompactionSettings, request } from "../../api/client";
 import {
   clearTheme,
   getCurrentThemeName,
@@ -232,6 +232,8 @@ export function useSettings() {
   const modelHttpApiKeys = ref<ModelHttpApiKey[]>([]);
   const enabledChatModels = ref<PublicChatModel[]>([]);
   const newModelHttpSecret = ref("");
+  const contextCompactionPercent = ref(80);
+  const contextCompactionSaving = ref(false);
 
   const allPublicModelsSelected = computed(
     () => enabledChatModels.value.length > 0 && publicModelConfigIds.value.length === enabledChatModels.value.length,
@@ -275,6 +277,23 @@ export function useSettings() {
       modelHttpApiKeys.value = response.api_keys;
     } finally {
       modelHttpSaving.value = false;
+    }
+  }
+
+  async function loadContextCompactionSettings() {
+    const settings = await getContextCompactionSettings();
+    contextCompactionPercent.value = settings.percent;
+  }
+
+  async function saveContextCompactionSettings() {
+    contextCompactionSaving.value = true;
+    try {
+      const settings = await request<{ percent: number }>("PUT", "/settings/context-compaction", {
+        percent: contextCompactionPercent.value,
+      });
+      contextCompactionPercent.value = settings.percent;
+    } finally {
+      contextCompactionSaving.value = false;
     }
   }
 
@@ -323,7 +342,10 @@ export function useSettings() {
     await navigator.clipboard.writeText(modelHttpEndpoint.value);
   }
 
-  onMounted(() => { void loadModelHttpSettings(); });
+  onMounted(() => {
+    void loadModelHttpSettings();
+    void loadContextCompactionSettings();
+  });
 
   async function changePythonRuntime() {
     pythonRuntimeChanging.value = true;
@@ -443,8 +465,11 @@ export function useSettings() {
     enabledChatModels,
     allPublicModelsSelected,
     newModelHttpSecret,
+    contextCompactionPercent,
+    contextCompactionSaving,
     setModelHttpEnabled,
     saveModelHttpSettings,
+    saveContextCompactionSettings,
     toggleAllPublicModels,
     createModelHttpApiKey,
     updateModelHttpApiKey,

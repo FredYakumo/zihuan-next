@@ -8,10 +8,11 @@ use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
-use zihuan_core::model_inference::inference_function::compact_message::compact_message_history;
+use zihuan_core::model_inference::inference_function::compact_message::{compact_message_history, compaction_threshold};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole};
 use zihuan_core::runtime::block_async;
+use zihuan_core::system_config::current_context_compaction_percent;
 use zihuan_core::steer::message_with_api_style;
 use zihuan_core::memory_agent::{MemoryBrainAgent, MemoryBrainAgentContextTool};
 
@@ -83,7 +84,6 @@ pub(crate) struct PrepromptContext<'a> {
     pub(crate) is_group: bool,
     pub(crate) session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
     pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
-    pub(crate) compact_context_length: usize,
     pub(crate) memory_resources: Option<AgentMemoryToolResources>,
     pub(crate) rdb_pool: Option<RelationalDbConnection>,
     pub(crate) default_tools_enabled: &'a HashMap<String, bool>,
@@ -145,7 +145,7 @@ fn run_preprompt(ctx: &PrepromptContext<'_>) -> Option<String> {
     let compact_result = compact_message_history(
         ctx.llm,
         load_history(ctx.cache, ctx.history_key),
-        ctx.compact_context_length,
+        compaction_threshold(ctx.llm.context_length(), current_context_compaction_percent()),
         &user_message,
     );
     let mut history = compact_result.messages;

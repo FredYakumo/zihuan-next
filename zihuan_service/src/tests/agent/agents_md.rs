@@ -52,6 +52,10 @@ fn unused_llm() -> Arc<dyn LLMBase> {
             "test"
         }
 
+        fn context_length(&self) -> usize {
+            32 * 1024
+        }
+
         fn inference(&self, _param: &InferenceParam) -> LLMMessage {
             panic!("unused test LLM")
         }

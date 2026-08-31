@@ -201,8 +201,6 @@ pub struct QqChatAgentServiceConfig {
     #[serde(default = "default_max_message_length")]
     pub max_message_length: usize,
     #[serde(default)]
-    pub compact_context_length: usize,
-    #[serde(default)]
     pub dream_enabled: bool,
     #[serde(default = "default_dream_interval_value")]
     pub dream_interval_value: usize,

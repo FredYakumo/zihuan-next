@@ -16,7 +16,7 @@ use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::{LLMMessage, StreamToken};
 use zihuan_core::task_context::AgentTaskRuntime;
 
-use crate::role::{InferenceToolProvider, RoleBrainAgent};
+use crate::role::{ContextCompactionObserver, InferenceToolProvider, RoleBrainAgent};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -130,7 +130,7 @@ impl RoleServiceManager {
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn ToolCallingObserver>>,
     ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::tools::ToolCallingStopReason)> {
-        self.infer_role_response_streaming_with_model(role_service_id, messages, token_tx, observer, None, None, None, None, None)
+        self.infer_role_response_streaming_with_model(role_service_id, messages, token_tx, observer, None, None, None, None, None, None)
             .await
     }
 
@@ -140,6 +140,7 @@ impl RoleServiceManager {
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn ToolCallingObserver>>,
+        compaction_observer: Option<ContextCompactionObserver>,
         model_config_id: Option<&str>,
         thinking_type: Option<zihuan_core::model_inference::model_config::ThinkingType>,
         reasoning_effort: Option<zihuan_core::model_inference::model_config::ReasoningEffort>,
@@ -164,11 +165,11 @@ impl RoleServiceManager {
             }
             let llm = zihuan_core::agent::resource_resolver::build_llm_model(&llm_config)?;
             agent
-                .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, llm, workspace_path, session_id)
+                .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, compaction_observer, llm, workspace_path, session_id)
                 .await
         } else {
             agent
-                .infer_response_streaming_with_trace(messages, token_tx, observer, workspace_path, session_id)
+                .infer_response_streaming_with_trace(messages, token_tx, observer, compaction_observer, workspace_path, session_id)
                 .await
         }
     }

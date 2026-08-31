@@ -31,6 +31,7 @@ use zihuan_workspace_service::task_tracking::{delete_workspace_tasks, interrupt_
 
 use crate::api::state::{RunningChatMessage, RunningChatToolCall, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
+use zihuan_service::role::{ContextCompactionEvent, ContextCompactionObserver};
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const CHAT_STREAM_MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
@@ -1206,7 +1207,7 @@ async fn execute_chat_streaming(
     let (token_tx, mut token_rx) = mpsc::unbounded_channel::<StreamToken>();
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
     let observer: Arc<dyn ToolCallingObserver> = Arc::new(SseToolCallingObserver {
-        event_tx,
+        event_tx: event_tx.clone(),
         message_id: assistant_message_id.clone(),
         change_recorder: workspace_changes::WorkspaceChangeRecorder::new(
             session_id.clone(),
@@ -1214,6 +1215,34 @@ async fn execute_chat_streaming(
         ),
         running_chat_message: running_chat_message.clone(),
     });
+    let compaction_observer: ContextCompactionObserver = {
+        let event_tx = event_tx.clone();
+        let message_id = assistant_message_id.clone();
+        Arc::new(move |event| {
+            let payload = match event {
+                ContextCompactionEvent::Started => json!({
+                    "type": "context_compaction_start",
+                    "message_id": message_id,
+                }),
+                ContextCompactionEvent::Completed {
+                    estimated_tokens_before,
+                    estimated_tokens_after,
+                    duration,
+                } => json!({
+                    "type": "context_compaction_complete",
+                    "message_id": message_id,
+                    "estimated_tokens_before": estimated_tokens_before,
+                    "estimated_tokens_after": estimated_tokens_after,
+                    "duration_ms": duration.as_millis() as u64,
+                }),
+                ContextCompactionEvent::Failed => json!({
+                    "type": "context_compaction_failed",
+                    "message_id": message_id,
+                }),
+            };
+            let _ = event_tx.send(payload);
+        })
+    };
 
     let chat_workspace_path = effective_workspace_path.clone();
     let inference_session_id = session_id.clone();
@@ -1230,6 +1259,7 @@ async fn execute_chat_streaming(
                     messages,
                     token_tx,
                     Some(observer),
+                    Some(compaction_observer),
                     model_config_id.as_deref(),
                     thinking_type,
                     reasoning_effort,

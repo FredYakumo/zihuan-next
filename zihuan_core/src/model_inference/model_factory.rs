@@ -24,6 +24,7 @@ pub fn build_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
                 config.include_reasoning_content,
                 config.thinking_type,
                 config.reasoning_effort,
+                config.context_length,
                 std::time::Duration::from_secs(config.timeout_secs),
             )
             .with_retry_count(config.retry_count);

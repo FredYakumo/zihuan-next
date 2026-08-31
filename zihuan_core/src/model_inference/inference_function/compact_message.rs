@@ -8,6 +8,10 @@ use crate::model_inference::message_content_utils::{is_transport_error, sanitize
 
 pub const COMPACT_TAIL_MESSAGES_TO_KEEP: usize = 2;
 
+pub fn compaction_threshold(context_length: usize, percent: u8) -> usize {
+    context_length.saturating_mul(percent.into()) / 100
+}
+
 // === Prompt Engineering ====
 const STORED_COMPACTION_REQUEST: &str =
     "The following assistant content is a compressed summary of earlier history.\n\
@@ -213,6 +217,17 @@ fn build_compaction_prompt(messages: &[LLMMessage]) -> String {
     }
 
     prompt
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compaction_threshold;
+
+    #[test]
+    fn compaction_threshold_uses_configured_percent() {
+        assert_eq!(compaction_threshold(32 * 1024, 80), 26_214);
+        assert_eq!(compaction_threshold(32 * 1024, 99), 32_440);
+    }
 }
 
 fn role_name(role: &MessageRole) -> &'static str {

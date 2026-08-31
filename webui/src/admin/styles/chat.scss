@@ -558,6 +558,20 @@
   margin-top: 8px;
 }
 
+.context-compaction-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  color: var(--admin-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .chat-message-avatar {
   width: 40px;
   height: 40px;
@@ -1662,6 +1676,24 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.context-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 360px;
+  color: var(--admin-muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.context-usage-chart {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border-radius: 50%;
+  background: conic-gradient(var(--admin-accent) var(--context-usage), var(--admin-border) 0);
 }
 
 .model-picker {

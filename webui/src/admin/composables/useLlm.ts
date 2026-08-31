@@ -133,6 +133,10 @@ export function useLlm() {
       return;
     }
     if (form.model_type === "chat_llm") {
+      if (!Number.isInteger(form.llm.context_length) || form.llm.context_length <= 0) {
+        alert("上下文长度必须为大于 0 的整数");
+        return;
+      }
       if (isCandleMode.value) {
         if (!form.llm.model_name.trim()) {
           alert("请选择本地 Candle 模型目录");
