@@ -17,7 +17,7 @@ use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::{Error, Result};
-use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage, TokenUsage};
+use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 use zihuan_core::steer::message_with_api_style;
 use zihuan_core::task_context::AgentTaskRequest;
 
@@ -1285,61 +1285,78 @@ impl QqChatAgentServiceInner {
         (brain_output, stop_reason) = brain.run(brain_conversation.clone());
         trace.record_llm_final_result(&stop_reason, &brain_output);
         let completion_tokens_estimated = estimate_messages_tokens(&brain_output);
-        let exact_token_usage = {
-            let mut prompt_tokens = 0usize;
-            let mut cached_prompt_tokens = 0usize;
-            let mut prompt_cache_miss_tokens = 0usize;
-            let mut completion_tokens = 0usize;
-            let mut total_tokens = 0usize;
-            let mut has_usage = false;
-            let mut cached_prompt_tokens_seen = false;
-            let mut prompt_cache_miss_tokens_seen = false;
-            let mut total_tokens_seen = false;
 
-            for message in &brain_output {
-                if let Some(usage) = message.usage.as_ref() {
-                    if let Some(value) = usage.prompt_tokens {
-                        prompt_tokens = prompt_tokens.saturating_add(value);
-                    }
-                    if let Some(value) = usage.cached_prompt_tokens {
-                        cached_prompt_tokens = cached_prompt_tokens.saturating_add(value);
-                        cached_prompt_tokens_seen = true;
-                    }
-                    if let Some(value) = usage.prompt_cache_miss_tokens {
-                        prompt_cache_miss_tokens = prompt_cache_miss_tokens.saturating_add(value);
-                        prompt_cache_miss_tokens_seen = true;
-                    }
-                    if let Some(value) = usage.completion_tokens {
-                        completion_tokens = completion_tokens.saturating_add(value);
-                    }
-                    if let Some(value) = usage.total_tokens {
-                        total_tokens = total_tokens.saturating_add(value);
-                        total_tokens_seen = true;
-                    }
-                    has_usage = true;
-                }
-            }
-
-            if has_usage {
-                Some(TokenUsage {
-                    prompt_tokens: Some(prompt_tokens),
-                    cached_prompt_tokens: if cached_prompt_tokens_seen {
-                        Some(cached_prompt_tokens)
-                    } else {
-                        None
-                    },
-                    prompt_cache_miss_tokens: if prompt_cache_miss_tokens_seen {
-                        Some(prompt_cache_miss_tokens)
-                    } else {
-                        None
-                    },
-                    completion_tokens: Some(completion_tokens),
-                    total_tokens: if total_tokens_seen { Some(total_tokens) } else { None },
-                })
-            } else {
-                None
-            }
-        };
+        // let exact_token_usage = {
+        //     let mut prompt_tokens = 0usize;
+        //     let mut cached_prompt_tokens = 0usize;
+        //     let mut prompt_cache_miss_tokens = 0usize;
+        //     let mut completion_tokens = 0usize;
+        //     let mut total_tokens = 0usize;
+        //     let mut has_usage = false;
+        //     let mut cached_prompt_tokens_seen = false;
+        //     let mut prompt_cache_miss_tokens_seen = false;
+        //     let mut total_tokens_seen = false;
+        //
+        //     for message in &brain_output {
+        //         if let Some(usage) = message.usage.as_ref() {
+        //             if let Some(value) = usage.prompt_tokens {
+        //                 prompt_tokens = prompt_tokens.saturating_add(value);
+        //             }
+        //             if let Some(value) = usage.cached_prompt_tokens {
+        //                 cached_prompt_tokens = cached_prompt_tokens.saturating_add(value);
+        //                 cached_prompt_tokens_seen = true;
+        //             }
+        //             if let Some(value) = usage.prompt_cache_miss_tokens {
+        //                 prompt_cache_miss_tokens = prompt_cache_miss_tokens.saturating_add(value);
+        //                 prompt_cache_miss_tokens_seen = true;
+        //             }
+        //             if let Some(value) = usage.completion_tokens {
+        //                 completion_tokens = completion_tokens.saturating_add(value);
+        //             }
+        //             if let Some(value) = usage.total_tokens {
+        //                 total_tokens = total_tokens.saturating_add(value);
+        //                 total_tokens_seen = true;
+        //             }
+        //             has_usage = true;
+        //         }
+        //     }
+        //
+        //     if has_usage {
+        //         Some(TokenUsage {
+        //             prompt_tokens: Some(prompt_tokens),
+        //             cached_prompt_tokens: if cached_prompt_tokens_seen {
+        //                 Some(cached_prompt_tokens)
+        //             } else {
+        //                 None
+        //             },
+        //             prompt_cache_miss_tokens: if prompt_cache_miss_tokens_seen {
+        //                 Some(prompt_cache_miss_tokens)
+        //             } else {
+        //                 None
+        //             },
+        //             completion_tokens: Some(completion_tokens),
+        //             total_tokens: if total_tokens_seen { Some(total_tokens) } else { None },
+        //         })
+        //     } else {
+        //         None
+        //     }
+        // };
+        
+        // take the usage of the last LLM call only (the final assistant
+        // message that carries usage). Each iteration of the tool loop sends the full
+        // context accumulated up to that point, so summing every message would count
+        // the same history input multiple times and inflate total_tokens. The final
+        // request's usage is the complete context actually sent for this reply.
+        let exact_token_usage = brain_output
+            .iter()
+            .rev()
+            .find(|message| {
+                matches!(
+                    message.role,
+                    zihuan_core::model_inference::llm::MessageRole::Assistant
+                ) && message.usage.is_some()
+            })
+            .and_then(|message| message.usage.clone());
         trace.record_token_usage(completion_tokens_estimated, exact_token_usage);
 
         let mut final_reply_text = self.parse_final_reply_text(&stop_reason, &brain_output);

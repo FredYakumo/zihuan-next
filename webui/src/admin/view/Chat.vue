@@ -418,11 +418,17 @@
                         <span v-if="message.metrics?.time_to_first_token_ms != null">
                           首 token {{ formatDuration(message.metrics.time_to_first_token_ms) }}
                         </span>
+                        <span v-if="message.metrics?.prompt_tokens != null">
+                          输入 {{ formatTokenCount(message.metrics.prompt_tokens) }} tokens
+                        </span>
+                        <span v-if="message.metrics?.completion_tokens != null">
+                          输出 {{ formatTokenCount(message.metrics.completion_tokens) }} tokens
+                        </span>
                         <span v-if="message.metrics?.output_tokens_per_second != null">
-                          输出 {{ formatOutputSpeed(message.metrics.output_tokens_per_second) }} tokens/s
+                          &nbsp;{{ formatOutputSpeed(message.metrics.output_tokens_per_second) }} tokens/s
                         </span>
                         <span v-if="message.metrics?.total_tokens != null">
-                          消耗 {{ formatTokenCount(message.metrics.total_tokens) }} tokens
+                          总 {{ formatTokenCount(message.metrics.total_tokens) }} tokens
                         </span>
                         <span v-if="message.metrics?.cache_hit_rate != null">
                           缓存命中 {{ formatCacheHitRate(message.metrics.cache_hit_rate) }}
@@ -1768,6 +1774,8 @@ type MetricsMessage = {
   metrics?: {
     time_to_first_token_ms?: number;
     output_tokens_per_second?: number;
+    prompt_tokens?: number;
+    completion_tokens?: number;
     total_tokens?: number;
     cache_hit_rate?: number;
   };
@@ -1777,6 +1785,8 @@ function hasMessageMetrics(message: MetricsMessage) {
   const metrics = message.metrics;
   return metrics?.time_to_first_token_ms != null
     || metrics?.output_tokens_per_second != null
+    || metrics?.prompt_tokens != null
+    || metrics?.completion_tokens != null
     || metrics?.total_tokens != null
     || metrics?.cache_hit_rate != null;
 }
