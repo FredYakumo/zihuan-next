@@ -1524,35 +1524,53 @@ fn build_chat_response_metrics(
     .then_some(metrics)
 }
 
+// Original aggregation (disabled): summing usage across every assistant message
+// in the tool loop double-counts the accumulated history on each iteration.
+//
+// fn aggregate_assistant_usage(output_messages: &[LLMMessage]) -> Option<TokenUsage> {
+//     let mut usage = TokenUsage::default();
+//     let mut has_usage = false;
+//
+//     for message in output_messages {
+//         if !matches!(message.role, MessageRole::Assistant) {
+//             continue;
+//         }
+//         let Some(message_usage) = &message.usage else {
+//             continue;
+//         };
+//         has_usage = true;
+//         add_optional_token_count(&mut usage.prompt_tokens, message_usage.prompt_tokens);
+//         add_optional_token_count(&mut usage.cached_prompt_tokens, message_usage.cached_prompt_tokens);
+//         add_optional_token_count(
+//             &mut usage.prompt_cache_miss_tokens,
+//             message_usage.prompt_cache_miss_tokens,
+//         );
+//         add_optional_token_count(&mut usage.completion_tokens, message_usage.completion_tokens);
+//         add_optional_token_count(&mut usage.total_tokens, message_usage.total_tokens);
+//     }
+//
+//     has_usage.then_some(usage)
+// }
+//
+// fn add_optional_token_count(total: &mut Option<usize>, value: Option<usize>) {
+//     if let Some(value) = value {
+//         *total = Some(total.unwrap_or(0) + value);
+//     }
+// }
+
+/// take the usage of the last LLM call only (the final assistant
+/// message in the output that carries usage). Each iteration of the tool loop
+/// sends the full context accumulated up to that point (history + tool
+/// definitions + previous assistant/tool messages), so summing every message
+/// would count the same history input multiple times and inflate total_tokens.
+/// The final request's usage is the complete context actually sent for this
+/// reply.
 fn aggregate_assistant_usage(output_messages: &[LLMMessage]) -> Option<TokenUsage> {
-    let mut usage = TokenUsage::default();
-    let mut has_usage = false;
-
-    for message in output_messages {
-        if !matches!(message.role, MessageRole::Assistant) {
-            continue;
-        }
-        let Some(message_usage) = &message.usage else {
-            continue;
-        };
-        has_usage = true;
-        add_optional_token_count(&mut usage.prompt_tokens, message_usage.prompt_tokens);
-        add_optional_token_count(&mut usage.cached_prompt_tokens, message_usage.cached_prompt_tokens);
-        add_optional_token_count(
-            &mut usage.prompt_cache_miss_tokens,
-            message_usage.prompt_cache_miss_tokens,
-        );
-        add_optional_token_count(&mut usage.completion_tokens, message_usage.completion_tokens);
-        add_optional_token_count(&mut usage.total_tokens, message_usage.total_tokens);
-    }
-
-    has_usage.then_some(usage)
-}
-
-fn add_optional_token_count(total: &mut Option<usize>, value: Option<usize>) {
-    if let Some(value) = value {
-        *total = Some(total.unwrap_or(0) + value);
-    }
+    output_messages
+        .iter()
+        .rev()
+        .find(|message| matches!(message.role, MessageRole::Assistant) && message.usage.is_some())
+        .and_then(|message| message.usage.clone())
 }
 
 fn duration_to_millis(duration: Duration) -> u64 {
