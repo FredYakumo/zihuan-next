@@ -88,6 +88,7 @@
             <div class="llm-form-grid">
               <t-form-item label="Timeout Secs"><t-input-number v-model="form.llm.timeout_secs" :min="1" /></t-form-item>
               <t-form-item label="Retry Count"><t-input-number v-model="form.llm.retry_count" :min="0" /></t-form-item>
+              <t-form-item label="上下文长度（tokens）"><t-input-number v-model="form.llm.context_length" :min="0" :step="1024" placeholder="0 表示不限制" /><small class="llm-form-hint">留空或 0 表示不限制，配置后可按上下文截断/压缩历史</small></t-form-item>
               <t-form-item label="思考模式"><t-select v-model="form.llm.thinking_type"><t-option :value="null" label="未配置" /><t-option value="enabled" label="启用" /><t-option value="disabled" label="关闭" /></t-select></t-form-item>
               <t-form-item label="思考强度"><t-select v-model="form.llm.reasoning_effort"><t-option :value="null" label="未配置" /><t-option value="low" label="低" /><t-option value="medium" label="中" /><t-option value="high" label="高" /><t-option value="max" label="最高" /></t-select></t-form-item>
             </div>

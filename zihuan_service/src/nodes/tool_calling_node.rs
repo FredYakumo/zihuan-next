@@ -265,6 +265,9 @@ impl Node for ToolCallingNode {
             ToolCallingStopReason::AwaitUserInput(request) => {
                 return Err(self.wrap_error(format!("ToolCallingEngine requested user input: {}", request.question)));
             }
+            ToolCallingStopReason::ToolCallLimitReached(request) => {
+                return Err(self.wrap_error(format!("ToolCallingEngine reached tool call limit: {}", request.question)));
+            }
             ToolCallingStopReason::Done => {}
         }
 

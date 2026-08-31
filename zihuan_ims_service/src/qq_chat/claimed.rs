@@ -294,7 +294,7 @@ impl QqChatAgentServiceInner {
     fn parse_final_reply_text(&self, stop_reason: &ToolCallingStopReason, brain_output: &[LLMMessage]) -> Option<String> {
         if matches!(
             stop_reason,
-            ToolCallingStopReason::TransportError(_) | ToolCallingStopReason::AwaitUserInput(_)
+            ToolCallingStopReason::TransportError(_) | ToolCallingStopReason::AwaitUserInput(_) | ToolCallingStopReason::ToolCallLimitReached(_)
         ) {
             return None;
         }
@@ -1385,6 +1385,9 @@ impl QqChatAgentServiceInner {
                 }
                 ToolCallingStopReason::AwaitUserInput(ref request) => {
                     warn!("{LOG_PREFIX} ToolCallingEngine paused for user input without reply: {}", request.question);
+                }
+                ToolCallingStopReason::ToolCallLimitReached(ref request) => {
+                    warn!("{LOG_PREFIX} ToolCallingEngine paused at tool-call limit without reply: {}", request.question);
                 }
             }
         } else if let Some(candidate_message) = final_reply_text.as_ref() {

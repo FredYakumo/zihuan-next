@@ -49,6 +49,8 @@ pub struct LlmServiceConfig {
     pub thinking_type: Option<ThinkingType>,
     #[serde(default)]
     pub reasoning_effort: Option<ReasoningEffort>,
+    #[serde(default)]
+    pub context_length: Option<usize>,
     #[serde(default = "default_timeout_secs")]
     pub timeout_secs: u64,
     #[serde(default = "default_retry_count")]

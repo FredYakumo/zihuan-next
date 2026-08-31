@@ -61,4 +61,5 @@ pub enum ToolCallingStopReason {
     TransportError(String),
     MaxIterationsReached,
     AwaitUserInput(AskUserRequest),
+    ToolCallLimitReached(AskUserRequest),
 }

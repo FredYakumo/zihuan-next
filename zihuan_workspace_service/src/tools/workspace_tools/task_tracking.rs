@@ -17,7 +17,7 @@ pub(crate) const DEFAULT_TOOL_TASK_LIST: &str = "TaskList";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum WorkspaceTaskStatus { Pending, InProgress, Completed }
+pub enum WorkspaceTaskStatus { Pending, InProgress, Completed, Interrupted }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceTask {
@@ -46,6 +46,20 @@ pub fn delete_workspace_tasks(session_id: &str) -> Result<(), String> {
     let _lock = lock_workspace_tasks(&path)?;
     if path.exists() { fs::remove_file(path).map_err(|err| format!("failed to delete task snapshot: {err}"))?; }
     Ok(())
+}
+
+pub fn interrupt_workspace_tasks(session_id: &str, reason: &str) -> Result<WorkspaceTaskSnapshot, String> {
+    let path = task_file_path(session_id)?;
+    let _lock = lock_workspace_tasks(&path)?;
+    let mut snapshot = load_workspace_tasks(session_id)?;
+    for task in &mut snapshot.tasks {
+        if task.status != WorkspaceTaskStatus::Completed {
+            task.status = WorkspaceTaskStatus::Interrupted;
+            task.metadata["interruption_reason"] = Value::String(reason.to_string());
+        }
+    }
+    save_workspace_tasks(session_id, &snapshot)?;
+    Ok(snapshot)
 }
 
 fn task_file_path(session_id: &str) -> Result<std::path::PathBuf, String> {
@@ -175,7 +189,7 @@ impl Tool for WorkspaceTaskTool {
                     if let Some(value) = arguments.get("metadata") { task.metadata = value.clone(); }
                     if arguments.get("blocks").is_some() { task.blocks = string_list(arguments, "blocks"); }
                     if arguments.get("blockedBy").is_some() { task.blocked_by = string_list(arguments, "blockedBy"); }
-                    if let Some(status) = arguments.get("status").and_then(Value::as_str) { task.status = match status { "pending" => WorkspaceTaskStatus::Pending, "in_progress" => WorkspaceTaskStatus::InProgress, "completed" => WorkspaceTaskStatus::Completed, _ => return json_error("status must be pending, in_progress, completed, or deleted") }; }
+                    if let Some(status) = arguments.get("status").and_then(Value::as_str) { task.status = match status { "pending" => WorkspaceTaskStatus::Pending, "in_progress" => WorkspaceTaskStatus::InProgress, "completed" => WorkspaceTaskStatus::Completed, "interrupted" => WorkspaceTaskStatus::Interrupted, _ => return json_error("status must be pending, in_progress, completed, interrupted, or deleted") }; }
                 }
             }
             _ => unreachable!("read-only task tools returned before entering the write transaction"),

@@ -277,15 +277,12 @@
                             :ref="(element) => setLiveOutputElement(liveCall.call_id, element)"
                             @scroll="handleLiveOutputScroll(liveCall.call_id)"
                           >{{ liveExecOutput(liveCall) }}</pre>
-                          <div v-if="liveCall.commandConfirmation" class="chat-command-confirmation">
-                            <span v-if="liveCall.commandConfirmation.decision">用户{{ liveCall.commandConfirmation.decision === 'reject' ? '已拒绝' : '已确认执行' }}</span>
-                            <template v-else>
-                              <span class="chat-command-confirmation-question">允许执行此命令？</span>
-                              <code class="chat-command-confirmation-command">{{ liveCall.commandConfirmation.shell }}&gt; {{ liveCall.commandConfirmation.command }}</code>
-                              <button class="btn primary" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
-                              <button class="btn secondary" @click="decideCommandConfirmation(liveCall, 'session')">本次对话允许类似指令</button>
-                              <button class="btn danger" @click="decideCommandConfirmation(liveCall, 'reject')">拒绝</button>
-                            </template>
+                          <div v-if="liveCall.commandConfirmation && !liveCall.commandConfirmation.decision" class="chat-command-confirmation">
+                            <span class="chat-command-confirmation-question">允许执行此命令？</span>
+                            <code class="chat-command-confirmation-command">{{ liveCall.commandConfirmation.shell }}&gt; {{ liveCall.commandConfirmation.command }}</code>
+                            <button class="btn primary" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
+                            <button class="btn secondary" @click="decideCommandConfirmation(liveCall, 'session')">本次对话允许类似指令</button>
+                            <button class="btn danger" @click="decideCommandConfirmation(liveCall, 'reject')">拒绝</button>
                           </div>
                         </div>
                       </div>
@@ -501,15 +498,12 @@
                             :ref="(element) => setLiveOutputElement(liveCall.call_id, element)"
                             @scroll="handleLiveOutputScroll(liveCall.call_id)"
                           >{{ liveExecOutput(liveCall) }}</pre>
-                          <div v-if="liveCall.commandConfirmation" class="chat-command-confirmation">
-                            <span v-if="liveCall.commandConfirmation.decision">用户{{ liveCall.commandConfirmation.decision === 'reject' ? '已拒绝' : '已确认执行' }}</span>
-                            <template v-else>
-                              <span class="chat-command-confirmation-question">允许执行此命令？</span>
-                              <code class="chat-command-confirmation-command">{{ liveCall.commandConfirmation.shell }}&gt; {{ liveCall.commandConfirmation.command }}</code>
-                              <button class="btn primary" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
-                              <button class="btn secondary" @click="decideCommandConfirmation(liveCall, 'session')">本次对话允许类似指令</button>
-                              <button class="btn danger" @click="decideCommandConfirmation(liveCall, 'reject')">拒绝</button>
-                            </template>
+                          <div v-if="liveCall.commandConfirmation && !liveCall.commandConfirmation.decision" class="chat-command-confirmation">
+                            <span class="chat-command-confirmation-question">允许执行此命令？</span>
+                            <code class="chat-command-confirmation-command">{{ liveCall.commandConfirmation.shell }}&gt; {{ liveCall.commandConfirmation.command }}</code>
+                            <button class="btn primary" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
+                            <button class="btn secondary" @click="decideCommandConfirmation(liveCall, 'session')">本次对话允许类似指令</button>
+                            <button class="btn danger" @click="decideCommandConfirmation(liveCall, 'reject')">拒绝</button>
                           </div>
                         </div>
                       </div>
@@ -586,6 +580,14 @@
                       :tasks="workspaceTasks"
                       interrupted
                     />
+                    <div v-if="pendingAskUser?.toolCallLimit && message.id === lastAssistantMessageId" class="ask-user-panel tool-call-limit-panel">
+                      <div class="ask-user-question">{{ pendingAskUser.question }}</div>
+                      <div v-if="pendingAskUser.details" class="ask-user-details">{{ pendingAskUser.details }}</div>
+                      <div class="ask-user-row">
+                        <button class="btn tool-call-limit-continue" :disabled="toolCallLimitDecisionLoading" @click="decideToolCallLimit('continue')">继续</button>
+                        <button class="btn tool-call-limit-stop" :disabled="toolCallLimitDecisionLoading" @click="decideToolCallLimit('stop')">停止</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div v-if="group.role !== 'assistant'" class="chat-bubble-col">
@@ -659,6 +661,11 @@
                                 <EditIcon />
                               </t-button>
                             </t-tooltip>
+                            <t-tooltip content="重发并创建新分支">
+                              <t-button variant="text" size="small" shape="square" :disabled="sending || message.id.startsWith('local-')" aria-label="重发消息" @click="resendMessage(message)">
+                                <RefreshIcon />
+                              </t-button>
+                            </t-tooltip>
                             <template v-if="messageBranchMap.has(message.id)">
                               <t-button variant="text" size="small" shape="square" :disabled="sending || messageBranchMap.get(message.id)?.current_index === 0" aria-label="上一版本" @click="switchMessageBranch(message.id, -1)">
                                 <ChevronLeftIcon />
@@ -701,7 +708,7 @@
                     </div>
                   </div>
                 </div>
-                <div v-if="pendingAskUser && !pendingAskUser.commandConfirmation" class="ask-user-panel">
+                <div v-if="pendingAskUser && !pendingAskUser.commandConfirmation && !pendingAskUser.toolCallLimit" class="ask-user-panel">
                   <div class="ask-user-question">{{ pendingAskUser.question }}</div>
                   <div v-if="pendingAskUser.details" class="ask-user-details">
                     {{ pendingAskUser.details }}
@@ -1009,6 +1016,7 @@
                   :key="index"
                   class="workspace-change-diff-row"
                 >
+                  <div v-if="row.showPath" class="workspace-change-diff-file-path">{{ row.path }}</div>
                   <div
                     class="workspace-change-diff-cell workspace-change-diff-cell--removed"
                     :class="{ empty: !row.before, 'workspace-change-diff-cell--changed': row.before?.kind === 'removed' }"
@@ -1236,7 +1244,7 @@
             <template v-else-if="toolPreviewState.kind.type === 'edit_file'">
               <div class="tool-preview-diff">
                 <div
-                  v-for="(hunk, idx) in editHunks(toolPreviewState.kind.edits)"
+                  v-for="(hunk, idx) in editHunks(toolPreviewState.kind.patch)"
                   :key="idx"
                   class="tool-preview-hunk"
                 >
@@ -1559,6 +1567,7 @@ const {
   workspaceChangeError,
   askUserAnswer,
   canSubmitAskUser,
+  toolCallLimitDecisionLoading,
   messageGroups,
   activeToolDetail,
   toolPreviewState,
@@ -1613,6 +1622,7 @@ const {
   startEditingMessage,
   cancelEditingMessage,
   submitEditingMessage,
+  resendMessage,
   switchMessageBranch,
   pickDirectory,
   loadDirectoryPicker,
@@ -1628,6 +1638,7 @@ const {
   sendMessage,
   stopInference,
   submitAskUserAnswer,
+  decideToolCallLimit,
   decideCommandConfirmation,
   sendMessageWithText,
   load,
@@ -1659,6 +1670,8 @@ const agentsMdEditorRef = ref<HTMLTextAreaElement | null>(null);
 const agentsMdLineNumbersRef = ref<HTMLElement | null>(null);
 
 interface WorkspaceDiffRow {
+  path?: string;
+  showPath?: boolean;
   before?: WorkspaceDiffCell;
   after?: WorkspaceDiffCell;
 }
@@ -1670,6 +1683,7 @@ interface WorkspaceDiffCell {
 }
 
 interface WorkspaceDiffLine {
+  path?: string;
   kind: "added" | "removed" | "context";
   line: string;
   before_line?: number;
@@ -1679,6 +1693,7 @@ interface WorkspaceDiffLine {
 
 function workspaceDiffRows(diff: WorkspaceDiffLine[]): WorkspaceDiffRow[] {
   const rows: WorkspaceDiffRow[] = [];
+  let previousPath: string | undefined;
   let start = 0;
 
   while (start < diff.length) {
@@ -1694,9 +1709,12 @@ function workspaceDiffRows(diff: WorkspaceDiffLine[]): WorkspaceDiffRow[] {
       const change = hunkLines[changeStart];
       if (change.kind === "context") {
         rows.push({
+          path: change.path,
+          showPath: change.path !== previousPath,
           before: { kind: "context", line: change.line, lineNumber: change.before_line },
           after: { kind: "context", line: change.line, lineNumber: change.after_line },
         });
+        previousPath = change.path;
         changeStart += 1;
         continue;
       }
@@ -1713,9 +1731,12 @@ function workspaceDiffRows(diff: WorkspaceDiffLine[]): WorkspaceDiffRow[] {
         const before = removed[index];
         const after = added[index];
         rows.push({
+          path: before?.path ?? after?.path,
+          showPath: (before?.path ?? after?.path) !== previousPath,
           before: before && { kind: before.kind, line: before.line, lineNumber: before.before_line },
           after: after && { kind: after.kind, line: after.line, lineNumber: after.after_line },
         });
+        previousPath = before?.path ?? after?.path;
       }
 
       changeStart = changeEnd;
@@ -1820,6 +1841,13 @@ function formatCacheHitRate(rate: number) {
   font-size: 13px;
   line-height: 20px;
 }
+
+.tool-call-limit-panel {
+  margin: 8px 0;
+}
+
+.tool-call-limit-continue { background: #2ba471; color: #fff; }
+.tool-call-limit-stop { background: #d54941; color: #fff; }
 
 .chat-tool-live-output {
   order: 2;

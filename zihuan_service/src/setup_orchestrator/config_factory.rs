@@ -175,6 +175,7 @@ fn build_llm_ref(config: &LlmSetupConfig, id: &str, name: &str) -> LlmRefConfig 
                 include_reasoning_content: false,
                 thinking_type: None,
                 reasoning_effort: None,
+                context_length: None,
                 timeout_secs: 120,
                 retry_count: 2,
             },

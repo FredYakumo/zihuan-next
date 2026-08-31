@@ -1,4 +1,4 @@
-use log::info;
+use log::{info, debug};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -116,7 +116,7 @@ pub fn load_llm_refs() -> Result<Vec<LlmRefConfig>> {
         .map(llm_ref_from_record)
         .collect::<Result<Vec<_>>>()?;
     for llm_ref in &llm_refs {
-        info!(
+        debug!(
             "[config_center] loaded llm_ref config_id={} name='{}'",
             llm_ref.canonical_config_id(),
             llm_ref.name

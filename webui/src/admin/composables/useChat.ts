@@ -92,11 +92,6 @@ type ToolDetail = {
   toolCall: ChatToolCall;
   result: string;
 };
-type LineEditSpec = {
-  start_line: number;
-  end_line: number;
-  replacement_lines: string[];
-};
 type SearchMatch = {
   path: string;
   line: number;
@@ -108,7 +103,7 @@ type WebSearchResult = { title: string; url: string; content: string; score: num
 type ToolCallKind =
   | { type: "create_file"; filename: string; lineCount: number; content: string }
   | { type: "delete_file"; filename: string; lineCount: number | null }
-  | { type: "edit_file"; filename: string; addedLines: number; removedLines: number; edits: LineEditSpec[] }
+  | { type: "edit_file"; filename: string; addedLines: number; removedLines: number; patch: string }
   | { type: "copy_file" | "move_file"; src: string; dest: string; overwritten: boolean }
   | { type: "file_info"; filename: string; metadata: Record<string, unknown> }
   | { type: "find_files"; pattern: string; matches: Array<{ name: string; path: string; type: string }>; truncated: boolean }
@@ -200,20 +195,16 @@ function classifyToolCall(name: string, arguments_: unknown, result?: string): T
     }
   }
   if (name === "edit_file") {
-    const args = safeParseJson<{ path?: string; edits?: LineEditSpec[] }>(arguments_);
-    if (args?.path != null && Array.isArray(args.edits)) {
-      let addedLines = 0;
-      let removedLines = 0;
-      for (const edit of args.edits) {
-        removedLines += Math.max(0, edit.end_line - edit.start_line + 1);
-        addedLines += edit.replacement_lines.length;
-      }
+    const args = safeParseJson<{ patch?: string }>(arguments_);
+    const res = safeParseJson<{ files?: Array<{ path?: string; added_lines?: number; removed_lines?: number }> }>(result);
+    if (args?.patch != null) {
+      const files = res?.files ?? [];
       return {
         type: "edit_file",
-        filename: basename(args.path),
-        addedLines,
-        removedLines,
-        edits: args.edits,
+        filename: files.map((file) => basename(file.path ?? "")).filter(Boolean).join(", ") || "补丁",
+        addedLines: files.reduce((sum, file) => sum + (file.added_lines ?? 0), 0),
+        removedLines: files.reduce((sum, file) => sum + (file.removed_lines ?? 0), 0),
+        patch: args.patch,
       };
     }
   }
@@ -342,6 +333,7 @@ type PendingAskUser = {
   details?: string;
   placeholder?: string;
   commandConfirmation?: { command: string; shell: string; decision?: "once" | "session" | "reject" };
+  toolCallLimit?: { usedCalls: number };
 };
 type StreamState = {
   assistantMessageId: string | null;
@@ -521,6 +513,7 @@ const selectedWorkspaceChange = computed(() =>
   workspaceChanges.value.find((item) => item.change_id === selectedWorkspaceChangeId.value) ?? workspaceChanges.value[0] ?? null,
 );
 const askUserAnswer = ref("");
+const toolCallLimitDecisionLoading = ref(false);
 const canSubmitAskUser = computed(() =>
   isChatEligible.value &&
   isWorkspaceService.value &&
@@ -775,20 +768,10 @@ function handleToolPreviewKeydown(e: KeyboardEvent) {
   }
 }
 
-function editHunks(edits: LineEditSpec[]): { startLine: number; removed: string[]; added: string[] }[] {
-  const sorted = [...edits].sort((a, b) => a.start_line - b.start_line);
-  const hunks: { startLine: number; removed: string[]; added: string[] }[] = [];
-  for (const edit of sorted) {
-    const removedCount = Math.max(0, edit.end_line - edit.start_line + 1);
-    hunks.push({
-      startLine: edit.start_line,
-      removed: Array.from({ length: removedCount }, (_, i) => `L${edit.start_line + i}`),
-      added: edit.replacement_lines.map(
-        (line, i) => `L${edit.start_line + i}` + (line.length > 0 ? ": " + line : ""),
-      ),
-    });
-  }
-  return hunks;
+function editHunks(patch: string): { startLine: number; removed: string[]; added: string[] }[] {
+  const removed = patch.split("\n").filter((line) => line.startsWith("-")).map((line) => line.slice(1));
+  const added = patch.split("\n").filter((line) => line.startsWith("+")).map((line) => line.slice(1));
+  return [{ startLine: 0, removed, added }];
 }
 
 function toggleLiveToolCall(callId: string) {
@@ -1304,6 +1287,7 @@ async function openSession(sessionId: string) {
       details: latestRecord.pending_ask_user.details ?? undefined,
       placeholder: latestRecord.pending_ask_user.placeholder ?? undefined,
       commandConfirmation: latestRecord.pending_ask_user.command_confirmation ?? undefined,
+      toolCallLimit: latestRecord.pending_ask_user.tool_call_limit ? { usedCalls: latestRecord.pending_ask_user.tool_call_limit.used_calls } : undefined,
     };
   }
   applyHistory(result.messages);
@@ -1433,6 +1417,28 @@ async function submitEditingMessage() {
     const forked = await chat.forkSession(activeSessionId.value, editing.messageId);
     await openSession(forked.session_id);
     editingMessage.value = null;
+    await sendMessageWithText(content, false, { attachments, isEdit: true });
+  } catch (error) {
+    showChatError(`创建对话分支失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function resendMessage(message: ChatMessage) {
+  if (sending.value || message.role !== "user" || message.id.startsWith("local-") || !activeSessionId.value) {
+    return;
+  }
+  const content = message.content.trim();
+  const attachments = message.imageAttachments ?? [];
+  if (!content && attachments.length === 0) {
+    return;
+  }
+  if (!supportsMultimodalInput.value && attachments.length > 0) {
+    showChatError("当前模型不支持多模态输入，无法发送图片。");
+    return;
+  }
+  try {
+    const forked = await chat.forkSession(activeSessionId.value, message.id);
+    await openSession(forked.session_id);
     await sendMessageWithText(content, false, { attachments, isEdit: true });
   } catch (error) {
     showChatError(`创建对话分支失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -1705,8 +1711,16 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
       details: event.details ?? undefined,
       placeholder: event.placeholder ?? undefined,
       commandConfirmation: event.command_confirmation,
+      toolCallLimit: event.tool_call_limit ? { usedCalls: event.tool_call_limit.used_calls } : undefined,
     };
     askUserAnswer.value = "";
+    return;
+  }
+
+  if (event.type === "tool_call_limit_stopped") {
+    workspaceTasks.value = event.tasks ?? [];
+    clearPendingAskUser();
+    workspaceTaskInterrupted.value = true;
     return;
   }
 
@@ -1927,6 +1941,38 @@ function isAbortError(error: unknown): boolean {
 
 async function submitAskUserAnswer() {
   await sendMessageWithText(askUserAnswer.value, true);
+}
+
+async function decideToolCallLimit(continuation: "continue" | "stop") {
+  if (!activeSessionId.value || !selectedServiceId.value || !pendingAskUser.value?.toolCallLimit || toolCallLimitDecisionLoading.value) return;
+  const pendingRequest = pendingAskUser.value;
+  toolCallLimitDecisionLoading.value = true;
+  clearPendingAskUser();
+  activeRequestCount.value += 1;
+  try {
+    await chat.stream({
+      agent_id: selectedServiceId.value,
+      session_id: activeSessionId.value,
+      stream: true,
+      model_config_id: selectedModelId.value || null,
+      thinking_type: selectedThinkingType.value || null,
+      reasoning_effort: selectedReasoningEffort.value || null,
+      workspace_path: isWorkspaceService.value ? workspacePath.value.trim() || null : null,
+      continuation,
+      messages: [],
+    }, (event) => applyStreamEvent(event, {
+      assistantMessageId: null, toolMessageId: null, awaitingPostToolContent: false, pendingNewConversation: null,
+      requestText: "", requestedSessionId: activeSessionId.value, sessionId: activeSessionId.value, foreground: true,
+    }));
+    await reloadSessions();
+    await openSession(activeSessionId.value);
+  } catch (error) {
+    pendingAskUser.value = pendingRequest;
+    showChatError(`处理工具调用上限失败: ${(error as Error).message}`);
+  } finally {
+    toolCallLimitDecisionLoading.value = false;
+    activeRequestCount.value = Math.max(0, activeRequestCount.value - 1);
+  }
 }
 
 async function decideCommandConfirmation(liveCall: LiveToolCall, decision: "once" | "session" | "reject") {
@@ -2262,6 +2308,7 @@ onUnmounted(() => {
     startEditingMessage,
     cancelEditingMessage,
     submitEditingMessage,
+    resendMessage,
     switchMessageBranch,
     pickDirectory,
     loadDirectoryPicker,
@@ -2278,6 +2325,8 @@ onUnmounted(() => {
     stopInference,
     submitAskUserAnswer,
     decideCommandConfirmation,
+    decideToolCallLimit,
+    toolCallLimitDecisionLoading,
     sendMessageWithText,
     load,
     formatTime,

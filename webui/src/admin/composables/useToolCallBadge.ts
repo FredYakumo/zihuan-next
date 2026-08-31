@@ -5,12 +5,6 @@ export interface ToolCallBadgeProps {
 
 export type ToolCallBadgeEmit = (e: "click") => void;
 
-type LineEditSpec = {
-  start_line: number;
-  end_line: number;
-  replacement_lines: string[];
-};
-
 type SearchMatch = {
   path: string;
   line: number;
@@ -28,7 +22,7 @@ type ToolCallKind =
       filename: string;
       addedLines: number;
       removedLines: number;
-      edits: LineEditSpec[];
+      patch: string;
     }
   | { type: "copy_file" | "move_file"; src: string; dest: string; overwritten: boolean }
   | { type: "file_info"; filename: string; metadata: Record<string, unknown> }
@@ -51,7 +45,7 @@ type ToolCallKind =
   | { type: "web_search"; query: string; url: string; results: WebSearchResult[]; error: string | null }
   | { type: "generic"; name: string };
 
-export type { ToolCallKind, LineEditSpec };
+export type { ToolCallKind };
 
 export interface UseToolCallBadgeReturn {
   kind: ToolCallBadgeProps["kind"];

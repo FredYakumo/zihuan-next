@@ -18,6 +18,13 @@ pub struct AskUserRequest {
     pub placeholder: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_confirmation: Option<CommandConfirmationRequest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_limit: Option<ToolCallLimitRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCallLimitRequest {
+    pub used_calls: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

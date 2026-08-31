@@ -27,7 +27,7 @@ use zihuan_core::message_part::MessagePart;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
 use zihuan_workspace_service::api::workspace_changes;
-use zihuan_workspace_service::task_tracking::{delete_workspace_tasks, load_workspace_tasks};
+use zihuan_workspace_service::task_tracking::{delete_workspace_tasks, interrupt_workspace_tasks, load_workspace_tasks};
 
 use crate::api::state::{RunningChatMessage, RunningChatToolCall, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
@@ -194,6 +194,22 @@ impl From<DashboardChatMessage> for LLMMessage {
     }
 }
 
+fn history_record_to_message(record: ChatHistoryRecord) -> LLMMessage {
+    LLMMessage {
+        role: match record.role.as_str() {
+            "user" => MessageRole::User,
+            "assistant" => MessageRole::Assistant,
+            "tool" => MessageRole::Tool,
+            _ => MessageRole::System,
+        },
+        parts: if record.parts.is_empty() && !record.content.is_empty() { vec![MessagePart::text(record.content)] } else { record.parts },
+        reasoning_content: record.reasoning_content,
+        tool_calls: record.tool_calls,
+        tool_call_id: record.tool_call_id,
+        usage: None,
+    }
+}
+
 /// conversation, the full message history, and a stream toggle.
 ///
 /// **Design:** Mirrors the OpenAI chat-completion request shape but adds `agent_id` and
@@ -214,7 +230,13 @@ pub struct ChatStreamRequest {
     pub reasoning_effort: Option<zihuan_core::model_inference::model_config::ReasoningEffort>,
     #[serde(default)]
     pub workspace_path: Option<String>,
+    #[serde(default)]
+    pub continuation: Option<ChatContinuationDecision>,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatContinuationDecision { Continue, Stop }
 
 /// Summary row returned by the session-list endpoint.
 ///
@@ -834,7 +856,7 @@ pub async fn stream_chat(req: &mut Request, res: &mut Response, depot: &mut Depo
         render_bad_request(res, "agent_id must not be empty".to_string());
         return;
     }
-    if body.messages.is_empty() {
+    if body.messages.is_empty() && body.continuation.is_none() {
         render_bad_request(res, "messages must not be empty".to_string());
         return;
     }
@@ -965,9 +987,53 @@ async fn execute_chat_streaming(
         thinking_type,
         reasoning_effort,
         workspace_path,
+        continuation,
     } = body;
+    let is_continuation = continuation.is_some();
     let mut messages: Vec<LLMMessage> = raw_messages.into_iter().map(Into::into).collect();
-
+    if let Some(decision) = continuation {
+        let Some(session_id) = requested_session_id.as_deref().filter(|value| !value.trim().is_empty()) else {
+            let event = json!({ "type": "error", "error": "continuation requires an existing session" });
+            let _ = sender.send_data(format!("data: {event}\n\n")).await;
+            return;
+        };
+        let latest = match load_chat_session_messages(session_id).and_then(|records| Ok(records.last().cloned())) {
+            Ok(Some(record)) => record,
+            _ => {
+                let event = json!({ "type": "error", "error": "no resumable tool-call limit prompt exists for this session" });
+                let _ = sender.send_data(format!("data: {event}\n\n")).await;
+                return;
+            }
+        };
+        if latest.pending_ask_user.as_ref().and_then(|request| request.tool_call_limit.as_ref()).is_none() {
+            let event = json!({ "type": "error", "error": "the session is not waiting for a tool-call limit decision" });
+            let _ = sender.send_data(format!("data: {event}\n\n")).await;
+            return;
+        }
+        if let Err(error) = append_tool_call_limit_decision_record(session_id, &latest, &decision) {
+            let event = json!({ "type": "error", "error": error.to_string() });
+            let _ = sender.send_data(format!("data: {event}\n\n")).await;
+            return;
+        }
+        match decision {
+            ChatContinuationDecision::Stop => {
+                match interrupt_workspace_tasks(session_id, "用户在工具调用上限处停止") {
+                    Ok(snapshot) => {
+                        let event = json!({ "type": "tool_call_limit_stopped", "session_id": session_id, "tasks": snapshot.tasks });
+                        let _ = sender.send_data(format!("data: {event}\n\n")).await;
+                        let _ = sender.send_data("data: [DONE]\n\n").await;
+                    }
+                    Err(error) => { let event = json!({ "type": "error", "error": error }); let _ = sender.send_data(format!("data: {event}\n\n")).await; }
+                }
+                return;
+            }
+            ChatContinuationDecision::Continue => {
+                let records = match load_chat_session_messages(session_id) { Ok(records) => records, Err(error) => { let event = json!({ "type": "error", "error": error.to_string() }); let _ = sender.send_data(format!("data: {event}\n\n")).await; return; } };
+                messages = records.into_iter().filter(|record| matches!(record.role.as_str(), "user" | "assistant" | "tool")).map(history_record_to_message).collect();
+                messages.push(LLMMessage::system("用户已同意继续执行。请从现有状态继续完成任务。"));
+            }
+        }
+    }
     let ChatAgentInfo { agent, agent_snapshot } = match resolve_chat_agent(&state.role_service_manager, &agent_id) {
         Ok(info) => info,
         Err(event) => {
@@ -1060,7 +1126,7 @@ async fn execute_chat_streaming(
             effective_workspace_path.clone(),
             None,
             None,
-            true,
+            !is_continuation,
         ) {
             if let Some((task_id, _)) = &workspace_task {
                 finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Failed, Some(err.to_string()), None);
@@ -1208,6 +1274,16 @@ async fn execute_chat_streaming(
     let (output_messages, stop_reason) = match inference_handle.await {
         Ok(Ok(result)) => result,
         Ok(Err(err)) => {
+            if let Some(snapshot) = running_chat_message.as_ref() {
+                if let Err(persist_err) = persist_running_chat_message(
+                    &session_id,
+                    &agent,
+                    &agent_snapshot,
+                    snapshot,
+                ) {
+                    log::warn!("failed to persist running chat message after inference error: {persist_err}");
+                }
+            }
             clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
             if let Some((task_id, _)) = &workspace_task {
                 finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Failed, Some(err.to_string()), None);
@@ -1217,6 +1293,16 @@ async fn execute_chat_streaming(
             return;
         }
         Err(err) => {
+            if let Some(snapshot) = running_chat_message.as_ref() {
+                if let Err(persist_err) = persist_running_chat_message(
+                    &session_id,
+                    &agent,
+                    &agent_snapshot,
+                    snapshot,
+                ) {
+                    log::warn!("failed to persist running chat message after chat task join failure: {persist_err}");
+                }
+            }
             clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
             let stopped = workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
             if let Some((task_id, _)) = &workspace_task {
@@ -1239,7 +1325,7 @@ async fn execute_chat_streaming(
     if let Some(watch) = stop_watch { watch.abort(); }
     if workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed)) {
         if let Some(snapshot) = running_chat_message.as_ref() {
-            if let Err(err) = persist_interrupted_running_chat_message(
+            if let Err(err) = persist_running_chat_message(
                 &session_id,
                 &agent,
                 &agent_snapshot,
@@ -1254,6 +1340,9 @@ async fn execute_chat_streaming(
         clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
         if let Some((task_id, _)) = &workspace_task {
             finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Stopped, None, None);
+        }
+        if matches!(agent.role_service_type, RoleServiceType::Workspace(_)) {
+            if let Err(error) = interrupt_workspace_tasks(&session_id, "用户手动停止推理") { log::warn!("failed to interrupt workspace tasks: {error}"); }
         }
         return;
     }
@@ -1274,7 +1363,7 @@ async fn execute_chat_streaming(
         &output_messages,
         effective_workspace_path.clone(),
         match &stop_reason {
-            ToolCallingStopReason::AwaitUserInput(request) => Some(request.clone()),
+            ToolCallingStopReason::AwaitUserInput(request) | ToolCallingStopReason::ToolCallLimitReached(request) => Some(request.clone()),
             _ => None,
         },
         metrics.as_ref(),
@@ -1306,7 +1395,7 @@ async fn execute_chat_streaming(
         }
     }
 
-    if let ToolCallingStopReason::AwaitUserInput(request) = stop_reason {
+    if let ToolCallingStopReason::AwaitUserInput(request) | ToolCallingStopReason::ToolCallLimitReached(request) = stop_reason {
         let event = json!({
             "type": "ask_user",
             "session_id": session_id,
@@ -1315,6 +1404,7 @@ async fn execute_chat_streaming(
             "details": request.details,
             "placeholder": request.placeholder,
             "command_confirmation": request.command_confirmation,
+            "tool_call_limit": request.tool_call_limit,
         });
         if client_connected && !send_sse(&mut sender, &event).await {
             return;
@@ -1529,12 +1619,13 @@ fn clear_running_chat_message(
     }
 }
 
-/// Persist the assistant output observed before a Workspace task was stopped.
+/// Persist the assistant output observed before a Workspace task exits without a final result.
 ///
 /// The user message is persisted when the task starts, while the assistant record normally
-/// waits for inference to finish. On interruption, retain the live snapshot instead of
-/// clearing it so a history reload does not discard streamed text or tool activity.
-fn persist_interrupted_running_chat_message(
+/// waits for inference to finish. On an interrupted or failed completion path, retain the live
+/// snapshot instead of clearing it so a history reload does not discard streamed text or tool
+/// activity.
+fn persist_running_chat_message(
     session_id: &str,
     agent: &RoleServiceConfig,
     agent_snapshot: &AgentSnapshot,
@@ -1707,6 +1798,39 @@ fn append_history_record(record: &ChatHistoryRecord) -> Result<()> {
     file.write_all(b"\n")?;
     file.flush()?;
     Ok(())
+}
+
+fn append_tool_call_limit_decision_record(
+    session_id: &str,
+    latest: &ChatHistoryRecord,
+    decision: &ChatContinuationDecision,
+) -> Result<()> {
+    let content = match decision {
+        ChatContinuationDecision::Continue => "用户已同意继续执行。",
+        ChatContinuationDecision::Stop => "用户已在工具调用上限处停止执行。",
+    };
+    append_history_record(&ChatHistoryRecord {
+        session_id: session_id.to_string(),
+        agent_id: latest.agent_id.clone(),
+        agent_name: latest.agent_name.clone(),
+        role_service_type: latest.role_service_type.clone(),
+        agent_avatar_url: latest.agent_avatar_url.clone(),
+        role: "system".to_string(),
+        content: content.to_string(),
+        parts: vec![MessagePart::text(content)],
+        reasoning_content: None,
+        timestamp: Utc::now().to_rfc3339(),
+        stream_index: None,
+        streaming: false,
+        live_tool_calls: Vec::new(),
+        trace_id: latest.trace_id.clone(),
+        message_id: format!("msg_{}", Uuid::new_v4().simple()),
+        tool_calls: Vec::new(),
+        tool_call_id: None,
+        workspace_path: latest.workspace_path.clone(),
+        pending_ask_user: None,
+        metrics: None,
+    })
 }
 
 fn fork_chat_session_history(source_session_id: &str, source_message_id: &str) -> Result<String> {
