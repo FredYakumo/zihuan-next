@@ -498,6 +498,9 @@ const contextTokenUsage = computed(() => {
   if (!contextLength || contextLength < 1) {
     return null;
   }
+  if (messages.value.length === 0) {
+    return null;
+  }
 
   const usedTokens = messages.value
     .filter(

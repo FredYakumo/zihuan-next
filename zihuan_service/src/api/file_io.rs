@@ -21,7 +21,7 @@ const LOCAL_IMAGE_UPLOAD_DIR: &str = "uploaded_images";
 const TEXT_EMBEDDING_MODEL_DIR: &str = "models/text_embedding";
 const TOKENIZER_MODEL_DIR: &str = "models/tokenizer";
 
-// ─── Workflows directory helpers ──────────────────────────────────────────────
+// Workflows directory helpers
 
 /// Return a sorted list of `.json` filenames in the `workflow_set/` directory.
 #[handler]
