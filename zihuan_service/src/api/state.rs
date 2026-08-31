@@ -322,6 +322,22 @@ impl TaskManager {
         false
     }
 
+    pub fn stop_workspace_chat_task(&mut self, session_id: &str, task_id: Option<&str>) -> bool {
+        let Some(task) = self.tasks.iter_mut().find(|task| {
+            task.task_type == TaskType::WorkspaceChat
+                && task.is_running
+                && task.chat_session_id.as_deref() == Some(session_id)
+                && task_id.is_none_or(|task_id| task.id == task_id)
+        }) else {
+            return false;
+        };
+        let Some(flag) = &task.stop_flag else {
+            return false;
+        };
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        true
+    }
+
     pub fn finish_task(
         &mut self,
         id: &str,

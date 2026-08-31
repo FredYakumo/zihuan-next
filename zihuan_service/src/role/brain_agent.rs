@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use zihuan_core::model_inference::message_content_utils::sanitize_messages_for_inference;
 use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::agent::AgentCancellation;
 use zihuan_core::config::llm_refs::{load_llm_refs, LlmRefConfig};
 use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
@@ -214,6 +215,7 @@ impl RoleBrainAgent {
         compaction_observer: Option<ContextCompactionObserver>,
         workspace_path: Option<String>,
         session_id: Option<String>,
+        cancellation: Option<Arc<dyn AgentCancellation>>,
     ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
         self.infer_response_streaming_with_trace_and_llm(
             messages,
@@ -223,6 +225,7 @@ impl RoleBrainAgent {
             Arc::clone(&self.llm),
             workspace_path,
             session_id,
+            cancellation,
         )
         .await
     }
@@ -236,6 +239,7 @@ impl RoleBrainAgent {
         llm: Arc<dyn LLMBase>,
         workspace_path: Option<String>,
         session_id: Option<String>,
+        cancellation: Option<Arc<dyn AgentCancellation>>,
     ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
         let context = build_inference_tool_context(&messages, workspace_path, session_id, Arc::clone(&llm));
 
@@ -294,6 +298,7 @@ impl RoleBrainAgent {
             conversation,
             token_tx,
             observer,
+            cancellation,
         )
         .await
     }
@@ -496,10 +501,14 @@ async fn run_agent_tool_calling_streaming(
     messages: Vec<LLMMessage>,
     token_tx: mpsc::UnboundedSender<StreamToken>,
     observer: Option<Arc<dyn ToolCallingObserver>>,
+    cancellation: Option<Arc<dyn AgentCancellation>>,
 ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
     let mut brain = build_tool_calling_engine(agent, llm, default_tools, tool_definitions);
     if let Some(obs) = observer {
         brain.set_observer(obs);
+    }
+    if let Some(cancellation) = cancellation {
+        brain.set_cancellation(cancellation);
     }
     let (output_messages, stop_reason) = brain.run_streaming(messages, token_tx).await;
     handle_tool_calling_result_with_reason(&agent.name, output_messages, stop_reason)

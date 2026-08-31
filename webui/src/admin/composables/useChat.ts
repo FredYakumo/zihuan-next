@@ -351,6 +351,7 @@ type StreamState = {
   requestText: string;
   requestedSessionId: string;
   sessionId: string;
+  taskId: string | null;
   foreground: boolean;
 };
 
@@ -374,6 +375,7 @@ const directoryPickerError = ref("");
 const activeRequestCount = ref(0);
 const sending = computed(() => activeRequestCount.value > 0);
 let activeStreamController: AbortController | null = null;
+let activeChatTask: { sessionId: string; taskId: string } | null = null;
 let sessionRefreshTimer: ReturnType<typeof setInterval> | null = null;
 const sessionsAwaitingHistoryRefresh = new Set<string>();
 const sessionsNeedingHistoryRefresh = new Set<string>();
@@ -1808,6 +1810,10 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   }
 
   if (event.type === "start") {
+    streamState.taskId = event.task_id ?? null;
+    activeChatTask = event.task_id && event.session_id
+      ? { sessionId: event.session_id, taskId: event.task_id }
+      : null;
     if (streamState.requestedSessionId && activeSessionId.value !== streamState.requestedSessionId) {
       streamState.foreground = false;
     } else if (!streamState.requestedSessionId && activeSessionId.value) {
@@ -2005,6 +2011,12 @@ async function sendMessage() {
 
 function stopInference() {
   workspaceTaskInterrupted.value = true;
+  const task = activeChatTask;
+  if (task) {
+    chat.stop(task.sessionId, task.taskId).catch((error) => {
+      console.warn("Failed to stop Workspace chat task:", error);
+    });
+  }
   activeStreamController?.abort();
 }
 
@@ -2035,7 +2047,7 @@ async function decideToolCallLimit(continuation: "continue" | "stop") {
       messages: [],
     }, (event) => applyStreamEvent(event, {
       assistantMessageId: null, toolMessageId: null, awaitingPostToolContent: false, pendingNewConversation: null,
-      requestText: "", requestedSessionId: activeSessionId.value, sessionId: activeSessionId.value, foreground: true,
+      requestText: "", requestedSessionId: activeSessionId.value, sessionId: activeSessionId.value, taskId: null, foreground: true,
     }));
     await reloadSessions();
     await openSession(activeSessionId.value);
@@ -2116,6 +2128,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
     requestText: userText,
     requestedSessionId: activeSessionId.value,
     sessionId: activeSessionId.value,
+    taskId: null,
     foreground: true,
   };
   workspaceTaskInterrupted.value = false;
@@ -2178,6 +2191,9 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
       applyInferenceFailure(streamState, (error as Error).message);
     }
   } finally {
+    if (activeChatTask?.taskId === streamState.taskId) {
+      activeChatTask = null;
+    }
     if (activeStreamController === streamController) {
       activeStreamController = null;
     }

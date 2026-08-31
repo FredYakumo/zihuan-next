@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use zihuan_core::ims_bot_adapter::resolve_fallback_bot_profile;
+use zihuan_core::agent::AgentCancellation;
 use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
 use salvo::http::body::BodySender;
 use salvo::http::header::{CACHE_CONTROL, CONTENT_TYPE};
@@ -36,6 +37,14 @@ use zihuan_service::role::{ContextCompactionEvent, ContextCompactionObserver};
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const CHAT_STREAM_MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 const CHAT_FORK_METADATA_SUFFIX: &str = ".fork.json";
+
+struct WorkspaceChatCancellation(Arc<AtomicBool>);
+
+impl AgentCancellation for WorkspaceChatCancellation {
+    fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+}
 
 /// Bridges ToolCallingObserver callbacks into the SSE event stream.
 ///
@@ -238,6 +247,12 @@ pub struct ChatStreamRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChatContinuationDecision { Continue, Stop }
+
+#[derive(Debug, Deserialize)]
+struct StopChatRequest {
+    #[serde(default)]
+    task_id: Option<String>,
+}
 
 /// Summary row returned by the session-list endpoint.
 ///
@@ -875,6 +890,29 @@ pub async fn stream_chat(req: &mut Request, res: &mut Response, depot: &mut Depo
 }
 
 #[handler]
+pub async fn stop_chat(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let session_id = req.param::<String>("session_id").unwrap_or_default();
+    if session_id.trim().is_empty() {
+        render_bad_request(res, "session_id must not be empty".to_string());
+        return;
+    }
+    let body = req.parse_json::<StopChatRequest>().await.unwrap_or(StopChatRequest { task_id: None });
+    let stopped = depot
+        .obtain::<Arc<crate::api::state::AppState>>()
+        .unwrap()
+        .tasks
+        .lock()
+        .unwrap()
+        .stop_workspace_chat_task(&session_id, body.task_id.as_deref());
+    if !stopped {
+        res.status_code(salvo::http::StatusCode::NOT_FOUND);
+        res.render(Json(json!({ "error": "running Workspace chat task not found" })));
+        return;
+    }
+    res.render(Json(json!({ "ok": true })));
+}
+
+#[handler]
 pub async fn list_chat_sessions(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let filter_agent_id = req.query::<String>("agent_id");
     match load_chat_sessions(filter_agent_id.as_deref()) {
@@ -1251,6 +1289,9 @@ async fn execute_chat_streaming(
         let state = state.clone();
         let agent_id = agent_id.clone();
         let model_config_id = model_config_id.clone();
+        let cancellation = workspace_task
+            .as_ref()
+            .map(|(_, stop_flag)| Arc::new(WorkspaceChatCancellation(Arc::clone(stop_flag))) as Arc<dyn AgentCancellation>);
         async move {
             state
                 .role_service_manager
@@ -1265,6 +1306,7 @@ async fn execute_chat_streaming(
                     reasoning_effort,
                     chat_workspace_path.clone(),
                     Some(inference_session_id.clone()),
+                    cancellation,
                 )
                 .await
         }
@@ -1315,8 +1357,22 @@ async fn execute_chat_streaming(
                 }
             }
             clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
+            let stopped = workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
             if let Some((task_id, _)) = &workspace_task {
-                finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Failed, Some(err.to_string()), None);
+                finish_workspace_task(
+                    &state,
+                    &broadcast_tx,
+                    task_id,
+                    if stopped { TaskStatus::Stopped } else { TaskStatus::Failed },
+                    (!stopped).then(|| err.to_string()),
+                    None,
+                );
+            }
+            if stopped {
+                if let Err(error) = interrupt_workspace_tasks(&session_id, "用户手动停止推理") {
+                    log::warn!("failed to interrupt workspace tasks: {error}");
+                }
+                return;
             }
             let event = json!({ "type": "error", "error": err.to_string() });
             if client_connected { let _ = sender.send_data(format!("data: {event}\n\n")).await; }

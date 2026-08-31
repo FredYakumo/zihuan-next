@@ -17,7 +17,7 @@ use crate::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskStatus,
 };
 use crate::workspace::{AskUserRequest, ToolCallLimitRequest};
-use crate::agent::AgentContext;
+use crate::agent::{AgentCancellation, AgentContext};
 use super::tool_calling_types::{AgentExecutor, LongTaskContext, ToolCallingMiddleware, ToolCallingObserver, ToolCallingRequest, ToolCallingResult, ToolCallingStopReason};
 use super::tool_progress::{current_task_progress_message, ToolProgressScopeGuard};
 
@@ -83,6 +83,7 @@ pub struct ToolCallingEngine {
     observer: Option<Arc<dyn ToolCallingObserver>>,
     iteration_hook: Option<Arc<dyn ToolCallingMiddleware>>,
     long_task_context: Option<LongTaskContext>,
+    cancellation: Option<Arc<dyn AgentCancellation>>,
 }
 
 impl ToolCallingEngine {
@@ -93,6 +94,7 @@ impl ToolCallingEngine {
             observer: None,
             iteration_hook: None,
             long_task_context: None,
+            cancellation: None,
         }
     }
 
@@ -110,6 +112,14 @@ impl ToolCallingEngine {
     /// Attach a long-task execution context.
     pub fn set_long_task_context(&mut self, ctx: LongTaskContext) {
         self.long_task_context = Some(ctx);
+    }
+
+    pub fn set_cancellation(&mut self, cancellation: Arc<dyn AgentCancellation>) {
+        self.cancellation = Some(cancellation);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancellation.as_ref().is_some_and(|cancellation| cancellation.is_cancelled())
     }
 
     pub fn with_observer(mut self, observer: Arc<dyn ToolCallingObserver>) -> Self {
@@ -224,6 +234,14 @@ impl ToolCallingEngine {
     }
 
     fn execute_prepared_call(&self, call_content: &str, call: PreparedToolCall) -> PreparedToolResult {
+        if self.is_cancelled() {
+            return PreparedToolResult {
+                index: call.index,
+                call_id: call.call_id,
+                name: call.name,
+                result: ToolExecutionOutput::text("tool execution cancelled".to_string()),
+            };
+        }
         Self::execute_prepared_call_with_context(call_content, call, self.long_task_context.as_ref(), self.observer.as_ref())
     }
 
@@ -347,6 +365,9 @@ impl ToolCallingEngine {
         let mut conversation = sanitize_messages_for_inference(messages);
         let mut output: Vec<LLMMessage> = Vec::new();
         for iteration in 0..MAX_TOOL_ITERATIONS {
+            if self.is_cancelled() {
+                return (output, ToolCallingStopReason::TransportError("tool-calling execution cancelled".to_string()));
+            }
             if iteration > 0 {
                 self.append_iteration_messages(iteration + 1, &mut conversation);
             }
@@ -409,6 +430,9 @@ impl ToolCallingEngine {
             output.push(response.clone());
 
             let _tool_progress_scope = ToolProgressScopeGuard::enter(&tool_call_content);
+            if self.is_cancelled() {
+                return (output, ToolCallingStopReason::TransportError("tool-calling execution cancelled".to_string()));
+            }
             let prepared_calls = self.prepare_tool_calls(&response.tool_calls);
             for call in &prepared_calls {
                 info!(
@@ -482,6 +506,9 @@ impl ToolCallingEngine {
         let streaming_llm = self.llm.as_streaming();
 
         for iteration in 0..MAX_TOOL_ITERATIONS {
+            if self.is_cancelled() {
+                return (output, ToolCallingStopReason::TransportError("tool-calling execution cancelled".to_string()));
+            }
             if iteration > 0 {
                 self.append_iteration_messages(iteration + 1, &mut conversation);
             }
@@ -565,6 +592,9 @@ impl ToolCallingEngine {
             output.push(response.clone());
 
             let _tool_progress_scope = ToolProgressScopeGuard::enter(&tool_call_content);
+            if self.is_cancelled() {
+                return (output, ToolCallingStopReason::TransportError("tool-calling execution cancelled".to_string()));
+            }
             let prepared_calls = self.prepare_tool_calls(&response.tool_calls);
             for call in &prepared_calls {
                 info!(
@@ -677,6 +707,56 @@ fn resources_conflict(left: &ToolExecutionResource, right: &ToolExecutionResourc
             left == right || left.starts_with(right) || right.starts_with(left)
         }
         (ToolExecutionResource::Exclusive, _) | (_, ToolExecutionResource::Exclusive) => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use super::*;
+
+    #[derive(Debug)]
+    struct TestLlm {
+        called: AtomicBool,
+    }
+
+    impl LLMBase for TestLlm {
+        fn get_model_name(&self) -> &str {
+            "test"
+        }
+
+        fn context_length(&self) -> usize {
+            1
+        }
+
+        fn inference(&self, _param: &InferenceParam) -> LLMMessage {
+            self.called.store(true, Ordering::Relaxed);
+            LLMMessage::assistant_text("unexpected inference")
+        }
+    }
+
+    struct TestCancellation;
+
+    impl AgentCancellation for TestCancellation {
+        fn is_cancelled(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn cancellation_prevents_inference() {
+        let llm = Arc::new(TestLlm {
+            called: AtomicBool::new(false),
+        });
+        let mut engine = ToolCallingEngine::new(llm.clone());
+        engine.set_cancellation(Arc::new(TestCancellation));
+
+        let (messages, stop_reason) = engine.run(vec![LLMMessage::user("hello")]);
+
+        assert!(messages.is_empty());
+        assert!(matches!(stop_reason, ToolCallingStopReason::TransportError(message) if message == "tool-calling execution cancelled"));
+        assert!(!llm.called.load(Ordering::Relaxed));
     }
 }
 

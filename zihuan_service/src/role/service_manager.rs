@@ -15,6 +15,7 @@ use zihuan_core::agent::tools::ToolCallingObserver;
 use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::{LLMMessage, StreamToken};
 use zihuan_core::task_context::AgentTaskRuntime;
+use zihuan_core::agent::AgentCancellation;
 
 use crate::role::{ContextCompactionObserver, InferenceToolProvider, RoleBrainAgent};
 
@@ -130,7 +131,7 @@ impl RoleServiceManager {
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn ToolCallingObserver>>,
     ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::tools::ToolCallingStopReason)> {
-        self.infer_role_response_streaming_with_model(role_service_id, messages, token_tx, observer, None, None, None, None, None, None)
+        self.infer_role_response_streaming_with_model(role_service_id, messages, token_tx, observer, None, None, None, None, None, None, None)
             .await
     }
 
@@ -146,6 +147,7 @@ impl RoleServiceManager {
         reasoning_effort: Option<zihuan_core::model_inference::model_config::ReasoningEffort>,
         workspace_path: Option<String>,
         session_id: Option<String>,
+        cancellation: Option<Arc<dyn AgentCancellation>>,
     ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::tools::ToolCallingStopReason)> {
         let agent = self.running_role_service(role_service_id).ok_or_else(|| {
             zihuan_core::error::Error::ValidationError(format!("role service '{}' is not running", role_service_id))
@@ -165,11 +167,11 @@ impl RoleServiceManager {
             }
             let llm = zihuan_core::agent::resource_resolver::build_llm_model(&llm_config)?;
             agent
-                .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, compaction_observer, llm, workspace_path, session_id)
+                .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, compaction_observer, llm, workspace_path, session_id, cancellation)
                 .await
         } else {
             agent
-                .infer_response_streaming_with_trace(messages, token_tx, observer, compaction_observer, workspace_path, session_id)
+                .infer_response_streaming_with_trace(messages, token_tx, observer, compaction_observer, workspace_path, session_id, cancellation)
                 .await
         }
     }

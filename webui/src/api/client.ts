@@ -1094,6 +1094,12 @@ export const explorer = {
 };
 
 export const chat = {
+  stop(sessionId: string, taskId?: string | null): Promise<{ ok: boolean }> {
+    return request("POST", `/chat/sessions/${encodeURIComponent(sessionId)}/stop`, {
+      task_id: taskId ?? null,
+    });
+  },
+
   async stream(
     payload: {
       agent_id: string;
