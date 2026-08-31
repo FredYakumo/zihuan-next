@@ -1274,6 +1274,16 @@ async fn execute_chat_streaming(
     let (output_messages, stop_reason) = match inference_handle.await {
         Ok(Ok(result)) => result,
         Ok(Err(err)) => {
+            if let Some(snapshot) = running_chat_message.as_ref() {
+                if let Err(persist_err) = persist_running_chat_message(
+                    &session_id,
+                    &agent,
+                    &agent_snapshot,
+                    snapshot,
+                ) {
+                    log::warn!("failed to persist running chat message after inference error: {persist_err}");
+                }
+            }
             clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
             if let Some((task_id, _)) = &workspace_task {
                 finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Failed, Some(err.to_string()), None);
@@ -1283,6 +1293,16 @@ async fn execute_chat_streaming(
             return;
         }
         Err(err) => {
+            if let Some(snapshot) = running_chat_message.as_ref() {
+                if let Err(persist_err) = persist_running_chat_message(
+                    &session_id,
+                    &agent,
+                    &agent_snapshot,
+                    snapshot,
+                ) {
+                    log::warn!("failed to persist running chat message after chat task join failure: {persist_err}");
+                }
+            }
             clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
             let stopped = workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
             if let Some((task_id, _)) = &workspace_task {
@@ -1305,7 +1325,7 @@ async fn execute_chat_streaming(
     if let Some(watch) = stop_watch { watch.abort(); }
     if workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed)) {
         if let Some(snapshot) = running_chat_message.as_ref() {
-            if let Err(err) = persist_interrupted_running_chat_message(
+            if let Err(err) = persist_running_chat_message(
                 &session_id,
                 &agent,
                 &agent_snapshot,
@@ -1599,12 +1619,13 @@ fn clear_running_chat_message(
     }
 }
 
-/// Persist the assistant output observed before a Workspace task was stopped.
+/// Persist the assistant output observed before a Workspace task exits without a final result.
 ///
 /// The user message is persisted when the task starts, while the assistant record normally
-/// waits for inference to finish. On interruption, retain the live snapshot instead of
-/// clearing it so a history reload does not discard streamed text or tool activity.
-fn persist_interrupted_running_chat_message(
+/// waits for inference to finish. On an interrupted or failed completion path, retain the live
+/// snapshot instead of clearing it so a history reload does not discard streamed text or tool
+/// activity.
+fn persist_running_chat_message(
     session_id: &str,
     agent: &RoleServiceConfig,
     agent_snapshot: &AgentSnapshot,
