@@ -629,7 +629,7 @@
                       </div>
                       <textarea v-model="editingMessage.content" placeholder="输入消息" />
                       <div class="chat-message-edit-actions">
-                        <template v-if="supportsMultimodalInput">
+                        <template v-if="canAcceptImageInput">
                           <input
                             :id="`chat-edit-image-upload-${message.id}`"
                             class="chat-image-upload-input"
@@ -1599,6 +1599,7 @@ const {
   chatModels,
   selectedModelLlmConfig,
   supportsMultimodalInput,
+  canAcceptImageInput,
   imageUnderstandingModelId,
   imageUnderstandingModels,
   selectedImageUnderstandingModelLabel,
