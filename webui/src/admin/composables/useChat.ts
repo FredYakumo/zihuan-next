@@ -48,6 +48,7 @@ type LiveToolCall = {
   result?: string;
   done: boolean;
   commandConfirmation?: { command: string; shell: string; decision?: "once" | "session" | "reject" };
+  commandDecisionPending?: boolean;
 };
 type ChatMessage = {
   id: string;
@@ -2234,11 +2235,13 @@ async function decideToolCallLimit(continuation: "continue" | "stop") {
 
 async function decideCommandConfirmation(liveCall: LiveToolCall, decision: "once" | "session" | "reject") {
   const confirmation = liveCall.commandConfirmation;
-  if (!confirmation || !activeSessionId.value) return;
+  if (!confirmation || confirmation.decision || liveCall.commandDecisionPending || !activeSessionId.value) return;
+  liveCall.commandDecisionPending = true;
   try {
     await chat.approveCommand(activeSessionId.value, confirmation.command, decision);
     confirmation.decision = decision;
   } catch (error) {
+    liveCall.commandDecisionPending = false;
     showChatError(`命令确认失败: ${(error as Error).message}`);
   }
 }
