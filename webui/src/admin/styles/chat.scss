@@ -1258,6 +1258,14 @@
   min-width: 0;
 }
 
+.chat-tool-image-preview {
+  display: block;
+  max-width: 320px;
+  max-height: 240px;
+  margin-top: 8px;
+  object-fit: contain;
+}
+
 .chat-tool-detail-inline pre {
   margin: 0;
   white-space: pre-wrap;

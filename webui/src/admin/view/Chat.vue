@@ -258,6 +258,10 @@
                               <div class="chat-tool-detail-inline-block">
                                 <div class="chat-tool-detail-caption">arguments</div>
                                 <pre>{{ formatToolPayload(liveCall.arguments) }}</pre>
+                                <template v-if="liveCall.name === 'image_understand' && findImageAttachmentByMediaId(liveCall.arguments)">
+                                  <img class="chat-tool-image-preview" :src="findImageAttachmentByMediaId(liveCall.arguments)!.url" alt="工具请求图片" />
+                                  <code>{{ findImageAttachmentByMediaId(liveCall.arguments)!.mediaId }}</code>
+                                </template>
                               </div>
                               <div v-if="liveCall.done" class="chat-tool-detail-inline-block">
                                 <div class="chat-tool-detail-caption">result</div>
@@ -356,6 +360,10 @@
                         <div class="chat-tool-detail-inline-block">
                           <div class="chat-tool-detail-caption">arguments</div>
                           <pre>{{ formatToolPayload(activeToolDetail.toolCall.function.arguments) }}</pre>
+                          <template v-if="activeToolDetail.toolCall.function.name === 'image_understand' && findImageAttachmentByMediaId(activeToolDetail.toolCall.function.arguments)">
+                            <img class="chat-tool-image-preview" :src="findImageAttachmentByMediaId(activeToolDetail.toolCall.function.arguments)!.url" alt="工具请求图片" />
+                            <code>{{ findImageAttachmentByMediaId(activeToolDetail.toolCall.function.arguments)!.mediaId }}</code>
+                          </template>
                         </div>
                         <div class="chat-tool-detail-inline-block">
                           <div class="chat-tool-detail-caption">result</div>
@@ -485,6 +493,10 @@
                               <div class="chat-tool-detail-inline-block">
                                 <div class="chat-tool-detail-caption">arguments</div>
                                 <pre>{{ formatToolPayload(liveCall.arguments) }}</pre>
+                                <template v-if="liveCall.name === 'image_understand' && findImageAttachmentByMediaId(liveCall.arguments)">
+                                  <img class="chat-tool-image-preview" :src="findImageAttachmentByMediaId(liveCall.arguments)!.url" alt="工具请求图片" />
+                                  <code>{{ findImageAttachmentByMediaId(liveCall.arguments)!.mediaId }}</code>
+                                </template>
                               </div>
                               <div v-if="liveCall.done" class="chat-tool-detail-inline-block">
                                 <div class="chat-tool-detail-caption">result</div>
@@ -583,6 +595,10 @@
                         <div class="chat-tool-detail-inline-block">
                           <div class="chat-tool-detail-caption">arguments</div>
                           <pre>{{ formatToolPayload(activeToolDetail.toolCall.function.arguments) }}</pre>
+                          <template v-if="activeToolDetail.toolCall.function.name === 'image_understand' && findImageAttachmentByMediaId(activeToolDetail.toolCall.function.arguments)">
+                            <img class="chat-tool-image-preview" :src="findImageAttachmentByMediaId(activeToolDetail.toolCall.function.arguments)!.url" alt="工具请求图片" />
+                            <code>{{ findImageAttachmentByMediaId(activeToolDetail.toolCall.function.arguments)!.mediaId }}</code>
+                          </template>
                         </div>
                         <div class="chat-tool-detail-inline-block">
                           <div class="chat-tool-detail-caption">result</div>
@@ -1600,6 +1616,7 @@ const {
   selectedModelLlmConfig,
   supportsMultimodalInput,
   canAcceptImageInput,
+  findImageAttachmentByMediaId,
   imageUnderstandingModelId,
   imageUnderstandingModels,
   selectedImageUnderstandingModelLabel,

@@ -771,8 +771,9 @@ function imageAttachmentToPart(attachment: ChatImageAttachment): ChatMessagePart
   };
 }
 
-function isProviderImageUrl(url: string): boolean {
-  return url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:image/");
+function isProviderImageUrl(url: string | null | undefined): boolean {
+  return typeof url === "string" &&
+    (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:image/"));
 }
 
 function imageAttachmentsFromParts(parts: ChatMessagePart[] | undefined): ChatImageAttachment[] {
@@ -795,6 +796,17 @@ function imageAttachmentsFromParts(parts: ChatMessagePart[] | undefined): ChatIm
       modelUrl: providerUrl,
     }];
   });
+}
+
+function findImageAttachmentByMediaId(arguments_: unknown): ChatImageAttachment | null {
+  const argumentsValue = typeof arguments_ === "string"
+    ? safeParseJson<{ media_id?: unknown }>(arguments_)
+    : arguments_ as { media_id?: unknown } | null;
+  const mediaId = typeof argumentsValue?.media_id === "string" ? argumentsValue.media_id.trim() : "";
+  if (!mediaId) return null;
+  return messages.value
+    .flatMap((message) => message.imageAttachments ?? [])
+    .find((attachment) => attachment.mediaId === mediaId) ?? null;
 }
 
 function messageParts(content: string, attachments: ChatImageAttachment[] | undefined): ChatMessagePart[] | undefined {
@@ -2513,6 +2525,7 @@ onUnmounted(() => {
     selectedModelLlmConfig,
     supportsMultimodalInput,
     canAcceptImageInput,
+    findImageAttachmentByMediaId,
     imageUnderstandingModelId,
     imageUnderstandingModels,
     selectedImageUnderstandingModelLabel,
