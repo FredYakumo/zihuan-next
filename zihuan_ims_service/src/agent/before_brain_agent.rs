@@ -2,37 +2,40 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use log::{info, warn};
-use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingStopReason};
-use zihuan_core::agent::{Agent, AgentContext, AgentDescriptor};
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingStopReason};
+use zihuan_core::agent::{Agent, AgentContext, AgentDescriptor};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
-use zihuan_core::model_inference::inference_function::compact_message::{compact_message_history, compaction_threshold};
+use zihuan_core::memory_agent::{MemoryBrainAgent, MemoryBrainAgentContextTool};
+use zihuan_core::model_inference::inference_function::compact_message::{
+    compact_message_history, compaction_threshold,
+};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole};
 use zihuan_core::runtime::block_async;
-use zihuan_core::system_config::current_context_compaction_percent;
 use zihuan_core::steer::message_with_api_style;
-use zihuan_core::memory_agent::{MemoryBrainAgent, MemoryBrainAgentContextTool};
+use zihuan_core::system_config::current_context_compaction_percent;
 
-use crate::qq_chat::logging::{QqChatToolCallingObserver, QqChatTaskTrace};
 use crate::agent::emotion::utils::emotion_dimensions_text;
+use crate::qq_chat::logging::{QqChatTaskTrace, QqChatToolCallingObserver};
 use crate::qq_chat::PreparedCurrentTurnUserInput;
 use crate::storage::qq_chat_history_store::{load_history, save_history};
 use crate::tools::{
-    AgentMemoryToolResources, GetRecentGroupMessagesTool, GetRecentUserMessagesTool, ToolNotificationTarget,
-    UpdateAgentStateTool, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
-    DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT,
+    AgentMemoryToolResources, GetRecentGroupMessagesTool, GetRecentUserMessagesTool,
+    ToolNotificationTarget, UpdateAgentStateTool, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
+    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT,
 };
 
 const LOG_PREFIX: &str = "[QqBeforeBrainAgent]";
 
-
-
 // Prompt engineering
 
-fn build_chat_preprompt_agent_system_prompt(bot_name: &str, emotion_dimensions_text: &str) -> String {
+fn build_chat_preprompt_agent_system_prompt(
+    bot_name: &str,
+    emotion_dimensions_text: &str,
+) -> String {
     format!(
         "You are the chat-preprompt agent for the QQ bot `{bot_name}`. You run before the main reply agent every turn and prepare a context block that anchors its reply. You have two responsibilities.\n\
          \n[Responsibility 1: Emotion management]\n\
@@ -59,7 +62,10 @@ fn build_chat_preprompt_agent_user_message(
     sender_id: &str,
     dream_memory: Option<&str>,
 ) -> String {
-    let sender_name = zihuan_core::ims_bot_adapter::utils::sender_display_name!(&input.event.sender.nickname, &input.event.sender.card);
+    let sender_name = zihuan_core::ims_bot_adapter::utils::sender_display_name!(
+        &input.event.sender.nickname,
+        &input.event.sender.card
+    );
     let dream_candidate = dream_memory
         .filter(|content| !content.trim().is_empty())
         .map(|content| format!("\n\n[Candidate Dream Memory]\n{content}"))
@@ -117,18 +123,35 @@ impl Agent for BeforeBrainAgent<'_> {
         )
     }
 
-    async fn run(&self, _context: AgentContext, _input: Self::Input) -> zihuan_core::error::Result<Self::Output> {
+    async fn run(
+        &self,
+        _context: AgentContext,
+        _input: Self::Input,
+    ) -> zihuan_core::error::Result<Self::Output> {
         Ok(self.execute())
     }
 }
 
 fn run_preprompt(ctx: &PrepromptContext<'_>) -> Option<String> {
-    let emotion_dimensions_text = emotion_dimensions_text(&ctx.session_state.lock().unwrap(), &ctx.emotion_dimensions);
+    let emotion_dimensions_text =
+        emotion_dimensions_text(&ctx.session_state.lock().unwrap(), &ctx.emotion_dimensions);
 
     // Load the latest candidate dream memory for the current sender, if available.
-    let dream_memory = ctx.rdb_pool.as_ref().and_then(|connection| match block_async(zihuan_core::scheduled_task::latest_dream_memory(connection, ctx.agent_id, ctx.sender_id)) {
-        Ok(memory) => memory,
-        Err(err) => { warn!("{LOG_PREFIX} failed to load Dream memory for sender={}: {err}", ctx.sender_id); None }
+    let dream_memory = ctx.rdb_pool.as_ref().and_then(|connection| {
+        match block_async(zihuan_core::scheduled_task::latest_dream_memory(
+            connection,
+            ctx.agent_id,
+            ctx.sender_id,
+        )) {
+            Ok(memory) => memory,
+            Err(err) => {
+                warn!(
+                    "{LOG_PREFIX} failed to load Dream memory for sender={}: {err}",
+                    ctx.sender_id
+                );
+                None
+            }
+        }
     });
 
     // Build the current turn and compact persisted history to fit the context budget.
@@ -156,17 +179,20 @@ fn run_preprompt(ctx: &PrepromptContext<'_>) -> Option<String> {
     // assemble the 【system prompt, prior turns, and the current user event.]
     let mut conversation = Vec::with_capacity(history.len() + 2);
     conversation.push(message_with_api_style(
-        LLMMessage::system(build_chat_preprompt_agent_system_prompt(ctx.bot_name, &emotion_dimensions_text)),
+        LLMMessage::system(build_chat_preprompt_agent_system_prompt(
+            ctx.bot_name,
+            &emotion_dimensions_text,
+        )),
         ctx.llm.api_style(),
     ));
     conversation.extend(history.iter().cloned());
     conversation.push(user_message.clone());
 
-
     let mut brain = ToolCallingEngine::new(Arc::clone(ctx.llm));
     brain.set_observer(Arc::new(QqChatToolCallingObserver { trace: ctx.trace.clone() }));
 
-    ctx.trace.record_graph_phase("情绪维度处理", serde_json::json!({"status": "preprompt"}));
+    ctx.trace
+        .record_graph_phase("情绪维度处理", serde_json::json!({"status": "preprompt"}));
     brain.add_tool(UpdateAgentStateTool::new(
         Arc::clone(&ctx.session_state),
         ctx.emotion_dimensions.clone(),
@@ -180,16 +206,21 @@ fn run_preprompt(ctx: &PrepromptContext<'_>) -> Option<String> {
         .clone()
         .filter(|_| is_enabled(DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT))
     {
-        ctx.trace.record_graph_phase("名词处理", serde_json::json!({"status": "preprompt"}));
+        ctx.trace
+            .record_graph_phase("名词处理", serde_json::json!({"status": "preprompt"}));
         brain.add_tool(MemoryBrainAgentContextTool::new(MemoryBrainAgent::new(resources)));
     }
 
-    let notification_target = ToolNotificationTarget::new(None, ctx.target_id.to_string(), None, ctx.is_group, false);
+    let notification_target =
+        ToolNotificationTarget::new(None, ctx.target_id.to_string(), None, ctx.is_group, false);
     let recent_message_tools_enabled = ctx.rdb_pool.is_some()
         && (is_enabled(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES)
             || (ctx.is_group && is_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES)));
     if recent_message_tools_enabled {
-        ctx.trace.record_graph_phase("获取最近消息", serde_json::json!({"status": "preprompt tool when needed"}));
+        ctx.trace.record_graph_phase(
+            "获取最近消息",
+            serde_json::json!({"status": "preprompt tool when needed"}),
+        );
     }
 
     if ctx.rdb_pool.is_some() && is_enabled(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
@@ -198,7 +229,8 @@ fn run_preprompt(ctx: &PrepromptContext<'_>) -> Option<String> {
             notification_target.clone(),
         ));
     }
-    if ctx.is_group && ctx.rdb_pool.is_some() && is_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
+    if ctx.is_group && ctx.rdb_pool.is_some() && is_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES)
+    {
         brain.add_tool(GetRecentGroupMessagesTool::new(ctx.rdb_pool.clone(), notification_target));
     }
 
@@ -217,7 +249,6 @@ fn run_preprompt(ctx: &PrepromptContext<'_>) -> Option<String> {
             None
         }
     };
-
 
     history.push(user_message);
     history.extend(output);

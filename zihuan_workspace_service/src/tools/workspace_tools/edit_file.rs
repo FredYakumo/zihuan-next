@@ -56,16 +56,21 @@ impl Tool for EditFileTool {
         };
         for plan in &plans {
             if let Err(error) = fs::write(&plan.path, &plan.rewritten) {
-                return json_error(format!("failed to write edited file '{}': {error}", plan.path.display()));
+                return json_error(format!(
+                    "failed to write edited file '{}': {error}",
+                    plan.path.display()
+                ));
             }
         }
         let files: Vec<Value> = plans
             .iter()
-            .map(|plan| serde_json::json!({
-                "path": plan.path.display().to_string(),
-                "added_lines": plan.added_lines,
-                "removed_lines": plan.removed_lines,
-            }))
+            .map(|plan| {
+                serde_json::json!({
+                    "path": plan.path.display().to_string(),
+                    "added_lines": plan.added_lines,
+                    "removed_lines": plan.removed_lines,
+                })
+            })
             .collect();
         let diff = plans.iter().map(|plan| unified_diff(plan)).collect::<Vec<_>>().join("\n");
         success_json(serde_json::json!({ "ok": true, "files": files, "diff": diff }))
@@ -82,13 +87,22 @@ impl Tool for EditFileTool {
 }
 
 fn first_patch_path(patch: &str) -> Option<String> {
-    patch.lines().find_map(|line| line.strip_prefix("*** Update File: ").map(|path| path.trim().to_string()))
+    patch
+        .lines()
+        .find_map(|line| line.strip_prefix("*** Update File: ").map(|path| path.trim().to_string()))
 }
 
-fn plan_patch(workspace_path: Option<&std::path::Path>, patch: &str) -> Result<Vec<PlannedEdit>, String> {
+fn plan_patch(
+    workspace_path: Option<&std::path::Path>,
+    patch: &str,
+) -> Result<Vec<PlannedEdit>, String> {
     let lines: Vec<&str> = patch.lines().collect();
-    if lines.first().copied() != Some("*** Begin Patch") || lines.last().copied() != Some("*** End Patch") {
-        return Err("patch must start with '*** Begin Patch' and end with '*** End Patch'".to_string());
+    if lines.first().copied() != Some("*** Begin Patch")
+        || lines.last().copied() != Some("*** End Patch")
+    {
+        return Err(
+            "patch must start with '*** Begin Patch' and end with '*** End Patch'".to_string()
+        );
     }
     let mut index = 1;
     let mut plans = Vec::new();
@@ -101,8 +115,10 @@ fn plan_patch(workspace_path: Option<&std::path::Path>, patch: &str) -> Result<V
         if path_text.is_empty() || !paths.insert(path_text.to_string()) {
             return Err(format!("invalid or duplicate update path '{path_text}'"));
         }
-        let path = resolve_tool_path(workspace_path, path_text).map_err(|error| error.to_string())?;
-        let original = fs::read_to_string(&path).map_err(|error| format!("failed to read file '{}': {error}", path.display()))?;
+        let path =
+            resolve_tool_path(workspace_path, path_text).map_err(|error| error.to_string())?;
+        let original = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read file '{}': {error}", path.display()))?;
         let trailing_newline = original.ends_with('\n');
         let mut file_lines: Vec<String> = original.lines().map(ToOwned::to_owned).collect();
         index += 1;
@@ -116,36 +132,89 @@ fn plan_patch(workspace_path: Option<&std::path::Path>, patch: &str) -> Result<V
             }
             index += 1;
             let chunk_start = index;
-            while index + 1 < lines.len() && lines[index] != "@@" && !lines[index].starts_with("*** Update File: ") {
+            while index + 1 < lines.len()
+                && lines[index] != "@@"
+                && !lines[index].starts_with("*** Update File: ")
+            {
                 let line = lines[index];
                 if !matches!(line.as_bytes().first(), Some(b' ') | Some(b'+') | Some(b'-')) {
-                    return Err(format!("invalid patch line {}: every chunk line must start with space, +, or -", index + 1));
+                    return Err(format!(
+                        "invalid patch line {}: every chunk line must start with space, +, or -",
+                        index + 1
+                    ));
                 }
                 index += 1;
             }
-            if index == chunk_start { return Err(format!("empty patch chunk for '{}'", path.display())); }
-            let old: Vec<String> = lines[chunk_start..index].iter().filter_map(|line| matches!(line.as_bytes().first(), Some(b' ') | Some(b'-')).then(|| line[1..].to_string())).collect();
-            let replacement: Vec<String> = lines[chunk_start..index].iter().filter_map(|line| matches!(line.as_bytes().first(), Some(b' ') | Some(b'+')).then(|| line[1..].to_string())).collect();
-            let matches: Vec<usize> = file_lines.windows(old.len()).enumerate().filter_map(|(at, window)| (window == old.as_slice() && at >= search_from).then_some(at)).collect();
+            if index == chunk_start {
+                return Err(format!("empty patch chunk for '{}'", path.display()));
+            }
+            let old: Vec<String> = lines[chunk_start..index]
+                .iter()
+                .filter_map(|line| {
+                    matches!(line.as_bytes().first(), Some(b' ') | Some(b'-'))
+                        .then(|| line[1..].to_string())
+                })
+                .collect();
+            let replacement: Vec<String> = lines[chunk_start..index]
+                .iter()
+                .filter_map(|line| {
+                    matches!(line.as_bytes().first(), Some(b' ') | Some(b'+'))
+                        .then(|| line[1..].to_string())
+                })
+                .collect();
+            let matches: Vec<usize> = file_lines
+                .windows(old.len())
+                .enumerate()
+                .filter_map(|(at, window)| {
+                    (window == old.as_slice() && at >= search_from).then_some(at)
+                })
+                .collect();
             if matches.len() != 1 {
-                return Err(if matches.is_empty() { format!("failed to find expected context in '{}'", path.display()) } else { format!("patch context is ambiguous in '{}'; include more surrounding lines", path.display()) });
+                return Err(if matches.is_empty() {
+                    format!("failed to find expected context in '{}'", path.display())
+                } else {
+                    format!(
+                        "patch context is ambiguous in '{}'; include more surrounding lines",
+                        path.display()
+                    )
+                });
             }
             let at = matches[0];
-            added_lines += lines[chunk_start..index].iter().filter(|line| line.starts_with('+')).count();
-            removed_lines += lines[chunk_start..index].iter().filter(|line| line.starts_with('-')).count();
+            added_lines +=
+                lines[chunk_start..index].iter().filter(|line| line.starts_with('+')).count();
+            removed_lines +=
+                lines[chunk_start..index].iter().filter(|line| line.starts_with('-')).count();
             file_lines.splice(at..at + old.len(), replacement);
             search_from = at + 1;
             saw_chunk = true;
         }
-        if !saw_chunk { return Err(format!("update for '{}' has no chunks", path.display())); }
+        if !saw_chunk {
+            return Err(format!("update for '{}' has no chunks", path.display()));
+        }
         let mut rewritten = file_lines.join("\n");
-        if trailing_newline && !rewritten.is_empty() { rewritten.push('\n'); }
-        plans.push(PlannedEdit { path, original, rewritten, added_lines, removed_lines });
+        if trailing_newline && !rewritten.is_empty() {
+            rewritten.push('\n');
+        }
+        plans.push(PlannedEdit {
+            path,
+            original,
+            rewritten,
+            added_lines,
+            removed_lines,
+        });
     }
-    if plans.is_empty() { return Err("patch must contain at least one Update File section".to_string()); }
+    if plans.is_empty() {
+        return Err("patch must contain at least one Update File section".to_string());
+    }
     Ok(plans)
 }
 
 fn unified_diff(plan: &PlannedEdit) -> String {
-    format!("--- {}\n+++ {}\n@@\n-{}\n+{}", plan.path.display(), plan.path.display(), plan.original, plan.rewritten)
+    format!(
+        "--- {}\n+++ {}\n@@\n-{}\n+{}",
+        plan.path.display(),
+        plan.path.display(),
+        plan.original,
+        plan.rewritten
+    )
 }

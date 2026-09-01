@@ -5,8 +5,8 @@ use serde_json::Value;
 
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::graph::DataValue;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
 
 use crate::qq_chat::msg_send::{store_reply_directive, QqChatServiceReplyDirective};
 
@@ -44,11 +44,13 @@ impl Tool for ReplyMessageTool {
         let result = (|| -> Result<String> {
             let directive = match arguments.get("message_id") {
                 Some(Value::Number(number)) => {
-                    let message_id = number
-                        .as_i64()
-                        .ok_or_else(|| Error::ValidationError("message_id must be an integer".to_string()))?;
+                    let message_id = number.as_i64().ok_or_else(|| {
+                        Error::ValidationError("message_id must be an integer".to_string())
+                    })?;
                     if message_id <= 0 {
-                        return Err(Error::ValidationError("message_id must be a positive integer".to_string()));
+                        return Err(Error::ValidationError(
+                            "message_id must be a positive integer".to_string(),
+                        ));
                     }
                     QqChatServiceReplyDirective::Explicit { message_id }
                 }

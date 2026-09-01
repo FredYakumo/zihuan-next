@@ -45,7 +45,18 @@ pub fn strip_leading_bot_mention(text: &str, bot_id: &str, bot_name: &str) -> St
                     remaining = rest.trim_start_matches(|c: char| {
                         matches!(
                             c,
-                            ' ' | '\t' | '\n' | '\r' | ',' | '，' | '。' | ':' | '：' | '!' | '！' | '?' | '？'
+                            ' ' | '\t'
+                                | '\n'
+                                | '\r'
+                                | ','
+                                | '，'
+                                | '。'
+                                | ':'
+                                | '：'
+                                | '!'
+                                | '！'
+                                | '?'
+                                | '？'
                         )
                     });
                     stripped = true;

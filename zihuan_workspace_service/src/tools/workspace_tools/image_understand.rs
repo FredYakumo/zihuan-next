@@ -27,13 +27,26 @@ impl ImageUnderstandTool {
                 "当前图片理解模型不支持多模态输入，请先选择支持多模态的模型后再重试。".to_string(),
             ));
         }
-        let media_id = arguments.get("media_id").and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty())
+        let media_id = arguments
+            .get("media_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
             .ok_or_else(|| Error::ValidationError("media_id is required".to_string()))?;
-        let media = self.media.iter().find(|item| item.media_id == media_id)
-            .ok_or_else(|| Error::ValidationError(format!("image_understand could not find media_id '{}' in this conversation", media_id)))?;
+        let media = self.media.iter().find(|item| item.media_id == media_id).ok_or_else(|| {
+            Error::ValidationError(format!(
+                "image_understand could not find media_id '{}' in this conversation",
+                media_id
+            ))
+        })?;
         let image = ImageMessage::new(media.clone());
-        let resolved = resolve_image_message_part(&image, None, false, "[Workspace image_understand]")
-            .ok_or_else(|| Error::ValidationError("image_understand could not resolve image content".to_string()))?;
+        let resolved =
+            resolve_image_message_part(&image, None, false, "[Workspace image_understand]")
+                .ok_or_else(|| {
+                    Error::ValidationError(
+                        "image_understand could not resolve image content".to_string(),
+                    )
+                })?;
         let prompt = arguments.get("question").and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty())
             .map(|value| format!("Answer the following focus point based on the image and provide a concise, objective description.\nFocus: {value}"))
             .unwrap_or_else(|| "Describe the main content of this image concisely and objectively.".to_string());
@@ -41,9 +54,14 @@ impl ImageUnderstandTool {
             LLMMessage::system("You are an image understanding assistant. Output only concise, objective descriptions without extra pleasantries. If the image content is empty, invalid, or unrecognizable, output only \"No image recognized.\""),
             LLMMessage::user_with_parts(vec![MessagePart::text(prompt), resolved.part]),
         ];
-        self.llm.inference(&InferenceParam { messages: &messages, tools: None })
-            .content_text_owned().map(|value| value.trim().to_string()).filter(|value| !value.is_empty())
-            .ok_or_else(|| Error::ValidationError("image_understand returned empty response".to_string()))
+        self.llm
+            .inference(&InferenceParam { messages: &messages, tools: None })
+            .content_text_owned()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                Error::ValidationError("image_understand returned empty response".to_string())
+            })
     }
 }
 
@@ -64,7 +82,8 @@ impl Tool for ImageUnderstandTool {
     }
 
     fn execute(&self, _call_content: &str, arguments: &Value) -> String {
-        self.run(arguments).unwrap_or_else(|error| serde_json::json!({ "error": error.to_string() }).to_string())
+        self.run(arguments)
+            .unwrap_or_else(|error| serde_json::json!({ "error": error.to_string() }).to_string())
     }
 
     fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {

@@ -7,9 +7,9 @@ use serde_json::Value;
 use zihuan_core::agent::tools::{Tool, ToolExecutionResource};
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
 
+use super::shared::{json_error, path_resource, resolve_tool_path, success_json};
 use zihuan_core::model_inference::llm::tooling::StaticFunctionToolSpec;
 use zihuan_core::utils::string_utils::truncate_output;
-use super::shared::{json_error, path_resource, resolve_tool_path, success_json};
 
 pub(crate) const DEFAULT_TOOL_GIT_STATUS: &str = "git_status";
 const DEFAULT_MAX_OUTPUT_BYTES: usize = 32 * 1024;
@@ -22,16 +22,21 @@ struct GitStatusArgs {
     max_output_bytes: Option<usize>,
 }
 
-fn default_path() -> String { ".".to_string() }
+fn default_path() -> String {
+    ".".to_string()
+}
 
 #[derive(Debug, Clone)]
-pub(crate) struct GitStatusTool { pub(crate) workspace_path: Option<PathBuf> }
+pub(crate) struct GitStatusTool {
+    pub(crate) workspace_path: Option<PathBuf>,
+}
 
 impl Tool for GitStatusTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: DEFAULT_TOOL_GIT_STATUS,
-            description: "Read a concise git branch and working tree status without executing a shell",
+            description:
+                "Read a concise git branch and working tree status without executing a shell",
             parameters: serde_json::json!({"type":"object","properties":{
                 "path":{"type":"string","description":"Repository directory"},
                 "max_output_bytes":{"type":"integer","minimum":1}
@@ -48,20 +53,30 @@ impl Tool for GitStatusTool {
             Ok(path) => path,
             Err(err) => return json_error(err.to_string()),
         };
-        if !path.is_dir() { return json_error(format!("repository path is not a directory: {}", path.display())); }
+        if !path.is_dir() {
+            return json_error(format!("repository path is not a directory: {}", path.display()));
+        }
         let max_output_bytes = args.max_output_bytes.unwrap_or(DEFAULT_MAX_OUTPUT_BYTES);
-        if max_output_bytes == 0 { return json_error("max_output_bytes must be greater than zero"); }
-        let output = match Command::new("git").args(["-C", &path.to_string_lossy(), "status", "--short", "--branch"]).output() {
+        if max_output_bytes == 0 {
+            return json_error("max_output_bytes must be greater than zero");
+        }
+        let output = match Command::new("git")
+            .args(["-C", &path.to_string_lossy(), "status", "--short", "--branch"])
+            .output()
+        {
             Ok(output) => output,
             Err(err) => return json_error(format!("failed to execute git status: {err}")),
         };
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        if !output.status.success() { return json_error(format!("git status failed: {}", stderr.trim())); }
+        if !output.status.success() {
+            return json_error(format!("git status failed: {}", stderr.trim()));
+        }
         let (summary, truncated) = truncate_output(&output.stdout, max_output_bytes);
         let mut lines = summary.lines();
         let branch_line = lines.next().unwrap_or_default().to_string();
         let branch = branch_line.strip_prefix("## ").unwrap_or(&branch_line).to_string();
-        let changes: Vec<Value> = lines.filter(|line| !line.trim().is_empty()).map(parse_status_line).collect();
+        let changes: Vec<Value> =
+            lines.filter(|line| !line.trim().is_empty()).map(parse_status_line).collect();
         success_json(serde_json::json!({
             "ok": true,
             "path": path.display().to_string(),
@@ -73,7 +88,9 @@ impl Tool for GitStatusTool {
     }
 
     fn execution_resource(&self, arguments: &Value) -> ToolExecutionResource {
-        serde_json::from_value::<GitStatusArgs>(arguments.clone()).map(|args| path_resource(self.workspace_path.as_deref(), &args.path, false)).unwrap_or(ToolExecutionResource::Exclusive)
+        serde_json::from_value::<GitStatusArgs>(arguments.clone())
+            .map(|args| path_resource(self.workspace_path.as_deref(), &args.path, false))
+            .unwrap_or(ToolExecutionResource::Exclusive)
     }
 }
 

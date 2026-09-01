@@ -1,11 +1,14 @@
 use std::sync::Arc;
 
-use uuid::Uuid;
 use crate::data_refs::RelationalDbConnection;
 use crate::error::{Error, Result};
+use uuid::Uuid;
 
 use crate::storage::agent_avatar_store::{AgentAvatarData, AgentAvatarStore};
-use crate::storage::{build_relational_db_connection_for_connection, load_connections, ConnectionConfig, ConnectionKind};
+use crate::storage::{
+    build_relational_db_connection_for_connection, load_connections, ConnectionConfig,
+    ConnectionKind,
+};
 
 pub struct RdbAgentAvatarStore {
     connection: RelationalDbConnection,
@@ -16,8 +19,12 @@ impl RdbAgentAvatarStore {
         Self { connection }
     }
 
-    pub async fn from_connection_id(connection_id: &str, connections: &[ConnectionConfig]) -> Result<Self> {
-        let connection = build_relational_db_connection_for_connection(connection_id, connections).await?;
+    pub async fn from_connection_id(
+        connection_id: &str,
+        connections: &[ConnectionConfig],
+    ) -> Result<Self> {
+        let connection =
+            build_relational_db_connection_for_connection(connection_id, connections).await?;
         Ok(Self::new(connection))
     }
 
@@ -25,8 +32,14 @@ impl RdbAgentAvatarStore {
         let connections = load_connections()?;
         let connection = connections
             .iter()
-            .find(|connection| matches!(connection.kind, ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_)))
-            .ok_or_else(|| Error::ValidationError("no database connection available for avatar storage".to_string()))?;
+            .find(|connection| {
+                matches!(connection.kind, ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_))
+            })
+            .ok_or_else(|| {
+                Error::ValidationError(
+                    "no database connection available for avatar storage".to_string(),
+                )
+            })?;
         Self::from_connection_id(&connection.id, &connections).await
     }
 }
@@ -50,10 +63,11 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
 
         match &self.connection {
             RelationalDbConnection::MySql(mysql) => {
-                let pool = mysql
-                    .pool
-                    .as_ref()
-                    .ok_or_else(|| Error::ValidationError("failed to get mysql pool for avatar storage".to_string()))?;
+                let pool = mysql.pool.as_ref().ok_or_else(|| {
+                    Error::ValidationError(
+                        "failed to get mysql pool for avatar storage".to_string(),
+                    )
+                })?;
                 sqlx::query(
                     "INSERT INTO agent_avatar (id, agent_id, file_name, mime_type, image_data, created_at, updated_at)
                      VALUES (?, ?, ?, ?, ?, NOW(), NOW())
@@ -74,7 +88,9 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
             }
             RelationalDbConnection::Sqlite(sqlite) => {
                 let pool = sqlite.pool.as_ref().ok_or_else(|| {
-                    Error::ValidationError("failed to get sqlite pool for avatar storage".to_string())
+                    Error::ValidationError(
+                        "failed to get sqlite pool for avatar storage".to_string(),
+                    )
                 })?;
                 sqlx::query(
                     "INSERT INTO agent_avatar (id, agent_id, file_name, mime_type, image_data, created_at, updated_at)
@@ -102,10 +118,11 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
     async fn get_avatar(&self, avatar_id: &str) -> Result<Option<AgentAvatarData>> {
         match &self.connection {
             RelationalDbConnection::MySql(mysql) => {
-                let pool = mysql
-                    .pool
-                    .as_ref()
-                    .ok_or_else(|| Error::ValidationError("failed to get mysql pool for avatar storage".to_string()))?;
+                let pool = mysql.pool.as_ref().ok_or_else(|| {
+                    Error::ValidationError(
+                        "failed to get mysql pool for avatar storage".to_string(),
+                    )
+                })?;
                 let row = sqlx::query_as::<_, (String, String, Option<String>, String, Vec<u8>)>(
                     "SELECT id, agent_id, file_name, mime_type, image_data FROM agent_avatar WHERE id = ? LIMIT 1",
                 )
@@ -116,7 +133,9 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
             }
             RelationalDbConnection::Sqlite(sqlite) => {
                 let pool = sqlite.pool.as_ref().ok_or_else(|| {
-                    Error::ValidationError("failed to get sqlite pool for avatar storage".to_string())
+                    Error::ValidationError(
+                        "failed to get sqlite pool for avatar storage".to_string(),
+                    )
                 })?;
                 let row = sqlx::query_as::<_, (String, String, Option<String>, String, Vec<u8>)>(
                     "SELECT id, agent_id, file_name, mime_type, image_data FROM agent_avatar WHERE id = ? LIMIT 1",
@@ -132,10 +151,11 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
     async fn get_avatar_by_agent(&self, agent_id: &str) -> Result<Option<AgentAvatarData>> {
         match &self.connection {
             RelationalDbConnection::MySql(mysql) => {
-                let pool = mysql
-                    .pool
-                    .as_ref()
-                    .ok_or_else(|| Error::ValidationError("failed to get mysql pool for avatar storage".to_string()))?;
+                let pool = mysql.pool.as_ref().ok_or_else(|| {
+                    Error::ValidationError(
+                        "failed to get mysql pool for avatar storage".to_string(),
+                    )
+                })?;
                 let row = sqlx::query_as::<_, (String, String, Option<String>, String, Vec<u8>)>(
                     "SELECT id, agent_id, file_name, mime_type, image_data FROM agent_avatar WHERE agent_id = ? LIMIT 1",
                 )
@@ -146,7 +166,9 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
             }
             RelationalDbConnection::Sqlite(sqlite) => {
                 let pool = sqlite.pool.as_ref().ok_or_else(|| {
-                    Error::ValidationError("failed to get sqlite pool for avatar storage".to_string())
+                    Error::ValidationError(
+                        "failed to get sqlite pool for avatar storage".to_string(),
+                    )
                 })?;
                 let row = sqlx::query_as::<_, (String, String, Option<String>, String, Vec<u8>)>(
                     "SELECT id, agent_id, file_name, mime_type, image_data FROM agent_avatar WHERE agent_id = ? LIMIT 1",
@@ -162,10 +184,11 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
     async fn delete_avatar(&self, avatar_id: &str) -> Result<()> {
         match &self.connection {
             RelationalDbConnection::MySql(mysql) => {
-                let pool = mysql
-                    .pool
-                    .as_ref()
-                    .ok_or_else(|| Error::ValidationError("failed to get mysql pool for avatar storage".to_string()))?;
+                let pool = mysql.pool.as_ref().ok_or_else(|| {
+                    Error::ValidationError(
+                        "failed to get mysql pool for avatar storage".to_string(),
+                    )
+                })?;
                 sqlx::query("DELETE FROM agent_avatar WHERE id = ?")
                     .bind(avatar_id)
                     .execute(pool)
@@ -173,7 +196,9 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
             }
             RelationalDbConnection::Sqlite(sqlite) => {
                 let pool = sqlite.pool.as_ref().ok_or_else(|| {
-                    Error::ValidationError("failed to get sqlite pool for avatar storage".to_string())
+                    Error::ValidationError(
+                        "failed to get sqlite pool for avatar storage".to_string(),
+                    )
                 })?;
                 sqlx::query("DELETE FROM agent_avatar WHERE id = ?")
                     .bind(avatar_id)
@@ -187,10 +212,11 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
     async fn delete_avatar_by_agent(&self, agent_id: &str) -> Result<()> {
         match &self.connection {
             RelationalDbConnection::MySql(mysql) => {
-                let pool = mysql
-                    .pool
-                    .as_ref()
-                    .ok_or_else(|| Error::ValidationError("failed to get mysql pool for avatar storage".to_string()))?;
+                let pool = mysql.pool.as_ref().ok_or_else(|| {
+                    Error::ValidationError(
+                        "failed to get mysql pool for avatar storage".to_string(),
+                    )
+                })?;
                 sqlx::query("DELETE FROM agent_avatar WHERE agent_id = ?")
                     .bind(agent_id)
                     .execute(pool)
@@ -198,7 +224,9 @@ impl AgentAvatarStore for RdbAgentAvatarStore {
             }
             RelationalDbConnection::Sqlite(sqlite) => {
                 let pool = sqlite.pool.as_ref().ok_or_else(|| {
-                    Error::ValidationError("failed to get sqlite pool for avatar storage".to_string())
+                    Error::ValidationError(
+                        "failed to get sqlite pool for avatar storage".to_string(),
+                    )
                 })?;
                 sqlx::query("DELETE FROM agent_avatar WHERE agent_id = ?")
                     .bind(agent_id)

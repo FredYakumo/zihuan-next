@@ -1,4 +1,12 @@
+pub use crate::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
 use crate::graph::object_storage::S3Ref;
+use crate::ims_bot_adapter::models::event_model::MessageEvent;
+use crate::ims_bot_adapter::models::message::ImageMessage;
+use crate::ims_bot_adapter::models::sender_model::Sender as GraphSender;
+use crate::model_inference::llm::tooling::FunctionTool;
+use crate::model_inference::llm::MessagePart;
+pub use crate::rag::{WebSearchEngine, WebSearchImage};
+pub use crate::weaviate::WeaviateRef;
 use redis::{aio::Connection, AsyncCommands};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -9,14 +17,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::block_in_place;
-pub use crate::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
-use crate::ims_bot_adapter::models::event_model::MessageEvent;
-use crate::ims_bot_adapter::models::message::ImageMessage;
-use crate::ims_bot_adapter::models::sender_model::Sender as GraphSender;
-use crate::model_inference::llm::tooling::FunctionTool;
-use crate::model_inference::llm::MessagePart;
-pub use crate::rag::{WebSearchEngine, WebSearchImage};
-pub use crate::weaviate::WeaviateRef;
 
 tokio::task_local! {
     pub static SESSION_CLAIM_CONTEXT: Arc<SessionClaimContext>;
@@ -155,7 +155,11 @@ impl SessionStateRef {
         self.entries.lock().await.remove(sender_id).is_some()
     }
 
-    pub async fn try_claim(&self, sender_id: &str, state_json: Option<Value>) -> (SessionStateEntry, bool) {
+    pub async fn try_claim(
+        &self,
+        sender_id: &str,
+        state_json: Option<Value>,
+    ) -> (SessionStateEntry, bool) {
         let mut entries = self.entries.lock().await;
         if let Some(existing) = entries.get(sender_id) {
             if existing.in_session {
@@ -214,7 +218,8 @@ impl fmt::Debug for SessionStateRef {
 #[derive(Clone)]
 pub struct LLMMessageSessionCacheRef {
     pub node_id: String,
-    pub memory_cache: Arc<TokioMutex<HashMap<String, Vec<crate::model_inference::llm::LLMMessage>>>>,
+    pub memory_cache:
+        Arc<TokioMutex<HashMap<String, Vec<crate::model_inference::llm::LLMMessage>>>>,
     pub redis_cm: Arc<TokioMutex<Option<Connection>>>,
     pub cached_redis_url: Arc<TokioMutex<Option<String>>>,
     pub sender_bucket_map: Arc<TokioMutex<HashMap<String, String>>>,
@@ -323,7 +328,10 @@ impl LLMMessageSessionCacheRef {
         }
     }
 
-    pub async fn get_messages(&self, sender_id: &str) -> crate::error::Result<Vec<crate::model_inference::llm::LLMMessage>> {
+    pub async fn get_messages(
+        &self,
+        sender_id: &str,
+    ) -> crate::error::Result<Vec<crate::model_inference::llm::LLMMessage>> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
             let sender_bucket_map = self.sender_bucket_map.lock().await;
@@ -358,7 +366,8 @@ impl LLMMessageSessionCacheRef {
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
                 if let Some(raw) = existing_json {
-                    let messages: Vec<crate::model_inference::llm::LLMMessage> = serde_json::from_str(&raw)?;
+                    let messages: Vec<crate::model_inference::llm::LLMMessage> =
+                        serde_json::from_str(&raw)?;
                     return Ok(messages);
                 }
             }
@@ -403,7 +412,8 @@ impl LLMMessageSessionCacheRef {
 
             if let Some(cm) = cm_guard.as_mut() {
                 let deleted_count: i32 = cm.del(&key).await?;
-                let tracker_key = format!("llm_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
+                let tracker_key =
+                    format!("llm_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
                 let _: () = cm.srem(&tracker_key, &key).await?;
                 cleared |= deleted_count > 0;
             }
@@ -457,8 +467,10 @@ impl LLMMessageSessionCacheRef {
             if let Some(cm) = cm_guard.as_mut() {
                 let serialized = serde_json::to_string(&messages)?;
                 cm.set::<_, _, ()>(&key, serialized).await?;
-                let tracker_key = format!("llm_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
-                let tracker_registry_key = format!("llm_message_session:{}:tracker_sets", self.node_id);
+                let tracker_key =
+                    format!("llm_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
+                let tracker_registry_key =
+                    format!("llm_message_session:{}:tracker_sets", self.node_id);
                 cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
                 cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key).await?;
             }
@@ -511,17 +523,20 @@ impl LLMMessageSessionCacheRef {
 
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
-                let mut existing_messages: Vec<crate::model_inference::llm::LLMMessage> = existing_json
-                    .as_deref()
-                    .map(serde_json::from_str)
-                    .transpose()?
-                    .unwrap_or_default();
+                let mut existing_messages: Vec<crate::model_inference::llm::LLMMessage> =
+                    existing_json
+                        .as_deref()
+                        .map(serde_json::from_str)
+                        .transpose()?
+                        .unwrap_or_default();
                 existing_messages.extend(incoming_messages.clone());
 
                 let serialized = serde_json::to_string(&existing_messages)?;
                 cm.set::<_, _, ()>(&key, serialized).await?;
-                let tracker_key = format!("llm_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
-                let tracker_registry_key = format!("llm_message_session:{}:tracker_sets", self.node_id);
+                let tracker_key =
+                    format!("llm_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
+                let tracker_registry_key =
+                    format!("llm_message_session:{}:tracker_sets", self.node_id);
                 cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
                 cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key).await?;
             }
@@ -779,7 +794,8 @@ impl<'de> serde::Deserialize<'de> for DataType {
             }
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-                let key: String = map.next_key()?.ok_or_else(|| de::Error::missing_field("variant key"))?;
+                let key: String =
+                    map.next_key()?.ok_or_else(|| de::Error::missing_field("variant key"))?;
                 match key.as_str() {
                     "Vec" => {
                         let inner: DataType = map.next_value()?;
@@ -876,7 +892,9 @@ impl DataValue {
             DataValue::WebSearchEngineRef(_) => "WebSearchEngineRef".to_string(),
             DataValue::LoopControlRef(_) => "LoopControlRef".to_string(),
             DataValue::EmbeddingModel(_) => "EmbeddingModel".to_string(),
-            other => serde_json::to_string(&other.to_json()).unwrap_or_else(|_| format!("{other:?}")),
+            other => {
+                serde_json::to_string(&other.to_json()).unwrap_or_else(|_| format!("{other:?}"))
+            }
         }
     }
 
@@ -887,9 +905,15 @@ impl DataValue {
             DataValue::Float(f) => serde_json::json!(f),
             DataValue::Boolean(b) => Value::Bool(*b),
             DataValue::Json(v) => v.clone(),
-            DataValue::Binary(bytes) => Value::Array(bytes.iter().map(|b| Value::Number((*b).into())).collect()),
-            DataValue::Vector(values) => Value::Array(values.iter().map(|value| serde_json::json!(value)).collect()),
-            DataValue::Vec(_, items) => Value::Array(items.iter().map(|item| item.to_json()).collect()),
+            DataValue::Binary(bytes) => {
+                Value::Array(bytes.iter().map(|b| Value::Number((*b).into())).collect())
+            }
+            DataValue::Vector(values) => {
+                Value::Array(values.iter().map(|value| serde_json::json!(value)).collect())
+            }
+            DataValue::Vec(_, items) => {
+                Value::Array(items.iter().map(|item| item.to_json()).collect())
+            }
             DataValue::LLMMessage(m) => serde_json::to_value(m).unwrap_or(Value::Null),
             DataValue::QQMessage(m) => serde_json::to_value(m).unwrap_or(Value::Null),
             DataValue::Image(image) => serde_json::to_value(image).unwrap_or(Value::Null),
@@ -996,15 +1020,21 @@ impl fmt::Debug for DataValue {
             DataValue::S3Ref(config) => f.debug_tuple("S3Ref").field(config).finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::RdbRef(connection) => f.debug_tuple("RdbRef").field(connection).finish(),
-            DataValue::WeaviateRef(weaviate_ref) => f.debug_tuple("WeaviateRef").field(weaviate_ref).finish(),
+            DataValue::WeaviateRef(weaviate_ref) => {
+                f.debug_tuple("WeaviateRef").field(weaviate_ref).finish()
+            }
             DataValue::WebSearchEngineRef(_) => f.debug_tuple("WebSearchEngineRef").finish(),
-            DataValue::SessionStateRef(session_ref) => f.debug_tuple("SessionStateRef").field(session_ref).finish(),
+            DataValue::SessionStateRef(session_ref) => {
+                f.debug_tuple("SessionStateRef").field(session_ref).finish()
+            }
             DataValue::LLMMessageSessionCacheRef(cache_ref) => {
                 f.debug_tuple("LLMMessageSessionCacheRef").field(cache_ref).finish()
             }
             DataValue::Password(value) => f.debug_tuple("Password").field(value).finish(),
             DataValue::LLModel(m) => f.debug_tuple("LLModel").field(&m.get_model_name()).finish(),
-            DataValue::EmbeddingModel(m) => f.debug_tuple("EmbeddingModel").field(&m.get_model_name()).finish(),
+            DataValue::EmbeddingModel(m) => {
+                f.debug_tuple("EmbeddingModel").field(&m.get_model_name()).finish()
+            }
             DataValue::LoopControlRef(_) => f.debug_tuple("LoopControlRef").finish(),
         }
     }

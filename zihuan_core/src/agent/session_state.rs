@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use crate::agent::qq_chat::QqChatEmotionDimensionConfig;
 use crate::error::{Error, Result};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -50,7 +50,8 @@ impl QqChatAgentServiceSessionState {
         self.sync_emotion_dimensions(dimensions);
 
         let normalized_name = dimension_name.trim();
-        let Some(dimension) = dimensions.iter().find(|item| item.name.trim() == normalized_name) else {
+        let Some(dimension) = dimensions.iter().find(|item| item.name.trim() == normalized_name)
+        else {
             return Err(Error::ValidationError(format!(
                 "unsupported emotion dimension '{}'",
                 dimension_name
@@ -75,7 +76,11 @@ impl QqChatAgentServiceSessionState {
         self.emotion_expression_prompts.insert(dimension_name.to_string(), prompt);
     }
 
-    pub fn dissipate_expired_emotions(&mut self, dimensions: &[QqChatEmotionDimensionConfig], now_unix_seconds: i64) {
+    pub fn dissipate_expired_emotions(
+        &mut self,
+        dimensions: &[QqChatEmotionDimensionConfig],
+        now_unix_seconds: i64,
+    ) {
         self.sync_emotion_dimensions(dimensions);
         let Some(last_conversation_at) = self.last_conversation_at_unix_seconds else {
             return;
@@ -95,7 +100,10 @@ impl QqChatAgentServiceSessionState {
         self.last_conversation_at_unix_seconds = Some(now_unix_seconds);
     }
 
-    pub fn ordered_emotion_dimensions(&self, dimensions: &[QqChatEmotionDimensionConfig]) -> Vec<(String, f64)> {
+    pub fn ordered_emotion_dimensions(
+        &self,
+        dimensions: &[QqChatEmotionDimensionConfig],
+    ) -> Vec<(String, f64)> {
         dimensions
             .iter()
             .filter_map(|dimension| {

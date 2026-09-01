@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use crate::runtime::block_async;
 
-use crate::utils::string_utils::strip_html_tags;
 use crate::error::Result;
+use crate::utils::string_utils::strip_html_tags;
 
 use super::web_search_engine::{WebSearchEngine, WebSearchImage};
 
@@ -50,7 +50,11 @@ impl BraveSearch {
         }
     }
 
-    async fn search_async(&self, query: &str, search_count: i64) -> crate::error::Result<Vec<String>> {
+    async fn search_async(
+        &self,
+        query: &str,
+        search_count: i64,
+    ) -> crate::error::Result<Vec<String>> {
         let response = self
             .client
             .get("https://api.search.brave.com/res/v1/web/search")
@@ -69,7 +73,8 @@ impl BraveSearch {
             let body = response.text().await.unwrap_or_default();
             return Err(crate::string_error!(
                 "Brave search request failed with status {}: {}",
-                status, body
+                status,
+                body
             ));
         }
 
@@ -89,7 +94,8 @@ impl BraveSearch {
                         content.push_str(&snippets.join("\n"));
                     }
                 }
-                let score = item.score.map(|value| format!("\nScore: {value:.4}")).unwrap_or_default();
+                let score =
+                    item.score.map(|value| format!("\nScore: {value:.4}")).unwrap_or_default();
                 format!("标题: {}\n链接: {}{}\n内容: {}", item.title, item.url, score, content)
             })
             .collect())
@@ -108,7 +114,8 @@ impl BraveSearch {
             let body = response.text().await.unwrap_or_default();
             return Err(crate::string_error!(
                 "Direct web request failed with status {}: {}",
-                status, body
+                status,
+                body
             ));
         }
 
@@ -130,7 +137,11 @@ impl WebSearchEngine for BraveSearch {
         block_async(self.fetch_url_direct_async(url))
     }
 
-    fn search_images(&self, _query: &str, _max_results: i64) -> crate::error::Result<Vec<WebSearchImage>> {
+    fn search_images(
+        &self,
+        _query: &str,
+        _max_results: i64,
+    ) -> crate::error::Result<Vec<WebSearchImage>> {
         Ok(Vec::new())
     }
 }

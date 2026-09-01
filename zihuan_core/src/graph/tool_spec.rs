@@ -1,8 +1,10 @@
-use serde::{Deserialize, Serialize};
-use dynamic_script_engine::{PythonRuntimeConfig, PythonRuntimeKind};
 pub use crate::tool_runtime::ToolRunDuration;
+use dynamic_script_engine::{PythonRuntimeConfig, PythonRuntimeKind};
+use serde::{Deserialize, Serialize};
 
-use crate::graph::function_graph::{default_function_subgraph, FunctionPortDef, FUNCTION_OUTPUTS_NODE_ID};
+use crate::graph::function_graph::{
+    default_function_subgraph, FunctionPortDef, FUNCTION_OUTPUTS_NODE_ID,
+};
 use crate::graph::graph_io::NodeGraphDefinition;
 use crate::graph::DataType;
 
@@ -140,7 +142,9 @@ impl ToolDefinition {
     }
 }
 
-pub fn tool_calling_shared_inputs_from_value(value: &serde_json::Value) -> Option<Vec<FunctionPortDef>> {
+pub fn tool_calling_shared_inputs_from_value(
+    value: &serde_json::Value,
+) -> Option<Vec<FunctionPortDef>> {
     serde_json::from_value::<Vec<FunctionPortDef>>(value.clone()).ok()
 }
 
@@ -198,7 +202,10 @@ pub fn is_tool_calling_subgraph_owner(node_type: &str) -> bool {
     tool_subgraph_owner_types().contains(&node_type)
 }
 
-pub fn normalized_tool_outputs_for_owner(node_type: &str, tool: &ToolDefinition) -> Vec<FunctionPortDef> {
+pub fn normalized_tool_outputs_for_owner(
+    node_type: &str,
+    tool: &ToolDefinition,
+) -> Vec<FunctionPortDef> {
     if tool_subgraph_owner_uses_tool_calling_outputs(node_type) {
         tool.outputs.clone()
     } else {

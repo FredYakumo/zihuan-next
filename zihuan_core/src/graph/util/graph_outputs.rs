@@ -1,9 +1,9 @@
 use serde_json::Value;
 
+use crate::error::{Error, Result};
 use crate::graph::function_graph::{FunctionPortDef, FUNCTION_SIGNATURE_PORT};
 use crate::graph::graph_boundary::graph_outputs_ports;
 use crate::graph::{DataValue, Node, Port};
-use crate::error::{Error, Result};
 
 pub struct GraphOutputsNode {
     id: String,
@@ -21,8 +21,12 @@ impl GraphOutputsNode {
     }
 
     fn apply_signature_json(&mut self, value: &Value) -> Result<()> {
-        self.signature = serde_json::from_value::<Vec<FunctionPortDef>>(value.clone())
-            .map_err(|_| Error::ValidationError("graph_outputs.signature 不是有效的节点图签名 JSON".to_string()))?;
+        self.signature =
+            serde_json::from_value::<Vec<FunctionPortDef>>(value.clone()).map_err(|_| {
+                Error::ValidationError(
+                    "graph_outputs.signature 不是有效的节点图签名 JSON".to_string(),
+                )
+            })?;
         Ok(())
     }
 }
@@ -65,7 +69,10 @@ impl Node for GraphOutputsNode {
         }
     }
 
-    fn execute(&mut self, inputs: crate::graph::NodeInputFlow) -> Result<crate::graph::NodeOutputFlow> {
+    fn execute(
+        &mut self,
+        inputs: crate::graph::NodeInputFlow,
+    ) -> Result<crate::graph::NodeOutputFlow> {
         if let Some(DataValue::Json(value)) = inputs.get(FUNCTION_SIGNATURE_PORT) {
             self.apply_signature_json(value)?;
         }

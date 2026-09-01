@@ -63,7 +63,8 @@ fn default_memory_definition() -> SubAgentDefinition {
             description: "Memory result".to_string(),
             required: true,
         }],
-        system_prompt: "You manage durable role memory. Return JSON with a result field only.".to_string(),
+        system_prompt: "You manage durable role memory. Return JSON with a result field only."
+            .to_string(),
         tool_ids: vec![
             "search_memory".to_string(),
             "update_memory".to_string(),
@@ -88,7 +89,9 @@ fn default_dream_definition() -> SubAgentDefinition {
             description: "Consolidated memory".to_string(),
             required: true,
         }],
-        system_prompt: "Consolidate durable facts from the transcript. Return JSON with a memory field only.".to_string(),
+        system_prompt:
+            "Consolidate durable facts from the transcript. Return JSON with a memory field only."
+                .to_string(),
         tool_ids: Vec::new(),
     }
 }

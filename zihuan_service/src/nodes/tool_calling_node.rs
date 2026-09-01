@@ -3,21 +3,23 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 
-use zihuan_core::tool_subgraph::{
-    shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool, ToolResultMode,
-    ToolSubgraphRunner,
-};
 use zihuan_core::agent::tools::{
-    ToolCallingEngine, ToolCallingStopReason, Tool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS,
+    Tool, ToolCallingEngine, ToolCallingStopReason, ToolExecutionOutput, ToolRunDuration,
+    MAX_TOOL_ITERATIONS,
 };
 use zihuan_core::error::{Error, Result};
+use zihuan_core::graph::function_graph::FunctionPortDef;
+use zihuan_core::graph::tool_spec::{
+    tool_calling_shared_inputs_from_value, ToolDefinition, TOOL_CALLING_SHARED_INPUTS_PORT,
+    TOOL_CALLING_TOOLS_CONFIG_PORT,
+};
+use zihuan_core::graph::{DataType, DataValue, Node, Port};
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::model_inference::llm::LLMMessage;
-use zihuan_core::graph::tool_spec::{
-    tool_calling_shared_inputs_from_value, ToolDefinition, TOOL_CALLING_SHARED_INPUTS_PORT, TOOL_CALLING_TOOLS_CONFIG_PORT,
+use zihuan_core::tool_subgraph::{
+    shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool,
+    ToolResultMode, ToolSubgraphRunner,
 };
-use zihuan_core::graph::function_graph::FunctionPortDef;
-use zihuan_core::graph::{DataType, DataValue, Node, Port};
 
 struct SubgraphTool {
     runner: ToolSubgraphRunner,
@@ -95,7 +97,9 @@ impl ToolCallingNode {
         self.tool_definitions
             .iter()
             .cloned()
-            .map(|definition| Arc::new(SubgraphFunctionTool::new(definition)) as Arc<dyn FunctionTool>)
+            .map(|definition| {
+                Arc::new(SubgraphFunctionTool::new(definition)) as Arc<dyn FunctionTool>
+            })
             .collect()
     }
 
@@ -145,7 +149,8 @@ impl Node for ToolCallingNode {
 
     fn input_ports(&self) -> Vec<Port> {
         let mut ports = vec![
-            Port::new("llm_model", DataType::LLModel).with_description("LLM 模型引用，由 LLM API 节点提供"),
+            Port::new("llm_model", DataType::LLModel)
+                .with_description("LLM 模型引用，由 LLM API 节点提供"),
             Port::new("messages", DataType::Vec(Box::new(DataType::LLMMessage)))
                 .with_description("消息列表（包含 system/user/assistant/tool 等角色）"),
             // Hidden ports: managed via "管理工具" button dialog
@@ -170,14 +175,19 @@ impl Node for ToolCallingNode {
         true
     }
 
-    fn apply_inline_config(&mut self, inline_values: &zihuan_core::graph::NodeConfigFlow) -> Result<()> {
+    fn apply_inline_config(
+        &mut self,
+        inline_values: &zihuan_core::graph::NodeConfigFlow,
+    ) -> Result<()> {
         match inline_values.get(TOOL_CALLING_SHARED_INPUTS_PORT) {
             Some(DataValue::Json(value)) => {
                 if value.is_null() {
                     self.set_shared_inputs(Vec::new())?;
                 } else {
-                    let shared_inputs = tool_calling_shared_inputs_from_value(value)
-                        .ok_or_else(|| Error::ValidationError("Invalid shared_inputs".to_string()))?;
+                    let shared_inputs =
+                        tool_calling_shared_inputs_from_value(value).ok_or_else(|| {
+                            Error::ValidationError("Invalid shared_inputs".to_string())
+                        })?;
                     self.set_shared_inputs(shared_inputs)?;
                 }
             }
@@ -213,7 +223,10 @@ impl Node for ToolCallingNode {
         }
     }
 
-    fn execute(&mut self, inputs: zihuan_core::graph::NodeInputFlow) -> Result<zihuan_core::graph::NodeOutputFlow> {
+    fn execute(
+        &mut self,
+        inputs: zihuan_core::graph::NodeInputFlow,
+    ) -> Result<zihuan_core::graph::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         if let Some(DataValue::Json(value)) = inputs.get(TOOL_CALLING_SHARED_INPUTS_PORT) {
@@ -247,8 +260,12 @@ impl Node for ToolCallingNode {
                     shared_runtime_values: Arc::new(Mutex::new(shared_runtime_values.clone())),
                     qq_chat_agent: None,
                     result_mode: ToolResultMode::JsonObject,
-                    builtin_executor: Some(zihuan_ims_service::qq_tool_subgraph_hooks::image_understand_executor()),
-                    progress_notifier: Some(zihuan_ims_service::qq_tool_subgraph_hooks::qq_progress_notifier()),
+                    builtin_executor: Some(
+                        zihuan_ims_service::qq_tool_subgraph_hooks::image_understand_executor(),
+                    ),
+                    progress_notifier: Some(
+                        zihuan_ims_service::qq_tool_subgraph_hooks::qq_progress_notifier(),
+                    ),
                 },
             });
         }
@@ -260,13 +277,21 @@ impl Node for ToolCallingNode {
                 return Err(self.wrap_error(format!("LLM request failed: {content}")));
             }
             ToolCallingStopReason::MaxIterationsReached => {
-                return Err(self.wrap_error(format!("ToolCallingEngine tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})")));
+                return Err(self.wrap_error(format!(
+                    "ToolCallingEngine tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})"
+                )));
             }
             ToolCallingStopReason::AwaitUserInput(request) => {
-                return Err(self.wrap_error(format!("ToolCallingEngine requested user input: {}", request.question)));
+                return Err(self.wrap_error(format!(
+                    "ToolCallingEngine requested user input: {}",
+                    request.question
+                )));
             }
             ToolCallingStopReason::ToolCallLimitReached(request) => {
-                return Err(self.wrap_error(format!("ToolCallingEngine reached tool call limit: {}", request.question)));
+                return Err(self.wrap_error(format!(
+                    "ToolCallingEngine reached tool call limit: {}",
+                    request.question
+                )));
             }
             ToolCallingStopReason::Done => {}
         }

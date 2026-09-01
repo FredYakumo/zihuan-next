@@ -1,16 +1,18 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::error::{Error, Result};
+use crate::graph::object_storage::S3Ref;
+use crate::ims_bot_adapter::models::event_model::MessageEvent;
+use crate::ims_bot_adapter::models::message::{
+    ForwardNodeMessage, ImageMessage, Message, PersistedMedia,
+};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use base64::Engine;
 use log::{debug, info, warn};
 use reqwest::Client;
 use serde::Deserialize;
-use crate::error::{Error, Result};
-use crate::ims_bot_adapter::models::event_model::MessageEvent;
-use crate::ims_bot_adapter::models::message::{ForwardNodeMessage, ImageMessage, Message, PersistedMedia};
-use crate::graph::object_storage::S3Ref;
 
 use super::{save_image_to_object_storage, ImageObjectStorageInput};
 
@@ -49,7 +51,11 @@ pub async fn enrich_event_images<A: ImageCacheAdapter>(adapter: &A, event: &mut 
     enrich_message_images(adapter, event.message_id, &mut event.message_list).await;
 }
 
-pub async fn enrich_message_images<A: ImageCacheAdapter>(adapter: &A, message_id: i64, messages: &mut [Message]) {
+pub async fn enrich_message_images<A: ImageCacheAdapter>(
+    adapter: &A,
+    message_id: i64,
+    messages: &mut [Message],
+) {
     let Some(object_storage) = adapter.object_storage().await else {
         debug!("{LOG_PREFIX} Object storage is not configured; skipping image caching");
         return;
@@ -72,7 +78,9 @@ async fn enrich_message_images_with_storage<A: ImageCacheAdapter>(
                     continue;
                 }
 
-                match cache_one_image(adapter, object_storage, message_id, segment_index, image).await {
+                match cache_one_image(adapter, object_storage, message_id, segment_index, image)
+                    .await
+                {
                     Ok(Some(rustfs_path)) => {
                         info!(
                             "{LOG_PREFIX} Cached image for message {} segment {} to {}",
@@ -107,7 +115,13 @@ async fn enrich_message_images_with_storage<A: ImageCacheAdapter>(
                 }
             }
             Message::Forward(forward) => {
-                enrich_forward_node_images(adapter, object_storage, message_id, &mut forward.content).await;
+                enrich_forward_node_images(
+                    adapter,
+                    object_storage,
+                    message_id,
+                    &mut forward.content,
+                )
+                .await;
             }
             _ => {}
         }
@@ -122,7 +136,8 @@ async fn enrich_forward_node_images<A: ImageCacheAdapter>(
     nodes: &mut [ForwardNodeMessage],
 ) {
     for node in nodes {
-        enrich_message_images_with_storage(adapter, object_storage, message_id, &mut node.content).await;
+        enrich_message_images_with_storage(adapter, object_storage, message_id, &mut node.content)
+            .await;
     }
 }
 
@@ -257,7 +272,10 @@ async fn resolve_image_payload<A: ImageCacheAdapter>(
     Ok(None)
 }
 
-async fn read_local_file(path: &str, preferred_name: Option<&str>) -> Result<Option<ResolvedImagePayload>> {
+async fn read_local_file(
+    path: &str,
+    preferred_name: Option<&str>,
+) -> Result<Option<ResolvedImagePayload>> {
     let file_path = Path::new(path);
     if !file_path.exists() {
         return Ok(None);
@@ -276,7 +294,10 @@ async fn read_local_file(path: &str, preferred_name: Option<&str>) -> Result<Opt
     }))
 }
 
-async fn download_remote_file(url: &str, preferred_name: Option<&str>) -> Result<Option<ResolvedImagePayload>> {
+async fn download_remote_file(
+    url: &str,
+    preferred_name: Option<&str>,
+) -> Result<Option<ResolvedImagePayload>> {
     let response = Client::new().get(url).send().await?;
     if !response.status().is_success() {
         return Ok(None);

@@ -5,15 +5,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::json;
 use zihuan_core::agent::tools::Tool;
 
-use crate::tools::workspace_tools::{
-    approve_command, ListDirTool, ReadFileTool, RgTool,
-};
 #[cfg(windows)]
 use crate::tools::workspace_tools::ExecCmdTool;
+use crate::tools::workspace_tools::{approve_command, ListDirTool, ReadFileTool, RgTool};
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let path = std::env::temp_dir().join(format!("zihuan-enhanced-tools-{}-{suffix}", std::process::id()));
+    let path =
+        std::env::temp_dir().join(format!("zihuan-enhanced-tools-{}-{suffix}", std::process::id()));
     fs::create_dir_all(&path).unwrap();
     path
 }
@@ -35,10 +34,18 @@ fn read_file_supports_base64_and_list_dir_name_glob() {
     let read = ReadFileTool { workspace_path: Some(directory.clone()) };
     let list = ListDirTool { workspace_path: Some(directory.clone()) };
 
-    let binary = serde_json::from_str::<serde_json::Value>(&read.execute("", &json!({"path":"data.bin","encoding":"base64","byte_start":1,"byte_end":3}))).unwrap();
+    let binary =
+        serde_json::from_str::<serde_json::Value>(&read.execute(
+            "",
+            &json!({"path":"data.bin","encoding":"base64","byte_start":1,"byte_end":3}),
+        ))
+        .unwrap();
     assert_eq!(binary["encoding"], "base64");
-        assert_eq!(binary["content"], "AQI=");
-    let listing = serde_json::from_str::<serde_json::Value>(&list.execute("", &json!({"path":".","name_glob":"*.txt"}))).unwrap();
+    assert_eq!(binary["content"], "AQI=");
+    let listing = serde_json::from_str::<serde_json::Value>(
+        &list.execute("", &json!({"path":".","name_glob":"*.txt"})),
+    )
+    .unwrap();
     assert_eq!(listing["entries"].as_array().unwrap().len(), 1);
 
     fs::remove_dir_all(directory).unwrap();
@@ -56,7 +63,11 @@ fn rg_extracts_capture_group_and_deduplicates_values() {
     let directory = temp_dir();
     fs::write(directory.join("ids.txt"), "id=one\nid=two\nid=one\n").unwrap();
     let tool = RgTool { workspace_path: Some(directory.clone()) };
-    let result = serde_json::from_str::<serde_json::Value>(&tool.execute("", &json!({"path":".","pattern":"id=(?<id>[a-z]+)","output":"$id","unique":true}))).unwrap();
+    let result = serde_json::from_str::<serde_json::Value>(&tool.execute(
+        "",
+        &json!({"path":".","pattern":"id=(?<id>[a-z]+)","output":"$id","unique":true}),
+    ))
+    .unwrap();
     assert_eq!(result["matches"].as_array().unwrap().len(), 2);
     assert_eq!(result["matches"][0]["value"], "one");
 
@@ -75,19 +86,23 @@ fn rg_extracts_capture_group_and_deduplicates_values() {
 fn exec_cmd_accepts_environment_and_stdin() {
     let directory = temp_dir();
     let session_id = format!("exec-cmd-test-{}", std::process::id());
-    let command = "$data = [Console]::In.ReadToEnd(); Write-Output ($env:ZIHUAN_TEST + ':' + $data)";
+    let command =
+        "$data = [Console]::In.ReadToEnd(); Write-Output ($env:ZIHUAN_TEST + ':' + $data)";
     let tool = ExecCmdTool {
         workspace_path: Some(directory.clone()),
         session_id: Some(session_id.clone()),
     };
     approve_command(&session_id, command, false);
-    let result = serde_json::from_str::<serde_json::Value>(&tool.execute(
-        "",
-        &json!({"command":command,"env":{"ZIHUAN_TEST":"ok"},"input":"data"}),
-    ))
+    let result = serde_json::from_str::<serde_json::Value>(
+        &tool.execute("", &json!({"command":command,"env":{"ZIHUAN_TEST":"ok"},"input":"data"})),
+    )
     .unwrap();
     assert_eq!(result["ok"], true);
-    let output = format!("{}{}", result["stdout"].as_str().unwrap_or_default(), result["stderr"].as_str().unwrap_or_default());
+    let output = format!(
+        "{}{}",
+        result["stdout"].as_str().unwrap_or_default(),
+        result["stderr"].as_str().unwrap_or_default()
+    );
     assert!(output.contains("data"));
     fs::remove_dir_all(directory).unwrap();
 }

@@ -1,4 +1,4 @@
-use log::{info, debug};
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -71,7 +71,9 @@ impl ConfigRecord for LlmRefConfig {
                     return Err(crate::string_error!("chat_llm model_name must not be empty"));
                 }
                 if llm.context_length == 0 {
-                    return Err(crate::string_error!("chat_llm context_length must be greater than zero"));
+                    return Err(crate::string_error!(
+                        "chat_llm context_length must be greater than zero"
+                    ));
                 }
                 if !matches!(llm.api_style, LlmApiStyle::CandleGguf | LlmApiStyle::CandleHf)
                     && llm.api_endpoint.trim().is_empty()
@@ -80,7 +82,9 @@ impl ConfigRecord for LlmRefConfig {
                 }
             }
             ModelRefSpec::TextEmbeddingLocal { model_name } if model_name.trim().is_empty() => {
-                return Err(crate::string_error!("text_embedding_local model_name must not be empty"));
+                return Err(crate::string_error!(
+                    "text_embedding_local model_name must not be empty"
+                ));
             }
             ModelRefSpec::TextEmbeddingLocal { .. } => {}
         }
@@ -153,7 +157,11 @@ pub fn save_llm_refs(llm_refs: Vec<LlmRefConfig>) -> Result<()> {
 
 fn normalize_identity(mut llm_ref: LlmRefConfig, fallback_id: String) -> LlmRefConfig {
     let canonical = if llm_ref.config_id.trim().is_empty() {
-        if llm_ref.id.trim().is_empty() { fallback_id } else { llm_ref.id.clone() }
+        if llm_ref.id.trim().is_empty() {
+            fallback_id
+        } else {
+            llm_ref.id.clone()
+        }
     } else {
         llm_ref.config_id.clone()
     };
@@ -189,7 +197,12 @@ fn llm_ref_from_record(record: StoredConfigRecord) -> Result<LlmRefConfig> {
 }
 
 fn model_ref_spec_from_value(value: Value) -> Result<ModelRefSpec> {
-    if value.as_object().and_then(|object| object.get("type")).and_then(Value::as_str).is_some() {
+    if value
+        .as_object()
+        .and_then(|object| object.get("type"))
+        .and_then(Value::as_str)
+        .is_some()
+    {
         return Ok(serde_json::from_value(value)?);
     }
     Ok(ModelRefSpec::ChatLlm { llm: serde_json::from_value(value)? })

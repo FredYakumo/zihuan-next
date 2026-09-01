@@ -82,12 +82,16 @@ fn parse_chat_completions_sse_stream_response_hides_dsml_split_across_deltas() {
         stream.write_all(&response_body).expect("write response body");
     });
     let runtime = tokio::runtime::Runtime::new().expect("create runtime");
-    let response = runtime.block_on(reqwest::get(format!("http://{address}"))).expect("request SSE response");
+    let response = runtime
+        .block_on(reqwest::get(format!("http://{address}")))
+        .expect("request SSE response");
     let (token_tx, mut token_rx) = tokio::sync::mpsc::unbounded_channel();
     let message = runtime.block_on(parse_chat_completions_sse_stream_response(response, token_tx));
     server.join().expect("join test server");
     let mut emitted_tokens = Vec::new();
-    while let Ok(token) = token_rx.try_recv() { emitted_tokens.push(token.as_str().to_string()); }
+    while let Ok(token) = token_rx.try_recv() {
+        emitted_tokens.push(token.as_str().to_string());
+    }
     assert_eq!(message_text(&message), "正在处理 ");
     assert_eq!(message.tool_calls.len(), 1);
     assert_eq!(message.tool_calls[0].function.name, "read_file");
@@ -116,12 +120,16 @@ fn parse_chat_completions_sse_stream_response_hides_reasoning_dsml() {
         stream.write_all(&response_body).expect("write response body");
     });
     let runtime = tokio::runtime::Runtime::new().expect("create runtime");
-    let response = runtime.block_on(reqwest::get(format!("http://{address}"))).expect("request SSE response");
+    let response = runtime
+        .block_on(reqwest::get(format!("http://{address}")))
+        .expect("request SSE response");
     let (token_tx, mut token_rx) = tokio::sync::mpsc::unbounded_channel();
     let message = runtime.block_on(parse_chat_completions_sse_stream_response(response, token_tx));
     server.join().expect("join test server");
     let mut emitted_tokens = Vec::new();
-    while let Ok(token) = token_rx.try_recv() { emitted_tokens.push(token.as_str().to_string()); }
+    while let Ok(token) = token_rx.try_recv() {
+        emitted_tokens.push(token.as_str().to_string());
+    }
     assert_eq!(message.reasoning_content.as_deref(), Some("先处理  完成"));
     assert_eq!(message.tool_calls.len(), 1);
     assert_eq!(message.tool_calls[0].function.name, "read_file");
@@ -134,6 +142,9 @@ fn parse_chat_completions_sse_stream_response_hides_reasoning_dsml() {
 fn parse_chat_completions_response_preserves_plain_and_malformed_dsml_text() {
     let response = json!({"choices":[{"message":{"role":"assistant","content":"示例 <|DSML| is not a call. <|DSML|tool_calls><|DSML|invoke name=\"read_file\"><|DSML|parameter name=\"path\" string=\"true\">src/lib.rs"}}]});
     let message = parse_chat_completions_response(&response).expect("parse response");
-    assert_eq!(message_text(&message), response["choices"][0]["message"]["content"].as_str().expect("response content"));
+    assert_eq!(
+        message_text(&message),
+        response["choices"][0]["message"]["content"].as_str().expect("response content")
+    );
     assert!(message.tool_calls.is_empty());
 }

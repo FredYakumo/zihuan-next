@@ -14,18 +14,19 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
 
-use crate::graph::tool_spec::{
-    tool_calling_shared_inputs_from_value, tool_calling_tool_input_signature, is_tool_calling_subgraph_owner,
-    normalized_tool_outputs_for_owner, ToolDefinition, TOOL_CALLING_SHARED_INPUTS_PORT, TOOL_CALLING_TOOLS_CONFIG_PORT,
-};
+use crate::error::Result;
 use crate::graph::data_value::DataType;
 use crate::graph::function_graph::{
-    default_embedded_function_config, embedded_function_config_from_node, sync_function_node_definition,
-    sync_function_subgraph_signature,
+    default_embedded_function_config, embedded_function_config_from_node,
+    sync_function_node_definition, sync_function_subgraph_signature,
 };
 use crate::graph::graph_boundary::sync_root_graph_io;
+use crate::graph::tool_spec::{
+    is_tool_calling_subgraph_owner, normalized_tool_outputs_for_owner,
+    tool_calling_shared_inputs_from_value, tool_calling_tool_input_signature, ToolDefinition,
+    TOOL_CALLING_SHARED_INPUTS_PORT, TOOL_CALLING_TOOLS_CONFIG_PORT,
+};
 use crate::graph::{Node, NodeConfigFlow, NodeGraph, NodeOutputFlow, Port};
-use crate::error::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -195,16 +196,20 @@ pub fn refresh_port_types(graph: &mut NodeGraphDefinition) {
 fn refresh_port_types_internal(graph: &mut NodeGraphDefinition) {
     use crate::graph::registry::NODE_REGISTRY;
     for node in &mut graph.nodes {
-        if let Some((canonical_inputs, canonical_outputs)) = NODE_REGISTRY.get_node_ports(&node.node_type) {
-            if let Some((dynamic_inputs, dynamic_outputs)) = NODE_REGISTRY.get_node_dynamic_port_flags(&node.node_type)
+        if let Some((canonical_inputs, canonical_outputs)) =
+            NODE_REGISTRY.get_node_ports(&node.node_type)
+        {
+            if let Some((dynamic_inputs, dynamic_outputs)) =
+                NODE_REGISTRY.get_node_dynamic_port_flags(&node.node_type)
             {
                 node.dynamic_input_ports = dynamic_inputs;
                 node.dynamic_output_ports = dynamic_outputs;
             }
 
             if !node.dynamic_input_ports {
-                node.input_ports
-                    .retain(|port| canonical_inputs.iter().any(|canonical| canonical.name == port.name));
+                node.input_ports.retain(|port| {
+                    canonical_inputs.iter().any(|canonical| canonical.name == port.name)
+                });
             }
             for canon in &canonical_inputs {
                 if !node.input_ports.iter().any(|p| p.name == canon.name) {
@@ -218,8 +223,9 @@ fn refresh_port_types_internal(graph: &mut NodeGraphDefinition) {
             }
 
             if !node.dynamic_output_ports {
-                node.output_ports
-                    .retain(|port| canonical_outputs.iter().any(|canonical| canonical.name == port.name));
+                node.output_ports.retain(|port| {
+                    canonical_outputs.iter().any(|canonical| canonical.name == port.name)
+                });
             }
             for canon in &canonical_outputs {
                 if !node.output_ports.iter().any(|p| p.name == canon.name) {
@@ -233,7 +239,8 @@ fn refresh_port_types_internal(graph: &mut NodeGraphDefinition) {
             }
 
             if !node.dynamic_input_ports {
-                let config_fields = NODE_REGISTRY.get_node_config_fields(&node.node_type).unwrap_or_default();
+                let config_fields =
+                    NODE_REGISTRY.get_node_config_fields(&node.node_type).unwrap_or_default();
                 let all_port_names = canonical_inputs
                     .iter()
                     .chain(canonical_outputs.iter())
@@ -269,7 +276,9 @@ pub fn refresh_node_dynamic_ports(node: &mut NodeDefinition) {
         return;
     }
 
-    let Ok(mut runtime_node) = NODE_REGISTRY.create_node(&node.node_type, node.id.clone(), node.name.clone()) else {
+    let Ok(mut runtime_node) =
+        NODE_REGISTRY.create_node(&node.node_type, node.id.clone(), node.name.clone())
+    else {
         return;
     };
 
@@ -314,7 +323,9 @@ pub fn refresh_node_dynamic_ports(node: &mut NodeDefinition) {
 /// 保存了错误类型的条目（如旧版转换时将 BotAdapterRef/SessionStateRef 写成了 String）。
 /// 这是对旧 JSON 的加载迁移：以边另一端的源端口（已经过注册表刷新）为准，覆盖config里的错误类型。
 fn fix_function_node_input_types_from_edges(graph: &mut NodeGraphDefinition) {
-    use crate::graph::function_graph::{embedded_function_config_from_node, sync_function_node_definition};
+    use crate::graph::function_graph::{
+        embedded_function_config_from_node, sync_function_node_definition,
+    };
 
     // 构建 node_id → output_ports 映射（端口类型已经过注册表刷新）
     let output_port_map: HashMap<String, Vec<Port>> =
@@ -418,7 +429,8 @@ fn validate_graph_definition_local(graph: &NodeGraphDefinition) -> Vec<Validatio
     let mut issues = Vec::new();
 
     // Build a quick lookup: node_id → NodeDefinition
-    let node_map: HashMap<String, &NodeDefinition> = graph.nodes.iter().map(|n| (n.id.clone(), n)).collect();
+    let node_map: HashMap<String, &NodeDefinition> =
+        graph.nodes.iter().map(|n| (n.id.clone(), n)).collect();
 
     for node in &graph.nodes {
         match NODE_REGISTRY.get_node_ports(&node.node_type) {
@@ -429,11 +441,14 @@ fn validate_graph_definition_local(graph: &NodeGraphDefinition) -> Vec<Validatio
                 )));
             }
             Some((canonical_inputs, canonical_outputs)) => {
-                let config_fields = NODE_REGISTRY.get_node_config_fields(&node.node_type).unwrap_or_default();
+                let config_fields =
+                    NODE_REGISTRY.get_node_config_fields(&node.node_type).unwrap_or_default();
                 // Check for REQUIRED ports in registry but missing from JSON (inputs)
                 if !node.dynamic_input_ports {
                     for canon_port in &canonical_inputs {
-                        if canon_port.required && !node.input_ports.iter().any(|p| p.name == canon_port.name) {
+                        if canon_port.required
+                            && !node.input_ports.iter().any(|p| p.name == canon_port.name)
+                        {
                             issues.push(ValidationIssue::error(format!(
                                 "节点 \"{}\" 缺少必要输入端口 \"{}\"",
                                 node.name, canon_port.name
@@ -455,7 +470,9 @@ fn validate_graph_definition_local(graph: &NodeGraphDefinition) -> Vec<Validatio
                 // Check for REQUIRED ports in registry but missing from JSON (outputs)
                 if !node.dynamic_output_ports {
                     for canon_port in &canonical_outputs {
-                        if canon_port.required && !node.output_ports.iter().any(|p| p.name == canon_port.name) {
+                        if canon_port.required
+                            && !node.output_ports.iter().any(|p| p.name == canon_port.name)
+                        {
                             issues.push(ValidationIssue::error(format!(
                                 "节点 \"{}\" 缺少必要输出端口 \"{}\"",
                                 node.name, canon_port.name
@@ -561,9 +578,9 @@ fn auto_fix_graph_definition_local(graph: &mut NodeGraphDefinition) {
     }
     if !unknown_node_ids.is_empty() {
         graph.nodes.retain(|n| !unknown_node_ids.contains(&n.id));
-        graph
-            .edges
-            .retain(|e| !unknown_node_ids.contains(&e.from_node_id) && !unknown_node_ids.contains(&e.to_node_id));
+        graph.edges.retain(|e| {
+            !unknown_node_ids.contains(&e.from_node_id) && !unknown_node_ids.contains(&e.to_node_id)
+        });
     }
 
     // Track (node_id, port_name) of ports that no longer exist after fix –
@@ -588,7 +605,8 @@ fn auto_fix_graph_definition_local(graph: &mut NodeGraphDefinition) {
 
                 // Remove input ports not present in registry
                 if !node.dynamic_input_ports {
-                    let before: Vec<String> = node.input_ports.iter().map(|p| p.name.clone()).collect();
+                    let before: Vec<String> =
+                        node.input_ports.iter().map(|p| p.name.clone()).collect();
                     node.input_ports.retain(|p| canonical_inputs.iter().any(|c| c.name == p.name));
                     for removed in &before {
                         if !node.input_ports.iter().any(|p| &p.name == removed) {
@@ -605,8 +623,10 @@ fn auto_fix_graph_definition_local(graph: &mut NodeGraphDefinition) {
 
                 // Remove output ports not present in registry
                 if !node.dynamic_output_ports {
-                    let before: Vec<String> = node.output_ports.iter().map(|p| p.name.clone()).collect();
-                    node.output_ports.retain(|p| canonical_outputs.iter().any(|c| c.name == p.name));
+                    let before: Vec<String> =
+                        node.output_ports.iter().map(|p| p.name.clone()).collect();
+                    node.output_ports
+                        .retain(|p| canonical_outputs.iter().any(|c| c.name == p.name));
                     for removed in &before {
                         if !node.output_ports.iter().any(|p| &p.name == removed) {
                             removed_output_ports.push((node.id.clone(), removed.clone()));
@@ -637,7 +657,8 @@ fn auto_fix_graph_definition_local(graph: &mut NodeGraphDefinition) {
     }
 
     // Build set of valid (node_id, output_port) and (node_id, input_port) for edge validation
-    let node_map: HashMap<String, &NodeDefinition> = graph.nodes.iter().map(|n| (n.id.clone(), n)).collect();
+    let node_map: HashMap<String, &NodeDefinition> =
+        graph.nodes.iter().map(|n| (n.id.clone(), n)).collect();
 
     graph.edges.retain(|edge| {
         // Drop if referencing a port we just removed
@@ -723,7 +744,8 @@ fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
                 continue;
             }
             refresh_port_types_internal(&mut tool.subgraph);
-            let input_signature = tool_calling_tool_input_signature(&node.node_type, &shared_inputs, tool);
+            let input_signature =
+                tool_calling_tool_input_signature(&node.node_type, &shared_inputs, tool);
             let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);
             sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &outputs);
         }
@@ -763,8 +785,10 @@ fn validate_embedded_subgraphs(graph: &NodeGraphDefinition) -> Vec<ValidationIss
                         if !tool.uses_subgraph() {
                             continue;
                         }
-                        let prefix =
-                            format!("{} 节点 \"{}\" 的 Tool \"{}\" 子图", node.node_type, node.name, tool.name);
+                        let prefix = format!(
+                            "{} 节点 \"{}\" 的 Tool \"{}\" 子图",
+                            node.node_type, node.name, tool.name
+                        );
                         issues.extend(
                             validate_graph_definition(&tool.subgraph)
                                 .into_iter()
@@ -817,7 +841,8 @@ fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
                 continue;
             }
             auto_fix_graph_definition(&mut tool.subgraph);
-            let input_signature = tool_calling_tool_input_signature(&node.node_type, &shared_inputs, tool);
+            let input_signature =
+                tool_calling_tool_input_signature(&node.node_type, &shared_inputs, tool);
             let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);
             sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &outputs);
         }
@@ -835,7 +860,10 @@ fn prefixed_issue(prefix: String, issue: ValidationIssue) -> ValidationIssue {
     }
 }
 
-pub fn save_graph_definition_to_json(path: impl AsRef<Path>, graph: &NodeGraphDefinition) -> Result<()> {
+pub fn save_graph_definition_to_json(
+    path: impl AsRef<Path>,
+    graph: &NodeGraphDefinition,
+) -> Result<()> {
     let mut graph = graph.clone();
     sync_root_graph_io(&mut graph);
     let content = serde_json::to_string_pretty(&graph)?;
@@ -870,7 +898,11 @@ fn collect_cycle_members(graph: &NodeGraphDefinition) -> (HashSet<String>, HashS
         components: Vec<Vec<String>>,
     }
 
-    fn strong_connect(node_id: &str, adjacency: &HashMap<String, Vec<String>>, state: &mut TarjanState) {
+    fn strong_connect(
+        node_id: &str,
+        adjacency: &HashMap<String, Vec<String>>,
+        state: &mut TarjanState,
+    ) {
         let node_id_string = node_id.to_string();
         state.index_by_node.insert(node_id_string.clone(), state.next_index);
         state.lowlink_by_node.insert(node_id_string.clone(), state.next_index);
@@ -882,7 +914,8 @@ fn collect_cycle_members(graph: &NodeGraphDefinition) -> (HashSet<String>, HashS
             for neighbor in neighbors {
                 if !state.index_by_node.contains_key(neighbor) {
                     strong_connect(neighbor, adjacency, state);
-                    let neighbor_lowlink = *state.lowlink_by_node.get(neighbor).unwrap_or(&usize::MAX);
+                    let neighbor_lowlink =
+                        *state.lowlink_by_node.get(neighbor).unwrap_or(&usize::MAX);
                     if let Some(lowlink) = state.lowlink_by_node.get_mut(&node_id_string) {
                         *lowlink = (*lowlink).min(neighbor_lowlink);
                     }
@@ -943,8 +976,8 @@ fn collect_cycle_members(graph: &NodeGraphDefinition) -> (HashSet<String>, HashS
     let mut cyclic_components = HashSet::new();
 
     for (component_index, component) in state.components.iter().enumerate() {
-        let is_cycle_component =
-            component.len() > 1 || component.first().map(|node_id| self_loops.contains(node_id)).unwrap_or(false);
+        let is_cycle_component = component.len() > 1
+            || component.first().map(|node_id| self_loops.contains(node_id)).unwrap_or(false);
         for node_id in component {
             node_component_index.insert(node_id.clone(), component_index);
             if is_cycle_component {

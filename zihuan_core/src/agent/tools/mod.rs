@@ -4,8 +4,8 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::model_inference::llm::tooling::FunctionTool;
-use crate::workspace::AskUserRequest;
 pub use crate::tool_runtime::ToolRunDuration;
+use crate::workspace::AskUserRequest;
 
 pub mod tool_calling_engine;
 pub mod tool_calling_types;
@@ -73,6 +73,9 @@ impl ToolExecutionOutput {
     }
 
     pub fn ask_user(result: impl Into<String>, request: AskUserRequest) -> Self {
-        Self { result: result.into(), ask_user: Some(request) }
+        Self {
+            result: result.into(),
+            ask_user: Some(request),
+        }
     }
 }

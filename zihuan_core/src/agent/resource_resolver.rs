@@ -1,26 +1,29 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::model_inference::linalg::embedding_api::EmbeddingAPI;
-use crate::model_inference::nn::queued_embedding_model::QueuedEmbeddingModel;
-use crate::model_inference::model_factory::build_llm;
-use crate::config::llm_refs::LlmRefConfig;
-use crate::model_inference::model_config::{LlmServiceConfig, ModelRefSpec};
 use crate::agent::EmbeddingServiceConfig;
+use crate::config::llm_refs::LlmRefConfig;
 use crate::error::{Error, Result};
+use crate::model_inference::linalg::embedding_api::EmbeddingAPI;
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::model_inference::llm::llm_base::LLMBase;
+use crate::model_inference::model_config::{LlmServiceConfig, ModelRefSpec};
+use crate::model_inference::model_factory::build_llm;
+use crate::model_inference::nn::queued_embedding_model::QueuedEmbeddingModel;
 
 pub fn resolve_llm_service_config(
     llm_ref_id: Option<&str>,
     llm_refs: &[LlmRefConfig],
     agent_name: &str,
 ) -> Result<LlmServiceConfig> {
-    let ref_id = llm_ref_id
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| Error::ValidationError(format!("agent '{}' is missing llm_ref_id", agent_name)))?;
+    let ref_id = llm_ref_id.filter(|value| !value.trim().is_empty()).ok_or_else(|| {
+        Error::ValidationError(format!("agent '{}' is missing llm_ref_id", agent_name))
+    })?;
     let llm_ref = llm_refs.iter().find(|item| item.id == ref_id).ok_or_else(|| {
-        Error::ValidationError(format!("agent '{}' references missing llm_ref '{}'", agent_name, ref_id))
+        Error::ValidationError(format!(
+            "agent '{}' references missing llm_ref '{}'",
+            agent_name, ref_id
+        ))
     })?;
     if !llm_ref.enabled {
         return Err(Error::ValidationError(format!(

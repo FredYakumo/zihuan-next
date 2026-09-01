@@ -28,9 +28,7 @@ fn temp_dir() -> PathBuf {
 fn rg_finds_regular_expression_matches() {
     let directory = temp_dir();
     fs::write(directory.join("numbers.txt"), "item-1\nitem-20\nother").expect("write sample");
-    let tool = RgTool {
-        workspace_path: Some(directory.clone()),
-    };
+    let tool = RgTool { workspace_path: Some(directory.clone()) };
 
     assert_eq!(tool.spec().name(), DEFAULT_TOOL_RG);
     let result = tool.execute("", &json!({"path": ".", "pattern": "item-[0-9]+"}));
@@ -51,9 +49,7 @@ fn rg_finds_regular_expression_matches() {
 fn rg_returns_a_clear_error_for_invalid_regular_expressions() {
     let directory = temp_dir();
     fs::write(directory.join("sample.txt"), "text").expect("write sample");
-    let tool = RgTool {
-        workspace_path: Some(directory.clone()),
-    };
+    let tool = RgTool { workspace_path: Some(directory.clone()) };
 
     let result = tool.execute("", &json!({"path": ".", "pattern": "["}));
     let result: serde_json::Value = serde_json::from_str(&result).expect("valid JSON result");

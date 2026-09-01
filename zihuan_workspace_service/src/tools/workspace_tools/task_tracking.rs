@@ -17,38 +17,60 @@ pub(crate) const DEFAULT_TOOL_TASK_LIST: &str = "TaskList";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum WorkspaceTaskStatus { Pending, InProgress, Completed, Interrupted }
+pub enum WorkspaceTaskStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Interrupted,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceTask {
     pub task_id: String,
     pub subject: String,
-    #[serde(default)] pub description: String,
+    #[serde(default)]
+    pub description: String,
     pub active_form: String,
-    #[serde(default)] pub metadata: Value,
+    #[serde(default)]
+    pub metadata: Value,
     pub status: WorkspaceTaskStatus,
-    #[serde(default)] pub blocks: Vec<String>,
-    #[serde(default)] pub blocked_by: Vec<String>,
+    #[serde(default)]
+    pub blocks: Vec<String>,
+    #[serde(default)]
+    pub blocked_by: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct WorkspaceTaskSnapshot { #[serde(default)] pub tasks: Vec<WorkspaceTask> }
+pub struct WorkspaceTaskSnapshot {
+    #[serde(default)]
+    pub tasks: Vec<WorkspaceTask>,
+}
 
 pub fn load_workspace_tasks(session_id: &str) -> Result<WorkspaceTaskSnapshot, String> {
     let path = task_file_path(session_id)?;
-    if !path.exists() { return Ok(WorkspaceTaskSnapshot::default()); }
-    let file = OpenOptions::new().read(true).open(&path).map_err(|err| format!("failed to open task snapshot: {err}"))?;
+    if !path.exists() {
+        return Ok(WorkspaceTaskSnapshot::default());
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .open(&path)
+        .map_err(|err| format!("failed to open task snapshot: {err}"))?;
     serde_json::from_reader(file).map_err(|err| format!("failed to parse task snapshot: {err}"))
 }
 
 pub fn delete_workspace_tasks(session_id: &str) -> Result<(), String> {
     let path = task_file_path(session_id)?;
     let _lock = lock_workspace_tasks(&path)?;
-    if path.exists() { fs::remove_file(path).map_err(|err| format!("failed to delete task snapshot: {err}"))?; }
+    if path.exists() {
+        fs::remove_file(path).map_err(|err| format!("failed to delete task snapshot: {err}"))?;
+    }
     Ok(())
 }
 
-pub fn interrupt_workspace_tasks(session_id: &str, reason: &str) -> Result<WorkspaceTaskSnapshot, String> {
+pub fn interrupt_workspace_tasks(
+    session_id: &str,
+    reason: &str,
+) -> Result<WorkspaceTaskSnapshot, String> {
     let path = task_file_path(session_id)?;
     let _lock = lock_workspace_tasks(&path)?;
     let mut snapshot = load_workspace_tasks(session_id)?;
@@ -63,13 +85,20 @@ pub fn interrupt_workspace_tasks(session_id: &str, reason: &str) -> Result<Works
 }
 
 fn task_file_path(session_id: &str) -> Result<std::path::PathBuf, String> {
-    if session_id.trim().is_empty() { return Err("Workspace task tools require a chat session".to_string()); }
-    Ok(zihuan_core::system_config::application_data_dir().join("chat_history").join(format!("{session_id}.tasks.json")))
+    if session_id.trim().is_empty() {
+        return Err("Workspace task tools require a chat session".to_string());
+    }
+    Ok(zihuan_core::system_config::application_data_dir()
+        .join("chat_history")
+        .join(format!("{session_id}.tasks.json")))
 }
 
 fn lock_workspace_tasks(path: &std::path::Path) -> Result<File, String> {
-    let parent = path.parent().ok_or_else(|| "task snapshot has no parent directory".to_string())?;
-    fs::create_dir_all(parent).map_err(|err| format!("failed to create task snapshot directory: {err}"))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "task snapshot has no parent directory".to_string())?;
+    fs::create_dir_all(parent)
+        .map_err(|err| format!("failed to create task snapshot directory: {err}"))?;
     let lock_path = path.with_extension("tasks.lock");
     let lock = OpenOptions::new()
         .create(true)
@@ -77,15 +106,22 @@ fn lock_workspace_tasks(path: &std::path::Path) -> Result<File, String> {
         .write(true)
         .open(lock_path)
         .map_err(|err| format!("failed to open task snapshot lock: {err}"))?;
-    lock.lock_exclusive().map_err(|err| format!("failed to lock task snapshot: {err}"))?;
+    lock.lock_exclusive()
+        .map_err(|err| format!("failed to lock task snapshot: {err}"))?;
     Ok(lock)
 }
 
 fn save_workspace_tasks(session_id: &str, snapshot: &WorkspaceTaskSnapshot) -> Result<(), String> {
     let path = task_file_path(session_id)?;
-    let parent = path.parent().ok_or_else(|| "task snapshot has no parent directory".to_string())?;
-    fs::create_dir_all(parent).map_err(|err| format!("failed to create task snapshot directory: {err}"))?;
-    let file_name = path.file_name().and_then(|name| name.to_str()).ok_or_else(|| "task snapshot has no file name".to_string())?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "task snapshot has no parent directory".to_string())?;
+    fs::create_dir_all(parent)
+        .map_err(|err| format!("failed to create task snapshot directory: {err}"))?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "task snapshot has no file name".to_string())?;
     let temporary = parent.join(format!(".{file_name}.{}.tmp", Uuid::new_v4().simple()));
     let result = (|| {
         let file = OpenOptions::new()
@@ -93,10 +129,12 @@ fn save_workspace_tasks(session_id: &str, snapshot: &WorkspaceTaskSnapshot) -> R
             .write(true)
             .open(&temporary)
             .map_err(|err| format!("failed to write task snapshot: {err}"))?;
-        serde_json::to_writer(&file, snapshot).map_err(|err| format!("failed to serialize task snapshot: {err}"))?;
+        serde_json::to_writer(&file, snapshot)
+            .map_err(|err| format!("failed to serialize task snapshot: {err}"))?;
         file.sync_all().map_err(|err| format!("failed to sync task snapshot: {err}"))?;
         drop(file);
-        fs::rename(&temporary, &path).map_err(|err| format!("failed to replace task snapshot: {err}"))
+        fs::rename(&temporary, &path)
+            .map_err(|err| format!("failed to replace task snapshot: {err}"))
     })();
     if result.is_err() {
         let _ = fs::remove_file(&temporary);
@@ -109,23 +147,59 @@ fn validate(snapshot: &WorkspaceTaskSnapshot) -> Result<(), String> {
     let mut active = 0usize;
     let mut edges: HashMap<&str, Vec<&str>> = HashMap::new();
     for task in &snapshot.tasks {
-        if task.subject.trim().is_empty() || task.active_form.trim().is_empty() { return Err("task subject and activeForm must not be empty".to_string()); }
-        if task.status == WorkspaceTaskStatus::InProgress { active += 1; }
+        if task.subject.trim().is_empty() || task.active_form.trim().is_empty() {
+            return Err("task subject and activeForm must not be empty".to_string());
+        }
+        if task.status == WorkspaceTaskStatus::InProgress {
+            active += 1;
+        }
         for dependency in task.blocked_by.iter().chain(task.blocks.iter()) {
-            if !ids.contains(dependency.as_str()) { return Err(format!("task '{}' references unknown task '{dependency}'", task.task_id)); }
+            if !ids.contains(dependency.as_str()) {
+                return Err(format!(
+                    "task '{}' references unknown task '{dependency}'",
+                    task.task_id
+                ));
+            }
         }
         edges.insert(task.task_id.as_str(), task.blocked_by.iter().map(String::as_str).collect());
     }
-    if active > 1 { return Err("only one task may be in_progress".to_string()); }
-    fn visit<'a>(id: &'a str, edges: &HashMap<&'a str, Vec<&'a str>>, visiting: &mut HashSet<&'a str>, visited: &mut HashSet<&'a str>) -> bool {
-        if !visiting.insert(id) { return true; }
-        for next in edges.get(id).into_iter().flatten() { if visit(next, edges, visiting, visited) { return true; } }
-        visiting.remove(id); visited.insert(id); false
+    if active > 1 {
+        return Err("only one task may be in_progress".to_string());
     }
-    let mut visiting = HashSet::new(); let mut visited = HashSet::new();
-    if ids.iter().any(|id| !visited.contains(id) && visit(id, &edges, &mut visiting, &mut visited)) { return Err("task dependencies must not contain a cycle".to_string()); }
+    fn visit<'a>(
+        id: &'a str,
+        edges: &HashMap<&'a str, Vec<&'a str>>,
+        visiting: &mut HashSet<&'a str>,
+        visited: &mut HashSet<&'a str>,
+    ) -> bool {
+        if !visiting.insert(id) {
+            return true;
+        }
+        for next in edges.get(id).into_iter().flatten() {
+            if visit(next, edges, visiting, visited) {
+                return true;
+            }
+        }
+        visiting.remove(id);
+        visited.insert(id);
+        false
+    }
+    let mut visiting = HashSet::new();
+    let mut visited = HashSet::new();
+    if ids
+        .iter()
+        .any(|id| !visited.contains(id) && visit(id, &edges, &mut visiting, &mut visited))
+    {
+        return Err("task dependencies must not contain a cycle".to_string());
+    }
     for task in &snapshot.tasks {
-        if task.status == WorkspaceTaskStatus::InProgress && task.blocked_by.iter().any(|id| snapshot.tasks.iter().any(|other| &other.task_id == id && other.status != WorkspaceTaskStatus::Completed)) {
+        if task.status == WorkspaceTaskStatus::InProgress
+            && task.blocked_by.iter().any(|id| {
+                snapshot.tasks.iter().any(|other| {
+                    &other.task_id == id && other.status != WorkspaceTaskStatus::Completed
+                })
+            })
+        {
             return Err(format!("task '{}' is blocked by an unfinished dependency", task.task_id));
         }
     }
@@ -136,15 +210,29 @@ fn response(snapshot: &WorkspaceTaskSnapshot, task: Option<&WorkspaceTask>) -> S
     serde_json::json!({ "ok": true, "task": task, "tasks": snapshot.tasks }).to_string()
 }
 
-#[derive(Clone)] pub(crate) struct WorkspaceTaskTool { session_id: String, name: &'static str }
-impl WorkspaceTaskTool { pub(crate) fn new(session_id: String, name: &'static str) -> Self { Self { session_id, name } } }
+#[derive(Clone)]
+pub(crate) struct WorkspaceTaskTool {
+    session_id: String,
+    name: &'static str,
+}
+impl WorkspaceTaskTool {
+    pub(crate) fn new(session_id: String, name: &'static str) -> Self {
+        Self { session_id, name }
+    }
+}
 
 impl Tool for WorkspaceTaskTool {
     fn spec(&self) -> std::sync::Arc<dyn FunctionTool> {
         let parameters = match self.name {
-            DEFAULT_TOOL_TASK_CREATE => serde_json::json!({"type":"object","properties":{"subject":{"type":"string"},"description":{"type":"string"},"activeForm":{"type":"string"},"metadata":{"type":"object"},"blocks":{"type":"array","items":{"type":"string"}},"blockedBy":{"type":"array","items":{"type":"string"}}},"required":["subject","activeForm"]}),
-            DEFAULT_TOOL_TASK_UPDATE => serde_json::json!({"type":"object","properties":{"taskId":{"type":"string"},"subject":{"type":"string"},"description":{"type":"string"},"activeForm":{"type":"string"},"metadata":{"type":"object"},"status":{"enum":["pending","in_progress","completed","deleted"]},"blocks":{"type":"array","items":{"type":"string"}},"blockedBy":{"type":"array","items":{"type":"string"}}},"required":["taskId"]}),
-            DEFAULT_TOOL_TASK_GET => serde_json::json!({"type":"object","properties":{"taskId":{"type":"string"}},"required":["taskId"]}),
+            DEFAULT_TOOL_TASK_CREATE => {
+                serde_json::json!({"type":"object","properties":{"subject":{"type":"string"},"description":{"type":"string"},"activeForm":{"type":"string"},"metadata":{"type":"object"},"blocks":{"type":"array","items":{"type":"string"}},"blockedBy":{"type":"array","items":{"type":"string"}}},"required":["subject","activeForm"]})
+            }
+            DEFAULT_TOOL_TASK_UPDATE => {
+                serde_json::json!({"type":"object","properties":{"taskId":{"type":"string"},"subject":{"type":"string"},"description":{"type":"string"},"activeForm":{"type":"string"},"metadata":{"type":"object"},"status":{"enum":["pending","in_progress","completed","deleted"]},"blocks":{"type":"array","items":{"type":"string"}},"blockedBy":{"type":"array","items":{"type":"string"}}},"required":["taskId"]})
+            }
+            DEFAULT_TOOL_TASK_GET => {
+                serde_json::json!({"type":"object","properties":{"taskId":{"type":"string"}},"required":["taskId"]})
+            }
             _ => serde_json::json!({"type":"object","properties":{}}),
         };
         std::sync::Arc::new(StaticFunctionToolSpec { name: self.name, description: "Track the current Workspace Chat task plan. Create a task list before non-trivial work; update one task at a time as work progresses.", parameters })
@@ -152,56 +240,153 @@ impl Tool for WorkspaceTaskTool {
     fn execute(&self, _: &str, arguments: &Value) -> String {
         match self.name {
             DEFAULT_TOOL_TASK_LIST => {
-                let snapshot = match load_workspace_tasks(&self.session_id) { Ok(value) => value, Err(err) => return json_error(err) };
+                let snapshot = match load_workspace_tasks(&self.session_id) {
+                    Ok(value) => value,
+                    Err(err) => return json_error(err),
+                };
                 return response(&snapshot, None);
             }
             DEFAULT_TOOL_TASK_GET => {
-                let snapshot = match load_workspace_tasks(&self.session_id) { Ok(value) => value, Err(err) => return json_error(err) };
-                let Some(id) = arguments.get("taskId").and_then(Value::as_str) else { return json_error("taskId is required"); };
-                return match snapshot.tasks.iter().find(|task| task.task_id == id) { Some(task) => response(&snapshot, Some(task)), None => json_error(format!("task '{id}' was not found")) };
+                let snapshot = match load_workspace_tasks(&self.session_id) {
+                    Ok(value) => value,
+                    Err(err) => return json_error(err),
+                };
+                let Some(id) = arguments.get("taskId").and_then(Value::as_str) else {
+                    return json_error("taskId is required");
+                };
+                return match snapshot.tasks.iter().find(|task| task.task_id == id) {
+                    Some(task) => response(&snapshot, Some(task)),
+                    None => json_error(format!("task '{id}' was not found")),
+                };
             }
             DEFAULT_TOOL_TASK_CREATE | DEFAULT_TOOL_TASK_UPDATE => {}
             _ => return json_error("unknown task tool"),
         }
 
-        let path = match task_file_path(&self.session_id) { Ok(path) => path, Err(err) => return json_error(err) };
-        let _lock = match lock_workspace_tasks(&path) { Ok(lock) => lock, Err(err) => return json_error(err) };
-        let mut snapshot = match load_workspace_tasks(&self.session_id) { Ok(value) => value, Err(err) => return json_error(err) };
+        let path = match task_file_path(&self.session_id) {
+            Ok(path) => path,
+            Err(err) => return json_error(err),
+        };
+        let _lock = match lock_workspace_tasks(&path) {
+            Ok(lock) => lock,
+            Err(err) => return json_error(err),
+        };
+        let mut snapshot = match load_workspace_tasks(&self.session_id) {
+            Ok(value) => value,
+            Err(err) => return json_error(err),
+        };
         match self.name {
             DEFAULT_TOOL_TASK_CREATE => {
-                let Some(subject) = arguments.get("subject").and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty()) else { return json_error("subject is required"); };
-                let Some(active_form) = arguments.get("activeForm").and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty()) else { return json_error("activeForm is required"); };
-                let status = if snapshot.tasks.iter().any(|task| task.status == WorkspaceTaskStatus::InProgress) {
+                let Some(subject) = arguments
+                    .get("subject")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                else {
+                    return json_error("subject is required");
+                };
+                let Some(active_form) = arguments
+                    .get("activeForm")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                else {
+                    return json_error("activeForm is required");
+                };
+                let status = if snapshot
+                    .tasks
+                    .iter()
+                    .any(|task| task.status == WorkspaceTaskStatus::InProgress)
+                {
                     WorkspaceTaskStatus::Pending
                 } else {
                     WorkspaceTaskStatus::InProgress
                 };
-                snapshot.tasks.push(WorkspaceTask { task_id: format!("task_{}", Uuid::new_v4().simple()), subject: subject.to_string(), description: arguments.get("description").and_then(Value::as_str).unwrap_or_default().trim().to_string(), active_form: active_form.to_string(), metadata: arguments.get("metadata").cloned().unwrap_or_else(|| serde_json::json!({})), status, blocks: string_list(arguments, "blocks"), blocked_by: string_list(arguments, "blockedBy") });
+                snapshot.tasks.push(WorkspaceTask {
+                    task_id: format!("task_{}", Uuid::new_v4().simple()),
+                    subject: subject.to_string(),
+                    description: arguments
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string(),
+                    active_form: active_form.to_string(),
+                    metadata: arguments
+                        .get("metadata")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!({})),
+                    status,
+                    blocks: string_list(arguments, "blocks"),
+                    blocked_by: string_list(arguments, "blockedBy"),
+                });
             }
             DEFAULT_TOOL_TASK_UPDATE => {
-                let Some(id) = arguments.get("taskId").and_then(Value::as_str) else { return json_error("taskId is required"); };
-                let Some(index) = snapshot.tasks.iter().position(|task| task.task_id == id) else { return json_error(format!("task '{id}' was not found")); };
-                if arguments.get("status").and_then(Value::as_str) == Some("deleted") { snapshot.tasks.remove(index); } else {
+                let Some(id) = arguments.get("taskId").and_then(Value::as_str) else {
+                    return json_error("taskId is required");
+                };
+                let Some(index) = snapshot.tasks.iter().position(|task| task.task_id == id) else {
+                    return json_error(format!("task '{id}' was not found"));
+                };
+                if arguments.get("status").and_then(Value::as_str) == Some("deleted") {
+                    snapshot.tasks.remove(index);
+                } else {
                     let task = &mut snapshot.tasks[index];
-                    if let Some(value) = arguments.get("subject").and_then(Value::as_str) { task.subject = value.trim().to_string(); }
-                    if let Some(value) = arguments.get("description").and_then(Value::as_str) { task.description = value.trim().to_string(); }
-                    if let Some(value) = arguments.get("activeForm").and_then(Value::as_str) { task.active_form = value.trim().to_string(); }
-                    if let Some(value) = arguments.get("metadata") { task.metadata = value.clone(); }
-                    if arguments.get("blocks").is_some() { task.blocks = string_list(arguments, "blocks"); }
-                    if arguments.get("blockedBy").is_some() { task.blocked_by = string_list(arguments, "blockedBy"); }
-                    if let Some(status) = arguments.get("status").and_then(Value::as_str) { task.status = match status { "pending" => WorkspaceTaskStatus::Pending, "in_progress" => WorkspaceTaskStatus::InProgress, "completed" => WorkspaceTaskStatus::Completed, "interrupted" => WorkspaceTaskStatus::Interrupted, _ => return json_error("status must be pending, in_progress, completed, interrupted, or deleted") }; }
+                    if let Some(value) = arguments.get("subject").and_then(Value::as_str) {
+                        task.subject = value.trim().to_string();
+                    }
+                    if let Some(value) = arguments.get("description").and_then(Value::as_str) {
+                        task.description = value.trim().to_string();
+                    }
+                    if let Some(value) = arguments.get("activeForm").and_then(Value::as_str) {
+                        task.active_form = value.trim().to_string();
+                    }
+                    if let Some(value) = arguments.get("metadata") {
+                        task.metadata = value.clone();
+                    }
+                    if arguments.get("blocks").is_some() {
+                        task.blocks = string_list(arguments, "blocks");
+                    }
+                    if arguments.get("blockedBy").is_some() {
+                        task.blocked_by = string_list(arguments, "blockedBy");
+                    }
+                    if let Some(status) = arguments.get("status").and_then(Value::as_str) {
+                        task.status = match status { "pending" => WorkspaceTaskStatus::Pending, "in_progress" => WorkspaceTaskStatus::InProgress, "completed" => WorkspaceTaskStatus::Completed, "interrupted" => WorkspaceTaskStatus::Interrupted, _ => return json_error("status must be pending, in_progress, completed, interrupted, or deleted") };
+                    }
                 }
             }
-            _ => unreachable!("read-only task tools returned before entering the write transaction"),
+            _ => {
+                unreachable!("read-only task tools returned before entering the write transaction")
+            }
         }
-        if let Err(err) = validate(&snapshot) { return json_error(err); }
-        if let Err(err) = save_workspace_tasks(&self.session_id, &snapshot) { return json_error(err); }
+        if let Err(err) = validate(&snapshot) {
+            return json_error(err);
+        }
+        if let Err(err) = save_workspace_tasks(&self.session_id, &snapshot) {
+            return json_error(err);
+        }
         response(&snapshot, None)
     }
-    fn execution_resource(&self, _: &Value) -> ToolExecutionResource { ToolExecutionResource::Exclusive }
+    fn execution_resource(&self, _: &Value) -> ToolExecutionResource {
+        ToolExecutionResource::Exclusive
+    }
 }
 
-fn string_list(arguments: &Value, key: &str) -> Vec<String> { arguments.get(key).and_then(Value::as_array).map(|items| items.iter().filter_map(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).map(ToOwned::to_owned).collect()).unwrap_or_default() }
+fn string_list(arguments: &Value, key: &str) -> Vec<String> {
+    arguments
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
 #[cfg(test)]
 mod tests {

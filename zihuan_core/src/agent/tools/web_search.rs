@@ -16,18 +16,18 @@ pub struct WebSearchTool {
 
 impl WebSearchTool {
     pub fn new(web_search_engine: Arc<dyn WebSearchEngine>) -> Self {
-        Self {
-            web_search_engine: Ok(web_search_engine),
-        }
+        Self { web_search_engine: Ok(web_search_engine) }
     }
 
     pub fn unavailable(error: impl Into<String>) -> Self {
-        Self {
-            web_search_engine: Err(error.into()),
-        }
+        Self { web_search_engine: Err(error.into()) }
     }
 
-    fn extract_url_with_fallback(&self, engine: &dyn WebSearchEngine, url: &str) -> Result<Vec<String>> {
+    fn extract_url_with_fallback(
+        &self,
+        engine: &dyn WebSearchEngine,
+        url: &str,
+    ) -> Result<Vec<String>> {
         match engine.extract_url(url) {
             Ok(items) => Ok(items),
             Err(error) => {
@@ -51,8 +51,6 @@ impl WebSearchTool {
                     return Err(error);
                 }
 
-
-
                 warn!("{LOG_PREFIX} search failed for url-like query='{trimmed}': {error}; trying direct web request");
                 engine.fetch_url_direct(trimmed)
             }
@@ -64,7 +62,8 @@ impl Tool for WebSearchTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "web_search",
-            description: "在互联网上检索信息，或读取单个 URL 页面内容，返回可用于回答的问题相关结果与摘要",
+            description:
+                "在互联网上检索信息，或读取单个 URL 页面内容，返回可用于回答的问题相关结果与摘要",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

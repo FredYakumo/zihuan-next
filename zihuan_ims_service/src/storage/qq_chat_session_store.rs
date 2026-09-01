@@ -2,14 +2,17 @@ use std::sync::Arc;
 
 use log::info;
 
-use zihuan_core::ims_bot_adapter::message_helpers::OutboundMessagePersistence;
 use zihuan_core::data_refs::RelationalDbConnection;
-use zihuan_core::runtime::block_async;
 use zihuan_core::graph::data_value::{SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT};
+use zihuan_core::ims_bot_adapter::message_helpers::OutboundMessagePersistence;
+use zihuan_core::runtime::block_async;
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 
-pub(crate) fn try_claim_session(session: &Arc<SessionStateRef>, sender_id: &str) -> (bool, Option<u64>) {
+pub(crate) fn try_claim_session(
+    session: &Arc<SessionStateRef>,
+    sender_id: &str,
+) -> (bool, Option<u64>) {
     let (state, claimed) = block_async(session.try_claim(sender_id, None));
 
     if claimed {
@@ -27,7 +30,11 @@ pub(crate) fn try_claim_session(session: &Arc<SessionStateRef>, sender_id: &str)
     }
 }
 
-pub(crate) fn release_session(session: &Arc<SessionStateRef>, sender_id: &str, claim_token: Option<u64>) {
+pub(crate) fn release_session(
+    session: &Arc<SessionStateRef>,
+    sender_id: &str,
+    claim_token: Option<u64>,
+) {
     if let Ok(ctx) = SESSION_CLAIM_CONTEXT.try_with(Arc::clone) {
         ctx.unregister_claim(&session.node_id, sender_id);
     }

@@ -11,7 +11,9 @@ where
 {
     let v = serde_json::Value::deserialize(deserializer)?;
     match v {
-        serde_json::Value::Number(n) => n.as_i64().ok_or_else(|| de::Error::custom("numeric value is not an i64")),
+        serde_json::Value::Number(n) => {
+            n.as_i64().ok_or_else(|| de::Error::custom("numeric value is not an i64"))
+        }
         serde_json::Value::String(s) => s
             .parse::<i64>()
             .map_err(|e| de::Error::custom(format!("failed to parse i64 from string: {e}"))),
@@ -19,7 +21,9 @@ where
     }
 }
 
-fn deserialize_option_string_from_string_or_number<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+fn deserialize_option_string_from_string_or_number<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -256,7 +260,8 @@ impl ImageMessage {
     }
 
     pub fn original_source(&self) -> Option<&str> {
-        (!self.media.original_source.trim().is_empty()).then_some(self.media.original_source.as_str())
+        (!self.media.original_source.trim().is_empty())
+            .then_some(self.media.original_source.as_str())
     }
 
     pub fn name(&self) -> Option<&str> {
@@ -491,7 +496,11 @@ impl MessageProp {
         Self::from_messages_with_bot_name(messages, bot_id, None)
     }
 
-    pub fn from_messages_with_bot_name(messages: &[Message], bot_id: Option<&str>, bot_name: Option<&str>) -> Self {
+    pub fn from_messages_with_bot_name(
+        messages: &[Message],
+        bot_id: Option<&str>,
+        bot_name: Option<&str>,
+    ) -> Self {
         use std::collections::HashSet;
 
         let mut ref_parts: Vec<String> = Vec::new();

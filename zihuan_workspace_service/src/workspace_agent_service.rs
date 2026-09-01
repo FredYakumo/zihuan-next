@@ -159,82 +159,51 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
         let workspace_path =
             normalized_workspace_path(context.workspace_path.as_deref()).map(PathBuf::from);
         let mut tools: Vec<Box<dyn Tool>> = Vec::new();
-        if let Some(session_id) = context
-            .session_id
-            .as_deref()
-            .filter(|value| !value.is_empty())
-        {
+        if let Some(session_id) = context.session_id.as_deref().filter(|value| !value.is_empty()) {
             for name in [
                 DEFAULT_TOOL_TASK_CREATE,
                 DEFAULT_TOOL_TASK_UPDATE,
                 DEFAULT_TOOL_TASK_GET,
                 DEFAULT_TOOL_TASK_LIST,
             ] {
-                tools.push(Box::new(WorkspaceTaskTool::new(
-                    session_id.to_string(),
-                    name,
-                )));
+                tools.push(Box::new(WorkspaceTaskTool::new(session_id.to_string(), name)));
             }
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_CREATE_FILE) {
-            tools.push(Box::new(CreateFileTool {
-                workspace_path: workspace_path.clone(),
-            }));
+            tools.push(Box::new(CreateFileTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_DELETE_FILE) {
-            tools.push(Box::new(DeleteFileTool {
-                workspace_path: workspace_path.clone(),
-            }));
+            tools.push(Box::new(DeleteFileTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_EDIT_FILE) {
-            tools.push(Box::new(EditFileTool {
-                workspace_path: workspace_path.clone(),
-            }));
+            tools.push(Box::new(EditFileTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_READ_FILE) {
-            tools.push(Box::new(ReadFileTool {
-                workspace_path: workspace_path.clone(),
-            }));
+            tools.push(Box::new(ReadFileTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_LIST_DIR) {
-            tools.push(Box::new(ListDirTool {
-                workspace_path: workspace_path.clone(),
-            }));
+            tools.push(Box::new(ListDirTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_GREP) {
-            tools.push(Box::new(GrepTool {
-                workspace_path: workspace_path.clone(),
-            }));
+            tools.push(Box::new(GrepTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_RG) {
-            tools.push(Box::new(RgTool {
-                workspace_path: workspace_path.clone(),
-            }));
+            tools.push(Box::new(RgTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_FIND_FILES) {
-            tools.push(Box::new(FindFilesTool {
-                workspace_path: workspace_path.clone(),
-            }));
+            tools.push(Box::new(FindFilesTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_COPY_FILE) {
-            tools.push(Box::new(CopyFileTool {
-                workspace_path: workspace_path.clone(),
-            }));
+            tools.push(Box::new(CopyFileTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_MOVE_FILE) {
-            tools.push(Box::new(MoveFileTool {
-                workspace_path: workspace_path.clone(),
-            }));
+            tools.push(Box::new(MoveFileTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_FILE_INFO) {
-            tools.push(Box::new(FileInfoTool {
-                workspace_path: workspace_path.clone(),
-            }));
+            tools.push(Box::new(FileInfoTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_GIT_STATUS) {
-            tools.push(Box::new(GitStatusTool {
-                workspace_path: workspace_path.clone(),
-            }));
+            tools.push(Box::new(GitStatusTool { workspace_path: workspace_path.clone() }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_EXEC_CMD) {
             tools.push(Box::new(ExecCmdTool {
@@ -258,14 +227,9 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
             } else if context.llm.supports_multimodal_input() {
                 Arc::clone(&context.llm)
             } else {
-                self.image_understand_llm
-                    .clone()
-                    .unwrap_or_else(|| Arc::clone(&context.llm))
+                self.image_understand_llm.clone().unwrap_or_else(|| Arc::clone(&context.llm))
             };
-            tools.push(Box::new(ImageUnderstandTool::new(
-                context.image_media.clone(),
-                image_llm,
-            )));
+            tools.push(Box::new(ImageUnderstandTool::new(context.image_media.clone(), image_llm)));
         }
         if let Some(resources) = &self.memory_resources {
             tools.push(Box::new(MemoryBrainAgentTool::new(MemoryBrainAgent::new(
@@ -287,10 +251,8 @@ pub fn load_inference_tool_provider(
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     let image_understand_llm =
         if is_enabled(&config.default_tools_enabled, DEFAULT_TOOL_IMAGE_UNDERSTAND) {
-            let llm_ref_id = config
-                .image_understand_llm_ref_id
-                .as_deref()
-                .or(config.llm_ref_id.as_deref());
+            let llm_ref_id =
+                config.image_understand_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref());
             let llm_refs = load_llm_refs()?;
             let llm_config =
                 resolve_llm_service_config(llm_ref_id, &llm_refs, DEFAULT_TOOL_IMAGE_UNDERSTAND)?;
@@ -399,10 +361,7 @@ fn load_memory_resources(
         }
     };
 
-    Some(WorkspaceMemoryResources {
-        memory_backend,
-        embedding_model,
-    })
+    Some(WorkspaceMemoryResources { memory_backend, embedding_model })
 }
 
 /// Location of an `AGENTS.md` candidate, listed in discovery priority order.
@@ -467,11 +426,7 @@ fn push_agents_md_candidate(
 ) {
     let path = directory.join("AGENTS.md");
     let exists = path.is_file();
-    candidates.push(AgentsMdCandidate {
-        location,
-        path,
-        exists,
-    });
+    candidates.push(AgentsMdCandidate { location, path, exists });
 }
 
 /// Returns the existing `AGENTS.md` paths in priority order, deduplicated by canonical path.

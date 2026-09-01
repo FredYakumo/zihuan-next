@@ -55,7 +55,9 @@ pub fn upsert_qq_message_list(
     let group_name = normalize_optional_string(group_name);
     let content = messages.iter().map(|message| message.to_string()).collect::<Vec<_>>().join("");
     if content.trim().is_empty() {
-        return Err(Error::ValidationError("qq_message_list content must not be empty".to_string()));
+        return Err(Error::ValidationError(
+            "qq_message_list content must not be empty".to_string(),
+        ));
     }
 
     let at_targets: Vec<String> = messages
@@ -81,7 +83,8 @@ pub fn upsert_qq_message_list(
         "at_target_list": at_target_list,
         "media_json": media_json,
     });
-    let vector = embedding_model.inference(properties.get("content").and_then(Value::as_str).unwrap_or_default())?;
+    let vector = embedding_model
+        .inference(properties.get("content").and_then(Value::as_str).unwrap_or_default())?;
     let object_id = deterministic_message_object_id(&weaviate_ref.class_name, &message_id);
 
     info!(
@@ -112,7 +115,12 @@ pub fn upsert_image_record(
         }
     }
 
-    weaviate_ref.upsert_object_with_vectors(&weaviate_ref.class_name, properties, vectors, Some(&object_id))
+    weaviate_ref.upsert_object_with_vectors(
+        &weaviate_ref.class_name,
+        properties,
+        vectors,
+        Some(&object_id),
+    )
 }
 
 pub fn deterministic_media_object_id(class_name: &str, media_id: &str) -> String {

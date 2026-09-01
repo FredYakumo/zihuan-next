@@ -1,9 +1,11 @@
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
-use zihuan_core::agent::tools::Tool;
-use zihuan_core::agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
+use zihuan_core::agent::session_state::{
+    EmotionAdjustmentDirection, QqChatAgentServiceSessionState,
+};
+use zihuan_core::agent::tools::Tool;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
@@ -71,7 +73,12 @@ impl Tool for UpdateAgentStateTool {
             let direction = match direction.as_str() {
                 "increase" => EmotionAdjustmentDirection::Increase,
                 "decrease" => EmotionAdjustmentDirection::Decrease,
-                other => return Err(Error::ValidationError(format!("unsupported direction '{}'", other))),
+                other => {
+                    return Err(Error::ValidationError(format!(
+                        "unsupported direction '{}'",
+                        other
+                    )))
+                }
             };
             let reason = optional_string_argument(arguments, "reason")
                 .filter(|value| !value.trim().is_empty())
@@ -79,7 +86,11 @@ impl Tool for UpdateAgentStateTool {
             let emotion_prompt = self.emotion_prompt_for(&dimension, direction)?;
             let current_value = {
                 let mut session_state = self.session_state.lock().unwrap();
-                session_state.apply_emotion_adjustment(&self.emotion_dimensions, &dimension, direction)?
+                session_state.apply_emotion_adjustment(
+                    &self.emotion_dimensions,
+                    &dimension,
+                    direction,
+                )?
             };
             let generated_prompt = self.generate_expression_prompt(&emotion_prompt, &reason);
             if let Some(prompt) = generated_prompt.as_ref() {
@@ -110,12 +121,21 @@ impl Tool for UpdateAgentStateTool {
 }
 
 impl UpdateAgentStateTool {
-    fn emotion_prompt_for(&self, dimension_name: &str, direction: EmotionAdjustmentDirection) -> Result<String> {
+    fn emotion_prompt_for(
+        &self,
+        dimension_name: &str,
+        direction: EmotionAdjustmentDirection,
+    ) -> Result<String> {
         let dimension = self
             .emotion_dimensions
             .iter()
             .find(|item| item.name.trim() == dimension_name.trim())
-            .ok_or_else(|| Error::ValidationError(format!("unsupported emotion dimension '{}'", dimension_name)))?;
+            .ok_or_else(|| {
+                Error::ValidationError(format!(
+                    "unsupported emotion dimension '{}'",
+                    dimension_name
+                ))
+            })?;
         let configured_prompt = match direction {
             EmotionAdjustmentDirection::Increase => dimension.positive_prompt.as_deref(),
             EmotionAdjustmentDirection::Decrease => dimension.negative_prompt.as_deref(),
@@ -135,10 +155,7 @@ impl UpdateAgentStateTool {
             )),
         ];
         self.llm
-            .inference(&InferenceParam {
-                messages: &messages,
-                tools: None,
-            })
+            .inference(&InferenceParam { messages: &messages, tools: None })
             .content_text_owned()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())

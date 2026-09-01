@@ -10,7 +10,8 @@ use crate::validation_error;
 mod parser;
 
 static GLOBAL_COMMAND_REGISTRY: OnceLock<Arc<CommandRegistry>> = OnceLock::new();
-static GLOBAL_TASK_RUNTIME: RwLock<Option<Arc<dyn crate::task_context::AgentTaskRuntime>>> = RwLock::new(None);
+static GLOBAL_TASK_RUNTIME: RwLock<Option<Arc<dyn crate::task_context::AgentTaskRuntime>>> =
+    RwLock::new(None);
 
 pub fn set_global_command_registry(registry: Arc<CommandRegistry>) -> Result<()> {
     GLOBAL_COMMAND_REGISTRY
@@ -388,9 +389,9 @@ impl CommandRegistry {
         let command_name = body.split_whitespace().next()?.to_lowercase();
 
         let entry = self.commands.get(&command_name).or_else(|| {
-            self.commands
-                .values()
-                .find(|e| e.definition.aliases.iter().any(|a| a.eq_ignore_ascii_case(&command_name)))
+            self.commands.values().find(|e| {
+                e.definition.aliases.iter().any(|a| a.eq_ignore_ascii_case(&command_name))
+            })
         })?;
 
         if !entry.definition.scope.matches(&ctx.agent_type, &ctx.agent_id) {
@@ -428,7 +429,11 @@ impl CommandRegistry {
     }
 
     /// Preview a command without executing its handler.
-    pub fn preview<'a>(&'a self, ctx: &CommandContext, raw_input: &str) -> Option<CommandPreview<'a>> {
+    pub fn preview<'a>(
+        &'a self,
+        ctx: &CommandContext,
+        raw_input: &str,
+    ) -> Option<CommandPreview<'a>> {
         let (entry, parsed) = self.find_matching_entry(ctx, raw_input)?;
         Some(CommandPreview {
             definition: &entry.definition,

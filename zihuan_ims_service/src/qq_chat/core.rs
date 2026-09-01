@@ -2,58 +2,65 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
+use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
+use crate::agent::utils::build_state_system_prefix_lines;
 use log::{info, warn};
 use serde_json::Value;
-use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
-use crate::agent::utils::build_state_system_prefix_lines;
+use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 
 pub(crate) use super::super::tools::build_info_brain_tools;
 use super::super::tools::{
-    DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
-    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_MEMORY_AGENT,
+    DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
+    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
+    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_MEMORY_AGENT,
     DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT, DEFAULT_TOOL_SAVE_IMAGE,
     DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
 };
 pub(crate) use super::logging::QqChatTaskTrace;
 use super::msg_send::{
-    build_long_task_complete_content, build_long_task_start_text, send_forward_content, send_notification_text,
-    QqChatServiceSendContext,
+    build_long_task_complete_content, build_long_task_start_text, send_forward_content,
+    send_notification_text, QqChatServiceSendContext,
 };
-use zihuan_core::tool_subgraph::{validate_shared_inputs, validate_tool_definitions, ToolResultMode};
 use crate::storage::qq_chat_history_store::{clear_history, load_history};
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
-use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-use zihuan_core::agent::tools::LongTaskNotifier;
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
-use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
+use zihuan_core::agent::tools::LongTaskNotifier;
+use zihuan_core::command::{
+    CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
+};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
-use zihuan_core::model_inference::llm::{LLMMessage, MessagePart, MessageRole};
-use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
-use zihuan_core::utils::string_utils::extract_string_field;
-use zihuan_core::weaviate::WeaviateRef;
-use zihuan_core::graph::tool_spec::{ToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
 use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
 use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::graph::object_storage::S3Ref;
+use zihuan_core::graph::tool_spec::{ToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
 use zihuan_core::graph::DataValue;
+use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
+use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
+use zihuan_core::model_inference::llm::{LLMMessage, MessagePart, MessageRole};
+use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
+use zihuan_core::tool_subgraph::{
+    validate_shared_inputs, validate_tool_definitions, ToolResultMode,
+};
+use zihuan_core::utils::string_utils::extract_string_field;
+use zihuan_core::weaviate::WeaviateRef;
 
 use super::tool_quota::{QqChatToolQuotaContext, SessionToolQuotaState};
-use zihuan_core::agent::dream_agent::run_dream_agent;
 pub(crate) use super::user_input::{
-    append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference, flush_text_part,
-    prepare_current_turn_user_input, prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
+    append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference,
+    flush_text_part, prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
+    PreparedCurrentTurnUserInput,
 };
 use crate::qq_chat::language_style_store::get_applicable_language_style_blocking;
 use crate::qq_chat::language_style_store::QqChatAgentServiceLanguageStyle;
 pub(crate) use crate::qq_chat::model::{
-    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatAgentServiceRuntimeConfig,
-    QqChatServiceHandleReport, QqChatServiceReplyBatchBuilder, QqChatServiceReplyBuildRequest,
-    QqChatServiceReplyBuildResult, QqChatServiceTurnResult, QqCommandSideEffectContext, QqLongTaskNotifier,
+    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner,
+    QqChatAgentServiceRuntimeConfig, QqChatServiceHandleReport, QqChatServiceReplyBatchBuilder,
+    QqChatServiceReplyBuildRequest, QqChatServiceReplyBuildResult, QqChatServiceTurnResult,
+    QqCommandSideEffectContext, QqLongTaskNotifier,
 };
+use zihuan_core::agent::dream_agent::run_dream_agent;
 
 pub(crate) const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const MAX_REPLY_CHARS: usize = 250;
@@ -234,18 +241,28 @@ fn build_common_system_rules(
 }
 
 /// System prompt template (shared, private variant).
-pub(crate) fn build_private_system_prompt(bot_name: &str, agent_system_prompt: Option<&str>) -> String {
+pub(crate) fn build_private_system_prompt(
+    bot_name: &str,
+    agent_system_prompt: Option<&str>,
+) -> String {
     build_common_system_rules(bot_name, agent_system_prompt, &default_tools_enabled_map())
 }
 
 /// System prompt template (group variant).
-pub(crate) fn build_group_system_prompt(bot_name: &str, agent_system_prompt: Option<&str>) -> String {
-    let mut rules = build_common_system_rules(bot_name, agent_system_prompt, &default_tools_enabled_map());
+pub(crate) fn build_group_system_prompt(
+    bot_name: &str,
+    agent_system_prompt: Option<&str>,
+) -> String {
+    let mut rules =
+        build_common_system_rules(bot_name, agent_system_prompt, &default_tools_enabled_map());
     rules.push_str("\n- When you need to quote a QQ message in a group chat, call `reply_message` to set the reply target.");
     rules
 }
 
-pub(crate) fn merge_character_and_style_prompt(character_instructions: &str, style_prompt: Option<&str>) -> String {
+pub(crate) fn merge_character_and_style_prompt(
+    character_instructions: &str,
+    style_prompt: Option<&str>,
+) -> String {
     let style_prompt = style_prompt.map(str::trim).filter(|value| !value.is_empty());
     if let Some(style_prompt) = style_prompt {
         format!(
@@ -325,15 +342,25 @@ pub(crate) fn build_user_message(
     } else {
         style_prompt
     };
-    let merged_character_instructions = merge_character_and_style_prompt(character_instructions, style_prompt);
+    let merged_character_instructions =
+        merge_character_and_style_prompt(character_instructions, style_prompt);
     let emotion_prompt = emotion_expression_prompt(session_state, emotion_dimensions);
-    let state_lines = build_state_system_prefix_lines(&emotion_prompt, &merged_character_instructions, preprompt_context);
+    let state_lines = build_state_system_prefix_lines(
+        &emotion_prompt,
+        &merged_character_instructions,
+        preprompt_context,
+    );
     let sender_name = zihuan_core::ims_bot_adapter::utils::sender_display_name!(
         &current_input.event.sender.nickname,
         &current_input.event.sender.card
     );
-    let state_delta_lines =
-        build_state_delta_lines(session_state, current_input, bot_name, adapter, emotion_dimensions);
+    let state_delta_lines = build_state_delta_lines(
+        session_state,
+        current_input,
+        bot_name,
+        adapter,
+        emotion_dimensions,
+    );
     let now_text = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let current_turn_text = format!(
         "`The current time is {now_text}, `{sender_name}` sent you (`{bot_name}`) a message: \"{}\". You need to reply to this message, or choose not to reply.\n\
@@ -503,7 +530,8 @@ pub(crate) fn build_state_delta_lines(
         }
     }
 
-    if !current_emotion.is_empty() && previous_emotion.as_deref() != Some(current_emotion.as_str()) {
+    if !current_emotion.is_empty() && previous_emotion.as_deref() != Some(current_emotion.as_str())
+    {
         lines.push(format!("Your (`{bot_name}`) current emotional state is {current_emotion}."));
     }
 
@@ -528,7 +556,9 @@ fn resolve_group_role_label(
     };
 
     let bot_id = zihuan_core::ims_bot_adapter::message_helpers::get_bot_id(adapter);
-    match zihuan_core::ims_bot_adapter::tools::qq_profile::fetch_group_member_role(adapter, group_id, &bot_id) {
+    match zihuan_core::ims_bot_adapter::tools::qq_profile::fetch_group_member_role(
+        adapter, group_id, &bot_id,
+    ) {
         Ok(role) => match role.trim().to_lowercase().as_str() {
             "owner" => "群主".to_string(),
             "admin" => "管理员".to_string(),
@@ -540,7 +570,11 @@ fn resolve_group_role_label(
     }
 }
 
-fn build_image_prompt_section(lines: &[String], llm_supports_multimodal_input: bool, title: &str) -> String {
+fn build_image_prompt_section(
+    lines: &[String],
+    llm_supports_multimodal_input: bool,
+    title: &str,
+) -> String {
     if lines.is_empty() {
         return String::new();
     }
@@ -562,10 +596,10 @@ fn build_image_prompt_section(lines: &[String], llm_supports_multimodal_input: b
 mod build_user_message_tests {
     use super::*;
 
+    use tokio::runtime::Runtime;
     use zihuan_core::ims_bot_adapter::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
     use zihuan_core::ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
     use zihuan_core::ims_bot_adapter::models::message::{Message, PlainTextMessage};
-    use tokio::runtime::Runtime;
 
     fn build_test_adapter() -> SharedBotAdapter {
         Runtime::new()
@@ -585,7 +619,9 @@ mod build_user_message_tests {
                     card: String::new(),
                     role: None,
                 },
-                message_list: vec![Message::PlainText(PlainTextMessage { text: "你好".to_string() })],
+                message_list: vec![Message::PlainText(PlainTextMessage {
+                    text: "你好".to_string(),
+                })],
                 group_id: Some(200),
                 group_name: Some("测试群".to_string()),
                 is_group_message: true,
@@ -638,7 +674,9 @@ fn persisted_media_from_tool_value(value: &Value) -> Option<PersistedMedia> {
     })
 }
 
-pub(crate) fn collect_available_media_from_brain_output(messages: &[LLMMessage]) -> HashMap<String, PersistedMedia> {
+pub(crate) fn collect_available_media_from_brain_output(
+    messages: &[LLMMessage],
+) -> HashMap<String, PersistedMedia> {
     let mut media_by_id = HashMap::new();
 
     for message in messages {
@@ -666,7 +704,11 @@ pub(crate) fn collect_available_media_from_brain_output(messages: &[LLMMessage])
 /// which is deliberately kept out of the normal tool-calling ToolCallingEngine loop and receives no tool
 /// specs — this keeps real tool/command names and internal architecture out of the model's
 /// context so they can't leak into a user-facing "what can you do / what model are you" answer.
-pub(crate) fn build_meta_query_system_prompt(bot_name: &str, style_prompt: Option<&str>, emotion_text: &str) -> String {
+pub(crate) fn build_meta_query_system_prompt(
+    bot_name: &str,
+    style_prompt: Option<&str>,
+    emotion_text: &str,
+) -> String {
     let mut prompt = format!(
         "You are the QQ bot `{bot_name}`. The user is asking about your capabilities, functions, or internal information.\n\
          Below you will be given a function list and public info. Answer the user based ONLY on that data, \
@@ -701,7 +743,11 @@ pub(crate) fn build_meta_query_system_prompt(bot_name: &str, style_prompt: Optio
     prompt
 }
 
-pub(crate) fn build_meta_query_user_message(user_question: &str, function_list: &str, public_info: &str) -> String {
+pub(crate) fn build_meta_query_user_message(
+    user_question: &str,
+    function_list: &str,
+    public_info: &str,
+) -> String {
     format!(
         "The user sent you this message: \"{user_question}\"\n\n\
          [Function List]\n\
@@ -729,7 +775,11 @@ impl LongTaskNotifier for QqLongTaskNotifier {
             bot_id: &self.bot_id,
             bot_name: &self.bot_name,
             mention_target_id: Some(&self.sender_id),
-            persistence: build_outbound_persistence(self.rdb_pool.as_ref(), self.group_name.as_deref(), &self.bot_name),
+            persistence: build_outbound_persistence(
+                self.rdb_pool.as_ref(),
+                self.group_name.as_deref(),
+                &self.bot_name,
+            ),
             max_text_chars: MAX_REPLY_CHARS,
         };
         let _ = send_notification_text(&send_ctx, &text);
@@ -749,7 +799,11 @@ impl LongTaskNotifier for QqLongTaskNotifier {
             bot_id: &self.bot_id,
             bot_name: &self.bot_name,
             mention_target_id: None,
-            persistence: build_outbound_persistence(self.rdb_pool.as_ref(), self.group_name.as_deref(), &self.bot_name),
+            persistence: build_outbound_persistence(
+                self.rdb_pool.as_ref(),
+                self.group_name.as_deref(),
+                &self.bot_name,
+            ),
             max_text_chars: MAX_REPLY_CHARS,
         };
         if let Err(err) = send_forward_content(&send_ctx, &content) {
@@ -823,7 +877,13 @@ impl QqChatAgentService {
         let llm = Arc::clone(&self.config.llm);
         let tool_definitions = self.config.tool_definitions.clone();
         tokio::spawn(async move {
-            if let Err(err) = zihuan_core::scheduled_task::cancel_pending_dreams(&connection, &agent_id, &sender_id).await {
+            if let Err(err) = zihuan_core::scheduled_task::cancel_pending_dreams(
+                &connection,
+                &agent_id,
+                &sender_id,
+            )
+            .await
+            {
                 warn!("[Dream] failed to cancel previous task: {err}");
                 return;
             }
@@ -837,10 +897,14 @@ impl QqChatAgentService {
                 return;
             }
             tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
-            let pending = zihuan_core::scheduled_task::list_tasks(&connection, Some(&agent_id), Some("pending"))
-                .await
-                .map(|tasks| tasks.into_iter().any(|entry| entry.id == task.id))
-                .unwrap_or(false);
+            let pending = zihuan_core::scheduled_task::list_tasks(
+                &connection,
+                Some(&agent_id),
+                Some("pending"),
+            )
+            .await
+            .map(|tasks| tasks.into_iter().any(|entry| entry.id == task.id))
+            .unwrap_or(false);
             if !pending {
                 return;
             }
@@ -848,30 +912,72 @@ impl QqChatAgentService {
             let transcript = history
                 .iter()
                 .filter_map(|message| match message.role {
-                    MessageRole::User | MessageRole::Assistant => message.content_text_owned().map(|text| (message.role.clone(), text)),
+                    MessageRole::User | MessageRole::Assistant => {
+                        message.content_text_owned().map(|text| (message.role.clone(), text))
+                    }
                     _ => None,
                 })
-                .map(|(role, text)| format!("{}: {text}", if role == MessageRole::User { "用户" } else { "Bot" }))
+                .map(|(role, text)| {
+                    format!(
+                        "{}: {text}",
+                        if role == MessageRole::User {
+                            "用户"
+                        } else {
+                            "Bot"
+                        }
+                    )
+                })
                 .collect::<Vec<_>>();
             let chars = transcript.iter().map(|text| text.chars().count() as i64).sum();
-            let previous = zihuan_core::scheduled_task::latest_dream_memory(&connection, &agent_id, &sender_id)
+            let previous = zihuan_core::scheduled_task::latest_dream_memory(
+                &connection,
+                &agent_id,
+                &sender_id,
+            )
+            .await
+            .unwrap_or(None)
+            .unwrap_or_default();
+            match run_dream_agent(llm, &previous, &transcript.join("\n"), tool_definitions) {
+                Ok(content) => match zihuan_core::scheduled_task::insert_dream_memory(
+                    &connection,
+                    &agent_id,
+                    &sender_id,
+                    chars,
+                    &content,
+                )
                 .await
-                .unwrap_or(None)
-                .unwrap_or_default();
-            match run_dream_agent(
-                llm,
-                &previous,
-                &transcript.join("\n"),
-                tool_definitions,
-            ) {
-                Ok(content) => match zihuan_core::scheduled_task::insert_dream_memory(&connection, &agent_id, &sender_id, chars, &content).await {
+                {
                     Ok(()) => {
-                        if let Err(err) = clear_history(&cache, &sender_id) { warn!("[Dream] memory saved but history clear failed: {err}"); }
-                        let _ = zihuan_core::scheduled_task::finish_task(&connection, &task.id, zihuan_core::scheduled_task::ScheduledTaskStatus::Succeeded, Some("Dream 记忆已生成")).await;
+                        if let Err(err) = clear_history(&cache, &sender_id) {
+                            warn!("[Dream] memory saved but history clear failed: {err}");
+                        }
+                        let _ = zihuan_core::scheduled_task::finish_task(
+                            &connection,
+                            &task.id,
+                            zihuan_core::scheduled_task::ScheduledTaskStatus::Succeeded,
+                            Some("Dream 记忆已生成"),
+                        )
+                        .await;
                     }
-                    Err(err) => { let _ = zihuan_core::scheduled_task::finish_task(&connection, &task.id, zihuan_core::scheduled_task::ScheduledTaskStatus::Failed, Some(&err.to_string())).await; }
+                    Err(err) => {
+                        let _ = zihuan_core::scheduled_task::finish_task(
+                            &connection,
+                            &task.id,
+                            zihuan_core::scheduled_task::ScheduledTaskStatus::Failed,
+                            Some(&err.to_string()),
+                        )
+                        .await;
+                    }
                 },
-                Err(err) => { let _ = zihuan_core::scheduled_task::finish_task(&connection, &task.id, zihuan_core::scheduled_task::ScheduledTaskStatus::Failed, Some(&err.to_string())).await; }
+                Err(err) => {
+                    let _ = zihuan_core::scheduled_task::finish_task(
+                        &connection,
+                        &task.id,
+                        zihuan_core::scheduled_task::ScheduledTaskStatus::Failed,
+                        Some(&err.to_string()),
+                    )
+                    .await;
+                }
             }
         });
     }
@@ -895,7 +1001,8 @@ impl QqChatAgentService {
         time: &str,
     ) -> Result<()> {
         self.schedule_dream(event.sender.user_id.to_string());
-        let task_db_connection_id = self.config.qq_chat_config.resolved_rdb_id().map(ToOwned::to_owned);
+        let task_db_connection_id =
+            self.config.qq_chat_config.resolved_rdb_id().map(ToOwned::to_owned);
         let sender_id = event.sender.user_id.to_string();
         let tool_quota = Some(QqChatToolQuotaContext {
             agent_id: self.config.agent_id.clone(),
@@ -939,7 +1046,9 @@ impl QqChatAgentService {
             task_db_connection_id,
             tool_quota,
             resolved_language_style: self.config.rdb_pool.as_ref().and_then(|connection| {
-                let group_id = if event.message_type == zihuan_core::ims_bot_adapter::models::event_model::MessageType::Group {
+                let group_id = if event.message_type
+                    == zihuan_core::ims_bot_adapter::models::event_model::MessageType::Group
+                {
                     event.group_id.map(|value| value.to_string())
                 } else {
                     None
@@ -951,10 +1060,18 @@ impl QqChatAgentService {
         };
 
         zihuan_core::agent::runtime_context::with_current_agent_runtime_context(
-            zihuan_core::agent::runtime_context::AgentRuntimeContext::QqChat(self.config.qq_chat_config.clone()),
+            zihuan_core::agent::runtime_context::AgentRuntimeContext::QqChat(
+                self.config.qq_chat_config.clone(),
+            ),
             || {
-                self.inner
-                    .handle(event, time, &self.config.agent_id, &self.config.session, None, &ctx)
+                self.inner.handle(
+                    event,
+                    time,
+                    &self.config.agent_id,
+                    &self.config.session,
+                    None,
+                    &ctx,
+                )
             },
         )
     }

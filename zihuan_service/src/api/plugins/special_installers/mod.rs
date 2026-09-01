@@ -19,7 +19,8 @@ pub trait SpecialPluginInstaller: Sync {
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;
 }
 
-static SQLITE_INSTALLER: sqlite::SqliteSpecialPluginInstaller = sqlite::SqliteSpecialPluginInstaller;
+static SQLITE_INSTALLER: sqlite::SqliteSpecialPluginInstaller =
+    sqlite::SqliteSpecialPluginInstaller;
 
 pub fn installer_for(component_type: &str) -> Option<&'static dyn SpecialPluginInstaller> {
     let installer: &'static dyn SpecialPluginInstaller = &SQLITE_INSTALLER;

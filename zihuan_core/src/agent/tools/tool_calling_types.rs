@@ -22,7 +22,11 @@ pub struct ToolCallingResult {
 
 #[async_trait]
 pub trait AgentExecutor: Send + Sync {
-    async fn execute(&self, context: AgentContext, request: ToolCallingRequest) -> crate::error::Result<ToolCallingResult>;
+    async fn execute(
+        &self,
+        context: AgentContext,
+        request: ToolCallingRequest,
+    ) -> crate::error::Result<ToolCallingResult>;
 }
 
 pub trait LongTaskNotifier: Send + Sync + 'static {
@@ -41,7 +45,13 @@ pub struct LongTaskContext {
 }
 
 pub trait ToolCallingObserver: Send + Sync + 'static {
-    fn on_assistant_tool_request(&self, _iteration: usize, _content: &str, _tool_calls: &[ToolCalls]) {}
+    fn on_assistant_tool_request(
+        &self,
+        _iteration: usize,
+        _content: &str,
+        _tool_calls: &[ToolCalls],
+    ) {
+    }
     fn on_tool_start(&self, _name: &str, _call_id: &str, _arguments: &Value) {}
     fn on_tool_output(&self, _name: &str, _call_id: &str, _stream: &str, _chunk: &str) {}
     fn on_tool_finish(&self, _name: &str, _call_id: &str, _result: &str) {}
@@ -50,7 +60,11 @@ pub trait ToolCallingObserver: Send + Sync + 'static {
 }
 
 pub trait ToolCallingMiddleware: Send + Sync + 'static {
-    fn on_before_inference(&self, _iteration: usize, _conversation: &[LLMMessage]) -> Vec<LLMMessage> {
+    fn on_before_inference(
+        &self,
+        _iteration: usize,
+        _conversation: &[LLMMessage],
+    ) -> Vec<LLMMessage> {
         Vec::new()
     }
 }

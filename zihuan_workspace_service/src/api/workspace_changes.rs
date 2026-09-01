@@ -247,33 +247,26 @@ impl WorkspaceChangeRecorder {
             .into_iter()
             .filter_map(|path| resolve_path(self.workspace_path.as_deref(), &path))
             .collect::<Vec<_>>();
-        let source_path = matches!(
-            operation,
-            WorkspaceChangeOperation::Copy | WorkspaceChangeOperation::Move
-        )
-        .then(|| paths.first().cloned())
-        .flatten();
-        let destination_path = matches!(
-            operation,
-            WorkspaceChangeOperation::Copy | WorkspaceChangeOperation::Move
-        )
-        .then(|| paths.get(1).cloned())
-        .flatten();
+        let source_path =
+            matches!(operation, WorkspaceChangeOperation::Copy | WorkspaceChangeOperation::Move)
+                .then(|| paths.first().cloned())
+                .flatten();
+        let destination_path =
+            matches!(operation, WorkspaceChangeOperation::Copy | WorkspaceChangeOperation::Move)
+                .then(|| paths.get(1).cloned())
+                .flatten();
         let before = paths.iter().map(|path| snapshot(path)).collect::<Vec<_>>();
-        started()
-            .lock()
-            .expect("workspace change lock poisoned")
-            .insert(
-                call_id.to_string(),
-                PendingOperation {
-                    session_id: self.session_id.clone(),
-                    operation,
-                    paths,
-                    source_path,
-                    destination_path,
-                    before,
-                },
-            );
+        started().lock().expect("workspace change lock poisoned").insert(
+            call_id.to_string(),
+            PendingOperation {
+                session_id: self.session_id.clone(),
+                operation,
+                paths,
+                source_path,
+                destination_path,
+                before,
+            },
+        );
     }
 
     /// Finalizes a tool call after the tool has written to disk.
@@ -289,11 +282,7 @@ impl WorkspaceChangeRecorder {
         if result_json.get("ok").and_then(Value::as_bool) != Some(true) {
             return None;
         }
-        let after = operation
-            .paths
-            .iter()
-            .map(|path| snapshot(path))
-            .collect::<Vec<_>>();
+        let after = operation.paths.iter().map(|path| snapshot(path)).collect::<Vec<_>>();
         if snapshots_equal(&operation.before, &after) {
             return None;
         }
@@ -412,10 +401,7 @@ fn merge_pending_records(
         before_fingerprint: fingerprint(&before),
         after_fingerprint: fingerprint(&after),
         status: WorkspaceChangeStatus::Pending,
-        merged_count: merged_records
-            .iter()
-            .map(|record| record.merged_count)
-            .sum::<usize>()
+        merged_count: merged_records.iter().map(|record| record.merged_count).sum::<usize>()
             + incoming.merged_count,
         diff: build_diff(&before, &after, workspace),
         before,
@@ -478,11 +464,7 @@ fn merged_operation(
             })
             .and_then(|record| record.source_path.clone())
             .or_else(|| incoming.source_path.clone());
-        return (
-            WorkspaceChangeOperation::Move,
-            source_path,
-            incoming.destination_path.clone(),
-        );
+        return (WorkspaceChangeOperation::Move, source_path, incoming.destination_path.clone());
     }
     if let Some(record) = records.iter().rev().find(|record| {
         matches!(
@@ -530,12 +512,7 @@ pub fn pending(session_id: &str) -> Result<Vec<WorkspaceChangeRecord>> {
 
 /// Marks one pending change as accepted without touching the filesystem.
 pub fn accept(session_id: &str, change_id: &str) -> Result<WorkspaceChangeRecord> {
-    update_status(
-        session_id,
-        change_id,
-        WorkspaceChangeStatus::Accepted,
-        false,
-    )
+    update_status(session_id, change_id, WorkspaceChangeStatus::Accepted, false)
 }
 
 /// Attempts to cancel one pending change and restore its before-snapshot.
@@ -561,9 +538,7 @@ pub fn cancel(session_id: &str, change_id: &str) -> Result<WorkspaceChangeRecord
         .map(|item| snapshot(Path::new(&item.path)))
         .collect::<Vec<_>>();
     if fingerprint(&current) != record.after_fingerprint {
-        return Err(Error::ValidationError(
-            "文件已被其他操作修改，无法自动回滚".to_string(),
-        ));
+        return Err(Error::ValidationError("文件已被其他操作修改，无法自动回滚".to_string()));
     }
     for snapshot_item in &record.before {
         restore(snapshot_item)?;
@@ -612,11 +587,7 @@ fn operation_paths(operation: &WorkspaceChangeOperation, args: &Value) -> Vec<St
                     .map(|path| path.trim().to_string())
                     .collect()
             })
-            .or_else(|| {
-                args.get("path")
-                    .and_then(Value::as_str)
-                    .map(|path| vec![path.to_string()])
-            })
+            .or_else(|| args.get("path").and_then(Value::as_str).map(|path| vec![path.to_string()]))
             .unwrap_or_default(),
         WorkspaceChangeOperation::Create | WorkspaceChangeOperation::Delete => args
             .get("path")
@@ -694,17 +665,10 @@ fn collect_entries(root: &Path, current: &Path, entries: &mut Vec<SnapshotEntry>
     let Ok(read_dir) = fs::read_dir(current) else {
         return;
     };
-    let mut paths = read_dir
-        .flatten()
-        .map(|item| item.path())
-        .collect::<Vec<_>>();
+    let mut paths = read_dir.flatten().map(|item| item.path()).collect::<Vec<_>>();
     paths.sort();
     for path in paths {
-        let relative_path = path
-            .strip_prefix(root)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .to_string();
+        let relative_path = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().to_string();
         if path.is_dir() {
             entries.push(SnapshotEntry {
                 relative_path: relative_path.clone(),
@@ -749,20 +713,11 @@ fn build_diff(
     let mut lines = Vec::new();
     let before_files = snapshot_files(before);
     let after_files = snapshot_files(after);
-    let paths = before_files
-        .keys()
-        .chain(after_files.keys())
-        .collect::<BTreeSet<_>>();
+    let paths = before_files.keys().chain(after_files.keys()).collect::<BTreeSet<_>>();
 
     for (file_index, path) in paths.into_iter().enumerate() {
-        let old = before_files
-            .get(path)
-            .map(String::as_str)
-            .unwrap_or_default();
-        let new = after_files
-            .get(path)
-            .map(String::as_str)
-            .unwrap_or_default();
+        let old = before_files.get(path).map(String::as_str).unwrap_or_default();
+        let new = after_files.get(path).map(String::as_str).unwrap_or_default();
         let diff = TextDiff::from_lines(old, new);
         let display_path = display_path(workspace, Path::new(path));
         for (hunk, operations) in diff.grouped_ops(CONTEXT_LINES).into_iter().enumerate() {
@@ -807,15 +762,9 @@ fn snapshot_files(items: &[PathSnapshot]) -> BTreeMap<String, String> {
             let path = if entry.relative_path.is_empty() {
                 item.path.clone()
             } else {
-                Path::new(&item.path)
-                    .join(&entry.relative_path)
-                    .to_string_lossy()
-                    .to_string()
+                Path::new(&item.path).join(&entry.relative_path).to_string_lossy().to_string()
             };
-            files.insert(
-                path,
-                String::from_utf8_lossy(&hex_decode(content_hex)).to_string(),
-            );
+            files.insert(path, String::from_utf8_lossy(&hex_decode(content_hex)).to_string());
         }
     }
     files
@@ -849,12 +798,7 @@ fn restore(snapshot: &PathSnapshot) -> Result<()> {
         }
         fs::write(
             path,
-            hex_decode(
-                snapshot.entries[0]
-                    .content_hex
-                    .as_deref()
-                    .unwrap_or_default(),
-            ),
+            hex_decode(snapshot.entries[0].content_hex.as_deref().unwrap_or_default()),
         )?;
         return Ok(());
     }
@@ -867,10 +811,7 @@ fn restore(snapshot: &PathSnapshot) -> Result<()> {
             if let Some(parent) = target.parent() {
                 fs::create_dir_all(parent)?;
             }
-            fs::write(
-                target,
-                hex_decode(entry.content_hex.as_deref().unwrap_or_default()),
-            )?;
+            fs::write(target, hex_decode(entry.content_hex.as_deref().unwrap_or_default()))?;
         }
     }
     Ok(())

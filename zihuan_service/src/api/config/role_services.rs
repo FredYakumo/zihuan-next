@@ -9,41 +9,49 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::Utc;
-use zihuan_core::config::ConfigRecord;
-use zihuan_core::ims_bot_adapter::{resolve_active_or_fallback_bot_profile, resolve_fallback_bot_profile};
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
-use zihuan_core::storage::{
-    first_available_agent_avatar_store, AgentAvatarStore, ConnectionConfig, ConnectionKind, WeaviateCollectionSchema,
-};
 use uuid::Uuid;
 use zihuan_core::agent::sub_agent::{
     delete_subagent_definition, list_subagent_definitions, load_subagent_definition,
     save_subagent_definition, SubAgentDefinition,
 };
+use zihuan_core::config::ConfigRecord;
+use zihuan_core::ims_bot_adapter::{
+    resolve_active_or_fallback_bot_profile, resolve_fallback_bot_profile,
+};
+use zihuan_core::storage::{
+    first_available_agent_avatar_store, AgentAvatarStore, ConnectionConfig, ConnectionKind,
+    WeaviateCollectionSchema,
+};
 use zihuan_core::task_context::{
-    AgentTaskHandle, AgentTaskInfo, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
+    AgentTaskHandle, AgentTaskInfo, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
+    AgentTaskStatus,
 };
 
 use log::{info, warn};
 use zihuan_ims_service::qq_chat::ignore_store::{
-    create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule, QqChatAgentServiceIgnoreRuleUpsert,
+    create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule,
+    QqChatAgentServiceIgnoreRuleUpsert,
 };
-use zihuan_ims_service::qq_chat::privilege_store::{delete_all_notifications, list_recent_notifications};
+use zihuan_ims_service::qq_chat::privilege_store::{
+    delete_all_notifications, list_recent_notifications,
+};
 
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::system_config;
+use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
 use zihuan_core::agent::tool_config::AgentToolConfig;
 use zihuan_core::config::llm_refs::{load_llm_refs, LlmRefConfig};
-use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::error::{Error as CoreError, Result as CoreResult};
 use zihuan_service::{RoleServiceRuntimeInfo, RoleServiceRuntimeStatus};
 
 use super::{
-    now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found, render_unprocessable_entity,
+    now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
+    render_unprocessable_entity,
 };
 
 #[derive(Serialize)]
@@ -153,7 +161,8 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
 
             match task_status {
                 TaskStatus::Stopped => {
-                    let _ = broadcast_tx.send(ServerMessage::TaskStopped { task_id: task_id.clone() });
+                    let _ =
+                        broadcast_tx.send(ServerMessage::TaskStopped { task_id: task_id.clone() });
                 }
                 TaskStatus::Success => {
                     let _ = broadcast_tx.send(ServerMessage::TaskFinished {
@@ -271,7 +280,8 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
 
             match task_status {
                 TaskStatus::Stopped => {
-                    let _ = broadcast_tx.send(ServerMessage::TaskStopped { task_id: task_id_owned.clone() });
+                    let _ = broadcast_tx
+                        .send(ServerMessage::TaskStopped { task_id: task_id_owned.clone() });
                 }
                 TaskStatus::Success => {
                     let _ = broadcast_tx.send(ServerMessage::TaskFinished {
@@ -340,7 +350,10 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
     }
 }
 
-pub fn build_agent_task_runtime(state: Arc<AppState>, broadcast_tx: WsBroadcast) -> Arc<dyn AgentTaskRuntime> {
+pub fn build_agent_task_runtime(
+    state: Arc<AppState>,
+    broadcast_tx: WsBroadcast,
+) -> Arc<dyn AgentTaskRuntime> {
     if let Some(existing) = zihuan_service::command::global_task_runtime() {
         return existing;
     }
@@ -360,15 +373,16 @@ pub async fn start_role_service(
     connections: Vec<ConnectionConfig>,
 ) -> CoreResult<()> {
     let role_name = role.name().to_string();
-    let on_finish: Box<dyn FnOnce(bool, Option<String>) + Send + 'static> = Box::new(move |success, error_message| {
-        if !success {
-            log::warn!(
-                "[agents] agent '{}' stopped with error: {}",
-                role_name,
-                error_message.unwrap_or_else(|| "stopped".to_string())
-            );
-        }
-    });
+    let on_finish: Box<dyn FnOnce(bool, Option<String>) + Send + 'static> =
+        Box::new(move |success, error_message| {
+            if !success {
+                log::warn!(
+                    "[agents] agent '{}' stopped with error: {}",
+                    role_name,
+                    error_message.unwrap_or_else(|| "stopped".to_string())
+                );
+            }
+        });
 
     let task_runtime = build_agent_task_runtime(state.clone(), broadcast_tx.clone());
     state
@@ -416,7 +430,9 @@ pub struct SubAgentMutationRequest {
     pub available_tool_ids: Vec<String>,
 }
 
-fn subagent_available_tool_ids(tool_ids: impl IntoIterator<Item = String>) -> std::collections::HashSet<String> {
+fn subagent_available_tool_ids(
+    tool_ids: impl IntoIterator<Item = String>,
+) -> std::collections::HashSet<String> {
     tool_ids
         .into_iter()
         .chain([
@@ -446,13 +462,14 @@ pub async fn list_subagents(req: &mut Request, res: &mut Response, _depot: &mut 
 #[handler]
 pub async fn get_subagent(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
-    let available_tool_ids = subagent_available_tool_ids(req
-        .query::<String>("available_tool_ids")
-        .unwrap_or_default()
-        .split(',')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned));
+    let available_tool_ids = subagent_available_tool_ids(
+        req.query::<String>("available_tool_ids")
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned),
+    );
     match load_subagent_definition(&id, &available_tool_ids) {
         Ok(definition) => res.render(Json(definition)),
         Err(error) => render_unprocessable_entity(res, error.to_string()),
@@ -467,7 +484,10 @@ pub async fn save_subagent(req: &mut Request, res: &mut Response, _depot: &mut D
         Err(error) => return render_bad_request(res, error.to_string()),
     };
     if body.definition.id != id {
-        return render_bad_request(res, "SubAgent ID in the URL must match the definition ID".to_string());
+        return render_bad_request(
+            res,
+            "SubAgent ID in the URL must match the definition ID".to_string(),
+        );
     }
     let available_tool_ids = subagent_available_tool_ids(body.available_tool_ids);
     match save_subagent_definition(&body.definition, &available_tool_ids) {
@@ -481,7 +501,9 @@ pub async fn delete_subagent(req: &mut Request, res: &mut Response, _depot: &mut
     let id = req.param::<String>("id").unwrap_or_default();
     match delete_subagent_definition(&id) {
         Ok(()) => res.render(Json(ok_response())),
-        Err(error) if error.to_string().contains("not found") => render_not_found(res, &error.to_string()),
+        Err(error) if error.to_string().contains("not found") => {
+            render_not_found(res, &error.to_string())
+        }
         Err(error) => render_unprocessable_entity(res, error.to_string()),
     }
 }
@@ -504,15 +526,14 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
                     RoleServiceType::Workspace(_) => None,
                 };
                 let qq_chat_profile = match qq_config.as_ref() {
-                    Some(config) => resolve_qq_chat_profile(state, &mut agent, &connections, config, &runtime).await,
+                    Some(config) => {
+                        resolve_qq_chat_profile(state, &mut agent, &connections, config, &runtime)
+                            .await
+                    }
                     None => None,
                 };
 
-                items.push(AgentWithRuntime {
-                    runtime,
-                    agent,
-                    qq_chat_profile,
-                });
+                items.push(AgentWithRuntime { runtime, agent, qq_chat_profile });
             }
 
             res.render(Json(items));
@@ -569,13 +590,15 @@ fn resolve_qq_chat_agent_service_config<'a>(
     Ok(config)
 }
 
-async fn resolve_agent_rdb_connection(agent_id: &str) -> CoreResult<zihuan_core::data_refs::RelationalDbConnection> {
+async fn resolve_agent_rdb_connection(
+    agent_id: &str,
+) -> CoreResult<zihuan_core::data_refs::RelationalDbConnection> {
     let agents = system_config::load_role_services()?;
-    let config =
-        resolve_qq_chat_agent_service_config(&agents, agent_id).map_err(|err| zihuan_core::string_error!("{}", err))?;
-    let rdb_id = config
-        .resolved_rdb_id()
-        .ok_or_else(|| zihuan_core::string_error!("QQ Chat Agent Service '{}' has no rdb_id configured", agent_id))?;
+    let config = resolve_qq_chat_agent_service_config(&agents, agent_id)
+        .map_err(|err| zihuan_core::string_error!("{}", err))?;
+    let rdb_id = config.resolved_rdb_id().ok_or_else(|| {
+        zihuan_core::string_error!("QQ Chat Agent Service '{}' has no rdb_id configured", agent_id)
+    })?;
     let connections = system_config::load_connections()?;
     zihuan_core::storage::build_relational_db_connection_for_connection(rdb_id, &connections).await
 }
@@ -618,9 +641,9 @@ fn default_notification_card_limit() -> i64 {
 #[handler]
 pub async fn list_agent_notifications(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
-    let query: NotificationCardsQuery = req.parse_queries().unwrap_or(NotificationCardsQuery {
-        limit: default_notification_card_limit(),
-    });
+    let query: NotificationCardsQuery = req
+        .parse_queries()
+        .unwrap_or(NotificationCardsQuery { limit: default_notification_card_limit() });
     match resolve_agent_rdb_connection(&id).await {
         Ok(connection) => match list_recent_notifications(&connection, query.limit.max(1)).await {
             Ok(items) => res.render(Json(items)),
@@ -741,7 +764,9 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_qq_chat_agent_service_llms(&body.role_service_type, &llm_refs, &body.name) {
+    if let Err(message) =
+        validate_qq_chat_agent_service_llms(&body.role_service_type, &llm_refs, &body.name)
+    {
         return render_unprocessable_entity(res, message);
     }
 
@@ -797,7 +822,9 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_qq_chat_agent_service_llms(&body.role_service_type, &llm_refs, &body.name) {
+    if let Err(message) =
+        validate_qq_chat_agent_service_llms(&body.role_service_type, &llm_refs, &body.name)
+    {
         return render_unprocessable_entity(res, message);
     }
 
@@ -840,14 +867,17 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
         Ok(connections) => connections,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_agent_connection_schemas(&agent.role_service_type, &connections) {
+    if let Err(message) = validate_agent_connection_schemas(&agent.role_service_type, &connections)
+    {
         return render_unprocessable_entity(res, message);
     }
     let llm_refs = match load_llm_refs() {
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) = validate_qq_chat_agent_service_llms(&agent.role_service_type, &llm_refs, &agent.name) {
+    if let Err(message) =
+        validate_qq_chat_agent_service_llms(&agent.role_service_type, &llm_refs, &agent.name)
+    {
         return render_unprocessable_entity(res, message);
     }
 
@@ -923,13 +953,19 @@ fn validate_default_agent_flag(
     }
 }
 
-fn validate_agent_connection_schemas(role_service_type: &RoleServiceType, connections: &[ConnectionConfig]) -> Result<(), String> {
+fn validate_agent_connection_schemas(
+    role_service_type: &RoleServiceType,
+    connections: &[ConnectionConfig],
+) -> Result<(), String> {
     match role_service_type {
         RoleServiceType::QqChat(config) => {
             validate_rdb_connection(connections, config.resolved_rdb_id())?;
             if config.dream_enabled {
                 if config.dream_interval_seconds().is_none() {
-                    return Err("Dream interval must use minutes, hours, or days with a positive value".to_string());
+                    return Err(
+                        "Dream interval must use minutes, hours, or days with a positive value"
+                            .to_string(),
+                    );
                 }
                 if config.resolved_rdb_id().is_none() {
                     return Err("Dream requires a relational database connection".to_string());
@@ -975,12 +1011,20 @@ fn validate_qq_chat_agent_service_llms(
 
             let llm_ref = llm_refs
                 .iter()
-                .find(|item| item.id == resolved_llm_ref_id || item.config_id == resolved_llm_ref_id)
+                .find(|item| {
+                    item.id == resolved_llm_ref_id || item.config_id == resolved_llm_ref_id
+                })
                 .ok_or_else(|| {
-                    format!("agent '{}' references missing llm_ref '{}'", agent_name, resolved_llm_ref_id)
+                    format!(
+                        "agent '{}' references missing llm_ref '{}'",
+                        agent_name, resolved_llm_ref_id
+                    )
                 })?;
             if !llm_ref.enabled {
-                return Err(format!("agent '{}' references disabled llm_ref '{}'", agent_name, llm_ref.name));
+                return Err(format!(
+                    "agent '{}' references disabled llm_ref '{}'",
+                    agent_name, llm_ref.name
+                ));
             }
             match &llm_ref.model {
                 zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlm { llm } => {
@@ -1004,7 +1048,9 @@ fn validate_qq_chat_agent_service_llms(
                         ))
                     }
                 }
-                zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal { .. } => Err(format!(
+                zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal {
+                    ..
+                } => Err(format!(
                     "agent '{}' references non-chat model_ref '{}' as image_understand_llm_ref_id",
                     agent_name, llm_ref.name
                 )),
@@ -1021,7 +1067,11 @@ fn validate_qq_chat_agent_service_llms(
                 "natural_language_reply_llm_ref_id",
             )?;
 
-            validate_embedding_model_ref(llm_refs, config.embedding_model_ref_id.as_deref(), agent_name)
+            validate_embedding_model_ref(
+                llm_refs,
+                config.embedding_model_ref_id.as_deref(),
+                agent_name,
+            )
         }
         RoleServiceType::Workspace(config) => validate_chat_llm_ref(
             llm_refs,
@@ -1038,11 +1088,14 @@ fn validate_chat_llm_ref(
     agent_name: &str,
     field_name: &str,
 ) -> Result<(), String> {
-    let llm_ref_id = llm_ref_id.ok_or_else(|| format!("agent '{}' is missing {}", agent_name, field_name))?;
+    let llm_ref_id =
+        llm_ref_id.ok_or_else(|| format!("agent '{}' is missing {}", agent_name, field_name))?;
     let llm_ref = llm_refs
         .iter()
         .find(|item| item.id == llm_ref_id || item.config_id == llm_ref_id)
-        .ok_or_else(|| format!("agent '{}' references missing {} '{}'", agent_name, field_name, llm_ref_id))?;
+        .ok_or_else(|| {
+            format!("agent '{}' references missing {} '{}'", agent_name, field_name, llm_ref_id)
+        })?;
     if !llm_ref.enabled {
         return Err(format!(
             "agent '{}' references disabled {} '{}'",
@@ -1051,10 +1104,12 @@ fn validate_chat_llm_ref(
     }
     match llm_ref.model {
         zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlm { .. } => Ok(()),
-        zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal { .. } => Err(format!(
-            "agent '{}' references non-chat model_ref '{}' as {}",
-            agent_name, llm_ref.name, field_name
-        )),
+        zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal { .. } => {
+            Err(format!(
+                "agent '{}' references non-chat model_ref '{}' as {}",
+                agent_name, llm_ref.name, field_name
+            ))
+        }
     }
 }
 
@@ -1063,7 +1118,9 @@ fn validate_embedding_model_ref(
     embedding_model_ref_id: Option<&str>,
     agent_name: &str,
 ) -> Result<(), String> {
-    let Some(embedding_model_ref_id) = embedding_model_ref_id.map(str::trim).filter(|value| !value.is_empty()) else {
+    let Some(embedding_model_ref_id) =
+        embedding_model_ref_id.map(str::trim).filter(|value| !value.is_empty())
+    else {
         return Ok(());
     };
 
@@ -1083,7 +1140,9 @@ fn validate_embedding_model_ref(
         ));
     }
     match llm_ref.model {
-        zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal { .. } => Ok(()),
+        zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal { .. } => {
+            Ok(())
+        }
         zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlm { .. } => Err(format!(
             "agent '{}' references chat model_ref '{}' as embedding_model_ref_id",
             agent_name, llm_ref.name
@@ -1091,7 +1150,10 @@ fn validate_embedding_model_ref(
     }
 }
 
-fn validate_rdb_connection(connections: &[ConnectionConfig], connection_id: Option<&str>) -> Result<(), String> {
+fn validate_rdb_connection(
+    connections: &[ConnectionConfig],
+    connection_id: Option<&str>,
+) -> Result<(), String> {
     let Some(connection_id) = connection_id else {
         return Ok(());
     };
@@ -1264,8 +1326,12 @@ async fn delete_avatar_by_agent_id(agent_id: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-async fn persist_qq_avatar_for_agent(agent: &mut RoleServiceConfig, user_id: &str) -> Result<(), String> {
-    let avatar_url = zihuan_core::ims_bot_adapter::qq_avatar_url(user_id).ok_or_else(|| "QQ avatar URL is empty".to_string())?;
+async fn persist_qq_avatar_for_agent(
+    agent: &mut RoleServiceConfig,
+    user_id: &str,
+) -> Result<(), String> {
+    let avatar_url = zihuan_core::ims_bot_adapter::qq_avatar_url(user_id)
+        .ok_or_else(|| "QQ avatar URL is empty".to_string())?;
     let response = reqwest::get(&avatar_url)
         .await
         .map_err(|e| format!("Failed to download QQ avatar: {}", e))?;

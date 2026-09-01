@@ -6,9 +6,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
-use zihuan_core::ims_bot_adapter::resolve_fallback_bot_profile;
-use zihuan_core::agent::AgentCancellation;
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
 use salvo::http::body::BodySender;
 use salvo::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use salvo::http::HeaderValue;
@@ -16,19 +13,26 @@ use salvo::http::ResBody;
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use zihuan_core::storage::ConnectionConfig;
 use tokio::sync::mpsc;
 use uuid::Uuid;
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
 use zihuan_core::agent::tools::{ToolCallingObserver, ToolCallingStopReason};
-use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
+use zihuan_core::agent::AgentCancellation;
+use zihuan_core::command::{
+    CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
+};
 use zihuan_core::error::{Error, Result};
+use zihuan_core::ims_bot_adapter::resolve_fallback_bot_profile;
+use zihuan_core::message_part::MessagePart;
 use zihuan_core::model_inference::llm::tooling::ToolCalls;
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken, TokenUsage};
-use zihuan_core::message_part::MessagePart;
+use zihuan_core::storage::ConnectionConfig;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
 use zihuan_workspace_service::api::workspace_changes;
-use zihuan_workspace_service::task_tracking::{delete_workspace_tasks, interrupt_workspace_tasks, load_workspace_tasks};
+use zihuan_workspace_service::task_tracking::{
+    delete_workspace_tasks, interrupt_workspace_tasks, load_workspace_tasks,
+};
 
 use crate::api::state::{RunningChatMessage, RunningChatToolCall, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
@@ -107,9 +111,16 @@ impl ToolCallingObserver for SseToolCallingObserver {
         }
         if let Some(snapshot) = &self.running_chat_message {
             let mut snapshot = snapshot.lock().unwrap();
-            if let Some(tool_call) = snapshot.live_tool_calls.iter_mut().find(|item| item.call_id == call_id) {
-                let mut output = serde_json::from_str::<Value>(&tool_call.result).unwrap_or_else(|_| json!({}));
-                let key = if stream == "stderr" { "stderr" } else { "stdout" };
+            if let Some(tool_call) =
+                snapshot.live_tool_calls.iter_mut().find(|item| item.call_id == call_id)
+            {
+                let mut output =
+                    serde_json::from_str::<Value>(&tool_call.result).unwrap_or_else(|_| json!({}));
+                let key = if stream == "stderr" {
+                    "stderr"
+                } else {
+                    "stdout"
+                };
                 let content = output[key].as_str().unwrap_or_default();
                 output[key] = Value::String(format!("{content}{chunk}"));
                 tool_call.result = serde_json::to_string(&output).unwrap();
@@ -129,7 +140,9 @@ impl ToolCallingObserver for SseToolCallingObserver {
     fn on_tool_finish(&self, name: &str, call_id: &str, result: &str) {
         if let Some(snapshot) = &self.running_chat_message {
             let mut snapshot = snapshot.lock().unwrap();
-            if let Some(tool_call) = snapshot.live_tool_calls.iter_mut().find(|item| item.call_id == call_id) {
+            if let Some(tool_call) =
+                snapshot.live_tool_calls.iter_mut().find(|item| item.call_id == call_id)
+            {
                 tool_call.result = result.to_string();
                 tool_call.done = true;
             }
@@ -212,7 +225,11 @@ fn history_record_to_message(record: ChatHistoryRecord) -> LLMMessage {
             "tool" => MessageRole::Tool,
             _ => MessageRole::System,
         },
-        parts: if record.parts.is_empty() && !record.content.is_empty() { vec![MessagePart::text(record.content)] } else { record.parts },
+        parts: if record.parts.is_empty() && !record.content.is_empty() {
+            vec![MessagePart::text(record.content)]
+        } else {
+            record.parts
+        },
         reasoning_content: record.reasoning_content,
         tool_calls: record.tool_calls,
         tool_call_id: record.tool_call_id,
@@ -248,7 +265,10 @@ pub struct ChatStreamRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ChatContinuationDecision { Continue, Stop }
+pub enum ChatContinuationDecision {
+    Continue,
+    Stop,
+}
 
 #[derive(Debug, Deserialize)]
 struct StopChatRequest {
@@ -450,17 +470,22 @@ impl SideEffectContext for DashboardCommandSideEffectContext {
     }
 }
 
-fn extract_agent_snapshot(agent: &RoleServiceConfig, connections: &[ConnectionConfig]) -> AgentSnapshot {
+fn extract_agent_snapshot(
+    agent: &RoleServiceConfig,
+    connections: &[ConnectionConfig],
+) -> AgentSnapshot {
     let role_service_type = match &agent.role_service_type {
         RoleServiceType::QqChat(_) => "qq_chat",
         RoleServiceType::Workspace(_) => "workspace",
     };
 
     let avatar_url = match &agent.role_service_type {
-        RoleServiceType::QqChat(config) => resolve_fallback_bot_profile(connections, &config.ims_bot_adapter_connection_id)
-            .ok()
-            .flatten()
-            .and_then(|profile| profile.avatar_url),
+        RoleServiceType::QqChat(config) => {
+            resolve_fallback_bot_profile(connections, &config.ims_bot_adapter_connection_id)
+                .ok()
+                .flatten()
+                .and_then(|profile| profile.avatar_url)
+        }
         RoleServiceType::Workspace(_) => agent.avatar_url.clone(),
     };
 
@@ -519,19 +544,16 @@ fn resolve_chat_agent(
     role_service_manager: &zihuan_service::RoleServiceManager,
     agent_id: &str,
 ) -> std::result::Result<ChatAgentInfo, Value> {
-    let running_role_service = role_service_manager
-        .running_role_service(agent_id)
-        .ok_or_else(|| json!({ "type": "error", "error": format!("agent '{}' is not running", agent_id) }))?;
+    let running_role_service = role_service_manager.running_role_service(agent_id).ok_or_else(
+        || json!({ "type": "error", "error": format!("agent '{}' is not running", agent_id) }),
+    )?;
     let role_service = running_role_service.agent().clone();
 
-    let connections =
-        crate::system_config::load_connections().map_err(|err| json!({ "type": "error", "error": err.to_string() }))?;
+    let connections = crate::system_config::load_connections()
+        .map_err(|err| json!({ "type": "error", "error": err.to_string() }))?;
     let agent_snapshot = extract_agent_snapshot(&role_service, &connections);
 
-    Ok(ChatAgentInfo {
-        agent: role_service,
-        agent_snapshot,
-    })
+    Ok(ChatAgentInfo { agent: role_service, agent_snapshot })
 }
 
 /// Attempt to match and execute a dashboard slash-command against the user's latest message.
@@ -558,7 +580,8 @@ fn try_dispatch_dashboard_command(
     messages: Vec<LLMMessage>,
     latest_user_message: &Option<LLMMessage>,
 ) -> std::result::Result<CommandDispatchOutcome, Value> {
-    let requested_session_id = requested_session_id.as_deref().filter(|value| !value.trim().is_empty());
+    let requested_session_id =
+        requested_session_id.as_deref().filter(|value| !value.trim().is_empty());
     let mut session_id = requested_session_id
         .map(|s| s.to_string())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
@@ -653,7 +676,8 @@ fn try_dispatch_dashboard_command(
         latest_user_message = None;
     } else {
         should_run_inference = false;
-        immediate_output_messages = Some(vec![LLMMessage::assistant_text(dispatch_result.result.reply)]);
+        immediate_output_messages =
+            Some(vec![LLMMessage::assistant_text(dispatch_result.result.reply)]);
     }
 
     Ok(CommandDispatchOutcome {
@@ -871,13 +895,14 @@ fn is_false(value: &bool) -> bool {
 /// receiver is attached to the response, while the sender goes into the spawned task.
 #[handler]
 pub async fn stream_chat(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let body: ChatStreamRequest = match req.parse_json_with_max_size(CHAT_STREAM_MAX_BODY_BYTES).await {
-        Ok(body) => body,
-        Err(err) => {
-            render_bad_request(res, format!("invalid request body: {err}"));
-            return;
-        }
-    };
+    let body: ChatStreamRequest =
+        match req.parse_json_with_max_size(CHAT_STREAM_MAX_BODY_BYTES).await {
+            Ok(body) => body,
+            Err(err) => {
+                render_bad_request(res, format!("invalid request body: {err}"));
+                return;
+            }
+        };
 
     if body.agent_id.trim().is_empty() {
         render_bad_request(res, "agent_id must not be empty".to_string());
@@ -907,7 +932,10 @@ pub async fn stop_chat(req: &mut Request, res: &mut Response, depot: &mut Depot)
         render_bad_request(res, "session_id must not be empty".to_string());
         return;
     }
-    let body = req.parse_json::<StopChatRequest>().await.unwrap_or(StopChatRequest { task_id: None });
+    let body = req
+        .parse_json::<StopChatRequest>()
+        .await
+        .unwrap_or(StopChatRequest { task_id: None });
     let stopped = depot
         .obtain::<Arc<crate::api::state::AppState>>()
         .unwrap()
@@ -972,9 +1000,9 @@ pub async fn fork_chat_session(req: &mut Request, res: &mut Response, _depot: &m
     }
 
     match fork_chat_session_history(&session_id, &body.message_id) {
-        Ok(forked_session_id) => res.render(Json(ChatForkResponse {
-            session_id: forked_session_id,
-        })),
+        Ok(forked_session_id) => {
+            res.render(Json(ChatForkResponse { session_id: forked_session_id }))
+        }
         Err(Error::ValidationError(message)) => render_bad_request(res, message),
         Err(err) => render_internal_error(res, err),
     }
@@ -988,9 +1016,9 @@ pub async fn delete_chat_session(req: &mut Request, res: &mut Response, _depot: 
         return;
     }
 
-    match delete_chat_session_file(&session_id).and_then(|_| {
-        delete_workspace_tasks(&session_id).map_err(Error::ValidationError)
-    }) {
+    match delete_chat_session_file(&session_id)
+        .and_then(|_| delete_workspace_tasks(&session_id).map_err(Error::ValidationError))
+    {
         Ok(()) => res.render(Json(json!({ "ok": true }))),
         Err(err) => render_internal_error(res, err),
     }
@@ -1043,12 +1071,17 @@ async fn execute_chat_streaming(
     let is_continuation = continuation.is_some();
     let mut messages: Vec<LLMMessage> = raw_messages.into_iter().map(Into::into).collect();
     if let Some(decision) = continuation {
-        let Some(session_id) = requested_session_id.as_deref().filter(|value| !value.trim().is_empty()) else {
-            let event = json!({ "type": "error", "error": "continuation requires an existing session" });
+        let Some(session_id) =
+            requested_session_id.as_deref().filter(|value| !value.trim().is_empty())
+        else {
+            let event =
+                json!({ "type": "error", "error": "continuation requires an existing session" });
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
             return;
         };
-        let latest = match load_chat_session_messages(session_id).and_then(|records| Ok(records.last().cloned())) {
+        let latest = match load_chat_session_messages(session_id)
+            .and_then(|records| Ok(records.last().cloned()))
+        {
             Ok(Some(record)) => record,
             _ => {
                 let event = json!({ "type": "error", "error": "no resumable tool-call limit prompt exists for this session" });
@@ -1056,7 +1089,12 @@ async fn execute_chat_streaming(
                 return;
             }
         };
-        if latest.pending_ask_user.as_ref().and_then(|request| request.tool_call_limit.as_ref()).is_none() {
+        if latest
+            .pending_ask_user
+            .as_ref()
+            .and_then(|request| request.tool_call_limit.as_ref())
+            .is_none()
+        {
             let event = json!({ "type": "error", "error": "the session is not waiting for a tool-call limit decision" });
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
             return;
@@ -1068,34 +1106,51 @@ async fn execute_chat_streaming(
         }
         match decision {
             ChatContinuationDecision::Stop => {
-                match interrupt_workspace_tasks(session_id, "用户在工具调用上限处停止") {
+                match interrupt_workspace_tasks(session_id, "用户在工具调用上限处停止")
+                {
                     Ok(snapshot) => {
                         let event = json!({ "type": "tool_call_limit_stopped", "session_id": session_id, "tasks": snapshot.tasks });
                         let _ = sender.send_data(format!("data: {event}\n\n")).await;
                         let _ = sender.send_data("data: [DONE]\n\n").await;
                     }
-                    Err(error) => { let event = json!({ "type": "error", "error": error }); let _ = sender.send_data(format!("data: {event}\n\n")).await; }
+                    Err(error) => {
+                        let event = json!({ "type": "error", "error": error });
+                        let _ = sender.send_data(format!("data: {event}\n\n")).await;
+                    }
                 }
                 return;
             }
             ChatContinuationDecision::Continue => {
-                let records = match load_chat_session_messages(session_id) { Ok(records) => records, Err(error) => { let event = json!({ "type": "error", "error": error.to_string() }); let _ = sender.send_data(format!("data: {event}\n\n")).await; return; } };
-                messages = records.into_iter().filter(|record| matches!(record.role.as_str(), "user" | "assistant" | "tool")).map(history_record_to_message).collect();
+                let records = match load_chat_session_messages(session_id) {
+                    Ok(records) => records,
+                    Err(error) => {
+                        let event = json!({ "type": "error", "error": error.to_string() });
+                        let _ = sender.send_data(format!("data: {event}\n\n")).await;
+                        return;
+                    }
+                };
+                messages = records
+                    .into_iter()
+                    .filter(|record| matches!(record.role.as_str(), "user" | "assistant" | "tool"))
+                    .map(history_record_to_message)
+                    .collect();
                 messages.push(LLMMessage::system("用户已同意继续执行。请从现有状态继续完成任务。"));
             }
         }
     }
-    let ChatAgentInfo { agent, agent_snapshot } = match resolve_chat_agent(&state.role_service_manager, &agent_id) {
-        Ok(info) => info,
-        Err(event) => {
-            let _ = sender.send_data(format!("data: {event}\n\n")).await;
-            return;
-        }
-    };
+    let ChatAgentInfo { agent, agent_snapshot } =
+        match resolve_chat_agent(&state.role_service_manager, &agent_id) {
+            Ok(info) => info,
+            Err(event) => {
+                let _ = sender.send_data(format!("data: {event}\n\n")).await;
+                return;
+            }
+        };
 
     messages = sanitize_messages(messages);
     if messages.is_empty() {
-        let event = json!({ "type": "error", "error": "messages must not be empty after sanitization" });
+        let event =
+            json!({ "type": "error", "error": "messages must not be empty after sanitization" });
         let _ = sender.send_data(format!("data: {event}\n\n")).await;
         return;
     }
@@ -1106,15 +1161,18 @@ async fn execute_chat_streaming(
         .cloned();
 
     let trace_id = Uuid::new_v4().to_string();
-    let effective_workspace_path =
-        match resolve_effective_workspace_path(&agent, requested_session_id.as_deref(), workspace_path.as_deref()) {
-            Ok(path) => path,
-            Err(err) => {
-                let event = json!({ "type": "error", "error": err.to_string() });
-                let _ = sender.send_data(format!("data: {event}\n\n")).await;
-                return;
-            }
-        };
+    let effective_workspace_path = match resolve_effective_workspace_path(
+        &agent,
+        requested_session_id.as_deref(),
+        workspace_path.as_deref(),
+    ) {
+        Ok(path) => path,
+        Err(err) => {
+            let event = json!({ "type": "error", "error": err.to_string() });
+            let _ = sender.send_data(format!("data: {event}\n\n")).await;
+            return;
+        }
+    };
 
     let CommandDispatchOutcome {
         session_id,
@@ -1138,9 +1196,12 @@ async fn execute_chat_streaming(
         }
     };
 
-    let assistant_message_id = requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
+    let assistant_message_id =
+        requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
 
-    let workspace_task = if should_run_inference && matches!(agent.role_service_type, RoleServiceType::Workspace(_)) {
+    let workspace_task = if should_run_inference
+        && matches!(agent.role_service_type, RoleServiceType::Workspace(_))
+    {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let task_id = state.tasks.lock().unwrap().add_workspace_chat_task(
             agent.id.clone(),
@@ -1182,7 +1243,14 @@ async fn execute_chat_streaming(
             image_understand_model_config_id.as_deref(),
         ) {
             if let Some((task_id, _)) = &workspace_task {
-                finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Failed, Some(err.to_string()), None);
+                finish_workspace_task(
+                    &state,
+                    &broadcast_tx,
+                    task_id,
+                    TaskStatus::Failed,
+                    Some(err.to_string()),
+                    None,
+                );
             }
             let event = json!({ "type": "error", "error": err.to_string() });
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
@@ -1199,12 +1267,16 @@ async fn execute_chat_streaming(
             workspace_task.as_ref().map(|(task_id, _)| task_id.as_str()),
         ),
     )
-    .await && workspace_task.is_none() {
+    .await
+        && workspace_task.is_none()
+    {
         return;
     }
 
     if !should_run_inference {
-        if let (Some(ref output_messages), Some(ref msg_id)) = (&immediate_output_messages, &assistant_message_id) {
+        if let (Some(ref output_messages), Some(ref msg_id)) =
+            (&immediate_output_messages, &assistant_message_id)
+        {
             if !emit_immediate_output(
                 &mut sender,
                 &session_id,
@@ -1307,9 +1379,9 @@ async fn execute_chat_streaming(
         let agent_id = agent_id.clone();
         let model_config_id = model_config_id.clone();
         let image_understand_model_config_id = image_understand_model_config_id.clone();
-        let cancellation = workspace_task
-            .as_ref()
-            .map(|(_, stop_flag)| Arc::new(WorkspaceChatCancellation(Arc::clone(stop_flag))) as Arc<dyn AgentCancellation>);
+        let cancellation = workspace_task.as_ref().map(|(_, stop_flag)| {
+            Arc::new(WorkspaceChatCancellation(Arc::clone(stop_flag))) as Arc<dyn AgentCancellation>
+        });
         async move {
             state
                 .role_service_manager
@@ -1354,7 +1426,8 @@ async fn execute_chat_streaming(
         )
         .await
     } else {
-        relay_collected_text(&mut sender, &assistant_message_id, &mut token_rx, &mut event_rx).await;
+        relay_collected_text(&mut sender, &assistant_message_id, &mut token_rx, &mut event_rx)
+            .await;
         (true, RelayTiming::default())
     };
 
@@ -1366,76 +1439,87 @@ async fn execute_chat_streaming(
         Ok(Ok(result)) => result,
         Ok(Err(err)) => {
             if let Some(snapshot) = running_chat_message.as_ref() {
-                if let Err(persist_err) = persist_running_chat_message(
-                    &session_id,
-                    &agent,
-                    &agent_snapshot,
-                    snapshot,
-                ) {
+                if let Err(persist_err) =
+                    persist_running_chat_message(&session_id, &agent, &agent_snapshot, snapshot)
+                {
                     log::warn!("failed to persist running chat message after inference error: {persist_err}");
                 }
             }
             clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
-            let stopped = workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
+            let stopped =
+                workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
             if let Some((task_id, _)) = &workspace_task {
                 finish_workspace_task(
                     &state,
                     &broadcast_tx,
                     task_id,
-                    if stopped { TaskStatus::Stopped } else { TaskStatus::Failed },
+                    if stopped {
+                        TaskStatus::Stopped
+                    } else {
+                        TaskStatus::Failed
+                    },
                     (!stopped).then(|| err.to_string()),
                     None,
                 );
             }
             if stopped {
-                if let Err(error) = interrupt_workspace_tasks(&session_id, "用户手动停止推理") {
+                if let Err(error) = interrupt_workspace_tasks(&session_id, "用户手动停止推理")
+                {
                     log::warn!("failed to interrupt workspace tasks: {error}");
                 }
                 return;
             }
             let event = json!({ "type": "error", "error": err.to_string() });
-            if client_connected { let _ = sender.send_data(format!("data: {event}\n\n")).await; }
+            if client_connected {
+                let _ = sender.send_data(format!("data: {event}\n\n")).await;
+            }
             return;
         }
         Err(err) => {
             if let Some(snapshot) = running_chat_message.as_ref() {
-                if let Err(persist_err) = persist_running_chat_message(
-                    &session_id,
-                    &agent,
-                    &agent_snapshot,
-                    snapshot,
-                ) {
+                if let Err(persist_err) =
+                    persist_running_chat_message(&session_id, &agent, &agent_snapshot, snapshot)
+                {
                     log::warn!("failed to persist running chat message after chat task join failure: {persist_err}");
                 }
             }
             clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
-            let stopped = workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
+            let stopped =
+                workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
             if let Some((task_id, _)) = &workspace_task {
                 finish_workspace_task(
                     &state,
                     &broadcast_tx,
                     task_id,
-                    if stopped { TaskStatus::Stopped } else { TaskStatus::Failed },
+                    if stopped {
+                        TaskStatus::Stopped
+                    } else {
+                        TaskStatus::Failed
+                    },
                     (!stopped).then(|| format!("failed to join chat task: {err}")),
                     None,
                 );
             }
-            if stopped { return; }
-            let event = json!({ "type": "error", "error": format!("failed to join chat task: {err}") });
-            if client_connected { let _ = sender.send_data(format!("data: {event}\n\n")).await; }
+            if stopped {
+                return;
+            }
+            let event =
+                json!({ "type": "error", "error": format!("failed to join chat task: {err}") });
+            if client_connected {
+                let _ = sender.send_data(format!("data: {event}\n\n")).await;
+            }
             return;
         }
     };
 
-    if let Some(watch) = stop_watch { watch.abort(); }
+    if let Some(watch) = stop_watch {
+        watch.abort();
+    }
     if workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed)) {
         if let Some(snapshot) = running_chat_message.as_ref() {
-            if let Err(err) = persist_running_chat_message(
-                &session_id,
-                &agent,
-                &agent_snapshot,
-                snapshot,
-            ) {
+            if let Err(err) =
+                persist_running_chat_message(&session_id, &agent, &agent_snapshot, snapshot)
+            {
                 if client_connected {
                     let event = json!({ "type": "error", "error": err.to_string() });
                     let _ = sender.send_data(format!("data: {event}\n\n")).await;
@@ -1447,7 +1531,9 @@ async fn execute_chat_streaming(
             finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Stopped, None, None);
         }
         if matches!(agent.role_service_type, RoleServiceType::Workspace(_)) {
-            if let Err(error) = interrupt_workspace_tasks(&session_id, "用户手动停止推理") { log::warn!("failed to interrupt workspace tasks: {error}"); }
+            if let Err(error) = interrupt_workspace_tasks(&session_id, "用户手动停止推理") {
+                log::warn!("failed to interrupt workspace tasks: {error}");
+            }
         }
         return;
     }
@@ -1468,7 +1554,8 @@ async fn execute_chat_streaming(
         &output_messages,
         effective_workspace_path.clone(),
         match &stop_reason {
-            ToolCallingStopReason::AwaitUserInput(request) | ToolCallingStopReason::ToolCallLimitReached(request) => Some(request.clone()),
+            ToolCallingStopReason::AwaitUserInput(request)
+            | ToolCallingStopReason::ToolCallLimitReached(request) => Some(request.clone()),
             _ => None,
         },
         metrics.as_ref(),
@@ -1478,10 +1565,19 @@ async fn execute_chat_streaming(
     ) {
         clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
         if let Some((task_id, _)) = &workspace_task {
-            finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Failed, Some(err.to_string()), None);
+            finish_workspace_task(
+                &state,
+                &broadcast_tx,
+                task_id,
+                TaskStatus::Failed,
+                Some(err.to_string()),
+                None,
+            );
         }
         let event = json!({ "type": "error", "error": err.to_string() });
-        if client_connected { let _ = sender.send_data(format!("data: {event}\n\n")).await; }
+        if client_connected {
+            let _ = sender.send_data(format!("data: {event}\n\n")).await;
+        }
         return;
     }
 
@@ -1502,7 +1598,9 @@ async fn execute_chat_streaming(
         }
     }
 
-    if let ToolCallingStopReason::AwaitUserInput(request) | ToolCallingStopReason::ToolCallLimitReached(request) = stop_reason {
+    if let ToolCallingStopReason::AwaitUserInput(request)
+    | ToolCallingStopReason::ToolCallLimitReached(request) = stop_reason
+    {
         let event = json!({
             "type": "ask_user",
             "session_id": session_id,
@@ -1529,7 +1627,12 @@ async fn execute_chat_streaming(
 }
 
 /// Build a top-level SSE event (`start` / `done`) with optional `message_id`.
-fn build_chat_stream_event(kind: &str, session_id: &str, message_id: Option<&str>, task_id: Option<&str>) -> Value {
+fn build_chat_stream_event(
+    kind: &str,
+    session_id: &str,
+    message_id: Option<&str>,
+    task_id: Option<&str>,
+) -> Value {
     match message_id {
         Some(message_id) => json!({
             "type": kind,
@@ -1558,18 +1661,43 @@ fn finish_workspace_task(
         TaskStatus::Stopped => "WARN",
         _ => "ERROR",
     };
-    let message = error.as_deref().unwrap_or_else(|| summary.as_deref().unwrap_or("Workspace 聊天任务已结束"));
+    let message = error
+        .as_deref()
+        .unwrap_or_else(|| summary.as_deref().unwrap_or("Workspace 聊天任务已结束"));
     append_workspace_task_log(state, task_id, level, message);
-    state.tasks.lock().unwrap().finish_task(task_id, status.clone(), error.clone(), summary);
+    state
+        .tasks
+        .lock()
+        .unwrap()
+        .finish_task(task_id, status.clone(), error.clone(), summary);
     match status {
-        TaskStatus::Success => { let _ = broadcast_tx.send(ServerMessage::TaskFinished { task_id: task_id.to_string(), success: true, error: None }); }
-        TaskStatus::Failed => { let _ = broadcast_tx.send(ServerMessage::TaskFinished { task_id: task_id.to_string(), success: false, error }); }
-        TaskStatus::Stopped => { let _ = broadcast_tx.send(ServerMessage::TaskStopped { task_id: task_id.to_string() }); }
+        TaskStatus::Success => {
+            let _ = broadcast_tx.send(ServerMessage::TaskFinished {
+                task_id: task_id.to_string(),
+                success: true,
+                error: None,
+            });
+        }
+        TaskStatus::Failed => {
+            let _ = broadcast_tx.send(ServerMessage::TaskFinished {
+                task_id: task_id.to_string(),
+                success: false,
+                error,
+            });
+        }
+        TaskStatus::Stopped => {
+            let _ = broadcast_tx.send(ServerMessage::TaskStopped { task_id: task_id.to_string() });
+        }
         _ => {}
     }
 }
 
-fn append_workspace_task_log(state: &crate::api::state::AppState, task_id: &str, level: &str, message: &str) {
+fn append_workspace_task_log(
+    state: &crate::api::state::AppState,
+    task_id: &str,
+    level: &str,
+    message: &str,
+) {
     let entry = crate::api::state::TaskLogEntry {
         timestamp: Utc::now().to_rfc3339(),
         level: level.to_string(),
@@ -1588,15 +1716,13 @@ fn build_chat_response_metrics(
     let usage = aggregate_assistant_usage(output_messages);
     let generation_duration = first_token_after_start
         .and_then(|first_token| total_duration.and_then(|total| total.checked_sub(first_token)));
-    let output_tokens_per_second = match (
-        usage.as_ref().and_then(|usage| usage.completion_tokens),
-        generation_duration,
-    ) {
-        (Some(completion_tokens), Some(duration)) if !duration.is_zero() => {
-            Some(completion_tokens as f64 / duration.as_secs_f64())
-        }
-        _ => None,
-    };
+    let output_tokens_per_second =
+        match (usage.as_ref().and_then(|usage| usage.completion_tokens), generation_duration) {
+            (Some(completion_tokens), Some(duration)) if !duration.is_zero() => {
+                Some(completion_tokens as f64 / duration.as_secs_f64())
+            }
+            _ => None,
+        };
     let cache_hit_rate = match (
         usage.as_ref().and_then(|usage| usage.cached_prompt_tokens),
         usage.as_ref().and_then(|usage| usage.prompt_tokens),
@@ -1613,9 +1739,7 @@ fn build_chat_response_metrics(
         output_tokens_per_second,
         prompt_tokens: usage.as_ref().and_then(|usage| usage.prompt_tokens),
         cached_prompt_tokens: usage.as_ref().and_then(|usage| usage.cached_prompt_tokens),
-        prompt_cache_miss_tokens: usage
-            .as_ref()
-            .and_then(|usage| usage.prompt_cache_miss_tokens),
+        prompt_cache_miss_tokens: usage.as_ref().and_then(|usage| usage.prompt_cache_miss_tokens),
         completion_tokens: usage.as_ref().and_then(|usage| usage.completion_tokens),
         total_tokens: usage.as_ref().and_then(|usage| usage.total_tokens),
         cache_hit_rate,
@@ -1712,7 +1836,8 @@ fn append_running_chat_message(
         role: "assistant".to_string(),
         content: snapshot.content,
         parts: Vec::new(),
-        reasoning_content: (!snapshot.reasoning_content.is_empty()).then_some(snapshot.reasoning_content),
+        reasoning_content: (!snapshot.reasoning_content.is_empty())
+            .then_some(snapshot.reasoning_content),
         timestamp: snapshot.timestamp,
         stream_index: None,
         streaming: true,
@@ -1759,7 +1884,10 @@ fn persist_running_chat_message(
     snapshot: &Arc<Mutex<RunningChatMessage>>,
 ) -> Result<()> {
     let snapshot = snapshot.lock().unwrap().clone();
-    if snapshot.content.is_empty() && snapshot.reasoning_content.is_empty() && snapshot.live_tool_calls.is_empty() {
+    if snapshot.content.is_empty()
+        && snapshot.reasoning_content.is_empty()
+        && snapshot.live_tool_calls.is_empty()
+    {
         return Ok(());
     }
 
@@ -1772,7 +1900,8 @@ fn persist_running_chat_message(
         role: "assistant".to_string(),
         content: snapshot.content,
         parts: Vec::new(),
-        reasoning_content: (!snapshot.reasoning_content.is_empty()).then_some(snapshot.reasoning_content),
+        reasoning_content: (!snapshot.reasoning_content.is_empty())
+            .then_some(snapshot.reasoning_content),
         timestamp: snapshot.timestamp,
         stream_index: None,
         streaming: false,
@@ -1797,9 +1926,14 @@ fn sanitize_messages(messages: Vec<LLMMessage>) -> Vec<LLMMessage> {
     messages
         .into_iter()
         .filter(|message| {
-            let has_content = message.content_text_owned().is_some_and(|text| !text.trim().is_empty());
-            let has_reasoning = message.reasoning_content.as_deref().is_some_and(|text| !text.trim().is_empty());
-            has_content || has_reasoning || !message.parts.is_empty() || !message.tool_calls.is_empty()
+            let has_content =
+                message.content_text_owned().is_some_and(|text| !text.trim().is_empty());
+            let has_reasoning =
+                message.reasoning_content.as_deref().is_some_and(|text| !text.trim().is_empty());
+            has_content
+                || has_reasoning
+                || !message.parts.is_empty()
+                || !message.tool_calls.is_empty()
         })
         .collect()
 }
@@ -1809,7 +1943,9 @@ fn sanitize_messages(messages: Vec<LLMMessage>) -> Vec<LLMMessage> {
 /// **Purpose:** Used by command dispatch when a passthrough command rewrites the user message
 /// in-place rather than appending.
 fn replace_last_user_message(messages: &mut Vec<LLMMessage>, replacement: LLMMessage) {
-    if let Some(index) = messages.iter().rposition(|message| matches!(message.role, MessageRole::User)) {
+    if let Some(index) =
+        messages.iter().rposition(|message| matches!(message.role, MessageRole::User))
+    {
         messages[index] = replacement;
     } else {
         messages.push(replacement);
@@ -1844,32 +1980,33 @@ fn persist_chat_records(
     let now = Utc::now().to_rfc3339();
     if include_user_message {
         if let Some(user_message) = latest_user_message {
-        let user_record = ChatHistoryRecord {
-            session_id: session_id.to_string(),
-            agent_id: agent.id.clone(),
-            agent_name: agent_snapshot.name.clone(),
-            role_service_type: agent_snapshot.role_service_type.clone(),
-            agent_avatar_url: agent_snapshot.avatar_url.clone(),
-            role: "user".to_string(),
-            content: user_message.content_text_owned().unwrap_or_default(),
-            parts: user_message.parts.clone(),
-            reasoning_content: None,
-            timestamp: now.clone(),
-            stream_index: None,
-            streaming: false,
-            live_tool_calls: Vec::new(),
-            trace_id: trace_id.to_string(),
-            message_id: format!("msg_{}", Uuid::new_v4().simple()),
-            tool_calls: Vec::new(),
-            tool_call_id: None,
-            workspace_path: workspace_path.clone(),
-            model_config_id: model_config_id.map(str::to_string),
-            image_understand_model_config_id: image_understand_model_config_id.map(str::to_string),
-            pending_ask_user: None,
-            metrics: None,
-        };
-        append_history_record(&user_record)?;
-    }
+            let user_record = ChatHistoryRecord {
+                session_id: session_id.to_string(),
+                agent_id: agent.id.clone(),
+                agent_name: agent_snapshot.name.clone(),
+                role_service_type: agent_snapshot.role_service_type.clone(),
+                agent_avatar_url: agent_snapshot.avatar_url.clone(),
+                role: "user".to_string(),
+                content: user_message.content_text_owned().unwrap_or_default(),
+                parts: user_message.parts.clone(),
+                reasoning_content: None,
+                timestamp: now.clone(),
+                stream_index: None,
+                streaming: false,
+                live_tool_calls: Vec::new(),
+                trace_id: trace_id.to_string(),
+                message_id: format!("msg_{}", Uuid::new_v4().simple()),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+                workspace_path: workspace_path.clone(),
+                model_config_id: model_config_id.map(str::to_string),
+                image_understand_model_config_id: image_understand_model_config_id
+                    .map(str::to_string),
+                pending_ask_user: None,
+                metrics: None,
+            };
+            append_history_record(&user_record)?;
+        }
     }
 
     for message in output_messages {
@@ -1894,7 +2031,9 @@ fn persist_chat_records(
             streaming: false,
             live_tool_calls: Vec::new(),
             trace_id: trace_id.to_string(),
-            message_id: if matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty() {
+            message_id: if matches!(message.role, MessageRole::Assistant)
+                && message.tool_calls.is_empty()
+            {
                 assistant_message_id.to_string()
             } else {
                 format!("msg_{}", Uuid::new_v4().simple())
@@ -1905,7 +2044,9 @@ fn persist_chat_records(
             model_config_id: model_config_id.map(str::to_string),
             image_understand_model_config_id: image_understand_model_config_id.map(str::to_string),
             pending_ask_user: pending_ask_user.clone(),
-            metrics: if matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty() {
+            metrics: if matches!(message.role, MessageRole::Assistant)
+                && message.tool_calls.is_empty()
+            {
                 metrics.cloned()
             } else {
                 None
@@ -1976,7 +2117,9 @@ fn fork_chat_session_history(source_session_id: &str, source_message_id: &str) -
         .iter()
         .position(|record| record.message_id == source_message_id && record.role == "user")
     else {
-        return Err(Error::ValidationError("only an existing user message can be forked".to_string()));
+        return Err(Error::ValidationError(
+            "only an existing user message can be forked".to_string(),
+        ));
     };
 
     let forked_session_id = Uuid::new_v4().to_string();
@@ -2004,8 +2147,9 @@ fn write_chat_session_records(session_id: &str, records: &[ChatHistoryRecord]) -
     }
     let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
     for record in records {
-        serde_json::to_writer(&mut file, record)
-            .map_err(|err| zihuan_core::string_error!("failed to serialize fork history record: {err}"))?;
+        serde_json::to_writer(&mut file, record).map_err(|err| {
+            zihuan_core::string_error!("failed to serialize fork history record: {err}")
+        })?;
         file.write_all(b"\n")?;
     }
     file.flush()?;
@@ -2026,7 +2170,10 @@ fn resolve_fork_group_id(session_id: &str, message_id: &str) -> Result<String> {
     resolve_fork_group_id(&metadata.source_session_id, message_id)
 }
 
-fn load_message_branches(session_id: &str, records: &[ChatHistoryRecord]) -> Result<Vec<ChatMessageBranch>> {
+fn load_message_branches(
+    session_id: &str,
+    records: &[ChatHistoryRecord],
+) -> Result<Vec<ChatMessageBranch>> {
     let metadata_by_session = load_all_fork_metadata()?;
     let mut branches = Vec::new();
     for record in records.iter().filter(|record| record.role == "user") {
@@ -2160,7 +2307,10 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
             role_service_type: first_record.as_ref().map(|r| r.role_service_type.clone()),
             agent_avatar_url: first_record.as_ref().and_then(|r| r.agent_avatar_url.clone()),
             workspace_path: read_last_record(&path).ok().flatten().and_then(|r| r.workspace_path),
-            pending_ask_user: read_last_record(&path).ok().flatten().and_then(|r| r.pending_ask_user),
+            pending_ask_user: read_last_record(&path)
+                .ok()
+                .flatten()
+                .and_then(|r| r.pending_ask_user),
             title,
         });
     }
@@ -2185,7 +2335,9 @@ fn load_chat_session_messages(session_id: &str) -> Result<Vec<ChatHistoryRecord>
         }
         match serde_json::from_str::<ChatHistoryRecord>(&line) {
             Ok(record) => entries.push(record),
-            Err(err) => return Err(zihuan_core::string_error!("failed to parse chat record: {err}")),
+            Err(err) => {
+                return Err(zihuan_core::string_error!("failed to parse chat record: {err}"))
+            }
         }
     }
     Ok(entries)
@@ -2200,8 +2352,9 @@ fn read_first_record(path: &Path) -> Result<Option<ChatHistoryRecord>> {
         return Ok(None);
     }
 
-    let record: ChatHistoryRecord = serde_json::from_str(line.trim())
-        .map_err(|err| zihuan_core::string_error!("failed to parse first chat history record: {err}"))?;
+    let record: ChatHistoryRecord = serde_json::from_str(line.trim()).map_err(|err| {
+        zihuan_core::string_error!("failed to parse first chat history record: {err}")
+    })?;
     Ok(Some(record))
 }
 
@@ -2227,7 +2380,9 @@ fn read_first_user_message(path: &Path) -> Result<Option<String>> {
             Ok(record) if record.role == "user" => return Ok(Some(record.content)),
             Ok(_) => continue,
             Err(err) => {
-                return Err(zihuan_core::string_error!("failed to parse chat history record: {err}"));
+                return Err(zihuan_core::string_error!(
+                    "failed to parse chat history record: {err}"
+                ));
             }
         }
     }
@@ -2237,10 +2392,7 @@ fn read_first_user_message(path: &Path) -> Result<Option<String>> {
 /// Build a display title for a session from the first user message.
 fn build_session_title(raw: Option<&str>, session_id: &str) -> String {
     let message = raw.map(str::trim).unwrap_or_default();
-    let message = message
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let message = message.split_whitespace().collect::<Vec<_>>().join(" ");
     if message.is_empty() {
         return session_id.chars().take(8).collect();
     }

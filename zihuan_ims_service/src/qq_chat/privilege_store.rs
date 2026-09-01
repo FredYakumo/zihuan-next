@@ -124,8 +124,12 @@ pub async fn has_active_privilege(
     sender_id: &str,
 ) -> Result<bool> {
     match connection {
-        RelationalDbConnection::MySql(config) => has_active_privilege_mysql(config, agent_id, sender_id).await,
-        RelationalDbConnection::Sqlite(config) => has_active_privilege_sqlite(config, agent_id, sender_id).await,
+        RelationalDbConnection::MySql(config) => {
+            has_active_privilege_mysql(config, agent_id, sender_id).await
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            has_active_privilege_sqlite(config, agent_id, sender_id).await
+        }
     }
 }
 
@@ -134,8 +138,12 @@ pub async fn list_recent_notifications(
     limit: i64,
 ) -> Result<Vec<NotificationRecord>> {
     match connection {
-        RelationalDbConnection::MySql(config) => list_recent_notifications_mysql(config, limit).await,
-        RelationalDbConnection::Sqlite(config) => list_recent_notifications_sqlite(config, limit).await,
+        RelationalDbConnection::MySql(config) => {
+            list_recent_notifications_mysql(config, limit).await
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            list_recent_notifications_sqlite(config, limit).await
+        }
     }
 }
 
@@ -370,7 +378,11 @@ async fn verify_privilege_auth_sqlite(
     Ok(PrivilegeAuthStatus::Elevated { until: elevated_until, record })
 }
 
-async fn has_active_privilege_mysql(config: &Arc<MySqlConfig>, agent_id: &str, sender_id: &str) -> Result<bool> {
+async fn has_active_privilege_mysql(
+    config: &Arc<MySqlConfig>,
+    agent_id: &str,
+    sender_id: &str,
+) -> Result<bool> {
     let row = sqlx::query(
         "SELECT elevated_until FROM qq_chat_agent_service_privilege_auth \
          WHERE agent_id = ? AND sender_id = ? AND elevated_until IS NOT NULL \
@@ -388,7 +400,11 @@ async fn has_active_privilege_mysql(config: &Arc<MySqlConfig>, agent_id: &str, s
     Ok(Local::now().naive_local() <= elevated_until)
 }
 
-async fn has_active_privilege_sqlite(config: &Arc<SqliteConfig>, agent_id: &str, sender_id: &str) -> Result<bool> {
+async fn has_active_privilege_sqlite(
+    config: &Arc<SqliteConfig>,
+    agent_id: &str,
+    sender_id: &str,
+) -> Result<bool> {
     let row = sqlx::query(
         "SELECT elevated_until FROM qq_chat_agent_service_privilege_auth \
          WHERE agent_id = ? AND sender_id = ? AND elevated_until IS NOT NULL \
@@ -406,7 +422,10 @@ async fn has_active_privilege_sqlite(config: &Arc<SqliteConfig>, agent_id: &str,
     Ok(Local::now() <= parse_sqlite_timestamp(&elevated_until)?)
 }
 
-async fn list_recent_notifications_mysql(config: &Arc<MySqlConfig>, limit: i64) -> Result<Vec<NotificationRecord>> {
+async fn list_recent_notifications_mysql(
+    config: &Arc<MySqlConfig>,
+    limit: i64,
+) -> Result<Vec<NotificationRecord>> {
     let rows = sqlx::query(
         "SELECT id, agent_id, sender_id, purpose, auth_key, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
          FROM qq_chat_agent_service_privilege_auth ORDER BY created_at DESC LIMIT ?",
@@ -418,7 +437,10 @@ async fn list_recent_notifications_mysql(config: &Arc<MySqlConfig>, limit: i64) 
     Ok(rows.into_iter().map(map_notification_card_mysql_row).collect())
 }
 
-async fn list_recent_notifications_sqlite(config: &Arc<SqliteConfig>, limit: i64) -> Result<Vec<NotificationRecord>> {
+async fn list_recent_notifications_sqlite(
+    config: &Arc<SqliteConfig>,
+    limit: i64,
+) -> Result<Vec<NotificationRecord>> {
     let rows = sqlx::query(
         "SELECT id, agent_id, sender_id, purpose, auth_key, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
          FROM qq_chat_agent_service_privilege_auth ORDER BY created_at DESC LIMIT ?",
@@ -435,9 +457,9 @@ async fn latest_auth_mysql(
     agent_id: &str,
     sender_id: &str,
 ) -> Result<QqChatAgentServicePrivilegeAuthRecord> {
-    latest_auth_optional_mysql(config, agent_id, sender_id)
-        .await?
-        .ok_or_else(|| Error::ValidationError("privilege auth record missing after insert".to_string()))
+    latest_auth_optional_mysql(config, agent_id, sender_id).await?.ok_or_else(|| {
+        Error::ValidationError("privilege auth record missing after insert".to_string())
+    })
 }
 
 async fn latest_auth_sqlite(
@@ -445,9 +467,9 @@ async fn latest_auth_sqlite(
     agent_id: &str,
     sender_id: &str,
 ) -> Result<QqChatAgentServicePrivilegeAuthRecord> {
-    latest_auth_optional_sqlite(config, agent_id, sender_id)
-        .await?
-        .ok_or_else(|| Error::ValidationError("privilege auth record missing after insert".to_string()))
+    latest_auth_optional_sqlite(config, agent_id, sender_id).await?.ok_or_else(|| {
+        Error::ValidationError("privilege auth record missing after insert".to_string())
+    })
 }
 
 async fn latest_auth_optional_mysql(
@@ -573,17 +595,15 @@ fn map_notification_card_sqlite_row(row: SqliteRow) -> NotificationRecord {
 }
 
 fn mysql_pool(config: &Arc<MySqlConfig>) -> Result<&sqlx::mysql::MySqlPool> {
-    config
-        .pool
-        .as_ref()
-        .ok_or_else(|| Error::ValidationError("privilege-auth mysql pool is not initialized".to_string()))
+    config.pool.as_ref().ok_or_else(|| {
+        Error::ValidationError("privilege-auth mysql pool is not initialized".to_string())
+    })
 }
 
 fn sqlite_pool(config: &Arc<SqliteConfig>) -> Result<&sqlx::sqlite::SqlitePool> {
-    config
-        .pool
-        .as_ref()
-        .ok_or_else(|| Error::ValidationError("privilege-auth sqlite pool is not initialized".to_string()))
+    config.pool.as_ref().ok_or_else(|| {
+        Error::ValidationError("privilege-auth sqlite pool is not initialized".to_string())
+    })
 }
 
 async fn delete_all_notifications_mysql(config: &Arc<MySqlConfig>) -> Result<u64> {
@@ -612,8 +632,9 @@ fn parse_mysql_timestamp(value: &str) -> Result<NaiveDateTime> {
 }
 
 fn parse_sqlite_timestamp(value: &str) -> Result<chrono::DateTime<Local>> {
-    let naive = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
-        .map_err(|err| Error::ValidationError(format!("invalid sqlite timestamp '{value}': {err}")))?;
+    let naive = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S").map_err(|err| {
+        Error::ValidationError(format!("invalid sqlite timestamp '{value}': {err}"))
+    })?;
     Ok(chrono::TimeZone::from_local_datetime(&Local, &naive)
         .single()
         .ok_or_else(|| Error::ValidationError(format!("ambiguous sqlite timestamp '{value}'")))?)

@@ -49,7 +49,10 @@ pub struct LlmServiceConfig {
     pub thinking_type: Option<ThinkingType>,
     #[serde(default)]
     pub reasoning_effort: Option<ReasoningEffort>,
-    #[serde(default = "default_context_length", deserialize_with = "deserialize_context_length")]
+    #[serde(
+        default = "default_context_length",
+        deserialize_with = "deserialize_context_length"
+    )]
     pub context_length: usize,
     #[serde(default = "default_timeout_secs")]
     pub timeout_secs: u64,

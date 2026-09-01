@@ -3,16 +3,19 @@ use std::collections::HashMap;
 use crate::api::config::now_rfc3339;
 use crate::setup_orchestrator::{ImsBotAdapterSetupConfig, LlmSetupConfig};
 use crate::system_config;
-use zihuan_core::ims_bot_adapter::BotAdapterConnection;
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType, WorkspaceAgentServiceConfig};
+use zihuan_core::agent::qq_chat::{
+    DreamIntervalUnit, QqChatAgentServiceConfig, RetrievalStoreConfig,
+};
+use zihuan_core::agent::service_config::{
+    RoleServiceConfig, RoleServiceType, WorkspaceAgentServiceConfig,
+};
 use zihuan_core::config::llm_refs::LlmRefConfig;
+use zihuan_core::ims_bot_adapter::BotAdapterConnection;
 use zihuan_core::model_inference::model_config::{LlmApiStyle, LlmServiceConfig, ModelRefSpec};
 use zihuan_core::storage::{
-    ConnectionAuthMethod, ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection, SqliteConnection,
-    WeaviateConnection,
-    WebSearchEngineConnection,
+    ConnectionAuthMethod, ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection,
+    SqliteConnection, WeaviateConnection, WebSearchEngineConnection,
 };
-use zihuan_core::agent::qq_chat::{DreamIntervalUnit, QqChatAgentServiceConfig, RetrievalStoreConfig};
 use zihuan_core::weaviate::WeaviateCollectionSchema;
 
 pub async fn create_chat_assistant_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {
@@ -126,9 +129,7 @@ pub async fn create_qq_bot_stack(
     let sqlite = build_connection(
         "setup-default-sqlite",
         "SQLite Task DB",
-        ConnectionKind::Sqlite(SqliteConnection {
-            path: "zihuan_data.db".to_string(),
-        }),
+        ConnectionKind::Sqlite(SqliteConnection { path: "zihuan_data.db".to_string() }),
     );
     save_connection(sqlite)?;
 
@@ -141,18 +142,28 @@ pub async fn create_qq_bot_stack(
 pub async fn create_butler_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {
     let llm_ref = build_llm_ref(llm_config, "setup-default-llm", "Default LLM");
     save_llm_ref(llm_ref)?;
-    let agent =
-        build_workspace_agent_service("setup-default-agent", "AI Butler", Some("setup-default-llm".to_string()));
+    let agent = build_workspace_agent_service(
+        "setup-default-agent",
+        "AI Butler",
+        Some("setup-default-llm".to_string()),
+    );
     save_agent(agent)?;
 
     Ok(())
 }
 
-pub async fn create_workspace_agent_service_stack(llm_config: &LlmSetupConfig, name: &str) -> Result<(), String> {
+pub async fn create_workspace_agent_service_stack(
+    llm_config: &LlmSetupConfig,
+    name: &str,
+) -> Result<(), String> {
     let llm_ref = build_llm_ref(llm_config, "setup-default-llm", "Default LLM");
     save_llm_ref(llm_ref)?;
 
-    let agent = build_workspace_agent_service("setup-default-agent", name, Some("setup-default-llm".to_string()));
+    let agent = build_workspace_agent_service(
+        "setup-default-agent",
+        name,
+        Some("setup-default-llm".to_string()),
+    );
     save_agent(agent)?;
 
     Ok(())
@@ -160,9 +171,7 @@ pub async fn create_workspace_agent_service_stack(llm_config: &LlmSetupConfig, n
 
 fn build_llm_ref(config: &LlmSetupConfig, id: &str, name: &str) -> LlmRefConfig {
     let model = if config.mode == "local" {
-        ModelRefSpec::TextEmbeddingLocal {
-            model_name: config.model_name.clone(),
-        }
+        ModelRefSpec::TextEmbeddingLocal { model_name: config.model_name.clone() }
     } else {
         ModelRefSpec::ChatLlm {
             llm: LlmServiceConfig {
@@ -286,7 +295,11 @@ fn build_qq_chat_agent_service() -> RoleServiceConfig {
     }
 }
 
-fn build_workspace_agent_service(id: &str, name: &str, llm_ref_id: Option<String>) -> RoleServiceConfig {
+fn build_workspace_agent_service(
+    id: &str,
+    name: &str,
+    llm_ref_id: Option<String>,
+) -> RoleServiceConfig {
     RoleServiceConfig {
         id: id.to_string(),
         config_id: id.to_string(),

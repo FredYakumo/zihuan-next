@@ -9,8 +9,8 @@ use zihuan_core::graph::graph_boundary::{
     sync_root_graph_io_signature, GRAPH_INPUTS_NODE_ID, GRAPH_OUTPUTS_NODE_ID,
 };
 use zihuan_core::graph::graph_io::{
-    refresh_node_dynamic_ports, GraphMetadata, GraphPosition, GraphSize, NodeDefinition, NodeGraphDefinition,
-    PortBinding,
+    refresh_node_dynamic_ports, GraphMetadata, GraphPosition, GraphSize, NodeDefinition,
+    NodeGraphDefinition, PortBinding,
 };
 
 use super::state::{AppState, GraphSession, GraphTabInfo};
@@ -282,11 +282,10 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
 
                     match (existing_cfg, incoming_cfg) {
                         (Some(existing_cfg), Some(mut incoming_cfg)) => {
-                            let existing_has_content = existing_cfg
-                                .subgraph
-                                .nodes
-                                .iter()
-                                .any(|n| n.id != "__function_inputs__" && n.id != "__function_outputs__");
+                            let existing_has_content =
+                                existing_cfg.subgraph.nodes.iter().any(|n| {
+                                    n.id != "__function_inputs__" && n.id != "__function_outputs__"
+                                });
                             let incoming_is_empty = incoming_cfg.subgraph.nodes.is_empty();
 
                             if existing_has_content && incoming_is_empty {
@@ -310,7 +309,9 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
         refresh_node_dynamic_ports(node);
     }
     if let Some(pb) = body.port_bindings {
-        if let Ok(bindings) = serde_json::from_value::<std::collections::HashMap<String, PortBinding>>(pb) {
+        if let Ok(bindings) =
+            serde_json::from_value::<std::collections::HashMap<String, PortBinding>>(pb)
+        {
             for (k, v) in bindings {
                 node.port_bindings.insert(k.clone(), v);
                 node.inline_values.remove(&k);

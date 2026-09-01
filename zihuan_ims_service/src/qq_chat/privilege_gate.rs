@@ -5,7 +5,8 @@ use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::Result;
 
 use crate::qq_chat::privilege_store::{
-    create_privilege_auth, has_active_privilege_blocking, verify_privilege_auth, PrivilegeAuthStatus,
+    create_privilege_auth, has_active_privilege_blocking, verify_privilege_auth,
+    PrivilegeAuthStatus,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,28 +92,35 @@ pub fn handle_auth_command(
         return Ok(AuthCommandOutcome::Reply(render_auth_usage_prompt()));
     }
 
-    let status = run_blocking_future(verify_privilege_auth(connection, agent_id, sender_id, auth_key))?;
+    let status =
+        run_blocking_future(verify_privilege_auth(connection, agent_id, sender_id, auth_key))?;
     Ok(match status {
-        PrivilegeAuthStatus::Elevated { until, record } => match purpose_to_privileged_command(&record.purpose) {
-            Some(command) => AuthCommandOutcome::Resume {
-                message: format!("授权成功。正在自动继续执行 `/{} `。", command.command_name())
-                    .trim()
-                    .to_string(),
-                pending: PendingAuthorizedCommand {
-                    command,
-                    pending_task_id: record.pending_task_id,
-                    pending_target_id: record.pending_target_id,
-                    pending_group_id: record.pending_group_id,
-                    pending_is_group: record.pending_is_group,
-                    pending_args: record.pending_args,
+        PrivilegeAuthStatus::Elevated { until, record } => {
+            match purpose_to_privileged_command(&record.purpose) {
+                Some(command) => AuthCommandOutcome::Resume {
+                    message: format!("授权成功。正在自动继续执行 `/{} `。", command.command_name())
+                        .trim()
+                        .to_string(),
+                    pending: PendingAuthorizedCommand {
+                        command,
+                        pending_task_id: record.pending_task_id,
+                        pending_target_id: record.pending_target_id,
+                        pending_group_id: record.pending_group_id,
+                        pending_is_group: record.pending_is_group,
+                        pending_args: record.pending_args,
+                    },
                 },
-            },
-            None => AuthCommandOutcome::Reply(format!("授权成功。你已进入特权模式，有效期至 {until}。")),
-        },
-        PrivilegeAuthStatus::NotFound => {
-            AuthCommandOutcome::Reply("当前没有待验证的授权密钥，请重新触发需要特权的命令。".to_string())
+                None => AuthCommandOutcome::Reply(format!(
+                    "授权成功。你已进入特权模式，有效期至 {until}。"
+                )),
+            }
         }
-        PrivilegeAuthStatus::Pending(_) => AuthCommandOutcome::Reply("当前密钥仍待验证，请重新输入。".to_string()),
+        PrivilegeAuthStatus::NotFound => AuthCommandOutcome::Reply(
+            "当前没有待验证的授权密钥，请重新触发需要特权的命令。".to_string(),
+        ),
+        PrivilegeAuthStatus::Pending(_) => {
+            AuthCommandOutcome::Reply("当前密钥仍待验证，请重新输入。".to_string())
+        }
         PrivilegeAuthStatus::Failed(message) => AuthCommandOutcome::Reply(message),
     })
 }
@@ -142,7 +150,9 @@ pub fn enqueue_pending_privileged_command(
         privileged_command.command_name(),
         pending_task_id,
         match &cmd_ctx.channel {
-            zihuan_core::command::CommandChannel::QqChat { target_id, .. } => Some(target_id.as_str()),
+            zihuan_core::command::CommandChannel::QqChat { target_id, .. } => {
+                Some(target_id.as_str())
+            }
             _ => None,
         },
         match &cmd_ctx.channel {

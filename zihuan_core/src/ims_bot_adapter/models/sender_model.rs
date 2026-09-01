@@ -35,7 +35,11 @@ pub struct GroupSender {
 }
 
 impl GroupSender {
-    pub fn from_event_sender(sender: &EventSender, group_id: i64, group_name: Option<String>) -> Self {
+    pub fn from_event_sender(
+        sender: &EventSender,
+        group_id: i64,
+        group_name: Option<String>,
+    ) -> Self {
         Self {
             user_id: sender.user_id,
             nickname: sender.nickname.clone(),

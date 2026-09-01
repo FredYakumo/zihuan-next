@@ -50,11 +50,7 @@ pub fn parse_command(raw_input: &str, accepted_arg_count: u8) -> Option<ParsedCo
         Some(remainder.join(" "))
     };
 
-    Some(ParsedCommand {
-        command_name,
-        args,
-        passthrough_text,
-    })
+    Some(ParsedCommand { command_name, args, passthrough_text })
 }
 
 #[cfg(test)]

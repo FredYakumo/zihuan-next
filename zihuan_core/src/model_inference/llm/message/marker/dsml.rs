@@ -45,7 +45,10 @@ pub(crate) fn merge_tool_calls(
 }
 
 enum DsmlToolCallsBlock {
-    Complete { consumed: usize, tool_calls: Vec<ToolCalls> },
+    Complete {
+        consumed: usize,
+        tool_calls: Vec<ToolCalls>,
+    },
     Incomplete,
     Invalid,
 }
@@ -106,10 +109,7 @@ impl DsmlContentParser {
             }
 
             match parse_dsml_tool_calls_block(&self.pending) {
-                DsmlToolCallsBlock::Complete {
-                    consumed,
-                    tool_calls,
-                } => {
+                DsmlToolCallsBlock::Complete { consumed, tool_calls } => {
                     self.tool_calls.extend(tool_calls);
                     self.pending = self.pending[consumed..].to_string();
                 }
@@ -179,10 +179,7 @@ fn parse_dsml_tool_calls_block(text: &str) -> DsmlToolCallsBlock {
             return if tool_calls.is_empty() {
                 DsmlToolCallsBlock::Invalid
             } else {
-                DsmlToolCallsBlock::Complete {
-                    consumed: tag_end,
-                    tool_calls,
-                }
+                DsmlToolCallsBlock::Complete { consumed: tag_end, tool_calls }
             };
         }
         if tag.closing || tag.name != "invoke" {
@@ -208,11 +205,13 @@ fn parse_dsml_tool_calls_block(text: &str) -> DsmlToolCallsBlock {
                 return DsmlToolCallsBlock::Invalid;
             }
 
-            let Some(parameter_name) = parameter_tag.attributes.get("name").and_then(Value::as_str) else {
+            let Some(parameter_name) = parameter_tag.attributes.get("name").and_then(Value::as_str)
+            else {
                 return DsmlToolCallsBlock::Invalid;
             };
             let content_start = parameter_end;
-            let Some(closing_start) = find_next_dsml_tag(text, content_start, "parameter", true) else {
+            let Some(closing_start) = find_next_dsml_tag(text, content_start, "parameter", true)
+            else {
                 return DsmlToolCallsBlock::Incomplete;
             };
             let Some((closing_end, closing_tag)) = parse_dsml_tag(text, closing_start) else {
@@ -223,11 +222,8 @@ fn parse_dsml_tool_calls_block(text: &str) -> DsmlToolCallsBlock {
             }
 
             let raw_value = &text[content_start..closing_start];
-            let value_is_string = parameter_tag
-                .attributes
-                .get("string")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
+            let value_is_string =
+                parameter_tag.attributes.get("string").and_then(Value::as_bool).unwrap_or(false);
             let value = if value_is_string {
                 Value::String(raw_value.to_string())
             } else {
@@ -285,7 +281,11 @@ fn parse_dsml_tag(text: &str, start: usize) -> Option<(usize, DsmlTag)> {
     }
     body = body.strip_prefix('|').or_else(|| body.strip_prefix('｜'))?.trim_start();
     let rest = body.strip_prefix("DSML")?;
-    let rest = rest.trim_start().strip_prefix('|').or_else(|| rest.trim_start().strip_prefix('｜'))?.trim_start();
+    let rest = rest
+        .trim_start()
+        .strip_prefix('|')
+        .or_else(|| rest.trim_start().strip_prefix('｜'))?
+        .trim_start();
     let name_end = rest.find(char::is_whitespace).unwrap_or(rest.len());
     let name = &rest[..name_end];
     if name.is_empty() {

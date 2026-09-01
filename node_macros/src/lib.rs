@@ -83,9 +83,12 @@ fn expand_node_ports(input: TokenStream, kind: PortKind) -> TokenStream {
     let mut seen_names: HashSet<String> = HashSet::new();
     for port in &ports.ports {
         if !seen_names.insert(port.name.value()) {
-            return syn::Error::new(port.name.span(), format!("Duplicate port name '{}'", port.name.value()))
-                .to_compile_error()
-                .into();
+            return syn::Error::new(
+                port.name.span(),
+                format!("Duplicate port name '{}'", port.name.value()),
+            )
+            .to_compile_error()
+            .into();
         }
     }
 
@@ -119,9 +122,12 @@ fn expand_node_flow(input: TokenStream, kind: FlowKind) -> TokenStream {
     let mut seen_names: HashSet<String> = HashSet::new();
     for entry in &entries.entries {
         if !seen_names.insert(entry.key.value()) {
-            return syn::Error::new(entry.key.span(), format!("Duplicate flow key '{}'", entry.key.value()))
-                .to_compile_error()
-                .into();
+            return syn::Error::new(
+                entry.key.span(),
+                format!("Duplicate flow key '{}'", entry.key.value()),
+            )
+            .to_compile_error()
+            .into();
         }
     }
 
@@ -172,9 +178,12 @@ fn expand_return_with_node_output(input: TokenStream) -> TokenStream {
     let mut seen_names: HashSet<String> = HashSet::new();
     for entry in &entries.entries {
         if !seen_names.insert(entry.key.value()) {
-            return syn::Error::new(entry.key.span(), format!("Duplicate flow key '{}'", entry.key.value()))
-                .to_compile_error()
-                .into();
+            return syn::Error::new(
+                entry.key.span(),
+                format!("Duplicate flow key '{}'", entry.key.value()),
+            )
+            .to_compile_error()
+            .into();
         }
     }
 

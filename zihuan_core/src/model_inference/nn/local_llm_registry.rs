@@ -1,9 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::error::{Error, Result};
 
 pub const LOCAL_LLM_MODEL_ROOT: &str = "models/llm";
 

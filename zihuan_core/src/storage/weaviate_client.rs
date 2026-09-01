@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 
 use crate::error::Result;
-use crate::weaviate::{gql_escape, graphql_value, WeaviateCollectionConfig, WeaviateObjectInput, WeaviateRef};
+use crate::weaviate::{
+    gql_escape, graphql_value, WeaviateCollectionConfig, WeaviateObjectInput, WeaviateRef,
+};
 
 pub trait WeaviateClient {
     fn list_collections(&self) -> Result<Vec<String>>;
@@ -64,9 +66,15 @@ pub trait WeaviateClient {
         include_distance: bool,
     ) -> Result<Value>;
 
-    fn query_all(&self, class_name: &str, limit: usize, property_names: &[String]) -> Result<Value>;
+    fn query_all(&self, class_name: &str, limit: usize, property_names: &[String])
+        -> Result<Value>;
 
-    fn query_with_args(&self, class_name: &str, args: &str, property_names: &[String]) -> Result<Value>;
+    fn query_with_args(
+        &self,
+        class_name: &str,
+        args: &str,
+        property_names: &[String],
+    ) -> Result<Value>;
 
     fn query_near_vector(
         &self,
@@ -234,11 +242,21 @@ impl WeaviateClient for WeaviateRef {
         )
     }
 
-    fn query_all(&self, class_name: &str, limit: usize, property_names: &[String]) -> Result<Value> {
+    fn query_all(
+        &self,
+        class_name: &str,
+        limit: usize,
+        property_names: &[String],
+    ) -> Result<Value> {
         self.query_with_args(class_name, &format!("limit: {limit}"), property_names)
     }
 
-    fn query_with_args(&self, class_name: &str, args: &str, property_names: &[String]) -> Result<Value> {
+    fn query_with_args(
+        &self,
+        class_name: &str,
+        args: &str,
+        property_names: &[String],
+    ) -> Result<Value> {
         let mut requested_fields = property_names
             .iter()
             .filter(|value| !value.trim().is_empty())

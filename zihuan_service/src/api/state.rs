@@ -73,12 +73,7 @@ pub struct GraphSession {
 
 impl GraphSession {
     pub fn new(id: String, graph: NodeGraphDefinition, file_path: Option<String>) -> Self {
-        Self {
-            id,
-            file_path,
-            graph,
-            dirty: false,
-        }
+        Self { id, file_path, graph, dirty: false }
     }
 
     pub fn new_empty() -> Self {
@@ -300,8 +295,14 @@ impl TaskManager {
                 let entry_ref = entry.clone();
                 let pool_ref = pool.clone();
                 tokio::spawn(async move {
-                    if let Err(err) = crate::api::task_store::insert_task_entry(&pool_ref, &entry_ref).await {
-                        log::warn!("Failed to insert task_entry '{}' into DB: {}", entry_ref.id, err);
+                    if let Err(err) =
+                        crate::api::task_store::insert_task_entry(&pool_ref, &entry_ref).await
+                    {
+                        log::warn!(
+                            "Failed to insert task_entry '{}' into DB: {}",
+                            entry_ref.id,
+                            err
+                        );
                     }
                 });
             }
@@ -430,7 +431,12 @@ impl TaskManager {
         self.tasks.iter().find(|task| task.id == id)
     }
 
-    pub fn set_task_graph(&mut self, id: &str, graph: serde_json::Value, object_path: Option<String>) {
+    pub fn set_task_graph(
+        &mut self,
+        id: &str,
+        graph: serde_json::Value,
+        object_path: Option<String>,
+    ) {
         if let Some(task) = self.tasks.iter_mut().find(|task| task.id == id) {
             task.graph_snapshot = Some(graph);
             if object_path.is_some() {
@@ -543,10 +549,16 @@ impl TaskManager {
                         next
                     };
                     tokio::spawn(async move {
-                        if let Err(err) =
-                            crate::api::task_store::append_task_progress(&pool, &task_id, seq, &message).await
+                        if let Err(err) = crate::api::task_store::append_task_progress(
+                            &pool, &task_id, seq, &message,
+                        )
+                        .await
                         {
-                            log::warn!("Failed to append task_progress for task '{}': {}", task_id, err);
+                            log::warn!(
+                                "Failed to append task_progress for task '{}': {}",
+                                task_id,
+                                err
+                            );
                         }
                     });
                 }
@@ -583,7 +595,8 @@ impl TaskManager {
         let index_path = Self::task_index_path();
         if index_path.exists() {
             let content = fs::read_to_string(&index_path)?;
-            let mut tasks = serde_json::from_str::<Vec<TaskEntry>>(&content).map_err(std::io::Error::other)?;
+            let mut tasks =
+                serde_json::from_str::<Vec<TaskEntry>>(&content).map_err(std::io::Error::other)?;
             for task in &mut tasks {
                 task.stop_flag = None;
                 if task.is_running {

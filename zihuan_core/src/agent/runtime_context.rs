@@ -12,7 +12,10 @@ thread_local! {
     static CURRENT_AGENT_RUNTIME_CONTEXT: RefCell<Vec<AgentRuntimeContext>> = const { RefCell::new(Vec::new()) };
 }
 
-pub fn with_current_agent_runtime_context<T>(context: AgentRuntimeContext, f: impl FnOnce() -> T) -> T {
+pub fn with_current_agent_runtime_context<T>(
+    context: AgentRuntimeContext,
+    f: impl FnOnce() -> T,
+) -> T {
     CURRENT_AGENT_RUNTIME_CONTEXT.with(|slot| slot.borrow_mut().push(context));
     let result = f();
     CURRENT_AGENT_RUNTIME_CONTEXT.with(|slot| {

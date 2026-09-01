@@ -70,7 +70,11 @@ pub fn cosine_similarity(left: &[f32], right: &[f32]) -> Result<f32> {
     call_scalar(left, right, gw_cosine_similarity)
 }
 
-pub fn top_k_similar(candidates: &[Vec<f32>], query: &[f32], top_k: usize) -> Result<Vec<(usize, f32)>> {
+pub fn top_k_similar(
+    candidates: &[Vec<f32>],
+    query: &[f32],
+    top_k: usize,
+) -> Result<Vec<(usize, f32)>> {
     if query.is_empty() {
         return Err(VectorError::EmptyVector);
     }
@@ -119,10 +123,7 @@ fn validate_pair(left: &[f32], right: &[f32]) -> Result<()> {
         return Err(VectorError::EmptyVector);
     }
     if left.len() != right.len() {
-        return Err(VectorError::LengthMismatch {
-            left: left.len(),
-            right: right.len(),
-        });
+        return Err(VectorError::LengthMismatch { left: left.len(), right: right.len() });
     }
     Ok(())
 }
@@ -130,7 +131,14 @@ fn validate_pair(left: &[f32], right: &[f32]) -> Result<()> {
 fn call_scalar(
     left: &[f32],
     right: &[f32],
-    callback: unsafe extern "C" fn(*const f32, *const f32, usize, *mut f32, *mut c_char, usize) -> bool,
+    callback: unsafe extern "C" fn(
+        *const f32,
+        *const f32,
+        usize,
+        *mut f32,
+        *mut c_char,
+        usize,
+    ) -> bool,
 ) -> Result<f32> {
     let mut out = 0f32;
     let mut err_buf = vec![0i8; ERROR_BUFFER_LEN];

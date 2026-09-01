@@ -4,35 +4,38 @@ use std::sync::{Arc, Mutex};
 use chrono::Local;
 use log::{info, warn};
 
-use zihuan_core::agent::tools::ToolCallingMiddleware;
 use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use crate::agent::utils::build_state_system_prefix_lines;
+use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::agent::tools::ToolCallingMiddleware;
 
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{
-    apply_steer_prefix, build_merged_follow_up_event, PendingSteerEvent, PendingSteerStore, PROCESSING_INSTRUCTION,
+    apply_steer_prefix, build_merged_follow_up_event, PendingSteerEvent, PendingSteerStore,
+    PROCESSING_INSTRUCTION,
 };
 use zihuan_core::utils::string_utils::shorten_text;
 
-use zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT;
 use zihuan_core::graph::object_storage::S3Ref;
+use zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT;
 use zihuan_core::graph::DataValue;
 
 use zihuan_core::ims_bot_adapter::message_helpers::get_bot_id;
 use zihuan_core::ims_bot_adapter::{CURRENT_MESSAGE_LABEL, IMAGE_ANALYSIS_LABEL};
 
 use super::user_input::{
-    append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference, flush_text_part,
-    prepare_current_turn_user_input, prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
+    append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference,
+    flush_text_part, prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
+    PreparedCurrentTurnUserInput,
 };
 use crate::storage::qq_chat_history_store::{conversation_history_key, load_history};
 
 use super::core::{
-    build_state_delta_lines, build_user_message, merge_character_and_style_prompt, QqChatAgentServiceContext,
-    QqChatAgentServiceInner, QqChatServiceHandleReport, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+    build_state_delta_lines, build_user_message, merge_character_and_style_prompt,
+    QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatServiceHandleReport, LOG_PREFIX,
+    LOG_TEXT_PREVIEW_CHARS,
 };
 use super::logging::QqChatTaskTrace;
 
@@ -88,15 +91,18 @@ fn build_merged_steer_user_message(
     };
     let merged_prompt = merge_character_and_style_prompt(system_prompt, style_prompt);
     let emotion_prompt = emotion_expression_prompt(session_state, emotion_dimensions);
-    let prefix_lines = build_state_system_prefix_lines(
-        &emotion_prompt,
-        &merged_prompt,
-        preprompt_context,
-    );
+    let prefix_lines =
+        build_state_system_prefix_lines(&emotion_prompt, &merged_prompt, preprompt_context);
     let prefix = prefix_lines.join("\n");
     let mut state_delta_lines = Vec::new();
     if let Some(last_input) = current_inputs.last() {
-        state_delta_lines = build_state_delta_lines(session_state, last_input, bot_name, adapter, emotion_dimensions);
+        state_delta_lines = build_state_delta_lines(
+            session_state,
+            last_input,
+            bot_name,
+            adapter,
+            emotion_dimensions,
+        );
     }
     let state_delta_block = if state_delta_lines.is_empty() {
         String::new()
@@ -176,13 +182,19 @@ fn build_merged_steer_user_message(
             ));
         }
         if current_input.has_reference_context() {
-            text_buffer.push_str(&format!("\n\n{REFERENCED_CONTEXT_LABEL}\n{REFERENCE_ONLY_NOTICE}"));
+            text_buffer
+                .push_str(&format!("\n\n{REFERENCED_CONTEXT_LABEL}\n{REFERENCE_ONLY_NOTICE}"));
             let reference_text = current_input.referenced_context_text();
             if !reference_text.trim().is_empty() {
                 text_buffer.push('\n');
                 text_buffer.push_str(reference_text.trim());
             }
-            append_prepared_parts(&mut parts, &mut text_buffer, "\n", &current_input.reference_parts);
+            append_prepared_parts(
+                &mut parts,
+                &mut text_buffer,
+                "\n",
+                &current_input.reference_parts,
+            );
             if !current_input.reference_image_reference_lines.is_empty() {
                 text_buffer.push_str(&format!(
                     "\n\n[{}]\n{}",
@@ -233,8 +245,13 @@ pub(crate) struct QqChatServiceSteerHook {
 }
 
 impl ToolCallingMiddleware for QqChatServiceSteerHook {
-    fn on_before_inference(&self, _iteration: usize, _conversation: &[LLMMessage]) -> Vec<LLMMessage> {
-        let (pending, remaining_queue_len, accepted_steer_count) = self.pending_steer.drain_all(&self.sender_id);
+    fn on_before_inference(
+        &self,
+        _iteration: usize,
+        _conversation: &[LLMMessage],
+    ) -> Vec<LLMMessage> {
+        let (pending, remaining_queue_len, accepted_steer_count) =
+            self.pending_steer.drain_all(&self.sender_id);
         if pending.is_empty() {
             return Vec::new();
         }
@@ -246,7 +263,8 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
 
         for pending_event in pending {
             let mut inference_event = pending_event.event.clone();
-            inference_event.message_list = expand_messages_for_inference(&pending_event.event.message_list);
+            inference_event.message_list =
+                expand_messages_for_inference(&pending_event.event.message_list);
             let prepared_input = prepare_current_turn_user_input_from_event(
                 &inference_event,
                 &self.bot_id,
@@ -321,15 +339,26 @@ impl QqChatAgentServiceInner {
         time: &str,
     ) -> Result<()> {
         let bot_id = get_bot_id(ctx.adapter);
-        let prepared_input = prepare_current_turn_user_input(event, ctx.adapter, &bot_id, ctx.bot_name, ctx.s3_ref);
+        let prepared_input =
+            prepare_current_turn_user_input(event, ctx.adapter, &bot_id, ctx.bot_name, ctx.s3_ref);
         let mut inference_event = prepared_input.event.clone();
-        inference_event.message_list = expand_messages_for_inference(&prepared_input.event.message_list);
-        let current_message =
-            prepare_current_turn_user_input_from_event(&inference_event, &bot_id, ctx.bot_name, ctx.s3_ref)
-                .current_text_for_prompt()
-                .to_string();
+        inference_event.message_list =
+            expand_messages_for_inference(&prepared_input.event.message_list);
+        let current_message = prepare_current_turn_user_input_from_event(
+            &inference_event,
+            &bot_id,
+            ctx.bot_name,
+            ctx.s3_ref,
+        )
+        .current_text_for_prompt()
+        .to_string();
         if let Some(command_registry) = zihuan_core::command::global_command_registry() {
-            let cmd_ctx = self.build_command_context(sender_id, target_id, is_group, inference_event.group_id);
+            let cmd_ctx = self.build_command_context(
+                sender_id,
+                target_id,
+                is_group,
+                inference_event.group_id,
+            );
             if let Some(preview) = command_registry.preview(&cmd_ctx, &current_message) {
                 if preview.definition.allow_steer_bypass && preview.passthrough_text.is_none() {
                     info!(
@@ -337,7 +366,9 @@ impl QqChatAgentServiceInner {
                         event.message_id,
                         preview.definition.name
                     );
-                    if let Some(dispatch_result) = command_registry.dispatch(&cmd_ctx, &current_message) {
+                    if let Some(dispatch_result) =
+                        command_registry.dispatch(&cmd_ctx, &current_message)
+                    {
                         let history_key = conversation_history_key(sender_id);
                         let mut history = load_history(ctx.cache, &history_key);
                         let trace = QqChatTaskTrace::new(Local::now());
@@ -428,7 +459,8 @@ impl QqChatAgentServiceInner {
                     ctx,
                 )?;
 
-                let (pending, remaining_queue_len, accepted_steer_count) = ctx.pending_steer.drain_all(sender_id);
+                let (pending, remaining_queue_len, accepted_steer_count) =
+                    ctx.pending_steer.drain_all(sender_id);
                 if pending.is_empty() {
                     break turn_result.result_summary;
                 }
@@ -436,7 +468,8 @@ impl QqChatAgentServiceInner {
                 let steer_count = pending.len();
                 let next_event = build_merged_follow_up_event(&pending);
                 let mut next_inference_event = next_event.clone();
-                next_inference_event.message_list = expand_messages_for_inference(&next_event.message_list);
+                next_inference_event.message_list =
+                    expand_messages_for_inference(&next_event.message_list);
                 let next_message = prepare_current_turn_user_input_from_event(
                     &next_inference_event,
                     &bot_id,

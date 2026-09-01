@@ -1,14 +1,16 @@
 use std::thread;
 use std::time::Duration;
 
+use crate::error::{Error, Result};
 use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;
-use crate::ims_bot_adapter::runtime::models::message::{ForwardMessage, ForwardNodeMessage, Message};
+use crate::ims_bot_adapter::runtime::models::message::{
+    ForwardMessage, ForwardNodeMessage, Message,
+};
 use crate::ims_bot_adapter::runtime::ws_action::{
     json_i64, qq_message_list_to_send_json, response_message_id, response_success, ws_send_action,
     ws_send_action_with_timeout,
 };
 use log::{info, warn};
-use crate::error::{Error, Result};
 
 pub const TARGET_TYPE_FRIEND: &str = "friend";
 pub const TARGET_TYPE_GROUP: &str = "group";
@@ -34,7 +36,9 @@ pub fn qq_message_text_length(messages: &[Message]) -> usize {
         .map(|message| match message {
             Message::PlainText(text) => text.text.chars().count(),
             Message::Image(_) => 0,
-            Message::Forward(forward) => forward.content.iter().map(|node| qq_message_text_length(&node.content)).sum(),
+            Message::Forward(forward) => {
+                forward.content.iter().map(|node| qq_message_text_length(&node.content)).sum()
+            }
             _ => 0,
         })
         .sum()
@@ -89,15 +93,27 @@ fn forward_nodes_to_send_json(
                     data.insert("id".to_string(), serde_json::Value::String(id.to_string()));
                 }
                 if let Some(ref user_id) = node.user_id {
-                    data.insert("user_id".to_string(), serde_json::Value::String(user_id.to_string()));
+                    data.insert(
+                        "user_id".to_string(),
+                        serde_json::Value::String(user_id.to_string()),
+                    );
                     data.insert("uin".to_string(), serde_json::Value::String(user_id.to_string()));
                 }
                 if let Some(ref nickname) = node.nickname {
-                    data.insert("nickname".to_string(), serde_json::Value::String(nickname.to_string()));
-                    data.insert("name".to_string(), serde_json::Value::String(nickname.to_string()));
+                    data.insert(
+                        "nickname".to_string(),
+                        serde_json::Value::String(nickname.to_string()),
+                    );
+                    data.insert(
+                        "name".to_string(),
+                        serde_json::Value::String(nickname.to_string()),
+                    );
                 }
                 if !node.content.is_empty() {
-                    data.insert("content".to_string(), qq_message_list_to_send_json(adapter_ref, &node.content)?);
+                    data.insert(
+                        "content".to_string(),
+                        qq_message_list_to_send_json(adapter_ref, &node.content)?,
+                    );
                 }
 
                 Ok(serde_json::json!({
@@ -181,7 +197,12 @@ fn send_one_batch(
     };
 
     let response = if matches!(action_name, "send_group_forward_msg" | "send_private_forward_msg") {
-        ws_send_action_with_timeout(adapter_ref, action_name, params, FORWARD_MESSAGE_RESPONSE_TIMEOUT)?
+        ws_send_action_with_timeout(
+            adapter_ref,
+            action_name,
+            params,
+            FORWARD_MESSAGE_RESPONSE_TIMEOUT,
+        )?
     } else {
         ws_send_action(adapter_ref, action_name, params)?
     };
@@ -331,7 +352,14 @@ pub fn send_qq_message_batches(
     target_id: &str,
     batches: &[Vec<Message>],
 ) -> Vec<SendBatchResult> {
-    send_qq_message_batches_with_delay(adapter_ref, target_type, target_id, batches, 0, DEFAULT_LOG_PREFIX)
+    send_qq_message_batches_with_delay(
+        adapter_ref,
+        target_type,
+        target_id,
+        batches,
+        0,
+        DEFAULT_LOG_PREFIX,
+    )
 }
 
 pub fn message_ids_from_results(results: &[SendBatchResult]) -> Vec<i64> {
@@ -342,12 +370,17 @@ pub fn actual_sends_all_successful(results: &[SendBatchResult]) -> bool {
     results.iter().filter(|result| !result.skipped).all(|result| result.success)
 }
 
-pub fn build_send_summary(target_type: &str, target_id: &str, results: &[SendBatchResult]) -> String {
+pub fn build_send_summary(
+    target_type: &str,
+    target_id: &str,
+    results: &[SendBatchResult],
+) -> String {
     if results.is_empty() {
         return format!("未发送任何批次，目标={target_type}:{target_id}，共接收 0 批。");
     }
 
-    let sent_results: Vec<&SendBatchResult> = results.iter().filter(|result| !result.skipped).collect();
+    let sent_results: Vec<&SendBatchResult> =
+        results.iter().filter(|result| !result.skipped).collect();
     let success_count = sent_results.iter().filter(|result| result.success).count();
     let failure_count = sent_results.len().saturating_sub(success_count);
     let skipped_count = results.iter().filter(|result| result.skipped).count();

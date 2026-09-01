@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
+use crate::error::Result;
 use once_cell::sync::OnceCell;
 use tokenizers::Tokenizer;
-use crate::error::Result;
 
 use crate::nlp::punctuation_segmenter::split_text_by_punctuation;
 

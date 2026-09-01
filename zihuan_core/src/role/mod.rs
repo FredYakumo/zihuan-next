@@ -2,13 +2,11 @@ use async_trait::async_trait;
 
 use crate::error::Result;
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoleServiceKind {
     QqChat,
     Workspace,
 }
-
 
 /// metadata for a configured, externally reachable role service.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,8 +15,6 @@ pub struct RoleServiceDescriptor {
     pub name: String,
     pub kind: RoleServiceKind,
 }
-
-
 
 /// request-scoped metadata owned by a RoleService.
 ///
@@ -41,5 +37,6 @@ pub trait RoleService: Send + Sync {
 
     fn descriptor(&self) -> RoleServiceDescriptor;
 
-    async fn handle(&self, context: RoleServiceContext, input: Self::Input) -> Result<Self::Output>;
+    async fn handle(&self, context: RoleServiceContext, input: Self::Input)
+        -> Result<Self::Output>;
 }

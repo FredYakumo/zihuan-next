@@ -7,7 +7,6 @@ use crate::runtime::block_async;
 
 use crate::utils::string_utils::strip_html_tags;
 
-
 use super::web_search_engine::{WebSearchEngine, WebSearchImage};
 
 pub struct TavilySearch {
@@ -63,7 +62,11 @@ impl TavilySearch {
         }
     }
 
-    async fn search_async(&self, query: &str, search_count: i64) -> crate::error::Result<Vec<String>> {
+    async fn search_async(
+        &self,
+        query: &str,
+        search_count: i64,
+    ) -> crate::error::Result<Vec<String>> {
         let response = self
             .client
             .post("https://api.tavily.com/search")
@@ -84,20 +87,21 @@ impl TavilySearch {
             let body = response.text().await.unwrap_or_default();
             return Err(crate::string_error!(
                 "Tavily search request failed with status {}: {}",
-                status, body
+                status,
+                body
             ));
         }
 
         let body = response.text().await?;
-        let parsed: TavilySearchResponse = serde_json::from_str(&body).map_err(|err| {
-            crate::string_error!("Failed to parse Tavily search response: {err}")
-        })?;
+        let parsed: TavilySearchResponse = serde_json::from_str(&body)
+            .map_err(|err| crate::string_error!("Failed to parse Tavily search response: {err}"))?;
 
         Ok(parsed
             .results
             .into_iter()
             .map(|item| {
-                let score = item.score.map(|value| format!("\nScore: {value:.4}")).unwrap_or_default();
+                let score =
+                    item.score.map(|value| format!("\nScore: {value:.4}")).unwrap_or_default();
                 format!("标题: {}\n链接: {}{}\n内容: {}", item.title, item.url, score, item.content)
             })
             .collect())
@@ -123,7 +127,8 @@ impl TavilySearch {
             let body = response.text().await.unwrap_or_default();
             return Err(crate::string_error!(
                 "Tavily extract request failed with status {}: {}",
-                status, body
+                status,
+                body
             ));
         }
 
@@ -159,7 +164,8 @@ impl TavilySearch {
             let body = response.text().await.unwrap_or_default();
             return Err(crate::string_error!(
                 "Direct web request failed with status {}: {}",
-                status, body
+                status,
+                body
             ));
         }
 
@@ -167,7 +173,11 @@ impl TavilySearch {
         Ok(vec![format!("链接: {url}\n内容: {}", strip_html_tags(&body))])
     }
 
-    async fn search_images_async(&self, query: &str, max_results: i64) -> crate::error::Result<Vec<WebSearchImage>> {
+    async fn search_images_async(
+        &self,
+        query: &str,
+        max_results: i64,
+    ) -> crate::error::Result<Vec<WebSearchImage>> {
         let response = self
             .client
             .post("https://api.tavily.com/search")
@@ -189,14 +199,14 @@ impl TavilySearch {
             let body = response.text().await.unwrap_or_default();
             return Err(crate::string_error!(
                 "Tavily search request failed with status {}: {}",
-                status, body
+                status,
+                body
             ));
         }
 
         let body = response.text().await?;
-        let parsed: TavilyImageSearchResponse = serde_json::from_str(&body).map_err(|err| {
-            crate::string_error!("Failed to parse Tavily search response: {err}")
-        })?;
+        let parsed: TavilyImageSearchResponse = serde_json::from_str(&body)
+            .map_err(|err| crate::string_error!("Failed to parse Tavily search response: {err}"))?;
 
         Ok(parsed.images)
     }
@@ -215,7 +225,11 @@ impl WebSearchEngine for TavilySearch {
         block_async(self.fetch_url_direct_async(url))
     }
 
-    fn search_images(&self, query: &str, max_results: i64) -> crate::error::Result<Vec<WebSearchImage>> {
+    fn search_images(
+        &self,
+        query: &str,
+        max_results: i64,
+    ) -> crate::error::Result<Vec<WebSearchImage>> {
         block_async(self.search_images_async(query, max_results))
     }
 }

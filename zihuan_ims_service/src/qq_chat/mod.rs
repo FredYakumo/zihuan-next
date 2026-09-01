@@ -18,67 +18,76 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use self::core::{
-    build_info_brain_tools, expand_messages_for_inference, prepare_current_turn_user_input_from_event, QqChatTaskTrace,
-    LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+    build_info_brain_tools, expand_messages_for_inference,
+    prepare_current_turn_user_input_from_event, QqChatTaskTrace, LOG_PREFIX,
+    LOG_TEXT_PREVIEW_CHARS,
 };
 use self::ignore_store::should_ignore_message_blocking;
 use self::inbox::QqChatAgentServiceInbox;
 use self::language_style_store::get_applicable_language_style_blocking;
-use crate::storage::message_rate_limit_store::{
-    consume_message_rate_limit_blocking, MessageRateLimitBlockAction, MESSAGE_RATE_LIMIT_BLOCKED_REPLY,
-};
-pub use crate::storage::message_rate_limit_store::{list_message_rate_limit_usage, reset_message_rate_limit_usage};
 use self::model::{
-    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatAgentServiceRuntimeConfig,
-    QqChatServiceReplyBatchBuilder, QqInferenceToolProvider, QqLoadedInferenceResources,
+    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner,
+    QqChatAgentServiceRuntimeConfig, QqChatServiceReplyBatchBuilder, QqInferenceToolProvider,
+    QqLoadedInferenceResources,
 };
 use self::msg_send::{
-    build_reply_batch_builder as build_unified_reply_batch_builder, send_direct_notification_text_reply,
+    build_reply_batch_builder as build_unified_reply_batch_builder,
+    send_direct_notification_text_reply,
 };
-use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
-use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
-use zihuan_core::agent::resource_resolver::{
-    build_embedding_model, build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name,
+use crate::storage::message_rate_limit_store::{
+    consume_message_rate_limit_blocking, MessageRateLimitBlockAction,
+    MESSAGE_RATE_LIMIT_BLOCKED_REPLY,
+};
+pub use crate::storage::message_rate_limit_store::{
+    list_message_rate_limit_usage, reset_message_rate_limit_usage,
 };
 use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
 use chrono::Local;
-use zihuan_core::ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
-use zihuan_core::ims_bot_adapter::event::EventHandler;
-use zihuan_core::ims_bot_adapter::message_helpers::get_bot_id;
-use zihuan_core::ims_bot_adapter::models::event_model::MessageType;
-use zihuan_core::ims_bot_adapter::models::message::MessageProp;
 use log::{error, info, warn};
-use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use tokio::task::JoinHandle;
+use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
+use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
+use zihuan_core::agent::resource_resolver::{
+    build_embedding_model, build_llm_model, resolve_llm_service_config,
+    resolve_local_embedding_model_name,
+};
 use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
 use zihuan_core::agent::service_config::{MemoryBackendKind, RoleServiceConfig};
-use zihuan_core::config::llm_refs::load_llm_refs;
-use zihuan_core::storage::{
-    build_elasticsearch_ref, build_relational_db_connection_for_connection, build_s3_ref, build_weaviate_ref,
-    build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind, LocalMemoryStore, WeaviateCollectionSchema,
-};
-use tokio::task::JoinHandle;
-use zihuan_core::agent::tools::Tool;
 use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
+use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
+use zihuan_core::agent::tools::Tool;
+use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
-use zihuan_core::model_inference::llm::llm_base::LLMBase;
-use zihuan_core::model_inference::llm::LLMMessage;
-use zihuan_core::runtime::block_async;
-use zihuan_core::steer::PendingSteerEvent;
-use zihuan_core::task_context::{
-    scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
-};
-use zihuan_core::utils::string_utils::shorten_text;
-use zihuan_core::weaviate::WeaviateRef;
-use zihuan_core::graph::tool_spec::ToolDefinition;
 use zihuan_core::graph::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
 use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::graph::message_persistence::persist_message_event;
 use zihuan_core::graph::message_restore::register_rdb_pool;
 use zihuan_core::graph::object_storage::S3Ref;
+use zihuan_core::graph::tool_spec::ToolDefinition;
+use zihuan_core::ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
+use zihuan_core::ims_bot_adapter::event::EventHandler;
+use zihuan_core::ims_bot_adapter::message_helpers::get_bot_id;
+use zihuan_core::ims_bot_adapter::models::event_model::MessageType;
+use zihuan_core::ims_bot_adapter::models::message::MessageProp;
+use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
+use zihuan_core::model_inference::llm::llm_base::LLMBase;
+use zihuan_core::model_inference::llm::LLMMessage;
+use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::nlp::{build_segmenter, TextSegmenter};
+use zihuan_core::runtime::block_async;
+use zihuan_core::steer::PendingSteerEvent;
+use zihuan_core::storage::{
+    build_elasticsearch_ref, build_relational_db_connection_for_connection, build_s3_ref,
+    build_weaviate_ref, build_web_search_engine_ref, find_connection, ConnectionConfig,
+    ConnectionKind, LocalMemoryStore, WeaviateCollectionSchema,
+};
+use zihuan_core::task_context::{
+    scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
+    AgentTaskStatus,
+};
+use zihuan_core::utils::string_utils::shorten_text;
+use zihuan_core::weaviate::WeaviateRef;
 
 use self::tool_quota::SessionToolQuotaState;
 
@@ -157,10 +166,11 @@ fn load_qq_resources(
     config: &QqChatAgentServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<QqLoadedInferenceResources> {
-    if config.memory_backend != Some(MemoryBackendKind::LocalFile) && config
-        .weaviate_memory_connection_id
-        .as_deref()
-        .is_some_and(|value| !value.trim().is_empty())
+    if config.memory_backend != Some(MemoryBackendKind::LocalFile)
+        && config
+            .weaviate_memory_connection_id
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
         && config
             .elasticsearch_memory_connection_id
             .as_deref()
@@ -180,7 +190,8 @@ fn load_qq_resources(
             .is_some_and(|value| !value.trim().is_empty())
     {
         return Err(Error::ValidationError(
-            "configure either Weaviate or Elasticsearch for image semantic storage, not both".to_string(),
+            "configure either Weaviate or Elasticsearch for image semantic storage, not both"
+                .to_string(),
         ));
     }
     let web_search_engine_ref = build_web_search_engine_ref(
@@ -198,14 +209,16 @@ fn load_qq_resources(
 
     let rdb_pool = match config.resolved_rdb_id() {
         Some(connection_id) => {
-            block_async(build_relational_db_connection_for_connection(connection_id, connections)).ok()
+            block_async(build_relational_db_connection_for_connection(connection_id, connections))
+                .ok()
         }
         None => None,
     };
-    let s3_ref = block_async(build_s3_ref(config.rustfs_connection_id.as_deref(), connections)).unwrap_or_else(|e| {
-        warn!("[inference][qq_agent] rustfs connection unavailable: {e}");
-        None
-    });
+    let s3_ref = block_async(build_s3_ref(config.rustfs_connection_id.as_deref(), connections))
+        .unwrap_or_else(|e| {
+            warn!("[inference][qq_agent] rustfs connection unavailable: {e}");
+            None
+        });
 
     let weaviate_image_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
@@ -230,20 +243,27 @@ fn load_qq_resources(
     });
     let local_memory_store = (config.memory_backend == Some(MemoryBackendKind::LocalFile))
         .then(|| Arc::new(LocalMemoryStore::in_app_data_dir()));
-    let weaviate_memory_ref = if matches!(config.memory_backend, Some(MemoryBackendKind::LocalFile | MemoryBackendKind::Elasticsearch)) { None } else { tokio::task::block_in_place(|| {
-        build_weaviate_ref(
-            config
-                .weaviate_memory_connection_id
-                .as_deref()
-                .filter(|value| !value.trim().is_empty()),
-            connections,
-            Some(WeaviateCollectionSchema::AgentMemory),
-        )
-    })
-    .unwrap_or_else(|e| {
-        warn!("[inference][qq_agent] weaviate memory connection unavailable: {e}");
+    let weaviate_memory_ref = if matches!(
+        config.memory_backend,
+        Some(MemoryBackendKind::LocalFile | MemoryBackendKind::Elasticsearch)
+    ) {
         None
-    }) };
+    } else {
+        tokio::task::block_in_place(|| {
+            build_weaviate_ref(
+                config
+                    .weaviate_memory_connection_id
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty()),
+                connections,
+                Some(WeaviateCollectionSchema::AgentMemory),
+            )
+        })
+        .unwrap_or_else(|e| {
+            warn!("[inference][qq_agent] weaviate memory connection unavailable: {e}");
+            None
+        })
+    };
     let elasticsearch_image_ref = build_elasticsearch_ref(
         config
             .elasticsearch_image_connection_id
@@ -256,25 +276,35 @@ fn load_qq_resources(
         warn!("[inference][qq_agent] elasticsearch image connection unavailable: {error}");
         None
     });
-    let elasticsearch_memory_ref = if matches!(config.memory_backend, Some(MemoryBackendKind::LocalFile | MemoryBackendKind::Weaviate)) { None } else { build_elasticsearch_ref(
-        config
-            .elasticsearch_memory_connection_id
-            .as_deref()
-            .filter(|value| !value.trim().is_empty()),
-        connections,
-        Some(WeaviateCollectionSchema::AgentMemory),
-    )
-    .unwrap_or_else(|error| {
-        warn!("[inference][qq_agent] elasticsearch memory connection unavailable: {error}");
+    let elasticsearch_memory_ref = if matches!(
+        config.memory_backend,
+        Some(MemoryBackendKind::LocalFile | MemoryBackendKind::Weaviate)
+    ) {
         None
-    }) };
+    } else {
+        build_elasticsearch_ref(
+            config
+                .elasticsearch_memory_connection_id
+                .as_deref()
+                .filter(|value| !value.trim().is_empty()),
+            connections,
+            Some(WeaviateCollectionSchema::AgentMemory),
+        )
+        .unwrap_or_else(|error| {
+            warn!("[inference][qq_agent] elasticsearch memory connection unavailable: {error}");
+            None
+        })
+    };
 
-    let embedding_model = if local_memory_store.is_some() { None } else if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
+    let embedding_model = if local_memory_store.is_some() {
+        None
+    } else if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
         let llm_refs = load_llm_refs().unwrap_or_default();
         match resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name) {
-            Ok(Some(_)) => {
-                block_async(RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id)).ok()
-            }
+            Ok(Some(_)) => block_async(
+                RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id),
+            )
+            .ok(),
             Ok(None) => None,
             Err(err) => {
                 warn!("[inference][qq_agent] embedding model ref unavailable: {err}");
@@ -289,7 +319,11 @@ fn load_qq_resources(
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .map(|llm_ref_id| {
-            resolve_llm_service_config(Some(llm_ref_id), &load_llm_refs().unwrap_or_default(), &agent.name)
+            resolve_llm_service_config(
+                Some(llm_ref_id),
+                &load_llm_refs().unwrap_or_default(),
+                &agent.name,
+            )
         })
         .transpose()?
         .map(|llm_config| build_llm_model(&llm_config))
@@ -365,7 +399,8 @@ pub async fn spawn(
         )));
     };
 
-    let llm_config = resolve_llm_service_config(config.llm_ref_id.as_deref(), &llm_refs, &agent.name)?;
+    let llm_config =
+        resolve_llm_service_config(config.llm_ref_id.as_deref(), &llm_refs, &agent.name)?;
     let llm = build_llm_model(&llm_config)?;
     let intent_classification_llm_config = resolve_llm_service_config(
         config
@@ -382,11 +417,15 @@ pub async fn spawn(
         &agent.name,
     )?;
     let math_programming_llm = build_llm_model(&math_programming_llm_config)?;
-    let natural_language_reply_llm_config =
-        resolve_llm_service_config(config.natural_language_reply_llm_ref_id.as_deref(), &llm_refs, &agent.name)?;
+    let natural_language_reply_llm_config = resolve_llm_service_config(
+        config.natural_language_reply_llm_ref_id.as_deref(),
+        &llm_refs,
+        &agent.name,
+    )?;
     let natural_language_reply_llm = build_llm_model(&natural_language_reply_llm_config)?;
     let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
-        let model_name = resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name)?;
+        let model_name =
+            resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name)?;
         match model_name {
             Some(_) => Some(
                 RuntimeEmbeddingModelManager::shared()
@@ -400,10 +439,14 @@ pub async fn spawn(
     };
     let web_search_engine =
         build_web_search_engine_ref(Some(&config.web_search_engine_connection_id), &connections)?
-            .ok_or_else(|| Error::ValidationError("missing web search engine connection".to_string()))?;
+            .ok_or_else(|| {
+            Error::ValidationError("missing web search engine connection".to_string())
+        })?;
     let object_storage = build_s3_ref(config.rustfs_connection_id.as_deref(), &connections).await?;
     let rdb_pool = match config.resolved_rdb_id() {
-        Some(connection_id) => Some(build_relational_db_connection_for_connection(connection_id, &connections).await?),
+        Some(connection_id) => {
+            Some(build_relational_db_connection_for_connection(connection_id, &connections).await?)
+        }
         None => None,
     };
     let redis_ref = resolve_inbox_redis_ref(&connections)?;
@@ -449,7 +492,10 @@ pub async fn spawn(
             config.bot_name.clone()
         },
         system_prompt: config.system_prompt.clone(),
-        cache: Arc::new(LLMMessageSessionCacheRef::new(format!("service_agent_cache_{}", agent.id))),
+        cache: Arc::new(LLMMessageSessionCacheRef::new(format!(
+            "service_agent_cache_{}",
+            agent.id
+        ))),
         session: Arc::new(SessionStateRef::new(format!("service_agent_session_{}", agent.id))),
         llm,
         intent_classification_llm,
@@ -629,7 +675,12 @@ impl QqChatAgentServiceInner {
 
         if let Some(rdb_pool) = ctx.rdb_pool {
             let group_id_text = event.group_id.map(|value| value.to_string());
-            if should_ignore_message_blocking(rdb_pool, agent_id, &sender_id, group_id_text.as_deref())? {
+            if should_ignore_message_blocking(
+                rdb_pool,
+                agent_id,
+                &sender_id,
+                group_id_text.as_deref(),
+            )? {
                 info!(
                     "{LOG_PREFIX} Ignored inbound message: message_id={} sender={} group={:?}",
                     event.message_id, sender_id, event.group_id
@@ -640,8 +691,11 @@ impl QqChatAgentServiceInner {
 
         if is_group {
             let bot_id = get_bot_id(ctx.adapter);
-            let msg_prop =
-                MessageProp::from_messages_with_bot_name(&event.message_list, Some(&bot_id), Some(ctx.bot_name));
+            let msg_prop = MessageProp::from_messages_with_bot_name(
+                &event.message_list,
+                Some(&bot_id),
+                Some(ctx.bot_name),
+            );
             if !msg_prop.is_at_me {
                 return Ok(());
             }
@@ -651,8 +705,13 @@ impl QqChatAgentServiceInner {
         if let Some(rdb_pool) = ctx.rdb_pool {
             let group_id_text = event.group_id.map(|value| value.to_string());
             let config = current_qq_chat_agent_service_config()?;
-            let rate_limit_result =
-                consume_message_rate_limit_blocking(rdb_pool, agent_id, &sender_id, group_id_text.as_deref(), &config)?;
+            let rate_limit_result = consume_message_rate_limit_blocking(
+                rdb_pool,
+                agent_id,
+                &sender_id,
+                group_id_text.as_deref(),
+                &config,
+            )?;
             if !rate_limit_result.allowed {
                 match rate_limit_result.block_action {
                     MessageRateLimitBlockAction::ReplyOnce => {
@@ -660,8 +719,9 @@ impl QqChatAgentServiceInner {
                         let blocked_reply = rate_limit_result
                             .blocked_reply
                             .unwrap_or_else(|| MESSAGE_RATE_LIMIT_BLOCKED_REPLY.to_string());
-                        let mention_target_id =
-                            (is_group && rate_limit_result.mention_sender_on_block).then_some(sender_id.as_str());
+                        let mention_target_id = (is_group
+                            && rate_limit_result.mention_sender_on_block)
+                            .then_some(sender_id.as_str());
                         send_direct_notification_text_reply(
                             &QqChatTaskTrace::new(Local::now()),
                             ctx.adapter,
@@ -700,7 +760,8 @@ impl QqChatAgentServiceInner {
 
         let (claimed, claim_token) = try_claim_session(session, &sender_id);
         if !claimed {
-            return self.try_handle_busy_session_steer(event, ctx, &sender_id, &target_id, is_group, time);
+            return self
+                .try_handle_busy_session_steer(event, ctx, &sender_id, &target_id, is_group, time);
         }
 
         ctx.pending_steer.ensure_session_entry(&sender_id);

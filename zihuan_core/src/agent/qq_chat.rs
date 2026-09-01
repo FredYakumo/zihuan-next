@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    EmbeddingServiceConfig, LLM_KIND_INTENT_CLASSIFICATION, LLM_KIND_MAIN, LLM_KIND_MATH_PROGRAMMING,
-    LLM_KIND_NATURAL_LANGUAGE_REPLY,
+    EmbeddingServiceConfig, LLM_KIND_INTENT_CLASSIFICATION, LLM_KIND_MAIN,
+    LLM_KIND_MATH_PROGRAMMING, LLM_KIND_NATURAL_LANGUAGE_REPLY,
 };
 use crate::agent::service_config::MemoryBackendKind;
 
@@ -15,14 +15,19 @@ pub enum RetrievalStoreConfig {
     Connection { connection_id: String },
 }
 
-pub fn llm_ref_id_for_kind<'a>(config: &'a QqChatAgentServiceConfig, llm_kind: &str) -> Option<&'a str> {
+pub fn llm_ref_id_for_kind<'a>(
+    config: &'a QqChatAgentServiceConfig,
+    llm_kind: &str,
+) -> Option<&'a str> {
     match llm_kind {
         LLM_KIND_MAIN => config.llm_ref_id.as_deref(),
         LLM_KIND_INTENT_CLASSIFICATION => config
             .intent_classification_llm_ref_id
             .as_deref()
             .or(config.llm_ref_id.as_deref()),
-        LLM_KIND_MATH_PROGRAMMING => config.math_programming_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref()),
+        LLM_KIND_MATH_PROGRAMMING => {
+            config.math_programming_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref())
+        }
         LLM_KIND_NATURAL_LANGUAGE_REPLY => config.natural_language_reply_llm_ref_id.as_deref(),
         _ => None,
     }
@@ -102,7 +107,11 @@ impl QqChatMessageRateLimitRule {
 
         let window_unit = self.window_unit?;
         let max_calls = self.max_calls.filter(|value| *value > 0)?;
-        let window_size = if self.window_size > 0 { self.window_size } else { 1 };
+        let window_size = if self.window_size > 0 {
+            self.window_size
+        } else {
+            1
+        };
         Some(Self {
             unlimited: false,
             window_unit: Some(window_unit),
@@ -298,10 +307,7 @@ impl QqChatAgentServiceConfig {
             {
                 continue;
             }
-            rules.push(QqChatMessageRateLimitGroupRule {
-                group_id: group_id.to_string(),
-                limit,
-            });
+            rules.push(QqChatMessageRateLimitGroupRule { group_id: group_id.to_string(), limit });
         }
         rules
     }
@@ -314,16 +320,13 @@ impl QqChatAgentServiceConfig {
                 continue;
             };
             if sender_id.is_empty()
-                || rules
-                    .iter()
-                    .any(|existing: &QqChatMessageRateLimitUserRule| existing.sender_id == sender_id)
+                || rules.iter().any(|existing: &QqChatMessageRateLimitUserRule| {
+                    existing.sender_id == sender_id
+                })
             {
                 continue;
             }
-            rules.push(QqChatMessageRateLimitUserRule {
-                sender_id: sender_id.to_string(),
-                limit,
-            });
+            rules.push(QqChatMessageRateLimitUserRule { sender_id: sender_id.to_string(), limit });
         }
         rules
     }

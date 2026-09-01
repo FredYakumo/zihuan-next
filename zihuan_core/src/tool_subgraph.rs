@@ -8,16 +8,18 @@ use crate::agent::qq_chat::QqChatAgentServiceConfig;
 use crate::agent::runtime_context::{with_current_agent_runtime_context, AgentRuntimeContext};
 use crate::config::ConfigCenter;
 use crate::error::{Error, Result};
-use crate::graph::tool_spec::{
-    tool_calling_tool_input_signature, fixed_tool_runtime_inputs, ToolDefinition, ToolImplementation,
-    BuiltInToolKind, PythonScriptToolConfig, ToolParamDef, TOOL_CALLING_FIXED_CONTENT_INPUT,
-    QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
-};
 use crate::graph::function_graph::{
-    sync_function_subgraph_signature, FunctionPortDef, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,
+    sync_function_subgraph_signature, FunctionPortDef, FUNCTION_INPUTS_NODE_ID,
+    FUNCTION_OUTPUTS_NODE_ID,
 };
 use crate::graph::graph_io::refresh_port_types;
 use crate::graph::registry::{build_node_graph_from_definition, NODE_REGISTRY};
+use crate::graph::tool_spec::{
+    fixed_tool_runtime_inputs, tool_calling_tool_input_signature, BuiltInToolKind,
+    PythonScriptToolConfig, ToolDefinition, ToolImplementation, ToolParamDef,
+    QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
+    QQ_AGENT_TOOL_OWNER_TYPE, TOOL_CALLING_FIXED_CONTENT_INPUT,
+};
 use crate::graph::util::function::{
     data_value_from_json_with_declared_type, inject_runtime_values_into_function_inputs_node,
 };
@@ -26,9 +28,8 @@ use crate::model_inference::llm::tooling::FunctionTool;
 
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 
-pub type BuiltinToolExecutor = Arc<
-    dyn Fn(&Value, &HashMap<String, DataValue>) -> Result<String> + Send + Sync,
->;
+pub type BuiltinToolExecutor =
+    Arc<dyn Fn(&Value, &HashMap<String, DataValue>) -> Result<String> + Send + Sync>;
 pub type ToolProgressNotifier = Arc<dyn Fn(&HashMap<String, DataValue>, &str) + Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,7 +151,10 @@ pub fn shared_inputs_ports(shared_inputs: &[FunctionPortDef], owner_label: &str)
         .collect()
 }
 
-pub fn validate_shared_inputs(shared_inputs: &[FunctionPortDef], owner_label: &str) -> Result<Vec<FunctionPortDef>> {
+pub fn validate_shared_inputs(
+    shared_inputs: &[FunctionPortDef],
+    owner_label: &str,
+) -> Result<Vec<FunctionPortDef>> {
     let mut seen_names = HashSet::new();
     let mut normalized = Vec::with_capacity(shared_inputs.len());
 
@@ -177,7 +181,10 @@ pub fn validate_shared_inputs(shared_inputs: &[FunctionPortDef], owner_label: &s
     Ok(normalized)
 }
 
-fn normalize_outputs_for_mode(tool: &mut ToolDefinition, result_mode: ToolResultMode) -> Result<()> {
+fn normalize_outputs_for_mode(
+    tool: &mut ToolDefinition,
+    result_mode: ToolResultMode,
+) -> Result<()> {
     if result_mode == ToolResultMode::SingleString {
         if tool.outputs.len() != 1 {
             return Err(Error::ValidationError(format!(
@@ -318,7 +325,8 @@ pub fn validate_tool_definitions(
         normalize_outputs_for_mode(&mut tool, result_mode)?;
         validate_tool_implementation(&tool)?;
         if tool.uses_subgraph() {
-            let input_signature = tool_calling_tool_input_signature(owner_node_type, shared_inputs, &tool);
+            let input_signature =
+                tool_calling_tool_input_signature(owner_node_type, shared_inputs, &tool);
             sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
         }
         normalized.push(tool);
@@ -328,7 +336,8 @@ pub fn validate_tool_definitions(
 }
 
 pub fn build_tool_error_message(message: impl Into<String>) -> String {
-    Value::Object(Map::from_iter([("error".to_string(), Value::String(message.into()))])).to_string()
+    Value::Object(Map::from_iter([("error".to_string(), Value::String(message.into()))]))
+        .to_string()
 }
 
 impl ToolSubgraphRunner {
@@ -371,7 +380,10 @@ impl ToolSubgraphRunner {
             Value::Object(map) => map,
             Value::Null => Map::new(),
             other => {
-                return Err(self.wrap_error(format!("Tool '{}' 的参数必须是 JSON 对象，实际为 {}", tool.name, other)));
+                return Err(self.wrap_error(format!(
+                    "Tool '{}' 的参数必须是 JSON 对象，实际为 {}",
+                    tool.name, other
+                )));
             }
         };
         let builtin_arguments = Value::Object(tool_runtime_values.clone());
@@ -388,13 +400,18 @@ impl ToolSubgraphRunner {
                 QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
             ] {
                 if !runtime_values.contains_key(fixed_name) {
-                    return Err(self.wrap_error(format!("Tool '{}' 缺少固定输入 '{}'", tool.name, fixed_name)));
+                    return Err(self.wrap_error(format!(
+                        "Tool '{}' 缺少固定输入 '{}'",
+                        tool.name, fixed_name
+                    )));
                 }
             }
         }
         for (key, value) in tool_runtime_values {
             if runtime_values.contains_key(&key) {
-                return Err(self.wrap_error(format!("Tool '{}' 参数 '{}' 与共享输入重名", tool.name, key)));
+                return Err(
+                    self.wrap_error(format!("Tool '{}' 参数 '{}' 与共享输入重名", tool.name, key))
+                );
             }
             let param_definition = tool.parameters.iter().find(|param| param.name == key);
             if matches!(param_definition, Some(param) if !param.required) && value.is_null() {
@@ -416,9 +433,15 @@ impl ToolSubgraphRunner {
             runtime_values.insert(key, parsed_value);
         }
 
-        let input_signature = tool_calling_tool_input_signature(&self.owner_node_type, &self.shared_inputs, tool);
+        let input_signature =
+            tool_calling_tool_input_signature(&self.owner_node_type, &self.shared_inputs, tool);
         if !tool.uses_subgraph() {
-            return self.run_non_subgraph_tool(tool, &tool_call_content, &builtin_arguments, &runtime_values);
+            return self.run_non_subgraph_tool(
+                tool,
+                &tool_call_content,
+                &builtin_arguments,
+                &runtime_values,
+            );
         }
 
         let mut subgraph = tool.subgraph.clone();
@@ -429,7 +452,9 @@ impl ToolSubgraphRunner {
             .nodes
             .iter_mut()
             .find(|node| node.id == FUNCTION_INPUTS_NODE_ID)
-            .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 function_inputs 边界节点", tool.name)))?;
+            .ok_or_else(|| {
+                self.wrap_error(format!("Tool '{}' 缺少 function_inputs 边界节点", tool.name))
+            })?;
         function_inputs_node.inline_values.insert(
             crate::graph::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
             serde_json::to_value(&input_signature).unwrap_or(Value::Null),
@@ -439,7 +464,9 @@ impl ToolSubgraphRunner {
             .nodes
             .iter_mut()
             .find(|node| node.id == FUNCTION_OUTPUTS_NODE_ID)
-            .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 function_outputs 边界节点", tool.name)))?;
+            .ok_or_else(|| {
+                self.wrap_error(format!("Tool '{}' 缺少 function_outputs 边界节点", tool.name))
+            })?;
         function_outputs_node.inline_values.insert(
             crate::graph::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
             serde_json::to_value(&tool.outputs).unwrap_or(Value::Null),
@@ -448,7 +475,9 @@ impl ToolSubgraphRunner {
         let mut graph = build_node_graph_from_definition(&subgraph)
             .map_err(|e| self.wrap_error(format!("Tool '{}' 子图构建失败: {e}", tool.name)))?;
         inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values.into())
-            .map_err(|e| self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name)))?;
+            .map_err(|e| {
+                self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name))
+            })?;
         let execution_result = if let Some(config) = self.qq_chat_agent.clone() {
             with_current_agent_runtime_context(AgentRuntimeContext::QqChat(config), || {
                 graph.execute_and_capture_results()
@@ -461,20 +490,25 @@ impl ToolSubgraphRunner {
                 "[ToolSubgraph:{}] tool '{}' execution failed: {error_message}",
                 self.node_id, tool.name
             );
-            return Err(self.wrap_error(format!("Tool '{}' 子图执行失败: {error_message}", tool.name)));
+            return Err(
+                self.wrap_error(format!("Tool '{}' 子图执行失败: {error_message}", tool.name))
+            );
         }
 
-        let result_node_values = execution_result
-            .node_results
-            .get(FUNCTION_OUTPUTS_NODE_ID)
-            .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 function_outputs 执行结果", tool.name)))?;
+        let result_node_values =
+            execution_result.node_results.get(FUNCTION_OUTPUTS_NODE_ID).ok_or_else(|| {
+                self.wrap_error(format!("Tool '{}' 缺少 function_outputs 执行结果", tool.name))
+            })?;
 
         match self.result_mode {
             ToolResultMode::JsonObject => {
                 let mut result_payload = Map::new();
                 for port in &tool.outputs {
                     let value = result_node_values.get(&port.name).ok_or_else(|| {
-                        self.wrap_error(format!("Tool '{}' 输出 '{}' 未在子图中提供", tool.name, port.name))
+                        self.wrap_error(format!(
+                            "Tool '{}' 输出 '{}' 未在子图中提供",
+                            tool.name, port.name
+                        ))
                     })?;
                     if !port.data_type.is_compatible_with(&value.data_type()) {
                         return Err(self.wrap_error(format!(
@@ -495,12 +529,14 @@ impl ToolSubgraphRunner {
                 Ok(result)
             }
             ToolResultMode::SingleString => {
-                let output = tool
-                    .outputs
-                    .first()
-                    .ok_or_else(|| self.wrap_error(format!("Tool '{}' 必须声明一个 String 输出", tool.name)))?;
+                let output = tool.outputs.first().ok_or_else(|| {
+                    self.wrap_error(format!("Tool '{}' 必须声明一个 String 输出", tool.name))
+                })?;
                 let value = result_node_values.get(&output.name).ok_or_else(|| {
-                    self.wrap_error(format!("Tool '{}' 输出 '{}' 未在子图中提供", tool.name, output.name))
+                    self.wrap_error(format!(
+                        "Tool '{}' 输出 '{}' 未在子图中提供",
+                        tool.name, output.name
+                    ))
                 })?;
                 match value {
                     DataValue::String(text) => {
@@ -531,21 +567,27 @@ impl ToolSubgraphRunner {
         match tool.implementation {
             ToolImplementation::BuiltIn => {
                 let result = match tool.builtin_kind() {
-                    Some(BuiltInToolKind::ImageUnderstand) => self
-                        .builtin_executor
-                        .as_ref()
-                        .ok_or_else(|| {
+                    Some(BuiltInToolKind::ImageUnderstand) => {
+                        self.builtin_executor.as_ref().ok_or_else(|| {
                             self.wrap_error(format!(
                                 "Tool '{}' requires a built-in tool executor",
                                 tool.name
                             ))
-                        })?(builtin_arguments, runtime_values),
-                    None => Err(self.wrap_error(format!("Tool '{}' missing built_in_kind", tool.name))),
+                        })?(builtin_arguments, runtime_values)
+                    }
+                    None => {
+                        Err(self.wrap_error(format!("Tool '{}' missing built_in_kind", tool.name)))
+                    }
                 }?;
                 self.format_scalar_result(tool, result)
             }
             ToolImplementation::PythonScript => {
-                let result = self.run_python_script_tool(tool, tool_call_content, builtin_arguments, runtime_values)?;
+                let result = self.run_python_script_tool(
+                    tool,
+                    tool_call_content,
+                    builtin_arguments,
+                    runtime_values,
+                )?;
                 self.format_python_result(tool, result)
             }
             ToolImplementation::NodeGraph => {
@@ -557,12 +599,12 @@ impl ToolSubgraphRunner {
     fn format_scalar_result(&self, tool: &ToolDefinition, result: String) -> Result<String> {
         match self.result_mode {
             ToolResultMode::JsonObject => {
-                let output = tool
-                    .outputs
-                    .first()
-                    .ok_or_else(|| self.wrap_error(format!("Tool '{}' 必须声明一个 String 输出", tool.name)))?;
+                let output = tool.outputs.first().ok_or_else(|| {
+                    self.wrap_error(format!("Tool '{}' 必须声明一个 String 输出", tool.name))
+                })?;
                 let result_payload =
-                    Value::Object(Map::from_iter([(output.name.clone(), Value::String(result))])).to_string();
+                    Value::Object(Map::from_iter([(output.name.clone(), Value::String(result))]))
+                        .to_string();
                 info!(
                     "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
                     self.node_id, tool.name, result_payload
@@ -582,17 +624,26 @@ impl ToolSubgraphRunner {
     fn format_python_result(&self, tool: &ToolDefinition, result: Value) -> Result<String> {
         match self.result_mode {
             ToolResultMode::JsonObject => {
-                let object = result
-                    .as_object()
-                    .ok_or_else(|| self.wrap_error(format!("Tool '{}' 的 python 返回 result 必须是对象", tool.name)))?;
+                let object = result.as_object().ok_or_else(|| {
+                    self.wrap_error(format!(
+                        "Tool '{}' 的 python 返回 result 必须是对象",
+                        tool.name
+                    ))
+                })?;
                 let mut result_payload = Map::new();
                 for port in &tool.outputs {
                     let value = object.get(&port.name).ok_or_else(|| {
-                        self.wrap_error(format!("Tool '{}' 输出 '{}' 未在 python result 中提供", tool.name, port.name))
+                        self.wrap_error(format!(
+                            "Tool '{}' 输出 '{}' 未在 python result 中提供",
+                            tool.name, port.name
+                        ))
                     })?;
-                    let parsed = crate::graph::script_node::host_json_to_value(value, &port.data_type)
-                        .map(Ok)
-                        .unwrap_or_else(|| data_value_from_json_with_declared_type(port, value))?;
+                    let parsed =
+                        crate::graph::script_node::host_json_to_value(value, &port.data_type)
+                            .map(Ok)
+                            .unwrap_or_else(|| {
+                                data_value_from_json_with_declared_type(port, value)
+                            })?;
                     result_payload.insert(port.name.clone(), parsed.to_json());
                 }
                 let encoded = Value::Object(result_payload).to_string();
@@ -604,7 +655,10 @@ impl ToolSubgraphRunner {
             }
             ToolResultMode::SingleString => {
                 let text = result.as_str().ok_or_else(|| {
-                    self.wrap_error(format!("Tool '{}' 的 python 返回 result 必须是字符串", tool.name))
+                    self.wrap_error(format!(
+                        "Tool '{}' 的 python 返回 result 必须是字符串",
+                        tool.name
+                    ))
                 })?;
                 info!(
                     "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
@@ -625,10 +679,12 @@ impl ToolSubgraphRunner {
         let python_config = tool
             .python_config()
             .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 python_config", tool.name)))?;
-        let request = self.build_python_request(tool_call_content, builtin_arguments, runtime_values);
+        let request =
+            self.build_python_request(tool_call_content, builtin_arguments, runtime_values);
         let raw = self.execute_python_process(tool, python_config, &request)?;
-        let response: Value = serde_json::from_str(&raw)
-            .map_err(|e| self.wrap_error(format!("Tool '{}' 的 python 输出不是合法 JSON: {e}", tool.name)))?;
+        let response: Value = serde_json::from_str(&raw).map_err(|e| {
+            self.wrap_error(format!("Tool '{}' 的 python 输出不是合法 JSON: {e}", tool.name))
+        })?;
         let ok = response.get("ok").and_then(Value::as_bool).unwrap_or(false);
         if !ok {
             let error = response
@@ -637,10 +693,9 @@ impl ToolSubgraphRunner {
                 .unwrap_or("python tool returned unknown error");
             return Err(self.wrap_error(format!("Tool '{}' python 执行失败: {}", tool.name, error)));
         }
-        response
-            .get("result")
-            .cloned()
-            .ok_or_else(|| self.wrap_error(format!("Tool '{}' 的 python 输出缺少 result 字段", tool.name)))
+        response.get("result").cloned().ok_or_else(|| {
+            self.wrap_error(format!("Tool '{}' 的 python 输出缺少 result 字段", tool.name))
+        })
     }
 
     fn build_python_request(
@@ -649,7 +704,8 @@ impl ToolSubgraphRunner {
         builtin_arguments: &Value,
         runtime_values: &HashMap<String, DataValue>,
     ) -> Value {
-        let shared_input_names = self.shared_inputs.iter().map(|port| port.name.as_str()).collect::<HashSet<_>>();
+        let shared_input_names =
+            self.shared_inputs.iter().map(|port| port.name.as_str()).collect::<HashSet<_>>();
         let fixed_input_names = fixed_tool_runtime_inputs(&self.owner_node_type)
             .into_iter()
             .map(|port| port.name)
@@ -659,9 +715,11 @@ impl ToolSubgraphRunner {
         let mut fixed_runtime_inputs = Map::new();
         for (key, value) in runtime_values {
             if shared_input_names.contains(key.as_str()) {
-                shared_inputs.insert(key.clone(), crate::graph::script_node::host_value_to_json(value));
+                shared_inputs
+                    .insert(key.clone(), crate::graph::script_node::host_value_to_json(value));
             } else if fixed_input_names.contains(key) {
-                fixed_runtime_inputs.insert(key.clone(), crate::graph::script_node::host_value_to_json(value));
+                fixed_runtime_inputs
+                    .insert(key.clone(), crate::graph::script_node::host_value_to_json(value));
             }
         }
 
@@ -682,22 +740,30 @@ impl ToolSubgraphRunner {
         config: &PythonScriptToolConfig,
         request: &Value,
     ) -> Result<String> {
-        let workspace_root = std::env::current_dir()
-            .map_err(|e| self.wrap_error(format!("Tool '{}' 无法获取当前工作目录: {e}", tool.name)))?;
+        let workspace_root = std::env::current_dir().map_err(|e| {
+            self.wrap_error(format!("Tool '{}' 无法获取当前工作目录: {e}", tool.name))
+        })?;
         let runtime_config = match config.runtime_override() {
             Some(runtime) => runtime,
             None => {
                 ConfigCenter::shared()
                     .load_root()
                     .map_err(|error| {
-                        self.wrap_error(format!("Tool '{}' 无法加载 Python 运行时配置: {error}", tool.name))
+                        self.wrap_error(format!(
+                            "Tool '{}' 无法加载 Python 运行时配置: {error}",
+                            tool.name
+                        ))
                     })?
                     .python_runtime
             }
         };
         let script_path = {
             let path = std::path::PathBuf::from(&config.script_path);
-            if path.is_absolute() { path } else { workspace_root.join(path) }
+            if path.is_absolute() {
+                path
+            } else {
+                workspace_root.join(path)
+            }
         };
         let response = dynamic_script_engine::execute_python_script(
             &workspace_root, &runtime_config, &script_path, &config.module_entry, config.timeout_secs, request,
@@ -728,6 +794,8 @@ impl ToolSubgraphRunner {
             },
         ).map_err(|error| self.wrap_error(format!("Tool '{}' Python 执行失败: {error}", tool.name)))?;
         let payload = response.get("response").cloned().unwrap_or(response);
-        serde_json::to_string(&payload).map_err(|e| self.wrap_error(format!("Tool '{}' 序列化 python 响应失败: {e}", tool.name)))
+        serde_json::to_string(&payload).map_err(|e| {
+            self.wrap_error(format!("Tool '{}' 序列化 python 响应失败: {e}", tool.name))
+        })
     }
 }

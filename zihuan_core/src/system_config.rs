@@ -1,9 +1,9 @@
 use std::fs;
 use std::path::PathBuf;
 
+use chrono::{DateTime, Utc};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
-use chrono::{DateTime, Utc};
 
 use crate::error::Result;
 
@@ -32,11 +32,17 @@ pub trait SystemConfigSection {
         let value = match root.get(Self::SECTION_KEY) {
             Some(value) => value.clone(),
             None => serde_json::to_value(Self::Value::default()).map_err(|err| {
-                crate::string_error!("failed to serialize default system config section '{}': {err}", Self::SECTION_KEY)
+                crate::string_error!(
+                    "failed to serialize default system config section '{}': {err}",
+                    Self::SECTION_KEY
+                )
             })?,
         };
         serde_json::from_value(value).map_err(|err| {
-            crate::string_error!("failed to parse system config section '{}': {err}", Self::SECTION_KEY)
+            crate::string_error!(
+                "failed to parse system config section '{}': {err}",
+                Self::SECTION_KEY
+            )
         })
     }
 
@@ -48,7 +54,10 @@ pub trait SystemConfigSection {
         object.insert(
             Self::SECTION_KEY.to_string(),
             serde_json::to_value(value).map_err(|err| {
-                crate::string_error!("failed to serialize system config section '{}': {err}", Self::SECTION_KEY)
+                crate::string_error!(
+                    "failed to serialize system config section '{}': {err}",
+                    Self::SECTION_KEY
+                )
             })?,
         );
         ensure_version(object);
@@ -203,10 +212,8 @@ impl Default for GlobalSettings {
 
 impl GlobalSettings {
     pub fn context_compaction_percent(&self) -> u8 {
-        self.context_compaction_percent.clamp(
-            MIN_CONTEXT_COMPACTION_PERCENT,
-            MAX_CONTEXT_COMPACTION_PERCENT,
-        )
+        self.context_compaction_percent
+            .clamp(MIN_CONTEXT_COMPACTION_PERCENT, MAX_CONTEXT_COMPACTION_PERCENT)
     }
 }
 

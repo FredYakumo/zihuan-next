@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use zihuan_core::ims_bot_adapter::models::message::{Message, PersistedMedia};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::graph::message_restore::query_media_by_id;
+use zihuan_core::ims_bot_adapter::models::message::{Message, PersistedMedia};
 
 /// Resolves media references for all messages in the given batches.
 ///
@@ -47,7 +47,9 @@ fn resolve_message_media_reference(
 
             let media_id = image.media.media_id.trim();
             if media_id.is_empty() {
-                return Err(Error::ValidationError("outbound image marker is missing media_id".to_string()));
+                return Err(Error::ValidationError(
+                    "outbound image marker is missing media_id".to_string(),
+                ));
             }
 
             if let Some(media) = available_media.get(media_id) {

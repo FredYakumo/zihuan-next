@@ -17,7 +17,8 @@ fn rebuild_message_list_from_media_json_restores_persisted_media_image() {
         name: Some("download".to_string()),
         description: Some("图片描述".to_string()),
         mime_type: Some("image/jpeg".to_string()),
-    }]).expect("serialize media json");
+    }])
+    .expect("serialize media json");
     let messages = rebuild_message_list("", Some(&media_json));
     match &messages[0] {
         Message::Image(image) => {

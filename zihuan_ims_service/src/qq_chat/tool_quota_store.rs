@@ -27,8 +27,12 @@ pub async fn get_tool_quota(
     tool_name: &str,
 ) -> Result<Option<QqChatAgentServiceToolQuota>> {
     match connection {
-        RelationalDbConnection::MySql(config) => get_tool_quota_mysql(config, agent_id, sender_id, tool_name).await,
-        RelationalDbConnection::Sqlite(config) => get_tool_quota_sqlite(config, agent_id, sender_id, tool_name).await,
+        RelationalDbConnection::MySql(config) => {
+            get_tool_quota_mysql(config, agent_id, sender_id, tool_name).await
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            get_tool_quota_sqlite(config, agent_id, sender_id, tool_name).await
+        }
     }
 }
 
@@ -58,7 +62,9 @@ pub fn decrement_tool_quota_if_needed_blocking(
     let agent_id = agent_id.to_string();
     let sender_id = sender_id.to_string();
     let tool_name = tool_name.to_string();
-    let run = async move { decrement_tool_quota_if_needed(&connection, &agent_id, &sender_id, &tool_name).await };
+    let run = async move {
+        decrement_tool_quota_if_needed(&connection, &agent_id, &sender_id, &tool_name).await
+    };
 
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         block_in_place(|| handle.block_on(run))
@@ -200,17 +206,15 @@ fn map_tool_quota_sqlite_row(row: SqliteRow) -> QqChatAgentServiceToolQuota {
 }
 
 fn mysql_pool(config: &Arc<MySqlConfig>) -> Result<&sqlx::mysql::MySqlPool> {
-    config
-        .pool
-        .as_ref()
-        .ok_or_else(|| Error::ValidationError("tool-quota mysql pool is not initialized".to_string()))
+    config.pool.as_ref().ok_or_else(|| {
+        Error::ValidationError("tool-quota mysql pool is not initialized".to_string())
+    })
 }
 
 fn sqlite_pool(config: &Arc<SqliteConfig>) -> Result<&sqlx::sqlite::SqlitePool> {
-    config
-        .pool
-        .as_ref()
-        .ok_or_else(|| Error::ValidationError("tool-quota sqlite pool is not initialized".to_string()))
+    config.pool.as_ref().ok_or_else(|| {
+        Error::ValidationError("tool-quota sqlite pool is not initialized".to_string())
+    })
 }
 
 fn format_mysql_timestamp(value: NaiveDateTime) -> String {

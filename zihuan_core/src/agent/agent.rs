@@ -14,11 +14,7 @@ pub struct AgentDescriptor {
 
 impl AgentDescriptor {
     pub fn new(id: &'static str, name: &'static str, capabilities: Vec<&'static str>) -> Self {
-        Self {
-            id,
-            name,
-            capabilities,
-        }
+        Self { id, name, capabilities }
     }
 }
 
@@ -36,7 +32,9 @@ pub struct AgentContext {
 
 impl AgentContext {
     pub fn is_cancelled(&self) -> bool {
-        self.cancellation.as_ref().is_some_and(|cancellation| cancellation.is_cancelled())
+        self.cancellation
+            .as_ref()
+            .is_some_and(|cancellation| cancellation.is_cancelled())
     }
 }
 

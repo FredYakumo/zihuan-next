@@ -53,10 +53,24 @@ pub async fn upsert_language_style(
 ) -> Result<QqChatAgentServiceLanguageStyle> {
     match connection {
         RelationalDbConnection::MySql(config) => {
-            upsert_language_style_mysql(config, scope, style_prompt, sample_count, learned_by_sender_id).await
+            upsert_language_style_mysql(
+                config,
+                scope,
+                style_prompt,
+                sample_count,
+                learned_by_sender_id,
+            )
+            .await
         }
         RelationalDbConnection::Sqlite(config) => {
-            upsert_language_style_sqlite(config, scope, style_prompt, sample_count, learned_by_sender_id).await
+            upsert_language_style_sqlite(
+                config,
+                scope,
+                style_prompt,
+                sample_count,
+                learned_by_sender_id,
+            )
+            .await
         }
     }
 }
@@ -66,8 +80,12 @@ pub async fn get_applicable_language_style(
     group_id: Option<&str>,
 ) -> Result<Option<QqChatAgentServiceLanguageStyle>> {
     match connection {
-        RelationalDbConnection::MySql(config) => get_applicable_language_style_mysql(config, group_id).await,
-        RelationalDbConnection::Sqlite(config) => get_applicable_language_style_sqlite(config, group_id).await,
+        RelationalDbConnection::MySql(config) => {
+            get_applicable_language_style_mysql(config, group_id).await
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            get_applicable_language_style_sqlite(config, group_id).await
+        }
     }
 }
 
@@ -148,8 +166,11 @@ async fn get_applicable_language_style_mysql(
     group_id: Option<&str>,
 ) -> Result<Option<QqChatAgentServiceLanguageStyle>> {
     if let Some(group_id) = group_id {
-        if let Some(record) =
-            fetch_scope_optional_mysql(config, &LanguageStyleScope::Group { group_id: group_id.to_string() }).await?
+        if let Some(record) = fetch_scope_optional_mysql(
+            config,
+            &LanguageStyleScope::Group { group_id: group_id.to_string() },
+        )
+        .await?
         {
             return Ok(Some(record));
         }
@@ -162,8 +183,11 @@ async fn get_applicable_language_style_sqlite(
     group_id: Option<&str>,
 ) -> Result<Option<QqChatAgentServiceLanguageStyle>> {
     if let Some(group_id) = group_id {
-        if let Some(record) =
-            fetch_scope_optional_sqlite(config, &LanguageStyleScope::Group { group_id: group_id.to_string() }).await?
+        if let Some(record) = fetch_scope_optional_sqlite(
+            config,
+            &LanguageStyleScope::Group { group_id: group_id.to_string() },
+        )
+        .await?
         {
             return Ok(Some(record));
         }
@@ -175,18 +199,18 @@ async fn fetch_scope_mysql(
     config: &Arc<MySqlConfig>,
     scope: &LanguageStyleScope,
 ) -> Result<QqChatAgentServiceLanguageStyle> {
-    fetch_scope_optional_mysql(config, scope)
-        .await?
-        .ok_or_else(|| Error::ValidationError("language-style record missing after upsert".to_string()))
+    fetch_scope_optional_mysql(config, scope).await?.ok_or_else(|| {
+        Error::ValidationError("language-style record missing after upsert".to_string())
+    })
 }
 
 async fn fetch_scope_sqlite(
     config: &Arc<SqliteConfig>,
     scope: &LanguageStyleScope,
 ) -> Result<QqChatAgentServiceLanguageStyle> {
-    fetch_scope_optional_sqlite(config, scope)
-        .await?
-        .ok_or_else(|| Error::ValidationError("language-style record missing after upsert".to_string()))
+    fetch_scope_optional_sqlite(config, scope).await?.ok_or_else(|| {
+        Error::ValidationError("language-style record missing after upsert".to_string())
+    })
 }
 
 async fn fetch_scope_optional_mysql(
@@ -252,17 +276,15 @@ fn map_language_style_sqlite_row(row: SqliteRow) -> QqChatAgentServiceLanguageSt
 }
 
 fn mysql_pool(config: &Arc<MySqlConfig>) -> Result<&sqlx::mysql::MySqlPool> {
-    config
-        .pool
-        .as_ref()
-        .ok_or_else(|| Error::ValidationError("language-style mysql pool is not initialized".to_string()))
+    config.pool.as_ref().ok_or_else(|| {
+        Error::ValidationError("language-style mysql pool is not initialized".to_string())
+    })
 }
 
 fn sqlite_pool(config: &Arc<SqliteConfig>) -> Result<&sqlx::sqlite::SqlitePool> {
-    config
-        .pool
-        .as_ref()
-        .ok_or_else(|| Error::ValidationError("language-style sqlite pool is not initialized".to_string()))
+    config.pool.as_ref().ok_or_else(|| {
+        Error::ValidationError("language-style sqlite pool is not initialized".to_string())
+    })
 }
 
 fn format_mysql_timestamp(value: NaiveDateTime) -> String {

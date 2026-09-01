@@ -94,13 +94,12 @@ impl ExecutionResult {
     }
 }
 
-use serde::{Deserialize, Serialize};
 use crate::error::Result;
+use serde::{Deserialize, Serialize};
 
 type OutputPool = HashMap<String, NodeOutputFlow>;
 type InputSourceMap = HashMap<String, HashMap<String, (String, String)>>;
 
-pub mod tool_spec;
 pub mod data_value;
 pub mod function_graph;
 pub mod graph_boundary;
@@ -114,6 +113,7 @@ pub mod object_storage;
 pub mod qq_message_list_rdb_persistence;
 pub mod registry;
 pub mod script_node;
+pub mod tool_spec;
 pub mod util;
 
 pub type RuntimeVariableStore = Arc<RwLock<RuntimeValueFlow>>;
@@ -123,11 +123,13 @@ pub use data_value::{DataType, DataValue};
 pub use flow::{NodeConfigFlow, NodeInputFlow, NodeOutputFlow, RuntimeValueFlow};
 #[allow(unused_imports)]
 pub use graph_io::{
-    ensure_positions, load_graph_definition_from_json, save_graph_definition_to_json, EdgeDefinition, GraphPosition,
-    NodeDefinition, NodeGraphDefinition,
+    ensure_positions, load_graph_definition_from_json, save_graph_definition_to_json,
+    EdgeDefinition, GraphPosition, NodeDefinition, NodeGraphDefinition,
 };
 #[allow(unused_imports)]
-pub use node_macros::{node_input, node_input_flow, node_output, node_output_flow, return_with_node_output};
+pub use node_macros::{
+    node_input, node_input_flow, node_output, node_output_flow, return_with_node_output,
+};
 #[allow(unused_imports)]
 pub use registry::build_node_graph_from_definition;
 
@@ -171,7 +173,11 @@ pub mod flow {
                     self.values.contains_key(key)
                 }
 
-                pub fn insert(&mut self, key: impl Into<String>, value: DataValue) -> Option<DataValue> {
+                pub fn insert(
+                    &mut self,
+                    key: impl Into<String>,
+                    value: DataValue,
+                ) -> Option<DataValue> {
                     self.values.insert(key.into(), value)
                 }
 
@@ -391,9 +397,9 @@ pub trait Node: Send + Sync {
         for port in &input_ports {
             inputs.get(&port.name).map_or_else(
                 || {
-                    (!port.required)
-                        .then_some(())
-                        .ok_or_else(|| crate::validation_error!("Required input port '{}' is missing", port.name))
+                    (!port.required).then_some(()).ok_or_else(|| {
+                        crate::validation_error!("Required input port '{}' is missing", port.name)
+                    })
                 },
                 |value| {
                     let actual_type = value.data_type();
@@ -561,7 +567,9 @@ impl NodeGraph {
             let Some(initial_value) = variable.initial_value.as_ref() else {
                 continue;
             };
-            if let Some(data_value) = crate::graph::registry::json_to_data_value(initial_value, &variable.data_type) {
+            if let Some(data_value) =
+                crate::graph::registry::json_to_data_value(initial_value, &variable.data_type)
+            {
                 values.insert(variable.name.clone(), data_value);
             }
         }
@@ -625,7 +633,8 @@ impl NodeGraph {
         let mut output_producers: HashMap<String, String> = HashMap::new();
         for (node_id, node) in &self.nodes {
             for port in node.output_ports() {
-                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone()) {
+                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone())
+                {
                     return Err(crate::validation_error!(
                         "Output port '{}' is produced by both '{}' and '{}'",
                         port.name,
@@ -666,13 +675,18 @@ impl NodeGraph {
                         .unwrap_or(false);
 
                     if !has_inline {
-                        let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name) {
+                        let msg = if let Some(hp_name) =
+                            self.port_binding_hp_name(node_id, &port.name)
+                        {
                             format!(
                                 "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
                                 hp_name, port.name, node_id
                             )
                         } else {
-                            format!("Required input port '{}' for node '{}' is not bound", port.name, node_id)
+                            format!(
+                                "Required input port '{}' for node '{}' is not bound",
+                                port.name, node_id
+                            )
                         };
                         return Err(crate::error::Error::ValidationError(msg));
                     }
@@ -716,10 +730,9 @@ impl NodeGraph {
                 continue;
             }
             let Some(inputs) = ({
-                let node = self
-                    .nodes
-                    .get(&node_id)
-                    .ok_or_else(|| crate::validation_error!("Node '{}' not found during execution", node_id))?;
+                let node = self.nodes.get(&node_id).ok_or_else(|| {
+                    crate::validation_error!("Node '{}' not found during execution", node_id)
+                })?;
                 self.collect_inputs_if_available(
                     node.as_ref(),
                     &data_pool,
@@ -731,15 +744,15 @@ impl NodeGraph {
                 continue;
             };
 
-            let node = self
-                .nodes
-                .get_mut(&node_id)
-                .ok_or_else(|| crate::validation_error!("Node '{}' not found during execution", node_id))?;
+            let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
+                crate::validation_error!("Node '{}' not found during execution", node_id)
+            })?;
             let outputs = node
                 .execute(inputs)
                 .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-            node.validate_outputs(&outputs)
-                .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e))?;
+            node.validate_outputs(&outputs).map_err(|e| {
+                Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
+            })?;
             for (key, value) in outputs.into_inner() {
                 if data_pool.contains_key(&key) {
                     return Err(crate::validation_error!(
@@ -760,7 +773,9 @@ impl NodeGraph {
         let mut node_results: HashMap<String, NodeOutputFlow> = HashMap::new();
 
         // Try to execute, if error occurs, return early with error info
-        match crate::graph::script_node::with_dynamic_script_resources(|| self.execute_and_collect_node_results(&mut node_results)) {
+        match crate::graph::script_node::with_dynamic_script_resources(|| {
+            self.execute_and_collect_node_results(&mut node_results)
+        }) {
             Ok(()) => ExecutionResult::success(node_results),
             Err(e) => {
                 // Extract node ID from error if possible
@@ -805,7 +820,8 @@ impl NodeGraph {
         let mut output_producers: HashMap<String, String> = HashMap::new();
         for (node_id, node) in &self.nodes {
             for port in node.output_ports() {
-                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone()) {
+                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone())
+                {
                     return Err(crate::validation_error!(
                         "Output port '{}' is produced by both '{}' and '{}'",
                         port.name,
@@ -846,13 +862,18 @@ impl NodeGraph {
                         .unwrap_or(false);
 
                     if !has_inline {
-                        let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name) {
+                        let msg = if let Some(hp_name) =
+                            self.port_binding_hp_name(node_id, &port.name)
+                        {
                             format!(
                                 "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
                                 hp_name, port.name, node_id
                             )
                         } else {
-                            format!("Required input port '{}' for node '{}' is not bound", port.name, node_id)
+                            format!(
+                                "Required input port '{}' for node '{}' is not bound",
+                                port.name, node_id
+                            )
                         };
                         return Err(crate::error::Error::ValidationError(msg));
                     }
@@ -896,10 +917,9 @@ impl NodeGraph {
                 continue;
             }
             let Some(inputs) = ({
-                let node = self
-                    .nodes
-                    .get(&node_id)
-                    .ok_or_else(|| crate::validation_error!("Node '{}' not found during execution", node_id))?;
+                let node = self.nodes.get(&node_id).ok_or_else(|| {
+                    crate::validation_error!("Node '{}' not found during execution", node_id)
+                })?;
                 self.collect_inputs_if_available(
                     node.as_ref(),
                     &data_pool,
@@ -911,10 +931,9 @@ impl NodeGraph {
                 continue;
             };
 
-            let node = self
-                .nodes
-                .get_mut(&node_id)
-                .ok_or_else(|| crate::validation_error!("Node '{}' not found during execution", node_id))?;
+            let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
+                crate::validation_error!("Node '{}' not found during execution", node_id)
+            })?;
 
             let inputs_clone = if self.execution_callback.is_some() {
                 Some(inputs.clone())
@@ -925,8 +944,9 @@ impl NodeGraph {
             let outputs = node
                 .execute(inputs.clone())
                 .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-            node.validate_outputs(&outputs)
-                .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e))?;
+            node.validate_outputs(&outputs).map_err(|e| {
+                Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
+            })?;
 
             if let Some(cb) = &self.execution_callback {
                 if let Some(inp) = inputs_clone {
@@ -1007,10 +1027,9 @@ impl NodeGraph {
             if self.is_node_disabled(node_id) {
                 continue;
             }
-            let node = self
-                .nodes
-                .get(node_id)
-                .ok_or_else(|| crate::validation_error!("Node '{}' not found during execution", node_id))?;
+            let node = self.nodes.get(node_id).ok_or_else(|| {
+                crate::validation_error!("Node '{}' not found during execution", node_id)
+            })?;
 
             let has_inline = self.inline_values.get(node_id);
             let input_map = input_sources.get(node_id);
@@ -1020,15 +1039,20 @@ impl NodeGraph {
                     continue;
                 }
                 let has_edge = input_map.and_then(|m| m.get(&port.name)).is_some();
-                let has_inline_value = has_inline.map(|m| m.contains_key(&port.name)).unwrap_or(false);
+                let has_inline_value =
+                    has_inline.map(|m| m.contains_key(&port.name)).unwrap_or(false);
                 if !has_edge && !has_inline_value {
-                    let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name) {
+                    let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name)
+                    {
                         format!(
                             "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
                             hp_name, port.name, node_id
                         )
                     } else {
-                        format!("Required input port '{}' for node '{}' is not bound", port.name, node_id)
+                        format!(
+                            "Required input port '{}' for node '{}' is not bound",
+                            port.name, node_id
+                        )
                     };
                     return Err(crate::error::Error::ValidationError(msg));
                 }
@@ -1044,10 +1068,9 @@ impl NodeGraph {
                 continue;
             }
             let inputs = {
-                let node = self
-                    .nodes
-                    .get(&node_id)
-                    .ok_or_else(|| crate::validation_error!("Node '{}' not found during execution", node_id))?;
+                let node = self.nodes.get(&node_id).ok_or_else(|| {
+                    crate::validation_error!("Node '{}' not found during execution", node_id)
+                })?;
                 self.collect_inputs_with_edges_if_available(
                     node.as_ref(),
                     &data_pool,
@@ -1067,15 +1090,15 @@ impl NodeGraph {
                 None
             };
             let outputs = {
-                let node = self
-                    .nodes
-                    .get_mut(&node_id)
-                    .ok_or_else(|| crate::validation_error!("Node '{}' not found during execution", node_id))?;
+                let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
+                    crate::validation_error!("Node '{}' not found during execution", node_id)
+                })?;
                 let outputs = node
                     .execute(inputs)
                     .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-                node.validate_outputs(&outputs)
-                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e))?;
+                node.validate_outputs(&outputs).map_err(|e| {
+                    Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
+                })?;
                 outputs
             };
 
@@ -1146,10 +1169,9 @@ impl NodeGraph {
             if self.is_node_disabled(node_id) {
                 continue;
             }
-            let node = self
-                .nodes
-                .get(node_id)
-                .ok_or_else(|| crate::validation_error!("Node '{}' not found during execution", node_id))?;
+            let node = self.nodes.get(node_id).ok_or_else(|| {
+                crate::validation_error!("Node '{}' not found during execution", node_id)
+            })?;
 
             let has_inline = self.inline_values.get(node_id);
             let input_map = input_sources.get(node_id);
@@ -1159,15 +1181,20 @@ impl NodeGraph {
                     continue;
                 }
                 let has_edge = input_map.and_then(|m| m.get(&port.name)).is_some();
-                let has_inline_value = has_inline.map(|m| m.contains_key(&port.name)).unwrap_or(false);
+                let has_inline_value =
+                    has_inline.map(|m| m.contains_key(&port.name)).unwrap_or(false);
                 if !has_edge && !has_inline_value {
-                    let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name) {
+                    let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name)
+                    {
                         format!(
                             "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
                             hp_name, port.name, node_id
                         )
                     } else {
-                        format!("Required input port '{}' for node '{}' is not bound", port.name, node_id)
+                        format!(
+                            "Required input port '{}' for node '{}' is not bound",
+                            port.name, node_id
+                        )
                     };
                     return Err(crate::error::Error::ValidationError(msg));
                 }
@@ -1183,10 +1210,9 @@ impl NodeGraph {
                 continue;
             }
             let inputs = {
-                let node = self
-                    .nodes
-                    .get(&node_id)
-                    .ok_or_else(|| crate::validation_error!("Node '{}' not found during execution", node_id))?;
+                let node = self.nodes.get(&node_id).ok_or_else(|| {
+                    crate::validation_error!("Node '{}' not found during execution", node_id)
+                })?;
                 self.collect_inputs_with_edges_if_available(
                     node.as_ref(),
                     &data_pool,
@@ -1206,15 +1232,15 @@ impl NodeGraph {
                 None
             };
             let outputs = {
-                let node = self
-                    .nodes
-                    .get_mut(&node_id)
-                    .ok_or_else(|| crate::validation_error!("Node '{}' not found during execution", node_id))?;
+                let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
+                    crate::validation_error!("Node '{}' not found during execution", node_id)
+                })?;
                 let outputs = node
                     .execute(inputs.clone())
                     .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-                node.validate_outputs(&outputs)
-                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e))?;
+                node.validate_outputs(&outputs).map_err(|e| {
+                    Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
+                })?;
                 outputs
             };
 
@@ -1250,14 +1276,12 @@ impl NodeGraph {
         let mut input_sources: InputSourceMap = HashMap::new();
 
         for edge in &self.edges {
-            let from_node = self
-                .nodes
-                .get(&edge.from_node_id)
-                .ok_or_else(|| crate::validation_error!("Node '{}' not found for edge", edge.from_node_id))?;
-            let to_node = self
-                .nodes
-                .get(&edge.to_node_id)
-                .ok_or_else(|| crate::validation_error!("Node '{}' not found for edge", edge.to_node_id))?;
+            let from_node = self.nodes.get(&edge.from_node_id).ok_or_else(|| {
+                crate::validation_error!("Node '{}' not found for edge", edge.from_node_id)
+            })?;
+            let to_node = self.nodes.get(&edge.to_node_id).ok_or_else(|| {
+                crate::validation_error!("Node '{}' not found for edge", edge.to_node_id)
+            })?;
 
             let from_port = from_node
                 .output_ports()
@@ -1271,17 +1295,16 @@ impl NodeGraph {
                     )
                 })?;
 
-            let to_port = to_node
-                .input_ports()
-                .into_iter()
-                .find(|p| p.name == edge.to_port)
-                .ok_or_else(|| {
-                    crate::validation_error!(
-                        "Input port '{}' not found on node '{}'",
-                        edge.to_port,
-                        edge.to_node_id
-                    )
-                })?;
+            let to_port =
+                to_node.input_ports().into_iter().find(|p| p.name == edge.to_port).ok_or_else(
+                    || {
+                        crate::validation_error!(
+                            "Input port '{}' not found on node '{}'",
+                            edge.to_port,
+                            edge.to_node_id
+                        )
+                    },
+                )?;
 
             if !from_port.data_type.is_compatible_with(&to_port.data_type) {
                 return Err(crate::validation_error!(
@@ -1335,7 +1358,9 @@ impl NodeGraph {
             let bound_variable_value = self.runtime_bound_variable_value(node_id, &port.name);
             if let Some(source_map) = sources.and_then(|m| m.get(&port.name)) {
                 let (from_node_id, from_port) = source_map;
-                if let Some(value) = data_pool.get(from_node_id).and_then(|from_outputs| from_outputs.get(from_port)) {
+                if let Some(value) =
+                    data_pool.get(from_node_id).and_then(|from_outputs| from_outputs.get(from_port))
+                {
                     inputs.insert(port.name.clone(), value.clone());
                     continue;
                 }

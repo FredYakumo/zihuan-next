@@ -8,14 +8,14 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::classify_intent::IntentClassificationTrace;
-use zihuan_core::ims_bot_adapter::models::message::Message;
 use zihuan_core::agent::tools::{ToolCallingObserver, ToolCallingStopReason};
-use zihuan_core::model_inference::llm::tooling::ToolCalls;
-use zihuan_core::model_inference::llm::{LLMMessage, TokenUsage};
 use zihuan_core::graph::graph_io::{
     EdgeDefinition, GraphMetadata, GraphPosition, NodeDefinition, NodeGraphDefinition,
 };
 use zihuan_core::graph::{DataType, Port};
+use zihuan_core::ims_bot_adapter::models::message::Message;
+use zihuan_core::model_inference::llm::tooling::ToolCalls;
+use zihuan_core::model_inference::llm::{LLMMessage, TokenUsage};
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 // Maximum number of characters retained for a text segment in regular logs.
@@ -145,7 +145,11 @@ impl QqChatTaskTrace {
         self.log_key_event("收到用户消息", 0, details);
     }
 
-    pub(crate) fn record_history_stats(&self, history_message_count: usize, history_tokens_estimated: usize) {
+    pub(crate) fn record_history_stats(
+        &self,
+        history_message_count: usize,
+        history_tokens_estimated: usize,
+    ) {
         self.log_key_event(
             "历史消息上下文",
             0,
@@ -159,7 +163,11 @@ impl QqChatTaskTrace {
         inner.history_tokens_estimated = Some(history_tokens_estimated);
     }
 
-    pub(crate) fn record_intent_classification(&self, trace: &IntentClassificationTrace, routed_model: &str) {
+    pub(crate) fn record_intent_classification(
+        &self,
+        trace: &IntentClassificationTrace,
+        routed_model: &str,
+    ) {
         self.record_graph_step(
             "意图识别",
             "qq_chat_intent",
@@ -242,7 +250,11 @@ impl QqChatTaskTrace {
         inner.llm_request_started_at = Some(TracePoint::now());
     }
 
-    pub(crate) fn log_llm_conversation(&self, conversation: &[LLMMessage], prompt_tokens_estimated: usize) {
+    pub(crate) fn log_llm_conversation(
+        &self,
+        conversation: &[LLMMessage],
+        prompt_tokens_estimated: usize,
+    ) {
         self.record_graph_step(
             "主 ToolCallingEngine 提示词",
             "qq_chat_brain_prompt",
@@ -250,7 +262,8 @@ impl QqChatTaskTrace {
                 "messages": conversation, "prompt_tokens_estimated": prompt_tokens_estimated,
             }),
         );
-        let payload = serde_json::to_string(conversation).unwrap_or_else(|err| format!("<serialize failed: {err}>"));
+        let payload = serde_json::to_string(conversation)
+            .unwrap_or_else(|err| format!("<serialize failed: {err}>"));
         self.log_key_event(
             "发送给大模型的消息列表",
             0,
@@ -265,7 +278,12 @@ impl QqChatTaskTrace {
         inner.prompt_tokens_estimated = Some(prompt_tokens_estimated);
     }
 
-    pub(crate) fn record_tool_request(&self, iteration: usize, content: &str, tool_calls: &[ToolCalls]) {
+    pub(crate) fn record_tool_request(
+        &self,
+        iteration: usize,
+        content: &str,
+        tool_calls: &[ToolCalls],
+    ) {
         let details = format!(
             "iteration={} assistant_content={} tool_calls={}",
             iteration,
@@ -292,7 +310,10 @@ impl QqChatTaskTrace {
         self.log_key_event(
             &format!("工具调用 {name}"),
             0,
-            format!("arguments={}", truncate_for_log(&arguments.to_string(), LOG_TOOL_PREVIEW_CHARS)),
+            format!(
+                "arguments={}",
+                truncate_for_log(&arguments.to_string(), LOG_TOOL_PREVIEW_CHARS)
+            ),
         );
 
         let mut inner = self.inner.lock().unwrap();
@@ -338,7 +359,11 @@ impl QqChatTaskTrace {
         );
     }
 
-    pub(crate) fn record_llm_final_result(&self, stop_reason: &ToolCallingStopReason, brain_output: &[LLMMessage]) {
+    pub(crate) fn record_llm_final_result(
+        &self,
+        stop_reason: &ToolCallingStopReason,
+        brain_output: &[LLMMessage],
+    ) {
         self.record_graph_step(
             "主 ToolCallingEngine 输出",
             "qq_chat_brain_result",
@@ -463,7 +488,12 @@ impl QqChatTaskTrace {
         inner.reply_send_started_at = Some(TracePoint::now());
     }
 
-    pub(crate) fn record_reply_send(&self, suppress_send: bool, reply_sent: bool, batches: &[Vec<Message>]) {
+    pub(crate) fn record_reply_send(
+        &self,
+        suppress_send: bool,
+        reply_sent: bool,
+        batches: &[Vec<Message>],
+    ) {
         self.record_graph_step(
             "构建并发送回复",
             "qq_chat_send_reply",
@@ -499,7 +529,11 @@ impl QqChatTaskTrace {
         inner.reply_sent = Some(reply_sent);
     }
 
-    pub(crate) fn record_token_usage(&self, completion_tokens_estimated: usize, exact_usage: Option<TokenUsage>) {
+    pub(crate) fn record_token_usage(
+        &self,
+        completion_tokens_estimated: usize,
+        exact_usage: Option<TokenUsage>,
+    ) {
         let mut inner = self.inner.lock().unwrap();
         if let Some(usage) = exact_usage {
             if let Some(prompt_tokens) = usage.prompt_tokens {
@@ -527,7 +561,8 @@ impl QqChatTaskTrace {
         }
 
         inner.completion_tokens_estimated = Some(completion_tokens_estimated);
-        inner.total_tokens_estimated = inner.prompt_tokens_estimated.map(|prompt| prompt + completion_tokens_estimated);
+        inner.total_tokens_estimated =
+            inner.prompt_tokens_estimated.map(|prompt| prompt + completion_tokens_estimated);
     }
 
     pub(crate) fn log_result_summary(&self, result_summary: &str) {
@@ -722,7 +757,9 @@ impl QqChatTaskTrace {
         if id.is_empty() {
             return;
         }
-        if let Some(node) = self.inner.lock().unwrap().graph_nodes.iter_mut().find(|node| node.id == id) {
+        if let Some(node) =
+            self.inner.lock().unwrap().graph_nodes.iter_mut().find(|node| node.id == id)
+        {
             node.output = Some(serde_json::json!({ "result": output }));
             node.execution_time = Some(Local::now().to_rfc3339());
         }
@@ -744,7 +781,10 @@ fn layout_task_graph_nodes(nodes: &mut [NodeDefinition]) {
         } else {
             row_width + TASK_GRAPH_HORIZONTAL_GAP + node_width
         };
-        if !rows.last().is_some_and(|row| row.is_empty()) && row_width > 0.0 && next_width > TASK_GRAPH_MAX_ROW_WIDTH {
+        if !rows.last().is_some_and(|row| row.is_empty())
+            && row_width > 0.0
+            && next_width > TASK_GRAPH_MAX_ROW_WIDTH
+        {
             rows.push(Vec::new());
             row_width = 0.0;
         }
@@ -807,7 +847,11 @@ fn format_time(time: &DateTime<Local>) -> String {
     time.format("%Y-%m-%d %H:%M:%S%.3f").to_string()
 }
 
-fn format_timeline_line(label: &str, point: Option<&TracePoint>, previous: Option<&TracePoint>) -> String {
+fn format_timeline_line(
+    label: &str,
+    point: Option<&TracePoint>,
+    previous: Option<&TracePoint>,
+) -> String {
     match point {
         Some(point) => {
             let duration_ms = previous

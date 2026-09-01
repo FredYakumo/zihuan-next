@@ -1,10 +1,12 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use tokenizers::Tokenizer;
 use crate::error::{Error, Result};
 use crate::model_inference::llm::tooling::{FunctionTool, ToolCalls, ToolCallsFuncSpec};
-use crate::model_inference::llm::{InferenceParam, LLMMessage, MessagePart, StreamToken, TokenUsage};
+use crate::model_inference::llm::{
+    InferenceParam, LLMMessage, MessagePart, StreamToken, TokenUsage,
+};
+use tokenizers::Tokenizer;
 
 use crate::model_inference::message_content_utils::downgrade_messages_for_model;
 
@@ -14,7 +16,8 @@ pub const USER_VISIBLE_REQUEST_ERROR: &str = "Error: local Candle inference fail
 const THINK_OPEN_TAG: &str = "<think>";
 const THINK_CLOSE_TAG: &str = "</think>";
 const CALL_TOOL_MARKER: &str = "CALL_TOOL ";
-const STREAM_CONTENT_MARKERS: &[&str] = &[THINK_OPEN_TAG, CALL_TOOL_MARKER, "\nCALL_TOOL ", "\r\nCALL_TOOL "];
+const STREAM_CONTENT_MARKERS: &[&str] =
+    &[THINK_OPEN_TAG, CALL_TOOL_MARKER, "\nCALL_TOOL ", "\r\nCALL_TOOL "];
 
 #[derive(Debug, Clone)]
 pub struct ParsedLocalResponse {
@@ -76,12 +79,16 @@ impl LocalResponseStreamRenderer {
                     break;
                 }
                 LocalStreamMode::Content => {
-                    if let Some((pos, marker)) = earliest_marker(&self.pending, STREAM_CONTENT_MARKERS) {
+                    if let Some((pos, marker)) =
+                        earliest_marker(&self.pending, STREAM_CONTENT_MARKERS)
+                    {
                         let marker_len = marker.len();
                         let is_think_marker = marker == THINK_OPEN_TAG;
                         push_if_non_empty(
                             &mut emitted,
-                            StreamToken::content(self.pending[..pos].trim_end_matches(char::is_whitespace)),
+                            StreamToken::content(
+                                self.pending[..pos].trim_end_matches(char::is_whitespace),
+                            ),
                         );
                         self.pending.drain(..pos + marker_len);
                         self.mode = if is_think_marker {
@@ -96,12 +103,18 @@ impl LocalResponseStreamRenderer {
                     if safe_len == 0 {
                         break;
                     }
-                    push_if_non_empty(&mut emitted, StreamToken::content(&self.pending[..safe_len]));
+                    push_if_non_empty(
+                        &mut emitted,
+                        StreamToken::content(&self.pending[..safe_len]),
+                    );
                     self.pending.drain(..safe_len);
                 }
                 LocalStreamMode::Thinking => {
                     if let Some(pos) = self.pending.find(THINK_CLOSE_TAG) {
-                        push_if_non_empty(&mut emitted, StreamToken::thinking(&self.pending[..pos]));
+                        push_if_non_empty(
+                            &mut emitted,
+                            StreamToken::thinking(&self.pending[..pos]),
+                        );
                         self.pending.drain(..pos + THINK_CLOSE_TAG.len());
                         self.mode = LocalStreamMode::Content;
                         continue;
@@ -111,7 +124,10 @@ impl LocalResponseStreamRenderer {
                     if safe_len == 0 {
                         break;
                     }
-                    push_if_non_empty(&mut emitted, StreamToken::thinking(&self.pending[..safe_len]));
+                    push_if_non_empty(
+                        &mut emitted,
+                        StreamToken::thinking(&self.pending[..safe_len]),
+                    );
                     self.pending.drain(..safe_len);
                 }
             }
@@ -124,10 +140,16 @@ impl LocalResponseStreamRenderer {
         let mut emitted = Vec::new();
         match self.mode {
             LocalStreamMode::Content => {
-                push_if_non_empty(&mut emitted, StreamToken::content(self.pending.trim_end_matches('\0')));
+                push_if_non_empty(
+                    &mut emitted,
+                    StreamToken::content(self.pending.trim_end_matches('\0')),
+                );
             }
             LocalStreamMode::Thinking => {
-                push_if_non_empty(&mut emitted, StreamToken::thinking(self.pending.trim_end_matches('\0')));
+                push_if_non_empty(
+                    &mut emitted,
+                    StreamToken::thinking(self.pending.trim_end_matches('\0')),
+                );
             }
             LocalStreamMode::ToolCall => {}
         }
@@ -136,7 +158,10 @@ impl LocalResponseStreamRenderer {
     }
 }
 
-pub fn render_local_prompt(messages: &[LLMMessage], tools: Option<&Vec<Arc<dyn FunctionTool>>>) -> String {
+pub fn render_local_prompt(
+    messages: &[LLMMessage],
+    tools: Option<&Vec<Arc<dyn FunctionTool>>>,
+) -> String {
     let mut sections = Vec::new();
     sections.push(
         "You are a local assistant running inside zihuan-next. Reply concisely in plain text.\nIf you need hidden reasoning, place it inside <think>...</think> and do not mention the tags in the final answer.\nIf you need to call a tool, output a single line starting with CALL_TOOL followed by strict JSON: {\"name\":\"tool_name\",\"arguments\":{...}}.\nDo not wrap the tool call in markdown.".to_string(),
@@ -145,7 +170,14 @@ pub fn render_local_prompt(messages: &[LLMMessage], tools: Option<&Vec<Arc<dyn F
     if let Some(tools) = tools.filter(|tools| !tools.is_empty()) {
         let tool_descriptions = tools
             .iter()
-            .map(|tool| format!("- {}: {}\n  parameters: {}", tool.name(), tool.description(), tool.parameters()))
+            .map(|tool| {
+                format!(
+                    "- {}: {}\n  parameters: {}",
+                    tool.name(),
+                    tool.description(),
+                    tool.parameters()
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
         sections.push(format!("Available tools:\n{}", tool_descriptions));
@@ -182,8 +214,12 @@ pub fn render_local_prompt(messages: &[LLMMessage], tools: Option<&Vec<Arc<dyn F
     sections.join("\n\n")
 }
 
-pub fn prepare_prompt(param: &InferenceParam, supports_multimodal_input: bool) -> Result<(String, usize)> {
-    let downgraded = downgrade_messages_for_model(param.messages.clone(), supports_multimodal_input);
+pub fn prepare_prompt(
+    param: &InferenceParam,
+    supports_multimodal_input: bool,
+) -> Result<(String, usize)> {
+    let downgraded =
+        downgrade_messages_for_model(param.messages.clone(), supports_multimodal_input);
     let prompt = render_local_prompt(&downgraded, param.tools);
     let prompt_chars = prompt.chars().count();
     if prompt_chars == 0 {
@@ -193,10 +229,13 @@ pub fn prepare_prompt(param: &InferenceParam, supports_multimodal_input: bool) -
 }
 
 pub fn decode_token_piece(tokenizer: &Tokenizer, token_id: u32) -> Option<String> {
-    tokenizer
-        .decode(&[token_id], false)
-        .ok()
-        .and_then(|piece| if piece.is_empty() { None } else { Some(piece) })
+    tokenizer.decode(&[token_id], false).ok().and_then(|piece| {
+        if piece.is_empty() {
+            None
+        } else {
+            Some(piece)
+        }
+    })
 }
 
 pub fn build_usage(prompt_tokens: usize, completion_tokens: usize) -> Option<TokenUsage> {
@@ -270,8 +309,12 @@ fn join_parts(parts: &[MessagePart]) -> String {
         .iter()
         .map(|part| match part {
             MessagePart::Text { text } => text.clone(),
-            MessagePart::Image { media } => format!("[image omitted] {}", media.primary_locator().unwrap_or_default()),
-            MessagePart::Video { media } => format!("[video omitted] {}", media.primary_locator().unwrap_or_default()),
+            MessagePart::Image { media } => {
+                format!("[image omitted] {}", media.primary_locator().unwrap_or_default())
+            }
+            MessagePart::Video { media } => {
+                format!("[video omitted] {}", media.primary_locator().unwrap_or_default())
+            }
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -285,10 +328,7 @@ fn parse_tool_call_payload(payload: &str) -> Option<ToolCalls> {
     Some(ToolCalls {
         id: next_tool_call_id(),
         type_name: "function".to_string(),
-        function: ToolCallsFuncSpec {
-            name: name.to_string(),
-            arguments,
-        },
+        function: ToolCallsFuncSpec { name: name.to_string(), arguments },
     })
 }
 
@@ -354,8 +394,9 @@ mod tests {
 
     #[test]
     fn parse_local_response_extracts_reasoning_and_tool_call() {
-        let parsed =
-            parse_local_response("<think>先思考一下</think>\n\nCALL_TOOL {\"name\":\"get_time\",\"arguments\":{}}");
+        let parsed = parse_local_response(
+            "<think>先思考一下</think>\n\nCALL_TOOL {\"name\":\"get_time\",\"arguments\":{}}",
+        );
 
         assert_eq!(parsed.reasoning_content.as_deref(), Some("先思考一下"));
         assert!(parsed.content.is_empty());

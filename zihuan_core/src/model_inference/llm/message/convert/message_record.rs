@@ -1,6 +1,6 @@
-use chrono::Utc;
-use crate::storage::MessageRecord;
 use crate::model_inference::llm::{LLMMessage, MessageRole};
+use crate::storage::MessageRecord;
+use chrono::Utc;
 
 pub fn llm_message_to_message_record(
     message_id: impl Into<String>,

@@ -6,10 +6,12 @@ use std::sync::Arc;
 use crate::api::config::{now_rfc3339, ok_response, render_internal_error};
 use crate::api::state::AppState;
 use crate::setup_orchestrator::{
-    generate_detailed_install_command, DetailedSetupConfig, ImsBotAdapterSetupConfig, LlmSetupConfig, SetupOptions,
-    SetupOrchestrator, SetupRole,
+    generate_detailed_install_command, DetailedSetupConfig, ImsBotAdapterSetupConfig,
+    LlmSetupConfig, SetupOptions, SetupOrchestrator, SetupRole,
 };
-use zihuan_core::setup_wizard::{clear_setup_wizard_state, load_setup_wizard_state, save_setup_wizard_state};
+use zihuan_core::setup_wizard::{
+    clear_setup_wizard_state, load_setup_wizard_state, save_setup_wizard_state,
+};
 
 #[derive(Deserialize, Clone)]
 pub struct ExecuteSetupRequest {
@@ -141,7 +143,9 @@ pub async fn post_execute_setup(req: &mut Request, res: &mut Response, depot: &m
     }
     if matches!(&body.mode, SetupMode::Detailed) && detailed_config.is_none() {
         res.status_code(StatusCode::BAD_REQUEST);
-        res.render(Json(serde_json::json!({ "error": "detailed_config is required for detailed setup" })));
+        res.render(Json(
+            serde_json::json!({ "error": "detailed_config is required for detailed setup" }),
+        ));
         return;
     }
 
@@ -170,13 +174,21 @@ pub async fn post_execute_setup(req: &mut Request, res: &mut Response, depot: &m
 
     tokio::spawn(async move {
         let result = match mode {
-            SetupMode::Detailed => orchestrator.run_detailed(detailed_config.expect("validated detailed config")).await,
-            SetupMode::RoleBased => orchestrator.run(
-                role.expect("validated role"),
-                options,
-                llm_config.expect("validated LLM config"),
-                ims_bot_adapter_config,
-            ).await,
+            SetupMode::Detailed => {
+                orchestrator
+                    .run_detailed(detailed_config.expect("validated detailed config"))
+                    .await
+            }
+            SetupMode::RoleBased => {
+                orchestrator
+                    .run(
+                        role.expect("validated role"),
+                        options,
+                        llm_config.expect("validated LLM config"),
+                        ims_bot_adapter_config,
+                    )
+                    .await
+            }
             SetupMode::Skip => Ok(()),
         };
         if let Err(err) = result {

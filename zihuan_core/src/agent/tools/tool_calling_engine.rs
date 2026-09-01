@@ -1,25 +1,32 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::model_inference::message_content_utils::{
+    is_transport_error, sanitize_messages_for_inference,
+};
 use async_trait::async_trait;
 use log::{info, warn};
-use crate::model_inference::message_content_utils::{is_transport_error, sanitize_messages_for_inference};
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
-use crate::model_inference::llm::llm_base::LLMBase;
+use super::tool_calling_types::{
+    AgentExecutor, LongTaskContext, ToolCallingMiddleware, ToolCallingObserver, ToolCallingRequest,
+    ToolCallingResult, ToolCallingStopReason,
+};
+use super::tool_progress::{current_task_progress_message, ToolProgressScopeGuard};
 use crate::agent::tools::{Tool, ToolExecutionOutput, ToolExecutionResource, ToolRunDuration};
+use crate::agent::{AgentCancellation, AgentContext};
+use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::tooling::FunctionTool;
 use crate::model_inference::llm::tooling::ToolCalls;
-use crate::model_inference::llm::{InferenceParam, LLMMessage, MessagePart, MessageRole, StreamToken};
+use crate::model_inference::llm::{
+    InferenceParam, LLMMessage, MessagePart, MessageRole, StreamToken,
+};
 use crate::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskStatus,
 };
 use crate::workspace::{AskUserRequest, ToolCallLimitRequest};
-use crate::agent::{AgentCancellation, AgentContext};
-use super::tool_calling_types::{AgentExecutor, LongTaskContext, ToolCallingMiddleware, ToolCallingObserver, ToolCallingRequest, ToolCallingResult, ToolCallingStopReason};
-use super::tool_progress::{current_task_progress_message, ToolProgressScopeGuard};
 
 pub const MAX_TOOL_ITERATIONS: usize = 25;
 const LOG_PREVIEW_CHARS: usize = 600;
@@ -34,7 +41,10 @@ fn truncate_for_log(text: &str, max_chars: usize) -> String {
     format!("{truncated}...(truncated,total_chars={total_chars})")
 }
 
-fn format_cache_hit_rate(cached_prompt_tokens: Option<usize>, prompt_tokens: Option<usize>) -> String {
+fn format_cache_hit_rate(
+    cached_prompt_tokens: Option<usize>,
+    prompt_tokens: Option<usize>,
+) -> String {
     match (cached_prompt_tokens, prompt_tokens) {
         (Some(cached), Some(prompt)) if prompt > 0 => {
             format!("{:.2}%", (cached as f64 / prompt as f64) * 100.0)
@@ -121,7 +131,9 @@ impl ToolCallingEngine {
     }
 
     fn is_cancelled(&self) -> bool {
-        self.cancellation.as_ref().is_some_and(|cancellation| cancellation.is_cancelled())
+        self.cancellation
+            .as_ref()
+            .is_some_and(|cancellation| cancellation.is_cancelled())
     }
 
     pub fn with_observer(mut self, observer: Arc<dyn ToolCallingObserver>) -> Self {
@@ -158,7 +170,8 @@ impl ToolCallingEngine {
         // that at most one confirmation dialog is shown at a time. The guard is
         // held across registration, confirmation event emission, and the wait.
         let _confirmation_guard = if tool.requires_user_confirmation(arguments) {
-            confirmation_gate.map(|gate| gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner()))
+            confirmation_gate
+                .map(|gate| gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner()))
         } else {
             None
         };
@@ -180,7 +193,9 @@ impl ToolCallingEngine {
                 long_ctx.notifier.on_start(&task_id, &task_name, call_content);
                 let on_output = tool_output_callback(observer, tool_name, call_id);
                 let result = scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
-                    scope_task_id(task_id.clone(), || tool.execute_with_progress(call_content, arguments, on_output))
+                    scope_task_id(task_id.clone(), || {
+                        tool.execute_with_progress(call_content, arguments, on_output)
+                    })
                 });
                 handle.finish(AgentTaskResult {
                     status: Some(AgentTaskStatus::Success),
@@ -188,7 +203,10 @@ impl ToolCallingEngine {
                     error_message: None,
                 });
                 long_ctx.notifier.on_complete(&task_id, &task_name, &result.result);
-                info!("[ToolCallingEngine] tool '{}' completed as long task_id={}", tool_name, task_id);
+                info!(
+                    "[ToolCallingEngine] tool '{}' completed as long task_id={}",
+                    tool_name, task_id
+                );
                 return result;
             }
         }
@@ -230,7 +248,8 @@ impl ToolCallingEngine {
             let Some(tool) = call.tool.as_ref() else {
                 return false;
             };
-            if matches!(tool.execution_resource(&call.arguments), ToolExecutionResource::Exclusive) {
+            if matches!(tool.execution_resource(&call.arguments), ToolExecutionResource::Exclusive)
+            {
                 return false;
             }
         }
@@ -252,7 +271,11 @@ impl ToolCallingEngine {
         true
     }
 
-    fn execute_prepared_call(&self, call_content: &str, call: PreparedToolCall) -> PreparedToolResult {
+    fn execute_prepared_call(
+        &self,
+        call_content: &str,
+        call: PreparedToolCall,
+    ) -> PreparedToolResult {
         if self.is_cancelled() {
             return PreparedToolResult {
                 index: call.index,
@@ -393,7 +416,12 @@ impl ToolCallingEngine {
         let mut output: Vec<LLMMessage> = Vec::new();
         for iteration in 0..MAX_TOOL_ITERATIONS {
             if self.is_cancelled() {
-                return (output, ToolCallingStopReason::TransportError("tool-calling execution cancelled".to_string()));
+                return (
+                    output,
+                    ToolCallingStopReason::TransportError(
+                        "tool-calling execution cancelled".to_string(),
+                    ),
+                );
             }
             if iteration > 0 {
                 self.append_iteration_messages(iteration + 1, &mut conversation);
@@ -409,10 +437,15 @@ impl ToolCallingEngine {
 
             if let Some(content) = response.content_text() {
                 if is_transport_error(content) {
-                    warn!("[ToolCallingEngine] Transport error on iteration {iteration}: {content}");
+                    warn!(
+                        "[ToolCallingEngine] Transport error on iteration {iteration}: {content}"
+                    );
                     let msg = content.to_string();
                     if let Some(observer) = self.observer.as_ref() {
-                        observer.on_final_assistant(&response, &ToolCallingStopReason::TransportError(msg.clone()));
+                        observer.on_final_assistant(
+                            &response,
+                            &ToolCallingStopReason::TransportError(msg.clone()),
+                        );
                     }
                     output.push(response);
                     return (output, ToolCallingStopReason::TransportError(msg));
@@ -451,14 +484,23 @@ impl ToolCallingEngine {
                 response.tool_calls.len()
             );
             if let Some(observer) = self.observer.as_ref() {
-                observer.on_assistant_tool_request(iteration + 1, &tool_call_content, &response.tool_calls);
+                observer.on_assistant_tool_request(
+                    iteration + 1,
+                    &tool_call_content,
+                    &response.tool_calls,
+                );
             }
             conversation.push(response.clone());
             output.push(response.clone());
 
             let _tool_progress_scope = ToolProgressScopeGuard::enter(&tool_call_content);
             if self.is_cancelled() {
-                return (output, ToolCallingStopReason::TransportError("tool-calling execution cancelled".to_string()));
+                return (
+                    output,
+                    ToolCallingStopReason::TransportError(
+                        "tool-calling execution cancelled".to_string(),
+                    ),
+                );
             }
             let prepared_calls = self.prepare_tool_calls(&response.tool_calls);
             for call in &prepared_calls {
@@ -473,32 +515,35 @@ impl ToolCallingEngine {
                 }
             }
 
-            let mut results: Vec<PreparedToolResult> = if Self::can_execute_in_parallel(&prepared_calls) {
-                std::thread::scope(|scope| {
-                    let handles = prepared_calls.into_iter().map(|call| {
-                        let call_content = tool_call_content.clone();
-                        scope.spawn(move || {
-                            let result = self.execute_prepared_call(&call_content, call);
+            let mut results: Vec<PreparedToolResult> =
+                if Self::can_execute_in_parallel(&prepared_calls) {
+                    std::thread::scope(|scope| {
+                        let handles = prepared_calls.into_iter().map(|call| {
+                            let call_content = tool_call_content.clone();
+                            scope.spawn(move || {
+                                let result = self.execute_prepared_call(&call_content, call);
+                                self.notify_tool_finish(&result);
+                                result
+                            })
+                        });
+                        handles
+                            .map(|handle| handle.join().expect("parallel tool execution panicked"))
+                            .collect::<Vec<PreparedToolResult>>()
+                    })
+                } else {
+                    prepared_calls
+                        .into_iter()
+                        .map(|call| {
+                            let result = self.execute_prepared_call(&tool_call_content, call);
                             self.notify_tool_finish(&result);
                             result
                         })
-                    });
-                    handles
-                        .map(|handle| handle.join().expect("parallel tool execution panicked"))
                         .collect::<Vec<PreparedToolResult>>()
-                })
-            } else {
-                prepared_calls
-                    .into_iter()
-                    .map(|call| {
-                        let result = self.execute_prepared_call(&tool_call_content, call);
-                        self.notify_tool_finish(&result);
-                        result
-                    })
-                    .collect::<Vec<PreparedToolResult>>()
-            };
+                };
 
-            if let Some((call_id, request)) = self.append_tool_results(&mut results, &mut conversation, &mut output) {
+            if let Some((call_id, request)) =
+                self.append_tool_results(&mut results, &mut conversation, &mut output)
+            {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_ask_user(&call_id, &request);
                 }
@@ -512,7 +557,9 @@ impl ToolCallingEngine {
                     command_confirmation: None,
                     tool_call_limit: Some(ToolCallLimitRequest { used_calls: MAX_TOOL_ITERATIONS }),
                 };
-                if let Some(observer) = self.observer.as_ref() { observer.on_ask_user("tool_call_limit", &request); }
+                if let Some(observer) = self.observer.as_ref() {
+                    observer.on_ask_user("tool_call_limit", &request);
+                }
                 return (output, ToolCallingStopReason::ToolCallLimitReached(request));
             }
         }
@@ -534,7 +581,12 @@ impl ToolCallingEngine {
 
         for iteration in 0..MAX_TOOL_ITERATIONS {
             if self.is_cancelled() {
-                return (output, ToolCallingStopReason::TransportError("tool-calling execution cancelled".to_string()));
+                return (
+                    output,
+                    ToolCallingStopReason::TransportError(
+                        "tool-calling execution cancelled".to_string(),
+                    ),
+                );
             }
             if iteration > 0 {
                 self.append_iteration_messages(iteration + 1, &mut conversation);
@@ -564,10 +616,15 @@ impl ToolCallingEngine {
 
             if let Some(content) = response.content_text() {
                 if is_transport_error(content) {
-                    warn!("[ToolCallingEngine] Transport error on iteration {iteration}: {content}");
+                    warn!(
+                        "[ToolCallingEngine] Transport error on iteration {iteration}: {content}"
+                    );
                     let msg = content.to_string();
                     if let Some(observer) = self.observer.as_ref() {
-                        observer.on_final_assistant(&response, &ToolCallingStopReason::TransportError(msg.clone()));
+                        observer.on_final_assistant(
+                            &response,
+                            &ToolCallingStopReason::TransportError(msg.clone()),
+                        );
                     }
                     output.push(response);
                     return (output, ToolCallingStopReason::TransportError(msg));
@@ -613,14 +670,23 @@ impl ToolCallingEngine {
                 response.tool_calls.len()
             );
             if let Some(observer) = self.observer.as_ref() {
-                observer.on_assistant_tool_request(iteration + 1, &tool_call_content, &response.tool_calls);
+                observer.on_assistant_tool_request(
+                    iteration + 1,
+                    &tool_call_content,
+                    &response.tool_calls,
+                );
             }
             conversation.push(response.clone());
             output.push(response.clone());
 
             let _tool_progress_scope = ToolProgressScopeGuard::enter(&tool_call_content);
             if self.is_cancelled() {
-                return (output, ToolCallingStopReason::TransportError("tool-calling execution cancelled".to_string()));
+                return (
+                    output,
+                    ToolCallingStopReason::TransportError(
+                        "tool-calling execution cancelled".to_string(),
+                    ),
+                );
             }
             let prepared_calls = self.prepare_tool_calls(&response.tool_calls);
             for call in &prepared_calls {
@@ -635,45 +701,48 @@ impl ToolCallingEngine {
                 }
             }
 
-            let mut results: Vec<PreparedToolResult> = if Self::can_execute_in_parallel(&prepared_calls) {
-                let long_task_context = self.long_task_context.clone();
-                let observer_handle = self.observer.clone();
-                let confirmation_gate = Arc::clone(&self.confirmation_gate);
-                let mut tasks = JoinSet::new();
-                for call in prepared_calls {
-                    let call_content = tool_call_content.clone();
-                    let long_task_context = long_task_context.clone();
-                    let task_observer = observer_handle.clone();
-                    let gate = Arc::clone(&confirmation_gate);
-                    tasks.spawn_blocking(move || {
-                        Self::execute_prepared_call_with_context(
-                            &call_content,
-                            call,
-                            long_task_context.as_ref(),
-                            task_observer.as_ref(),
-                            Some(&*gate),
-                        )
-                    });
-                }
-                let mut results = Vec::new();
-                while let Some(result) = tasks.join_next().await {
-                    let result = result.expect("parallel streaming tool execution panicked");
-                    self.notify_tool_finish(&result);
-                    results.push(result);
-                }
-                results
-            } else {
-                prepared_calls
-                    .into_iter()
-                    .map(|call| {
-                        let result = self.execute_prepared_call(&tool_call_content, call);
+            let mut results: Vec<PreparedToolResult> =
+                if Self::can_execute_in_parallel(&prepared_calls) {
+                    let long_task_context = self.long_task_context.clone();
+                    let observer_handle = self.observer.clone();
+                    let confirmation_gate = Arc::clone(&self.confirmation_gate);
+                    let mut tasks = JoinSet::new();
+                    for call in prepared_calls {
+                        let call_content = tool_call_content.clone();
+                        let long_task_context = long_task_context.clone();
+                        let task_observer = observer_handle.clone();
+                        let gate = Arc::clone(&confirmation_gate);
+                        tasks.spawn_blocking(move || {
+                            Self::execute_prepared_call_with_context(
+                                &call_content,
+                                call,
+                                long_task_context.as_ref(),
+                                task_observer.as_ref(),
+                                Some(&*gate),
+                            )
+                        });
+                    }
+                    let mut results = Vec::new();
+                    while let Some(result) = tasks.join_next().await {
+                        let result = result.expect("parallel streaming tool execution panicked");
                         self.notify_tool_finish(&result);
-                        result
-                    })
-                    .collect::<Vec<PreparedToolResult>>()
-            };
+                        results.push(result);
+                    }
+                    results
+                } else {
+                    prepared_calls
+                        .into_iter()
+                        .map(|call| {
+                            let result = self.execute_prepared_call(&tool_call_content, call);
+                            self.notify_tool_finish(&result);
+                            result
+                        })
+                        .collect::<Vec<PreparedToolResult>>()
+                };
 
-            if let Some((call_id, request)) = self.append_tool_results(&mut results, &mut conversation, &mut output) {
+            if let Some((call_id, request)) =
+                self.append_tool_results(&mut results, &mut conversation, &mut output)
+            {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_ask_user(&call_id, &request);
                 }
@@ -687,7 +756,9 @@ impl ToolCallingEngine {
                     command_confirmation: None,
                     tool_call_limit: Some(ToolCallLimitRequest { used_calls: MAX_TOOL_ITERATIONS }),
                 };
-                if let Some(observer) = self.observer.as_ref() { observer.on_ask_user("tool_call_limit", &request); }
+                if let Some(observer) = self.observer.as_ref() {
+                    observer.on_ask_user("tool_call_limit", &request);
+                }
                 return (output, ToolCallingStopReason::ToolCallLimitReached(request));
             }
         }
@@ -717,7 +788,11 @@ impl ToolCallingEngine {
 
 #[async_trait]
 impl AgentExecutor for ToolCallingEngine {
-    async fn execute(&self, context: AgentContext, request: ToolCallingRequest) -> crate::error::Result<ToolCallingResult> {
+    async fn execute(
+        &self,
+        context: AgentContext,
+        request: ToolCallingRequest,
+    ) -> crate::error::Result<ToolCallingResult> {
         if context.is_cancelled() {
             return Err(crate::string_error!("tool-calling execution cancelled before inference"));
         }
@@ -776,16 +851,16 @@ mod tests {
 
     #[test]
     fn cancellation_prevents_inference() {
-        let llm = Arc::new(TestLlm {
-            called: AtomicBool::new(false),
-        });
+        let llm = Arc::new(TestLlm { called: AtomicBool::new(false) });
         let mut engine = ToolCallingEngine::new(llm.clone());
         engine.set_cancellation(Arc::new(TestCancellation));
 
         let (messages, stop_reason) = engine.run(vec![LLMMessage::user("hello")]);
 
         assert!(messages.is_empty());
-        assert!(matches!(stop_reason, ToolCallingStopReason::TransportError(message) if message == "tool-calling execution cancelled"));
+        assert!(
+            matches!(stop_reason, ToolCallingStopReason::TransportError(message) if message == "tool-calling execution cancelled")
+        );
         assert!(!llm.called.load(Ordering::Relaxed));
     }
 }
@@ -810,7 +885,8 @@ fn append_tool_summary_to_system(messages: &mut Vec<LLMMessage>, counts: &HashMa
 
     let mut items: Vec<_> = counts.iter().collect();
     items.sort_by(|a, b| a.0.cmp(b.0));
-    let lines: Vec<String> = items.iter().map(|(name, count)| format!("  - {name}: {count} 次")).collect();
+    let lines: Vec<String> =
+        items.iter().map(|(name, count)| format!("  - {name}: {count} 次")).collect();
     let summary = format!(
         "工具调用次数已达上限。目前已调用的工具及次数如下：\n{}\n\n请基于已获取的信息直接作答，不再调用任何工具。",
         lines.join("\n")

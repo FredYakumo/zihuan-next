@@ -4,18 +4,24 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::{info, warn};
 
-use zihuan_core::model_inference::inference_function::compact_message::{compact_message_history, compaction_threshold, estimate_messages_tokens};
-use zihuan_core::model_inference::message_content_utils::{downgrade_messages_for_model, sanitize_messages_for_inference};
+use zihuan_core::model_inference::inference_function::compact_message::{
+    compact_message_history, compaction_threshold, estimate_messages_tokens,
+};
+use zihuan_core::model_inference::message_content_utils::{
+    downgrade_messages_for_model, sanitize_messages_for_inference,
+};
 use zihuan_core::system_config::current_context_compaction_percent;
 
-use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingStopReason, LongTaskContext};
+use zihuan_core::agent::tools::{LongTaskContext, ToolCallingEngine, ToolCallingStopReason};
 
 use crate::agent::emotion::utils::{
     emotion_dimensions_text, emotion_expression_prompt, has_noticeable_emotion_expression,
 };
-use zihuan_core::agent::session_state::{EmotionAdjustmentDirection, QqChatAgentServiceSessionState};
-use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
+use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
+use zihuan_core::agent::session_state::{
+    EmotionAdjustmentDirection, QqChatAgentServiceSessionState,
+};
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
@@ -23,7 +29,8 @@ use zihuan_core::steer::message_with_api_style;
 use zihuan_core::task_context::AgentTaskRequest;
 
 use zihuan_core::graph::tool_spec::{
-    QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
+    QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
+    QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_core::graph::DataValue;
 
@@ -36,32 +43,36 @@ use super::super::super::tools::{
     EditableQqAgentTool, GetAgentPublicInfoTool, GetFunctionListTool, GetRecentGroupMessagesTool,
     GetRecentUserMessagesTool, ImageUnderstandTool, ModelIdentityContext, QqReplyReviewRequest,
     ReplyMessageTool, RunResearchSubagentTool, SaveImageTool, SearchSimilarImagesTool,
-    ToolNotificationTarget,
-    WebSearchTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
-    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
+    ToolNotificationTarget, WebSearchTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
+    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
+    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
     DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT, DEFAULT_TOOL_SAVE_IMAGE,
     DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
     QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
-use zihuan_core::memory_agent::{MemoryBrainAgent, MemoryBrainAgentContextTool, MemoryBrainAgentTool};
+use zihuan_core::memory_agent::{
+    MemoryBrainAgent, MemoryBrainAgentContextTool, MemoryBrainAgentTool,
+};
 use zihuan_core::storage::AgentMemoryAccessContext;
 
-use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use crate::storage::qq_chat_history_store::{
     chat_preprompt_history_key, conversation_history_key, load_history, save_history,
 };
+use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
 use crate::classify_intent::{classify_intent_with_trace, IntentCategory};
 use crate::qq_chat::msg_send::{
-    build_reply_result, send_direct_text_reply, send_planned_batches, take_reply_directive, QqChatServiceSendContext,
+    build_reply_result, send_direct_text_reply, send_planned_batches, take_reply_directive,
+    QqChatServiceSendContext,
 };
 
 use super::{
     build_group_system_prompt, build_meta_query_system_prompt, build_meta_query_user_message,
     build_private_system_prompt, build_user_message, collect_available_media_from_brain_output,
-    expand_messages_for_inference, prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
-    QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatServiceTurnResult, QqChatTaskTrace,
-    QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+    expand_messages_for_inference, prepare_current_turn_user_input,
+    prepare_current_turn_user_input_from_event, QqChatAgentServiceContext, QqChatAgentServiceInner,
+    QqChatServiceTurnResult, QqChatTaskTrace, QqCommandSideEffectContext, QqLongTaskNotifier,
+    LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 
 use crate::agent::before_brain_agent::{BeforeBrainAgent, PrepromptContext};
@@ -70,8 +81,8 @@ use super::super::steer::QqChatServiceSteerHook;
 use super::super::tool_quota::wrap_brain_tool_with_quota;
 use crate::qq_chat::language_style_store::LanguageStyleScope;
 use crate::qq_chat::privilege_gate::{
-    enqueue_pending_privileged_command, handle_auth_command, parse_privileged_command, AuthCommandOutcome,
-    PrivilegeGateOutcome, QqPrivilegedCommand,
+    enqueue_pending_privileged_command, handle_auth_command, parse_privileged_command,
+    AuthCommandOutcome, PrivilegeGateOutcome, QqPrivilegedCommand,
 };
 use crate::qq_chat::style_learner::{
     execute_style_learning_task, OwnedStyleLearningTaskContext, StyleLearningResumeInput,
@@ -123,7 +134,9 @@ fn execute_privileged_emotion_command(
                 Ok(value) => value,
                 Err(error) => return format!("调整情绪维度失败：{error}"),
             };
-            format!("已{direction_label} Agent 情绪维度「{dimension_name}」，当前值：{current_value}")
+            format!(
+                "已{direction_label} Agent 情绪维度「{dimension_name}」，当前值：{current_value}"
+            )
         }
         QqPrivilegedCommand::LearnGlobalStyle | QqPrivilegedCommand::LearnGroupStyle => {
             "不支持的情绪命令。".to_string()
@@ -160,7 +173,10 @@ impl QqChatAgentServiceInner {
             rdb_pool: connection.clone(),
             max_message_length: ctx.max_message_length,
             reply_batch_builder: ctx.reply_batch_builder.cloned(),
-            resolved_language_style_prompt: ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.clone()),
+            resolved_language_style_prompt: ctx
+                .resolved_language_style
+                .as_ref()
+                .map(|item| item.style_prompt.clone()),
         };
         let input = StyleLearningResumeInput {
             event: event.clone(),
@@ -258,11 +274,17 @@ impl QqChatAgentServiceInner {
                 build_private_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
             };
             let mut cmd_session_state = ctx.session_state_store.lock().unwrap().clone();
-            let cmd_emotion_dimensions = current_qq_chat_agent_service_config()?.resolved_emotion_dimensions();
+            let cmd_emotion_dimensions =
+                current_qq_chat_agent_service_config()?.resolved_emotion_dimensions();
 
             let user_msg_for_cmd = message_with_api_style(
                 build_user_message(
-                    &prepare_current_turn_user_input_from_event(hydrated_event, bot_id, ctx.bot_name, ctx.s3_ref),
+                    &prepare_current_turn_user_input_from_event(
+                        hydrated_event,
+                        bot_id,
+                        ctx.bot_name,
+                        ctx.s3_ref,
+                    ),
                     ctx.bot_name,
                     ctx.adapter,
                     ctx.llm.supports_multimodal_input(),
@@ -292,10 +314,16 @@ impl QqChatAgentServiceInner {
 
     /// Returns the last assistant text that carries no tool calls, skipping transport
     /// errors and awaiting-user-input stops. Empty or whitespace-only text yields `None`.
-    fn parse_final_reply_text(&self, stop_reason: &ToolCallingStopReason, brain_output: &[LLMMessage]) -> Option<String> {
+    fn parse_final_reply_text(
+        &self,
+        stop_reason: &ToolCallingStopReason,
+        brain_output: &[LLMMessage],
+    ) -> Option<String> {
         if matches!(
             stop_reason,
-            ToolCallingStopReason::TransportError(_) | ToolCallingStopReason::AwaitUserInput(_) | ToolCallingStopReason::ToolCallLimitReached(_)
+            ToolCallingStopReason::TransportError(_)
+                | ToolCallingStopReason::AwaitUserInput(_)
+                | ToolCallingStopReason::ToolCallLimitReached(_)
         ) {
             return None;
         }
@@ -304,7 +332,8 @@ impl QqChatAgentServiceInner {
             .iter()
             .rev()
             .find(|message| {
-                matches!(message.role, zihuan_core::model_inference::llm::MessageRole::Assistant) && message.tool_calls.is_empty()
+                matches!(message.role, zihuan_core::model_inference::llm::MessageRole::Assistant)
+                    && message.tool_calls.is_empty()
             })
             .and_then(|message| message.content_text())
             .map(str::trim)
@@ -352,17 +381,25 @@ impl QqChatAgentServiceInner {
         message_rate_limit_warning: Option<&str>,
         ctx: &QqChatAgentServiceContext<'_>,
     ) -> Result<QqChatServiceTurnResult> {
-        let prepared_input = prepare_current_turn_user_input(event, ctx.adapter, bot_id, ctx.bot_name, ctx.s3_ref);
+        let prepared_input =
+            prepare_current_turn_user_input(event, ctx.adapter, bot_id, ctx.bot_name, ctx.s3_ref);
         let mut inference_event = prepared_input.event.clone();
-        inference_event.message_list = expand_messages_for_inference(&prepared_input.event.message_list);
-        let inference_input =
-            prepare_current_turn_user_input_from_event(&inference_event, bot_id, ctx.bot_name, ctx.s3_ref);
+        inference_event.message_list =
+            expand_messages_for_inference(&prepared_input.event.message_list);
+        let inference_input = prepare_current_turn_user_input_from_event(
+            &inference_event,
+            bot_id,
+            ctx.bot_name,
+            ctx.s3_ref,
+        );
         let raw_user_message = prepared_input.current_text_for_prompt().to_string();
         let mut current_message = inference_input.current_text_for_prompt().to_string();
         trace.log_user_message(&raw_user_message, &current_message);
 
-        let emotion_dimensions = current_qq_chat_agent_service_config()?.resolved_emotion_dimensions();
-        let now_unix_seconds = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+        let emotion_dimensions =
+            current_qq_chat_agent_service_config()?.resolved_emotion_dimensions();
+        let now_unix_seconds =
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
         {
             let mut session_state = ctx.session_state_store.lock().unwrap();
             session_state.dissipate_expired_emotions(&emotion_dimensions, now_unix_seconds);
@@ -454,14 +491,21 @@ impl QqChatAgentServiceInner {
                                     ctx.reply_batch_builder,
                                 )?;
                                 return Ok(QqChatServiceTurnResult {
-                                    result_summary: format!("已恢复执行 /{}", pending.command.command_name()),
+                                    result_summary: format!(
+                                        "已恢复执行 /{}",
+                                        pending.command.command_name()
+                                    ),
                                 });
                             }
                             let resume_is_group = pending.pending_is_group;
-                            let resume_target_id =
-                                pending.pending_target_id.clone().unwrap_or_else(|| target_id.to_string());
+                            let resume_target_id = pending
+                                .pending_target_id
+                                .clone()
+                                .unwrap_or_else(|| target_id.to_string());
                             let resume_group_id = pending.pending_group_id;
-                            if matches!(pending.command, QqPrivilegedCommand::LearnGroupStyle) && !resume_is_group {
+                            if matches!(pending.command, QqPrivilegedCommand::LearnGroupStyle)
+                                && !resume_is_group
+                            {
                                 let reply = "当前不是群聊，无法学习群聊语言风格。".to_string();
                                 let _ = send_direct_text_reply(
                                     trace,
@@ -490,24 +534,37 @@ impl QqChatAgentServiceInner {
                                         .map(|value| value.to_string())
                                         .unwrap_or_else(|| resume_target_id.clone()),
                                 },
-                                QqPrivilegedCommand::Emotion | QqPrivilegedCommand::AdjustEmotion => {
-                                    unreachable!("emotion commands return before style-task resumption")
+                                QqPrivilegedCommand::Emotion
+                                | QqPrivilegedCommand::AdjustEmotion => {
+                                    unreachable!(
+                                        "emotion commands return before style-task resumption"
+                                    )
                                 }
                             };
                             let Some(task_runtime) = ctx.task_runtime.clone() else {
-                                return Err(Error::ValidationError("task runtime is not available".to_string()));
+                                return Err(Error::ValidationError(
+                                    "task runtime is not available".to_string(),
+                                ));
                             };
                             let Some(task_id) = pending.pending_task_id.as_deref() else {
-                                return Err(Error::ValidationError("pending task id is missing".to_string()));
+                                return Err(Error::ValidationError(
+                                    "pending task id is missing".to_string(),
+                                ));
                             };
                             let Some(rdb_pool) = ctx.rdb_pool.cloned() else {
-                                return Err(Error::ValidationError("pending task missing rdb pool".to_string()));
+                                return Err(Error::ValidationError(
+                                    "pending task missing rdb pool".to_string(),
+                                ));
                             };
                             let owned = OwnedStyleLearningTaskContext {
                                 adapter: ctx.adapter.clone(),
                                 bot_name: ctx.bot_name.to_string(),
-                                natural_language_reply_llm: Arc::clone(ctx.natural_language_reply_llm),
-                                intent_classification_llm: Arc::clone(ctx.intent_classification_llm),
+                                natural_language_reply_llm: Arc::clone(
+                                    ctx.natural_language_reply_llm,
+                                ),
+                                intent_classification_llm: Arc::clone(
+                                    ctx.intent_classification_llm,
+                                ),
                                 rdb_pool,
                                 max_message_length: ctx.max_message_length,
                                 reply_batch_builder: ctx.reply_batch_builder.cloned(),
@@ -551,11 +608,19 @@ impl QqChatAgentServiceInner {
                     }
                 }
                 "learn_global_style" | "learn_group_style" => {
-                    let Some(command_registry) = zihuan_core::command::global_command_registry() else {
-                        return Err(Error::ValidationError("command registry not initialized".to_string()));
+                    let Some(command_registry) = zihuan_core::command::global_command_registry()
+                    else {
+                        return Err(Error::ValidationError(
+                            "command registry not initialized".to_string(),
+                        ));
                     };
                     let permission_check = command_registry.check_permission(
-                        &self.build_command_context(sender_id, target_id, is_group, inference_event.group_id),
+                        &self.build_command_context(
+                            sender_id,
+                            target_id,
+                            is_group,
+                            inference_event.group_id,
+                        ),
                         &raw_user_message,
                     );
                     if !permission_check.matched || !permission_check.allowed {
@@ -610,7 +675,9 @@ impl QqChatAgentServiceInner {
                         QqPrivilegedCommand::LearnGlobalStyle
                     };
                     let Some(task_runtime) = ctx.task_runtime.clone() else {
-                        return Err(Error::ValidationError("task runtime is not available".to_string()));
+                        return Err(Error::ValidationError(
+                            "task runtime is not available".to_string(),
+                        ));
                     };
                     let task_name = if command_name == "learn_group_style" {
                         "学习群聊语言风格"
@@ -629,7 +696,12 @@ impl QqChatAgentServiceInner {
 
                     let gate_outcome = enqueue_pending_privileged_command(
                         &command_registry,
-                        &self.build_command_context(sender_id, target_id, is_group, inference_event.group_id),
+                        &self.build_command_context(
+                            sender_id,
+                            target_id,
+                            is_group,
+                            inference_event.group_id,
+                        ),
                         connection,
                         privileged_command,
                         Some(waiting_task.task_id.as_str()),
@@ -681,9 +753,7 @@ impl QqChatAgentServiceInner {
                     }
 
                     let scope = if command_name == "learn_group_style" {
-                        LanguageStyleScope::Group {
-                            group_id: target_id.to_string(),
-                        }
+                        LanguageStyleScope::Group { group_id: target_id.to_string() }
                     } else {
                         LanguageStyleScope::Global
                     };
@@ -706,12 +776,20 @@ impl QqChatAgentServiceInner {
                         });
                 }
                 "emotion" | "adjust_emotion" => {
-                    let Some(command_registry) = zihuan_core::command::global_command_registry() else {
-                        return Err(Error::ValidationError("command registry not initialized".to_string()));
+                    let Some(command_registry) = zihuan_core::command::global_command_registry()
+                    else {
+                        return Err(Error::ValidationError(
+                            "command registry not initialized".to_string(),
+                        ));
                     };
-                    let command_context =
-                        self.build_command_context(sender_id, target_id, is_group, inference_event.group_id);
-                    let permission_check = command_registry.check_permission(&command_context, &raw_user_message);
+                    let command_context = self.build_command_context(
+                        sender_id,
+                        target_id,
+                        is_group,
+                        inference_event.group_id,
+                    );
+                    let permission_check =
+                        command_registry.check_permission(&command_context, &raw_user_message);
                     if !permission_check.matched || !permission_check.allowed {
                         let reply = "你没有权限使用此命令。".to_string();
                         let _ = send_direct_text_reply(
@@ -827,7 +905,12 @@ impl QqChatAgentServiceInner {
         // Commands are dispatched synchronously; if `passthrough_text` is present it
         // replaces `current_message` and the brain loop runs with the leftover text.
         if let Some(command_registry) = zihuan_core::command::global_command_registry() {
-            let cmd_ctx = self.build_command_context(sender_id, target_id, is_group, inference_event.group_id);
+            let cmd_ctx = self.build_command_context(
+                sender_id,
+                target_id,
+                is_group,
+                inference_event.group_id,
+            );
             if let Some(DispatchResult { result, passthrough_text }) =
                 command_registry.dispatch(&cmd_ctx, &raw_user_message)
             {
@@ -858,14 +941,20 @@ impl QqChatAgentServiceInner {
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
         let chat_preprompt_history_key = chat_preprompt_history_key(sender_id);
-        let preprompt_memory_backend = ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(|| ctx
-            .elasticsearch_memory_ref
-            .cloned()
-            .map(AgentMemoryBackend::Elasticsearch)
-            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)));
+        let preprompt_memory_backend =
+            ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(|| {
+                ctx.elasticsearch_memory_ref
+                    .cloned()
+                    .map(AgentMemoryBackend::Elasticsearch)
+                    .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate))
+            });
         let preprompt_memory_resources = preprompt_memory_backend.and_then(|memory_backend| {
             let embedding_model = ctx.embedding_model.cloned();
-            if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_)) && embedding_model.is_none() { return None; }
+            if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_))
+                && embedding_model.is_none()
+            {
+                return None;
+            }
             Some(AgentMemoryToolResources {
                 memory_backend,
                 embedding_model,
@@ -971,7 +1060,9 @@ impl QqChatAgentServiceInner {
 
         if matches!(
             intent_trace.category,
-            IntentCategory::AskToolList | IntentCategory::AskSystemPrompt | IntentCategory::AskModelName
+            IntentCategory::AskToolList
+                | IntentCategory::AskSystemPrompt
+                | IntentCategory::AskModelName
         ) {
             info!(
                 "{LOG_PREFIX} meta-query short-circuit for sender={sender_id}, intent={}",
@@ -1001,18 +1092,23 @@ impl QqChatAgentServiceInner {
                 QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
                 DataValue::MessageEvent(prepared_input.event.clone()),
             );
-            let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = ctx.adapter.clone();
+            let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle =
+                ctx.adapter.clone();
             locked.insert(
                 QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
                 DataValue::BotAdapterRef(adapter_handle),
             );
-            locked.insert(QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS.to_string(), DataValue::Boolean(false));
+            locked.insert(
+                QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS.to_string(),
+                DataValue::Boolean(false),
+            );
         }
 
         let mut conversation: Vec<LLMMessage> = Vec::with_capacity(history.len() + 1);
         conversation.extend(history.iter().cloned());
         conversation.push(user_msg.clone());
-        let mut brain_conversation = downgrade_messages_for_model(conversation, turn_llm.supports_multimodal_input());
+        let mut brain_conversation =
+            downgrade_messages_for_model(conversation, turn_llm.supports_multimodal_input());
         let prompt_tokens_estimated = estimate_messages_tokens(&brain_conversation);
         trace.log_llm_conversation(&brain_conversation, prompt_tokens_estimated);
 
@@ -1034,51 +1130,60 @@ impl QqChatAgentServiceInner {
             consumed_messages: Arc::clone(&consumed_steer_messages),
             shared_runtime_values: Arc::clone(&shared_runtime_values),
             system_prompt: base_system_prompt.clone(),
-            style_prompt: ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.clone()),
+            style_prompt: ctx
+                .resolved_language_style
+                .as_ref()
+                .map(|item| item.style_prompt.clone()),
             session_state: Arc::clone(&turn_session_state),
             emotion_dimensions: emotion_dimensions.clone(),
             preprompt_context: preprompt_context.clone(),
         }));
 
-        let memory_backend = ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(|| ctx
-            .elasticsearch_memory_ref
-            .cloned()
-            .map(AgentMemoryBackend::Elasticsearch)
-            .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)));
+        let memory_backend =
+            ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(|| {
+                ctx.elasticsearch_memory_ref
+                    .cloned()
+                    .map(AgentMemoryBackend::Elasticsearch)
+                    .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate))
+            });
         if let Some(memory_backend) = memory_backend {
             let embedding_model = ctx.embedding_model.cloned();
-            if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_)) && embedding_model.is_none() {
-                log::warn!("memory tools disabled because the configured backend has no embedding model");
+            if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_))
+                && embedding_model.is_none()
+            {
+                log::warn!(
+                    "memory tools disabled because the configured backend has no embedding model"
+                );
             } else {
-            let memory_resources = AgentMemoryToolResources {
-                memory_backend,
-                embedding_model,
-                llm: Arc::clone(ctx.llm),
-                access: AgentMemoryAccessContext {
-                    sender_id: Some(sender_id.to_string()),
-                    group_id: if is_group {
-                        Some(target_id.to_string())
-                    } else {
-                        prepared_input.event.group_id.map(|value| value.to_string())
+                let memory_resources = AgentMemoryToolResources {
+                    memory_backend,
+                    embedding_model,
+                    llm: Arc::clone(ctx.llm),
+                    access: AgentMemoryAccessContext {
+                        sender_id: Some(sender_id.to_string()),
+                        group_id: if is_group {
+                            Some(target_id.to_string())
+                        } else {
+                            prepared_input.event.group_id.map(|value| value.to_string())
+                        },
+                        is_group,
+                        admin: false,
+                        skip_expiry_extend: false,
                     },
-                    is_group,
-                    admin: false,
-                    skip_expiry_extend: false,
-                },
-            };
-            let memory_agent = MemoryBrainAgent::new(memory_resources);
-            if self.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
-                brain.add_tool(wrap_brain_tool_with_quota(
-                    MemoryBrainAgentTool::new(memory_agent.clone()),
-                    tool_quota.clone(),
-                ));
-            }
-            if self.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT) {
-                brain.add_tool(wrap_brain_tool_with_quota(
-                    MemoryBrainAgentContextTool::new(memory_agent),
-                    tool_quota.clone(),
-                ));
-            }
+                };
+                let memory_agent = MemoryBrainAgent::new(memory_resources);
+                if self.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
+                    brain.add_tool(wrap_brain_tool_with_quota(
+                        MemoryBrainAgentTool::new(memory_agent.clone()),
+                        tool_quota.clone(),
+                    ));
+                }
+                if self.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT) {
+                    brain.add_tool(wrap_brain_tool_with_quota(
+                        MemoryBrainAgentContextTool::new(memory_agent),
+                        tool_quota.clone(),
+                    ));
+                }
             }
         }
 
@@ -1109,14 +1214,23 @@ impl QqChatAgentServiceInner {
                 ctx.weaviate_image_ref.cloned(),
                 Some(prepared_input.event.clone()),
                 ToolNotificationTarget::dashboard(),
-                if let Some(memory_backend) = ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(||
-                    ctx.elasticsearch_memory_ref
-                        .cloned()
-                        .map(AgentMemoryBackend::Elasticsearch)
-                        .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)))
+                if let Some(memory_backend) = ctx
+                    .local_memory_store
+                    .cloned()
+                    .map(AgentMemoryBackend::LocalFile)
+                    .or_else(|| {
+                        ctx.elasticsearch_memory_ref
+                            .cloned()
+                            .map(AgentMemoryBackend::Elasticsearch)
+                            .or_else(|| {
+                                ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)
+                            })
+                    })
                 {
                     let embedding_model = ctx.embedding_model.cloned();
-                    if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_)) && embedding_model.is_none() {
+                    if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_))
+                        && embedding_model.is_none()
+                    {
                         None
                     } else {
                         Some(AgentMemoryToolResources {
@@ -1155,7 +1269,11 @@ impl QqChatAgentServiceInner {
                     ToolNotificationTarget::new(
                         Some(ctx.adapter.clone()),
                         target_id.to_string(),
-                        if is_group { Some(sender_id.to_string()) } else { None },
+                        if is_group {
+                            Some(sender_id.to_string())
+                        } else {
+                            None
+                        },
                         is_group,
                         false,
                     ),
@@ -1171,7 +1289,11 @@ impl QqChatAgentServiceInner {
                     ToolNotificationTarget::new(
                         Some(ctx.adapter.clone()),
                         target_id.to_string(),
-                        if is_group { Some(sender_id.to_string()) } else { None },
+                        if is_group {
+                            Some(sender_id.to_string())
+                        } else {
+                            None
+                        },
                         is_group,
                         false,
                     ),
@@ -1190,7 +1312,11 @@ impl QqChatAgentServiceInner {
                     ToolNotificationTarget::new(
                         Some(ctx.adapter.clone()),
                         target_id.to_string(),
-                        if is_group { Some(sender_id.to_string()) } else { None },
+                        if is_group {
+                            Some(sender_id.to_string())
+                        } else {
+                            None
+                        },
                         is_group,
                         false,
                     ),
@@ -1200,7 +1326,10 @@ impl QqChatAgentServiceInner {
         }
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_SAVE_IMAGE) {
-            if ctx.s3_ref.is_some() && ctx.weaviate_image_ref.is_some() && ctx.embedding_model.is_some() {
+            if ctx.s3_ref.is_some()
+                && ctx.weaviate_image_ref.is_some()
+                && ctx.embedding_model.is_some()
+            {
                 brain.add_tool(wrap_brain_tool_with_quota(
                     SaveImageTool::new(
                         ctx.weaviate_image_ref.cloned(),
@@ -1223,7 +1352,11 @@ impl QqChatAgentServiceInner {
                     ToolNotificationTarget::new(
                         Some(ctx.adapter.clone()),
                         target_id.to_string(),
-                        if is_group { Some(sender_id.to_string()) } else { None },
+                        if is_group {
+                            Some(sender_id.to_string())
+                        } else {
+                            None
+                        },
                         is_group,
                         false,
                     ),
@@ -1233,11 +1366,19 @@ impl QqChatAgentServiceInner {
         }
 
         brain.add_tool(wrap_brain_tool_with_quota(
-            GetBotProfileTool::new(ctx.adapter.clone(), prepared_input.event.clone(), ctx.s3_ref.cloned()),
+            GetBotProfileTool::new(
+                ctx.adapter.clone(),
+                prepared_input.event.clone(),
+                ctx.s3_ref.cloned(),
+            ),
             tool_quota.clone(),
         ));
         brain.add_tool(wrap_brain_tool_with_quota(
-            GetQqUserProfileTool::new(ctx.adapter.clone(), prepared_input.event.clone(), ctx.s3_ref.cloned()),
+            GetQqUserProfileTool::new(
+                ctx.adapter.clone(),
+                prepared_input.event.clone(),
+                ctx.s3_ref.cloned(),
+            ),
             tool_quota.clone(),
         ));
         brain.add_tool(wrap_brain_tool_with_quota(
@@ -1257,8 +1398,12 @@ impl QqChatAgentServiceInner {
                         shared_runtime_values: Arc::clone(&shared_runtime_values),
                         qq_chat_agent: Some(qq_chat_agent.clone()),
                         result_mode: ToolResultMode::SingleString,
-                        builtin_executor: Some(crate::qq_tool_subgraph_hooks::image_understand_executor()),
-                        progress_notifier: Some(crate::qq_tool_subgraph_hooks::qq_progress_notifier()),
+                        builtin_executor: Some(
+                            crate::qq_tool_subgraph_hooks::image_understand_executor(),
+                        ),
+                        progress_notifier: Some(
+                            crate::qq_tool_subgraph_hooks::qq_progress_notifier(),
+                        ),
                     },
                 },
                 tool_quota.clone(),
@@ -1346,7 +1491,7 @@ impl QqChatAgentServiceInner {
         //         None
         //     }
         // };
-        
+
         // take the usage of the last LLM call only (the final assistant
         // message that carries usage). Each iteration of the tool loop sends the full
         // context accumulated up to that point, so summing every message would count
@@ -1356,10 +1501,8 @@ impl QqChatAgentServiceInner {
             .iter()
             .rev()
             .find(|message| {
-                matches!(
-                    message.role,
-                    zihuan_core::model_inference::llm::MessageRole::Assistant
-                ) && message.usage.is_some()
+                matches!(message.role, zihuan_core::model_inference::llm::MessageRole::Assistant)
+                    && message.usage.is_some()
             })
             .and_then(|message| message.usage.clone());
         trace.record_token_usage(completion_tokens_estimated, exact_token_usage);
@@ -1400,13 +1543,18 @@ impl QqChatAgentServiceInner {
                     warn!("{LOG_PREFIX} ToolCallingEngine transport error without reply: {err}");
                 }
                 ToolCallingStopReason::MaxIterationsReached => {
-                    warn!("{LOG_PREFIX} ToolCallingEngine exceeded max tool iterations without reply");
+                    warn!(
+                        "{LOG_PREFIX} ToolCallingEngine exceeded max tool iterations without reply"
+                    );
                 }
                 ToolCallingStopReason::Done => {
                     warn!("{LOG_PREFIX} ToolCallingEngine finished without any sendable reply content");
                 }
                 ToolCallingStopReason::AwaitUserInput(ref request) => {
-                    warn!("{LOG_PREFIX} ToolCallingEngine paused for user input without reply: {}", request.question);
+                    warn!(
+                        "{LOG_PREFIX} ToolCallingEngine paused for user input without reply: {}",
+                        request.question
+                    );
                 }
                 ToolCallingStopReason::ToolCallLimitReached(ref request) => {
                     warn!("{LOG_PREFIX} ToolCallingEngine paused at tool-call limit without reply: {}", request.question);
@@ -1466,11 +1614,12 @@ impl QqChatAgentServiceInner {
                         bot_id,
                         bot_name: ctx.bot_name,
                         mention_target_id: None,
-                        persistence: crate::storage::qq_chat_session_store::build_outbound_persistence(
-                            ctx.rdb_pool,
-                            event.group_name.as_deref(),
-                            ctx.bot_name,
-                        ),
+                        persistence:
+                            crate::storage::qq_chat_session_store::build_outbound_persistence(
+                                ctx.rdb_pool,
+                                event.group_name.as_deref(),
+                                ctx.bot_name,
+                            ),
                         max_text_chars: ctx.max_message_length,
                     };
                     send_planned_batches(&send_ctx, &reply_result.batches);
@@ -1531,10 +1680,12 @@ impl QqChatAgentServiceInner {
         turn_session_state: &Arc<Mutex<QqChatAgentServiceSessionState>>,
         emotion_dimensions: &[QqChatEmotionDimensionConfig],
     ) -> Result<QqChatServiceTurnResult> {
-        let function_list = zihuan_core::command::build_help_text().unwrap_or_else(|| "暂无可用功能信息。".to_string());
+        let function_list = zihuan_core::command::build_help_text()
+            .unwrap_or_else(|| "暂无可用功能信息。".to_string());
         let public_info = format_public_info_message(current_message).to_string();
 
-        let style_prompt = ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str());
+        let style_prompt =
+            ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str());
         let (emotion_prompt, suppress_language_style) = {
             let session = turn_session_state.lock().unwrap();
             (
@@ -1542,21 +1693,22 @@ impl QqChatAgentServiceInner {
                 has_noticeable_emotion_expression(&session, emotion_dimensions),
             )
         };
-        let style_prompt = if suppress_language_style { None } else { style_prompt };
+        let style_prompt = if suppress_language_style {
+            None
+        } else {
+            style_prompt
+        };
 
-        let meta_system_prompt = build_meta_query_system_prompt(ctx.bot_name, style_prompt, &emotion_prompt);
-        let meta_user_message = build_meta_query_user_message(current_message, &function_list, &public_info);
+        let meta_system_prompt =
+            build_meta_query_system_prompt(ctx.bot_name, style_prompt, &emotion_prompt);
+        let meta_user_message =
+            build_meta_query_user_message(current_message, &function_list, &public_info);
 
-        let meta_messages = vec![
-            LLMMessage::system(meta_system_prompt),
-            LLMMessage::user(meta_user_message),
-        ];
+        let meta_messages =
+            vec![LLMMessage::system(meta_system_prompt), LLMMessage::user(meta_user_message)];
 
         trace.mark_llm_request_started();
-        let response = ctx.llm.inference(&InferenceParam {
-            messages: &meta_messages,
-            tools: None,
-        });
+        let response = ctx.llm.inference(&InferenceParam { messages: &meta_messages, tools: None });
         let candidate_message = response.content_text_owned().unwrap_or_default();
         let candidate_message = candidate_message.trim();
         if candidate_message.is_empty() {

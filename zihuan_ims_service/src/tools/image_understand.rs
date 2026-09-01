@@ -1,22 +1,22 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use zihuan_core::ims_bot_adapter::models::message::{ImageMessage, PersistedMedia};
 use log::warn;
-use zihuan_core::config::llm_refs::load_llm_refs;
 use serde_json::Value;
-use zihuan_core::storage::RuntimeStorageConnectionManager;
-use zihuan_core::agent::tools::{Tool, ToolExecutionOutput};
 use zihuan_core::agent::qq_chat::image_understand_llm_ref_id;
 use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
+use zihuan_core::agent::tools::{Tool, ToolExecutionOutput};
+use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::model_inference::llm::tooling::FunctionTool;
-use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage, MessagePart};
-use zihuan_core::runtime::block_async;
 use zihuan_core::graph::message_restore::{find_media_in_messages, query_media_by_id};
 use zihuan_core::graph::object_storage::S3Ref;
 use zihuan_core::graph::DataValue;
+use zihuan_core::ims_bot_adapter::models::message::{ImageMessage, PersistedMedia};
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
+use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage, MessagePart};
+use zihuan_core::runtime::block_async;
+use zihuan_core::storage::RuntimeStorageConnectionManager;
 
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
 
@@ -76,7 +76,8 @@ impl Tool for ImageUnderstandTool {
 pub(crate) fn build_image_understand_spec() -> StaticFunctionToolSpec {
     StaticFunctionToolSpec {
         name: DEFAULT_TOOL_IMAGE_UNDERSTAND,
-        description: "Understand image content by media_id and return a concise, objective text description",
+        description:
+            "Understand image content by media_id and return a concise, objective text description",
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -118,9 +119,11 @@ fn execute_image_understand(
         .ok_or_else(|| Error::ValidationError("media_id is required".to_string()))?;
     let focus_text = optional_string_argument(arguments, "question");
 
-    let persisted_media = resolve_image_understand_media(&media_id, current_event, rdb_pool.as_ref())?;
+    let persisted_media =
+        resolve_image_understand_media(&media_id, current_event, rdb_pool.as_ref())?;
     let s3_ref = resolve_image_understand_s3_ref(s3_ref)?;
-    let description = analyze_persisted_media(&persisted_media, focus_text.as_deref(), s3_ref.as_deref())?;
+    let description =
+        analyze_persisted_media(&persisted_media, focus_text.as_deref(), s3_ref.as_deref())?;
     Ok(description)
 }
 
@@ -135,8 +138,9 @@ fn resolve_image_understand_media(
         }
     }
 
-    query_media_by_id(media_id, rdb_pool)?
-        .ok_or_else(|| Error::ValidationError(format!("image_understand could not find media_id '{}'", media_id)))
+    query_media_by_id(media_id, rdb_pool)?.ok_or_else(|| {
+        Error::ValidationError(format!("image_understand could not find media_id '{}'", media_id))
+    })
 }
 
 fn resolve_image_understand_s3_ref(s3_ref: Option<Arc<S3Ref>>) -> Result<Option<Arc<S3Ref>>> {
@@ -158,17 +162,22 @@ fn load_agent_s3_ref() -> Option<Result<Arc<S3Ref>>> {
     ))
 }
 
-fn analyze_persisted_media(media: &PersistedMedia, focus_text: Option<&str>, s3_ref: Option<&S3Ref>) -> Result<String> {
+fn analyze_persisted_media(
+    media: &PersistedMedia,
+    focus_text: Option<&str>,
+    s3_ref: Option<&S3Ref>,
+) -> Result<String> {
     let image_message = ImageMessage::new(media.clone());
-    let resolved = match zihuan_core::ims_bot_adapter::multimodal_image_url::resolve_image_message_part(
-        &image_message,
-        s3_ref,
-        false,
-        LOG_PREFIX,
-    ) {
-        Some(resolved) => resolved,
-        None => return Ok("Not any image found".to_string()),
-    };
+    let resolved =
+        match zihuan_core::ims_bot_adapter::multimodal_image_url::resolve_image_message_part(
+            &image_message,
+            s3_ref,
+            false,
+            LOG_PREFIX,
+        ) {
+            Some(resolved) => resolved,
+            None => return Ok("Not any image found".to_string()),
+        };
 
     let llm = load_multimodal_llm()?;
 
@@ -186,10 +195,7 @@ fn analyze_persisted_media(media: &PersistedMedia, focus_text: Option<&str>, s3_
         ),
         LLMMessage::user_with_parts(vec![MessagePart::text(prompt), resolved.part]),
     ];
-    let response = llm.inference(&InferenceParam {
-        messages: &messages,
-        tools: None,
-    });
+    let response = llm.inference(&InferenceParam { messages: &messages, tools: None });
 
     let content = response.content_text_owned().unwrap_or_default();
     let trimmed = content.trim();
@@ -211,7 +217,8 @@ fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::model_inference::llm::ll
                 "image_understand requires a main llm_ref_id or a dedicated image_understand_llm_ref_id".to_string(),
             )
         })?;
-    let llm_config = resolve_llm_service_config(Some(llm_ref_id), &llm_refs, DEFAULT_TOOL_IMAGE_UNDERSTAND)?;
+    let llm_config =
+        resolve_llm_service_config(Some(llm_ref_id), &llm_refs, DEFAULT_TOOL_IMAGE_UNDERSTAND)?;
     if !llm_config.supports_multimodal_input {
         let error_message = if agent
             .image_understand_llm_ref_id
@@ -220,7 +227,10 @@ fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::model_inference::llm::ll
             .filter(|value| !value.is_empty())
             .is_some()
         {
-            format!("image_understand_llm_ref_id '{}' does not support multimodal input", llm_ref_id)
+            format!(
+                "image_understand_llm_ref_id '{}' does not support multimodal input",
+                llm_ref_id
+            )
         } else {
             format!(
                 "main llm_ref_id '{}' does not support multimodal input; please choose a multimodal model for image_understand_llm_ref_id",

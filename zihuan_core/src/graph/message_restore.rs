@@ -1,4 +1,11 @@
+use crate::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
+use crate::error::Result;
 use crate::graph::data_value::RedisConfig;
+use crate::ims_bot_adapter::models::event_model::MessageEvent;
+use crate::ims_bot_adapter::models::message::{
+    ImageMessage, Message, MessageMediaRecord, PersistedMedia, PersistedMediaSource,
+    PlainTextMessage,
+};
 use log::{debug, warn};
 use once_cell::sync::Lazy;
 use redis::AsyncCommands;
@@ -6,15 +13,11 @@ use sqlx::Row;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tokio::task::block_in_place;
-use crate::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
-use crate::error::Result;
-use crate::ims_bot_adapter::models::event_model::MessageEvent;
-use crate::ims_bot_adapter::models::message::{
-    ImageMessage, Message, MessageMediaRecord, PersistedMedia, PersistedMediaSource, PlainTextMessage,
-};
 
-static RUNTIME_MESSAGE_INDEX: Lazy<RwLock<HashMap<String, Vec<Message>>>> = Lazy::new(|| RwLock::new(HashMap::new()));
-static LATEST_RDB_POOL: Lazy<RwLock<Option<RelationalDbConnection>>> = Lazy::new(|| RwLock::new(None));
+static RUNTIME_MESSAGE_INDEX: Lazy<RwLock<HashMap<String, Vec<Message>>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+static LATEST_RDB_POOL: Lazy<RwLock<Option<RelationalDbConnection>>> =
+    Lazy::new(|| RwLock::new(None));
 static LATEST_REDIS_REF: Lazy<RwLock<Option<Arc<RedisConfig>>>> = Lazy::new(|| RwLock::new(None));
 
 const LOOKUP_SQL: &str = r#"
@@ -120,7 +123,8 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
     };
 
     if let Some(redis_config) = redis_config {
-        if let Some(snapshot) = restore_message_snapshot_from_redis(&redis_config, &message_id_str)? {
+        if let Some(snapshot) = restore_message_snapshot_from_redis(&redis_config, &message_id_str)?
+        {
             if let Ok(mut guard) = RUNTIME_MESSAGE_INDEX.write() {
                 guard.insert(message_id_str.clone(), snapshot.messages.clone());
             }
@@ -134,7 +138,9 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
                 RelationalDbConnection::MySql(config) => {
                     let lookup_id = message_id_str.clone();
                     let pool = mysql_pool(&config)?.clone();
-                    let run = async move { sqlx::query(LOOKUP_SQL).bind(&lookup_id).fetch_all(&pool).await };
+                    let run = async move {
+                        sqlx::query(LOOKUP_SQL).bind(&lookup_id).fetch_all(&pool).await
+                    };
                     let rows = if let Ok(handle) = tokio::runtime::Handle::try_current() {
                         block_in_place(|| handle.block_on(run))?
                     } else {
@@ -143,7 +149,13 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
 
                     (
                         rows.into_iter()
-                            .map(|row| (row.get("content"), row.get("media_json"), row.get("raw_message_json")))
+                            .map(|row| {
+                                (
+                                    row.get("content"),
+                                    row.get("media_json"),
+                                    row.get("raw_message_json"),
+                                )
+                            })
                             .collect(),
                         MessageRestoreSource::MySql,
                     )
@@ -151,7 +163,9 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
                 RelationalDbConnection::Sqlite(config) => {
                     let lookup_id = message_id_str.clone();
                     let pool = sqlite_pool(&config)?.clone();
-                    let run = async move { sqlx::query(LOOKUP_SQL).bind(&lookup_id).fetch_all(&pool).await };
+                    let run = async move {
+                        sqlx::query(LOOKUP_SQL).bind(&lookup_id).fetch_all(&pool).await
+                    };
                     let rows = if let Ok(handle) = tokio::runtime::Handle::try_current() {
                         block_in_place(|| handle.block_on(run))?
                     } else {
@@ -160,7 +174,13 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
 
                     (
                         rows.into_iter()
-                            .map(|row| (row.get("content"), row.get("media_json"), row.get("raw_message_json")))
+                            .map(|row| {
+                                (
+                                    row.get("content"),
+                                    row.get("media_json"),
+                                    row.get("raw_message_json"),
+                                )
+                            })
                             .collect(),
                         MessageRestoreSource::Sqlite,
                     )
@@ -206,7 +226,10 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
     Ok(Some(RestoredMessageSnapshot { messages, source }))
 }
 
-pub fn query_media_by_id(media_id: &str, rdb_ref: Option<&RelationalDbConnection>) -> Result<Option<PersistedMedia>> {
+pub fn query_media_by_id(
+    media_id: &str,
+    rdb_ref: Option<&RelationalDbConnection>,
+) -> Result<Option<PersistedMedia>> {
     let media_id = media_id.trim();
     if media_id.is_empty() {
         return Ok(None);
@@ -218,56 +241,57 @@ pub fn query_media_by_id(media_id: &str, rdb_ref: Option<&RelationalDbConnection
     };
 
     let media_id_for_bind = media_id.to_string();
-    let row: Option<(String, String, String, Option<String>, Option<String>, Option<String>)> = match &rdb_pool {
-        RelationalDbConnection::MySql(config) => {
-            let pool = mysql_pool(config)?.clone();
-            let run = async move {
-                sqlx::query(MEDIA_RECORD_LOOKUP_SQL)
-                    .bind(&media_id_for_bind)
-                    .fetch_optional(&pool)
-                    .await
-            };
-            let row = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                block_in_place(|| handle.block_on(run))?
-            } else {
-                tokio::runtime::Runtime::new()?.block_on(run)?
-            };
-            row.map(|r| {
-                (
-                    r.get("source"),
-                    r.get("original_source"),
-                    r.get("rustfs_path"),
-                    r.get("name"),
-                    r.get("description"),
-                    r.get("mime_type"),
-                )
-            })
-        }
-        RelationalDbConnection::Sqlite(config) => {
-            let pool = sqlite_pool(config)?.clone();
-            let run = async move {
-                sqlx::query(MEDIA_RECORD_LOOKUP_SQL)
-                    .bind(&media_id_for_bind)
-                    .fetch_optional(&pool)
-                    .await
-            };
-            let row = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                block_in_place(|| handle.block_on(run))?
-            } else {
-                tokio::runtime::Runtime::new()?.block_on(run)?
-            };
-            row.map(|r| {
-                (
-                    r.get("source"),
-                    r.get("original_source"),
-                    r.get("rustfs_path"),
-                    r.get("name"),
-                    r.get("description"),
-                    r.get("mime_type"),
-                )
-            })
-        }
-    };
+    let row: Option<(String, String, String, Option<String>, Option<String>, Option<String>)> =
+        match &rdb_pool {
+            RelationalDbConnection::MySql(config) => {
+                let pool = mysql_pool(config)?.clone();
+                let run = async move {
+                    sqlx::query(MEDIA_RECORD_LOOKUP_SQL)
+                        .bind(&media_id_for_bind)
+                        .fetch_optional(&pool)
+                        .await
+                };
+                let row = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    block_in_place(|| handle.block_on(run))?
+                } else {
+                    tokio::runtime::Runtime::new()?.block_on(run)?
+                };
+                row.map(|r| {
+                    (
+                        r.get("source"),
+                        r.get("original_source"),
+                        r.get("rustfs_path"),
+                        r.get("name"),
+                        r.get("description"),
+                        r.get("mime_type"),
+                    )
+                })
+            }
+            RelationalDbConnection::Sqlite(config) => {
+                let pool = sqlite_pool(config)?.clone();
+                let run = async move {
+                    sqlx::query(MEDIA_RECORD_LOOKUP_SQL)
+                        .bind(&media_id_for_bind)
+                        .fetch_optional(&pool)
+                        .await
+                };
+                let row = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    block_in_place(|| handle.block_on(run))?
+                } else {
+                    tokio::runtime::Runtime::new()?.block_on(run)?
+                };
+                row.map(|r| {
+                    (
+                        r.get("source"),
+                        r.get("original_source"),
+                        r.get("rustfs_path"),
+                        r.get("name"),
+                        r.get("description"),
+                        r.get("mime_type"),
+                    )
+                })
+            }
+        };
 
     let Some((source, original_source, rustfs_path, name, description, mime_type)) = row else {
         return Ok(None);
@@ -292,7 +316,10 @@ pub fn query_media_by_id(media_id: &str, rdb_ref: Option<&RelationalDbConnection
     }))
 }
 
-pub fn persist_media_to_record(connection: &RelationalDbConnection, media: &PersistedMedia) -> Result<()> {
+pub fn persist_media_to_record(
+    connection: &RelationalDbConnection,
+    media: &PersistedMedia,
+) -> Result<()> {
     let source = media.source.to_string();
     match connection {
         RelationalDbConnection::MySql(config) => {
@@ -341,13 +368,17 @@ pub fn persist_media_to_record(connection: &RelationalDbConnection, media: &Pers
 
 fn mysql_pool(config: &Arc<MySqlConfig>) -> Result<&sqlx::mysql::MySqlPool> {
     config.pool.as_ref().ok_or_else(|| {
-        crate::error::Error::ValidationError("message restore mysql pool is not initialized".to_string())
+        crate::error::Error::ValidationError(
+            "message restore mysql pool is not initialized".to_string(),
+        )
     })
 }
 
 fn sqlite_pool(config: &Arc<SqliteConfig>) -> Result<&sqlx::sqlite::SqlitePool> {
     config.pool.as_ref().ok_or_else(|| {
-        crate::error::Error::ValidationError("message restore sqlite pool is not initialized".to_string())
+        crate::error::Error::ValidationError(
+            "message restore sqlite pool is not initialized".to_string(),
+        )
     })
 }
 
@@ -425,9 +456,7 @@ pub fn rebuild_message_list(content: &str, media_json: Option<&str>) -> Vec<Mess
     let mut messages = Vec::new();
     let trimmed_content = content.trim();
     if !trimmed_content.is_empty() {
-        messages.push(Message::PlainText(PlainTextMessage {
-            text: trimmed_content.to_string(),
-        }));
+        messages.push(Message::PlainText(PlainTextMessage { text: trimmed_content.to_string() }));
     }
 
     let Some(media_json) = media_json.filter(|value| !value.trim().is_empty()) else {

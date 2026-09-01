@@ -2,6 +2,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::connection_manager::{
+    ConnectionManager as ConnectionManagerTrait, RuntimeConnectionStatus, RuntimeInstanceInfo,
+};
+use crate::data_refs::{MySqlConfig, SqliteConfig};
+use crate::error::{Error, Result};
+use crate::graph::data_value::RedisConfig;
+use crate::graph::object_storage::S3Ref;
+use crate::weaviate::WeaviateRef;
 use async_trait::async_trait;
 use chrono::Utc;
 use log::info;
@@ -10,21 +18,13 @@ use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 use sqlx::sqlite::SqlitePoolOptions;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use crate::connection_manager::{
-    ConnectionManager as ConnectionManagerTrait, RuntimeConnectionStatus, RuntimeInstanceInfo,
-};
-use crate::data_refs::{MySqlConfig, SqliteConfig};
-use crate::error::{Error, Result};
-use crate::weaviate::WeaviateRef;
-use crate::graph::data_value::RedisConfig;
-use crate::graph::object_storage::S3Ref;
 
 use crate::storage::resource_resolver::find_connection;
 use crate::storage::rustfs::build_s3_ref as build_s3_direct_ref;
 use crate::storage::weaviate::build_weaviate_ref as build_weaviate_direct_ref;
 use crate::storage::{
-    db_schema::ensure_tables_for_connection, load_connections, ConnectionKind, DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
-    DEFAULT_MYSQL_MAX_CONNECTIONS,
+    db_schema::ensure_tables_for_connection, load_connections, ConnectionKind,
+    DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS, DEFAULT_MYSQL_MAX_CONNECTIONS,
 };
 
 const STORAGE_INSTANCE_IDLE_TIMEOUT_SECS: i64 = 15 * 60;
@@ -80,9 +80,7 @@ static RUNTIME_STORAGE_CONNECTION_MANAGER: Lazy<RuntimeStorageConnectionManager>
 
 impl RuntimeStorageConnectionManager {
     pub fn new() -> Self {
-        Self {
-            instances: RwLock::new(HashMap::new()),
-        }
+        Self { instances: RwLock::new(HashMap::new()) }
     }
 
     pub fn shared() -> &'static Self {
@@ -129,11 +127,17 @@ impl RuntimeStorageConnectionManager {
         }
     }
 
-    async fn build_runtime_instance(&self, config_id: &str) -> Result<(StorageRuntimeInstance, StorageRuntimeHandle)> {
+    async fn build_runtime_instance(
+        &self,
+        config_id: &str,
+    ) -> Result<(StorageRuntimeInstance, StorageRuntimeHandle)> {
         let connections = load_connections()?;
         let connection = find_connection(&connections, config_id)?;
         if !connection.enabled {
-            return Err(Error::ValidationError(format!("connection '{}' is disabled", connection.name)));
+            return Err(Error::ValidationError(format!(
+                "connection '{}' is disabled",
+                connection.name
+            )));
         }
 
         let started_at = Utc::now();
@@ -160,7 +164,9 @@ impl RuntimeStorageConnectionManager {
                     .min_connections(1)
                     .acquire_timeout(Duration::from_secs(acquire_timeout_secs));
                 let masked_url = mask_url_credentials(&mysql.url);
-                let (pool, handle, runtime) = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                let (pool, handle, runtime) = if let Ok(handle) =
+                    tokio::runtime::Handle::try_current()
+                {
                     let pool = pool_options.connect(&mysql.url).await.map_err(|err| {
                             Error::Database(sqlx::Error::Configuration(Box::new(std::io::Error::other(
                                 format!(
@@ -242,7 +248,9 @@ impl RuntimeStorageConnectionManager {
                 );
                 let db_url = format!("sqlite://{}?mode=rwc", sqlite.path);
                 let pool_options = SqlitePoolOptions::new().max_connections(4).min_connections(1);
-                let (pool, handle, runtime) = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                let (pool, handle, runtime) = if let Ok(handle) =
+                    tokio::runtime::Handle::try_current()
+                {
                     let pool = pool_options.connect(&db_url).await.map_err(|err| {
                         Error::Database(sqlx::Error::Configuration(Box::new(std::io::Error::other(format!(
                             "failed to create sqlite pool for connection '{}' (config_id={}, path={}): {}",
@@ -307,14 +315,7 @@ impl RuntimeStorageConnectionManager {
             summary.instance_id, summary.config_id, summary.kind, summary.name
         );
         let handle = payload.clone_handle();
-        Ok((
-            StorageRuntimeInstance {
-                summary,
-                payload,
-                _runtime: runtime,
-            },
-            handle,
-        ))
+        Ok((StorageRuntimeInstance { summary, payload, _runtime: runtime }, handle))
     }
 
     async fn mark_used_and_clone(
@@ -385,7 +386,9 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
     async fn close_instance(&self, instance_id: &str) -> Result<bool> {
         let mut instances = self.instances.write().await;
         for bucket in instances.values_mut() {
-            if let Some(index) = bucket.iter().position(|item| item.summary.instance_id == instance_id) {
+            if let Some(index) =
+                bucket.iter().position(|item| item.summary.instance_id == instance_id)
+            {
                 let removed = bucket.remove(index);
                 info!(
                     "[storage_instance_manager] force closed runtime instance_id={} config_id={} kind={} name='{}'",
@@ -415,7 +418,8 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
                 .unwrap_or(false);
             let mut retained = Vec::new();
             for item in bucket.drain(..) {
-                let stale = (now - item.summary.last_used_at).num_seconds() >= STORAGE_INSTANCE_IDLE_TIMEOUT_SECS;
+                let stale = (now - item.summary.last_used_at).num_seconds()
+                    >= STORAGE_INSTANCE_IDLE_TIMEOUT_SECS;
                 let externally_held_mysql = item.payload.has_external_mysql_refs();
                 if enabled && (!stale || externally_held_mysql) {
                     retained.push(item);
@@ -445,11 +449,15 @@ pub fn list_runtime_storage_instances() -> Result<Vec<RuntimeInstanceInfo>> {
 }
 
 pub fn close_runtime_storage_instance(instance_id: &str) -> Result<bool> {
-    crate::runtime::block_async(RuntimeStorageConnectionManager::shared().close_instance(instance_id))
+    crate::runtime::block_async(
+        RuntimeStorageConnectionManager::shared().close_instance(instance_id),
+    )
 }
 
 pub fn close_runtime_storage_instances_for_config(config_id: &str) -> Result<usize> {
-    crate::runtime::block_async(RuntimeStorageConnectionManager::shared().close_instances_for_config(config_id))
+    crate::runtime::block_async(
+        RuntimeStorageConnectionManager::shared().close_instances_for_config(config_id),
+    )
 }
 
 pub fn cleanup_runtime_storage_instances() -> Result<usize> {
@@ -510,7 +518,8 @@ mod tests {
             }
 
             let mut guard = manager.instances.write().await;
-            let handle = manager.mark_used_and_clone("cfg-1", &mut guard).await.expect("cached handle");
+            let handle =
+                manager.mark_used_and_clone("cfg-1", &mut guard).await.expect("cached handle");
             drop(guard);
 
             match handle {

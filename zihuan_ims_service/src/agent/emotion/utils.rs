@@ -62,12 +62,14 @@ fn emotion_prompt_entries(
     emotion_dimensions
         .iter()
         .filter_map(|dimension| {
-            let value = *session_state.emotion_dimensions.get(dimension.name.trim()).unwrap_or(&0.0);
+            let value =
+                *session_state.emotion_dimensions.get(dimension.name.trim()).unwrap_or(&0.0);
             if !value.is_finite() || value == 0.0 {
                 return None;
             }
 
-            let prompt = session_state.emotion_expression_prompts.get(dimension.name.trim())?.trim();
+            let prompt =
+                session_state.emotion_expression_prompts.get(dimension.name.trim())?.trim();
             if prompt.is_empty() {
                 return None;
             }

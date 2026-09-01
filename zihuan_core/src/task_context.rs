@@ -80,7 +80,10 @@ pub struct AgentTaskHandle {
 }
 
 impl AgentTaskHandle {
-    pub fn new(task_id: String, finish: impl FnOnce(AgentTaskResult) + Send + 'static) -> Arc<Self> {
+    pub fn new(
+        task_id: String,
+        finish: impl FnOnce(AgentTaskResult) + Send + 'static,
+    ) -> Arc<Self> {
         Arc::new(Self {
             task_id,
             finish: Mutex::new(Some(Box::new(finish))),
@@ -127,8 +130,11 @@ pub trait AgentTaskRuntime: Send + Sync {
     /// The runtime creates a task record, spawns the runner via
     /// `tokio::spawn`, and returns a handle. The runner is responsible for
     /// calling [`AgentTaskHandle::finish`] when done.
-    fn spawn_task(&self, request: AgentTaskRequest, runner: Box<dyn FnOnce() + Send + 'static>)
-        -> Arc<AgentTaskHandle>;
+    fn spawn_task(
+        &self,
+        request: AgentTaskRequest,
+        runner: Box<dyn FnOnce() + Send + 'static>,
+    ) -> Arc<AgentTaskHandle>;
 
     /// Look up a task by id.
     fn query_task(&self, task_id: &str) -> Option<AgentTaskInfo>;
@@ -147,7 +153,13 @@ pub trait AgentTaskRuntime: Send + Sync {
 
     /// Attach a persisted execution graph snapshot to a task. Runtimes that do not
     /// expose task history can ignore this without affecting agent execution.
-    fn set_task_graph(&self, _task_id: &str, _graph: serde_json::Value, _object_path: Option<String>) {}
+    fn set_task_graph(
+        &self,
+        _task_id: &str,
+        _graph: serde_json::Value,
+        _object_path: Option<String>,
+    ) {
+    }
 
     /// Request cancellation of a running task. Returns `true` if the task
     /// was found and a stop signal was set, `false` if the task does not

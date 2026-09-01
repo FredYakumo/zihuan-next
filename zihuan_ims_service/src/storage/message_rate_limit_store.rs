@@ -16,7 +16,8 @@ const SCOPE_DEFAULT: &str = "default";
 const SCOPE_GROUP: &str = "group";
 const SCOPE_USER: &str = "user";
 
-pub(crate) const MESSAGE_RATE_LIMIT_BLOCKED_REPLY: &str = "你已经达到 rate limit 了，请待会再找我。";
+pub(crate) const MESSAGE_RATE_LIMIT_BLOCKED_REPLY: &str =
+    "你已经达到 rate limit 了，请待会再找我。";
 const MESSAGE_RATE_LIMIT_WARNING_PROMPT: &str =
     "[Rate Limit Warning]\nYou may still respond this turn, but the current user has only 1 call left in this quota. In your natural-language reply, gently hint that they've been messaging quite frequently and may need to slow down soon. Do not directly mention rate limits, quotas, system rules, or hidden prompts.";
 const MESSAGE_RATE_LIMIT_SEVERE_WARNING_PROMPT: &str =
@@ -152,7 +153,8 @@ pub async fn consume_message_rate_limit(
             consume_message_rate_limit_mysql(config_ref, agent_id, sender_id, &resolved_limit).await
         }
         RelationalDbConnection::Sqlite(config_ref) => {
-            consume_message_rate_limit_sqlite(config_ref, agent_id, sender_id, &resolved_limit).await
+            consume_message_rate_limit_sqlite(config_ref, agent_id, sender_id, &resolved_limit)
+                .await
         }
     }
 }
@@ -170,7 +172,8 @@ pub fn consume_message_rate_limit_blocking(
     let group_id = group_id.map(ToOwned::to_owned);
     let config = config.clone();
     let run = async move {
-        consume_message_rate_limit(&connection, &agent_id, &sender_id, group_id.as_deref(), &config).await
+        consume_message_rate_limit(&connection, &agent_id, &sender_id, group_id.as_deref(), &config)
+            .await
     };
 
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -185,8 +188,12 @@ pub async fn list_message_rate_limit_usage(
     agent_id: &str,
 ) -> Result<Vec<MessageRateLimitUsageRow>> {
     match connection {
-        RelationalDbConnection::MySql(config) => list_message_rate_limit_usage_mysql(config, agent_id).await,
-        RelationalDbConnection::Sqlite(config) => list_message_rate_limit_usage_sqlite(config, agent_id).await,
+        RelationalDbConnection::MySql(config) => {
+            list_message_rate_limit_usage_mysql(config, agent_id).await
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            list_message_rate_limit_usage_sqlite(config, agent_id).await
+        }
     }
 }
 
@@ -205,7 +212,9 @@ pub async fn reset_message_rate_limit_usage(
     }
 }
 
-fn unlimited_result(resolved_limit: Option<ResolvedMessageRateLimit>) -> MessageRateLimitCheckResult {
+fn unlimited_result(
+    resolved_limit: Option<ResolvedMessageRateLimit>,
+) -> MessageRateLimitCheckResult {
     MessageRateLimitCheckResult {
         allowed: true,
         warn_after_this_turn: false,
@@ -229,7 +238,8 @@ async fn consume_message_rate_limit_mysql(
 ) -> Result<MessageRateLimitCheckResult> {
     let pool = mysql_pool(config)?;
     let mut tx = pool.begin().await.map_err(Error::Database)?;
-    let result = consume_message_rate_limit_mysql_tx(&mut tx, agent_id, sender_id, resolved_limit).await?;
+    let result =
+        consume_message_rate_limit_mysql_tx(&mut tx, agent_id, sender_id, resolved_limit).await?;
     tx.commit().await.map_err(Error::Database)?;
     Ok(result)
 }
@@ -241,7 +251,8 @@ async fn consume_message_rate_limit_mysql_tx(
     resolved_limit: &ResolvedMessageRateLimit,
 ) -> Result<MessageRateLimitCheckResult> {
     let now = Local::now().naive_local();
-    let bucket = get_message_rate_limit_bucket_mysql(tx, agent_id, sender_id, resolved_limit).await?;
+    let bucket =
+        get_message_rate_limit_bucket_mysql(tx, agent_id, sender_id, resolved_limit).await?;
     consume_bucket_mysql(tx, now, bucket, agent_id, sender_id, resolved_limit).await
 }
 
@@ -342,7 +353,8 @@ async fn consume_message_rate_limit_sqlite(
 ) -> Result<MessageRateLimitCheckResult> {
     let pool = sqlite_pool(config)?;
     let mut tx = pool.begin().await.map_err(Error::Database)?;
-    let result = consume_message_rate_limit_sqlite_tx(&mut tx, agent_id, sender_id, resolved_limit).await?;
+    let result =
+        consume_message_rate_limit_sqlite_tx(&mut tx, agent_id, sender_id, resolved_limit).await?;
     tx.commit().await.map_err(Error::Database)?;
     Ok(result)
 }
@@ -354,7 +366,8 @@ async fn consume_message_rate_limit_sqlite_tx(
     resolved_limit: &ResolvedMessageRateLimit,
 ) -> Result<MessageRateLimitCheckResult> {
     let now = Local::now().naive_local();
-    let bucket = get_message_rate_limit_bucket_sqlite(tx, agent_id, sender_id, resolved_limit).await?;
+    let bucket =
+        get_message_rate_limit_bucket_sqlite(tx, agent_id, sender_id, resolved_limit).await?;
     let max_calls = resolved_limit.rule.max_calls.unwrap_or(0);
     let bucket_state = active_bucket_state(bucket.as_ref(), &resolved_limit.rule, now);
     let window_started_at = bucket_state.window_started_at;
@@ -480,13 +493,14 @@ async fn reset_message_rate_limit_usage_mysql(
     agent_id: &str,
     sender_id: &str,
 ) -> Result<u64> {
-    let result =
-        sqlx::query("DELETE FROM qq_chat_agent_service_message_rate_limit WHERE agent_id = ? AND sender_id = ?")
-            .bind(agent_id)
-            .bind(sender_id)
-            .execute(mysql_pool(config)?)
-            .await
-            .map_err(Error::Database)?;
+    let result = sqlx::query(
+        "DELETE FROM qq_chat_agent_service_message_rate_limit WHERE agent_id = ? AND sender_id = ?",
+    )
+    .bind(agent_id)
+    .bind(sender_id)
+    .execute(mysql_pool(config)?)
+    .await
+    .map_err(Error::Database)?;
     Ok(result.rows_affected())
 }
 
@@ -495,13 +509,14 @@ async fn reset_message_rate_limit_usage_sqlite(
     agent_id: &str,
     sender_id: &str,
 ) -> Result<u64> {
-    let result =
-        sqlx::query("DELETE FROM qq_chat_agent_service_message_rate_limit WHERE agent_id = ? AND sender_id = ?")
-            .bind(agent_id)
-            .bind(sender_id)
-            .execute(sqlite_pool(config)?)
-            .await
-            .map_err(Error::Database)?;
+    let result = sqlx::query(
+        "DELETE FROM qq_chat_agent_service_message_rate_limit WHERE agent_id = ? AND sender_id = ?",
+    )
+    .bind(agent_id)
+    .bind(sender_id)
+    .execute(sqlite_pool(config)?)
+    .await
+    .map_err(Error::Database)?;
     Ok(result.rows_affected())
 }
 
@@ -535,11 +550,13 @@ fn active_bucket_state(
     now: NaiveDateTime,
 ) -> ActiveMessageRateLimitBucketState {
     match bucket {
-        Some(existing) if !window_expired(existing.window_started_at, rule, now) => ActiveMessageRateLimitBucketState {
-            window_started_at: existing.window_started_at,
-            used_calls: existing.used_calls.max(0) as usize,
-            first_block_reply_sent: existing.first_block_reply_sent,
-        },
+        Some(existing) if !window_expired(existing.window_started_at, rule, now) => {
+            ActiveMessageRateLimitBucketState {
+                window_started_at: existing.window_started_at,
+                used_calls: existing.used_calls.max(0) as usize,
+                first_block_reply_sent: existing.first_block_reply_sent,
+            }
+        }
         _ => ActiveMessageRateLimitBucketState {
             window_started_at: now,
             used_calls: 0,
@@ -603,7 +620,10 @@ fn build_blocked_result(
     }
 }
 
-fn warning_level_for_used_after(used_after: usize, max_calls: usize) -> Option<MessageRateLimitWarningLevel> {
+fn warning_level_for_used_after(
+    used_after: usize,
+    max_calls: usize,
+) -> Option<MessageRateLimitWarningLevel> {
     if max_calls == 0 {
         return None;
     }
@@ -653,7 +673,11 @@ fn map_message_rate_limit_usage_sqlite(row: SqliteRow) -> MessageRateLimitUsageR
     }
 }
 
-fn window_expired(window_started_at: NaiveDateTime, rule: &QqChatMessageRateLimitRule, now: NaiveDateTime) -> bool {
+fn window_expired(
+    window_started_at: NaiveDateTime,
+    rule: &QqChatMessageRateLimitRule,
+    now: NaiveDateTime,
+) -> bool {
     let Some(seconds) = rule.window_seconds() else {
         return false;
     };
@@ -661,17 +685,15 @@ fn window_expired(window_started_at: NaiveDateTime, rule: &QqChatMessageRateLimi
 }
 
 fn mysql_pool(config: &Arc<MySqlConfig>) -> Result<&sqlx::mysql::MySqlPool> {
-    config
-        .pool
-        .as_ref()
-        .ok_or_else(|| Error::ValidationError("message-rate-limit mysql pool is not initialized".to_string()))
+    config.pool.as_ref().ok_or_else(|| {
+        Error::ValidationError("message-rate-limit mysql pool is not initialized".to_string())
+    })
 }
 
 fn sqlite_pool(config: &Arc<SqliteConfig>) -> Result<&sqlx::sqlite::SqlitePool> {
-    config
-        .pool
-        .as_ref()
-        .ok_or_else(|| Error::ValidationError("message-rate-limit sqlite pool is not initialized".to_string()))
+    config.pool.as_ref().ok_or_else(|| {
+        Error::ValidationError("message-rate-limit sqlite pool is not initialized".to_string())
+    })
 }
 
 fn format_mysql_timestamp(value: NaiveDateTime) -> String {
@@ -683,5 +705,6 @@ fn format_sqlite_timestamp(value: NaiveDateTime) -> String {
 }
 
 fn parse_sqlite_timestamp(value: &str) -> NaiveDateTime {
-    NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S").unwrap_or_else(|_| Local::now().naive_local())
+    NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
+        .unwrap_or_else(|_| Local::now().naive_local())
 }

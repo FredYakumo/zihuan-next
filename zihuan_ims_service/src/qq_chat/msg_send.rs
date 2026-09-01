@@ -4,21 +4,22 @@ use std::sync::{Arc, Mutex};
 
 use zihuan_core::data_refs::RelationalDbConnection;
 
-use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
-use zihuan_core::ims_bot_adapter::message_helpers::{
-    get_bot_id, send_friend_batches_with_persistence, send_group_batches_with_persistence, OutboundMessagePersistence,
-};
-use zihuan_core::ims_bot_adapter::models::message::{
-    AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, PersistedMedia, PersistedMediaSource,
-    PlainTextMessage, ReplyMessage,
-};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use zihuan_core::agent::utils::string_utils::is_no_reply_directive;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
 use zihuan_core::graph::data_value::DataValue;
+use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
+use zihuan_core::ims_bot_adapter::message_helpers::{
+    get_bot_id, send_friend_batches_with_persistence, send_group_batches_with_persistence,
+    OutboundMessagePersistence,
+};
+use zihuan_core::ims_bot_adapter::models::message::{
+    AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, PersistedMedia,
+    PersistedMediaSource, PlainTextMessage, ReplyMessage,
+};
 use zihuan_core::nlp::{PunctuationSegmenter, TextSegmenter};
+use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
 
 pub(crate) use super::model::{
     QqChatServiceReplyBatchBuilder, QqChatServiceReplyBuildRequest, QqChatServiceReplyBuildResult,
@@ -80,7 +81,9 @@ struct SplitRepairState {
     in_cn_quote: bool,
 }
 
-pub(crate) fn build_reply_batch_builder(segmenter: Arc<dyn TextSegmenter>) -> QqChatServiceReplyBatchBuilder {
+pub(crate) fn build_reply_batch_builder(
+    segmenter: Arc<dyn TextSegmenter>,
+) -> QqChatServiceReplyBatchBuilder {
     Arc::new(move |request| {
         let plan = plan_model_reply(request, segmenter.as_ref())?;
         Ok(QqChatServiceReplyBuildResult {
@@ -147,7 +150,9 @@ pub(crate) fn plan_model_reply(
     for segment in segments {
         match segment {
             ReplySegment::Text(text) => {
-                for chunk in split_plain_text_for_forward(&text, request.max_message_length, segmenter) {
+                for chunk in
+                    split_plain_text_for_forward(&text, request.max_message_length, segmenter)
+                {
                     text_chunk_count += 1;
                     expanded_segments.push(PlannedSegment::Text(chunk));
                 }
@@ -162,12 +167,18 @@ pub(crate) fn plan_model_reply(
         }
     }
 
-    let reply_message = resolve_reply_message(request.reply_directive.as_ref(), request.trigger_message_id);
+    let reply_message =
+        resolve_reply_message(request.reply_directive.as_ref(), request.trigger_message_id);
 
     // Use forward messages only for long text because QQ clients may not render images in forward nodes.
     let forced_forward = text_chunk_count >= 3;
     let mut batches = if forced_forward {
-        build_forced_forward_batches(expanded_segments, reply_message, &request.bot_id, &request.bot_name)
+        build_forced_forward_batches(
+            expanded_segments,
+            reply_message,
+            &request.bot_id,
+            &request.bot_name,
+        )
     } else {
         build_regular_batches(expanded_segments, reply_message, request.max_message_length)
     };
@@ -192,7 +203,10 @@ pub(crate) fn send_planned_batches(ctx: &QqChatServiceSendContext<'_>, batches: 
     }
 }
 
-pub(crate) fn send_notification_text(ctx: &QqChatServiceSendContext<'_>, content: &str) -> Result<()> {
+pub(crate) fn send_notification_text(
+    ctx: &QqChatServiceSendContext<'_>,
+    content: &str,
+) -> Result<()> {
     let text = content.trim();
     if text.is_empty() {
         return Ok(());
@@ -213,7 +227,10 @@ pub(crate) fn send_notification_text(ctx: &QqChatServiceSendContext<'_>, content
     Ok(())
 }
 
-pub(crate) fn send_forward_content(ctx: &QqChatServiceSendContext<'_>, content: &str) -> Result<()> {
+pub(crate) fn send_forward_content(
+    ctx: &QqChatServiceSendContext<'_>,
+    content: &str,
+) -> Result<()> {
     let text = content.trim();
     if text.is_empty() {
         return Err(Error::ValidationError("forward content must not be blank".to_string()));
@@ -245,7 +262,11 @@ pub(crate) fn build_long_task_complete_content(
     result: &str,
 ) -> String {
     let result = result.trim();
-    let result = if result.is_empty() { "没有结果" } else { result };
+    let result = if result.is_empty() {
+        "没有结果"
+    } else {
+        result
+    };
     let mut content = format!("\n任务: {task_name}({task_id})");
     if !progress.is_empty() {
         content.push_str("\n\n");
@@ -275,10 +296,7 @@ fn resolve_reply_message(
         None => None,
     }?;
 
-    Some(ReplyMessage {
-        id: message_id,
-        message_source: None,
-    })
+    Some(ReplyMessage { id: message_id, message_source: None })
 }
 
 fn build_regular_batches(
@@ -303,7 +321,8 @@ fn build_regular_batches(
                 current_batch.push(Message::PlainText(PlainTextMessage { text }));
             }
             PlannedSegment::Image(image) => {
-                let should_append_to_current = current_batch.iter().all(|message| matches!(message, Message::At(_)));
+                let should_append_to_current =
+                    current_batch.iter().all(|message| matches!(message, Message::At(_)));
                 if should_append_to_current && !current_batch.is_empty() {
                     current_batch.push(Message::Image(image));
                     flush_batch(&mut batches, &mut current_batch);
@@ -376,10 +395,7 @@ fn build_forced_forward_batches(
     }
 
     if !forward_nodes.is_empty() {
-        batches.push(vec![Message::Forward(ForwardMessage {
-            id: None,
-            content: forward_nodes,
-        })]);
+        batches.push(vec![Message::Forward(ForwardMessage { id: None, content: forward_nodes })]);
     }
 
     batches
@@ -435,9 +451,7 @@ fn build_notification_batches(
         let mut batches = Vec::new();
         let mut carrier = Vec::new();
         if let Some(target) = mention_target_id {
-            carrier.push(Message::At(AtTargetMessage {
-                target: Some(target.to_string()),
-            }));
+            carrier.push(Message::At(AtTargetMessage { target: Some(target.to_string()) }));
         }
         if let Some(first_chunk) = chunks.first() {
             carrier.push(Message::PlainText(PlainTextMessage { text: first_chunk.clone() }));
@@ -463,9 +477,7 @@ fn build_notification_batches(
 
     let mut current_batch = Vec::new();
     if let Some(target) = mention_target_id {
-        current_batch.push(Message::At(AtTargetMessage {
-            target: Some(target.to_string()),
-        }));
+        current_batch.push(Message::At(AtTargetMessage { target: Some(target.to_string()) }));
     }
     let mut batches = Vec::new();
     for chunk in chunks {
@@ -537,7 +549,11 @@ fn flush_batch(batches: &mut Vec<Vec<Message>>, current_batch: &mut Vec<Message>
     }
 }
 
-fn build_forward_message_from_chunks(chunks: Vec<String>, bot_id: &str, bot_name: &str) -> Result<ForwardMessage> {
+fn build_forward_message_from_chunks(
+    chunks: Vec<String>,
+    bot_id: &str,
+    bot_name: &str,
+) -> Result<ForwardMessage> {
     let nodes: Vec<ForwardNodeMessage> = chunks
         .into_iter()
         .filter(|chunk| !chunk.trim().is_empty())
@@ -560,7 +576,11 @@ fn split_text_by_semantic_boundaries(content: &str, max_chars: usize) -> Vec<Str
     PunctuationSegmenter.segment(content, max_chars)
 }
 
-fn split_plain_text_for_forward(text: &str, max_chars: usize, segmenter: &dyn TextSegmenter) -> Vec<String> {
+fn split_plain_text_for_forward(
+    text: &str,
+    max_chars: usize,
+    segmenter: &dyn TextSegmenter,
+) -> Vec<String> {
     let normalized = text.replace("\r\n", "\n");
     let trimmed = normalized.trim();
     if trimmed.is_empty() || max_chars == 0 {
@@ -792,7 +812,9 @@ pub(crate) fn send_direct_text_reply(
     max_message_length: usize,
     reply_batch_builder: Option<&QqChatServiceReplyBatchBuilder>,
 ) -> Result<()> {
-    let persistence = crate::storage::qq_chat_session_store::build_outbound_persistence(rdb_pool, group_name, bot_name);
+    let persistence = crate::storage::qq_chat_session_store::build_outbound_persistence(
+        rdb_pool, group_name, bot_name,
+    );
     let reply_result = build_reply_result(
         text,
         is_group,
@@ -843,7 +865,9 @@ pub(crate) fn send_direct_notification_text_reply(
     mention_target_id: Option<&str>,
     max_message_length: usize,
 ) -> Result<()> {
-    let persistence = crate::storage::qq_chat_session_store::build_outbound_persistence(rdb_pool, group_name, bot_name);
+    let persistence = crate::storage::qq_chat_session_store::build_outbound_persistence(
+        rdb_pool, group_name, bot_name,
+    );
     let send_ctx = QqChatServiceSendContext {
         adapter,
         target_id,

@@ -61,13 +61,9 @@ pub fn approve_command(session_id: &str, command: &str, allow_similar: bool) -> 
         return false;
     }
     if allow_similar {
-        approvals
-            .families
-            .push((session_id.to_string(), command_family(command)))
+        approvals.families.push((session_id.to_string(), command_family(command)))
     }
-    approvals
-        .decisions
-        .insert((session_id.to_string(), command.to_string()), true);
+    approvals.decisions.insert((session_id.to_string(), command.to_string()), true);
     wake.notify_all();
     true
 }
@@ -82,9 +78,7 @@ pub fn reject_command(session_id: &str, command: &str) -> bool {
     if pending.command != command {
         return false;
     }
-    approvals
-        .decisions
-        .insert((session_id.to_string(), command.to_string()), false);
+    approvals.decisions.insert((session_id.to_string(), command.to_string()), false);
     wake.notify_all();
     true
 }
@@ -123,19 +117,14 @@ fn wait_for_command_decision(session_id: &str, command: &str) -> bool {
 }
 
 fn command_family(command: &str) -> String {
-    command
-        .split_whitespace()
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase()
+    command.split_whitespace().next().unwrap_or_default().to_ascii_lowercase()
 }
 impl Tool for ExecCmdTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec{name:DEFAULT_TOOL_EXEC_CMD,description:"Execute a shell command with optional environment, stdin, shell, timeout, and bounded output",parameters:serde_json::json!({"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"timeout_secs":{"type":"integer","minimum":1},"env":{"type":"object","additionalProperties":{"type":"string"}},"input":{"type":"string"},"max_output_bytes":{"type":"integer","minimum":1},"shell":{"type":"string","enum":["powershell","bash"]}},"required":["command"]})})
     }
     fn execute(&self, call_content: &str, a: &Value) -> String {
-        self.execute_with_progress(call_content, a, Arc::new(|_, _| {}))
-            .result
+        self.execute_with_progress(call_content, a, Arc::new(|_, _| {})).result
     }
     fn execute_with_progress(
         &self,
@@ -237,14 +226,8 @@ impl Tool for ExecCmdTool {
                         let _ = stdin.write_all(input.as_bytes()).await;
                     }
                 }
-                let stdout = child
-                    .stdout
-                    .take()
-                    .expect("exec_cmd stdout pipe must be configured");
-                let stderr = child
-                    .stderr
-                    .take()
-                    .expect("exec_cmd stderr pipe must be configured");
+                let stdout = child.stdout.take().expect("exec_cmd stdout pipe must be configured");
+                let stderr = child.stderr.take().expect("exec_cmd stderr pipe must be configured");
                 let (output_tx, mut output_rx) =
                     mpsc::unbounded_channel::<(&'static str, Option<Vec<u8>>)>();
                 tokio::spawn(forward_stream("stdout", stdout, output_tx.clone()));
@@ -319,10 +302,7 @@ async fn forward_stream<R: AsyncRead + Unpin>(
         match reader.read(&mut buffer).await {
             Ok(0) => break,
             Ok(size) => {
-                if output_tx
-                    .send((stream_name, Some(buffer[..size].to_vec())))
-                    .is_err()
-                {
+                if output_tx.send((stream_name, Some(buffer[..size].to_vec()))).is_err() {
                     return;
                 }
             }

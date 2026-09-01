@@ -1,7 +1,9 @@
 use crate::data_refs::RelationalDbConnection;
 use crate::error::{Error, Result};
 
-use crate::storage::{find_connection, ConnectionConfig, ConnectionKind, RuntimeStorageConnectionManager};
+use crate::storage::{
+    find_connection, ConnectionConfig, ConnectionKind, RuntimeStorageConnectionManager,
+};
 
 pub async fn build_relational_db_connection_for_connection(
     connection_id: &str,

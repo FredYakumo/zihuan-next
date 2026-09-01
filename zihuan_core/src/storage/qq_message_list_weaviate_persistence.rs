@@ -36,7 +36,9 @@ pub fn persist_qq_message_list(
     ) {
         Ok(_) => Ok(true),
         Err(error) => {
-            error!("[qq_message_list_weaviate_persistence] failed to persist message vector: {error}");
+            error!(
+                "[qq_message_list_weaviate_persistence] failed to persist message vector: {error}"
+            );
             Ok(false)
         }
     }
@@ -51,8 +53,5 @@ fn required_string(value: &str, key: &str) -> Result<String> {
 }
 
 fn optional_non_empty_string(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
+    value.map(str::trim).filter(|value| !value.is_empty()).map(ToOwned::to_owned)
 }

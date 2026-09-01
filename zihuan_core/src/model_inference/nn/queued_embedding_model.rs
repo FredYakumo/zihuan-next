@@ -4,10 +4,10 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Mutex;
 use std::thread;
 
-use candle_core::Device;
-use log::warn;
 use crate::error::{Error, Result};
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
+use candle_core::Device;
+use log::warn;
 
 use super::local_candle_embedding::{describe_device, LocalCandleEmbeddingModel};
 
@@ -98,7 +98,8 @@ impl QueuedEmbeddingModel {
                     Err(err) => {
                         return Err(crate::string_error!(
                             "queued embedding worker stopped before replying for model '{}': {}",
-                            self.model_name, err
+                            self.model_name,
+                            err
                         ));
                     }
                 },
@@ -112,7 +113,8 @@ impl QueuedEmbeddingModel {
                 Err(err) => {
                     return Err(crate::string_error!(
                         "failed to enqueue embedding request for model '{}': {}",
-                        self.model_name, err
+                        self.model_name,
+                        err
                     ));
                 }
             }
@@ -137,7 +139,8 @@ fn run_embedding_worker(
     );
 
     while let Ok(request) = receiver.recv() {
-        let result = panic::catch_unwind(AssertUnwindSafe(|| model.batch_inference(&request.texts)));
+        let result =
+            panic::catch_unwind(AssertUnwindSafe(|| model.batch_inference(&request.texts)));
         let response = match result {
             Ok(result) => result,
             Err(_) => {
@@ -156,7 +159,9 @@ fn run_embedding_worker(
                 );
                 model.set_preferred_device(Device::Cpu);
 
-                match panic::catch_unwind(AssertUnwindSafe(|| model.batch_inference(&request.texts))) {
+                match panic::catch_unwind(AssertUnwindSafe(|| {
+                    model.batch_inference(&request.texts)
+                })) {
                     Ok(cpu_result) => cpu_result,
                     Err(_) => {
                         let _ = request.response.send(Err(crate::string_error!(

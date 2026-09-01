@@ -5,13 +5,13 @@ use std::time::Duration;
 
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use zihuan_core::storage::redis::{rpush_value, RedisBlockingPopConnection};
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use zihuan_core::error::Result;
-use zihuan_core::ims_bot_adapter::models::MessageEvent;
 use zihuan_core::graph::data_value::RedisConfig;
+use zihuan_core::ims_bot_adapter::models::MessageEvent;
+use zihuan_core::storage::redis::{rpush_value, RedisBlockingPopConnection};
 
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 
@@ -146,7 +146,11 @@ impl QqChatAgentServiceInbox {
         self.inner.shutdown.request_shutdown();
     }
 
-    pub async fn enqueue(&self, event: MessageEvent, time: String) -> Result<QqChatAgentServiceInboxBackend> {
+    pub async fn enqueue(
+        &self,
+        event: MessageEvent,
+        time: String,
+    ) -> Result<QqChatAgentServiceInboxBackend> {
         let item = QqChatAgentServiceInboxItem {
             event,
             adapter: Arc::clone(&self.inner.adapter),
@@ -193,7 +197,7 @@ impl QqChatAgentServiceInbox {
             }
         }
 
-        // Redis enqueue failures fall back to the memory queue, 
+        // Redis enqueue failures fall back to the memory queue,
         //memory consumers are always required.
         for consumer_idx in 0..self.inner.consumer_count {
             let inbox = self.clone();
@@ -217,7 +221,11 @@ impl QqChatAgentServiceInbox {
         Ok(())
     }
 
-    async fn run_redis_consumer(&self, consumer_idx: usize, mut redis_blpop: RedisBlockingPopConnection) {
+    async fn run_redis_consumer(
+        &self,
+        consumer_idx: usize,
+        mut redis_blpop: RedisBlockingPopConnection,
+    ) {
         loop {
             if self.inner.shutdown.is_closing() {
                 break;
@@ -228,7 +236,10 @@ impl QqChatAgentServiceInbox {
                 }
                 Ok(None) => continue,
                 Err(err) => {
-                    warn!("[service][qq_agent][inbox][redis:{}] dequeue failed: {}", consumer_idx, err);
+                    warn!(
+                        "[service][qq_agent][inbox][redis:{}] dequeue failed: {}",
+                        consumer_idx, err
+                    );
                     sleep(Duration::from_millis(REDIS_RETRY_DELAY_MS)).await;
                 }
             }
@@ -265,7 +276,9 @@ impl QqChatAgentServiceInbox {
             .map_err(|err| {
                 zihuan_core::string_error!(
                     "redis consumer {} failed to BLPOP from '{}': {}",
-                    consumer_idx, self.inner.redis_queue_key, err
+                    consumer_idx,
+                    self.inner.redis_queue_key,
+                    err
                 )
             })?;
         let Some((_, payload)) = result else {
@@ -290,7 +303,9 @@ impl QqChatAgentServiceInbox {
         let message_id = event.message_id;
         let sender_id = event.sender.user_id;
 
-        let result = tokio::task::spawn_blocking(move || service.handle_event(&event, &adapter, &time)).await;
+        let result =
+            tokio::task::spawn_blocking(move || service.handle_event(&event, &adapter, &time))
+                .await;
 
         match result {
             Ok(Ok(())) => {}
