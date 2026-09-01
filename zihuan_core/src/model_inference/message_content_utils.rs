@@ -43,11 +43,11 @@ fn parts_to_text(parts: Vec<MessagePart>) -> String {
     for part in parts {
         match part {
             MessagePart::Text { text } => segments.push(text),
-            MessagePart::Image { media: _ } => {
-                segments.push(media_placeholder(IMAGE_OMITTED_PLACEHOLDER));
+            MessagePart::Image { media } => {
+                segments.push(media_placeholder(IMAGE_OMITTED_PLACEHOLDER, &media.media_id));
             }
-            MessagePart::Video { media: _ } => {
-                segments.push(media_placeholder(VIDEO_OMITTED_PLACEHOLDER));
+            MessagePart::Video { media } => {
+                segments.push(media_placeholder(VIDEO_OMITTED_PLACEHOLDER, &media.media_id));
             }
         }
     }
@@ -55,8 +55,13 @@ fn parts_to_text(parts: Vec<MessagePart>) -> String {
     segments.join("\n")
 }
 
-fn media_placeholder(prefix: &str) -> String {
-    prefix.to_string()
+fn media_placeholder(prefix: &str, media_id: &str) -> String {
+    let media_id = media_id.trim();
+    if media_id.is_empty() {
+        prefix.to_string()
+    } else {
+        format!("{prefix} (media_id: {media_id})")
+    }
 }
 
 /// Remove dangling / unresolved tool-call sequences from a message history so
