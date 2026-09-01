@@ -131,7 +131,7 @@ impl RoleServiceManager {
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn ToolCallingObserver>>,
     ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::tools::ToolCallingStopReason)> {
-        self.infer_role_response_streaming_with_model(role_service_id, messages, token_tx, observer, None, None, None, None, None, None, None)
+        self.infer_role_response_streaming_with_model(role_service_id, messages, token_tx, observer, None, None, None, None, None, None, None, None)
             .await
     }
 
@@ -143,6 +143,7 @@ impl RoleServiceManager {
         observer: Option<Arc<dyn ToolCallingObserver>>,
         compaction_observer: Option<ContextCompactionObserver>,
         model_config_id: Option<&str>,
+        image_understand_model_config_id: Option<&str>,
         thinking_type: Option<zihuan_core::model_inference::model_config::ThinkingType>,
         reasoning_effort: Option<zihuan_core::model_inference::model_config::ReasoningEffort>,
         workspace_path: Option<String>,
@@ -166,12 +167,25 @@ impl RoleServiceManager {
                 llm_config.reasoning_effort = Some(override_value);
             }
             let llm = zihuan_core::agent::resource_resolver::build_llm_model(&llm_config)?;
+            let image_understand_llm = image_understand_model_config_id
+                .map(|model_id| {
+                    let llm_config = zihuan_core::agent::resource_resolver::resolve_llm_service_config(Some(model_id), &llm_refs, &agent.agent().name)?;
+                    zihuan_core::agent::resource_resolver::build_llm_model(&llm_config)
+                })
+                .transpose()?;
             agent
-                .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, compaction_observer, llm, workspace_path, session_id, cancellation)
+                .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, compaction_observer, llm, image_understand_llm, workspace_path, session_id, cancellation)
                 .await
         } else {
+            let image_understand_llm = image_understand_model_config_id
+                .map(|model_id| {
+                    let llm_refs = load_llm_refs()?;
+                    let llm_config = zihuan_core::agent::resource_resolver::resolve_llm_service_config(Some(model_id), &llm_refs, &agent.agent().name)?;
+                    zihuan_core::agent::resource_resolver::build_llm_model(&llm_config)
+                })
+                .transpose()?;
             agent
-                .infer_response_streaming_with_trace(messages, token_tx, observer, compaction_observer, workspace_path, session_id, cancellation)
+                .infer_response_streaming_with_trace_and_image_understand_llm(messages, token_tx, observer, compaction_observer, image_understand_llm, workspace_path, session_id, cancellation)
                 .await
         }
     }

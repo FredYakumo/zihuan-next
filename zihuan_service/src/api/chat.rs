@@ -235,6 +235,8 @@ pub struct ChatStreamRequest {
     #[serde(default)]
     pub model_config_id: Option<String>,
     #[serde(default)]
+    pub image_understand_model_config_id: Option<String>,
+    #[serde(default)]
     pub thinking_type: Option<zihuan_core::model_inference::model_config::ThinkingType>,
     #[serde(default)]
     pub reasoning_effort: Option<zihuan_core::model_inference::model_config::ReasoningEffort>,
@@ -317,6 +319,12 @@ pub struct ChatHistoryRecord {
     pub tool_call_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
+    /// Model config used for this message's request, so the frontend can restore the
+    /// previously used model when editing or re-sending a conversation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_config_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_understand_model_config_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_ask_user: Option<AskUserRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -682,6 +690,7 @@ async fn emit_immediate_output(
     trace_id: &str,
     latest_user_message: Option<&LLMMessage>,
     workspace_path: Option<String>,
+    model_config_id: Option<&str>,
 ) -> bool {
     if let Some(content) = output_messages
         .iter()
@@ -712,6 +721,8 @@ async fn emit_immediate_output(
             None,
             None,
             true,
+            model_config_id,
+            None,
         ) {
             let event = json!({ "type": "error", "error": err.to_string() });
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
@@ -1023,6 +1034,7 @@ async fn execute_chat_streaming(
         messages: raw_messages,
         stream,
         model_config_id,
+        image_understand_model_config_id,
         thinking_type,
         reasoning_effort,
         workspace_path,
@@ -1166,6 +1178,8 @@ async fn execute_chat_streaming(
             None,
             None,
             !is_continuation,
+            model_config_id.as_deref(),
+            image_understand_model_config_id.as_deref(),
         ) {
             if let Some((task_id, _)) = &workspace_task {
                 finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Failed, Some(err.to_string()), None);
@@ -1202,6 +1216,7 @@ async fn execute_chat_streaming(
                 &trace_id,
                 latest_user_message.as_ref(),
                 effective_workspace_path.clone(),
+                model_config_id.as_deref(),
             )
             .await
             {
@@ -1229,6 +1244,8 @@ async fn execute_chat_streaming(
             agent_avatar_url: agent_snapshot.avatar_url.clone(),
             trace_id: trace_id.clone(),
             workspace_path: effective_workspace_path.clone(),
+            model_config_id: model_config_id.clone(),
+            image_understand_model_config_id: image_understand_model_config_id.clone(),
             timestamp: Utc::now().to_rfc3339(),
             content: String::new(),
             reasoning_content: String::new(),
@@ -1289,6 +1306,7 @@ async fn execute_chat_streaming(
         let state = state.clone();
         let agent_id = agent_id.clone();
         let model_config_id = model_config_id.clone();
+        let image_understand_model_config_id = image_understand_model_config_id.clone();
         let cancellation = workspace_task
             .as_ref()
             .map(|(_, stop_flag)| Arc::new(WorkspaceChatCancellation(Arc::clone(stop_flag))) as Arc<dyn AgentCancellation>);
@@ -1302,6 +1320,7 @@ async fn execute_chat_streaming(
                     Some(observer),
                     Some(compaction_observer),
                     model_config_id.as_deref(),
+                    image_understand_model_config_id.as_deref(),
                     thinking_type,
                     reasoning_effort,
                     chat_workspace_path.clone(),
@@ -1454,6 +1473,8 @@ async fn execute_chat_streaming(
         },
         metrics.as_ref(),
         workspace_task.is_none(),
+        model_config_id.as_deref(),
+        image_understand_model_config_id.as_deref(),
     ) {
         clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
         if let Some((task_id, _)) = &workspace_task {
@@ -1701,6 +1722,8 @@ fn append_running_chat_message(
         tool_calls: Vec::new(),
         tool_call_id: None,
         workspace_path: snapshot.workspace_path,
+        model_config_id: snapshot.model_config_id,
+        image_understand_model_config_id: None,
         pending_ask_user: None,
         metrics: None,
     });
@@ -1759,6 +1782,8 @@ fn persist_running_chat_message(
         tool_calls: Vec::new(),
         tool_call_id: None,
         workspace_path: snapshot.workspace_path,
+        model_config_id: snapshot.model_config_id,
+        image_understand_model_config_id: None,
         pending_ask_user: None,
         metrics: None,
     })
@@ -1813,6 +1838,8 @@ fn persist_chat_records(
     pending_ask_user: Option<AskUserRequest>,
     metrics: Option<&ChatResponseMetrics>,
     include_user_message: bool,
+    model_config_id: Option<&str>,
+    image_understand_model_config_id: Option<&str>,
 ) -> Result<()> {
     let now = Utc::now().to_rfc3339();
     if include_user_message {
@@ -1836,6 +1863,8 @@ fn persist_chat_records(
             tool_calls: Vec::new(),
             tool_call_id: None,
             workspace_path: workspace_path.clone(),
+            model_config_id: model_config_id.map(str::to_string),
+            image_understand_model_config_id: image_understand_model_config_id.map(str::to_string),
             pending_ask_user: None,
             metrics: None,
         };
@@ -1873,6 +1902,8 @@ fn persist_chat_records(
             tool_calls: message.tool_calls.clone(),
             tool_call_id: message.tool_call_id.clone(),
             workspace_path: workspace_path.clone(),
+            model_config_id: model_config_id.map(str::to_string),
+            image_understand_model_config_id: image_understand_model_config_id.map(str::to_string),
             pending_ask_user: pending_ask_user.clone(),
             metrics: if matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty() {
                 metrics.cloned()
@@ -1932,6 +1963,8 @@ fn append_tool_call_limit_decision_record(
         tool_calls: Vec::new(),
         tool_call_id: None,
         workspace_path: latest.workspace_path.clone(),
+        model_config_id: latest.model_config_id.clone(),
+        image_understand_model_config_id: latest.image_understand_model_config_id.clone(),
         pending_ask_user: None,
         metrics: None,
     })

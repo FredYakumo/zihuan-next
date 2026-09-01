@@ -12,6 +12,7 @@ pub struct InferenceToolContext {
     pub workspace_path: Option<String>,
     pub session_id: Option<String>,
     pub llm: Arc<dyn LLMBase>,
+    pub image_understand_llm: Option<Arc<dyn LLMBase>>,
     pub image_media: Vec<PersistedMedia>,
 }
 

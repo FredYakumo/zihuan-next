@@ -11,7 +11,7 @@ use zihuan_core::config::llm_refs::{load_llm_refs, LlmRefConfig};
 use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
 use zihuan_core::agent::tools::{
-    ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason, Tool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS,
+    ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason, Tool, ToolExecutionOutput, ToolExecutionResource, ToolRunDuration, MAX_TOOL_ITERATIONS,
 };
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
@@ -115,6 +115,14 @@ impl Tool for DynToolWrapper {
     ) -> ToolExecutionOutput {
         self.0.execute_with_progress(call_content, arguments, on_output)
     }
+
+    fn execution_resource(&self, arguments: &serde_json::Value) -> ToolExecutionResource {
+        self.0.execution_resource(arguments)
+    }
+
+    fn requires_user_confirmation(&self, arguments: &serde_json::Value) -> bool {
+        self.0.requires_user_confirmation(arguments)
+    }
 }
 
 impl RoleBrainAgent {
@@ -177,16 +185,17 @@ impl RoleBrainAgent {
     }
 
     pub fn infer_response_with_trace(&self, messages: Vec<LLMMessage>) -> Result<Vec<LLMMessage>> {
-        self.infer_response_with_trace_and_llm(messages, Arc::clone(&self.llm), None)
+        self.infer_response_with_trace_and_llm(messages, Arc::clone(&self.llm), None, None)
     }
 
     pub fn infer_response_with_trace_and_llm(
         &self,
         messages: Vec<LLMMessage>,
         llm: Arc<dyn LLMBase>,
+        image_understand_llm: Option<Arc<dyn LLMBase>>,
         workspace_path: Option<String>,
     ) -> Result<Vec<LLMMessage>> {
-        let context = build_inference_tool_context(&messages, workspace_path, None, Arc::clone(&llm));
+        let context = build_inference_tool_context(&messages, workspace_path, None, Arc::clone(&llm), image_understand_llm);
 
         let mut conversation = sanitize_messages_for_inference(messages);
         if conversation.is_empty() {
@@ -223,6 +232,32 @@ impl RoleBrainAgent {
             observer,
             compaction_observer,
             Arc::clone(&self.llm),
+            None,
+            workspace_path,
+            session_id,
+            cancellation,
+        )
+        .await
+    }
+
+    pub async fn infer_response_streaming_with_trace_and_image_understand_llm(
+        &self,
+        messages: Vec<LLMMessage>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
+        observer: Option<Arc<dyn ToolCallingObserver>>,
+        compaction_observer: Option<ContextCompactionObserver>,
+        image_understand_llm: Option<Arc<dyn LLMBase>>,
+        workspace_path: Option<String>,
+        session_id: Option<String>,
+        cancellation: Option<Arc<dyn AgentCancellation>>,
+    ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
+        self.infer_response_streaming_with_trace_and_llm(
+            messages,
+            token_tx,
+            observer,
+            compaction_observer,
+            Arc::clone(&self.llm),
+            image_understand_llm,
             workspace_path,
             session_id,
             cancellation,
@@ -237,11 +272,12 @@ impl RoleBrainAgent {
         observer: Option<Arc<dyn ToolCallingObserver>>,
         compaction_observer: Option<ContextCompactionObserver>,
         llm: Arc<dyn LLMBase>,
+        image_understand_llm: Option<Arc<dyn LLMBase>>,
         workspace_path: Option<String>,
         session_id: Option<String>,
         cancellation: Option<Arc<dyn AgentCancellation>>,
     ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
-        let context = build_inference_tool_context(&messages, workspace_path, session_id, Arc::clone(&llm));
+        let context = build_inference_tool_context(&messages, workspace_path, session_id, Arc::clone(&llm), image_understand_llm);
 
         let mut conversation = sanitize_messages_for_inference(messages);
         if conversation.is_empty() {
@@ -348,7 +384,7 @@ pub fn infer_role_response_with_model(
     let output_messages = if let Some(model_id) = model_override {
         let llm_config = resolve_llm_service_config(Some(model_id), llm_refs, &agent.name)?;
         let llm = build_llm_model(&llm_config)?;
-        loaded.infer_response_with_trace_and_llm(messages, llm, None)?
+        loaded.infer_response_with_trace_and_llm(messages, llm, None, None)?
     } else {
         loaded.infer_response_with_trace(messages)?
     };
@@ -392,6 +428,7 @@ fn build_inference_tool_context(
     workspace_path: Option<String>,
     session_id: Option<String>,
     llm: Arc<dyn LLMBase>,
+    image_understand_llm: Option<Arc<dyn LLMBase>>,
 ) -> InferenceToolContext {
     InferenceToolContext {
         last_user_text: messages
@@ -404,6 +441,7 @@ fn build_inference_tool_context(
         workspace_path,
         session_id,
         llm,
+        image_understand_llm,
         image_media: messages
             .iter()
             .flat_map(|message| message.parts.iter())

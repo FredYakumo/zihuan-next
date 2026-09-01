@@ -1,36 +1,47 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use zihuan_core::agent::tools::Tool;
 use zihuan_core::agent::resource_resolver::resolve_local_embedding_model_name;
-use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_core::agent::service_config::{MemoryBackendKind, RoleServiceConfig, WorkspaceAgentServiceConfig};
-use zihuan_core::config::llm_refs::load_llm_refs;
-use zihuan_core::model_inference::llm::{LLMMessage, llm_base::LLMBase};
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
-use zihuan_core::memory_agent::{MemoryAgentResources, MemoryBackend, MemoryBrainAgent, MemoryBrainAgentTool};
+use zihuan_core::agent::service_config::{
+    MemoryBackendKind, RoleServiceConfig, WorkspaceAgentServiceConfig,
+};
+use zihuan_core::agent::tools::Tool;
+use zihuan_core::config::llm_refs::load_llm_refs;
+use zihuan_core::graph::tool_spec::ToolDefinition;
+use zihuan_core::memory_agent::{
+    MemoryAgentResources, MemoryBackend, MemoryBrainAgent, MemoryBrainAgentTool,
+};
+use zihuan_core::model_inference::llm::{llm_base::LLMBase, LLMMessage};
+use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::runtime::block_async;
 use zihuan_core::storage::{
-    build_elasticsearch_ref, build_web_search_engine_ref, build_weaviate_ref, AgentMemoryAccessContext,
-    ConnectionConfig, LocalMemoryStore, WeaviateCollectionSchema,
+    build_elasticsearch_ref, build_weaviate_ref, build_web_search_engine_ref,
+    AgentMemoryAccessContext, ConnectionConfig, LocalMemoryStore, WeaviateCollectionSchema,
 };
 use zihuan_core::workspace::normalized_workspace_path;
-use zihuan_core::graph::tool_spec::ToolDefinition;
 
+use crate::tools::{
+    AskUserTool, CopyFileTool, CreateFileTool, DeleteFileTool, EditFileTool, ExecCmdTool,
+    FileInfoTool, FindFilesTool, GitStatusTool, GrepTool, ImageUnderstandTool, ListDirTool,
+    MoveFileTool, ReadFileTool, RgTool, WorkspaceTaskTool, DEFAULT_TOOL_ASK_USER,
+    DEFAULT_TOOL_COPY_FILE, DEFAULT_TOOL_CREATE_FILE, DEFAULT_TOOL_DELETE_FILE,
+    DEFAULT_TOOL_EDIT_FILE, DEFAULT_TOOL_EXEC_CMD, DEFAULT_TOOL_FILE_INFO, DEFAULT_TOOL_FIND_FILES,
+    DEFAULT_TOOL_GIT_STATUS, DEFAULT_TOOL_GREP, DEFAULT_TOOL_IMAGE_UNDERSTAND,
+    DEFAULT_TOOL_LIST_DIR, DEFAULT_TOOL_MOVE_FILE, DEFAULT_TOOL_READ_FILE, DEFAULT_TOOL_RG,
+    DEFAULT_TOOL_TASK_CREATE, DEFAULT_TOOL_TASK_GET, DEFAULT_TOOL_TASK_LIST,
+    DEFAULT_TOOL_TASK_UPDATE, DEFAULT_TOOL_WEB_SEARCH,
+};
 use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
 use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
 use zihuan_core::agent::tools::WebSearchTool;
-use crate::tools::{
-    AskUserTool, CreateFileTool, DeleteFileTool, EditFileTool, ExecCmdTool,
-    CopyFileTool, FileInfoTool, FindFilesTool, GitStatusTool, GrepTool, ListDirTool, MoveFileTool, ReadFileTool, RgTool, DEFAULT_TOOL_ASK_USER,
-    DEFAULT_TOOL_CREATE_FILE, DEFAULT_TOOL_DELETE_FILE, DEFAULT_TOOL_EDIT_FILE, DEFAULT_TOOL_EXEC_CMD,
-    DEFAULT_TOOL_COPY_FILE, DEFAULT_TOOL_FILE_INFO, DEFAULT_TOOL_FIND_FILES, DEFAULT_TOOL_GIT_STATUS, DEFAULT_TOOL_GREP, DEFAULT_TOOL_LIST_DIR, DEFAULT_TOOL_MOVE_FILE, DEFAULT_TOOL_READ_FILE, DEFAULT_TOOL_RG, DEFAULT_TOOL_WEB_SEARCH,
-    WorkspaceTaskTool, DEFAULT_TOOL_TASK_CREATE, DEFAULT_TOOL_TASK_GET, DEFAULT_TOOL_TASK_LIST, DEFAULT_TOOL_TASK_UPDATE,
-    ImageUnderstandTool, DEFAULT_TOOL_IMAGE_UNDERSTAND,
-};
 use zihuan_core::error::Result;
 
-fn workspace_context_prompt(service_name: &str, workspace_path: &str, capabilities: &str) -> String {
+fn workspace_context_prompt(
+    service_name: &str,
+    workspace_path: &str,
+    capabilities: &str,
+) -> String {
     format!(
         "You are {service_name}, an assistant operating in the workspace directory: {workspace_path}\n\
          {capabilities}\nTask tracking: for any task requiring multiple meaningful steps, first create a concise task list with TaskCreate, keep exactly one task in progress, and mark tasks completed as work finishes."
@@ -41,9 +52,7 @@ fn memory_prompt() -> &'static str {
     "[Memory] You can use memory_agent to recall relevant long-term information before answering. When this conversation establishes durable facts, preferences, decisions, or relationships, call memory_agent before finishing to save them. Do not save transient details, sensitive data, or information without long-term value."
 }
 
-fn build_tool_capabilities(
-    enabled: &std::collections::HashMap<String, bool>,
-) -> String {
+fn build_tool_capabilities(enabled: &std::collections::HashMap<String, bool>) -> String {
     let mut capabilities = Vec::new();
     if is_enabled(enabled, DEFAULT_TOOL_READ_FILE) {
         capabilities.push("read files (read_file can read binary fragments as base64 when needed)");
@@ -147,11 +156,24 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
     }
 
     fn build_default_tools(&self, context: &InferenceToolContext) -> Vec<Box<dyn Tool>> {
-        let workspace_path = normalized_workspace_path(context.workspace_path.as_deref()).map(PathBuf::from);
+        let workspace_path =
+            normalized_workspace_path(context.workspace_path.as_deref()).map(PathBuf::from);
         let mut tools: Vec<Box<dyn Tool>> = Vec::new();
-        if let Some(session_id) = context.session_id.as_deref().filter(|value| !value.is_empty()) {
-            for name in [DEFAULT_TOOL_TASK_CREATE, DEFAULT_TOOL_TASK_UPDATE, DEFAULT_TOOL_TASK_GET, DEFAULT_TOOL_TASK_LIST] {
-                tools.push(Box::new(WorkspaceTaskTool::new(session_id.to_string(), name)));
+        if let Some(session_id) = context
+            .session_id
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            for name in [
+                DEFAULT_TOOL_TASK_CREATE,
+                DEFAULT_TOOL_TASK_UPDATE,
+                DEFAULT_TOOL_TASK_GET,
+                DEFAULT_TOOL_TASK_LIST,
+            ] {
+                tools.push(Box::new(WorkspaceTaskTool::new(
+                    session_id.to_string(),
+                    name,
+                )));
             }
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_CREATE_FILE) {
@@ -190,19 +212,29 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
             }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_FIND_FILES) {
-            tools.push(Box::new(FindFilesTool { workspace_path: workspace_path.clone() }));
+            tools.push(Box::new(FindFilesTool {
+                workspace_path: workspace_path.clone(),
+            }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_COPY_FILE) {
-            tools.push(Box::new(CopyFileTool { workspace_path: workspace_path.clone() }));
+            tools.push(Box::new(CopyFileTool {
+                workspace_path: workspace_path.clone(),
+            }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_MOVE_FILE) {
-            tools.push(Box::new(MoveFileTool { workspace_path: workspace_path.clone() }));
+            tools.push(Box::new(MoveFileTool {
+                workspace_path: workspace_path.clone(),
+            }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_FILE_INFO) {
-            tools.push(Box::new(FileInfoTool { workspace_path: workspace_path.clone() }));
+            tools.push(Box::new(FileInfoTool {
+                workspace_path: workspace_path.clone(),
+            }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_GIT_STATUS) {
-            tools.push(Box::new(GitStatusTool { workspace_path: workspace_path.clone() }));
+            tools.push(Box::new(GitStatusTool {
+                workspace_path: workspace_path.clone(),
+            }));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_EXEC_CMD) {
             tools.push(Box::new(ExecCmdTool {
@@ -221,10 +253,14 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
             tools.push(Box::new(tool));
         }
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_IMAGE_UNDERSTAND) {
-            let image_llm = if context.llm.supports_multimodal_input() {
+            let image_llm = if let Some(image_understand_llm) = &context.image_understand_llm {
+                Arc::clone(image_understand_llm)
+            } else if context.llm.supports_multimodal_input() {
                 Arc::clone(&context.llm)
             } else {
-                self.image_understand_llm.clone().unwrap_or_else(|| Arc::clone(&context.llm))
+                self.image_understand_llm
+                    .clone()
+                    .unwrap_or_else(|| Arc::clone(&context.llm))
             };
             tools.push(Box::new(ImageUnderstandTool::new(
                 context.image_media.clone(),
@@ -249,14 +285,19 @@ pub fn load_inference_tool_provider(
     config: &WorkspaceAgentServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
-    let image_understand_llm = if is_enabled(&config.default_tools_enabled, DEFAULT_TOOL_IMAGE_UNDERSTAND) {
-        let llm_ref_id = config.image_understand_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref());
-        let llm_refs = load_llm_refs()?;
-        let llm_config = resolve_llm_service_config(llm_ref_id, &llm_refs, DEFAULT_TOOL_IMAGE_UNDERSTAND)?;
-        Some(build_llm_model(&llm_config)?)
-    } else {
-        None
-    };
+    let image_understand_llm =
+        if is_enabled(&config.default_tools_enabled, DEFAULT_TOOL_IMAGE_UNDERSTAND) {
+            let llm_ref_id = config
+                .image_understand_llm_ref_id
+                .as_deref()
+                .or(config.llm_ref_id.as_deref());
+            let llm_refs = load_llm_refs()?;
+            let llm_config =
+                resolve_llm_service_config(llm_ref_id, &llm_refs, DEFAULT_TOOL_IMAGE_UNDERSTAND)?;
+            Some(build_llm_model(&llm_config)?)
+        } else {
+            None
+        };
     Ok(Arc::new(WorkspaceInferenceToolProvider {
         service_name: agent.name.clone(),
         agents_md_enabled: config.agents_md_enabled,
@@ -285,11 +326,15 @@ fn load_web_search_engine(
 #[derive(Clone)]
 struct WorkspaceMemoryResources {
     memory_backend: MemoryBackend,
-    embedding_model: Option<Arc<dyn zihuan_core::model_inference::llm::embedding_base::EmbeddingBase>>,
+    embedding_model:
+        Option<Arc<dyn zihuan_core::model_inference::llm::embedding_base::EmbeddingBase>>,
 }
 
 impl WorkspaceMemoryResources {
-    fn with_llm(&self, llm: Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>) -> MemoryAgentResources {
+    fn with_llm(
+        &self,
+        llm: Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>,
+    ) -> MemoryAgentResources {
         MemoryAgentResources {
             memory_backend: self.memory_backend.clone(),
             embedding_model: self.embedding_model.clone(),
@@ -308,10 +353,15 @@ fn load_memory_resources(
     }
 
     let memory_backend = match config.memory_backend? {
-        MemoryBackendKind::LocalFile => MemoryBackend::LocalFile(Arc::new(LocalMemoryStore::in_app_data_dir())),
+        MemoryBackendKind::LocalFile => {
+            MemoryBackend::LocalFile(Arc::new(LocalMemoryStore::in_app_data_dir()))
+        }
         MemoryBackendKind::Weaviate => {
             let reference = build_weaviate_ref(
-                config.weaviate_memory_connection_id.as_deref().filter(|value| !value.trim().is_empty()),
+                config
+                    .weaviate_memory_connection_id
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty()),
                 connections,
                 Some(WeaviateCollectionSchema::AgentMemory),
             )
@@ -320,7 +370,10 @@ fn load_memory_resources(
         }
         MemoryBackendKind::Elasticsearch => {
             let reference = build_elasticsearch_ref(
-                config.elasticsearch_memory_connection_id.as_deref().filter(|value| !value.trim().is_empty()),
+                config
+                    .elasticsearch_memory_connection_id
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty()),
                 connections,
                 Some(WeaviateCollectionSchema::AgentMemory),
             )
@@ -333,9 +386,16 @@ fn load_memory_resources(
     let embedding_model = match config.memory_backend? {
         MemoryBackendKind::LocalFile => None,
         MemoryBackendKind::Weaviate | MemoryBackendKind::Elasticsearch => {
-            let model_ref_id = config.embedding_model_ref_id.as_deref().filter(|value| !value.trim().is_empty())?;
-            resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, "workspace").ok()??;
-            block_async(RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id)).ok()
+            let model_ref_id = config
+                .embedding_model_ref_id
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())?;
+            resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, "workspace")
+                .ok()??;
+            block_async(
+                RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id),
+            )
+            .ok()
         }
     };
 
@@ -407,7 +467,11 @@ fn push_agents_md_candidate(
 ) {
     let path = directory.join("AGENTS.md");
     let exists = path.is_file();
-    candidates.push(AgentsMdCandidate { location, path, exists });
+    candidates.push(AgentsMdCandidate {
+        location,
+        path,
+        exists,
+    });
 }
 
 /// Returns the existing `AGENTS.md` paths in priority order, deduplicated by canonical path.

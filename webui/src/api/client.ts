@@ -610,6 +610,8 @@ export interface ChatHistoryRecord {
   tool_call_id?: string | null;
   metrics?: ChatResponseMetrics | null;
   workspace_path?: string | null;
+  model_config_id?: string | null;
+  image_understand_model_config_id?: string | null;
   pending_ask_user?: {
     question: string;
     details?: string | null;
@@ -1106,6 +1108,7 @@ export const chat = {
       session_id?: string | null;
       stream?: boolean;
       model_config_id?: string | null;
+      image_understand_model_config_id?: string | null;
       thinking_type?: "enabled" | "disabled" | null;
       reasoning_effort?: "low" | "medium" | "high" | "max" | null;
       workspace_path?: string | null;

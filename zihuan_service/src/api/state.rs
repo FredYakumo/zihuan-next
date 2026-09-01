@@ -46,6 +46,8 @@ pub struct RunningChatMessage {
     pub agent_avatar_url: Option<String>,
     pub trace_id: String,
     pub workspace_path: Option<String>,
+    pub model_config_id: Option<String>,
+    pub image_understand_model_config_id: Option<String>,
     pub timestamp: String,
     pub content: String,
     pub reasoning_content: String,

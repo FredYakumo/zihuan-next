@@ -63,6 +63,8 @@ type ChatMessage = {
   agentAvatarUrl?: string;
   agentName?: string;
   metrics?: ChatResponseMetrics;
+  modelConfigId?: string | null;
+  imageUnderstandModelConfigId?: string | null;
   liveToolCalls?: LiveToolCall[];
   imageAttachments?: ChatImageAttachment[];
   contextCompaction?: ContextCompactionStatus;
@@ -93,6 +95,8 @@ type EditingMessage = {
 type SendMessageOptions = {
   attachments?: ChatImageAttachment[];
   isEdit?: boolean;
+  modelConfigId?: string | null;
+  imageUnderstandModelConfigId?: string | null;
 };
 
 type ToolDetail = {
@@ -376,6 +380,7 @@ const activeRequestCount = ref(0);
 const sending = computed(() => activeRequestCount.value > 0);
 let activeStreamController: AbortController | null = null;
 let activeChatTask: { sessionId: string; taskId: string } | null = null;
+let pendingWorkspaceStop: { streamController: AbortController; sessionId: string | null } | null = null;
 let sessionRefreshTimer: ReturnType<typeof setInterval> | null = null;
 const sessionsAwaitingHistoryRefresh = new Set<string>();
 const sessionsNeedingHistoryRefresh = new Set<string>();
@@ -411,6 +416,67 @@ const markdown = new MarkdownIt({
   linkify: true,
 });
 
+let pendingSessionModelId: string | null = null;
+
+const CHAT_MODEL_SELECTION_KEY = "zihuan.chat.model-selection";
+
+type ChatModelSelection = {
+  main?: string;
+  imageUnderstand?: string;
+};
+
+function readChatModelSelections(): Record<string, ChatModelSelection> {
+  try {
+    const raw = localStorage.getItem(CHAT_MODEL_SELECTION_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, ChatModelSelection>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function restoreChatModelSelection() {
+  const agentId = selectedServiceId.value;
+  if (!agentId) {
+    selectedModelId.value = defaultAgentModelId.value;
+    imageUnderstandingModelId.value = "";
+    return;
+  }
+  const selection = readChatModelSelections()[agentId];
+  if (selection?.main && chatModels.value.some((model) => model.config_id === selection.main)) {
+    selectedModelId.value = selection.main;
+  } else {
+    selectedModelId.value = defaultAgentModelId.value;
+  }
+  if (
+    selection?.imageUnderstand &&
+    imageUnderstandingModels.value.some((model) => model.config_id === selection.imageUnderstand)
+  ) {
+    imageUnderstandingModelId.value = selection.imageUnderstand;
+  } else {
+    imageUnderstandingModelId.value = "";
+  }
+}
+
+function persistChatModelSelection() {
+  const agentId = selectedServiceId.value;
+  if (!agentId) return;
+  const selections = readChatModelSelections();
+  const entry: ChatModelSelection = { ...(selections[agentId] ?? {}) };
+  if (selectedModelId.value) {
+    entry.main = selectedModelId.value;
+  } else {
+    delete entry.main;
+  }
+  if (imageUnderstandingModelId.value) {
+    entry.imageUnderstand = imageUnderstandingModelId.value;
+  } else {
+    delete entry.imageUnderstand;
+  }
+  selections[agentId] = entry;
+  localStorage.setItem(CHAT_MODEL_SELECTION_KEY, JSON.stringify(selections));
+}
 
 const selectedService = computed(
   () => services.value.find((agent) => agent.config_id === selectedServiceId.value) ?? null,
@@ -782,6 +848,8 @@ function applyHistory(records: ChatHistoryRecord[]) {
       agentAvatarUrl: messageAvatarUrl(item) || undefined,
       agentName: item.agent_name || undefined,
       metrics: item.metrics ?? undefined,
+      modelConfigId: item.model_config_id ?? null,
+      imageUnderstandModelConfigId: item.image_understand_model_config_id ?? null,
     }));
   const toolCallMap = new Map<string, ChatToolCall>();
   for (const message of mapped) {
@@ -1356,7 +1424,11 @@ async function openSession(sessionId: string) {
   workspaceChanges.value = (await chat.listWorkspaceChanges(sessionId)).changes;
   selectedWorkspaceChangeId.value = workspaceChanges.value[0]?.change_id ?? null;
   const firstRecord = result.messages[0];
-  if (firstRecord?.agent_id && services.value.some((a) => a.config_id === firstRecord.agent_id)) {
+  const serviceSwitched =
+    !!firstRecord?.agent_id &&
+    services.value.some((a) => a.config_id === firstRecord.agent_id) &&
+    firstRecord.agent_id !== selectedServiceId.value;
+  if (serviceSwitched) {
     selectedServiceId.value = firstRecord.agent_id;
   }
   workspacePath.value =
@@ -1374,6 +1446,25 @@ async function openSession(sessionId: string) {
     };
   }
   applyHistory(result.messages);
+  const sessionModelId = [...result.messages]
+    .reverse()
+    .find((record) => record.role === "user" && record.model_config_id)?.model_config_id;
+  if (sessionModelId && chatModels.value.some((model) => model.config_id === sessionModelId)) {
+    selectedModelId.value = sessionModelId;
+    persistChatModelSelection();
+  }
+  const sessionImageUnderstandModelId = [...result.messages]
+    .reverse()
+    .find((record) => record.role === "user" && record.image_understand_model_config_id)
+    ?.image_understand_model_config_id;
+  if (
+    sessionImageUnderstandModelId &&
+    imageUnderstandingModels.value.some((model) => model.config_id === sessionImageUnderstandModelId)
+  ) {
+    imageUnderstandingModelId.value = sessionImageUnderstandModelId;
+    persistChatModelSelection();
+  }
+  pendingSessionModelId = serviceSwitched ? (sessionModelId ?? null) : null;
   messageBranches.value = result.branches;
   editingMessage.value = null;
 }
@@ -1500,7 +1591,13 @@ async function submitEditingMessage() {
     const forked = await chat.forkSession(activeSessionId.value, editing.messageId);
     await openSession(forked.session_id);
     editingMessage.value = null;
-    await sendMessageWithText(content, false, { attachments, isEdit: true });
+    const sourceMessage = messages.value.find((message) => message.id === editing.messageId);
+    await sendMessageWithText(content, false, {
+      attachments,
+      modelConfigId: sourceMessage?.modelConfigId || null,
+      imageUnderstandModelConfigId: sourceMessage?.imageUnderstandModelConfigId || null,
+      isEdit: true,
+    });
   } catch (error) {
     showChatError(`创建对话分支失败: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -1522,7 +1619,12 @@ async function resendMessage(message: ChatMessage) {
   try {
     const forked = await chat.forkSession(activeSessionId.value, message.id);
     await openSession(forked.session_id);
-    await sendMessageWithText(content, false, { attachments, isEdit: true });
+    await sendMessageWithText(content, false, {
+      attachments,
+      modelConfigId: message.modelConfigId || null,
+      imageUnderstandModelConfigId: message.imageUnderstandModelConfigId || null,
+      isEdit: true,
+    });
   } catch (error) {
     showChatError(`创建对话分支失败: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -1686,16 +1788,19 @@ function startNewSession() {
   agentsMdEditingKey.value = "";
   agentsMdEditorContent.value = "";
   agentsMdError.value = "";
-  imageUnderstandingModelId.value = "";
+  restoreChatModelSelection();
 }
 
 function selectModel(id: string) {
+  pendingSessionModelId = null;
   selectedModelId.value = id;
+  persistChatModelSelection();
   openPicker.value = null;
 }
 
 function selectImageUnderstandingModel(id: string) {
   imageUnderstandingModelId.value = id;
+  persistChatModelSelection();
   openPicker.value = null;
 }
 
@@ -1719,7 +1824,11 @@ function closePickersOnClickOutside(event: MouseEvent) {
 watch(selectedServiceId, async () => {
   await reloadSessions();
   startNewSession();
-  selectedModelId.value = defaultAgentModelId.value;
+  if (pendingSessionModelId && chatModels.value.some((model) => model.config_id === pendingSessionModelId)) {
+    selectedModelId.value = pendingSessionModelId;
+    persistChatModelSelection();
+  }
+  pendingSessionModelId = null;
   selectedThinkingType.value = "";
   selectedReasoningEffort.value = "";
   if (!isWorkspaceService.value) {
@@ -1848,6 +1957,17 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
     activeChatTask = event.task_id && event.session_id
       ? { sessionId: event.session_id, taskId: event.task_id }
       : null;
+    if (
+      event.task_id &&
+      event.session_id &&
+      pendingWorkspaceStop?.streamController === activeStreamController &&
+      (pendingWorkspaceStop.sessionId == null || pendingWorkspaceStop.sessionId === event.session_id)
+    ) {
+      pendingWorkspaceStop = null;
+      chat.stop(event.session_id, event.task_id).catch((error) => {
+        console.warn("Failed to stop pending Workspace chat task:", error);
+      });
+    }
     if (streamState.requestedSessionId && activeSessionId.value !== streamState.requestedSessionId) {
       streamState.foreground = false;
     } else if (!streamState.requestedSessionId && activeSessionId.value) {
@@ -2045,13 +2165,26 @@ async function sendMessage() {
 
 function stopInference() {
   workspaceTaskInterrupted.value = true;
-  const task = activeChatTask;
+  const sessionTask = activeSessionId.value
+    ? sessions.value.find((session) => session.session_id === activeSessionId.value)
+    : undefined;
+  const task = sessionTask?.running_task_id
+    ? { sessionId: activeSessionId.value, taskId: sessionTask.running_task_id }
+    : activeChatTask?.sessionId === activeSessionId.value
+      ? activeChatTask
+      : null;
   if (task) {
     chat.stop(task.sessionId, task.taskId).catch((error) => {
       console.warn("Failed to stop Workspace chat task:", error);
     });
+  } else if (isWorkspaceService.value && activeStreamController) {
+    pendingWorkspaceStop = {
+      streamController: activeStreamController,
+      sessionId: activeSessionId.value || null,
+    };
+  } else {
+    activeStreamController?.abort();
   }
-  activeStreamController?.abort();
 }
 
 function isAbortError(error: unknown): boolean {
@@ -2065,6 +2198,10 @@ async function submitAskUserAnswer() {
 async function decideToolCallLimit(continuation: "continue" | "stop") {
   if (!activeSessionId.value || !selectedServiceId.value || !pendingAskUser.value?.toolCallLimit || toolCallLimitDecisionLoading.value) return;
   const pendingRequest = pendingAskUser.value;
+  const continuationImageModelId = [...messages.value]
+    .reverse()
+    .find((message) => message.role === "user" && message.imageUnderstandModelConfigId)
+    ?.imageUnderstandModelConfigId;
   toolCallLimitDecisionLoading.value = true;
   clearPendingAskUser();
   activeRequestCount.value += 1;
@@ -2074,6 +2211,7 @@ async function decideToolCallLimit(continuation: "continue" | "stop") {
       session_id: activeSessionId.value,
       stream: true,
       model_config_id: selectedModelId.value || null,
+      image_understand_model_config_id: continuationImageModelId || imageUnderstandingModelId.value || null,
       thinking_type: selectedThinkingType.value || null,
       reasoning_effort: selectedReasoningEffort.value || null,
       workspace_path: isWorkspaceService.value ? workspacePath.value.trim() || null : null,
@@ -2176,6 +2314,8 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
       toolCalls: [],
       toolCallId: null,
       linkedToolCall: null,
+      modelConfigId: options.modelConfigId ?? (selectedModelId.value || null),
+      imageUnderstandModelConfigId: options.imageUnderstandModelConfigId ?? (imageUnderstandingModelId.value || null),
       imageAttachments: sentAttachments,
     };
     messages.value.push(userMessage);
@@ -2203,7 +2343,8 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
         agent_id: selectedServiceId.value,
         session_id: activeSessionId.value || null,
         stream: true,
-        model_config_id: selectedModelId.value || null,
+        model_config_id: (options.modelConfigId ?? selectedModelId.value) || null,
+        image_understand_model_config_id: (options.imageUnderstandModelConfigId ?? imageUnderstandingModelId.value) || null,
         thinking_type: selectedThinkingType.value || null,
         reasoning_effort: selectedReasoningEffort.value || null,
         workspace_path: isWorkspaceService.value ? workspacePath.value.trim() || null : null,
@@ -2225,6 +2366,9 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
       applyInferenceFailure(streamState, (error as Error).message);
     }
   } finally {
+    if (pendingWorkspaceStop?.streamController === streamController) {
+      pendingWorkspaceStop = null;
+    }
     if (activeChatTask?.taskId === streamState.taskId) {
       activeChatTask = null;
     }
@@ -2264,7 +2408,7 @@ async function load() {
     ) {
       selectedServiceId.value = eligible[0]?.config_id ?? loadedAgents[0]?.config_id ?? "";
     }
-    selectedModelId.value = defaultAgentModelId.value;
+    restoreChatModelSelection();
   } finally {
     servicesLoading.value = false;
   }
