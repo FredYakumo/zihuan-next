@@ -40,6 +40,7 @@ impl Drop for TempDir {
 fn provider(enabled: bool) -> Arc<dyn InferenceToolProvider> {
     let config = WorkspaceAgentServiceConfig {
         llm_ref_id: None,
+        image_understand_llm_ref_id: None,
         agents_md_enabled: enabled,
         memory_enabled: false,
         embedding_model_ref_id: None,
@@ -47,7 +48,7 @@ fn provider(enabled: bool) -> Arc<dyn InferenceToolProvider> {
         elasticsearch_memory_connection_id: None,
         memory_backend: None,
         web_search_engine_connection_id: None,
-        default_tools_enabled: HashMap::new(),
+        default_tools_enabled: HashMap::from([("image_understand".to_string(), false)]),
     };
     let agent = RoleServiceConfig {
         id: "test-agent".to_string(),
@@ -95,6 +96,7 @@ fn system_prompt(
             workspace_path,
             session_id: None,
             llm: unused_llm(),
+            image_understand_llm: None,
             image_media: Vec::new(),
         },
     );
