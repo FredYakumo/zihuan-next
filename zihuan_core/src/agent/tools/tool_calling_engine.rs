@@ -534,7 +534,9 @@ impl ToolCallingEngine {
                     prepared_calls
                         .into_iter()
                         .map(|call| {
-                            let result = self.execute_prepared_call(&tool_call_content, call);
+                            let result = tokio::task::block_in_place(|| {
+                                self.execute_prepared_call(&tool_call_content, call)
+                            });
                             self.notify_tool_finish(&result);
                             result
                         })
