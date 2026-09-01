@@ -259,6 +259,7 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
 ];
 
 export const WORKSPACE_DEFAULT_TOOLS: DefaultToolOption[] = [
+  { id: "image_understand", label: "image_understand", description: "按 media_id 理解图片内容" },
   { id: "web_search", label: "web_search", description: "联网搜索并读取网页内容" },
   { id: "read_file", label: "read_file", description: "读取文件内容" },
   { id: "list_dir", label: "list_dir", description: "列出目录内容" },
@@ -978,6 +979,7 @@ export function serviceFormFromConfig(
       : [];
   } else {
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
+    form.image_understand_llm_ref_id = String(agentType.image_understand_llm_ref_id ?? "");
     form.agents_md_enabled = Boolean(agentType.agents_md_enabled ?? false);
     form.workspace_memory_enabled = Boolean(agentType.memory_enabled ?? false);
     form.workspace_embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
@@ -1150,6 +1152,7 @@ export function buildServicePayload(form: ServiceFormState): {
     role_service_type: {
       type: "workspace",
       llm_ref_id: form.llm_ref_id || null,
+      image_understand_llm_ref_id: form.image_understand_llm_ref_id || null,
       agents_md_enabled: form.agents_md_enabled,
       memory_enabled: form.workspace_memory_enabled,
       embedding_model_ref_id: form.workspace_embedding_model_ref_id || null,

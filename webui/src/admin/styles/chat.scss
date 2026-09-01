@@ -1799,6 +1799,19 @@
   font-weight: 600;
 }
 
+.model-picker-section-title {
+  padding: 8px 10px 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--admin-muted);
+  white-space: nowrap;
+}
+
+.model-picker-select {
+  width: 100%;
+  margin: 2px 0 4px;
+}
+
 .model-settings {
   position: relative;
 }

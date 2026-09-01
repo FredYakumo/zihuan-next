@@ -771,7 +771,7 @@
                 <div class="chat-input-actions">
                   <button class="btn ghost" @click="startNewSession">新对话</button>
                   <div class="chat-input-right">
-                    <template v-if="supportsMultimodalInput">
+                    <template v-if="isChatEligible">
                       <input
                         id="chat-image-upload"
                         class="chat-image-upload-input"
@@ -978,6 +978,25 @@
                             自动折叠思考过程
                             <CheckIcon v-if="autoCollapseThinking" class="live-tool-done-icon" />
                           </button>
+                          <div class="model-picker-section-title">图片理解模型</div>
+                          <t-select
+                            :value="imageUnderstandingModelId"
+                            filterable
+                            size="small"
+                            class="model-picker-select"
+                            placeholder="选择"
+                            @change="selectImageUnderstandingModel"
+                          >
+                            <t-option value="" label="选择">选择</t-option>
+                            <t-option
+                              v-for="model in imageUnderstandingModels"
+                              :key="model.config_id"
+                              :value="model.config_id"
+                              :label="model.name"
+                            >
+                              {{ model.name }}
+                            </t-option>
+                          </t-select>
                         </div>
                       </div>
                     </div>
@@ -1580,6 +1599,10 @@ const {
   chatModels,
   selectedModelLlmConfig,
   supportsMultimodalInput,
+  imageUnderstandingModelId,
+  imageUnderstandingModels,
+  selectedImageUnderstandingModelLabel,
+  selectImageUnderstandingModel,
   defaultAgentModelId,
   selectedModelLabel,
   selectedThinkingLabel,

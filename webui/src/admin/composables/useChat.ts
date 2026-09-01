@@ -463,7 +463,27 @@ const selectedModelLlmConfig = computed(() => {
   }
   return null;
 });
-const supportsMultimodalInput = computed(() => selectedModelLlmConfig.value?.supports_multimodal_input === true);
+const imageUnderstandingModelId = ref("");
+const imageUnderstandingModels = computed(() =>
+  chatModels.value.filter((item) => item.model.type === "chat_llm" && item.model.llm.supports_multimodal_input),
+);
+const effectiveImageUnderstandingModelId = computed(() => {
+  if (imageUnderstandingModelId.value) {
+    return imageUnderstandingModelId.value;
+  }
+  return selectedModelId.value || defaultAgentModelId.value;
+});
+const effectiveImageUnderstandingModelConfig = computed(() => {
+  const modelId = effectiveImageUnderstandingModelId.value;
+  const model = chatModels.value.find((m) => m.config_id === modelId);
+  if (model?.model.type === "chat_llm") {
+    return model.model.llm;
+  }
+  return null;
+});
+const supportsMultimodalInput = computed(
+  () => effectiveImageUnderstandingModelConfig.value?.supports_multimodal_input === true,
+);
 const defaultAgentModelId = computed(() => {
   const agent = selectedService.value;
   if (!agent) {
@@ -478,6 +498,13 @@ const selectedModelLabel = computed(() => {
   }
   const model = chatModels.value.find((m) => m.config_id === selectedModelId.value);
   return model?.name ?? "默认模型";
+});
+const selectedImageUnderstandingModelLabel = computed(() => {
+  if (!imageUnderstandingModelId.value) {
+    return "未选择";
+  }
+  const model = imageUnderstandingModels.value.find((m) => m.config_id === imageUnderstandingModelId.value);
+  return model?.name ?? "未选择";
 });
 const selectedThinkingLabel = computed(() => {
   const defaultType = selectedModelLlmConfig.value?.thinking_type;
@@ -1069,7 +1096,8 @@ function handleEditImageFileSelection(event: Event) {
 
 function addImageFilesTo(target: ChatImageAttachment[], files: File[]) {
   if (!supportsMultimodalInput.value) {
-    showChatError("当前模型不支持多模态输入，无法添加图片。");
+    showChatError("当前模型不支持多模态输入。请先在对话模型或图片理解模型中选择支持多模态的模型。");
+    openPicker.value = "model";
     return;
   }
   for (const file of files) {
@@ -1460,7 +1488,7 @@ async function submitEditingMessage() {
     return;
   }
   if (!supportsMultimodalInput.value && attachments.length > 0) {
-    showChatError("当前模型不支持多模态输入，无法发送图片。");
+    showChatError("当前模型不支持多模态输入。请选择支持多模态的模型后再发送图片。");
     return;
   }
   if (attachments.some((attachment) => attachment.uploading || attachment.error)) {
@@ -1488,7 +1516,7 @@ async function resendMessage(message: ChatMessage) {
     return;
   }
   if (!supportsMultimodalInput.value && attachments.length > 0) {
-    showChatError("当前模型不支持多模态输入，无法发送图片。");
+    showChatError("当前模型不支持多模态输入。请选择支持多模态的模型后再发送图片。");
     return;
   }
   try {
@@ -1658,10 +1686,16 @@ function startNewSession() {
   agentsMdEditingKey.value = "";
   agentsMdEditorContent.value = "";
   agentsMdError.value = "";
+  imageUnderstandingModelId.value = "";
 }
 
 function selectModel(id: string) {
   selectedModelId.value = id;
+  openPicker.value = null;
+}
+
+function selectImageUnderstandingModel(id: string) {
+  imageUnderstandingModelId.value = id;
   openPicker.value = null;
 }
 
@@ -2079,7 +2113,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
   const userText = rawInput.trim();
   const sentAttachments = fromAskUser ? [] : options.attachments ?? draftImageAttachments.value;
   if (!fromAskUser && sentAttachments.length > 0 && !supportsMultimodalInput.value) {
-    showChatError("当前模型不支持多模态输入，无法发送图片。");
+    showChatError("当前模型不支持多模态输入。请选择支持多模态的模型后再发送图片。");
     return;
   }
   if (!userText && (!fromAskUser && sentAttachments.length === 0)) {
@@ -2316,6 +2350,10 @@ onUnmounted(() => {
     chatModels,
     selectedModelLlmConfig,
     supportsMultimodalInput,
+    imageUnderstandingModelId,
+    imageUnderstandingModels,
+    selectedImageUnderstandingModelLabel,
+    selectImageUnderstandingModel,
     defaultAgentModelId,
     selectedModelLabel,
     selectedThinkingLabel,

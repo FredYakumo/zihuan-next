@@ -404,6 +404,14 @@ fn build_inference_tool_context(
         workspace_path,
         session_id,
         llm,
+        image_media: messages
+            .iter()
+            .flat_map(|message| message.parts.iter())
+            .filter_map(|part| match part {
+                zihuan_core::message_part::MessagePart::Image { media } => Some(media.clone()),
+                _ => None,
+            })
+            .collect(),
     }
 }
 

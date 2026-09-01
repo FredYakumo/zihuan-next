@@ -894,7 +894,7 @@
             <t-input-number v-model="defaultToolEditDraft.callLimit" :min="0" placeholder="不限制" />
             <div class="agent-service-form-hint" style="font-size: 12px; margin-top: 4px">0 或留空表示不限制</div>
           </t-form-item>
-          <t-form-item v-if="form.type === 'qq_chat' && editingDefaultToolId === 'image_understand'" label="图片理解模型" class="agent-service-form-item-full">
+          <t-form-item v-if="editingDefaultToolId === 'image_understand'" label="图片理解模型" class="agent-service-form-item-full">
             <t-select v-model="defaultToolEditDraft.imageUnderstandLlmRefId" placeholder="默认使用主模型" clearable>
               <t-option value="" label="默认使用主模型" />
               <t-option v-for="item in multimodalChatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />

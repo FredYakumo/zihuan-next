@@ -293,6 +293,7 @@ fn build_workspace_agent_service(id: &str, name: &str, llm_ref_id: Option<String
         name: name.to_string(),
         role_service_type: RoleServiceType::Workspace(WorkspaceAgentServiceConfig {
             llm_ref_id,
+            image_understand_llm_ref_id: None,
             agents_md_enabled: true,
             memory_enabled: false,
             embedding_model_ref_id: None,

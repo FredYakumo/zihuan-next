@@ -6,7 +6,8 @@ use zihuan_core::agent::resource_resolver::resolve_local_embedding_model_name;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::agent::service_config::{MemoryBackendKind, RoleServiceConfig, WorkspaceAgentServiceConfig};
 use zihuan_core::config::llm_refs::load_llm_refs;
-use zihuan_core::model_inference::llm::LLMMessage;
+use zihuan_core::model_inference::llm::{LLMMessage, llm_base::LLMBase};
+use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
 use zihuan_core::memory_agent::{MemoryAgentResources, MemoryBackend, MemoryBrainAgent, MemoryBrainAgentTool};
 use zihuan_core::runtime::block_async;
 use zihuan_core::storage::{
@@ -25,6 +26,7 @@ use crate::tools::{
     DEFAULT_TOOL_CREATE_FILE, DEFAULT_TOOL_DELETE_FILE, DEFAULT_TOOL_EDIT_FILE, DEFAULT_TOOL_EXEC_CMD,
     DEFAULT_TOOL_COPY_FILE, DEFAULT_TOOL_FILE_INFO, DEFAULT_TOOL_FIND_FILES, DEFAULT_TOOL_GIT_STATUS, DEFAULT_TOOL_GREP, DEFAULT_TOOL_LIST_DIR, DEFAULT_TOOL_MOVE_FILE, DEFAULT_TOOL_READ_FILE, DEFAULT_TOOL_RG, DEFAULT_TOOL_WEB_SEARCH,
     WorkspaceTaskTool, DEFAULT_TOOL_TASK_CREATE, DEFAULT_TOOL_TASK_GET, DEFAULT_TOOL_TASK_LIST, DEFAULT_TOOL_TASK_UPDATE,
+    ImageUnderstandTool, DEFAULT_TOOL_IMAGE_UNDERSTAND,
 };
 use zihuan_core::error::Result;
 
@@ -107,6 +109,7 @@ pub struct WorkspaceInferenceToolProvider {
     memory_resources: Option<WorkspaceMemoryResources>,
     web_search_engine: std::result::Result<Arc<dyn zihuan_core::rag::WebSearchEngine>, String>,
     tool_definitions: Vec<ToolDefinition>,
+    image_understand_llm: Option<Arc<dyn LLMBase>>,
 }
 
 impl InferenceToolProvider for WorkspaceInferenceToolProvider {
@@ -217,6 +220,17 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
             };
             tools.push(Box::new(tool));
         }
+        if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_IMAGE_UNDERSTAND) {
+            let image_llm = if context.llm.supports_multimodal_input() {
+                Arc::clone(&context.llm)
+            } else {
+                self.image_understand_llm.clone().unwrap_or_else(|| Arc::clone(&context.llm))
+            };
+            tools.push(Box::new(ImageUnderstandTool::new(
+                context.image_media.clone(),
+                image_llm,
+            )));
+        }
         if let Some(resources) = &self.memory_resources {
             tools.push(Box::new(MemoryBrainAgentTool::new(MemoryBrainAgent::new(
                 resources.with_llm(Arc::clone(&context.llm)),
@@ -235,6 +249,14 @@ pub fn load_inference_tool_provider(
     config: &WorkspaceAgentServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
+    let image_understand_llm = if is_enabled(&config.default_tools_enabled, DEFAULT_TOOL_IMAGE_UNDERSTAND) {
+        let llm_ref_id = config.image_understand_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref());
+        let llm_refs = load_llm_refs()?;
+        let llm_config = resolve_llm_service_config(llm_ref_id, &llm_refs, DEFAULT_TOOL_IMAGE_UNDERSTAND)?;
+        Some(build_llm_model(&llm_config)?)
+    } else {
+        None
+    };
     Ok(Arc::new(WorkspaceInferenceToolProvider {
         service_name: agent.name.clone(),
         agents_md_enabled: config.agents_md_enabled,
@@ -242,6 +264,7 @@ pub fn load_inference_tool_provider(
         memory_resources: load_memory_resources(config, connections),
         web_search_engine: load_web_search_engine(config, connections),
         tool_definitions: build_enabled_tool_definitions(&agent.tools)?,
+        image_understand_llm,
     }))
 }
 

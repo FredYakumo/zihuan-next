@@ -70,6 +70,7 @@ fn system_prompt(provider: &Arc<dyn InferenceToolProvider>, workspace_path: Opti
         workspace_path,
         session_id: None,
         llm: unused_llm(),
+        image_media: Vec::new(),
     });
     messages.into_iter().find(|message| matches!(message.role, MessageRole::System)).and_then(|message| message.content_text().map(ToOwned::to_owned))
 }
