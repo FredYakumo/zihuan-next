@@ -1000,7 +1000,7 @@
                         </div>
                       </div>
                     </div>
-                    <t-tooltip v-if="sending" content="停止推理">
+                    <t-tooltip v-if="activeSessionRunning" content="停止推理">
                       <t-button theme="danger" shape="square" aria-label="停止推理" @click="stopInference">
                         <StopIcon />
                       </t-button>

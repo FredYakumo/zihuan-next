@@ -45,6 +45,12 @@ pub trait Tool: Send + Sync + 'static {
     fn execution_resource(&self, _arguments: &Value) -> ToolExecutionResource {
         ToolExecutionResource::Concurrent
     }
+    /// Declares whether this call blocks waiting for user confirmation. The
+    /// engine forces such calls to run serially so that at most one
+    /// confirmation dialog is shown at a time.
+    fn requires_user_confirmation(&self, _arguments: &Value) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

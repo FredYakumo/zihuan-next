@@ -66,6 +66,22 @@ pub fn strip_leading_bot_mention(text: &str, bot_id: &str, bot_name: &str) -> St
     remaining.trim().to_string()
 }
 
+/// Truncates a byte slice to `max_bytes`, decoding it as lossy UTF-8. Returns the
+/// rendered text and whether truncation occurred. When the input exceeds the limit, a
+/// `[output truncated after N bytes]` marker is appended on a new line.
+pub fn truncate_output(bytes: &[u8], max_bytes: usize) -> (String, bool) {
+    if bytes.len() <= max_bytes {
+        return (String::from_utf8_lossy(bytes).to_string(), false);
+    }
+    (
+        format!(
+            "{}\n[output truncated after {max_bytes} bytes]",
+            String::from_utf8_lossy(&bytes[..max_bytes])
+        ),
+        true,
+    )
+}
+
 /// Shortens a string to the specified character limit, appending "...(truncated)" if truncated.
 pub fn shorten_text(text: &str, limit: usize) -> String {
     if text.chars().count() <= limit {

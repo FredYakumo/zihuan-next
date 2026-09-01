@@ -8,6 +8,7 @@ use zihuan_core::agent::tools::{Tool, ToolExecutionResource};
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
 
 use zihuan_core::model_inference::llm::tooling::StaticFunctionToolSpec;
+use zihuan_core::utils::string_utils::truncate_output;
 use super::shared::{json_error, path_resource, resolve_tool_path, success_json};
 
 pub(crate) const DEFAULT_TOOL_GIT_STATUS: &str = "git_status";
@@ -54,10 +55,9 @@ impl Tool for GitStatusTool {
             Ok(output) => output,
             Err(err) => return json_error(format!("failed to execute git status: {err}")),
         };
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         if !output.status.success() { return json_error(format!("git status failed: {}", stderr.trim())); }
-        let (summary, truncated) = truncate_output(&stdout, max_output_bytes);
+        let (summary, truncated) = truncate_output(&output.stdout, max_output_bytes);
         let mut lines = summary.lines();
         let branch_line = lines.next().unwrap_or_default().to_string();
         let branch = branch_line.strip_prefix("## ").unwrap_or(&branch_line).to_string();
@@ -81,11 +81,4 @@ fn parse_status_line(line: &str) -> Value {
     let status = line.get(..2).unwrap_or("").trim().to_string();
     let path = line.get(3..).unwrap_or(line).trim().to_string();
     serde_json::json!({"status":status,"path":path})
-}
-
-fn truncate_output(value: &str, max_bytes: usize) -> (String, bool) {
-    if value.len() <= max_bytes { return (value.to_string(), false); }
-    let mut end = max_bytes.min(value.len());
-    while end > 0 && !value.is_char_boundary(end) { end -= 1; }
-    (format!("{}\n[output truncated after {max_bytes} bytes]", &value[..end]), true)
 }

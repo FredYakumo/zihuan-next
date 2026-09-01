@@ -17,24 +17,37 @@ pub async fn approve_command_execution(req: &mut Request, res: &mut Response) {
         Ok(body) => body,
         Err(error) => {
             res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(json!({ "error": format!("invalid command approval: {error}") })));
+            res.render(Json(
+                json!({ "error": format!("invalid command approval: {error}") }),
+            ));
             return;
         }
     };
     if session_id.trim().is_empty() || body.command.trim().is_empty() {
         res.status_code(StatusCode::BAD_REQUEST);
-        res.render(Json(json!({ "error": "session_id and command must not be empty" })));
+        res.render(Json(
+            json!({ "error": "session_id and command must not be empty" }),
+        ));
         return;
     }
-    match body.decision.as_str() {
+    let accepted = match body.decision.as_str() {
         "once" => approve_command(&session_id, &body.command, false),
         "session" => approve_command(&session_id, &body.command, true),
         "reject" => reject_command(&session_id, &body.command),
         _ => {
             res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(json!({ "error": "decision must be once, session, or reject" })));
+            res.render(Json(
+                json!({ "error": "decision must be once, session, or reject" }),
+            ));
             return;
         }
+    };
+    if !accepted {
+        res.status_code(StatusCode::CONFLICT);
+        res.render(Json(
+            json!({ "error": "no matching pending command approval" }),
+        ));
+        return;
     }
     res.render(Json(json!({ "ok": true })));
 }
@@ -47,5 +60,7 @@ pub async fn get_pending_command_approval(req: &mut Request, res: &mut Response)
         res.render(Json(json!({ "error": "session_id must not be empty" })));
         return;
     }
-    res.render(Json(json!({ "pending": pending_command_approval(&session_id) })));
+    res.render(Json(
+        json!({ "pending": pending_command_approval(&session_id) }),
+    ));
 }

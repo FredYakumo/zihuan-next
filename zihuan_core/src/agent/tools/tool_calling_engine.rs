@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use log::{info, warn};
@@ -84,6 +84,7 @@ pub struct ToolCallingEngine {
     iteration_hook: Option<Arc<dyn ToolCallingMiddleware>>,
     long_task_context: Option<LongTaskContext>,
     cancellation: Option<Arc<dyn AgentCancellation>>,
+    confirmation_gate: Arc<Mutex<()>>,
 }
 
 impl ToolCallingEngine {
@@ -95,6 +96,7 @@ impl ToolCallingEngine {
             iteration_hook: None,
             long_task_context: None,
             cancellation: None,
+            confirmation_gate: Arc::new(Mutex::new(())),
         }
     }
 
@@ -150,7 +152,16 @@ impl ToolCallingEngine {
         call_id: &str,
         observer: Option<&Arc<dyn ToolCallingObserver>>,
         long_task_context: Option<&LongTaskContext>,
+        confirmation_gate: Option<&Mutex<()>>,
     ) -> ToolExecutionOutput {
+        // Calls that block waiting for user confirmation must run serially so
+        // that at most one confirmation dialog is shown at a time. The guard is
+        // held across registration, confirmation event emission, and the wait.
+        let _confirmation_guard = if tool.requires_user_confirmation(arguments) {
+            confirmation_gate.map(|gate| gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner()))
+        } else {
+            None
+        };
         if tool.run_duration() == ToolRunDuration::Long {
             if let Some(long_ctx) = long_task_context {
                 let task_name = format!("工具: {tool_name}");
@@ -211,6 +222,14 @@ impl ToolCallingEngine {
             let Some(tool) = call.tool.as_ref() else {
                 return false;
             };
+            if tool.requires_user_confirmation(&call.arguments) {
+                return false;
+            }
+        }
+        for call in calls {
+            let Some(tool) = call.tool.as_ref() else {
+                return false;
+            };
             if matches!(tool.execution_resource(&call.arguments), ToolExecutionResource::Exclusive) {
                 return false;
             }
@@ -242,7 +261,13 @@ impl ToolCallingEngine {
                 result: ToolExecutionOutput::text("tool execution cancelled".to_string()),
             };
         }
-        Self::execute_prepared_call_with_context(call_content, call, self.long_task_context.as_ref(), self.observer.as_ref())
+        Self::execute_prepared_call_with_context(
+            call_content,
+            call,
+            self.long_task_context.as_ref(),
+            self.observer.as_ref(),
+            Some(&self.confirmation_gate),
+        )
     }
 
     fn execute_prepared_call_with_context(
@@ -250,6 +275,7 @@ impl ToolCallingEngine {
         call: PreparedToolCall,
         long_task_context: Option<&LongTaskContext>,
         observer: Option<&Arc<dyn ToolCallingObserver>>,
+        confirmation_gate: Option<&Mutex<()>>,
     ) -> PreparedToolResult {
         let result = if let Some(tool) = call.tool.as_ref() {
             Self::execute_tool_call_with_context(
@@ -260,6 +286,7 @@ impl ToolCallingEngine {
                 &call.call_id,
                 observer,
                 long_task_context,
+                confirmation_gate,
             )
         } else {
             warn!(
@@ -611,17 +638,20 @@ impl ToolCallingEngine {
             let mut results: Vec<PreparedToolResult> = if Self::can_execute_in_parallel(&prepared_calls) {
                 let long_task_context = self.long_task_context.clone();
                 let observer_handle = self.observer.clone();
+                let confirmation_gate = Arc::clone(&self.confirmation_gate);
                 let mut tasks = JoinSet::new();
                 for call in prepared_calls {
                     let call_content = tool_call_content.clone();
                     let long_task_context = long_task_context.clone();
                     let task_observer = observer_handle.clone();
+                    let gate = Arc::clone(&confirmation_gate);
                     tasks.spawn_blocking(move || {
                         Self::execute_prepared_call_with_context(
                             &call_content,
                             call,
                             long_task_context.as_ref(),
                             task_observer.as_ref(),
+                            Some(&*gate),
                         )
                     });
                 }
