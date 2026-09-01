@@ -74,8 +74,13 @@ impl<T> QuotaMaybeWrappedTool<T> {
             return Ok(());
         };
 
-        let allowed = decrement_tool_quota_if_needed_blocking(rdb_pool, &quota.agent_id, &quota.sender_id, tool_name)
-            .map_err(|err| err.to_string())?;
+        let allowed = decrement_tool_quota_if_needed_blocking(
+            rdb_pool,
+            &quota.agent_id,
+            &quota.sender_id,
+            tool_name,
+        )
+        .map_err(|err| err.to_string())?;
         if !allowed {
             return Err(Self::limit_message(quota, TOOL_LIMIT_SCOPE_USER));
         }
@@ -88,7 +93,10 @@ impl<T> QuotaMaybeWrappedTool<T> {
     }
 }
 
-pub(crate) fn wrap_brain_tool_with_quota<T>(tool: T, quota: Option<QqChatToolQuotaContext>) -> impl Tool
+pub(crate) fn wrap_brain_tool_with_quota<T>(
+    tool: T,
+    quota: Option<QqChatToolQuotaContext>,
+) -> impl Tool
 where
     T: Tool,
 {
@@ -136,8 +144,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        wrap_brain_tool_with_quota, QqChatToolQuotaContext, SessionToolQuotaState, TOOL_LIMIT_SCOPE_SESSION,
-        TOOL_LIMIT_SCOPE_USER,
+        wrap_brain_tool_with_quota, QqChatToolQuotaContext, SessionToolQuotaState,
+        TOOL_LIMIT_SCOPE_SESSION, TOOL_LIMIT_SCOPE_USER,
     };
     use zihuan_core::agent::tools::Tool;
     use zihuan_core::model_inference::llm::tooling::FunctionTool;
@@ -176,7 +184,10 @@ mod tests {
             json!({"type": "object"})
         }
 
-        fn call(&self, _arguments: serde_json::Value) -> zihuan_core::error::Result<serde_json::Value> {
+        fn call(
+            &self,
+            _arguments: serde_json::Value,
+        ) -> zihuan_core::error::Result<serde_json::Value> {
             Ok(json!({}))
         }
     }
@@ -217,7 +228,8 @@ mod tests {
             session_limit_message: None,
             session_state: Arc::new(std::sync::Mutex::new(SessionToolQuotaState::default())),
         };
-        let message = super::QuotaMaybeWrappedTool::<EchoTool>::limit_message(&quota, TOOL_LIMIT_SCOPE_USER);
+        let message =
+            super::QuotaMaybeWrappedTool::<EchoTool>::limit_message(&quota, TOOL_LIMIT_SCOPE_USER);
         assert!(message.contains(TOOL_LIMIT_SCOPE_USER));
     }
 

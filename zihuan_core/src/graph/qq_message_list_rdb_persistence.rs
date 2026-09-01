@@ -32,22 +32,26 @@ pub fn persist_qq_message_list(
         MESSAGE_ID_MAX_CHARS,
         &message_id,
     );
-    let sender_id = truncate_field_if_needed("sender_id", sender_id, SENDER_ID_MAX_CHARS, &message_id);
-    let sender_name = truncate_field_if_needed(
-        "sender_name",
-        sender_name,
-        SENDER_NAME_MAX_CHARS,
+    let sender_id =
+        truncate_field_if_needed("sender_id", sender_id, SENDER_ID_MAX_CHARS, &message_id);
+    let sender_name =
+        truncate_field_if_needed("sender_name", sender_name, SENDER_NAME_MAX_CHARS, &message_id);
+    let group_id =
+        truncate_optional_field_if_needed("group_id", group_id, GROUP_ID_MAX_CHARS, &message_id);
+    let group_name = truncate_optional_field_if_needed(
+        "group_name",
+        group_name,
+        GROUP_NAME_MAX_CHARS,
         &message_id,
     );
-    let group_id = truncate_optional_field_if_needed("group_id", group_id, GROUP_ID_MAX_CHARS, &message_id);
-    let group_name =
-        truncate_optional_field_if_needed("group_name", group_name, GROUP_NAME_MAX_CHARS, &message_id);
     let pool = match rdb_config.pool.clone() {
         Some(pool) => {
             let size = pool.size();
             let idle = pool.num_idle();
             let in_use = size.saturating_sub(idle as u32);
-            debug!("[qq_message_list_rdb_persistence] pool size={size}, idle={idle}, in-use={in_use}");
+            debug!(
+                "[qq_message_list_rdb_persistence] pool size={size}, idle={idle}, in-use={in_use}"
+            );
             if idle == 0 {
                 warn!("[qq_message_list_rdb_persistence] no idle connections; INSERT may stall");
             }
@@ -79,7 +83,11 @@ pub fn persist_qq_message_list(
     );
     let media_json = {
         let records = collect_media_records(messages);
-        if records.is_empty() { None } else { Some(serde_json::to_string(&records)?) }
+        if records.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&records)?)
+        }
     };
     let media_json = truncate_optional_field_if_needed(
         "media_json",

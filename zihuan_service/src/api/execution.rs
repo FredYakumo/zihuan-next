@@ -25,18 +25,26 @@ pub struct DeleteTasksRequest {
     pub task_ids: Vec<String>,
 }
 
-fn validate_duplicate_port_names(graph: &zihuan_core::graph::graph_io::NodeGraphDefinition) -> Result<(), String> {
+fn validate_duplicate_port_names(
+    graph: &zihuan_core::graph::graph_io::NodeGraphDefinition,
+) -> Result<(), String> {
     for node in &graph.nodes {
         let mut seen = std::collections::HashSet::new();
         for port in &node.input_ports {
             if !seen.insert(&port.name) {
-                return Err(format!("节点 '{}' 存在重复的输入端口名称: '{}'", node.name, port.name));
+                return Err(format!(
+                    "节点 '{}' 存在重复的输入端口名称: '{}'",
+                    node.name, port.name
+                ));
             }
         }
         seen.clear();
         for port in &node.output_ports {
             if !seen.insert(&port.name) {
-                return Err(format!("节点 '{}' 存在重复的输出端口名称: '{}'", node.name, port.name));
+                return Err(format!(
+                    "节点 '{}' 存在重复的输出端口名称: '{}'",
+                    node.name, port.name
+                ));
             }
         }
     }
@@ -113,7 +121,10 @@ fn run_graph_blocking(
 
     let mut graph = zihuan_core::graph::registry::build_node_graph_from_definition(&definition)
         .map_err(|e| format!("Build graph failed: {e}"))?;
-    crate::api::graph_exec_helpers::inject_runtime_inline_values(&mut graph, &runtime_inline_values);
+    crate::api::graph_exec_helpers::inject_runtime_inline_values(
+        &mut graph,
+        &runtime_inline_values,
+    );
     graph.set_execution_task_id(Some(task_id.clone()));
 
     if !preview_node_ids.is_empty() {
@@ -150,7 +161,9 @@ fn run_graph_blocking(
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     });
-    crate::log_forwarder::scope_task(task_id, || graph.execute().map_err(|e| format!("Execution failed: {e}").into()))
+    crate::log_forwarder::scope_task(task_id, || {
+        graph.execute().map_err(|e| format!("Execution failed: {e}").into())
+    })
 }
 
 // ─── Stop task ────────────────────────────────────────────────────────────────
@@ -262,7 +275,8 @@ pub async fn get_task_logs(req: &mut Request, res: &mut Response, depot: &mut De
                 })
                 .collect();
             let total = filtered.len();
-            let page: Vec<_> = filtered.into_iter().skip(offset).take(limit.unwrap_or(usize::MAX)).collect();
+            let page: Vec<_> =
+                filtered.into_iter().skip(offset).take(limit.unwrap_or(usize::MAX)).collect();
             res.render(Json(serde_json::json!({
                 "entries": page,
                 "total": total,
@@ -474,7 +488,8 @@ fn start_graph_task(
 
         match status {
             TaskStatus::Stopped => {
-                match broadcast_tx_clone.send(ServerMessage::TaskStopped { task_id: task_id_clone }) {
+                match broadcast_tx_clone.send(ServerMessage::TaskStopped { task_id: task_id_clone })
+                {
                     Ok(n) => info!("Broadcast TaskStopped to {} receivers", n),
                     Err(e) => error!("Failed to broadcast TaskStopped: {}", e),
                 }
@@ -485,7 +500,9 @@ fn start_graph_task(
                     success,
                     error: error_message,
                 }) {
-                    Ok(n) => info!("Broadcast TaskFinished(success={}) to {} receivers", success, n),
+                    Ok(n) => {
+                        info!("Broadcast TaskFinished(success={}) to {} receivers", success, n)
+                    }
                     Err(e) => error!("Failed to broadcast TaskFinished: {}", e),
                 }
             }

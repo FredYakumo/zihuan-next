@@ -5,22 +5,25 @@ use std::time::Duration;
 use uuid::Uuid;
 
 use crate::system_config;
-use zihuan_core::ims_bot_adapter::{
-    close_runtime_bot_adapter_instance, list_active_bot_adapter_connection_ids, list_runtime_bot_adapter_instances,
-    parse_ims_bot_adapter_connection, sync_enabled_bot_adapters,
-};
 use log::info;
+use zihuan_core::ims_bot_adapter::{
+    close_runtime_bot_adapter_instance, list_active_bot_adapter_connection_ids,
+    list_runtime_bot_adapter_instances, parse_ims_bot_adapter_connection,
+    sync_enabled_bot_adapters,
+};
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::{
     close_runtime_embedding_instance, list_runtime_embedding_instances,
 };
 use zihuan_core::storage::{
     close_runtime_storage_instance, close_runtime_storage_instances_for_config, connection_exists,
-    delete_connection as delete_stored_connection, list_runtime_storage_instances, upsert_connection,
-    validate_connection_authentication, ConnectionConfig, ConnectionKind,
+    delete_connection as delete_stored_connection, list_runtime_storage_instances,
+    upsert_connection, validate_connection_authentication, ConnectionConfig, ConnectionKind,
 };
 use zihuan_core::weaviate::{WeaviateEnsureCollectionResult, WeaviateRef};
 
-use super::{now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found};
+use super::{
+    now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
+};
 
 #[derive(Deserialize)]
 pub struct CreateConnectionRequest {
@@ -103,8 +106,11 @@ fn validate_connection(
         if let ConnectionKind::Elasticsearch(elasticsearch) = kind {
             let reference = zihuan_core::storage::ElasticsearchRef::new(elasticsearch.clone())
                 .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
-            return zihuan_core::storage::ensure_elasticsearch_index(&reference, allow_create_collection)
-                .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()));
+            return zihuan_core::storage::ensure_elasticsearch_index(
+                &reference,
+                allow_create_collection,
+            )
+            .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()));
         }
         return Ok(false);
     };
@@ -139,9 +145,12 @@ fn validate_connection(
         Duration::from_secs(30),
     )
     .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
-    let result =
-        zihuan_core::storage::ensure_collection_schema(&weaviate_ref, weaviate.collection_schema, allow_create_collection)
-            .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
+    let result = zihuan_core::storage::ensure_collection_schema(
+        &weaviate_ref,
+        weaviate.collection_schema,
+        allow_create_collection,
+    )
+    .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
     Ok(matches!(result, WeaviateEnsureCollectionResult::Created))
 }
 
@@ -208,7 +217,7 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
     //     Ok(collection_created) => collection_created,
     //     Err(err) => return render_connection_validation_error(res, err),
     // };
-    
+
     // Elasticsearch/Weaviate validation uses blocking HTTP clients. Keep both
     // construction and drop on a blocking thread instead of a Tokio worker.
     let collection_created = match tokio::task::spawn_blocking(move || {

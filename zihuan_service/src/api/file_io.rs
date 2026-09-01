@@ -3,15 +3,15 @@ use std::sync::Arc;
 
 use chrono::{Datelike, Utc};
 use log::{info, warn};
-use zihuan_core::model_inference::nn::local_llm_registry::list_local_llm_models as scan_local_llm_models;
-use zihuan_core::agent::service_config::RoleServiceConfig;
-use zihuan_core::agent::tool_config::{AgentToolType, NodeGraphToolConfig};
-use zihuan_core::config::role_services::load_role_services;
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
-use zihuan_core::storage::{load_connections, ObjectStorageConfig};
+use zihuan_core::agent::service_config::RoleServiceConfig;
+use zihuan_core::agent::tool_config::{AgentToolType, NodeGraphToolConfig};
+use zihuan_core::config::role_services::load_role_services;
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
+use zihuan_core::model_inference::nn::local_llm_registry::list_local_llm_models as scan_local_llm_models;
+use zihuan_core::storage::{load_connections, ObjectStorageConfig};
 
 use super::state::AppState;
 use super::ws::WsBroadcast;
@@ -21,7 +21,7 @@ const LOCAL_IMAGE_UPLOAD_DIR: &str = "uploaded_images";
 const TEXT_EMBEDDING_MODEL_DIR: &str = "models/text_embedding";
 const TOKENIZER_MODEL_DIR: &str = "models/tokenizer";
 
-// ─── Workflows directory helpers ──────────────────────────────────────────────
+// Workflows directory helpers
 
 /// Return a sorted list of `.json` filenames in the `workflow_set/` directory.
 #[handler]
@@ -51,7 +51,11 @@ pub async fn list_workflows(_req: &mut Request, res: &mut Response, _depot: &mut
 }
 
 #[handler]
-pub async fn list_text_embedding_models(_req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn list_text_embedding_models(
+    _req: &mut Request,
+    res: &mut Response,
+    _depot: &mut Depot,
+) {
     let dir = std::path::Path::new(TEXT_EMBEDDING_MODEL_DIR);
     let models = match std::fs::read_dir(dir) {
         Ok(entries) => {
@@ -227,7 +231,11 @@ pub struct SaveToWorkflowsRequest {
     pub name: String,
 }
 
-async fn hot_reload_agents_for_saved_graph(state: Arc<AppState>, broadcast_tx: WsBroadcast, saved_path: &str) {
+async fn hot_reload_agents_for_saved_graph(
+    state: Arc<AppState>,
+    broadcast_tx: WsBroadcast,
+    saved_path: &str,
+) {
     let agents = match load_role_services() {
         Ok(agents) => agents,
         Err(err) => {
@@ -284,14 +292,20 @@ async fn hot_reload_agents_for_saved_graph(state: Arc<AppState>, broadcast_tx: W
     }
 }
 
-fn agent_uses_saved_graph(agent: &RoleServiceConfig, normalized_saved_path: &str, saved_workflow_name: Option<&str>) -> bool {
+fn agent_uses_saved_graph(
+    agent: &RoleServiceConfig,
+    normalized_saved_path: &str,
+    saved_workflow_name: Option<&str>,
+) -> bool {
     agent
         .tools
         .iter()
         .filter(|tool| tool.enabled)
         .any(|tool| match &tool.tool_type {
             AgentToolType::NodeGraph(config) => match config {
-                NodeGraphToolConfig::FilePath { path, .. } => normalize_graph_path(path) == normalized_saved_path,
+                NodeGraphToolConfig::FilePath { path, .. } => {
+                    normalize_graph_path(path) == normalized_saved_path
+                }
                 NodeGraphToolConfig::WorkflowSet { name, .. } => {
                     saved_workflow_name.is_some_and(|workflow_name| workflow_name == name.trim())
                 }
@@ -399,7 +413,8 @@ pub async fn open_file(req: &mut Request, res: &mut Response, depot: &mut Depot)
             zihuan_core::graph::graph_boundary::sync_root_graph_io(&mut graph);
             zihuan_core::graph::ensure_positions(&mut graph);
             let session_id = uuid::Uuid::new_v4().to_string();
-            let session = super::state::GraphSession::new(session_id.clone(), graph, Some(body.path));
+            let session =
+                super::state::GraphSession::new(session_id.clone(), graph, Some(body.path));
             let mut sessions = state.sessions.write().unwrap();
             sessions.insert(session_id.clone(), session);
             res.render(Json(serde_json::json!({
@@ -499,14 +514,15 @@ pub async fn upload_graph(req: &mut Request, res: &mut Response, depot: &mut Dep
         }
     };
 
-    let graph: zihuan_core::graph::graph_io::NodeGraphDefinition = match serde_json::from_slice(&body_bytes) {
-        Ok(v) => v,
-        Err(e) => {
-            res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
-            res.render(Json(serde_json::json!({"error": e.to_string()})));
-            return;
-        }
-    };
+    let graph: zihuan_core::graph::graph_io::NodeGraphDefinition =
+        match serde_json::from_slice(&body_bytes) {
+            Ok(v) => v,
+            Err(e) => {
+                res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
+                res.render(Json(serde_json::json!({"error": e.to_string()})));
+                return;
+            }
+        };
 
     let mut graph = graph;
     zihuan_core::graph::graph_boundary::sync_root_graph_io(&mut graph);
@@ -532,8 +548,12 @@ pub async fn download_graph(req: &mut Request, res: &mut Response, depot: &mut D
                 .and_then(|p| std::path::Path::new(p).file_name())
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| "graph.json".to_string());
-            res.add_header("Content-Disposition", format!("attachment; filename=\"{}\"", filename), true)
-                .unwrap();
+            res.add_header(
+                "Content-Disposition",
+                format!("attachment; filename=\"{}\"", filename),
+                true,
+            )
+            .unwrap();
             res.add_header("Content-Type", "application/json", true).unwrap();
             res.write_body(json.into_bytes()).ok();
         }
@@ -552,7 +572,12 @@ pub struct UploadImageResponse {
     pub name: String,
 }
 
-fn build_upload_image_response(url: String, key: String, name: String, mime: &str) -> UploadImageResponse {
+fn build_upload_image_response(
+    url: String,
+    key: String,
+    name: String,
+    mime: &str,
+) -> UploadImageResponse {
     let media = PersistedMedia::new(
         PersistedMediaSource::Upload,
         &url,
@@ -561,12 +586,7 @@ fn build_upload_image_response(url: String, key: String, name: String, mime: &st
         None,
         Some(mime.to_string()),
     );
-    UploadImageResponse {
-        url,
-        key,
-        media_id: media.media_id,
-        name,
-    }
+    UploadImageResponse { url, key, media_id: media.media_id, name }
 }
 
 #[handler]
@@ -655,7 +675,11 @@ pub async fn upload_image(req: &mut Request, res: &mut Response, _depot: &mut De
 #[handler]
 pub async fn serve_uploaded_image(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let rel_path = req.param::<String>("rest").unwrap_or_default();
-    if rel_path.is_empty() || rel_path.contains("..") || rel_path.starts_with('/') || rel_path.starts_with('\\') {
+    if rel_path.is_empty()
+        || rel_path.contains("..")
+        || rel_path.starts_with('/')
+        || rel_path.starts_with('\\')
+    {
         res.status_code(StatusCode::BAD_REQUEST);
         return;
     }

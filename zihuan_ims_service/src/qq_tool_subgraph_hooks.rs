@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use zihuan_core::agent::tools::{consume_tool_progress_notification, current_task_progress_message};
+use zihuan_core::agent::tools::{
+    consume_tool_progress_notification, current_task_progress_message,
+};
 use zihuan_core::graph::tool_spec::{
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
 };
@@ -22,7 +24,10 @@ pub fn qq_progress_notifier() -> ToolProgressNotifier {
     Arc::new(send_brain_tool_progress_notification)
 }
 
-fn send_brain_tool_progress_notification(runtime_values: &HashMap<String, DataValue>, call_content: &str) {
+fn send_brain_tool_progress_notification(
+    runtime_values: &HashMap<String, DataValue>,
+    call_content: &str,
+) {
     if let Some(progress_text) = current_task_progress_message(call_content) {
         if append_current_task_progress(progress_text) {
             return;

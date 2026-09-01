@@ -91,7 +91,11 @@ pub fn save_role_services(agents: Vec<RoleServiceConfig>) -> Result<()> {
 
 fn normalize_identity(mut agent: RoleServiceConfig, fallback_id: String) -> RoleServiceConfig {
     let canonical = if agent.config_id.trim().is_empty() {
-        if agent.id.trim().is_empty() { fallback_id } else { agent.id.clone() }
+        if agent.id.trim().is_empty() {
+            fallback_id
+        } else {
+            agent.id.clone()
+        }
     } else {
         agent.config_id.clone()
     };
@@ -124,11 +128,11 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<RoleServiceConfig> {
     if record.kind.category() != ConfigCategory::Service {
         return Err(crate::string_error!("config '{}' is not an agent config", record.config_id));
     }
-    let spec = record
-        .spec
-        .as_object()
-        .ok_or_else(|| crate::string_error!("agent config '{}' spec must be an object", record.config_id))?;
-    let mut role_service_type = serde_json::from_value(spec.get("role_service_type").cloned().unwrap_or(Value::Null))?;
+    let spec = record.spec.as_object().ok_or_else(|| {
+        crate::string_error!("agent config '{}' spec must be an object", record.config_id)
+    })?;
+    let mut role_service_type =
+        serde_json::from_value(spec.get("role_service_type").cloned().unwrap_or(Value::Null))?;
     migrate_legacy_qq_rdb_id(&record.config_id, &mut role_service_type);
 
     Ok(RoleServiceConfig {
@@ -140,8 +144,14 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<RoleServiceConfig> {
         auto_start: spec.get("auto_start").and_then(Value::as_bool).unwrap_or(false),
         is_default: spec.get("is_default").and_then(Value::as_bool).unwrap_or(false),
         updated_at: record.updated_at,
-        tools: serde_json::from_value(spec.get("tools").cloned().unwrap_or_else(|| Value::Array(Vec::new())))?,
-        avatar_url: spec.get("avatar_url").and_then(Value::as_str).map(str::to_string).filter(|value| !value.is_empty()),
+        tools: serde_json::from_value(
+            spec.get("tools").cloned().unwrap_or_else(|| Value::Array(Vec::new())),
+        )?,
+        avatar_url: spec
+            .get("avatar_url")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .filter(|value| !value.is_empty()),
     })
 }
 

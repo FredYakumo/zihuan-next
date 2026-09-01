@@ -114,9 +114,7 @@ impl WeaviateRef {
             ));
         }
         if api_key.is_none() && username.is_none() {
-            return Err(Error::ValidationError(
-                "weaviate authentication is required".to_string(),
-            ));
+            return Err(Error::ValidationError("weaviate authentication is required".to_string()));
         }
         let client = Client::builder().timeout(timeout).build()?;
 
@@ -190,7 +188,8 @@ impl WeaviateRef {
         let body = response.text().await.unwrap_or_default();
         Err(crate::string_error!(
             "Weaviate readiness probe failed with status {}: {}",
-            status, body
+            status,
+            body
         ))
     }
 
@@ -213,17 +212,18 @@ impl WeaviateRef {
         }
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        Err(crate::string_error!(
-            "Weaviate request failed with status {}: {}",
-            status, body
-        ))
+        Err(crate::string_error!("Weaviate request failed with status {}: {}", status, body))
     }
 
     pub fn get_object_vector(&self, class_name: &str, id: &str) -> Result<Option<Vec<f32>>> {
         crate::runtime::block_async(self.get_object_vector_async(class_name, id))
     }
 
-    pub async fn get_object_vector_async(&self, class_name: &str, id: &str) -> Result<Option<Vec<f32>>> {
+    pub async fn get_object_vector_async(
+        &self,
+        class_name: &str,
+        id: &str,
+    ) -> Result<Option<Vec<f32>>> {
         let query = format!(
             r#"{{ Get {{ {class_name}(where: {{path: ["_id"], operator: Equal, valueText: "{id}"}}) {{ _additional {{ vector }} }} }} }}"#
         );
@@ -248,14 +248,16 @@ impl WeaviateRef {
         if !status.is_success() {
             return Err(crate::string_error!(
                 "Weaviate request failed with status {}: {}",
-                status, body
+                status,
+                body
             ));
         }
         if body.trim().is_empty() {
             return Ok(Value::Null);
         }
-        serde_json::from_str(&body)
-            .map_err(|err| crate::string_error!("Failed to parse Weaviate response as JSON: {err}; body={body}"))
+        serde_json::from_str(&body).map_err(|err| {
+            crate::string_error!("Failed to parse Weaviate response as JSON: {err}; body={body}")
+        })
     }
 }
 
@@ -277,8 +279,9 @@ fn normalize_base_url(raw: String) -> Result<String> {
     if trimmed.is_empty() {
         return Err(Error::ValidationError("Weaviate base_url must not be empty".to_string()));
     }
-    let parsed = reqwest::Url::parse(&trimmed)
-        .map_err(|err| Error::ValidationError(format!("Invalid Weaviate base_url '{trimmed}': {err}")))?;
+    let parsed = reqwest::Url::parse(&trimmed).map_err(|err| {
+        Error::ValidationError(format!("Invalid Weaviate base_url '{trimmed}': {err}"))
+    })?;
     let scheme = parsed.scheme();
     if scheme != "http" && scheme != "https" {
         return Err(Error::ValidationError(format!(

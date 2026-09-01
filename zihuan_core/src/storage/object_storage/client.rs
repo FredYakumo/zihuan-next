@@ -1,11 +1,11 @@
 use std::env;
 use std::sync::Arc;
 
-use chrono::Datelike;
 use crate::error::Result;
+use crate::graph::object_storage::S3Ref;
 use crate::runtime::block_async;
 use crate::url_utils::{image_content_type_from_bytes, supported_image_content_type};
-use crate::graph::object_storage::S3Ref;
+use chrono::Datelike;
 
 #[derive(Debug, Clone)]
 pub struct ObjectStorageConfig {
@@ -40,7 +40,8 @@ impl ObjectStorageConfig {
                 bucket,
                 access_key,
                 secret_key,
-                region: env::var("OBJECT_STORAGE_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
+                region: env::var("OBJECT_STORAGE_REGION")
+                    .unwrap_or_else(|_| "us-east-1".to_string()),
                 public_base_url: env::var("OBJECT_STORAGE_PUBLIC_BASE_URL").ok(),
                 path_style: env::var("OBJECT_STORAGE_PATH_STYLE")
                     .ok()
@@ -97,10 +98,7 @@ pub fn upload_remote_image_to_s3(s3_ref: &S3Ref, url: &str) -> Result<String> {
         .build()?;
     let resp = client.get(url).send()?;
     if !resp.status().is_success() {
-        return Err(crate::string_error!(
-            "image download returned status {}",
-            resp.status()
-        ));
+        return Err(crate::string_error!("image download returned status {}", resp.status()));
     }
     let response_content_type = resp
         .headers()
@@ -117,26 +115,27 @@ pub fn upload_remote_image_to_s3(s3_ref: &S3Ref, url: &str) -> Result<String> {
     })
 }
 
-fn verified_image_content_type(response_content_type: Option<&str>, bytes: &[u8]) -> Result<&'static str> {
+fn verified_image_content_type(
+    response_content_type: Option<&str>,
+    bytes: &[u8],
+) -> Result<&'static str> {
     if bytes.is_empty() {
-        return Err(crate::string_error!(
-            "image download returned an empty body"
-        ));
+        return Err(crate::string_error!("image download returned an empty body"));
     }
 
-    let response_content_type = response_content_type.and_then(supported_image_content_type).ok_or_else(|| {
-        crate::string_error!("image download returned no supported image content type")
-    })?;
+    let response_content_type =
+        response_content_type.and_then(supported_image_content_type).ok_or_else(|| {
+            crate::string_error!("image download returned no supported image content type")
+        })?;
     let detected_content_type = image_content_type_from_bytes(bytes).ok_or_else(|| {
-        crate::string_error!(
-            "image download body does not match a supported image signature"
-        )
+        crate::string_error!("image download body does not match a supported image signature")
     })?;
 
     if response_content_type != detected_content_type {
         return Err(crate::string_error!(
             "image download content type mismatch: response={}, detected={}",
-            response_content_type, detected_content_type
+            response_content_type,
+            detected_content_type
         ));
     }
 

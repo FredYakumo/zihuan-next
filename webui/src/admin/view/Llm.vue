@@ -88,7 +88,14 @@
             <div class="llm-form-grid">
               <t-form-item label="Timeout Secs"><t-input-number v-model="form.llm.timeout_secs" :min="1" /></t-form-item>
               <t-form-item label="Retry Count"><t-input-number v-model="form.llm.retry_count" :min="0" /></t-form-item>
-              <t-form-item label="上下文长度（tokens）"><t-input-number v-model="form.llm.context_length" :min="0" :step="1024" placeholder="0 表示不限制" /><small class="llm-form-hint">留空或 0 表示不限制，配置后可按上下文截断/压缩历史</small></t-form-item>
+              <t-form-item label="上下文长度（tokens）" required>
+                <t-input-number v-model="form.llm.context_length" :min="1" :step="1024" :allow-input-over-limit="false" theme="normal" />
+                <div class="context-length-presets" aria-label="上下文长度快捷设置">
+                  <t-button v-for="preset in contextLengthPresets" :key="preset.label" size="small" variant="outline" @click="form.llm.context_length = preset.value">
+                    {{ preset.label }}
+                  </t-button>
+                </div>
+              </t-form-item>
               <t-form-item label="思考模式"><t-select v-model="form.llm.thinking_type"><t-option :value="null" label="未配置" /><t-option value="enabled" label="启用" /><t-option value="disabled" label="关闭" /></t-select></t-form-item>
               <t-form-item label="思考强度"><t-select v-model="form.llm.reasoning_effort"><t-option :value="null" label="未配置" /><t-option value="low" label="低" /><t-option value="medium" label="中" /><t-option value="high" label="高" /><t-option value="max" label="最高" /></t-select></t-form-item>
             </div>
@@ -130,6 +137,11 @@ const columns = [
   { colKey: "endpoint", title: "接口地址", ellipsis: true },
   { colKey: "updated_at", title: "更新时间", width: 170 },
   { colKey: "actions", title: "操作", width: 270, fixed: "right" },
+];
+const contextLengthPresets = [
+  { label: "64K", value: 64 * 1024 },
+  { label: "256K", value: 256 * 1024 },
+  { label: "1M", value: 1024 * 1024 },
 ];
 
 function triggerImportFile() { importFileInput.value?.click(); }

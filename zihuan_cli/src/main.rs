@@ -40,7 +40,9 @@ fn resolve_graph_path(args: &Args) -> Result<PathBuf> {
         (None, None) => Err(Error::ValidationError(
             "missing input: pass --file <PATH> or --workflow <NAME>".to_string(),
         )),
-        (Some(_), Some(_)) => Err(Error::ValidationError("choose either --file or --workflow".to_string())),
+        (Some(_), Some(_)) => {
+            Err(Error::ValidationError("choose either --file or --workflow".to_string()))
+        }
     }
 }
 

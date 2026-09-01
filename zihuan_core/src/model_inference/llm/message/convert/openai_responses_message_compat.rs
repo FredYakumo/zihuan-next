@@ -1,6 +1,6 @@
+use crate::model_inference::llm::{InferenceParam, LLMMessage, StreamToken};
 use serde_json::Value;
 use tokio::sync::mpsc;
-use crate::model_inference::llm::{InferenceParam, LLMMessage, StreamToken};
 
 use super::openai_responses::{
     build_responses_request_body_for_style, parse_responses_response, parse_responses_sse_response,

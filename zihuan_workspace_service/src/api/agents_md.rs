@@ -6,12 +6,10 @@
 
 use std::fs;
 
+use crate::workspace_agent_service::{agents_md_candidates, AgentsMdCandidate, AgentsMdLocation};
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use crate::workspace_agent_service::{
-    agents_md_candidates, AgentsMdCandidate, AgentsMdLocation,
-};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,18 +62,28 @@ pub async fn save_agents_md(req: &mut Request, res: &mut Response) {
     let candidate = match resolve_candidate(&body.key, workspace_path.as_deref()) {
         Some(candidate) => candidate,
         None => {
-            return render_error(res, StatusCode::BAD_REQUEST, format!("无效的 AGENTS.md 位置: {}", body.key));
+            return render_error(
+                res,
+                StatusCode::BAD_REQUEST,
+                format!("无效的 AGENTS.md 位置: {}", body.key),
+            );
         }
     };
     if let Some(parent) = candidate.path.parent() {
         if let Err(err) = fs::create_dir_all(parent) {
-            return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, format!("创建目录失败: {err}"));
+            return render_error(
+                res,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("创建目录失败: {err}"),
+            );
         }
     }
     if let Err(err) = fs::write(&candidate.path, &body.content) {
         return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, format!("写入失败: {err}"));
     }
-    res.render(Json(json!({ "ok": true, "path": candidate.path.to_string_lossy().to_string() })));
+    res.render(Json(
+        json!({ "ok": true, "path": candidate.path.to_string_lossy().to_string() }),
+    ));
 }
 
 /// Deletes the AGENTS.md file at the requested location, if it exists.
@@ -86,15 +94,25 @@ pub async fn delete_agents_md(req: &mut Request, res: &mut Response) {
     let candidate = match resolve_candidate(&key, workspace_path.as_deref()) {
         Some(candidate) => candidate,
         None => {
-            return render_error(res, StatusCode::BAD_REQUEST, format!("无效的 AGENTS.md 位置: {key}"));
+            return render_error(
+                res,
+                StatusCode::BAD_REQUEST,
+                format!("无效的 AGENTS.md 位置: {key}"),
+            );
         }
     };
     if candidate.exists {
         if let Err(err) = fs::remove_file(&candidate.path) {
-            return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, format!("删除失败: {err}"));
+            return render_error(
+                res,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("删除失败: {err}"),
+            );
         }
     }
-    res.render(Json(json!({ "ok": true, "path": candidate.path.to_string_lossy().to_string() })));
+    res.render(Json(
+        json!({ "ok": true, "path": candidate.path.to_string_lossy().to_string() }),
+    ));
 }
 
 fn query_workspace_path(req: &Request) -> Option<String> {

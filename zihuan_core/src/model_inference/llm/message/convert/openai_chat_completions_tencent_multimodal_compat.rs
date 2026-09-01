@@ -1,6 +1,6 @@
+use crate::model_inference::llm::{InferenceParam, LLMMessage, LLMMessageConvertStyle};
 use crate::model_inference::model_config::{ReasoningEffort, ThinkingType};
 use serde_json::Value;
-use crate::model_inference::llm::{InferenceParam, LLMMessage, LLMMessageConvertStyle};
 
 pub fn build_tencent_multimodal_chat_completions_request_body(
     model_name: &str,

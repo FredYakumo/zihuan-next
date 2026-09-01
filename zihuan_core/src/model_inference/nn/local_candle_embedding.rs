@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::error::{Error, Result};
+use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use candle_core::{safetensors, DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::qwen3::{Config, Model};
 use tokenizers::{PaddingParams, PaddingStrategy, Tokenizer, TruncationParams};
-use crate::error::{Error, Result};
-use crate::model_inference::llm::embedding_base::EmbeddingBase;
 
 const LOCAL_MODEL_ROOT: &str = "models/text_embedding";
 
@@ -29,13 +29,17 @@ impl LocalCandleEmbeddingModel {
         let config_text = fs::read_to_string(&config_path).map_err(|err| {
             crate::string_error!(
                 "failed to read local embedding config '{}' for model '{}': {}",
-                config_path.display(), model_name, err
+                config_path.display(),
+                model_name,
+                err
             )
         })?;
         let config: Config = serde_json::from_str(&config_text).map_err(|err| {
             crate::string_error!(
                 "failed to parse local embedding config '{}' for model '{}': {}",
-                config_path.display(), model_name, err
+                config_path.display(),
+                model_name,
+                err
             )
         })?;
         let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|err| {
@@ -64,19 +68,26 @@ impl LocalCandleEmbeddingModel {
 
     fn load_runtime_model(&self, device: &Device) -> Result<Model> {
         let dtype = device.bf16_default_to_f32();
-        let tensors = safetensors::load(self.model_dir.join("model.safetensors"), device).map_err(|err| {
-            crate::string_error!(
-                "failed to load local embedding weights '{}' for model '{}': {}",
-                self.model_dir.join("model.safetensors").display(), self.model_name, err
-            )
-        })?;
+        let tensors =
+            safetensors::load(self.model_dir.join("model.safetensors"), device).map_err(|err| {
+                crate::string_error!(
+                    "failed to load local embedding weights '{}' for model '{}': {}",
+                    self.model_dir.join("model.safetensors").display(),
+                    self.model_name,
+                    err
+                )
+            })?;
         let tensors: HashMap<String, Tensor> = tensors
             .into_iter()
             .map(|(name, tensor)| (format!("model.{name}"), tensor))
             .collect();
         let vb = VarBuilder::from_tensors(tensors, dtype, device);
         Model::new(&self.config, vb).map_err(|err| {
-            crate::string_error!("failed to load Candle Qwen3 model for '{}': {}", self.model_name, err)
+            crate::string_error!(
+                "failed to load Candle Qwen3 model for '{}': {}",
+                self.model_name,
+                err
+            )
         })
     }
 

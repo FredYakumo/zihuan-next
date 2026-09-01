@@ -34,6 +34,10 @@ export class ApiError extends Error {
   }
 }
 
+export interface ContextCompactionSettings {
+  percent: number;
+}
+
 export async function request<T>(
   method: string,
   path: string,
@@ -52,6 +56,10 @@ export async function request<T>(
     throw new ApiError(message, res.status, details);
   }
   return res.json() as Promise<T>;
+}
+
+export function getContextCompactionSettings(): Promise<ContextCompactionSettings> {
+  return request("GET", "/settings/context-compaction");
 }
 
 // Registry
@@ -359,7 +367,7 @@ export interface LlmServiceConfig {
   include_reasoning_content: boolean;
   thinking_type?: "enabled" | "disabled" | null;
   reasoning_effort?: "low" | "medium" | "high" | "max" | null;
-  context_length?: number | null;
+  context_length: number;
   timeout_secs: number;
   retry_count: number;
 }
@@ -471,7 +479,7 @@ export interface NotificationCard {
 }
 
 export interface ChatStreamEvent {
-  type: "start" | "delta" | "thinking_delta" | "metrics" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "workspace_tasks" | "ask_user" | "command_confirmation" | "tool_call_limit_stopped";
+  type: "start" | "delta" | "thinking_delta" | "metrics" | "done" | "error" | "tool_call_start" | "tool_call_output" | "tool_call_result" | "workspace_change" | "workspace_tasks" | "ask_user" | "command_confirmation" | "tool_call_limit_stopped" | "context_compaction_start" | "context_compaction_complete" | "context_compaction_failed";
   session_id?: string;
   message_id?: string;
   task_id?: string;
@@ -495,6 +503,9 @@ export interface ChatStreamEvent {
   change?: WorkspaceChange;
   tasks?: WorkspaceTask[];
   metrics?: ChatResponseMetrics;
+  estimated_tokens_before?: number;
+  estimated_tokens_after?: number;
+  duration_ms?: number;
 }
 
 export type WorkspaceTaskStatus = "pending" | "in_progress" | "completed" | "interrupted";
@@ -599,6 +610,8 @@ export interface ChatHistoryRecord {
   tool_call_id?: string | null;
   metrics?: ChatResponseMetrics | null;
   workspace_path?: string | null;
+  model_config_id?: string | null;
+  image_understand_model_config_id?: string | null;
   pending_ask_user?: {
     question: string;
     details?: string | null;
@@ -1083,12 +1096,19 @@ export const explorer = {
 };
 
 export const chat = {
+  stop(sessionId: string, taskId?: string | null): Promise<{ ok: boolean }> {
+    return request("POST", `/chat/sessions/${encodeURIComponent(sessionId)}/stop`, {
+      task_id: taskId ?? null,
+    });
+  },
+
   async stream(
     payload: {
       agent_id: string;
       session_id?: string | null;
       stream?: boolean;
       model_config_id?: string | null;
+      image_understand_model_config_id?: string | null;
       thinking_type?: "enabled" | "disabled" | null;
       reasoning_effort?: "low" | "medium" | "high" | "max" | null;
       workspace_path?: string | null;

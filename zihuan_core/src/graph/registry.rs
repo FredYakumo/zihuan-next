@@ -1,9 +1,9 @@
+use crate::error::Result;
 use crate::graph::{DataType, DataValue, Node, NodeConfigField, NodeConfigFlow};
 use once_cell::sync::Lazy;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use crate::error::Result;
 
 /// Node factory function type
 pub type NodeFactory = Arc<dyn Fn(String, String) -> Box<dyn Node> + Send + Sync>;
@@ -54,7 +54,12 @@ impl NodeRegistry {
     }
 
     /// Create a new node instance by type ID
-    pub fn create_node(&self, type_id: &str, id: impl Into<String>, name: impl Into<String>) -> Result<Box<dyn Node>> {
+    pub fn create_node(
+        &self,
+        type_id: &str,
+        id: impl Into<String>,
+        name: impl Into<String>,
+    ) -> Result<Box<dyn Node>> {
         let factories = self.factories.read().unwrap();
         let factory = factories.get(type_id).ok_or_else(|| {
             crate::error::Error::ValidationError(format!("Node type '{}' not registered", type_id))
@@ -66,7 +71,10 @@ impl NodeRegistry {
     /// Return the canonical input and output ports for a registered node type.
     ///
     /// Returns `None` if the type is not registered.
-    pub fn get_node_ports(&self, type_id: &str) -> Option<(Vec<crate::graph::Port>, Vec<crate::graph::Port>)> {
+    pub fn get_node_ports(
+        &self,
+        type_id: &str,
+    ) -> Option<(Vec<crate::graph::Port>, Vec<crate::graph::Port>)> {
         let factories = self.factories.read().unwrap();
         let factory = factories.get(type_id)?;
         let node = factory("__probe__".to_string(), "__probe__".to_string());
@@ -137,13 +145,17 @@ macro_rules! register_node {
                 $display_name,
                 $category,
                 $description,
-                std::sync::Arc::new(|id: String, name: String| Box::new(<$node_struct>::new(id, name))),
+                std::sync::Arc::new(|id: String, name: String| {
+                    Box::new(<$node_struct>::new(id, name))
+                }),
             )
             .unwrap();
     };
 }
 
-pub fn build_node_graph_from_definition(definition: &crate::graph::graph_io::NodeGraphDefinition) -> Result<crate::graph::NodeGraph> {
+pub fn build_node_graph_from_definition(
+    definition: &crate::graph::graph_io::NodeGraphDefinition,
+) -> Result<crate::graph::NodeGraph> {
     let mut graph = crate::graph::NodeGraph::new();
     graph.set_definition(definition.clone());
 
@@ -152,7 +164,11 @@ pub fn build_node_graph_from_definition(definition: &crate::graph::graph_io::Nod
     }
 
     for node_def in &definition.nodes {
-        let node = NODE_REGISTRY.create_node(&node_def.node_type, node_def.id.clone(), node_def.name.clone())?;
+        let node = NODE_REGISTRY.create_node(
+            &node_def.node_type,
+            node_def.id.clone(),
+            node_def.name.clone(),
+        )?;
 
         // Parse inline values
         if !node_def.inline_values.is_empty() {
@@ -277,7 +293,9 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
 
         // Prefer the canonical serialized message so scripts preserve tool calls, usage and media.
         (Value::Object(map), DataType::LLMMessage) => {
-            if let Ok(message) = serde_json::from_value::<crate::model_inference::llm::LLMMessage>(json.clone()) {
+            if let Ok(message) =
+                serde_json::from_value::<crate::model_inference::llm::LLMMessage>(json.clone())
+            {
                 return Some(DataValue::LLMMessage(message));
             }
 
@@ -299,16 +317,23 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
             let parts = match map.get("parts") {
                 Some(Value::Array(parts)) => parts
                     .iter()
-                    .filter_map(|part| serde_json::from_value::<crate::model_inference::llm::MessagePart>(part.clone()).ok())
+                    .filter_map(|part| {
+                        serde_json::from_value::<crate::model_inference::llm::MessagePart>(
+                            part.clone(),
+                        )
+                        .ok()
+                    })
                     .collect(),
                 Some(Value::Null) | None => map
                     .get("content")
                     .and_then(Value::as_str)
                     .map(|content| vec![crate::model_inference::llm::MessagePart::text(content)])
                     .unwrap_or_default(),
-                Some(other) => serde_json::from_value::<crate::model_inference::llm::MessagePart>(other.clone())
-                    .map(|part| vec![part])
-                    .unwrap_or_default(),
+                Some(other) => serde_json::from_value::<crate::model_inference::llm::MessagePart>(
+                    other.clone(),
+                )
+                .map(|part| vec![part])
+                .unwrap_or_default(),
             };
             Some(DataValue::LLMMessage(crate::model_inference::llm::LLMMessage {
                 role,
@@ -320,17 +345,17 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
             }))
         }
 
-        (_, DataType::Sender) => {
-            serde_json::from_value::<crate::ims_bot_adapter::models::sender_model::Sender>(json.clone())
-                .ok()
-                .map(DataValue::Sender)
-        }
+        (_, DataType::Sender) => serde_json::from_value::<
+            crate::ims_bot_adapter::models::sender_model::Sender,
+        >(json.clone())
+        .ok()
+        .map(DataValue::Sender),
 
-        (_, DataType::MessageEvent) => {
-            serde_json::from_value::<crate::ims_bot_adapter::models::event_model::MessageEvent>(json.clone())
-                .ok()
-                .map(DataValue::MessageEvent)
-        }
+        (_, DataType::MessageEvent) => serde_json::from_value::<
+            crate::ims_bot_adapter::models::event_model::MessageEvent,
+        >(json.clone())
+        .ok()
+        .map(DataValue::MessageEvent),
 
         // Single QQ Message from a JSON object: {"type": "text", "data": {"text": "..."}}
         (_, DataType::QQMessage) => {
@@ -340,7 +365,9 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
         }
 
         (_, DataType::MessagePart) => {
-            if let Ok(part) = serde_json::from_value::<crate::model_inference::llm::MessagePart>(json.clone()) {
+            if let Ok(part) =
+                serde_json::from_value::<crate::model_inference::llm::MessagePart>(json.clone())
+            {
                 return Some(DataValue::MessagePart(part));
             }
             let part_type = json.get("type").and_then(Value::as_str)?;
@@ -349,9 +376,15 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 .or_else(|| json.get("url"))
                 .and_then(Value::as_str)?;
             match part_type {
-                "image" => Some(DataValue::MessagePart(crate::model_inference::llm::MessagePart::image_url_string(url))),
-                "video" => Some(DataValue::MessagePart(crate::model_inference::llm::MessagePart::video_url_string(url))),
-                "text" => json.get("text").and_then(Value::as_str)
+                "image" => Some(DataValue::MessagePart(
+                    crate::model_inference::llm::MessagePart::image_url_string(url),
+                )),
+                "video" => Some(DataValue::MessagePart(
+                    crate::model_inference::llm::MessagePart::video_url_string(url),
+                )),
+                "text" => json
+                    .get("text")
+                    .and_then(Value::as_str)
                     .map(crate::model_inference::llm::MessagePart::text)
                     .map(DataValue::MessagePart),
                 _ => None,
@@ -365,14 +398,17 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
             .map(DataValue::Binary),
 
         // Single Image payload from a JSON object.
-        (_, DataType::Image) => serde_json::from_value::<crate::graph::data_value::ImageData>(json.clone())
-            .ok()
-            .map(DataValue::Image),
+        (_, DataType::Image) => {
+            serde_json::from_value::<crate::graph::data_value::ImageData>(json.clone())
+                .ok()
+                .map(DataValue::Image)
+        }
 
         // Generic Vec: recurse per element using the inner type.
         // Handles Vec<LLMMessage>, Vec<QQMessage>, and any other Vec<X>.
         (Value::Array(items), DataType::Vec(inner)) => {
-            let parsed: Vec<DataValue> = items.iter().filter_map(|item| json_to_data_value(item, inner)).collect();
+            let parsed: Vec<DataValue> =
+                items.iter().filter_map(|item| json_to_data_value(item, inner)).collect();
             Some(DataValue::Vec(inner.clone(), parsed))
         }
 
@@ -383,7 +419,9 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
 fn infer_any_data_value(json: &Value) -> Option<DataValue> {
     match json {
         Value::String(s) => Some(DataValue::String(s.clone())),
-        Value::Number(n) => n.as_i64().map(DataValue::Integer).or_else(|| n.as_f64().map(DataValue::Float)),
+        Value::Number(n) => {
+            n.as_i64().map(DataValue::Integer).or_else(|| n.as_f64().map(DataValue::Float))
+        }
         Value::Bool(b) => Some(DataValue::Boolean(*b)),
         _ => Some(DataValue::Json(json.clone())),
     }
@@ -440,8 +478,9 @@ pub fn init_node_registry_with_extensions(extra_registrars: &[RegistryInitFn]) -
     for init in extra_registrars {
         init()?;
     }
-    let workspace_root = std::env::current_dir()
-        .map_err(|error| crate::error::Error::ValidationError(format!("无法获取动态脚本运行时工作目录: {error}")))?;
+    let workspace_root = std::env::current_dir().map_err(|error| {
+        crate::error::Error::ValidationError(format!("无法获取动态脚本运行时工作目录: {error}"))
+    })?;
     let config = crate::config::ConfigCenter::shared()
         .load_root()
         .map(|root| root.node_runtime)

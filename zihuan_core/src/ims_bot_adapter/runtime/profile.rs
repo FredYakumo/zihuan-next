@@ -1,8 +1,10 @@
-use serde::{Deserialize, Serialize};
-use crate::storage::{find_connection, ConnectionConfig, ConnectionKind};
 use crate::error::Result;
+use crate::storage::{find_connection, ConnectionConfig, ConnectionKind};
+use serde::{Deserialize, Serialize};
 
-use crate::ims_bot_adapter::runtime::login_info::{fetch_login_info_via_adapter_connection, qq_avatar_url, BotLoginInfo};
+use crate::ims_bot_adapter::runtime::login_info::{
+    fetch_login_info_via_adapter_connection, qq_avatar_url, BotLoginInfo,
+};
 use crate::ims_bot_adapter::runtime::parse_ims_bot_adapter_connection;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -20,7 +22,9 @@ pub fn resolve_fallback_bot_profile(
     Ok(resolve_fallback_bot_profile_from_connection(connection))
 }
 
-pub fn resolve_fallback_bot_profile_from_connection(connection: &ConnectionConfig) -> Option<QqBotProfile> {
+pub fn resolve_fallback_bot_profile_from_connection(
+    connection: &ConnectionConfig,
+) -> Option<QqBotProfile> {
     let ConnectionKind::BotAdapter(raw) = &connection.kind else {
         return None;
     };

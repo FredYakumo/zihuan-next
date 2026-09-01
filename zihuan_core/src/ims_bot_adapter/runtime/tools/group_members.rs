@@ -93,7 +93,11 @@ impl Tool for GetCurrentGroupMembersTool {
     }
 }
 
-fn execute_group_member_tool(adapter: &SharedBotAdapter, event: &MessageEvent, arguments: &Value) -> Result<String> {
+fn execute_group_member_tool(
+    adapter: &SharedBotAdapter,
+    event: &MessageEvent,
+    arguments: &Value,
+) -> Result<String> {
     let Some(group_id) = event.group_id.filter(|_| is_group_event(event)) else {
         return Ok(NOT_IN_GROUP_MESSAGE.to_string());
     };
@@ -158,7 +162,10 @@ fn parse_role_filter(raw: &str) -> Result<GroupMemberRole> {
     }
 }
 
-fn fetch_group_member_list(adapter: &SharedBotAdapter, group_id: i64) -> Result<Vec<GroupMemberEntry>> {
+fn fetch_group_member_list(
+    adapter: &SharedBotAdapter,
+    group_id: i64,
+) -> Result<Vec<GroupMemberEntry>> {
     let response = ws_send_action(
         adapter,
         "get_group_member_list",
@@ -167,10 +174,9 @@ fn fetch_group_member_list(adapter: &SharedBotAdapter, group_id: i64) -> Result<
         }),
     )?;
 
-    let data = response
-        .get("data")
-        .and_then(Value::as_array)
-        .ok_or_else(|| Error::ValidationError("get_group_member_list 响应缺少 data 数组".to_string()))?;
+    let data = response.get("data").and_then(Value::as_array).ok_or_else(|| {
+        Error::ValidationError("get_group_member_list 响应缺少 data 数组".to_string())
+    })?;
 
     let mut members = Vec::with_capacity(data.len());
     for (index, item) in data.iter().enumerate() {
@@ -211,8 +217,12 @@ fn parse_member_role(raw: Option<&str>) -> GroupMemberRole {
     }
 }
 
-fn filter_members(members: Vec<GroupMemberEntry>, criteria: &SearchCriteria) -> Vec<GroupMemberEntry> {
-    let mut indexed_scores: HashMap<usize, f64> = members.iter().map(|item| (item.original_index, 0.0)).collect();
+fn filter_members(
+    members: Vec<GroupMemberEntry>,
+    criteria: &SearchCriteria,
+) -> Vec<GroupMemberEntry> {
+    let mut indexed_scores: HashMap<usize, f64> =
+        members.iter().map(|item| (item.original_index, 0.0)).collect();
     let mut active_indices: Vec<usize> = members.iter().map(|item| item.original_index).collect();
 
     if let Some(filter) = criteria.filter {
@@ -234,7 +244,8 @@ fn filter_members(members: Vec<GroupMemberEntry>, criteria: &SearchCriteria) -> 
         active_indices = intersect_ranked_indices(active_indices, matches, &mut indexed_scores);
     }
 
-    let mut filtered: Vec<GroupMemberEntry> = active_indices.into_iter().map(|index| members[index].clone()).collect();
+    let mut filtered: Vec<GroupMemberEntry> =
+        active_indices.into_iter().map(|index| members[index].clone()).collect();
     filtered.sort_by(|left, right| {
         let right_score = indexed_scores.get(&right.original_index).copied().unwrap_or_default();
         let left_score = indexed_scores.get(&left.original_index).copied().unwrap_or_default();
@@ -256,7 +267,8 @@ fn intersect_ranked_indices(
     matches: Vec<crate::utils::bm25::Bm25Match>,
     indexed_scores: &mut HashMap<usize, f64>,
 ) -> Vec<usize> {
-    let score_map: HashMap<usize, f64> = matches.into_iter().map(|item| (item.index, item.score)).collect();
+    let score_map: HashMap<usize, f64> =
+        matches.into_iter().map(|item| (item.index, item.score)).collect();
     current_indices
         .into_iter()
         .filter(|index| score_map.contains_key(index))
@@ -277,7 +289,10 @@ fn role_sort_key(role: GroupMemberRole) -> usize {
     }
 }
 
-fn render_group_member_sections(members: &[GroupMemberEntry], filter: Option<GroupMemberRole>) -> String {
+fn render_group_member_sections(
+    members: &[GroupMemberEntry],
+    filter: Option<GroupMemberRole>,
+) -> String {
     let roles = match filter {
         Some(role) => vec![role],
         None => vec![GroupMemberRole::Owner, GroupMemberRole::Admin, GroupMemberRole::Member],
@@ -294,7 +309,11 @@ fn render_group_member_sections(members: &[GroupMemberEntry], filter: Option<Gro
 
         let mut added = false;
         for member in members.iter().filter(|item| item.role == role) {
-            lines.push(format!("|{}|{}|", escape_table_cell(member.display_name()), member.user_id));
+            lines.push(format!(
+                "|{}|{}|",
+                escape_table_cell(member.display_name()),
+                member.user_id
+            ));
             added = true;
         }
 
@@ -311,5 +330,8 @@ fn escape_table_cell(value: &str) -> String {
 }
 
 fn is_group_event(event: &MessageEvent) -> bool {
-    matches!(event.message_type, crate::ims_bot_adapter::runtime::models::event_model::MessageType::Group)
+    matches!(
+        event.message_type,
+        crate::ims_bot_adapter::runtime::models::event_model::MessageType::Group
+    )
 }

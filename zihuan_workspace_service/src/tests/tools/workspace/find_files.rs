@@ -9,7 +9,8 @@ use crate::tools::workspace_tools::{FindFilesTool, DEFAULT_TOOL_FIND_FILES};
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let path = std::env::temp_dir().join(format!("zihuan-find-files-{}-{suffix}", std::process::id()));
+    let path =
+        std::env::temp_dir().join(format!("zihuan-find-files-{}-{suffix}", std::process::id()));
     fs::create_dir_all(&path).unwrap();
     path
 }
@@ -32,7 +33,8 @@ fn find_files_filters_name_type_and_excluded_directories() {
     let tool = FindFilesTool { workspace_path: Some(directory.clone()) };
 
     assert_eq!(tool.spec().name(), DEFAULT_TOOL_FIND_FILES);
-    let result = tool.execute("", &json!({"path":".","name":"*.rs","type":"file","exclude":["target"]}));
+    let result =
+        tool.execute("", &json!({"path":".","name":"*.rs","type":"file","exclude":["target"]}));
     let result: serde_json::Value = serde_json::from_str(&result).unwrap();
     assert_eq!(result["ok"], true);
     let matches = result["matches"].as_array().unwrap();

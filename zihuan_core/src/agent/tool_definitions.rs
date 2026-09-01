@@ -4,11 +4,12 @@ use crate::agent::tool_config::{
     AgentToolConfig, AgentToolType, NodeGraphToolConfig, PythonScriptAgentToolConfig,
 };
 use crate::error::{Error, Result};
-use crate::graph::tool_spec::{
-    fixed_tool_runtime_inputs, ToolDefinition, ToolImplementation, ToolParamDef, QQ_AGENT_TOOL_OWNER_TYPE,
-};
 use crate::graph::function_graph::FunctionPortDef;
 use crate::graph::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
+use crate::graph::tool_spec::{
+    fixed_tool_runtime_inputs, ToolDefinition, ToolImplementation, ToolParamDef,
+    QQ_AGENT_TOOL_OWNER_TYPE,
+};
 use crate::graph::DataType;
 
 pub fn build_enabled_tool_definitions(tools: &[AgentToolConfig]) -> Result<Vec<ToolDefinition>> {
@@ -132,7 +133,10 @@ fn derive_parameters_from_graph_inputs(inputs: &[FunctionPortDef]) -> Vec<ToolPa
 
 fn load_graph_from_path(path: PathBuf) -> Result<crate::graph::graph_io::NodeGraphDefinition> {
     if !path.exists() {
-        return Err(Error::ValidationError(format!("tool graph file not found: {}", path.display())));
+        return Err(Error::ValidationError(format!(
+            "tool graph file not found: {}",
+            path.display()
+        )));
     }
     crate::graph::load_graph_definition_from_json(&path)
 }
@@ -243,10 +247,9 @@ fn same_param_signature(parameters: &[ToolParamDef], inputs: &[FunctionPortDef])
         .collect::<Vec<_>>();
 
     parameters.len() == exposed_inputs.len()
-        && parameters
-            .iter()
-            .zip(exposed_inputs)
-            .all(|(param, input)| param.name.trim() == input.name.trim() && param.data_type == input.data_type)
+        && parameters.iter().zip(exposed_inputs).all(|(param, input)| {
+            param.name.trim() == input.name.trim() && param.data_type == input.data_type
+        })
 }
 
 fn same_port_signature(left: &[FunctionPortDef], right: &[FunctionPortDef]) -> bool {
@@ -296,7 +299,8 @@ fn merge_output_descriptions_from_graph(
             if let Some(description) = graph_outputs
                 .iter()
                 .find(|graph_output| {
-                    graph_output.name.trim() == output.name.trim() && graph_output.data_type == output.data_type
+                    graph_output.name.trim() == output.name.trim()
+                        && graph_output.data_type == output.data_type
                 })
                 .map(|graph_output| graph_output.description.trim())
                 .filter(|description| !description.is_empty())

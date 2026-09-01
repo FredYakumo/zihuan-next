@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use log::warn;
 use serde_json::Value;
 
-use crate::graph::graph_io::NodeGraphDefinition;
 use crate::error::Result;
+use crate::graph::graph_io::NodeGraphDefinition;
 
 /// Returns the central directory that stores hyperparameter value files.
 ///
@@ -132,7 +132,9 @@ fn migrate_legacy_values_into_shared_store(
                 if path.extension().and_then(|ext| ext.to_str()) != Some("yaml") {
                     return None;
                 }
-                if path.file_name().and_then(|name| name.to_str()) == Some("shared_hyperparameters.yaml") {
+                if path.file_name().and_then(|name| name.to_str())
+                    == Some("shared_hyperparameters.yaml")
+                {
                     return None;
                 }
                 let modified = entry
@@ -180,7 +182,10 @@ fn migrate_legacy_values_into_shared_store(
 ///
 /// Values are shared across graphs by `(group, name)`. Legacy per-graph YAML files are
 /// imported automatically when matching values are found.
-pub fn load_hyperparameter_values(graph_path: &Path, graph: &NodeGraphDefinition) -> HashMap<String, Value> {
+pub fn load_hyperparameter_values(
+    graph_path: &Path,
+    graph: &NodeGraphDefinition,
+) -> HashMap<String, Value> {
     let shared_path = match shared_hyperparam_yaml_path() {
         Some(p) => p,
         None => return HashMap::new(),

@@ -9,7 +9,8 @@ use crate::tools::workspace_tools::{EditFileTool, DEFAULT_TOOL_EDIT_FILE};
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let path = std::env::temp_dir().join(format!("zihuan-edit-file-{}-{suffix}", std::process::id()));
+    let path =
+        std::env::temp_dir().join(format!("zihuan-edit-file-{}-{suffix}", std::process::id()));
     fs::create_dir_all(&path).unwrap();
     path
 }

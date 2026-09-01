@@ -24,7 +24,8 @@ impl Tool for GetFunctionListTool {
     }
 
     fn execute(&self, _call_content: &str, _arguments: &Value) -> String {
-        zihuan_core::command::build_help_text().unwrap_or_else(|| "命令注册表尚未初始化。".to_string())
+        zihuan_core::command::build_help_text()
+            .unwrap_or_else(|| "命令注册表尚未初始化。".to_string())
     }
 }
 

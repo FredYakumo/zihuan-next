@@ -10,11 +10,11 @@ use uuid::Uuid;
 use crate::error::{Error, Result};
 use crate::weaviate::WeaviateCollectionSchema;
 
-use crate::storage::{
-    memory_is_accessible, validate_connection_authentication, AgentMemoryAccessContext, AgentMemoryRecord,
-    AgentMemorySearchHit, AgentMemoryUpsert, ElasticsearchConnection,
-};
 use crate::ims_bot_adapter::models::message::PersistedMedia;
+use crate::storage::{
+    memory_is_accessible, validate_connection_authentication, AgentMemoryAccessContext,
+    AgentMemoryRecord, AgentMemorySearchHit, AgentMemoryUpsert, ElasticsearchConnection,
+};
 
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 const INDEX_CHECK_RETRY_ATTEMPTS: usize = 5;
@@ -78,20 +78,30 @@ impl ElasticsearchRef {
         let mut headers = HeaderMap::new();
         match config.auth_method {
             crate::storage::ConnectionAuthMethod::ApiKey => {
-                let api_key = config.api_key.as_deref().map(str::trim).filter(|value| !value.is_empty()).unwrap_or_default();
+                let api_key = config
+                    .api_key
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_default();
                 headers.insert(
                     AUTHORIZATION,
-                    HeaderValue::from_str(&format!("ApiKey {api_key}"))
-                        .map_err(|_| Error::ValidationError("invalid elasticsearch api_key".to_string()))?,
+                    HeaderValue::from_str(&format!("ApiKey {api_key}")).map_err(|_| {
+                        Error::ValidationError("invalid elasticsearch api_key".to_string())
+                    })?,
                 );
             }
             crate::storage::ConnectionAuthMethod::Password => {
-                let credentials = base64::engine::general_purpose::STANDARD
-                    .encode(format!("{}:{}", username.unwrap_or_default(), password.unwrap_or_default()));
+                let credentials = base64::engine::general_purpose::STANDARD.encode(format!(
+                    "{}:{}",
+                    username.unwrap_or_default(),
+                    password.unwrap_or_default()
+                ));
                 headers.insert(
                     AUTHORIZATION,
-                    HeaderValue::from_str(&format!("Basic {credentials}"))
-                        .map_err(|_| Error::ValidationError("invalid elasticsearch basic auth".to_string()))?,
+                    HeaderValue::from_str(&format!("Basic {credentials}")).map_err(|_| {
+                        Error::ValidationError("invalid elasticsearch basic auth".to_string())
+                    })?,
                 );
             }
         }
@@ -99,9 +109,9 @@ impl ElasticsearchRef {
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
             .default_headers(headers);
         Ok(Self {
-            client: builder
-                .build()
-                .map_err(|error| crate::string_error!("build elasticsearch client failed: {error}"))?,
+            client: builder.build().map_err(|error| {
+                crate::string_error!("build elasticsearch client failed: {error}")
+            })?,
             base_url,
             index_name: config.index_name.trim().to_string(),
             schema: config.collection_schema.into(),
@@ -131,7 +141,10 @@ impl ElasticsearchRef {
     }
 }
 
-pub fn ensure_elasticsearch_index(reference: &ElasticsearchRef, create_missing: bool) -> Result<bool> {
+pub fn ensure_elasticsearch_index(
+    reference: &ElasticsearchRef,
+    create_missing: bool,
+) -> Result<bool> {
     let index_url = format!("{}/{}", reference.base_url, reference.index_name);
     let mut attempt = 0;
     let exists = loop {
@@ -162,7 +175,11 @@ pub fn ensure_elasticsearch_index(reference: &ElasticsearchRef, create_missing: 
         )?;
         return Ok(true);
     }
-    let mapping = reference.request(reqwest::Method::GET, &format!("/{}/_mapping", reference.index_name), None)?;
+    let mapping = reference.request(
+        reqwest::Method::GET,
+        &format!("/{}/_mapping", reference.index_name),
+        None,
+    )?;
     let dims = mapping
         .pointer(&format!("/{}/mappings/properties/embedding/dims", reference.index_name))
         .and_then(Value::as_u64);
@@ -227,12 +244,28 @@ pub fn search_elasticsearch_images(
     let limit = limit.clamp(1, 50);
     let mut merged = Vec::new();
     if let Some(query) = name_query.map(str::trim).filter(|value| !value.is_empty()) {
-        merged.extend(parse_image_hits(reference.request(reqwest::Method::POST, &format!("/{}/_search", reference.index_name), Some(json!({"size": limit, "query": {"match": {"name": query}}})))?, true));
+        merged.extend(parse_image_hits(
+            reference.request(
+                reqwest::Method::POST,
+                &format!("/{}/_search", reference.index_name),
+                Some(json!({"size": limit, "query": {"match": {"name": query}}})),
+            )?,
+            true,
+        ));
     }
     if let Some(query) = description_query.map(str::trim).filter(|value| !value.is_empty()) {
-        merged.extend(parse_image_hits(reference.request(reqwest::Method::POST, &format!("/{}/_search", reference.index_name), Some(json!({"size": limit, "query": {"match": {"description": query}}})))?, true));
+        merged.extend(parse_image_hits(
+            reference.request(
+                reqwest::Method::POST,
+                &format!("/{}/_search", reference.index_name),
+                Some(json!({"size": limit, "query": {"match": {"description": query}}})),
+            )?,
+            true,
+        ));
     }
-    for (field, vector) in [("name_vector", name_vector), ("description_vector", description_vector)] {
+    for (field, vector) in
+        [("name_vector", name_vector), ("description_vector", description_vector)]
+    {
         if let Some(vector) = vector {
             validate_vector(reference, vector)?;
             merged.extend(parse_image_hits(reference.request(reqwest::Method::POST, &format!("/{}/_search", reference.index_name), Some(json!({"size": limit, "knn": {"field": field, "query_vector": vector, "k": limit, "num_candidates": (limit * 5).min(MAX_QUERY_CANDIDATES)}})))?, false));
@@ -249,19 +282,37 @@ pub fn search_elasticsearch_images(
                     (None, score) => score,
                 };
             }
-            None => { deduped.insert(hit.object_id.clone(), hit); }
+            None => {
+                deduped.insert(hit.object_id.clone(), hit);
+            }
         }
     }
     let mut results = deduped.into_values().collect::<Vec<_>>();
-    results.sort_by(|left, right| right.keyword_match.cmp(&left.keyword_match).then_with(|| right.score.partial_cmp(&left.score).unwrap_or(std::cmp::Ordering::Equal)));
+    results.sort_by(|left, right| {
+        right
+            .keyword_match
+            .cmp(&left.keyword_match)
+            .then_with(|| right.score.partial_cmp(&left.score).unwrap_or(std::cmp::Ordering::Equal))
+    });
     results.truncate(limit);
     Ok(results)
 }
 
 fn parse_image_hits(value: Value, keyword_match: bool) -> Vec<ElasticsearchImageSearchHit> {
-    value.pointer("/hits/hits").and_then(Value::as_array).into_iter().flatten().filter_map(|hit| {
-        Some(ElasticsearchImageSearchHit { object_id: hit.get("_id")?.as_str()?.to_string(), properties: hit.get("_source")?.clone(), score: hit.get("_score").and_then(Value::as_f64), keyword_match })
-    }).collect()
+    value
+        .pointer("/hits/hits")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|hit| {
+            Some(ElasticsearchImageSearchHit {
+                object_id: hit.get("_id")?.as_str()?.to_string(),
+                properties: hit.get("_source")?.clone(),
+                score: hit.get("_score").and_then(Value::as_f64),
+                keyword_match,
+            })
+        })
+        .collect()
 }
 
 pub fn list_elasticsearch_memory_keys(
@@ -277,7 +328,11 @@ pub fn list_elasticsearch_memory_keys(
         memory_search_body(access, query, None, top_n)
     };
     parse_memory_hits(
-        reference.request(reqwest::Method::POST, &format!("/{}/_search", reference.index_name), Some(body))?,
+        reference.request(
+            reqwest::Method::POST,
+            &format!("/{}/_search", reference.index_name),
+            Some(body),
+        )?,
         access,
     )
 }
@@ -324,18 +379,26 @@ fn access_filter(access: &AgentMemoryAccessContext) -> Value {
     if access.admin {
         return json!({"bool":{"must_not":[{"range":{"expires_at":{"lte":"now"}}}]}});
     }
-    let mut should =
-        vec![json!({"bool":{"must_not":[{"exists":{"field":"group_id_list"}},{"exists":{"field":"sender_id_list"}}]}})];
-    if let Some(group_id) = access.group_id.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+    let mut should = vec![
+        json!({"bool":{"must_not":[{"exists":{"field":"group_id_list"}},{"exists":{"field":"sender_id_list"}}]}}),
+    ];
+    if let Some(group_id) =
+        access.group_id.as_deref().map(str::trim).filter(|value| !value.is_empty())
+    {
         should.push(json!({"terms":{"group_id_list":[group_id]}}));
     }
-    if let Some(sender_id) = access.sender_id.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(sender_id) =
+        access.sender_id.as_deref().map(str::trim).filter(|value| !value.is_empty())
+    {
         should.push(json!({"bool":{"must_not":[{"exists":{"field":"group_id_list"}}],"filter":[{"terms":{"sender_id_list":[sender_id]}}]}}));
     }
     json!({"bool":{"must_not":[{"range":{"expires_at":{"lte":"now"}}}],"should":should,"minimum_should_match":1}})
 }
 
-fn parse_memory_hits(value: Value, access: &AgentMemoryAccessContext) -> Result<Vec<AgentMemorySearchHit>> {
+fn parse_memory_hits(
+    value: Value,
+    access: &AgentMemoryAccessContext,
+) -> Result<Vec<AgentMemorySearchHit>> {
     let hits = value
         .pointer("/hits/hits")
         .and_then(Value::as_array)
@@ -369,9 +432,9 @@ fn get_memory_record(reference: &ElasticsearchRef, object_id: &str) -> Result<Ag
         &format!("/{}/_doc/{}", reference.index_name, object_id),
         None,
     )?;
-    let source = value
-        .get("_source")
-        .ok_or_else(|| Error::ValidationError("elasticsearch memory document is missing _source".to_string()))?;
+    let source = value.get("_source").ok_or_else(|| {
+        Error::ValidationError("elasticsearch memory document is missing _source".to_string())
+    })?;
     Ok(AgentMemoryRecord {
         object_id: object_id.to_string(),
         key: source.get("key").and_then(Value::as_str).unwrap_or_default().to_string(),
@@ -379,8 +442,16 @@ fn get_memory_record(reference: &ElasticsearchRef, object_id: &str) -> Result<Ag
         expires_at: source.get("expires_at").and_then(Value::as_str).map(ToOwned::to_owned),
         sender_id_list: string_list(source, "sender_id_list"),
         group_id_list: string_list(source, "group_id_list"),
-        created_at: source.get("created_at").and_then(Value::as_str).unwrap_or_default().to_string(),
-        updated_at: source.get("updated_at").and_then(Value::as_str).unwrap_or_default().to_string(),
+        created_at: source
+            .get("created_at")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        updated_at: source
+            .get("updated_at")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
     })
 }
 

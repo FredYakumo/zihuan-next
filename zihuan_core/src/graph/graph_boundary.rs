@@ -4,7 +4,8 @@ use serde_json::Value;
 
 use crate::graph::function_graph::{
     function_inputs_ports, function_outputs_ports, function_signature_from_inline_values,
-    hidden_function_runtime_values_port, hidden_function_signature_port, FunctionPortDef, FUNCTION_SIGNATURE_PORT,
+    hidden_function_runtime_values_port, hidden_function_signature_port, FunctionPortDef,
+    FUNCTION_SIGNATURE_PORT,
 };
 use crate::graph::graph_io::{GraphPosition, GraphSize, NodeDefinition, NodeGraphDefinition};
 use crate::graph::Port;
@@ -123,7 +124,11 @@ pub fn sync_root_graph_io_signature(
         GRAPH_INPUTS_NODE_ID,
         build_graph_inputs_node_definition(&effective_inputs),
     );
-    changed |= upsert_boundary_node(graph, GRAPH_OUTPUTS_NODE_ID, build_graph_outputs_node_definition(outputs));
+    changed |= upsert_boundary_node(
+        graph,
+        GRAPH_OUTPUTS_NODE_ID,
+        build_graph_outputs_node_definition(outputs),
+    );
 
     let valid_inputs: HashMap<&str, Vec<&str>> = graph
         .nodes
@@ -168,13 +173,17 @@ pub fn root_graph_to_tool_subgraph(graph: &NodeGraphDefinition) -> NodeGraphDefi
         .nodes
         .iter()
         .find(|node| node.id == GRAPH_INPUTS_NODE_ID)
-        .and_then(|node| crate::graph::function_graph::function_signature_from_inline_values(&node.inline_values))
+        .and_then(|node| {
+            crate::graph::function_graph::function_signature_from_inline_values(&node.inline_values)
+        })
         .unwrap_or_else(|| subgraph.graph_inputs.clone());
     let output_signature = subgraph
         .nodes
         .iter()
         .find(|node| node.id == GRAPH_OUTPUTS_NODE_ID)
-        .and_then(|node| crate::graph::function_graph::function_signature_from_inline_values(&node.inline_values))
+        .and_then(|node| {
+            crate::graph::function_graph::function_signature_from_inline_values(&node.inline_values)
+        })
         .unwrap_or_else(|| subgraph.graph_outputs.clone());
 
     for node in &mut subgraph.nodes {
@@ -200,11 +209,19 @@ pub fn root_graph_to_tool_subgraph(graph: &NodeGraphDefinition) -> NodeGraphDefi
 
     subgraph.graph_inputs.clear();
     subgraph.graph_outputs.clear();
-    crate::graph::function_graph::sync_function_subgraph_signature(&mut subgraph, &input_signature, &output_signature);
+    crate::graph::function_graph::sync_function_subgraph_signature(
+        &mut subgraph,
+        &input_signature,
+        &output_signature,
+    );
     subgraph
 }
 
-fn upsert_boundary_node(graph: &mut NodeGraphDefinition, node_id: &str, replacement: NodeDefinition) -> bool {
+fn upsert_boundary_node(
+    graph: &mut NodeGraphDefinition,
+    node_id: &str,
+    replacement: NodeDefinition,
+) -> bool {
     if let Some(existing) = graph.nodes.iter_mut().find(|node| node.id == node_id) {
         let position = existing.position.clone();
         let size = existing.size.clone();
@@ -219,7 +236,8 @@ fn upsert_boundary_node(graph: &mut NodeGraphDefinition, node_id: &str, replacem
             || existing.output_ports != replacement.output_ports
             || existing.dynamic_input_ports != replacement.dynamic_input_ports
             || existing.dynamic_output_ports != replacement.dynamic_output_ports
-            || existing.position.as_ref().map(|p| (p.x, p.y)) != replacement.position.as_ref().map(|p| (p.x, p.y))
+            || existing.position.as_ref().map(|p| (p.x, p.y))
+                != replacement.position.as_ref().map(|p| (p.x, p.y))
             || existing.size.as_ref().map(|s| (s.width, s.height))
                 != replacement.size.as_ref().map(|s| (s.width, s.height))
             || existing.inline_values != replacement.inline_values

@@ -6,9 +6,9 @@ use tokio::sync::broadcast;
 
 use zihuan_core::setup_wizard::{load_setup_wizard_state, save_setup_wizard_state};
 use zihuan_core::storage::{
-    ensure_collection_schema, ensure_elasticsearch_index, ConnectionAuthMethod, ConnectionConfig, ConnectionKind,
-    ElasticsearchConnection, ElasticsearchRef,
-    MysqlConnection, RedisConnection, RustfsConnection, SqliteConnection, WeaviateConnection,
+    ensure_collection_schema, ensure_elasticsearch_index, ConnectionAuthMethod, ConnectionConfig,
+    ConnectionKind, ElasticsearchConnection, ElasticsearchRef, MysqlConnection, RedisConnection,
+    RustfsConnection, SqliteConnection, WeaviateConnection,
 };
 use zihuan_core::weaviate::{WeaviateCollectionSchema, WeaviateRef};
 
@@ -172,7 +172,12 @@ impl SetupOrchestrator {
         let effective_proxy = options.http_proxy.as_deref().or(env.proxy.as_deref());
 
         if let Some(proxy) = effective_proxy {
-            self.emit("detecting_environment", "success", &format!("Using proxy: {proxy}"), Some(12));
+            self.emit(
+                "detecting_environment",
+                "success",
+                &format!("Using proxy: {proxy}"),
+                Some(12),
+            );
         }
 
         if !required_services.is_empty() {
@@ -219,7 +224,8 @@ impl SetupOrchestrator {
                 for (i, service) in required_services.iter().enumerate() {
                     let pct = 15 + ((i + 1) as u8 * 50 / required_services.len() as u8);
                     if *service == "napcat" {
-                        let qq_id = ims_bot_adapter_config.as_ref().and_then(|c| c.qq_id.as_deref());
+                        let qq_id =
+                            ims_bot_adapter_config.as_ref().and_then(|c| c.qq_id.as_deref());
                         self.emit(
                             "installing_napcat",
                             "running",
@@ -277,10 +283,20 @@ impl SetupOrchestrator {
             .await
         {
             Ok(_) => {
-                self.emit("creating_configs", "success", "Configurations created successfully", Some(90));
+                self.emit(
+                    "creating_configs",
+                    "success",
+                    "Configurations created successfully",
+                    Some(90),
+                );
             }
             Err(e) => {
-                self.emit("creating_configs", "error", &format!("Failed to create configs: {e}"), Some(90));
+                self.emit(
+                    "creating_configs",
+                    "error",
+                    &format!("Failed to create configs: {e}"),
+                    Some(90),
+                );
                 return Err(e);
             }
         }
@@ -305,34 +321,65 @@ impl SetupOrchestrator {
         napcat_native_path: Option<&str>,
     ) -> Result<(), String> {
         match role {
-            SetupRole::ChatAssistant => config_factory::create_chat_assistant_stack(llm_config).await,
+            SetupRole::ChatAssistant => {
+                config_factory::create_chat_assistant_stack(llm_config).await
+            }
             SetupRole::CodeDevAssistant => {
-                config_factory::create_workspace_agent_service_stack(llm_config, "Project Dev Assistant").await
+                config_factory::create_workspace_agent_service_stack(
+                    llm_config,
+                    "Project Dev Assistant",
+                )
+                .await
             }
             SetupRole::QqChatBot => {
-                let ims_config =
-                    ims_bot_adapter_config.ok_or("IMS Bot Adapter configuration is required for QQ Chat Bot")?;
-                config_factory::create_qq_bot_stack(llm_config, ims_config, napcat_native_path).await
+                let ims_config = ims_bot_adapter_config
+                    .ok_or("IMS Bot Adapter configuration is required for QQ Chat Bot")?;
+                config_factory::create_qq_bot_stack(llm_config, ims_config, napcat_native_path)
+                    .await
             }
             SetupRole::AiButler => config_factory::create_butler_stack(llm_config).await,
         }
     }
 
     pub async fn run_detailed(&self, config: DetailedSetupConfig) -> Result<(), String> {
-        self.emit("validating_detailed_config", "running", "Validating component configuration...", Some(5));
+        self.emit(
+            "validating_detailed_config",
+            "running",
+            "Validating component configuration...",
+            Some(5),
+        );
         validate_detailed_config(&config)?;
 
         let install_services = detailed_install_services(&config);
         if !install_services.is_empty() {
-            self.emit("installing_dependencies", "running", "Installing selected components...", Some(15));
+            self.emit(
+                "installing_dependencies",
+                "running",
+                "Installing selected components...",
+                Some(15),
+            );
             match config.install_method {
-                DetailedInstallMethod::Docker => run_detailed_docker(&config, &install_services).await?,
-                DetailedInstallMethod::Binary => run_detailed_binary(&config, &install_services).await?,
+                DetailedInstallMethod::Docker => {
+                    run_detailed_docker(&config, &install_services).await?
+                }
+                DetailedInstallMethod::Binary => {
+                    run_detailed_binary(&config, &install_services).await?
+                }
             }
-            self.emit("installing_dependencies", "success", "Selected components are running", Some(55));
+            self.emit(
+                "installing_dependencies",
+                "success",
+                "Selected components are running",
+                Some(55),
+            );
         }
 
-        self.emit("verifying_connections", "running", "Verifying component connections...", Some(65));
+        self.emit(
+            "verifying_connections",
+            "running",
+            "Verifying component connections...",
+            Some(65),
+        );
         save_detailed_connections(&config).await?;
         self.emit("verifying_connections", "success", "Component connections saved", Some(90));
 
@@ -363,21 +410,33 @@ impl SetupOrchestrator {
 }
 
 fn validate_detailed_config(config: &DetailedSetupConfig) -> Result<(), String> {
-    if !config.relational.enabled && !config.rustfs.enabled && !config.search.enabled && !config.redis.enabled {
+    if !config.relational.enabled
+        && !config.rustfs.enabled
+        && !config.search.enabled
+        && !config.redis.enabled
+    {
         return Err("Select at least one component to configure".to_string());
     }
     if config.relational.enabled && config.relational.database_type == "mysql" {
-        if config.relational.host.trim().is_empty() || config.relational.database.trim().is_empty() {
+        if config.relational.host.trim().is_empty() || config.relational.database.trim().is_empty()
+        {
             return Err("MySQL host and database are required".to_string());
         }
-        if config.relational.source == DetailedComponentSource::Install && config.relational.password.is_empty() {
+        if config.relational.source == DetailedComponentSource::Install
+            && config.relational.password.is_empty()
+        {
             return Err("A MySQL root password is required when installing MySQL".to_string());
         }
     }
-    if config.relational.enabled && config.relational.database_type == "sqlite" && config.relational.sqlite_path.trim().is_empty() {
+    if config.relational.enabled
+        && config.relational.database_type == "sqlite"
+        && config.relational.sqlite_path.trim().is_empty()
+    {
         return Err("SQLite database path is required".to_string());
     }
-    if config.rustfs.enabled && (config.rustfs.endpoint.trim().is_empty() || config.rustfs.bucket.trim().is_empty()) {
+    if config.rustfs.enabled
+        && (config.rustfs.endpoint.trim().is_empty() || config.rustfs.bucket.trim().is_empty())
+    {
         return Err("RustFS endpoint and bucket are required".to_string());
     }
     if config.search.enabled && config.search.base_url.trim().is_empty() {
@@ -395,8 +454,12 @@ fn validate_detailed_config(config: &DetailedSetupConfig) -> Result<(), String> 
                 if !api_key.is_empty() {
                     return Err("Configure either a password or an API key for the search database, not both".to_string());
                 }
-                if config.search.source == DetailedComponentSource::Existing && username.is_empty() {
-                    return Err("A search database username is required when using password authentication".to_string());
+                if config.search.source == DetailedComponentSource::Existing && username.is_empty()
+                {
+                    return Err(
+                        "A search database username is required when using password authentication"
+                            .to_string(),
+                    );
                 }
             }
             DetailedSearchAuthMethod::ApiKey => {
@@ -413,7 +476,9 @@ fn validate_detailed_config(config: &DetailedSetupConfig) -> Result<(), String> 
             ("elasticsearch", DetailedComponentSource::Install)
                 if config.search.auth_method != DetailedSearchAuthMethod::Password =>
             {
-                return Err("Wizard-installed Elasticsearch requires password authentication".to_string());
+                return Err(
+                    "Wizard-installed Elasticsearch requires password authentication".to_string()
+                );
             }
             ("weaviate", DetailedComponentSource::Install)
                 if config.search.auth_method != DetailedSearchAuthMethod::ApiKey =>
@@ -437,7 +502,8 @@ fn validate_detailed_config(config: &DetailedSetupConfig) -> Result<(), String> 
         if config.rustfs.enabled
             && (config.rustfs.access_key.is_empty() || config.rustfs.secret_key.is_empty())
         {
-            return Err("RustFS access and secret keys are required when exposing public access".to_string());
+            return Err("RustFS access and secret keys are required when exposing public access"
+                .to_string());
         }
         if config.redis.enabled && config.redis.password.as_deref().unwrap_or_default().is_empty() {
             return Err("A Redis password is required when exposing public access".to_string());
@@ -446,7 +512,9 @@ fn validate_detailed_config(config: &DetailedSetupConfig) -> Result<(), String> 
     Ok(())
 }
 
-pub fn generate_detailed_install_command(config: &DetailedSetupConfig) -> Result<DetailedInstallCommand, String> {
+pub fn generate_detailed_install_command(
+    config: &DetailedSetupConfig,
+) -> Result<DetailedInstallCommand, String> {
     validate_detailed_config(config)?;
 
     let compose = detailed_compose(config);
@@ -487,14 +555,25 @@ fn base64_encode(bytes: &[u8]) -> String {
         let third = *chunk.get(2).unwrap_or(&0);
         output.push(TABLE[(first >> 2) as usize] as char);
         output.push(TABLE[((first & 0b0000_0011) << 4 | second >> 4) as usize] as char);
-        output.push(if chunk.len() > 1 { TABLE[((second & 0b0000_1111) << 2 | third >> 6) as usize] as char } else { '=' });
-        output.push(if chunk.len() > 2 { TABLE[(third & 0b0011_1111) as usize] as char } else { '=' });
+        output.push(if chunk.len() > 1 {
+            TABLE[((second & 0b0000_1111) << 2 | third >> 6) as usize] as char
+        } else {
+            '='
+        });
+        output.push(if chunk.len() > 2 {
+            TABLE[(third & 0b0011_1111) as usize] as char
+        } else {
+            '='
+        });
     }
     output
 }
 
 fn detailed_connection_host<'a>(config: &'a DetailedSetupConfig, default: &'a str) -> &'a str {
-    if config.expose_public_access && config.use_target_machine_address && !config.target_machine_address.trim().is_empty() {
+    if config.expose_public_access
+        && config.use_target_machine_address
+        && !config.target_machine_address.trim().is_empty()
+    {
         config.target_machine_address.trim()
     } else {
         default
@@ -509,7 +588,9 @@ fn detailed_connection_configs(config: &DetailedSetupConfig) -> Vec<ConnectionCo
             config_factory::build_connection(
                 "setup-detailed-sqlite",
                 "SQLite",
-                ConnectionKind::Sqlite(SqliteConnection { path: config.relational.sqlite_path.clone() }),
+                ConnectionKind::Sqlite(SqliteConnection {
+                    path: config.relational.sqlite_path.clone(),
+                }),
             )
         } else {
             let host = detailed_connection_host(config, &config.relational.host);
@@ -534,8 +615,15 @@ fn detailed_connection_configs(config: &DetailedSetupConfig) -> Vec<ConnectionCo
         connections.push(connection);
     }
     if config.rustfs.enabled {
-        let endpoint = if config.expose_public_access && config.use_target_machine_address && !config.target_machine_address.trim().is_empty() {
-            format!("http://{}:{}", config.target_machine_address.trim(), config.rustfs.deployment.port)
+        let endpoint = if config.expose_public_access
+            && config.use_target_machine_address
+            && !config.target_machine_address.trim().is_empty()
+        {
+            format!(
+                "http://{}:{}",
+                config.target_machine_address.trim(),
+                config.rustfs.deployment.port
+            )
         } else {
             config.rustfs.endpoint.clone()
         };
@@ -554,8 +642,15 @@ fn detailed_connection_configs(config: &DetailedSetupConfig) -> Vec<ConnectionCo
         ));
     }
     if config.redis.enabled {
-        let url = if config.expose_public_access && config.use_target_machine_address && !config.target_machine_address.trim().is_empty() {
-            format!("redis://{}:{}", config.target_machine_address.trim(), config.redis.deployment.port)
+        let url = if config.expose_public_access
+            && config.use_target_machine_address
+            && !config.target_machine_address.trim().is_empty()
+        {
+            format!(
+                "redis://{}:{}",
+                config.target_machine_address.trim(),
+                config.redis.deployment.port
+            )
         } else {
             config.redis.url.clone()
         };
@@ -570,12 +665,22 @@ fn detailed_connection_configs(config: &DetailedSetupConfig) -> Vec<ConnectionCo
         ));
     }
     if config.search.enabled {
-        let base_url = if config.expose_public_access && config.use_target_machine_address && !config.target_machine_address.trim().is_empty() {
-            format!("http://{}:{}", config.target_machine_address.trim(), config.search.deployment.port)
+        let base_url = if config.expose_public_access
+            && config.use_target_machine_address
+            && !config.target_machine_address.trim().is_empty()
+        {
+            format!(
+                "http://{}:{}",
+                config.target_machine_address.trim(),
+                config.search.deployment.port
+            )
         } else {
             config.search.base_url.clone()
         };
-        for (suffix, schema) in [("memory", WeaviateCollectionSchema::AgentMemory), ("image", WeaviateCollectionSchema::ImageSemantic)] {
+        for (suffix, schema) in [
+            ("memory", WeaviateCollectionSchema::AgentMemory),
+            ("image", WeaviateCollectionSchema::ImageSemantic),
+        ] {
             let id = format!("setup-detailed-{}-{suffix}", config.search.search_type);
             let name = format!("{} {suffix}", config.search.search_type);
             let kind = if config.search.search_type == "elasticsearch" {
@@ -620,7 +725,11 @@ fn detailed_connection_configs(config: &DetailedSetupConfig) -> Vec<ConnectionCo
             } else {
                 ConnectionKind::Weaviate(WeaviateConnection {
                     base_url: base_url.clone(),
-                    class_name: if suffix == "memory" { "AgentMemory".to_string() } else { "ImageSemantic".to_string() },
+                    class_name: if suffix == "memory" {
+                        "AgentMemory".to_string()
+                    } else {
+                        "ImageSemantic".to_string()
+                    },
                     username: if config.search.auth_method == DetailedSearchAuthMethod::Password {
                         config.search.username.clone()
                     } else {
@@ -651,16 +760,37 @@ fn detailed_connection_configs(config: &DetailedSetupConfig) -> Vec<ConnectionCo
 
 fn detailed_install_services(config: &DetailedSetupConfig) -> Vec<&'static str> {
     let mut services = Vec::new();
-    if config.relational.enabled && config.relational.source == DetailedComponentSource::Install && config.relational.database_type == "mysql" { services.push("mysql"); }
-    if config.rustfs.enabled && config.rustfs.source == DetailedComponentSource::Install { services.push("rustfs"); }
-    if config.search.enabled && config.search.source == DetailedComponentSource::Install { services.push(if config.search.search_type == "elasticsearch" { "elasticsearch" } else { "weaviate" }); }
-    if config.redis.enabled && config.redis.source == DetailedComponentSource::Install { services.push("redis"); }
+    if config.relational.enabled
+        && config.relational.source == DetailedComponentSource::Install
+        && config.relational.database_type == "mysql"
+    {
+        services.push("mysql");
+    }
+    if config.rustfs.enabled && config.rustfs.source == DetailedComponentSource::Install {
+        services.push("rustfs");
+    }
+    if config.search.enabled && config.search.source == DetailedComponentSource::Install {
+        services.push(if config.search.search_type == "elasticsearch" {
+            "elasticsearch"
+        } else {
+            "weaviate"
+        });
+    }
+    if config.redis.enabled && config.redis.source == DetailedComponentSource::Install {
+        services.push("redis");
+    }
     services
 }
 
-async fn run_detailed_docker(config: &DetailedSetupConfig, services: &[&str]) -> Result<(), String> {
+async fn run_detailed_docker(
+    config: &DetailedSetupConfig,
+    services: &[&str],
+) -> Result<(), String> {
     if !check_command("docker", &["compose", "version"]).await {
-        return Err("Docker Compose is unavailable. Install Docker Desktop or Docker Compose, then retry.".to_string());
+        return Err(
+            "Docker Compose is unavailable. Install Docker Desktop or Docker Compose, then retry."
+                .to_string(),
+        );
     }
     let compose_path = detailed_compose_path();
     let compose_dir = compose_path
@@ -671,34 +801,57 @@ async fn run_detailed_docker(config: &DetailedSetupConfig, services: &[&str]) ->
         .map_err(|err| format!("Failed to create Docker Compose directory: {err}"))?;
     for data_dir in detailed_data_dirs(config) {
         let data_dir = resolve_compose_data_dir(compose_dir, &data_dir);
-        tokio::fs::create_dir_all(&data_dir)
-            .await
-            .map_err(|err| format!("Failed to create container data directory {}: {err}", data_dir.display()))?;
+        tokio::fs::create_dir_all(&data_dir).await.map_err(|err| {
+            format!("Failed to create container data directory {}: {err}", data_dir.display())
+        })?;
     }
-    tokio::fs::write(&compose_path, detailed_compose(config)).await.map_err(|err| err.to_string())?;
+    tokio::fs::write(&compose_path, detailed_compose(config))
+        .await
+        .map_err(|err| err.to_string())?;
     let output = tokio::process::Command::new("docker")
-        .arg("compose").arg("-f").arg(&compose_path).arg("up").arg("-d").args(services)
-        .output().await.map_err(|err| format!("Failed to run Docker Compose: {err}"))?;
-    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).trim().to_string()); }
+        .arg("compose")
+        .arg("-f")
+        .arg(&compose_path)
+        .arg("up")
+        .arg("-d")
+        .args(services)
+        .output()
+        .await
+        .map_err(|err| format!("Failed to run Docker Compose: {err}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
     Ok(())
 }
 
-async fn run_detailed_binary(_config: &DetailedSetupConfig, services: &[&str]) -> Result<(), String> {
+async fn run_detailed_binary(
+    _config: &DetailedSetupConfig,
+    services: &[&str],
+) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let output = tokio::process::Command::new("wsl").args(["--status"]).output().await;
         if !matches!(output, Ok(ref result) if result.status.success()) {
             return Err("Native installation on Windows requires WSL. Install WSL, then retry, or choose Docker.".to_string());
         }
-        return Err(format!("WSL was detected. Run the setup from your WSL distribution to install: {}", services.join(", ")));
+        return Err(format!(
+            "WSL was detected. Run the setup from your WSL distribution to install: {}",
+            services.join(", ")
+        ));
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let package_manager = if check_command("brew", &["--version"]).await { "brew" }
-            else if check_command("apt-get", &["--version"]).await { "apt-get" }
-            else if check_command("dnf", &["--version"]).await { "dnf" }
-            else if check_command("pacman", &["--version"]).await { "pacman" }
-            else { return Err("No supported package manager found. Install Homebrew, apt, dnf, or pacman, or choose Docker.".to_string()); };
+        let package_manager = if check_command("brew", &["--version"]).await {
+            "brew"
+        } else if check_command("apt-get", &["--version"]).await {
+            "apt-get"
+        } else if check_command("dnf", &["--version"]).await {
+            "dnf"
+        } else if check_command("pacman", &["--version"]).await {
+            "pacman"
+        } else {
+            return Err("No supported package manager found. Install Homebrew, apt, dnf, or pacman, or choose Docker.".to_string());
+        };
         for service in services {
             let package = match (*service, package_manager) {
                 ("mysql", "brew") => "mysql", ("mysql", _) => "mysql-server",
@@ -707,15 +860,36 @@ async fn run_detailed_binary(_config: &DetailedSetupConfig, services: &[&str]) -
                 _ => unreachable!(),
             };
             let mut command = tokio::process::Command::new(package_manager);
-            match package_manager { "brew" => { command.args(["install", package]); }, "apt-get" => { command.args(["install", "-y", package]); }, "dnf" => { command.args(["install", "-y", package]); }, "pacman" => { command.args(["-S", "--noconfirm", package]); }, _ => {} }
-            let output = command.output().await.map_err(|err| format!("Failed to start {package_manager}: {err}"))?;
-            if !output.status.success() { return Err(format!("Failed to install {service}. Run the required package-manager command with administrator privileges, then retry using '使用现有配置'.")); }
+            match package_manager {
+                "brew" => {
+                    command.args(["install", package]);
+                }
+                "apt-get" => {
+                    command.args(["install", "-y", package]);
+                }
+                "dnf" => {
+                    command.args(["install", "-y", package]);
+                }
+                "pacman" => {
+                    command.args(["-S", "--noconfirm", package]);
+                }
+                _ => {}
+            }
+            let output = command
+                .output()
+                .await
+                .map_err(|err| format!("Failed to start {package_manager}: {err}"))?;
+            if !output.status.success() {
+                return Err(format!("Failed to install {service}. Run the required package-manager command with administrator privileges, then retry using '使用现有配置'."));
+            }
         }
         Ok(())
     }
 }
 
-fn detailed_compose_path() -> PathBuf { zihuan_core::system_config::application_data_dir().join("detailed-compose.yaml") }
+fn detailed_compose_path() -> PathBuf {
+    zihuan_core::system_config::application_data_dir().join("detailed-compose.yaml")
+}
 
 fn detailed_data_dirs(config: &DetailedSetupConfig) -> Vec<String> {
     let mut data_dirs = Vec::new();
@@ -773,22 +947,36 @@ fn shell_quote(value: &str) -> String {
 
 fn detailed_compose(config: &DetailedSetupConfig) -> String {
     let mut services = String::from("services:\n");
-    if config.relational.enabled && config.relational.source == DetailedComponentSource::Install && config.relational.database_type == "mysql" {
+    if config.relational.enabled
+        && config.relational.source == DetailedComponentSource::Install
+        && config.relational.database_type == "mysql"
+    {
         let d = &config.relational.deployment;
         services.push_str(&format!("  mysql:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:3306\"]\n    volumes: [{}]\n    environment:\n      MYSQL_ROOT_PASSWORD: {}\n      MYSQL_DATABASE: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/var/lib/mysql"), yaml_quote(&config.relational.password), yaml_quote(&config.relational.database)));
     }
-    if config.rustfs.enabled && config.rustfs.source == DetailedComponentSource::Install { let d = &config.rustfs.deployment; services.push_str(&format!("  rustfs:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9000\"]\n    volumes: [{}]\n    environment:\n      RUSTFS_ACCESS_KEY: {}\n      RUSTFS_SECRET_KEY: {}\n    command: [\"--console-enable\", \"/data\"]\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/data"), yaml_quote(&config.rustfs.access_key), yaml_quote(&config.rustfs.secret_key))); }
+    if config.rustfs.enabled && config.rustfs.source == DetailedComponentSource::Install {
+        let d = &config.rustfs.deployment;
+        services.push_str(&format!("  rustfs:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9000\"]\n    volumes: [{}]\n    environment:\n      RUSTFS_ACCESS_KEY: {}\n      RUSTFS_SECRET_KEY: {}\n    command: [\"--console-enable\", \"/data\"]\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/data"), yaml_quote(&config.rustfs.access_key), yaml_quote(&config.rustfs.secret_key)));
+    }
     if config.search.enabled && config.search.source == DetailedComponentSource::Install {
         let d = &config.search.deployment;
-        if config.search.search_type == "elasticsearch" { services.push_str(&format!("  elasticsearch:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9200\"]\n    volumes: [{}]\n    environment:\n      discovery.type: single-node\n      xpack.security.enabled: 'true'\n      ELASTIC_PASSWORD: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/usr/share/elasticsearch/data"), yaml_quote(config.search.password.as_deref().unwrap_or_default()))); }
-        else {
+        if config.search.search_type == "elasticsearch" {
+            services.push_str(&format!("  elasticsearch:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9200\"]\n    volumes: [{}]\n    environment:\n      discovery.type: single-node\n      xpack.security.enabled: 'true'\n      ELASTIC_PASSWORD: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/usr/share/elasticsearch/data"), yaml_quote(config.search.password.as_deref().unwrap_or_default())));
+        } else {
             let authentication = format!("      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'false'\n      AUTHENTICATION_APIKEY_ENABLED: 'true'\n      AUTHENTICATION_APIKEY_ALLOWED_KEYS: {}\n", yaml_quote(config.search.api_key.as_deref().unwrap_or_default()));
             services.push_str(&format!("  weaviate:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:8080\"]\n    volumes: [{}]\n    environment:\n{}      DEFAULT_VECTORIZER_MODULE: none\n      CLUSTER_HOSTNAME: node1\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/var/lib/weaviate"), authentication));
         }
     }
     if config.redis.enabled && config.redis.source == DetailedComponentSource::Install {
         let d = &config.redis.deployment;
-        let command = if config.expose_public_access { format!("    command: [\"redis-server\", \"--requirepass\", {}]\n", yaml_quote(config.redis.password.as_deref().unwrap_or_default())) } else { String::new() };
+        let command = if config.expose_public_access {
+            format!(
+                "    command: [\"redis-server\", \"--requirepass\", {}]\n",
+                yaml_quote(config.redis.password.as_deref().unwrap_or_default())
+            )
+        } else {
+            String::new()
+        };
         services.push_str(&format!("  redis:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:6379\"]\n    volumes: [{}]\n{}", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/data"), command));
     }
     services
@@ -810,20 +998,71 @@ async fn save_detailed_connections(config: &DetailedSetupConfig) -> Result<(), S
             if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
                 tokio::fs::create_dir_all(parent).await.map_err(|err| err.to_string())?;
             }
-            let mut connection = sqlx::SqliteConnection::connect(&format!("sqlite://{}?mode=rwc", path.display()))
-                .await.map_err(|err| format!("Failed to create SQLite database: {err}"))?;
+            let mut connection =
+                sqlx::SqliteConnection::connect(&format!("sqlite://{}?mode=rwc", path.display()))
+                    .await
+                    .map_err(|err| format!("Failed to create SQLite database: {err}"))?;
             zihuan_core::database::ensure_tables_sqlite(&mut connection)
-                .await.map_err(|err| format!("Failed to initialize SQLite database: {err}"))?;
-            config_factory::save_connection(config_factory::build_connection("setup-detailed-sqlite", "SQLite", ConnectionKind::Sqlite(SqliteConnection { path: config.relational.sqlite_path.clone() })))?;
+                .await
+                .map_err(|err| format!("Failed to initialize SQLite database: {err}"))?;
+            config_factory::save_connection(config_factory::build_connection(
+                "setup-detailed-sqlite",
+                "SQLite",
+                ConnectionKind::Sqlite(SqliteConnection {
+                    path: config.relational.sqlite_path.clone(),
+                }),
+            ))?;
         } else {
-            let url = format!("mysql://{}:{}@{}:{}/{}", config.relational.username, config.relational.password, config.relational.host, config.relational.deployment.port, config.relational.database);
-            config_factory::save_connection(config_factory::build_connection("setup-detailed-mysql", "MySQL", ConnectionKind::Mysql(MysqlConnection { url, max_connections: config.relational.max_connections, acquire_timeout_secs: config.relational.acquire_timeout_secs })))?;
+            let url = format!(
+                "mysql://{}:{}@{}:{}/{}",
+                config.relational.username,
+                config.relational.password,
+                config.relational.host,
+                config.relational.deployment.port,
+                config.relational.database
+            );
+            config_factory::save_connection(config_factory::build_connection(
+                "setup-detailed-mysql",
+                "MySQL",
+                ConnectionKind::Mysql(MysqlConnection {
+                    url,
+                    max_connections: config.relational.max_connections,
+                    acquire_timeout_secs: config.relational.acquire_timeout_secs,
+                }),
+            ))?;
         }
     }
-    if config.rustfs.enabled { config_factory::save_connection(config_factory::build_connection("setup-detailed-rustfs", "RustFS", ConnectionKind::Rustfs(RustfsConnection { endpoint: config.rustfs.endpoint.clone(), bucket: config.rustfs.bucket.clone(), region: config.rustfs.region.clone(), access_key: config.rustfs.access_key.clone(), secret_key: config.rustfs.secret_key.clone(), public_base_url: config.rustfs.public_base_url.clone(), path_style: config.rustfs.path_style })))?; }
-    if config.redis.enabled { config_factory::save_connection(config_factory::build_connection("setup-detailed-redis", "Redis", ConnectionKind::Redis(RedisConnection { url: config.redis.url.clone(), username: config.redis.username.clone(), password: config.redis.password.clone() })))?; }
+    if config.rustfs.enabled {
+        config_factory::save_connection(config_factory::build_connection(
+            "setup-detailed-rustfs",
+            "RustFS",
+            ConnectionKind::Rustfs(RustfsConnection {
+                endpoint: config.rustfs.endpoint.clone(),
+                bucket: config.rustfs.bucket.clone(),
+                region: config.rustfs.region.clone(),
+                access_key: config.rustfs.access_key.clone(),
+                secret_key: config.rustfs.secret_key.clone(),
+                public_base_url: config.rustfs.public_base_url.clone(),
+                path_style: config.rustfs.path_style,
+            }),
+        ))?;
+    }
+    if config.redis.enabled {
+        config_factory::save_connection(config_factory::build_connection(
+            "setup-detailed-redis",
+            "Redis",
+            ConnectionKind::Redis(RedisConnection {
+                url: config.redis.url.clone(),
+                username: config.redis.username.clone(),
+                password: config.redis.password.clone(),
+            }),
+        ))?;
+    }
     if config.search.enabled {
-        for (suffix, schema) in [("memory", WeaviateCollectionSchema::AgentMemory), ("image", WeaviateCollectionSchema::ImageSemantic)] {
+        for (suffix, schema) in [
+            ("memory", WeaviateCollectionSchema::AgentMemory),
+            ("image", WeaviateCollectionSchema::ImageSemantic),
+        ] {
             let id = format!("setup-detailed-{}-{suffix}", config.search.search_type);
             let name = format!("{} {}", config.search.search_type, suffix);
             let kind = if config.search.search_type == "elasticsearch" {
@@ -869,7 +1108,11 @@ async fn save_detailed_connections(config: &DetailedSetupConfig) -> Result<(), S
             } else {
                 ConnectionKind::Weaviate(WeaviateConnection {
                     base_url: config.search.base_url.clone(),
-                    class_name: if suffix == "memory" { "AgentMemory".to_string() } else { "ImageSemantic".to_string() },
+                    class_name: if suffix == "memory" {
+                        "AgentMemory".to_string()
+                    } else {
+                        "ImageSemantic".to_string()
+                    },
                     username: if config.search.auth_method == DetailedSearchAuthMethod::Password {
                         config.search.username.clone()
                     } else {
@@ -913,14 +1156,15 @@ async fn save_detailed_connections(config: &DetailedSetupConfig) -> Result<(), S
             // initialized search indexes directly in this
             // async task, causing reqwest::blocking's runtime to drop on Tokio
 
-
             // Index setup uses blocking HTTP clients; keep their runtime lifetime
             // entirely inside the blocking pool rather than an async worker.
             tokio::task::spawn_blocking(move || -> Result<(), String> {
                 match initialization_kind {
                     ConnectionKind::Elasticsearch(elasticsearch) => {
-                        let reference = ElasticsearchRef::new(elasticsearch).map_err(|err| err.to_string())?;
-                        ensure_elasticsearch_index(&reference, true).map_err(|err| err.to_string())?;
+                        let reference =
+                            ElasticsearchRef::new(elasticsearch).map_err(|err| err.to_string())?;
+                        ensure_elasticsearch_index(&reference, true)
+                            .map_err(|err| err.to_string())?;
                     }
                     ConnectionKind::Weaviate(weaviate) => {
                         let reference = WeaviateRef::new(
@@ -932,7 +1176,8 @@ async fn save_detailed_connections(config: &DetailedSetupConfig) -> Result<(), S
                             Duration::from_secs(30),
                         )
                         .map_err(|err| err.to_string())?;
-                        ensure_collection_schema(&reference, schema, true).map_err(|err| err.to_string())?;
+                        ensure_collection_schema(&reference, schema, true)
+                            .map_err(|err| err.to_string())?;
                     }
                     _ => {}
                 }
@@ -955,7 +1200,11 @@ async fn verify_detailed_connections(config: &DetailedSetupConfig) -> Result<(),
         wait_for_tcp(&host, port, "RustFS").await?;
     }
     if config.search.enabled {
-        let default_port = if config.search.search_type == "elasticsearch" { 9200 } else { 8080 };
+        let default_port = if config.search.search_type == "elasticsearch" {
+            9200
+        } else {
+            8080
+        };
         let (host, port) = endpoint_host_port(&config.search.base_url, default_port)?;
         wait_for_tcp(&host, port, "search database").await?;
     }
@@ -968,17 +1217,30 @@ async fn verify_detailed_connections(config: &DetailedSetupConfig) -> Result<(),
 
 fn endpoint_host_port(value: &str, default_port: u16) -> Result<(String, u16), String> {
     let without_scheme = value.split_once("://").map(|(_, rest)| rest).unwrap_or(value);
-    let authority = without_scheme.split('/').next().unwrap_or_default().rsplit('@').next().unwrap_or_default();
-    if authority.is_empty() { return Err(format!("Invalid endpoint: {value}")); }
+    let authority = without_scheme
+        .split('/')
+        .next()
+        .unwrap_or_default()
+        .rsplit('@')
+        .next()
+        .unwrap_or_default();
+    if authority.is_empty() {
+        return Err(format!("Invalid endpoint: {value}"));
+    }
     if let Some((host, port)) = authority.rsplit_once(':') {
-        return Ok((host.to_string(), port.parse::<u16>().map_err(|_| format!("Invalid endpoint port: {value}"))?));
+        return Ok((
+            host.to_string(),
+            port.parse::<u16>().map_err(|_| format!("Invalid endpoint port: {value}"))?,
+        ));
     }
     Ok((authority.to_string(), default_port))
 }
 
 async fn wait_for_tcp(host: &str, port: u16, service: &str) -> Result<(), String> {
     for _ in 0..15 {
-        if tokio::net::TcpStream::connect((host, port)).await.is_ok() { return Ok(()); }
+        if tokio::net::TcpStream::connect((host, port)).await.is_ok() {
+            return Ok(());
+        }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
     Err(format!("Could not connect to {service} at {host}:{port}. Start the service and retry using '使用现有配置'."))
@@ -1057,7 +1319,8 @@ pub async fn detect_environment() -> EnvironmentInfo {
     let os_detail = detailed_os_name().await;
     let docker_available = check_command("docker", &["--version"]).await;
     let docker_compose_available = check_command("docker", &["compose", "version"]).await;
-    let (binary_install_available, binary_install_reason) = detect_binary_installation_support().await;
+    let (binary_install_available, binary_install_reason) =
+        detect_binary_installation_support().await;
     let (wsl_available, wsl_docker_available) = detect_windows_wsl().await;
     let cuda_version = detect_cuda_version().await;
     let compiler_version = detect_compiler_version().await;
@@ -1089,10 +1352,7 @@ pub async fn detect_environment() -> EnvironmentInfo {
 
 #[cfg(target_os = "windows")]
 async fn detect_binary_installation_support() -> (bool, Option<String>) {
-    (
-        false,
-        Some("Windows 上的二进制安装需在 WSL 发行版内运行本程序".to_string()),
-    )
+    (false, Some("Windows 上的二进制安装需在 WSL 发行版内运行本程序".to_string()))
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -1103,10 +1363,7 @@ async fn detect_binary_installation_support() -> (bool, Option<String>) {
         }
     }
 
-    (
-        false,
-        Some("未检测到 Homebrew、apt、dnf 或 pacman 包管理器".to_string()),
-    )
+    (false, Some("未检测到 Homebrew、apt、dnf 或 pacman 包管理器".to_string()))
 }
 
 #[cfg(target_os = "windows")]
@@ -1139,7 +1396,8 @@ async fn detect_cuda_version() -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
-        let cuda_path = std::path::PathBuf::from("C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA");
+        let cuda_path =
+            std::path::PathBuf::from("C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA");
         if let Ok(mut entries) = tokio::fs::read_dir(&cuda_path).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
                 if let Ok(ft) = entry.file_type().await {
@@ -1284,7 +1542,10 @@ async fn check_service_port(service: &str, host: &str, port: u16) -> ServiceDete
     }
 }
 
-async fn run_docker_compose_for_service(service: &str, http_proxy: Option<&str>) -> Result<(), String> {
+async fn run_docker_compose_for_service(
+    service: &str,
+    http_proxy: Option<&str>,
+) -> Result<(), String> {
     let mut cmd = tokio::process::Command::new("docker");
     cmd.arg("compose")
         .arg("-f")
@@ -1309,10 +1570,14 @@ const NAPCAT_WIN_ONEKEY_URL: &str =
 
 /// Installs NapCat natively on Windows using the OneKey package.
 /// Returns the install directory path on success.
-async fn install_napcat_native(http_proxy: Option<&str>, qq_id: Option<&str>) -> Result<String, String> {
+async fn install_napcat_native(
+    http_proxy: Option<&str>,
+    qq_id: Option<&str>,
+) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {
-        let install_root = zihuan_core::system_config::application_data_dir().join("napcat_install");
+        let install_root =
+            zihuan_core::system_config::application_data_dir().join("napcat_install");
         let zip_path = install_root.join("NapCat.OneKey.zip");
         let extract_dir = install_root.join("NapCat");
 
@@ -1321,7 +1586,8 @@ async fn install_napcat_native(http_proxy: Option<&str>, qq_id: Option<&str>) ->
             .map_err(|e| format!("Failed to create install directory: {e}"))?;
 
         // Download
-        let mut client_builder = reqwest::Client::builder().timeout(std::time::Duration::from_secs(600));
+        let mut client_builder =
+            reqwest::Client::builder().timeout(std::time::Duration::from_secs(600));
         if let Some(proxy) = http_proxy {
             if let Ok(p) = reqwest::Proxy::all(proxy) {
                 client_builder = client_builder.proxy(p);
@@ -1357,8 +1623,10 @@ async fn install_napcat_native(http_proxy: Option<&str>, qq_id: Option<&str>) ->
             .map_err(|e| format!("Failed to save downloaded zip: {e}"))?;
 
         // Extract
-        let file = std::fs::File::open(&zip_path).map_err(|e| format!("Failed to open zip: {e}"))?;
-        let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Failed to read zip archive: {e}"))?;
+        let file =
+            std::fs::File::open(&zip_path).map_err(|e| format!("Failed to open zip: {e}"))?;
+        let mut archive =
+            zip::ZipArchive::new(file).map_err(|e| format!("Failed to read zip archive: {e}"))?;
         archive
             .extract(&extract_dir)
             .map_err(|e| format!("Failed to extract NapCat: {e}"))?;
@@ -1435,7 +1703,9 @@ fn find_napcat_installer(extract_dir: &std::path::Path) -> Result<std::path::Pat
     if root_installer.exists() {
         return Ok(root_installer);
     }
-    for entry in std::fs::read_dir(extract_dir).map_err(|e| format!("Cannot read extract dir: {e}"))? {
+    for entry in
+        std::fs::read_dir(extract_dir).map_err(|e| format!("Cannot read extract dir: {e}"))?
+    {
         let entry = entry.map_err(|e| format!("Dir entry error: {e}"))?;
         if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
             let name = entry.file_name().to_string_lossy().to_string();

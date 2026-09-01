@@ -44,7 +44,9 @@ pub async fn browse_workspace_directories(req: &mut Request, res: &mut Response)
 pub async fn select_workspace_directory(req: &mut Request, res: &mut Response) {
     let body: SelectDirectoryRequest = match req.parse_json::<SelectDirectoryRequest>().await {
         Ok(body) => body,
-        Err(error) => return render_directory_error(res, DirectoryError::InvalidPath(error.to_string())),
+        Err(error) => {
+            return render_directory_error(res, DirectoryError::InvalidPath(error.to_string()))
+        }
     };
     let path = match normalize_directory(&body.path) {
         Ok(path) => path,
@@ -52,12 +54,16 @@ pub async fn select_workspace_directory(req: &mut Request, res: &mut Response) {
     };
     let path_text = path.to_string_lossy().to_string();
     match save_recent_directory(&path_text) {
-        Ok(recent_directories) => res.render(Json(json!({ "path": path_text, "recent_directories": recent_directories }))),
+        Ok(recent_directories) => {
+            res.render(Json(json!({ "path": path_text, "recent_directories": recent_directories })))
+        }
         Err(error) => render_directory_error(res, error),
     }
 }
 
-fn browse_directories(requested_path: Option<&str>) -> Result<BrowseDirectoriesResponse, DirectoryError> {
+fn browse_directories(
+    requested_path: Option<&str>,
+) -> Result<BrowseDirectoriesResponse, DirectoryError> {
     let current_path = match requested_path.map(str::trim).filter(|path| !path.is_empty()) {
         Some(path) => Some(normalize_directory(path)?),
         None => Some(default_browse_directory()?),
@@ -80,9 +86,8 @@ fn default_browse_directory() -> Result<PathBuf, DirectoryError> {
     let home_directory = std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
         .map(PathBuf::from);
-    let path = home_directory.unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-    });
+    let path = home_directory
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     normalize_directory(&path_to_string(&path))
 }
 
@@ -91,7 +96,8 @@ fn normalize_directory(raw_path: &str) -> Result<PathBuf, DirectoryError> {
     if path.is_empty() {
         return Err(DirectoryError::InvalidPath("path must not be empty".to_string()));
     }
-    let canonical = fs::canonicalize(path).map_err(|error| DirectoryError::Unreadable(path.to_string(), error.to_string()))?;
+    let canonical = fs::canonicalize(path)
+        .map_err(|error| DirectoryError::Unreadable(path.to_string(), error.to_string()))?;
     if !canonical.is_dir() {
         return Err(DirectoryError::NotDirectory(path.to_string()));
     }
@@ -99,10 +105,12 @@ fn normalize_directory(raw_path: &str) -> Result<PathBuf, DirectoryError> {
 }
 
 fn list_directories(path: &Path) -> Result<Vec<DirectoryEntry>, DirectoryError> {
-    let entries = fs::read_dir(path).map_err(|error| DirectoryError::Unreadable(path_to_string(path), error.to_string()))?;
+    let entries = fs::read_dir(path)
+        .map_err(|error| DirectoryError::Unreadable(path_to_string(path), error.to_string()))?;
     let mut directories = Vec::new();
     for entry in entries {
-        let entry = entry.map_err(|error| DirectoryError::Unreadable(path_to_string(path), error.to_string()))?;
+        let entry = entry
+            .map_err(|error| DirectoryError::Unreadable(path_to_string(path), error.to_string()))?;
         let entry_path = entry.path();
         if entry_path.is_dir() {
             directories.push(DirectoryEntry {
@@ -121,14 +129,20 @@ fn root_directories() -> Result<Vec<DirectoryEntry>, DirectoryError> {
         let roots = (b'A'..=b'Z')
             .map(|letter| PathBuf::from(format!("{}:\\", letter as char)))
             .filter(|path| path.is_dir())
-            .map(|path| DirectoryEntry { name: path_to_string(&path), path: path_to_string(&path) })
+            .map(|path| DirectoryEntry {
+                name: path_to_string(&path),
+                path: path_to_string(&path),
+            })
             .collect();
         Ok(roots)
     }
     #[cfg(not(windows))]
     {
         let root = PathBuf::from("/");
-        Ok(vec![DirectoryEntry { name: "/".to_string(), path: path_to_string(&root) }])
+        Ok(vec![DirectoryEntry {
+            name: "/".to_string(),
+            path: path_to_string(&root),
+        }])
     }
 }
 
@@ -140,8 +154,10 @@ fn load_recent_directories() -> Result<Vec<String>, DirectoryError> {
 
 fn save_recent_directory(path: &str) -> Result<Vec<String>, DirectoryError> {
     let paths = updated_recent_directories(load_recent_directories()?, path);
-    save_section::<WorkspaceDirectoryHistorySection>(&WorkspaceDirectoryHistory { paths: paths.clone() })
-        .map_err(|error| DirectoryError::Persistence(error.to_string()))?;
+    save_section::<WorkspaceDirectoryHistorySection>(&WorkspaceDirectoryHistory {
+        paths: paths.clone(),
+    })
+    .map_err(|error| DirectoryError::Persistence(error.to_string()))?;
     Ok(paths)
 }
 
@@ -171,8 +187,12 @@ enum DirectoryError {
 fn render_directory_error(res: &mut Response, error: DirectoryError) {
     let (status, message) = match error {
         DirectoryError::InvalidPath(message) => (StatusCode::BAD_REQUEST, message),
-        DirectoryError::NotDirectory(path) => (StatusCode::BAD_REQUEST, format!("not a directory: {path}")),
-        DirectoryError::Unreadable(path, error) => (StatusCode::BAD_REQUEST, format!("unable to access directory '{path}': {error}")),
+        DirectoryError::NotDirectory(path) => {
+            (StatusCode::BAD_REQUEST, format!("not a directory: {path}"))
+        }
+        DirectoryError::Unreadable(path, error) => {
+            (StatusCode::BAD_REQUEST, format!("unable to access directory '{path}': {error}"))
+        }
         DirectoryError::Persistence(error) => (StatusCode::INTERNAL_SERVER_ERROR, error),
     };
     res.status_code(status);
@@ -191,13 +211,17 @@ mod tests {
     #[test]
     fn test_browsing_a_file_is_rejected() {
         let file = std::env::current_exe().expect("current executable");
-        assert!(matches!(normalize_directory(&path_to_string(&file)), Err(DirectoryError::NotDirectory(_))));
+        assert!(matches!(
+            normalize_directory(&path_to_string(&file)),
+            Err(DirectoryError::NotDirectory(_))
+        ));
     }
 
     #[test]
     fn test_browsing_the_current_directory_lists_directories() {
         let current = std::env::current_dir().expect("current directory");
-        let response = browse_directories(Some(&path_to_string(&current))).expect("browse current directory");
+        let response =
+            browse_directories(Some(&path_to_string(&current))).expect("browse current directory");
         let canonical = path_to_string(&fs::canonicalize(current).expect("canonical current"));
         assert_eq!(response.current_path.as_deref(), Some(canonical.as_str()));
     }
@@ -211,7 +235,8 @@ mod tests {
 
     #[test]
     fn test_recent_directories_are_deduplicated_and_limited() {
-        let paths = (0..MAX_RECENT_DIRECTORIES).map(|index| format!("/workspace/{index}")).collect();
+        let paths =
+            (0..MAX_RECENT_DIRECTORIES).map(|index| format!("/workspace/{index}")).collect();
         let updated = updated_recent_directories(paths, "/workspace/4");
         assert_eq!(updated.len(), MAX_RECENT_DIRECTORIES);
         assert_eq!(updated.first().map(String::as_str), Some("/workspace/4"));
@@ -221,7 +246,10 @@ mod tests {
     #[test]
     fn test_inaccessible_recent_directories_are_filtered() {
         let current = path_to_string(&std::env::current_dir().expect("current directory"));
-        let filtered = valid_recent_directories(vec!["__zihuan_missing_directory__".to_string(), current.clone()]);
+        let filtered = valid_recent_directories(vec![
+            "__zihuan_missing_directory__".to_string(),
+            current.clone(),
+        ]);
         assert_eq!(filtered, vec![current]);
     }
 }

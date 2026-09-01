@@ -3,20 +3,21 @@ use std::sync::{Arc, Mutex};
 
 use chrono::Local;
 use log::error;
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
-use zihuan_core::config::llm_refs::load_llm_refs;
-use zihuan_core::config::role_services::load_role_services;
 use serde::Serialize;
-use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
 use zihuan_core::agent::tools::ToolCallingObserver;
+use zihuan_core::agent::AgentCancellation;
+use zihuan_core::config::llm_refs::load_llm_refs;
+use zihuan_core::config::role_services::load_role_services;
 use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::{LLMMessage, StreamToken};
+use zihuan_core::storage::{load_connections, ConnectionConfig};
 use zihuan_core::task_context::AgentTaskRuntime;
 
-use crate::role::{InferenceToolProvider, RoleBrainAgent};
+use crate::role::{ContextCompactionObserver, InferenceToolProvider, RoleBrainAgent};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -56,7 +57,8 @@ impl Default for RoleServiceRuntimeState {
     }
 }
 
-pub(super) type OnFinishShared = Arc<Mutex<Option<Box<dyn FnOnce(bool, Option<String>) + Send + 'static>>>>;
+pub(super) type OnFinishShared =
+    Arc<Mutex<Option<Box<dyn FnOnce(bool, Option<String>) + Send + 'static>>>>;
 
 pub(super) struct RoleServiceRuntimeEntry {
     pub role_service: Option<Arc<RoleBrainAgent>>,
@@ -118,7 +120,10 @@ impl RoleServiceManager {
         messages: Vec<LLMMessage>,
     ) -> Result<Vec<LLMMessage>> {
         let agent = self.running_role_service(role_service_id).ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError(format!("role service '{}' is not running", role_service_id))
+            zihuan_core::error::Error::ValidationError(format!(
+                "role service '{}' is not running",
+                role_service_id
+            ))
         })?;
         agent.infer_response_with_trace(messages)
     }
@@ -130,8 +135,21 @@ impl RoleServiceManager {
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn ToolCallingObserver>>,
     ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::tools::ToolCallingStopReason)> {
-        self.infer_role_response_streaming_with_model(role_service_id, messages, token_tx, observer, None, None, None, None, None)
-            .await
+        self.infer_role_response_streaming_with_model(
+            role_service_id,
+            messages,
+            token_tx,
+            observer,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
     }
 
     pub async fn infer_role_response_streaming_with_model(
@@ -140,14 +158,20 @@ impl RoleServiceManager {
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn ToolCallingObserver>>,
+        compaction_observer: Option<ContextCompactionObserver>,
         model_config_id: Option<&str>,
+        image_understand_model_config_id: Option<&str>,
         thinking_type: Option<zihuan_core::model_inference::model_config::ThinkingType>,
         reasoning_effort: Option<zihuan_core::model_inference::model_config::ReasoningEffort>,
         workspace_path: Option<String>,
         session_id: Option<String>,
+        cancellation: Option<Arc<dyn AgentCancellation>>,
     ) -> Result<(Vec<LLMMessage>, zihuan_core::agent::tools::ToolCallingStopReason)> {
         let agent = self.running_role_service(role_service_id).ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError(format!("role service '{}' is not running", role_service_id))
+            zihuan_core::error::Error::ValidationError(format!(
+                "role service '{}' is not running",
+                role_service_id
+            ))
         })?;
         if let Some(model_id) = model_config_id {
             let llm_refs = load_llm_refs()?;
@@ -163,12 +187,54 @@ impl RoleServiceManager {
                 llm_config.reasoning_effort = Some(override_value);
             }
             let llm = zihuan_core::agent::resource_resolver::build_llm_model(&llm_config)?;
+            let image_understand_llm = image_understand_model_config_id
+                .map(|model_id| {
+                    let llm_config =
+                        zihuan_core::agent::resource_resolver::resolve_llm_service_config(
+                            Some(model_id),
+                            &llm_refs,
+                            &agent.agent().name,
+                        )?;
+                    zihuan_core::agent::resource_resolver::build_llm_model(&llm_config)
+                })
+                .transpose()?;
             agent
-                .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, llm, workspace_path, session_id)
+                .infer_response_streaming_with_trace_and_llm(
+                    messages,
+                    token_tx,
+                    observer,
+                    compaction_observer,
+                    llm,
+                    image_understand_llm,
+                    workspace_path,
+                    session_id,
+                    cancellation,
+                )
                 .await
         } else {
+            let image_understand_llm = image_understand_model_config_id
+                .map(|model_id| {
+                    let llm_refs = load_llm_refs()?;
+                    let llm_config =
+                        zihuan_core::agent::resource_resolver::resolve_llm_service_config(
+                            Some(model_id),
+                            &llm_refs,
+                            &agent.agent().name,
+                        )?;
+                    zihuan_core::agent::resource_resolver::build_llm_model(&llm_config)
+                })
+                .transpose()?;
             agent
-                .infer_response_streaming_with_trace(messages, token_tx, observer, workspace_path, session_id)
+                .infer_response_streaming_with_trace_and_image_understand_llm(
+                    messages,
+                    token_tx,
+                    observer,
+                    compaction_observer,
+                    image_understand_llm,
+                    workspace_path,
+                    session_id,
+                    cancellation,
+                )
                 .await
         }
     }
@@ -184,7 +250,8 @@ impl RoleServiceManager {
         let start_result: Result<()> = async {
             let llm_refs = load_llm_refs()?;
             let tool_provider = build_role_tool_provider(&agent, &connections)?;
-            let role_service = Arc::new(RoleBrainAgent::load_with_tools(&agent, &llm_refs, tool_provider)?);
+            let role_service =
+                Arc::new(RoleBrainAgent::load_with_tools(&agent, &llm_refs, tool_provider)?);
 
             self.update_state(
                 &agent.id,
@@ -208,7 +275,11 @@ impl RoleServiceManager {
                             &agent_id_for_callback,
                             RoleServiceRuntimeState {
                                 instance_id: None,
-                                status: if success { RoleServiceRuntimeStatus::Stopped } else { RoleServiceRuntimeStatus::Error },
+                                status: if success {
+                                    RoleServiceRuntimeStatus::Stopped
+                                } else {
+                                    RoleServiceRuntimeStatus::Error
+                                },
                                 started_at: None,
                                 last_error: error_message,
                             },
@@ -314,9 +385,7 @@ impl RoleServiceManager {
         };
 
         for agent in role_services.into_iter().filter(|agent| agent.enabled && agent.auto_start) {
-            if let Err(err) = self
-                .start_role_service(&agent, connections.clone(), None, None)
-                .await
+            if let Err(err) = self.start_role_service(&agent, connections.clone(), None, None).await
             {
                 error!("Failed to auto start role service '{}': {}", agent.name, err);
             }
@@ -339,9 +408,15 @@ pub fn build_role_tool_provider(
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     match &agent.role_service_type {
-        RoleServiceType::QqChat(config) => zihuan_ims_service::qq_chat::load_inference_tool_provider(agent, config, connections),
+        RoleServiceType::QqChat(config) => {
+            zihuan_ims_service::qq_chat::load_inference_tool_provider(agent, config, connections)
+        }
         RoleServiceType::Workspace(config) => {
-            zihuan_workspace_service::workspace_agent_service::load_inference_tool_provider(agent, config, connections)
+            zihuan_workspace_service::workspace_agent_service::load_inference_tool_provider(
+                agent,
+                config,
+                connections,
+            )
         }
     }
 }

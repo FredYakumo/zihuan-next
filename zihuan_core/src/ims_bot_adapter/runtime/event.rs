@@ -1,8 +1,8 @@
+use crate::error::Result;
 use log::{error, info};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use crate::error::Result;
 
 use super::models::{MessageEvent, MessageType};
 use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;
@@ -60,5 +60,8 @@ pub async fn process_message(ims_bot_adapter: SharedBotAdapter, event: MessageEv
 }
 
 /// Event handler type alias
-pub type EventHandler =
-    Arc<dyn for<'a> Fn(&'a MessageEvent) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> + Send + Sync>;
+pub type EventHandler = Arc<
+    dyn for<'a> Fn(&'a MessageEvent) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>
+        + Send
+        + Sync,
+>;

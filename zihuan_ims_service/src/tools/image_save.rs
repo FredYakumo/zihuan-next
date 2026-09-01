@@ -3,17 +3,19 @@ use std::sync::Arc;
 use log::{info, warn};
 use serde_json::Value;
 
-use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-use zihuan_core::storage::{upload_remote_image_to_s3, upsert_elasticsearch_image, upsert_image_record, ElasticsearchRef};
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
-use zihuan_core::model_inference::llm::tooling::FunctionTool;
-use zihuan_core::url_utils::content_type_from_url;
-use zihuan_core::weaviate::WeaviateRef;
 use zihuan_core::graph::message_restore::{persist_media_to_record, query_media_by_id};
 use zihuan_core::graph::object_storage::S3Ref;
+use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
+use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
+use zihuan_core::storage::{
+    upload_remote_image_to_s3, upsert_elasticsearch_image, upsert_image_record, ElasticsearchRef,
+};
+use zihuan_core::url_utils::content_type_from_url;
+use zihuan_core::weaviate::WeaviateRef;
 
 use super::common::{optional_string_argument, StaticFunctionToolSpec};
 
@@ -71,9 +73,13 @@ impl Tool for SaveImageTool {
             let resolved_url = match (&image_url, &media_id) {
                 (Some(url), _) => url.clone(),
                 (None, Some(media_id)) => {
-                    let media = query_media_by_id(media_id, self.rdb_pool.as_ref())?.ok_or_else(|| {
-                        Error::ValidationError(format!("save_image could not find media_id '{}'", media_id))
-                    })?;
+                    let media =
+                        query_media_by_id(media_id, self.rdb_pool.as_ref())?.ok_or_else(|| {
+                            Error::ValidationError(format!(
+                                "save_image could not find media_id '{}'",
+                                media_id
+                            ))
+                        })?;
                     if media.original_source.trim().is_empty() {
                         return Err(Error::ValidationError(format!(
                             "save_image: media_id '{}' has no usable source URL",
@@ -93,7 +99,9 @@ impl Tool for SaveImageTool {
             let description = optional_string_argument(arguments, "description");
 
             let s3_ref = self.s3_ref.as_ref().ok_or_else(|| {
-                Error::ValidationError("save_image requires RustFS (S3) storage to be configured".to_string())
+                Error::ValidationError(
+                    "save_image requires RustFS (S3) storage to be configured".to_string(),
+                )
             })?;
 
             let rustfs_path = upload_remote_image_to_s3(s3_ref, &resolved_url).map_err(|err| {
@@ -117,12 +125,15 @@ impl Tool for SaveImageTool {
                 (self.weaviate_image_ref.as_ref(), self.embedding_model.as_ref())
             {
                 let embedding_text = description.as_deref().unwrap_or(&resolved_url);
-                let description_vector = embedding_model
-                    .inference(embedding_text)
-                    .unwrap_or_else(|_| embedding_model.inference(&resolved_url).unwrap_or_default());
+                let description_vector =
+                    embedding_model.inference(embedding_text).unwrap_or_else(|_| {
+                        embedding_model.inference(&resolved_url).unwrap_or_default()
+                    });
 
                 if !description_vector.is_empty() {
-                    if let Err(err) = upsert_image_record(weaviate_image_ref, &media, &description_vector, None) {
+                    if let Err(err) =
+                        upsert_image_record(weaviate_image_ref, &media, &description_vector, None)
+                    {
                         warn!("{LOG_PREFIX} save_image failed to persist image record into Weaviate: {}", err);
                     }
                 } else {
@@ -138,7 +149,9 @@ impl Tool for SaveImageTool {
                 let embedding_text = description.as_deref().unwrap_or(&resolved_url);
                 let vector = embedding_model.inference(embedding_text).unwrap_or_default();
                 if !vector.is_empty() {
-                    if let Err(err) = upsert_elasticsearch_image(elasticsearch_image_ref, &media, vector, None) {
+                    if let Err(err) =
+                        upsert_elasticsearch_image(elasticsearch_image_ref, &media, vector, None)
+                    {
                         warn!("{LOG_PREFIX} save_image failed to persist image record into Elasticsearch: {err}");
                     }
                 }
@@ -151,7 +164,10 @@ impl Tool for SaveImageTool {
 
             if let Some(rdb_pool) = &self.rdb_pool {
                 if let Err(err) = persist_media_to_record(rdb_pool, &media) {
-                    warn!("{LOG_PREFIX} save_image failed to persist media to media_record: {}", err);
+                    warn!(
+                        "{LOG_PREFIX} save_image failed to persist media to media_record: {}",
+                        err
+                    );
                 }
             }
 

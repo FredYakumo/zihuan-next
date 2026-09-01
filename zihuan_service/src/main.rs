@@ -9,12 +9,12 @@ mod util;
 use std::sync::Arc;
 
 use clap::Parser;
+use dynamic_script_engine::check_node_runtime;
 use lazy_static::lazy_static;
 use log::{error, info};
 use log_util::log_util::LogUtil;
 use salvo::Listener;
 use zihuan_core::config::ConfigRepository;
-use dynamic_script_engine::check_node_runtime;
 
 lazy_static! {
     static ref BASE_LOG: LogUtil = LogUtil::new_with_path("zihuan_next", "logs");
@@ -54,8 +54,9 @@ async fn main() {
         let repo = zihuan_core::config::FsConfigRepository::default();
         if let Ok(root) = repo.load_root() {
             for record in &root.configs.command_permissions {
-                if let Ok(cmd) = serde_json::from_value::<zihuan_core::command::CommandPermission>(record.spec.clone())
-                {
+                if let Ok(cmd) = serde_json::from_value::<zihuan_core::command::CommandPermission>(
+                    record.spec.clone(),
+                ) {
                     registry.set_permissions(&cmd.command_name, cmd.rules);
                 }
             }
@@ -130,8 +131,11 @@ async fn main() {
 }
 
 async fn start_node_worker() -> zihuan_core::error::Result<()> {
-    let workspace_root = std::env::current_dir()
-        .map_err(|error| zihuan_core::error::Error::ValidationError(format!("无法获取动态脚本运行时工作目录: {error}")))?;
+    let workspace_root = std::env::current_dir().map_err(|error| {
+        zihuan_core::error::Error::ValidationError(format!(
+            "无法获取动态脚本运行时工作目录: {error}"
+        ))
+    })?;
     let config = zihuan_core::config::ConfigCenter::shared().load_root()?.node_runtime;
     let (_command, version, executable) = check_node_runtime(&workspace_root, &config)
         .await
@@ -158,9 +162,11 @@ async fn startup_recover_orphan_tasks(state: &api::state::AppState) {
 }
 
 fn spawn_task_ttl_cleanup(state: std::sync::Arc<api::state::AppState>) {
-    let ttl_hours = zihuan_core::system_config::load_section::<zihuan_core::system_config::GlobalSettingsSection>()
-        .unwrap_or_default()
-        .task_ttl_hours;
+    let ttl_hours = zihuan_core::system_config::load_section::<
+        zihuan_core::system_config::GlobalSettingsSection,
+    >()
+    .unwrap_or_default()
+    .task_ttl_hours;
 
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));

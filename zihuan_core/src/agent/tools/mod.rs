@@ -4,8 +4,8 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::model_inference::llm::tooling::FunctionTool;
-use crate::workspace::AskUserRequest;
 pub use crate::tool_runtime::ToolRunDuration;
+use crate::workspace::AskUserRequest;
 
 pub mod tool_calling_engine;
 pub mod tool_calling_types;
@@ -45,6 +45,12 @@ pub trait Tool: Send + Sync + 'static {
     fn execution_resource(&self, _arguments: &Value) -> ToolExecutionResource {
         ToolExecutionResource::Concurrent
     }
+    /// Declares whether this call blocks waiting for user confirmation. The
+    /// engine forces such calls to run serially so that at most one
+    /// confirmation dialog is shown at a time.
+    fn requires_user_confirmation(&self, _arguments: &Value) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +73,9 @@ impl ToolExecutionOutput {
     }
 
     pub fn ask_user(result: impl Into<String>, request: AskUserRequest) -> Self {
-        Self { result: result.into(), ask_user: Some(request) }
+        Self {
+            result: result.into(),
+            ask_user: Some(request),
+        }
     }
 }

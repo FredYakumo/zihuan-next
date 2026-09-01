@@ -34,9 +34,7 @@ pub fn persist_image_record(
         ));
     };
     if description_vector.is_empty() {
-        return Err(Error::ValidationError(
-            "description_vector must not be empty".to_string(),
-        ));
+        return Err(Error::ValidationError("description_vector must not be empty".to_string()));
     }
 
     let source = parse_media_source(request.source);
@@ -67,12 +65,7 @@ pub fn persist_image_record(
         .and_then(|name| request.embedding_model.and_then(|model| model.inference(name).ok()))
         .filter(|vector| !vector.is_empty());
 
-    match upsert_image_record(
-        weaviate_ref,
-        &media,
-        &description_vector,
-        name_vector.as_deref(),
-    ) {
+    match upsert_image_record(weaviate_ref, &media, &description_vector, name_vector.as_deref()) {
         Ok(_) => Ok(true),
         Err(error) => {
             log::error!("[image_weaviate_persistence] failed to persist image vector: {error}");
@@ -90,10 +83,7 @@ fn required_string(value: &str, key: &str) -> Result<String> {
 }
 
 fn optional_non_empty_string(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
+    value.map(str::trim).filter(|value| !value.is_empty()).map(ToOwned::to_owned)
 }
 
 fn parse_media_source(value: Option<&str>) -> PersistedMediaSource {

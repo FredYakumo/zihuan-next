@@ -1,16 +1,18 @@
+use crate::error::{Error, Result};
+use crate::graph::object_storage::S3Ref;
+use crate::ims_bot_adapter::logging::{LOG_DATA_URL_PREVIEW_CHARS, LOG_MESSAGE_PREVIEW_CHARS};
 use crate::ims_bot_adapter::runtime::adapter::restore_message_list_for_message_id;
 use crate::ims_bot_adapter::runtime::models::message::MessageProp;
+use crate::model_inference::llm::{LLMMessage, MessagePart};
 use log::{info, warn};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::task::block_in_place;
-use crate::error::{Error, Result};
-use crate::ims_bot_adapter::logging::{LOG_DATA_URL_PREVIEW_CHARS, LOG_MESSAGE_PREVIEW_CHARS};
-use crate::model_inference::llm::{LLMMessage, MessagePart};
-use crate::graph::object_storage::S3Ref;
 
 use crate::ims_bot_adapter::runtime::models::message::Message;
-use crate::ims_bot_adapter::runtime::multimodal_image_url::{resolve_image_message_part, resolve_plain_text_segments, ResolvedTextSegment};
+use crate::ims_bot_adapter::runtime::multimodal_image_url::{
+    resolve_image_message_part, resolve_plain_text_segments, ResolvedTextSegment,
+};
 
 pub struct MessageEventExtractor;
 
@@ -140,10 +142,18 @@ impl MessageEventExtractor {
         for message in messages {
             match message {
                 Message::PlainText(plain) => {
-                    Self::append_plain_text_as_parts(&plain.text, parts, text_buffer, has_media, s3_ref);
+                    Self::append_plain_text_as_parts(
+                        &plain.text,
+                        parts,
+                        text_buffer,
+                        has_media,
+                        s3_ref,
+                    );
                 }
                 Message::Image(image) => {
-                    if let Some(resolved) = resolve_image_message_part(image, s3_ref, false, Self::LOG_PREFIX) {
+                    if let Some(resolved) =
+                        resolve_image_message_part(image, s3_ref, false, Self::LOG_PREFIX)
+                    {
                         Self::flush_text_part(parts, text_buffer);
                         parts.push(resolved.part);
                         *has_media = true;
@@ -159,7 +169,10 @@ impl MessageEventExtractor {
                             if !text_buffer.is_empty() {
                                 text_buffer.push_str("\n\n");
                             }
-                            text_buffer.push_str(&format!("[{}]\n", crate::ims_bot_adapter::runtime::REPLAY_CONTENT_LABEL));
+                            text_buffer.push_str(&format!(
+                                "[{}]\n",
+                                crate::ims_bot_adapter::runtime::REPLAY_CONTENT_LABEL
+                            ));
                             Self::append_messages_as_parts(
                                 source_messages,
                                 parts,
@@ -178,15 +191,29 @@ impl MessageEventExtractor {
                         if !text_buffer.is_empty() {
                             text_buffer.push_str("\n\n");
                         }
-                        text_buffer.push_str(&format!("[{}]\n", crate::ims_bot_adapter::runtime::FORWARD_CONTENT_LABEL));
+                        text_buffer.push_str(&format!(
+                            "[{}]\n",
+                            crate::ims_bot_adapter::runtime::FORWARD_CONTENT_LABEL
+                        ));
                         for (index, node) in forward.content.iter().enumerate() {
                             if index > 0 && !text_buffer.ends_with('\n') {
                                 text_buffer.push('\n');
                             }
-                            let sender = node.nickname.as_deref().or(node.user_id.as_deref()).unwrap_or("unknown");
+                            let sender = node
+                                .nickname
+                                .as_deref()
+                                .or(node.user_id.as_deref())
+                                .unwrap_or("unknown");
                             text_buffer.push_str(sender);
                             text_buffer.push_str(": ");
-                            Self::append_messages_as_parts(&node.content, parts, text_buffer, has_media, false, s3_ref);
+                            Self::append_messages_as_parts(
+                                &node.content,
+                                parts,
+                                text_buffer,
+                                has_media,
+                                false,
+                                s3_ref,
+                            );
                             if !text_buffer.ends_with('\n') {
                                 text_buffer.push('\n');
                             }
@@ -200,25 +227,42 @@ impl MessageEventExtractor {
         }
     }
 
-    fn build_user_message(messages: &[Message], msg_prop: &MessageProp, s3_ref: Option<&S3Ref>) -> LLMMessage {
+    fn build_user_message(
+        messages: &[Message],
+        msg_prop: &MessageProp,
+        s3_ref: Option<&S3Ref>,
+    ) -> LLMMessage {
         let mut parts = Vec::new();
         let mut text_buffer = String::new();
         let mut has_media = false;
 
-        Self::append_messages_as_parts(messages, &mut parts, &mut text_buffer, &mut has_media, true, s3_ref);
+        Self::append_messages_as_parts(
+            messages,
+            &mut parts,
+            &mut text_buffer,
+            &mut has_media,
+            true,
+            s3_ref,
+        );
 
         if let Some(ref_cnt) = msg_prop.ref_content.as_deref().filter(|value| !value.is_empty()) {
             if text_buffer.contains(crate::ims_bot_adapter::runtime::REPLAY_CONTENT_LABEL) {
                 if !text_buffer.is_empty() {
                     text_buffer.push_str("\n\n");
                 }
-                text_buffer.push_str(&format!("[{}]\n", crate::ims_bot_adapter::runtime::QUOTE_CONTENT_APPENDIX_LABEL));
+                text_buffer.push_str(&format!(
+                    "[{}]\n",
+                    crate::ims_bot_adapter::runtime::QUOTE_CONTENT_APPENDIX_LABEL
+                ));
                 text_buffer.push_str(ref_cnt);
             } else {
                 if !text_buffer.is_empty() {
                     text_buffer.push_str("\n\n");
                 }
-                text_buffer.push_str(&format!("[{}]\n", crate::ims_bot_adapter::runtime::REPLAY_CONTENT_LABEL));
+                text_buffer.push_str(&format!(
+                    "[{}]\n",
+                    crate::ims_bot_adapter::runtime::REPLAY_CONTENT_LABEL
+                ));
                 text_buffer.push_str(ref_cnt);
             }
         }
@@ -233,7 +277,8 @@ impl MessageEventExtractor {
                 );
                 LLMMessage::user("(无可用文本内容)")
             } else {
-                let image_part_count = parts.iter().filter(|part| matches!(part, MessagePart::Image { .. })).count();
+                let image_part_count =
+                    parts.iter().filter(|part| matches!(part, MessagePart::Image { .. })).count();
                 info!(
                     "{} build_user_message produced multimodal parts total_parts={} image_parts={}",
                     Self::LOG_PREFIX,
@@ -280,7 +325,6 @@ impl MessageEventExtractor {
             at_target_list: msg_prop.at_target_list,
         }
     }
-
 }
 
 pub(crate) fn extract_message_outputs(

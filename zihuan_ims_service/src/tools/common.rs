@@ -4,17 +4,20 @@ use std::sync::{Arc, Mutex};
 use log::warn;
 use serde_json::Value;
 
+use zihuan_core::agent::tools::{
+    consume_tool_progress_notification, current_task_progress_message,
+};
+use zihuan_core::error::{Error, Result};
+use zihuan_core::graph::{DataType, DataValue};
 use zihuan_core::ims_bot_adapter::adapter::{shared_from_handle, SharedBotAdapter};
 use zihuan_core::ims_bot_adapter::models::event_model::MessageType;
-use zihuan_core::agent::tools::{consume_tool_progress_notification, current_task_progress_message};
-use zihuan_core::error::{Error, Result};
 use zihuan_core::task_context::append_current_task_progress;
-use zihuan_core::graph::{DataType, DataValue};
 
 use crate::qq_chat::msg_send::{send_notification_text, QqChatServiceSendContext};
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
-pub(crate) const QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS: &str = "qq_chat_emit_tool_progress_notifications";
+pub(crate) const QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS: &str =
+    "qq_chat_emit_tool_progress_notifications";
 
 #[derive(Clone)]
 pub(crate) struct ToolNotificationTarget {
@@ -118,14 +121,20 @@ pub(crate) fn send_editable_tool_progress_notification(
         return;
     }
 
-    let event = match shared_rt.get(zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
+    let event = match shared_rt
+        .get(zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT)
+    {
         Some(DataValue::MessageEvent(event)) => event,
         _ => {
-            warn!("{LOG_PREFIX} editable tool progress notification skipped: missing message_event");
+            warn!(
+                "{LOG_PREFIX} editable tool progress notification skipped: missing message_event"
+            );
             return;
         }
     };
-    let adapter = match shared_rt.get(zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT) {
+    let adapter = match shared_rt
+        .get(zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT)
+    {
         Some(DataValue::BotAdapterRef(handle)) => shared_from_handle(handle),
         _ => {
             warn!("{LOG_PREFIX} editable tool progress notification skipped: missing qq_ims_bot_adapter");
@@ -171,7 +180,11 @@ pub(crate) fn send_editable_tool_progress_notification(
 
 /// Coerces an optional limit into a bounded positive usize, falling back to
 /// `default_limit` and clamping between 1 and `max_limit`.
-pub(crate) fn sanitize_positive_limit(value: Option<i64>, default_limit: i64, max_limit: i64) -> usize {
+pub(crate) fn sanitize_positive_limit(
+    value: Option<i64>,
+    default_limit: i64,
+    max_limit: i64,
+) -> usize {
     let limit = value.unwrap_or(default_limit);
     limit.clamp(1, max_limit) as usize
 }
@@ -208,7 +221,10 @@ pub(crate) fn extract_string_field(value: &Value, key: &str) -> Option<String> {
 
 /// Extracts a `Vec<String>` from a graph output map, validating both the outer
 /// vector type and that every inner item is actually a string.
-pub(crate) fn extract_string_list_output(outputs: &HashMap<String, DataValue>, key: &str) -> Result<Vec<String>> {
+pub(crate) fn extract_string_list_output(
+    outputs: &HashMap<String, DataValue>,
+    key: &str,
+) -> Result<Vec<String>> {
     let value = outputs
         .get(key)
         .ok_or_else(|| Error::ValidationError(format!("missing output: {key}")))?;

@@ -1,6 +1,6 @@
+use crate::model_inference::llm::{InferenceParam, LLMMessage, StreamToken};
 use serde_json::Value;
 use tokio::sync::mpsc;
-use crate::model_inference::llm::{InferenceParam, LLMMessage, StreamToken};
 
 use super::openai_responses::{
     build_responses_request_body_for_style, parse_responses_response, parse_responses_sse_response,
@@ -26,7 +26,9 @@ pub fn parse_responses_image_url_object_compat_response(api_resp: &Value) -> Opt
     parse_responses_response(api_resp)
 }
 
-pub fn parse_responses_image_url_object_compat_sse_response(response_text: &str) -> Option<LLMMessage> {
+pub fn parse_responses_image_url_object_compat_sse_response(
+    response_text: &str,
+) -> Option<LLMMessage> {
     parse_responses_sse_response(response_text)
 }
 

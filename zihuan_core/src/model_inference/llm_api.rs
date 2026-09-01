@@ -1,14 +1,19 @@
+use crate::model_inference::llm::llm_base::{LLMBase, StreamingLLMBase};
 use crate::model_inference::llm::message::convert::{
     build_chat_completions_request_body, build_responses_image_url_object_compat_request_body,
     build_responses_message_compat_request_body, build_responses_request_body,
-    build_tencent_multimodal_chat_completions_request_body, has_multimodal_messages, parse_chat_completions_response,
-    parse_chat_completions_sse_response, parse_chat_completions_sse_stream_response,
-    parse_responses_image_url_object_compat_response, parse_responses_image_url_object_compat_sse_response,
-    parse_responses_image_url_object_compat_sse_stream_response, parse_responses_message_compat_response,
-    parse_responses_message_compat_sse_response, parse_responses_message_compat_sse_stream_response,
-    parse_responses_response, parse_responses_sse_response, parse_responses_sse_stream_response,
+    build_tencent_multimodal_chat_completions_request_body, has_multimodal_messages,
+    parse_chat_completions_response, parse_chat_completions_sse_response,
+    parse_chat_completions_sse_stream_response, parse_responses_image_url_object_compat_response,
+    parse_responses_image_url_object_compat_sse_response,
+    parse_responses_image_url_object_compat_sse_stream_response,
+    parse_responses_message_compat_response, parse_responses_message_compat_sse_response,
+    parse_responses_message_compat_sse_stream_response, parse_responses_response,
+    parse_responses_sse_response, parse_responses_sse_stream_response,
 };
+use crate::model_inference::llm::{InferenceParam, LLMMessage, StreamToken};
 use crate::model_inference::model_config::{LlmApiStyle, ReasoningEffort, ThinkingType};
+use crate::utils::string_utils;
 use log::{debug, error, warn};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
@@ -18,9 +23,6 @@ use std::fmt::Write as _;
 use std::thread;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use crate::model_inference::llm::llm_base::{LLMBase, StreamingLLMBase};
-use crate::model_inference::llm::{InferenceParam, LLMMessage, StreamToken};
-use crate::utils::string_utils;
 
 const DEFAULT_RETRY_COUNT: u32 = 2;
 const RETRY_DELAY_MS: u64 = 1_000;
@@ -49,12 +51,17 @@ pub struct LLMAPI {
     include_reasoning_content: bool,
     thinking_type: Option<ThinkingType>,
     reasoning_effort: Option<ReasoningEffort>,
+    context_length: usize,
     pub timeout: Duration,
     retry_count: u32,
 }
 
 impl LLMAPI {
-    fn format_cache_hit_rate(&self, cached_prompt_tokens: Option<usize>, prompt_tokens: Option<usize>) -> String {
+    fn format_cache_hit_rate(
+        &self,
+        cached_prompt_tokens: Option<usize>,
+        prompt_tokens: Option<usize>,
+    ) -> String {
         match (cached_prompt_tokens, prompt_tokens) {
             (Some(cached), Some(prompt)) if prompt > 0 => {
                 format!("{:.2}%", (cached as f64 / prompt as f64) * 100.0)
@@ -63,7 +70,11 @@ impl LLMAPI {
         }
     }
 
-    fn log_usage(&self, request_context: &RequestContext, usage: &crate::model_inference::llm::TokenUsage) {
+    fn log_usage(
+        &self,
+        request_context: &RequestContext,
+        usage: &crate::model_inference::llm::TokenUsage,
+    ) {
         let prompt_tokens = usage.prompt_tokens.or_else(|| {
             usage
                 .cached_prompt_tokens
@@ -116,6 +127,7 @@ impl LLMAPI {
         include_reasoning_content: bool,
         thinking_type: Option<ThinkingType>,
         reasoning_effort: Option<ReasoningEffort>,
+        context_length: usize,
         timeout: Duration,
     ) -> Self {
         Self {
@@ -128,6 +140,7 @@ impl LLMAPI {
             include_reasoning_content,
             thinking_type,
             reasoning_effort,
+            context_length,
             timeout,
             retry_count: DEFAULT_RETRY_COUNT,
         }
@@ -159,7 +172,11 @@ impl LLMAPI {
         &self.api_endpoint
     }
 
-    fn format_request_context(&self, request_context: &RequestContext, attempt: Option<(u32, u32)>) -> String {
+    fn format_request_context(
+        &self,
+        request_context: &RequestContext,
+        attempt: Option<(u32, u32)>,
+    ) -> String {
         let mut context = format!(
             "model={} endpoint={} api_style={:?} format={} timeout_secs={} messages={} tools={} multimodal={} include_reasoning_content={} thinking_type={} reasoning_effort={}",
             self.model_name,
@@ -230,7 +247,9 @@ impl LLMAPI {
             }
             LlmApiStyle::OpenAiResponses => "open_ai_responses",
             LlmApiStyle::OpenAiResponsesMessageCompat => "open_ai_responses_message_compat",
-            LlmApiStyle::OpenAiResponsesImageUrlObjectCompat => "open_ai_responses_image_url_object_compat",
+            LlmApiStyle::OpenAiResponsesImageUrlObjectCompat => {
+                "open_ai_responses_image_url_object_compat"
+            }
         }
     }
 
@@ -276,7 +295,8 @@ impl LLMAPI {
             RequestError::Retryable { message: err_detail }
         })?;
         let status = response.status();
-        let response_text = response.text().unwrap_or_else(|_| "Failed to read response".to_string());
+        let response_text =
+            response.text().unwrap_or_else(|_| "Failed to read response".to_string());
 
         if self.stream {
             if let Some(message) = match self.uses_responses_api() {
@@ -324,19 +344,23 @@ impl LLMAPI {
             };
         }
 
-        let api_resp = serde_json::from_str::<Value>(&response_text).map_err(|e| RequestError::NonRetryable {
-            message: format!(
-                "{} parse_error={} body={}",
-                self.format_request_context(request_context, Some((attempt, max_attempts)),),
-                e,
-                string_utils::shorten_text(&response_text, 800)
-            ),
+        let api_resp = serde_json::from_str::<Value>(&response_text).map_err(|e| {
+            RequestError::NonRetryable {
+                message: format!(
+                    "{} parse_error={} body={}",
+                    self.format_request_context(request_context, Some((attempt, max_attempts)),),
+                    e,
+                    string_utils::shorten_text(&response_text, 800)
+                ),
+            }
         })?;
 
         let parsed_message = match self.uses_responses_api() {
             true => match self.api_style {
                 LlmApiStyle::OpenAiResponses => parse_responses_response(&api_resp),
-                LlmApiStyle::OpenAiResponsesMessageCompat => parse_responses_message_compat_response(&api_resp),
+                LlmApiStyle::OpenAiResponsesMessageCompat => {
+                    parse_responses_message_compat_response(&api_resp)
+                }
                 LlmApiStyle::OpenAiResponsesImageUrlObjectCompat => {
                     parse_responses_image_url_object_compat_response(&api_resp)
                 }
@@ -379,6 +403,10 @@ impl LLMBase for LLMAPI {
         &self.model_name
     }
 
+    fn context_length(&self) -> usize {
+        self.context_length
+    }
+
     fn api_style(&self) -> Option<&str> {
         Some(self.api_style_label())
     }
@@ -409,15 +437,20 @@ impl LLMBase for LLMAPI {
         };
         let request_body = if self.uses_responses_api() {
             match self.api_style {
-                LlmApiStyle::OpenAiResponses => {
-                    build_responses_request_body(&self.model_name, param, self.stream, self.include_reasoning_content)
-                }
-                LlmApiStyle::OpenAiResponsesMessageCompat => build_responses_message_compat_request_body(
+                LlmApiStyle::OpenAiResponses => build_responses_request_body(
                     &self.model_name,
                     param,
                     self.stream,
                     self.include_reasoning_content,
                 ),
+                LlmApiStyle::OpenAiResponsesMessageCompat => {
+                    build_responses_message_compat_request_body(
+                        &self.model_name,
+                        param,
+                        self.stream,
+                        self.include_reasoning_content,
+                    )
+                }
                 LlmApiStyle::OpenAiResponsesImageUrlObjectCompat => {
                     build_responses_image_url_object_compat_request_body(
                         &self.model_name,
@@ -428,7 +461,10 @@ impl LLMBase for LLMAPI {
                 }
                 _ => unreachable!("non-responses style reached responses request builder"),
             }
-        } else if matches!(self.api_style, LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat) {
+        } else if matches!(
+            self.api_style,
+            LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat
+        ) {
             build_tencent_multimodal_chat_completions_request_body(
                 &self.model_name,
                 param,
@@ -456,14 +492,18 @@ impl LLMBase for LLMAPI {
                 self.format_request_context(&request_context, Some((attempt, max_attempts)),)
             );
 
-            match self.send_request(&client, &request_body, &request_context, attempt, max_attempts) {
+            match self.send_request(&client, &request_body, &request_context, attempt, max_attempts)
+            {
                 Ok(msg) => {
                     if let Some(usage) = msg.usage.as_ref() {
                         self.log_usage(&request_context, usage);
                     }
                     debug!(
                         "Successfully parsed API response: {}",
-                        self.format_request_context(&request_context, Some((attempt, max_attempts)),)
+                        self.format_request_context(
+                            &request_context,
+                            Some((attempt, max_attempts)),
+                        )
                     );
                     return msg;
                 }
@@ -477,7 +517,10 @@ impl LLMBase for LLMAPI {
                         );
                         thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
                     } else {
-                        error!("LLM API request failed on attempt {}/{}: {}", attempt, max_attempts, message);
+                        error!(
+                            "LLM API request failed on attempt {}/{}: {}",
+                            attempt, max_attempts, message
+                        );
                     }
                 }
                 Err(RequestError::NonRetryable { message }) => {
@@ -522,15 +565,20 @@ impl LLMAPI {
         };
         let request_body = if self.uses_responses_api() {
             match self.api_style {
-                LlmApiStyle::OpenAiResponses => {
-                    build_responses_request_body(&self.model_name, param, true, self.include_reasoning_content)
-                }
-                LlmApiStyle::OpenAiResponsesMessageCompat => build_responses_message_compat_request_body(
+                LlmApiStyle::OpenAiResponses => build_responses_request_body(
                     &self.model_name,
                     param,
                     true,
                     self.include_reasoning_content,
                 ),
+                LlmApiStyle::OpenAiResponsesMessageCompat => {
+                    build_responses_message_compat_request_body(
+                        &self.model_name,
+                        param,
+                        true,
+                        self.include_reasoning_content,
+                    )
+                }
                 LlmApiStyle::OpenAiResponsesImageUrlObjectCompat => {
                     build_responses_image_url_object_compat_request_body(
                         &self.model_name,
@@ -541,7 +589,10 @@ impl LLMAPI {
                 }
                 _ => unreachable!("non-responses style reached responses request builder"),
             }
-        } else if matches!(self.api_style, LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat) {
+        } else if matches!(
+            self.api_style,
+            LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat
+        ) {
             build_tencent_multimodal_chat_completions_request_body(
                 &self.model_name,
                 param,
@@ -595,19 +646,29 @@ impl LLMAPI {
             );
             let provider_message = serde_json::from_str::<serde_json::Value>(&body)
                 .ok()
-                .and_then(|value| value.pointer("/error/message").and_then(|message| message.as_str()).map(str::to_owned))
+                .and_then(|value| {
+                    value
+                        .pointer("/error/message")
+                        .and_then(|message| message.as_str())
+                        .map(str::to_owned)
+                })
                 .unwrap_or_else(|| USER_VISIBLE_REQUEST_ERROR.to_string());
-            return LLMMessage::assistant_text(format!("Error: LLM API request failed ({status}): {provider_message}"));
+            return LLMMessage::assistant_text(format!(
+                "Error: LLM API request failed ({status}): {provider_message}"
+            ));
         }
 
         let message = match self.uses_responses_api() {
             true => match self.api_style {
-                LlmApiStyle::OpenAiResponses => parse_responses_sse_stream_response(response, token_tx).await,
+                LlmApiStyle::OpenAiResponses => {
+                    parse_responses_sse_stream_response(response, token_tx).await
+                }
                 LlmApiStyle::OpenAiResponsesMessageCompat => {
                     parse_responses_message_compat_sse_stream_response(response, token_tx).await
                 }
                 LlmApiStyle::OpenAiResponsesImageUrlObjectCompat => {
-                    parse_responses_image_url_object_compat_sse_stream_response(response, token_tx).await
+                    parse_responses_image_url_object_compat_sse_stream_response(response, token_tx)
+                        .await
                 }
                 _ => unreachable!("non-responses style reached responses streaming parser"),
             },

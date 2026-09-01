@@ -1,4 +1,11 @@
+use crate::error::{Error, Result};
+use crate::graph::object_storage::S3Ref;
+use crate::ims_bot_adapter::models::message::{ImageMessage, Message};
 use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;
+use crate::url_utils::{
+    content_type_from_url, image_content_type_from_bytes, image_extension_for_content_type,
+    supported_image_content_type,
+};
 use base64::Engine;
 use log::{info, warn};
 use percent_encoding::percent_decode_str;
@@ -9,13 +16,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::oneshot;
 use tokio::task::block_in_place;
 use uuid::Uuid;
-use crate::error::{Error, Result};
-use crate::ims_bot_adapter::models::message::{ImageMessage, Message};
-use crate::url_utils::{
-    content_type_from_url, image_content_type_from_bytes, image_extension_for_content_type,
-    supported_image_content_type,
-};
-use crate::graph::object_storage::S3Ref;
 
 /// Global counter for generating unique echo IDs.
 static ECHO_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -57,59 +57,72 @@ pub fn response_message_id(response: &Value) -> Option<i64> {
     response.get("data").and_then(|data| json_i64(data.get("message_id")))
 }
 
-pub fn qq_message_list_to_json(messages: &[crate::ims_bot_adapter::runtime::models::message::Message]) -> serde_json::Value {
+pub fn qq_message_list_to_json(
+    messages: &[crate::ims_bot_adapter::runtime::models::message::Message],
+) -> serde_json::Value {
     serde_json::Value::Array(
         messages
             .iter()
             .map(|m| match m {
-                crate::ims_bot_adapter::runtime::models::message::Message::Image(image) => serde_json::json!({
-                    "type": "image",
-                    "data": {
-                        "file": image
-                            .original_source()
-                            .filter(|value| {
-                                value.starts_with("base64://")
-                                    || value.starts_with("file://")
-                                    || (!value.starts_with("http://")
-                                        && !value.starts_with("https://"))
-                            })
-                            .map(ToOwned::to_owned),
-                        "path": image
-                            .original_source()
-                            .filter(|value| {
-                                !value.starts_with("http://")
-                                    && !value.starts_with("https://")
-                                    && !value.starts_with("base64://")
-                            })
-                            .map(ToOwned::to_owned),
-                        "url": image
-                            .original_source()
-                            .filter(|value| {
-                                value.starts_with("http://") || value.starts_with("https://")
-                            })
-                            .map(ToOwned::to_owned),
-                        "name": image.name().map(ToOwned::to_owned),
-                    }
-                }),
+                crate::ims_bot_adapter::runtime::models::message::Message::Image(image) => {
+                    serde_json::json!({
+                        "type": "image",
+                        "data": {
+                            "file": image
+                                .original_source()
+                                .filter(|value| {
+                                    value.starts_with("base64://")
+                                        || value.starts_with("file://")
+                                        || (!value.starts_with("http://")
+                                            && !value.starts_with("https://"))
+                                })
+                                .map(ToOwned::to_owned),
+                            "path": image
+                                .original_source()
+                                .filter(|value| {
+                                    !value.starts_with("http://")
+                                        && !value.starts_with("https://")
+                                        && !value.starts_with("base64://")
+                                })
+                                .map(ToOwned::to_owned),
+                            "url": image
+                                .original_source()
+                                .filter(|value| {
+                                    value.starts_with("http://") || value.starts_with("https://")
+                                })
+                                .map(ToOwned::to_owned),
+                            "name": image.name().map(ToOwned::to_owned),
+                        }
+                    })
+                }
                 _ => serde_json::to_value(m).unwrap_or(serde_json::Value::Null),
             })
             .collect(),
     )
 }
 
-pub fn qq_message_list_to_send_json(adapter_ref: &SharedBotAdapter, messages: &[Message]) -> Result<serde_json::Value> {
+pub fn qq_message_list_to_send_json(
+    adapter_ref: &SharedBotAdapter,
+    messages: &[Message],
+) -> Result<serde_json::Value> {
     let normalized = normalize_messages_for_send(adapter_ref, messages)?;
     Ok(qq_message_list_to_json(&normalized))
 }
 
-fn normalize_messages_for_send(adapter_ref: &SharedBotAdapter, messages: &[Message]) -> Result<Vec<Message>> {
+fn normalize_messages_for_send(
+    adapter_ref: &SharedBotAdapter,
+    messages: &[Message],
+) -> Result<Vec<Message>> {
     messages
         .iter()
         .map(|message| normalize_message_for_send(adapter_ref, message))
         .collect()
 }
 
-fn normalize_message_for_send(adapter_ref: &SharedBotAdapter, message: &Message) -> Result<Message> {
+fn normalize_message_for_send(
+    adapter_ref: &SharedBotAdapter,
+    message: &Message,
+) -> Result<Message> {
     match message {
         Message::Image(image) => Ok(Message::Image(normalize_image_for_send(adapter_ref, image)?)),
         Message::Forward(forward) => {
@@ -123,7 +136,10 @@ fn normalize_message_for_send(adapter_ref: &SharedBotAdapter, message: &Message)
     }
 }
 
-fn normalize_image_for_send(adapter_ref: &SharedBotAdapter, image: &ImageMessage) -> Result<ImageMessage> {
+fn normalize_image_for_send(
+    adapter_ref: &SharedBotAdapter,
+    image: &ImageMessage,
+) -> Result<ImageMessage> {
     if let Some(payload) = outbound_base64_file(adapter_ref, image)? {
         let mut normalized = image.clone();
         normalized.media.original_source = payload.base64_file;
@@ -176,7 +192,10 @@ fn normalize_existing_local_path(path: &str) -> Option<String> {
     None
 }
 
-fn outbound_object_storage_key(adapter_ref: &SharedBotAdapter, image: &ImageMessage) -> Option<String> {
+fn outbound_object_storage_key(
+    adapter_ref: &SharedBotAdapter,
+    image: &ImageMessage,
+) -> Option<String> {
     if let Some(key) = image.rustfs_path().map(str::trim).filter(|key| !key.is_empty()) {
         return Some(key.to_string());
     }
@@ -192,19 +211,30 @@ fn outbound_object_storage_key(adapter_ref: &SharedBotAdapter, image: &ImageMess
     None
 }
 
-fn outbound_base64_file(adapter_ref: &SharedBotAdapter, image: &ImageMessage) -> Result<Option<OutboundImagePayload>> {
+fn outbound_base64_file(
+    adapter_ref: &SharedBotAdapter,
+    image: &ImageMessage,
+) -> Result<Option<OutboundImagePayload>> {
     if let Some(file) = image.original_source() {
         if file.starts_with("base64://") {
             return outbound_payload_from_base64(image, file, "base64").map(Some);
         }
         if let Some(base64_payload) = file.strip_prefix("data:").and_then(data_url_base64_payload) {
-            return outbound_payload_from_base64(image, &format!("base64://{base64_payload}"), "data_url").map(Some);
+            return outbound_payload_from_base64(
+                image,
+                &format!("base64://{base64_payload}"),
+                "data_url",
+            )
+            .map(Some);
         }
     }
 
     if let Some(local_path) = outbound_local_image_path(image) {
         let bytes = std::fs::read(&local_path).map_err(|error| {
-            Error::ValidationError(format!("failed to read outbound QQ image file '{}': {}", local_path, error))
+            Error::ValidationError(format!(
+                "failed to read outbound QQ image file '{}': {}",
+                local_path, error
+            ))
         })?;
         return Ok(Some(outbound_payload_from_bytes(image, bytes, "local_file")?));
     }
@@ -244,11 +274,13 @@ fn outbound_payload_from_base64(
     source: &'static str,
 ) -> Result<OutboundImagePayload> {
     let payload = base64_file.strip_prefix("base64://").ok_or_else(|| {
-        Error::ValidationError("outbound QQ image base64 payload is missing the base64:// prefix".to_string())
+        Error::ValidationError(
+            "outbound QQ image base64 payload is missing the base64:// prefix".to_string(),
+        )
     })?;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(payload)
-        .map_err(|error| Error::ValidationError(format!("outbound QQ image contains invalid base64 data: {error}")))?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(payload).map_err(|error| {
+        Error::ValidationError(format!("outbound QQ image contains invalid base64 data: {error}"))
+    })?;
     let mut outbound = outbound_payload_from_bytes(image, bytes, source)?;
     outbound.base64_file = base64_file.to_string();
     Ok(outbound)
@@ -264,7 +296,9 @@ fn outbound_payload_from_bytes(
         .and_then(supported_image_content_type)
         .or_else(|| image_content_type_from_bytes(&bytes))
         .ok_or_else(|| {
-            Error::ValidationError("outbound QQ image has an unsupported or unrecognized format".to_string())
+            Error::ValidationError(
+                "outbound QQ image has an unsupported or unrecognized format".to_string(),
+            )
         })?;
     let file_name = outbound_image_file_name(image, mime_type);
 
@@ -339,7 +373,11 @@ fn safe_file_name(value: &str) -> Option<String> {
     (!sanitized.is_empty()).then_some(sanitized)
 }
 
-async fn store_remote_image_bytes(adapter_ref: &SharedBotAdapter, url: &str, bytes: &[u8]) -> Result<()> {
+async fn store_remote_image_bytes(
+    adapter_ref: &SharedBotAdapter,
+    url: &str,
+    bytes: &[u8],
+) -> Result<()> {
     let object_storage = adapter_ref.lock().await.object_storage.clone();
     let Some(object_storage) = object_storage else {
         return Err(Error::ValidationError(format!(
@@ -368,7 +406,9 @@ fn remote_image_object_key(url: &str) -> String {
                 .and_then(|ext| ext.to_str())
                 .map(|ext| ext.to_ascii_lowercase())
         })
-        .filter(|ext| matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp" | "avif" | "svg"))
+        .filter(|ext| {
+            matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp" | "avif" | "svg")
+        })
         .unwrap_or_else(|| "jpg".to_string());
     format!(
         "qq-outbound/{}/{}.{}",
@@ -475,7 +515,11 @@ fn object_storage_url_prefixes(object_storage: &S3Ref) -> Vec<String> {
     } else if let Ok(endpoint) = reqwest::Url::parse(&object_storage.endpoint) {
         if let Some(host) = endpoint.host_str() {
             let scheme = endpoint.scheme();
-            prefixes.push(format!("{scheme}://{}.{}", object_storage.bucket.trim_matches('/'), host));
+            prefixes.push(format!(
+                "{scheme}://{}.{}",
+                object_storage.bucket.trim_matches('/'),
+                host
+            ));
         }
     }
 
@@ -526,7 +570,13 @@ pub async fn ws_send_action_async(
     action_name: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value> {
-    ws_send_action_with_timeout_async(adapter_ref, action_name, params, std::time::Duration::from_secs(30)).await
+    ws_send_action_with_timeout_async(
+        adapter_ref,
+        action_name,
+        params,
+        std::time::Duration::from_secs(30),
+    )
+    .await
 }
 
 pub async fn ws_send_action_with_timeout_async(
@@ -549,7 +599,9 @@ pub async fn ws_send_action_with_timeout_async(
     let (action_tx, pending_actions) = {
         let guard = adapter_ref.lock().await;
         let tx = guard.action_tx.clone().ok_or_else(|| {
-            crate::error::Error::ValidationError("Bot adapter WebSocket not connected yet".to_string())
+            crate::error::Error::ValidationError(
+                "Bot adapter WebSocket not connected yet".to_string(),
+            )
         })?;
         let pending = guard.pending_actions.clone();
         Ok::<_, crate::error::Error>((tx, pending))

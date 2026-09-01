@@ -1,10 +1,10 @@
+use crate::error::{Error, Result};
+use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use log::{error, warn};
 use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;
-use crate::error::{Error, Result};
-use crate::model_inference::llm::embedding_base::EmbeddingBase;
 
 const DEFAULT_RETRY_COUNT: u32 = 2;
 const RETRY_DELAY_MS: u64 = 1_000;
@@ -30,7 +30,12 @@ struct EmbeddingData {
 }
 
 impl EmbeddingAPI {
-    pub fn new(model_name: String, api_endpoint: String, api_key: Option<String>, timeout: Duration) -> Self {
+    pub fn new(
+        model_name: String,
+        api_endpoint: String,
+        api_key: Option<String>,
+        timeout: Duration,
+    ) -> Self {
         Self {
             model_name,
             api_endpoint,
@@ -66,11 +71,16 @@ impl EmbeddingAPI {
             }
         }
 
-        Err(last_error
-            .unwrap_or_else(|| crate::string_error!("embedding request failed without a concrete error")))
+        Err(last_error.unwrap_or_else(|| {
+            crate::string_error!("embedding request failed without a concrete error")
+        }))
     }
 
-    fn try_execute_embedding_request(&self, client: &Client, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+    fn try_execute_embedding_request(
+        &self,
+        client: &Client,
+        texts: &[String],
+    ) -> Result<Vec<Vec<f32>>> {
         let input = if texts.len() == 1 {
             json!(texts[0])
         } else {
@@ -98,7 +108,8 @@ impl EmbeddingAPI {
         if !status.is_success() {
             return Err(crate::string_error!(
                 "embedding request failed with status {}: {}",
-                status, body
+                status,
+                body
             ));
         }
 

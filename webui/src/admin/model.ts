@@ -147,7 +147,6 @@ export interface ServiceFormState {
   rdb_id: string;
   retrieval_store_id: string;
   max_message_length: number;
-  compact_context_length: number;
   dream_enabled: boolean;
   dream_interval_value: number;
   dream_interval_unit: "minutes" | "hours" | "days";
@@ -260,6 +259,7 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
 ];
 
 export const WORKSPACE_DEFAULT_TOOLS: DefaultToolOption[] = [
+  { id: "image_understand", label: "image_understand", description: "按 media_id 理解图片内容" },
   { id: "web_search", label: "web_search", description: "联网搜索并读取网页内容" },
   { id: "read_file", label: "read_file", description: "读取文件内容" },
   { id: "list_dir", label: "list_dir", description: "列出目录内容" },
@@ -318,7 +318,7 @@ export function defaultLlmConfig(): LlmServiceConfig {
     include_reasoning_content: false,
     thinking_type: null,
     reasoning_effort: null,
-    context_length: null,
+    context_length: 32 * 1024,
     timeout_secs: 30,
     retry_count: 2,
   };
@@ -435,7 +435,6 @@ export function defaultServiceForm(): ServiceFormState {
     rdb_id: "",
     retrieval_store_id: "",
     max_message_length: 500,
-    compact_context_length: 0,
     dream_enabled: false,
     dream_interval_value: 30,
     dream_interval_unit: "minutes",
@@ -797,7 +796,7 @@ export function llmFormFromConfig(config: LlmConfig): LlmFormState {
       ),
       thinking_type: config.model.llm.thinking_type ?? null,
       reasoning_effort: config.model.llm.reasoning_effort ?? null,
-      context_length: config.model.llm.context_length ?? null,
+      context_length: config.model.llm.context_length ?? 32 * 1024,
       timeout_secs: config.model.llm.timeout_secs,
       retry_count: config.model.llm.retry_count,
     },
@@ -910,7 +909,6 @@ export function serviceFormFromConfig(
       ? "__local_markdown__"
       : String(retrievalStore?.connection_id ?? "");
     form.max_message_length = Number(agentType.max_message_length ?? 500);
-    form.compact_context_length = Number(agentType.compact_context_length ?? 0);
     form.dream_enabled = Boolean(agentType.dream_enabled ?? false);
     form.dream_interval_value = Number(agentType.dream_interval_value ?? 30);
     form.dream_interval_unit = (agentType.dream_interval_unit === "hours" || agentType.dream_interval_unit === "days") ? agentType.dream_interval_unit : "minutes";
@@ -981,6 +979,7 @@ export function serviceFormFromConfig(
       : [];
   } else {
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
+    form.image_understand_llm_ref_id = String(agentType.image_understand_llm_ref_id ?? "");
     form.agents_md_enabled = Boolean(agentType.agents_md_enabled ?? false);
     form.workspace_memory_enabled = Boolean(agentType.memory_enabled ?? false);
     form.workspace_embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
@@ -1113,7 +1112,6 @@ export function buildServicePayload(form: ServiceFormState): {
             ? { type: "connection", connection_id: form.retrieval_store_id }
             : null,
         max_message_length: form.max_message_length,
-        compact_context_length: form.compact_context_length,
         dream_enabled: form.dream_enabled,
         dream_interval_value: Math.max(1, Math.trunc(form.dream_interval_value || 1)),
         dream_interval_unit: form.dream_interval_unit,
@@ -1154,6 +1152,7 @@ export function buildServicePayload(form: ServiceFormState): {
     role_service_type: {
       type: "workspace",
       llm_ref_id: form.llm_ref_id || null,
+      image_understand_llm_ref_id: form.image_understand_llm_ref_id || null,
       agents_md_enabled: form.agents_md_enabled,
       memory_enabled: form.workspace_memory_enabled,
       embedding_model_ref_id: form.workspace_embedding_model_ref_id || null,
@@ -1327,6 +1326,10 @@ export function assertLlmConfig(json: unknown): LlmConfig {
     const llmModelName = String((llm as Record<string, unknown>).model_name ?? "").trim();
     if (!llmModelName) {
       throw new Error("聊天模型配置缺少 model_name");
+    }
+    const contextLength = (llm as Record<string, unknown>).context_length;
+    if (!Number.isInteger(contextLength) || Number(contextLength) <= 0) {
+      throw new Error("聊天模型配置缺少有效的 context_length");
     }
   } else if (modelType === "text_embedding_local") {
     const modelName = String(modelObj.model_name ?? "").trim();

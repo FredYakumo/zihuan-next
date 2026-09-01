@@ -1,22 +1,22 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use zihuan_core::storage::ElasticsearchRef;
-use zihuan_core::storage::LocalMemoryStore;
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
+use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::data_refs::RelationalDbConnection;
+use zihuan_core::graph::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
+use zihuan_core::graph::function_graph::FunctionPortDef;
+use zihuan_core::graph::object_storage::S3Ref;
+use zihuan_core::graph::tool_spec::ToolDefinition;
+use zihuan_core::graph::DataValue;
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngine;
 use zihuan_core::steer::PendingSteerStore;
+use zihuan_core::storage::ElasticsearchRef;
+use zihuan_core::storage::LocalMemoryStore;
 use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_core::graph::tool_spec::ToolDefinition;
-use zihuan_core::graph::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
-use zihuan_core::graph::function_graph::FunctionPortDef;
-use zihuan_core::graph::object_storage::S3Ref;
-use zihuan_core::graph::DataValue;
 
 use crate::qq_chat::language_style_store::QqChatAgentServiceLanguageStyle;
 use crate::qq_chat::model::reply::QqChatServiceReplyBatchBuilder;
@@ -43,7 +43,6 @@ pub(crate) struct QqChatAgentServiceContext<'a> {
     pub(crate) web_search_engine: &'a Arc<dyn WebSearchEngine>,
     pub(crate) s3_ref: Option<&'a Arc<S3Ref>>,
     pub(crate) max_message_length: usize,
-    pub(crate) compact_context_length: usize,
     pub(crate) max_steer_count: usize,
     pub(crate) reply_batch_builder: Option<&'a QqChatServiceReplyBatchBuilder>,
     pub(crate) shared_runtime_values: HashMap<String, DataValue>,
@@ -57,12 +56,12 @@ pub(crate) struct QqChatAgentServiceContext<'a> {
 
 impl<'a> QqChatAgentServiceContext<'a> {
     /// Returns `(role_label, llm_ref)` pairs for all LLM roles configured on this service.
-    /// QQ Chat agent service's logical pipeline: 
+    /// QQ Chat agent service's logical pipeline:
     /// - main conversation,
     /// - intent classification,
     /// - math/programming,
     /// - natural-language reply
-    /// 
+    ///
     pub(crate) fn llm_roles(&'a self) -> [(&'static str, &'a Arc<dyn LLMBase>); 4] {
         [
             ("对话", self.llm),
@@ -96,7 +95,6 @@ pub struct QqChatAgentServiceRuntimeConfig {
     pub web_search_engine: Arc<dyn WebSearchEngine>,
     pub s3_ref: Option<Arc<S3Ref>>,
     pub max_message_length: usize,
-    pub compact_context_length: usize,
     pub max_steer_count: usize,
     pub reply_batch_builder: Option<QqChatServiceReplyBatchBuilder>,
     pub default_tools_enabled: HashMap<String, bool>,

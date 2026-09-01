@@ -1,26 +1,46 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
-use zihuan_core::model_inference::message_content_utils::sanitize_messages_for_inference;
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
-use zihuan_core::config::llm_refs::{load_llm_refs, LlmRefConfig};
-use zihuan_core::storage::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
 use zihuan_core::agent::tools::{
-    ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason, Tool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS,
+    Tool, ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason, ToolExecutionOutput,
+    ToolExecutionResource, ToolRunDuration, MAX_TOOL_ITERATIONS,
 };
+use zihuan_core::agent::AgentCancellation;
+use zihuan_core::config::llm_refs::{load_llm_refs, LlmRefConfig};
 use zihuan_core::error::{Error, Result};
+use zihuan_core::graph::tool_spec::ToolDefinition;
+use zihuan_core::model_inference::inference_function::compact_message::{
+    compact_message_history, compaction_threshold, estimate_messages_tokens,
+};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken};
-use zihuan_core::graph::tool_spec::ToolDefinition;
+use zihuan_core::model_inference::message_content_utils::sanitize_messages_for_inference;
+use zihuan_core::storage::{load_connections, ConnectionConfig};
+use zihuan_core::system_config::current_context_compaction_percent;
+use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
 use zihuan_core::role::{RoleService, RoleServiceContext, RoleServiceDescriptor, RoleServiceKind};
 
 pub use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
+
+#[derive(Debug, Clone)]
+pub enum ContextCompactionEvent {
+    Started,
+    Completed {
+        estimated_tokens_before: usize,
+        estimated_tokens_after: usize,
+        duration: Duration,
+    },
+    Failed,
+}
+
+pub type ContextCompactionObserver = Arc<dyn Fn(ContextCompactionEvent) + Send + Sync>;
 
 #[derive(Clone, Default)]
 pub struct StaticInferenceToolProvider {
@@ -65,10 +85,13 @@ impl Tool for ServiceSubgraphTool {
         self.runner.execute_to_string(call_content, arguments)
     }
 
-    fn execute_with_outcome(&self, call_content: &str, arguments: &serde_json::Value) -> ToolExecutionOutput {
+    fn execute_with_outcome(
+        &self,
+        call_content: &str,
+        arguments: &serde_json::Value,
+    ) -> ToolExecutionOutput {
         ToolExecutionOutput::text(self.execute(call_content, arguments))
     }
-
 }
 
 struct DynToolWrapper(Box<dyn Tool>);
@@ -86,7 +109,11 @@ impl Tool for DynToolWrapper {
         self.0.execute(call_content, arguments)
     }
 
-    fn execute_with_outcome(&self, call_content: &str, arguments: &serde_json::Value) -> ToolExecutionOutput {
+    fn execute_with_outcome(
+        &self,
+        call_content: &str,
+        arguments: &serde_json::Value,
+    ) -> ToolExecutionOutput {
         self.0.execute_with_outcome(call_content, arguments)
     }
 
@@ -97,6 +124,14 @@ impl Tool for DynToolWrapper {
         on_output: Arc<dyn Fn(&str, &str) + Send + Sync>,
     ) -> ToolExecutionOutput {
         self.0.execute_with_progress(call_content, arguments, on_output)
+    }
+
+    fn execution_resource(&self, arguments: &serde_json::Value) -> ToolExecutionResource {
+        self.0.execution_resource(arguments)
+    }
+
+    fn requires_user_confirmation(&self, arguments: &serde_json::Value) -> bool {
+        self.0.requires_user_confirmation(arguments)
     }
 }
 
@@ -153,23 +188,35 @@ impl RoleBrainAgent {
         output_messages
             .into_iter()
             .rev()
-            .find(|message| matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty())
+            .find(|message| {
+                matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty()
+            })
             .ok_or_else(|| {
-                zihuan_core::string_error!("agent '{}' did not produce a final assistant message", self.agent.name)
+                zihuan_core::string_error!(
+                    "agent '{}' did not produce a final assistant message",
+                    self.agent.name
+                )
             })
     }
 
     pub fn infer_response_with_trace(&self, messages: Vec<LLMMessage>) -> Result<Vec<LLMMessage>> {
-        self.infer_response_with_trace_and_llm(messages, Arc::clone(&self.llm), None)
+        self.infer_response_with_trace_and_llm(messages, Arc::clone(&self.llm), None, None)
     }
 
     pub fn infer_response_with_trace_and_llm(
         &self,
         messages: Vec<LLMMessage>,
         llm: Arc<dyn LLMBase>,
+        image_understand_llm: Option<Arc<dyn LLMBase>>,
         workspace_path: Option<String>,
     ) -> Result<Vec<LLMMessage>> {
-        let context = build_inference_tool_context(&messages, workspace_path, None, Arc::clone(&llm));
+        let context = build_inference_tool_context(
+            &messages,
+            workspace_path,
+            None,
+            Arc::clone(&llm),
+            image_understand_llm,
+        );
 
         let mut conversation = sanitize_messages_for_inference(messages);
         if conversation.is_empty() {
@@ -195,16 +242,46 @@ impl RoleBrainAgent {
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn ToolCallingObserver>>,
+        compaction_observer: Option<ContextCompactionObserver>,
         workspace_path: Option<String>,
         session_id: Option<String>,
+        cancellation: Option<Arc<dyn AgentCancellation>>,
     ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
         self.infer_response_streaming_with_trace_and_llm(
             messages,
             token_tx,
             observer,
+            compaction_observer,
             Arc::clone(&self.llm),
+            None,
             workspace_path,
             session_id,
+            cancellation,
+        )
+        .await
+    }
+
+    pub async fn infer_response_streaming_with_trace_and_image_understand_llm(
+        &self,
+        messages: Vec<LLMMessage>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
+        observer: Option<Arc<dyn ToolCallingObserver>>,
+        compaction_observer: Option<ContextCompactionObserver>,
+        image_understand_llm: Option<Arc<dyn LLMBase>>,
+        workspace_path: Option<String>,
+        session_id: Option<String>,
+        cancellation: Option<Arc<dyn AgentCancellation>>,
+    ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
+        self.infer_response_streaming_with_trace_and_llm(
+            messages,
+            token_tx,
+            observer,
+            compaction_observer,
+            Arc::clone(&self.llm),
+            image_understand_llm,
+            workspace_path,
+            session_id,
+            cancellation,
         )
         .await
     }
@@ -214,17 +291,67 @@ impl RoleBrainAgent {
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn ToolCallingObserver>>,
+        compaction_observer: Option<ContextCompactionObserver>,
         llm: Arc<dyn LLMBase>,
+        image_understand_llm: Option<Arc<dyn LLMBase>>,
         workspace_path: Option<String>,
         session_id: Option<String>,
+        cancellation: Option<Arc<dyn AgentCancellation>>,
     ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
-        let context = build_inference_tool_context(&messages, workspace_path, session_id, Arc::clone(&llm));
+        let context = build_inference_tool_context(
+            &messages,
+            workspace_path,
+            session_id,
+            Arc::clone(&llm),
+            image_understand_llm,
+        );
 
         let mut conversation = sanitize_messages_for_inference(messages);
         if conversation.is_empty() {
             return Err(Error::ValidationError(
                 "messages must not be empty after sanitization".to_string(),
             ));
+        }
+
+        if matches!(self.agent.role_service_type, RoleServiceType::Workspace(_)) {
+            if let (Some(observer), Some(latest_user_index)) = (
+                compaction_observer,
+                conversation
+                    .iter()
+                    .rposition(|message| matches!(message.role, MessageRole::User)),
+            ) {
+                let latest_user_message = conversation.remove(latest_user_index);
+                let estimated_tokens_before = estimate_messages_tokens(&conversation)
+                    + estimate_messages_tokens(std::slice::from_ref(&latest_user_message));
+                let threshold = compaction_threshold(
+                    llm.context_length(),
+                    current_context_compaction_percent(),
+                );
+                if estimated_tokens_before > threshold {
+                    observer(ContextCompactionEvent::Started);
+                    let started_at = Instant::now();
+                    let compact_result = compact_message_history(
+                        &llm,
+                        conversation,
+                        threshold,
+                        &latest_user_message,
+                    );
+                    conversation = compact_result.messages;
+                    if compact_result.did_compact {
+                        observer(ContextCompactionEvent::Completed {
+                            estimated_tokens_before,
+                            estimated_tokens_after: compact_result.estimated_tokens_after
+                                + estimate_messages_tokens(std::slice::from_ref(
+                                    &latest_user_message,
+                                )),
+                            duration: started_at.elapsed(),
+                        });
+                    } else {
+                        observer(ContextCompactionEvent::Failed);
+                    }
+                }
+                conversation.push(latest_user_message);
+            }
         }
 
         self.tools.augment_messages(&mut conversation, &context);
@@ -238,6 +365,7 @@ impl RoleBrainAgent {
             conversation,
             token_tx,
             observer,
+            cancellation,
         )
         .await
     }
@@ -287,15 +415,22 @@ pub fn infer_role_response_with_model(
     let output_messages = if let Some(model_id) = model_override {
         let llm_config = resolve_llm_service_config(Some(model_id), llm_refs, &agent.name)?;
         let llm = build_llm_model(&llm_config)?;
-        loaded.infer_response_with_trace_and_llm(messages, llm, None)?
+        loaded.infer_response_with_trace_and_llm(messages, llm, None, None)?
     } else {
         loaded.infer_response_with_trace(messages)?
     };
     output_messages
         .into_iter()
         .rev()
-        .find(|message| matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty())
-        .ok_or_else(|| zihuan_core::string_error!("agent '{}' did not produce a final assistant message", agent.name))
+        .find(|message| {
+            matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty()
+        })
+        .ok_or_else(|| {
+            zihuan_core::string_error!(
+                "agent '{}' did not produce a final assistant message",
+                agent.name
+            )
+        })
 }
 
 pub fn infer_role_response_with_trace(
@@ -304,10 +439,14 @@ pub fn infer_role_response_with_trace(
     messages: Vec<LLMMessage>,
 ) -> Result<Vec<LLMMessage>> {
     let connections = load_connections().unwrap_or_default();
-    RoleBrainAgent::load_with_refs(agent, llm_refs, &connections)?.infer_response_with_trace(messages)
+    RoleBrainAgent::load_with_refs(agent, llm_refs, &connections)?
+        .infer_response_with_trace(messages)
 }
 
-pub fn resolve_role_model_name(agent: &RoleServiceConfig, llm_refs: &[LlmRefConfig]) -> Result<String> {
+pub fn resolve_role_model_name(
+    agent: &RoleServiceConfig,
+    llm_refs: &[LlmRefConfig],
+) -> Result<String> {
     resolve_role_model_name_with_override(agent, llm_refs, None)
 }
 
@@ -331,6 +470,7 @@ fn build_inference_tool_context(
     workspace_path: Option<String>,
     session_id: Option<String>,
     llm: Arc<dyn LLMBase>,
+    image_understand_llm: Option<Arc<dyn LLMBase>>,
 ) -> InferenceToolContext {
     InferenceToolContext {
         last_user_text: messages
@@ -343,6 +483,15 @@ fn build_inference_tool_context(
         workspace_path,
         session_id,
         llm,
+        image_understand_llm,
+        image_media: messages
+            .iter()
+            .flat_map(|message| message.parts.iter())
+            .filter_map(|part| match part {
+                zihuan_core::message_part::MessagePart::Image { media } => Some(media.clone()),
+                _ => None,
+            })
+            .collect(),
     }
 }
 
@@ -368,8 +517,12 @@ fn build_tool_calling_engine(
                 shared_runtime_values: Arc::new(Mutex::new(HashMap::new())),
                 qq_chat_agent: None,
                 result_mode: ToolResultMode::JsonObject,
-                builtin_executor: Some(zihuan_ims_service::qq_tool_subgraph_hooks::image_understand_executor()),
-                progress_notifier: Some(zihuan_ims_service::qq_tool_subgraph_hooks::qq_progress_notifier()),
+                builtin_executor: Some(
+                    zihuan_ims_service::qq_tool_subgraph_hooks::image_understand_executor(),
+                ),
+                progress_notifier: Some(
+                    zihuan_ims_service::qq_tool_subgraph_hooks::qq_progress_notifier(),
+                ),
             },
         });
     }
@@ -386,13 +539,15 @@ fn handle_tool_calling_result(
         ToolCallingStopReason::Done => Ok(output_messages),
         ToolCallingStopReason::TransportError(content) => Err(zihuan_core::string_error!(
             "chat stream LLM request failed for '{}': {}",
-            agent_name, content
+            agent_name,
+            content
         )),
         ToolCallingStopReason::MaxIterationsReached => Err(zihuan_core::string_error!(
             "chat stream exceeded max tool iterations ({MAX_TOOL_ITERATIONS}) for '{}'",
             agent_name
         )),
-        ToolCallingStopReason::AwaitUserInput(request) | ToolCallingStopReason::ToolCallLimitReached(request) => Ok(output_messages
+        ToolCallingStopReason::AwaitUserInput(request)
+        | ToolCallingStopReason::ToolCallLimitReached(request) => Ok(output_messages
             .into_iter()
             .chain(std::iter::once(LLMMessage::assistant_text(format!(
                 "需要用户补充信息: {}",
@@ -408,10 +563,13 @@ fn handle_tool_calling_result_with_reason(
     stop_reason: ToolCallingStopReason,
 ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
     match &stop_reason {
-        ToolCallingStopReason::Done | ToolCallingStopReason::AwaitUserInput(_) | ToolCallingStopReason::ToolCallLimitReached(_) => Ok((output_messages, stop_reason)),
+        ToolCallingStopReason::Done
+        | ToolCallingStopReason::AwaitUserInput(_)
+        | ToolCallingStopReason::ToolCallLimitReached(_) => Ok((output_messages, stop_reason)),
         ToolCallingStopReason::TransportError(content) => Err(zihuan_core::string_error!(
             "chat stream LLM request failed for '{}': {}",
-            agent_name, content
+            agent_name,
+            content
         )),
         ToolCallingStopReason::MaxIterationsReached => Err(zihuan_core::string_error!(
             "chat stream exceeded max tool iterations ({MAX_TOOL_ITERATIONS}) for '{}'",
@@ -440,10 +598,14 @@ async fn run_agent_tool_calling_streaming(
     messages: Vec<LLMMessage>,
     token_tx: mpsc::UnboundedSender<StreamToken>,
     observer: Option<Arc<dyn ToolCallingObserver>>,
+    cancellation: Option<Arc<dyn AgentCancellation>>,
 ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
     let mut brain = build_tool_calling_engine(agent, llm, default_tools, tool_definitions);
     if let Some(obs) = observer {
         brain.set_observer(obs);
+    }
+    if let Some(cancellation) = cancellation {
+        brain.set_cancellation(cancellation);
     }
     let (output_messages, stop_reason) = brain.run_streaming(messages, token_tx).await;
     handle_tool_calling_result_with_reason(&agent.name, output_messages, stop_reason)

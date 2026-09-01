@@ -5,10 +5,13 @@ use serde_json::Value;
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::graph::message_rdb_history_common::{load_group_history, load_user_history};
+use zihuan_core::model_inference::llm::tooling::FunctionTool;
 
-use super::common::{optional_string_argument, sanitize_positive_limit, StaticFunctionToolSpec, ToolNotificationTarget};
+use super::common::{
+    optional_string_argument, sanitize_positive_limit, StaticFunctionToolSpec,
+    ToolNotificationTarget,
+};
 
 const DEFAULT_HISTORY_TOOL_LIMIT: i64 = 10;
 const MAX_HISTORY_TOOL_LIMIT: i64 = 50;
@@ -19,7 +22,10 @@ pub(crate) struct GetRecentGroupMessagesTool {
 }
 
 impl GetRecentGroupMessagesTool {
-    pub(crate) fn new(rdb_pool: Option<RelationalDbConnection>, notification_target: ToolNotificationTarget) -> Self {
+    pub(crate) fn new(
+        rdb_pool: Option<RelationalDbConnection>,
+        notification_target: ToolNotificationTarget,
+    ) -> Self {
         Self { rdb_pool, notification_target }
     }
 }
@@ -71,17 +77,18 @@ impl Tool for GetRecentGroupMessagesTool {
                 }
                 self.notification_target.target_id().to_string()
             };
-            let rdb_pool = self
-                .rdb_pool
-                .as_ref()
-                .ok_or_else(|| Error::ValidationError("rdb_pool is required for message lookup".to_string()))?;
+            let rdb_pool = self.rdb_pool.as_ref().ok_or_else(|| {
+                Error::ValidationError("rdb_pool is required for message lookup".to_string())
+            })?;
             let limit = sanitize_positive_limit(
                 arguments.get("limit").and_then(Value::as_i64),
                 DEFAULT_HISTORY_TOOL_LIMIT,
                 MAX_HISTORY_TOOL_LIMIT,
             );
             let RelationalDbConnection::MySql(mysql) = rdb_pool else {
-                return Err(Error::ValidationError("rdb_pool must be a MySQL connection".to_string()));
+                return Err(Error::ValidationError(
+                    "rdb_pool must be a MySQL connection".to_string(),
+                ));
             };
             let items = load_group_history(mysql, group_id, limit as u32)?;
             Ok(serde_json::json!({
@@ -103,7 +110,10 @@ pub(crate) struct GetRecentUserMessagesTool {
 }
 
 impl GetRecentUserMessagesTool {
-    pub(crate) fn new(rdb_pool: Option<RelationalDbConnection>, notification_target: ToolNotificationTarget) -> Self {
+    pub(crate) fn new(
+        rdb_pool: Option<RelationalDbConnection>,
+        notification_target: ToolNotificationTarget,
+    ) -> Self {
         Self {
             rdb_pool,
             _notification_target: notification_target,
@@ -131,10 +141,9 @@ impl Tool for GetRecentUserMessagesTool {
 
     fn execute(&self, _call_content: &str, arguments: &Value) -> String {
         let result = (|| -> Result<Value> {
-            let rdb_pool = self
-                .rdb_pool
-                .as_ref()
-                .ok_or_else(|| Error::ValidationError("rdb_pool is required for message lookup".to_string()))?;
+            let rdb_pool = self.rdb_pool.as_ref().ok_or_else(|| {
+                Error::ValidationError("rdb_pool is required for message lookup".to_string())
+            })?;
             let sender_id = optional_string_argument(arguments, "sender_id")
                 .ok_or_else(|| Error::ValidationError("sender_id is required".to_string()))?;
             let group_id = optional_string_argument(arguments, "group_id");
@@ -144,7 +153,9 @@ impl Tool for GetRecentUserMessagesTool {
                 MAX_HISTORY_TOOL_LIMIT,
             );
             let RelationalDbConnection::MySql(mysql) = rdb_pool else {
-                return Err(Error::ValidationError("rdb_pool must be a MySQL connection".to_string()));
+                return Err(Error::ValidationError(
+                    "rdb_pool must be a MySQL connection".to_string(),
+                ));
             };
             let items = load_user_history(mysql, sender_id, group_id, limit as u32)?;
             Ok(serde_json::json!({

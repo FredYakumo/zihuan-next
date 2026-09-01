@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
+use crate::error::{Error, Result};
+use crate::graph::data_value::RedisConfig;
+use crate::url_utils::pct_encode;
 use log::{debug, warn};
 use redis::aio::Connection;
 use redis::AsyncCommands;
 use reqwest::Url;
-use crate::error::{Error, Result};
-use crate::url_utils::pct_encode;
-use crate::graph::data_value::RedisConfig;
 
 use crate::storage::{find_connection, load_connections, ConnectionKind};
 
@@ -163,7 +163,11 @@ impl RedisBlockingPopConnection {
         Self { redis_ref, conn: None }
     }
 
-    pub async fn blpop_value(&mut self, key: &str, timeout_secs: usize) -> Result<Option<(String, String)>> {
+    pub async fn blpop_value(
+        &mut self,
+        key: &str,
+        timeout_secs: usize,
+    ) -> Result<Option<(String, String)>> {
         let first_error = {
             let conn = self.ensure_connection().await?;
             match conn.blpop(key, timeout_secs as f64).await {
@@ -250,7 +254,10 @@ pub fn build_redis_ref_for_connection(config_id: &str) -> Result<Arc<RedisConfig
         )));
     };
     if !connection.enabled {
-        return Err(Error::ValidationError(format!("connection '{}' is disabled", connection.name)));
+        return Err(Error::ValidationError(format!(
+            "connection '{}' is disabled",
+            connection.name
+        )));
     }
     crate::runtime::block_async(build_redis_ref(&build_redis_connection_url(
         &redis.url,
@@ -259,21 +266,26 @@ pub fn build_redis_ref_for_connection(config_id: &str) -> Result<Arc<RedisConfig
     )?))
 }
 
-pub fn build_redis_connection_url(base_url: &str, username: Option<&str>, password: Option<&str>) -> Result<String> {
+pub fn build_redis_connection_url(
+    base_url: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+) -> Result<String> {
     let username = username.map(str::trim).filter(|value| !value.is_empty());
     let password = password.map(str::trim).filter(|value| !value.is_empty());
     if username.is_none() && password.is_none() {
         return Ok(base_url.to_string());
     }
 
-    let mut parsed = Url::parse(base_url)
-        .map_err(|err| Error::ValidationError(format!("invalid redis url '{}': {}", base_url, err)))?;
+    let mut parsed = Url::parse(base_url).map_err(|err| {
+        Error::ValidationError(format!("invalid redis url '{}': {}", base_url, err))
+    })?;
     let encoded_username = username.map(pct_encode).unwrap_or_default();
-    parsed
-        .set_username(&encoded_username)
-        .map_err(|_| Error::ValidationError(format!("failed to apply username to redis url '{}'", base_url)))?;
-    parsed
-        .set_password(password.map(pct_encode).as_deref())
-        .map_err(|_| Error::ValidationError(format!("failed to apply password to redis url '{}'", base_url)))?;
+    parsed.set_username(&encoded_username).map_err(|_| {
+        Error::ValidationError(format!("failed to apply username to redis url '{}'", base_url))
+    })?;
+    parsed.set_password(password.map(pct_encode).as_deref()).map_err(|_| {
+        Error::ValidationError(format!("failed to apply password to redis url '{}'", base_url))
+    })?;
     Ok(parsed.to_string())
 }

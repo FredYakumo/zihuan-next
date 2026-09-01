@@ -16,7 +16,8 @@ pub fn rank_bm25_matches(query: &str, documents: &[String]) -> Vec<Bm25Match> {
         return Vec::new();
     }
 
-    let corpus_tokens: Vec<Vec<String>> = documents.iter().map(|value| tokenize_bm25_text(value)).collect();
+    let corpus_tokens: Vec<Vec<String>> =
+        documents.iter().map(|value| tokenize_bm25_text(value)).collect();
     let scores = bm25_scores(&query_tokens, &corpus_tokens);
 
     let mut matches: Vec<Bm25Match> = scores
@@ -31,7 +32,9 @@ pub fn rank_bm25_matches(query: &str, documents: &[String]) -> Vec<Bm25Match> {
         })
         .collect();
 
-    matches.sort_by(|left, right| right.score.total_cmp(&left.score).then_with(|| left.index.cmp(&right.index)));
+    matches.sort_by(|left, right| {
+        right.score.total_cmp(&left.score).then_with(|| left.index.cmp(&right.index))
+    });
     matches
 }
 
@@ -85,7 +88,8 @@ fn bm25_scores(query_tokens: &[String], corpus_tokens: &[Vec<String>]) -> Vec<f6
     }
 
     let doc_count = corpus_tokens.len() as f64;
-    let avg_doc_len = corpus_tokens.iter().map(|tokens| tokens.len() as f64).sum::<f64>() / doc_count.max(1.0);
+    let avg_doc_len =
+        corpus_tokens.iter().map(|tokens| tokens.len() as f64).sum::<f64>() / doc_count.max(1.0);
 
     let mut doc_freq: HashMap<&str, usize> = HashMap::new();
     for doc_tokens in corpus_tokens {
@@ -112,7 +116,8 @@ fn bm25_scores(query_tokens: &[String], corpus_tokens: &[Vec<String>]) -> Vec<f6
 
                 let df = doc_freq.get(token.as_str()).copied().unwrap_or_default() as f64;
                 let idf = (((doc_count - df + 0.5) / (df + 0.5)) + 1.0).ln();
-                let denominator = frequency + BM25_K1 * (1.0 - BM25_B + BM25_B * (doc_len / avg_doc_len.max(1.0)));
+                let denominator = frequency
+                    + BM25_K1 * (1.0 - BM25_B + BM25_B * (doc_len / avg_doc_len.max(1.0)));
                 acc + idf * (frequency * (BM25_K1 + 1.0)) / denominator
             })
         })

@@ -1,12 +1,18 @@
 use std::sync::Arc;
 
-use log::warn;
 use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::{InferenceParam, LLMMessage, MessageRole};
+use log::warn;
 
-use crate::model_inference::message_content_utils::{is_transport_error, sanitize_messages_for_inference};
+use crate::model_inference::message_content_utils::{
+    is_transport_error, sanitize_messages_for_inference,
+};
 
 pub const COMPACT_TAIL_MESSAGES_TO_KEEP: usize = 2;
+
+pub fn compaction_threshold(context_length: usize, percent: u8) -> usize {
+    context_length.saturating_mul(percent.into()) / 100
+}
 
 // === Prompt Engineering ====
 const STORED_COMPACTION_REQUEST: &str =
@@ -40,9 +46,12 @@ pub fn compact_context_messages(
 ) -> ContextCompactionResult {
     let sanitized_messages = sanitize_messages_for_inference(messages);
     let estimated_tokens_before = estimate_messages_tokens(&sanitized_messages);
-    let trigger_estimated_tokens = estimated_tokens_before + estimate_messages_tokens(trigger_messages);
+    let trigger_estimated_tokens =
+        estimated_tokens_before + estimate_messages_tokens(trigger_messages);
 
-    if !force_compact && (compact_context_length == 0 || trigger_estimated_tokens <= compact_context_length) {
+    if !force_compact
+        && (compact_context_length == 0 || trigger_estimated_tokens <= compact_context_length)
+    {
         return ContextCompactionResult {
             estimated_tokens_after: estimated_tokens_before,
             messages: sanitized_messages,
@@ -66,7 +75,8 @@ pub fn compact_context_messages(
 
     if prefix_messages.is_empty() {
         let estimated_tokens_after = estimate_messages_tokens(&tail_messages);
-        let did_compact = removed_tool_related_messages > 0 || tail_messages.len() < sanitized_messages.len();
+        let did_compact =
+            removed_tool_related_messages > 0 || tail_messages.len() < sanitized_messages.len();
         return ContextCompactionResult {
             messages: tail_messages,
             did_compact,
@@ -82,10 +92,7 @@ pub fn compact_context_messages(
         LLMMessage::user(build_compaction_prompt(&prefix_messages)),
     ];
 
-    let response = llm.inference(&InferenceParam {
-        messages: &prompt_messages,
-        tools: None,
-    });
+    let response = llm.inference(&InferenceParam { messages: &prompt_messages, tools: None });
 
     let Some(summary_text) = response
         .content_text_owned()
@@ -138,7 +145,13 @@ pub fn compact_message_history(
     compact_context_length: usize,
     user_message: &LLMMessage,
 ) -> ContextCompactionResult {
-    compact_context_messages(llm, history, compact_context_length, std::slice::from_ref(user_message), false)
+    compact_context_messages(
+        llm,
+        history,
+        compact_context_length,
+        std::slice::from_ref(user_message),
+        false,
+    )
 }
 
 pub fn estimate_messages_tokens(messages: &[LLMMessage]) -> usize {
@@ -213,6 +226,17 @@ fn build_compaction_prompt(messages: &[LLMMessage]) -> String {
     }
 
     prompt
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compaction_threshold;
+
+    #[test]
+    fn compaction_threshold_uses_configured_percent() {
+        assert_eq!(compaction_threshold(32 * 1024, 80), 26_214);
+        assert_eq!(compaction_threshold(32 * 1024, 99), 32_440);
+    }
 }
 
 fn role_name(role: &MessageRole) -> &'static str {

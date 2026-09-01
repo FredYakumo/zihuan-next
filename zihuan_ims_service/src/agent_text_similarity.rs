@@ -33,10 +33,7 @@ pub struct HybridSimilarityConfig {
 
 impl Default for HybridSimilarityConfig {
     fn default() -> Self {
-        Self {
-            bm25_weight: 0.45,
-            cosine_weight: 0.55,
-        }
+        Self { bm25_weight: 0.45, cosine_weight: 0.55 }
     }
 }
 
@@ -210,7 +207,8 @@ fn bm25_scores(query_tokens: &[String], corpus_tokens: &[Vec<String>]) -> Vec<f6
     }
 
     let doc_count = corpus_tokens.len() as f64;
-    let avg_doc_len = corpus_tokens.iter().map(|tokens| tokens.len() as f64).sum::<f64>() / doc_count.max(1.0);
+    let avg_doc_len =
+        corpus_tokens.iter().map(|tokens| tokens.len() as f64).sum::<f64>() / doc_count.max(1.0);
 
     let mut doc_freq: HashMap<&str, usize> = HashMap::new();
     for doc_tokens in corpus_tokens {
@@ -237,7 +235,8 @@ fn bm25_scores(query_tokens: &[String], corpus_tokens: &[Vec<String>]) -> Vec<f6
 
                 let df = doc_freq.get(token.as_str()).copied().unwrap_or_default() as f64;
                 let idf = (((doc_count - df + 0.5) / (df + 0.5)) + 1.0).ln();
-                let denominator = frequency + BM25_K1 * (1.0 - BM25_B + BM25_B * (doc_len / avg_doc_len.max(1.0)));
+                let denominator = frequency
+                    + BM25_K1 * (1.0 - BM25_B + BM25_B * (doc_len / avg_doc_len.max(1.0)));
                 acc + idf * (frequency * (BM25_K1 + 1.0)) / denominator
             })
         })

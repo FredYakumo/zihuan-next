@@ -20,18 +20,36 @@ pub struct BrainAgent {
 }
 
 impl BrainAgent {
-    pub fn new(id: impl Into<String>, name: impl Into<String>, system_prompt: impl Into<String>, llm: Arc<dyn LLMBase>, tools: Vec<Arc<dyn Tool>>) -> Self {
-        Self { id: id.into(), name: name.into(), system_prompt: system_prompt.into(), llm, tools }
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        system_prompt: impl Into<String>,
+        llm: Arc<dyn LLMBase>,
+        tools: Vec<Arc<dyn Tool>>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            system_prompt: system_prompt.into(),
+            llm,
+            tools,
+        }
     }
 
     fn prepare_messages(&self, mut messages: Vec<LLMMessage>) -> Vec<LLMMessage> {
-        if !self.system_prompt.trim().is_empty() && !messages.iter().any(|message| matches!(message.role, MessageRole::System)) {
+        if !self.system_prompt.trim().is_empty()
+            && !messages.iter().any(|message| matches!(message.role, MessageRole::System))
+        {
             messages.insert(0, LLMMessage::system(self.system_prompt.clone()));
         }
         messages
     }
 
-    fn engine(&self, llm: Arc<dyn LLMBase>, observer: Option<Arc<dyn ToolCallingObserver>>) -> ToolCallingEngine {
+    fn engine(
+        &self,
+        llm: Arc<dyn LLMBase>,
+        observer: Option<Arc<dyn ToolCallingObserver>>,
+    ) -> ToolCallingEngine {
         let mut engine = ToolCallingEngine::new(llm);
         for tool in &self.tools {
             engine.add_tool(SharedTool::new(Arc::clone(tool)));
@@ -74,15 +92,28 @@ impl Agent for BrainAgent {
     type Output = Vec<LLMMessage>;
 
     fn descriptor(&self) -> AgentDescriptor {
-        AgentDescriptor::new(Box::leak(self.id.clone().into_boxed_str()), Box::leak(self.name.clone().into_boxed_str()), vec!["primary_reasoning"])
+        AgentDescriptor::new(
+            Box::leak(self.id.clone().into_boxed_str()),
+            Box::leak(self.name.clone().into_boxed_str()),
+            vec!["primary_reasoning"],
+        )
     }
 
     async fn run(&self, _context: AgentContext, messages: Self::Input) -> Result<Self::Output> {
-        let (output, reason) = self.engine(Arc::clone(&self.llm), None).run(self.prepare_messages(messages));
+        let (output, reason) =
+            self.engine(Arc::clone(&self.llm), None).run(self.prepare_messages(messages));
         match reason {
-            ToolCallingStopReason::Done | ToolCallingStopReason::AwaitUserInput(_) | ToolCallingStopReason::ToolCallLimitReached(_) => Ok(output),
-            ToolCallingStopReason::TransportError(error) => Err(Error::ValidationError(format!("BrainAgent '{}' transport error: {error}", self.name))),
-            ToolCallingStopReason::MaxIterationsReached => Err(Error::ValidationError(format!("BrainAgent '{}' exceeded tool iterations", self.name))),
+            ToolCallingStopReason::Done
+            | ToolCallingStopReason::AwaitUserInput(_)
+            | ToolCallingStopReason::ToolCallLimitReached(_) => Ok(output),
+            ToolCallingStopReason::TransportError(error) => Err(Error::ValidationError(format!(
+                "BrainAgent '{}' transport error: {error}",
+                self.name
+            ))),
+            ToolCallingStopReason::MaxIterationsReached => Err(Error::ValidationError(format!(
+                "BrainAgent '{}' exceeded tool iterations",
+                self.name
+            ))),
         }
     }
 }

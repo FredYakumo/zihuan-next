@@ -37,4 +37,8 @@ impl Tool for SharedTool {
     fn execution_resource(&self, arguments: &Value) -> ToolExecutionResource {
         self.0.execution_resource(arguments)
     }
+
+    fn requires_user_confirmation(&self, arguments: &Value) -> bool {
+        self.0.requires_user_confirmation(arguments)
+    }
 }

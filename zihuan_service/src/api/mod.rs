@@ -16,8 +16,8 @@ pub mod setup_wizard;
 pub mod state;
 pub mod task_store;
 pub mod themes;
-pub mod ws;
 pub mod workspace_directories;
+pub mod ws;
 
 use std::sync::Arc;
 
@@ -90,14 +90,23 @@ pub fn build_router(
                         .push(
                             Router::with_path("avatar")
                                 .post(config::role_services::upload_avatar)
-                                .push(Router::with_path("<avatar_id>").get(config::role_services::get_avatar)),
+                                .push(
+                                    Router::with_path("<avatar_id>")
+                                        .get(config::role_services::get_avatar),
+                                ),
                         )
                         .push(
                             Router::with_path("<id>")
                                 .put(config::role_services::update_agent)
                                 .delete(config::role_services::delete_agent)
-                                .push(Router::with_path("start").post(config::role_services::start_agent))
-                                .push(Router::with_path("stop").post(config::role_services::stop_agent))
+                                .push(
+                                    Router::with_path("start")
+                                        .post(config::role_services::start_agent),
+                                )
+                                .push(
+                                    Router::with_path("stop")
+                                        .post(config::role_services::stop_agent),
+                                )
                                 .push(
                                     Router::with_path("notifications")
                                         .get(config::role_services::list_agent_notifications)
@@ -109,21 +118,23 @@ pub fn build_router(
                                         .post(config::role_services::create_agent_ignore_rule)
                                         .push(
                                             Router::with_path("<rule_id>")
-                                                .put(config::role_services::update_agent_ignore_rule)
-                                                .delete(config::role_services::delete_agent_ignore_rule),
+                                                .put(
+                                                    config::role_services::update_agent_ignore_rule,
+                                                )
+                                                .delete(
+                                                    config::role_services::delete_agent_ignore_rule,
+                                                ),
                                         ),
                                 ),
                         ),
                 )
                 .push(
-                    Router::with_path("subagents")
-                        .get(config::role_services::list_subagents)
-                        .push(
-                            Router::with_path("<id>")
-                                .get(config::role_services::get_subagent)
-                                .put(config::role_services::save_subagent)
-                                .delete(config::role_services::delete_subagent),
-                        ),
+                    Router::with_path("subagents").get(config::role_services::list_subagents).push(
+                        Router::with_path("<id>")
+                            .get(config::role_services::get_subagent)
+                            .put(config::role_services::save_subagent)
+                            .delete(config::role_services::delete_subagent),
+                    ),
                 )
                 .push(
                     Router::with_path("command-permissions")
@@ -141,7 +152,10 @@ pub fn build_router(
                 .push(
                     Router::with_path("workspace-directories")
                         .get(workspace_directories::browse_workspace_directories)
-                        .push(Router::with_path("select").post(workspace_directories::select_workspace_directory)),
+                        .push(
+                            Router::with_path("select")
+                                .post(workspace_directories::select_workspace_directory),
+                        ),
                 ),
         )
         // Setup wizard
@@ -215,7 +229,10 @@ pub fn build_router(
         .push(
             Router::with_path("scheduled-tasks")
                 .get(scheduled_tasks::list_scheduled_tasks)
-                .push(Router::with_path("<task_id>/cancel").post(scheduled_tasks::cancel_scheduled_task)),
+                .push(
+                    Router::with_path("<task_id>/cancel")
+                        .post(scheduled_tasks::cancel_scheduled_task),
+                ),
         )
         // File I/O (not graph-scoped)
         .push(Router::with_path("file/open").post(file_io::open_file))
@@ -231,14 +248,27 @@ pub fn build_router(
         .push(
             Router::with_path("chat")
                 .push(Router::with_path("stream").post(chat::stream_chat))
+                .push(Router::with_path("sessions/<session_id>/stop").post(chat::stop_chat))
                 .push(Router::with_path("sessions").get(chat::list_chat_sessions))
                 .push(Router::with_path("sessions/<session_id>/fork").post(chat::fork_chat_session))
                 .push(Router::with_path("sessions/<session_id>").delete(chat::delete_chat_session))
-                .push(Router::with_path("sessions/<session_id>/changes").get(zihuan_workspace_service::api::workspace_changes::list_workspace_changes))
-                .push(Router::with_path("sessions/<session_id>/changes/<change_id>/accept").post(zihuan_workspace_service::api::workspace_changes::accept_workspace_change))
-                .push(Router::with_path("sessions/<session_id>/changes/<change_id>/cancel").post(zihuan_workspace_service::api::workspace_changes::cancel_workspace_change))
-                .push(Router::with_path("sessions/<session_id>/command-approval").post(zihuan_workspace_service::api::command_approval::approve_command_execution))
-                .push(Router::with_path("sessions/<session_id>/command-pending").get(zihuan_workspace_service::api::command_approval::get_pending_command_approval))
+                .push(
+                    Router::with_path("sessions/<session_id>/changes").get(
+                        zihuan_workspace_service::api::workspace_changes::list_workspace_changes,
+                    ),
+                )
+                .push(Router::with_path("sessions/<session_id>/changes/<change_id>/accept").post(
+                    zihuan_workspace_service::api::workspace_changes::accept_workspace_change,
+                ))
+                .push(Router::with_path("sessions/<session_id>/changes/<change_id>/cancel").post(
+                    zihuan_workspace_service::api::workspace_changes::cancel_workspace_change,
+                ))
+                .push(Router::with_path("sessions/<session_id>/command-approval").post(
+                    zihuan_workspace_service::api::command_approval::approve_command_execution,
+                ))
+                .push(Router::with_path("sessions/<session_id>/command-pending").get(
+                    zihuan_workspace_service::api::command_approval::get_pending_command_approval,
+                ))
                 .push(
                     Router::with_path("sessions/<session_id>/messages")
                         .get(chat::get_chat_session_messages),
@@ -256,12 +286,8 @@ pub fn build_router(
             Router::with_path("plugins")
                 .get(plugins::list_plugins)
                 .post(plugins::create_plugin)
-                .push(
-                    Router::with_path("install").post(plugins::install_plugin)
-                )
-                .push(
-                    Router::with_path("progress").get(setup_wizard::stream_setup_progress)
-                )
+                .push(Router::with_path("install").post(plugins::install_plugin))
+                .push(Router::with_path("progress").get(setup_wizard::stream_setup_progress))
                 .push(
                     Router::with_path("<id>")
                         .put(plugins::update_plugin)
@@ -283,11 +309,19 @@ pub fn build_router(
         // Settings
         .push(Router::with_path("settings/storage-info").get(settings::get_storage_info))
         .push(
+            Router::with_path("settings/context-compaction")
+                .get(settings::get_context_compaction_settings)
+                .put(settings::update_context_compaction_settings),
+        )
+        .push(
             Router::with_path("settings/python-runtime")
                 .get(settings::get_python_runtime)
                 .put(settings::update_python_runtime),
         )
-        .push(Router::with_path("settings/python-runtime/select").post(settings::select_python_runtime))
+        .push(
+            Router::with_path("settings/python-runtime/select")
+                .post(settings::select_python_runtime),
+        )
         .push(
             Router::with_path("settings/node-runtime")
                 .get(settings::get_node_runtime)
@@ -310,7 +344,10 @@ pub fn build_router(
         // Data Explorer
         .push(
             Router::with_path("explorer")
-                .push(Router::with_path("qq-chat-rate-limit-usage").get(explorer::query_qq_chat_rate_limit_usage))
+                .push(
+                    Router::with_path("qq-chat-rate-limit-usage")
+                        .get(explorer::query_qq_chat_rate_limit_usage),
+                )
                 .push(
                     Router::with_path("qq-chat-rate-limit-usage/reset")
                         .post(explorer::reset_qq_chat_rate_limit_usage),
@@ -325,14 +362,12 @@ pub fn build_router(
                 .push(Router::with_path("redis").get(explorer::query_redis))
                 .push(Router::with_path("weaviate").get(explorer::query_weaviate))
                 .push(
-                    Router::with_path("agent-memory")
-                        .post(explorer::create_agent_memory)
-                        .push(
-                            Router::with_path("<object_id>")
-                                .get(explorer::get_agent_memory)
-                                .put(explorer::update_agent_memory)
-                                .delete(explorer::delete_agent_memory),
-                        ),
+                    Router::with_path("agent-memory").post(explorer::create_agent_memory).push(
+                        Router::with_path("<object_id>")
+                            .get(explorer::get_agent_memory)
+                            .put(explorer::update_agent_memory)
+                            .delete(explorer::delete_agent_memory),
+                    ),
                 )
                 .push(Router::with_path("rustfs").get(explorer::query_rustfs)),
         );
@@ -370,11 +405,18 @@ impl CanonicalLocalRedirect {
 
 #[async_trait]
 impl Handler for CanonicalLocalRedirect {
-    async fn handle(&self, req: &mut Request, depot: &mut Depot, res: &mut Response, ctrl: &mut FlowCtrl) {
+    async fn handle(
+        &self,
+        req: &mut Request,
+        depot: &mut Depot,
+        res: &mut Response,
+        ctrl: &mut FlowCtrl,
+    ) {
         if matches!(*req.method(), Method::GET | Method::HEAD)
             && should_redirect_local_host(req.headers(), &self.canonical_origin)
         {
-            let path_and_query = req.uri().path_and_query().map(|value| value.as_str()).unwrap_or("/");
+            let path_and_query =
+                req.uri().path_and_query().map(|value| value.as_str()).unwrap_or("/");
             res.render(Redirect::temporary(format!("{}{}", self.canonical_origin, path_and_query)));
             ctrl.skip_rest();
             return;

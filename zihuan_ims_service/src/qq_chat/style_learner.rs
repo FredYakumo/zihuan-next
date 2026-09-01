@@ -8,11 +8,15 @@ use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
-use zihuan_core::task_context::{scope_task_id, scope_task_runtime, AgentTaskResult, AgentTaskStatus};
+use zihuan_core::task_context::{
+    scope_task_id, scope_task_runtime, AgentTaskResult, AgentTaskStatus,
+};
 
 use crate::qq_chat::language_style_store::{upsert_language_style, LanguageStyleScope};
 use crate::qq_chat::logging::QqChatTaskTrace;
-use crate::qq_chat::msg_send::{build_reply_result, send_planned_batches, QqChatServiceSendContext};
+use crate::qq_chat::msg_send::{
+    build_reply_result, send_planned_batches, QqChatServiceSendContext,
+};
 use crate::tools::{AfterBrainAgent, QqReplyReviewRequest};
 
 const STYLE_LEARNING_SAMPLE_LIMIT: i64 = 200;
@@ -49,16 +53,20 @@ pub async fn learn_language_style(
     let messages = build_style_learning_messages(scope, &samples);
     let llm_clone = Arc::clone(llm);
     let response = tokio::task::spawn_blocking(move || {
-        llm_clone.inference(&InferenceParam {
-            messages: &messages,
-            tools: None,
-        })
+        llm_clone.inference(&InferenceParam { messages: &messages, tools: None })
     })
     .await
     .map_err(|e| zihuan_core::string_error!("style learning LLM task panicked: {e}"))?;
-    let style_prompt = parse_style_learning_result(&response.content_text_owned().unwrap_or_default())?;
-    let saved =
-        upsert_language_style(connection, scope, &style_prompt, samples.len() as i32, learned_by_sender_id).await?;
+    let style_prompt =
+        parse_style_learning_result(&response.content_text_owned().unwrap_or_default())?;
+    let saved = upsert_language_style(
+        connection,
+        scope,
+        &style_prompt,
+        samples.len() as i32,
+        learned_by_sender_id,
+    )
+    .await?;
 
     Ok(StyleLearningOutcome {
         updated: true,
@@ -68,7 +76,10 @@ pub async fn learn_language_style(
     })
 }
 
-fn build_style_learning_messages(scope: &LanguageStyleScope, samples: &[StyleSample]) -> Vec<LLMMessage> {
+fn build_style_learning_messages(
+    scope: &LanguageStyleScope,
+    samples: &[StyleSample],
+) -> Vec<LLMMessage> {
     let scope_label = match scope {
         LanguageStyleScope::Global => "全局聊天",
         LanguageStyleScope::Group { .. } => "当前群聊",
@@ -95,14 +106,17 @@ style_prompt 只允许描述说话风格、口吻、常用表达、称呼偏好�
 }
 
 fn parse_style_learning_result(content: &str) -> Result<String> {
-    let value: serde_json::Value = serde_json::from_str(content.trim())
-        .map_err(|err| Error::ValidationError(format!("style learning returned invalid json: {err}")))?;
+    let value: serde_json::Value = serde_json::from_str(content.trim()).map_err(|err| {
+        Error::ValidationError(format!("style learning returned invalid json: {err}"))
+    })?;
     let style_prompt = value
         .get("style_prompt")
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| Error::ValidationError("style learning result missing style_prompt".to_string()))?;
+        .ok_or_else(|| {
+            Error::ValidationError("style learning result missing style_prompt".to_string())
+        })?;
     Ok(style_prompt.to_string())
 }
 
@@ -112,10 +126,9 @@ async fn fetch_style_learning_samples(
 ) -> Result<Vec<StyleSample>> {
     match connection {
         RelationalDbConnection::MySql(config) => {
-            let pool = config
-                .pool
-                .as_ref()
-                .ok_or_else(|| Error::ValidationError("style-learning mysql pool is not initialized".to_string()))?;
+            let pool = config.pool.as_ref().ok_or_else(|| {
+                Error::ValidationError("style-learning mysql pool is not initialized".to_string())
+            })?;
             let rows = match scope {
                 LanguageStyleScope::Global => sqlx::query(
                     "SELECT sender_name, content FROM message_record \
@@ -139,10 +152,9 @@ async fn fetch_style_learning_samples(
             Ok(normalize_mysql_rows(rows))
         }
         RelationalDbConnection::Sqlite(config) => {
-            let pool = config
-                .pool
-                .as_ref()
-                .ok_or_else(|| Error::ValidationError("style-learning sqlite pool is not initialized".to_string()))?;
+            let pool = config.pool.as_ref().ok_or_else(|| {
+                Error::ValidationError("style-learning sqlite pool is not initialized".to_string())
+            })?;
             let rows = match scope {
                 LanguageStyleScope::Global => sqlx::query(
                     "SELECT sender_name, content FROM message_record \
@@ -177,14 +189,14 @@ fn normalize_mysql_rows(rows: Vec<MySqlRow>) -> Vec<StyleSample> {
                 return None;
             }
             let sender_name: Option<String> = row.try_get("sender_name").ok();
-            let text = match sender_name.map(|item| item.trim().to_string()).filter(|item| !item.is_empty()) {
+            let text = match sender_name
+                .map(|item| item.trim().to_string())
+                .filter(|item| !item.is_empty())
+            {
                 Some(sender_name) => format!("{sender_name}: {content}"),
                 None => content,
             };
-            Some(StyleSample {
-                char_count: text.chars().count(),
-                text,
-            })
+            Some(StyleSample { char_count: text.chars().count(), text })
         })
         .collect()
 }
@@ -198,14 +210,14 @@ fn normalize_sqlite_rows(rows: Vec<SqliteRow>) -> Vec<StyleSample> {
                 return None;
             }
             let sender_name: Option<String> = row.try_get("sender_name").ok();
-            let text = match sender_name.map(|item| item.trim().to_string()).filter(|item| !item.is_empty()) {
+            let text = match sender_name
+                .map(|item| item.trim().to_string())
+                .filter(|item| !item.is_empty())
+            {
                 Some(sender_name) => format!("{sender_name}: {content}"),
                 None => content,
             };
-            Some(StyleSample {
-                char_count: text.chars().count(),
-                text,
-            })
+            Some(StyleSample { char_count: text.chars().count(), text })
         })
         .collect()
 }
@@ -252,7 +264,9 @@ pub(crate) fn execute_style_learning_task(
     let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<String> {
         scope_task_runtime(task_runtime, || {
             scope_task_id(task_handle.task_id.clone(), || {
-                let _ = zihuan_core::task_context::append_current_task_progress("开始执行语言风格学习".to_string());
+                let _ = zihuan_core::task_context::append_current_task_progress(
+                    "开始执行语言风格学习".to_string(),
+                );
                 let learning = run_blocking_future(learn_language_style(
                     &owned.rdb_pool,
                     &input.scope,

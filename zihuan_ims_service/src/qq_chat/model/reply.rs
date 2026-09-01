@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use zihuan_core::ims_bot_adapter::models::message::{Message, PersistedMedia};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::Result;
+use zihuan_core::ims_bot_adapter::models::message::{Message, PersistedMedia};
 
 use crate::qq_chat::msg_send::QqChatServiceReplyDirective;
 
@@ -38,8 +38,9 @@ pub(crate) struct QqChatServiceReplyBuildResult {
 }
 
 /// Builder type for constructing reply batches from a build request.
-pub(crate) type QqChatServiceReplyBatchBuilder =
-    Arc<dyn Fn(&QqChatServiceReplyBuildRequest) -> Result<QqChatServiceReplyBuildResult> + Send + Sync>;
+pub(crate) type QqChatServiceReplyBatchBuilder = Arc<
+    dyn Fn(&QqChatServiceReplyBuildRequest) -> Result<QqChatServiceReplyBuildResult> + Send + Sync,
+>;
 
 /// Result summary for a single QQ chat turn.
 #[derive(Debug, Clone)]

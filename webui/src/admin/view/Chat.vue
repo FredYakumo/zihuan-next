@@ -208,6 +208,16 @@
                     :key="message.id + '-' + idx"
                     class="chat-message-item"
                   >
+                    <div v-if="message.contextCompaction" class="context-compaction-status">
+                      <template v-if="message.contextCompaction.status === 'running'">
+                        <t-loading size="small" />
+                        <span>上下文压缩中...</span>
+                      </template>
+                      <span v-else-if="message.contextCompaction.status === 'completed'">
+                        上下文已压缩, 原 context: {{ formatTokenCount(message.contextCompaction.estimatedTokensBefore ?? 0) }} tokens, 压缩后: {{ formatTokenCount(message.contextCompaction.estimatedTokensAfter ?? 0) }} tokens，耗时: {{ formatDuration(message.contextCompaction.durationMs ?? 0) }}
+                      </span>
+                      <span v-else>上下文压缩未完成</span>
+                    </div>
                     <div
                       v-if="
                         idx === group.messages.length - 1 &&
@@ -761,7 +771,7 @@
                 <div class="chat-input-actions">
                   <button class="btn ghost" @click="startNewSession">新对话</button>
                   <div class="chat-input-right">
-                    <template v-if="supportsMultimodalInput">
+                    <template v-if="isChatEligible">
                       <input
                         id="chat-image-upload"
                         class="chat-image-upload-input"
@@ -913,6 +923,19 @@
                         </div>
                       </div>
 
+                      <div
+                        v-if="contextTokenUsage"
+                        class="context-usage"
+                        :style="{ '--context-usage': `${contextTokenUsage.usagePercent}%` }"
+                        :title="`context ${formatTokenCount(contextTokenUsage.usedTokens)}/${formatTokenCount(contextTokenUsage.contextLength)} tokens (可用上限: ${formatTokenCount(contextTokenUsage.compactionThreshold)} tokens)`"
+                      >
+                        <span class="context-usage-chart" aria-hidden="true" />
+                        <span>
+                          context {{ formatTokenCount(contextTokenUsage.usedTokens) }}/{{ formatTokenCount(contextTokenUsage.contextLength) }} tokens
+                          (可用上限: {{ formatTokenCount(contextTokenUsage.compactionThreshold) }} tokens)
+                        </span>
+                      </div>
+
                       <button
                         v-if="isWorkspaceService"
                         class="model-chip agents-md-chip"
@@ -955,10 +978,29 @@
                             自动折叠思考过程
                             <CheckIcon v-if="autoCollapseThinking" class="live-tool-done-icon" />
                           </button>
+                          <div class="model-picker-section-title">图片理解模型</div>
+                          <t-select
+                            :value="imageUnderstandingModelId"
+                            filterable
+                            size="small"
+                            class="model-picker-select"
+                            placeholder="选择"
+                            @change="selectImageUnderstandingModel"
+                          >
+                            <t-option value="" label="选择">选择</t-option>
+                            <t-option
+                              v-for="model in imageUnderstandingModels"
+                              :key="model.config_id"
+                              :value="model.config_id"
+                              :label="model.name"
+                            >
+                              {{ model.name }}
+                            </t-option>
+                          </t-select>
                         </div>
                       </div>
                     </div>
-                    <t-tooltip v-if="sending" content="停止推理">
+                    <t-tooltip v-if="activeSessionRunning" content="停止推理">
                       <t-button theme="danger" shape="square" aria-label="停止推理" @click="stopInference">
                         <StopIcon />
                       </t-button>
@@ -1557,10 +1599,15 @@ const {
   chatModels,
   selectedModelLlmConfig,
   supportsMultimodalInput,
+  imageUnderstandingModelId,
+  imageUnderstandingModels,
+  selectedImageUnderstandingModelLabel,
+  selectImageUnderstandingModel,
   defaultAgentModelId,
   selectedModelLabel,
   selectedThinkingLabel,
   selectedEffortLabel,
+  contextTokenUsage,
   canSend,
   selectedAgentAvatarUrl,
   selectedAgentAvatarFallback,

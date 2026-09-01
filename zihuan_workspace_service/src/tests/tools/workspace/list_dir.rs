@@ -12,7 +12,8 @@ fn temp_dir() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("system clock must be after unix epoch")
         .as_nanos();
-    let path = std::env::temp_dir().join(format!("zihuan-list-dir-{}-{suffix}", std::process::id()));
+    let path =
+        std::env::temp_dir().join(format!("zihuan-list-dir-{}-{suffix}", std::process::id()));
     fs::create_dir_all(&path).expect("create temporary directory");
     path
 }
@@ -30,9 +31,7 @@ fn list_dir_returns_stably_sorted_entries() {
     fs::create_dir(directory.join("z-dir")).expect("create directory");
     fs::write(directory.join("a.txt"), "a").expect("write file");
     fs::write(directory.join("m.txt"), "m").expect("write file");
-    let tool = ListDirTool {
-        workspace_path: Some(directory.clone()),
-    };
+    let tool = ListDirTool { workspace_path: Some(directory.clone()) };
 
     assert_eq!(tool.spec().name(), DEFAULT_TOOL_LIST_DIR);
     let result = tool.execute("", &json!({"path": "."}));
@@ -61,9 +60,7 @@ fn list_dir_can_recurse_and_skip_hidden_entries() {
     fs::create_dir(&nested).expect("create nested directory");
     fs::write(nested.join("child.txt"), "child").expect("write child");
     fs::write(directory.join(".hidden"), "hidden").expect("write hidden file");
-    let tool = ListDirTool {
-        workspace_path: Some(directory.clone()),
-    };
+    let tool = ListDirTool { workspace_path: Some(directory.clone()) };
 
     let result = tool.execute("", &json!({"path": ".", "recursive": true}));
     let result: serde_json::Value = serde_json::from_str(&result).expect("valid JSON result");

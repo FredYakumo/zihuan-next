@@ -11,7 +11,8 @@ struct TempDir {
 
 impl TempDir {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("zihuan-local-memory-test-{}", uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("zihuan-local-memory-test-{}", uuid::Uuid::new_v4()));
         Self { path }
     }
 }
@@ -42,7 +43,10 @@ fn test_local_memory_overwrites_matching_markdown_key() {
     store.create_or_update(&memory("旅行者原神喜爱角色", "刻晴")).unwrap();
     store.create_or_update(&memory("旅行者原神喜爱角色", "甘雨")).unwrap();
 
-    assert_eq!(fs::read_to_string(directory.path.join("旅行者原神喜爱角色.md")).unwrap(), "甘雨");
+    assert_eq!(
+        fs::read_to_string(directory.path.join("旅行者原神喜爱角色.md")).unwrap(),
+        "甘雨"
+    );
     assert_eq!(store.list(Some("甘雨"), 5).unwrap().len(), 1);
 }
 

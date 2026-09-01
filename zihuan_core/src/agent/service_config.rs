@@ -57,6 +57,8 @@ pub struct WorkspaceAgentServiceConfig {
     #[serde(default)]
     pub llm_ref_id: Option<String>,
     #[serde(default)]
+    pub image_understand_llm_ref_id: Option<String>,
+    #[serde(default)]
     pub agents_md_enabled: bool,
     #[serde(default)]
     pub memory_enabled: bool,
@@ -90,6 +92,7 @@ fn default_workspace_default_tools_enabled() -> HashMap<String, bool> {
         ("edit_file".to_string(), true),
         ("exec_cmd".to_string(), true),
         ("ask_user".to_string(), true),
+        ("image_understand".to_string(), true),
         ("web_search".to_string(), false),
     ]
     .into_iter()

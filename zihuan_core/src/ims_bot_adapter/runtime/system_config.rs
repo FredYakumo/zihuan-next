@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use crate::error::{Error, Result};
 use crate::graph::object_storage::S3Ref;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::ims_bot_adapter::runtime::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
 use crate::storage::{save_connections, ConnectionConfig, ConnectionKind};
@@ -47,7 +47,9 @@ pub fn load_ims_bot_adapter_connections() -> Result<Vec<BotAdapterConnectionConf
                 id: connection.id,
                 name: connection.name,
                 enabled: connection.enabled,
-                kind: BotAdapterConnectionKind::BotAdapter(parse_ims_bot_adapter_connection(&raw).ok()?),
+                kind: BotAdapterConnectionKind::BotAdapter(
+                    parse_ims_bot_adapter_connection(&raw).ok()?,
+                ),
                 updated_at: connection.updated_at,
             }),
             _ => None,
@@ -55,7 +57,9 @@ pub fn load_ims_bot_adapter_connections() -> Result<Vec<BotAdapterConnectionConf
         .collect())
 }
 
-pub fn save_ims_bot_adapter_connections(connections: Vec<BotAdapterConnectionConfig>) -> Result<()> {
+pub fn save_ims_bot_adapter_connections(
+    connections: Vec<BotAdapterConnectionConfig>,
+) -> Result<()> {
     let mut all = crate::storage::load_connections()?;
     all.retain(|connection| !matches!(connection.kind, ConnectionKind::BotAdapter(_)));
     all.extend(connections.into_iter().map(|connection| ConnectionConfig {
@@ -64,9 +68,9 @@ pub fn save_ims_bot_adapter_connections(connections: Vec<BotAdapterConnectionCon
         name: connection.name,
         enabled: connection.enabled,
         kind: match connection.kind {
-            BotAdapterConnectionKind::BotAdapter(bot) => {
-                ConnectionKind::BotAdapter(serde_json::to_value(bot).unwrap_or(serde_json::Value::Null))
-            }
+            BotAdapterConnectionKind::BotAdapter(bot) => ConnectionKind::BotAdapter(
+                serde_json::to_value(bot).unwrap_or(serde_json::Value::Null),
+            ),
         },
         updated_at: connection.updated_at,
     }));
@@ -74,8 +78,9 @@ pub fn save_ims_bot_adapter_connections(connections: Vec<BotAdapterConnectionCon
 }
 
 pub fn parse_ims_bot_adapter_connection(value: &serde_json::Value) -> Result<BotAdapterConnection> {
-    serde_json::from_value::<BotAdapterConnection>(value.clone())
-        .map_err(|err| Error::ValidationError(format!("invalid ims_bot_adapter connection config: {err}")))
+    serde_json::from_value::<BotAdapterConnection>(value.clone()).map_err(|err| {
+        Error::ValidationError(format!("invalid ims_bot_adapter connection config: {err}"))
+    })
 }
 
 pub async fn build_ims_bot_adapter(

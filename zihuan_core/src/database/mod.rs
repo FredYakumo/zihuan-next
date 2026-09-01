@@ -20,7 +20,10 @@ pub async fn ensure_tables_mysql(conn: &mut MySqlConnection) -> Result<()> {
             if let Err(e) = sqlx::query(idx).execute(&mut *conn).await {
                 let msg = e.to_string();
                 if msg.contains("Duplicate key name") || msg.contains("1061") {
-                    log::debug!("MySQL index already exists, skipping: {}", &idx[..idx.len().min(120)]);
+                    log::debug!(
+                        "MySQL index already exists, skipping: {}",
+                        &idx[..idx.len().min(120)]
+                    );
                     continue;
                 }
                 return Err(Error::Database(sqlx::Error::Protocol(format!(
@@ -40,10 +43,9 @@ pub async fn ensure_tables_mysql(conn: &mut MySqlConnection) -> Result<()> {
 /// Enables `PRAGMA foreign_keys = ON` before creating tables so that
 /// FOREIGN KEY constraints are enforced.
 pub async fn ensure_tables_sqlite(conn: &mut SqliteConnection) -> Result<()> {
-    sqlx::query("PRAGMA foreign_keys = ON")
-        .execute(&mut *conn)
-        .await
-        .map_err(|e| Error::Database(sqlx::Error::Protocol(format!("SQLite PRAGMA failed: {}", e))))?;
+    sqlx::query("PRAGMA foreign_keys = ON").execute(&mut *conn).await.map_err(|e| {
+        Error::Database(sqlx::Error::Protocol(format!("SQLite PRAGMA failed: {}", e)))
+    })?;
 
     for (ddl, indexes) in ddl::SQLITE_TABLES {
         sqlx::query(ddl).execute(&mut *conn).await.map_err(|e| {
@@ -116,12 +118,17 @@ async fn ensure_privilege_auth_columns_sqlite(conn: &mut SqliteConnection) -> Re
     let rows = sqlx::query("PRAGMA table_info('qq_chat_agent_service_privilege_auth')")
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| Error::Database(sqlx::Error::Protocol(format!("SQLite PRAGMA table_info failed: {}", e))))?;
+        .map_err(|e| {
+            Error::Database(sqlx::Error::Protocol(format!(
+                "SQLite PRAGMA table_info failed: {}",
+                e
+            )))
+        })?;
     let mut existing = std::collections::HashSet::new();
     for row in rows {
-        let name: String = row
-            .try_get("name")
-            .map_err(|e| Error::Database(sqlx::Error::Protocol(format!("SQLite PRAGMA row parse failed: {}", e))))?;
+        let name: String = row.try_get("name").map_err(|e| {
+            Error::Database(sqlx::Error::Protocol(format!("SQLite PRAGMA row parse failed: {}", e)))
+        })?;
         existing.insert(name);
     }
 
@@ -223,7 +230,10 @@ async fn ensure_message_rate_limit_schema_mysql(conn: &mut MySqlConnection) -> R
     .await;
     if let Err(e) = drop_result {
         let msg = e.to_string();
-        if !msg.contains("1091") && !msg.contains("ER_CANT_DROP_FIELD_OR_KEY") && !msg.contains("check that") {
+        if !msg.contains("1091")
+            && !msg.contains("ER_CANT_DROP_FIELD_OR_KEY")
+            && !msg.contains("check that")
+        {
             log::debug!("MySQL rate-limit index drop skipped: {}", msg);
         }
     }
@@ -250,12 +260,17 @@ async fn ensure_message_rate_limit_schema_sqlite(conn: &mut SqliteConnection) ->
     let rows = sqlx::query("PRAGMA table_info('qq_chat_agent_service_message_rate_limit')")
         .fetch_all(&mut *conn)
         .await
-        .map_err(|e| Error::Database(sqlx::Error::Protocol(format!("SQLite PRAGMA table_info failed: {}", e))))?;
+        .map_err(|e| {
+            Error::Database(sqlx::Error::Protocol(format!(
+                "SQLite PRAGMA table_info failed: {}",
+                e
+            )))
+        })?;
     let mut existing = std::collections::HashSet::new();
     for row in rows {
-        let name: String = row
-            .try_get("name")
-            .map_err(|e| Error::Database(sqlx::Error::Protocol(format!("SQLite PRAGMA row parse failed: {}", e))))?;
+        let name: String = row.try_get("name").map_err(|e| {
+            Error::Database(sqlx::Error::Protocol(format!("SQLite PRAGMA row parse failed: {}", e)))
+        })?;
         existing.insert(name);
     }
 

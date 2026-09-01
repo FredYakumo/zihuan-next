@@ -3,18 +3,21 @@ use std::time::Duration;
 
 use crate::data_refs::RelationalDbConnection;
 use crate::error::{Error, Result};
-use crate::rag::{BraveSearch, TavilySearch, WebSearchEngine};
-use crate::weaviate::WeaviateRef;
 use crate::graph::data_value::RedisConfig;
 use crate::graph::object_storage::S3Ref;
 use crate::graph::DataValue;
+use crate::rag::{BraveSearch, TavilySearch, WebSearchEngine};
+use crate::weaviate::WeaviateRef;
 
 use crate::storage::{
     redis::build_redis_connection_url, ConnectionConfig, ConnectionKind, ElasticsearchRef,
     RuntimeStorageConnectionManager, WeaviateCollectionSchema,
 };
 
-pub fn find_connection<'a>(connections: &'a [ConnectionConfig], id: &str) -> Result<&'a ConnectionConfig> {
+pub fn find_connection<'a>(
+    connections: &'a [ConnectionConfig],
+    id: &str,
+) -> Result<&'a ConnectionConfig> {
     connections
         .iter()
         .find(|connection| connection.id == id)
@@ -61,7 +64,11 @@ pub fn build_redis_ref(
             connection.name
         )));
     };
-    let url = build_redis_connection_url(&redis.url, redis.username.as_deref(), redis.password.as_deref())?;
+    let url = build_redis_connection_url(
+        &redis.url,
+        redis.username.as_deref(),
+        redis.password.as_deref(),
+    )?;
     Ok(Some(Arc::new(RedisConfig::new(
         Some(url),
         redis.username.clone(),
@@ -126,7 +133,10 @@ pub fn build_elasticsearch_ref(
     Ok(Some(Arc::new(ElasticsearchRef::new(elasticsearch.clone())?)))
 }
 
-pub async fn build_s3_ref(connection_id: Option<&str>, connections: &[ConnectionConfig]) -> Result<Option<Arc<S3Ref>>> {
+pub async fn build_s3_ref(
+    connection_id: Option<&str>,
+    connections: &[ConnectionConfig],
+) -> Result<Option<Arc<S3Ref>>> {
     let Some(connection_id) = connection_id else {
         return Ok(None);
     };
@@ -157,7 +167,9 @@ pub fn build_web_search_engine_ref(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| Error::ValidationError("web_search_engine.api_token must not be empty".to_string()))?;
+        .ok_or_else(|| {
+            Error::ValidationError("web_search_engine.api_token must not be empty".to_string())
+        })?;
     let engine_ref = match engine.provider.as_str() {
         "tavily" => Arc::new(TavilySearch::new(
             api_token.to_string(),
@@ -187,11 +199,11 @@ pub async fn resolve_connection_data_value(
             let rdb_ref = build_rdb_ref(Some(connection_id), connections).await?;
             Ok(rdb_ref.map(DataValue::RdbRef))
         }
-        crate::graph::DataType::RedisRef => {
-            build_redis_ref(Some(connection_id), connections).map(|value| value.map(DataValue::RedisRef))
-        }
+        crate::graph::DataType::RedisRef => build_redis_ref(Some(connection_id), connections)
+            .map(|value| value.map(DataValue::RedisRef)),
         crate::graph::DataType::WeaviateRef => {
-            build_weaviate_ref(Some(connection_id), connections, None).map(|value| value.map(DataValue::WeaviateRef))
+            build_weaviate_ref(Some(connection_id), connections, None)
+                .map(|value| value.map(DataValue::WeaviateRef))
         }
         crate::graph::DataType::S3Ref => build_s3_ref(Some(connection_id), connections)
             .await
@@ -216,7 +228,8 @@ fn ensure_endpoint_bypasses_proxy(endpoint: &str) {
 
 fn append_no_proxy_var(var_name: &str, host: &str) -> bool {
     let current = std::env::var(var_name).unwrap_or_default();
-    let already_present = current.split(',').map(str::trim).any(|entry| entry.eq_ignore_ascii_case(host));
+    let already_present =
+        current.split(',').map(str::trim).any(|entry| entry.eq_ignore_ascii_case(host));
     if already_present {
         return false;
     }

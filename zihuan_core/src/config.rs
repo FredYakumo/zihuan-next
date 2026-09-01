@@ -9,8 +9,8 @@ use uuid::Uuid;
 
 use crate::connection_manager::RuntimeConnectionStatus;
 use crate::error::{Error, Result};
-use dynamic_script_engine::{NodeRuntimeConfig, PythonRuntimeConfig};
 use crate::system_config::system_config_file_path;
+use dynamic_script_engine::{NodeRuntimeConfig, PythonRuntimeConfig};
 
 pub mod llm_refs;
 pub mod role_services;
@@ -178,19 +178,28 @@ impl ConfigRoot {
             connections: parse_config_collection(configs.get("connections"), "connections"),
             llm_refs: parse_config_collection(configs.get("llm_refs"), "llm_refs"),
             agents: parse_config_collection(configs.get("agents"), "agents"),
-            command_permissions: parse_config_collection(configs.get("command_permissions"), "command_permissions"),
+            command_permissions: parse_config_collection(
+                configs.get("command_permissions"),
+                "command_permissions",
+            ),
         };
         Ok(root)
     }
 
     fn from_legacy_object(object: Map<String, Value>) -> Result<Self> {
         let mut root = Self::default();
-        root.configs.connections =
-            migrate_legacy_collection(object.get("connections").and_then(Value::as_array), ConfigCategory::Connection)?;
-        root.configs.llm_refs =
-            migrate_legacy_collection(object.get("llm_refs").and_then(Value::as_array), ConfigCategory::LlmRef)?;
-        root.configs.agents =
-            migrate_legacy_collection(object.get("agents").and_then(Value::as_array), ConfigCategory::Service)?;
+        root.configs.connections = migrate_legacy_collection(
+            object.get("connections").and_then(Value::as_array),
+            ConfigCategory::Connection,
+        )?;
+        root.configs.llm_refs = migrate_legacy_collection(
+            object.get("llm_refs").and_then(Value::as_array),
+            ConfigCategory::LlmRef,
+        )?;
+        root.configs.agents = migrate_legacy_collection(
+            object.get("agents").and_then(Value::as_array),
+            ConfigCategory::Service,
+        )?;
         Ok(root)
     }
 
@@ -200,8 +209,13 @@ impl ConfigRoot {
     }
 }
 
-fn parse_config_collection(value: Option<&Value>, collection_name: &str) -> Vec<StoredConfigRecord> {
-    let Some(items) = value else { return Vec::new(); };
+fn parse_config_collection(
+    value: Option<&Value>,
+    collection_name: &str,
+) -> Vec<StoredConfigRecord> {
+    let Some(items) = value else {
+        return Vec::new();
+    };
     let Some(items) = items.as_array() else {
         warn!("[config_center] skipping invalid config collection '{collection_name}': expected an array");
         return Vec::new();
@@ -223,7 +237,10 @@ fn parse_config_collection(value: Option<&Value>, collection_name: &str) -> Vec<
         .collect()
 }
 
-fn migrate_legacy_collection(items: Option<&Vec<Value>>, category: ConfigCategory) -> Result<Vec<StoredConfigRecord>> {
+fn migrate_legacy_collection(
+    items: Option<&Vec<Value>>,
+    category: ConfigCategory,
+) -> Result<Vec<StoredConfigRecord>> {
     let mut records = Vec::new();
     for item in items.into_iter().flatten() {
         let Some(object) = item.as_object() else {
@@ -233,7 +250,8 @@ fn migrate_legacy_collection(items: Option<&Vec<Value>>, category: ConfigCategor
         let kind = infer_kind_from_legacy_object(category, object)?;
         let name = object.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
         let enabled = object.get("enabled").and_then(Value::as_bool).unwrap_or(false);
-        let updated_at = object.get("updated_at").and_then(Value::as_str).unwrap_or_default().to_string();
+        let updated_at =
+            object.get("updated_at").and_then(Value::as_str).unwrap_or_default().to_string();
         let spec = legacy_object_to_spec(category, object)?;
         records.push(StoredConfigRecord {
             config_id,
@@ -262,7 +280,10 @@ fn config_id_from_legacy_object(object: &Map<String, Value>) -> String {
         .unwrap_or_else(|| Uuid::new_v4().to_string())
 }
 
-fn infer_kind_from_legacy_object(category: ConfigCategory, object: &Map<String, Value>) -> Result<ConfigKind> {
+fn infer_kind_from_legacy_object(
+    category: ConfigCategory,
+    object: &Map<String, Value>,
+) -> Result<ConfigKind> {
     match category {
         ConfigCategory::Connection => match object
             .get("kind")
@@ -278,8 +299,12 @@ fn infer_kind_from_legacy_object(category: ConfigCategory, object: &Map<String, 
             Some("bot_adapter") | Some("ims_bot_adapter") => Ok(ConfigKind::ConnectionBotAdapter),
             Some("tavily") => Ok(ConfigKind::ConnectionWebSearchEngine),
             Some("tokenizer") => Ok(ConfigKind::ConnectionTokenizer),
-            Some(other) => Err(Error::ValidationError(format!("unsupported legacy connection kind '{other}'"))),
-            None => Err(Error::ValidationError("legacy connection is missing kind.type".to_string())),
+            Some(other) => {
+                Err(Error::ValidationError(format!("unsupported legacy connection kind '{other}'")))
+            }
+            None => {
+                Err(Error::ValidationError("legacy connection is missing kind.type".to_string()))
+            }
         },
         ConfigCategory::LlmRef => Ok(ConfigKind::LlmRef),
         ConfigCategory::Service => match object
@@ -290,8 +315,12 @@ fn infer_kind_from_legacy_object(category: ConfigCategory, object: &Map<String, 
         {
             Some("qq_chat") => Ok(ConfigKind::ServiceQqChat),
             Some("workspace") => Ok(ConfigKind::ServiceWorkspace),
-            Some(other) => Err(Error::ValidationError(format!("unsupported legacy agent type '{other}'"))),
-            None => Err(Error::ValidationError("legacy agent is missing agent_type.type".to_string())),
+            Some(other) => {
+                Err(Error::ValidationError(format!("unsupported legacy agent type '{other}'")))
+            }
+            None => {
+                Err(Error::ValidationError("legacy agent is missing agent_type.type".to_string()))
+            }
         },
     }
 }
@@ -330,9 +359,7 @@ pub struct FsConfigRepository {
 
 impl Default for FsConfigRepository {
     fn default() -> Self {
-        Self {
-            path: system_config_file_path(),
-        }
+        Self { path: system_config_file_path() }
     }
 }
 
@@ -343,8 +370,9 @@ impl ConfigRepository for FsConfigRepository {
         }
 
         let content = fs::read_to_string(&self.path)?;
-        let value = serde_json::from_str::<Value>(&content)
-            .map_err(|err| crate::string_error!("failed to parse {}: {err}", self.path.display()))?;
+        let value = serde_json::from_str::<Value>(&content).map_err(|err| {
+            crate::string_error!("failed to parse {}: {err}", self.path.display())
+        })?;
         ConfigRoot::from_value(value)
     }
 
@@ -353,8 +381,9 @@ impl ConfigRepository for FsConfigRepository {
             fs::create_dir_all(parent)?;
         }
         let value = root.to_value()?;
-        let content = serde_json::to_string_pretty(&value)
-            .map_err(|err| crate::string_error!("failed to serialize unified config root: {err}"))?;
+        let content = serde_json::to_string_pretty(&value).map_err(|err| {
+            crate::string_error!("failed to serialize unified config root: {err}")
+        })?;
         let tmp_path = self.path.with_extension("json.tmp");
         fs::write(&tmp_path, content)?;
         fs::rename(&tmp_path, &self.path)?;

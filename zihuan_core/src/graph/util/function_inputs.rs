@@ -1,13 +1,14 @@
 use crate::graph::NodeOutputFlow;
 use serde_json::Value;
 
+use crate::error::{Error, Result};
 use crate::graph::function_graph::{
     function_inputs_ports, function_signature_from_value, hidden_function_runtime_values_port,
-    hidden_function_signature_port, FunctionPortDef, FUNCTION_RUNTIME_VALUES_PORT, FUNCTION_SIGNATURE_PORT,
+    hidden_function_signature_port, FunctionPortDef, FUNCTION_RUNTIME_VALUES_PORT,
+    FUNCTION_SIGNATURE_PORT,
 };
 use crate::graph::util::function::data_value_from_json_with_declared_type;
 use crate::graph::{DataValue, Node, Port};
-use crate::error::{Error, Result};
 
 pub struct FunctionInputsNode {
     id: String,
@@ -27,8 +28,9 @@ impl FunctionInputsNode {
     }
 
     fn apply_signature_json(&mut self, value: &Value) -> Result<()> {
-        self.signature = function_signature_from_value(value)
-            .ok_or_else(|| Error::ValidationError("function_inputs.signature 不是有效的函数签名 JSON".to_string()))?;
+        self.signature = function_signature_from_value(value).ok_or_else(|| {
+            Error::ValidationError("function_inputs.signature 不是有效的函数签名 JSON".to_string())
+        })?;
         Ok(())
     }
 }
@@ -69,12 +71,18 @@ impl Node for FunctionInputsNode {
         }
     }
 
-    fn set_function_runtime_values(&mut self, values: crate::graph::RuntimeValueFlow) -> Result<()> {
+    fn set_function_runtime_values(
+        &mut self,
+        values: crate::graph::RuntimeValueFlow,
+    ) -> Result<()> {
         self.runtime_values = Some(values);
         Ok(())
     }
 
-    fn execute(&mut self, inputs: crate::graph::NodeInputFlow) -> Result<crate::graph::NodeOutputFlow> {
+    fn execute(
+        &mut self,
+        inputs: crate::graph::NodeInputFlow,
+    ) -> Result<crate::graph::NodeOutputFlow> {
         if let Some(DataValue::Json(value)) = inputs.get(FUNCTION_SIGNATURE_PORT) {
             self.apply_signature_json(value)?;
         }
@@ -126,7 +134,8 @@ impl Node for FunctionInputsNode {
                     )))
                 }
             };
-            outputs.insert(port.name.clone(), data_value_from_json_with_declared_type(port, value)?);
+            outputs
+                .insert(port.name.clone(), data_value_from_json_with_declared_type(port, value)?);
         }
 
         self.validate_outputs(&outputs)?;
@@ -181,7 +190,9 @@ mod tests {
         )])))
         .expect("runtime values should apply");
 
-        let outputs = node.execute(crate::graph::NodeInputFlow::new()).expect("execute should succeed");
+        let outputs = node
+            .execute(crate::graph::NodeInputFlow::new())
+            .expect("execute should succeed");
 
         match outputs.get("required_text") {
             Some(DataValue::String(value)) => assert_eq!(value, "hello"),
@@ -196,7 +207,9 @@ mod tests {
         node.set_function_runtime_values(crate::graph::RuntimeValueFlow::new())
             .expect("runtime values should apply");
 
-        let error = node.execute(crate::graph::NodeInputFlow::new()).expect_err("execute should fail");
+        let error = node
+            .execute(crate::graph::NodeInputFlow::new())
+            .expect_err("execute should fail");
         assert!(error.to_string().contains("required_text"));
     }
 

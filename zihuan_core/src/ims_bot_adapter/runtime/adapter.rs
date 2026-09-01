@@ -10,22 +10,28 @@ use uuid::Uuid;
 
 use super::event;
 use super::models::{MessageEvent, MessageType, Profile, RawMessageEvent};
-use crate::ims_bot_adapter::runtime::ws_action::ws_send_action_async;
-use crate::storage::{enrich_event_images, enrich_message_images, ImageCacheAdapter, PendingImageUpload};
-use tokio::sync::Mutex as TokioMutex;
-use tokio::sync::{mpsc, oneshot};
 use crate::error::Result;
-use crate::ims_bot_adapter::models::message::{ForwardNodeMessage, Message};
-use crate::url_utils::extract_host;
 use crate::graph::message_restore::restore_message_snapshot;
 use crate::graph::object_storage::S3Ref;
+use crate::ims_bot_adapter::models::message::{ForwardNodeMessage, Message};
+use crate::ims_bot_adapter::runtime::ws_action::ws_send_action_async;
+use crate::storage::{
+    enrich_event_images, enrich_message_images, ImageCacheAdapter, PendingImageUpload,
+};
+use crate::url_utils::extract_host;
+use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::{mpsc, oneshot};
 
 /// Transport boundary for handlers that consume QQ events.
 ///
 /// This is intentionally distinct from `agent::Agent`: adapters own protocol
 /// translation, while domain agents own business execution.
 pub trait BotEventHandler: Send + Sync {
-    fn on_event(&self, ims_bot_adapter: &mut BotAdapter, event: &super::models::MessageEvent) -> Result<()>;
+    fn on_event(
+        &self,
+        ims_bot_adapter: &mut BotAdapter,
+        event: &super::models::MessageEvent,
+    ) -> Result<()>;
     fn name(&self) -> &'static str;
     fn clone_box(&self) -> BotEventHandlerBox;
 }
@@ -226,7 +232,11 @@ impl BotAdapter {
         handler_id
     }
 
-    pub fn register_event_handler_with_id(&mut self, handler_id: impl Into<String>, handler: event::EventHandler) {
+    pub fn register_event_handler_with_id(
+        &mut self,
+        handler_id: impl Into<String>,
+        handler: event::EventHandler,
+    ) {
         self.event_handlers.insert(handler_id.into(), handler);
     }
 
@@ -380,7 +390,13 @@ impl BotAdapter {
 
         let image_cache_handle = BotAdapterImageCacheHandle(adapter.clone());
         enrich_event_images(&image_cache_handle, &mut event).await;
-        hydrate_message_segments(&adapter, &image_cache_handle, event.message_id, &mut event.message_list).await;
+        hydrate_message_segments(
+            &adapter,
+            &image_cache_handle,
+            event.message_id,
+            &mut event.message_list,
+        )
+        .await;
 
         // Dispatch to the unified message handler
         let adapter_clone = adapter.clone();
@@ -436,9 +452,9 @@ fn push_plain_text_segment(messages: &mut Vec<Message>, text: &str) {
         return;
     }
 
-    messages.push(Message::PlainText(
-        crate::ims_bot_adapter::models::message::PlainTextMessage { text: decoded },
-    ));
+    messages.push(Message::PlainText(crate::ims_bot_adapter::models::message::PlainTextMessage {
+        text: decoded,
+    }));
 }
 
 fn parse_cq_string_to_messages(content: &str) -> Vec<Message> {
@@ -481,16 +497,20 @@ fn parse_cq_string_to_messages(content: &str) -> Vec<Message> {
                 ));
             }
             "at" => {
-                messages.push(Message::At(crate::ims_bot_adapter::models::message::AtTargetMessage {
-                    target: params.get("qq").cloned(),
-                }));
+                messages.push(Message::At(
+                    crate::ims_bot_adapter::models::message::AtTargetMessage {
+                        target: params.get("qq").cloned(),
+                    },
+                ));
             }
             "reply" => {
                 if let Some(id) = params.get("id").and_then(|value| value.parse::<i64>().ok()) {
-                    messages.push(Message::Reply(crate::ims_bot_adapter::models::message::ReplyMessage {
-                        id,
-                        message_source: None,
-                    }));
+                    messages.push(Message::Reply(
+                        crate::ims_bot_adapter::models::message::ReplyMessage {
+                            id,
+                            message_source: None,
+                        },
+                    ));
                 }
             }
             "forward" => {
@@ -519,15 +539,19 @@ fn parse_forward_content_value(value: Option<&serde_json::Value>) -> Vec<Message
             .iter()
             .filter_map(|item| serde_json::from_value::<Message>(item.clone()).ok())
             .collect(),
-        Some(serde_json::Value::Object(_)) => serde_json::from_value::<Message>(value.cloned().unwrap())
-            .map(|message| vec![message])
-            .unwrap_or_default(),
+        Some(serde_json::Value::Object(_)) => {
+            serde_json::from_value::<Message>(value.cloned().unwrap())
+                .map(|message| vec![message])
+                .unwrap_or_default()
+        }
         Some(serde_json::Value::String(text)) => parse_cq_string_to_messages(text),
         _ => Vec::new(),
     }
 }
 
-pub fn parse_reply_source_messages_from_get_msg_response(response: &serde_json::Value) -> Vec<Message> {
+pub fn parse_reply_source_messages_from_get_msg_response(
+    response: &serde_json::Value,
+) -> Vec<Message> {
     let payload: NapCatMessageResponse = match serde_json::from_value(response.clone()) {
         Ok(payload) => payload,
         Err(error) => {
@@ -555,8 +579,13 @@ pub fn parse_reply_source_messages_from_get_msg_response(response: &serde_json::
     )
 }
 
-async fn fetch_reply_source_messages(adapter: &SharedBotAdapter, message_id: i64) -> Result<Vec<Message>> {
-    let response = ws_send_action_async(adapter, "get_msg", serde_json::json!({ "message_id": message_id })).await?;
+async fn fetch_reply_source_messages(
+    adapter: &SharedBotAdapter,
+    message_id: i64,
+) -> Result<Vec<Message>> {
+    let response =
+        ws_send_action_async(adapter, "get_msg", serde_json::json!({ "message_id": message_id }))
+            .await?;
 
     Ok(parse_reply_source_messages_from_get_msg_response(&response))
 }
@@ -569,7 +598,8 @@ pub(crate) async fn restore_message_list_for_message_id(
 
     if let Some(snapshot) = restore_message_snapshot(message_id)? {
         let mut restored_messages = snapshot.messages;
-        hydrate_message_segments(adapter, &image_cache_handle, message_id, &mut restored_messages).await;
+        hydrate_message_segments(adapter, &image_cache_handle, message_id, &mut restored_messages)
+            .await;
         enrich_message_images(&image_cache_handle, message_id, &mut restored_messages).await;
         return Ok(Some(ResolvedMessageList {
             messages: restored_messages,
@@ -582,7 +612,8 @@ pub(crate) async fn restore_message_list_for_message_id(
         return Ok(None);
     }
 
-    hydrate_message_segments(adapter, &image_cache_handle, message_id, &mut restored_messages).await;
+    hydrate_message_segments(adapter, &image_cache_handle, message_id, &mut restored_messages)
+        .await;
     enrich_message_images(&image_cache_handle, message_id, &mut restored_messages).await;
     Ok(Some(ResolvedMessageList {
         messages: restored_messages,
@@ -634,35 +665,37 @@ async fn hydrate_message_segments(
 ) {
     for message in messages {
         match message {
-            Message::Reply(reply) => match restore_message_list_for_message_id(adapter, reply.id).await {
-                Ok(Some(resolved)) => {
-                    let image_count = resolved
-                        .messages
-                        .iter()
-                        .filter(|message| matches!(message, Message::Image(_)))
-                        .count();
-                    info!(
+            Message::Reply(reply) => {
+                match restore_message_list_for_message_id(adapter, reply.id).await {
+                    Ok(Some(resolved)) => {
+                        let image_count = resolved
+                            .messages
+                            .iter()
+                            .filter(|message| matches!(message, Message::Image(_)))
+                            .count();
+                        info!(
                         "[adapter] hydrated reply source for message_id={} via {} (segments={}, images={})",
                         reply.id,
                         resolved.source_label,
                         resolved.messages.len(),
                         image_count
                     );
-                    reply.message_source = Some(resolved.messages);
-                }
-                Ok(None) => {
-                    debug!(
+                        reply.message_source = Some(resolved.messages);
+                    }
+                    Ok(None) => {
+                        debug!(
                         "[adapter] reply source unavailable for message_id={} after cache/mysql/get_msg lookup",
                         reply.id
                     );
+                    }
+                    Err(error) => {
+                        debug!(
+                            "[adapter] failed to hydrate reply source for message_id={}: {}",
+                            reply.id, error
+                        );
+                    }
                 }
-                Err(error) => {
-                    debug!(
-                        "[adapter] failed to hydrate reply source for message_id={}: {}",
-                        reply.id, error
-                    );
-                }
-            },
+            }
             Message::Forward(forward) => {
                 if forward.content.is_empty() {
                     if let Some(forward_id) = forward.id.clone() {
@@ -686,8 +719,15 @@ async fn hydrate_message_segments(
                 }
 
                 for node in &mut forward.content {
-                    hydrate_message_segments(adapter, image_cache_handle, root_message_id, &mut node.content).await;
-                    enrich_message_images(image_cache_handle, root_message_id, &mut node.content).await;
+                    hydrate_message_segments(
+                        adapter,
+                        image_cache_handle,
+                        root_message_id,
+                        &mut node.content,
+                    )
+                    .await;
+                    enrich_message_images(image_cache_handle, root_message_id, &mut node.content)
+                        .await;
                 }
             }
             _ => {}
@@ -695,9 +735,16 @@ async fn hydrate_message_segments(
     }
 }
 
-async fn fetch_forward_content(adapter: &SharedBotAdapter, forward_id: &str) -> Result<Vec<ForwardNodeMessage>> {
-    let response =
-        ws_send_action_async(adapter, "get_forward_msg", serde_json::json!({ "message_id": forward_id })).await?;
+async fn fetch_forward_content(
+    adapter: &SharedBotAdapter,
+    forward_id: &str,
+) -> Result<Vec<ForwardNodeMessage>> {
+    let response = ws_send_action_async(
+        adapter,
+        "get_forward_msg",
+        serde_json::json!({ "message_id": forward_id }),
+    )
+    .await?;
     let payload: NapCatForwardResponse = serde_json::from_value(response)?;
     let raw_messages = payload
         .data

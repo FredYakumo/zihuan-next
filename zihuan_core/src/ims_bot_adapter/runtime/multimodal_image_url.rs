@@ -1,11 +1,11 @@
+use crate::graph::object_storage::S3Ref;
+use crate::model_inference::llm::MessagePart;
 use base64::Engine;
 use log::{info, warn};
 use reqwest::header::CONTENT_TYPE;
 use std::path::Path;
 use std::time::Duration;
 use tokio::task::block_in_place;
-use crate::model_inference::llm::MessagePart;
-use crate::graph::object_storage::S3Ref;
 
 use crate::ims_bot_adapter::runtime::models::message::ImageMessage;
 
@@ -246,10 +246,7 @@ async fn download_remote_image(url: &str, log_prefix: &str) -> Option<Downloaded
         .map(|value| value.trim().to_string());
 
     match response.bytes().await {
-        Ok(bytes) => Some(DownloadedRemoteImage {
-            bytes: bytes.to_vec(),
-            content_type,
-        }),
+        Ok(bytes) => Some(DownloadedRemoteImage { bytes: bytes.to_vec(), content_type }),
         Err(error) => {
             warn!(
                 "{log_prefix} failed to read remote image body for multimodal input url={}: {}",
@@ -274,8 +271,8 @@ fn run_async<T>(future: impl std::future::Future<Output = T>) -> Option<T> {
 
 fn trim_trailing_url_punctuation(candidate: &str) -> (&str, &str) {
     let trimmed = candidate.trim_end_matches([
-        '.', ',', '!', '?', ';', ':', ')', ']', '}', '>', '"', '\'', '，', '。', '！', '？', '；', '：', '）', '】',
-        '》', '、',
+        '.', ',', '!', '?', ';', ':', ')', ']', '}', '>', '"', '\'', '，', '。', '！', '？', '；',
+        '：', '）', '】', '》', '、',
     ]);
     let suffix = &candidate[trimmed.len()..];
     (trimmed, suffix)
@@ -333,7 +330,9 @@ fn resolve_remote_url_as_image_part(
             let s3_ref = s3_ref.clone();
             let bytes = downloaded.bytes.clone();
             let content_type = final_content_type.clone();
-            match run_async(async move { s3_ref.put_object(&object_key, &content_type, &bytes).await }) {
+            match run_async(
+                async move { s3_ref.put_object(&object_key, &content_type, &bytes).await },
+            ) {
                 Some(Ok(object_url)) => {
                     info!(
                         "{log_prefix} cached remote image to object storage for multimodal input url={} object_url={}",
@@ -463,10 +462,16 @@ pub fn resolve_plain_text_segments(
         let (trimmed_url, trailing) = trim_trailing_url_punctuation(candidate);
 
         if !trimmed_url.is_empty() {
-            let file_name_hint = infer_file_name_from_url(trimmed_url, content_type_from_url_hint(trimmed_url));
-            if let Some(resolved) =
-                resolve_remote_url_as_image_part(trimmed_url, &file_name_hint, None, s3_ref, cache_to_s3, log_prefix)
-            {
+            let file_name_hint =
+                infer_file_name_from_url(trimmed_url, content_type_from_url_hint(trimmed_url));
+            if let Some(resolved) = resolve_remote_url_as_image_part(
+                trimmed_url,
+                &file_name_hint,
+                None,
+                s3_ref,
+                cache_to_s3,
+                log_prefix,
+            ) {
                 segments.push(ResolvedTextSegment::Image(resolved));
             } else {
                 segments.push(ResolvedTextSegment::Text(trimmed_url.to_string()));

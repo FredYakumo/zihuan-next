@@ -1,6 +1,9 @@
 use std::fs::File;
 use std::sync::{Arc, Mutex};
 
+use crate::error::{Error, Result};
+use crate::model_inference::llm::llm_base::{LLMBase, StreamingLLMBase};
+use crate::model_inference::llm::{InferenceParam, LLMMessage, StreamToken};
 use candle_core::quantized::gguf_file;
 use candle_core::{Device, Tensor};
 use candle_transformers::generation::{LogitsProcessor, Sampling};
@@ -8,17 +11,16 @@ use candle_transformers::models::quantized_qwen3::ModelWeights;
 use log::{info, warn};
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
-use crate::error::{Error, Result};
-use crate::model_inference::llm::llm_base::{LLMBase, StreamingLLMBase};
-use crate::model_inference::llm::{InferenceParam, LLMMessage, StreamToken};
 
+use crate::model_inference::model_config::LlmServiceConfig;
 use crate::model_inference::nn::local_candle_embedding::describe_device;
 use crate::model_inference::nn::local_candle_llm_common::{
-    build_usage, decode_token_piece, parse_local_response, prepare_prompt, LocalResponseStreamRenderer,
-    DEFAULT_MAX_NEW_TOKENS, USER_VISIBLE_REQUEST_ERROR,
+    build_usage, decode_token_piece, parse_local_response, prepare_prompt,
+    LocalResponseStreamRenderer, DEFAULT_MAX_NEW_TOKENS, USER_VISIBLE_REQUEST_ERROR,
 };
-use crate::model_inference::nn::local_llm_registry::{get_local_llm_model_info, resolve_model_dir, LocalLlmModelLayout};
-use crate::model_inference::model_config::LlmServiceConfig;
+use crate::model_inference::nn::local_llm_registry::{
+    get_local_llm_model_info, resolve_model_dir, LocalLlmModelLayout,
+};
 
 pub fn build_local_candle_gguf_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
     let model = LocalCandleGgufLlm::load(config)?;
@@ -28,6 +30,7 @@ pub fn build_local_candle_gguf_llm(config: LlmServiceConfig) -> Result<Arc<dyn L
 #[derive(Debug)]
 pub struct LocalCandleGgufLlm {
     model_name: String,
+    context_length: usize,
     engine: Mutex<LocalCandleGgufLlmEngine>,
 }
 
@@ -109,6 +112,7 @@ impl LocalCandleGgufLlm {
 
         Ok(Self {
             model_name: config.model_name,
+            context_length: config.context_length,
             engine: Mutex::new(LocalCandleGgufLlmEngine {
                 tokenizer,
                 model,
@@ -132,7 +136,8 @@ impl LocalCandleGgufLlm {
             .tokenizer
             .encode(prompt, true)
             .map_err(|err| crate::string_error!("failed to tokenize local prompt: {err}"))?;
-        let mut tokens = prompt_encoding.get_ids().iter().map(|value| *value as u32).collect::<Vec<_>>();
+        let mut tokens =
+            prompt_encoding.get_ids().iter().map(|value| *value as u32).collect::<Vec<_>>();
         if tokens.is_empty() {
             return Err(Error::ValidationError("model produced no tokens".to_string()));
         }
@@ -150,10 +155,19 @@ impl LocalCandleGgufLlm {
                 Tensor::new(&[*tokens.last().expect("tokens not empty")], &engine.device)
             }
             .and_then(|tensor| tensor.unsqueeze(0))
-            .map_err(|err| crate::string_error!("failed to build gguf model input tensor: {err}"))?;
+            .map_err(|err| {
+                crate::string_error!("failed to build gguf model input tensor: {err}")
+            })?;
             let logits = engine
                 .model
-                .forward(&input, if step == 0 { 0 } else { tokens.len().saturating_sub(1) })
+                .forward(
+                    &input,
+                    if step == 0 {
+                        0
+                    } else {
+                        tokens.len().saturating_sub(1)
+                    },
+                )
                 .map_err(|err| crate::string_error!("gguf model forward failed: {err}"))?;
             let next_token = logits_processor
                 .sample(
@@ -212,6 +226,10 @@ impl std::fmt::Debug for LocalCandleGgufLlmEngine {
 impl LLMBase for LocalCandleGgufLlm {
     fn get_model_name(&self) -> &str {
         &self.model_name
+    }
+
+    fn context_length(&self) -> usize {
+        self.context_length
     }
 
     fn api_style(&self) -> Option<&str> {

@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
+use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 
-use crate::qq_chat::logging::QqChatTaskTrace;
 use crate::agent::emotion::utils::emotion_expression_prompt;
+use crate::qq_chat::logging::QqChatTaskTrace;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ModelIdentityContext {
@@ -59,11 +59,10 @@ pub(crate) fn review_and_rewrite_reply(
     trace: &QqChatTaskTrace,
 ) -> Result<QqReplyReviewResult> {
     let protected_media = ProtectedImageProtocolTags::from_message(&request.candidate_message);
-    let review_messages = build_review_messages(reply_system_prompt, request, &protected_media.masked_message);
-    let review_response = review_llm.inference(&InferenceParam {
-        messages: &review_messages,
-        tools: None,
-    });
+    let review_messages =
+        build_review_messages(reply_system_prompt, request, &protected_media.masked_message);
+    let review_response =
+        review_llm.inference(&InferenceParam { messages: &review_messages, tools: None });
     let review_text = review_response
         .content_text_owned()
         .filter(|text| !text.trim().is_empty())
@@ -95,11 +94,10 @@ pub(crate) fn review_and_rewrite_reply(
         });
     }
 
-    let rewrite_messages = build_rewrite_messages(reply_system_prompt, request, &protected_media.masked_message);
-    let rewrite_response = rewrite_llm.inference(&InferenceParam {
-        messages: &rewrite_messages,
-        tools: None,
-    });
+    let rewrite_messages =
+        build_rewrite_messages(reply_system_prompt, request, &protected_media.masked_message);
+    let rewrite_response =
+        rewrite_llm.inference(&InferenceParam { messages: &rewrite_messages, tools: None });
     let rewritten_message = rewrite_response.content_text_owned().unwrap_or_default();
     let rewritten_message = parse_force_rewrite_result(&rewritten_message)?;
     let rewritten_message = protected_media.restore(rewritten_message.trim());
@@ -127,7 +125,8 @@ fn build_review_messages(
     request: &QqReplyReviewRequest,
     candidate_message: &str,
 ) -> Vec<LLMMessage> {
-    let session_hint = build_session_state_hint(&request.session_state, &request.emotion_dimensions);
+    let session_hint =
+        build_session_state_hint(&request.session_state, &request.emotion_dimensions);
     let sender_name = display_sender_name(&request.sender_nickname, &request.sender_card);
     let mode = if request.is_group {
         "QQ group chat"
@@ -147,7 +146,8 @@ fn build_review_messages(
         bot = request.bot_name,
         sender = sender_name,
     );
-    if let Some(extra_prompt) = reply_system_prompt.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(extra_prompt) = reply_system_prompt.map(str::trim).filter(|value| !value.is_empty())
+    {
         system_prompt.push_str("\n\n");
         system_prompt.push_str(extra_prompt);
     }
@@ -181,7 +181,8 @@ fn build_rewrite_messages(
     request: &QqReplyReviewRequest,
     candidate_message: &str,
 ) -> Vec<LLMMessage> {
-    let session_hint = build_session_state_hint(&request.session_state, &request.emotion_dimensions);
+    let session_hint =
+        build_session_state_hint(&request.session_state, &request.emotion_dimensions);
     let sender_name = display_sender_name(&request.sender_nickname, &request.sender_card);
     let mode = if request.is_group {
         "QQ group chat"
@@ -208,7 +209,8 @@ fn build_rewrite_messages(
          - Do not add new facts; do not output analysis\n\n\
          Your output must be strict JSON in the format: {{\"rewritten_message\": string, \"reason\": string}}.",
     );
-    if let Some(extra_prompt) = reply_system_prompt.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(extra_prompt) = reply_system_prompt.map(str::trim).filter(|value| !value.is_empty())
+    {
         system_prompt.push_str("\n\n");
         system_prompt.push_str(extra_prompt);
     }
@@ -277,10 +279,7 @@ impl ProtectedImageProtocolTags {
         }
         masked_message.push_str(remaining);
 
-        Self {
-            masked_message,
-            image_tags,
-        }
+        Self { masked_message, image_tags }
     }
 
     fn restore(&self, rewritten_message: &str) -> String {
@@ -288,9 +287,8 @@ impl ProtectedImageProtocolTags {
             return rewritten_message.to_string();
         }
 
-        let expected_placeholders = (1..=self.image_tags.len())
-            .map(image_protocol_placeholder)
-            .collect::<Vec<_>>();
+        let expected_placeholders =
+            (1..=self.image_tags.len()).map(image_protocol_placeholder).collect::<Vec<_>>();
         if collect_image_protocol_placeholders(rewritten_message)
             .is_some_and(|placeholders| placeholders == expected_placeholders)
         {
@@ -301,7 +299,8 @@ impl ProtectedImageProtocolTags {
             return restored;
         }
 
-        let rewritten_text = strip_image_protocol_placeholders(rewritten_message).trim().to_string();
+        let rewritten_text =
+            strip_image_protocol_placeholders(rewritten_message).trim().to_string();
         let image_tags = self.image_tags.join("\n\n");
         if rewritten_text.is_empty() {
             image_tags
@@ -381,12 +380,12 @@ struct ParsedReviewResult {
 }
 
 fn parse_review_result(content: &str) -> Result<ParsedReviewResult> {
-    let value: serde_json::Value = serde_json::from_str(content.trim())
-        .map_err(|error| Error::ValidationError(format!("reply reviewer returned invalid review json: {error}")))?;
-    let safe = value
-        .get("safe")
-        .and_then(serde_json::Value::as_bool)
-        .ok_or_else(|| Error::ValidationError("reply reviewer review json missing safe".to_string()))?;
+    let value: serde_json::Value = serde_json::from_str(content.trim()).map_err(|error| {
+        Error::ValidationError(format!("reply reviewer returned invalid review json: {error}"))
+    })?;
+    let safe = value.get("safe").and_then(serde_json::Value::as_bool).ok_or_else(|| {
+        Error::ValidationError("reply reviewer review json missing safe".to_string())
+    })?;
     let rewritten_message = value
         .get("rewritten_message")
         .and_then(serde_json::Value::as_str)
@@ -401,28 +400,25 @@ fn parse_review_result(content: &str) -> Result<ParsedReviewResult> {
         .to_string();
 
     if safe && rewritten_message.as_deref().unwrap_or_default().is_empty() {
-        return Ok(ParsedReviewResult {
-            safe,
-            rewritten_message: None,
-            reason,
-        });
+        return Ok(ParsedReviewResult { safe, rewritten_message: None, reason });
     }
 
-    Ok(ParsedReviewResult {
-        safe,
-        rewritten_message,
-        reason,
-    })
+    Ok(ParsedReviewResult { safe, rewritten_message, reason })
 }
 
 fn parse_force_rewrite_result(content: &str) -> Result<String> {
-    let value: serde_json::Value = serde_json::from_str(content.trim())
-        .map_err(|error| Error::ValidationError(format!("reply reviewer returned invalid rewrite json: {error}")))?;
+    let value: serde_json::Value = serde_json::from_str(content.trim()).map_err(|error| {
+        Error::ValidationError(format!("reply reviewer returned invalid rewrite json: {error}"))
+    })?;
     let rewritten_message = value
         .get("rewritten_message")
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
         .filter(|text| !text.is_empty())
-        .ok_or_else(|| Error::ValidationError("reply reviewer rewrite json missing rewritten_message".to_string()))?;
+        .ok_or_else(|| {
+            Error::ValidationError(
+                "reply reviewer rewrite json missing rewritten_message".to_string(),
+            )
+        })?;
     Ok(rewritten_message.to_string())
 }

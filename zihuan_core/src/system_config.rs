@@ -1,9 +1,9 @@
 use std::fs;
 use std::path::PathBuf;
 
+use chrono::{DateTime, Utc};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
-use chrono::{DateTime, Utc};
 
 use crate::error::Result;
 
@@ -32,11 +32,17 @@ pub trait SystemConfigSection {
         let value = match root.get(Self::SECTION_KEY) {
             Some(value) => value.clone(),
             None => serde_json::to_value(Self::Value::default()).map_err(|err| {
-                crate::string_error!("failed to serialize default system config section '{}': {err}", Self::SECTION_KEY)
+                crate::string_error!(
+                    "failed to serialize default system config section '{}': {err}",
+                    Self::SECTION_KEY
+                )
             })?,
         };
         serde_json::from_value(value).map_err(|err| {
-            crate::string_error!("failed to parse system config section '{}': {err}", Self::SECTION_KEY)
+            crate::string_error!(
+                "failed to parse system config section '{}': {err}",
+                Self::SECTION_KEY
+            )
         })
     }
 
@@ -48,7 +54,10 @@ pub trait SystemConfigSection {
         object.insert(
             Self::SECTION_KEY.to_string(),
             serde_json::to_value(value).map_err(|err| {
-                crate::string_error!("failed to serialize system config section '{}': {err}", Self::SECTION_KEY)
+                crate::string_error!(
+                    "failed to serialize system config section '{}': {err}",
+                    Self::SECTION_KEY
+                )
             })?,
         );
         ensure_version(object);
@@ -171,10 +180,20 @@ fn default_task_ttl_hours() -> u64 {
     168 // 7 days
 }
 
+pub const DEFAULT_CONTEXT_COMPACTION_PERCENT: u8 = 80;
+pub const MIN_CONTEXT_COMPACTION_PERCENT: u8 = 40;
+pub const MAX_CONTEXT_COMPACTION_PERCENT: u8 = 99;
+
+fn default_context_compaction_percent() -> u8 {
+    DEFAULT_CONTEXT_COMPACTION_PERCENT
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalSettings {
     #[serde(default = "default_task_ttl_hours")]
     pub task_ttl_hours: u64,
+    #[serde(default = "default_context_compaction_percent")]
+    pub context_compaction_percent: u8,
     #[serde(default)]
     pub model_http_service: ModelHttpServiceSettings,
 }
@@ -185,9 +204,23 @@ impl Default for GlobalSettings {
     fn default() -> Self {
         Self {
             task_ttl_hours: default_task_ttl_hours(),
+            context_compaction_percent: default_context_compaction_percent(),
             model_http_service: ModelHttpServiceSettings::default(),
         }
     }
+}
+
+impl GlobalSettings {
+    pub fn context_compaction_percent(&self) -> u8 {
+        self.context_compaction_percent
+            .clamp(MIN_CONTEXT_COMPACTION_PERCENT, MAX_CONTEXT_COMPACTION_PERCENT)
+    }
+}
+
+pub fn current_context_compaction_percent() -> u8 {
+    load_section::<GlobalSettingsSection>()
+        .map(|settings| settings.context_compaction_percent())
+        .unwrap_or(DEFAULT_CONTEXT_COMPACTION_PERCENT)
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -238,4 +271,24 @@ pub struct WorkspaceDirectoryHistorySection;
 impl SystemConfigSection for WorkspaceDirectoryHistorySection {
     const SECTION_KEY: &'static str = "workspace_directory_history";
     type Value = WorkspaceDirectoryHistory;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        GlobalSettings, DEFAULT_CONTEXT_COMPACTION_PERCENT, MAX_CONTEXT_COMPACTION_PERCENT,
+        MIN_CONTEXT_COMPACTION_PERCENT,
+    };
+
+    #[test]
+    fn context_compaction_percent_defaults_and_clamps_to_supported_range() {
+        let mut settings = GlobalSettings::default();
+        assert_eq!(settings.context_compaction_percent(), DEFAULT_CONTEXT_COMPACTION_PERCENT);
+
+        settings.context_compaction_percent = 0;
+        assert_eq!(settings.context_compaction_percent(), MIN_CONTEXT_COMPACTION_PERCENT);
+
+        settings.context_compaction_percent = 100;
+        assert_eq!(settings.context_compaction_percent(), MAX_CONTEXT_COMPACTION_PERCENT);
+    }
 }

@@ -243,9 +243,6 @@
                   <t-input-number v-model="form.max_steer_count" :min="0" />
                   <div class="agent-service-form-hint">当 Service 还没发出最终回复时，用户继续发消息会被视为"插嘴 / steer"。这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出会被丢弃并写入日志。</div>
                 </t-form-item>
-                <t-form-item label="达到上下文长度时压缩">
-                  <t-input-number v-model="form.compact_context_length" :min="0" />
-                </t-form-item>
                 <t-form-item label="Dream">
                   <t-checkbox v-model="form.dream_enabled">启用 Dream 记忆</t-checkbox>
                   <div v-if="form.dream_enabled" class="agent-service-form-grid" style="margin-top: 8px">
@@ -720,9 +717,6 @@
                 <t-input-number v-model="form.max_steer_count" :min="0" />
                 <div class="agent-service-form-hint">当 Service 还没发出最终回复时，用户继续发消息会被视为"插嘴 / steer"。这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出的消息会被丢弃。</div>
               </t-form-item>
-              <t-form-item label="达到上下文长度时压缩">
-                <t-input-number v-model="form.compact_context_length" :min="0" />
-              </t-form-item>
             </div>
             <div class="agent-service-form-grid">
               <t-form-item label="情绪维度" class="agent-service-form-item-full">
@@ -900,7 +894,7 @@
             <t-input-number v-model="defaultToolEditDraft.callLimit" :min="0" placeholder="不限制" />
             <div class="agent-service-form-hint" style="font-size: 12px; margin-top: 4px">0 或留空表示不限制</div>
           </t-form-item>
-          <t-form-item v-if="form.type === 'qq_chat' && editingDefaultToolId === 'image_understand'" label="图片理解模型" class="agent-service-form-item-full">
+          <t-form-item v-if="editingDefaultToolId === 'image_understand'" label="图片理解模型" class="agent-service-form-item-full">
             <t-select v-model="defaultToolEditDraft.imageUnderstandLlmRefId" placeholder="默认使用主模型" clearable>
               <t-option value="" label="默认使用主模型" />
               <t-option v-for="item in multimodalChatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />

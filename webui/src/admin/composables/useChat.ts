@@ -7,6 +7,7 @@ import {
   fileIO,
   system,
   agentsMd,
+  getContextCompactionSettings,
   type AgentsMdFile,
   type ServiceWithRuntime,
   type ChatHistoryRecord,
@@ -62,8 +63,17 @@ type ChatMessage = {
   agentAvatarUrl?: string;
   agentName?: string;
   metrics?: ChatResponseMetrics;
+  modelConfigId?: string | null;
+  imageUnderstandModelConfigId?: string | null;
   liveToolCalls?: LiveToolCall[];
   imageAttachments?: ChatImageAttachment[];
+  contextCompaction?: ContextCompactionStatus;
+};
+type ContextCompactionStatus = {
+  status: "running" | "completed" | "failed";
+  estimatedTokensBefore?: number;
+  estimatedTokensAfter?: number;
+  durationMs?: number;
 };
 type ChatImageAttachment = {
   id: string;
@@ -85,6 +95,8 @@ type EditingMessage = {
 type SendMessageOptions = {
   attachments?: ChatImageAttachment[];
   isEdit?: boolean;
+  modelConfigId?: string | null;
+  imageUnderstandModelConfigId?: string | null;
 };
 
 type ToolDetail = {
@@ -343,6 +355,7 @@ type StreamState = {
   requestText: string;
   requestedSessionId: string;
   sessionId: string;
+  taskId: string | null;
   foreground: boolean;
 };
 
@@ -366,6 +379,8 @@ const directoryPickerError = ref("");
 const activeRequestCount = ref(0);
 const sending = computed(() => activeRequestCount.value > 0);
 let activeStreamController: AbortController | null = null;
+let activeChatTask: { sessionId: string; taskId: string } | null = null;
+let pendingWorkspaceStop: { streamController: AbortController; sessionId: string | null } | null = null;
 let sessionRefreshTimer: ReturnType<typeof setInterval> | null = null;
 const sessionsAwaitingHistoryRefresh = new Set<string>();
 const sessionsNeedingHistoryRefresh = new Set<string>();
@@ -387,6 +402,7 @@ const llmModels = ref<LlmConfig[]>([]);
 const selectedModelId = ref("");
 const selectedThinkingType = ref<"" | "enabled" | "disabled">("");
 const selectedReasoningEffort = ref<"" | "low" | "medium" | "high" | "max">("");
+const contextCompactionPercent = ref(80);
 const openPicker = ref<"model" | "thinking" | "effort" | "settings" | null>(null);
 const autoCollapseThinking = ref(true);
 const stats = reactive({
@@ -400,6 +416,67 @@ const markdown = new MarkdownIt({
   linkify: true,
 });
 
+let pendingSessionModelId: string | null = null;
+
+const CHAT_MODEL_SELECTION_KEY = "zihuan.chat.model-selection";
+
+type ChatModelSelection = {
+  main?: string;
+  imageUnderstand?: string;
+};
+
+function readChatModelSelections(): Record<string, ChatModelSelection> {
+  try {
+    const raw = localStorage.getItem(CHAT_MODEL_SELECTION_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, ChatModelSelection>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function restoreChatModelSelection() {
+  const agentId = selectedServiceId.value;
+  if (!agentId) {
+    selectedModelId.value = defaultAgentModelId.value;
+    imageUnderstandingModelId.value = "";
+    return;
+  }
+  const selection = readChatModelSelections()[agentId];
+  if (selection?.main && chatModels.value.some((model) => model.config_id === selection.main)) {
+    selectedModelId.value = selection.main;
+  } else {
+    selectedModelId.value = defaultAgentModelId.value;
+  }
+  if (
+    selection?.imageUnderstand &&
+    imageUnderstandingModels.value.some((model) => model.config_id === selection.imageUnderstand)
+  ) {
+    imageUnderstandingModelId.value = selection.imageUnderstand;
+  } else {
+    imageUnderstandingModelId.value = "";
+  }
+}
+
+function persistChatModelSelection() {
+  const agentId = selectedServiceId.value;
+  if (!agentId) return;
+  const selections = readChatModelSelections();
+  const entry: ChatModelSelection = { ...(selections[agentId] ?? {}) };
+  if (selectedModelId.value) {
+    entry.main = selectedModelId.value;
+  } else {
+    delete entry.main;
+  }
+  if (imageUnderstandingModelId.value) {
+    entry.imageUnderstand = imageUnderstandingModelId.value;
+  } else {
+    delete entry.imageUnderstand;
+  }
+  selections[agentId] = entry;
+  localStorage.setItem(CHAT_MODEL_SELECTION_KEY, JSON.stringify(selections));
+}
 
 const selectedService = computed(
   () => services.value.find((agent) => agent.config_id === selectedServiceId.value) ?? null,
@@ -452,7 +529,27 @@ const selectedModelLlmConfig = computed(() => {
   }
   return null;
 });
-const supportsMultimodalInput = computed(() => selectedModelLlmConfig.value?.supports_multimodal_input === true);
+const imageUnderstandingModelId = ref("");
+const imageUnderstandingModels = computed(() =>
+  chatModels.value.filter((item) => item.model.type === "chat_llm" && item.model.llm.supports_multimodal_input),
+);
+const effectiveImageUnderstandingModelId = computed(() => {
+  if (imageUnderstandingModelId.value) {
+    return imageUnderstandingModelId.value;
+  }
+  return selectedModelId.value || defaultAgentModelId.value;
+});
+const effectiveImageUnderstandingModelConfig = computed(() => {
+  const modelId = effectiveImageUnderstandingModelId.value;
+  const model = chatModels.value.find((m) => m.config_id === modelId);
+  if (model?.model.type === "chat_llm") {
+    return model.model.llm;
+  }
+  return null;
+});
+const supportsMultimodalInput = computed(
+  () => effectiveImageUnderstandingModelConfig.value?.supports_multimodal_input === true,
+);
 const defaultAgentModelId = computed(() => {
   const agent = selectedService.value;
   if (!agent) {
@@ -467,6 +564,13 @@ const selectedModelLabel = computed(() => {
   }
   const model = chatModels.value.find((m) => m.config_id === selectedModelId.value);
   return model?.name ?? "默认模型";
+});
+const selectedImageUnderstandingModelLabel = computed(() => {
+  if (!imageUnderstandingModelId.value) {
+    return "未选择";
+  }
+  const model = imageUnderstandingModels.value.find((m) => m.config_id === imageUnderstandingModelId.value);
+  return model?.name ?? "未选择";
 });
 const selectedThinkingLabel = computed(() => {
   const defaultType = selectedModelLlmConfig.value?.thinking_type;
@@ -483,6 +587,32 @@ const selectedEffortLabel = computed(() => {
     return `默认${defaultLabel}`;
   }
   return selectedReasoningEffort.value;
+});
+const contextTokenUsage = computed(() => {
+  const contextLength = selectedModelLlmConfig.value?.context_length;
+  if (!contextLength || contextLength < 1) {
+    return null;
+  }
+  if (messages.value.length === 0) {
+    return null;
+  }
+
+  const usedTokens = messages.value
+    .filter(
+      (message) =>
+        message.content.trim().length > 0 ||
+        message.imageAttachments?.length ||
+        message.toolCalls.length > 0 ||
+        !!message.toolCallId,
+    )
+    .reduce((total, message) => total + estimateChatMessageTokens(message), 0);
+
+  return {
+    usedTokens,
+    contextLength,
+    compactionThreshold: Math.floor(contextLength * contextCompactionPercent.value / 100),
+    usagePercent: Math.min((usedTokens / contextLength) * 100, 100),
+  };
 });
 const canSend = computed(() =>
   !!selectedService.value &&
@@ -663,6 +793,24 @@ function messageParts(content: string, attachments: ChatImageAttachment[] | unde
   return parts;
 }
 
+function estimateChatMessageTokens(message: ChatMessage): number {
+  const roleTokenCount = message.role === "assistant" ? 5 : 4;
+  let characterCount = roleTokenCount * 4 + message.content.length;
+
+  if (message.toolCallId) {
+    characterCount += message.toolCallId.length;
+  }
+
+  for (const toolCall of message.toolCalls) {
+    characterCount += toolCall.id.length;
+    characterCount += toolCall.type_name.length;
+    characterCount += toolCall.function.name.length;
+    characterCount += JSON.stringify(toolCall.function.arguments)?.length ?? 0;
+  }
+
+  return Math.max(Math.floor(characterCount / 4), 1) + 6;
+}
+
 function toApiMessages() {
   return messages.value
     .filter(
@@ -700,6 +848,8 @@ function applyHistory(records: ChatHistoryRecord[]) {
       agentAvatarUrl: messageAvatarUrl(item) || undefined,
       agentName: item.agent_name || undefined,
       metrics: item.metrics ?? undefined,
+      modelConfigId: item.model_config_id ?? null,
+      imageUnderstandModelConfigId: item.image_understand_model_config_id ?? null,
     }));
   const toolCallMap = new Map<string, ChatToolCall>();
   for (const message of mapped) {
@@ -1014,7 +1164,8 @@ function handleEditImageFileSelection(event: Event) {
 
 function addImageFilesTo(target: ChatImageAttachment[], files: File[]) {
   if (!supportsMultimodalInput.value) {
-    showChatError("当前模型不支持多模态输入，无法添加图片。");
+    showChatError("当前模型不支持多模态输入。请先在对话模型或图片理解模型中选择支持多模态的模型。");
+    openPicker.value = "model";
     return;
   }
   for (const file of files) {
@@ -1273,7 +1424,11 @@ async function openSession(sessionId: string) {
   workspaceChanges.value = (await chat.listWorkspaceChanges(sessionId)).changes;
   selectedWorkspaceChangeId.value = workspaceChanges.value[0]?.change_id ?? null;
   const firstRecord = result.messages[0];
-  if (firstRecord?.agent_id && services.value.some((a) => a.config_id === firstRecord.agent_id)) {
+  const serviceSwitched =
+    !!firstRecord?.agent_id &&
+    services.value.some((a) => a.config_id === firstRecord.agent_id) &&
+    firstRecord.agent_id !== selectedServiceId.value;
+  if (serviceSwitched) {
     selectedServiceId.value = firstRecord.agent_id;
   }
   workspacePath.value =
@@ -1291,6 +1446,25 @@ async function openSession(sessionId: string) {
     };
   }
   applyHistory(result.messages);
+  const sessionModelId = [...result.messages]
+    .reverse()
+    .find((record) => record.role === "user" && record.model_config_id)?.model_config_id;
+  if (sessionModelId && chatModels.value.some((model) => model.config_id === sessionModelId)) {
+    selectedModelId.value = sessionModelId;
+    persistChatModelSelection();
+  }
+  const sessionImageUnderstandModelId = [...result.messages]
+    .reverse()
+    .find((record) => record.role === "user" && record.image_understand_model_config_id)
+    ?.image_understand_model_config_id;
+  if (
+    sessionImageUnderstandModelId &&
+    imageUnderstandingModels.value.some((model) => model.config_id === sessionImageUnderstandModelId)
+  ) {
+    imageUnderstandingModelId.value = sessionImageUnderstandModelId;
+    persistChatModelSelection();
+  }
+  pendingSessionModelId = serviceSwitched ? (sessionModelId ?? null) : null;
   messageBranches.value = result.branches;
   editingMessage.value = null;
 }
@@ -1405,7 +1579,7 @@ async function submitEditingMessage() {
     return;
   }
   if (!supportsMultimodalInput.value && attachments.length > 0) {
-    showChatError("当前模型不支持多模态输入，无法发送图片。");
+    showChatError("当前模型不支持多模态输入。请选择支持多模态的模型后再发送图片。");
     return;
   }
   if (attachments.some((attachment) => attachment.uploading || attachment.error)) {
@@ -1417,7 +1591,13 @@ async function submitEditingMessage() {
     const forked = await chat.forkSession(activeSessionId.value, editing.messageId);
     await openSession(forked.session_id);
     editingMessage.value = null;
-    await sendMessageWithText(content, false, { attachments, isEdit: true });
+    const sourceMessage = messages.value.find((message) => message.id === editing.messageId);
+    await sendMessageWithText(content, false, {
+      attachments,
+      modelConfigId: sourceMessage?.modelConfigId || null,
+      imageUnderstandModelConfigId: sourceMessage?.imageUnderstandModelConfigId || null,
+      isEdit: true,
+    });
   } catch (error) {
     showChatError(`创建对话分支失败: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -1433,13 +1613,18 @@ async function resendMessage(message: ChatMessage) {
     return;
   }
   if (!supportsMultimodalInput.value && attachments.length > 0) {
-    showChatError("当前模型不支持多模态输入，无法发送图片。");
+    showChatError("当前模型不支持多模态输入。请选择支持多模态的模型后再发送图片。");
     return;
   }
   try {
     const forked = await chat.forkSession(activeSessionId.value, message.id);
     await openSession(forked.session_id);
-    await sendMessageWithText(content, false, { attachments, isEdit: true });
+    await sendMessageWithText(content, false, {
+      attachments,
+      modelConfigId: message.modelConfigId || null,
+      imageUnderstandModelConfigId: message.imageUnderstandModelConfigId || null,
+      isEdit: true,
+    });
   } catch (error) {
     showChatError(`创建对话分支失败: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -1603,10 +1788,19 @@ function startNewSession() {
   agentsMdEditingKey.value = "";
   agentsMdEditorContent.value = "";
   agentsMdError.value = "";
+  restoreChatModelSelection();
 }
 
 function selectModel(id: string) {
+  pendingSessionModelId = null;
   selectedModelId.value = id;
+  persistChatModelSelection();
+  openPicker.value = null;
+}
+
+function selectImageUnderstandingModel(id: string) {
+  imageUnderstandingModelId.value = id;
+  persistChatModelSelection();
   openPicker.value = null;
 }
 
@@ -1630,7 +1824,11 @@ function closePickersOnClickOutside(event: MouseEvent) {
 watch(selectedServiceId, async () => {
   await reloadSessions();
   startNewSession();
-  selectedModelId.value = defaultAgentModelId.value;
+  if (pendingSessionModelId && chatModels.value.some((model) => model.config_id === pendingSessionModelId)) {
+    selectedModelId.value = pendingSessionModelId;
+    persistChatModelSelection();
+  }
+  pendingSessionModelId = null;
   selectedThinkingType.value = "";
   selectedReasoningEffort.value = "";
   if (!isWorkspaceService.value) {
@@ -1705,6 +1903,26 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
     return;
   }
 
+  if (event.type.startsWith("context_compaction_")) {
+    const targetId = event.message_id || streamState.assistantMessageId;
+    const message = targetId ? messages.value.find((item) => item.id === targetId) : undefined;
+    if (!message) return;
+    if (event.type === "context_compaction_start") {
+      message.contextCompaction = { status: "running" };
+    } else if (event.type === "context_compaction_complete") {
+      message.contextCompaction = {
+        status: "completed",
+        estimatedTokensBefore: event.estimated_tokens_before,
+        estimatedTokensAfter: event.estimated_tokens_after,
+        durationMs: event.duration_ms,
+      };
+    } else {
+      message.contextCompaction = { status: "failed" };
+    }
+    scrollToBottom();
+    return;
+  }
+
   if (event.type === "ask_user" && event.question) {
     pendingAskUser.value = {
       question: event.question,
@@ -1735,6 +1953,21 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   }
 
   if (event.type === "start") {
+    streamState.taskId = event.task_id ?? null;
+    activeChatTask = event.task_id && event.session_id
+      ? { sessionId: event.session_id, taskId: event.task_id }
+      : null;
+    if (
+      event.task_id &&
+      event.session_id &&
+      pendingWorkspaceStop?.streamController === activeStreamController &&
+      (pendingWorkspaceStop.sessionId == null || pendingWorkspaceStop.sessionId === event.session_id)
+    ) {
+      pendingWorkspaceStop = null;
+      chat.stop(event.session_id, event.task_id).catch((error) => {
+        console.warn("Failed to stop pending Workspace chat task:", error);
+      });
+    }
     if (streamState.requestedSessionId && activeSessionId.value !== streamState.requestedSessionId) {
       streamState.foreground = false;
     } else if (!streamState.requestedSessionId && activeSessionId.value) {
@@ -1932,7 +2165,26 @@ async function sendMessage() {
 
 function stopInference() {
   workspaceTaskInterrupted.value = true;
-  activeStreamController?.abort();
+  const sessionTask = activeSessionId.value
+    ? sessions.value.find((session) => session.session_id === activeSessionId.value)
+    : undefined;
+  const task = sessionTask?.running_task_id
+    ? { sessionId: activeSessionId.value, taskId: sessionTask.running_task_id }
+    : activeChatTask?.sessionId === activeSessionId.value
+      ? activeChatTask
+      : null;
+  if (task) {
+    chat.stop(task.sessionId, task.taskId).catch((error) => {
+      console.warn("Failed to stop Workspace chat task:", error);
+    });
+  } else if (isWorkspaceService.value && activeStreamController) {
+    pendingWorkspaceStop = {
+      streamController: activeStreamController,
+      sessionId: activeSessionId.value || null,
+    };
+  } else {
+    activeStreamController?.abort();
+  }
 }
 
 function isAbortError(error: unknown): boolean {
@@ -1946,6 +2198,10 @@ async function submitAskUserAnswer() {
 async function decideToolCallLimit(continuation: "continue" | "stop") {
   if (!activeSessionId.value || !selectedServiceId.value || !pendingAskUser.value?.toolCallLimit || toolCallLimitDecisionLoading.value) return;
   const pendingRequest = pendingAskUser.value;
+  const continuationImageModelId = [...messages.value]
+    .reverse()
+    .find((message) => message.role === "user" && message.imageUnderstandModelConfigId)
+    ?.imageUnderstandModelConfigId;
   toolCallLimitDecisionLoading.value = true;
   clearPendingAskUser();
   activeRequestCount.value += 1;
@@ -1955,6 +2211,7 @@ async function decideToolCallLimit(continuation: "continue" | "stop") {
       session_id: activeSessionId.value,
       stream: true,
       model_config_id: selectedModelId.value || null,
+      image_understand_model_config_id: continuationImageModelId || imageUnderstandingModelId.value || null,
       thinking_type: selectedThinkingType.value || null,
       reasoning_effort: selectedReasoningEffort.value || null,
       workspace_path: isWorkspaceService.value ? workspacePath.value.trim() || null : null,
@@ -1962,7 +2219,7 @@ async function decideToolCallLimit(continuation: "continue" | "stop") {
       messages: [],
     }, (event) => applyStreamEvent(event, {
       assistantMessageId: null, toolMessageId: null, awaitingPostToolContent: false, pendingNewConversation: null,
-      requestText: "", requestedSessionId: activeSessionId.value, sessionId: activeSessionId.value, foreground: true,
+      requestText: "", requestedSessionId: activeSessionId.value, sessionId: activeSessionId.value, taskId: null, foreground: true,
     }));
     await reloadSessions();
     await openSession(activeSessionId.value);
@@ -1994,7 +2251,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
   const userText = rawInput.trim();
   const sentAttachments = fromAskUser ? [] : options.attachments ?? draftImageAttachments.value;
   if (!fromAskUser && sentAttachments.length > 0 && !supportsMultimodalInput.value) {
-    showChatError("当前模型不支持多模态输入，无法发送图片。");
+    showChatError("当前模型不支持多模态输入。请选择支持多模态的模型后再发送图片。");
     return;
   }
   if (!userText && (!fromAskUser && sentAttachments.length === 0)) {
@@ -2043,6 +2300,7 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
     requestText: userText,
     requestedSessionId: activeSessionId.value,
     sessionId: activeSessionId.value,
+    taskId: null,
     foreground: true,
   };
   workspaceTaskInterrupted.value = false;
@@ -2056,6 +2314,8 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
       toolCalls: [],
       toolCallId: null,
       linkedToolCall: null,
+      modelConfigId: options.modelConfigId ?? (selectedModelId.value || null),
+      imageUnderstandModelConfigId: options.imageUnderstandModelConfigId ?? (imageUnderstandingModelId.value || null),
       imageAttachments: sentAttachments,
     };
     messages.value.push(userMessage);
@@ -2083,7 +2343,8 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
         agent_id: selectedServiceId.value,
         session_id: activeSessionId.value || null,
         stream: true,
-        model_config_id: selectedModelId.value || null,
+        model_config_id: (options.modelConfigId ?? selectedModelId.value) || null,
+        image_understand_model_config_id: (options.imageUnderstandModelConfigId ?? imageUnderstandingModelId.value) || null,
         thinking_type: selectedThinkingType.value || null,
         reasoning_effort: selectedReasoningEffort.value || null,
         workspace_path: isWorkspaceService.value ? workspacePath.value.trim() || null : null,
@@ -2105,6 +2366,12 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
       applyInferenceFailure(streamState, (error as Error).message);
     }
   } finally {
+    if (pendingWorkspaceStop?.streamController === streamController) {
+      pendingWorkspaceStop = null;
+    }
+    if (activeChatTask?.taskId === streamState.taskId) {
+      activeChatTask = null;
+    }
     if (activeStreamController === streamController) {
       activeStreamController = null;
     }
@@ -2115,16 +2382,18 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean, optio
 async function load() {
   servicesLoading.value = true;
   try {
-    const [connections, llm, loadedAgents] = await Promise.all([
+    const [connections, llm, loadedAgents, contextCompactionSettings] = await Promise.all([
       system.connections.list(),
       system.llm.list(),
       system.services.list(),
+      getContextCompactionSettings(),
     ]);
     stats.connections = connections.length;
     stats.llm = llm.length;
     stats.services = loadedAgents.length;
     services.value = loadedAgents;
     llmModels.value = llm;
+    contextCompactionPercent.value = contextCompactionSettings.percent;
 
     const eligible = loadedAgents.filter((agent) => CHAT_ELIGIBLE_SERVICE_TYPES.has(agent.role_service_type.type));
     const requestedAgent = props.agentId
@@ -2139,7 +2408,7 @@ async function load() {
     ) {
       selectedServiceId.value = eligible[0]?.config_id ?? loadedAgents[0]?.config_id ?? "";
     }
-    selectedModelId.value = defaultAgentModelId.value;
+    restoreChatModelSelection();
   } finally {
     servicesLoading.value = false;
   }
@@ -2225,10 +2494,15 @@ onUnmounted(() => {
     chatModels,
     selectedModelLlmConfig,
     supportsMultimodalInput,
+    imageUnderstandingModelId,
+    imageUnderstandingModels,
+    selectedImageUnderstandingModelLabel,
+    selectImageUnderstandingModel,
     defaultAgentModelId,
     selectedModelLabel,
     selectedThinkingLabel,
     selectedEffortLabel,
+    contextTokenUsage,
     canSend,
     selectedAgentAvatarUrl,
     selectedAgentAvatarFallback,

@@ -3,9 +3,10 @@ use std::sync::Arc;
 use log::info;
 use serde_json::Value;
 
-use zihuan_core::agent::tools::{ToolCallingEngine, Tool};
+use zihuan_core::agent::tools::{Tool, ToolCallingEngine};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::graph::object_storage::S3Ref;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole};
@@ -13,12 +14,13 @@ use zihuan_core::rag::WebSearchEngine;
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_core::tool_runtime::ToolRunDuration;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_core::graph::object_storage::S3Ref;
 
-use zihuan_core::memory_agent::{MemoryAgentResources, MemoryBrainAgent, MemoryBrainAgentContextTool, MemoryBrainAgentTool};
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
 use super::deep_research::RunDeepResearchSubagentTool;
 use crate::qq_chat::tool_quota::{wrap_brain_tool_with_quota, QqChatToolQuotaContext};
+use zihuan_core::memory_agent::{
+    MemoryAgentResources, MemoryBrainAgent, MemoryBrainAgentContextTool, MemoryBrainAgentTool,
+};
 
 const LOG_PREFIX: &str = "[ResearchSubagent]";
 
@@ -168,7 +170,9 @@ impl Tool for RunResearchSubagentTool {
 
             let trimmed = answer.trim().to_string();
             if trimmed.is_empty() {
-                return Err(Error::ValidationError("research subagent returned empty response".to_string()));
+                return Err(Error::ValidationError(
+                    "research subagent returned empty response".to_string(),
+                ));
             }
 
             info!("{LOG_PREFIX} research completed, answer length: {}", trimmed.len());

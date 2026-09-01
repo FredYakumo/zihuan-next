@@ -1,25 +1,26 @@
-use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
-use zihuan_core::config::role_services::load_role_services;
 use redis::AsyncCommands;
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sqlx::Row as SqlxRow;
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::config::role_services::load_role_services;
+use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 
 use crate::system_config::load_connections;
+use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::storage::{
-    build_relational_db_connection_for_connection, create_memory_record_with_vector, delete_memory_record,
-    get_memory_record, list_elasticsearch_memory_keys, list_recent_memory_keys,
+    build_relational_db_connection_for_connection, create_memory_record_with_vector,
+    delete_memory_record, get_memory_record, list_elasticsearch_memory_keys,
+    list_recent_memory_keys,
     resource_resolver::{self, build_rdb_ref},
     search_elasticsearch_images, search_elasticsearch_memory, search_memory_content_by_vector,
     update_memory_record_with_vector,
     weaviate::build_weaviate_ref as build_storage_weaviate_ref,
-    AgentMemoryAccessContext, AgentMemorySearchHit, AgentMemoryUpsert, ConnectionKind, WeaviateClient,
-    WeaviateCollectionSchema,
+    AgentMemoryAccessContext, AgentMemorySearchHit, AgentMemoryUpsert, ConnectionKind,
+    WeaviateClient, WeaviateCollectionSchema,
 };
-use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_ims_service::qq_chat::{list_message_rate_limit_usage, reset_message_rate_limit_usage};
 
 use super::config::{render_bad_request, render_internal_error};
@@ -57,7 +58,11 @@ struct MessageRecordResponse {
 }
 
 #[handler]
-pub async fn query_qq_chat_rate_limit_usage(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn query_qq_chat_rate_limit_usage(
+    req: &mut Request,
+    res: &mut Response,
+    _depot: &mut Depot,
+) {
     let query: QqChatRateLimitUsageQuery = match req.parse_queries() {
         Ok(query) => query,
         Err(err) => return render_bad_request(res, err.to_string()),
@@ -78,7 +83,11 @@ pub async fn query_qq_chat_rate_limit_usage(req: &mut Request, res: &mut Respons
 }
 
 #[handler]
-pub async fn reset_qq_chat_rate_limit_usage(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn reset_qq_chat_rate_limit_usage(
+    req: &mut Request,
+    res: &mut Response,
+    _depot: &mut Depot,
+) {
     let body: QqChatRateLimitUsageResetRequest = match req.parse_json().await {
         Ok(body) => body,
         Err(err) => return render_bad_request(res, err.to_string()),
@@ -115,7 +124,9 @@ pub async fn query_mysql(req: &mut Request, res: &mut Response, _depot: &mut Dep
 
     let mysql_ref = match build_rdb_ref(Some(&connection_id), &connections).await {
         Ok(Some(zihuan_core::data_refs::RelationalDbConnection::MySql(r))) => r,
-        Ok(Some(_)) => return render_bad_request(res, "connection is not a MySQL connection".into()),
+        Ok(Some(_)) => {
+            return render_bad_request(res, "connection is not a MySQL connection".into())
+        }
         Ok(None) => return render_bad_request(res, "connection not found".into()),
         Err(e) => return render_internal_error(res, e),
     };
@@ -240,12 +251,7 @@ pub async fn query_mysql(req: &mut Request, res: &mut Response, _depot: &mut Dep
         Err(e) => return render_internal_error(res, format!("mysql query failed: {e}")),
     };
 
-    res.render(Json(MysqlExploreResponse {
-        records,
-        total,
-        page,
-        page_size,
-    }));
+    res.render(Json(MysqlExploreResponse { records, total, page, page_size }));
 }
 
 fn truncate_preview(value: &str, max_chars: usize) -> String {
@@ -306,13 +312,17 @@ pub async fn query_redis(req: &mut Request, res: &mut Response, _depot: &mut Dep
             if let Some(ref url) = redis_ref.url {
                 let client = match redis::Client::open(url.as_str()) {
                     Ok(c) => c,
-                    Err(e) => return render_internal_error(res, format!("redis client open failed: {e}")),
+                    Err(e) => {
+                        return render_internal_error(res, format!("redis client open failed: {e}"))
+                    }
                 };
                 match client.get_tokio_connection().await {
                     Ok(conn) => {
                         *cm = Some(conn);
                     }
-                    Err(e) => return render_internal_error(res, format!("redis connect failed: {e}")),
+                    Err(e) => {
+                        return render_internal_error(res, format!("redis connect failed: {e}"))
+                    }
                 }
             } else {
                 return render_bad_request(res, "redis connection has no url".into());
@@ -370,10 +380,11 @@ pub async fn query_redis(req: &mut Request, res: &mut Response, _depot: &mut Dep
             None => break,
         };
 
-        let key_type: String = match redis::cmd("TYPE").arg(key.as_str()).query_async::<_, String>(conn).await {
-            Ok(t) => t,
-            Err(_) => "unknown".to_string(),
-        };
+        let key_type: String =
+            match redis::cmd("TYPE").arg(key.as_str()).query_async::<_, String>(conn).await {
+                Ok(t) => t,
+                Err(_) => "unknown".to_string(),
+            };
 
         let ttl: i64 = match conn.ttl::<_, i64>(key).await {
             Ok(t) => t,
@@ -453,7 +464,11 @@ pub async fn query_rustfs(req: &mut Request, res: &mut Response, _depot: &mut De
         Err(e) => return render_internal_error(res, e),
     };
 
-    let prefix_opt = if prefix.is_empty() { None } else { Some(prefix.as_str()) };
+    let prefix_opt = if prefix.is_empty() {
+        None
+    } else {
+        Some(prefix.as_str())
+    };
 
     let output = match s3_ref.list_objects(prefix_opt, Some("/"), Some(1000)).await {
         Ok(o) => o,
@@ -602,7 +617,8 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
                 None => {
                     return render_bad_request(
                         res,
-                        "embedding_model_ref_id is required for agent_memory semantic search".into(),
+                        "embedding_model_ref_id is required for agent_memory semantic search"
+                            .into(),
                     )
                 }
             };
@@ -615,7 +631,9 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
             };
             let vector = match tokio::task::block_in_place(|| embedding_model.inference(&query)) {
                 Ok(vector) if !vector.is_empty() => vector,
-                Ok(_) => return render_internal_error(res, "embedding model returned an empty vector"),
+                Ok(_) => {
+                    return render_internal_error(res, "embedding model returned an empty vector")
+                }
                 Err(err) => return render_internal_error(res, err),
             };
             match search_memory_content_by_vector(&weaviate_ref, &access, &vector, limit) {
@@ -997,12 +1015,9 @@ pub async fn query_service_messages(req: &mut Request, res: &mut Response, _depo
     .filter(|(_, value)| !value.trim().is_empty())
     .collect::<Vec<_>>();
     match query_service_message_rows(connection, &filters, page, page_size).await {
-        Ok((records, total)) => res.render(Json(MysqlExploreResponse {
-            records,
-            total,
-            page,
-            page_size,
-        })),
+        Ok((records, total)) => {
+            res.render(Json(MysqlExploreResponse { records, total, page, page_size }))
+        }
         Err(error) => render_internal_error(res, error),
     }
 }
@@ -1017,7 +1032,9 @@ async fn query_service_message_rows(
     let mut values = Vec::new();
     for (key, value) in filters {
         let clause = match *key {
-            "message_id" | "sender_id" | "sender_name" | "group_id" | "content" => format!("{key} LIKE ?"),
+            "message_id" | "sender_id" | "sender_name" | "group_id" | "content" => {
+                format!("{key} LIKE ?")
+            }
             "send_time_start" => "send_time >= ?".to_string(),
             "send_time_end" => "send_time <= ?".to_string(),
             _ => continue,
@@ -1047,7 +1064,8 @@ async fn query_service_message_rows(
             for value in &values {
                 data_query = data_query.bind(value);
             }
-            let rows = data_query.bind(page_size).bind((page - 1) * page_size).fetch_all($pool).await?;
+            let rows =
+                data_query.bind(page_size).bind((page - 1) * page_size).fetch_all($pool).await?;
             let mut records = Vec::with_capacity(rows.len());
             for row in rows {
                 records.push(MessageRecordResponse {
@@ -1057,7 +1075,10 @@ async fn query_service_message_rows(
                     send_time: $time(&row),
                     group_id: row.try_get("group_id").unwrap_or(None),
                     group_name: row.try_get("group_name").unwrap_or(None),
-                    content: truncate_preview(&row.try_get::<String, _>("content").unwrap_or_default(), 500),
+                    content: truncate_preview(
+                        &row.try_get::<String, _>("content").unwrap_or_default(),
+                        500,
+                    ),
                     at_target_list: row.try_get("at_target_list").unwrap_or(None),
                     media_json: row.try_get("media_json").unwrap_or(None),
                 });
@@ -1113,13 +1134,18 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
             Some(WeaviateCollectionSchema::AgentMemory),
         ) {
             Ok(Some(reference)) => reference,
-            Ok(None) => return render_bad_request(res, "memory connection is not configured".into()),
+            Ok(None) => {
+                return render_bad_request(res, "memory connection is not configured".into())
+            }
             Err(error) => return render_internal_error(res, error),
         };
         let hits = match query.as_deref() {
             Some(value) => {
                 let Some(model_id) = embedding_id.as_deref() else {
-                    return render_bad_request(res, "Service has no memory embedding model configured".into());
+                    return render_bad_request(
+                        res,
+                        "Service has no memory embedding model configured".into(),
+                    );
                 };
                 let vector = match service_memory_query_vector(model_id, value).await {
                     Ok(vector) => vector,
@@ -1138,7 +1164,11 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
         res.render(Json(ServiceMemoryResponse {
             items: memory_items(
                 hits,
-                if query.is_some() { "semantic" } else { "recent" },
+                if query.is_some() {
+                    "semantic"
+                } else {
+                    "recent"
+                },
                 "weaviate",
                 true,
             ),
@@ -1162,7 +1192,10 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
     let hits = match query.as_deref() {
         Some(value) => {
             let Some(model_id) = embedding_id.as_deref() else {
-                return render_bad_request(res, "Service has no memory embedding model configured".into());
+                return render_bad_request(
+                    res,
+                    "Service has no memory embedding model configured".into(),
+                );
             };
             let vector = match service_memory_query_vector(model_id, value).await {
                 Ok(vector) => vector,
@@ -1207,11 +1240,16 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
         Err(error) => return render_bad_request(res, error.to_string()),
     };
     let (weaviate_id, elasticsearch_id, embedding_id) = service_image_config(&agent);
-    let (name_vector, description_vector) =
-        match embedding_vectors(embedding_id.as_deref(), name_query.as_deref(), description_query.as_deref()).await {
-            Ok(value) => value,
-            Err(error) => return render_internal_error(res, error),
-        };
+    let (name_vector, description_vector) = match embedding_vectors(
+        embedding_id.as_deref(),
+        name_query.as_deref(),
+        description_query.as_deref(),
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => return render_internal_error(res, error),
+    };
     if let Some(connection_id) = weaviate_id {
         let reference = match resource_resolver::build_weaviate_ref(
             Some(&connection_id),
@@ -1219,15 +1257,16 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
             Some(WeaviateCollectionSchema::ImageSemantic),
         ) {
             Ok(Some(reference)) => reference,
-            Ok(None) => return render_bad_request(res, "image connection is not configured".into()),
+            Ok(None) => {
+                return render_bad_request(res, "image connection is not configured".into())
+            }
             Err(error) => return render_internal_error(res, error),
         };
         let properties = image_property_names();
         let mut items = Vec::new();
-        for (query, field) in [
-            (name_query.as_deref(), "name"),
-            (description_query.as_deref(), "description"),
-        ] {
+        for (query, field) in
+            [(name_query.as_deref(), "name"), (description_query.as_deref(), "description")]
+        {
             if let Some(query) = query {
                 let args = format!(
                     "bm25: {{ query: \"{}\", properties: [\"{}\"] }}, limit: {}",
@@ -1235,7 +1274,9 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
                     field,
                     limit
                 );
-                if let Ok(response) = reference.query_with_args(&reference.class_name, &args, &properties) {
+                if let Ok(response) =
+                    reference.query_with_args(&reference.class_name, &args, &properties)
+                {
                     merge_image_items(&mut items, weaviate_image_items(response, "keyword"));
                 }
             }
@@ -1295,16 +1336,17 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
             image_item(
                 hit.object_id,
                 &hit.properties,
-                if hit.keyword_match { "keyword" } else { "semantic" },
+                if hit.keyword_match {
+                    "keyword"
+                } else {
+                    "semantic"
+                },
                 hit.score,
                 "elasticsearch",
             )
         })
         .collect();
-    res.render(Json(ServiceImageResponse {
-        items,
-        backend: "elasticsearch",
-    }));
+    res.render(Json(ServiceImageResponse { items, backend: "elasticsearch" }));
 }
 
 fn load_service_and_connections(
@@ -1457,7 +1499,9 @@ fn image_item(
 }
 fn merge_image_items(target: &mut Vec<ServiceImageItem>, incoming: Vec<ServiceImageItem>) {
     for item in incoming {
-        if let Some(existing) = target.iter_mut().find(|current| current.object_id == item.object_id) {
+        if let Some(existing) =
+            target.iter_mut().find(|current| current.object_id == item.object_id)
+        {
             if !existing.match_kinds.contains(&item.match_kinds[0]) {
                 existing.match_kinds.push(item.match_kinds[0]);
             }
@@ -1482,9 +1526,9 @@ async fn resolve_agent_rdb_connection(
             agent_id
         ));
     };
-    let rdb_id = config
-        .resolved_rdb_id()
-        .ok_or_else(|| zihuan_core::string_error!("QQ Chat Agent Service '{}' has no rdb_id configured", agent_id))?;
+    let rdb_id = config.resolved_rdb_id().ok_or_else(|| {
+        zihuan_core::string_error!("QQ Chat Agent Service '{}' has no rdb_id configured", agent_id)
+    })?;
     let connections = load_connections()?;
     build_relational_db_connection_for_connection(rdb_id, &connections).await
 }

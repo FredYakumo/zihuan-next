@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::model_inference::llm::tooling::ToolCalls;
 use crate::message_part::MessagePart;
+use crate::model_inference::llm::tooling::ToolCalls;
 
 use super::message_role::MessageRole;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -149,7 +149,11 @@ impl LLMMessage {
     }
 
     /// Dispatch this message to the concrete provider/style-specific payload converter.
-    pub fn convert(&self, style: LLMMessageConvertStyle, include_reasoning_content: bool) -> Vec<Value> {
+    pub fn convert(
+        &self,
+        style: LLMMessageConvertStyle,
+        include_reasoning_content: bool,
+    ) -> Vec<Value> {
         match style {
             LLMMessageConvertStyle::OpenAiChatCompletions => {
                 super::convert::openai_chat_completions::convert(self, include_reasoning_content)
@@ -160,7 +164,9 @@ impl LLMMessage {
                     include_reasoning_content,
                 )
             }
-            LLMMessageConvertStyle::OpenAiResponses => super::convert::openai_responses::convert(self),
+            LLMMessageConvertStyle::OpenAiResponses => {
+                super::convert::openai_responses::convert(self)
+            }
             LLMMessageConvertStyle::OpenAiResponsesMessageCompat => {
                 super::convert::openai_responses_message_compat::convert(self)
             }

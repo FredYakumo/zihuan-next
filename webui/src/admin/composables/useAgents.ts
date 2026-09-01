@@ -724,7 +724,7 @@ function removeTool(index: number) {
 }
 
 function validateImageUnderstandModelSelection(): string | null {
-  if (form.type !== "qq_chat" || !form.default_tools_enabled.image_understand) {
+  if (!form.default_tools_enabled.image_understand) {
     return null;
   }
   if (form.image_understand_llm_ref_id) {

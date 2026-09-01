@@ -113,6 +113,13 @@
   line-height: 1.5;
 }
 
+.context-length-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .llm-switches {
   display: grid;
   gap: 12px;

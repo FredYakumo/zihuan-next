@@ -28,14 +28,20 @@ impl SpecialPluginInstaller for SqliteSpecialPluginInstaller {
             plugin.installation_method = "embedded".to_string();
             let database_path = sqlite_database_path(&plugin.id);
             let parent = database_path.parent().ok_or_else(|| {
-                format!("SQLite database path '{}' has no parent directory", database_path.display())
+                format!(
+                    "SQLite database path '{}' has no parent directory",
+                    database_path.display()
+                )
             })?;
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|error| format!("Failed to create SQLite data directory '{}': {error}", parent.display()))?;
-            let mut database = sqlx::SqliteConnection::connect(&format!("sqlite://{}?mode=rwc", database_path.display()))
-                .await
-                .map_err(|error| format!("Failed to create SQLite database: {error}"))?;
+            tokio::fs::create_dir_all(parent).await.map_err(|error| {
+                format!("Failed to create SQLite data directory '{}': {error}", parent.display())
+            })?;
+            let mut database = sqlx::SqliteConnection::connect(&format!(
+                "sqlite://{}?mode=rwc",
+                database_path.display()
+            ))
+            .await
+            .map_err(|error| format!("Failed to create SQLite database: {error}"))?;
             zihuan_core::database::ensure_tables_sqlite(&mut database)
                 .await
                 .map_err(|error| format!("Failed to initialize SQLite database: {error}"))?;
@@ -44,14 +50,17 @@ impl SpecialPluginInstaller for SqliteSpecialPluginInstaller {
                 config_id: format!("plugin-sqlite-{}", plugin.id),
                 name: format!("{} SQLite", plugin.name),
                 enabled: true,
-                kind: ConnectionKind::Sqlite(SqliteConnection { path: database_path.to_string_lossy().to_string() }),
+                kind: ConnectionKind::Sqlite(SqliteConnection {
+                    path: database_path.to_string_lossy().to_string(),
+                }),
                 updated_at: chrono::Utc::now().to_rfc3339(),
             };
             storage::upsert_connection(connection.clone()).map_err(|error| error.to_string())?;
             plugin.connection_ids = vec![connection.config_id];
             plugin.status = "installed".to_string();
             plugin.updated_at = chrono::Utc::now().to_rfc3339();
-            plugin.extra_install_metadata["database_path"] = Value::String(database_path.to_string_lossy().to_string());
+            plugin.extra_install_metadata["database_path"] =
+                Value::String(database_path.to_string_lossy().to_string());
             save_plugin_record(&plugin)?;
             Ok(plugin)
         })
@@ -62,7 +71,9 @@ impl SpecialPluginInstaller for SqliteSpecialPluginInstaller {
         plugin: &'a PluginRecord,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
-            let Some(path) = plugin.extra_install_metadata.get("database_path").and_then(Value::as_str) else {
+            let Some(path) =
+                plugin.extra_install_metadata.get("database_path").and_then(Value::as_str)
+            else {
                 return Ok(());
             };
             match tokio::fs::remove_file(path).await {

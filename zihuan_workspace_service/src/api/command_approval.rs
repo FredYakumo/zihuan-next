@@ -26,7 +26,7 @@ pub async fn approve_command_execution(req: &mut Request, res: &mut Response) {
         res.render(Json(json!({ "error": "session_id and command must not be empty" })));
         return;
     }
-    match body.decision.as_str() {
+    let accepted = match body.decision.as_str() {
         "once" => approve_command(&session_id, &body.command, false),
         "session" => approve_command(&session_id, &body.command, true),
         "reject" => reject_command(&session_id, &body.command),
@@ -35,6 +35,11 @@ pub async fn approve_command_execution(req: &mut Request, res: &mut Response) {
             res.render(Json(json!({ "error": "decision must be once, session, or reject" })));
             return;
         }
+    };
+    if !accepted {
+        res.status_code(StatusCode::CONFLICT);
+        res.render(Json(json!({ "error": "no matching pending command approval" })));
+        return;
     }
     res.render(Json(json!({ "ok": true })));
 }
