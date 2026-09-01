@@ -1610,15 +1610,17 @@
   display: grid;
   padding: 20px;
   place-items: center;
-  background: rgb(0 0 0 / 55%);
+  background: color-mix(in srgb, var(--admin-bg) 66%, transparent 34%);
+  backdrop-filter: blur(2px);
 }
 
 .chat-error-dialog {
-  width: min(520px, 100%);
-  border: 1px solid color-mix(in srgb, var(--admin-danger, #ef4444) 45%, var(--admin-border) 55%);
-  border-radius: 14px;
+  width: min(480px, 100%);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--admin-danger, #e34d59) 72%, var(--admin-border) 28%);
+  border-radius: var(--td-radius-default, 2px);
   background: var(--admin-bg-elevated);
-  box-shadow: 0 20px 55px rgb(0 0 0 / 28%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
 }
 
 .chat-error-dialog-header,
@@ -1630,18 +1632,23 @@
 }
 
 .chat-error-dialog-header {
+  min-height: 56px;
+  padding-top: 0;
+  padding-bottom: 0;
   border-bottom: 1px solid var(--admin-border);
-  color: var(--admin-danger, #ef4444);
+  color: var(--admin-danger, #e34d59);
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .chat-error-dialog-header button {
   display: grid;
-  width: 30px;
-  height: 30px;
-  padding: 5px;
+  width: 28px;
+  height: 28px;
+  padding: 4px;
   place-items: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--td-radius-small, 2px);
   color: var(--admin-muted);
   background: transparent;
   cursor: pointer;
@@ -1653,16 +1660,37 @@
 }
 
 .chat-error-dialog-body {
-  padding: 18px 16px;
+  min-height: 72px;
+  padding: 20px 16px;
   color: var(--admin-ink);
+  font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .chat-error-dialog-actions {
+  min-height: 68px;
   justify-content: flex-end;
   border-top: 1px solid var(--admin-border);
+}
+
+.chat-error-dialog-actions .btn.primary {
+  min-width: 80px;
+  padding: 8px 20px;
+  border: 1px solid var(--td-brand-color, var(--admin-accent));
+  border-radius: var(--td-radius-default, 2px);
+  background: var(--td-brand-color, var(--admin-accent));
+  box-shadow: none;
+  color: var(--td-text-color-anti, #fff);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.chat-error-dialog-actions .btn.primary:hover {
+  transform: none;
+  border-color: var(--td-brand-color-hover, var(--admin-accent));
+  background: var(--td-brand-color-hover, var(--admin-accent));
 }
 
 .chat-input-right {
