@@ -249,17 +249,11 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
     label: "save_image",
     description: "保存图片到图片库",
   },
-  {
-    id: "image_understand",
-    label: "image_understand",
-    description: "按 media_id 理解图片内容",
-  },
   { id: "memory_agent", label: "memory_agent", description: "由记忆 Agent 自动检索或更新记忆" },
   { id: "memory_agent_with_context", label: "memory_agent_with_context", description: "按聊天上下文搜索或更新记忆" },
 ];
 
 export const WORKSPACE_DEFAULT_TOOLS: DefaultToolOption[] = [
-  { id: "image_understand", label: "image_understand", description: "按 media_id 理解图片内容" },
   { id: "web_search", label: "web_search", description: "联网搜索并读取网页内容" },
   { id: "read_file", label: "read_file", description: "读取文件内容" },
   { id: "list_dir", label: "list_dir", description: "列出目录内容" },
@@ -278,9 +272,7 @@ export const WORKSPACE_DEFAULT_TOOLS: DefaultToolOption[] = [
 ];
 
 export function defaultQqChatDefaultToolsEnabled(): Record<string, boolean> {
-  return Object.fromEntries(
-    QQ_CHAT_DEFAULT_TOOLS.map((tool) => [tool.id, true]),
-  );
+  return { image_understand: true, ...Object.fromEntries(QQ_CHAT_DEFAULT_TOOLS.map((tool) => [tool.id, true])) };
 }
 
 export function defaultQqChatEmotionDimensions(): QqChatEmotionDimensionFormItem[] {
@@ -304,7 +296,7 @@ export function defaultQqChatMessageRateLimitRule(): QqChatMessageRateLimitRuleF
   };
 }
 export function defaultWorkspaceDefaultToolsEnabled(): Record<string, boolean> {
-  return Object.fromEntries(WORKSPACE_DEFAULT_TOOLS.map((tool) => [tool.id, tool.id !== "web_search"]));
+  return { image_understand: true, ...Object.fromEntries(WORKSPACE_DEFAULT_TOOLS.map((tool) => [tool.id, tool.id !== "web_search"])) };
 }
 
 export function defaultLlmConfig(): LlmServiceConfig {
@@ -927,6 +919,9 @@ export function serviceFormFromConfig(
         form.default_tools_enabled[tool.id] = value;
       }
     }
+    if (typeof source.image_understand === "boolean") {
+      form.default_tools_enabled.image_understand = source.image_understand;
+    }
     const limitsSource = (agentType.tool_session_call_limits ?? {}) as Record<
       string,
       unknown
@@ -997,6 +992,9 @@ export function serviceFormFromConfig(
       if (typeof value === "boolean") {
         form.default_tools_enabled[tool.id] = value;
       }
+    }
+    if (typeof source.image_understand === "boolean") {
+      form.default_tools_enabled.image_understand = source.image_understand;
     }
   }
   // avatar_url is at root level for Workspace Agent Services
@@ -1084,6 +1082,7 @@ export function buildServicePayload(form: ServiceFormState): {
         form.default_tools_enabled[tool.id] !== false,
       ]),
     );
+    defaultToolsEnabled.image_understand = form.default_tools_enabled.image_understand !== false;
     return {
       ...common,
       role_service_type: {
@@ -1160,12 +1159,15 @@ export function buildServicePayload(form: ServiceFormState): {
       elasticsearch_memory_connection_id: form.workspace_elasticsearch_memory_connection_id || null,
       memory_backend: form.workspace_memory_backend || null,
       web_search_engine_connection_id: form.web_search_engine_connection_id || null,
-      default_tools_enabled: Object.fromEntries(
+      default_tools_enabled: {
+        image_understand: form.default_tools_enabled.image_understand !== false,
+        ...Object.fromEntries(
         WORKSPACE_DEFAULT_TOOLS.map((tool) => [
           tool.id,
           form.default_tools_enabled[tool.id] !== false,
         ]),
-      ),
+        ),
+      },
     },
   };
 }

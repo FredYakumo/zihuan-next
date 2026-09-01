@@ -68,66 +68,19 @@
             </t-form-item>
           </t-card>
 
-          <!-- 模型配置 -->
-          <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>{{ form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
-            <div class="agent-service-form-grid">
-              <t-form-item :label="form.type === 'workspace' ? '默认模型' : '主 Brain 模型'" required>
-                <t-select v-model="form.llm_ref_id" placeholder="请选择" @change="handlePrimaryModelChange">
-                  <t-option class="agent-service-add-model-option" value="__add_model__" label="新增模型配置">
-                    <span class="agent-service-add-model-option-content"><AddIcon />新增模型配置</span>
-                  </t-option>
-                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-              </t-form-item>
-              <t-form-item v-if="form.type === 'workspace'" label="AGENTS.md">
-                <t-checkbox v-model="form.agents_md_enabled">关注 AGENTS.md</t-checkbox>
-                <div class="agent-service-form-hint">让Agent关注 AGENTS.md</div>
-              </t-form-item>
-              <t-form-item v-if="form.type === 'workspace'" label="Agent 记忆">
-                <t-checkbox v-model="form.workspace_memory_enabled">启用 Agent 记忆</t-checkbox>
-                <div class="agent-service-form-hint">启用后 Agent 会回想或者记忆对话中的信息，需要记忆库的支持</div>
-              </t-form-item>
-              <t-form-item v-if="form.type === 'qq_chat'" label="数学/编程模型">
-                <t-select v-model="form.math_programming_llm_ref_id" placeholder="回退主 Brain 模型" clearable>
-                  <t-option value="" label="回退主 Brain 模型" />
-                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-              </t-form-item>
-              <t-form-item v-if="form.type === 'qq_chat'" label="Preprompt 模型">
-                <t-select v-model="form.intent_classification_llm_ref_id" placeholder="回退主 Brain 模型" clearable>
-                  <t-option value="" label="回退主 Brain 模型" />
-                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-              </t-form-item>
-              <t-form-item v-if="form.type === 'qq_chat'" label="自然语言回复模型">
-                <t-select v-model="form.natural_language_reply_llm_ref_id" placeholder="请选择" clearable>
-                  <t-option value="" label="请选择" />
-                  <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-              </t-form-item>
-              <t-form-item v-if="form.type === 'qq_chat'" label="分词配置">
-                <t-select v-model="form.tokenizer_connection_id" placeholder="不使用（标点分段）" clearable>
-                  <t-option value="" label="不使用（标点分段）" />
-                  <t-option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-              </t-form-item>
-            </div>
-          </t-card>
+          <RoleServiceModelConfig
+            :form="form"
+            :chat-models="chatModels"
+            :multimodal-chat-models="multimodalChatModels"
+            :tokenizer-connections="tokenizerConnections"
+            @primary-model-change="handlePrimaryModelChange"
+            @image-understand-model-change="handleImageUnderstandModelChange"
+            @memory-backend-change="handleMemoryBackendChange"
+          />
 
           <t-card v-if="form.type === 'workspace' && (form.workspace_memory_enabled || form.default_tools_enabled.web_search)" class="agent-service-form-section" :bordered="false">
             <template #title>检索增强生成</template>
             <div class="agent-service-form-grid">
-              <t-form-item v-if="form.workspace_memory_enabled" label="记忆介质" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆介质。' : undefined">
-                <t-select v-model="form.workspace_memory_backend" placeholder="请选择记忆库" @change="handleMemoryBackendChange">
-                  <t-option class="agent-service-add-retrieval-option" value="__add_retrieval_database__" label="新增检索数据库">
-                    <span class="agent-service-add-model-option-content"><AddIcon />新增检索数据库</span>
-                  </t-option>
-                  <t-option value="local_file" label="本地文件" />
-                  <t-option value="weaviate" label="Weaviate" />
-                  <t-option value="elasticsearch" label="Elasticsearch" />
-                </t-select>
-              </t-form-item>
               <t-form-item v-if="form.workspace_memory_backend === 'weaviate' || form.workspace_memory_backend === 'elasticsearch'" label="文本向量模型" required :status="!form.workspace_embedding_model_ref_id ? 'error' : undefined" :help="!form.workspace_embedding_model_ref_id ? '必须选择文本向量模型。' : undefined">
                 <t-select v-model="form.workspace_embedding_model_ref_id" placeholder="请选择文本向量模型">
                   <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
@@ -479,66 +432,19 @@
           </t-form-item>
         </t-card>
 
-        <!-- 模型配置 -->
-        <t-card class="agent-service-form-section" :bordered="false">
-          <template #title>{{ form.type === 'workspace' ? '默认模型' : '模型配置' }}</template>
-          <div class="agent-service-form-grid">
-            <t-form-item :label="form.type === 'workspace' ? '默认模型' : '主 Brain 模型'" required>
-              <t-select v-model="form.llm_ref_id" placeholder="请选择" @change="handlePrimaryModelChange">
-                <t-option class="agent-service-add-model-option" value="__add_model__" label="新增模型配置">
-                  <span class="agent-service-add-model-option-content"><AddIcon />新增模型配置</span>
-                </t-option>
-                <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-              </t-select>
-            </t-form-item>
-            <t-form-item v-if="form.type === 'workspace'" label="AGENTS.md">
-              <t-checkbox v-model="form.agents_md_enabled">关注 AGENTS.md</t-checkbox>
-              <div class="agent-service-form-hint">让 RoleService 的 Workspace Agent 关注 AGENTS.md</div>
-            </t-form-item>
-            <t-form-item v-if="form.type === 'workspace'" label="RoleService 记忆">
-              <t-checkbox v-model="form.workspace_memory_enabled">启用 RoleService 记忆</t-checkbox>
-              <div class="agent-service-form-hint">启用后 RoleService 的 Agent 会回想或者记忆对话中的信息，需要记忆库的支持。</div>
-            </t-form-item>
-            <t-form-item v-if="form.type === 'qq_chat'" label="数学/编程模型">
-              <t-select v-model="form.math_programming_llm_ref_id" placeholder="回退主 Brain 模型" clearable>
-                <t-option value="" label="回退主 Brain 模型" />
-                <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-              </t-select>
-            </t-form-item>
-            <t-form-item v-if="form.type === 'qq_chat'" label="Preprompt 模型">
-              <t-select v-model="form.intent_classification_llm_ref_id" placeholder="回退主 Brain 模型" clearable>
-                <t-option value="" label="回退主 Brain 模型" />
-                <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-              </t-select>
-            </t-form-item>
-            <t-form-item v-if="form.type === 'qq_chat'" label="自然语言回复模型">
-              <t-select v-model="form.natural_language_reply_llm_ref_id" placeholder="请选择" clearable>
-                <t-option value="" label="请选择" />
-                <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-              </t-select>
-            </t-form-item>
-            <t-form-item v-if="form.type === 'qq_chat'" label="分词配置">
-              <t-select v-model="form.tokenizer_connection_id" placeholder="不使用（标点分段）" clearable>
-                <t-option value="" label="不使用（标点分段）" />
-                <t-option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-              </t-select>
-            </t-form-item>
-          </div>
-        </t-card>
+        <RoleServiceModelConfig
+          :form="form"
+          :chat-models="chatModels"
+          :multimodal-chat-models="multimodalChatModels"
+          :tokenizer-connections="tokenizerConnections"
+          @primary-model-change="handlePrimaryModelChange"
+          @image-understand-model-change="handleImageUnderstandModelChange"
+          @memory-backend-change="handleMemoryBackendChange"
+        />
 
         <t-card v-if="form.type === 'workspace' && (form.workspace_memory_enabled || form.default_tools_enabled.web_search)" class="agent-service-form-section" :bordered="false">
           <template #title>检索增强生成</template>
           <div class="agent-service-form-grid">
-            <t-form-item v-if="form.workspace_memory_enabled" label="记忆库" required :status="!form.workspace_memory_backend ? 'error' : undefined" :help="!form.workspace_memory_backend ? '启用 Agent 记忆后必须选择记忆库。' : undefined">
-              <t-select v-model="form.workspace_memory_backend" placeholder="请选择记忆库" @change="handleMemoryBackendChange">
-                <t-option class="agent-service-add-retrieval-option" value="__add_retrieval_database__" label="新增检索数据库">
-                  <span class="agent-service-add-model-option-content"><AddIcon />新增检索数据库</span>
-                </t-option>
-                <t-option value="local_file" label="本地 Markdown 文件" />
-                <t-option value="weaviate" label="Weaviate" />
-                <t-option value="elasticsearch" label="Elasticsearch" />
-              </t-select>
-            </t-form-item>
             <t-form-item v-if="form.workspace_memory_backend === 'weaviate' || form.workspace_memory_backend === 'elasticsearch'" label="文本向量模型" required :status="!form.workspace_embedding_model_ref_id ? 'error' : undefined" :help="!form.workspace_embedding_model_ref_id ? '必须选择文本向量模型。' : undefined">
               <t-select v-model="form.workspace_embedding_model_ref_id" placeholder="请选择文本向量模型">
                 <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
@@ -893,14 +799,6 @@
           <t-form-item label="单次会话调用上限" style="margin-top: 16px">
             <t-input-number v-model="defaultToolEditDraft.callLimit" :min="0" placeholder="不限制" />
             <div class="agent-service-form-hint" style="font-size: 12px; margin-top: 4px">0 或留空表示不限制</div>
-          </t-form-item>
-          <t-form-item v-if="editingDefaultToolId === 'image_understand'" label="图片理解模型" class="agent-service-form-item-full">
-            <t-select v-model="defaultToolEditDraft.imageUnderstandLlmRefId" placeholder="默认使用主模型" clearable>
-              <t-option value="" label="默认使用主模型" />
-              <t-option v-for="item in multimodalChatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-            </t-select>
-            <div class="agent-service-form-hint" style="margin-top: 4px">image_understand 默认使用 Service 主模型；这里只有支持多模态的模型可选。</div>
-            <div v-if="form.llm_ref_id && !mainChatModelSupportsMultimodal && !defaultToolEditDraft.imageUnderstandLlmRefId" class="agent-service-form-hint" style="margin-top: 4px; color: #ffb36b">当前主模型不支持多模态，启用 image_understand 时必须在这里指定一个支持多模态的模型。</div>
           </t-form-item>
         </t-card>
       </t-form>
@@ -1334,6 +1232,7 @@ import { useRouter } from "vue-router";
 import { AddIcon, CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
 import { system, type ServiceWithRuntime } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
+import RoleServiceModelConfig from "../components/RoleServiceModelConfig.vue";
 import { useAgents } from "../composables/useAgents";
 import { assertConnectionConfig, assertLlmConfig } from "../model";
 
@@ -1375,8 +1274,6 @@ const {
   chatModels,
   multimodalChatModels,
   embeddingModels,
-  mainChatModel,
-  mainChatModelSupportsMultimodal,
   botConnections,
   rustfsConnections,
   webSearchEngineConnections,
@@ -1471,6 +1368,12 @@ const webSearchImporting = ref(false);
 function handlePrimaryModelChange(value: string | number) {
   if (String(value) !== "__add_model__") return;
   form.llm_ref_id = "";
+  showModelConfigDialog.value = true;
+}
+
+function handleImageUnderstandModelChange(value: string | number) {
+  if (String(value) !== "__add_model__") return;
+  form.image_understand_llm_ref_id = "";
   showModelConfigDialog.value = true;
 }
 
@@ -1641,7 +1544,7 @@ const filteredServices = computed(() => {
 const columns = [
   { colKey: "name", title: "Service 名称", width: 230 },
   { colKey: "type", title: "Service 类型", width: 185 },
-  { colKey: "model", title: "默认模型", ellipsis: true },
+  { colKey: "model", title: "模型配置", ellipsis: true },
   { colKey: "runtime", title: "运行状态", width: 150 },
   { colKey: "enabled", title: "配置状态", width: 100 },
   { colKey: "updated", title: "启动时间", width: 170 },
