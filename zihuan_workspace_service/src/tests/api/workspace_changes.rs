@@ -7,7 +7,10 @@ use crate::api::workspace_changes::{
 };
 
 fn temp_workspace() -> PathBuf {
-    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     std::env::temp_dir().join(format!("zihuan-workspace-change-{suffix}"))
 }
 
@@ -16,11 +19,15 @@ fn temp_workspace() -> PathBuf {
 #[test]
 fn edit_changes_merge_and_cancel_restores_original_content() {
     let root = temp_workspace();
-    let session_id = format!("test-session-{}", root.file_name().unwrap().to_string_lossy());
+    let session_id = format!(
+        "test-session-{}",
+        root.file_name().unwrap().to_string_lossy()
+    );
     fs::create_dir_all(&root).unwrap();
     let path = root.join("teyvat.txt");
     fs::write(&path, "Mondstadt\nLiyue\n").unwrap();
-    let recorder = WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
+    let recorder =
+        WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
     let args = serde_json::json!({ "path": "teyvat.txt" });
 
     recorder.start("first", WorkspaceChangeOperation::Edit, &args);
@@ -42,16 +49,27 @@ fn edit_changes_merge_and_cancel_restores_original_content() {
 #[test]
 fn accept_does_not_change_disk() {
     let root = temp_workspace();
-    let session_id = format!("accept-session-{}", root.file_name().unwrap().to_string_lossy());
+    let session_id = format!(
+        "accept-session-{}",
+        root.file_name().unwrap().to_string_lossy()
+    );
     fs::create_dir_all(&root).unwrap();
     let path = root.join("nahida-note.txt");
-    let recorder = WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
-    recorder.start("create", WorkspaceChangeOperation::Create, &serde_json::json!({ "path": "nahida-note.txt" }));
+    let recorder =
+        WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
+    recorder.start(
+        "create",
+        WorkspaceChangeOperation::Create,
+        &serde_json::json!({ "path": "nahida-note.txt" }),
+    );
     fs::write(&path, "Nahida studies Irminsul.\n").unwrap();
     let change = recorder.finish("create", r#"{"ok":true}"#).unwrap();
 
     accept(&session_id, &change.change_id).unwrap();
-    assert_eq!(fs::read_to_string(&path).unwrap(), "Nahida studies Irminsul.\n");
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "Nahida studies Irminsul.\n"
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -60,10 +78,14 @@ fn accept_does_not_change_disk() {
 #[test]
 fn create_delete_create_merges_into_one_pending_change() {
     let root = temp_workspace();
-    let session_id = format!("create-delete-create-{}", root.file_name().unwrap().to_string_lossy());
+    let session_id = format!(
+        "create-delete-create-{}",
+        root.file_name().unwrap().to_string_lossy()
+    );
     fs::create_dir_all(&root).unwrap();
     let path = root.join("paimon-guide.md");
-    let recorder = WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
+    let recorder =
+        WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
     let args = serde_json::json!({ "path": "paimon-guide.md" });
 
     recorder.start("create-first", WorkspaceChangeOperation::Create, &args);
@@ -76,10 +98,16 @@ fn create_delete_create_merges_into_one_pending_change() {
     fs::write(&path, "Liyue has lantern rite.\n").unwrap();
     let final_change = recorder.finish("create-second", r#"{"ok":true}"#).unwrap();
 
-    assert!(matches!(resolved.status, crate::api::workspace_changes::WorkspaceChangeStatus::Resolved));
+    assert!(matches!(
+        resolved.status,
+        crate::api::workspace_changes::WorkspaceChangeStatus::Resolved
+    ));
     assert_eq!(first.change_id, final_change.change_id);
     assert_eq!(final_change.merged_count, 3);
-    assert!(matches!(final_change.operation, WorkspaceChangeOperation::Create));
+    assert!(matches!(
+        final_change.operation,
+        WorkspaceChangeOperation::Create
+    ));
     assert_eq!(pending(&session_id).unwrap().len(), 1);
     cancel(&session_id, &final_change.change_id).unwrap();
     assert!(!path.exists());
@@ -91,11 +119,15 @@ fn create_delete_create_merges_into_one_pending_change() {
 #[test]
 fn returning_to_the_original_content_resolves_the_change() {
     let root = temp_workspace();
-    let session_id = format!("resolved-change-{}", root.file_name().unwrap().to_string_lossy());
+    let session_id = format!(
+        "resolved-change-{}",
+        root.file_name().unwrap().to_string_lossy()
+    );
     fs::create_dir_all(&root).unwrap();
     let path = root.join("b.txt");
     fs::write(&path, "Welcome to Mondstadt.\n").unwrap();
-    let recorder = WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
+    let recorder =
+        WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
     let args = serde_json::json!({ "path": "b.txt" });
 
     recorder.start("liyue", WorkspaceChangeOperation::Edit, &args);
@@ -105,7 +137,10 @@ fn returning_to_the_original_content_resolves_the_change() {
     fs::write(&path, "Welcome to Mondstadt.\n").unwrap();
     let resolved = recorder.finish("mondstadt", r#"{"ok":true}"#).unwrap();
 
-    assert!(matches!(resolved.status, crate::api::workspace_changes::WorkspaceChangeStatus::Resolved));
+    assert!(matches!(
+        resolved.status,
+        crate::api::workspace_changes::WorkspaceChangeStatus::Resolved
+    ));
     assert!(pending(&session_id).unwrap().is_empty());
     let _ = fs::remove_dir_all(root);
 }
@@ -115,18 +150,23 @@ fn returning_to_the_original_content_resolves_the_change() {
 #[test]
 fn later_chat_round_merges_with_the_existing_pending_change() {
     let root = temp_workspace();
-    let session_id = format!("multi-round-{}", root.file_name().unwrap().to_string_lossy());
+    let session_id = format!(
+        "multi-round-{}",
+        root.file_name().unwrap().to_string_lossy()
+    );
     fs::create_dir_all(&root).unwrap();
     let path = root.join("b.txt");
     fs::write(&path, "Mondstadt\n").unwrap();
     let args = serde_json::json!({ "path": "b.txt" });
 
-    let first_round = WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
+    let first_round =
+        WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
     first_round.start("round-one", WorkspaceChangeOperation::Edit, &args);
     fs::write(&path, "Inazuma\n").unwrap();
     let first_change = first_round.finish("round-one", r#"{"ok":true}"#).unwrap();
 
-    let second_round = WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
+    let second_round =
+        WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
     second_round.start("round-two", WorkspaceChangeOperation::Edit, &args);
     fs::write(&path, "Fontaine\n").unwrap();
     let second_change = second_round.finish("round-two", r#"{"ok":true}"#).unwrap();
@@ -149,12 +189,21 @@ fn edit_then_move_merges_and_reject_restores_the_source_file() {
     let source = root.join("a.txt");
     let destination = root.join("b.txt");
     fs::write(&source, "Amber is gliding.\n").unwrap();
-    let recorder = WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
+    let recorder =
+        WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
 
-    recorder.start("edit", WorkspaceChangeOperation::Edit, &serde_json::json!({ "path": "a.txt" }));
+    recorder.start(
+        "edit",
+        WorkspaceChangeOperation::Edit,
+        &serde_json::json!({ "path": "a.txt" }),
+    );
     fs::write(&source, "Yoimiya is preparing fireworks.\n").unwrap();
     recorder.finish("edit", r#"{"ok":true}"#).unwrap();
-    recorder.start("move", WorkspaceChangeOperation::Move, &serde_json::json!({ "src": "a.txt", "dest": "b.txt" }));
+    recorder.start(
+        "move",
+        WorkspaceChangeOperation::Move,
+        &serde_json::json!({ "src": "a.txt", "dest": "b.txt" }),
+    );
     fs::rename(&source, &destination).unwrap();
     let change = recorder.finish("move", r#"{"ok":true}"#).unwrap();
 
@@ -178,9 +227,14 @@ fn copy_is_one_atomic_change_and_reject_removes_the_destination() {
     let source = root.join("traveler.txt");
     let destination = root.join("lumine.txt");
     fs::write(&source, "Aether is looking for his sibling.\n").unwrap();
-    let recorder = WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
+    let recorder =
+        WorkspaceChangeRecorder::new(&session_id, Some(root.to_string_lossy().to_string()));
 
-    recorder.start("copy", WorkspaceChangeOperation::Copy, &serde_json::json!({ "src": "traveler.txt", "dest": "lumine.txt" }));
+    recorder.start(
+        "copy",
+        WorkspaceChangeOperation::Copy,
+        &serde_json::json!({ "src": "traveler.txt", "dest": "lumine.txt" }),
+    );
     fs::copy(&source, &destination).unwrap();
     let change = recorder.finish("copy", r#"{"ok":true}"#).unwrap();
 
@@ -189,7 +243,10 @@ fn copy_is_one_atomic_change_and_reject_removes_the_destination() {
     assert_eq!(change.destination_path.as_deref(), Some("lumine.txt"));
     assert_eq!(pending(&session_id).unwrap().len(), 1);
     cancel(&session_id, &change.change_id).unwrap();
-    assert_eq!(fs::read_to_string(&source).unwrap(), "Aether is looking for his sibling.\n");
+    assert_eq!(
+        fs::read_to_string(&source).unwrap(),
+        "Aether is looking for his sibling.\n"
+    );
     assert!(!destination.exists());
     let _ = fs::remove_dir_all(root);
 }
