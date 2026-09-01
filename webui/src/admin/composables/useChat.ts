@@ -764,7 +764,7 @@ function imageAttachmentToPart(attachment: ChatImageAttachment): ChatMessagePart
       media_id: attachment.mediaId,
       source: "upload",
       original_source: attachment.modelUrl ?? attachment.url,
-      rustfs_path: "",
+      rustfs_path: attachment.key,
       name: attachment.name,
       mime_type: attachment.mimeType,
     },
