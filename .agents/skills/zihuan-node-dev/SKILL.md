@@ -18,6 +18,22 @@ stable: model reusable operators, primitives, and atomic operations as `util`
 building blocks so multiple script nodes can share them. Do not move a node to
 Rust merely because it is convenient to implement there.
 
+## Dynamic Script Runtime
+
+`dynamic_script_engine/` is the runtime boundary for script nodes. It discovers
+modules under `dag_nodes/`, loads their exported node catalog, resolves dynamic
+ports, and executes nodes through the JavaScript or Python worker. Keep this
+discovery and execution protocol intact when adding script nodes; do not add a
+second ad-hoc script loader.
+
+Use `zihuan_sdk` as the script-facing contract. JavaScript nodes import the SDK
+alias (for example, `port` and resource helpers), export node definitions, and
+use the `zihuan` object supplied in `NodeExecutionContext` for Rust-hosted
+capabilities. Python nodes use the corresponding `dynamic_script_engine` SDK
+interfaces. SDK calls are host RPCs, so add or change the Rust-side capability
+and its SDK method together, with typed resource handles preserved across the
+boundary.
+
 1. Find a comparable node and keep one node implementation per file.
 2. Define ports with `node_input!`, `node_output!`, and `port!`; use meaningful names and UI descriptions.
 3. Return production outputs with `return_with_node_output!` so declared ports are validated.
