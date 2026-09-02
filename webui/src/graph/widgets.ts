@@ -37,7 +37,6 @@ export function setupNodeWidgets(
     case "function":
       setupFunctionWidgets(lNode, nodeDef, getSessionId, onRefresh, onEnterSubgraph);
       break;
-    case "tool_calling":
     case "qq_chat":
       setupToolCallingWidgets(lNode, nodeDef, getSessionId, onRefresh, onEnterSubgraph);
       break;

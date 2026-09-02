@@ -22,9 +22,9 @@ use crate::graph::function_graph::{
 };
 use crate::graph::graph_boundary::sync_root_graph_io;
 use crate::graph::tool_spec::{
-    is_tool_calling_subgraph_owner, normalized_tool_outputs_for_owner,
-    tool_calling_shared_inputs_from_value, tool_calling_tool_input_signature, ToolDefinition,
-    TOOL_CALLING_SHARED_INPUTS_PORT, TOOL_CALLING_TOOLS_CONFIG_PORT,
+    is_qq_agent_tool_subgraph_owner, qq_agent_tool_outputs, tool_calling_shared_inputs_from_value,
+    tool_calling_tool_input_signature, ToolDefinition, TOOL_CALLING_SHARED_INPUTS_PORT,
+    TOOL_CALLING_TOOLS_CONFIG_PORT,
 };
 use crate::graph::{Node, NodeConfigFlow, NodeGraph, NodeOutputFlow, Port};
 
@@ -721,7 +721,7 @@ fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
             continue;
         }
 
-        if !is_tool_calling_subgraph_owner(&node.node_type) {
+        if !is_qq_agent_tool_subgraph_owner(&node.node_type) {
             continue;
         }
 
@@ -746,7 +746,7 @@ fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
             refresh_port_types_internal(&mut tool.subgraph);
             let input_signature =
                 tool_calling_tool_input_signature(&node.node_type, &shared_inputs, tool);
-            let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);
+            let outputs = qq_agent_tool_outputs();
             sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &outputs);
         }
 
@@ -774,7 +774,7 @@ fn validate_embedded_subgraphs(graph: &NodeGraphDefinition) -> Vec<ValidationIss
             }
         }
 
-        if !is_tool_calling_subgraph_owner(&node.node_type) {
+        if !is_qq_agent_tool_subgraph_owner(&node.node_type) {
             continue;
         }
 
@@ -818,7 +818,7 @@ fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
             continue;
         }
 
-        if !is_tool_calling_subgraph_owner(&node.node_type) {
+        if !is_qq_agent_tool_subgraph_owner(&node.node_type) {
             continue;
         }
 
@@ -843,7 +843,7 @@ fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
             auto_fix_graph_definition(&mut tool.subgraph);
             let input_signature =
                 tool_calling_tool_input_signature(&node.node_type, &shared_inputs, tool);
-            let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);
+            let outputs = qq_agent_tool_outputs();
             sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &outputs);
         }
 
@@ -1026,7 +1026,6 @@ fn calc_node_height(node: &NodeDefinition) -> f32 {
     let default_min = GRID * (3.0f32.max(2.0 + port_rows) + 0.8);
     let min_h = match node.node_type.as_str() {
         "message_list_data" | "qq_message_list_data" => default_min.max(GRID * 8.0),
-        "tool_calling" => default_min.max(GRID * 6.2),
         _ => default_min,
     };
     node.size.as_ref().map_or(min_h, |s| s.height.max(min_h))
