@@ -3,90 +3,12 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use tokio::sync::broadcast;
 use uuid::Uuid;
 use zihuan_core::data_refs::RelationalDbConnection;
-use zihuan_core::graph::graph_io::NodeGraphDefinition;
-
-use zihuan_service::RoleServiceManager;
-
-use crate::setup_orchestrator::SetupProgressEvent;
-
-pub struct AppState {
-    pub sessions: RwLock<HashMap<String, GraphSession>>,
-    pub tasks: Mutex<TaskManager>,
-    pub role_service_manager: RoleServiceManager,
-    pub setup_tasks: Mutex<HashMap<String, broadcast::Sender<SetupProgressEvent>>>,
-    pub running_chat_messages: Mutex<HashMap<String, Arc<Mutex<RunningChatMessage>>>>,
-}
-
-impl AppState {
-    pub fn new() -> Self {
-        Self {
-            sessions: RwLock::new(HashMap::new()),
-            tasks: Mutex::new(TaskManager::new()),
-            role_service_manager: RoleServiceManager::new(),
-            setup_tasks: Mutex::new(HashMap::new()),
-            running_chat_messages: Mutex::new(HashMap::new()),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct RunningChatMessage {
-    pub message_id: String,
-    pub agent_id: String,
-    pub agent_name: String,
-    pub agent_type: String,
-    pub agent_avatar_url: Option<String>,
-    pub trace_id: String,
-    pub workspace_path: Option<String>,
-    pub model_config_id: Option<String>,
-    pub image_understand_model_config_id: Option<String>,
-    pub timestamp: String,
-    pub content: String,
-    pub reasoning_content: String,
-    pub live_tool_calls: Vec<RunningChatToolCall>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RunningChatToolCall {
-    pub call_id: String,
-    pub name: String,
-    pub arguments: Value,
-    pub result: String,
-    pub done: bool,
-}
-
-pub struct GraphSession {
-    pub id: String,
-    /// Optional filesystem path for save/load
-    pub file_path: Option<String>,
-    pub graph: NodeGraphDefinition,
-    pub dirty: bool,
-}
-
-impl GraphSession {
-    pub fn new(id: String, graph: NodeGraphDefinition, file_path: Option<String>) -> Self {
-        Self { id, file_path, graph, dirty: false }
-    }
-
-    pub fn new_empty() -> Self {
-        let id = Uuid::new_v4().to_string();
-        Self {
-            id,
-            file_path: None,
-            graph: zihuan_core::graph::graph_boundary::default_root_graph_definition(),
-            dirty: false,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskType {
@@ -672,14 +594,4 @@ impl TaskManager {
 
         Ok(())
     }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct GraphTabInfo {
-    pub id: String,
-    pub name: String,
-    pub file_path: Option<String>,
-    pub dirty: bool,
-    pub node_count: usize,
-    pub edge_count: usize,
 }
