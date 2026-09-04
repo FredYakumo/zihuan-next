@@ -48,7 +48,7 @@
 </template>
 <script setup lang="ts">
 import AdminPageHeader from "../components/AdminPageHeader.vue";
-import { useGraphs } from "../composables/useGraphs";
+import { useGraphs } from "./useGraphs";
 
 const { workflows, graphs, load } = useGraphs();
 </script>
