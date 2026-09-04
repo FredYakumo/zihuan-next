@@ -130,7 +130,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from "tdesign-icons-vue-next";
 import type { PrimaryTableCol } from "tdesign-vue-next";
 
 import type { TaskEntry } from "../../api/client";
-import { useTasks } from "../composables/useTasks";
+import { useTasks } from "./useTasks";
 import { statusTagTheme } from "../model";
 
 const {
@@ -198,5 +198,5 @@ const columns: PrimaryTableCol<TaskEntry>[] = [
 </script>
 
 <style scoped lang="scss">
-@use "../styles/tasks" as *;
+@use "./tasks" as *;
 </style>
