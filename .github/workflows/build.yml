@@ -118,6 +118,10 @@ jobs:
         working-directory: webui
         run: pnpm install --frozen-lockfile
 
+      - name: Build webui
+        working-directory: webui
+        run: pnpm run build
+
       - name: Set up MSVC environment
         if: matrix.windows_cuda
         uses: ilammy/msvc-dev-cmd@v1
