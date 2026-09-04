@@ -1,5 +1,6 @@
 id: dream
 name: Dream
+builtin: true
 inputs:
 - name: transcript
   data_type: String

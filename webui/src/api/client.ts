@@ -438,6 +438,7 @@ export interface SubAgentPort {
 export interface SubAgentDefinition {
   id: string;
   name: string;
+  builtin: boolean;
   inputs: SubAgentPort[];
   outputs: SubAgentPort[];
   system_prompt: string;
