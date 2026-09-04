@@ -35,6 +35,9 @@ pub struct NodeTypeInfo {
     pub has_dynamic_output_ports: bool,
     pub is_event_producer: bool,
     pub config_fields: Vec<NodeConfigFieldInfo>,
+    pub ui_template: Option<String>,
+    pub ui_template_error: Option<String>,
+    pub ui: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -101,6 +104,9 @@ pub async fn get_registry(_req: &mut Request, res: &mut Response, _depot: &mut D
                         connection_kind: field.connection_kind.clone(),
                     })
                     .collect(),
+                ui_template: meta.ui_template.clone(),
+                ui_template_error: meta.ui_template_error.clone(),
+                ui: meta.ui.clone(),
             }
         })
         .collect();

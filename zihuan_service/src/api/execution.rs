@@ -161,8 +161,23 @@ fn run_graph_blocking(
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     });
-    crate::log_forwarder::scope_task(task_id, || {
-        graph.execute().map_err(|e| format!("Execution failed: {e}").into())
+    let tx = broadcast_tx.clone();
+    let session = graph_session_id.clone();
+    let publisher = Arc::new(move |task: &str, node: &str, state: serde_json::Value| {
+        let _ = tx.send(ServerMessage::NodeUiUpdate {
+            task_id: task.to_string(),
+            graph_session_id: session.clone(),
+            node_id: node.to_string(),
+            revision: 0,
+            state,
+        });
+    });
+    crate::log_forwarder::scope_task(task_id.clone(), || {
+        zihuan_core::task_context::scope_task_id(task_id, || {
+            zihuan_core::graph::script_node::with_dynamic_script_ui_publisher(publisher, || {
+                graph.execute().map_err(|e| format!("Execution failed: {e}").into())
+            })
+        })
     })
 }
 

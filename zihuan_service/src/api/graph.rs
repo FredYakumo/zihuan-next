@@ -163,6 +163,7 @@ pub async fn add_node(req: &mut Request, res: &mut Response, depot: &mut Depot) 
         position: Some(GraphPosition { x: body.x, y: body.y }),
         size: Some(GraphSize { width: 200.0, height: 120.0 }),
         inline_values: Default::default(),
+        ui_state: None,
         port_bindings: Default::default(),
         has_error: false,
         has_cycle: false,
@@ -193,6 +194,7 @@ pub struct UpdateNodeRequest {
     pub inline_values: Option<serde_json::Value>,
     pub port_bindings: Option<serde_json::Value>,
     pub disabled: Option<bool>,
+    pub ui_state: Option<serde_json::Value>,
 }
 
 #[handler]
@@ -267,6 +269,13 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
         {
             node.disabled = d;
         }
+    }
+    if let Some(ui_state) = body.ui_state {
+        node.ui_state = if ui_state.is_null() {
+            None
+        } else {
+            Some(ui_state)
+        };
     }
     if let Some(iv) = body.inline_values {
         if let serde_json::Value::Object(map) = iv {
