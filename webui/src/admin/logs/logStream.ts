@@ -6,13 +6,16 @@ import type { TaskLogEntry } from "../../api/types";
 const MAX_LOG_ENTRIES = 500;
 const BADGE_SETTING_KEY = "zh-log-error-badge-enabled";
 
-export const logs = ref<TaskLogEntry[]>([]);
+export type LogStreamEntry = TaskLogEntry & { seq: number };
+
+export const logs = ref<LogStreamEntry[]>([]);
 export const errorCount = ref(0);
 export const logErrorBadgeEnabled = ref<boolean>(localStorage.getItem(BADGE_SETTING_KEY) !== "false");
 
 let initialized = false;
 let viewingLogs = false;
 let unsubWs: (() => void) | null = null;
+let logSeq = 0;
 
 function isErrorLevel(level: string): boolean {
   const normalized = level.toUpperCase();
@@ -32,7 +35,9 @@ function formatNow(): string {
 }
 
 function pushLog(entry: TaskLogEntry): void {
-  logs.value.push(entry);
+  // seq 单调递增，作为 v-for 的稳定 key：日志达到上限从头部裁剪时，
+  // 剩余条目的 key 不变，避免 Vue 因 index 移位重建整个列表导致滚动位置丢失
+  logs.value.push({ ...entry, seq: ++logSeq });
   if (logs.value.length > MAX_LOG_ENTRIES) {
     logs.value.splice(0, logs.value.length - MAX_LOG_ENTRIES);
   }
