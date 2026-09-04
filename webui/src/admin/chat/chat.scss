@@ -1971,6 +1971,38 @@
   border-top: 1px solid var(--admin-border);
 }
 
+.chat-bubble-content :deep(table),
+.chat-thinking-content :deep(table) {
+  width: 100%;
+  margin: 0.45em 0;
+  border-collapse: collapse;
+  border: 1px solid var(--admin-border);
+  font-size: 0.95em;
+}
+
+.chat-bubble-content :deep(th),
+.chat-bubble-content :deep(td),
+.chat-thinking-content :deep(th),
+.chat-thinking-content :deep(td) {
+  padding: 6px 10px;
+  border: 1px solid var(--admin-border);
+  text-align: left;
+  vertical-align: top;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.chat-bubble-content :deep(th),
+.chat-thinking-content :deep(th) {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--admin-ink) 5%, transparent);
+}
+
+.chat-bubble-content :deep(table code),
+.chat-thinking-content :deep(table code) {
+  white-space: normal;
+}
+
 @media (max-width: 1180px) {
   .chat-toolbar {
     flex-direction: column;

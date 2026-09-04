@@ -386,6 +386,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     let pendingWorkspaceStop: { streamController: AbortController; sessionId: string | null } | null = null;
     let sessionListRevision = 0;
     let sessionOpenRevision = 0;
+    const sessionStatusRefreshRevisions = new Map<string, number>();
     let preservedServiceChangeId: string | null = null;
     const chatErrorMessage = ref("");
     const chatErrorDialogMessage = ref("");
@@ -1409,6 +1410,19 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         }
     }
 
+    async function refreshSessionStatus(sessionId: string): Promise<void> {
+        const revision = (sessionStatusRefreshRevisions.get(sessionId) ?? 0) + 1;
+        sessionStatusRefreshRevisions.set(sessionId, revision);
+        const task = (await tasksApi.list())
+            .find((item) => item.task_type === "workspace_chat" && item.chat_session_id === sessionId && item.is_running);
+        if (sessionStatusRefreshRevisions.get(sessionId) !== revision) return;
+        const session = sessions.value.find((item) => item.session_id === sessionId);
+        if (!session) return;
+        if (!task && session.task_status === "running") return;
+        session.running_task_id = task?.id ?? null;
+        session.task_status = task?.status ?? null;
+    }
+
     async function refreshPendingCommandApproval(): Promise<void> {
         const sessionId = activeSessionId.value;
         if (!sessionId) return;
@@ -2024,6 +2038,16 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             activeChatTask = event.task_id && event.session_id
                 ? { sessionId: event.session_id, taskId: event.task_id }
                 : null;
+            if (event.session_id) {
+                const session = sessions.value.find((item) => item.session_id === event.session_id);
+                if (session && event.task_id) {
+                    session.running_task_id = event.task_id;
+                    session.task_status = "running";
+                }
+                refreshSessionStatus(event.session_id).catch((error) => {
+                    console.warn("Failed to refresh chat session status:", error);
+                });
+            }
             if (
                 event.task_id &&
                 event.session_id &&
@@ -2646,6 +2670,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         pruneFailedAssistantPlaceholder,
         applyInferenceFailure,
         reloadSessions,
+        refreshSessionStatus,
         openSession,
         copyMessage,
         startEditingMessage,
