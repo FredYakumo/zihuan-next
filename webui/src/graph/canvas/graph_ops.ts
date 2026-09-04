@@ -16,6 +16,7 @@ import {
   truncateText,
 } from "./rendering";
 import { portTypeString } from "../registry";
+import { getNodeTypeInfo } from "../registry";
 
 const PROTECTED_BOUNDARY_NODE_IDS = new Set([
   "__function_inputs__",
@@ -73,6 +74,7 @@ export class CanvasGraphOps {
   rebuildCanvas(def: NodeGraphDefinition): void {
     this.canvas._rebuilding = true;
     try {
+      this.canvas.uiRenderer?.clear();
       this.canvas.lGraph.clear();
       this.canvas.nodeMap.clear();
       for (const nodeDef of def.nodes) this.addLGraphNode(nodeDef);
@@ -464,6 +466,7 @@ export class CanvasGraphOps {
       },
       (pending?: Promise<unknown>) => { this.onWidgetMutated(pending); },
     );
+    this.canvas.uiRenderer?.mount(node, nodeDef, getNodeTypeInfo(nodeDef.node_type));
 
     if (nodeDef.size) {
       node.size = [nodeDef.size.width, nodeDef.size.height];

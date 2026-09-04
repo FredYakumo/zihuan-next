@@ -77,7 +77,7 @@
 <script setup lang="ts">
 import { ArrowLeftIcon, ArrowRightIcon } from "tdesign-icons-vue-next";
 
-import { useEnvironmentCheck } from "../composables/useEnvironmentCheck";
+import { useEnvironmentCheck } from "./useEnvironmentCheck";
 
 defineProps<{
   role: string | null;
@@ -89,5 +89,5 @@ const { loading, info, compilerLabel } = useEnvironmentCheck();
 </script>
 
 <style scoped lang="scss">
-@use "../styles/environment-check" as *;
+@use "./environment-check" as *;
 </style>

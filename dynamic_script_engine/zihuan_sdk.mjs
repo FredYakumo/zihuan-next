@@ -117,6 +117,11 @@ export class ZihuanSdk {
    */
   constructor(request) {
     this._request = async (method, params = {}) => hydrateResources(await request(method, params));
+    this.ui = Object.freeze({
+      publish: (state) => this._request("ui.publish", { state }),
+      update: (patch) => this._request("ui.update", { patch }),
+      waitEvent: (eventName, timeoutMs) => this._request("ui.wait_event", { event: eventName ?? null, timeout_ms: timeoutMs ?? 30000 }),
+    });
     this.variables = Object.freeze({
       get: (name) => this._request("variables.get", { name }),
       set: (name, value) => this._request("variables.set", { name, value }),

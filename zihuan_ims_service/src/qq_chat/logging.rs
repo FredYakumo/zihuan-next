@@ -737,6 +737,7 @@ impl QqChatTaskTrace {
             }),
             size: Some(zihuan_core::graph::graph_io::GraphSize { width: 220.0, height: 120.0 }),
             inline_values: HashMap::new(),
+            ui_state: None,
             port_bindings: HashMap::new(),
             has_error: false,
             has_cycle: false,

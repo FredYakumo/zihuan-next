@@ -44,16 +44,10 @@ fn parts_to_text(parts: Vec<MessagePart>) -> String {
         match part {
             MessagePart::Text { text } => segments.push(text),
             MessagePart::Image { media } => {
-                segments.push(media_placeholder(
-                    IMAGE_OMITTED_PLACEHOLDER,
-                    media.primary_locator().unwrap_or(""),
-                ));
+                segments.push(media_placeholder(IMAGE_OMITTED_PLACEHOLDER, &media.media_id));
             }
             MessagePart::Video { media } => {
-                segments.push(media_placeholder(
-                    VIDEO_OMITTED_PLACEHOLDER,
-                    media.primary_locator().unwrap_or(""),
-                ));
+                segments.push(media_placeholder(VIDEO_OMITTED_PLACEHOLDER, &media.media_id));
             }
         }
     }
@@ -61,12 +55,12 @@ fn parts_to_text(parts: Vec<MessagePart>) -> String {
     segments.join("\n")
 }
 
-fn media_placeholder(prefix: &str, url: &str) -> String {
-    let trimmed = url.trim();
-    if trimmed.is_empty() {
+fn media_placeholder(prefix: &str, media_id: &str) -> String {
+    let media_id = media_id.trim();
+    if media_id.is_empty() {
         prefix.to_string()
     } else {
-        format!("{prefix} {trimmed}")
+        format!("{prefix} (media_id: {media_id})")
     }
 }
 

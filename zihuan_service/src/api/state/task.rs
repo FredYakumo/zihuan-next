@@ -1,0 +1,597 @@
+use std::collections::HashMap;
+use std::fs::{self, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+
+use chrono::{DateTime, Local};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+use zihuan_core::data_refs::RelationalDbConnection;
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskType {
+    NodeGraph,
+    AgentService,
+    WorkspaceChat,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskEntry {
+    pub id: String,
+    pub task_type: TaskType,
+    pub graph_name: String,
+    pub graph_session_id: String,
+    #[serde(default)]
+    pub chat_session_id: Option<String>,
+    pub file_path: Option<String>,
+    pub is_workflow_set: bool,
+    pub start_time: DateTime<Local>,
+    pub is_running: bool,
+    pub end_time: Option<DateTime<Local>>,
+    pub duration_ms: Option<i64>,
+    pub user_ip: Option<String>,
+    pub owner_id: Option<String>,
+    pub status: TaskStatus,
+    pub error_message: Option<String>,
+    pub result_summary: Option<String>,
+    pub log_path: Option<String>,
+    pub can_rerun: bool,
+    #[serde(default)]
+    pub graph_snapshot: Option<serde_json::Value>,
+    #[serde(default)]
+    pub task_db_connection_id: Option<String>,
+    #[serde(skip, default)]
+    pub stop_flag: Option<Arc<AtomicBool>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
+    Running,
+    Success,
+    Failed,
+    Stopped,
+    WaitingAuth,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskLogEntry {
+    pub timestamp: String,
+    pub level: String,
+    pub message: String,
+}
+
+pub struct TaskManager {
+    tasks: Vec<TaskEntry>,
+    db_pools: HashMap<String, RelationalDbConnection>,
+    next_task_progress_seq: Mutex<HashMap<String, i32>>,
+}
+
+impl TaskManager {
+    pub fn new() -> Self {
+        let mut manager = Self {
+            tasks: Vec::new(),
+            db_pools: HashMap::new(),
+            next_task_progress_seq: Mutex::new(HashMap::new()),
+        };
+        if let Err(err) = manager.load_persisted_tasks() {
+            log::warn!("Failed to load persisted task records: {}", err);
+        }
+        manager
+    }
+
+    pub fn add_task(
+        &mut self,
+        graph_name: String,
+        graph_session_id: String,
+        file_path: Option<String>,
+        is_workflow_set: bool,
+        user_ip: Option<String>,
+        stop_flag: Arc<AtomicBool>,
+    ) -> String {
+        let can_rerun = file_path.is_some();
+        self.add_task_with_type(
+            TaskType::NodeGraph,
+            graph_name,
+            graph_session_id,
+            file_path,
+            is_workflow_set,
+            user_ip,
+            None,
+            Some(stop_flag),
+            can_rerun,
+            None,
+        )
+    }
+
+    pub fn add_agent_response_task(
+        &mut self,
+        agent_id: String,
+        task_name: String,
+        user_ip: Option<String>,
+        owner_id: Option<String>,
+        task_db_connection_id: Option<String>,
+    ) -> String {
+        self.add_task_with_type(
+            TaskType::AgentService,
+            task_name,
+            agent_id,
+            None,
+            false,
+            user_ip,
+            owner_id,
+            None,
+            false,
+            task_db_connection_id,
+        )
+    }
+
+    pub fn add_workspace_chat_task(
+        &mut self,
+        agent_id: String,
+        session_id: String,
+        agent_name: String,
+        workspace_path: Option<String>,
+        stop_flag: Arc<AtomicBool>,
+    ) -> Option<String> {
+        if self.tasks.iter().any(|task| {
+            task.task_type == TaskType::WorkspaceChat
+                && task.is_running
+                && task.chat_session_id.as_deref() == Some(session_id.as_str())
+        }) {
+            return None;
+        }
+        let id = Uuid::new_v4().to_string();
+        let entry = TaskEntry {
+            id: id.clone(),
+            task_type: TaskType::WorkspaceChat,
+            graph_name: agent_name,
+            graph_session_id: agent_id,
+            chat_session_id: Some(session_id),
+            file_path: workspace_path,
+            is_workflow_set: false,
+            start_time: Local::now(),
+            is_running: true,
+            end_time: None,
+            duration_ms: None,
+            user_ip: None,
+            owner_id: None,
+            status: TaskStatus::Running,
+            error_message: None,
+            result_summary: None,
+            log_path: Self::task_log_path(&id).ok(),
+            can_rerun: false,
+            graph_snapshot: None,
+            task_db_connection_id: None,
+            stop_flag: Some(stop_flag),
+        };
+        self.tasks.push(entry);
+        self.persist_index();
+        Some(id)
+    }
+
+    fn add_task_with_type(
+        &mut self,
+        task_type: TaskType,
+        graph_name: String,
+        graph_session_id: String,
+        file_path: Option<String>,
+        is_workflow_set: bool,
+        user_ip: Option<String>,
+        owner_id: Option<String>,
+        stop_flag: Option<Arc<AtomicBool>>,
+        can_rerun: bool,
+        task_db_connection_id: Option<String>,
+    ) -> String {
+        let id = Uuid::new_v4().to_string();
+        let log_path = Self::task_log_path(&id).ok();
+        let task_db_connection_id_for_insert = task_db_connection_id.clone();
+        let entry = TaskEntry {
+            id: id.clone(),
+            task_type,
+            graph_name,
+            graph_session_id,
+            chat_session_id: None,
+            can_rerun,
+            file_path,
+            is_workflow_set,
+            start_time: Local::now(),
+            is_running: true,
+            end_time: None,
+            duration_ms: None,
+            user_ip,
+            owner_id,
+            status: TaskStatus::Running,
+            error_message: None,
+            result_summary: None,
+            log_path,
+            graph_snapshot: None,
+            task_db_connection_id,
+            stop_flag,
+        };
+
+        if let Some(conn_id) = &task_db_connection_id_for_insert {
+            if let Some(pool) = self.db_pools.get(conn_id).cloned() {
+                let entry_ref = entry.clone();
+                let pool_ref = pool.clone();
+                tokio::spawn(async move {
+                    if let Err(err) =
+                        crate::api::task_store::insert_task_entry(&pool_ref, &entry_ref).await
+                    {
+                        log::warn!(
+                            "Failed to insert task_entry '{}' into DB: {}",
+                            entry_ref.id,
+                            err
+                        );
+                    }
+                });
+            }
+        }
+
+        self.tasks.push(entry);
+        self.persist_index();
+        id
+    }
+
+    pub fn stop_task(&mut self, id: &str) -> bool {
+        if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
+            if let Some(flag) = &task.stop_flag {
+                flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                return true;
+            }
+            return false;
+        }
+
+        false
+    }
+
+    pub fn stop_workspace_chat_task(&mut self, session_id: &str, task_id: Option<&str>) -> bool {
+        let Some(task) = self.tasks.iter_mut().find(|task| {
+            task.task_type == TaskType::WorkspaceChat
+                && task.is_running
+                && task.chat_session_id.as_deref() == Some(session_id)
+                && task_id.is_none_or(|task_id| task.id == task_id)
+        }) else {
+            return false;
+        };
+        let Some(flag) = &task.stop_flag else {
+            return false;
+        };
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        true
+    }
+
+    pub fn finish_task(
+        &mut self,
+        id: &str,
+        status: TaskStatus,
+        error_message: Option<String>,
+        result_summary: Option<String>,
+    ) {
+        if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
+            let end_time = Local::now();
+            task.is_running = false;
+            task.end_time = Some(end_time);
+            task.duration_ms = Some((end_time - task.start_time).num_milliseconds().max(0));
+            task.status = status.clone();
+            task.error_message = error_message.clone();
+            task.result_summary = result_summary.clone();
+            task.stop_flag = None;
+
+            if let Some(conn_id) = &task.task_db_connection_id {
+                if let Some(pool) = self.db_pools.get(conn_id).cloned() {
+                    let task_id = task.id.clone();
+                    let duration_ms = task.duration_ms.unwrap_or(0);
+                    tokio::spawn(async move {
+                        if let Err(err) = crate::api::task_store::update_task_entry_finished(
+                            &pool,
+                            &task_id,
+                            &status,
+                            error_message.as_deref(),
+                            result_summary.as_deref(),
+                            end_time,
+                            duration_ms,
+                        )
+                        .await
+                        {
+                            log::warn!("Failed to update task_entry '{}' in DB: {}", task_id, err);
+                        }
+                    });
+                }
+            }
+
+            self.persist_index();
+        }
+    }
+
+    pub fn set_task_waiting_auth(&mut self, id: &str) {
+        if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
+            task.status = TaskStatus::WaitingAuth;
+            task.is_running = true;
+            task.result_summary = Some("等待授权".to_string());
+            task.error_message = None;
+            self.persist_index();
+        }
+    }
+
+    pub fn set_task_running(&mut self, id: &str) {
+        if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
+            task.status = TaskStatus::Running;
+            task.is_running = true;
+            task.result_summary = None;
+            task.error_message = None;
+            self.persist_index();
+        }
+    }
+
+    pub fn register_db_pool(&mut self, connection_id: String, pool: RelationalDbConnection) {
+        self.db_pools.insert(connection_id, pool);
+    }
+
+    pub fn unregister_db_pool(&mut self, connection_id: &str) {
+        self.db_pools.remove(connection_id);
+    }
+
+    pub fn get_db_pool(&self, connection_id: &str) -> Option<RelationalDbConnection> {
+        self.db_pools.get(connection_id).cloned()
+    }
+
+    pub fn all_db_pools(&self) -> HashMap<String, RelationalDbConnection> {
+        self.db_pools.clone()
+    }
+
+    pub fn list(&self) -> Vec<TaskEntry> {
+        let mut entries = self.tasks.clone();
+        // Newest first
+        entries.sort_by(|a, b| b.start_time.cmp(&a.start_time));
+        entries
+    }
+
+    pub fn get(&self, id: &str) -> Option<&TaskEntry> {
+        self.tasks.iter().find(|task| task.id == id)
+    }
+
+    pub fn set_task_graph(
+        &mut self,
+        id: &str,
+        graph: serde_json::Value,
+        object_path: Option<String>,
+    ) {
+        if let Some(task) = self.tasks.iter_mut().find(|task| task.id == id) {
+            task.graph_snapshot = Some(graph);
+            if object_path.is_some() {
+                task.file_path = object_path;
+            }
+            self.persist_index();
+        }
+    }
+
+    pub fn clear_non_running(&mut self) -> usize {
+        let before = self.tasks.len();
+        let removed_paths: Vec<PathBuf> = self
+            .tasks
+            .iter()
+            .filter(|task| !task.is_running)
+            .filter_map(|task| task.log_path.as_ref().map(PathBuf::from))
+            .collect();
+        self.tasks.retain(|task| task.is_running);
+
+        for path in removed_paths {
+            let _ = fs::remove_file(path);
+        }
+
+        self.persist_index();
+        before.saturating_sub(self.tasks.len())
+    }
+
+    pub fn delete_task(&mut self, id: &str) -> bool {
+        let Some(index) = self.tasks.iter().position(|task| task.id == id) else {
+            return false;
+        };
+        let task = self.tasks.remove(index);
+        if let Some(flag) = task.stop_flag {
+            flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        if let Some(path) = task.log_path {
+            let _ = fs::remove_file(path);
+        }
+        self.persist_index();
+        true
+    }
+
+    pub fn delete_tasks(&mut self, ids: &[String]) -> usize {
+        let before = self.tasks.len();
+        for id in ids {
+            let _ = self.delete_task(id);
+        }
+        before.saturating_sub(self.tasks.len())
+    }
+
+    pub fn append_task_log(&self, task_id: &str, entry: &TaskLogEntry) -> std::io::Result<()> {
+        let Some(task) = self.get(task_id) else {
+            return Ok(());
+        };
+        let Some(path) = task.log_path.as_ref() else {
+            return Ok(());
+        };
+
+        if let Some(parent) = Path::new(path).parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+        serde_json::to_writer(&mut file, entry)?;
+        file.write_all(b"\n")?;
+        file.flush()?;
+        Ok(())
+    }
+
+    pub fn read_task_logs(&self, task_id: &str) -> std::io::Result<Vec<TaskLogEntry>> {
+        let Some(task) = self.get(task_id) else {
+            return Ok(Vec::new());
+        };
+        let Some(path) = task.log_path.as_ref() else {
+            return Ok(Vec::new());
+        };
+
+        let file = match OpenOptions::new().read(true).open(path) {
+            Ok(file) => file,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(err) => return Err(err),
+        };
+
+        let reader = BufReader::new(file);
+        let mut entries = Vec::new();
+        for line in reader.lines() {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Ok(entry) = serde_json::from_str::<TaskLogEntry>(&line) {
+                entries.push(entry);
+            }
+        }
+        Ok(entries)
+    }
+
+    /// Append a progress step message for a task. If the task has a DB connection configured,
+    /// writes to the database; otherwise the message is silently dropped (in-memory tracking
+    /// is handled by the agent runtime).
+    pub fn append_task_progress(&self, task_id: &str, message: String) {
+        if let Some(task) = self.get(task_id) {
+            if let Some(conn_id) = &task.task_db_connection_id {
+                if let Some(pool) = self.get_db_pool(conn_id) {
+                    let task_id = task_id.to_string();
+                    let seq = {
+                        let mut guard = self.next_task_progress_seq.lock().unwrap();
+                        let next = guard.get(task_id.as_str()).copied().unwrap_or(0);
+                        guard.insert(task_id.clone(), next + 1);
+                        next
+                    };
+                    tokio::spawn(async move {
+                        if let Err(err) = crate::api::task_store::append_task_progress(
+                            &pool, &task_id, seq, &message,
+                        )
+                        .await
+                        {
+                            log::warn!(
+                                "Failed to append task_progress for task '{}': {}",
+                                task_id,
+                                err
+                            );
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    fn task_log_path(task_id: &str) -> std::io::Result<String> {
+        let dir = Path::new("logs").join("tasks");
+        fs::create_dir_all(&dir)?;
+        Ok(dir.join(format!("{task_id}.jsonl")).to_string_lossy().to_string())
+    }
+
+    fn task_index_path() -> PathBuf {
+        Path::new("logs").join("tasks").join("index.json")
+    }
+
+    fn persist_index(&self) {
+        if let Err(err) = self.write_index() {
+            log::warn!("Failed to persist task records: {}", err);
+        }
+    }
+
+    fn write_index(&self) -> std::io::Result<()> {
+        let path = Self::task_index_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let json = serde_json::to_string_pretty(&self.tasks).map_err(std::io::Error::other)?;
+        fs::write(path, json)
+    }
+
+    fn load_persisted_tasks(&mut self) -> std::io::Result<()> {
+        let index_path = Self::task_index_path();
+        if index_path.exists() {
+            let content = fs::read_to_string(&index_path)?;
+            let mut tasks =
+                serde_json::from_str::<Vec<TaskEntry>>(&content).map_err(std::io::Error::other)?;
+            for task in &mut tasks {
+                task.stop_flag = None;
+                if task.is_running {
+                    let end_time = Local::now();
+                    task.is_running = false;
+                    task.end_time.get_or_insert(end_time);
+                    task.duration_ms = Some((end_time - task.start_time).num_milliseconds().max(0));
+                    task.status = TaskStatus::Stopped;
+                }
+                if task.log_path.is_none() {
+                    task.log_path = Self::task_log_path(&task.id).ok();
+                }
+            }
+            self.tasks = tasks;
+        }
+
+        self.load_orphan_log_tasks()?;
+        self.persist_index();
+        Ok(())
+    }
+
+    fn load_orphan_log_tasks(&mut self) -> std::io::Result<()> {
+        let dir = Path::new("logs").join("tasks");
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(err) => return Err(err),
+        };
+
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let Some(task_id) = path.file_stem().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if self.tasks.iter().any(|task| task.id == task_id) {
+                continue;
+            }
+
+            let modified = entry
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .map(DateTime::<Local>::from)
+                .unwrap_or_else(|_| Local::now());
+            let short_id = task_id.chars().take(8).collect::<String>();
+            self.tasks.push(TaskEntry {
+                id: task_id.to_string(),
+                task_type: TaskType::NodeGraph,
+                graph_name: format!("历史任务 {}", short_id),
+                graph_session_id: String::new(),
+                chat_session_id: None,
+                file_path: None,
+                is_workflow_set: false,
+                start_time: modified,
+                is_running: false,
+                end_time: Some(modified),
+                duration_ms: Some(0),
+                user_ip: None,
+                owner_id: None,
+                status: TaskStatus::Success,
+                error_message: None,
+                result_summary: Some("从历史日志文件恢复的任务记录".to_string()),
+                log_path: Some(path.to_string_lossy().to_string()),
+                can_rerun: false,
+                graph_snapshot: None,
+                task_db_connection_id: None,
+                stop_flag: None,
+            });
+        }
+
+        Ok(())
+    }
+}

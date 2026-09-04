@@ -5,6 +5,7 @@ use log::{info, warn};
 use salvo::prelude::*;
 use salvo::websocket::{Message, WebSocket, WebSocketUpgrade};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::broadcast;
 
 use super::state::AppState;
@@ -41,14 +42,32 @@ pub enum ServerMessage {
         node_id: String,
         messages: serde_json::Value,
     },
+    NodeUiUpdate {
+        task_id: String,
+        graph_session_id: String,
+        node_id: String,
+        revision: u64,
+        state: Value,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ClientMessage {
-    Subscribe { graph_id: String },
-    Unsubscribe { graph_id: String },
+    Subscribe {
+        graph_id: String,
+    },
+    Unsubscribe {
+        graph_id: String,
+    },
     Ping,
+    NodeUiEvent {
+        graph_session_id: String,
+        task_id: Option<String>,
+        node_id: String,
+        event: String,
+        payload: Value,
+    },
 }
 
 /// Broadcast sender for server → all WS clients
@@ -108,6 +127,23 @@ async fn handle_ws_connection(ws: WebSocket, _state: Arc<AppState>, broadcast_tx
                     }
                     Ok(ClientMessage::Unsubscribe { graph_id }) => {
                         info!("WS client unsubscribed from graph {}", graph_id);
+                    }
+                    Ok(ClientMessage::NodeUiEvent {
+                        task_id: Some(task_id),
+                        node_id,
+                        event,
+                        payload,
+                        ..
+                    }) => {
+                        zihuan_core::graph::script_node::deliver_dynamic_script_ui_event(
+                            &task_id,
+                            &node_id,
+                            Some(event),
+                            payload,
+                        );
+                    }
+                    Ok(ClientMessage::NodeUiEvent { task_id: None, .. }) => {
+                        warn!("WS: UI event missing task_id");
                     }
                     Err(e) => {
                         warn!("WS: invalid client message: {}", e);

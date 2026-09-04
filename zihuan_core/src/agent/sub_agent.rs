@@ -24,6 +24,8 @@ pub struct SubAgentDefinition {
     pub id: String,
     pub name: String,
     #[serde(default)]
+    pub builtin: bool,
+    #[serde(default)]
     pub inputs: Vec<FunctionPortDef>,
     #[serde(default)]
     pub outputs: Vec<FunctionPortDef>,
@@ -371,6 +373,7 @@ mod tests {
         let definition = SubAgentDefinition {
             id: "memory".to_string(),
             name: "Memory".to_string(),
+            builtin: false,
             inputs: vec![],
             outputs: vec![],
             system_prompt: String::new(),
@@ -387,6 +390,7 @@ mod tests {
         let mut definition = SubAgentDefinition {
             id: "memory".to_string(),
             name: "Memory".to_string(),
+            builtin: false,
             inputs: vec![FunctionPortDef {
                 name: "content".to_string(),
                 data_type: DataType::String,
@@ -408,6 +412,7 @@ mod tests {
         let mut definition = SubAgentDefinition {
             id: "memory".to_string(),
             name: "Memory".to_string(),
+            builtin: false,
             inputs: vec![],
             outputs: vec![],
             system_prompt: String::new(),
@@ -424,6 +429,7 @@ mod tests {
         let definition = SubAgentDefinition {
             id: "search_memory".to_string(),
             name: "Search".to_string(),
+            builtin: false,
             inputs: vec![],
             outputs: vec![],
             system_prompt: String::new(),

@@ -47,3 +47,4 @@
   --badge-trace-bg:     #1a1a1a;
   --badge-trace-text:   #a0a0a0;
 }
+ .zihuan-node-ui-template { position: fixed; z-index: 4; pointer-events: auto; color: var(--text, #e6e6e6); background: rgba(24, 24, 24, 0.94); border: 1px solid rgba(255,255,255,.12); padding: 8px; box-sizing: border-box; overflow: auto; max-height: 360px; }

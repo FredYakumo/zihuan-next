@@ -17,12 +17,18 @@ NODE_DIR = Path(os.environ.get("ZIHUAN_DAG_NODES", ENGINE_DIR.parent / "dag_node
 
 
 def load_module(path: Path) -> tuple[Any | None, str | None]:
+    from zihuan_sdk import _CURRENT_SCRIPT_PATH
     try:
+        script_path = path.relative_to(Path.cwd())
         sys.path.insert(0, str(path.parent))
         spec = importlib.util.spec_from_file_location(f"zihuan_node_{path.stem}", path)
         if spec is None or spec.loader is None: raise RuntimeError("cannot create module specification")
         module = importlib.util.module_from_spec(spec)
+        # 设置当前脚本路径，供节点注册时使用
+        import zihuan_sdk
+        zihuan_sdk._CURRENT_SCRIPT_PATH = str(script_path)
         spec.loader.exec_module(module)
+        zihuan_sdk._CURRENT_SCRIPT_PATH = None
         return module, None
     except Exception as error:
         return None, f"failed to load {path.relative_to(NODE_DIR)}: {error}"
@@ -41,7 +47,7 @@ def load_nodes() -> tuple[dict[str, Any], list[dict[str, str]]]:
 
 
 def definition_json(definition: Any) -> dict[str, Any]:
-    return {"type_id": definition.type_id, "display_name": definition.display_name, "category": definition.category, "description": definition.description, "input_ports": [port.to_json() for port in definition.input_ports], "output_ports": [port.to_json() for port in definition.output_ports], "dynamic_input_ports": definition.dynamic_input_ports, "dynamic_output_ports": definition.dynamic_output_ports, "config_fields": definition.config_fields}
+    return {"type_id": definition.type_id, "display_name": definition.display_name, "category": definition.category, "description": definition.description, "script_path": definition.script_path, "input_ports": [port.to_json() for port in definition.input_ports], "output_ports": [port.to_json() for port in definition.output_ports], "dynamic_input_ports": definition.dynamic_input_ports, "dynamic_output_ports": definition.dynamic_output_ports, "config_fields": definition.config_fields}
 
 
 def resolve_ports(definition: Any, values: dict[str, Any]) -> dict[str, Any]:

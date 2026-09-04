@@ -31,6 +31,7 @@ export interface CanvasFacade {
   _pendingGraphMutations: Set<Promise<unknown>>;
   outputSummariesVisible: boolean;
   nodeTypes: NodeTypeInfo[];
+  uiRenderer?: { mount(node: any, definition: NodeDefinition, info: NodeTypeInfo | undefined): void; reposition(): void; clear(): void; dispose(): void };
   onNavigationChange?: (labels: string[]) => void;
   onGraphDirty?: () => void;
   onHistoryChange?: () => void;

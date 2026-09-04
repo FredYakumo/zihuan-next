@@ -51,6 +51,7 @@ fn default_memory_definition() -> SubAgentDefinition {
     SubAgentDefinition {
         id: DEFAULT_MEMORY_ID.to_string(),
         name: "Memory".to_string(),
+        builtin: true,
         inputs: vec![FunctionPortDef {
             name: "content".to_string(),
             data_type: DataType::String,
@@ -77,6 +78,7 @@ fn default_dream_definition() -> SubAgentDefinition {
     SubAgentDefinition {
         id: DEFAULT_DREAM_ID.to_string(),
         name: "Dream".to_string(),
+        builtin: true,
         inputs: vec![FunctionPortDef {
             name: "transcript".to_string(),
             data_type: DataType::String,

@@ -24,6 +24,7 @@ import { SaveManager } from "./app/save_manager";
 import { GraphActions } from "./app/graph_actions";
 import { WorkspaceController } from "./app/workspace_controller";
 import { openTaskManagerDialog } from "./ui/dialogs/index";
+import { NodeUiTemplateRenderer } from "./graph/ui_template_renderer";
 
 const TASK_TRACE_NODE_PREFIX = "qq_chat_";
 // Initial x-coordinate for the task trace graph layout.
@@ -57,6 +58,8 @@ export async function bootstrapGraphEditor() {
   }
 
   const canvas = new ZihuanCanvas(canvasEl);
+  (window as any).__zihuanWs = ws;
+  canvas.uiRenderer = new NodeUiTemplateRenderer(canvas, ws);
   canvas.nodeTypes = nodeTypes;
 
   let currentTaskId: string | null = null;

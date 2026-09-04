@@ -1,5 +1,6 @@
 uv.lock
-logs/
+/logs/
+webui/logs/
 debug.log
 **/debug.log
 **/__pycache__/

@@ -31,5 +31,5 @@ defineEmits<{ (e: "select", mode: "role" | "detailed" | "skip"): void }>();
 </script>
 
 <style scoped lang="scss">
-@use "../styles/mode-selection" as *;
+@use "./mode-selection" as *;
 </style>

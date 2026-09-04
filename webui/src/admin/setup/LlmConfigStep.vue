@@ -97,7 +97,7 @@
 import { ArrowLeftIcon, ArrowRightIcon } from "tdesign-icons-vue-next";
 
 import type { LlmSetupConfig } from "../../api/client";
-import { useLlmConfigStep } from "../composables/useLlmConfigStep";
+import { useLlmConfigStep } from "./useLlmConfigStep";
 
 const model = defineModel<LlmSetupConfig>({ required: true });
 
@@ -107,5 +107,5 @@ const { canProceed } = useLlmConfigStep(model);
 </script>
 
 <style scoped lang="scss">
-@use "../styles/llm-config-step" as *;
+@use "./llm-config-step" as *;
 </style>

@@ -47,5 +47,5 @@ defineEmits<{
 </script>
 
 <style scoped lang="scss">
-@use "../styles/role-selection" as *;
+@use "./role-selection" as *;
 </style>

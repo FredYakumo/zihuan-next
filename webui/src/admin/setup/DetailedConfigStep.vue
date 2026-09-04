@@ -105,11 +105,11 @@ import { computed, onMounted, ref, watch } from "vue";
 import { ArrowLeftIcon, ArrowRightIcon } from "tdesign-icons-vue-next";
 
 import { setup as setupApi, type DetailedSetupConfig, type DetailedSetupInstallMethod, type EnvironmentInfo } from "../../api/client";
-import ComponentHeader from "./SetupComponentHeader.vue";
-import CredentialInput from "./SetupCredentialInput.vue";
-import DeploymentFields from "./SetupDeploymentFields.vue";
-import Field from "./SetupField.vue";
-import SourceChoice from "./SetupSourceChoice.vue";
+import ComponentHeader from "../components/setup/SetupComponentHeader.vue";
+import CredentialInput from "../components/setup/SetupCredentialInput.vue";
+import DeploymentFields from "../components/setup/SetupDeploymentFields.vue";
+import Field from "../components/setup/SetupField.vue";
+import SourceChoice from "../components/setup/SetupSourceChoice.vue";
 
 const model = defineModel<DetailedSetupConfig>({ required: true });
 defineProps<{ error: string | null }>();
@@ -207,7 +207,7 @@ function clearInactiveSearchCredentials() {
 </script>
 
 <style scoped lang="scss">
-@use "../styles/detailed-config-step" as *;
+@use "./detailed-config-step" as *;
 
 .credential-auth-field {
   display: grid;

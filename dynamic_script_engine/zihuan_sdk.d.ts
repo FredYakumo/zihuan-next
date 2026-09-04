@@ -3,6 +3,8 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 export type DataType = string | { Vec: DataType } | { [key: string]: DataType };
 export type PortDefinition = { name: string; data_type: DataType; required: boolean; hidden: boolean; description: string | null };
 export type NodeConfigField = { key: string; data_type: DataType; description?: string; required?: boolean; widget?: string; connection_kind?: string | null };
+export type NodeUiDefinition = { template_path?: string; card?: UiComponent[]; panel?: UiComponent[] };
+export type UiComponent = { type: string; props?: Record<string, JsonValue>; value_key?: string; event?: string; children?: UiComponent[] };
 
 export class ResourceHandle {
   readonly handle: string;
@@ -27,6 +29,11 @@ export type NodeInputs = Record<string, JsonValue | ResourceHandle | undefined>;
 export type NodeOutputs = Record<string, JsonValue | ResourceHandle | undefined>;
 
 export interface ZihuanSdk {
+  readonly ui: {
+    publish(state: JsonValue): Promise<boolean>;
+    update(patch: JsonValue): Promise<boolean>;
+    waitEvent(eventName?: string, timeoutMs?: number): Promise<JsonValue | null>;
+  };
   readonly variables: { get(name: string): Promise<JsonValue>; set(name: string, value: JsonValue | ResourceHandle): Promise<boolean> };
   readonly task: { progress(message: string): Promise<boolean>; append(taskId: unknown, message: unknown): Promise<boolean> };
   readonly session: {
@@ -118,11 +125,13 @@ export interface NodeDefinition {
   display_name: string;
   category: string;
   description?: string;
+  script_path?: string;
   input_ports?: PortDefinition[];
   output_ports?: PortDefinition[];
   dynamic_input_ports?: boolean;
   dynamic_output_ports?: boolean;
   config_fields?: NodeConfigField[];
+  ui?: NodeUiDefinition;
   resolve_ports?(context: Pick<NodeExecutionContext, "inline_values">): { input_ports?: PortDefinition[]; output_ports?: PortDefinition[] };
   execute(context: NodeExecutionContext): NodeOutputs | Promise<NodeOutputs>;
 }

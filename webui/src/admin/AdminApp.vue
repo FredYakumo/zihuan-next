@@ -54,8 +54,8 @@ import {
 
 import brandLogoSrc from "../assets/brand-icon.png";
 import { onThemeChange } from "../ui/theme";
-import { useAdminApp } from "./composables/useAdminApp";
-import { errorCount, logErrorBadgeEnabled } from "./state/logStream";
+import { useAdminApp } from "./components/useAdminApp";
+import { errorCount, logErrorBadgeEnabled } from "./logs/logStream";
 
 const { isSetupRoute, sidebarOpen, sidebarCollapsed, showOverlay, closeSidebar, toggleSidebar } = useAdminApp();
 const route = useRoute();
@@ -72,5 +72,5 @@ onUnmounted(() => { unsubscribeTheme?.(); });
 </script>
 
 <style scoped lang="scss">
-@use "./styles/admin-app" as *;
+@use "./components/admin-app" as *;
 </style>

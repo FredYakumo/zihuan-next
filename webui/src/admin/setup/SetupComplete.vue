@@ -17,5 +17,5 @@ defineEmits<{ (e: "finish"): void }>();
 </script>
 
 <style scoped lang="scss">
-@use "../styles/setup-complete" as *;
+@use "./setup-complete" as *;
 </style>

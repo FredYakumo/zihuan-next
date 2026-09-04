@@ -1,7 +1,7 @@
 use super::shared::{json_error, resolve_tool_path, success_json};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -45,8 +45,13 @@ pub struct PendingCommandApproval {
 #[derive(Default)]
 struct CommandApprovals {
     families: Vec<(String, String)>,
-    decisions: HashMap<(String, String), bool>,
-    pending: HashMap<String, PendingCommandApproval>,
+    pending: HashMap<String, VecDeque<PendingApproval>>,
+    next_id: u64,
+}
+struct PendingApproval {
+    id: u64,
+    request: PendingCommandApproval,
+    decision: Option<bool>,
 }
 static COMMAND_APPROVALS: OnceLock<(Mutex<CommandApprovals>, Condvar)> = OnceLock::new();
 
@@ -54,16 +59,18 @@ pub fn approve_command(session_id: &str, command: &str, allow_similar: bool) -> 
     let (lock, wake) =
         COMMAND_APPROVALS.get_or_init(|| (Mutex::new(CommandApprovals::default()), Condvar::new()));
     let mut approvals = lock.lock().unwrap();
-    let Some(pending) = approvals.pending.get(session_id) else {
+    let Some(pending) = approvals.pending.get(session_id).and_then(|queue| queue.front()) else {
         return false;
     };
-    if pending.command != command {
+    if pending.request.command != command {
         return false;
     }
     if allow_similar {
         approvals.families.push((session_id.to_string(), command_family(command)))
     }
-    approvals.decisions.insert((session_id.to_string(), command.to_string()), true);
+    if let Some(item) = approvals.pending.get_mut(session_id).and_then(|queue| queue.front_mut()) {
+        item.decision = Some(true);
+    }
     wake.notify_all();
     true
 }
@@ -72,13 +79,15 @@ pub fn reject_command(session_id: &str, command: &str) -> bool {
     let (lock, wake) =
         COMMAND_APPROVALS.get_or_init(|| (Mutex::new(CommandApprovals::default()), Condvar::new()));
     let mut approvals = lock.lock().unwrap();
-    let Some(pending) = approvals.pending.get(session_id) else {
+    let Some(pending) = approvals.pending.get(session_id).and_then(|queue| queue.front()) else {
         return false;
     };
-    if pending.command != command {
+    if pending.request.command != command {
         return false;
     }
-    approvals.decisions.insert((session_id.to_string(), command.to_string()), false);
+    if let Some(item) = approvals.pending.get_mut(session_id).and_then(|queue| queue.front_mut()) {
+        item.decision = Some(false);
+    }
     wake.notify_all();
     true
 }
@@ -86,7 +95,12 @@ pub fn reject_command(session_id: &str, command: &str) -> bool {
 pub fn pending_command_approval(session_id: &str) -> Option<PendingCommandApproval> {
     let (lock, _) =
         COMMAND_APPROVALS.get_or_init(|| (Mutex::new(CommandApprovals::default()), Condvar::new()));
-    lock.lock().unwrap().pending.get(session_id).cloned()
+    lock.lock()
+        .unwrap()
+        .pending
+        .get(session_id)
+        .and_then(|queue| queue.front())
+        .map(|item| item.request.clone())
 }
 
 fn is_approved(session_id: Option<&str>, command: &str) -> bool {
@@ -103,17 +117,75 @@ fn is_approved(session_id: Option<&str>, command: &str) -> bool {
         .any(|(session, allowed)| session == session_id && allowed == &family)
 }
 
-fn wait_for_command_decision(session_id: &str, command: &str) -> bool {
+fn wait_for_command_decision(
+    session_id: &str,
+    command: &str,
+    shell: &str,
+    on_output: &Arc<dyn Fn(&str, &str) + Send + Sync>,
+) -> bool {
     let (lock, wake) =
         COMMAND_APPROVALS.get_or_init(|| (Mutex::new(CommandApprovals::default()), Condvar::new()));
-    let key = (session_id.to_string(), command.to_string());
     let mut approvals = lock.lock().unwrap();
-    while !approvals.decisions.contains_key(&key) {
+    let family = command_family(command);
+    if approvals
+        .families
+        .iter()
+        .any(|(session, allowed)| session == session_id && allowed == &family)
+    {
+        return true;
+    }
+    approvals.next_id = approvals.next_id.wrapping_add(1);
+    let id = approvals.next_id;
+    let queue = approvals.pending.entry(session_id.to_string()).or_default();
+    let mut announced = queue.is_empty();
+    queue.push_back(PendingApproval {
+        id,
+        request: PendingCommandApproval {
+            command: command.to_string(),
+            shell: shell.to_string(),
+        },
+        decision: None,
+    });
+    drop(approvals);
+    if announced {
+        (on_output)(
+            "command_confirmation",
+            &serde_json::json!({"command": command, "shell": shell}).to_string(),
+        );
+    }
+    let mut approvals = lock.lock().unwrap();
+    loop {
+        let Some(queue) = approvals.pending.get(session_id) else {
+            return false;
+        };
+        if !queue.iter().any(|item| item.id == id) {
+            return false;
+        }
+        let decision = queue.iter().find(|item| item.id == id).and_then(|item| item.decision);
+        if !announced && queue.front().is_some_and(|front| front.id == id) {
+            announced = true;
+            drop(approvals);
+            (on_output)(
+                "command_confirmation",
+                &serde_json::json!({"command": command, "shell": shell}).to_string(),
+            );
+            approvals = lock.lock().unwrap();
+            continue;
+        }
+        if let Some(decision) = decision {
+            let result = decision;
+            if let Some(queue) = approvals.pending.get_mut(session_id) {
+                queue.retain(|item| item.id != id);
+            }
+            if approvals.pending.get(session_id).is_some_and(VecDeque::is_empty) {
+                approvals.pending.remove(session_id);
+            }
+            wake.notify_all();
+            drop(approvals);
+            return result;
+        }
         approvals = wake.wait(approvals).unwrap();
     }
-    let decision = approvals.decisions.remove(&key).unwrap_or(false);
-    approvals.pending.remove(session_id);
-    decision
 }
 
 fn command_family(command: &str) -> String {
@@ -154,22 +226,7 @@ impl Tool for ExecCmdTool {
             let Some(session_id) = self.session_id.as_deref() else {
                 return ToolExecutionOutput::text(json_error("exec_cmd requires a chat session"));
             };
-            {
-                let (lock, _) = COMMAND_APPROVALS
-                    .get_or_init(|| (Mutex::new(CommandApprovals::default()), Condvar::new()));
-                lock.lock().unwrap().pending.insert(
-                    session_id.to_string(),
-                    PendingCommandApproval {
-                        command: args.command.clone(),
-                        shell: shell.clone(),
-                    },
-                );
-            }
-            (on_output)(
-                "command_confirmation",
-                &serde_json::json!({"command":args.command,"shell":shell}).to_string(),
-            );
-            if !wait_for_command_decision(session_id, &args.command) {
+            if !wait_for_command_decision(session_id, &args.command, &shell, &on_output) {
                 return ToolExecutionOutput::text(serde_json::json!({"ok":false,"rejected":true,"error":"command execution rejected by user"}).to_string());
             }
         }

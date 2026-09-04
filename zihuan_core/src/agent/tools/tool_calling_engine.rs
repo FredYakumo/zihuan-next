@@ -534,7 +534,12 @@ impl ToolCallingEngine {
                     prepared_calls
                         .into_iter()
                         .map(|call| {
-                            let result = self.execute_prepared_call(&tool_call_content, call);
+                            let result = std::thread::scope(|scope| {
+                                scope
+                                    .spawn(|| self.execute_prepared_call(&tool_call_content, call))
+                                    .join()
+                                    .expect("serial tool execution panicked")
+                            });
                             self.notify_tool_finish(&result);
                             result
                         })
@@ -733,7 +738,12 @@ impl ToolCallingEngine {
                     prepared_calls
                         .into_iter()
                         .map(|call| {
-                            let result = self.execute_prepared_call(&tool_call_content, call);
+                            let result = std::thread::scope(|scope| {
+                                scope
+                                    .spawn(|| self.execute_prepared_call(&tool_call_content, call))
+                                    .join()
+                                    .expect("serial tool execution panicked")
+                            });
                             self.notify_tool_finish(&result);
                             result
                         })

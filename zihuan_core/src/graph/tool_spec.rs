@@ -190,30 +190,15 @@ pub fn tool_calling_tool_input_signature(
     signature
 }
 
-pub fn tool_subgraph_owner_uses_tool_calling_outputs(node_type: &str) -> bool {
-    node_type == "tool_calling"
+pub fn is_qq_agent_tool_subgraph_owner(node_type: &str) -> bool {
+    node_type == QQ_AGENT_TOOL_OWNER_TYPE
 }
 
-pub fn tool_subgraph_owner_types() -> [&'static str; 2] {
-    ["tool_calling", QQ_AGENT_TOOL_OWNER_TYPE]
-}
-
-pub fn is_tool_calling_subgraph_owner(node_type: &str) -> bool {
-    tool_subgraph_owner_types().contains(&node_type)
-}
-
-pub fn normalized_tool_outputs_for_owner(
-    node_type: &str,
-    tool: &ToolDefinition,
-) -> Vec<FunctionPortDef> {
-    if tool_subgraph_owner_uses_tool_calling_outputs(node_type) {
-        tool.outputs.clone()
-    } else {
-        vec![FunctionPortDef {
-            name: QQ_AGENT_TOOL_OUTPUT_NAME.to_string(),
-            data_type: crate::graph::DataType::String,
-            description: "工具返回给 Agent 的文本结果".to_string(),
-            required: true,
-        }]
-    }
+pub fn qq_agent_tool_outputs() -> Vec<FunctionPortDef> {
+    vec![FunctionPortDef {
+        name: QQ_AGENT_TOOL_OUTPUT_NAME.to_string(),
+        data_type: crate::graph::DataType::String,
+        description: "工具返回给 Agent 的文本结果".to_string(),
+        required: true,
+    }]
 }

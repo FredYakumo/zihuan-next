@@ -1,5 +1,6 @@
 id: memory
 name: Memory
+builtin: true
 inputs:
 - name: content
   data_type: String

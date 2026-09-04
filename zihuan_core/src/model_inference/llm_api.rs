@@ -12,6 +12,7 @@ use crate::model_inference::llm::message::convert::{
     parse_responses_sse_response, parse_responses_sse_stream_response,
 };
 use crate::model_inference::llm::{InferenceParam, LLMMessage, StreamToken};
+use crate::model_inference::message_content_utils::downgrade_messages_for_model;
 use crate::model_inference::model_config::{LlmApiStyle, ReasoningEffort, ThinkingType};
 use crate::utils::string_utils;
 use log::{debug, error, warn};
@@ -425,6 +426,10 @@ impl LLMBase for LLMAPI {
             return LLMMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
         }
 
+        let messages =
+            downgrade_messages_for_model(param.messages.clone(), self.supports_multimodal_input);
+        let param = InferenceParam { messages: &messages, tools: param.tools };
+
         let client = Client::builder()
             .timeout(self.timeout)
             .build()
@@ -439,14 +444,14 @@ impl LLMBase for LLMAPI {
             match self.api_style {
                 LlmApiStyle::OpenAiResponses => build_responses_request_body(
                     &self.model_name,
-                    param,
+                    &param,
                     self.stream,
                     self.include_reasoning_content,
                 ),
                 LlmApiStyle::OpenAiResponsesMessageCompat => {
                     build_responses_message_compat_request_body(
                         &self.model_name,
-                        param,
+                        &param,
                         self.stream,
                         self.include_reasoning_content,
                     )
@@ -454,7 +459,7 @@ impl LLMBase for LLMAPI {
                 LlmApiStyle::OpenAiResponsesImageUrlObjectCompat => {
                     build_responses_image_url_object_compat_request_body(
                         &self.model_name,
-                        param,
+                        &param,
                         self.stream,
                         self.include_reasoning_content,
                     )
@@ -467,7 +472,7 @@ impl LLMBase for LLMAPI {
         ) {
             build_tencent_multimodal_chat_completions_request_body(
                 &self.model_name,
-                param,
+                &param,
                 self.stream,
                 self.include_reasoning_content,
                 self.thinking_type.as_ref(),
@@ -476,7 +481,7 @@ impl LLMBase for LLMAPI {
         } else {
             build_chat_completions_request_body(
                 &self.model_name,
-                param,
+                &param,
                 self.stream,
                 self.include_reasoning_content,
                 self.thinking_type.as_ref(),
@@ -558,6 +563,10 @@ impl LLMAPI {
             return LLMMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
         }
 
+        let messages =
+            downgrade_messages_for_model(param.messages.clone(), self.supports_multimodal_input);
+        let param = InferenceParam { messages: &messages, tools: param.tools };
+
         let request_context = RequestContext {
             message_count: param.messages.len(),
             tool_count: param.tools.as_ref().map(|tools| tools.len()).unwrap_or(0),
@@ -567,14 +576,14 @@ impl LLMAPI {
             match self.api_style {
                 LlmApiStyle::OpenAiResponses => build_responses_request_body(
                     &self.model_name,
-                    param,
+                    &param,
                     true,
                     self.include_reasoning_content,
                 ),
                 LlmApiStyle::OpenAiResponsesMessageCompat => {
                     build_responses_message_compat_request_body(
                         &self.model_name,
-                        param,
+                        &param,
                         true,
                         self.include_reasoning_content,
                     )
@@ -582,7 +591,7 @@ impl LLMAPI {
                 LlmApiStyle::OpenAiResponsesImageUrlObjectCompat => {
                     build_responses_image_url_object_compat_request_body(
                         &self.model_name,
-                        param,
+                        &param,
                         true,
                         self.include_reasoning_content,
                     )
@@ -595,7 +604,7 @@ impl LLMAPI {
         ) {
             build_tencent_multimodal_chat_completions_request_body(
                 &self.model_name,
-                param,
+                &param,
                 true,
                 self.include_reasoning_content,
                 self.thinking_type.as_ref(),
@@ -604,7 +613,7 @@ impl LLMAPI {
         } else {
             build_chat_completions_request_body(
                 &self.model_name,
-                param,
+                &param,
                 true,
                 self.include_reasoning_content,
                 self.thinking_type.as_ref(),

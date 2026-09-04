@@ -1,0 +1,69 @@
+.agent-service-form-section {
+  margin-bottom: 12px;
+}
+
+.agent-service-form-section :deep(.t-card__title) {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.agent-service-model-config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+}
+
+.agent-service-model-config-grid :deep(.t-form__item) {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.agent-service-model-config-grid :deep(.t-form__label) {
+  flex: 0 0 132px;
+  margin: 0 8px 0 0;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.agent-service-model-config-grid :deep(.t-form__controls) {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-service-model-config-grid :deep(.t-form__controls-content) {
+  width: 100%;
+}
+
+.agent-service-check-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.agent-service-check-row :deep(.t-checkbox) {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.agent-service-image-understand-item .agent-service-check-row :deep(.t-select) {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-service-image-understand-item .agent-service-check-row :deep(.t-checkbox),
+.agent-service-memory-item .agent-service-check-row :deep(.t-checkbox) {
+  flex: 0 0 136px;
+}
+
+.agent-service-memory-item .agent-service-check-row :deep(.t-select) {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 840px) {
+  .agent-service-model-config-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,4 +1,5 @@
 // TypeScript types mirroring the Rust API structs
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 /**
  * Object-variant form of a DataType as serialized by Rust serde.
@@ -17,6 +18,8 @@ export type DataTypeMetaDataObject = { Vec: DataTypeMetaData } | { Custom: strin
  * Tuple variants: { Vec: DataTypeMetaData } | { Custom: string }
  */
 export type DataTypeMetaData = string | DataTypeMetaDataObject;
+export interface UiComponentDefinition { type: string; props?: Record<string, JsonValue>; value_key?: string; event?: string; children?: UiComponentDefinition[]; }
+export interface NodeUiDefinition { template_path?: string; card?: UiComponentDefinition[]; panel?: UiComponentDefinition[]; }
 
 export interface PortInfo {
   name: string;
@@ -46,6 +49,9 @@ export interface NodeTypeInfo {
   has_dynamic_output_ports: boolean;
   is_event_producer: boolean;
   config_fields: NodeConfigFieldInfo[];
+  ui_template?: string | null;
+  ui_template_error?: string | null;
+  ui?: NodeUiDefinition | null;
 }
 
 export interface RegistryResponse {
@@ -90,6 +96,7 @@ export interface NodeDefinition {
   position: GraphPosition | null;
   size: GraphSize | null;
   inline_values: Record<string, unknown>;
+  ui_state?: unknown | null;
   port_bindings: Record<string, PortBinding>;
   has_error: boolean;
   has_cycle: boolean;
@@ -214,9 +221,11 @@ export type ServerMessage =
       graph_session_id: string;
       node_id: string;
       messages: QQMessageItem[];
-    };
+    }
+  | { type: "NodeUiUpdate"; task_id: string; graph_session_id: string; node_id: string; revision: number; state: JsonValue };
 
 export type ClientMessage =
   | { type: "Subscribe"; graph_id: string }
   | { type: "Unsubscribe"; graph_id: string }
-  | { type: "Ping" };
+  | { type: "Ping" }
+  | { type: "NodeUiEvent"; graph_session_id: string; task_id?: string; node_id: string; event: string; payload: JsonValue };
