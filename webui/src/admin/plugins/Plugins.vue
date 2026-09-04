@@ -144,12 +144,12 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router";
 import { ChevronLeftIcon, CopyIcon } from "tdesign-icons-vue-next";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
-import InstallationSuccessDialog from "../components/InstallationSuccessDialog.vue";
+import InstallationSuccessDialog from "../components/setup/InstallationSuccessDialog.vue";
 import { pluginsApi, setup as setupApi, type DetailedSetupConfig, type EnvironmentInfo, type PluginRecord, type SetupProgressEvent } from "../../api/client";
-import InstallationProgress from "../setup/InstallationProgress.vue";
-import SetupCredentialInput from "../setup/SetupCredentialInput.vue";
-import SetupDeploymentFields from "../setup/SetupDeploymentFields.vue";
-import SetupField from "../setup/SetupField.vue";
+import InstallationProgress from "../components/setup/InstallationProgress.vue";
+import SetupCredentialInput from "../components/setup/SetupCredentialInput.vue";
+import SetupDeploymentFields from "../components/setup/SetupDeploymentFields.vue";
+import SetupField from "../components/setup/SetupField.vue";
 import elasticsearchIcon from "../../assets/icons/elasticsearch.svg";
 import mysqlIcon from "../../assets/icons/mysql.svg";
 import redisIcon from "../../assets/icons/redis.svg";
