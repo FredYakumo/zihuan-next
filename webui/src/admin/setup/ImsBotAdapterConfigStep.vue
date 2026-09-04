@@ -87,7 +87,7 @@
 import { ArrowLeftIcon, ArrowRightIcon, ChatIcon, LogoQqIcon, SendIcon } from "tdesign-icons-vue-next";
 
 import type { ImsBotAdapterSetupConfig } from "../../api/client";
-import { useImsBotAdapterConfigStep } from "../composables/useImsBotAdapterConfigStep";
+import { useImsBotAdapterConfigStep } from "./useImsBotAdapterConfigStep";
 
 const model = defineModel<ImsBotAdapterSetupConfig>({ required: true });
 
@@ -97,5 +97,5 @@ const { canProceed, platformHint } = useImsBotAdapterConfigStep(model);
 </script>
 
 <style scoped lang="scss">
-@use "../styles/ims-bot-adapter-config-step" as *;
+@use "./ims-bot-adapter-config-step" as *;
 </style>

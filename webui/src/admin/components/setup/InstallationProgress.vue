@@ -38,7 +38,7 @@
 import { nextTick, ref, watch } from "vue";
 
 import type { SetupProgressEvent } from "../../api/client";
-import { useInstallationProgress } from "../composables/useInstallationProgress";
+import { useInstallationProgress } from "../../setup/useInstallationProgress";
 
 const props = withDefaults(defineProps<{
   taskId: string;
@@ -67,5 +67,5 @@ watch(() => logs.value.length, async () => {
 </script>
 
 <style scoped lang="scss">
-@use "../styles/installation-progress" as *;
+@use "./installation-progress" as *;
 </style>

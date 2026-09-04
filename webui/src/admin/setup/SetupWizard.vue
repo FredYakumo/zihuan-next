@@ -78,15 +78,15 @@
 
 <script setup lang="ts">
 import brandIconSrc from "../../assets/brand-icon.png";
-import ModeSelection from "../setup/ModeSelection.vue";
-import RoleSelection from "../setup/RoleSelection.vue";
-import DetailedConfigStep from "../setup/DetailedConfigStep.vue";
-import EnvironmentCheck from "../setup/EnvironmentCheck.vue";
-import LlmConfigStep from "../setup/LlmConfigStep.vue";
-import ImsBotAdapterConfigStep from "../setup/ImsBotAdapterConfigStep.vue";
-import InstallationProgress from "../setup/InstallationProgress.vue";
-import InstallationSuccessDialog from "../components/InstallationSuccessDialog.vue";
-import { useSetupWizard } from "../composables/useSetupWizard";
+import ModeSelection from "./ModeSelection.vue";
+import RoleSelection from "./RoleSelection.vue";
+import DetailedConfigStep from "./DetailedConfigStep.vue";
+import EnvironmentCheck from "./EnvironmentCheck.vue";
+import LlmConfigStep from "./LlmConfigStep.vue";
+import ImsBotAdapterConfigStep from "./ImsBotAdapterConfigStep.vue";
+import InstallationProgress from "../components/setup/InstallationProgress.vue";
+import InstallationSuccessDialog from "../components/setup/InstallationSuccessDialog.vue";
+import { useSetupWizard } from "./useSetupWizard";
 
 const {
   step,
@@ -115,5 +115,5 @@ const {
 </script>
 
 <style scoped lang="scss">
-@use "../styles/setup-wizard" as *;
+@use "./setup-wizard" as *;
 </style>
