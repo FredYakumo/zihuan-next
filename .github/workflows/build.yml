@@ -59,21 +59,25 @@ jobs:
             runner: windows-2022
             artifact_name: Windows-x86_64-cpu
             binary_extension: .exe
+            package_extension: .zip
             build_command: cargo build --release -p zihuan_service --bin zihuan_next
           - name: Linux-x86_64-cpu
             runner: ubuntu-22.04
             artifact_name: Linux-x86_64-cpu
             binary_extension: ''
+            package_extension: .tar.xz
             build_command: cargo build --release -p zihuan_service --bin zihuan_next
           - name: macOS-Apple-cpu
             runner: macos-14
             artifact_name: macOS-Apple-cpu
             binary_extension: ''
+            package_extension: .zip
             build_command: cargo build --release -p zihuan_service --bin zihuan_next
           - name: Windows-x86_64-candle-cuda-12.6
             runner: windows-2022
             artifact_name: Windows-x86_64-candle-cuda-12.6
             binary_extension: .exe
+            package_extension: .zip
             cuda: true
             windows_cuda: true
             cuda_compute_cap: 75
@@ -81,6 +85,7 @@ jobs:
             runner: ubuntu-22.04
             artifact_name: Linux-x86_64-candle-cuda-12.6
             binary_extension: ''
+            package_extension: .tar.xz
             cuda: true
             cuda_compute_cap: 75
             build_command: cargo build --release -p zihuan_service --bin zihuan_next --features candle-cuda
@@ -132,11 +137,44 @@ jobs:
         if: "!matrix.windows_cuda"
         run: ${{ matrix.build_command }}
 
-      - name: Upload binary
+      - name: Prepare release package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $packageRoot = "package/zihuan_next"
+          $archive = "zihuan_next-${{ github.ref_name }}-${{ matrix.artifact_name }}.zip"
+          New-Item -ItemType Directory -Force -Path "$packageRoot/dag_nodes", "$packageRoot/dynamic_script_engine" | Out-Null
+          Copy-Item "target/release/zihuan_next${{ matrix.binary_extension }}" $packageRoot
+          Copy-Item "package.json" $packageRoot
+          Copy-Item "dag_nodes/*" "$packageRoot/dag_nodes" -Recurse
+          $runtimeFiles = @("engine.mjs", "python_node_runtime.py", "zihuan_sdk.mjs", "zihuan_sdk.py")
+          foreach ($file in $runtimeFiles) {
+            Copy-Item "dynamic_script_engine/$file" "$packageRoot/dynamic_script_engine"
+          }
+          Compress-Archive -Path $packageRoot -DestinationPath $archive -Force
+
+      - name: Prepare release package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          package_root="package/zihuan_next"
+          archive_base="zihuan_next-${{ github.ref_name }}-${{ matrix.artifact_name }}"
+          mkdir -p "$package_root/dag_nodes" "$package_root/dynamic_script_engine"
+          cp "target/release/zihuan_next${{ matrix.binary_extension }}" "$package_root/"
+          cp package.json "$package_root/"
+          cp -R dag_nodes/. "$package_root/dag_nodes/"
+          cp dynamic_script_engine/{engine.mjs,python_node_runtime.py,zihuan_sdk.mjs,zihuan_sdk.py} "$package_root/dynamic_script_engine/"
+          if [[ "${{ matrix.package_extension }}" == ".tar.xz" ]]; then
+            tar -cJf "${archive_base}.tar.xz" -C package zihuan_next
+          else
+            (cd package && zip -r "../${archive_base}.zip" zihuan_next)
+          fi
+
+      - name: Upload release package
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: target/release/zihuan_next${{ matrix.binary_extension }}
+          path: zihuan_next-${{ github.ref_name }}-${{ matrix.artifact_name }}${{ matrix.package_extension }}
           if-no-files-found: error
 
   release:
@@ -156,11 +194,11 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir release
-          cp artifacts/Windows-x86_64-cpu/zihuan_next.exe release/zihuan_next-Windows-x86_64-cpu.exe
-          cp artifacts/Linux-x86_64-cpu/zihuan_next release/zihuan_next-Linux-x86_64-cpu
-          cp artifacts/macOS-Apple-cpu/zihuan_next release/zihuan_next-macOS-Apple-cpu
-          cp artifacts/Windows-x86_64-candle-cuda-12.6/zihuan_next.exe release/zihuan_next-Windows-x86_64-candle-cuda-12.6.exe
-          cp artifacts/Linux-x86_64-candle-cuda-12.6/zihuan_next release/zihuan_next-Linux-x86_64-candle-cuda-12.6
+          cp artifacts/Windows-x86_64-cpu/zihuan_next-${{ github.ref_name }}-Windows-x86_64-cpu.zip release/
+          cp artifacts/Linux-x86_64-cpu/zihuan_next-${{ github.ref_name }}-Linux-x86_64-cpu.tar.xz release/
+          cp artifacts/macOS-Apple-cpu/zihuan_next-${{ github.ref_name }}-macOS-Apple-cpu.zip release/
+          cp artifacts/Windows-x86_64-candle-cuda-12.6/zihuan_next-${{ github.ref_name }}-Windows-x86_64-candle-cuda-12.6.zip release/
+          cp artifacts/Linux-x86_64-candle-cuda-12.6/zihuan_next-${{ github.ref_name }}-Linux-x86_64-candle-cuda-12.6.tar.xz release/
 
       - name: Publish release
         uses: softprops/action-gh-release@v2

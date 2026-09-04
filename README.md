@@ -23,15 +23,9 @@ And Zihuan can easily tweak agent behavior and model inference details—whether
 
 ### 下载
 
-请选择与你的操作系统和硬件相符的版本。
+[最新版本Download](https://github.com/FredYakumo/zihuan-next/releases/latest/)
 
-| 平台 | 版本 | 下载 |
-| --- | --- | --- |
-| Windows x86_64 | CPU | [Download](https://github.com/FredYakumo/zihuan-next/releases/latest/download/zihuan_next-Windows-x86_64-cpu.exe) |
-| Windows x86_64 + NVIDIA GPU | CUDA 12.6 | [Download](https://github.com/FredYakumo/zihuan-next/releases/latest/download/zihuan_next-Windows-x86_64-candle-cuda-12.6.exe) |
-| Linux x86_64 | CPU | [Download](https://github.com/FredYakumo/zihuan-next/releases/latest/download/zihuan_next-Linux-x86_64-cpu) |
-| Linux x86_64 + NVIDIA GPU | CUDA 12.6 | [Download](https://github.com/FredYakumo/zihuan-next/releases/latest/download/zihuan_next-Linux-x86_64-candle-cuda-12.6) |
-| macOS Apple Silicon | CPU | [Download](https://github.com/FredYakumo/zihuan-next/releases/latest/download/zihuan_next-macOS-Apple-cpu) |
+解压后运行zihuan_next
 
 - 不需要使用 Zihuan 运行本地模型时，可以选择 **CPU 版本**
 - CUDA 版本仅适用于 NVIDIA GPU，并且需要安装与 CUDA 12.6 兼容的运行时依赖
