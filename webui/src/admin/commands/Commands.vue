@@ -118,7 +118,7 @@
 
 <script setup lang="ts">
 import AdminPageHeader from "../components/AdminPageHeader.vue";
-import { useCommands } from "../composables/useCommands";
+import { useCommands } from "./useCommands";
 
 const {
   commands,
@@ -168,5 +168,5 @@ const permissionColumns = [
 </script>
 
 <style scoped lang="scss">
-@use "../styles/commands" as *;
+@use "./commands" as *;
 </style>
