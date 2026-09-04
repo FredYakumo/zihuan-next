@@ -384,12 +384,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     let activeStreamController: AbortController | null = null;
     let activeChatTask: { sessionId: string; taskId: string } | null = null;
     let pendingWorkspaceStop: { streamController: AbortController; sessionId: string | null } | null = null;
-    let sessionRefreshTimer: ReturnType<typeof setInterval> | null = null;
     let sessionListRevision = 0;
     let sessionOpenRevision = 0;
     let preservedServiceChangeId: string | null = null;
-    const sessionsAwaitingHistoryRefresh = new Set<string>();
-    const sessionsNeedingHistoryRefresh = new Set<string>();
     const chatErrorMessage = ref("");
     const chatErrorDialogMessage = ref("");
     const messagesContainer = ref<HTMLElement | null>(null);
@@ -1399,14 +1396,6 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 .map((task) => [task.chat_session_id as string, task]));
             sessions.value = result.sessions.map((session) => {
                 const task = runningBySession.get(session.session_id);
-                const wasRunning = sessionsAwaitingHistoryRefresh.has(session.session_id);
-                if (task) {
-                    sessionsAwaitingHistoryRefresh.add(session.session_id);
-                } else if (wasRunning) {
-                    // Mark the session for a history refresh when its task stops running.
-                    sessionsAwaitingHistoryRefresh.delete(session.session_id);
-                    sessionsNeedingHistoryRefresh.add(session.session_id);
-                }
                 return {
                     ...session,
                     running_task_id: task?.id ?? null,
@@ -1417,24 +1406,6 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             if (revision === sessionListRevision && selectedServiceId.value === serviceId) {
                 sessionsLoading.value = false;
             }
-        }
-    }
-
-    async function refreshActiveSessionHistoryIfNeeded(): Promise<void> {
-        const sessionId = activeSessionId.value;
-        if (!sessionId || sending.value) return;
-        const session = sessions.value.find((item) => item.session_id === sessionId);
-        if (!session && !sessionsAwaitingHistoryRefresh.has(sessionId)) return;
-        if (!session?.running_task_id && !sessionsAwaitingHistoryRefresh.has(sessionId) && !sessionsNeedingHistoryRefresh.has(sessionId)) return;
-        const result = await chat.getSessionMessages(sessionId);
-        if (activeSessionId.value !== sessionId) return;
-        applyHistory(result.messages);
-        messageBranches.value = result.branches;
-        workspaceTasks.value = result.tasks;
-        workspaceTaskInterrupted.value = result.tasks.some((task) => task.status !== "completed") &&
-            (session?.task_status === "stopped" || session?.task_status === "failed");
-        if (!session?.running_task_id) {
-            sessionsNeedingHistoryRefresh.delete(sessionId);
         }
     }
 
@@ -1945,10 +1916,10 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         }
         try {
             await chat.deleteSession(sessionId);
-            sessions.value = sessions.value.filter((s) => s.session_id !== sessionId);
             if (activeSessionId.value === sessionId) {
                 startNewSession();
             }
+            await reloadSessions();
         } catch (error) {
             alert(`删除失败: ${(error as Error).message}`);
         }
@@ -2537,25 +2508,10 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         });
         document.addEventListener("click", closePickersOnClickOutside);
         document.addEventListener("keydown", handleDocumentKeydown);
-        sessionRefreshTimer = setInterval(() => {
-            if (selectedServiceId.value) {
-                reloadSessions()
-                    .then(async () => {
-                        await refreshActiveSessionHistoryIfNeeded();
-                        await refreshPendingCommandApproval();
-                        await refreshSessionCommandApprovals();
-                    })
-                    .catch((error) => console.warn("Failed to refresh chat sessions:", error));
-            }
-        }, 3000);
     });
 
     onUnmounted(() => {
         activeStreamController?.abort();
-        if (sessionRefreshTimer) {
-            clearInterval(sessionRefreshTimer);
-            sessionRefreshTimer = null;
-        }
         document.removeEventListener("click", closePickersOnClickOutside);
         document.removeEventListener("keydown", handleDocumentKeydown);
     });
