@@ -146,6 +146,8 @@ pub struct NodeDefinition {
     pub size: Option<GraphSize>,
     #[serde(default)]
     pub inline_values: HashMap<String, Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_state: Option<Value>,
     #[serde(default)]
     pub port_bindings: HashMap<String, PortBinding>,
     #[serde(default)]
@@ -1279,6 +1281,7 @@ fn node_to_definition(id: &str, node: &dyn Node) -> NodeDefinition {
         position: None,
         size: None,
         inline_values: HashMap::new(),
+        ui_state: None,
         port_bindings: HashMap::new(),
         has_error: false,
         has_cycle: false,

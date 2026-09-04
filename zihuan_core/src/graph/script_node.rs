@@ -1,7 +1,7 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, LazyLock, Mutex};
 
 use tokio::task::block_in_place;
 
@@ -22,6 +22,84 @@ use super::{
 
 thread_local! {
     static SCRIPT_RESOURCES: RefCell<ScriptResourceStore> = RefCell::new(ScriptResourceStore::default());
+    static UI_PUBLISHER: RefCell<Option<Arc<dyn Fn(&str, &str, Value) + Send + Sync>>> = RefCell::new(None);
+}
+
+type UiEventQueue = Arc<(Mutex<VecDeque<(Option<String>, Value)>>, Condvar)>;
+static UI_EVENTS: LazyLock<Mutex<HashMap<String, UiEventQueue>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+pub fn with_dynamic_script_ui_publisher<T>(
+    publisher: Arc<dyn Fn(&str, &str, Value) + Send + Sync>,
+    operation: impl FnOnce() -> T,
+) -> T {
+    UI_PUBLISHER.with(|cell| {
+        let previous = cell.replace(Some(publisher));
+        let result = operation();
+        cell.replace(previous);
+        result
+    })
+}
+
+pub fn deliver_dynamic_script_ui_event(
+    task_id: &str,
+    node_id: &str,
+    event: Option<String>,
+    payload: Value,
+) {
+    let key = format!("{task_id}:{node_id}");
+    let queue = {
+        let mut events = UI_EVENTS.lock().unwrap();
+        events
+            .entry(key)
+            .or_insert_with(|| Arc::new((Mutex::new(VecDeque::new()), Condvar::new())))
+            .clone()
+    };
+    let (lock, condvar) = &*queue;
+    let mut values = lock.lock().unwrap();
+    if values.len() >= 64 {
+        values.pop_front();
+    }
+    values.push_back((event, payload));
+    condvar.notify_all();
+}
+
+fn wait_dynamic_script_ui_event(
+    task_id: &str,
+    node_id: &str,
+    event: Option<&str>,
+    timeout_ms: u64,
+) -> Option<Value> {
+    let key = format!("{task_id}:{node_id}");
+    let queue = {
+        let mut events = UI_EVENTS.lock().unwrap();
+        events
+            .entry(key)
+            .or_insert_with(|| Arc::new((Mutex::new(VecDeque::new()), Condvar::new())))
+            .clone()
+    };
+    let (lock, condvar) = &*queue;
+    let deadline = std::time::Duration::from_millis(timeout_ms.min(300_000));
+    let mut values = lock.lock().unwrap();
+    let start = std::time::Instant::now();
+    loop {
+        if let Some(index) =
+            values.iter().position(|(name, _)| event.is_none() || name.as_deref() == event)
+        {
+            return values.remove(index).map(|(_, payload)| payload);
+        }
+        let remaining = deadline.checked_sub(start.elapsed())?;
+        let (next, result) = condvar.wait_timeout(values, remaining).ok()?;
+        values = next;
+        if result.timed_out() {
+            return None;
+        }
+    }
+}
+
+pub fn clear_dynamic_script_ui_events(task_id: &str) {
+    let prefix = format!("{task_id}:");
+    UI_EVENTS.lock().unwrap().retain(|key, _| !key.starts_with(&prefix));
 }
 
 #[derive(Default)]
@@ -363,6 +441,8 @@ pub struct DynamicScriptNodeDefinition {
     #[serde(default)]
     pub description: String,
     #[serde(default)]
+    pub script_path: Option<String>,
+    #[serde(default)]
     pub input_ports: Vec<Port>,
     #[serde(default)]
     pub output_ports: Vec<Port>,
@@ -372,6 +452,8 @@ pub struct DynamicScriptNodeDefinition {
     pub dynamic_output_ports: bool,
     #[serde(default)]
     pub config_fields: Vec<NodeConfigField>,
+    #[serde(default)]
+    pub ui: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -416,15 +498,92 @@ pub fn register_script_catalog(
         let factory: NodeFactory = Arc::new(move |id, name| {
             Box::new(DynamicScriptNode::new(id, name, factory_definition.clone()))
         });
-        registry.register(
+        let script_dir = definition
+            .script_path
+            .as_ref()
+            .and_then(|path| Path::new(path).parent())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| workspace_root.join("dag_nodes"));
+        let (template, template_error) = load_ui_template(&script_dir, definition.ui.as_ref());
+        registry.register_with_ui(
             definition.type_id,
             definition.display_name,
             definition.category,
             definition.description,
             factory,
+            template,
+            template_error,
+            definition.ui.clone(),
         )?;
     }
     Ok(())
+}
+
+fn load_ui_template(script_dir: &Path, ui: Option<&serde_json::Value>) -> (Option<String>, Option<String>) {
+    let Some(path_value) = ui.and_then(|value| value.get("template_path")).and_then(Value::as_str)
+    else {
+        return (None, None);
+    };
+    let relative = Path::new(path_value);
+
+    // 验证路径规范
+    if relative.is_absolute()
+        || relative.components().any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return (None, Some("UI 模板路径必须是相对路径且不能包含 ..".to_string()));
+    }
+
+    // 验证文件扩展名
+    let allowed_extensions = ["html", "css", "scss"];
+    let ext = relative.extension().and_then(|e| e.to_str());
+    if !ext.map(|e| allowed_extensions.contains(&e)).unwrap_or(false) {
+        return (None, Some(format!(
+            "UI 模板路径必须是 .html、.css 或 .scss 文件，当前: {:?}",
+            ext
+        )));
+    }
+
+    // 解析为相对于脚本文件目录的路径
+    let path = script_dir.join(relative);
+
+    // 获取规范路径进行安全验证
+    let canonical_script_dir = match script_dir.canonicalize() {
+        Ok(path) => path,
+        Err(error) => return (None, Some(format!("脚本目录不可用: {error}"))),
+    };
+    let canonical = match path.canonicalize() {
+        Ok(path) => path,
+        Err(error) => return (None, Some(format!("UI 模板读取失败: {error}"))),
+    };
+
+    // 确保解析后的路径仍在脚本目录内
+    if !canonical.starts_with(&canonical_script_dir) {
+        return (None, Some("UI 模板路径超出脚本目录范围".to_string()));
+    }
+
+    // 检查文件大小限制
+    const MAX_TEMPLATE_BYTES: u64 = 512 * 1024;
+    if std::fs::metadata(&canonical)
+        .map(|m| m.len() > MAX_TEMPLATE_BYTES)
+        .unwrap_or(true)
+    {
+        return (None, Some("UI 模板超过 512 KiB 限制".to_string()));
+    }
+
+    // 读取并清理模板内容
+    match std::fs::read_to_string(canonical) {
+        Ok(content) => (Some(sanitize_ui_template(&content)), None),
+        Err(error) => (None, Some(format!("UI 模板读取失败: {error}"))),
+    }
+}
+
+fn sanitize_ui_template(input: &str) -> String {
+    let mut output = input.replace("<script", "&lt;script").replace("</script>", "&lt;/script&gt;");
+    for prefix in ["onclick=", "onchange=", "onsubmit=", "onload=", "onerror="] {
+        output = output.replace(prefix, "data-blocked=");
+        output = output.replace(&prefix.to_ascii_uppercase(), "data-blocked=");
+    }
+    output.replace("javascript:", "").replace("JAVASCRIPT:", "")
 }
 
 fn resolve_script_ports(
@@ -535,6 +694,38 @@ impl Node for DynamicScriptNode {
             self.definition.language,
             &request,
             &mut |method, params| match method {
+                "ui.publish" | "ui.update" => {
+                    let state = params
+                        .get(if method == "ui.publish" {
+                            "state"
+                        } else {
+                            "patch"
+                        })
+                        .cloned()
+                        .unwrap_or(Value::Null);
+                    let task_id = crate::task_context::current_task_id().unwrap_or_default();
+                    if task_id.is_empty() {
+                        return Err(Error::ValidationError("当前节点未关联任务".to_string()));
+                    }
+                    UI_PUBLISHER.with(|publisher| {
+                        if let Some(publisher) = publisher.borrow().as_ref() {
+                            publisher(&task_id, &self.id, state);
+                            Ok(Value::Bool(true))
+                        } else {
+                            Err(Error::ValidationError(
+                                "当前执行上下文未配置 UI 发布器".to_string(),
+                            ))
+                        }
+                    })
+                }
+                "ui.wait_event" => {
+                    let task_id = crate::task_context::current_task_id().unwrap_or_default();
+                    let event = params.get("event").and_then(Value::as_str);
+                    let timeout_ms =
+                        params.get("timeout_ms").and_then(Value::as_u64).unwrap_or(30_000);
+                    Ok(wait_dynamic_script_ui_event(&task_id, &self.id, event, timeout_ms)
+                        .unwrap_or(Value::Null))
+                }
                 "variables.get" => {
                     let name = params.get("name").and_then(Value::as_str).ok_or_else(|| {
                         Error::ValidationError("variables.get 缺少 name".to_string())

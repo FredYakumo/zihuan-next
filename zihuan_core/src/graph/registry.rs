@@ -21,6 +21,9 @@ pub struct NodeTypeMetadata {
     pub display_name: String,
     pub category: String,
     pub description: String,
+    pub ui_template: Option<String>,
+    pub ui_template_error: Option<String>,
+    pub ui: Option<Value>,
 }
 
 impl NodeRegistry {
@@ -46,8 +49,37 @@ impl NodeRegistry {
             display_name: display_name.into(),
             category: category.into(),
             description: description.into(),
+            ui_template: None,
+            ui_template_error: None,
+            ui: None,
         };
 
+        self.factories.write().unwrap().insert(type_id.clone(), factory);
+        self.metadata.write().unwrap().insert(type_id, metadata);
+        Ok(())
+    }
+
+    pub fn register_with_ui(
+        &self,
+        type_id: impl Into<String>,
+        display_name: impl Into<String>,
+        category: impl Into<String>,
+        description: impl Into<String>,
+        factory: NodeFactory,
+        ui_template: Option<String>,
+        ui_template_error: Option<String>,
+        ui: Option<Value>,
+    ) -> Result<()> {
+        let type_id = type_id.into();
+        let metadata = NodeTypeMetadata {
+            type_id: type_id.clone(),
+            display_name: display_name.into(),
+            category: category.into(),
+            description: description.into(),
+            ui_template,
+            ui_template_error,
+            ui,
+        };
         self.factories.write().unwrap().insert(type_id.clone(), factory);
         self.metadata.write().unwrap().insert(type_id, metadata);
         Ok(())
