@@ -123,8 +123,8 @@ import { useRoute } from "vue-router";
 
 import type { LlmConfig } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
-import { useLlm } from "../composables/useLlm";
-import ConnectionCredentialInput from "./ConnectionCredentialInput.vue";
+import { useLlm } from "./useLlm";
+import ConnectionCredentialInput from "../components/ConnectionCredentialInput.vue";
 
 const { filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, isCandleMode, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, updateEnabled, updatingEnabledIds, localLlmOptionLabel, compactId, formatTime, copiedId, copyConfig, handleFileChange } = useLlm();
 
@@ -158,6 +158,6 @@ function copyLlmConfig(item: LlmConfig) { copyConfig({ name: item.name, enabled:
 </script>
 
 <style scoped lang="scss">
-@use "../styles/llm" as *;
+@use "./llm" as *;
 
 </style>

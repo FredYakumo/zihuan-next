@@ -10,7 +10,7 @@ import {
   llmFormFromConfig,
   type LlmFormState,
 } from "../model";
-import { useAdminClipboard } from "./useAdminClipboard";
+import { useAdminClipboard } from "../components/useAdminClipboard";
 
 type LlmFilters = {
   keyword: string;
