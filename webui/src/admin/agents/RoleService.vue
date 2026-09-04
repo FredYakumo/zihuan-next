@@ -68,7 +68,7 @@
             </t-form-item>
           </t-card>
 
-          <RoleServiceModelConfig
+          <ServiceModelConfig
             :form="form"
             :chat-models="chatModels"
             :multimodal-chat-models="multimodalChatModels"
@@ -432,7 +432,7 @@
           </t-form-item>
         </t-card>
 
-        <RoleServiceModelConfig
+        <ServiceModelConfig
           :form="form"
           :chat-models="chatModels"
           :multimodal-chat-models="multimodalChatModels"
@@ -1232,8 +1232,8 @@ import { useRouter } from "vue-router";
 import { AddIcon, CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
 import { system, type ServiceWithRuntime } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
-import RoleServiceModelConfig from "../components/RoleServiceModelConfig.vue";
-import { useAgents } from "../composables/useAgents";
+import ServiceModelConfig from "../components/ServiceModelConfig.vue";
+import { useAgents } from "./useAgents";
 import { assertConnectionConfig, assertLlmConfig } from "../model";
 
 const {
@@ -1599,9 +1599,9 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
 </script>
 
 <style scoped lang="scss">
-@use "../styles/agents" as *;
-@use "../styles/connections" as *;
-@use "../styles/dashboard" as *;
+@use "./agents" as *;
+@use "../dashboard/dashboard" as *;
+@use "../connections/connections" as *;
 
 .agent-service-page {
   gap: 0;

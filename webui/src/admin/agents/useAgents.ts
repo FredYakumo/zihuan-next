@@ -32,7 +32,7 @@ import {
   type ServiceTypeName,
   type QqChatEmotionDimensionFormItem,
 } from "../model";
-import { useAdminClipboard } from "./useAdminClipboard";
+import { useAdminClipboard } from "../components/useAdminClipboard";
 
 export function useAgents() {
 type ServiceTypeOption = {

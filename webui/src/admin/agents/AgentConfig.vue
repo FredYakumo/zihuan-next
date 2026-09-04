@@ -5,7 +5,7 @@
     </AdminPageHeader>
     <t-card bordered>
       <t-table :data="subagents" :columns="columns" row-key="id" :loading="loading">
-        <template #name="{ row }"><div class="agent-name-cell"><span>{{ row.name }}</span><t-tag size="small" variant="light" theme="primary">SubAgent</t-tag></div></template>
+        <template #name="{ row }"><div class="agent-name-cell"><span>{{ row.name }}</span><t-tag size="small" variant="light" theme="primary">SubAgent</t-tag><t-tag v-if="row.builtin" size="small" variant="light" theme="success">Built-in</t-tag></div></template>
         <template #tools="{ row }">{{ row.tool_ids.length }} 个工具</template>
         <template #actions="{ row }"><t-button variant="text" size="small" @click="openEditor(row.id)">编辑</t-button><t-popconfirm content="确认删除这个 SubAgent 吗？默认 Agent 将在下次启动时自动恢复。" @confirm="remove(row.id)"><t-button variant="text" theme="danger" size="small">删除</t-button></t-popconfirm></template>
         <template #empty><div class="agent-config-empty">暂无 SubAgent。</div></template>
@@ -31,10 +31,10 @@ import { QQ_CHAT_DEFAULT_TOOLS, WORKSPACE_DEFAULT_TOOLS } from "../model";
 const portTypes = ["String", "Integer", "Float", "Boolean", "Json"];
 const availableTools = computed(() => [...QQ_CHAT_DEFAULT_TOOLS.map((tool) => ({ id: tool.id, name: tool.label })), ...WORKSPACE_DEFAULT_TOOLS.filter((tool) => !QQ_CHAT_DEFAULT_TOOLS.some((item) => item.id === tool.id)).map((tool) => ({ id: tool.id, name: tool.label }))]);
 const subagents = ref<SubAgentDefinition[]>([]); const loading = ref(false); const showTypePicker = ref(false); const editorVisible = ref(false); const isCreating = ref(false); const saving = ref(false); const error = ref("");
-const form = reactive<SubAgentDefinition>({ id: "", name: "", inputs: [], outputs: [], system_prompt: "", tool_ids: [] });
+const form = reactive<SubAgentDefinition>({ id: "", name: "", builtin: false, inputs: [], outputs: [], system_prompt: "", tool_ids: [] });
 const columns = [{ colKey: "name", title: "名称", ellipsis: true }, { colKey: "id", title: "ID", width: 180 }, { colKey: "tools", title: "工具", width: 100 }, { colKey: "actions", title: "操作", width: 130 }];
 async function load() { loading.value = true; try { subagents.value = await system.subagents.list(availableTools.value.map((tool) => tool.id)); } catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause); } finally { loading.value = false; } }
-function startCreate() { showTypePicker.value = false; isCreating.value = true; error.value = ""; Object.assign(form, { id: "", name: "", inputs: [], outputs: [], system_prompt: "", tool_ids: [] }); editorVisible.value = true; }
+function startCreate() { showTypePicker.value = false; isCreating.value = true; error.value = ""; Object.assign(form, { id: "", name: "", builtin: false, inputs: [], outputs: [], system_prompt: "", tool_ids: [] }); editorVisible.value = true; }
 async function openEditor(id: string) { error.value = ""; try { Object.assign(form, await system.subagents.get(id, availableTools.value.map((tool) => tool.id))); isCreating.value = false; editorVisible.value = true; } catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause); } }
 function addPort(kind: "inputs" | "outputs") { form[kind].push({ name: "", data_type: "String", description: "", required: true }); }
 function removePort(kind: "inputs" | "outputs", index: number) { form[kind].splice(index, 1); }
