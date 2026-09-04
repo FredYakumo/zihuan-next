@@ -1279,6 +1279,7 @@
 }
 
 .chat-input-area {
+  position: relative;
   border-top: 1px solid var(--admin-border);
   padding: 16px 20px;
   display: flex;

@@ -1221,6 +1221,8 @@ export const chat = {
   getPendingCommandApproval(sessionId: string): Promise<{ pending: { command: string; shell: string } | null }> {
     return request("GET", `/chat/sessions/${encodeURIComponent(sessionId)}/command-pending`);
   },
+  getSessionCommandApprovals(sessionId: string): Promise<{ commands: string[] }> { return request("GET", `/chat/sessions/${encodeURIComponent(sessionId)}/command-approvals`); },
+  revokeSessionCommand(sessionId: string, family: string): Promise<{ ok: boolean }> { return request("DELETE", `/chat/sessions/${encodeURIComponent(sessionId)}/command-approvals/${encodeURIComponent(family)}`); },
 };
 
 export const agentsMd = {

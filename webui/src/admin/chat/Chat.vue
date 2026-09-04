@@ -291,7 +291,7 @@
                             :ref="(element) => setLiveOutputElement(liveCall.call_id, element)"
                             @scroll="handleLiveOutputScroll(liveCall.call_id)"
                           >{{ liveExecOutput(liveCall) }}</pre>
-                          <div v-if="isCurrentCommandConfirmation(liveCall) && !liveCall.commandConfirmation?.decision" class="chat-command-confirmation">
+                          <div v-if="isCurrentCommandConfirmation(liveCall) && !liveCall.commandConfirmation?.decision" class="chat-command-confirmation chat-command-confirmation--inline">
                             <span class="chat-command-confirmation-question">允许执行此命令？</span>
                             <code class="chat-command-confirmation-command">{{ liveCall.commandConfirmation.shell }}&gt; {{ liveCall.commandConfirmation.command }}</code>
                             <button class="btn primary" :disabled="liveCall.commandDecisionPending" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
@@ -526,7 +526,7 @@
                             :ref="(element) => setLiveOutputElement(liveCall.call_id, element)"
                             @scroll="handleLiveOutputScroll(liveCall.call_id)"
                           >{{ liveExecOutput(liveCall) }}</pre>
-                          <div v-if="isCurrentCommandConfirmation(liveCall) && !liveCall.commandConfirmation?.decision" class="chat-command-confirmation">
+                          <div v-if="isCurrentCommandConfirmation(liveCall) && !liveCall.commandConfirmation?.decision" class="chat-command-confirmation chat-command-confirmation--inline">
                             <span class="chat-command-confirmation-question">允许执行此命令？</span>
                             <code class="chat-command-confirmation-command">{{ liveCall.commandConfirmation.shell }}&gt; {{ liveCall.commandConfirmation.command }}</code>
                             <button class="btn primary" :disabled="liveCall.commandDecisionPending" @click="decideCommandConfirmation(liveCall, 'once')">执行</button>
@@ -716,6 +716,16 @@
               </div>
             </div>
 
+            <CommandApprovalPanel :confirmation="currentCommandConfirmation" :pending="currentCommandConfirmation?.call.commandDecisionPending" :allowed-commands="[]" input @decide="(decision) => currentCommandConfirmation && decideCommandConfirmation(currentCommandConfirmation.call, decision)" />
+            <div v-if="false && currentCommandConfirmation" class="chat-command-confirmation chat-command-confirmation--input">
+              <span class="chat-command-confirmation-question">允许执行此命令？</span>
+              <code class="chat-command-confirmation-command">{{ currentCommandConfirmation.shell }}&gt; {{ currentCommandConfirmation.command }}</code>
+              <div class="chat-command-confirmation-actions">
+                <button class="btn primary" :disabled="currentCommandConfirmation.call.commandDecisionPending" @click="decideCommandConfirmation(currentCommandConfirmation.call, 'once')">执行</button>
+                <button class="btn secondary" :disabled="currentCommandConfirmation.call.commandDecisionPending" @click="decideCommandConfirmation(currentCommandConfirmation.call, 'session')">本次对话允许类似指令</button>
+                <button class="btn danger" :disabled="currentCommandConfirmation.call.commandDecisionPending" @click="decideCommandConfirmation(currentCommandConfirmation.call, 'reject')">拒绝</button>
+              </div>
+            </div>
             <div class="chat-input-area">
               <div v-if="!isChatEligible" class="chat-not-supported">
                 <ErrorCircleIcon class="chat-not-supported-icon" />
@@ -1022,6 +1032,14 @@
                       </t-button>
                     </t-tooltip>
                     <button v-else class="btn primary" :disabled="!canSend" @click="sendMessage">发送</button>
+                  </div>
+                </div>
+                <CommandApprovalPanel :allowed-commands="sessionCommandApprovals" @revoke="revokeSessionCommand" />
+                <div v-if="false && sessionCommandApprovals.length" class="session-command-approvals">
+                  <div class="session-command-approvals__title">本次对话已允许命令</div>
+                  <div v-for="family in sessionCommandApprovals" :key="family" class="session-command-approval-row">
+                    <code>{{ family }}</code>
+                    <button class="session-command-approval-close" :aria-label="`撤回 ${family}`" title="撤回允许" @click="revokeSessionCommand(family)"><CloseIcon /></button>
                   </div>
                 </div>
               </template>
@@ -1530,6 +1548,7 @@ import { computed, ref, watch } from "vue";
 import { useChat } from "./useChat";
 import ToolCallBadge from "../components/ToolCallBadge.vue";
 import WorkspaceTaskList from "../components/WorkspaceTaskList.vue";
+import CommandApprovalPanel from "../components/CommandApprovalPanel.vue";
 
 const props = defineProps<{
   agentId?: string;
@@ -1711,6 +1730,8 @@ const {
   submitAskUserAnswer,
   decideToolCallLimit,
   decideCommandConfirmation,
+  sessionCommandApprovals,
+  revokeSessionCommand,
   isCurrentCommandConfirmation,
   sendMessageWithText,
   load,
@@ -1737,6 +1758,14 @@ const {
   deleteAgentsMd,
   CHAT_ELIGIBLE_SERVICE_TYPES,
 } = useChat(props, emit);
+
+const currentCommandConfirmation = computed(() => {
+  for (const message of [...messages.value].reverse()) {
+    const call = [...(message.liveToolCalls ?? [])].reverse().find((item) => isCurrentCommandConfirmation(item) && !item.commandConfirmation?.decision);
+    if (call?.commandConfirmation) return { call, ...call.commandConfirmation };
+  }
+  return null;
+});
 
 const agentsMdEditorRef = ref<HTMLTextAreaElement | null>(null);
 const agentsMdLineNumbersRef = ref<HTMLElement | null>(null);
@@ -1893,6 +1922,13 @@ function formatCacheHitRate(rate: number) {
   border: 1px solid var(--border, #d9d9d9);
   border-radius: 4px;
 }
+.chat-command-confirmation--inline { display: none; }
+.chat-command-confirmation--input {
+  order: 0;
+  margin: 0 20px 8px;
+  background: var(--admin-bg-panel, #fff);
+}
+.chat-command-confirmation-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .chat-command-confirmation-question {
   font-weight: 600;
@@ -1903,13 +1939,45 @@ function formatCacheHitRate(rate: number) {
   overflow: hidden;
   padding: 4px 6px;
   border-radius: 3px;
-  background: var(--code-bg, #f3f4f6);
-  color: var(--text, #1f2937);
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #f8fafc;
   font-size: 12px;
   line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.session-command-approvals {
+  position: absolute;
+  z-index: 1200;
+  bottom: calc(100% + 8px);
+  right: 20px;
+  width: min(320px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid var(--admin-border, #d9d9d9);
+  border-radius: 6px;
+  background: var(--admin-bg-panel, #fff);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
+}
+.session-command-approvals__title { margin-bottom: 8px; font-weight: 600; }
+.session-command-approval-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--admin-border, #eee); }
+.session-command-approval-row code { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-command-approval-close {
+  position: relative;
+  z-index: 1;
+  display: inline-grid;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--admin-ink-muted, #666);
+  cursor: pointer;
+}
+.session-command-approval-close:hover { background: var(--admin-bg-soft, #f3f4f6); color: var(--admin-danger, #d54941); }
 
 .chat-command-confirmation .btn {
   min-height: 28px;

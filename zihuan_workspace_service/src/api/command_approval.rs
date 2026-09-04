@@ -2,7 +2,10 @@ use salvo::prelude::*;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::tools::workspace_tools::{approve_command, pending_command_approval, reject_command};
+use crate::tools::workspace_tools::{
+    approve_command, pending_command_approval, reject_command, revoke_session_command_approval,
+    session_command_approvals,
+};
 
 #[derive(Deserialize)]
 struct CommandApprovalRequest {
@@ -53,4 +56,22 @@ pub async fn get_pending_command_approval(req: &mut Request, res: &mut Response)
         return;
     }
     res.render(Json(json!({ "pending": pending_command_approval(&session_id) })));
+}
+
+#[handler]
+pub async fn get_session_command_approvals(req: &mut Request, res: &mut Response) {
+    let session_id = req.param::<String>("session_id").unwrap_or_default();
+    res.render(Json(json!({ "commands": session_command_approvals(&session_id) })));
+}
+
+#[handler]
+pub async fn revoke_session_command(req: &mut Request, res: &mut Response) {
+    let session_id = req.param::<String>("session_id").unwrap_or_default();
+    let family = req.param::<String>("family").unwrap_or_default();
+    if revoke_session_command_approval(&session_id, &family) {
+        res.render(Json(json!({ "ok": true })));
+    } else {
+        res.status_code(StatusCode::NOT_FOUND);
+        res.render(Json(json!({ "error": "command approval not found" })));
+    }
 }

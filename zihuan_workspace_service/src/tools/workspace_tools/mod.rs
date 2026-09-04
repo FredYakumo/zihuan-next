@@ -21,7 +21,10 @@ pub(crate) use copy_file::{CopyFileTool, DEFAULT_TOOL_COPY_FILE};
 pub(crate) use create_file::{CreateFileTool, DEFAULT_TOOL_CREATE_FILE};
 pub(crate) use delete_file::{DeleteFileTool, DEFAULT_TOOL_DELETE_FILE};
 pub(crate) use edit_file::{EditFileTool, DEFAULT_TOOL_EDIT_FILE};
-pub use exec_cmd::{approve_command, pending_command_approval, reject_command};
+pub use exec_cmd::{
+    approve_command, pending_command_approval, reject_command, revoke_session_command_approval,
+    session_command_approvals,
+};
 pub(crate) use exec_cmd::{ExecCmdTool, DEFAULT_TOOL_EXEC_CMD};
 pub(crate) use file_info::{FileInfoTool, DEFAULT_TOOL_FILE_INFO};
 pub(crate) use find_files::{FindFilesTool, DEFAULT_TOOL_FIND_FILES};

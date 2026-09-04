@@ -269,6 +269,12 @@ pub fn build_router(
                 .push(Router::with_path("sessions/<session_id>/command-pending").get(
                     zihuan_workspace_service::api::command_approval::get_pending_command_approval,
                 ))
+                .push(Router::with_path("sessions/<session_id>/command-approvals").get(
+                    zihuan_workspace_service::api::command_approval::get_session_command_approvals,
+                ))
+                .push(Router::with_path("sessions/<session_id>/command-approvals/<family>").delete(
+                    zihuan_workspace_service::api::command_approval::revoke_session_command,
+                ))
                 .push(
                     Router::with_path("sessions/<session_id>/messages")
                         .get(chat::get_chat_session_messages),
