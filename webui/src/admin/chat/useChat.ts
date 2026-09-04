@@ -646,6 +646,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     });
     const pendingAskUser = ref<PendingAskUser | null>(null);
     const pendingCommandApproval = ref<{ command: string; shell: string } | null>(null);
+    const sessionCommandApprovals = ref<string[]>([]);
     const workspaceChanges = ref<WorkspaceChange[]>([]);
     const selectedWorkspaceChangeId = ref<string | null>(null);
     const workspaceChangeDialogOpen = ref(false);
@@ -1453,6 +1454,16 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             }
         }
     }
+    async function refreshSessionCommandApprovals(): Promise<void> {
+        const sessionId = activeSessionId.value;
+        if (!sessionId) { sessionCommandApprovals.value = []; return; }
+        try { sessionCommandApprovals.value = (await chat.getSessionCommandApprovals(sessionId)).commands; } catch { sessionCommandApprovals.value = []; }
+    }
+    async function revokeSessionCommand(family: string): Promise<void> {
+        if (!activeSessionId.value) return;
+        await chat.revokeSessionCommand(activeSessionId.value, family);
+        await refreshSessionCommandApprovals();
+    }
 
     function isCurrentCommandConfirmation(liveCall: LiveToolCall): boolean {
         const confirmation = liveCall.commandConfirmation;
@@ -1520,6 +1531,8 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         }
         messageBranches.value = result.branches;
         editingMessage.value = null;
+        await refreshPendingCommandApproval();
+        await refreshSessionCommandApprovals();
     }
 
     function applyWorkspaceChange(change: WorkspaceChange) {
@@ -2294,6 +2307,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             await chat.approveCommand(activeSessionId.value, confirmation.command, decision);
             confirmation.decision = decision;
             await refreshPendingCommandApproval();
+            if (decision === "session") await refreshSessionCommandApprovals();
         } catch (error) {
             liveCall.commandDecisionPending = false;
             const message = (error as Error).message;
@@ -2500,6 +2514,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                     .then(async () => {
                         await refreshActiveSessionHistoryIfNeeded();
                         await refreshPendingCommandApproval();
+                        await refreshSessionCommandApprovals();
                     })
                     .catch((error) => console.warn("Failed to refresh chat sessions:", error));
             }
@@ -2666,6 +2681,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         stopInference,
         submitAskUserAnswer,
         decideCommandConfirmation,
+        sessionCommandApprovals,
+        refreshSessionCommandApprovals,
+        revokeSessionCommand,
         isCurrentCommandConfirmation,
         decideToolCallLimit,
         toolCallLimitDecisionLoading,

@@ -21,7 +21,11 @@ lazy_static! {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Zihuan Next — node-graph workflow engine (web UI)")]
+#[command(
+    author,
+    version = env!("ZIHUAN_BUILD_VERSION"),
+    about = "Zihuan Next — node-graph workflow engine (web UI)"
+)]
 struct Args {
     #[arg(long, default_value = "127.0.0.1", env = "ZIHUAN_HOST")]
     host: String,

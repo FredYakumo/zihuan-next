@@ -103,6 +103,28 @@ pub fn pending_command_approval(session_id: &str) -> Option<PendingCommandApprov
         .map(|item| item.request.clone())
 }
 
+pub fn session_command_approvals(session_id: &str) -> Vec<String> {
+    let (lock, _) =
+        COMMAND_APPROVALS.get_or_init(|| (Mutex::new(CommandApprovals::default()), Condvar::new()));
+    lock.lock()
+        .unwrap()
+        .families
+        .iter()
+        .filter_map(|(session, family)| (session == session_id).then_some(family.clone()))
+        .collect()
+}
+
+pub fn revoke_session_command_approval(session_id: &str, family: &str) -> bool {
+    let (lock, _) =
+        COMMAND_APPROVALS.get_or_init(|| (Mutex::new(CommandApprovals::default()), Condvar::new()));
+    let mut approvals = lock.lock().unwrap();
+    let before = approvals.families.len();
+    approvals
+        .families
+        .retain(|(session, allowed)| !(session == session_id && allowed == family));
+    before != approvals.families.len()
+}
+
 fn is_approved(session_id: Option<&str>, command: &str) -> bool {
     let Some(session_id) = session_id else {
         return false;
