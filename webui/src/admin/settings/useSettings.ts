@@ -10,7 +10,7 @@ import {
   onThemeChange,
   setTheme,
 } from "../../ui/theme";
-import { logErrorBadgeEnabled, setLogErrorBadgeEnabled } from "../state/logStream";
+import { logErrorBadgeEnabled, setLogErrorBadgeEnabled } from "../logs/logStream";
 import type { LlmConfig } from "../../api/client";
 
 interface StorageEntry {

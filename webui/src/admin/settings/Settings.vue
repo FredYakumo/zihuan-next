@@ -225,7 +225,7 @@ import { ErrorCircleIcon, FileCopyIcon } from "tdesign-icons-vue-next";
 import { ref } from "vue";
 
 import AdminPageHeader from "../components/AdminPageHeader.vue";
-import { useSettings } from "../composables/useSettings";
+import { useSettings } from "./useSettings";
 
 const {
   themeOptions,
@@ -291,7 +291,7 @@ async function handleSaveModelHttpSettings() {
 </script>
 
 <style scoped lang="scss">
-@use "../styles/settings" as *;
+@use "./settings" as *;
 
 .model-http-service-actions {
   display: grid;

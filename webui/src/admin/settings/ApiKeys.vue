@@ -30,7 +30,7 @@
 import { ref } from "vue";
 
 import AdminPageHeader from "../components/AdminPageHeader.vue";
-import { useSettings } from "../composables/useSettings";
+import { useSettings } from "./useSettings";
 
 const {
   modelHttpApiKeys,
