@@ -142,7 +142,7 @@
                 v-for="session in group.sessions"
                 :key="session.session_id"
                 class="chat-session-item"
-                :class="{ active: session.session_id === activeSessionId }"
+                :class="{ active: session.versionSessionIds.includes(activeSessionId) }"
               >
                 <button class="chat-session-main" @click="openSession(session.session_id)">
                   <strong>{{ session.title || session.session_id.slice(0, 8) }}</strong>

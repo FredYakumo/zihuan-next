@@ -633,6 +633,7 @@ export interface ChatLiveToolCall {
 
 export interface ChatSessionSummary {
   session_id: string;
+  root_session_id?: string;
   updated_at: string;
   agent_id?: string | null;
   agent_name?: string | null;

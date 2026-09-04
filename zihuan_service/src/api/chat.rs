@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -286,6 +287,7 @@ struct StopChatRequest {
 #[derive(Debug, Serialize)]
 pub struct ChatSessionSummary {
     pub session_id: String,
+    pub root_session_id: String,
     pub updated_at: String,
     pub agent_id: Option<String>,
     pub agent_name: Option<String>,
@@ -2301,6 +2303,7 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
 
         sessions.push(ChatSessionSummary {
             session_id: stem.to_string(),
+            root_session_id: resolve_root_session_id(stem)?,
             updated_at,
             agent_id: first_record.as_ref().map(|r| r.agent_id.clone()),
             agent_name: first_record.as_ref().map(|r| r.agent_name.clone()),
@@ -2317,6 +2320,24 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
 
     sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     Ok(sessions)
+}
+
+/// Resolve the original session of a fork lineage so the client can present all edits and
+/// resends as versions of one conversation.
+fn resolve_root_session_id(session_id: &str) -> Result<String> {
+    let mut current_session_id = session_id.to_string();
+    let mut visited = HashSet::new();
+
+    while let Some(metadata) = load_fork_metadata(&current_session_id)? {
+        if !visited.insert(current_session_id.clone()) {
+            return Err(zihuan_core::string_error!(
+                "detected a cycle in chat fork metadata for session {session_id}"
+            ));
+        }
+        current_session_id = metadata.source_session_id;
+    }
+
+    Ok(current_session_id)
 }
 
 fn load_chat_session_messages(session_id: &str) -> Result<Vec<ChatHistoryRecord>> {

@@ -495,17 +495,30 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         return new Set(agentsMdFiles.value.filter((file) => file.exists).map((file) => file.key));
     });
     const groupedSessions = computed(() => {
-        const groups = new Map<string, ChatSessionSummary[]>();
+        type ConversationSummary = ChatSessionSummary & { versionSessionIds: string[] };
+        const conversations = new Map<string, ChatSessionSummary[]>();
         for (const session of sessions.value) {
-            const key = session.workspace_path ?? "__default__";
+            const key = session.root_session_id ?? session.session_id;
+            if (!conversations.has(key)) conversations.set(key, []);
+            conversations.get(key)!.push(session);
+        }
+
+        const groups = new Map<string, ConversationSummary[]>();
+        for (const versions of conversations.values()) {
+            versions.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+            const latest = versions[0];
+            const key = latest.workspace_path ?? "__default__";
             if (!groups.has(key)) groups.set(key, []);
-            groups.get(key)!.push(session);
+            groups.get(key)!.push({
+                ...latest,
+                versionSessionIds: versions.map((version) => version.session_id),
+            });
         }
         const result: Array<{
             pathKey: string;
             path: string | null;
             label: string;
-            sessions: ChatSessionSummary[];
+            sessions: ConversationSummary[];
         }> = [];
         for (const [key, items] of groups) {
             items.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
