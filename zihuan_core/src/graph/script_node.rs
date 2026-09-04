@@ -519,34 +519,37 @@ pub fn register_script_catalog(
     Ok(())
 }
 
-fn load_ui_template(script_dir: &Path, ui: Option<&serde_json::Value>) -> (Option<String>, Option<String>) {
+fn load_ui_template(
+    script_dir: &Path,
+    ui: Option<&serde_json::Value>,
+) -> (Option<String>, Option<String>) {
     let Some(path_value) = ui.and_then(|value| value.get("template_path")).and_then(Value::as_str)
     else {
         return (None, None);
     };
     let relative = Path::new(path_value);
 
-    // 验证路径规范
+    // Validate the path form.
     if relative.is_absolute()
         || relative.components().any(|c| matches!(c, std::path::Component::ParentDir))
     {
         return (None, Some("UI 模板路径必须是相对路径且不能包含 ..".to_string()));
     }
 
-    // 验证文件扩展名
+    // Validate the file extension.
     let allowed_extensions = ["html", "css", "scss"];
     let ext = relative.extension().and_then(|e| e.to_str());
     if !ext.map(|e| allowed_extensions.contains(&e)).unwrap_or(false) {
-        return (None, Some(format!(
-            "UI 模板路径必须是 .html、.css 或 .scss 文件，当前: {:?}",
-            ext
-        )));
+        return (
+            None,
+            Some(format!("UI 模板路径必须是 .html、.css 或 .scss 文件，当前: {:?}", ext)),
+        );
     }
 
-    // 解析为相对于脚本文件目录的路径
+    // Resolve the path relative to the declaring script's directory.
     let path = script_dir.join(relative);
 
-    // 获取规范路径进行安全验证
+    // Canonicalize the directories so containment can be checked reliably.
     let canonical_script_dir = match script_dir.canonicalize() {
         Ok(path) => path,
         Err(error) => return (None, Some(format!("脚本目录不可用: {error}"))),
@@ -556,12 +559,12 @@ fn load_ui_template(script_dir: &Path, ui: Option<&serde_json::Value>) -> (Optio
         Err(error) => return (None, Some(format!("UI 模板读取失败: {error}"))),
     };
 
-    // 确保解析后的路径仍在脚本目录内
+    // Ensure the resolved path stays inside the script directory.
     if !canonical.starts_with(&canonical_script_dir) {
         return (None, Some("UI 模板路径超出脚本目录范围".to_string()));
     }
 
-    // 检查文件大小限制
+    // Enforce a size limit on the template.
     const MAX_TEMPLATE_BYTES: u64 = 512 * 1024;
     if std::fs::metadata(&canonical)
         .map(|m| m.len() > MAX_TEMPLATE_BYTES)
@@ -570,7 +573,7 @@ fn load_ui_template(script_dir: &Path, ui: Option<&serde_json::Value>) -> (Optio
         return (None, Some("UI 模板超过 512 KiB 限制".to_string()));
     }
 
-    // 读取并清理模板内容
+    // Read and sanitize the template content.
     match std::fs::read_to_string(canonical) {
         Ok(content) => (Some(sanitize_ui_template(&content)), None),
         Err(error) => (None, Some(format!("UI 模板读取失败: {error}"))),
