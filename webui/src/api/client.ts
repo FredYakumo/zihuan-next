@@ -110,6 +110,7 @@ export const graphs = {
       inline_values?: Record<string, unknown>;
       port_bindings?: Record<string, { kind: string; name: string }>;
       disabled?: boolean;
+      ui_state?: unknown | null;
     }
   ): Promise<{ ok: boolean }> {
     return request("PUT", `/graphs/${graphId}/nodes/${nodeId}`, updates);

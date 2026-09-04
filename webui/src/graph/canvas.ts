@@ -25,6 +25,7 @@ export class ZihuanCanvas implements CanvasFacade {
   _pendingGraphMutations = new Set<Promise<unknown>>();
   outputSummariesVisible = true;
   nodeTypes: NodeTypeInfo[] = [];
+  uiRenderer?: { mount(node: any, definition: NodeDefinition, info: NodeTypeInfo | undefined): void; reposition(): void; clear(): void; dispose(): void };
 
   onNavigationChange?: (labels: string[]) => void;
   onGraphDirty?: () => void;
@@ -81,6 +82,7 @@ export class ZihuanCanvas implements CanvasFacade {
     ds.offset = [...offset];
     ds.scale = scale;
     this.lGraph.setDirtyCanvas(true, true);
+    this.uiRenderer?.reposition();
   }
 
   graphCenterPos(): { x: number; y: number } {
@@ -96,6 +98,7 @@ export class ZihuanCanvas implements CanvasFacade {
   }
 
   clearCanvas(): void {
+    this.uiRenderer?.dispose();
     this.state = { sessionId: null, graph: null, dirty: false };
     this.nodeMap.clear();
     this.subgraphStack = [];
@@ -128,6 +131,7 @@ export class ZihuanCanvas implements CanvasFacade {
   resize(width: number, height: number): void {
     const dpr = window.devicePixelRatio || 1;
     (this.lCanvas as any).resize(Math.round(width * dpr), Math.round(height * dpr));
+    this.uiRenderer?.reposition();
   }
 
   startPositionSync(intervalMs = 2000): () => void {
