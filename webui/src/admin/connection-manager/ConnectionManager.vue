@@ -68,7 +68,7 @@
 
 <script setup lang="ts">
 import AdminPageHeader from "../components/AdminPageHeader.vue";
-import { useConnectionManager } from "../composables/useConnectionManager";
+import { useConnectionManager } from "./useConnectionManager";
 import { statusTagTheme } from "../model";
 
 const {
@@ -106,5 +106,5 @@ const columns = [
 </script>
 
 <style scoped lang="scss">
-@use "../styles/connection-manager" as *;
+@use "./connection-manager" as *;
 </style>
