@@ -226,6 +226,7 @@ class NodeDefinition:
     category: str
     execute: Callable[[NodeExecutionContext], dict[str, Any]]
     description: str = ""
+    script_path: str | None = None
     input_ports: list[Port] = field(default_factory=list)
     output_ports: list[Port] = field(default_factory=list)
     dynamic_input_ports: bool = False
@@ -235,12 +236,13 @@ class NodeDefinition:
 
 
 _REGISTERED_NODES: list[NodeDefinition] = []
+_CURRENT_SCRIPT_PATH: str | None = None
 
 
 def node(*, type_id: str, display_name: str, category: str, description: str = "", input_ports: list[Port] | None = None, output_ports: list[Port] | None = None, dynamic_input_ports: bool = False, dynamic_output_ports: bool = False, config_fields: list[dict[str, Any]] | None = None, resolve_ports: Callable[[dict[str, Any]], dict[str, list[Port]]] | None = None) -> Callable[[Callable[[NodeExecutionContext], dict[str, Any]]], Callable[[NodeExecutionContext], dict[str, Any]]]:
     """Purpose: register an execute function as a discoverable ZiHuan Python DAG node."""
     def register(execute: Callable[[NodeExecutionContext], dict[str, Any]]) -> Callable[[NodeExecutionContext], dict[str, Any]]:
-        _REGISTERED_NODES.append(NodeDefinition(type_id, display_name, category, execute, description, input_ports or [], output_ports or [], dynamic_input_ports, dynamic_output_ports, config_fields or [], resolve_ports)); return execute
+        _REGISTERED_NODES.append(NodeDefinition(type_id, display_name, category, execute, description, _CURRENT_SCRIPT_PATH, input_ports or [], output_ports or [], dynamic_input_ports, dynamic_output_ports, config_fields or [], resolve_ports)); return execute
     return register
 
 
