@@ -188,8 +188,8 @@ import { useRoute, useRouter } from "vue-router";
 import type { ConnectionConfig } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { compactId } from "../model";
-import { useConnections } from "../composables/useConnections";
-import ConnectionCredentialInput from "./ConnectionCredentialInput.vue";
+import { useConnections } from "./useConnections";
+import ConnectionCredentialInput from "../components/ConnectionCredentialInput.vue";
 
 const {
   filteredConnections,
@@ -256,7 +256,7 @@ function copyConnectionConfig(connection: ConnectionConfig) {
 </script>
 
 <style scoped lang="scss">
-@use "../styles/connections" as *;
+@use "./connections" as *;
 
 .create-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .create-choice { display: grid; gap: 8px; padding: 20px; text-align: left; border: 1px solid var(--admin-border); background: var(--admin-surface); border-radius: 8px; cursor: pointer; color: inherit; }

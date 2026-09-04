@@ -20,7 +20,7 @@ import {
   summarizeIds,
   type ConnectionFormState,
 } from "../model";
-import { useAdminClipboard } from "./useAdminClipboard";
+import { useAdminClipboard } from "../components/useAdminClipboard";
 
 type ConnectionTypeOption = {
   value: ConnectionFormState["type"];
