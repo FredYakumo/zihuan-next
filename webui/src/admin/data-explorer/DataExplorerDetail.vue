@@ -60,7 +60,7 @@ import { useRoute, useRouter } from "vue-router";
 import type { PrimaryTableCol } from "tdesign-vue-next";
 
 import type { MysqlRecord } from "../../api/client";
-import { type ServiceCapability, useDataExplorerDetail } from "../composables/useDataExplorer";
+import { type ServiceCapability, useDataExplorerDetail } from "./useDataExplorer";
 
 const route = useRoute();
 const router = useRouter();

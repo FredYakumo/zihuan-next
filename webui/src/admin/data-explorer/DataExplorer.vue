@@ -26,7 +26,7 @@ import type { PrimaryTableCol } from "tdesign-vue-next";
 import { useRouter } from "vue-router";
 
 import type { ServiceWithRuntime } from "../../api/client";
-import { serviceCapabilities, type ServiceCapability, useDataExplorerList } from "../composables/useDataExplorer";
+import { serviceCapabilities, type ServiceCapability, useDataExplorerList } from "./useDataExplorer";
 
 const router = useRouter();
 const { explorerServices } = useDataExplorerList();
