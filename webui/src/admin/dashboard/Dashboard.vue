@@ -262,8 +262,8 @@
 <script setup lang="ts">
 import { CloseIcon } from "tdesign-icons-vue-next";
 
-import { useDashboard } from "../composables/useDashboard";
-import Chat from "./Chat.vue";
+import { useDashboard } from "./useDashboard";
+import Chat from "../chat/Chat.vue";
 
 const {
   services,
@@ -295,6 +295,6 @@ const {
 </script>
 
 <style scoped lang="scss">
-@use "../styles/connections" as *;
-@use "../styles/dashboard" as *;
+@use "../connections/connections" as *;
+@use "./dashboard" as *;
 </style>
