@@ -103,5 +103,5 @@ const emit = defineEmits<{
 </script>
 
 <style scoped lang="scss">
-@use "../styles/role-service-model-config" as *;
+@use "./service-model-config" as *;
 </style>

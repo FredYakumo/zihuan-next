@@ -16,7 +16,7 @@ import {
   InternetIcon,
 } from "tdesign-icons-vue-next";
 
-import { useToolCallBadge, type ToolCallKind } from "../composables/useToolCallBadge";
+import { useToolCallBadge, type ToolCallKind } from "./useToolCallBadge";
 
 const props = defineProps<{
   kind: ToolCallKind;
@@ -131,5 +131,5 @@ const { kind, loading } = useToolCallBadge(props, emit);
 </template>
 
 <style scoped lang="scss">
-@use "../styles/tool-call-badge" as *;
+@use "./tool-call-badge" as *;
 </style>
