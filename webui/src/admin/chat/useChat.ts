@@ -363,7 +363,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     const services = ref<ServiceWithRuntime[]>([]);
     const servicesLoading = ref(false);
     const sessions = ref<ChatSessionSummary[]>([]);
+    const sessionsLoading = ref(false);
     const activeSessionId = ref("");
+    const openingSessionId = ref("");
     const selectedServiceId = ref("");
     const draftMessage = ref("");
     const draftImageAttachments = ref<ChatImageAttachment[]>([]);
@@ -1383,32 +1385,39 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     async function reloadSessions() {
         const serviceId = selectedServiceId.value;
         const revision = ++sessionListRevision;
+        sessionsLoading.value = true;
         // Fetch the selected service's sessions and workspace tasks in parallel.
-        const [result, taskItems] = await Promise.all([
-            chat.listSessions(serviceId || undefined),
-            tasksApi.list(),
-        ]);
-        if (revision !== sessionListRevision || selectedServiceId.value !== serviceId) return;
-        // Keep only running workspace chat tasks linked to a session for quick status lookup.
-        const runningBySession = new Map(taskItems
-            .filter((task) => task.task_type === "workspace_chat" && task.is_running && task.chat_session_id)
-            .map((task) => [task.chat_session_id as string, task]));
-        sessions.value = result.sessions.map((session) => {
-            const task = runningBySession.get(session.session_id);
-            const wasRunning = sessionsAwaitingHistoryRefresh.has(session.session_id);
-            if (task) {
-                sessionsAwaitingHistoryRefresh.add(session.session_id);
-            } else if (wasRunning) {
-                // Mark the session for a history refresh when its task stops running.
-                sessionsAwaitingHistoryRefresh.delete(session.session_id);
-                sessionsNeedingHistoryRefresh.add(session.session_id);
+        try {
+            const [result, taskItems] = await Promise.all([
+                chat.listSessions(serviceId || undefined),
+                tasksApi.list(),
+            ]);
+            if (revision !== sessionListRevision || selectedServiceId.value !== serviceId) return;
+            // Keep only running workspace chat tasks linked to a session for quick status lookup.
+            const runningBySession = new Map(taskItems
+                .filter((task) => task.task_type === "workspace_chat" && task.is_running && task.chat_session_id)
+                .map((task) => [task.chat_session_id as string, task]));
+            sessions.value = result.sessions.map((session) => {
+                const task = runningBySession.get(session.session_id);
+                const wasRunning = sessionsAwaitingHistoryRefresh.has(session.session_id);
+                if (task) {
+                    sessionsAwaitingHistoryRefresh.add(session.session_id);
+                } else if (wasRunning) {
+                    // Mark the session for a history refresh when its task stops running.
+                    sessionsAwaitingHistoryRefresh.delete(session.session_id);
+                    sessionsNeedingHistoryRefresh.add(session.session_id);
+                }
+                return {
+                    ...session,
+                    running_task_id: task?.id ?? null,
+                    task_status: task?.status ?? null,
+                };
+            });
+        } finally {
+            if (revision === sessionListRevision && selectedServiceId.value === serviceId) {
+                sessionsLoading.value = false;
             }
-            return {
-                ...session,
-                running_task_id: task?.id ?? null,
-                task_status: task?.status ?? null,
-            };
-        });
+        }
     }
 
     async function refreshActiveSessionHistoryIfNeeded(): Promise<void> {
@@ -1486,12 +1495,14 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
 
     async function openSession(sessionId: string) {
         const revision = ++sessionOpenRevision;
+        openingSessionId.value = sessionId;
         activeSessionId.value = sessionId;
         emit("update:sessionId", sessionId);
         clearChatError();
         clearPendingAskUser();
-        const result = await chat.getSessionMessages(sessionId);
-        if (revision !== sessionOpenRevision || activeSessionId.value !== sessionId) return;
+        try {
+            const result = await chat.getSessionMessages(sessionId);
+            if (revision !== sessionOpenRevision || activeSessionId.value !== sessionId) return;
         workspaceTasks.value = result.tasks;
         const session = sessions.value.find((item) => item.session_id === sessionId);
         workspaceTaskInterrupted.value = result.tasks.some((task) => task.status !== "completed") &&
@@ -1545,7 +1556,12 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         messageBranches.value = result.branches;
         editingMessage.value = null;
         await refreshPendingCommandApproval();
-        await refreshSessionCommandApprovals();
+            await refreshSessionCommandApprovals();
+        } finally {
+            if (revision === sessionOpenRevision && openingSessionId.value === sessionId) {
+                openingSessionId.value = "";
+            }
+        }
     }
 
     function applyWorkspaceChange(change: WorkspaceChange) {
@@ -2548,7 +2564,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         services,
         servicesLoading,
         sessions,
+        sessionsLoading,
         activeSessionId,
+        openingSessionId,
         selectedServiceId,
         draftMessage,
         draftImageAttachments,

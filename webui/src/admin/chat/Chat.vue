@@ -133,7 +133,10 @@
                 <MenuFoldIcon />
               </button>
             </div>
-            <div class="chat-sessions-header">历史</div>
+            <div class="chat-sessions-header">
+              <span>历史</span>
+              <t-loading v-if="sessionsLoading" class="chat-sessions-loading" size="small" />
+            </div>
             <template v-for="group in groupedSessions" :key="group.pathKey">
               <div class="chat-session-group-header" :title="group.path ?? undefined">
                 <FolderIcon /> {{ group.label }}
@@ -142,7 +145,10 @@
                 v-for="session in group.sessions"
                 :key="session.session_id"
                 class="chat-session-item"
-                :class="{ active: session.versionSessionIds.includes(activeSessionId) }"
+                :class="{
+                  active: session.versionSessionIds.includes(activeSessionId),
+                  loading: session.session_id === openingSessionId,
+                }"
               >
                 <button class="chat-session-main" @click="openSession(session.session_id)">
                   <strong>{{ session.title || session.session_id.slice(0, 8) }}</strong>
@@ -151,6 +157,7 @@
                     {{ formatTime(session.updated_at) }}
                   </span>
                 </button>
+                <t-loading v-if="session.session_id === openingSessionId" class="chat-session-loading" size="small" />
                 <button
                   class="chat-session-delete"
                   title="删除会话"
@@ -182,7 +189,12 @@
             <aside v-if="showWorkspaceTaskPanel" class="workspace-task-panel" aria-label="当前任务">
               <WorkspaceTaskList :tasks="workspaceTasks" />
             </aside>
-            <div class="chat-messages" ref="messagesContainer" @scroll="handleMessagesScroll">
+            <div
+              class="chat-messages"
+              ref="messagesContainer"
+              :aria-busy="Boolean(openingSessionId)"
+              @scroll="handleMessagesScroll"
+            >
               <div v-if="messages.length === 0" class="empty-state"></div>
               <div
                 v-for="group in messageGroups"
@@ -713,6 +725,9 @@
                     </template>
                   </div>
                 </div>
+              </div>
+              <div v-if="openingSessionId" class="chat-session-loading-overlay" aria-live="polite">
+                <t-loading size="large" text="加载会话中..." />
               </div>
             </div>
 
@@ -1598,7 +1613,9 @@ const {
   services,
   servicesLoading,
   sessions,
+  sessionsLoading,
   activeSessionId,
+  openingSessionId,
   selectedServiceId,
   draftMessage,
   draftImageAttachments,
