@@ -52,5 +52,9 @@ jobs:
         working-directory: webui
         run: pnpm install --frozen-lockfile
 
+      - name: Build webui
+        working-directory: webui
+        run: pnpm run build
+
       - name: Test workspace
         run: cargo test --workspace
