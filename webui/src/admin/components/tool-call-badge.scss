@@ -120,6 +120,12 @@
   flex-shrink: 0;
 }
 
+.tool-call-complete-icon {
+  flex-shrink: 0;
+  color: var(--admin-good);
+  font-size: 13px;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }

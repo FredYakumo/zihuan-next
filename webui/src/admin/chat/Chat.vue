@@ -384,7 +384,6 @@
                       </div>
                     </div>
                     <div
-                    <div
                       v-if="message.thinkingContent"
                       class="chat-thinking-block"
                       :class="{ collapsed: !message.thinkingExpanded }"

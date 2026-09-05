@@ -67,6 +67,7 @@ impl AgentCancellation for WorkspaceChatCancellation {
 /// `Arc<dyn ToolCallingObserver>` into `infer_role_response_streaming`.
 struct SseToolCallingObserver {
     event_tx: mpsc::UnboundedSender<Value>,
+    session_id: String,
     message_id: String,
     change_recorder: Arc<workspace_changes::WorkspaceChangeRecorder>,
     running_chat_message: Option<Arc<Mutex<RunningChatMessage>>>,
@@ -101,6 +102,7 @@ impl ToolCallingObserver for SseToolCallingObserver {
             let payload = serde_json::from_str::<Value>(chunk).unwrap_or_else(|_| json!({}));
             let event = json!({
                 "type": "command_confirmation",
+                "session_id": self.session_id,
                 "message_id": self.message_id,
                 "call_id": call_id,
                 "name": name,
@@ -1337,6 +1339,7 @@ async fn execute_chat_streaming(
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
     let observer: Arc<dyn ToolCallingObserver> = Arc::new(SseToolCallingObserver {
         event_tx: event_tx.clone(),
+        session_id: session_id.clone(),
         message_id: assistant_message_id.clone(),
         change_recorder: workspace_changes::WorkspaceChangeRecorder::new(
             session_id.clone(),
