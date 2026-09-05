@@ -800,14 +800,16 @@
                     </button>
                   </div>
                 </div>
-                <textarea
-                  v-model="draftMessage"
-                  placeholder="输入消息"
-                  @keydown.enter="handleTextareaKeydown"
-                  @paste="handleTextareaPaste"
-                  @input="clearChatError"
-                />
-                <div class="chat-input-hint">使用 shift + enter 换行</div>
+                <div class="chat-input-box">
+                  <textarea
+                    v-model="draftMessage"
+                    placeholder="输入消息"
+                    @keydown.enter="handleTextareaKeydown"
+                    @paste="handleTextareaPaste"
+                    @input="clearChatError"
+                  />
+                  <div class="chat-input-hint">使用 shift + enter 换行</div>
+                </div>
                 <div class="chat-input-actions">
                   <button class="btn ghost" @click="startNewSession">新对话</button>
                   <div class="chat-input-right">
@@ -1936,7 +1938,7 @@ function formatCacheHitRate(rate: number) {
   margin-top: 6px;
   padding: 6px 8px;
   border: 1px solid var(--border, #d9d9d9);
-  border-radius: 4px;
+  border-radius: 12px;
 }
 .chat-command-confirmation--inline { display: none; }
 .chat-command-confirmation--input {
@@ -1954,7 +1956,7 @@ function formatCacheHitRate(rate: number) {
   flex-basis: 100%;
   overflow: hidden;
   padding: 4px 6px;
-  border-radius: 3px;
+  border-radius: 12px;
   border: 1px solid #334155;
   background: #0f172a;
   color: #f8fafc;
@@ -1972,7 +1974,7 @@ function formatCacheHitRate(rate: number) {
   width: min(320px, calc(100vw - 32px));
   padding: 12px;
   border: 1px solid var(--admin-border, #d9d9d9);
-  border-radius: 6px;
+  border-radius: 12px;
   background: var(--admin-bg-panel, #fff);
   box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
 }
@@ -2020,7 +2022,7 @@ function formatCacheHitRate(rate: number) {
   max-height: min(720px, calc(100vh - 32px));
   overflow: hidden;
   border: 1px solid var(--admin-border);
-  border-radius: 6px;
+  border-radius: 12px;
   background: var(--admin-bg-panel);
   color: var(--admin-ink);
   box-shadow: var(--admin-card-shadow);
@@ -2055,9 +2057,9 @@ function formatCacheHitRate(rate: number) {
 
 .directory-picker-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .directory-picker-path { padding-bottom: 8px; }
-.directory-picker-path input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--admin-border); border-radius: 4px; background: var(--admin-bg-soft); color: var(--admin-ink); }
+.directory-picker-path input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--admin-border); border-radius: 12px; background: var(--admin-bg-soft); color: var(--admin-ink); }
 .directory-picker-path input::placeholder { color: var(--admin-muted); }
-.directory-picker-icon-button, .directory-picker-tool { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--admin-border); border-radius: 4px; background: var(--admin-bg-soft); color: var(--admin-ink); cursor: pointer; }
+.directory-picker-icon-button, .directory-picker-tool { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--admin-border); border-radius: 12px; background: var(--admin-bg-soft); color: var(--admin-ink); cursor: pointer; }
 .directory-picker-icon-button:hover:not(:disabled), .directory-picker-tool:hover:not(:disabled) { border-color: var(--admin-accent); color: var(--admin-accent); }
 .directory-picker-icon-button:disabled, .directory-picker-tool:disabled { cursor: not-allowed; opacity: .5; }
 .directory-picker-toolbar { padding-top: 0; border-bottom: 1px solid var(--admin-border); }
@@ -2067,7 +2069,7 @@ function formatCacheHitRate(rate: number) {
 .directory-picker-section { min-width: 0; padding: 12px; border-right: 1px solid var(--admin-border); }
 .directory-picker-section:last-child { border-right: 0; }
 .directory-picker-section h4 { margin: 0 0 8px; color: var(--admin-muted); font-size: 12px; font-weight: 600; }
-.directory-picker-row { display: flex; width: 100%; align-items: center; gap: 8px; overflow: hidden; padding: 7px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--admin-ink); cursor: pointer; text-align: left; }
+.directory-picker-row { display: flex; width: 100%; align-items: center; gap: 8px; overflow: hidden; padding: 7px 8px; border: 0; border-radius: 12px; background: transparent; color: var(--admin-ink); cursor: pointer; text-align: left; }
 .directory-picker-row:hover { background: var(--admin-accent-soft); }
 .directory-picker-row svg { flex: 0 0 auto; color: var(--admin-accent); }
 .directory-picker-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
