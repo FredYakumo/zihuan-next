@@ -2403,10 +2403,20 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             // remains responsible for cancelling the detached inference task.
             activeStreamController?.abort();
         } else if (isWorkspaceService.value && activeStreamController) {
+            const sessionId = activeSessionId.value || null;
+            // Stop rendering immediately when the session id is known, even if
+            // the task id has not reached session metadata yet. A new session
+            // must remain connected until its start event supplies the id.
             pendingWorkspaceStop = {
                 streamController: activeStreamController,
-                sessionId: activeSessionId.value || null,
+                sessionId,
             };
+            if (sessionId) {
+                chat.stop(sessionId).catch((error) => {
+                    console.warn("Failed to stop Workspace chat task:", error);
+                });
+                activeStreamController.abort();
+            }
         } else {
             activeStreamController?.abort();
         }
