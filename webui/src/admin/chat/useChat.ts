@@ -363,7 +363,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     const services = ref<ServiceWithRuntime[]>([]);
     const servicesLoading = ref(false);
     const sessions = ref<ChatSessionSummary[]>([]);
+    const sessionsLoading = ref(false);
     const activeSessionId = ref("");
+    const openingSessionId = ref("");
     const selectedServiceId = ref("");
     const draftMessage = ref("");
     const draftImageAttachments = ref<ChatImageAttachment[]>([]);
@@ -382,12 +384,10 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     let activeStreamController: AbortController | null = null;
     let activeChatTask: { sessionId: string; taskId: string } | null = null;
     let pendingWorkspaceStop: { streamController: AbortController; sessionId: string | null } | null = null;
-    let sessionRefreshTimer: ReturnType<typeof setInterval> | null = null;
     let sessionListRevision = 0;
     let sessionOpenRevision = 0;
+    const sessionStatusRefreshRevisions = new Map<string, number>();
     let preservedServiceChangeId: string | null = null;
-    const sessionsAwaitingHistoryRefresh = new Set<string>();
-    const sessionsNeedingHistoryRefresh = new Set<string>();
     const chatErrorMessage = ref("");
     const chatErrorDialogMessage = ref("");
     const messagesContainer = ref<HTMLElement | null>(null);
@@ -396,6 +396,8 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     const shouldFollowLiveOutput = new Map<string, boolean>();
     const programmaticScrollElements = new Set<string>();
     const messages = ref<ChatMessage[]>([]);
+    const liveSessionMessages = new Map<string, ChatMessage[]>();
+    let commandApprovalPollTimer: ReturnType<typeof window.setTimeout> | null = null;
     const messageBranches = ref<ChatMessageBranch[]>([]);
     const editingMessage = ref<EditingMessage | null>(null);
     const copiedMessageId = ref("");
@@ -495,17 +497,30 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         return new Set(agentsMdFiles.value.filter((file) => file.exists).map((file) => file.key));
     });
     const groupedSessions = computed(() => {
-        const groups = new Map<string, ChatSessionSummary[]>();
+        type ConversationSummary = ChatSessionSummary & { versionSessionIds: string[] };
+        const conversations = new Map<string, ChatSessionSummary[]>();
         for (const session of sessions.value) {
-            const key = session.workspace_path ?? "__default__";
+            const key = session.root_session_id ?? session.session_id;
+            if (!conversations.has(key)) conversations.set(key, []);
+            conversations.get(key)!.push(session);
+        }
+
+        const groups = new Map<string, ConversationSummary[]>();
+        for (const versions of conversations.values()) {
+            versions.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+            const latest = versions[0];
+            const key = latest.workspace_path ?? "__default__";
             if (!groups.has(key)) groups.set(key, []);
-            groups.get(key)!.push(session);
+            groups.get(key)!.push({
+                ...latest,
+                versionSessionIds: versions.map((version) => version.session_id),
+            });
         }
         const result: Array<{
             pathKey: string;
             path: string | null;
             label: string;
-            sessions: ChatSessionSummary[];
+            sessions: ConversationSummary[];
         }> = [];
         for (const [key, items] of groups) {
             items.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
@@ -903,6 +918,45 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             }
         }
         scrollToBottom(true);
+    }
+
+    function rememberLiveSessionMessages(sessionId: string) {
+        if (!sessionId || messages.value.length === 0) return;
+        liveSessionMessages.set(sessionId, messages.value.map((message) => ({
+            ...message,
+            toolCalls: message.toolCalls.map((toolCall) => ({ ...toolCall })),
+            liveToolCalls: message.liveToolCalls?.map((call) => ({ ...call, commandConfirmation: call.commandConfirmation ? { ...call.commandConfirmation } : undefined })),
+        })));
+    }
+
+    function mergeLiveSessionMessages(sessionId: string) {
+        const snapshot = liveSessionMessages.get(sessionId);
+        if (!snapshot?.length) return;
+        const serverMessages = new Map(messages.value.map((message) => [message.id, message]));
+        for (const localMessage of snapshot) {
+            const serverMessage = serverMessages.get(localMessage.id);
+            if (!serverMessage) {
+                messages.value.push(localMessage);
+                continue;
+            }
+            if (localMessage.content.length > serverMessage.content.length) {
+                serverMessage.content = localMessage.content;
+            }
+            if ((localMessage.thinkingContent?.length ?? 0) > (serverMessage.thinkingContent?.length ?? 0)) {
+                serverMessage.thinkingContent = localMessage.thinkingContent;
+            }
+            if (!serverMessage.liveToolCalls) serverMessage.liveToolCalls = [];
+            const serverCalls = new Map(serverMessage.liveToolCalls.map((call) => [call.call_id, call]));
+            for (const localCall of localMessage.liveToolCalls ?? []) {
+                const serverCall = serverCalls.get(localCall.call_id);
+                if (!serverCall) {
+                    serverMessage.liveToolCalls.push(localCall);
+                } else if (!serverCall.done || localCall.done) {
+                    Object.assign(serverCall, localCall, { done: serverCall.done || localCall.done });
+                }
+            }
+        }
+        messages.value.sort((left, right) => (left.timestamp ?? "").localeCompare(right.timestamp ?? ""));
     }
 
     function openToolDetail(messageId: string, toolCallId: string) {
@@ -1370,50 +1424,43 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     async function reloadSessions() {
         const serviceId = selectedServiceId.value;
         const revision = ++sessionListRevision;
+        sessionsLoading.value = true;
         // Fetch the selected service's sessions and workspace tasks in parallel.
-        const [result, taskItems] = await Promise.all([
-            chat.listSessions(serviceId || undefined),
-            tasksApi.list(),
-        ]);
-        if (revision !== sessionListRevision || selectedServiceId.value !== serviceId) return;
-        // Keep only running workspace chat tasks linked to a session for quick status lookup.
-        const runningBySession = new Map(taskItems
-            .filter((task) => task.task_type === "workspace_chat" && task.is_running && task.chat_session_id)
-            .map((task) => [task.chat_session_id as string, task]));
-        sessions.value = result.sessions.map((session) => {
-            const task = runningBySession.get(session.session_id);
-            const wasRunning = sessionsAwaitingHistoryRefresh.has(session.session_id);
-            if (task) {
-                sessionsAwaitingHistoryRefresh.add(session.session_id);
-            } else if (wasRunning) {
-                // Mark the session for a history refresh when its task stops running.
-                sessionsAwaitingHistoryRefresh.delete(session.session_id);
-                sessionsNeedingHistoryRefresh.add(session.session_id);
+        try {
+            const [result, taskItems] = await Promise.all([
+                chat.listSessions(serviceId || undefined),
+                tasksApi.list(),
+            ]);
+            if (revision !== sessionListRevision || selectedServiceId.value !== serviceId) return;
+            // Keep only running workspace chat tasks linked to a session for quick status lookup.
+            const runningBySession = new Map(taskItems
+                .filter((task) => task.task_type === "workspace_chat" && task.is_running && task.chat_session_id)
+                .map((task) => [task.chat_session_id as string, task]));
+            sessions.value = result.sessions.map((session) => {
+                const task = runningBySession.get(session.session_id);
+                return {
+                    ...session,
+                    running_task_id: task?.id ?? null,
+                    task_status: task?.status ?? null,
+                };
+            });
+        } finally {
+            if (revision === sessionListRevision && selectedServiceId.value === serviceId) {
+                sessionsLoading.value = false;
             }
-            return {
-                ...session,
-                running_task_id: task?.id ?? null,
-                task_status: task?.status ?? null,
-            };
-        });
+        }
     }
 
-    async function refreshActiveSessionHistoryIfNeeded(): Promise<void> {
-        const sessionId = activeSessionId.value;
-        if (!sessionId || sending.value) return;
+    async function refreshSessionStatus(sessionId: string): Promise<void> {
+        const revision = (sessionStatusRefreshRevisions.get(sessionId) ?? 0) + 1;
+        sessionStatusRefreshRevisions.set(sessionId, revision);
+        const { task } = await tasksApi.getChatSessionStatus(sessionId);
+        if (sessionStatusRefreshRevisions.get(sessionId) !== revision) return;
         const session = sessions.value.find((item) => item.session_id === sessionId);
-        if (!session && !sessionsAwaitingHistoryRefresh.has(sessionId)) return;
-        if (!session?.running_task_id && !sessionsAwaitingHistoryRefresh.has(sessionId) && !sessionsNeedingHistoryRefresh.has(sessionId)) return;
-        const result = await chat.getSessionMessages(sessionId);
-        if (activeSessionId.value !== sessionId) return;
-        applyHistory(result.messages);
-        messageBranches.value = result.branches;
-        workspaceTasks.value = result.tasks;
-        workspaceTaskInterrupted.value = result.tasks.some((task) => task.status !== "completed") &&
-            (session?.task_status === "stopped" || session?.task_status === "failed");
-        if (!session?.running_task_id) {
-            sessionsNeedingHistoryRefresh.delete(sessionId);
-        }
+        if (!session) return;
+        if (!task && session.task_status === "running") return;
+        session.running_task_id = task?.id ?? null;
+        session.task_status = task?.status ?? null;
     }
 
     async function refreshPendingCommandApproval(): Promise<void> {
@@ -1430,7 +1477,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                     return call.name === "exec_cmd" && argumentsValue?.command === pending.command;
                 });
             if (existingCall) {
-                existingCall.commandConfirmation = pending;
+                if (!existingCall.commandConfirmation?.decision) {
+                    existingCall.commandConfirmation = pending;
+                }
                 return;
             }
 
@@ -1451,8 +1500,45 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         } else {
             for (const message of messages.value) {
                 message.liveToolCalls = message.liveToolCalls?.filter((call) => !call.call_id.startsWith("recovered-command-"));
+                for (const call of message.liveToolCalls ?? []) {
+                    if (call.done) call.commandConfirmation = undefined;
+                }
             }
         }
+    }
+
+    function hasUnfinishedCommand(): boolean {
+        return messages.value.some((message) =>
+            message.liveToolCalls?.some((call) => call.name === "exec_cmd" && !call.done),
+        );
+    }
+
+    function shouldPollCommandApproval(): boolean {
+        const sessionId = activeSessionId.value;
+        if (!sessionId) return false;
+        const session = sessions.value.find((item) => item.session_id === sessionId);
+        return sending.value ||
+            activeChatTask?.sessionId === sessionId ||
+            session?.task_status === "running" ||
+            pendingCommandApproval.value !== null ||
+            hasUnfinishedCommand();
+    }
+
+    function scheduleCommandApprovalRefresh(delay = 250): void {
+        if (commandApprovalPollTimer !== null) return;
+        commandApprovalPollTimer = window.setTimeout(async () => {
+            commandApprovalPollTimer = null;
+            if (!shouldPollCommandApproval()) return;
+            try {
+                await refreshPendingCommandApproval();
+            } catch (error) {
+                console.warn("Failed to refresh pending command approval:", error);
+            } finally {
+                if (shouldPollCommandApproval()) {
+                    scheduleCommandApprovalRefresh(500);
+                }
+            }
+        }, delay);
     }
     async function refreshSessionCommandApprovals(): Promise<void> {
         const sessionId = activeSessionId.value;
@@ -1473,12 +1559,17 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
 
     async function openSession(sessionId: string) {
         const revision = ++sessionOpenRevision;
+        if (activeSessionId.value && (sending.value || openingSessionId.value)) {
+            rememberLiveSessionMessages(activeSessionId.value);
+        }
+        openingSessionId.value = sessionId;
         activeSessionId.value = sessionId;
         emit("update:sessionId", sessionId);
         clearChatError();
         clearPendingAskUser();
-        const result = await chat.getSessionMessages(sessionId);
-        if (revision !== sessionOpenRevision || activeSessionId.value !== sessionId) return;
+        try {
+            const result = await chat.getSessionMessages(sessionId);
+            if (revision !== sessionOpenRevision || activeSessionId.value !== sessionId) return;
         workspaceTasks.value = result.tasks;
         const session = sessions.value.find((item) => item.session_id === sessionId);
         workspaceTaskInterrupted.value = result.tasks.some((task) => task.status !== "completed") &&
@@ -1511,6 +1602,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             };
         }
         applyHistory(result.messages);
+        mergeLiveSessionMessages(sessionId);
         const sessionModelId = [...result.messages]
             .reverse()
             .find((record) => record.role === "user" && record.model_config_id)?.model_config_id;
@@ -1532,7 +1624,12 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         messageBranches.value = result.branches;
         editingMessage.value = null;
         await refreshPendingCommandApproval();
-        await refreshSessionCommandApprovals();
+            await refreshSessionCommandApprovals();
+        } finally {
+            if (revision === sessionOpenRevision && openingSessionId.value === sessionId) {
+                openingSessionId.value = "";
+            }
+        }
     }
 
     function applyWorkspaceChange(change: WorkspaceChange) {
@@ -1910,16 +2007,22 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         selectedReasoningEffort.value = "";
     });
 
+    watch([activeSessionId, sending], () => {
+        if (shouldPollCommandApproval()) {
+            scheduleCommandApprovalRefresh();
+        }
+    });
+
     async function removeSession(sessionId: string) {
         if (!confirm("确定要删除该会话吗？此操作不可恢复。")) {
             return;
         }
         try {
             await chat.deleteSession(sessionId);
-            sessions.value = sessions.value.filter((s) => s.session_id !== sessionId);
             if (activeSessionId.value === sessionId) {
                 startNewSession();
             }
+            await reloadSessions();
         } catch (error) {
             alert(`删除失败: ${(error as Error).message}`);
         }
@@ -1928,6 +2031,20 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
         if (event.type === "command_confirmation" && event.call_id && event.command && event.shell) {
             const confirmation = { command: event.command, shell: event.shell };
+            const belongsToActiveSession =
+                !event.session_id ||
+                event.session_id === activeSessionId.value ||
+                event.session_id === streamState.requestedSessionId;
+            if (belongsToActiveSession) {
+                // The approval may race the start/session reconciliation. Keep
+                // it attached to the visible stream so the approval panel is
+                // rendered immediately instead of waiting for a session switch.
+                streamState.foreground = true;
+            }
+            if (event.session_id && streamState.foreground && activeSessionId.value !== event.session_id) {
+                activeSessionId.value = event.session_id;
+                emit("update:sessionId", event.session_id);
+            }
             pendingCommandApproval.value = confirmation;
             let message = messages.value.find((item) => item.liveToolCalls?.some((call) => call.call_id === event.call_id));
             if (!message && event.message_id) {
@@ -1962,7 +2079,15 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         }
 
         if (event.type !== "start" && !streamState.foreground) {
-            return;
+            // A command approval can arrive while the start event is still
+            // reconciling the newly-created session with the active view. Do not
+            // drop it when it belongs to the session currently shown; otherwise
+            // the server waits forever until the user switches sessions and the
+            // pending approval is recovered by a refresh.
+            if (event.type !== "command_confirmation" || event.session_id !== activeSessionId.value) {
+                return;
+            }
+            streamState.foreground = true;
         }
 
         if (event.type === "error") {
@@ -2024,6 +2149,16 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             activeChatTask = event.task_id && event.session_id
                 ? { sessionId: event.session_id, taskId: event.task_id }
                 : null;
+            if (event.session_id) {
+                const session = sessions.value.find((item) => item.session_id === event.session_id);
+                if (session && event.task_id) {
+                    session.running_task_id = event.task_id;
+                    session.task_status = "running";
+                }
+                refreshSessionStatus(event.session_id).catch((error) => {
+                    console.warn("Failed to refresh chat session status:", error);
+                });
+            }
             if (
                 event.task_id &&
                 event.session_id &&
@@ -2081,6 +2216,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 }
 
                 streamState.pendingNewConversation = null;
+                reloadSessions().catch((error) => {
+                    console.warn("Failed to refresh chat sessions after starting a new conversation:", error);
+                });
                 scrollToBottom();
                 return;
             }
@@ -2088,6 +2226,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             if (event.session_id) {
                 activeSessionId.value = event.session_id;
                 emit("update:sessionId", event.session_id);
+                reloadSessions().catch((error) => {
+                    console.warn("Failed to refresh chat sessions after starting a conversation:", error);
+                });
             }
             if (event.message_id) {
                 const currentAssistantId = streamState.assistantMessageId;
@@ -2181,11 +2322,19 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 pendingCommandConfirmations.delete(event.call_id);
             }
             scrollToBottom();
+            if (event.name === "exec_cmd") {
+                // Tool starts for the whole model turn are emitted up front, while
+                // exec commands enter the approval queue one by one. Keep polling
+                // until every command in the turn has either completed or failed.
+                scheduleCommandApprovalRefresh();
+            }
         }
 
         if (event.type === "tool_call_output" && event.call_id && event.chunk) {
             const targetId = streamState.toolMessageId || streamState.assistantMessageId || event.message_id;
-            const message = targetId ? messages.value.find((item) => item.id === targetId) : undefined;
+            const message = messages.value.find((item) =>
+                item.liveToolCalls?.some((call) => call.call_id === event.call_id),
+            ) ?? (targetId ? messages.value.find((item) => item.id === targetId) : undefined);
             const liveCall = message?.liveToolCalls?.find((item) => item.call_id === event.call_id);
             if (liveCall) {
                 const current = safeParseJson<{ stdout?: string; stderr?: string }>(liveCall.result) ?? {};
@@ -2202,7 +2351,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
 
         if (event.type === "tool_call_result" && event.call_id) {
             const targetId = streamState.toolMessageId || streamState.assistantMessageId || event.message_id;
-            const message = targetId ? messages.value.find((item) => item.id === targetId) : undefined;
+            const message = messages.value.find((item) =>
+                item.liveToolCalls?.some((call) => call.call_id === event.call_id),
+            ) ?? (targetId ? messages.value.find((item) => item.id === targetId) : undefined);
             if (message) {
                 if (!message.liveToolCalls) {
                     message.liveToolCalls = [];
@@ -2211,6 +2362,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 if (liveCall) {
                     liveCall.result = event.result ?? "";
                     liveCall.done = true;
+                    liveCall.commandDecisionPending = false;
                     pendingCommandConfirmations.delete(event.call_id);
                 } else {
                     message.liveToolCalls.push({
@@ -2222,6 +2374,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                     });
                 }
                 scrollToBottom();
+                if (event.name === "exec_cmd" && hasUnfinishedCommand()) {
+                    scheduleCommandApprovalRefresh(100);
+                }
             }
         }
     }
@@ -2244,11 +2399,24 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             chat.stop(task.sessionId, task.taskId).catch((error) => {
                 console.warn("Failed to stop Workspace chat task:", error);
             });
+            // Stop rendering the stream immediately. The server-side stop request
+            // remains responsible for cancelling the detached inference task.
+            activeStreamController?.abort();
         } else if (isWorkspaceService.value && activeStreamController) {
+            const sessionId = activeSessionId.value || null;
+            // Stop rendering immediately when the session id is known, even if
+            // the task id has not reached session metadata yet. A new session
+            // must remain connected until its start event supplies the id.
             pendingWorkspaceStop = {
                 streamController: activeStreamController,
-                sessionId: activeSessionId.value || null,
+                sessionId,
             };
+            if (sessionId) {
+                chat.stop(sessionId).catch((error) => {
+                    console.warn("Failed to stop Workspace chat task:", error);
+                });
+                activeStreamController.abort();
+            }
         } else {
             activeStreamController?.abort();
         }
@@ -2307,6 +2475,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             await chat.approveCommand(activeSessionId.value, confirmation.command, decision);
             confirmation.decision = decision;
             await refreshPendingCommandApproval();
+            if (hasUnfinishedCommand()) scheduleCommandApprovalRefresh(100);
             if (decision === "session") await refreshSessionCommandApprovals();
         } catch (error) {
             liveCall.commandDecisionPending = false;
@@ -2429,12 +2598,17 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                     workspace_path: isWorkspaceService.value ? workspacePath.value.trim() || null : null,
                     messages: requestMessages,
                 },
-                (event) => applyStreamEvent(event, streamState),
+                (event) => {
+                    applyStreamEvent(event, streamState);
+                    const sessionId = event.session_id || streamState.sessionId || activeSessionId.value;
+                    if (sessionId) rememberLiveSessionMessages(sessionId);
+                },
                 streamController.signal,
             );
             await reloadSessions();
             if (streamState.foreground && activeSessionId.value) {
                 await openSession(activeSessionId.value);
+                liveSessionMessages.delete(activeSessionId.value);
             }
         } catch (error) {
             if (isAbortError(error)) {
@@ -2508,24 +2682,13 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         });
         document.addEventListener("click", closePickersOnClickOutside);
         document.addEventListener("keydown", handleDocumentKeydown);
-        sessionRefreshTimer = setInterval(() => {
-            if (selectedServiceId.value) {
-                reloadSessions()
-                    .then(async () => {
-                        await refreshActiveSessionHistoryIfNeeded();
-                        await refreshPendingCommandApproval();
-                        await refreshSessionCommandApprovals();
-                    })
-                    .catch((error) => console.warn("Failed to refresh chat sessions:", error));
-            }
-        }, 3000);
     });
 
     onUnmounted(() => {
         activeStreamController?.abort();
-        if (sessionRefreshTimer) {
-            clearInterval(sessionRefreshTimer);
-            sessionRefreshTimer = null;
+        if (commandApprovalPollTimer !== null) {
+            window.clearTimeout(commandApprovalPollTimer);
+            commandApprovalPollTimer = null;
         }
         document.removeEventListener("click", closePickersOnClickOutside);
         document.removeEventListener("keydown", handleDocumentKeydown);
@@ -2535,7 +2698,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         services,
         servicesLoading,
         sessions,
+        sessionsLoading,
         activeSessionId,
+        openingSessionId,
         selectedServiceId,
         draftMessage,
         draftImageAttachments,
@@ -2659,6 +2824,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         pruneFailedAssistantPlaceholder,
         applyInferenceFailure,
         reloadSessions,
+        refreshSessionStatus,
         openSession,
         copyMessage,
         startEditingMessage,

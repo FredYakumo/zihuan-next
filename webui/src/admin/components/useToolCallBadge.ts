@@ -1,3 +1,5 @@
+import { toRef, type Ref } from "vue";
+
 export interface ToolCallBadgeProps {
   kind: ToolCallKind;
   loading?: boolean;
@@ -48,8 +50,8 @@ type ToolCallKind =
 export type { ToolCallKind };
 
 export interface UseToolCallBadgeReturn {
-  kind: ToolCallBadgeProps["kind"];
-  loading: ToolCallBadgeProps["loading"];
+  kind: Ref<ToolCallBadgeProps["kind"]>;
+  loading: Ref<ToolCallBadgeProps["loading"]>;
 }
 
 export function useToolCallBadge(
@@ -57,7 +59,7 @@ export function useToolCallBadge(
   _emit: ToolCallBadgeEmit,
 ): UseToolCallBadgeReturn {
   return {
-    kind: props.kind,
-    loading: props.loading,
+    kind: toRef(props, "kind"),
+    loading: toRef(props, "loading"),
   };
 }

@@ -243,6 +243,9 @@ export const tasks = {
   list(): Promise<TaskEntry[]> {
     return request("GET", "/tasks");
   },
+  getChatSessionStatus(sessionId: string): Promise<{ task: TaskEntry | null }> {
+    return request("GET", `/tasks/chat-sessions/${encodeURIComponent(sessionId)}/status`);
+  },
   stop(taskId: string): Promise<{ ok: boolean }> {
     return request("POST", `/tasks/${taskId}/stop`);
   },
@@ -633,6 +636,7 @@ export interface ChatLiveToolCall {
 
 export interface ChatSessionSummary {
   session_id: string;
+  root_session_id?: string;
   updated_at: string;
   agent_id?: string | null;
   agent_name?: string | null;

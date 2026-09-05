@@ -219,6 +219,10 @@ pub fn build_router(
             Router::with_path("tasks")
                 .get(execution::list_tasks)
                 .delete(execution::clear_non_running_tasks)
+                .push(
+                    Router::with_path("chat-sessions/<session_id>/status")
+                        .get(execution::get_chat_session_task_status),
+                )
                 .push(Router::with_path("delete-batch").post(execution::delete_tasks))
                 .push(Router::with_path("<task_id>").delete(execution::delete_task))
                 .push(Router::with_path("<task_id>/stop").post(execution::stop_task))

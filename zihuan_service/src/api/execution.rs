@@ -369,6 +369,23 @@ pub async fn list_tasks(_req: &mut Request, res: &mut Response, depot: &mut Depo
     res.render(Json(entries));
 }
 
+#[handler]
+pub async fn get_chat_session_task_status(
+    req: &mut Request,
+    res: &mut Response,
+    depot: &mut Depot,
+) {
+    let session_id = req.param::<String>("session_id").unwrap_or_default();
+    if session_id.trim().is_empty() {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({"error": "session_id must not be empty"})));
+        return;
+    }
+    let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let task = state.tasks.lock().unwrap().running_workspace_chat_task(&session_id);
+    res.render(Json(serde_json::json!({"task": task})));
+}
+
 fn start_graph_task(
     state: Arc<AppState>,
     broadcast_tx: WsBroadcast,
