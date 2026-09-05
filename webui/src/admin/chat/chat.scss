@@ -281,6 +281,22 @@
   min-width: 0;
 }
 
+.chat-service-select :deep(.t-input) {
+  border-color: transparent;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.chat-service-select :deep(.t-input:hover:not(.t-input--focused)) {
+  border-color: color-mix(in srgb, var(--admin-accent) 28%, transparent 72%);
+  background: color-mix(in srgb, var(--btn-hover) 88%, transparent 12%);
+}
+
+.chat-service-select :deep(.t-input--focused) {
+  border-color: var(--td-brand-color, var(--admin-accent));
+  background: transparent;
+}
+
 .chat-service-select-value,
 .chat-service-select-option {
   display: flex;
@@ -392,7 +408,8 @@
 }
 
 .chat-session-item:hover {
-  background: var(--admin-bg-soft);
+  background: color-mix(in srgb, var(--btn-hover) 88%, transparent 12%);
+  border-color: color-mix(in srgb, var(--admin-accent) 22%, transparent 78%);
 }
 
 .chat-session-item.active {
