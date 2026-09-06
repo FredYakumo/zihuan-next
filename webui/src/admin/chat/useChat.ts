@@ -1035,12 +1035,19 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         }
     }
 
-    function liveExecOutput(liveCall: LiveToolCall): string {
-        const kind = classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result);
+    function execOutputText(kind: ToolCallKind, pending: boolean): string {
         if (kind.type !== "exec_cmd") {
             return "";
         }
-        return [kind.stdout, kind.stderr].filter(Boolean).join("") || (liveCall.done ? "(空结果)" : "执行中...");
+        return [kind.stdout, kind.stderr].filter(Boolean).join("") || (pending ? "执行中..." : "(空结果)");
+    }
+
+    function liveExecOutput(liveCall: LiveToolCall): string {
+        return execOutputText(classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result), !liveCall.done);
+    }
+
+    function toolCallExecOutput(name: string, arguments_: unknown, result?: string): string {
+        return execOutputText(classifyToolCall(name, arguments_, result), false);
     }
 
     function formatChatTime(timestamp?: string): string {
@@ -2804,6 +2811,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         toggleLiveToolCall,
         formatToolPayload,
         liveExecOutput,
+        toolCallExecOutput,
         formatChatTime,
         renderMessageContent,
         scrollToBottom,

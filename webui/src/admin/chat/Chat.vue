@@ -347,6 +347,17 @@
                               )
                             "
                           />
+                          <pre
+                            v-if="
+                              classifyToolCall(
+                                toolCall.function.name,
+                                toolCall.function.arguments,
+                                getToolResultText(toolCall.id),
+                              ).type === 'exec_cmd' &&
+                              !message.liveToolCalls?.some((liveCall) => liveCall.call_id === toolCall.id)
+                            "
+                            class="chat-tool-live-output"
+                          >{{ toolCallExecOutput(toolCall.function.name, toolCall.function.arguments, getToolResultText(toolCall.id)) }}</pre>
                         </template>
                       </div>
                       <WorkspaceTaskList
@@ -581,6 +592,17 @@
                               )
                             "
                           />
+                          <pre
+                            v-if="
+                              classifyToolCall(
+                                toolCall.function.name,
+                                toolCall.function.arguments,
+                                getToolResultText(toolCall.id),
+                              ).type === 'exec_cmd' &&
+                              !message.liveToolCalls?.some((liveCall) => liveCall.call_id === toolCall.id)
+                            "
+                            class="chat-tool-live-output"
+                          >{{ toolCallExecOutput(toolCall.function.name, toolCall.function.arguments, getToolResultText(toolCall.id)) }}</pre>
                         </template>
                       </div>
                       <WorkspaceTaskList
@@ -1722,6 +1744,7 @@ const {
   toggleLiveToolCall,
   formatToolPayload,
   liveExecOutput,
+  toolCallExecOutput,
   formatChatTime,
   renderMessageContent,
   scrollToBottom,
@@ -2035,7 +2058,7 @@ function formatCacheHitRate(rate: number) {
 .tool-call-limit-continue { background: #2ba471; color: #fff; }
 .tool-call-limit-stop { background: #d54941; color: #fff; }
 
-.chat-tool-live-output {
+.chat-live-tool-wrapper .chat-tool-live-output {
   order: 2;
 }
 
