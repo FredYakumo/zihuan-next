@@ -306,6 +306,7 @@ fn build_workspace_agent_service(
         name: name.to_string(),
         role_service_type: RoleServiceType::Workspace(WorkspaceAgentServiceConfig {
             llm_ref_id,
+            orchestration_llm_ref_id: None,
             image_understand_llm_ref_id: None,
             agents_md_enabled: true,
             memory_enabled: false,

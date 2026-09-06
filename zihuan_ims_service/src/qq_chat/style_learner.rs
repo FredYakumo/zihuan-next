@@ -12,12 +12,13 @@ use zihuan_core::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskResult, AgentTaskStatus,
 };
 
+use crate::procedure::{qq_procedure_context, run_after_brain, QqAfterBrainContext};
 use crate::qq_chat::language_style_store::{upsert_language_style, LanguageStyleScope};
 use crate::qq_chat::logging::QqChatTaskTrace;
 use crate::qq_chat::msg_send::{
     build_reply_result, send_planned_batches, QqChatServiceSendContext,
 };
-use crate::tools::{AfterBrainAgent, QqReplyReviewRequest};
+use crate::tools::QqReplyReviewRequest;
 
 const STYLE_LEARNING_SAMPLE_LIMIT: i64 = 200;
 const STYLE_LEARNING_MIN_SAMPLES: usize = 20;
@@ -289,22 +290,29 @@ pub(crate) fn execute_style_learning_task(
                     },
                     learning.sample_count
                 );
-                let review_result = AfterBrainAgent::run(
-                    &owned.intent_classification_llm,
-                    &owned.natural_language_reply_llm,
-                    Some("请确保反馈消息也符合刚刚学到的语言风格。"),
-                    &QqReplyReviewRequest {
-                        candidate_message: feedback_base.clone(),
-                        is_group: input.is_group,
-                        bot_name: owned.bot_name.clone(),
-                        sender_id: input.sender_id.clone(),
-                        sender_nickname: input.inference_event.sender.nickname.clone(),
-                        sender_card: input.inference_event.sender.card.clone(),
-                        session_state: zihuan_core::agent::session_state::QqChatAgentServiceSessionState::default(),
-                        emotion_dimensions: Vec::new(),
-                        model_identity_context: None,
+                let review_result = run_after_brain(
+                    &qq_procedure_context(
+                        &format!("style-learning:{}", input.sender_id),
+                        Some(feedback_base.clone()),
+                    ),
+                    QqAfterBrainContext {
+                        review_llm: &owned.intent_classification_llm,
+                        rewrite_llm: &owned.natural_language_reply_llm,
+                        reply_system_prompt: Some("请确保反馈消息也符合刚刚学到的语言风格。"),
+                        request: QqReplyReviewRequest {
+                            candidate_message: feedback_base.clone(),
+                            is_group: input.is_group,
+                            bot_name: owned.bot_name.clone(),
+                            sender_id: input.sender_id.clone(),
+                            sender_nickname: input.inference_event.sender.nickname.clone(),
+                            sender_card: input.inference_event.sender.card.clone(),
+                            session_state:
+                                zihuan_core::agent::session_state::QqChatAgentServiceSessionState::default(),
+                            emotion_dimensions: Vec::new(),
+                            model_identity_context: None,
+                        },
+                        trace: &trace,
                     },
-                    &trace,
                 )?;
                 let final_feedback = if owned
                     .resolved_language_style_prompt

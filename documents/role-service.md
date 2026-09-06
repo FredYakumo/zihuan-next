@@ -20,18 +20,18 @@ Role Context表达的是Role在这一次工作中所处的状态。
 
 不同交互环境拥有不同的上下文语义。上下文根据不同Role类型进行类型擦除，将适合Role类型的Role Context传入。
 
-## BefortBrain Agent hook
+## BeforeBrain Procedure
 
-BeforeBrain Agent hook 是角色进入主推理前的hook
+BeforeBrain Procedure 是角色进入主推理前的固定处理阶段（参考[Procedure](./procedure.md)）。
 
 ## BrainAgent开始工作
 
 BrainAgent 是 RoleService 的主要Agent(参考[Agent 概念](./agent_concept.md))。它在已准备好的上下文中理解事件，输出内容，或者调用工具/subagent。
 
 
-## After Brain Agent hook
+## AfterBrain Procedure
 
-After Brain Agent hook 是主决策之后、外部行动之前的固定收束阶段。
+AfterBrain Procedure 是主决策之后、外部行动之前的固定收束阶段。
 
 ## 处理结束与Transport输出
 
@@ -40,8 +40,8 @@ After Brain Agent hook 是主决策之后、外部行动之前的固定收束阶
 ```mermaid
 flowchart LR
     transport_in["Transport"] --> role["RoleService"]
-    role --> before["BeforeBrain Hook"]
+    role --> before["BeforeBrain Procedure"]
     before --> brain["BrainAgent"]
-    brain --> after["AfterBrain Hook"]
+    brain --> after["AfterBrain Procedure"]
     after --> transport_out["Transport"]
 ```

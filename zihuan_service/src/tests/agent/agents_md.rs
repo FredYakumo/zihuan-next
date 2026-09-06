@@ -40,6 +40,7 @@ impl Drop for TempDir {
 fn provider(enabled: bool) -> Arc<dyn InferenceToolProvider> {
     let config = WorkspaceAgentServiceConfig {
         llm_ref_id: None,
+        orchestration_llm_ref_id: None,
         image_understand_llm_ref_id: None,
         agents_md_enabled: enabled,
         memory_enabled: false,

@@ -76,6 +76,7 @@ fn build_chat_preprompt_agent_user_message(
     )
 }
 
+#[derive(Clone)]
 pub(crate) struct PrepromptContext<'a> {
     pub(crate) trace: &'a QqChatTaskTrace,
     pub(crate) llm: &'a Arc<dyn LLMBase>,

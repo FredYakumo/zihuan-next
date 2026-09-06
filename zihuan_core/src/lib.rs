@@ -4,6 +4,7 @@ pub mod utils {
     pub mod string_utils;
 }
 pub mod agent;
+pub mod chat_history;
 pub mod command;
 pub mod config;
 pub mod connection_manager;

@@ -39,8 +39,8 @@ use zihuan_core::ims_bot_adapter::tools::group_members::GetCurrentGroupMembersTo
 use zihuan_core::ims_bot_adapter::tools::qq_profile::{GetBotProfileTool, GetQqUserProfileTool};
 
 use super::super::super::tools::{
-    format_public_info_message, AfterBrainAgent, AgentMemoryBackend, AgentMemoryToolResources,
-    EditableQqAgentTool, GetAgentPublicInfoTool, GetFunctionListTool, GetRecentGroupMessagesTool,
+    format_public_info_message, AgentMemoryBackend, AgentMemoryToolResources, EditableQqAgentTool,
+    GetAgentPublicInfoTool, GetFunctionListTool, GetRecentGroupMessagesTool,
     GetRecentUserMessagesTool, ImageUnderstandTool, ModelIdentityContext, QqReplyReviewRequest,
     ReplyMessageTool, RunResearchSubagentTool, SaveImageTool, SearchSimilarImagesTool,
     ToolNotificationTarget, WebSearchTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
@@ -75,7 +75,10 @@ use super::{
     LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 
-use crate::agent::before_brain_agent::{BeforeBrainAgent, PrepromptContext};
+use crate::agent::before_brain_agent::PrepromptContext;
+use crate::procedure::{
+    qq_procedure_context, run_after_brain, run_before_brain, QqAfterBrainContext,
+};
 
 use super::super::steer::QqChatServiceSteerHook;
 use super::super::tool_quota::wrap_brain_tool_with_quota;
@@ -972,25 +975,27 @@ impl QqChatAgentServiceInner {
                 },
             })
         });
-        let preprompt_context = BeforeBrainAgent::new(PrepromptContext {
-            trace,
-            llm: ctx.natural_language_reply_llm,
-            cache: ctx.cache,
-            history_key: &chat_preprompt_history_key,
-            input: &prepared_input,
-            bot_name: ctx.bot_name,
-            bot_id,
-            agent_id: ctx.agent_id,
-            sender_id,
-            target_id,
-            is_group,
-            session_state: Arc::clone(&turn_session_state),
-            emotion_dimensions: emotion_dimensions.clone(),
-            memory_resources: preprompt_memory_resources,
-            rdb_pool: ctx.rdb_pool.cloned(),
-            default_tools_enabled: &self.default_tools_enabled,
-        })
-        .execute();
+        let preprompt_context = run_before_brain(
+            &qq_procedure_context(&chat_preprompt_history_key, None),
+            PrepromptContext {
+                trace,
+                llm: ctx.natural_language_reply_llm,
+                cache: ctx.cache,
+                history_key: &chat_preprompt_history_key,
+                input: &prepared_input,
+                bot_name: ctx.bot_name,
+                bot_id,
+                agent_id: ctx.agent_id,
+                sender_id,
+                target_id,
+                is_group,
+                session_state: Arc::clone(&turn_session_state),
+                emotion_dimensions: emotion_dimensions.clone(),
+                memory_resources: preprompt_memory_resources,
+                rdb_pool: ctx.rdb_pool.cloned(),
+                default_tools_enabled: &self.default_tools_enabled,
+            },
+        )?;
         trace.record_graph_phase(
             "Preprompt 阶段",
             serde_json::json!({
@@ -1565,22 +1570,25 @@ impl QqChatAgentServiceInner {
                 explicit_no_reply = true;
             } else {
                 let available_media = collect_available_media_from_brain_output(&brain_output);
-                let review_result = AfterBrainAgent::run(
-                    ctx.intent_classification_llm,
-                    ctx.natural_language_reply_llm,
-                    ctx.natural_language_reply_system_prompt,
-                    &QqReplyReviewRequest {
-                        candidate_message: candidate_message.clone(),
-                        is_group,
-                        bot_name: ctx.bot_name.to_string(),
-                        sender_id: sender_id.to_string(),
-                        sender_nickname: inference_event.sender.nickname.clone(),
-                        sender_card: inference_event.sender.card.clone(),
-                        session_state: turn_session_state.lock().unwrap().clone(),
-                        emotion_dimensions: emotion_dimensions.clone(),
-                        model_identity_context: Some(build_model_identity_context(ctx)),
+                let review_result = run_after_brain(
+                    &qq_procedure_context(&history_key, Some(candidate_message.clone())),
+                    QqAfterBrainContext {
+                        review_llm: ctx.intent_classification_llm,
+                        rewrite_llm: ctx.natural_language_reply_llm,
+                        reply_system_prompt: ctx.natural_language_reply_system_prompt,
+                        request: QqReplyReviewRequest {
+                            candidate_message: candidate_message.clone(),
+                            is_group,
+                            bot_name: ctx.bot_name.to_string(),
+                            sender_id: sender_id.to_string(),
+                            sender_nickname: inference_event.sender.nickname.clone(),
+                            sender_card: inference_event.sender.card.clone(),
+                            session_state: turn_session_state.lock().unwrap().clone(),
+                            emotion_dimensions: emotion_dimensions.clone(),
+                            model_identity_context: Some(build_model_identity_context(ctx)),
+                        },
+                        trace,
                     },
-                    trace,
                 )?;
 
                 let reply_result = build_reply_result(
@@ -1732,22 +1740,25 @@ impl QqChatAgentServiceInner {
             });
         }
 
-        let review_result = AfterBrainAgent::run(
-            ctx.intent_classification_llm,
-            ctx.natural_language_reply_llm,
-            ctx.natural_language_reply_system_prompt,
-            &QqReplyReviewRequest {
-                candidate_message: candidate_message.to_string(),
-                is_group,
-                bot_name: ctx.bot_name.to_string(),
-                sender_id: sender_id.to_string(),
-                sender_nickname: inference_event.sender.nickname.clone(),
-                sender_card: inference_event.sender.card.clone(),
-                session_state: turn_session_state.lock().unwrap().clone(),
-                emotion_dimensions: emotion_dimensions.to_vec(),
-                model_identity_context: Some(build_model_identity_context(ctx)),
+        let review_result = run_after_brain(
+            &qq_procedure_context(history_key, Some(candidate_message.to_string())),
+            QqAfterBrainContext {
+                review_llm: ctx.intent_classification_llm,
+                rewrite_llm: ctx.natural_language_reply_llm,
+                reply_system_prompt: ctx.natural_language_reply_system_prompt,
+                request: QqReplyReviewRequest {
+                    candidate_message: candidate_message.to_string(),
+                    is_group,
+                    bot_name: ctx.bot_name.to_string(),
+                    sender_id: sender_id.to_string(),
+                    sender_nickname: inference_event.sender.nickname.clone(),
+                    sender_card: inference_event.sender.card.clone(),
+                    session_state: turn_session_state.lock().unwrap().clone(),
+                    emotion_dimensions: emotion_dimensions.to_vec(),
+                    model_identity_context: Some(build_model_identity_context(ctx)),
+                },
+                trace,
             },
-            trace,
         )?;
 
         let reply_result = build_reply_result(

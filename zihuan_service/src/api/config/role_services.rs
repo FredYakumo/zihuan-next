@@ -1073,12 +1073,35 @@ fn validate_qq_chat_agent_service_llms(
                 agent_name,
             )
         }
-        RoleServiceType::Workspace(config) => validate_chat_llm_ref(
-            llm_refs,
-            config.llm_ref_id.as_deref().map(str::trim).filter(|value| !value.is_empty()),
-            agent_name,
-            "llm_ref_id",
-        ),
+        RoleServiceType::Workspace(config) => {
+            validate_chat_llm_ref(
+                llm_refs,
+                config.llm_ref_id.as_deref().map(str::trim).filter(|value| !value.is_empty()),
+                agent_name,
+                "llm_ref_id",
+            )?;
+            validate_optional_chat_llm_ref(
+                llm_refs,
+                config.orchestration_llm_ref_id.as_deref(),
+                agent_name,
+                "orchestration_llm_ref_id",
+            )
+        }
+    }
+}
+
+/// Validate an optional chat model reference: empty/missing means "fall back to the main model".
+fn validate_optional_chat_llm_ref(
+    llm_refs: &[LlmRefConfig],
+    llm_ref_id: Option<&str>,
+    agent_name: &str,
+    field_name: &str,
+) -> Result<(), String> {
+    match llm_ref_id.map(str::trim).filter(|value| !value.is_empty()) {
+        None => Ok(()),
+        Some(llm_ref_id) => {
+            validate_chat_llm_ref(llm_refs, Some(llm_ref_id), agent_name, field_name)
+        }
     }
 }
 

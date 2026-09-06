@@ -57,6 +57,8 @@ pub struct WorkspaceAgentServiceConfig {
     #[serde(default)]
     pub llm_ref_id: Option<String>,
     #[serde(default)]
+    pub orchestration_llm_ref_id: Option<String>,
+    #[serde(default)]
     pub image_understand_llm_ref_id: Option<String>,
     #[serde(default)]
     pub agents_md_enabled: bool,

@@ -19,6 +19,9 @@ use uuid::Uuid;
 use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
 use zihuan_core::agent::tools::{ToolCallingObserver, ToolCallingStopReason};
 use zihuan_core::agent::AgentCancellation;
+use zihuan_core::chat_history::{
+    chat_history_dir, delete_session_title, load_session_title, write_session_title,
+};
 use zihuan_core::command::{
     CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
 };
@@ -27,6 +30,7 @@ use zihuan_core::ims_bot_adapter::resolve_fallback_bot_profile;
 use zihuan_core::message_part::MessagePart;
 use zihuan_core::model_inference::llm::tooling::ToolCalls;
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken, TokenUsage};
+use zihuan_core::role::procedure::ProcedureContext;
 use zihuan_core::storage::ConnectionConfig;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
@@ -39,7 +43,6 @@ use crate::api::state::{RunningChatMessage, RunningChatToolCall, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 use zihuan_service::role::{ContextCompactionEvent, ContextCompactionObserver};
 
-const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const CHAT_STREAM_MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 const CHAT_FORK_METADATA_SUFFIX: &str = ".fork.json";
 
@@ -1200,6 +1203,27 @@ async fn execute_chat_streaming(
         }
     };
 
+    // Before-brain procedures (documents/procedure.md). The new-conversation check must happen
+    // before any persistence: Workspace turns create the session file with the user message
+    // right below.
+    let is_new_conversation =
+        !chat_session_file_path(&session_id).map(|path| path.exists()).unwrap_or(false);
+    state
+        .role_service_manager
+        .run_before_brain_procedures(
+            &agent,
+            &ProcedureContext {
+                session_id: session_id.clone(),
+                is_new_conversation,
+                latest_user_text: latest_user_message
+                    .as_ref()
+                    .and_then(LLMMessage::content_text_owned),
+                workspace_path: effective_workspace_path.clone(),
+                role_context: None,
+            },
+        )
+        .await;
+
     let assistant_message_id =
         requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
 
@@ -2142,6 +2166,9 @@ fn fork_chat_session_history(source_session_id: &str, source_message_id: &str) -
         created_at: Utc::now().to_rfc3339(),
     };
     write_fork_metadata(&forked_session_id, &metadata)?;
+    if let Some(title) = load_session_title(source_session_id)? {
+        write_session_title(&forked_session_id, &title)?;
+    }
     Ok(forked_session_id)
 }
 
@@ -2296,7 +2323,10 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
 
         let first_record = read_first_record(&path).ok().flatten();
         let first_user_message = read_first_user_message(&path).ok().flatten();
-        let title = build_session_title(first_user_message.as_deref(), stem);
+        let title = load_session_title(stem)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| build_session_title(first_user_message.as_deref(), stem));
 
         if let Some(filter) = filter_agent_id {
             if first_record.as_ref().map(|r| r.agent_id.as_str()) != Some(filter) {
@@ -2458,11 +2488,6 @@ fn resolve_effective_workspace_path(
     ))
 }
 
-fn chat_history_dir() -> Result<PathBuf> {
-    let root = zihuan_core::system_config::application_data_dir().join(CHAT_HISTORY_DIR_NAME);
-    Ok(root)
-}
-
 fn chat_session_file_path(session_id: &str) -> Result<PathBuf> {
     if session_id.trim().is_empty() {
         return Err(Error::ValidationError("session_id must not be empty".to_string()));
@@ -2486,6 +2511,7 @@ fn delete_chat_session_file(session_id: &str) -> Result<()> {
     if metadata_path.exists() {
         fs::remove_file(metadata_path)?;
     }
+    delete_session_title(session_id)?;
     Ok(())
 }
 

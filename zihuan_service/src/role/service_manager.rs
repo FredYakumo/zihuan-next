@@ -14,6 +14,7 @@ use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::config::role_services::load_role_services;
 use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::{LLMMessage, StreamToken};
+use zihuan_core::role::procedure::{execute_procedures, ProcedureContext, ProcedurePhase};
 use zihuan_core::storage::{load_connections, ConnectionConfig};
 use zihuan_core::task_context::AgentTaskRuntime;
 
@@ -112,6 +113,33 @@ impl RoleServiceManager {
             return None;
         }
         entry.role_service.clone()
+    }
+
+    /// Execute the before-brain procedures of one chat work unit (documents/procedure.md).
+    ///
+    /// **Design:** Procedure implementations live in their owning RoleService crates; the manager
+    /// only collects the ones that apply to the agent's type and runs them through the shared
+    /// executor. Procedure failures are logged and never fail the chat pipeline. QQ Chat
+    /// procedures run inside the IMS turn pipeline instead, so nothing is collected for it here.
+    pub async fn run_before_brain_procedures(
+        &self,
+        agent: &RoleServiceConfig,
+        context: &ProcedureContext,
+    ) {
+        let procedures = match &agent.role_service_type {
+            RoleServiceType::Workspace(_) => zihuan_workspace_service::procedure::collect(
+                ProcedurePhase::BeforeBrain,
+                agent,
+                context,
+            ),
+            RoleServiceType::QqChat(_) => Vec::new(),
+        };
+        if procedures.is_empty() {
+            return;
+        }
+        if let Err(err) = execute_procedures(procedures, context).await {
+            error!("before-brain procedures failed for agent '{}': {err}", agent.name);
+        }
     }
 
     pub fn infer_role_response_with_trace(

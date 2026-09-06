@@ -168,6 +168,7 @@ export interface ServiceFormState {
   http_memory_backend: "" | "local_file" | "weaviate" | "elasticsearch";
   task_db_connection_id: string;
   agents_md_enabled: boolean;
+  workspace_orchestration_llm_ref_id: string;
   workspace_memory_enabled: boolean;
   workspace_embedding_model_ref_id: string;
   workspace_weaviate_memory_connection_id: string;
@@ -448,6 +449,7 @@ export function defaultServiceForm(): ServiceFormState {
     http_memory_backend: "",
     task_db_connection_id: "",
     agents_md_enabled: false,
+    workspace_orchestration_llm_ref_id: "",
     workspace_memory_enabled: false,
     workspace_embedding_model_ref_id: "",
     workspace_weaviate_memory_connection_id: "",
@@ -976,6 +978,7 @@ export function serviceFormFromConfig(
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
     form.image_understand_llm_ref_id = String(agentType.image_understand_llm_ref_id ?? "");
     form.agents_md_enabled = Boolean(agentType.agents_md_enabled ?? false);
+    form.workspace_orchestration_llm_ref_id = String(agentType.orchestration_llm_ref_id ?? "");
     form.workspace_memory_enabled = Boolean(agentType.memory_enabled ?? false);
     form.workspace_embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
     form.workspace_weaviate_memory_connection_id = String(agentType.weaviate_memory_connection_id ?? "");
@@ -1151,6 +1154,7 @@ export function buildServicePayload(form: ServiceFormState): {
     role_service_type: {
       type: "workspace",
       llm_ref_id: form.llm_ref_id || null,
+      orchestration_llm_ref_id: form.workspace_orchestration_llm_ref_id || null,
       image_understand_llm_ref_id: form.image_understand_llm_ref_id || null,
       agents_md_enabled: form.agents_md_enabled,
       memory_enabled: form.workspace_memory_enabled,

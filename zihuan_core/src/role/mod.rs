@@ -2,6 +2,13 @@ use async_trait::async_trait;
 
 use crate::error::Result;
 
+pub mod procedure;
+
+pub use procedure::{
+    execute_blocking_procedures, execute_procedures, Procedure, ProcedureContext,
+    ProcedureDescriptor, ProcedureExecution, ProcedureOutput, ProcedurePhase,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoleServiceKind {
     QqChat,
