@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -66,6 +67,7 @@ impl AgentCancellation for WorkspaceChatCancellation {
 /// `Arc<dyn ToolCallingObserver>` into `infer_role_response_streaming`.
 struct SseToolCallingObserver {
     event_tx: mpsc::UnboundedSender<Value>,
+    session_id: String,
     message_id: String,
     change_recorder: Arc<workspace_changes::WorkspaceChangeRecorder>,
     running_chat_message: Option<Arc<Mutex<RunningChatMessage>>>,
@@ -100,6 +102,7 @@ impl ToolCallingObserver for SseToolCallingObserver {
             let payload = serde_json::from_str::<Value>(chunk).unwrap_or_else(|_| json!({}));
             let event = json!({
                 "type": "command_confirmation",
+                "session_id": self.session_id,
                 "message_id": self.message_id,
                 "call_id": call_id,
                 "name": name,
@@ -286,6 +289,7 @@ struct StopChatRequest {
 #[derive(Debug, Serialize)]
 pub struct ChatSessionSummary {
     pub session_id: String,
+    pub root_session_id: String,
     pub updated_at: String,
     pub agent_id: Option<String>,
     pub agent_name: Option<String>,
@@ -1335,6 +1339,7 @@ async fn execute_chat_streaming(
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
     let observer: Arc<dyn ToolCallingObserver> = Arc::new(SseToolCallingObserver {
         event_tx: event_tx.clone(),
+        session_id: session_id.clone(),
         message_id: assistant_message_id.clone(),
         change_recorder: workspace_changes::WorkspaceChangeRecorder::new(
             session_id.clone(),
@@ -2301,6 +2306,7 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
 
         sessions.push(ChatSessionSummary {
             session_id: stem.to_string(),
+            root_session_id: resolve_root_session_id(stem)?,
             updated_at,
             agent_id: first_record.as_ref().map(|r| r.agent_id.clone()),
             agent_name: first_record.as_ref().map(|r| r.agent_name.clone()),
@@ -2317,6 +2323,24 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
 
     sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     Ok(sessions)
+}
+
+/// Resolve the original session of a fork lineage so the client can present all edits and
+/// resends as versions of one conversation.
+fn resolve_root_session_id(session_id: &str) -> Result<String> {
+    let mut current_session_id = session_id.to_string();
+    let mut visited = HashSet::new();
+
+    while let Some(metadata) = load_fork_metadata(&current_session_id)? {
+        if !visited.insert(current_session_id.clone()) {
+            return Err(zihuan_core::string_error!(
+                "detected a cycle in chat fork metadata for session {session_id}"
+            ));
+        }
+        current_session_id = metadata.source_session_id;
+    }
+
+    Ok(current_session_id)
 }
 
 fn load_chat_session_messages(session_id: &str) -> Result<Vec<ChatHistoryRecord>> {

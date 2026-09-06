@@ -283,6 +283,10 @@ impl Tool for ExecCmdTool {
                     c.args(["-lc", &command_text]);
                     c
                 };
+                // The tool runs in a blocking worker and its future may be aborted when
+                // the user stops inference. Ensure the spawned shell is terminated when
+                // that happens instead of continuing after the Rust task is dropped.
+                command.kill_on_drop(true);
                 if let Some(path) = command_cwd.as_ref() {
                     command.current_dir(path);
                 }

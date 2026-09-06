@@ -11,6 +11,7 @@ import {
   InfoCircleIcon,
   MoveIcon,
   BookmarkIcon,
+  CheckIcon,
   SearchIcon,
   ChatIcon,
   InternetIcon,
@@ -53,6 +54,7 @@ const { kind, loading } = useToolCallBadge(props, emit);
     @click="$emit('click')"
   >
     <span v-if="loading" class="live-tool-spinner"></span>
+    <CheckIcon v-else-if="kind.type === 'exec_cmd'" class="tool-call-complete-icon" />
     <template v-if="kind.type === 'create_file'">
       <FileIcon class="badge-icon" />
       {{ kind.filename }}

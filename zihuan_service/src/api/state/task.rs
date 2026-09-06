@@ -349,6 +349,17 @@ impl TaskManager {
         entries
     }
 
+    pub fn running_workspace_chat_task(&self, session_id: &str) -> Option<TaskEntry> {
+        self.tasks
+            .iter()
+            .find(|task| {
+                task.task_type == TaskType::WorkspaceChat
+                    && task.chat_session_id.as_deref() == Some(session_id)
+                    && task.is_running
+            })
+            .cloned()
+    }
+
     pub fn get(&self, id: &str) -> Option<&TaskEntry> {
         self.tasks.iter().find(|task| task.id == id)
     }

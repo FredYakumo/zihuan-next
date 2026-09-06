@@ -711,13 +711,42 @@ impl ToolCallingEngine {
                     let long_task_context = self.long_task_context.clone();
                     let observer_handle = self.observer.clone();
                     let confirmation_gate = Arc::clone(&self.confirmation_gate);
+                    let cancellation = self.cancellation.clone();
                     let mut tasks = JoinSet::new();
                     for call in prepared_calls {
+                        // Stop dispatching further parallel tool calls as soon as a
+                        // cancellation is requested. The worker path below bypasses the
+                        // serial-path `execute_prepared_call` guard, so without this check
+                        // every tool in a parallel wave runs to completion after a stop.
+                        if self.is_cancelled() {
+                            return (
+                                output,
+                                ToolCallingStopReason::TransportError(
+                                    "tool-calling execution cancelled".to_string(),
+                                ),
+                            );
+                        }
                         let call_content = tool_call_content.clone();
                         let long_task_context = long_task_context.clone();
                         let task_observer = observer_handle.clone();
                         let gate = Arc::clone(&confirmation_gate);
+                        let cancellation_guard = cancellation.clone();
                         tasks.spawn_blocking(move || {
+                            // Re-check inside the worker: a call that has not yet started
+                            // its real work short-circuits instead of running.
+                            if cancellation_guard
+                                .as_ref()
+                                .is_some_and(|cancellation| cancellation.is_cancelled())
+                            {
+                                return PreparedToolResult {
+                                    index: call.index,
+                                    call_id: call.call_id,
+                                    name: call.name,
+                                    result: ToolExecutionOutput::text(
+                                        "tool execution cancelled".to_string(),
+                                    ),
+                                };
+                            }
                             Self::execute_prepared_call_with_context(
                                 &call_content,
                                 call,
@@ -732,6 +761,18 @@ impl ToolCallingEngine {
                         let result = result.expect("parallel streaming tool execution panicked");
                         self.notify_tool_finish(&result);
                         results.push(result);
+                        // Abort the wave promptly once a stop is requested instead of
+                        // draining every parallel tool call. Dropping the JoinSet cancels
+                        // queued workers; a worker already running on the blocking pool is
+                        // left to settle on its own.
+                        if self.is_cancelled() {
+                            return (
+                                output,
+                                ToolCallingStopReason::TransportError(
+                                    "tool-calling execution cancelled".to_string(),
+                                ),
+                            );
+                        }
                     }
                     results
                 } else {
