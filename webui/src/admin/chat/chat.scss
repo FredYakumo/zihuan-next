@@ -1455,6 +1455,10 @@
   box-shadow: 0 0 0 3px var(--admin-accent-soft);
 }
 
+[data-theme-schema="light"] .chat-input-area textarea {
+  background: color-mix(in srgb, var(--admin-bg) 94%, black 6%);
+}
+
 .chat-draft-images,
 .chat-message-images {
   display: flex;
