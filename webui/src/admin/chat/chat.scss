@@ -555,8 +555,10 @@
   position: relative;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   padding: 24px;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -595,6 +597,7 @@
   display: flex;
   flex-direction: column;
   max-width: calc(85% - 54px);
+  min-width: 0;
 }
 
 .chat-tool-above-content {
@@ -1863,6 +1866,18 @@
   white-space: nowrap;
   line-height: 1;
   height: 36px;
+  min-width: 0;
+}
+
+.chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agents-md-chip .agents-md-icon {
+  display: none;
 }
 
 .chat-model-bar .model-chip {
@@ -2060,7 +2075,10 @@
 
 .chat-bubble-content :deep(table),
 .chat-thinking-content :deep(table) {
+  display: block;
   width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
   margin: 0.45em 0;
   border-collapse: collapse;
   border: 1px solid var(--admin-border);
@@ -2102,17 +2120,82 @@
 
   .chat-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .chat-layout--history-collapsed {
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .chat-sessions {
-    max-height: 240px;
+    max-height: 200px;
+  }
+
+  .chat-input-actions {
+    gap: 8px;
+  }
+
+  .chat-input-actions > .btn,
+  .chat-input-right > .btn,
+  .chat-input-right > .t-button {
+    height: 30px;
+    padding-left: 10px;
+    padding-right: 10px;
+    font-size: 12px;
+  }
+
+  .chat-input-right .model-chip {
+    height: 30px;
+    padding: 2px 8px;
+    font-size: 12px;
+    gap: 4px;
+    border-radius: 10px;
+  }
+
+  .chat-input-right .model-chip.icon-only {
+    width: 30px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .model-settings .model-chip.icon-only svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .chat-model-bar {
+    flex-wrap: nowrap;
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .chat-input-right {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .agents-md-chip .agents-md-icon {
+    display: block;
+  }
+
+  .agents-md-chip .agents-md-label {
+    display: none;
+  }
+
+  .context-usage-chart {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
   }
 }
 
 @media (max-width: 900px) {
   .chat-page {
-    height: auto;
-    min-height: calc(100vh - 32px);
+    height: calc(100vh - 52px);
+    height: calc(100dvh - 52px);
+    min-height: 0;
   }
 
   .chat-panel {
@@ -2132,13 +2215,41 @@
     padding: 14px 16px;
   }
 
-  .chat-input-actions {
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-
   .chat-bubble,
   .chat-bubble-col .chat-bubble {
     max-width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .chat-messages {
+    padding: 12px;
+    gap: 14px;
+  }
+
+  .chat-bubble-row {
+    gap: 8px;
+  }
+
+  .chat-message-avatar {
+    width: 28px;
+    height: 28px;
+  }
+
+  .chat-bubble-col {
+    max-width: calc(100% - 36px);
+  }
+
+  .chat-input-area {
+    padding: 10px 12px;
+  }
+
+  .workspace-path-display {
+    padding: 5px 12px;
+  }
+
+  .workspace-path-display .path-label,
+  .workspace-path-display .path-value {
+    font-size: 12px;
   }
 }

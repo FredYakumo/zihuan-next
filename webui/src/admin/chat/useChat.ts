@@ -371,6 +371,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     const draftImageAttachments = ref<ChatImageAttachment[]>([]);
     const imagePreviewAttachment = ref<ChatImageAttachment | null>(null);
     const workspacePath = ref("");
+    const workspacePathDisplay = computed(() =>
+        workspacePath.value.replace(/^\\\\\?\\UNC\\/i, "\\\\").replace(/^\\\\\?\\/, ""),
+    );
     const workspaceTasks = ref<WorkspaceTask[]>([]);
     const workspaceTaskInterrupted = ref(false);
     const directoryPickerOpen = ref(false);
@@ -2706,6 +2709,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         draftImageAttachments,
         imagePreviewAttachment,
         workspacePath,
+        workspacePathDisplay,
         workspaceTasks,
         workspaceTaskInterrupted,
         directoryPickerOpen,
