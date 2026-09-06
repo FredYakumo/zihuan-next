@@ -969,10 +969,10 @@
                         v-if="contextTokenUsage"
                         class="context-usage"
                         :style="{ '--context-usage': `${contextTokenUsage.usagePercent}%` }"
-                        :title="`context ${formatTokenCount(contextTokenUsage.usedTokens)}/${formatTokenCount(contextTokenUsage.contextLength)} tokens (可用上限: ${formatTokenCount(contextTokenUsage.compactionThreshold)} tokens)`"
+                        :aria-label="`context ${formatTokenCount(contextTokenUsage.usedTokens)}/${formatTokenCount(contextTokenUsage.contextLength)} tokens (可用上限: ${formatTokenCount(contextTokenUsage.compactionThreshold)} tokens)`"
                       >
                         <span class="context-usage-chart" aria-hidden="true" />
-                        <span>
+                        <span class="context-usage-tooltip" role="tooltip">
                           context {{ formatTokenCount(contextTokenUsage.usedTokens) }}/{{ formatTokenCount(contextTokenUsage.contextLength) }} tokens
                           (可用上限: {{ formatTokenCount(contextTokenUsage.compactionThreshold) }} tokens)
                         </span>
