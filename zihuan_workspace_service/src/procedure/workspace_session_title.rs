@@ -8,7 +8,6 @@ use zihuan_core::model_inference::agent_config_support::build_llm_from_ref_id;
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
-    ProcedurePhase,
 };
 
 const LOG_PREFIX: &str = "[WorkspaceSessionTitle]";
@@ -74,7 +73,6 @@ impl Procedure for WorkspaceSessionTitle {
         ProcedureDescriptor {
             id: "workspace_session_title",
             name: "会话命名",
-            phase: ProcedurePhase::BeforeBrain,
             execution: ProcedureExecution::Background,
         }
     }

@@ -69,7 +69,7 @@ pub trait ToolCallingMiddleware: Send + Sync + 'static {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ToolCallingStopReason {
     Done,
     TransportError(String),

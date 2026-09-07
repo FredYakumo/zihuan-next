@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use zihuan_core::error::Result;
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
-    ProcedurePhase,
 };
 
 use super::run_blocking;
@@ -30,7 +29,6 @@ impl Procedure for QqBeforeBrain<'_> {
         ProcedureDescriptor {
             id: "qq_before_brain",
             name: "QQ Preprompt",
-            phase: ProcedurePhase::BeforeBrain,
             execution: ProcedureExecution::Blocking,
         }
     }
@@ -42,7 +40,7 @@ impl Procedure for QqBeforeBrain<'_> {
 
 /// Execute the QQ before-brain procedure and return its context block for the reply prompt.
 pub(crate) fn run_before_brain(
-    shared: &ProcedureContext,
+    shared: &mut ProcedureContext,
     context: PrepromptContext<'_>,
 ) -> Result<Option<String>> {
     let output = run_blocking(Arc::new(QqBeforeBrain::new(context)), shared)?;

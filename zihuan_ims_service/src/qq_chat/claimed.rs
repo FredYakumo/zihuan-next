@@ -12,7 +12,7 @@ use zihuan_core::model_inference::message_content_utils::{
 };
 use zihuan_core::system_config::current_context_compaction_percent;
 
-use zihuan_core::agent::tools::{LongTaskContext, ToolCallingEngine, ToolCallingStopReason};
+use zihuan_core::agent::tools::ToolCallingStopReason;
 
 use crate::agent::emotion::utils::{
     emotion_dimensions_text, emotion_expression_prompt, has_noticeable_emotion_expression,
@@ -24,41 +24,24 @@ use zihuan_core::agent::session_state::{
 };
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::{Error, Result};
-use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
+use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::steer::message_with_api_style;
 use zihuan_core::task_context::AgentTaskRequest;
 
 use zihuan_core::graph::tool_spec::{
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
-    QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_core::graph::DataValue;
 
-use super::super::logging::QqChatToolCallingObserver;
-use zihuan_core::ims_bot_adapter::tools::group_members::GetCurrentGroupMembersTool;
-use zihuan_core::ims_bot_adapter::tools::qq_profile::{GetBotProfileTool, GetQqUserProfileTool};
-
 use super::super::super::tools::{
-    format_public_info_message, AgentMemoryBackend, AgentMemoryToolResources, EditableQqAgentTool,
-    GetAgentPublicInfoTool, GetFunctionListTool, GetRecentGroupMessagesTool,
-    GetRecentUserMessagesTool, ImageUnderstandTool, ModelIdentityContext, QqReplyReviewRequest,
-    ReplyMessageTool, RunResearchSubagentTool, SaveImageTool, SearchSimilarImagesTool,
-    ToolNotificationTarget, WebSearchTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
-    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
-    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
-    DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT, DEFAULT_TOOL_SAVE_IMAGE,
-    DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
-    QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
-};
-use zihuan_core::memory_agent::{
-    MemoryBrainAgent, MemoryBrainAgentContextTool, MemoryBrainAgentTool,
+    format_public_info_message, AgentMemoryBackend, AgentMemoryToolResources, ModelIdentityContext,
+    QqReplyReviewRequest, QqReplyReviewResult, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 use zihuan_core::storage::AgentMemoryAccessContext;
 
 use crate::storage::qq_chat_history_store::{
     chat_preprompt_history_key, conversation_history_key, load_history, save_history,
 };
-use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
 use crate::classify_intent::{classify_intent_with_trace, IntentCategory};
 use crate::qq_chat::msg_send::{
@@ -71,17 +54,17 @@ use super::{
     build_private_system_prompt, build_user_message, collect_available_media_from_brain_output,
     expand_messages_for_inference, prepare_current_turn_user_input,
     prepare_current_turn_user_input_from_event, QqChatAgentServiceContext, QqChatAgentServiceInner,
-    QqChatServiceTurnResult, QqChatTaskTrace, QqCommandSideEffectContext, QqLongTaskNotifier,
-    LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+    QqChatServiceTurnResult, QqChatTaskTrace, QqCommandSideEffectContext, LOG_PREFIX,
 };
 
 use crate::agent::before_brain_agent::PrepromptContext;
 use crate::procedure::{
-    qq_procedure_context, run_after_brain, run_before_brain, QqAfterBrainContext,
+    qq_procedure_context, run_before_brain, QqAfterBrain, QqAfterBrainContext, QqBrain,
+    QqBrainOutput, QqMetaQueryBrain,
 };
+use zihuan_core::role::procedure::execute_blocking_procedure_chain;
+use zihuan_core::runtime::block_async;
 
-use super::super::steer::QqChatServiceSteerHook;
-use super::super::tool_quota::wrap_brain_tool_with_quota;
 use crate::qq_chat::language_style_store::LanguageStyleScope;
 use crate::qq_chat::privilege_gate::{
     enqueue_pending_privileged_command, handle_auth_command, parse_privileged_command,
@@ -976,7 +959,7 @@ impl QqChatAgentServiceInner {
             })
         });
         let preprompt_context = run_before_brain(
-            &qq_procedure_context(&chat_preprompt_history_key, None),
+            &mut qq_procedure_context(&chat_preprompt_history_key, None),
             PrepromptContext {
                 trace,
                 llm: ctx.natural_language_reply_llm,
@@ -1112,438 +1095,69 @@ impl QqChatAgentServiceInner {
         let mut conversation: Vec<LLMMessage> = Vec::with_capacity(history.len() + 1);
         conversation.extend(history.iter().cloned());
         conversation.push(user_msg.clone());
-        let mut brain_conversation =
+        let brain_conversation =
             downgrade_messages_for_model(conversation, turn_llm.supports_multimodal_input());
         let prompt_tokens_estimated = estimate_messages_tokens(&brain_conversation);
         trace.log_llm_conversation(&brain_conversation, prompt_tokens_estimated);
 
         let consumed_steer_messages = Arc::new(Mutex::new(Vec::new()));
-        let tool_quota = ctx.tool_quota.clone();
-        let mut brain = ToolCallingEngine::new(Arc::clone(turn_llm));
-        brain.set_observer(Arc::new(QqChatToolCallingObserver { trace: trace.clone() }));
-        brain.set_iteration_hook(Arc::new(QqChatServiceSteerHook {
-            pending_steer: Arc::clone(ctx.pending_steer),
-            sender_id: sender_id.to_string(),
-            bot_id: bot_id.to_string(),
-            bot_name: ctx.bot_name.to_string(),
-            adapter: ctx.adapter.clone(),
-            max_steer_count: ctx.max_steer_count,
-            llm_supports_multimodal_input: turn_llm.supports_multimodal_input(),
-            llm_api_style: turn_llm.api_style().map(ToOwned::to_owned),
-            s3_ref: ctx.s3_ref.cloned(),
-            trace: trace.clone(),
-            consumed_messages: Arc::clone(&consumed_steer_messages),
-            shared_runtime_values: Arc::clone(&shared_runtime_values),
-            system_prompt: base_system_prompt.clone(),
-            style_prompt: ctx
-                .resolved_language_style
-                .as_ref()
-                .map(|item| item.style_prompt.clone()),
-            session_state: Arc::clone(&turn_session_state),
-            emotion_dimensions: emotion_dimensions.clone(),
-            preprompt_context: preprompt_context.clone(),
-        }));
-
-        let memory_backend =
-            ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(|| {
-                ctx.elasticsearch_memory_ref
-                    .cloned()
-                    .map(AgentMemoryBackend::Elasticsearch)
-                    .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate))
-            });
-        if let Some(memory_backend) = memory_backend {
-            let embedding_model = ctx.embedding_model.cloned();
-            if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_))
-                && embedding_model.is_none()
-            {
-                log::warn!(
-                    "memory tools disabled because the configured backend has no embedding model"
-                );
-            } else {
-                let memory_resources = AgentMemoryToolResources {
-                    memory_backend,
-                    embedding_model,
-                    llm: Arc::clone(ctx.llm),
-                    access: AgentMemoryAccessContext {
-                        sender_id: Some(sender_id.to_string()),
-                        group_id: if is_group {
-                            Some(target_id.to_string())
-                        } else {
-                            prepared_input.event.group_id.map(|value| value.to_string())
-                        },
+        let brain = QqBrain::new(
+            self,
+            ctx,
+            trace,
+            turn_llm,
+            &prepared_input,
+            &current_message,
+            sender_id,
+            target_id,
+            bot_id,
+            is_group,
+            event.group_name.clone(),
+            brain_conversation,
+            base_system_prompt,
+            Arc::clone(&shared_runtime_values),
+            Arc::clone(&consumed_steer_messages),
+            Arc::clone(&turn_session_state),
+            emotion_dimensions.clone(),
+            preprompt_context.clone(),
+        )?;
+        // Role turn chain (documents/procedure.md): brain -> AfterBrain procedures. The
+        // before-brain procedure (preprompt) ran earlier above because its output feeds the
+        // turn's user-message construction.
+        let mut shared = qq_procedure_context(&history_key, Some(current_message.clone()));
+        let turn_outputs = block_async(execute_blocking_procedure_chain(
+            vec![
+                Arc::new(brain),
+                Arc::new(QqAfterBrain::new(QqAfterBrainContext {
+                    review_llm: ctx.intent_classification_llm,
+                    rewrite_llm: ctx.natural_language_reply_llm,
+                    reply_system_prompt: ctx.natural_language_reply_system_prompt,
+                    request: QqReplyReviewRequest {
+                        // Filled from the brain output inside the after-brain procedure.
+                        candidate_message: String::new(),
                         is_group,
-                        admin: false,
-                        skip_expiry_extend: false,
+                        bot_name: ctx.bot_name.to_string(),
+                        sender_id: sender_id.to_string(),
+                        sender_nickname: inference_event.sender.nickname.clone(),
+                        sender_card: inference_event.sender.card.clone(),
+                        session_state: turn_session_state.lock().unwrap().clone(),
+                        emotion_dimensions: emotion_dimensions.clone(),
+                        model_identity_context: Some(build_model_identity_context(ctx)),
                     },
-                };
-                let memory_agent = MemoryBrainAgent::new(memory_resources);
-                if self.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
-                    brain.add_tool(wrap_brain_tool_with_quota(
-                        MemoryBrainAgentTool::new(memory_agent.clone()),
-                        tool_quota.clone(),
-                    ));
-                }
-                if self.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT) {
-                    brain.add_tool(wrap_brain_tool_with_quota(
-                        MemoryBrainAgentContextTool::new(memory_agent),
-                        tool_quota.clone(),
-                    ));
-                }
-            }
-        }
-
-        if self.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
-            brain.add_tool(wrap_brain_tool_with_quota(
-                WebSearchTool::new(ctx.web_search_engine.clone()),
-                tool_quota.clone(),
-            ));
-        }
-
-        if self.is_default_tool_enabled(DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
-            brain.add_tool(wrap_brain_tool_with_quota(
-                GetAgentPublicInfoTool::new(current_message.clone()),
-                tool_quota.clone(),
-            ));
-        }
-
-        if self.is_default_tool_enabled(DEFAULT_TOOL_GET_FUNCTION_LIST) {
-            brain.add_tool(wrap_brain_tool_with_quota(GetFunctionListTool, tool_quota.clone()));
-        }
-
-        brain.add_tool(wrap_brain_tool_with_quota(
-            RunResearchSubagentTool::new(
-                Arc::clone(ctx.math_programming_llm),
-                Arc::clone(ctx.web_search_engine),
-                ctx.rdb_pool.cloned(),
-                ctx.s3_ref.cloned(),
-                ctx.weaviate_image_ref.cloned(),
-                Some(prepared_input.event.clone()),
-                ToolNotificationTarget::dashboard(),
-                if let Some(memory_backend) = ctx
-                    .local_memory_store
-                    .cloned()
-                    .map(AgentMemoryBackend::LocalFile)
-                    .or_else(|| {
-                        ctx.elasticsearch_memory_ref
-                            .cloned()
-                            .map(AgentMemoryBackend::Elasticsearch)
-                            .or_else(|| {
-                                ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate)
-                            })
-                    })
-                {
-                    let embedding_model = ctx.embedding_model.cloned();
-                    if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_))
-                        && embedding_model.is_none()
-                    {
-                        None
-                    } else {
-                        Some(AgentMemoryToolResources {
-                            memory_backend,
-                            embedding_model,
-                            llm: Arc::clone(turn_llm),
-                            access: AgentMemoryAccessContext {
-                                sender_id: Some(sender_id.to_string()),
-                                group_id: if is_group {
-                                    Some(target_id.to_string())
-                                } else {
-                                    prepared_input.event.group_id.map(|value| value.to_string())
-                                },
-                                is_group,
-                                admin: false,
-                                skip_expiry_extend: false,
-                            },
-                        })
-                    }
-                } else {
-                    None
-                },
-                tool_quota.clone(),
-            ),
-            tool_quota.clone(),
-        ));
-        brain.add_tool(wrap_brain_tool_with_quota(
-            ReplyMessageTool::new(Arc::clone(&shared_runtime_values)),
-            tool_quota.clone(),
-        ));
-
-        if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
-            brain.add_tool(wrap_brain_tool_with_quota(
-                GetRecentGroupMessagesTool::new(
-                    ctx.rdb_pool.cloned(),
-                    ToolNotificationTarget::new(
-                        Some(ctx.adapter.clone()),
-                        target_id.to_string(),
-                        if is_group {
-                            Some(sender_id.to_string())
-                        } else {
-                            None
-                        },
-                        is_group,
-                        false,
-                    ),
-                ),
-                tool_quota.clone(),
-            ));
-        }
-
-        if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
-            brain.add_tool(wrap_brain_tool_with_quota(
-                GetRecentUserMessagesTool::new(
-                    ctx.rdb_pool.cloned(),
-                    ToolNotificationTarget::new(
-                        Some(ctx.adapter.clone()),
-                        target_id.to_string(),
-                        if is_group {
-                            Some(sender_id.to_string())
-                        } else {
-                            None
-                        },
-                        is_group,
-                        false,
-                    ),
-                ),
-                tool_quota.clone(),
-            ));
-        }
-
-        if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
-            brain.add_tool(wrap_brain_tool_with_quota(
-                SearchSimilarImagesTool::new(
-                    ctx.weaviate_image_ref.cloned(),
-                    ctx.embedding_model.cloned(),
-                    ctx.web_search_engine.clone(),
-                    ctx.s3_ref.cloned(),
-                    ToolNotificationTarget::new(
-                        Some(ctx.adapter.clone()),
-                        target_id.to_string(),
-                        if is_group {
-                            Some(sender_id.to_string())
-                        } else {
-                            None
-                        },
-                        is_group,
-                        false,
-                    ),
-                ),
-                tool_quota.clone(),
-            ));
-        }
-
-        if self.is_default_tool_enabled(DEFAULT_TOOL_SAVE_IMAGE) {
-            if ctx.s3_ref.is_some()
-                && ctx.weaviate_image_ref.is_some()
-                && ctx.embedding_model.is_some()
-            {
-                brain.add_tool(wrap_brain_tool_with_quota(
-                    SaveImageTool::new(
-                        ctx.weaviate_image_ref.cloned(),
-                        None,
-                        ctx.embedding_model.cloned(),
-                        ctx.s3_ref.cloned(),
-                        ctx.rdb_pool.cloned(),
-                    ),
-                    tool_quota.clone(),
-                ));
-            }
-        }
-
-        if self.is_default_tool_enabled(DEFAULT_TOOL_IMAGE_UNDERSTAND) {
-            brain.add_tool(wrap_brain_tool_with_quota(
-                ImageUnderstandTool::new(
-                    Some(prepared_input.event.clone()),
-                    ctx.rdb_pool.cloned(),
-                    ctx.s3_ref.cloned(),
-                    ToolNotificationTarget::new(
-                        Some(ctx.adapter.clone()),
-                        target_id.to_string(),
-                        if is_group {
-                            Some(sender_id.to_string())
-                        } else {
-                            None
-                        },
-                        is_group,
-                        false,
-                    ),
-                ),
-                tool_quota.clone(),
-            ));
-        }
-
-        brain.add_tool(wrap_brain_tool_with_quota(
-            GetBotProfileTool::new(
-                ctx.adapter.clone(),
-                prepared_input.event.clone(),
-                ctx.s3_ref.cloned(),
-            ),
-            tool_quota.clone(),
-        ));
-        brain.add_tool(wrap_brain_tool_with_quota(
-            GetQqUserProfileTool::new(
-                ctx.adapter.clone(),
-                prepared_input.event.clone(),
-                ctx.s3_ref.cloned(),
-            ),
-            tool_quota.clone(),
-        ));
-        brain.add_tool(wrap_brain_tool_with_quota(
-            GetCurrentGroupMembersTool::new(ctx.adapter.clone(), prepared_input.event.clone()),
-            tool_quota.clone(),
-        ));
-
-        let qq_chat_agent = current_qq_chat_agent_service_config()?;
-        for tool_def in &self.tool_definitions {
-            brain.add_tool(wrap_brain_tool_with_quota(
-                EditableQqAgentTool {
-                    runner: ToolSubgraphRunner {
-                        node_id: self.id.clone(),
-                        owner_node_type: QQ_AGENT_TOOL_OWNER_TYPE.to_string(),
-                        shared_inputs: self.shared_inputs.clone(),
-                        definition: tool_def.clone(),
-                        shared_runtime_values: Arc::clone(&shared_runtime_values),
-                        qq_chat_agent: Some(qq_chat_agent.clone()),
-                        result_mode: ToolResultMode::SingleString,
-                        builtin_executor: Some(
-                            crate::qq_tool_subgraph_hooks::image_understand_executor(),
-                        ),
-                        progress_notifier: Some(
-                            crate::qq_tool_subgraph_hooks::qq_progress_notifier(),
-                        ),
-                    },
-                },
-                tool_quota.clone(),
-            ));
-        }
-
-        trace.mark_llm_request_started();
-        if let Some(task_runtime) = ctx.task_runtime.clone() {
-            brain.set_long_task_context(LongTaskContext {
-                task_runtime,
-                owner_id: Some(sender_id.to_string()),
-                agent_id: self.id.clone(),
-                agent_name: ctx.bot_name.to_string(),
-                task_db_connection_id: ctx.task_db_connection_id.clone(),
-                notifier: Arc::new(QqLongTaskNotifier {
-                    adapter: ctx.adapter.clone(),
-                    target_id: target_id.to_string(),
-                    sender_id: sender_id.to_string(),
-                    is_group,
-                    rdb_pool: ctx.rdb_pool.cloned(),
-                    group_name: event.group_name.clone(),
-                    bot_id: bot_id.to_string(),
-                    bot_name: ctx.bot_name.to_string(),
-                }),
-            });
-        }
-        let mut brain_output;
-        let mut stop_reason;
-        (brain_output, stop_reason) = brain.run(brain_conversation.clone());
-        trace.record_llm_final_result(&stop_reason, &brain_output);
-        let completion_tokens_estimated = estimate_messages_tokens(&brain_output);
-
-        // let exact_token_usage = {
-        //     let mut prompt_tokens = 0usize;
-        //     let mut cached_prompt_tokens = 0usize;
-        //     let mut prompt_cache_miss_tokens = 0usize;
-        //     let mut completion_tokens = 0usize;
-        //     let mut total_tokens = 0usize;
-        //     let mut has_usage = false;
-        //     let mut cached_prompt_tokens_seen = false;
-        //     let mut prompt_cache_miss_tokens_seen = false;
-        //     let mut total_tokens_seen = false;
-        //
-        //     for message in &brain_output {
-        //         if let Some(usage) = message.usage.as_ref() {
-        //             if let Some(value) = usage.prompt_tokens {
-        //                 prompt_tokens = prompt_tokens.saturating_add(value);
-        //             }
-        //             if let Some(value) = usage.cached_prompt_tokens {
-        //                 cached_prompt_tokens = cached_prompt_tokens.saturating_add(value);
-        //                 cached_prompt_tokens_seen = true;
-        //             }
-        //             if let Some(value) = usage.prompt_cache_miss_tokens {
-        //                 prompt_cache_miss_tokens = prompt_cache_miss_tokens.saturating_add(value);
-        //                 prompt_cache_miss_tokens_seen = true;
-        //             }
-        //             if let Some(value) = usage.completion_tokens {
-        //                 completion_tokens = completion_tokens.saturating_add(value);
-        //             }
-        //             if let Some(value) = usage.total_tokens {
-        //                 total_tokens = total_tokens.saturating_add(value);
-        //                 total_tokens_seen = true;
-        //             }
-        //             has_usage = true;
-        //         }
-        //     }
-        //
-        //     if has_usage {
-        //         Some(TokenUsage {
-        //             prompt_tokens: Some(prompt_tokens),
-        //             cached_prompt_tokens: if cached_prompt_tokens_seen {
-        //                 Some(cached_prompt_tokens)
-        //             } else {
-        //                 None
-        //             },
-        //             prompt_cache_miss_tokens: if prompt_cache_miss_tokens_seen {
-        //                 Some(prompt_cache_miss_tokens)
-        //             } else {
-        //                 None
-        //             },
-        //             completion_tokens: Some(completion_tokens),
-        //             total_tokens: if total_tokens_seen { Some(total_tokens) } else { None },
-        //         })
-        //     } else {
-        //         None
-        //     }
-        // };
-
-        // take the usage of the last LLM call only (the final assistant
-        // message that carries usage). Each iteration of the tool loop sends the full
-        // context accumulated up to that point, so summing every message would count
-        // the same history input multiple times and inflate total_tokens. The final
-        // request's usage is the complete context actually sent for this reply.
-        let exact_token_usage = brain_output
-            .iter()
-            .rev()
-            .find(|message| {
-                matches!(message.role, zihuan_core::model_inference::llm::MessageRole::Assistant)
-                    && message.usage.is_some()
-            })
-            .and_then(|message| message.usage.clone());
-        trace.record_token_usage(completion_tokens_estimated, exact_token_usage);
-
-        let mut final_reply_text = self.parse_final_reply_text(&stop_reason, &brain_output);
-
-        if final_reply_text.is_none() && matches!(stop_reason, ToolCallingStopReason::Done) {
-            info!(
-                "{LOG_PREFIX} ToolCallingEngine finished without sendable final reply text; requesting one more internal reflection for sender={sender_id}"
-            );
-            brain_conversation.extend(brain_output.iter().cloned());
-            brain_conversation.push(message_with_api_style(
-                LLMMessage::user(
-                    "【系统补充提醒】你刚才还没有输出最终可发送文本。请重新完成本轮任务，并且最终 assistant 只能输出直接发给用户的自然语言文本，或者输出 `[no_reply]` 表示本轮不回复。"
-                        .to_string(),
-                ),
-                turn_llm.api_style(),
-            ));
-
-            let (second_output, second_stop_reason) = brain.run(brain_conversation.clone());
-            trace.record_llm_final_result(&second_stop_reason, &second_output);
-            brain_output.extend(second_output.iter().cloned());
-            stop_reason = second_stop_reason;
-            final_reply_text = self.parse_final_reply_text(&stop_reason, &brain_output);
-        }
-
-        trace.record_llm_result_parsed(final_reply_text.as_deref());
-        let suppress_send = final_reply_text
-            .as_deref()
-            .map(zihuan_core::agent::utils::string_utils::is_no_reply_directive);
-        trace.record_final_reply_decision(final_reply_text.as_deref(), suppress_send, None);
+                    trace,
+                })),
+            ],
+            &mut shared,
+        ))?;
+        let brain_output_payload =
+            shared.find_output::<QqBrainOutput>().map(|value| (*value).clone()).ok_or_else(
+                || Error::ValidationError("qq brain procedure produced no turn output".to_string()),
+            )?;
 
         let mut visible_assistant_history_text = None;
         let mut explicit_no_reply = false;
-        if final_reply_text.is_none() {
-            match stop_reason {
+        if brain_output_payload.final_reply_text.is_none() {
+            match &brain_output_payload.stop_reason {
                 ToolCallingStopReason::TransportError(ref err) => {
                     warn!("{LOG_PREFIX} ToolCallingEngine transport error without reply: {err}");
                 }
@@ -1565,31 +1179,21 @@ impl QqChatAgentServiceInner {
                     warn!("{LOG_PREFIX} ToolCallingEngine paused at tool-call limit without reply: {}", request.question);
                 }
             }
-        } else if let Some(candidate_message) = final_reply_text.as_ref() {
-            if zihuan_core::agent::utils::string_utils::is_no_reply_directive(candidate_message) {
+        } else if brain_output_payload.final_reply_text.is_some() {
+            if brain_output_payload.suppress_send {
                 explicit_no_reply = true;
             } else {
-                let available_media = collect_available_media_from_brain_output(&brain_output);
-                let review_result = run_after_brain(
-                    &qq_procedure_context(&history_key, Some(candidate_message.clone())),
-                    QqAfterBrainContext {
-                        review_llm: ctx.intent_classification_llm,
-                        rewrite_llm: ctx.natural_language_reply_llm,
-                        reply_system_prompt: ctx.natural_language_reply_system_prompt,
-                        request: QqReplyReviewRequest {
-                            candidate_message: candidate_message.clone(),
-                            is_group,
-                            bot_name: ctx.bot_name.to_string(),
-                            sender_id: sender_id.to_string(),
-                            sender_nickname: inference_event.sender.nickname.clone(),
-                            sender_card: inference_event.sender.card.clone(),
-                            session_state: turn_session_state.lock().unwrap().clone(),
-                            emotion_dimensions: emotion_dimensions.clone(),
-                            model_identity_context: Some(build_model_identity_context(ctx)),
-                        },
-                        trace,
-                    },
-                )?;
+                let available_media =
+                    collect_available_media_from_brain_output(&brain_output_payload.brain_output);
+                let review_result = turn_outputs
+                    .iter()
+                    .rev()
+                    .find_map(|output| output.cloned::<QqReplyReviewResult>())
+                    .ok_or_else(|| {
+                        Error::ValidationError(
+                            "after-brain procedure produced no review result".to_string(),
+                        )
+                    })?;
 
                 let reply_result = build_reply_result(
                     &review_result.final_message,
@@ -1655,7 +1259,10 @@ impl QqChatAgentServiceInner {
             )
         } else if explicit_no_reply {
             format!("已处理[{sender_id}]的消息，显式选择不回复")
-        } else if matches!(stop_reason, ToolCallingStopReason::TransportError(_)) {
+        } else if matches!(
+            brain_output_payload.stop_reason,
+            ToolCallingStopReason::TransportError(_)
+        ) {
             format!("回复[{sender_id}]失败：模型请求异常")
         } else {
             format!("已处理[{sender_id}]的消息，但未发送回复")
@@ -1715,19 +1322,48 @@ impl QqChatAgentServiceInner {
         let meta_messages =
             vec![LLMMessage::system(meta_system_prompt), LLMMessage::user(meta_user_message)];
 
-        trace.mark_llm_request_started();
-        let response = ctx.llm.inference(&InferenceParam { messages: &meta_messages, tools: None });
-        let candidate_message = response.content_text_owned().unwrap_or_default();
-        let candidate_message = candidate_message.trim();
-        if candidate_message.is_empty() {
+        // Role turn chain (documents/procedure.md): the meta-query brain (a single direct
+        // inference) -> AfterBrain review.
+        let mut shared = qq_procedure_context(history_key, None);
+        let meta_outputs = block_async(execute_blocking_procedure_chain(
+            vec![
+                Arc::new(QqMetaQueryBrain::new(ctx.llm, trace, meta_messages)),
+                Arc::new(QqAfterBrain::new(QqAfterBrainContext {
+                    review_llm: ctx.intent_classification_llm,
+                    rewrite_llm: ctx.natural_language_reply_llm,
+                    reply_system_prompt: ctx.natural_language_reply_system_prompt,
+                    request: QqReplyReviewRequest {
+                        // Filled from the brain output inside the after-brain procedure.
+                        candidate_message: String::new(),
+                        is_group,
+                        bot_name: ctx.bot_name.to_string(),
+                        sender_id: sender_id.to_string(),
+                        sender_nickname: inference_event.sender.nickname.clone(),
+                        sender_card: inference_event.sender.card.clone(),
+                        session_state: turn_session_state.lock().unwrap().clone(),
+                        emotion_dimensions: emotion_dimensions.to_vec(),
+                        model_identity_context: Some(build_model_identity_context(ctx)),
+                    },
+                    trace,
+                })),
+            ],
+            &mut shared,
+        ))?;
+        let meta_payload = shared
+            .find_output::<QqBrainOutput>()
+            .map(|value| (*value).clone())
+            .ok_or_else(|| {
+                Error::ValidationError(
+                    "qq meta-query brain procedure produced no turn output".to_string(),
+                )
+            })?;
+        let Some(candidate_message) = meta_payload.final_reply_text.as_ref() else {
             return Ok(QqChatServiceTurnResult {
                 result_summary: format!("元查询[{sender_id}]：LLM未返回有效回复"),
             });
-        }
+        };
 
-        trace.record_llm_result_parsed(Some(candidate_message));
-
-        if zihuan_core::agent::utils::string_utils::is_no_reply_directive(candidate_message) {
+        if meta_payload.suppress_send {
             history.push(message_with_api_style(
                 LLMMessage::user(current_message.to_string()),
                 ctx.llm.api_style(),
@@ -1740,27 +1376,15 @@ impl QqChatAgentServiceInner {
             });
         }
 
-        let review_result = run_after_brain(
-            &qq_procedure_context(history_key, Some(candidate_message.to_string())),
-            QqAfterBrainContext {
-                review_llm: ctx.intent_classification_llm,
-                rewrite_llm: ctx.natural_language_reply_llm,
-                reply_system_prompt: ctx.natural_language_reply_system_prompt,
-                request: QqReplyReviewRequest {
-                    candidate_message: candidate_message.to_string(),
-                    is_group,
-                    bot_name: ctx.bot_name.to_string(),
-                    sender_id: sender_id.to_string(),
-                    sender_nickname: inference_event.sender.nickname.clone(),
-                    sender_card: inference_event.sender.card.clone(),
-                    session_state: turn_session_state.lock().unwrap().clone(),
-                    emotion_dimensions: emotion_dimensions.to_vec(),
-                    model_identity_context: Some(build_model_identity_context(ctx)),
-                },
-                trace,
-            },
-        )?;
-
+        let review_result = meta_outputs
+            .iter()
+            .rev()
+            .find_map(|output| output.cloned::<QqReplyReviewResult>())
+            .ok_or_else(|| {
+                Error::ValidationError(
+                    "after-brain procedure produced no review result".to_string(),
+                )
+            })?;
         let reply_result = build_reply_result(
             &review_result.final_message,
             is_group,

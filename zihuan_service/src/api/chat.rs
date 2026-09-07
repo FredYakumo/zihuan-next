@@ -31,17 +31,20 @@ use zihuan_core::message_part::MessagePart;
 use zihuan_core::model_inference::llm::tooling::ToolCalls;
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken, TokenUsage};
 use zihuan_core::role::procedure::ProcedureContext;
+use zihuan_core::role::{
+    BrainAgent, ContextCompactionEvent, ContextCompactionObserver, TransportSink,
+};
 use zihuan_core::storage::ConnectionConfig;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
 use zihuan_workspace_service::api::workspace_changes;
+use zihuan_workspace_service::procedure::WorkspaceBrain;
 use zihuan_workspace_service::task_tracking::{
     delete_workspace_tasks, interrupt_workspace_tasks, load_workspace_tasks,
 };
 
 use crate::api::state::{RunningChatMessage, RunningChatToolCall, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
-use zihuan_service::role::{ContextCompactionEvent, ContextCompactionObserver};
 
 const CHAT_STREAM_MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 const CHAT_FORK_METADATA_SUFFIX: &str = ".fork.json";
@@ -54,20 +57,42 @@ impl AgentCancellation for WorkspaceChatCancellation {
     }
 }
 
+/// SSE adapter's transport out boundary (documents/transport.md).
+///
+/// **Design:** Holds the sending halves of the token and brain-event channels; the relay loops
+/// in `execute_chat_streaming` own the receiving halves. Procedures emit through the sink via
+/// the `TransportSink` impl, and all sender clones dropped when the turn task ends let the
+/// relay drain and exit.
+struct SseTransportSink {
+    token_tx: mpsc::UnboundedSender<StreamToken>,
+    event_tx: mpsc::UnboundedSender<Value>,
+}
+
+impl TransportSink for SseTransportSink {
+    fn token_sender(&self) -> mpsc::UnboundedSender<StreamToken> {
+        self.token_tx.clone()
+    }
+
+    fn send_event(&self, event: Value) {
+        let _ = self.event_tx.send(event);
+    }
+}
+
 /// Bridges ToolCallingObserver callbacks into the SSE event stream.
 ///
-/// **Purpose:** The ToolCallingEngine tool-call loop emits structured events (tool start/finish) that the
-/// dashboard needs to display in real time. This observer translates those callbacks into JSON
-/// payloads and pushes them onto the same unbounded channel that the token stream uses, so the
-/// relay loop can multiplex both onto a single SSE connection.
+/// **Purpose:** The ToolCallingEngine tool-call loop emits structured events (tool start/finish)
+/// that the dashboard needs to display in real time. This observer translates those callbacks
+/// into JSON payloads and pushes them onto the same unbounded channel that the token stream
+/// uses, so the relay loop can multiplex both onto a single SSE connection.
 ///
 /// **Design:** Uses an unbounded sender intentionally — the relay loop drains both the token and
 /// event channels via `tokio::select!`, so backpressure is managed by the SSE sender, not the
 /// observer. Errors from `send` are silently ignored because a closed channel means the client
 /// has disconnected and the entire streaming task will tear down.
 ///
-/// **Architecture:** Created per-request inside `execute_chat_streaming`, passed as
-/// `Arc<dyn ToolCallingObserver>` into `infer_role_response_streaming`.
+/// **Architecture:** Created per-request inside the spawned turn task of
+/// `execute_chat_streaming`, passed as the turn's `ToolCallingObserver` into the brain
+/// procedure.
 struct SseToolCallingObserver {
     event_tx: mpsc::UnboundedSender<Value>,
     session_id: String,
@@ -1045,9 +1070,10 @@ pub async fn delete_chat_session(req: &mut Request, res: &mut Response, _depot: 
 /// 2. **Command dispatch** (`try_dispatch_dashboard_command`) — intercepts slash-commands
 ///    before inference; may short-circuit the pipeline with an immediate reply or a session
 ///    switch.
-/// 3. **Inference + relay** — if inference is required, spawns `infer_role_response_streaming`
-///    in a background task and either `relay_inference_stream` (token-by-token) or
-///    `relay_collected_text` (batch) to forward results to the client.
+/// 3. **Procedure chain + relay** — if inference is required, spawns the RoleService procedure
+///    chain (`run_procedure_chain`, whose Brain procedure drives the inference) in a background
+///    task and either `relay_inference_stream` (token-by-token) or `relay_collected_text`
+///    (batch) to forward results to the client.
 /// 4. **Persistence** (`persist_chat_records`) — writes the user message and all output
 ///    messages to the session's `.jsonl` file.
 ///
@@ -1203,26 +1229,36 @@ async fn execute_chat_streaming(
         }
     };
 
-    // Before-brain procedures (documents/procedure.md). The new-conversation check must happen
-    // before any persistence: Workspace turns create the session file with the user message
-    // right below.
+    // Turn context shared by the whole procedure chain (documents/procedure.md). The
+    // new-conversation check must happen before any persistence: Workspace turns create the
+    // session file with the user message right below.
     let is_new_conversation =
         !chat_session_file_path(&session_id).map(|path| path.exists()).unwrap_or(false);
-    state
-        .role_service_manager
-        .run_before_brain_procedures(
-            &agent,
-            &ProcedureContext {
-                session_id: session_id.clone(),
-                is_new_conversation,
-                latest_user_text: latest_user_message
-                    .as_ref()
-                    .and_then(LLMMessage::content_text_owned),
-                workspace_path: effective_workspace_path.clone(),
-                role_context: None,
-            },
-        )
-        .await;
+    let (token_tx, mut token_rx) = mpsc::unbounded_channel::<StreamToken>();
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
+    let transport_sink: Arc<dyn TransportSink> =
+        Arc::new(SseTransportSink { token_tx, event_tx: event_tx.clone() });
+    let procedure_context = ProcedureContext {
+        session_id: session_id.clone(),
+        is_new_conversation,
+        latest_user_text: latest_user_message.as_ref().and_then(LLMMessage::content_text_owned),
+        workspace_path: effective_workspace_path.clone(),
+        transport_out: Some(transport_sink),
+        procedure_outputs: Vec::new(),
+        role_context: None,
+    };
+    if !should_run_inference {
+        // Command-only turns skip the brain, so the role's side-effect procedures (e.g. /new
+        // session naming) run here; inference turns run the whole chain inside the spawned
+        // turn task below.
+        if let Err(err) = state
+            .role_service_manager
+            .run_procedure_chain(&agent, procedure_context.clone(), Vec::new())
+            .await
+        {
+            log::error!("role procedures failed for agent '{}': {err}", agent.name);
+        }
+    }
 
     let assistant_message_id =
         requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
@@ -1359,82 +1395,88 @@ async fn execute_chat_streaming(
         snapshot
     });
 
-    let (token_tx, mut token_rx) = mpsc::unbounded_channel::<StreamToken>();
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
-    let observer: Arc<dyn ToolCallingObserver> = Arc::new(SseToolCallingObserver {
-        event_tx: event_tx.clone(),
-        session_id: session_id.clone(),
-        message_id: assistant_message_id.clone(),
-        change_recorder: workspace_changes::WorkspaceChangeRecorder::new(
-            session_id.clone(),
-            effective_workspace_path.clone(),
-        ),
-        running_chat_message: running_chat_message.clone(),
-    });
-    let compaction_observer: ContextCompactionObserver = {
-        let event_tx = event_tx.clone();
-        let message_id = assistant_message_id.clone();
-        Arc::new(move |event| {
-            let payload = match event {
-                ContextCompactionEvent::Started => json!({
-                    "type": "context_compaction_start",
-                    "message_id": message_id,
-                }),
-                ContextCompactionEvent::Completed {
-                    estimated_tokens_before,
-                    estimated_tokens_after,
-                    duration,
-                } => json!({
-                    "type": "context_compaction_complete",
-                    "message_id": message_id,
-                    "estimated_tokens_before": estimated_tokens_before,
-                    "estimated_tokens_after": estimated_tokens_after,
-                    "duration_ms": duration.as_millis() as u64,
-                }),
-                ContextCompactionEvent::Failed => json!({
-                    "type": "context_compaction_failed",
-                    "message_id": message_id,
-                }),
+    let inference_started_at = Instant::now();
+    let cancellation: Option<Arc<dyn AgentCancellation>> =
+        workspace_task.as_ref().map(|(_, stop_flag)| {
+            Arc::new(WorkspaceChatCancellation(Arc::clone(stop_flag))) as Arc<dyn AgentCancellation>
+        });
+    let turn_handle = {
+        let manager = state.role_service_manager.clone();
+        let agent_id = agent_id.clone();
+        let agent_config = agent.clone();
+        let procedure_context = procedure_context;
+        let turn_event_tx = event_tx;
+        let turn_session_id = session_id.clone();
+        let turn_workspace_path = effective_workspace_path.clone();
+        let turn_model_config_id = model_config_id.clone();
+        let turn_image_understand_model_config_id = image_understand_model_config_id.clone();
+        let turn_running_chat_message = running_chat_message.clone();
+        let turn_assistant_message_id = assistant_message_id.clone();
+        tokio::spawn(async move {
+            // Resolve the running brain at turn time like the old inference task did; a
+            // missing service flows through the standard turn failure handling below.
+            let Some(role_service) = manager.running_role_service(&agent_id) else {
+                return Err(zihuan_core::string_error!("agent '{agent_id}' is not running"));
             };
-            let _ = event_tx.send(payload);
+            let brain_agent: Arc<dyn BrainAgent> = role_service;
+            let observer: Arc<dyn ToolCallingObserver> = Arc::new(SseToolCallingObserver {
+                event_tx: turn_event_tx.clone(),
+                session_id: turn_session_id.clone(),
+                message_id: turn_assistant_message_id.clone(),
+                change_recorder: workspace_changes::WorkspaceChangeRecorder::new(
+                    turn_session_id.clone(),
+                    turn_workspace_path.clone(),
+                ),
+                running_chat_message: turn_running_chat_message.clone(),
+            });
+            let compaction_observer: ContextCompactionObserver = {
+                let event_tx = turn_event_tx;
+                let message_id = turn_assistant_message_id;
+                Arc::new(move |event| {
+                    let payload = match event {
+                        ContextCompactionEvent::Started => json!({
+                            "type": "context_compaction_start",
+                            "message_id": message_id,
+                        }),
+                        ContextCompactionEvent::Completed {
+                            estimated_tokens_before,
+                            estimated_tokens_after,
+                            duration,
+                        } => json!({
+                            "type": "context_compaction_complete",
+                            "message_id": message_id,
+                            "estimated_tokens_before": estimated_tokens_before,
+                            "estimated_tokens_after": estimated_tokens_after,
+                            "duration_ms": duration.as_millis() as u64,
+                        }),
+                        ContextCompactionEvent::Failed => json!({
+                            "type": "context_compaction_failed",
+                            "message_id": message_id,
+                        }),
+                    };
+                    let _ = event_tx.send(payload);
+                })
+            };
+            let brain = Arc::new(WorkspaceBrain::new(
+                brain_agent,
+                messages,
+                turn_session_id,
+                turn_workspace_path,
+                turn_model_config_id,
+                turn_image_understand_model_config_id,
+                thinking_type,
+                reasoning_effort,
+                cancellation,
+                Some(observer),
+                Some(compaction_observer),
+            ));
+            manager.run_procedure_chain(&agent_config, procedure_context, vec![brain]).await
         })
     };
 
-    let chat_workspace_path = effective_workspace_path.clone();
-    let inference_session_id = session_id.clone();
-    let inference_started_at = Instant::now();
-    let inference_handle = tokio::spawn({
-        let state = state.clone();
-        let agent_id = agent_id.clone();
-        let model_config_id = model_config_id.clone();
-        let image_understand_model_config_id = image_understand_model_config_id.clone();
-        let cancellation = workspace_task.as_ref().map(|(_, stop_flag)| {
-            Arc::new(WorkspaceChatCancellation(Arc::clone(stop_flag))) as Arc<dyn AgentCancellation>
-        });
-        async move {
-            state
-                .role_service_manager
-                .infer_role_response_streaming_with_model(
-                    &agent_id,
-                    messages,
-                    token_tx,
-                    Some(observer),
-                    Some(compaction_observer),
-                    model_config_id.as_deref(),
-                    image_understand_model_config_id.as_deref(),
-                    thinking_type,
-                    reasoning_effort,
-                    chat_workspace_path.clone(),
-                    Some(inference_session_id.clone()),
-                    cancellation,
-                )
-                .await
-        }
-    });
-
     let stop_watch = workspace_task.as_ref().map(|(_, flag)| {
         let flag = Arc::clone(flag);
-        let abort_handle = inference_handle.abort_handle();
+        let abort_handle = turn_handle.abort_handle();
         tokio::spawn(async move {
             while !flag.load(Ordering::Relaxed) {
                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -1464,80 +1506,59 @@ async fn execute_chat_streaming(
     // already stopped consuming events, but the inference result is still awaited
     // and persisted below.
 
-    let (output_messages, stop_reason) = match inference_handle.await {
-        Ok(Ok(result)) => result,
-        Ok(Err(err)) => {
-            if let Some(snapshot) = running_chat_message.as_ref() {
-                if let Err(persist_err) =
-                    persist_running_chat_message(&session_id, &agent, &agent_snapshot, snapshot)
-                {
-                    log::warn!("failed to persist running chat message after inference error: {persist_err}");
+    let (output_messages, stop_reason) = {
+        let turn_result = match turn_handle.await {
+            Ok(result) => result,
+            Err(err) => Err(zihuan_core::string_error!("failed to join chat task: {err}")),
+        };
+        match turn_result.and_then(|outputs| {
+            outputs
+                .iter()
+                .rev()
+                .find_map(|output| output.cloned::<(Vec<LLMMessage>, ToolCallingStopReason)>())
+                .ok_or_else(|| {
+                    zihuan_core::string_error!("brain procedure produced no turn output")
+                })
+        }) {
+            Ok(result) => result,
+            Err(err) => {
+                if let Some(snapshot) = running_chat_message.as_ref() {
+                    if let Err(persist_err) =
+                        persist_running_chat_message(&session_id, &agent, &agent_snapshot, snapshot)
+                    {
+                        log::warn!("failed to persist running chat message after inference error: {persist_err}");
+                    }
                 }
-            }
-            clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
-            let stopped =
-                workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
-            if let Some((task_id, _)) = &workspace_task {
-                finish_workspace_task(
-                    &state,
-                    &broadcast_tx,
-                    task_id,
-                    if stopped {
-                        TaskStatus::Stopped
-                    } else {
-                        TaskStatus::Failed
-                    },
-                    (!stopped).then(|| err.to_string()),
-                    None,
-                );
-            }
-            if stopped {
-                if let Err(error) = interrupt_workspace_tasks(&session_id, "用户手动停止推理")
-                {
-                    log::warn!("failed to interrupt workspace tasks: {error}");
+                clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
+                let stopped =
+                    workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
+                if let Some((task_id, _)) = &workspace_task {
+                    finish_workspace_task(
+                        &state,
+                        &broadcast_tx,
+                        task_id,
+                        if stopped {
+                            TaskStatus::Stopped
+                        } else {
+                            TaskStatus::Failed
+                        },
+                        (!stopped).then(|| err.to_string()),
+                        None,
+                    );
+                }
+                if stopped {
+                    if let Err(error) = interrupt_workspace_tasks(&session_id, "用户手动停止推理")
+                    {
+                        log::warn!("failed to interrupt workspace tasks: {error}");
+                    }
+                    return;
+                }
+                let event = json!({ "type": "error", "error": err.to_string() });
+                if client_connected {
+                    let _ = sender.send_data(format!("data: {event}\n\n")).await;
                 }
                 return;
             }
-            let event = json!({ "type": "error", "error": err.to_string() });
-            if client_connected {
-                let _ = sender.send_data(format!("data: {event}\n\n")).await;
-            }
-            return;
-        }
-        Err(err) => {
-            if let Some(snapshot) = running_chat_message.as_ref() {
-                if let Err(persist_err) =
-                    persist_running_chat_message(&session_id, &agent, &agent_snapshot, snapshot)
-                {
-                    log::warn!("failed to persist running chat message after chat task join failure: {persist_err}");
-                }
-            }
-            clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
-            let stopped =
-                workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
-            if let Some((task_id, _)) = &workspace_task {
-                finish_workspace_task(
-                    &state,
-                    &broadcast_tx,
-                    task_id,
-                    if stopped {
-                        TaskStatus::Stopped
-                    } else {
-                        TaskStatus::Failed
-                    },
-                    (!stopped).then(|| format!("failed to join chat task: {err}")),
-                    None,
-                );
-            }
-            if stopped {
-                return;
-            }
-            let event =
-                json!({ "type": "error", "error": format!("failed to join chat task: {err}") });
-            if client_connected {
-                let _ = sender.send_data(format!("data: {event}\n\n")).await;
-            }
-            return;
         }
     };
 

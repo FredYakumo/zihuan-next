@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
@@ -28,19 +28,7 @@ use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service
 use zihuan_core::role::{RoleService, RoleServiceContext, RoleServiceDescriptor, RoleServiceKind};
 
 pub use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
-
-#[derive(Debug, Clone)]
-pub enum ContextCompactionEvent {
-    Started,
-    Completed {
-        estimated_tokens_before: usize,
-        estimated_tokens_after: usize,
-        duration: Duration,
-    },
-    Failed,
-}
-
-pub type ContextCompactionObserver = Arc<dyn Fn(ContextCompactionEvent) + Send + Sync>;
+pub use zihuan_core::role::brain_agent::{ContextCompactionEvent, ContextCompactionObserver};
 
 #[derive(Clone, Default)]
 pub struct StaticInferenceToolProvider {
@@ -136,6 +124,11 @@ impl Tool for DynToolWrapper {
 }
 
 impl RoleBrainAgent {
+    /// The RoleService's own configured LLM, used by chat turns without a model override.
+    pub fn llm(&self) -> Arc<dyn LLMBase> {
+        Arc::clone(&self.llm)
+    }
+
     pub fn load(agent: &RoleServiceConfig, connections: &[ConnectionConfig]) -> Result<Self> {
         let llm_refs = load_llm_refs()?;
         Self::load_with_refs(agent, &llm_refs, connections)
@@ -393,6 +386,43 @@ impl RoleService for RoleBrainAgent {
         input: Self::Input,
     ) -> Result<Self::Output> {
         self.infer_response_with_trace(input)
+    }
+}
+
+#[async_trait]
+impl zihuan_core::role::BrainAgent for RoleBrainAgent {
+    fn name(&self) -> &str {
+        &self.agent.name
+    }
+
+    fn llm(&self) -> Arc<dyn LLMBase> {
+        Arc::clone(&self.llm)
+    }
+
+    async fn run_streaming(
+        &self,
+        messages: Vec<LLMMessage>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
+        observer: Option<Arc<dyn ToolCallingObserver>>,
+        compaction_observer: Option<ContextCompactionObserver>,
+        llm: Arc<dyn LLMBase>,
+        image_understand_llm: Option<Arc<dyn LLMBase>>,
+        workspace_path: Option<String>,
+        session_id: Option<String>,
+        cancellation: Option<Arc<dyn AgentCancellation>>,
+    ) -> Result<(Vec<LLMMessage>, ToolCallingStopReason)> {
+        self.infer_response_streaming_with_trace_and_llm(
+            messages,
+            token_tx,
+            observer,
+            compaction_observer,
+            llm,
+            image_understand_llm,
+            workspace_path,
+            session_id,
+            cancellation,
+        )
+        .await
     }
 }
 

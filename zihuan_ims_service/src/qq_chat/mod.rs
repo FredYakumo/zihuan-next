@@ -7,11 +7,11 @@ pub(crate) mod model;
 pub(crate) mod msg_send;
 pub mod privilege_gate;
 pub mod privilege_store;
-mod steer;
+pub(crate) mod steer;
 pub mod style_learner;
 pub(crate) mod tool_quota;
 pub mod tool_quota_store;
-mod user_input;
+pub(crate) mod user_input;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -19,17 +19,17 @@ use std::sync::{Arc, Mutex};
 
 use self::core::{
     build_info_brain_tools, expand_messages_for_inference,
-    prepare_current_turn_user_input_from_event, QqChatTaskTrace, LOG_PREFIX,
-    LOG_TEXT_PREVIEW_CHARS,
+    prepare_current_turn_user_input_from_event,
 };
+pub(crate) use self::core::{QqChatTaskTrace, LOG_PREFIX};
 use self::ignore_store::should_ignore_message_blocking;
 use self::inbox::QqChatAgentServiceInbox;
 use self::language_style_store::get_applicable_language_style_blocking;
 use self::model::{
-    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner,
-    QqChatAgentServiceRuntimeConfig, QqChatServiceReplyBatchBuilder, QqInferenceToolProvider,
-    QqLoadedInferenceResources,
+    QqChatAgentService, QqChatAgentServiceRuntimeConfig, QqChatServiceReplyBatchBuilder,
+    QqInferenceToolProvider, QqLoadedInferenceResources,
 };
+pub(crate) use self::model::{QqChatAgentServiceContext, QqChatAgentServiceInner};
 use self::msg_send::{
     build_reply_batch_builder as build_unified_reply_batch_builder,
     send_direct_notification_text_reply,

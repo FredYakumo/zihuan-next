@@ -2,12 +2,16 @@ use async_trait::async_trait;
 
 use crate::error::Result;
 
+pub mod brain_agent;
 pub mod procedure;
+pub mod transport;
 
+pub use brain_agent::{BrainAgent, ContextCompactionEvent, ContextCompactionObserver};
 pub use procedure::{
-    execute_blocking_procedures, execute_procedures, Procedure, ProcedureContext,
-    ProcedureDescriptor, ProcedureExecution, ProcedureOutput, ProcedurePhase,
+    execute_blocking_procedure_chain, execute_procedure_chain, Procedure, ProcedureContext,
+    ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
 };
+pub use transport::TransportSink;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoleServiceKind {

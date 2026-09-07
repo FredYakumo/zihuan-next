@@ -291,7 +291,7 @@ pub(crate) fn execute_style_learning_task(
                     learning.sample_count
                 );
                 let review_result = run_after_brain(
-                    &qq_procedure_context(
+                    &mut qq_procedure_context(
                         &format!("style-learning:{}", input.sender_id),
                         Some(feedback_base.clone()),
                     ),
