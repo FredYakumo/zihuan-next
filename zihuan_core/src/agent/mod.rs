@@ -7,7 +7,6 @@ pub const LLM_KIND_MATH_PROGRAMMING: &str = "math_programming";
 pub const LLM_KIND_NATURAL_LANGUAGE_REPLY: &str = "natural_language_reply";
 
 pub mod agent;
-pub mod brain_agent;
 pub mod qq_chat;
 pub mod runtime_context;
 pub mod service_config;
@@ -67,7 +66,6 @@ pub mod utils;
 
 pub use crate::model_inference::llm::tooling::FunctionTool;
 pub use agent::{Agent, AgentCancellation, AgentContext, AgentDescriptor};
-pub use brain_agent::BrainAgent;
 pub(crate) use shared_tool::SharedTool;
 pub use sub_agent::{SubAgent, SubAgentDefinition, SubAgentTool};
 pub use tools::{AgentExecutor, ToolCallingEngine, ToolCallingRequest, ToolCallingResult};

@@ -975,12 +975,9 @@ pub async fn stop_chat(req: &mut Request, res: &mut Response, depot: &mut Depot)
         .lock()
         .unwrap()
         .stop_workspace_chat_task(&session_id, body.task_id.as_deref());
-    if !stopped {
-        res.status_code(salvo::http::StatusCode::NOT_FOUND);
-        res.render(Json(json!({ "error": "running Workspace chat task not found" })));
-        return;
-    }
-    res.render(Json(json!({ "ok": true })));
+    // Stopping is intentionally idempotent. A second click may arrive after the turn has
+    // already observed the cancellation flag and removed itself from the running-task list.
+    res.render(Json(json!({ "ok": true, "stopped": stopped })));
 }
 
 #[handler]
