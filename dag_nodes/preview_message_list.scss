@@ -1,0 +1,49 @@
+// Styles for the preview_message_list node UI template.
+
+$znp-text: #e8e8e8;
+$znp-muted: #888;
+$znp-border: rgba(255, 255, 255, 0.08);
+
+$role-system: #9aa7b8;
+$role-user: #79c8ff;
+$role-assistant: #8fd694;
+$role-tool: #ffc97a;
+
+.znp-preview {
+  font: 12px/1.5 sans-serif;
+  color: $znp-text;
+
+  .znp-preview-empty {
+    color: $znp-muted;
+  }
+
+  .znp-mlist {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    .znp-mlist-row {
+      padding: 6px 8px;
+      border: 1px solid $znp-border;
+      border-radius: 8px;
+
+      &.is-system .znp-mlist-role { color: $role-system; }
+      &.is-user .znp-mlist-role { color: $role-user; }
+      &.is-assistant .znp-mlist-role { color: $role-assistant; }
+      &.is-tool .znp-mlist-role { color: $role-tool; }
+    }
+
+    .znp-mlist-role {
+      display: inline-block;
+      margin-bottom: 2px;
+      color: $znp-muted;
+    }
+
+    .znp-mlist-text {
+      margin: 0;
+      font: inherit;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  }
+}

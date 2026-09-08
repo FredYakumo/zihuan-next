@@ -1,0 +1,10 @@
+<div class="znp-preview">
+  <div class="znp-preview-empty" data-bind-if="empty">（暂无消息，运行图后将在此显示）</div>
+  <div class="znp-qq" data-bind-each="bubbles">
+    <div data-bind-attr="class:cls">
+      <span class="znp-qq-prefix" data-bind-if="prefix" data-bind-text="prefix"></span>
+      <pre class="znp-qq-text" data-bind-if="text" data-bind-text="text"></pre>
+      <img class="znp-qq-image" data-bind-if="image" data-bind-attr="src:image" alt="预览图片" />
+    </div>
+  </div>
+</div>

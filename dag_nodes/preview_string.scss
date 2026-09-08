@@ -1,0 +1,21 @@
+// Styles for the preview_string node UI template.
+// The host injects the compiled sheet inside the .zihuan-node-ui-template container.
+
+$znp-text: #e8e8e8;
+$znp-muted: #888;
+
+.znp-preview {
+  font: 12px/1.5 sans-serif;
+  color: $znp-text;
+
+  .znp-preview-empty {
+    color: $znp-muted;
+  }
+
+  .znp-preview-string {
+    margin: 0;
+    font: inherit;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}

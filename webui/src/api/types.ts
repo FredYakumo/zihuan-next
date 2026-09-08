@@ -215,13 +215,6 @@ export type ServerMessage =
   | { type: "TaskStopped"; task_id: string }
   | { type: "LogMessage"; level: string; message: string; timestamp: string }
   | { type: "GraphValidationResult"; graph_id: string; issues: ValidationIssue[] }
-  | {
-      type: "NodePreviewQQMessages";
-      task_id: string;
-      graph_session_id: string;
-      node_id: string;
-      messages: QQMessageItem[];
-    }
   | { type: "NodeUiUpdate"; task_id: string; graph_session_id: string; node_id: string; revision: number; state: JsonValue };
 
 export type ClientMessage =

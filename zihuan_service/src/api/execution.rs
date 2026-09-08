@@ -1,5 +1,4 @@
 use chrono::Local;
-use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -112,13 +111,6 @@ fn run_graph_blocking(
     broadcast_tx: WsBroadcast,
     graph_session_id: String,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let preview_node_ids: HashSet<String> = definition
-        .nodes
-        .iter()
-        .filter(|n| n.node_type == "qq_message_preview")
-        .map(|n| n.id.clone())
-        .collect();
-
     let mut graph = zihuan_core::graph::registry::build_node_graph_from_definition(&definition)
         .map_err(|e| format!("Build graph failed: {e}"))?;
     crate::api::graph_exec_helpers::inject_runtime_inline_values(
@@ -126,30 +118,6 @@ fn run_graph_blocking(
         &runtime_inline_values,
     );
     graph.set_execution_task_id(Some(task_id.clone()));
-
-    if !preview_node_ids.is_empty() {
-        let tx = broadcast_tx.clone();
-        let task = task_id.clone();
-        let session = graph_session_id.clone();
-        let ids = Arc::new(preview_node_ids);
-        graph.set_execution_callback(move |node_id, inputs, _outputs| {
-            if !ids.contains(node_id) {
-                return;
-            }
-            let Some(value) = inputs.get("messages") else {
-                return;
-            };
-            let Ok(json) = serde_json::to_value(value) else {
-                return;
-            };
-            let _ = tx.send(ServerMessage::NodePreviewQQMessages {
-                task_id: task.clone(),
-                graph_session_id: session.clone(),
-                node_id: node_id.to_string(),
-                messages: json,
-            });
-        });
-    }
 
     // Link the external stop flag to the graph's internal stop flag
     let graph_flag = graph.get_stop_flag();

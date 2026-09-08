@@ -5,7 +5,6 @@ import { ws } from "./api/ws";
 import type { NodeTypeInfo, TaskEntry } from "./api/types";
 import { registerNodeTypes } from "./graph/registry";
 import { ZihuanCanvas } from "./graph/canvas";
-import { installPreviewWsHandler } from "./graph/node_widgets/qq_message_preview";
 import {
   buildCanvasPanelButtons,
   buildDOM,
@@ -45,7 +44,6 @@ export async function bootstrapGraphEditor() {
   const { toolbar, canvasContainer, canvasEl, backArrow } = buildDOM();
 
   ws.connect();
-  installPreviewWsHandler(ws);
 
   let nodeTypes: NodeTypeInfo[] = [];
   try {

@@ -1,0 +1,9 @@
+<div class="znp-preview">
+  <div class="znp-preview-empty" data-bind-if="empty">（暂无消息）</div>
+  <div class="znp-mlist" data-bind-each="messages">
+    <div data-bind-attr="class:cls">
+      <span class="znp-mlist-role" data-bind-text="role"></span>
+      <pre class="znp-mlist-text" data-bind-text="text"></pre>
+    </div>
+  </div>
+</div>
