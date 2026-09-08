@@ -4,8 +4,8 @@
 //! payload. These helpers let `zihuan_service` orchestration code parse the payload
 //! back into the concrete config types owned by each service crate.
 
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceKind, RoleServiceType};
 use zihuan_core::error::{Error, Result};
+use zihuan_core::role::service_config::{RoleServiceConfig, RoleServiceKind, RoleServiceType};
 use zihuan_ims_service::role_config::QqChatRoleServiceConfig;
 use zihuan_workspace_service::role_config::WorkspaceRoleServiceConfig;
 

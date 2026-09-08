@@ -5,10 +5,10 @@ use uuid::Uuid;
 
 use crate::system_config;
 use log::{info, warn};
-use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::config::llm_refs::LlmRefConfig;
 use zihuan_core::model_inference::model_config::ModelRefSpec;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::close_runtime_embedding_instances_for_config;
+use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_service::RoleServiceRuntimeStatus;
 
 use super::{

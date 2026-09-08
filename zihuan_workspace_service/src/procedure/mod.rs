@@ -3,8 +3,8 @@ mod workspace_session_title;
 
 use std::sync::Arc;
 
-use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::role::procedure::{Procedure, ProcedureContext};
+use zihuan_core::role::service_config::RoleServiceConfig;
 
 pub use workspace_brain::WorkspaceBrain;
 pub use workspace_session_title::WorkspaceSessionTitle;

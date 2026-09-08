@@ -17,7 +17,6 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
-use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::agent::tools::{ToolCallingObserver, ToolCallingStopReason};
 use zihuan_core::agent::{
     Agent, AgentCancellation, ContextCompactionEvent, ContextCompactionObserver,
@@ -35,6 +34,7 @@ use zihuan_core::message_part::MessagePart;
 use zihuan_core::model_inference::llm::tooling::ToolCalls;
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken, TokenUsage};
 use zihuan_core::role::procedure::ProcedureContext;
+use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::role::TransportSink;
 use zihuan_core::storage::ConnectionConfig;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};

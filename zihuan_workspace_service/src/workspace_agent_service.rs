@@ -7,7 +7,6 @@ use zihuan_core::agent::resource_provider::{
 };
 use zihuan_core::agent::resource_resolver::resolve_local_embedding_model_name;
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
-use zihuan_core::agent::service_config::{MemoryBackendKind, RoleServiceConfig};
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::graph::tool_spec::ToolDefinition;
@@ -16,6 +15,7 @@ use zihuan_core::memory_agent::{
 };
 use zihuan_core::model_inference::llm::{llm_base::LLMBase, LLMMessage};
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use zihuan_core::role::service_config::{MemoryBackendKind, RoleServiceConfig};
 use zihuan_core::runtime::block_async;
 use zihuan_core::storage::{
     build_elasticsearch_ref, build_weaviate_ref, build_web_search_engine_ref,

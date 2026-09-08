@@ -4,7 +4,6 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
-use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::agent::tools::{
     Tool, ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason, ToolExecutionOutput,
     ToolExecutionResource, ToolRunDuration, MAX_TOOL_ITERATIONS,
@@ -22,6 +21,7 @@ use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken};
 use zihuan_core::model_inference::message_content_utils::sanitize_messages_for_inference;
+use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::storage::ConnectionConfig;
 use zihuan_core::system_config::current_context_compaction_percent;
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};

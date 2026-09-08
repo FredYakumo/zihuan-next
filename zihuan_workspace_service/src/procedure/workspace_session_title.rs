@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceKind};
+use zihuan_core::role::service_config::{RoleServiceConfig, RoleServiceKind};
 
 use crate::role_config::WorkspaceRoleServiceConfig;
 use zihuan_core::chat_history::{sanitize_session_title, write_session_title};

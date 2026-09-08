@@ -1,9 +1,9 @@
 use log::{info, warn};
 use serde_json::{json, Map, Value};
 
-use crate::agent::service_config::{RoleServiceConfig, RoleServiceKind, RoleServiceType};
 use crate::config::{ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord};
 use crate::error::Result;
+use crate::role::service_config::{RoleServiceConfig, RoleServiceKind, RoleServiceType};
 
 pub fn role_service_config_kind(role_service_type: &RoleServiceType) -> ConfigKind {
     match role_service_type.kind {

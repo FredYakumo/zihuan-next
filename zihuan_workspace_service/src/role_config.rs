@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use zihuan_core::agent::service_config::MemoryBackendKind;
+use zihuan_core::role::service_config::MemoryBackendKind;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceRoleServiceConfig {

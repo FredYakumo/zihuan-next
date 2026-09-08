@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use crate::api::config::now_rfc3339;
 use crate::setup_orchestrator::{ImsBotAdapterSetupConfig, LlmSetupConfig};
 use crate::system_config;
-use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::config::llm_refs::LlmRefConfig;
 use zihuan_core::ims_bot_adapter::BotAdapterConnection;
 use zihuan_core::model_inference::model_config::{LlmApiStyle, LlmServiceConfig, ModelRefSpec};
+use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::storage::{
     ConnectionAuthMethod, ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection,
     SqliteConnection, WeaviateConnection, WebSearchEngineConnection,

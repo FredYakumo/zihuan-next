@@ -54,7 +54,6 @@ use zihuan_core::agent::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config,
     resolve_local_embedding_model_name,
 };
-use zihuan_core::agent::service_config::{MemoryBackendKind, RoleServiceConfig};
 use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::config::llm_refs::load_llm_refs;
@@ -76,6 +75,7 @@ use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::nlp::{build_segmenter, TextSegmenter};
+use zihuan_core::role::service_config::{MemoryBackendKind, RoleServiceConfig};
 use zihuan_core::runtime::block_async;
 use zihuan_core::steer::PendingSteerEvent;
 use zihuan_core::storage::{

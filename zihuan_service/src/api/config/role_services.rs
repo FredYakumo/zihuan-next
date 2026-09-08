@@ -42,10 +42,10 @@ use zihuan_ims_service::qq_chat::privilege_store::{
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::system_config;
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
 use zihuan_core::agent::tool_config::AgentToolConfig;
 use zihuan_core::config::llm_refs::{load_llm_refs, LlmRefConfig};
 use zihuan_core::error::{Error as CoreError, Result as CoreResult};
+use zihuan_core::role::service_config::{RoleServiceConfig, RoleServiceType};
 use zihuan_ims_service::role_config::QqChatRoleServiceConfig;
 use zihuan_service::{RoleServiceRuntimeInfo, RoleServiceRuntimeStatus};
 

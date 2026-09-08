@@ -4,7 +4,6 @@ use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sqlx::Row as SqlxRow;
-use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::config::role_services::load_role_services;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 
@@ -1352,7 +1351,7 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
 fn load_service_and_connections(
     service_id: &str,
 ) -> zihuan_core::error::Result<(
-    zihuan_core::agent::service_config::RoleServiceConfig,
+    zihuan_core::role::service_config::RoleServiceConfig,
     Vec<zihuan_core::storage::ConnectionConfig>,
 )> {
     let agent = load_role_services()?
@@ -1363,7 +1362,7 @@ fn load_service_and_connections(
 }
 
 fn service_memory_config(
-    agent: &zihuan_core::agent::service_config::RoleServiceConfig,
+    agent: &zihuan_core::role::service_config::RoleServiceConfig,
 ) -> (Option<String>, Option<String>, Option<String>) {
     zihuan_service::role::optional_qq_chat(&agent.role_service_type).map_or(
         (None, None, None),
@@ -1378,7 +1377,7 @@ fn service_memory_config(
 }
 
 fn service_image_config(
-    agent: &zihuan_core::agent::service_config::RoleServiceConfig,
+    agent: &zihuan_core::role::service_config::RoleServiceConfig,
 ) -> (Option<String>, Option<String>, Option<String>) {
     zihuan_service::role::optional_qq_chat(&agent.role_service_type).map_or(
         (None, None, None),

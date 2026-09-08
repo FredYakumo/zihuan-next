@@ -6,13 +6,13 @@ use log::error;
 use serde::Serialize;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
-use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::config::role_services::load_role_services;
 use zihuan_core::error::Result;
 use zihuan_core::role::procedure::{
     execute_procedure_chain, Procedure, ProcedureContext, ProcedureOutput,
 };
+use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::storage::{load_connections, ConnectionConfig};
 use zihuan_core::task_context::AgentTaskRuntime;
 
