@@ -19,7 +19,7 @@ export type DataTypeMetaDataObject = { Vec: DataTypeMetaData } | { Custom: strin
  */
 export type DataTypeMetaData = string | DataTypeMetaDataObject;
 export interface UiComponentDefinition { type: string; props?: Record<string, JsonValue>; value_key?: string; event?: string; children?: UiComponentDefinition[]; }
-export interface NodeUiDefinition { template_path?: string; card?: UiComponentDefinition[]; panel?: UiComponentDefinition[]; }
+export interface NodeUiDefinition { template_path?: string; style_path?: string; card?: UiComponentDefinition[]; panel?: UiComponentDefinition[]; }
 
 export interface PortInfo {
   name: string;

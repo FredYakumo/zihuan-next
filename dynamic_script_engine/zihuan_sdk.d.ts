@@ -3,7 +3,7 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 export type DataType = string | { Vec: DataType } | { [key: string]: DataType };
 export type PortDefinition = { name: string; data_type: DataType; required: boolean; hidden: boolean; description: string | null };
 export type NodeConfigField = { key: string; data_type: DataType; description?: string; required?: boolean; widget?: string; connection_kind?: string | null };
-export type NodeUiDefinition = { template_path?: string; card?: UiComponent[]; panel?: UiComponent[] };
+export type NodeUiDefinition = { template_path?: string; style_path?: string; card?: UiComponent[]; panel?: UiComponent[] };
 export type UiComponent = { type: string; props?: Record<string, JsonValue>; value_key?: string; event?: string; children?: UiComponent[] };
 
 export class ResourceHandle {
