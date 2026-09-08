@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use log::{info, warn};
 use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatEmotionDimensionConfig;
-use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingStopReason};
-use zihuan_core::agent::{Agent, AgentContext, AgentDescriptor};
+use async_trait::async_trait;
+use log::{info, warn};
+use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason};
+use zihuan_core::agent::{Agent, AgentContext};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
 use zihuan_core::memory_agent::{MemoryBrainAgent, MemoryBrainAgentContextTool};
@@ -97,6 +98,11 @@ pub(crate) struct PrepromptContext<'a> {
 }
 
 /// QQ turn sub-agent that prepares continuity and emotion context for the reply agent.
+///
+/// **Design:** Constructed per preprompt turn with the full [`PrepromptContext`]; its
+/// `Input`/`Config` are the same borrowed turn context. `run`/`run_streaming` both execute the
+/// preprompt reasoning; `run_streaming` additionally reports tool-call events to an external
+/// observer (the uniform review hook), composed with the QQ trace observer.
 pub(crate) struct BeforeBrainAgent<'a> {
     context: PrepromptContext<'a>,
 }
@@ -105,23 +111,24 @@ impl<'a> BeforeBrainAgent<'a> {
     pub(crate) fn new(context: PrepromptContext<'a>) -> Self {
         Self { context }
     }
-
-    pub(crate) fn execute(&self) -> Option<String> {
-        run_preprompt(&self.context)
-    }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Agent for BeforeBrainAgent<'_> {
+    type Config = Self;
     type Input = ();
     type Output = Option<String>;
 
-    fn descriptor(&self) -> AgentDescriptor {
-        AgentDescriptor::new(
-            "qq_preprompt",
-            "QQ Preprompt Agent",
-            vec!["emotion", "memory_recall", "conversation_continuity"],
-        )
+    fn name(&self) -> &str {
+        "qq_preprompt"
+    }
+
+    fn llm(&self) -> Arc<dyn LLMBase> {
+        Arc::clone(self.context.llm)
+    }
+
+    fn new(config: Self::Config) -> zihuan_core::error::Result<Self> {
+        Ok(config)
     }
 
     async fn run(
@@ -129,11 +136,79 @@ impl Agent for BeforeBrainAgent<'_> {
         _context: AgentContext,
         _input: Self::Input,
     ) -> zihuan_core::error::Result<Self::Output> {
-        Ok(self.execute())
+        Ok(run_preprompt(&self.context, None))
+    }
+
+    async fn run_streaming(
+        &self,
+        context: AgentContext,
+        _input: Self::Input,
+    ) -> zihuan_core::error::Result<Self::Output> {
+        Ok(run_preprompt(&self.context, context.observer))
     }
 }
 
-fn run_preprompt(ctx: &PrepromptContext<'_>) -> Option<String> {
+/// Fan out tool-call events to the QQ trace observer plus an optional external observer.
+struct ComposedToolCallingObserver {
+    trace: QqChatToolCallingObserver,
+    external: Option<Arc<dyn ToolCallingObserver>>,
+}
+
+impl ComposedToolCallingObserver {
+    fn new(trace: QqChatTaskTrace, external: Option<Arc<dyn ToolCallingObserver>>) -> Self {
+        Self {
+            trace: QqChatToolCallingObserver { trace },
+            external,
+        }
+    }
+}
+
+impl ToolCallingObserver for ComposedToolCallingObserver {
+    fn on_assistant_tool_request(
+        &self,
+        iteration: usize,
+        content: &str,
+        tool_calls: &[zihuan_core::model_inference::llm::tooling::ToolCalls],
+    ) {
+        self.trace.on_assistant_tool_request(iteration, content, tool_calls);
+        if let Some(external) = &self.external {
+            external.on_assistant_tool_request(iteration, content, tool_calls);
+        }
+    }
+
+    fn on_tool_start(&self, name: &str, call_id: &str, arguments: &serde_json::Value) {
+        self.trace.on_tool_start(name, call_id, arguments);
+        if let Some(external) = &self.external {
+            external.on_tool_start(name, call_id, arguments);
+        }
+    }
+
+    fn on_tool_output(&self, name: &str, call_id: &str, stream: &str, chunk: &str) {
+        self.trace.on_tool_output(name, call_id, stream, chunk);
+        if let Some(external) = &self.external {
+            external.on_tool_output(name, call_id, stream, chunk);
+        }
+    }
+
+    fn on_tool_finish(&self, name: &str, call_id: &str, result: &str) {
+        self.trace.on_tool_finish(name, call_id, result);
+        if let Some(external) = &self.external {
+            external.on_tool_finish(name, call_id, result);
+        }
+    }
+
+    fn on_final_assistant(&self, response: &LLMMessage, stop_reason: &ToolCallingStopReason) {
+        self.trace.on_final_assistant(response, stop_reason);
+        if let Some(external) = &self.external {
+            external.on_final_assistant(response, stop_reason);
+        }
+    }
+}
+
+fn run_preprompt(
+    ctx: &PrepromptContext<'_>,
+    external_observer: Option<Arc<dyn ToolCallingObserver>>,
+) -> Option<String> {
     let emotion_dimensions_text =
         emotion_dimensions_text(&ctx.session_state.lock().unwrap(), &ctx.emotion_dimensions);
 
@@ -190,7 +265,10 @@ fn run_preprompt(ctx: &PrepromptContext<'_>) -> Option<String> {
     conversation.push(user_message.clone());
 
     let mut brain = ToolCallingEngine::new(Arc::clone(ctx.llm));
-    brain.set_observer(Arc::new(QqChatToolCallingObserver { trace: ctx.trace.clone() }));
+    brain.set_observer(Arc::new(ComposedToolCallingObserver::new(
+        ctx.trace.clone(),
+        external_observer,
+    )));
 
     ctx.trace
         .record_graph_phase("情绪维度处理", serde_json::json!({"status": "preprompt"}));

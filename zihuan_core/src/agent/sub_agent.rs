@@ -3,12 +3,10 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use super::SharedTool;
-use crate::agent::agent::{Agent, AgentContext, AgentDescriptor};
 use crate::agent::sub_agent_manager::subagent_dir;
 use crate::agent::tools::{Tool, ToolCallingEngine, ToolCallingStopReason};
 use crate::error::{Error, Result};
@@ -199,20 +197,13 @@ impl SubAgent {
     }
 }
 
-#[async_trait]
-impl Agent for SubAgent {
-    type Input = HashMap<String, DataValue>;
-    type Output = HashMap<String, DataValue>;
-
-    fn descriptor(&self) -> AgentDescriptor {
-        AgentDescriptor::new(
-            Box::leak(self.definition.id.clone().into_boxed_str()),
-            Box::leak(self.definition.name.clone().into_boxed_str()),
-            vec!["subagent"],
-        )
-    }
-
-    async fn run(&self, _context: AgentContext, input: Self::Input) -> Result<Self::Output> {
+impl SubAgent {
+    /// Validate the declared input ports, run one tool-calling turn, and map the returned JSON
+    /// back onto the declared output ports.
+    pub async fn run(
+        &self,
+        input: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         for port in &self.definition.inputs {
             let value = input.get(&port.name);
             if port.required && value.is_none() {
@@ -303,8 +294,7 @@ impl Tool for SubAgentTool {
         let result = (|| -> Result<Value> {
             let input =
                 subagent_input_from_tool_arguments(&self.agent.definition.inputs, arguments)?;
-            let output =
-                crate::runtime::block_async(self.agent.run(AgentContext::default(), input))?;
+            let output = crate::runtime::block_async(self.agent.run(input))?;
             Ok(Value::Object(
                 output.into_iter().map(|(key, value)| (key, value.to_json())).collect(),
             ))

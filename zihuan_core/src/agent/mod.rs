@@ -64,7 +64,9 @@ pub mod tools;
 pub mod utils;
 
 pub use crate::model_inference::llm::tooling::FunctionTool;
-pub use agent::{Agent, AgentCancellation, AgentContext, AgentDescriptor};
+pub use agent::{
+    Agent, AgentCancellation, AgentContext, ContextCompactionEvent, ContextCompactionObserver,
+};
 pub(crate) use shared_tool::SharedTool;
 pub use sub_agent::{SubAgent, SubAgentDefinition, SubAgentTool};
 pub use tools::{AgentExecutor, ToolCallingEngine, ToolCallingRequest, ToolCallingResult};

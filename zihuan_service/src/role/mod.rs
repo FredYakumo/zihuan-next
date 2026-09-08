@@ -1,11 +1,8 @@
-mod brain_agent;
+mod role_agent;
 mod service_manager;
 mod service_type_ext;
 
-pub use brain_agent::{
-    ContextCompactionEvent, ContextCompactionObserver, InferenceToolContext, InferenceToolProvider,
-    RoleBrainAgent,
-};
+pub use role_agent::{InferenceToolContext, InferenceToolProvider, RoleAgent, RoleAgentConfig};
 pub use service_manager::{
     build_role_tool_provider, RoleServiceManager, RoleServiceRuntimeInfo, RoleServiceRuntimeStatus,
 };

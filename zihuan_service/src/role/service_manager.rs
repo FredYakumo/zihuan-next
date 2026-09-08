@@ -16,7 +16,7 @@ use zihuan_core::role::procedure::{
 use zihuan_core::storage::{load_connections, ConnectionConfig};
 use zihuan_core::task_context::AgentTaskRuntime;
 
-use crate::role::{InferenceToolProvider, RoleBrainAgent};
+use crate::role::{InferenceToolProvider, RoleAgent};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -60,7 +60,7 @@ pub(super) type OnFinishShared =
     Arc<Mutex<Option<Box<dyn FnOnce(bool, Option<String>) + Send + 'static>>>>;
 
 pub(super) struct RoleServiceRuntimeEntry {
-    pub role_service: Option<Arc<RoleBrainAgent>>,
+    pub role_service: Option<Arc<RoleAgent>>,
     pub state: RoleServiceRuntimeState,
     pub task: Option<JoinHandle<()>>,
     pub on_finish: OnFinishShared,
@@ -104,7 +104,7 @@ impl RoleServiceManager {
         }
     }
 
-    pub fn running_role_service(&self, role_service_id: &str) -> Option<Arc<RoleBrainAgent>> {
+    pub fn running_role_service(&self, role_service_id: &str) -> Option<Arc<RoleAgent>> {
         let guard = self.inner.lock().unwrap();
         let entry = guard.get(role_service_id)?;
         if entry.state.status != RoleServiceRuntimeStatus::Running {
@@ -151,7 +151,7 @@ impl RoleServiceManager {
             let llm_refs = load_llm_refs()?;
             let tool_provider = build_role_tool_provider(&agent, &connections)?;
             let role_service =
-                Arc::new(RoleBrainAgent::load_with_tools(&agent, &llm_refs, tool_provider)?);
+                Arc::new(RoleAgent::load_with_tools(&agent, &llm_refs, tool_provider)?);
 
             self.update_state(
                 &agent.id,

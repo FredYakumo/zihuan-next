@@ -16,24 +16,26 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use uuid::Uuid;
+use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
 use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::agent::tools::{ToolCallingObserver, ToolCallingStopReason};
-use zihuan_core::agent::AgentCancellation;
+use zihuan_core::agent::{
+    Agent, AgentCancellation, ContextCompactionEvent, ContextCompactionObserver,
+};
 use zihuan_core::chat_history::{
     chat_history_dir, delete_session_title, load_session_title, write_session_title,
 };
 use zihuan_core::command::{
     CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
 };
+use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::resolve_fallback_bot_profile;
 use zihuan_core::message_part::MessagePart;
 use zihuan_core::model_inference::llm::tooling::ToolCalls;
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken, TokenUsage};
 use zihuan_core::role::procedure::ProcedureContext;
-use zihuan_core::role::{
-    BrainAgent, ContextCompactionEvent, ContextCompactionObserver, TransportSink,
-};
+use zihuan_core::role::TransportSink;
 use zihuan_core::storage::ConnectionConfig;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
@@ -45,6 +47,7 @@ use zihuan_workspace_service::task_tracking::{
 
 use crate::api::state::{RunningChatMessage, RunningChatToolCall, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
+use zihuan_service::role::RoleAgent;
 
 const CHAT_STREAM_MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 const CHAT_FORK_METADATA_SUFFIX: &str = ".fork.json";
@@ -1255,7 +1258,8 @@ async fn execute_chat_streaming(
     let assistant_message_id =
         requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
 
-    let workspace_task = if should_run_inference && zihuan_service::role::is_workspace_agent(&agent) {
+    let workspace_task = if should_run_inference && zihuan_service::role::is_workspace_agent(&agent)
+    {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let task_id = state.tasks.lock().unwrap().add_workspace_chat_task(
             agent.id.clone(),
@@ -1403,12 +1407,51 @@ async fn execute_chat_streaming(
         let turn_running_chat_message = running_chat_message.clone();
         let turn_assistant_message_id = assistant_message_id.clone();
         tokio::spawn(async move {
-            // Resolve the running brain at turn time like the old inference task did; a
+            // Resolve the running agent at turn time like the old inference task did; a
             // missing service flows through the standard turn failure handling below.
             let Some(role_service) = manager.running_role_service(&agent_id) else {
                 return Err(zihuan_core::string_error!("agent '{agent_id}' is not running"));
             };
-            let brain_agent: Arc<dyn BrainAgent> = role_service;
+            // Bind this turn's model overrides into a turn-scoped agent at inference time, so
+            // the agent handed to the brain procedure already carries its models. With no
+            // override the role's own configured binding is used as-is.
+            let brain_agent: Arc<RoleAgent> = if turn_model_config_id.is_some()
+                || turn_image_understand_model_config_id.is_some()
+            {
+                let llm_refs = load_llm_refs()?;
+                let (llm, model_name) = match turn_model_config_id.as_deref() {
+                    Some(model_id) => {
+                        let mut llm_config = resolve_llm_service_config(
+                            Some(model_id),
+                            &llm_refs,
+                            role_service.agent().name.as_str(),
+                        )?;
+                        if let Some(override_value) = thinking_type {
+                            llm_config.thinking_type = Some(override_value);
+                        }
+                        if let Some(override_value) = reasoning_effort {
+                            llm_config.reasoning_effort = Some(override_value);
+                        }
+                        let model_name = llm_config.model_name.clone();
+                        (build_llm_model(&llm_config)?, model_name)
+                    }
+                    None => (role_service.llm(), role_service.model_name().to_string()),
+                };
+                let image_understand_llm = match turn_image_understand_model_config_id.as_deref() {
+                    Some(image_model_id) => {
+                        let llm_config = resolve_llm_service_config(
+                            Some(image_model_id),
+                            &llm_refs,
+                            role_service.agent().name.as_str(),
+                        )?;
+                        Some(build_llm_model(&llm_config)?)
+                    }
+                    None => None,
+                };
+                Arc::new(role_service.with_llm_override(llm, model_name, image_understand_llm))
+            } else {
+                role_service
+            };
             let observer: Arc<dyn ToolCallingObserver> = Arc::new(SseToolCallingObserver {
                 event_tx: turn_event_tx.clone(),
                 session_id: turn_session_id.clone(),
@@ -1447,15 +1490,11 @@ async fn execute_chat_streaming(
                     let _ = event_tx.send(payload);
                 })
             };
-            let brain = Arc::new(WorkspaceBrain::new(
+            let brain = Arc::new(WorkspaceBrain::<RoleAgent>::new(
                 brain_agent,
                 messages,
-                turn_session_id,
+                Some(turn_session_id),
                 turn_workspace_path,
-                turn_model_config_id,
-                turn_image_understand_model_config_id,
-                thinking_type,
-                reasoning_effort,
                 cancellation,
                 Some(observer),
                 Some(compaction_observer),

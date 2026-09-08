@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use zihuan_core::agent::Agent;
+use zihuan_core::agent::AgentContext;
 use zihuan_core::error::Result;
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
@@ -11,8 +13,8 @@ use crate::agent::before_brain_agent::{BeforeBrainAgent, PrepromptContext};
 
 /// QQ before-brain procedure: prepares continuity and emotion context for the reply agent.
 ///
-/// Wraps the existing `BeforeBrainAgent` implementation; the produced context block is injected
-/// into the main reply prompt, so the procedure is `Blocking`.
+/// Wraps the `BeforeBrainAgent` implementation (an `Agent`); the produced context block is
+/// injected into the main reply prompt, so the procedure is `Blocking`.
 pub(crate) struct QqBeforeBrain<'a> {
     context: PrepromptContext<'a>,
 }
@@ -34,7 +36,9 @@ impl Procedure for QqBeforeBrain<'_> {
     }
 
     async fn run(&self, _context: &ProcedureContext) -> Result<ProcedureOutput> {
-        Ok(ProcedureOutput::of(BeforeBrainAgent::new(self.context.clone()).execute()))
+        let agent = BeforeBrainAgent::new(self.context.clone());
+        let output = agent.run(AgentContext::default(), ()).await?;
+        Ok(ProcedureOutput::of(output))
     }
 }
 

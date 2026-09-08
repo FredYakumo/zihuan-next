@@ -2,11 +2,9 @@ use async_trait::async_trait;
 
 use crate::error::Result;
 
-pub mod brain_agent;
 pub mod procedure;
 pub mod transport;
 
-pub use brain_agent::{BrainAgent, ContextCompactionEvent, ContextCompactionObserver};
 pub use crate::agent::service_config::RoleServiceKind;
 pub use procedure::{
     execute_blocking_procedure_chain, execute_procedure_chain, Procedure, ProcedureContext,
