@@ -7,7 +7,7 @@ use zihuan_core::agent::{
     LLM_KIND_MATH_PROGRAMMING, LLM_KIND_NATURAL_LANGUAGE_REPLY,
 };
 use zihuan_core::role::service_config::MemoryBackendKind;
-use zihuan_core::time_unit::TimeWindowUnit;
+use zihuan_core::utils::time_unit::TimeUnit;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -58,7 +58,7 @@ pub struct QqChatMessageRateLimitRule {
     #[serde(default)]
     pub unlimited: bool,
     #[serde(default)]
-    pub window_unit: Option<TimeWindowUnit>,
+    pub window_unit: Option<TimeUnit>,
     #[serde(default)]
     pub max_calls: Option<usize>,
     #[serde(default = "default_message_rate_limit_window_size")]
@@ -113,25 +113,6 @@ pub struct QqChatMessageRateLimitUserRule {
     pub sender_id: String,
     #[serde(flatten)]
     pub limit: QqChatMessageRateLimitRule,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum DreamIntervalUnit {
-    #[default]
-    Minutes,
-    Hours,
-    Days,
-}
-
-impl DreamIntervalUnit {
-    pub fn seconds_multiplier(self) -> usize {
-        match self {
-            Self::Minutes => 60,
-            Self::Hours => 60 * 60,
-            Self::Days => 24 * 60 * 60,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -189,7 +170,7 @@ pub struct QqChatRoleServiceConfig {
     #[serde(default = "default_dream_interval_value")]
     pub dream_interval_value: usize,
     #[serde(default)]
-    pub dream_interval_unit: DreamIntervalUnit,
+    pub dream_interval_unit: TimeUnit,
     #[serde(default = "default_max_steer_count")]
     pub max_steer_count: usize,
     #[serde(default = "default_qq_chat_default_tools_enabled")]
@@ -216,7 +197,7 @@ impl QqChatRoleServiceConfig {
             return None;
         }
         self.dream_interval_value
-            .checked_mul(self.dream_interval_unit.seconds_multiplier())
+            .checked_mul(self.dream_interval_unit.seconds() as usize)
             .map(|value| value as u64)
     }
     pub fn resolved_rdb_id(&self) -> Option<&str> {

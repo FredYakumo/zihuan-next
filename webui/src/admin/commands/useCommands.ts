@@ -85,6 +85,7 @@ export function useCommands() {
       const map: Record<string, string> = {
         all: "全部",
         qq_chat: "QQ Chat",
+        workspace: "Workspace",
         http_stream: "HTTP Stream",
       };
       return map[scope] ?? scope;

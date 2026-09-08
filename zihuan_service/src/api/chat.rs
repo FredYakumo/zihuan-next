@@ -24,9 +24,7 @@ use zihuan_core::agent::{
 use zihuan_core::chat_history::{
     chat_history_dir, delete_session_title, load_session_title, write_session_title,
 };
-use zihuan_core::command::{
-    CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
-};
+use zihuan_core::command::{CommandChannel, CommandContext};
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::resolve_fallback_bot_profile;
@@ -458,11 +456,11 @@ struct AgentSnapshot {
     avatar_url: Option<String>,
 }
 
-/// Shared mutable state for command side-effects that run on the dashboard channel.
+/// Shared mutable state for command effects that run on the dashboard channel.
 ///
 /// **Purpose:** Commands like "new conversation" need to issue a fresh session ID that the
-/// streaming task must pick up. Rather than threading return values through the trait-based
-/// `SideEffectContext`, we store the ID here and read it after `execute` returns.
+/// streaming task must pick up. The dashboard command runtime records the new-session signal
+/// here and the caller reads it after the engine run completes.
 ///
 /// **Design:** Uses `Arc<Mutex<Option<String>>>` — minimal overhead for a rarely-contended
 /// single-write-then-read pattern. The mutex guard is held only briefly during `issue_new_session_id`
@@ -483,24 +481,63 @@ impl DashboardCommandSideEffectState {
     }
 }
 
-/// `SideEffectContext` implementation for the dashboard chat channel.
+/// Dashboard (SSE) channel command runtime.
 ///
-/// **Purpose:** Adapts the generic `SideEffectContext` trait so that dashboard-originated commands
-/// can trigger side-effects (e.g. starting a new conversation) while the streaming task is in
-/// progress. The `state` is shared with the caller so the emitted session ID can be retrieved
-/// after all side-effects have executed.
-struct DashboardCommandSideEffectContext {
-    command_context: CommandContext,
+/// Executes `builtin://*` steps shared with the QQ channel and renders effects
+/// into dashboard outputs: assistant texts plus an optional new-session signal.
+/// QQ-only privileged specs (`ims://*`) fall back to a channel-unsupported
+/// message, preserving the pre-engine stub behavior for QQ-kind agents served
+/// over the dashboard transport.
+struct DashboardCommandRuntime {
     state: DashboardCommandSideEffectState,
+    output_texts: Vec<String>,
 }
 
-impl SideEffectContext for DashboardCommandSideEffectContext {
-    fn command_context(&self) -> &CommandContext {
-        &self.command_context
+impl DashboardCommandRuntime {
+    fn new(state: DashboardCommandSideEffectState) -> Self {
+        Self { state, output_texts: Vec::new() }
+    }
+}
+
+impl zihuan_core::command::CommandRuntime for DashboardCommandRuntime {
+    fn run_step(
+        &mut self,
+        step: &zihuan_core::command::Step,
+        inv: &zihuan_core::command::Invocation,
+        _state: &mut zihuan_core::command::CmdState,
+    ) -> Result<zihuan_core::command::StepRun> {
+        if let Some(op) = step.op.strip_prefix("builtin://") {
+            return match zihuan_core::command::execute_builtin(op, &inv.args, &inv.ctx.caller_id) {
+                Some(Ok(effects)) => {
+                    Ok(zihuan_core::command::StepRun::stop_with(effects))
+                }
+                Some(Err(err)) => Err(err),
+                None => Err(zihuan_core::string_error!(
+                    "builtin 操作不存在: {}",
+                    step.op
+                )),
+            };
+        }
+        // QQ-only privileged command reached a non-QQ channel.
+        Ok(zihuan_core::command::StepRun::stop_with(vec![
+            zihuan_core::command::Effect::Text(
+                "该命令仅能在 QQ Chat Agent 运行时中使用。".to_string(),
+            ),
+        ]))
     }
 
-    fn start_new_conversation(&self, _request: &NewConversationRequest) -> Result<()> {
-        self.state.issue_new_session_id();
+    fn apply_effect(&mut self, effect: &zihuan_core::command::Effect) -> Result<()> {
+        match effect {
+            zihuan_core::command::Effect::Text(text)
+            | zihuan_core::command::Effect::Notice(text)
+            | zihuan_core::command::Effect::Forward(text) => self.output_texts.push(text.clone()),
+            zihuan_core::command::Effect::StartNewConversation => {
+                self.state.issue_new_session_id();
+            }
+            // The engine folds SetContext into the shared CmdState before
+            // delivery; dashboard never receives one.
+            zihuan_core::command::Effect::SetContext { .. } => {}
+        }
         Ok(())
     }
 }
@@ -595,10 +632,10 @@ fn resolve_chat_agent(
 /// what to do next.
 ///
 /// **Design:** The function follows an early-return pattern for the "no command" case (returns
-/// the default outcome). When a command matches, it executes side-effects through
-/// `DashboardCommandSideEffectContext`, then constructs the appropriate outcome based on whether
-/// the command produced a passthrough text, an immediate reply, or triggered a new-conversation
-/// side-effect. The three exit paths are documented on `CommandDispatchOutcome`.
+/// the default outcome). When a command matches, it runs the command state machine through the
+/// `DashboardCommandRuntime`, then constructs the appropriate outcome based on whether the
+/// command produced a passthrough text, an immediate reply, or triggered a new-conversation
+/// effect. The three exit paths are documented on `CommandDispatchOutcome`.
 ///
 /// **Architecture:** Called after `resolve_chat_agent` in `execute_chat_streaming`. Depends on
 /// the global `CommandRegistry` from `zihuan_service`. Does **not** touch the SSE sender —
@@ -659,7 +696,7 @@ fn try_dispatch_dashboard_command(
         },
     };
 
-    let Some(dispatch_result) = command_registry.dispatch(&command_context, &raw_user_text) else {
+    let Some((spec, parsed)) = command_registry.spec_for(&command_context, &raw_user_text) else {
         return Ok(CommandDispatchOutcome {
             session_id,
             messages,
@@ -671,43 +708,70 @@ fn try_dispatch_dashboard_command(
         });
     };
 
-    let side_effect_state = DashboardCommandSideEffectState::default();
-    let side_effect_context = DashboardCommandSideEffectContext {
-        command_context: command_context.clone(),
-        state: side_effect_state.clone(),
-    };
-    for effect in &dispatch_result.result.side_effects {
-        if let Err(err) = effect.execute(&side_effect_context) {
-            return Err(json!({ "type": "error", "error": err.to_string() }));
-        }
+    // Permission gate.
+    let permission = command_registry.check_permission(&command_context, &raw_user_text);
+    if permission.matched && !permission.allowed {
+        immediate_output_messages = Some(vec![LLMMessage::assistant_text(
+            "你没有权限使用此命令。".to_string(),
+        )]);
+        should_run_inference = false;
+        return Ok(CommandDispatchOutcome {
+            session_id,
+            messages,
+            latest_user_message,
+            should_run_inference,
+            should_persist,
+            requires_assistant_message,
+            immediate_output_messages,
+        });
     }
+
+    let side_effect_state = DashboardCommandSideEffectState::default();
+    let mut runtime = DashboardCommandRuntime::new(side_effect_state.clone());
+    let invocation = zihuan_core::command::Invocation {
+        ctx: command_context,
+        args: parsed.args,
+        passthrough: parsed.passthrough_text,
+        resumed: false,
+    };
+    let execution = match zihuan_core::command::execute_command(&mut runtime, spec, invocation) {
+        Ok(execution) => execution,
+        Err(err) => return Err(json!({ "type": "error", "error": err.to_string() })),
+    };
 
     let issued_new_session_id = side_effect_state.current_new_session_id();
     if let Some(next_session_id) = issued_new_session_id.clone() {
         session_id = next_session_id;
     }
 
-    if let Some(passthrough_text) = dispatch_result.passthrough_text {
+    let passthrough_text = execution.passthrough;
+    let output_text = runtime.output_texts.join("\n");
+
+    if let Some(passthrough_text) = passthrough_text {
         let passthrough_message = LLMMessage::user(passthrough_text.clone());
         latest_user_message = Some(passthrough_message.clone());
 
         if issued_new_session_id.is_some() {
             messages = vec![passthrough_message];
-        } else if dispatch_result.result.inject_to_llm {
-            messages.push(LLMMessage::assistant_text(dispatch_result.result.reply));
-            messages.push(passthrough_message);
         } else {
             replace_last_user_message(&mut messages, passthrough_message);
         }
     } else if issued_new_session_id.is_some() {
+        // Starting a new conversation consumes the turn without emitting an
+        // assistant message (mirrors the pre-engine `/new` behavior).
         should_run_inference = false;
         should_persist = false;
         requires_assistant_message = false;
         latest_user_message = None;
     } else {
         should_run_inference = false;
-        immediate_output_messages =
-            Some(vec![LLMMessage::assistant_text(dispatch_result.result.reply)]);
+        if !output_text.is_empty() {
+            immediate_output_messages = Some(vec![LLMMessage::assistant_text(output_text)]);
+        } else {
+            // A matched command that produced no visible output still consumes
+            // the turn rather than falling through to inference.
+            immediate_output_messages = Some(vec![LLMMessage::assistant_text("命令已执行。".to_string())]);
+        }
     }
 
     Ok(CommandDispatchOutcome {

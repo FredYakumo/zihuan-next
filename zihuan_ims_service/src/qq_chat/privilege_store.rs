@@ -25,6 +25,9 @@ pub struct QqChatAgentServicePrivilegeAuthRecord {
     pub pending_group_id: Option<i64>,
     pub pending_is_group: bool,
     pub pending_args: Vec<String>,
+    /// Serialized [`ExecutionSnapshot`] when this auth row backs a paused
+    /// command state machine (engine resume target).
+    pub snapshot_json: Option<String>,
     pub failed_attempts: i32,
     pub expires_at: String,
     pub elevated_until: Option<String>,
@@ -118,6 +121,47 @@ pub async fn verify_privilege_auth(
     }
 }
 
+/// Blocking wrapper of [`create_privilege_auth`] for synchronous command steps.
+pub fn create_privilege_auth_blocking(
+    connection: &RelationalDbConnection,
+    agent_id: &str,
+    sender_id: &str,
+    purpose: &str,
+    pending_task_id: Option<&str>,
+    pending_target_id: Option<&str>,
+    pending_group_id: Option<i64>,
+    pending_is_group: bool,
+    pending_args: &[String],
+) -> Result<()> {
+    let connection = connection.clone();
+    let agent_id = agent_id.to_string();
+    let sender_id = sender_id.to_string();
+    let purpose = purpose.to_string();
+    let pending_task_id = pending_task_id.map(ToOwned::to_owned);
+    let pending_target_id = pending_target_id.map(ToOwned::to_owned);
+    let pending_args = pending_args.to_vec();
+    let run = async move {
+        create_privilege_auth(
+            &connection,
+            &agent_id,
+            &sender_id,
+            &purpose,
+            pending_task_id.as_deref(),
+            pending_target_id.as_deref(),
+            pending_group_id,
+            pending_is_group,
+            &pending_args,
+        )
+        .await
+        .map(|_| ())
+    };
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        block_in_place(|| handle.block_on(run))
+    } else {
+        tokio::runtime::Runtime::new()?.block_on(run)
+    }
+}
+
 pub async fn has_active_privilege(
     connection: &RelationalDbConnection,
     agent_id: &str,
@@ -168,6 +212,155 @@ pub fn has_active_privilege_blocking(
     } else {
         tokio::runtime::Runtime::new()?.block_on(run)
     }
+}
+
+/// Overwrite the latest auth row's snapshot payload (or clear it with `None`).
+/// The snapshot lets a later `/auth` resume the exact command state-machine
+/// position.
+pub async fn update_snapshot(
+    connection: &RelationalDbConnection,
+    agent_id: &str,
+    sender_id: &str,
+    snapshot_json: Option<String>,
+) -> Result<()> {
+    match connection {
+        RelationalDbConnection::MySql(config) => {
+            update_snapshot_mysql(config, agent_id, sender_id, snapshot_json).await
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            update_snapshot_sqlite(config, agent_id, sender_id, snapshot_json).await
+        }
+    }
+}
+
+pub async fn load_snapshot_json(
+    connection: &RelationalDbConnection,
+    agent_id: &str,
+    sender_id: &str,
+) -> Result<Option<String>> {
+    match connection {
+        RelationalDbConnection::MySql(config) => {
+            load_snapshot_json_mysql(config, agent_id, sender_id).await
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            load_snapshot_json_sqlite(config, agent_id, sender_id).await
+        }
+    }
+}
+
+pub fn update_snapshot_blocking(
+    connection: &RelationalDbConnection,
+    agent_id: &str,
+    sender_id: &str,
+    snapshot_json: Option<String>,
+) -> Result<()> {
+    let connection = connection.clone();
+    let agent_id = agent_id.to_string();
+    let sender_id = sender_id.to_string();
+    let run = async move {
+        update_snapshot(&connection, &agent_id, &sender_id, snapshot_json).await
+    };
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        block_in_place(|| handle.block_on(run))
+    } else {
+        tokio::runtime::Runtime::new()?.block_on(run)
+    }
+}
+
+pub fn load_snapshot_json_blocking(
+    connection: &RelationalDbConnection,
+    agent_id: &str,
+    sender_id: &str,
+) -> Result<Option<String>> {
+    let connection = connection.clone();
+    let agent_id = agent_id.to_string();
+    let sender_id = sender_id.to_string();
+    let run = async move { load_snapshot_json(&connection, &agent_id, &sender_id).await };
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        block_in_place(|| handle.block_on(run))
+    } else {
+        tokio::runtime::Runtime::new()?.block_on(run)
+    }
+}
+
+async fn update_snapshot_mysql(
+    config: &Arc<MySqlConfig>,
+    agent_id: &str,
+    sender_id: &str,
+    snapshot_json: Option<String>,
+) -> Result<()> {
+    let now = Local::now().naive_local();
+    sqlx::query(
+        "UPDATE qq_chat_agent_service_privilege_auth \
+         SET snapshot_json = ?, updated_at = ? \
+         WHERE id = (SELECT MAX(id) FROM qq_chat_agent_service_privilege_auth \
+                     WHERE agent_id = ? AND sender_id = ?)",
+    )
+    .bind(snapshot_json)
+    .bind(now)
+    .bind(agent_id)
+    .bind(sender_id)
+    .execute(mysql_pool(config)?)
+    .await
+    .map_err(Error::Database)?;
+    Ok(())
+}
+
+async fn update_snapshot_sqlite(
+    config: &Arc<SqliteConfig>,
+    agent_id: &str,
+    sender_id: &str,
+    snapshot_json: Option<String>,
+) -> Result<()> {
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    sqlx::query(
+        "UPDATE qq_chat_agent_service_privilege_auth \
+         SET snapshot_json = ?, updated_at = ? \
+         WHERE id = (SELECT MAX(id) FROM qq_chat_agent_service_privilege_auth \
+                     WHERE agent_id = ? AND sender_id = ?)",
+    )
+    .bind(snapshot_json)
+    .bind(&now)
+    .bind(agent_id)
+    .bind(sender_id)
+    .execute(sqlite_pool(config)?)
+    .await
+    .map_err(Error::Database)?;
+    Ok(())
+}
+
+async fn load_snapshot_json_mysql(
+    config: &Arc<MySqlConfig>,
+    agent_id: &str,
+    sender_id: &str,
+) -> Result<Option<String>> {
+    let row = sqlx::query(
+        "SELECT snapshot_json FROM qq_chat_agent_service_privilege_auth \
+         WHERE agent_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(agent_id)
+    .bind(sender_id)
+    .fetch_optional(mysql_pool(config)?)
+    .await
+    .map_err(Error::Database)?;
+    Ok(row.and_then(|row| row.get("snapshot_json")))
+}
+
+async fn load_snapshot_json_sqlite(
+    config: &Arc<SqliteConfig>,
+    agent_id: &str,
+    sender_id: &str,
+) -> Result<Option<String>> {
+    let row = sqlx::query(
+        "SELECT snapshot_json FROM qq_chat_agent_service_privilege_auth \
+         WHERE agent_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(agent_id)
+    .bind(sender_id)
+    .fetch_optional(sqlite_pool(config)?)
+    .await
+    .map_err(Error::Database)?;
+    Ok(row.and_then(|row| row.get("snapshot_json")))
 }
 
 fn generate_auth_key() -> String {
@@ -478,7 +671,7 @@ async fn latest_auth_optional_mysql(
     sender_id: &str,
 ) -> Result<Option<QqChatAgentServicePrivilegeAuthRecord>> {
     let row = sqlx::query(
-        "SELECT id, agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, pending_args_json, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
+        "SELECT id, agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, pending_args_json, snapshot_json, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
          FROM qq_chat_agent_service_privilege_auth WHERE agent_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 1",
     )
     .bind(agent_id)
@@ -495,7 +688,7 @@ async fn latest_auth_optional_sqlite(
     sender_id: &str,
 ) -> Result<Option<QqChatAgentServicePrivilegeAuthRecord>> {
     let row = sqlx::query(
-        "SELECT id, agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, pending_args_json, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
+        "SELECT id, agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, pending_args_json, snapshot_json, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
          FROM qq_chat_agent_service_privilege_auth WHERE agent_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 1",
     )
     .bind(agent_id)
@@ -518,6 +711,7 @@ fn map_privilege_auth_mysql_row(row: MySqlRow) -> QqChatAgentServicePrivilegeAut
         pending_group_id: row.get("pending_group_id"),
         pending_is_group: row.get::<i8, _>("pending_is_group") != 0,
         pending_args: parse_pending_args(row.get("pending_args_json")),
+        snapshot_json: row.get("snapshot_json"),
         failed_attempts: row.get("failed_attempts"),
         expires_at: format_mysql_timestamp(row.get::<NaiveDateTime, _>("expires_at")),
         elevated_until: row
@@ -541,6 +735,7 @@ fn map_privilege_auth_sqlite_row(row: SqliteRow) -> QqChatAgentServicePrivilegeA
         pending_group_id: row.get("pending_group_id"),
         pending_is_group: row.get::<i64, _>("pending_is_group") != 0,
         pending_args: parse_pending_args(row.get("pending_args_json")),
+        snapshot_json: row.get("snapshot_json"),
         failed_attempts: row.get("failed_attempts"),
         expires_at: row.get("expires_at"),
         elevated_until: row.get("elevated_until"),

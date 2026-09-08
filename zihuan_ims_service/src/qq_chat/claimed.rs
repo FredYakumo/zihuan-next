@@ -15,16 +15,15 @@ use zihuan_core::system_config::current_context_compaction_percent;
 use zihuan_core::agent::tools::ToolCallingStopReason;
 
 use crate::agent::emotion::utils::{
-    emotion_dimensions_text, emotion_expression_prompt, has_noticeable_emotion_expression,
+    emotion_expression_prompt, has_noticeable_emotion_expression,
 };
 use crate::qq_chat::resources::current_qq_chat_role_service_config;
-use crate::qq_session_state::{EmotionAdjustmentDirection, QqChatSessionState};
+use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatEmotionDimensionConfig;
-use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
+use zihuan_core::command::{CommandChannel, CommandContext};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::steer::message_with_api_style;
-use zihuan_core::task_context::AgentTaskRequest;
 
 use zihuan_core::graph::tool_spec::{
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
@@ -42,9 +41,9 @@ use crate::storage::qq_chat_history_store::{
 };
 
 use crate::classify_intent::{classify_intent_with_trace, IntentCategory};
+use crate::qq_chat::command_runtime::QqChatCommandRuntime;
 use crate::qq_chat::msg_send::{
-    build_reply_result, send_direct_text_reply, send_planned_batches, take_reply_directive,
-    QqChatServiceSendContext,
+    build_reply_result, send_planned_batches, take_reply_directive, QqChatServiceSendContext,
 };
 
 use super::{
@@ -52,7 +51,7 @@ use super::{
     build_private_system_prompt, build_user_message, collect_available_media_from_brain_output,
     expand_messages_for_inference, prepare_current_turn_user_input,
     prepare_current_turn_user_input_from_event, QqChatAgentServiceContext, QqChatAgentServiceInner,
-    QqChatServiceTurnResult, QqChatTaskTrace, QqCommandSideEffectContext, LOG_PREFIX,
+    QqChatServiceTurnResult, QqChatTaskTrace, LOG_PREFIX,
 };
 
 use crate::agent::before_brain_agent::PrepromptContext;
@@ -63,239 +62,17 @@ use crate::procedure::{
 use zihuan_core::role::procedure::execute_blocking_procedure_chain;
 use zihuan_core::runtime::block_async;
 
-use crate::qq_chat::language_style_store::LanguageStyleScope;
-use crate::qq_chat::privilege_gate::{
-    enqueue_pending_privileged_command, handle_auth_command, parse_privileged_command,
-    AuthCommandOutcome, PrivilegeGateOutcome, QqPrivilegedCommand,
-};
-use crate::qq_chat::style_learner::{
-    execute_style_learning_task, OwnedStyleLearningTaskContext, StyleLearningResumeInput,
-};
-
-fn execute_privileged_emotion_command(
-    session_state_store: &Mutex<QqChatSessionState>,
-    emotion_dimensions: &[QqChatEmotionDimensionConfig],
-    command: QqPrivilegedCommand,
-    args: &[String],
-) -> String {
-    match command {
-        QqPrivilegedCommand::Emotion => {
-            if !args.is_empty() {
-                return "用法: /emotion".to_string();
-            }
-            let mut session_state = session_state_store.lock().unwrap();
-            session_state.sync_emotion_dimensions(emotion_dimensions);
-            format!(
-                "当前 Agent 情绪维度：\n{}",
-                emotion_dimensions_text(&session_state, emotion_dimensions)
-            )
-        }
-        QqPrivilegedCommand::AdjustEmotion => {
-            if args.len() != 2 {
-                return "用法: /adjust_emotion <维度名> <increase|decrease>".to_string();
-            }
-            let dimension_name = args[0].trim();
-            if !emotion_dimensions
-                .iter()
-                .any(|dimension| dimension.name.trim() == dimension_name)
-            {
-                return format!("不支持的情绪维度「{dimension_name}」。");
-            }
-            let direction = match args[1].to_ascii_lowercase().as_str() {
-                "increase" => EmotionAdjustmentDirection::Increase,
-                "decrease" => EmotionAdjustmentDirection::Decrease,
-                _ => return "方向仅支持 increase 或 decrease。".to_string(),
-            };
-            let direction_label = match direction {
-                EmotionAdjustmentDirection::Increase => "增加",
-                EmotionAdjustmentDirection::Decrease => "降低",
-            };
-            let current_value = match session_state_store.lock().unwrap().apply_emotion_adjustment(
-                emotion_dimensions,
-                dimension_name,
-                direction,
-            ) {
-                Ok(value) => value,
-                Err(error) => return format!("调整情绪维度失败：{error}"),
-            };
-            format!(
-                "已{direction_label} Agent 情绪维度「{dimension_name}」，当前值：{current_value}"
-            )
-        }
-        QqPrivilegedCommand::LearnGlobalStyle | QqPrivilegedCommand::LearnGroupStyle => {
-            "不支持的情绪命令。".to_string()
-        }
-    }
+/// Result of running the command state machine for one QQ turn.
+enum CommandTurnEnd {
+    /// The command consumed the whole turn (reply sent, or waiting for auth).
+    Consumed(QqChatServiceTurnResult),
+    /// The command produced leftover passthrough text that should feed the brain.
+    Passthrough(String),
+    /// The message is not a command; continue normal handling.
+    NotACommand,
 }
 
 impl QqChatAgentServiceInner {
-    fn run_style_learning_task(
-        &self,
-        trace: &QqChatTaskTrace,
-        ctx: &QqChatAgentServiceContext<'_>,
-        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
-        inference_event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
-        sender_id: &str,
-        target_id: &str,
-        bot_id: &str,
-        is_group: bool,
-        scope: LanguageStyleScope,
-        task_handle: Arc<zihuan_core::task_context::AgentTaskHandle>,
-        task_runtime: Arc<dyn zihuan_core::task_context::AgentTaskRuntime>,
-    ) -> Result<()> {
-        let Some(connection) = ctx.rdb_pool else {
-            return Err(Error::ValidationError(
-                "当前未配置关系数据库，无法执行语言风格学习。".to_string(),
-            ));
-        };
-
-        let owned = OwnedStyleLearningTaskContext {
-            adapter: ctx.adapter.clone(),
-            bot_name: ctx.bot_name.to_string(),
-            natural_language_reply_llm: Arc::clone(ctx.natural_language_reply_llm),
-            intent_classification_llm: Arc::clone(ctx.intent_classification_llm),
-            rdb_pool: connection.clone(),
-            max_message_length: ctx.max_message_length,
-            reply_batch_builder: ctx.reply_batch_builder.cloned(),
-            resolved_language_style_prompt: ctx
-                .resolved_language_style
-                .as_ref()
-                .map(|item| item.style_prompt.clone()),
-        };
-        let input = StyleLearningResumeInput {
-            event: event.clone(),
-            inference_event: inference_event.clone(),
-            sender_id: sender_id.to_string(),
-            target_id: target_id.to_string(),
-            bot_id: bot_id.to_string(),
-            is_group,
-            scope,
-        };
-        let trace_owned = trace.clone();
-        std::thread::spawn(move || {
-            execute_style_learning_task(owned, input, trace_owned, task_handle, task_runtime);
-        });
-        Ok(())
-    }
-
-    pub(crate) fn build_command_context(
-        &self,
-        sender_id: &str,
-        target_id: &str,
-        is_group: bool,
-        group_id: Option<i64>,
-    ) -> CommandContext {
-        CommandContext {
-            agent_type: "qq_chat".to_string(),
-            agent_id: self.id.clone(),
-            caller_id: sender_id.to_string(),
-            channel: CommandChannel::QqChat {
-                sender_id: sender_id.to_string(),
-                is_group,
-                group_id,
-                target_id: target_id.to_string(),
-            },
-        }
-    }
-
-    pub(crate) fn execute_command_dispatch(
-        &self,
-        trace: &QqChatTaskTrace,
-        cmd_ctx: &CommandContext,
-        dispatch_result: DispatchResult,
-        hydrated_event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
-        inference_event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
-        sender_id: &str,
-        target_id: &str,
-        bot_id: &str,
-        history: &mut Vec<LLMMessage>,
-        message_rate_limit_warning: Option<&str>,
-        ctx: &QqChatAgentServiceContext<'_>,
-    ) -> Result<Option<String>> {
-        let DispatchResult { result, passthrough_text } = dispatch_result;
-        let side_effect_ctx = QqCommandSideEffectContext {
-            command_context: cmd_ctx,
-            cache: ctx.cache,
-            adapter: ctx.adapter,
-            bot_id,
-            bot_name: ctx.bot_name,
-            target_id,
-            is_group: matches!(cmd_ctx.channel, CommandChannel::QqChat { is_group: true, .. }),
-            group_name: hydrated_event.group_name.as_deref(),
-            rdb_pool: ctx.rdb_pool,
-        };
-
-        for effect in &result.side_effects {
-            effect.execute(&side_effect_ctx)?;
-        }
-
-        if let Some(ref echo) = result.echo_message {
-            let is_group = matches!(cmd_ctx.channel, CommandChannel::QqChat { is_group: true, .. });
-            let _ = send_direct_text_reply(
-                trace,
-                ctx.adapter,
-                target_id,
-                ctx.rdb_pool,
-                hydrated_event.group_name.as_deref(),
-                ctx.bot_name,
-                bot_id,
-                echo,
-                is_group,
-                sender_id,
-                &inference_event.sender.nickname,
-                inference_event.sender.card.as_str(),
-                ctx.max_message_length,
-                ctx.reply_batch_builder,
-            )?;
-        }
-
-        let has_passthrough = passthrough_text.is_some();
-        if result.inject_to_llm {
-            let is_group = matches!(cmd_ctx.channel, CommandChannel::QqChat { is_group: true, .. });
-            let cmd_system_prompt = if is_group {
-                build_group_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
-            } else {
-                build_private_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
-            };
-            let mut cmd_session_state = ctx.session_state_store.lock().unwrap().clone();
-            let cmd_emotion_dimensions =
-                current_qq_chat_role_service_config()?.resolved_emotion_dimensions();
-
-            let user_msg_for_cmd = message_with_api_style(
-                build_user_message(
-                    &prepare_current_turn_user_input_from_event(
-                        hydrated_event,
-                        bot_id,
-                        ctx.bot_name,
-                        ctx.s3_ref,
-                    ),
-                    ctx.bot_name,
-                    ctx.adapter,
-                    ctx.llm.supports_multimodal_input(),
-                    &cmd_system_prompt,
-                    ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str()),
-                    message_rate_limit_warning,
-                    &mut cmd_session_state,
-                    &cmd_emotion_dimensions,
-                    None,
-                ),
-                ctx.llm.api_style(),
-            );
-            history.push(user_msg_for_cmd);
-            history.push(message_with_api_style(
-                LLMMessage::assistant_text(result.reply),
-                ctx.llm.api_style(),
-            ));
-        }
-
-        if result.inject_to_llm && !has_passthrough {
-            let history_key = conversation_history_key(sender_id);
-            save_history(ctx.cache, &history_key, history.clone());
-        }
-
-        Ok(passthrough_text)
-    }
-
     /// Returns the last assistant text that carries no tool calls, skipping transport
     /// errors and awaiting-user-input stops. Empty or whitespace-only text yields `None`.
     fn parse_final_reply_text(
@@ -336,6 +113,175 @@ impl QqChatAgentServiceInner {
             }
             _ => (ctx.llm, "main"),
         }
+    }
+
+    /// Runs a message through the unified command state machine. Returns the
+    /// turn end when the message was a command, or `NotACommand` to fall
+    /// through to the brain loop.
+    ///
+    /// Delivery semantics preserve the pre-engine QQ behavior:
+    /// - command effects are rendered in order (Text = direct reply, Forward =
+    ///   forward node, StartNewConversation = clear history);
+    /// - a pause (auth gate) sends the auth prompt and persists the resume
+    ///   snapshot; the later `/auth` resumes the same spec via the engine.
+    #[allow(clippy::too_many_arguments)]
+    fn run_command_pipeline(
+        &self,
+        trace: &QqChatTaskTrace,
+        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
+        inference_event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
+        raw_user_message: &str,
+        sender_id: &str,
+        target_id: &str,
+        bot_id: &str,
+        is_group: bool,
+        emotion_dimensions: &[QqChatEmotionDimensionConfig],
+        ctx: &QqChatAgentServiceContext<'_>,
+    ) -> Result<CommandTurnEnd> {
+        let Some(registry) = zihuan_core::command::global_command_registry() else {
+            return Ok(CommandTurnEnd::NotACommand);
+        };
+        if !raw_user_message.trim_start().starts_with('/') {
+            return Ok(CommandTurnEnd::NotACommand);
+        }
+        let cmd_ctx = CommandContext {
+            agent_type: "qq_chat".to_string(),
+            agent_id: self.id.clone(),
+            caller_id: sender_id.to_string(),
+            channel: CommandChannel::QqChat {
+                sender_id: sender_id.to_string(),
+                is_group,
+                group_id: inference_event.group_id,
+                target_id: target_id.to_string(),
+            },
+        };
+        let Some((spec, parsed)) = registry.spec_for(&cmd_ctx, raw_user_message) else {
+            // Unmatched or scope-mismatched slash line: fall through to the brain.
+            return Ok(CommandTurnEnd::NotACommand);
+        };
+        // Permission gate.
+        let permission = registry.check_permission(&cmd_ctx, raw_user_message);
+        if permission.matched && !permission.allowed {
+            let denied = self.deliver_command_effects(
+                trace,
+                ctx,
+                event,
+                inference_event,
+                sender_id,
+                target_id,
+                bot_id,
+                is_group,
+                vec![zihuan_core::command::Effect::Text(
+                    "你没有权限使用此命令。".to_string(),
+                )],
+            )?;
+            debug_assert!(denied, "permission-denied command must emit a reply");
+            return Ok(CommandTurnEnd::Consumed(QqChatServiceTurnResult {
+                result_summary: "命令权限拒绝".to_string(),
+            }));
+        }
+
+        let mut runtime = QqChatCommandRuntime {
+            trace,
+            ctx,
+            agent_id: &self.id,
+            event: event.clone(),
+            inference_event: inference_event.clone(),
+            sender_id,
+            target_id,
+            bot_id,
+            is_group,
+            session_state_store: ctx.session_state_store,
+            emotion_dimensions: emotion_dimensions.to_vec(),
+        };
+        let invocation = zihuan_core::command::Invocation {
+            ctx: cmd_ctx.clone(),
+            args: parsed.args.clone(),
+            passthrough: parsed.passthrough_text.clone(),
+            resumed: false,
+        };
+        let result = zihuan_core::command::execute_command(&mut runtime, spec, invocation)?;
+
+        if result.waiting.is_some() {
+            // Deliver the gate prompt produced by the paused step, then end the
+            // turn waiting for the /auth message. The resume snapshot was
+            // persisted by the runtime's persist_pause hook.
+            let _ = self.deliver_command_effects(
+                trace,
+                ctx,
+                event,
+                inference_event,
+                sender_id,
+                target_id,
+                bot_id,
+                is_group,
+                result.effects.clone(),
+            )?;
+            return Ok(CommandTurnEnd::Consumed(QqChatServiceTurnResult {
+                result_summary: "命令已进入等待授权状态".to_string(),
+            }));
+        }
+
+        let delivered = self.deliver_command_effects(
+            trace,
+            ctx,
+            event,
+            inference_event,
+            sender_id,
+            target_id,
+            bot_id,
+            is_group,
+            result.effects.clone(),
+        )?;
+        // A command that produced leftover passthrough text (e.g. `/new <text>`)
+        // delivers its effects first, then the remainder feeds the brain loop —
+        // matching the pre-engine QQ behavior.
+        if let Some(passthrough) = result.passthrough {
+            return Ok(CommandTurnEnd::Passthrough(passthrough));
+        }
+        if delivered {
+            return Ok(CommandTurnEnd::Consumed(QqChatServiceTurnResult {
+                result_summary: "已处理命令".to_string(),
+            }));
+        }
+        // Effect-free command with no passthrough: fall through.
+        Ok(CommandTurnEnd::NotACommand)
+    }
+
+    /// Render command effects into QQ output. Returns `true` when any effect
+    /// was delivered (i.e. the command consumed the turn).
+    fn deliver_command_effects(
+        &self,
+        trace: &QqChatTaskTrace,
+        ctx: &QqChatAgentServiceContext<'_>,
+        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
+        inference_event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
+        sender_id: &str,
+        target_id: &str,
+        bot_id: &str,
+        is_group: bool,
+        effects: Vec<zihuan_core::command::Effect>,
+    ) -> Result<bool> {
+        if effects.is_empty() {
+            return Ok(false);
+        }
+        let mut runtime = QqChatCommandRuntime {
+            trace,
+            ctx,
+            agent_id: &self.id,
+            event: event.clone(),
+            inference_event: inference_event.clone(),
+            sender_id,
+            target_id,
+            bot_id,
+            is_group,
+            session_state_store: ctx.session_state_store,
+            emotion_dimensions: Vec::new(),
+        };
+        for effect in &effects {
+            zihuan_core::command::CommandRuntime::apply_effect(&mut runtime, effect)?;
+        }
+        Ok(true)
     }
 
     /// Processes a single QQ chat turn end-to-end for a claimed message.
@@ -398,527 +344,29 @@ impl QqChatAgentServiceInner {
         }
 
         let history_key = conversation_history_key(sender_id);
-        let mut history = load_history(ctx.cache, &history_key);
+        let history = load_history(ctx.cache, &history_key);
 
-        if let Some((command_name, args)) = parse_privileged_command(&raw_user_message) {
-            match command_name.as_str() {
-                "auth" => {
-                    let Some(connection) = ctx.rdb_pool else {
-                        return Ok(QqChatServiceTurnResult {
-                            result_summary: "未配置关系数据库，无法完成授权".to_string(),
-                        });
-                    };
-                    let auth_key = args.first().map(String::as_str).unwrap_or("");
-                    match handle_auth_command(connection, &self.id, sender_id, auth_key)? {
-                        AuthCommandOutcome::Reply(reply) => {
-                            let _ = send_direct_text_reply(
-                                trace,
-                                ctx.adapter,
-                                target_id,
-                                ctx.rdb_pool,
-                                event.group_name.as_deref(),
-                                ctx.bot_name,
-                                bot_id,
-                                &reply,
-                                is_group,
-                                sender_id,
-                                &inference_event.sender.nickname,
-                                inference_event.sender.card.as_str(),
-                                ctx.max_message_length,
-                                ctx.reply_batch_builder,
-                            )?;
-                            return Ok(QqChatServiceTurnResult {
-                                result_summary: "已处理授权命令".to_string(),
-                            });
-                        }
-                        AuthCommandOutcome::Resume { message, pending } => {
-                            let _ = send_direct_text_reply(
-                                trace,
-                                ctx.adapter,
-                                target_id,
-                                ctx.rdb_pool,
-                                event.group_name.as_deref(),
-                                ctx.bot_name,
-                                bot_id,
-                                &message,
-                                is_group,
-                                sender_id,
-                                &inference_event.sender.nickname,
-                                inference_event.sender.card.as_str(),
-                                ctx.max_message_length,
-                                ctx.reply_batch_builder,
-                            )?;
-                            if matches!(
-                                pending.command,
-                                QqPrivilegedCommand::Emotion | QqPrivilegedCommand::AdjustEmotion
-                            ) {
-                                let reply = execute_privileged_emotion_command(
-                                    ctx.session_state_store,
-                                    &emotion_dimensions,
-                                    pending.command,
-                                    &pending.pending_args,
-                                );
-                                let _ = send_direct_text_reply(
-                                    trace,
-                                    ctx.adapter,
-                                    target_id,
-                                    ctx.rdb_pool,
-                                    event.group_name.as_deref(),
-                                    ctx.bot_name,
-                                    bot_id,
-                                    &reply,
-                                    is_group,
-                                    sender_id,
-                                    &inference_event.sender.nickname,
-                                    inference_event.sender.card.as_str(),
-                                    ctx.max_message_length,
-                                    ctx.reply_batch_builder,
-                                )?;
-                                return Ok(QqChatServiceTurnResult {
-                                    result_summary: format!(
-                                        "已恢复执行 /{}",
-                                        pending.command.command_name()
-                                    ),
-                                });
-                            }
-                            let resume_is_group = pending.pending_is_group;
-                            let resume_target_id = pending
-                                .pending_target_id
-                                .clone()
-                                .unwrap_or_else(|| target_id.to_string());
-                            let resume_group_id = pending.pending_group_id;
-                            if matches!(pending.command, QqPrivilegedCommand::LearnGroupStyle)
-                                && !resume_is_group
-                            {
-                                let reply = "当前不是群聊，无法学习群聊语言风格。".to_string();
-                                let _ = send_direct_text_reply(
-                                    trace,
-                                    ctx.adapter,
-                                    target_id,
-                                    ctx.rdb_pool,
-                                    event.group_name.as_deref(),
-                                    ctx.bot_name,
-                                    bot_id,
-                                    &reply,
-                                    is_group,
-                                    sender_id,
-                                    &inference_event.sender.nickname,
-                                    inference_event.sender.card.as_str(),
-                                    ctx.max_message_length,
-                                    ctx.reply_batch_builder,
-                                )?;
-                                return Ok(QqChatServiceTurnResult {
-                                    result_summary: "群聊风格学习命令在私聊中被拒绝".to_string(),
-                                });
-                            }
-                            let scope = match pending.command {
-                                QqPrivilegedCommand::LearnGlobalStyle => LanguageStyleScope::Global,
-                                QqPrivilegedCommand::LearnGroupStyle => LanguageStyleScope::Group {
-                                    group_id: resume_group_id
-                                        .map(|value| value.to_string())
-                                        .unwrap_or_else(|| resume_target_id.clone()),
-                                },
-                                QqPrivilegedCommand::Emotion
-                                | QqPrivilegedCommand::AdjustEmotion => {
-                                    unreachable!(
-                                        "emotion commands return before style-task resumption"
-                                    )
-                                }
-                            };
-                            let Some(task_runtime) = ctx.task_runtime.clone() else {
-                                return Err(Error::ValidationError(
-                                    "task runtime is not available".to_string(),
-                                ));
-                            };
-                            let Some(task_id) = pending.pending_task_id.as_deref() else {
-                                return Err(Error::ValidationError(
-                                    "pending task id is missing".to_string(),
-                                ));
-                            };
-                            let Some(rdb_pool) = ctx.rdb_pool.cloned() else {
-                                return Err(Error::ValidationError(
-                                    "pending task missing rdb pool".to_string(),
-                                ));
-                            };
-                            let owned = OwnedStyleLearningTaskContext {
-                                adapter: ctx.adapter.clone(),
-                                bot_name: ctx.bot_name.to_string(),
-                                natural_language_reply_llm: Arc::clone(
-                                    ctx.natural_language_reply_llm,
-                                ),
-                                intent_classification_llm: Arc::clone(
-                                    ctx.intent_classification_llm,
-                                ),
-                                rdb_pool,
-                                max_message_length: ctx.max_message_length,
-                                reply_batch_builder: ctx.reply_batch_builder.cloned(),
-                                resolved_language_style_prompt: ctx
-                                    .resolved_language_style
-                                    .as_ref()
-                                    .map(|item| item.style_prompt.clone()),
-                            };
-                            let input = StyleLearningResumeInput {
-                                event: event.clone(),
-                                inference_event: inference_event.clone(),
-                                sender_id: sender_id.to_string(),
-                                target_id: resume_target_id.clone(),
-                                bot_id: bot_id.to_string(),
-                                is_group: resume_is_group,
-                                scope,
-                            };
-                            let trace_clone = trace.clone();
-                            let task_runtime_for_runner = Arc::clone(&task_runtime);
-                            let resumed = task_runtime.resume_waiting_auth_task(
-                                task_id,
-                                Box::new(move |task_handle| {
-                                    execute_style_learning_task(
-                                        owned,
-                                        input,
-                                        trace_clone,
-                                        task_handle,
-                                        task_runtime_for_runner,
-                                    );
-                                }),
-                            );
-                            if !resumed {
-                                return Err(Error::ValidationError(
-                                    "pending waiting-auth task could not be resumed".to_string(),
-                                ));
-                            }
-                            return Ok(QqChatServiceTurnResult {
-                                result_summary: "已恢复等待授权的任务".to_string(),
-                            });
-                        }
-                    }
-                }
-                "learn_global_style" | "learn_group_style" => {
-                    let Some(command_registry) = zihuan_core::command::global_command_registry()
-                    else {
-                        return Err(Error::ValidationError(
-                            "command registry not initialized".to_string(),
-                        ));
-                    };
-                    let permission_check = command_registry.check_permission(
-                        &self.build_command_context(
-                            sender_id,
-                            target_id,
-                            is_group,
-                            inference_event.group_id,
-                        ),
-                        &raw_user_message,
-                    );
-                    if !permission_check.matched || !permission_check.allowed {
-                        let reply = "你没有权限使用此命令。".to_string();
-                        let _ = send_direct_text_reply(
-                            trace,
-                            ctx.adapter,
-                            target_id,
-                            ctx.rdb_pool,
-                            event.group_name.as_deref(),
-                            ctx.bot_name,
-                            bot_id,
-                            &reply,
-                            is_group,
-                            sender_id,
-                            &inference_event.sender.nickname,
-                            inference_event.sender.card.as_str(),
-                            ctx.max_message_length,
-                            ctx.reply_batch_builder,
-                        )?;
-                        return Ok(QqChatServiceTurnResult {
-                            result_summary: "命令权限拒绝".to_string(),
-                        });
-                    }
-
-                    let Some(connection) = ctx.rdb_pool else {
-                        let reply = "当前未配置关系数据库，无法执行语言风格学习。".to_string();
-                        let _ = send_direct_text_reply(
-                            trace,
-                            ctx.adapter,
-                            target_id,
-                            ctx.rdb_pool,
-                            event.group_name.as_deref(),
-                            ctx.bot_name,
-                            bot_id,
-                            &reply,
-                            is_group,
-                            sender_id,
-                            &inference_event.sender.nickname,
-                            inference_event.sender.card.as_str(),
-                            ctx.max_message_length,
-                            ctx.reply_batch_builder,
-                        )?;
-                        return Ok(QqChatServiceTurnResult {
-                            result_summary: "缺少关系数据库".to_string(),
-                        });
-                    };
-
-                    let privileged_command = if command_name == "learn_group_style" {
-                        QqPrivilegedCommand::LearnGroupStyle
-                    } else {
-                        QqPrivilegedCommand::LearnGlobalStyle
-                    };
-                    let Some(task_runtime) = ctx.task_runtime.clone() else {
-                        return Err(Error::ValidationError(
-                            "task runtime is not available".to_string(),
-                        ));
-                    };
-                    let task_name = if command_name == "learn_group_style" {
-                        "学习群聊语言风格"
-                    } else {
-                        "学习全局语言风格"
-                    }
-                    .to_string();
-                    let waiting_task = task_runtime.start_waiting_auth_task(AgentTaskRequest {
-                        task_name: task_name.clone(),
-                        agent_id: self.id.clone(),
-                        agent_name: ctx.bot_name.to_string(),
-                        user_ip: None,
-                        owner_id: Some(sender_id.to_string()),
-                        task_db_connection_id: ctx.task_db_connection_id.clone(),
-                    });
-
-                    let gate_outcome = enqueue_pending_privileged_command(
-                        &command_registry,
-                        &self.build_command_context(
-                            sender_id,
-                            target_id,
-                            is_group,
-                            inference_event.group_id,
-                        ),
-                        connection,
-                        privileged_command,
-                        Some(waiting_task.task_id.as_str()),
-                        &[],
-                    )?;
-                    if let PrivilegeGateOutcome::Denied(reply) = gate_outcome {
-                        let _ = send_direct_text_reply(
-                            trace,
-                            ctx.adapter,
-                            target_id,
-                            ctx.rdb_pool,
-                            event.group_name.as_deref(),
-                            ctx.bot_name,
-                            bot_id,
-                            &reply,
-                            is_group,
-                            sender_id,
-                            &inference_event.sender.nickname,
-                            inference_event.sender.card.as_str(),
-                            ctx.max_message_length,
-                            ctx.reply_batch_builder,
-                        )?;
-                        return Ok(QqChatServiceTurnResult {
-                            result_summary: format!("{command_name} 已进入等待授权状态"),
-                        });
-                    }
-
-                    if command_name == "learn_group_style" && !is_group {
-                        let reply = "当前不是群聊，无法学习群聊语言风格。".to_string();
-                        let _ = send_direct_text_reply(
-                            trace,
-                            ctx.adapter,
-                            target_id,
-                            ctx.rdb_pool,
-                            event.group_name.as_deref(),
-                            ctx.bot_name,
-                            bot_id,
-                            &reply,
-                            is_group,
-                            sender_id,
-                            &inference_event.sender.nickname,
-                            inference_event.sender.card.as_str(),
-                            ctx.max_message_length,
-                            ctx.reply_batch_builder,
-                        )?;
-                        return Ok(QqChatServiceTurnResult {
-                            result_summary: "群聊风格学习命令在私聊中被拒绝".to_string(),
-                        });
-                    }
-
-                    let scope = if command_name == "learn_group_style" {
-                        LanguageStyleScope::Group { group_id: target_id.to_string() }
-                    } else {
-                        LanguageStyleScope::Global
-                    };
-                    return self
-                        .run_style_learning_task(
-                            trace,
-                            ctx,
-                            event,
-                            &inference_event,
-                            sender_id,
-                            target_id,
-                            bot_id,
-                            is_group,
-                            scope,
-                            waiting_task,
-                            task_runtime,
-                        )
-                        .map(|_| QqChatServiceTurnResult {
-                            result_summary: format!("已创建 {task_name} 任务"),
-                        });
-                }
-                "emotion" | "adjust_emotion" => {
-                    let Some(command_registry) = zihuan_core::command::global_command_registry()
-                    else {
-                        return Err(Error::ValidationError(
-                            "command registry not initialized".to_string(),
-                        ));
-                    };
-                    let command_context = self.build_command_context(
-                        sender_id,
-                        target_id,
-                        is_group,
-                        inference_event.group_id,
-                    );
-                    let permission_check =
-                        command_registry.check_permission(&command_context, &raw_user_message);
-                    if !permission_check.matched || !permission_check.allowed {
-                        let reply = "你没有权限使用此命令。".to_string();
-                        let _ = send_direct_text_reply(
-                            trace,
-                            ctx.adapter,
-                            target_id,
-                            ctx.rdb_pool,
-                            event.group_name.as_deref(),
-                            ctx.bot_name,
-                            bot_id,
-                            &reply,
-                            is_group,
-                            sender_id,
-                            &inference_event.sender.nickname,
-                            inference_event.sender.card.as_str(),
-                            ctx.max_message_length,
-                            ctx.reply_batch_builder,
-                        )?;
-                        return Ok(QqChatServiceTurnResult {
-                            result_summary: "命令权限拒绝".to_string(),
-                        });
-                    }
-
-                    let Some(connection) = ctx.rdb_pool else {
-                        let reply = "当前未配置关系数据库，无法完成特权授权。".to_string();
-                        let _ = send_direct_text_reply(
-                            trace,
-                            ctx.adapter,
-                            target_id,
-                            ctx.rdb_pool,
-                            event.group_name.as_deref(),
-                            ctx.bot_name,
-                            bot_id,
-                            &reply,
-                            is_group,
-                            sender_id,
-                            &inference_event.sender.nickname,
-                            inference_event.sender.card.as_str(),
-                            ctx.max_message_length,
-                            ctx.reply_batch_builder,
-                        )?;
-                        return Ok(QqChatServiceTurnResult {
-                            result_summary: "缺少关系数据库".to_string(),
-                        });
-                    };
-
-                    let privileged_command = if command_name == "emotion" {
-                        QqPrivilegedCommand::Emotion
-                    } else {
-                        QqPrivilegedCommand::AdjustEmotion
-                    };
-                    let gate_outcome = enqueue_pending_privileged_command(
-                        &command_registry,
-                        &command_context,
-                        connection,
-                        privileged_command,
-                        None,
-                        &args,
-                    )?;
-                    if let PrivilegeGateOutcome::Denied(reply) = gate_outcome {
-                        let _ = send_direct_text_reply(
-                            trace,
-                            ctx.adapter,
-                            target_id,
-                            ctx.rdb_pool,
-                            event.group_name.as_deref(),
-                            ctx.bot_name,
-                            bot_id,
-                            &reply,
-                            is_group,
-                            sender_id,
-                            &inference_event.sender.nickname,
-                            inference_event.sender.card.as_str(),
-                            ctx.max_message_length,
-                            ctx.reply_batch_builder,
-                        )?;
-                        return Ok(QqChatServiceTurnResult {
-                            result_summary: format!("{command_name} 已进入等待授权状态"),
-                        });
-                    }
-
-                    let reply = execute_privileged_emotion_command(
-                        ctx.session_state_store,
-                        &emotion_dimensions,
-                        privileged_command,
-                        &args,
-                    );
-                    let _ = send_direct_text_reply(
-                        trace,
-                        ctx.adapter,
-                        target_id,
-                        ctx.rdb_pool,
-                        event.group_name.as_deref(),
-                        ctx.bot_name,
-                        bot_id,
-                        &reply,
-                        is_group,
-                        sender_id,
-                        &inference_event.sender.nickname,
-                        inference_event.sender.card.as_str(),
-                        ctx.max_message_length,
-                        ctx.reply_batch_builder,
-                    )?;
-                    return Ok(QqChatServiceTurnResult {
-                        result_summary: format!("已执行 /{command_name}"),
-                    });
-                }
-                _ => {}
-            }
+        // Command interception runs through the unified command state machine.
+        // The engine resolves the spec, runs preconditions/body steps via the
+        // QQ channel runtime, and returns effects (or a pause) for this turn.
+        match self.run_command_pipeline(
+            trace,
+            event,
+            &inference_event,
+            &raw_user_message,
+            sender_id,
+            target_id,
+            bot_id,
+            is_group,
+            &emotion_dimensions,
+            ctx,
+        )? {
+            CommandTurnEnd::Consumed(result) => return Ok(result),
+            CommandTurnEnd::Passthrough(text) => current_message = text,
+            CommandTurnEnd::NotACommand => {}
         }
 
-        // Intercept command-style messages (e.g. slash commands) before the brain loop.
-        // Commands are dispatched synchronously; if `passthrough_text` is present it
-        // replaces `current_message` and the brain loop runs with the leftover text.
-        if let Some(command_registry) = zihuan_core::command::global_command_registry() {
-            let cmd_ctx = self.build_command_context(
-                sender_id,
-                target_id,
-                is_group,
-                inference_event.group_id,
-            );
-            if let Some(DispatchResult { result, passthrough_text }) =
-                command_registry.dispatch(&cmd_ctx, &raw_user_message)
-            {
-                if let Some(passthrough) = self.execute_command_dispatch(
-                    trace,
-                    &cmd_ctx,
-                    DispatchResult { result, passthrough_text },
-                    &prepared_input.event,
-                    &inference_event,
-                    sender_id,
-                    target_id,
-                    bot_id,
-                    &mut history,
-                    message_rate_limit_warning,
-                    ctx,
-                )? {
-                    current_message = passthrough;
-                } else {
-                    return Ok(QqChatServiceTurnResult {
-                        result_summary: "已处理命令".to_string(),
-                    });
-                }
-            }
-        }
+        // Non-command messages fall through to the brain loop.
 
         let mut current_session_state = ctx.session_state_store.lock().unwrap().clone();
         current_session_state.sync_emotion_dimensions(&emotion_dimensions);

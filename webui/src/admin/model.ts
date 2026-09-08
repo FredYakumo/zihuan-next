@@ -149,7 +149,7 @@ export interface ServiceFormState {
   max_message_length: number;
   dream_enabled: boolean;
   dream_interval_value: number;
-  dream_interval_unit: "minutes" | "hours" | "days";
+  dream_interval_unit: "minute" | "hour" | "day";
   max_steer_count: number;
   emotion_dimensions: QqChatEmotionDimensionFormItem[];
   default_tools_enabled: Record<string, boolean>;
@@ -430,7 +430,7 @@ export function defaultServiceForm(): ServiceFormState {
     max_message_length: 500,
     dream_enabled: false,
     dream_interval_value: 30,
-    dream_interval_unit: "minutes",
+    dream_interval_unit: "minute",
     max_steer_count: 4,
     emotion_dimensions: defaultQqChatEmotionDimensions(),
     default_tools_enabled: defaultQqChatDefaultToolsEnabled(),
@@ -481,7 +481,7 @@ function normalizeQqChatMessageRateLimitRule(
   const windowSize =
     Number.isFinite(rawWindowSize) && rawWindowSize > 0 ? Math.trunc(rawWindowSize) : 1;
   if (
-    (windowUnit !== "minute" && windowUnit !== "hour" && windowUnit !== "day") ||
+    !normalizeTimeUnitValue(windowUnit, null) ||
     !Number.isFinite(maxCalls) ||
     maxCalls <= 0
   ) {
@@ -489,10 +489,31 @@ function normalizeQqChatMessageRateLimitRule(
   }
   return {
     unlimited: false,
-    window_unit: windowUnit as QqChatMessageRateLimitWindowUnit,
+    window_unit: normalizeTimeUnitValue(windowUnit, "day") as QqChatMessageRateLimitWindowUnit,
     window_size: windowSize,
     max_calls: maxCalls,
   };
+}
+
+/** Canonicalizes a time-unit label to its singular form, or returns `fallback`
+ *  when the value is missing. Accepts both singular and legacy plural spellings. */
+function normalizeTimeUnitValue(
+  value: unknown,
+  fallback: null,
+): "minute" | "hour" | "day" | null;
+function normalizeTimeUnitValue(
+  value: unknown,
+  fallback: "minute" | "hour" | "day",
+): "minute" | "hour" | "day";
+function normalizeTimeUnitValue(
+  value: unknown,
+  fallback: "minute" | "hour" | "day" | null,
+): "minute" | "hour" | "day" | null {
+  const unit = String(value ?? "").trim().toLowerCase();
+  if (unit === "minute" || unit === "minutes") return "minute";
+  if (unit === "hour" || unit === "hours") return "hour";
+  if (unit === "day" || unit === "days") return "day";
+  return fallback;
 }
 
 function buildQqChatMessageRateLimitRulePayload(
@@ -905,7 +926,10 @@ export function serviceFormFromConfig(
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.dream_enabled = Boolean(agentType.dream_enabled ?? false);
     form.dream_interval_value = Number(agentType.dream_interval_value ?? 30);
-    form.dream_interval_unit = (agentType.dream_interval_unit === "hours" || agentType.dream_interval_unit === "days") ? agentType.dream_interval_unit : "minutes";
+    form.dream_interval_unit = normalizeTimeUnitValue(
+      agentType.dream_interval_unit,
+      "minute",
+    );
     form.max_steer_count = Number(agentType.max_steer_count ?? 4);
     form.emotion_dimensions = normalizeQqChatEmotionDimensions(
       agentType.emotion_dimensions,

@@ -11,10 +11,9 @@ use zihuan_core::storage::{
     ConnectionAuthMethod, ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection,
     SqliteConnection, WeaviateConnection, WebSearchEngineConnection,
 };
+use zihuan_core::utils::time_unit::TimeUnit;
 use zihuan_core::weaviate::WeaviateCollectionSchema;
-use zihuan_ims_service::role_config::{
-    DreamIntervalUnit, QqChatRoleServiceConfig, RetrievalStoreConfig,
-};
+use zihuan_ims_service::role_config::{QqChatRoleServiceConfig, RetrievalStoreConfig};
 use zihuan_workspace_service::role_config::WorkspaceRoleServiceConfig;
 
 pub async fn create_chat_assistant_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {
@@ -270,7 +269,7 @@ fn build_qq_chat_agent_service() -> RoleServiceConfig {
         max_message_length: 500,
         dream_enabled: false,
         dream_interval_value: 15,
-        dream_interval_unit: DreamIntervalUnit::default(),
+        dream_interval_unit: TimeUnit::default(),
         max_steer_count: 4,
         default_tools_enabled: default_tools,
         tool_session_call_limits: HashMap::new(),

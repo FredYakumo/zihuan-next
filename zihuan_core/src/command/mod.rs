@@ -1,13 +1,29 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::{OnceLock, RwLock};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::validation_error;
 
+mod builtin;
+mod effect;
+mod engine;
 mod parser;
+mod snapshot;
+mod step;
+
+pub use builtin::execute_builtin;
+pub use effect::Effect;
+pub use engine::{
+    execute_command, resume_from_snapshot, CommandRuntime, ExecutionResult, ResumeAction,
+    StepControl, StepRun, MAX_COMMAND_STEPS,
+};
+pub use snapshot::{
+    CmdState, ExecutionSnapshot, InputGate, Invocation, Phase,
+};
+pub use step::{CommandSpec, Step};
 
 static GLOBAL_COMMAND_REGISTRY: OnceLock<Arc<CommandRegistry>> = OnceLock::new();
 static GLOBAL_TASK_RUNTIME: RwLock<Option<Arc<dyn crate::task_context::AgentTaskRuntime>>> =
@@ -36,13 +52,13 @@ pub fn build_help_text() -> Option<String> {
     let mut lines = registry
         .list_commands()
         .iter()
-        .map(|definition| {
-            let aliases = if definition.aliases.is_empty() {
+        .map(|spec| {
+            let aliases = if spec.aliases.is_empty() {
                 String::new()
             } else {
-                format!(" (别名: {})", definition.aliases.join(", "))
+                format!(" (别名: {})", spec.aliases.join(", "))
             };
-            format!("/{} — {}{}", definition.name, definition.description, aliases)
+            format!("/{} — {}{}", spec.name, spec.description, aliases)
         })
         .collect::<Vec<_>>();
     if lines.is_empty() {
@@ -51,12 +67,15 @@ pub fn build_help_text() -> Option<String> {
     Some(lines.join("\n"))
 }
 
-/// Defines which agent types a command is available for.
+/// Defines which agent types a command is available for. `agent_type` is the
+/// RoleService kind tag (`qq_chat` / `workspace`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CommandScope {
     All,
     QqChat,
+    Workspace,
+    /// Legacy, not produced by any current runtime.
     HttpStream,
     Specific { agent_ids: Vec<String> },
 }
@@ -72,39 +91,21 @@ impl CommandScope {
         match self {
             Self::All => "全部",
             Self::QqChat => "QQ Chat",
+            Self::Workspace => "Workspace",
             Self::HttpStream => "HTTP Stream",
             Self::Specific { .. } => "指定 Agent",
         }
     }
 
-    pub fn matches(&self, agent_type: &str, _agent_id: &str) -> bool {
+    pub fn matches(&self, agent_type: &str, agent_id: &str) -> bool {
         match self {
             Self::All => true,
             Self::QqChat => agent_type == "qq_chat",
+            Self::Workspace => agent_type == "workspace",
             Self::HttpStream => agent_type == "http_stream",
-            Self::Specific { agent_ids } => agent_ids.iter().any(|id| id == _agent_id),
+            Self::Specific { agent_ids } => agent_ids.iter().any(|id| id == agent_id),
         }
     }
-}
-
-/// A registered command definition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommandDefinition {
-    pub name: String,
-    #[serde(default)]
-    pub aliases: Vec<String>,
-    pub description: String,
-    #[serde(default)]
-    pub scope: CommandScope,
-    /// Number of positional arguments to consume after the command name.
-    /// 0 = parameterless: all remaining text is passthrough for the LLM.
-    /// N = consume up to N tokens as args, remainder is passthrough.
-    #[serde(default)]
-    pub accepted_arg_count: u8,
-    /// Whether this command may bypass steer queueing while another reply
-    /// flow is active. Defaults to false so only explicitly safe commands opt in.
-    #[serde(default)]
-    pub allow_steer_bypass: bool,
 }
 
 /// Permission rules that control who can use a command.
@@ -133,7 +134,8 @@ pub struct CommandPermission {
 }
 
 /// Identifies the source of a command invocation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum CommandChannel {
     QqChat {
         sender_id: String,
@@ -149,120 +151,15 @@ pub enum CommandChannel {
     },
 }
 
-/// Context passed to command dispatch and permission checks.
-#[derive(Debug, Clone)]
+/// Context passed to command matching and permission checks, and carried
+/// inside an invocation snapshot so a paused command resumes against the
+/// original request context.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CommandContext {
     pub agent_type: String,
     pub agent_id: String,
     pub caller_id: String,
     pub channel: CommandChannel,
-}
-
-/// Semantic payload for starting a fresh conversation turn.
-#[derive(Debug, Clone)]
-pub struct NewConversationRequest {
-    pub caller_id: String,
-    pub channel: CommandChannel,
-}
-
-/// Runtime capability surface exposed to command side effects.
-pub trait SideEffectContext: Send + Sync {
-    fn command_context(&self) -> &CommandContext;
-
-    fn start_new_conversation(&self, _request: &NewConversationRequest) -> Result<()> {
-        Err(validation_error!(
-            "side effect 'start_new_conversation' is not supported for agent_type='{}' agent_id='{}'",
-            self.command_context().agent_type,
-            self.command_context().agent_id
-        ))
-    }
-
-    fn send_forward_content(&self, _content: &str) -> Result<()> {
-        Err(validation_error!(
-            "side effect 'send_forward_content' is not supported for agent_type='{}' agent_id='{}'",
-            self.command_context().agent_type,
-            self.command_context().agent_id
-        ))
-    }
-}
-
-/// Side effects that a command handler can request.
-pub trait CommandSideEffect: Send + Sync {
-    fn execute(&self, ctx: &dyn SideEffectContext) -> Result<()>;
-
-    fn name(&self) -> &str {
-        "command_side_effect"
-    }
-}
-
-impl<F> CommandSideEffect for F
-where
-    F: Fn(&dyn SideEffectContext) -> Result<()> + Send + Sync,
-{
-    fn execute(&self, ctx: &dyn SideEffectContext) -> Result<()> {
-        (self)(ctx)
-    }
-
-    fn name(&self) -> &str {
-        "command_side_effect_closure"
-    }
-}
-
-pub type BoxedCommandSideEffect = Box<dyn CommandSideEffect>;
-
-/// Result returned by a command handler.
-pub struct CommandResult {
-    /// Reply text injected into the LLM conversation (if inject_to_llm is true).
-    pub reply: String,
-    pub side_effects: Vec<BoxedCommandSideEffect>,
-    /// Optional user-visible echo sent as a separate message. For QQ Chat,
-    /// this message is persisted via the normal outbound codepath (MySQL
-    /// message_record + Redis). For HTTP Stream, it is emitted as a non-bubble
-    /// system message.
-    pub echo_message: Option<String>,
-    /// Whether `reply` should be injected into the LLM conversation history.
-    /// Defaults to true. Set to false for commands like /new that clear history.
-    pub inject_to_llm: bool,
-}
-
-impl CommandResult {
-    pub fn add_side_effect<E>(&mut self, effect: E)
-    where
-        E: CommandSideEffect + 'static,
-    {
-        self.side_effects.push(Box::new(effect));
-    }
-
-    pub fn with_side_effect<E>(mut self, effect: E) -> Self
-    where
-        E: CommandSideEffect + 'static,
-    {
-        self.add_side_effect(effect);
-        self
-    }
-}
-
-/// Result of a successful command dispatch, including optional passthrough
-/// text for the LLM when the command does not consume all input.
-pub struct DispatchResult {
-    pub result: CommandResult,
-    /// When `accepted_arg_count` is exhausted and text remains, it is preserved
-    /// here. The caller should feed this into the LLM as a new conversation
-    /// turn after executing the command.
-    pub passthrough_text: Option<String>,
-}
-
-/// Parsed command preview used by callers that need to inspect a command
-/// before deciding whether to execute it.
-pub struct CommandPreview<'a> {
-    pub definition: &'a CommandDefinition,
-    pub args: Vec<String>,
-    pub passthrough_text: Option<String>,
-}
-
-/// Trait implemented by each command handler.
-pub trait CommandHandler: Send + Sync {
-    fn handle(&self, ctx: &CommandContext, args: &[String]) -> CommandResult;
 }
 
 // PermissionRegistry — stateless permission evaluator.
@@ -282,8 +179,6 @@ pub trait CommandHandler: Send + Sync {
 // - **Channel-aware matching** is delegated to `CommandContext.caller_id`: QQ users
 //   are matched by sender ID, API keys by the `ApiKeys` variant, and custom rules
 //   match against `custom_type` + `allow_list`.
-// - The design intentionally keeps the evaluator decoupled from storage: permissions
-//   are loaded and cached elsewhere, and `check` only sees the resolved rules.
 
 pub struct PermissionRegistry;
 
@@ -316,34 +211,33 @@ impl PermissionRegistry {
     }
 }
 
-// CommandRegistry — central command router and lifecycle manager.
+#[derive(Debug, Clone)]
+pub struct PermissionCheckResult {
+    pub matched: bool,
+    pub allowed: bool,
+}
+
+// CommandRegistry — central command spec router and permission manager.
 //
 // ## Purpose
 //
-// CommandRegistry owns the full lifecycle of slash-commands in the system:
-// registration, permission management, listing, and dispatch. It is the
-// single source of truth for which commands exist and how they map to
-// incoming messages.
+// CommandRegistry owns the lifecycle of slash-command *definitions*: registration,
+// permission management, listing, and name/scope matching. It does not execute
+// commands — execution is a per-channel engine run over a [`CommandSpec`].
 //
 // ## Design
 //
-// - **Registration** (`register`) accepts a `CommandDefinition` + `Arc<dyn CommandHandler>`.
-//   Each command starts with a default `Everyone` permission so it is usable
-//   immediately after registration.
-// - **Lookup path** (`dispatch`): raw input is tested for a leading `/`, then the
+// - **Registration** (`register`) accepts a `CommandSpec` (pure data). Each command
+//   starts with a default `Everyone` permission so it is usable immediately.
+// - **Lookup path** (`spec_for`): raw input is tested for a leading `/`, then the
 //   command name (case-insensitive) is matched first by primary name and then by
-//   aliases. Scope is checked before permissions, so a command that doesn't apply
+//   aliases. Scope is checked before permissions, so a command that does not apply
 //   to the current agent type is silently ignored.
-// - **Permission enforcement** delegates to `PermissionRegistry::check`. On denial
-//   a Chinese-language message is returned; the handler is never invoked.
 // - **Mutability model**: permissions are behind a `Mutex` so they can be updated
-//   at runtime via `set_permissions` without &mut access to the registry itself.
-// - **List APIs** (`list_commands`, `list_permissions`) provide read-only views
-//   for admin UIs and the `/help` command.
+//   at runtime via `set_permissions` without `&mut` access to the registry itself.
 
 struct CommandEntry {
-    definition: CommandDefinition,
-    handler: Arc<dyn CommandHandler>,
+    spec: Arc<CommandSpec>,
     permissions: Mutex<Vec<PermissionRule>>,
 }
 
@@ -351,55 +245,53 @@ pub struct CommandRegistry {
     commands: HashMap<String, CommandEntry>,
 }
 
-#[derive(Debug, Clone)]
-pub struct PermissionCheckResult {
-    pub matched: bool,
-    pub allowed: bool,
-}
-
 impl CommandRegistry {
     pub fn new() -> Self {
         Self { commands: HashMap::new() }
     }
 
-    /// Register a command with its handler.
-    pub fn register(&mut self, def: CommandDefinition, handler: Arc<dyn CommandHandler>) {
-        let name = def.name.clone();
+    /// Register a command spec by its primary name.
+    pub fn register(&mut self, spec: CommandSpec) {
+        let name = spec.name.clone();
         self.commands.insert(
             name,
             CommandEntry {
-                definition: def,
-                handler,
+                spec: Arc::new(spec),
                 permissions: Mutex::new(vec![PermissionRule::Everyone]),
             },
         );
     }
 
-    fn find_matching_entry<'a>(
-        &'a self,
+    /// Register with explicit initial permissions (used for QQ privileged specs
+    /// whose gate still consults the registry permission rules).
+    pub fn register_with_permissions(
+        &mut self,
+        spec: CommandSpec,
+        permissions: Vec<PermissionRule>,
+    ) {
+        let name = spec.name.clone();
+        self.commands.insert(
+            name,
+            CommandEntry { spec: Arc::new(spec), permissions: Mutex::new(permissions) },
+        );
+    }
+
+    /// Look up a registered spec by canonical primary name (case-sensitive
+    /// canonical names only — used for resume targets).
+    pub fn get(&self, name: &str) -> Option<Arc<CommandSpec>> {
+        self.commands.get(name).map(|entry| Arc::clone(&entry.spec))
+    }
+
+    /// Resolve a raw message to a spec plus parsed arguments, gated by scope.
+    /// Permission is checked separately by the caller (or the engine) via
+    /// [`CommandRegistry::check_permission`].
+    pub fn spec_for(
+        &self,
         ctx: &CommandContext,
         raw_input: &str,
-    ) -> Option<(&'a CommandEntry, parser::ParsedCommand)> {
-        let trimmed = raw_input.trim();
-        if !trimmed.starts_with('/') {
-            return None;
-        }
-
-        let body = &trimmed[1..];
-        let command_name = body.split_whitespace().next()?.to_lowercase();
-
-        let entry = self.commands.get(&command_name).or_else(|| {
-            self.commands.values().find(|e| {
-                e.definition.aliases.iter().any(|a| a.eq_ignore_ascii_case(&command_name))
-            })
-        })?;
-
-        if !entry.definition.scope.matches(&ctx.agent_type, &ctx.agent_id) {
-            return None;
-        }
-
-        let parsed = parser::parse_command(raw_input, entry.definition.accepted_arg_count)?;
-        Some((entry, parsed))
+    ) -> Option<(Arc<CommandSpec>, parser::ParsedCommand)> {
+        let (entry, parsed) = self.find_matching_entry(ctx, raw_input)?;
+        Some((Arc::clone(&entry.spec), parsed))
     }
 
     /// Update permission rules for a registered command.
@@ -411,9 +303,10 @@ impl CommandRegistry {
         }
     }
 
-    /// List all registered commands (read-only metadata).
-    pub fn list_commands(&self) -> Vec<&CommandDefinition> {
-        self.commands.values().map(|e| &e.definition).collect()
+    /// List all registered command specs (read-only metadata; stable order not
+    /// guaranteed).
+    pub fn list_commands(&self) -> Vec<&CommandSpec> {
+        self.commands.values().map(|entry| entry.spec.as_ref()).collect()
     }
 
     /// List all command permissions (for admin API).
@@ -428,15 +321,16 @@ impl CommandRegistry {
             .collect()
     }
 
-    /// Preview a command without executing its handler.
+    /// Preview a command without executing it. Used by busy-session steer to
+    /// decide whether a command may bypass the steer queue.
     pub fn preview<'a>(
         &'a self,
         ctx: &CommandContext,
         raw_input: &str,
     ) -> Option<CommandPreview<'a>> {
-        let (entry, parsed) = self.find_matching_entry(ctx, raw_input)?;
+        let (spec, parsed) = self.find_matching_entry(ctx, raw_input)?;
         Some(CommandPreview {
-            definition: &entry.definition,
+            spec: spec.spec.as_ref(),
             args: parsed.args,
             passthrough_text: parsed.passthrough_text,
         })
@@ -454,37 +348,31 @@ impl CommandRegistry {
         }
     }
 
-    /// Try to dispatch a raw message as a command. Returns None if the message
-    /// does not start with '/', or if the command is not found, or if
-    /// permission is denied.
-    pub fn dispatch(&self, ctx: &CommandContext, raw_input: &str) -> Option<DispatchResult> {
-        let (entry, parsed) = self.find_matching_entry(ctx, raw_input)?;
-
-        // Check permission
-        let permissions = entry.permissions.lock().unwrap();
-        if !PermissionRegistry::check(&permissions, ctx) {
-            return Some(DispatchResult {
-                result: CommandResult {
-                    reply: "你没有权限使用此命令。".to_string(),
-                    side_effects: vec![],
-                    echo_message: None,
-                    inject_to_llm: false,
-                },
-                passthrough_text: None,
-            });
-        }
-        drop(permissions);
-
-        let mut result = entry.handler.handle(ctx, &parsed.args);
-
-        if result.reply.is_empty() {
-            result.reply = "命令已执行。".to_string();
+    fn find_matching_entry<'a>(
+        &'a self,
+        ctx: &CommandContext,
+        raw_input: &str,
+    ) -> Option<(&'a CommandEntry, parser::ParsedCommand)> {
+        let trimmed = raw_input.trim();
+        if !trimmed.starts_with('/') {
+            return None;
         }
 
-        Some(DispatchResult {
-            result,
-            passthrough_text: parsed.passthrough_text,
-        })
+        let body = &trimmed[1..];
+        let command_name = body.split_whitespace().next()?.to_lowercase();
+
+        let entry = self.commands.get(&command_name).or_else(|| {
+            self.commands.values().find(|entry| {
+                entry.spec.aliases.iter().any(|a| a.eq_ignore_ascii_case(&command_name))
+            })
+        })?;
+
+        if !entry.spec.scope.matches(&ctx.agent_type, &ctx.agent_id) {
+            return None;
+        }
+
+        let parsed = parser::parse_command(raw_input, entry.spec.accepted_arg_count)?;
+        Some((entry, parsed))
     }
 }
 
@@ -494,95 +382,28 @@ impl Default for CommandRegistry {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
+/// Parsed command preview used by callers that need to inspect a command
+/// before deciding whether to execute it.
+pub struct CommandPreview<'a> {
+    pub spec: &'a CommandSpec,
+    pub args: Vec<String>,
+    pub passthrough_text: Option<String>,
+}
 
-    use super::*;
-
-    struct TestCommand;
-
-    impl CommandHandler for TestCommand {
-        fn handle(&self, _ctx: &CommandContext, args: &[String]) -> CommandResult {
-            CommandResult {
-                reply: args.join(","),
-                side_effects: vec![],
-                echo_message: None,
-                inject_to_llm: false,
-            }
-        }
+/// Look up the spec that should resolve a resume target. Resolves aliases via
+/// the registry so `/auth` resume targets may use either canonical or alias
+/// names.
+pub fn resolve_spec(name: &str) -> Option<Arc<CommandSpec>> {
+    let registry = global_command_registry()?;
+    if let Some(spec) = registry.get(name) {
+        return Some(spec);
     }
-
-    fn test_context() -> CommandContext {
-        CommandContext {
-            agent_type: "qq_chat".to_string(),
-            agent_id: "agent-1".to_string(),
-            caller_id: "caller-1".to_string(),
-            channel: CommandChannel::QqChat {
-                sender_id: "caller-1".to_string(),
-                is_group: false,
-                group_id: None,
-                target_id: "caller-1".to_string(),
-            },
-        }
-    }
-
-    #[test]
-    fn command_definition_defaults_to_no_steer_bypass() {
-        let def = CommandDefinition {
-            name: "task".to_string(),
-            aliases: vec![],
-            description: "desc".to_string(),
-            scope: CommandScope::All,
-            accepted_arg_count: 2,
-            allow_steer_bypass: false,
-        };
-        assert!(!def.allow_steer_bypass);
-    }
-
-    #[test]
-    fn preview_returns_args_and_passthrough_without_execution() {
-        let mut registry = CommandRegistry::new();
-        registry.register(
-            CommandDefinition {
-                name: "task".to_string(),
-                aliases: vec![],
-                description: "desc".to_string(),
-                scope: CommandScope::All,
-                accepted_arg_count: 2,
-                allow_steer_bypass: true,
-            },
-            Arc::new(TestCommand),
-        );
-
-        let preview = registry
-            .preview(&test_context(), "/task cancel abc123 extra words")
-            .expect("command preview should exist");
-        assert_eq!(preview.definition.name, "task");
-        assert!(preview.definition.allow_steer_bypass);
-        assert_eq!(preview.args, vec!["cancel", "abc123"]);
-        assert_eq!(preview.passthrough_text.as_deref(), Some("extra words"));
-    }
-
-    #[test]
-    fn dispatch_still_executes_handler_after_preview_refactor() {
-        let mut registry = CommandRegistry::new();
-        registry.register(
-            CommandDefinition {
-                name: "task".to_string(),
-                aliases: vec!["t".to_string()],
-                description: "desc".to_string(),
-                scope: CommandScope::All,
-                accepted_arg_count: 1,
-                allow_steer_bypass: true,
-            },
-            Arc::new(TestCommand),
-        );
-
-        let dispatched = registry
-            .dispatch(&test_context(), "/t abc123 trailing text")
-            .expect("dispatch should succeed");
-        assert_eq!(dispatched.result.reply, "abc123");
-        assert_eq!(dispatched.passthrough_text.as_deref(), Some("trailing text"));
-    }
+    registry
+        .list_commands()
+        .into_iter()
+        .find(|spec| {
+            spec.name.eq_ignore_ascii_case(name)
+                || spec.aliases.iter().any(|alias| alias.eq_ignore_ascii_case(name))
+        })
+        .map(|spec| Arc::new(spec.clone()))
 }

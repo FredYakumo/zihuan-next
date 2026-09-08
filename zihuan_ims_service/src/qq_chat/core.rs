@@ -5,7 +5,7 @@ use std::time::Duration;
 use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use crate::agent::utils::build_state_system_prefix_lines;
 use crate::qq_session_state::QqChatSessionState;
-use log::{info, warn};
+use log::warn;
 use serde_json::Value;
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 
@@ -26,39 +26,28 @@ use crate::role_config::QqChatEmotionDimensionConfig;
 use crate::storage::qq_chat_history_store::{clear_history, load_history};
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use zihuan_core::agent::tools::LongTaskNotifier;
-use zihuan_core::command::{
-    CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
-};
-use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
 use zihuan_core::graph::function_graph::FunctionPortDef;
-use zihuan_core::graph::object_storage::S3Ref;
 use zihuan_core::graph::tool_spec::{ToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
-use zihuan_core::graph::DataValue;
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::{LLMMessage, MessagePart, MessageRole};
 use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
 use zihuan_core::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode,
 };
 use zihuan_core::utils::string_utils::extract_string_field;
-use zihuan_core::weaviate::WeaviateRef;
 
-use super::tool_quota::{QqChatToolQuotaContext, SessionToolQuotaState};
+use super::tool_quota::QqChatToolQuotaContext;
 pub(crate) use super::user_input::{
-    append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference,
-    flush_text_part, prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
+    append_prepared_parts, expand_messages_for_inference, flush_text_part,
+    prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
     PreparedCurrentTurnUserInput,
 };
 use crate::qq_chat::language_style_store::get_applicable_language_style_blocking;
-use crate::qq_chat::language_style_store::QqChatAgentServiceLanguageStyle;
 pub(crate) use crate::qq_chat::model::{
     QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner,
-    QqChatAgentServiceRuntimeConfig, QqChatServiceHandleReport, QqChatServiceReplyBatchBuilder,
-    QqChatServiceReplyBuildRequest, QqChatServiceReplyBuildResult, QqChatServiceTurnResult,
-    QqCommandSideEffectContext, QqLongTaskNotifier,
+    QqChatAgentServiceRuntimeConfig, QqChatServiceHandleReport, QqChatServiceTurnResult,
+    QqLongTaskNotifier,
 };
 use zihuan_core::agent::dream_agent::run_dream_agent;
 
@@ -75,37 +64,6 @@ const REFERENCE_ONLY_NOTICE: &str =
 pub(crate) const LAST_INJECTED_GROUP_NAME_KEY: &str = "qq_chat_last_injected_group_name";
 pub(crate) const LAST_INJECTED_ROLE_KEY: &str = "qq_chat_last_injected_role";
 pub(crate) const LAST_INJECTED_EMOTION_KEY: &str = "qq_chat_last_injected_emotion";
-
-impl SideEffectContext for QqCommandSideEffectContext<'_> {
-    fn command_context(&self) -> &CommandContext {
-        self.command_context
-    }
-
-    fn start_new_conversation(&self, request: &NewConversationRequest) -> Result<()> {
-        let CommandChannel::QqChat { sender_id, .. } = &request.channel else {
-            return Err(Error::ValidationError(
-                "QQ command context received a non-QQ new conversation request".to_string(),
-            ));
-        };
-
-        clear_history(self.cache, sender_id)
-    }
-
-    fn send_forward_content(&self, content: &str) -> Result<()> {
-        let send_ctx = QqChatServiceSendContext {
-            adapter: self.adapter,
-            target_id: self.target_id,
-            is_group: self.is_group,
-            group_name: self.group_name,
-            bot_id: self.bot_id,
-            bot_name: self.bot_name,
-            mention_target_id: None,
-            persistence: build_outbound_persistence(self.rdb_pool, self.group_name, self.bot_name),
-            max_text_chars: MAX_REPLY_CHARS,
-        };
-        send_forward_content(&send_ctx, content)
-    }
-}
 
 fn default_tools_enabled_map() -> HashMap<String, bool> {
     [
