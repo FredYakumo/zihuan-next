@@ -72,6 +72,12 @@ export class NodeUiTemplateRenderer {
   constructor(private readonly canvas: any, socket: ZihuanWS) {
     this.container = (canvas.lCanvas as any).canvas?.parentElement ?? document.body;
     this.unsubscribe = socket.onMessage((message: ServerMessage) => {
+      if (message.type === "TaskStarted") {
+        // A new run starts from a blank template state, like the graph itself.
+        this.states.clear();
+        for (const nodeId of this.elements.keys()) this.renderNode(nodeId);
+        return;
+      }
       if (message.type !== "NodeUiUpdate") return;
       this.tasks.set(message.node_id, message.task_id);
       this.states.set(message.node_id, message.state);
