@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use crate::role_config::{
-    QqChatMessageRateLimitRule, QqChatMessageRateLimitWindowUnit, QqChatRoleServiceConfig,
-};
+use crate::role_config::{QqChatMessageRateLimitRule, QqChatRoleServiceConfig};
 use chrono::{Duration, Local, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use sqlx::mysql::MySqlRow;

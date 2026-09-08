@@ -7,6 +7,7 @@ use zihuan_core::agent::{
     LLM_KIND_MATH_PROGRAMMING, LLM_KIND_NATURAL_LANGUAGE_REPLY,
 };
 use zihuan_core::role::service_config::MemoryBackendKind;
+use zihuan_core::time_unit::TimeWindowUnit;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -52,38 +53,12 @@ pub struct QqChatEmotionDimensionConfig {
     pub dissipation_hours: i64,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum QqChatMessageRateLimitWindowUnit {
-    Minute,
-    Hour,
-    Day,
-}
-
-impl QqChatMessageRateLimitWindowUnit {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Minute => "minute",
-            Self::Hour => "hour",
-            Self::Day => "day",
-        }
-    }
-
-    pub fn window_seconds(&self) -> i64 {
-        match self {
-            Self::Minute => 60,
-            Self::Hour => 60 * 60,
-            Self::Day => 60 * 60 * 24,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QqChatMessageRateLimitRule {
     #[serde(default)]
     pub unlimited: bool,
     #[serde(default)]
-    pub window_unit: Option<QqChatMessageRateLimitWindowUnit>,
+    pub window_unit: Option<TimeWindowUnit>,
     #[serde(default)]
     pub max_calls: Option<usize>,
     #[serde(default = "default_message_rate_limit_window_size")]
@@ -122,7 +97,7 @@ impl QqChatMessageRateLimitRule {
 
     /// Total window length in seconds: `window_unit` seconds multiplied by `window_size`.
     pub fn window_seconds(&self) -> Option<i64> {
-        self.window_unit.map(|unit| unit.window_seconds() * self.window_size.max(1))
+        self.window_unit.map(|unit| unit.seconds() * self.window_size.max(1))
     }
 }
 
