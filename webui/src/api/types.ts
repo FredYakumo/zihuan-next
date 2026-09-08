@@ -207,7 +207,6 @@ export interface ScheduledTaskEntry {
 }
 
 // WebSocket message types
-import type { QQMessageItem } from "../ui/dialogs/types";
 
 export type ServerMessage =
   | { type: "TaskStarted"; task_id: string; graph_name: string; graph_session_id: string }
