@@ -1,10 +1,8 @@
 use std::sync::{Arc, Mutex};
 
+use crate::qq_session_state::{EmotionAdjustmentDirection, QqChatSessionState};
+use crate::role_config::QqChatEmotionDimensionConfig;
 use serde_json::Value;
-use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
-use zihuan_core::agent::session_state::{
-    EmotionAdjustmentDirection, QqChatAgentServiceSessionState,
-};
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
@@ -14,7 +12,7 @@ use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 use super::common::{optional_string_argument, StaticFunctionToolSpec};
 
 pub(crate) struct UpdateAgentStateTool {
-    session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
+    session_state: Arc<Mutex<QqChatSessionState>>,
     emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     llm: Arc<dyn LLMBase>,
     current_user_message: String,
@@ -22,7 +20,7 @@ pub(crate) struct UpdateAgentStateTool {
 
 impl UpdateAgentStateTool {
     pub(crate) fn new(
-        session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
+        session_state: Arc<Mutex<QqChatSessionState>>,
         emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
         llm: Arc<dyn LLMBase>,
         current_user_message: String,

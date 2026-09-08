@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
-use crate::agent::qq_chat::QqChatEmotionDimensionConfig;
-use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use zihuan_core::error::{Error, Result};
+
+use crate::role_config::QqChatEmotionDimensionConfig;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -13,7 +14,7 @@ pub enum EmotionAdjustmentDirection {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct QqChatAgentServiceSessionState {
+pub struct QqChatSessionState {
     #[serde(default)]
     pub emotion_dimensions: HashMap<String, f64>,
     #[serde(default)]
@@ -24,7 +25,7 @@ pub struct QqChatAgentServiceSessionState {
     pub extra_state: HashMap<String, Value>,
 }
 
-impl QqChatAgentServiceSessionState {
+impl QqChatSessionState {
     pub fn sync_emotion_dimensions(&mut self, dimensions: &[QqChatEmotionDimensionConfig]) {
         let mut allowed_names = Vec::with_capacity(dimensions.len());
         for dimension in dimensions {

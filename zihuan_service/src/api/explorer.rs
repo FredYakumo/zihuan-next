@@ -4,7 +4,7 @@ use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sqlx::Row as SqlxRow;
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::config::role_services::load_role_services;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 
@@ -1365,27 +1365,31 @@ fn load_service_and_connections(
 fn service_memory_config(
     agent: &zihuan_core::agent::service_config::RoleServiceConfig,
 ) -> (Option<String>, Option<String>, Option<String>) {
-    match &agent.role_service_type {
-        RoleServiceType::QqChat(config) => (
-            config.weaviate_memory_connection_id.clone(),
-            config.elasticsearch_memory_connection_id.clone(),
-            config.embedding_model_ref_id.clone(),
-        ),
-        RoleServiceType::Workspace(_) => (None, None, None),
-    }
+    zihuan_service::role::optional_qq_chat(&agent.role_service_type).map_or(
+        (None, None, None),
+        |config| {
+            (
+                config.weaviate_memory_connection_id.clone(),
+                config.elasticsearch_memory_connection_id.clone(),
+                config.embedding_model_ref_id.clone(),
+            )
+        },
+    )
 }
 
 fn service_image_config(
     agent: &zihuan_core::agent::service_config::RoleServiceConfig,
 ) -> (Option<String>, Option<String>, Option<String>) {
-    match &agent.role_service_type {
-        RoleServiceType::QqChat(config) => (
-            config.weaviate_image_connection_id.clone(),
-            config.elasticsearch_image_connection_id.clone(),
-            config.embedding_model_ref_id.clone(),
-        ),
-        _ => (None, None, None),
-    }
+    zihuan_service::role::optional_qq_chat(&agent.role_service_type).map_or(
+        (None, None, None),
+        |config| {
+            (
+                config.weaviate_image_connection_id.clone(),
+                config.elasticsearch_image_connection_id.clone(),
+                config.embedding_model_ref_id.clone(),
+            )
+        },
+    )
 }
 
 async fn embedding_vectors(
@@ -1520,12 +1524,9 @@ async fn resolve_agent_rdb_connection(
         .into_iter()
         .find(|item| item.id == agent_id)
         .ok_or_else(|| zihuan_core::string_error!("agent '{}' not found", agent_id))?;
-    let RoleServiceType::QqChat(config) = agent.role_service_type else {
-        return Err(zihuan_core::string_error!(
-            "agent '{}' is not a QQ Chat Agent Service",
-            agent_id
-        ));
-    };
+    let config = zihuan_service::role::qq_chat_of(&agent.role_service_type).map_err(|_| {
+        zihuan_core::string_error!("agent '{}' is not a QQ Chat Agent Service", agent_id)
+    })?;
     let rdb_id = config.resolved_rdb_id().ok_or_else(|| {
         zihuan_core::string_error!("QQ Chat Agent Service '{}' has no rdb_id configured", agent_id)
     })?;

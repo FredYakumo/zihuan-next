@@ -7,7 +7,7 @@ pub const LLM_KIND_MATH_PROGRAMMING: &str = "math_programming";
 pub const LLM_KIND_NATURAL_LANGUAGE_REPLY: &str = "natural_language_reply";
 
 pub mod agent;
-pub mod qq_chat;
+pub mod resource_provider;
 pub mod runtime_context;
 pub mod service_config;
 pub mod sub_agent;
@@ -58,7 +58,6 @@ fn default_retry_count() -> u32 {
 pub mod dream_agent;
 pub mod inference_provider;
 pub mod resource_resolver;
-pub mod session_state;
 mod shared_tool;
 pub mod tool_definitions;
 pub mod tools;

@@ -1,9 +1,16 @@
 use log::{info, warn};
 use serde_json::{json, Map, Value};
 
-use crate::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use crate::agent::service_config::{RoleServiceConfig, RoleServiceKind, RoleServiceType};
 use crate::config::{ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord};
 use crate::error::Result;
+
+pub fn role_service_config_kind(role_service_type: &RoleServiceType) -> ConfigKind {
+    match role_service_type.kind {
+        RoleServiceKind::QqChat => ConfigKind::ServiceQqChat,
+        RoleServiceKind::Workspace => ConfigKind::ServiceWorkspace,
+    }
+}
 
 impl ConfigRecord for RoleServiceConfig {
     fn config_id(&self) -> &str {
@@ -23,10 +30,7 @@ impl ConfigRecord for RoleServiceConfig {
     }
 
     fn kind(&self) -> ConfigKind {
-        match self.role_service_type {
-            RoleServiceType::QqChat(_) => ConfigKind::ServiceQqChat,
-            RoleServiceType::Workspace(_) => ConfigKind::ServiceWorkspace,
-        }
+        role_service_config_kind(&self.role_service_type)
     }
 
     fn validate(&self) -> Result<()> {
@@ -155,16 +159,20 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<RoleServiceConfig> {
     })
 }
 
+/// 早期 QQ 配置可能只写了 mysql/task_db 连接而未写 rdb_id。该迁移在 raw 载荷上把
+/// `mysql_connection_id`/`task_db_connection_id` 提升为 `rdb_id`，纯字段搬运，不依赖具体类型。
 fn migrate_legacy_qq_rdb_id(config_id: &str, role_service_type: &mut RoleServiceType) {
-    let RoleServiceType::QqChat(config) = role_service_type else {
-        return;
-    };
-    let rdb_id = non_empty_id(config.rdb_id.as_deref());
-    let mysql_connection_id = non_empty_id(config.mysql_connection_id.as_deref());
-    let task_db_connection_id = non_empty_id(config.task_db_connection_id.as_deref());
-    if rdb_id.is_some() {
+    if role_service_type.kind != RoleServiceKind::QqChat {
         return;
     }
+    let payload = role_service_type.payload_mut();
+    if non_empty_str(payload.get("rdb_id").and_then(Value::as_str)).is_some() {
+        return;
+    }
+    let mysql_connection_id =
+        non_empty_str(payload.get("mysql_connection_id").and_then(Value::as_str));
+    let task_db_connection_id =
+        non_empty_str(payload.get("task_db_connection_id").and_then(Value::as_str));
     if let (Some(mysql_id), Some(task_id)) = (&mysql_connection_id, &task_db_connection_id) {
         if mysql_id != task_id {
             warn!(
@@ -173,9 +181,11 @@ fn migrate_legacy_qq_rdb_id(config_id: &str, role_service_type: &mut RoleService
             );
         }
     }
-    config.rdb_id = mysql_connection_id.or(task_db_connection_id);
+    if let Some(rdb_id) = mysql_connection_id.or(task_db_connection_id) {
+        payload.insert("rdb_id".to_string(), Value::String(rdb_id));
+    }
 }
 
-fn non_empty_id(value: Option<&str>) -> Option<String> {
+fn non_empty_str(value: Option<&str>) -> Option<String> {
     value.map(str::trim).filter(|value| !value.is_empty()).map(ToOwned::to_owned)
 }

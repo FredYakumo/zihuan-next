@@ -2,6 +2,7 @@
 
 pub mod api;
 pub mod procedure;
+pub mod role_config;
 pub mod tools;
 pub mod workspace_agent_service;
 pub mod task_tracking {

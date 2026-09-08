@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::qq_session_state::QqChatSessionState;
+use crate::role_config::QqChatEmotionDimensionConfig;
 use async_trait::async_trait;
 use log::info;
-use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
-use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use zihuan_core::agent::runtime_context::current_agent_resources;
 use zihuan_core::agent::tools::{LongTaskContext, ToolCallingEngine, ToolCallingStopReason};
 use zihuan_core::error::Result;
 use zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_OWNER_TYPE;
@@ -98,7 +98,7 @@ impl QqBrain {
         base_system_prompt: String,
         shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
         consumed_steer_messages: Arc<Mutex<Vec<LLMMessage>>>,
-        turn_session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
+        turn_session_state: Arc<Mutex<QqChatSessionState>>,
         emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
         preprompt_context: Option<String>,
     ) -> Result<Self> {
@@ -360,7 +360,7 @@ impl QqBrain {
             tool_quota.clone(),
         ));
 
-        let qq_chat_agent = current_qq_chat_agent_service_config()?;
+        let resources = current_agent_resources()?;
         for tool_def in &service.tool_definitions {
             brain.add_tool(wrap_brain_tool_with_quota(
                 EditableQqAgentTool {
@@ -370,7 +370,7 @@ impl QqBrain {
                         shared_inputs: service.shared_inputs.clone(),
                         definition: tool_def.clone(),
                         shared_runtime_values: Arc::clone(&shared_runtime_values),
-                        qq_chat_agent: Some(qq_chat_agent.clone()),
+                        resources: Some(resources.clone()),
                         result_mode: ToolResultMode::SingleString,
                         builtin_executor: Some(
                             crate::qq_tool_subgraph_hooks::image_understand_executor(),

@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceKind};
+
+use crate::role_config::WorkspaceRoleServiceConfig;
 use zihuan_core::chat_history::{sanitize_session_title, write_session_title};
 use zihuan_core::error::Result;
 use zihuan_core::model_inference::agent_config_support::build_llm_from_ref_id;
@@ -55,8 +57,12 @@ fn session_title_llm_ref_id(
     if !has_user_text {
         return None;
     }
-    let RoleServiceType::Workspace(config) = &agent.role_service_type else {
+    if agent.role_service_type.kind != RoleServiceKind::Workspace {
         return None;
+    }
+    let config: WorkspaceRoleServiceConfig = match agent.role_service_type.parse_typed_config() {
+        Ok(config) => config,
+        Err(_) => return None,
     };
     config
         .orchestration_llm_ref_id

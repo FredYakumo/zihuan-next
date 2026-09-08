@@ -3,12 +3,7 @@ use std::collections::HashMap;
 use crate::api::config::now_rfc3339;
 use crate::setup_orchestrator::{ImsBotAdapterSetupConfig, LlmSetupConfig};
 use crate::system_config;
-use zihuan_core::agent::qq_chat::{
-    DreamIntervalUnit, QqChatAgentServiceConfig, RetrievalStoreConfig,
-};
-use zihuan_core::agent::service_config::{
-    RoleServiceConfig, RoleServiceType, WorkspaceAgentServiceConfig,
-};
+use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::config::llm_refs::LlmRefConfig;
 use zihuan_core::ims_bot_adapter::BotAdapterConnection;
 use zihuan_core::model_inference::model_config::{LlmApiStyle, LlmServiceConfig, ModelRefSpec};
@@ -17,6 +12,10 @@ use zihuan_core::storage::{
     SqliteConnection, WeaviateConnection, WebSearchEngineConnection,
 };
 use zihuan_core::weaviate::WeaviateCollectionSchema;
+use zihuan_ims_service::role_config::{
+    DreamIntervalUnit, QqChatRoleServiceConfig, RetrievalStoreConfig,
+};
+use zihuan_workspace_service::role_config::WorkspaceRoleServiceConfig;
 
 pub async fn create_chat_assistant_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {
     let llm_ref = build_llm_ref(llm_config, "setup-default-llm", "Default LLM");
@@ -242,50 +241,51 @@ fn build_qq_chat_agent_service() -> RoleServiceConfig {
         default_tools.insert(tool.to_string(), true);
     }
 
+    let config = QqChatRoleServiceConfig {
+        ims_bot_adapter_connection_id: "setup-default-bot-adapter".to_string(),
+        rustfs_connection_id: Some("setup-default-rustfs".to_string()),
+        bot_name: "ZihuanBot".to_string(),
+        system_prompt: None,
+        llm_ref_id: Some("setup-default-llm".to_string()),
+        image_understand_llm_ref_id: None,
+        intent_classification_llm_ref_id: None,
+        math_programming_llm_ref_id: None,
+        natural_language_reply_llm_ref_id: None,
+        natural_language_reply_system_prompt: None,
+        embedding_model_ref_id: Some("setup-default-embedding".to_string()),
+        tokenizer_connection_id: None,
+        web_search_engine_connection_id: "setup-default-web-search".to_string(),
+        rdb_id: Some("setup-default-sqlite".to_string()),
+        retrieval_store: Some(RetrievalStoreConfig::Connection {
+            connection_id: "setup-default-weaviate-memory".to_string(),
+        }),
+        embedding: None,
+        mysql_connection_id: None,
+        task_db_connection_id: None,
+        weaviate_image_connection_id: Some("setup-default-weaviate-image".to_string()),
+        elasticsearch_image_connection_id: None,
+        weaviate_memory_connection_id: Some("setup-default-weaviate-memory".to_string()),
+        elasticsearch_memory_connection_id: None,
+        memory_backend: None,
+        max_message_length: 500,
+        dream_enabled: false,
+        dream_interval_value: 15,
+        dream_interval_unit: DreamIntervalUnit::default(),
+        max_steer_count: 4,
+        default_tools_enabled: default_tools,
+        tool_session_call_limits: HashMap::new(),
+        tool_session_limit_message: None,
+        message_rate_limit_default: None,
+        message_rate_limit_groups: vec![],
+        message_rate_limit_users: vec![],
+        emotion_dimensions: vec![],
+        event_handler_threads: None,
+    };
     RoleServiceConfig {
         id: "setup-default-agent".to_string(),
         config_id: "setup-default-agent".to_string(),
         name: "QQ Chat Bot".to_string(),
-        role_service_type: RoleServiceType::QqChat(QqChatAgentServiceConfig {
-            ims_bot_adapter_connection_id: "setup-default-bot-adapter".to_string(),
-            rustfs_connection_id: Some("setup-default-rustfs".to_string()),
-            bot_name: "ZihuanBot".to_string(),
-            system_prompt: None,
-            llm_ref_id: Some("setup-default-llm".to_string()),
-            image_understand_llm_ref_id: None,
-            intent_classification_llm_ref_id: None,
-            math_programming_llm_ref_id: None,
-            natural_language_reply_llm_ref_id: None,
-            natural_language_reply_system_prompt: None,
-            embedding_model_ref_id: Some("setup-default-embedding".to_string()),
-            tokenizer_connection_id: None,
-            web_search_engine_connection_id: "setup-default-web-search".to_string(),
-            rdb_id: Some("setup-default-sqlite".to_string()),
-            retrieval_store: Some(RetrievalStoreConfig::Connection {
-                connection_id: "setup-default-weaviate-memory".to_string(),
-            }),
-            embedding: None,
-            mysql_connection_id: None,
-            task_db_connection_id: None,
-            weaviate_image_connection_id: Some("setup-default-weaviate-image".to_string()),
-            elasticsearch_image_connection_id: None,
-            weaviate_memory_connection_id: Some("setup-default-weaviate-memory".to_string()),
-            elasticsearch_memory_connection_id: None,
-            memory_backend: None,
-            max_message_length: 500,
-            dream_enabled: false,
-            dream_interval_value: 15,
-            dream_interval_unit: DreamIntervalUnit::default(),
-            max_steer_count: 4,
-            default_tools_enabled: default_tools,
-            tool_session_call_limits: HashMap::new(),
-            tool_session_limit_message: None,
-            message_rate_limit_default: None,
-            message_rate_limit_groups: vec![],
-            message_rate_limit_users: vec![],
-            emotion_dimensions: vec![],
-            event_handler_threads: None,
-        }),
+        role_service_type: zihuan_service::role::qq_chat_from(config),
         enabled: true,
         auto_start: false,
         is_default: false,
@@ -300,23 +300,24 @@ fn build_workspace_agent_service(
     name: &str,
     llm_ref_id: Option<String>,
 ) -> RoleServiceConfig {
+    let config = WorkspaceRoleServiceConfig {
+        llm_ref_id,
+        orchestration_llm_ref_id: None,
+        image_understand_llm_ref_id: None,
+        agents_md_enabled: true,
+        memory_enabled: false,
+        embedding_model_ref_id: None,
+        weaviate_memory_connection_id: None,
+        elasticsearch_memory_connection_id: None,
+        memory_backend: None,
+        web_search_engine_connection_id: None,
+        default_tools_enabled: default_workspace_tools(),
+    };
     RoleServiceConfig {
         id: id.to_string(),
         config_id: id.to_string(),
         name: name.to_string(),
-        role_service_type: RoleServiceType::Workspace(WorkspaceAgentServiceConfig {
-            llm_ref_id,
-            orchestration_llm_ref_id: None,
-            image_understand_llm_ref_id: None,
-            agents_md_enabled: true,
-            memory_enabled: false,
-            embedding_model_ref_id: None,
-            weaviate_memory_connection_id: None,
-            elasticsearch_memory_connection_id: None,
-            memory_backend: None,
-            web_search_engine_connection_id: None,
-            default_tools_enabled: default_workspace_tools(),
-        }),
+        role_service_type: zihuan_service::role::workspace_from(config),
         enabled: true,
         auto_start: false,
         is_default: false,

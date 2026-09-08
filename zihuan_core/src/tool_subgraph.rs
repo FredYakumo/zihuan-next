@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use log::{info, warn};
 use serde_json::{json, Map, Value};
 
-use crate::agent::qq_chat::QqChatAgentServiceConfig;
 use crate::agent::runtime_context::{with_current_agent_runtime_context, AgentRuntimeContext};
 use crate::config::ConfigCenter;
 use crate::error::{Error, Result};
@@ -45,7 +44,7 @@ pub struct ToolSubgraphRunner {
     pub shared_inputs: Vec<FunctionPortDef>,
     pub definition: ToolDefinition,
     pub shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
-    pub qq_chat_agent: Option<QqChatAgentServiceConfig>,
+    pub resources: Option<crate::agent::resource_provider::SharedAgentResourceProvider>,
     pub result_mode: ToolResultMode,
     pub builtin_executor: Option<BuiltinToolExecutor>,
     pub progress_notifier: Option<ToolProgressNotifier>,
@@ -478,8 +477,8 @@ impl ToolSubgraphRunner {
             .map_err(|e| {
                 self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name))
             })?;
-        let execution_result = if let Some(config) = self.qq_chat_agent.clone() {
-            with_current_agent_runtime_context(AgentRuntimeContext::QqChat(config), || {
+        let execution_result = if let Some(resources) = self.resources.clone() {
+            with_current_agent_runtime_context(AgentRuntimeContext { resources }, || {
                 graph.execute_and_capture_results()
             })
         } else {

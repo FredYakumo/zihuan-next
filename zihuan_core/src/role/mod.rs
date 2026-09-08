@@ -7,17 +7,12 @@ pub mod procedure;
 pub mod transport;
 
 pub use brain_agent::{BrainAgent, ContextCompactionEvent, ContextCompactionObserver};
+pub use crate::agent::service_config::RoleServiceKind;
 pub use procedure::{
     execute_blocking_procedure_chain, execute_procedure_chain, Procedure, ProcedureContext,
     ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
 };
 pub use transport::TransportSink;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RoleServiceKind {
-    QqChat,
-    Workspace,
-}
 
 /// metadata for a configured, externally reachable role service.
 #[derive(Debug, Clone, PartialEq, Eq)]

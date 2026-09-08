@@ -17,11 +17,9 @@ use zihuan_core::agent::tools::ToolCallingStopReason;
 use crate::agent::emotion::utils::{
     emotion_dimensions_text, emotion_expression_prompt, has_noticeable_emotion_expression,
 };
-use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
-use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
-use zihuan_core::agent::session_state::{
-    EmotionAdjustmentDirection, QqChatAgentServiceSessionState,
-};
+use crate::qq_chat::resources::current_qq_chat_role_service_config;
+use crate::qq_session_state::{EmotionAdjustmentDirection, QqChatSessionState};
+use crate::role_config::QqChatEmotionDimensionConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::LLMMessage;
@@ -75,7 +73,7 @@ use crate::qq_chat::style_learner::{
 };
 
 fn execute_privileged_emotion_command(
-    session_state_store: &Mutex<QqChatAgentServiceSessionState>,
+    session_state_store: &Mutex<QqChatSessionState>,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
     command: QqPrivilegedCommand,
     args: &[String],
@@ -261,7 +259,7 @@ impl QqChatAgentServiceInner {
             };
             let mut cmd_session_state = ctx.session_state_store.lock().unwrap().clone();
             let cmd_emotion_dimensions =
-                current_qq_chat_agent_service_config()?.resolved_emotion_dimensions();
+                current_qq_chat_role_service_config()?.resolved_emotion_dimensions();
 
             let user_msg_for_cmd = message_with_api_style(
                 build_user_message(
@@ -383,7 +381,7 @@ impl QqChatAgentServiceInner {
         trace.log_user_message(&raw_user_message, &current_message);
 
         let emotion_dimensions =
-            current_qq_chat_agent_service_config()?.resolved_emotion_dimensions();
+            current_qq_chat_role_service_config()?.resolved_emotion_dimensions();
         let now_unix_seconds =
             SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
         {
@@ -1292,7 +1290,7 @@ impl QqChatAgentServiceInner {
         current_message: &str,
         history_key: &str,
         mut history: Vec<LLMMessage>,
-        turn_session_state: &Arc<Mutex<QqChatAgentServiceSessionState>>,
+        turn_session_state: &Arc<Mutex<QqChatSessionState>>,
         emotion_dimensions: &[QqChatEmotionDimensionConfig],
     ) -> Result<QqChatServiceTurnResult> {
         let function_list = zihuan_core::command::build_help_text()

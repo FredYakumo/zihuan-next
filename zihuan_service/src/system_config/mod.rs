@@ -1,15 +1,15 @@
 pub mod role_services {
-    pub use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
     #[allow(unused_imports)]
-    pub use zihuan_core::agent::service_config::{
-        RoleServiceConfig, RoleServiceType, WorkspaceAgentServiceConfig,
-    };
+    pub use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
     pub use zihuan_core::agent::tool_config::{
         AgentToolConfig, AgentToolType, NodeGraphToolConfig,
     };
     #[allow(unused_imports)]
     pub use zihuan_core::agent::EmbeddingServiceConfig;
     pub use zihuan_core::model_inference::model_config::LlmServiceConfig;
+    pub use zihuan_ims_service::role_config::QqChatRoleServiceConfig;
+    #[allow(unused_imports)]
+    pub use zihuan_workspace_service::role_config::WorkspaceRoleServiceConfig;
 }
 
 pub mod connections {

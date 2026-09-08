@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use log::{info, warn};
-use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use crate::qq_session_state::QqChatSessionState;
+use crate::role_config::QqChatEmotionDimensionConfig;
 use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingStopReason};
 use zihuan_core::agent::{Agent, AgentContext, AgentDescriptor};
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -89,7 +89,7 @@ pub(crate) struct PrepromptContext<'a> {
     pub(crate) sender_id: &'a str,
     pub(crate) target_id: &'a str,
     pub(crate) is_group: bool,
-    pub(crate) session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
+    pub(crate) session_state: Arc<Mutex<QqChatSessionState>>,
     pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     pub(crate) memory_resources: Option<AgentMemoryToolResources>,
     pub(crate) rdb_pool: Option<RelationalDbConnection>,

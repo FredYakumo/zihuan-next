@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use uuid::Uuid;
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::agent::tools::{ToolCallingObserver, ToolCallingStopReason};
 use zihuan_core::agent::AgentCancellation;
 use zihuan_core::chat_history::{
@@ -506,24 +506,19 @@ fn extract_agent_snapshot(
     agent: &RoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> AgentSnapshot {
-    let role_service_type = match &agent.role_service_type {
-        RoleServiceType::QqChat(_) => "qq_chat",
-        RoleServiceType::Workspace(_) => "workspace",
-    };
-
-    let avatar_url = match &agent.role_service_type {
-        RoleServiceType::QqChat(config) => {
+    let avatar_url =
+        if let Some(config) = zihuan_service::role::optional_qq_chat(&agent.role_service_type) {
             resolve_fallback_bot_profile(connections, &config.ims_bot_adapter_connection_id)
                 .ok()
                 .flatten()
                 .and_then(|profile| profile.avatar_url)
-        }
-        RoleServiceType::Workspace(_) => agent.avatar_url.clone(),
-    };
+        } else {
+            agent.avatar_url.clone()
+        };
 
     AgentSnapshot {
         name: agent.name.clone(),
-        role_service_type: role_service_type.to_string(),
+        role_service_type: agent.role_service_type.kind_tag().into(),
         avatar_url,
     }
 }
@@ -1260,9 +1255,7 @@ async fn execute_chat_streaming(
     let assistant_message_id =
         requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
 
-    let workspace_task = if should_run_inference
-        && matches!(agent.role_service_type, RoleServiceType::Workspace(_))
-    {
+    let workspace_task = if should_run_inference && zihuan_service::role::is_workspace_agent(&agent) {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let task_id = state.tasks.lock().unwrap().add_workspace_chat_task(
             agent.id.clone(),
@@ -1577,7 +1570,7 @@ async fn execute_chat_streaming(
         if let Some((task_id, _)) = &workspace_task {
             finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Stopped, None, None);
         }
-        if matches!(agent.role_service_type, RoleServiceType::Workspace(_)) {
+        if zihuan_service::role::is_workspace_agent(&agent) {
             if let Err(error) = interrupt_workspace_tasks(&session_id, "用户手动停止推理") {
                 log::warn!("failed to interrupt workspace tasks: {error}");
             }
@@ -2481,7 +2474,7 @@ fn resolve_effective_workspace_path(
     session_id: Option<&str>,
     requested_workspace_path: Option<&str>,
 ) -> Result<Option<String>> {
-    if !matches!(agent.role_service_type, RoleServiceType::Workspace(_)) {
+    if !zihuan_service::role::is_workspace_agent(&agent) {
         return Ok(None);
     }
 

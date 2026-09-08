@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use crate::qq_session_state::QqChatSessionState;
+use crate::role_config::QqChatEmotionDimensionConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
@@ -23,7 +23,7 @@ pub(crate) struct QqReplyReviewRequest {
     pub sender_id: String,
     pub sender_nickname: String,
     pub sender_card: String,
-    pub session_state: QqChatAgentServiceSessionState,
+    pub session_state: QqChatSessionState,
     pub emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     pub model_identity_context: Option<ModelIdentityContext>,
 }
@@ -354,7 +354,7 @@ fn strip_image_protocol_placeholders(message: &str) -> String {
 }
 
 fn build_session_state_hint(
-    session_state: &QqChatAgentServiceSessionState,
+    session_state: &QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> String {
     format!(

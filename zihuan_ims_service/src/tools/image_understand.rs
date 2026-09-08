@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::qq_chat::resources::current_qq_chat_role_service_config;
+use crate::role_config::image_understand_llm_ref_id;
 use log::warn;
 use serde_json::Value;
-use zihuan_core::agent::qq_chat::image_understand_llm_ref_id;
-use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
 use zihuan_core::agent::tools::{Tool, ToolExecutionOutput};
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -151,7 +151,7 @@ fn resolve_image_understand_s3_ref(s3_ref: Option<Arc<S3Ref>>) -> Result<Option<
 }
 
 fn load_agent_s3_ref() -> Option<Result<Arc<S3Ref>>> {
-    let config = current_qq_chat_agent_service_config().ok()?;
+    let config = current_qq_chat_role_service_config().ok()?;
     let connection_id = config
         .rustfs_connection_id
         .as_deref()
@@ -207,7 +207,7 @@ fn analyze_persisted_media(
 }
 
 fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>> {
-    let agent = current_qq_chat_agent_service_config()?;
+    let agent = current_qq_chat_role_service_config()?;
     let llm_refs = load_llm_refs()?;
     let llm_ref_id = image_understand_llm_ref_id(&agent)
         .map(str::trim)

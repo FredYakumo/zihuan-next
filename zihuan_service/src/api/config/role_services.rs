@@ -42,11 +42,11 @@ use zihuan_ims_service::qq_chat::privilege_store::{
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::system_config;
-use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
 use zihuan_core::agent::tool_config::AgentToolConfig;
 use zihuan_core::config::llm_refs::{load_llm_refs, LlmRefConfig};
 use zihuan_core::error::{Error as CoreError, Result as CoreResult};
+use zihuan_ims_service::role_config::QqChatRoleServiceConfig;
 use zihuan_service::{RoleServiceRuntimeInfo, RoleServiceRuntimeStatus};
 
 use super::{
@@ -521,10 +521,7 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
             let mut items = Vec::with_capacity(agents.len());
             for mut agent in agents {
                 let runtime = state.role_service_manager.runtime_info(&agent.id);
-                let qq_config = match &agent.role_service_type {
-                    RoleServiceType::QqChat(config) => Some(config.clone()),
-                    RoleServiceType::Workspace(_) => None,
-                };
+                let qq_config = zihuan_service::role::optional_qq_chat(&agent.role_service_type);
                 let qq_chat_profile = match qq_config.as_ref() {
                     Some(config) => {
                         resolve_qq_chat_profile(state, &mut agent, &connections, config, &runtime)
@@ -546,7 +543,7 @@ async fn resolve_qq_chat_profile(
     _state: &Arc<AppState>,
     agent: &mut RoleServiceConfig,
     connections: &[ConnectionConfig],
-    config: &QqChatAgentServiceConfig,
+    config: &QqChatRoleServiceConfig,
     runtime: &RoleServiceRuntimeInfo,
 ) -> Option<QqChatProfile> {
     let profile = if runtime.status == RoleServiceRuntimeStatus::Running {
@@ -576,18 +573,18 @@ async fn resolve_qq_chat_profile(
     })
 }
 
-fn resolve_qq_chat_agent_service_config<'a>(
-    agents: &'a [RoleServiceConfig],
+fn resolve_qq_chat_agent_service_config(
+    agents: &[RoleServiceConfig],
     agent_id: &str,
-) -> Result<&'a QqChatAgentServiceConfig, String> {
+) -> Result<QqChatRoleServiceConfig, String> {
     let agent = agents
         .iter()
         .find(|item| item.id == agent_id)
         .ok_or_else(|| "Agent not found".to_string())?;
-    let RoleServiceType::QqChat(config) = &agent.role_service_type else {
+    if !zihuan_service::role::is_qq_chat_agent(agent) {
         return Err("Agent is not a QQ Chat Agent Service".to_string());
-    };
-    Ok(config)
+    }
+    zihuan_service::role::qq_chat_of(&agent.role_service_type).map_err(|err| err.to_string())
 }
 
 async fn resolve_agent_rdb_connection(
@@ -957,36 +954,33 @@ fn validate_agent_connection_schemas(
     role_service_type: &RoleServiceType,
     connections: &[ConnectionConfig],
 ) -> Result<(), String> {
-    match role_service_type {
-        RoleServiceType::QqChat(config) => {
-            validate_rdb_connection(connections, config.resolved_rdb_id())?;
-            if config.dream_enabled {
-                if config.dream_interval_seconds().is_none() {
-                    return Err(
-                        "Dream interval must use minutes, hours, or days with a positive value"
-                            .to_string(),
-                    );
-                }
-                if config.resolved_rdb_id().is_none() {
-                    return Err("Dream requires a relational database connection".to_string());
-                }
-            }
-            validate_weaviate_connection_schema(
-                connections,
-                config.weaviate_image_connection_id.as_deref(),
-                WeaviateCollectionSchema::ImageSemantic,
-                "weaviate_image_connection_id",
-            )?;
-            validate_weaviate_connection_schema(
-                connections,
-                config.weaviate_memory_connection_id.as_deref(),
-                WeaviateCollectionSchema::AgentMemory,
-                "weaviate_memory_connection_id",
-            )?;
-            Ok(())
+    let Some(config) = zihuan_service::role::optional_qq_chat(role_service_type) else {
+        return Ok(());
+    };
+    validate_rdb_connection(connections, config.resolved_rdb_id())?;
+    if config.dream_enabled {
+        if config.dream_interval_seconds().is_none() {
+            return Err(
+                "Dream interval must use minutes, hours, or days with a positive value".to_string()
+            );
         }
-        RoleServiceType::Workspace(_) => Ok(()),
+        if config.resolved_rdb_id().is_none() {
+            return Err("Dream requires a relational database connection".to_string());
+        }
     }
+    validate_weaviate_connection_schema(
+        connections,
+        config.weaviate_image_connection_id.as_deref(),
+        WeaviateCollectionSchema::ImageSemantic,
+        "weaviate_image_connection_id",
+    )?;
+    validate_weaviate_connection_schema(
+        connections,
+        config.weaviate_memory_connection_id.as_deref(),
+        WeaviateCollectionSchema::AgentMemory,
+        "weaviate_memory_connection_id",
+    )?;
+    Ok(())
 }
 
 fn validate_qq_chat_agent_service_llms(
@@ -994,100 +988,98 @@ fn validate_qq_chat_agent_service_llms(
     llm_refs: &[LlmRefConfig],
     agent_name: &str,
 ) -> Result<(), String> {
-    match role_service_type {
-        RoleServiceType::QqChat(config) => {
-            let llm_ref_id = config
-                .llm_ref_id
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| format!("agent '{}' is missing llm_ref_id", agent_name))?;
-            let resolved_llm_ref_id = config
-                .image_understand_llm_ref_id
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .unwrap_or(llm_ref_id);
+    if let Some(config) = zihuan_service::role::optional_qq_chat(role_service_type) {
+        let llm_ref_id = config
+            .llm_ref_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| format!("agent '{}' is missing llm_ref_id", agent_name))?;
+        let resolved_llm_ref_id = config
+            .image_understand_llm_ref_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(llm_ref_id);
 
-            let llm_ref = llm_refs
-                .iter()
-                .find(|item| {
-                    item.id == resolved_llm_ref_id || item.config_id == resolved_llm_ref_id
-                })
-                .ok_or_else(|| {
-                    format!(
-                        "agent '{}' references missing llm_ref '{}'",
-                        agent_name, resolved_llm_ref_id
-                    )
-                })?;
-            if !llm_ref.enabled {
-                return Err(format!(
-                    "agent '{}' references disabled llm_ref '{}'",
-                    agent_name, llm_ref.name
-                ));
-            }
-            match &llm_ref.model {
-                zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlm { llm } => {
-                    if llm.supports_multimodal_input {
-                        Ok(())
-                    } else if config
-                        .image_understand_llm_ref_id
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty())
-                        .is_some()
-                    {
-                        Err(format!(
-                            "image_understand_llm_ref_id '{}' does not support multimodal input",
-                            llm_ref.name
-                        ))
-                    } else {
-                        Err(format!(
-                            "main llm_ref_id '{}' does not support multimodal input; please choose a multimodal model for image_understand_llm_ref_id",
-                            llm_ref.name
-                        ))
-                    }
-                }
-                zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal {
-                    ..
-                } => Err(format!(
-                    "agent '{}' references non-chat model_ref '{}' as image_understand_llm_ref_id",
-                    agent_name, llm_ref.name
-                )),
-            }?;
-
-            validate_chat_llm_ref(
-                llm_refs,
-                config
-                    .natural_language_reply_llm_ref_id
+        let llm_ref = llm_refs
+            .iter()
+            .find(|item| item.id == resolved_llm_ref_id || item.config_id == resolved_llm_ref_id)
+            .ok_or_else(|| {
+                format!(
+                    "agent '{}' references missing llm_ref '{}'",
+                    agent_name, resolved_llm_ref_id
+                )
+            })?;
+        if !llm_ref.enabled {
+            return Err(format!(
+                "agent '{}' references disabled llm_ref '{}'",
+                agent_name, llm_ref.name
+            ));
+        }
+        match &llm_ref.model {
+            zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlm { llm } => {
+                if llm.supports_multimodal_input {
+                    Ok(())
+                } else if config
+                    .image_understand_llm_ref_id
                     .as_deref()
                     .map(str::trim)
-                    .filter(|value| !value.is_empty()),
-                agent_name,
-                "natural_language_reply_llm_ref_id",
-            )?;
+                    .filter(|value| !value.is_empty())
+                    .is_some()
+                {
+                    Err(format!(
+                        "image_understand_llm_ref_id '{}' does not support multimodal input",
+                        llm_ref.name
+                    ))
+                } else {
+                    Err(format!(
+                        "main llm_ref_id '{}' does not support multimodal input; please choose a multimodal model for image_understand_llm_ref_id",
+                        llm_ref.name
+                    ))
+                }
+            }
+            zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal {
+                ..
+            } => Err(format!(
+                "agent '{}' references non-chat model_ref '{}' as image_understand_llm_ref_id",
+                agent_name, llm_ref.name
+            )),
+        }?;
 
-            validate_embedding_model_ref(
-                llm_refs,
-                config.embedding_model_ref_id.as_deref(),
-                agent_name,
-            )
-        }
-        RoleServiceType::Workspace(config) => {
-            validate_chat_llm_ref(
-                llm_refs,
-                config.llm_ref_id.as_deref().map(str::trim).filter(|value| !value.is_empty()),
-                agent_name,
-                "llm_ref_id",
-            )?;
-            validate_optional_chat_llm_ref(
-                llm_refs,
-                config.orchestration_llm_ref_id.as_deref(),
-                agent_name,
-                "orchestration_llm_ref_id",
-            )
-        }
+        validate_chat_llm_ref(
+            llm_refs,
+            config
+                .natural_language_reply_llm_ref_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+            agent_name,
+            "natural_language_reply_llm_ref_id",
+        )?;
+
+        return validate_embedding_model_ref(
+            llm_refs,
+            config.embedding_model_ref_id.as_deref(),
+            agent_name,
+        );
     }
+
+    if let Some(config) = zihuan_service::role::optional_workspace(role_service_type) {
+        validate_chat_llm_ref(
+            llm_refs,
+            config.llm_ref_id.as_deref().map(str::trim).filter(|value| !value.is_empty()),
+            agent_name,
+            "llm_ref_id",
+        )?;
+        return validate_optional_chat_llm_ref(
+            llm_refs,
+            config.orchestration_llm_ref_id.as_deref(),
+            agent_name,
+            "orchestration_llm_ref_id",
+        );
+    }
+    Ok(())
 }
 
 /// Validate an optional chat model reference: empty/missing means "fall back to the main model".

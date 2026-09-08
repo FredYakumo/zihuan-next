@@ -6,7 +6,7 @@ use log::error;
 use serde::Serialize;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::config::role_services::load_role_services;
 use zihuan_core::error::Result;
@@ -127,11 +127,10 @@ impl RoleServiceManager {
         mut context: ProcedureContext,
         mut procedures: Vec<Arc<dyn Procedure>>,
     ) -> Result<Vec<ProcedureOutput>> {
-        let mut owned = match &agent.role_service_type {
-            RoleServiceType::Workspace(_) => {
-                zihuan_workspace_service::procedure::collect(agent, &context)
-            }
-            RoleServiceType::QqChat(_) => Vec::new(),
+        let mut owned = if super::service_type_ext::is_workspace_agent(agent) {
+            zihuan_workspace_service::procedure::collect(agent, &context)
+        } else {
+            Vec::new()
         };
         owned.append(&mut procedures);
         execute_procedure_chain(owned, &mut context).await
@@ -166,63 +165,62 @@ impl RoleServiceManager {
 
             let runtime_instance_id = Uuid::new_v4().to_string();
 
-            match &agent.role_service_type {
-                RoleServiceType::QqChat(config) => {
-                    let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
-                    let manager = self.clone();
-                    let agent_id_for_callback = agent.id.clone();
-                    let callback = Arc::new(move |success: bool, error_message: Option<String>| {
-                        manager.update_state(
-                            &agent_id_for_callback,
-                            RoleServiceRuntimeState {
-                                instance_id: None,
-                                status: if success {
-                                    RoleServiceRuntimeStatus::Stopped
-                                } else {
-                                    RoleServiceRuntimeStatus::Error
-                                },
-                                started_at: None,
-                                last_error: error_message,
+            let is_qq_chat = super::service_type_ext::is_qq_chat_agent(agent);
+            if is_qq_chat {
+                let config = super::service_type_ext::qq_chat_of(&agent.role_service_type)?;
+                let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
+                let manager = self.clone();
+                let agent_id_for_callback = agent.id.clone();
+                let callback = Arc::new(move |success: bool, error_message: Option<String>| {
+                    manager.update_state(
+                        &agent_id_for_callback,
+                        RoleServiceRuntimeState {
+                            instance_id: None,
+                            status: if success {
+                                RoleServiceRuntimeStatus::Stopped
+                            } else {
+                                RoleServiceRuntimeStatus::Error
                             },
-                        );
-                    });
-                    let task = zihuan_ims_service::qq_chat::spawn(
-                        agent.clone(),
-                        config.clone(),
-                        connections,
-                        callback,
-                        task_runtime.clone(),
-                    )
-                    .await?;
-                    let started_at = Local::now().to_rfc3339();
-                    let mut guard = self.inner.lock().unwrap();
-                    let entry = guard.entry(agent.id.clone()).or_default();
-                    entry.role_service = Some(Arc::clone(&role_service));
-                    entry.state = RoleServiceRuntimeState {
-                        instance_id: Some(runtime_instance_id),
-                        status: RoleServiceRuntimeStatus::Running,
-                        started_at: Some(started_at),
-                        last_error: None,
-                    };
-                    entry.task = Some(task);
-                    entry.on_finish = on_finish_shared;
-                    Ok(())
-                }
-                RoleServiceType::Workspace(_config) => {
-                    let started_at = Local::now().to_rfc3339();
-                    let mut guard = self.inner.lock().unwrap();
-                    let entry = guard.entry(agent.id.clone()).or_default();
-                    entry.role_service = Some(Arc::clone(&role_service));
-                    entry.state = RoleServiceRuntimeState {
-                        instance_id: Some(runtime_instance_id),
-                        status: RoleServiceRuntimeStatus::Running,
-                        started_at: Some(started_at),
-                        last_error: None,
-                    };
-                    entry.task = None;
-                    entry.on_finish = Arc::new(Mutex::new(on_finish));
-                    Ok(())
-                }
+                            started_at: None,
+                            last_error: error_message,
+                        },
+                    );
+                });
+                let task = zihuan_ims_service::qq_chat::spawn(
+                    agent.clone(),
+                    config,
+                    connections,
+                    callback,
+                    task_runtime.clone(),
+                )
+                .await?;
+                let started_at = Local::now().to_rfc3339();
+                let mut guard = self.inner.lock().unwrap();
+                let entry = guard.entry(agent.id.clone()).or_default();
+                entry.role_service = Some(Arc::clone(&role_service));
+                entry.state = RoleServiceRuntimeState {
+                    instance_id: Some(runtime_instance_id),
+                    status: RoleServiceRuntimeStatus::Running,
+                    started_at: Some(started_at),
+                    last_error: None,
+                };
+                entry.task = Some(task);
+                entry.on_finish = on_finish_shared;
+                Ok(())
+            } else {
+                let started_at = Local::now().to_rfc3339();
+                let mut guard = self.inner.lock().unwrap();
+                let entry = guard.entry(agent.id.clone()).or_default();
+                entry.role_service = Some(Arc::clone(&role_service));
+                entry.state = RoleServiceRuntimeState {
+                    instance_id: Some(runtime_instance_id),
+                    status: RoleServiceRuntimeStatus::Running,
+                    started_at: Some(started_at),
+                    last_error: None,
+                };
+                entry.task = None;
+                entry.on_finish = Arc::new(Mutex::new(on_finish));
+                Ok(())
             }
         }
         .await;
@@ -308,16 +306,15 @@ pub fn build_role_tool_provider(
     agent: &RoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
-    match &agent.role_service_type {
-        RoleServiceType::QqChat(config) => {
-            zihuan_ims_service::qq_chat::load_inference_tool_provider(agent, config, connections)
-        }
-        RoleServiceType::Workspace(config) => {
-            zihuan_workspace_service::workspace_agent_service::load_inference_tool_provider(
-                agent,
-                config,
-                connections,
-            )
-        }
+    if super::service_type_ext::is_qq_chat_agent(agent) {
+        let config = super::service_type_ext::qq_chat_of(&agent.role_service_type)?;
+        zihuan_ims_service::qq_chat::load_inference_tool_provider(agent, &config, connections)
+    } else {
+        let config = super::service_type_ext::workspace_of(&agent.role_service_type)?;
+        zihuan_workspace_service::workspace_agent_service::load_inference_tool_provider(
+            agent,
+            &config,
+            connections,
+        )
     }
 }

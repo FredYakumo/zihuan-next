@@ -6,10 +6,10 @@ use log::{info, warn};
 
 use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use crate::agent::utils::build_state_system_prefix_lines;
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use crate::qq_session_state::QqChatSessionState;
 use zihuan_core::agent::tools::ToolCallingMiddleware;
 
-use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
+use crate::role_config::QqChatEmotionDimensionConfig;
 use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{
@@ -52,7 +52,7 @@ fn build_steer_user_message(
     api_style: Option<&str>,
     system_prompt: &str,
     style_prompt: Option<&str>,
-    session_state: &mut QqChatAgentServiceSessionState,
+    session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
     preprompt_context: Option<&str>,
 ) -> LLMMessage {
@@ -80,7 +80,7 @@ fn build_merged_steer_user_message(
     api_style: Option<&str>,
     system_prompt: &str,
     style_prompt: Option<&str>,
-    session_state: &mut QqChatAgentServiceSessionState,
+    session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
     preprompt_context: Option<&str>,
 ) -> LLMMessage {
@@ -239,7 +239,7 @@ pub(crate) struct QqChatServiceSteerHook {
     pub(crate) shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
     pub(crate) system_prompt: String,
     pub(crate) style_prompt: Option<String>,
-    pub(crate) session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
+    pub(crate) session_state: Arc<Mutex<QqChatSessionState>>,
     pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     pub(crate) preprompt_context: Option<String>,
 }

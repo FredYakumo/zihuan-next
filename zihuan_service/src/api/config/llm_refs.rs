@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::system_config;
 use log::{info, warn};
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::config::llm_refs::LlmRefConfig;
 use zihuan_core::model_inference::model_config::ModelRefSpec;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::close_runtime_embedding_instances_for_config;
@@ -181,13 +181,14 @@ async fn hot_reload_agents_for_llm_ref(state: &crate::api::state::AppState, llm_
 }
 
 fn agent_uses_llm_ref(agent: &RoleServiceConfig, llm_ref_id: &str) -> bool {
-    match &agent.role_service_type {
-        RoleServiceType::QqChat(config) => {
-            config.llm_ref_id.as_deref() == Some(llm_ref_id)
-                || config.math_programming_llm_ref_id.as_deref() == Some(llm_ref_id)
-                || config.natural_language_reply_llm_ref_id.as_deref() == Some(llm_ref_id)
-                || config.embedding_model_ref_id.as_deref() == Some(llm_ref_id)
-        }
-        RoleServiceType::Workspace(config) => config.llm_ref_id.as_deref() == Some(llm_ref_id),
+    if let Some(config) = zihuan_service::role::optional_qq_chat(&agent.role_service_type) {
+        return config.llm_ref_id.as_deref() == Some(llm_ref_id)
+            || config.math_programming_llm_ref_id.as_deref() == Some(llm_ref_id)
+            || config.natural_language_reply_llm_ref_id.as_deref() == Some(llm_ref_id)
+            || config.embedding_model_ref_id.as_deref() == Some(llm_ref_id);
     }
+    if let Some(config) = zihuan_service::role::optional_workspace(&agent.role_service_type) {
+        return config.llm_ref_id.as_deref() == Some(llm_ref_id);
+    }
+    false
 }

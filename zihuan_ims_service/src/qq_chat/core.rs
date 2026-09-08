@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use crate::agent::utils::build_state_system_prefix_lines;
+use crate::qq_session_state::QqChatSessionState;
 use log::{info, warn};
 use serde_json::Value;
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 
 pub(crate) use super::super::tools::build_info_brain_tools;
@@ -22,9 +22,9 @@ use super::msg_send::{
     build_long_task_complete_content, build_long_task_start_text, send_forward_content,
     send_notification_text, QqChatServiceSendContext,
 };
+use crate::role_config::QqChatEmotionDimensionConfig;
 use crate::storage::qq_chat_history_store::{clear_history, load_history};
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
-use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::agent::tools::LongTaskNotifier;
 use zihuan_core::command::{
     CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
@@ -333,7 +333,7 @@ pub(crate) fn build_user_message(
     character_instructions: &str,
     style_prompt: Option<&str>,
     message_rate_limit_warning: Option<&str>,
-    session_state: &mut QqChatAgentServiceSessionState,
+    session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
     preprompt_context: Option<&str>,
 ) -> LLMMessage {
@@ -454,7 +454,7 @@ pub(crate) fn build_user_message(
 }
 
 pub(crate) fn build_state_delta_lines(
-    session_state: &mut QqChatAgentServiceSessionState,
+    session_state: &mut QqChatSessionState,
     current_input: &PreparedCurrentTurnUserInput,
     bot_name: &str,
     adapter: &SharedBotAdapter,
@@ -1060,9 +1060,12 @@ impl QqChatAgentService {
         };
 
         zihuan_core::agent::runtime_context::with_current_agent_runtime_context(
-            zihuan_core::agent::runtime_context::AgentRuntimeContext::QqChat(
-                self.config.qq_chat_config.clone(),
-            ),
+            zihuan_core::agent::runtime_context::AgentRuntimeContext {
+                resources: crate::qq_chat::resources::QqChatRoleServiceResources::new(
+                    self.config.qq_chat_config.clone(),
+                )
+                .into_shared(),
+            },
             || {
                 self.inner.handle(
                     event,

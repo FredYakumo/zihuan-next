@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{
+use zihuan_core::agent::service_config::MemoryBackendKind;
+use zihuan_core::agent::{
     EmbeddingServiceConfig, LLM_KIND_INTENT_CLASSIFICATION, LLM_KIND_MAIN,
     LLM_KIND_MATH_PROGRAMMING, LLM_KIND_NATURAL_LANGUAGE_REPLY,
 };
-use crate::agent::service_config::MemoryBackendKind;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -16,7 +16,7 @@ pub enum RetrievalStoreConfig {
 }
 
 pub fn llm_ref_id_for_kind<'a>(
-    config: &'a QqChatAgentServiceConfig,
+    config: &'a QqChatRoleServiceConfig,
     llm_kind: &str,
 ) -> Option<&'a str> {
     match llm_kind {
@@ -33,7 +33,7 @@ pub fn llm_ref_id_for_kind<'a>(
     }
 }
 
-pub fn image_understand_llm_ref_id<'a>(config: &'a QqChatAgentServiceConfig) -> Option<&'a str> {
+pub fn image_understand_llm_ref_id<'a>(config: &'a QqChatRoleServiceConfig) -> Option<&'a str> {
     config.image_understand_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref())
 }
 
@@ -160,7 +160,7 @@ impl DreamIntervalUnit {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QqChatAgentServiceConfig {
+pub struct QqChatRoleServiceConfig {
     pub ims_bot_adapter_connection_id: String,
     #[serde(default)]
     pub rustfs_connection_id: Option<String>,
@@ -235,7 +235,7 @@ pub struct QqChatAgentServiceConfig {
     pub event_handler_threads: Option<usize>,
 }
 
-impl QqChatAgentServiceConfig {
+impl QqChatRoleServiceConfig {
     pub fn dream_interval_seconds(&self) -> Option<u64> {
         if !self.dream_enabled || self.dream_interval_value == 0 {
             return None;

@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::agent::service_config::RoleServiceConfig;
 use zihuan_core::agent::tools::{
     Tool, ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason, ToolExecutionOutput,
     ToolExecutionResource, ToolRunDuration, MAX_TOOL_ITERATIONS,
@@ -25,7 +25,7 @@ use zihuan_core::system_config::current_context_compaction_percent;
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
-use zihuan_core::role::{RoleService, RoleServiceContext, RoleServiceDescriptor, RoleServiceKind};
+use zihuan_core::role::{RoleService, RoleServiceContext, RoleServiceDescriptor};
 
 pub use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
 pub use zihuan_core::role::brain_agent::{ContextCompactionEvent, ContextCompactionObserver};
@@ -152,10 +152,9 @@ impl RoleBrainAgent {
             return Err(Error::ValidationError(format!("agent '{}' is disabled", agent.name)));
         }
 
-        let llm_ref_id = match &agent.role_service_type {
-            RoleServiceType::QqChat(config) => config.llm_ref_id.as_deref(),
-            RoleServiceType::Workspace(config) => config.llm_ref_id.as_deref(),
-        };
+        let llm_ref_id_owned =
+            super::service_type_ext::primary_llm_ref_id(&agent.role_service_type);
+        let llm_ref_id = llm_ref_id_owned.as_deref();
         let llm_config = resolve_llm_service_config(llm_ref_id, llm_refs, &agent.name)?;
         let model_name = llm_config.model_name.clone();
         let llm = build_llm_model(&llm_config)?;
@@ -306,7 +305,7 @@ impl RoleBrainAgent {
             ));
         }
 
-        if matches!(self.agent.role_service_type, RoleServiceType::Workspace(_)) {
+        if super::service_type_ext::is_workspace(&self.agent.role_service_type) {
             if let (Some(observer), Some(latest_user_index)) = (
                 compaction_observer,
                 conversation
@@ -373,10 +372,7 @@ impl RoleService for RoleBrainAgent {
         RoleServiceDescriptor {
             id: self.agent.id.clone(),
             name: self.agent.name.clone(),
-            kind: match self.agent.role_service_type {
-                RoleServiceType::QqChat(_) => RoleServiceKind::QqChat,
-                RoleServiceType::Workspace(_) => RoleServiceKind::Workspace,
-            },
+            kind: super::service_type_ext::role_service_kind_of(&self.agent.role_service_type),
         }
     }
 
@@ -485,12 +481,10 @@ pub fn resolve_role_model_name_with_override(
     llm_refs: &[LlmRefConfig],
     model_override: Option<&str>,
 ) -> Result<String> {
+    let fallback_llm_ref_id = super::service_type_ext::primary_llm_ref_id(&agent.role_service_type);
     let llm_ref_id = match model_override {
         Some(id) => Some(id),
-        None => match &agent.role_service_type {
-            RoleServiceType::QqChat(config) => config.llm_ref_id.as_deref(),
-            RoleServiceType::Workspace(config) => config.llm_ref_id.as_deref(),
-        },
+        None => fallback_llm_ref_id.as_deref(),
     };
     Ok(resolve_llm_service_config(llm_ref_id, llm_refs, &agent.name)?.model_name)
 }

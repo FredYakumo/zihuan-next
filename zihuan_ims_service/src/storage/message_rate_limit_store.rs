@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
+use crate::role_config::{
+    QqChatMessageRateLimitRule, QqChatMessageRateLimitWindowUnit, QqChatRoleServiceConfig,
+};
 use chrono::{Duration, Local, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use sqlx::mysql::MySqlRow;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{MySql, Row, Sqlite, Transaction};
 use tokio::task::block_in_place;
-use zihuan_core::agent::qq_chat::{
-    QqChatAgentServiceConfig, QqChatMessageRateLimitRule, QqChatMessageRateLimitWindowUnit,
-};
 use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
 use zihuan_core::error::{Error, Result};
 
@@ -94,7 +94,7 @@ pub fn severe_warning_prompt_text() -> &'static str {
 }
 
 pub fn resolve_message_rate_limit(
-    config: &QqChatAgentServiceConfig,
+    config: &QqChatRoleServiceConfig,
     sender_id: &str,
     group_id: Option<&str>,
 ) -> Option<ResolvedMessageRateLimit> {
@@ -138,7 +138,7 @@ pub async fn consume_message_rate_limit(
     agent_id: &str,
     sender_id: &str,
     group_id: Option<&str>,
-    config: &QqChatAgentServiceConfig,
+    config: &QqChatRoleServiceConfig,
 ) -> Result<MessageRateLimitCheckResult> {
     let Some(resolved_limit) = resolve_message_rate_limit(config, sender_id, group_id) else {
         return Ok(unlimited_result(None));
@@ -164,7 +164,7 @@ pub fn consume_message_rate_limit_blocking(
     agent_id: &str,
     sender_id: &str,
     group_id: Option<&str>,
-    config: &QqChatAgentServiceConfig,
+    config: &QqChatRoleServiceConfig,
 ) -> Result<MessageRateLimitCheckResult> {
     let connection = connection.clone();
     let agent_id = agent_id.to_string();
