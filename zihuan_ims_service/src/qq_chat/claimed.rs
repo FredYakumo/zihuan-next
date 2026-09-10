@@ -20,7 +20,6 @@ use crate::agent::emotion::utils::{
 use crate::qq_chat::resources::current_qq_chat_role_service_config;
 use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatEmotionDimensionConfig;
-use zihuan_core::command::{CommandChannel, CommandContext};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::steer::message_with_api_style;
@@ -41,7 +40,7 @@ use crate::storage::qq_chat_history_store::{
 };
 
 use crate::classify_intent::{classify_intent_with_trace, IntentCategory};
-use crate::qq_chat::command_runtime::QqChatCommandRuntime;
+use crate::qq_chat::command::{run_command_pipeline, CommandTurnEnd};
 use crate::qq_chat::msg_send::{
     build_reply_result, send_planned_batches, take_reply_directive, QqChatServiceSendContext,
 };
@@ -61,16 +60,6 @@ use crate::procedure::{
 };
 use zihuan_core::role::procedure::execute_blocking_procedure_chain;
 use zihuan_core::runtime::block_async;
-
-/// Result of running the command state machine for one QQ turn.
-enum CommandTurnEnd {
-    /// The command consumed the whole turn (reply sent, or waiting for auth).
-    Consumed(QqChatServiceTurnResult),
-    /// The command produced leftover passthrough text that should feed the brain.
-    Passthrough(String),
-    /// The message is not a command; continue normal handling.
-    NotACommand,
-}
 
 impl QqChatAgentServiceInner {
     /// Returns the last assistant text that carries no tool calls, skipping transport
@@ -115,181 +104,13 @@ impl QqChatAgentServiceInner {
         }
     }
 
-    /// Runs a message through the unified command state machine. Returns the
-    /// turn end when the message was a command, or `NotACommand` to fall
-    /// through to the brain loop.
-    ///
-    /// Delivery semantics preserve the pre-engine QQ behavior:
-    /// - command effects are rendered in order (Text = direct reply, Forward =
-    ///   forward node, StartNewConversation = clear history);
-    /// - a pause (auth gate) sends the auth prompt and persists the resume
-    ///   snapshot; the later `/auth` resumes the same spec via the engine.
-    #[allow(clippy::too_many_arguments)]
-    fn run_command_pipeline(
-        &self,
-        trace: &QqChatTaskTrace,
-        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
-        inference_event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
-        raw_user_message: &str,
-        sender_id: &str,
-        target_id: &str,
-        bot_id: &str,
-        is_group: bool,
-        emotion_dimensions: &[QqChatEmotionDimensionConfig],
-        ctx: &QqChatAgentServiceContext<'_>,
-    ) -> Result<CommandTurnEnd> {
-        let Some(registry) = zihuan_core::command::global_command_registry() else {
-            return Ok(CommandTurnEnd::NotACommand);
-        };
-        if !raw_user_message.trim_start().starts_with('/') {
-            return Ok(CommandTurnEnd::NotACommand);
-        }
-        let cmd_ctx = CommandContext {
-            agent_type: "qq_chat".to_string(),
-            agent_id: self.id.clone(),
-            caller_id: sender_id.to_string(),
-            channel: CommandChannel::QqChat {
-                sender_id: sender_id.to_string(),
-                is_group,
-                group_id: inference_event.group_id,
-                target_id: target_id.to_string(),
-            },
-        };
-        let Some((spec, parsed)) = registry.spec_for(&cmd_ctx, raw_user_message) else {
-            // Unmatched or scope-mismatched slash line: fall through to the brain.
-            return Ok(CommandTurnEnd::NotACommand);
-        };
-        // Permission gate.
-        let permission = registry.check_permission(&cmd_ctx, raw_user_message);
-        if permission.matched && !permission.allowed {
-            let denied = self.deliver_command_effects(
-                trace,
-                ctx,
-                event,
-                inference_event,
-                sender_id,
-                target_id,
-                bot_id,
-                is_group,
-                vec![zihuan_core::command::Effect::Text(
-                    "你没有权限使用此命令。".to_string(),
-                )],
-            )?;
-            debug_assert!(denied, "permission-denied command must emit a reply");
-            return Ok(CommandTurnEnd::Consumed(QqChatServiceTurnResult {
-                result_summary: "命令权限拒绝".to_string(),
-            }));
-        }
-
-        let mut runtime = QqChatCommandRuntime {
-            trace,
-            ctx,
-            agent_id: &self.id,
-            event: event.clone(),
-            inference_event: inference_event.clone(),
-            sender_id,
-            target_id,
-            bot_id,
-            is_group,
-            session_state_store: ctx.session_state_store,
-            emotion_dimensions: emotion_dimensions.to_vec(),
-        };
-        let invocation = zihuan_core::command::Invocation {
-            ctx: cmd_ctx.clone(),
-            args: parsed.args.clone(),
-            passthrough: parsed.passthrough_text.clone(),
-            resumed: false,
-        };
-        let result = zihuan_core::command::execute_command(&mut runtime, spec, invocation)?;
-
-        if result.waiting.is_some() {
-            // Deliver the gate prompt produced by the paused step, then end the
-            // turn waiting for the /auth message. The resume snapshot was
-            // persisted by the runtime's persist_pause hook.
-            let _ = self.deliver_command_effects(
-                trace,
-                ctx,
-                event,
-                inference_event,
-                sender_id,
-                target_id,
-                bot_id,
-                is_group,
-                result.effects.clone(),
-            )?;
-            return Ok(CommandTurnEnd::Consumed(QqChatServiceTurnResult {
-                result_summary: "命令已进入等待授权状态".to_string(),
-            }));
-        }
-
-        let delivered = self.deliver_command_effects(
-            trace,
-            ctx,
-            event,
-            inference_event,
-            sender_id,
-            target_id,
-            bot_id,
-            is_group,
-            result.effects.clone(),
-        )?;
-        // A command that produced leftover passthrough text (e.g. `/new <text>`)
-        // delivers its effects first, then the remainder feeds the brain loop —
-        // matching the pre-engine QQ behavior.
-        if let Some(passthrough) = result.passthrough {
-            return Ok(CommandTurnEnd::Passthrough(passthrough));
-        }
-        if delivered {
-            return Ok(CommandTurnEnd::Consumed(QqChatServiceTurnResult {
-                result_summary: "已处理命令".to_string(),
-            }));
-        }
-        // Effect-free command with no passthrough: fall through.
-        Ok(CommandTurnEnd::NotACommand)
-    }
-
-    /// Render command effects into QQ output. Returns `true` when any effect
-    /// was delivered (i.e. the command consumed the turn).
-    fn deliver_command_effects(
-        &self,
-        trace: &QqChatTaskTrace,
-        ctx: &QqChatAgentServiceContext<'_>,
-        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
-        inference_event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
-        sender_id: &str,
-        target_id: &str,
-        bot_id: &str,
-        is_group: bool,
-        effects: Vec<zihuan_core::command::Effect>,
-    ) -> Result<bool> {
-        if effects.is_empty() {
-            return Ok(false);
-        }
-        let mut runtime = QqChatCommandRuntime {
-            trace,
-            ctx,
-            agent_id: &self.id,
-            event: event.clone(),
-            inference_event: inference_event.clone(),
-            sender_id,
-            target_id,
-            bot_id,
-            is_group,
-            session_state_store: ctx.session_state_store,
-            emotion_dimensions: Vec::new(),
-        };
-        for effect in &effects {
-            zihuan_core::command::CommandRuntime::apply_effect(&mut runtime, effect)?;
-        }
-        Ok(true)
-    }
-
     /// Processes a single QQ chat turn end-to-end for a claimed message.
     ///
     /// The lifecycle is:
     /// - **Hydration & extraction** — resolves reply chains and extracts the user text.
-    /// - **Command interception** — dispatches slash commands, executes side effects, and
-    ///   optionally passes remaining text to the brain loop.
+    /// - **Command interception** — runs the message through the QQ command pipeline
+    ///   (`crate::qq_chat::command`), which either consumes the turn or leaves
+    ///   remaining text to the brain loop.
     /// - **Intent classification** — selects the appropriate LLM (general vs math/programming).
     /// - **Short-circuit replies** — answers meta-queries (model name, tool list, etc.) directly.
     /// - **History compaction** — compresses conversation context when it exceeds budget.
@@ -346,10 +167,12 @@ impl QqChatAgentServiceInner {
         let history_key = conversation_history_key(sender_id);
         let history = load_history(ctx.cache, &history_key);
 
-        // Command interception runs through the unified command state machine.
-        // The engine resolves the spec, runs preconditions/body steps via the
-        // QQ channel runtime, and returns effects (or a pause) for this turn.
-        match self.run_command_pipeline(
+        // Command interception runs through the unified command state machine
+        // (crate::qq_chat::command). The pipeline resolves the spec, runs
+        // preconditions/body steps via the QQ channel runtime, and returns
+        // effects (or a pause) for this turn.
+        match run_command_pipeline(
+            &self.id,
             trace,
             event,
             &inference_event,

@@ -473,6 +473,12 @@ fn build_tool_calling_engine(
         })
             });
 
+    // This engine is built outside the per-turn runtime scope, so capture the
+    // provider explicitly; tool workers re-enter it before executing.
+    if let Some(resources) = resources.clone() {
+        brain.set_agent_resources(resources);
+    }
+
     for tool_def in tool_definitions {
         brain.add_tool(ServiceSubgraphTool {
             runner: ToolSubgraphRunner {

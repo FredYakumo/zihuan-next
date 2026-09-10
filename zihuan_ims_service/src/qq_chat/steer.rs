@@ -372,7 +372,7 @@ impl QqChatAgentServiceInner {
                         preview.spec.name
                     );
                     let trace = QqChatTaskTrace::new(Local::now());
-                    let executed = crate::qq_chat::command_runtime::run_command_effects_now(
+                    let executed = crate::qq_chat::command::run_command_effects_now(
                         &trace,
                         ctx,
                         &self.id,

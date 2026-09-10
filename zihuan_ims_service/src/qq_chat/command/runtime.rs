@@ -485,7 +485,7 @@ pub(crate) fn run_command_effects_now(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn make_runtime<'a>(
+pub(super) fn make_runtime<'a>(
     trace: &'a QqChatTaskTrace,
     ctx: &'a QqChatAgentServiceContext<'a>,
     agent_id: &'a str,
@@ -511,7 +511,7 @@ fn make_runtime<'a>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn make_runtime_with_emotion<'a>(
+pub(super) fn make_runtime_with_emotion<'a>(
     trace: &'a QqChatTaskTrace,
     ctx: &'a QqChatAgentServiceContext<'a>,
     agent_id: &'a str,

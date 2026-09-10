@@ -147,19 +147,21 @@ fn resolve_image_understand_s3_ref(s3_ref: Option<Arc<S3Ref>>) -> Result<Option<
     if s3_ref.is_some() {
         return Ok(s3_ref);
     }
-    load_agent_s3_ref().transpose()
+    load_agent_s3_ref()
 }
 
-fn load_agent_s3_ref() -> Option<Result<Arc<S3Ref>>> {
-    let config = current_qq_chat_role_service_config().ok()?;
-    let connection_id = config
+fn load_agent_s3_ref() -> Result<Option<Arc<S3Ref>>> {
+    let config = current_qq_chat_role_service_config()?;
+    let Some(connection_id) = config
         .rustfs_connection_id
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty())?;
-    Some(block_async(
-        RuntimeStorageConnectionManager::shared().get_or_create_s3_ref(connection_id),
-    ))
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+    block_async(RuntimeStorageConnectionManager::shared().get_or_create_s3_ref(connection_id))
+        .map(Some)
 }
 
 fn analyze_persisted_media(

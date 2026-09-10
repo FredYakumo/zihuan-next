@@ -1,5 +1,5 @@
+pub(crate) mod command;
 mod core;
-pub(crate) mod command_runtime;
 pub mod ignore_store;
 mod inbox;
 pub mod language_style_store;

@@ -15,6 +15,10 @@ use super::tool_calling_types::{
     ToolCallingResult, ToolCallingStopReason,
 };
 use super::tool_progress::{current_task_progress_message, ToolProgressScopeGuard};
+use crate::agent::resource_provider::SharedAgentResourceProvider;
+use crate::agent::runtime_context::{
+    current_agent_runtime_context, scope_agent_runtime_context, AgentRuntimeContext,
+};
 use crate::agent::tools::{Tool, ToolExecutionOutput, ToolExecutionResource, ToolRunDuration};
 use crate::agent::{AgentCancellation, AgentContext};
 use crate::model_inference::llm::llm_base::LLMBase;
@@ -95,6 +99,7 @@ pub struct ToolCallingEngine {
     long_task_context: Option<LongTaskContext>,
     cancellation: Option<Arc<dyn AgentCancellation>>,
     confirmation_gate: Arc<Mutex<()>>,
+    agent_runtime_context: Option<AgentRuntimeContext>,
 }
 
 impl ToolCallingEngine {
@@ -107,6 +112,10 @@ impl ToolCallingEngine {
             long_task_context: None,
             cancellation: None,
             confirmation_gate: Arc::new(Mutex::new(())),
+            // Constructors in the hot paths run inside a per-turn agent runtime
+            // scope, so capture it here; tool bodies execute on spawned threads
+            // where the thread-local is not visible.
+            agent_runtime_context: current_agent_runtime_context(),
         }
     }
 
@@ -124,6 +133,18 @@ impl ToolCallingEngine {
     /// Attach a long-task execution context.
     pub fn set_long_task_context(&mut self, ctx: LongTaskContext) {
         self.long_task_context = Some(ctx);
+    }
+
+    /// Install the agent runtime context that tool workers re-enter before
+    /// calling into a tool. Use this when the engine is built outside a
+    /// per-turn runtime scope; otherwise [`Self::new`] captures it already.
+    pub fn set_agent_runtime_context(&mut self, context: AgentRuntimeContext) {
+        self.agent_runtime_context = Some(context);
+    }
+
+    /// Convenience wrapper around [`Self::set_agent_runtime_context`].
+    pub fn set_agent_resources(&mut self, resources: SharedAgentResourceProvider) {
+        self.agent_runtime_context = Some(AgentRuntimeContext::from_resources(resources));
     }
 
     pub fn set_cancellation(&mut self, cancellation: Arc<dyn AgentCancellation>) {
@@ -165,6 +186,7 @@ impl ToolCallingEngine {
         observer: Option<&Arc<dyn ToolCallingObserver>>,
         long_task_context: Option<&LongTaskContext>,
         confirmation_gate: Option<&Mutex<()>>,
+        agent_runtime_context: Option<AgentRuntimeContext>,
     ) -> ToolExecutionOutput {
         // Calls that block waiting for user confirmation must run serially so
         // that at most one confirmation dialog is shown at a time. The guard is
@@ -192,9 +214,11 @@ impl ToolCallingEngine {
                 }
                 long_ctx.notifier.on_start(&task_id, &task_name, call_content);
                 let on_output = tool_output_callback(observer, tool_name, call_id);
-                let result = scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
-                    scope_task_id(task_id.clone(), || {
-                        tool.execute_with_progress(call_content, arguments, on_output)
+                let result = scope_agent_runtime_context(agent_runtime_context.clone(), || {
+                    scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
+                        scope_task_id(task_id.clone(), || {
+                            tool.execute_with_progress(call_content, arguments, on_output)
+                        })
                     })
                 });
                 handle.finish(AgentTaskResult {
@@ -211,7 +235,9 @@ impl ToolCallingEngine {
             }
         }
         let on_output = tool_output_callback(observer, tool_name, call_id);
-        tool.execute_with_progress(call_content, arguments, on_output)
+        scope_agent_runtime_context(agent_runtime_context, || {
+            tool.execute_with_progress(call_content, arguments, on_output)
+        })
     }
 
     fn prepare_tool_calls(&self, tool_calls: &[ToolCalls]) -> Vec<PreparedToolCall> {
@@ -290,6 +316,7 @@ impl ToolCallingEngine {
             self.long_task_context.as_ref(),
             self.observer.as_ref(),
             Some(&self.confirmation_gate),
+            self.agent_runtime_context.clone(),
         )
     }
 
@@ -299,6 +326,7 @@ impl ToolCallingEngine {
         long_task_context: Option<&LongTaskContext>,
         observer: Option<&Arc<dyn ToolCallingObserver>>,
         confirmation_gate: Option<&Mutex<()>>,
+        agent_runtime_context: Option<AgentRuntimeContext>,
     ) -> PreparedToolResult {
         let result = if let Some(tool) = call.tool.as_ref() {
             Self::execute_tool_call_with_context(
@@ -310,6 +338,7 @@ impl ToolCallingEngine {
                 observer,
                 long_task_context,
                 confirmation_gate,
+                agent_runtime_context,
             )
         } else {
             warn!(
@@ -712,6 +741,7 @@ impl ToolCallingEngine {
                     let observer_handle = self.observer.clone();
                     let confirmation_gate = Arc::clone(&self.confirmation_gate);
                     let cancellation = self.cancellation.clone();
+                    let agent_runtime_context = self.agent_runtime_context.clone();
                     let mut tasks = JoinSet::new();
                     for call in prepared_calls {
                         // Stop dispatching further parallel tool calls as soon as a
@@ -731,6 +761,7 @@ impl ToolCallingEngine {
                         let task_observer = observer_handle.clone();
                         let gate = Arc::clone(&confirmation_gate);
                         let cancellation_guard = cancellation.clone();
+                        let agent_runtime_context = agent_runtime_context.clone();
                         tasks.spawn_blocking(move || {
                             // Re-check inside the worker: a call that has not yet started
                             // its real work short-circuits instead of running.
@@ -753,6 +784,7 @@ impl ToolCallingEngine {
                                 long_task_context.as_ref(),
                                 task_observer.as_ref(),
                                 Some(&*gate),
+                                agent_runtime_context,
                             )
                         });
                     }

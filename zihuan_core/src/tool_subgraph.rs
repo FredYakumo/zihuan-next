@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use log::{info, warn};
 use serde_json::{json, Map, Value};
 
-use crate::agent::runtime_context::{with_current_agent_runtime_context, AgentRuntimeContext};
+use crate::agent::runtime_context::{scope_agent_runtime_context, AgentRuntimeContext};
 use crate::config::ConfigCenter;
 use crate::error::{Error, Result};
 use crate::graph::function_graph::{
@@ -477,13 +477,10 @@ impl ToolSubgraphRunner {
             .map_err(|e| {
                 self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name))
             })?;
-        let execution_result = if let Some(resources) = self.resources.clone() {
-            with_current_agent_runtime_context(AgentRuntimeContext { resources }, || {
-                graph.execute_and_capture_results()
-            })
-        } else {
-            graph.execute_and_capture_results()
-        };
+        let execution_result = scope_agent_runtime_context(
+            self.resources.clone().map(AgentRuntimeContext::from_resources),
+            || graph.execute_and_capture_results(),
+        );
         if let Some(ref error_message) = execution_result.error_message {
             warn!(
                 "[ToolSubgraph:{}] tool '{}' execution failed: {error_message}",
