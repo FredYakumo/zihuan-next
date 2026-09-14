@@ -455,31 +455,27 @@ impl ToolCallingEngine {
             if iteration > 0 {
                 self.append_iteration_messages(iteration + 1, &mut conversation);
             }
-            let response = self.llm.inference(&InferenceParam {
+            let response = match self.llm.inference(&InferenceParam {
                 messages: &conversation,
                 tools: if tool_specs.is_empty() {
                     None
                 } else {
                     Some(&tool_specs)
                 },
-            });
-
-            if let Some(content) = response.content_text() {
-                if is_transport_error(content) {
-                    warn!(
-                        "[ToolCallingEngine] Transport error on iteration {iteration}: {content}"
-                    );
-                    let msg = content.to_string();
+            }) {
+                Ok(response) => response,
+                Err(err) => {
+                    warn!("[ToolCallingEngine] Transport error on iteration {iteration}: {err}");
+                    let message = err.to_string();
                     if let Some(observer) = self.observer.as_ref() {
                         observer.on_final_assistant(
-                            &response,
-                            &ToolCallingStopReason::TransportError(msg.clone()),
+                            &LLMMessage::assistant_text(message.clone()),
+                            &ToolCallingStopReason::TransportError(message.clone()),
                         );
                     }
-                    output.push(response);
-                    return (output, ToolCallingStopReason::TransportError(msg));
+                    return (output, ToolCallingStopReason::TransportError(message));
                 }
-            }
+            };
 
             self.log_llm_usage(&response);
 
@@ -642,10 +638,25 @@ impl ToolCallingEngine {
                     )
                     .await
             } else {
-                self.llm.inference(&InferenceParam {
+                match self.llm.inference(&InferenceParam {
                     messages: &conversation,
                     tools: tools_param,
-                })
+                }) {
+                    Ok(response) => response,
+                    Err(err) => {
+                        warn!(
+                            "[ToolCallingEngine] Transport error on iteration {iteration}: {err}"
+                        );
+                        let message = err.to_string();
+                        if let Some(observer) = self.observer.as_ref() {
+                            observer.on_final_assistant(
+                                &LLMMessage::assistant_text(message.clone()),
+                                &ToolCallingStopReason::TransportError(message.clone()),
+                            );
+                        }
+                        return (output, ToolCallingStopReason::TransportError(message));
+                    }
+                }
             };
 
             if let Some(content) = response.content_text() {
@@ -918,9 +929,9 @@ mod tests {
             1
         }
 
-        fn inference(&self, _param: &InferenceParam) -> LLMMessage {
+        fn inference(&self, _param: &InferenceParam) -> crate::error::Result<LLMMessage> {
             self.called.store(true, Ordering::Relaxed);
-            LLMMessage::assistant_text("unexpected inference")
+            Ok(LLMMessage::assistant_text("unexpected inference"))
         }
     }
 

@@ -123,7 +123,13 @@ fn generate_session_title(llm_ref_id: &str, user_text: &str) -> Option<String> {
         LLMMessage::system(SESSION_TITLE_SYSTEM_PROMPT),
         LLMMessage::user(user_text.chars().take(MAX_PROMPT_USER_TEXT_CHARS).collect::<String>()),
     ];
-    let response = llm.inference(&InferenceParam { messages: &messages, tools: None });
-    let text = response.content_text_owned()?;
+    let response = llm
+        .inference(&InferenceParam { messages: &messages, tools: None })
+        .map_err(|err| {
+            log::warn!("{LOG_PREFIX} session title inference failed: {err}");
+            err
+        })
+        .ok();
+    let text = response.and_then(|response| response.content_text_owned())?;
     sanitize_session_title(&text)
 }

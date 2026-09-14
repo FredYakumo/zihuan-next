@@ -4,9 +4,7 @@ use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::{InferenceParam, LLMMessage, MessageRole};
 use log::warn;
 
-use crate::model_inference::message_content_utils::{
-    is_transport_error, sanitize_messages_for_inference,
-};
+use crate::model_inference::message_content_utils::sanitize_messages_for_inference;
 
 pub const COMPACT_TAIL_MESSAGES_TO_KEEP: usize = 2;
 
@@ -92,7 +90,21 @@ pub fn compact_context_messages(
         LLMMessage::user(build_compaction_prompt(&prefix_messages)),
     ];
 
-    let response = llm.inference(&InferenceParam { messages: &prompt_messages, tools: None });
+    let response = match llm.inference(&InferenceParam { messages: &prompt_messages, tools: None })
+    {
+        Ok(response) => response,
+        Err(err) => {
+            warn!("[ContextCompaction] Summary inference failed: {err}");
+            return ContextCompactionResult {
+                estimated_tokens_after: estimated_tokens_before,
+                messages: sanitized_messages,
+                did_compact: false,
+                estimated_tokens_before,
+                removed_tool_related_messages: 0,
+                kept_tail_messages: 0,
+            };
+        }
+    };
 
     let Some(summary_text) = response
         .content_text_owned()
@@ -109,18 +121,6 @@ pub fn compact_context_messages(
             kept_tail_messages: 0,
         };
     };
-
-    if is_transport_error(&summary_text) {
-        warn!("[ContextCompaction] Summary inference failed: {summary_text}");
-        return ContextCompactionResult {
-            estimated_tokens_after: estimated_tokens_before,
-            messages: sanitized_messages,
-            did_compact: false,
-            estimated_tokens_before,
-            removed_tool_related_messages: 0,
-            kept_tail_messages: 0,
-        };
-    }
 
     let mut compacted_messages = Vec::with_capacity(2 + tail_messages.len());
     compacted_messages.push(LLMMessage::user(STORED_COMPACTION_REQUEST));

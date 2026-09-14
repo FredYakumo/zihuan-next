@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use log::error;
 use zihuan_core::agent::tools::ToolCallingStopReason;
 use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
@@ -46,10 +47,21 @@ impl Procedure for QqMetaQueryBrain<'_> {
 
     async fn run(&self, _context: &ProcedureContext) -> Result<ProcedureOutput> {
         self.trace.mark_llm_request_started();
-        let response = self.llm.inference(&InferenceParam {
+        let response = match self.llm.inference(&InferenceParam {
             messages: &self.meta_messages,
             tools: None,
-        });
+        }) {
+            Ok(response) => response,
+            Err(err) => {
+                error!("[QQMetaQueryBrain] LLM inference failed, no reply will be sent: {err}");
+                return Ok(ProcedureOutput::of(QqBrainOutput {
+                    final_reply_text: None,
+                    suppress_send: false,
+                    brain_output: vec![],
+                    stop_reason: ToolCallingStopReason::TransportError(err.to_string()),
+                }));
+            }
+        };
         let candidate_message = response.content_text_owned().unwrap_or_default();
         let candidate_message = candidate_message.trim();
         if candidate_message.is_empty() {

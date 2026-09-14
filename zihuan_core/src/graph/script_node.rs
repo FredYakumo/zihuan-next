@@ -1299,10 +1299,11 @@ impl Node for DynamicScriptNode {
                         })?,
                         "messages",
                     )?;
-                    let response = model.inference(&crate::model_inference::llm::InferenceParam {
-                        messages: &messages,
-                        tools: None,
-                    });
+                    let response =
+                        model.inference(&crate::model_inference::llm::InferenceParam {
+                            messages: &messages,
+                            tools: None,
+                        })?;
                     Ok(json!({"response": [response]}))
                 }
                 "model.create_llm_from_ref" => {

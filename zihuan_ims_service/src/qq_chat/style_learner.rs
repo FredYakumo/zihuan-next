@@ -57,7 +57,8 @@ pub async fn learn_language_style(
         llm_clone.inference(&InferenceParam { messages: &messages, tools: None })
     })
     .await
-    .map_err(|e| zihuan_core::string_error!("style learning LLM task panicked: {e}"))?;
+    .map_err(|e| zihuan_core::string_error!("style learning LLM task panicked: {e}"))?
+    .map_err(|e| zihuan_core::string_error!("style learning LLM inference failed: {e}"))?;
     let style_prompt =
         parse_style_learning_result(&response.content_text_owned().unwrap_or_default())?;
     let saved = upsert_language_style(

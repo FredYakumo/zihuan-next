@@ -54,8 +54,8 @@ impl ImageUnderstandTool {
             LLMMessage::system("You are an image understanding assistant. Output only concise, objective descriptions without extra pleasantries. If the image content is empty, invalid, or unrecognizable, output only \"No image recognized.\""),
             LLMMessage::user_with_parts(vec![MessagePart::text(prompt), resolved.part]),
         ];
-        self.llm
-            .inference(&InferenceParam { messages: &messages, tools: None })
+        let response = self.llm.inference(&InferenceParam { messages: &messages, tools: None })?;
+        response
             .content_text_owned()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())

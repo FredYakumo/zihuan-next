@@ -1,3 +1,4 @@
+use crate::error::Result;
 use crate::model_inference::llm::model::{InferenceParam, LLMMessage};
 use crate::model_inference::llm::StreamToken;
 use tokio::sync::mpsc;
@@ -15,7 +16,9 @@ pub trait LLMBase: std::fmt::Debug + Send + Sync {
         false
     }
 
-    fn inference(&self, param: &InferenceParam) -> LLMMessage;
+    /// Run a single blocking inference. Transport and parsing failures surface as `Err`
+    /// instead of being folded into an assistant message.
+    fn inference(&self, param: &InferenceParam) -> Result<LLMMessage>;
 
     fn as_streaming(&self) -> Option<&dyn StreamingLLMBase> {
         None

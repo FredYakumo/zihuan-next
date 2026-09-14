@@ -77,7 +77,7 @@ fn unused_llm() -> Arc<dyn LLMBase> {
             32 * 1024
         }
 
-        fn inference(&self, _param: &InferenceParam) -> LLMMessage {
+        fn inference(&self, _param: &InferenceParam) -> zihuan_core::error::Result<LLMMessage> {
             panic!("unused test LLM")
         }
     }

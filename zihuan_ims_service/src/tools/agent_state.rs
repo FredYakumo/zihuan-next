@@ -154,7 +154,8 @@ impl UpdateAgentStateTool {
         ];
         self.llm
             .inference(&InferenceParam { messages: &messages, tools: None })
-            .content_text_owned()
+            .ok()
+            .and_then(|response| response.content_text_owned())
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
     }

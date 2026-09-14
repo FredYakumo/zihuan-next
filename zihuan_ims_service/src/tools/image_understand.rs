@@ -197,7 +197,9 @@ fn analyze_persisted_media(
         ),
         LLMMessage::user_with_parts(vec![MessagePart::text(prompt), resolved.part]),
     ];
-    let response = llm.inference(&InferenceParam { messages: &messages, tools: None });
+    let response = llm
+        .inference(&InferenceParam { messages: &messages, tools: None })
+        .map_err(|err| Error::StringError(format!("image_understand inference failed: {err}")))?;
 
     let content = response.content_text_owned().unwrap_or_default();
     let trimmed = content.trim();
