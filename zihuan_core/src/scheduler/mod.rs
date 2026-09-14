@@ -102,6 +102,14 @@ pub fn register_service(resources: JobResources) -> Result<ServiceRegistrationGu
 pub fn register_job(manifest: JobManifest, job: Arc<dyn SchedulerJob>) {
     let task_name = manifest.task_name.clone();
     let mut state = registry().write().unwrap();
+    if let Some(existing) = state.manifests.get(&task_name) {
+        log::error!(
+            "[Scheduler] job task_name 重复注册，覆盖先注册的 job: task_name '{}'（{} 被 {} 覆盖）",
+            task_name,
+            existing.script,
+            manifest.script
+        );
+    }
     state.manifests.insert(task_name.clone(), manifest);
     state.jobs.insert(task_name.clone(), job);
     log::info!("[Scheduler] job registered: {task_name}");

@@ -2,7 +2,7 @@
 //! inline (`job_manifest` export for `.mjs`, `JOB_MANIFEST` dict for `.py`) and the script
 //! runners report those manifests through the `--jobs-catalog` catalog mode.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -100,7 +100,8 @@ pub fn init_script_jobs() -> Result<usize> {
     for diagnostic in &catalog.diagnostics {
         log::warn!("[Scheduler] job 目录诊断: {}", diagnostic.message);
     }
-    let mut seen = HashSet::new();
+    // `task_name` -> the script that already claimed it, so a duplicate can name both sides.
+    let mut registered_scripts: HashMap<String, String> = HashMap::new();
     let mut count = 0;
     for entry in catalog.jobs {
         let manifest = match manifest_from_entry(entry) {
@@ -110,8 +111,13 @@ pub fn init_script_jobs() -> Result<usize> {
                 continue;
             }
         };
-        if !seen.insert(manifest.task_name.clone()) {
-            log::warn!("[Scheduler] job task_name 重复，跳过: {}", manifest.task_name);
+        if let Some(owner) = registered_scripts.get(&manifest.task_name) {
+            log::error!(
+                "[Scheduler] job task_name 重复 {}（task_name '{}' 已由 {} 注册）",
+                manifest.script,
+                manifest.task_name,
+                owner
+            );
             continue;
         }
         let language = match manifest.language() {
@@ -129,7 +135,10 @@ pub fn init_script_jobs() -> Result<usize> {
         ) {
             log::warn!("[Scheduler] failed to start script runtime for {language:?} jobs: {error}");
         }
+        let task_name = manifest.task_name.clone();
+        let script = manifest.script.clone();
         super::register_job(manifest.clone(), Arc::new(ScriptJob { manifest, language }));
+        registered_scripts.insert(task_name, script);
         count += 1;
     }
     Ok(count)
