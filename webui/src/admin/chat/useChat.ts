@@ -371,6 +371,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     const draftImageAttachments = ref<ChatImageAttachment[]>([]);
     const imagePreviewAttachment = ref<ChatImageAttachment | null>(null);
     const workspacePath = ref("");
+    const workspacePathDisplay = computed(() =>
+        workspacePath.value.replace(/^\\\\\?\\UNC\\/i, "\\\\").replace(/^\\\\\?\\/, ""),
+    );
     const workspaceTasks = ref<WorkspaceTask[]>([]);
     const workspaceTaskInterrupted = ref(false);
     const directoryPickerOpen = ref(false);
@@ -383,7 +386,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     const sending = computed(() => activeRequestCount.value > 0);
     let activeStreamController: AbortController | null = null;
     let activeChatTask: { sessionId: string; taskId: string } | null = null;
-    let pendingWorkspaceStop: { streamController: AbortController; sessionId: string | null } | null = null;
+    let pendingWorkspaceStop: { streamController: AbortController } | null = null;
     let sessionListRevision = 0;
     let sessionOpenRevision = 0;
     const sessionStatusRefreshRevisions = new Map<string, number>();
@@ -933,9 +936,25 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         const snapshot = liveSessionMessages.get(sessionId);
         if (!snapshot?.length) return;
         const serverMessages = new Map(messages.value.map((message) => [message.id, message]));
+        // Local user messages keep client-generated ids that never match the
+        // server-generated record ids, so the id join alone would re-append a user
+        // message the server already persisted. Count server user contents as a
+        // multiset and drop local copies already accounted for.
+        const serverUserContents = new Map<string, number>();
+        for (const message of messages.value) {
+            if (message.role !== "user") continue;
+            serverUserContents.set(message.content, (serverUserContents.get(message.content) ?? 0) + 1);
+        }
         for (const localMessage of snapshot) {
             const serverMessage = serverMessages.get(localMessage.id);
             if (!serverMessage) {
+                const remainingServerCopies = localMessage.role === "user"
+                    ? serverUserContents.get(localMessage.content) ?? 0
+                    : 0;
+                if (remainingServerCopies > 0) {
+                    serverUserContents.set(localMessage.content, remainingServerCopies - 1);
+                    continue;
+                }
                 messages.value.push(localMessage);
                 continue;
             }
@@ -1032,12 +1051,19 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         }
     }
 
-    function liveExecOutput(liveCall: LiveToolCall): string {
-        const kind = classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result);
+    function execOutputText(kind: ToolCallKind, pending: boolean): string {
         if (kind.type !== "exec_cmd") {
             return "";
         }
-        return [kind.stdout, kind.stderr].filter(Boolean).join("") || (liveCall.done ? "(空结果)" : "执行中...");
+        return [kind.stdout, kind.stderr].filter(Boolean).join("") || (pending ? "执行中..." : "(空结果)");
+    }
+
+    function liveExecOutput(liveCall: LiveToolCall): string {
+        return execOutputText(classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result), !liveCall.done);
+    }
+
+    function toolCallExecOutput(name: string, arguments_: unknown, result?: string): string {
+        return execOutputText(classifyToolCall(name, arguments_, result), false);
     }
 
     function formatChatTime(timestamp?: string): string {
@@ -2162,8 +2188,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             if (
                 event.task_id &&
                 event.session_id &&
-                pendingWorkspaceStop?.streamController === activeStreamController &&
-                (pendingWorkspaceStop.sessionId == null || pendingWorkspaceStop.sessionId === event.session_id)
+                pendingWorkspaceStop?.streamController === activeStreamController
             ) {
                 pendingWorkspaceStop = null;
                 chat.stop(event.session_id, event.task_id).catch((error) => {
@@ -2390,10 +2415,12 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         const sessionTask = activeSessionId.value
             ? sessions.value.find((session) => session.session_id === activeSessionId.value)
             : undefined;
-        const task = sessionTask?.running_task_id
-            ? { sessionId: activeSessionId.value, taskId: sessionTask.running_task_id }
-            : activeChatTask?.sessionId === activeSessionId.value
-                ? activeChatTask
+        // The active stream's start event is the authoritative task identity. Session metadata
+        // can briefly lag behind it, particularly when a previous task has just finished.
+        const task = activeChatTask?.sessionId === activeSessionId.value
+            ? activeChatTask
+            : sessionTask?.running_task_id
+                ? { sessionId: activeSessionId.value, taskId: sessionTask.running_task_id }
                 : null;
         if (task) {
             chat.stop(task.sessionId, task.taskId).catch((error) => {
@@ -2403,20 +2430,12 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             // remains responsible for cancelling the detached inference task.
             activeStreamController?.abort();
         } else if (isWorkspaceService.value && activeStreamController) {
-            const sessionId = activeSessionId.value || null;
-            // Stop rendering immediately when the session id is known, even if
-            // the task id has not reached session metadata yet. A new session
-            // must remain connected until its start event supplies the id.
+            // The server creates the Workspace task immediately before emitting its start
+            // event. Keep the stream open until that event gives us its task ID; a stop
+            // request issued earlier races task registration and cannot cancel the turn.
             pendingWorkspaceStop = {
                 streamController: activeStreamController,
-                sessionId,
             };
-            if (sessionId) {
-                chat.stop(sessionId).catch((error) => {
-                    console.warn("Failed to stop Workspace chat task:", error);
-                });
-                activeStreamController.abort();
-            }
         } else {
             activeStreamController?.abort();
         }
@@ -2706,6 +2725,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         draftImageAttachments,
         imagePreviewAttachment,
         workspacePath,
+        workspacePathDisplay,
         workspaceTasks,
         workspaceTaskInterrupted,
         directoryPickerOpen,
@@ -2800,6 +2820,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         toggleLiveToolCall,
         formatToolPayload,
         liveExecOutput,
+        toolCallExecOutput,
         formatChatTime,
         renderMessageContent,
         scrollToBottom,

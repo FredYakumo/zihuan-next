@@ -240,14 +240,15 @@ impl LLMBase for LocalCandleGgufLlm {
         false
     }
 
-    fn inference(&self, param: &InferenceParam) -> LLMMessage {
-        match self.infer_internal(param, None) {
-            Ok(message) => message,
-            Err(err) => {
-                warn!("Local Candle GGUF inference failed for '{}': {}", self.model_name, err);
-                LLMMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR)
-            }
-        }
+    fn inference(&self, param: &InferenceParam) -> Result<LLMMessage> {
+        self.infer_internal(param, None).map_err(|err| {
+            warn!("Local Candle GGUF inference failed for '{}': {}", self.model_name, err);
+            crate::string_error!(
+                "local Candle GGUF inference failed for '{}': {}",
+                self.model_name,
+                err
+            )
+        })
     }
 
     fn as_streaming(&self) -> Option<&dyn StreamingLLMBase> {

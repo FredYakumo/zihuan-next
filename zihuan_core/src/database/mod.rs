@@ -91,6 +91,10 @@ async fn ensure_privilege_auth_columns_mysql(conn: &mut MySqlConnection) -> Resu
             "pending_args_json",
             "ALTER TABLE qq_chat_agent_service_privilege_auth ADD COLUMN pending_args_json TEXT NULL",
         ),
+        (
+            "snapshot_json",
+            "ALTER TABLE qq_chat_agent_service_privilege_auth ADD COLUMN snapshot_json TEXT NULL",
+        ),
     ];
 
     for (column_name, alter_sql) in columns {
@@ -152,6 +156,10 @@ async fn ensure_privilege_auth_columns_sqlite(conn: &mut SqliteConnection) -> Re
         (
             "pending_args_json",
             "ALTER TABLE qq_chat_agent_service_privilege_auth ADD COLUMN pending_args_json TEXT NULL",
+        ),
+        (
+            "snapshot_json",
+            "ALTER TABLE qq_chat_agent_service_privilege_auth ADD COLUMN snapshot_json TEXT NULL",
         ),
     ];
 

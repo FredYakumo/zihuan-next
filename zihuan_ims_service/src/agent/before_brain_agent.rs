@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::qq_session_state::QqChatSessionState;
+use crate::role_config::QqChatEmotionDimensionConfig;
+use async_trait::async_trait;
 use log::{info, warn};
-use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
-use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingStopReason};
-use zihuan_core::agent::{Agent, AgentContext, AgentDescriptor};
+use zihuan_core::agent::declarative_agent::AgentHost;
+use zihuan_core::agent::tools::memory_tools::register_memory_tools;
+use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason};
+use zihuan_core::agent::{Agent, AgentContext, LLM_KIND_MAIN};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
-use zihuan_core::memory_agent::{MemoryBrainAgent, MemoryBrainAgentContextTool};
 use zihuan_core::model_inference::inference_function::compact_message::{
     compact_message_history, compaction_threshold,
 };
@@ -23,9 +25,9 @@ use crate::qq_chat::logging::{QqChatTaskTrace, QqChatToolCallingObserver};
 use crate::qq_chat::PreparedCurrentTurnUserInput;
 use crate::storage::qq_chat_history_store::{load_history, save_history};
 use crate::tools::{
-    AgentMemoryToolResources, GetRecentGroupMessagesTool, GetRecentUserMessagesTool,
+    AgentMemoryToolResources, GetRecentGroupMessagesTool, GetRecentUserMessagesTool, SharedTool,
     ToolNotificationTarget, UpdateAgentStateTool, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
-    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT,
+    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_MEMORY_AGENT,
 };
 
 const LOG_PREFIX: &str = "[QqBeforeBrainAgent]";
@@ -43,7 +45,7 @@ fn build_chat_preprompt_agent_system_prompt(
          Based on the current event and the independent emotion history, decide whether the emotion should be adjusted. Call `update_agent_state` only when a change is truly warranted; do not call any tool when no change is needed. When an adjustment is needed, specify an emotion dimension and `increase` or `decrease`. You may adjust multiple dimensions in the same event if each is genuinely necessary.\n\
          \n[Responsibility 2: Recall & consistency preprompt]\n\
          - Extract the key nouns / entities / proper nouns from the user's current message.\n\
-         - For each, call `memory_agent_with_context` with the complete current chat context and `search_memory` to check whether you have related memory or an existing stance.\n\
+         - For each, call `memory_agent` with the complete current chat context as `content` and `operation` set to `search_memory` to check whether you have related memory or an existing stance.\n\
          - When memory contains your prior stance on a topic, surface it so the main agent stays consistent and does not flip its likes/dislikes or opinions across turns.\n\
          - If a [Candidate Dream Memory] block is present, judge whether it is relevant to the current event. Only include relevant durable facts or continuity in the final context; omit unrelated Dream content completely.\n\
          - For nouns that have no related memory and that you do not already know, include in the final context block a line exactly like: 「xxx」这些名词没有相关内容，可能需要联网查询？\n\
@@ -76,6 +78,7 @@ fn build_chat_preprompt_agent_user_message(
     )
 }
 
+#[derive(Clone)]
 pub(crate) struct PrepromptContext<'a> {
     pub(crate) trace: &'a QqChatTaskTrace,
     pub(crate) llm: &'a Arc<dyn LLMBase>,
@@ -88,7 +91,7 @@ pub(crate) struct PrepromptContext<'a> {
     pub(crate) sender_id: &'a str,
     pub(crate) target_id: &'a str,
     pub(crate) is_group: bool,
-    pub(crate) session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
+    pub(crate) session_state: Arc<Mutex<QqChatSessionState>>,
     pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     pub(crate) memory_resources: Option<AgentMemoryToolResources>,
     pub(crate) rdb_pool: Option<RelationalDbConnection>,
@@ -96,6 +99,11 @@ pub(crate) struct PrepromptContext<'a> {
 }
 
 /// QQ turn sub-agent that prepares continuity and emotion context for the reply agent.
+///
+/// **Design:** Constructed per preprompt turn with the full [`PrepromptContext`]; its
+/// `Input`/`Config` are the same borrowed turn context. `run`/`run_streaming` both execute the
+/// preprompt reasoning; `run_streaming` additionally reports tool-call events to an external
+/// observer (the uniform review hook), composed with the QQ trace observer.
 pub(crate) struct BeforeBrainAgent<'a> {
     context: PrepromptContext<'a>,
 }
@@ -104,23 +112,24 @@ impl<'a> BeforeBrainAgent<'a> {
     pub(crate) fn new(context: PrepromptContext<'a>) -> Self {
         Self { context }
     }
-
-    pub(crate) fn execute(&self) -> Option<String> {
-        run_preprompt(&self.context)
-    }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Agent for BeforeBrainAgent<'_> {
+    type Config = Self;
     type Input = ();
     type Output = Option<String>;
 
-    fn descriptor(&self) -> AgentDescriptor {
-        AgentDescriptor::new(
-            "qq_preprompt",
-            "QQ Preprompt Agent",
-            vec!["emotion", "memory_recall", "conversation_continuity"],
-        )
+    fn name(&self) -> &str {
+        "qq_preprompt"
+    }
+
+    fn llm(&self) -> Arc<dyn LLMBase> {
+        Arc::clone(self.context.llm)
+    }
+
+    fn new(config: Self::Config) -> zihuan_core::error::Result<Self> {
+        Ok(config)
     }
 
     async fn run(
@@ -128,11 +137,79 @@ impl Agent for BeforeBrainAgent<'_> {
         _context: AgentContext,
         _input: Self::Input,
     ) -> zihuan_core::error::Result<Self::Output> {
-        Ok(self.execute())
+        Ok(run_preprompt(&self.context, None))
+    }
+
+    async fn run_streaming(
+        &self,
+        context: AgentContext,
+        _input: Self::Input,
+    ) -> zihuan_core::error::Result<Self::Output> {
+        Ok(run_preprompt(&self.context, context.observer))
     }
 }
 
-fn run_preprompt(ctx: &PrepromptContext<'_>) -> Option<String> {
+/// Fan out tool-call events to the QQ trace observer plus an optional external observer.
+struct ComposedToolCallingObserver {
+    trace: QqChatToolCallingObserver,
+    external: Option<Arc<dyn ToolCallingObserver>>,
+}
+
+impl ComposedToolCallingObserver {
+    fn new(trace: QqChatTaskTrace, external: Option<Arc<dyn ToolCallingObserver>>) -> Self {
+        Self {
+            trace: QqChatToolCallingObserver { trace },
+            external,
+        }
+    }
+}
+
+impl ToolCallingObserver for ComposedToolCallingObserver {
+    fn on_assistant_tool_request(
+        &self,
+        iteration: usize,
+        content: &str,
+        tool_calls: &[zihuan_core::model_inference::llm::tooling::ToolCalls],
+    ) {
+        self.trace.on_assistant_tool_request(iteration, content, tool_calls);
+        if let Some(external) = &self.external {
+            external.on_assistant_tool_request(iteration, content, tool_calls);
+        }
+    }
+
+    fn on_tool_start(&self, name: &str, call_id: &str, arguments: &serde_json::Value) {
+        self.trace.on_tool_start(name, call_id, arguments);
+        if let Some(external) = &self.external {
+            external.on_tool_start(name, call_id, arguments);
+        }
+    }
+
+    fn on_tool_output(&self, name: &str, call_id: &str, stream: &str, chunk: &str) {
+        self.trace.on_tool_output(name, call_id, stream, chunk);
+        if let Some(external) = &self.external {
+            external.on_tool_output(name, call_id, stream, chunk);
+        }
+    }
+
+    fn on_tool_finish(&self, name: &str, call_id: &str, result: &str) {
+        self.trace.on_tool_finish(name, call_id, result);
+        if let Some(external) = &self.external {
+            external.on_tool_finish(name, call_id, result);
+        }
+    }
+
+    fn on_final_assistant(&self, response: &LLMMessage, stop_reason: &ToolCallingStopReason) {
+        self.trace.on_final_assistant(response, stop_reason);
+        if let Some(external) = &self.external {
+            external.on_final_assistant(response, stop_reason);
+        }
+    }
+}
+
+fn run_preprompt(
+    ctx: &PrepromptContext<'_>,
+    external_observer: Option<Arc<dyn ToolCallingObserver>>,
+) -> Option<String> {
     let emotion_dimensions_text =
         emotion_dimensions_text(&ctx.session_state.lock().unwrap(), &ctx.emotion_dimensions);
 
@@ -189,7 +266,10 @@ fn run_preprompt(ctx: &PrepromptContext<'_>) -> Option<String> {
     conversation.push(user_message.clone());
 
     let mut brain = ToolCallingEngine::new(Arc::clone(ctx.llm));
-    brain.set_observer(Arc::new(QqChatToolCallingObserver { trace: ctx.trace.clone() }));
+    brain.set_observer(Arc::new(ComposedToolCallingObserver::new(
+        ctx.trace.clone(),
+        external_observer,
+    )));
 
     ctx.trace
         .record_graph_phase("情绪维度处理", serde_json::json!({"status": "preprompt"}));
@@ -201,14 +281,17 @@ fn run_preprompt(ctx: &PrepromptContext<'_>) -> Option<String> {
     ));
 
     let is_enabled = |name: &str| *ctx.default_tools_enabled.get(name).unwrap_or(&true);
-    if let Some(resources) = ctx
-        .memory_resources
-        .clone()
-        .filter(|_| is_enabled(DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT))
+    if let Some(resources) =
+        ctx.memory_resources.clone().filter(|_| is_enabled(DEFAULT_TOOL_MEMORY_AGENT))
     {
         ctx.trace
             .record_graph_phase("名词处理", serde_json::json!({"status": "preprompt"}));
-        brain.add_tool(MemoryBrainAgentContextTool::new(MemoryBrainAgent::new(resources)));
+        let mut host = AgentHost::new();
+        register_memory_tools(&mut host, resources);
+        host.register_llm(LLM_KIND_MAIN, Arc::clone(ctx.llm));
+        if let Some(tool) = host.publish_logged(DEFAULT_TOOL_MEMORY_AGENT) {
+            brain.add_tool(SharedTool::new(tool));
+        }
     }
 
     let notification_target =

@@ -67,6 +67,36 @@ class Host:
         return hydrate_resources(response.get("result"))
 
 
+class JobSdk:
+    """Purpose: expose the scheduler kernel's named host capabilities to Python job scripts."""
+
+    def __init__(self, host: Host) -> None: self._host = host
+
+    def load_history(self, sender_id: str) -> list[Any]:
+        """Purpose: load one sender's conversation history as role/text messages."""
+        return self._host.call("history.load", {"sender_id": sender_id})
+
+    def clear_history(self, sender_id: str) -> None:
+        """Purpose: drop one sender's stored conversation history."""
+        self._host.call("history.clear", {"sender_id": sender_id})
+
+    def latest_dream_memory(self, agent_id: str, sender_id: str) -> Any:
+        """Purpose: read the latest persisted Dream memory for one sender, or null when absent."""
+        return self._host.call("dream_memory.latest", {"agent_id": agent_id, "sender_id": sender_id})
+
+    def insert_dream_memory(self, agent_id: str, sender_id: str, chars: int, content: str) -> None:
+        """Purpose: persist one consolidated Dream memory snapshot for one sender."""
+        self._host.call("dream_memory.insert", {"agent_id": agent_id, "sender_id": sender_id, "chars": chars, "content": content})
+
+    def run_subagent(self, definition: str, **inputs: str) -> Any:
+        """Purpose: run one inline sub-agent definition with string inputs and return its text result."""
+        return self._host.call("subagent.run", {"definition": definition, "inputs": inputs})
+
+    def log(self, message: str, level: str = "info") -> None:
+        """Purpose: forward one log line to the scheduler host."""
+        self._host.call("log", {"level": level, "message": message})
+
+
 class _Namespace:
     def __init__(self, host: Host, prefix: str) -> None: self._host, self._prefix = host, prefix
     def _call(self, name: str, **params: Any) -> Any: return self._host.call(f"{self._prefix}.{name}", params)

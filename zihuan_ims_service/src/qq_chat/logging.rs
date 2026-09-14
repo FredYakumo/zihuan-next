@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use chrono::{DateTime, Local};
-use log::info;
+use log::{error, info};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -381,15 +381,18 @@ impl QqChatTaskTrace {
             .map(|point| now.instant.duration_since(point.instant).as_millis())
             .unwrap_or_default();
 
-        self.log_key_event(
-            "大模型返回内容",
-            duration_ms,
-            format!(
-                "stop_reason={stop_reason:?} messages={} payload={}",
-                brain_output.len(),
-                json_for_log(brain_output, LOG_TEXT_PREVIEW_CHARS)
-            ),
+        // Transport errors are model request failures, not conversational content: surface
+        // them at error level so they stand out, and they must never be sent as a reply.
+        let details = format!(
+            "stop_reason={stop_reason:?} messages={} payload={}",
+            brain_output.len(),
+            json_for_log(brain_output, LOG_TEXT_PREVIEW_CHARS)
         );
+        if matches!(stop_reason, ToolCallingStopReason::TransportError(_)) {
+            error!("{LOG_PREFIX} 大模型返回错误 [耗时 {duration_ms} ms] {details}");
+        } else {
+            self.log_key_event("大模型返回内容", duration_ms, details);
+        }
 
         let mut inner = self.inner.lock().unwrap();
         inner.llm_final_result_at = Some(now);

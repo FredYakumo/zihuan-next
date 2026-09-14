@@ -69,9 +69,14 @@ async fn main() {
 
     let args = Args::parse();
 
-    if let Err(error) = zihuan_core::agent::sub_agent_manager::ensure_default_subagents() {
-        error!("Failed to initialize default SubAgents: {error}");
+    if let Err(error) = zihuan_core::agent::declarative_agent::seed_builtin_agents() {
+        error!("Failed to seed default agent definitions: {error}");
     }
+
+    if let Err(error) = zihuan_core::scheduler::init_script_jobs() {
+        error!("Failed to initialize scheduled jobs: {error}");
+    }
+    zihuan_core::scheduler::start_scheduler_kernel();
 
     let state = Arc::new(api::state::AppState::new());
     let broadcast = api::ws::create_broadcast();

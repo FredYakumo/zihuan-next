@@ -19,7 +19,7 @@ export type DataTypeMetaDataObject = { Vec: DataTypeMetaData } | { Custom: strin
  */
 export type DataTypeMetaData = string | DataTypeMetaDataObject;
 export interface UiComponentDefinition { type: string; props?: Record<string, JsonValue>; value_key?: string; event?: string; children?: UiComponentDefinition[]; }
-export interface NodeUiDefinition { template_path?: string; card?: UiComponentDefinition[]; panel?: UiComponentDefinition[]; }
+export interface NodeUiDefinition { template_path?: string; style_path?: string; card?: UiComponentDefinition[]; panel?: UiComponentDefinition[]; }
 
 export interface PortInfo {
   name: string;
@@ -207,7 +207,6 @@ export interface ScheduledTaskEntry {
 }
 
 // WebSocket message types
-import type { QQMessageItem } from "../ui/dialogs/types";
 
 export type ServerMessage =
   | { type: "TaskStarted"; task_id: string; graph_name: string; graph_session_id: string }
@@ -215,13 +214,6 @@ export type ServerMessage =
   | { type: "TaskStopped"; task_id: string }
   | { type: "LogMessage"; level: string; message: string; timestamp: string }
   | { type: "GraphValidationResult"; graph_id: string; issues: ValidationIssue[] }
-  | {
-      type: "NodePreviewQQMessages";
-      task_id: string;
-      graph_session_id: string;
-      node_id: string;
-      messages: QQMessageItem[];
-    }
   | { type: "NodeUiUpdate"; task_id: string; graph_session_id: string; node_id: string; revision: number; state: JsonValue };
 
 export type ClientMessage =

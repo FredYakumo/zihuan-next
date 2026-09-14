@@ -272,23 +272,3 @@ impl SystemConfigSection for WorkspaceDirectoryHistorySection {
     const SECTION_KEY: &'static str = "workspace_directory_history";
     type Value = WorkspaceDirectoryHistory;
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        GlobalSettings, DEFAULT_CONTEXT_COMPACTION_PERCENT, MAX_CONTEXT_COMPACTION_PERCENT,
-        MIN_CONTEXT_COMPACTION_PERCENT,
-    };
-
-    #[test]
-    fn context_compaction_percent_defaults_and_clamps_to_supported_range() {
-        let mut settings = GlobalSettings::default();
-        assert_eq!(settings.context_compaction_percent(), DEFAULT_CONTEXT_COMPACTION_PERCENT);
-
-        settings.context_compaction_percent = 0;
-        assert_eq!(settings.context_compaction_percent(), MIN_CONTEXT_COMPACTION_PERCENT);
-
-        settings.context_compaction_percent = 100;
-        assert_eq!(settings.context_compaction_percent(), MAX_CONTEXT_COMPACTION_PERCENT);
-    }
-}

@@ -1,0 +1,81 @@
+// Styles for the qq_message_preview node UI template.
+// Bubble colors ported from the former canvas-drawn widget.
+
+$bubble-bg-text: #3a3a3a;
+$bubble-bg-at: #1f3a55;
+$bubble-bg-reply: #3a2a48;
+$bubble-bg-forward: #4a3820;
+$bubble-bg-error: #4a2828;
+$bubble-bg-image: #2c2c2c;
+$bubble-border: rgba(255, 255, 255, 0.06);
+$bubble-radius: 10px;
+$bubble-pad-x: 10px;
+$bubble-pad-y: 6px;
+$bubble-text: #e8e8e8;
+$bubble-muted: #888;
+$prefix-muted: #aaa;
+$prefix-at: #79c8ff;
+$prefix-reply: #dba8e0;
+$prefix-forward: #ffc97a;
+$prefix-error: #ef9a9a;
+$image-max: 200px;
+
+.znp-preview {
+  font: 12px/1.5 sans-serif;
+  color: $bubble-text;
+
+  .znp-preview-empty {
+    color: $bubble-muted;
+  }
+
+  .znp-qq {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+
+    .znp-qq-bubble {
+      box-sizing: border-box;
+      max-width: 100%;
+      padding: $bubble-pad-y $bubble-pad-x;
+      border: 1px solid $bubble-border;
+      border-radius: $bubble-radius;
+
+      &.is-text { background: $bubble-bg-text; }
+      &.is-at {
+        background: $bubble-bg-at;
+        .znp-qq-prefix { color: $prefix-at; }
+      }
+      &.is-reply {
+        background: $bubble-bg-reply;
+        .znp-qq-prefix { color: $prefix-reply; }
+      }
+      &.is-forward {
+        background: $bubble-bg-forward;
+        .znp-qq-prefix { color: $prefix-forward; }
+      }
+      &.is-error {
+        background: $bubble-bg-error;
+        .znp-qq-prefix { color: $prefix-error; }
+      }
+      &.is-image { background: $bubble-bg-image; }
+      &.is-missing { color: $bubble-muted; }
+
+      .znp-qq-prefix { color: $prefix-muted; }
+
+      .znp-qq-text {
+        margin: 0;
+        font: inherit;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .znp-qq-image {
+        display: block;
+        max-width: $image-max;
+        max-height: $image-max;
+        border-radius: $bubble-radius - 3px;
+      }
+    }
+  }
+}

@@ -29,17 +29,23 @@ pub struct ScheduledTaskEntry {
 }
 
 impl ScheduledTaskEntry {
-    pub fn dream(source_service: String, sender_id: String, start_time: DateTime<Local>) -> Self {
+    pub fn new(
+        task_name: impl Into<String>,
+        source_service: impl Into<String>,
+        triggered_by: Option<String>,
+        start_time: DateTime<Local>,
+        info_summary: Option<&str>,
+    ) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
-            task_name: "Dream".to_string(),
-            source_service,
-            triggered_by: Some(sender_id),
+            task_name: task_name.into(),
+            source_service: source_service.into(),
+            triggered_by,
             start_time,
             end_time: None,
             status: ScheduledTaskStatus::Pending,
             related_task_ids: Vec::new(),
-            info_summary: Some("等待用户静默后生成 Dream 记忆".to_string()),
+            info_summary: info_summary.map(str::to_string),
         }
     }
 }
@@ -73,22 +79,78 @@ pub async fn insert_task(
     Ok(())
 }
 
-pub async fn cancel_pending_dreams(
+pub async fn cancel_pending_tasks(
     connection: &RelationalDbConnection,
+    task_name: &str,
     source_service: &str,
-    sender_id: &str,
+    triggered_by: &str,
+    summary: Option<&str>,
 ) -> Result<()> {
     let now = Local::now();
+    let summary = summary.unwrap_or("被新任务替换");
     match connection {
         RelationalDbConnection::MySql(config) => {
             let pool = config.pool.as_ref().ok_or_else(pool_missing)?;
-            sqlx::query("UPDATE scheduled_task SET status = 'cancelled', end_time = ?, info_summary = '被新的用户消息替换' WHERE task_name = 'Dream' AND source_service = ? AND triggered_by = ? AND status = 'pending'")
-                .bind(now).bind(source_service).bind(sender_id).execute(pool).await.map_err(Error::Database)?;
+            sqlx::query("UPDATE scheduled_task SET status = 'cancelled', end_time = ?, info_summary = ? WHERE task_name = ? AND source_service = ? AND triggered_by = ? AND status = 'pending'")
+                .bind(now).bind(summary).bind(task_name).bind(source_service).bind(triggered_by).execute(pool).await.map_err(Error::Database)?;
         }
         RelationalDbConnection::Sqlite(config) => {
             let pool = config.pool.as_ref().ok_or_else(pool_missing)?;
-            sqlx::query("UPDATE scheduled_task SET status = 'cancelled', end_time = ?, info_summary = '被新的用户消息替换' WHERE task_name = 'Dream' AND source_service = ? AND triggered_by = ? AND status = 'pending'")
-                .bind(now.to_rfc3339()).bind(source_service).bind(sender_id).execute(pool).await.map_err(Error::Database)?;
+            sqlx::query("UPDATE scheduled_task SET status = 'cancelled', end_time = ?, info_summary = ? WHERE task_name = ? AND source_service = ? AND triggered_by = ? AND status = 'pending'")
+                .bind(now.to_rfc3339()).bind(summary).bind(task_name).bind(source_service).bind(triggered_by).execute(pool).await.map_err(Error::Database)?;
+        }
+    }
+    Ok(())
+}
+
+/// Atomically claims a pending task for execution: only one caller can flip a task from
+/// `pending` to `running`, which doubles as the concurrency guard across ticks.
+pub async fn claim_task(connection: &RelationalDbConnection, id: &str) -> Result<bool> {
+    let affected = match connection {
+        RelationalDbConnection::MySql(config) => {
+            let pool = config.pool.as_ref().ok_or_else(pool_missing)?;
+            sqlx::query("UPDATE scheduled_task SET status = 'running', info_summary = '执行中' WHERE id = ? AND status = 'pending'")
+                .bind(id)
+                .execute(pool)
+                .await
+                .map_err(Error::Database)?
+                .rows_affected()
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            let pool = config.pool.as_ref().ok_or_else(pool_missing)?;
+            sqlx::query("UPDATE scheduled_task SET status = 'running', info_summary = '执行中' WHERE id = ? AND status = 'pending'")
+                .bind(id)
+                .execute(pool)
+                .await
+                .map_err(Error::Database)?
+                .rows_affected()
+        }
+    };
+    Ok(affected > 0)
+}
+
+/// Puts `running` tasks of one service back to `pending`. Called when a service registers
+/// with the scheduler to recover tasks left running by a previous process crash.
+pub async fn requeue_running_tasks(
+    connection: &RelationalDbConnection,
+    source_service: &str,
+) -> Result<()> {
+    match connection {
+        RelationalDbConnection::MySql(config) => {
+            let pool = config.pool.as_ref().ok_or_else(pool_missing)?;
+            sqlx::query("UPDATE scheduled_task SET status = 'pending', info_summary = '重启后重新排队' WHERE source_service = ? AND status = 'running'")
+                .bind(source_service)
+                .execute(pool)
+                .await
+                .map_err(Error::Database)?;
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            let pool = config.pool.as_ref().ok_or_else(pool_missing)?;
+            sqlx::query("UPDATE scheduled_task SET status = 'pending', info_summary = '重启后重新排队' WHERE source_service = ? AND status = 'running'")
+                .bind(source_service)
+                .execute(pool)
+                .await
+                .map_err(Error::Database)?;
         }
     }
     Ok(())
@@ -207,6 +269,38 @@ pub async fn list_tasks(
             }
             query
                 .fetch_all(config.pool.as_ref().ok_or_else(pool_missing)?)
+                .await
+                .map_err(Error::Database)?
+                .into_iter()
+                .map(parse_sqlite_row)
+                .collect()
+        }
+    }
+}
+
+/// Lists pending tasks whose scheduled start time has arrived; the scheduler kernel claims
+/// each of them with [`claim_task`] before running its job.
+pub async fn list_due_tasks(
+    connection: &RelationalDbConnection,
+    now: DateTime<Local>,
+) -> Result<Vec<ScheduledTaskEntry>> {
+    match connection {
+        RelationalDbConnection::MySql(config) => {
+            let pool = config.pool.as_ref().ok_or_else(pool_missing)?;
+            sqlx::query("SELECT id, task_name, source_service, triggered_by, start_time, end_time, status, related_task_ids, info_summary FROM scheduled_task WHERE status = 'pending' AND start_time <= ? ORDER BY start_time ASC")
+                .bind(now)
+                .fetch_all(pool)
+                .await
+                .map_err(Error::Database)?
+                .into_iter()
+                .map(parse_mysql_row)
+                .collect()
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            let pool = config.pool.as_ref().ok_or_else(pool_missing)?;
+            sqlx::query("SELECT id, task_name, source_service, triggered_by, start_time, end_time, status, related_task_ids, info_summary FROM scheduled_task WHERE status = 'pending' AND start_time <= ? ORDER BY start_time ASC")
+                .bind(now.to_rfc3339())
+                .fetch_all(pool)
                 .await
                 .map_err(Error::Database)?
                 .into_iter()

@@ -2,11 +2,16 @@ use async_trait::async_trait;
 
 use crate::error::Result;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RoleServiceKind {
-    QqChat,
-    Workspace,
-}
+pub mod procedure;
+pub mod service_config;
+pub mod transport;
+
+pub use procedure::{
+    execute_blocking_procedure_chain, execute_procedure_chain, Procedure, ProcedureContext,
+    ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
+};
+pub use service_config::RoleServiceKind;
+pub use transport::TransportSink;
 
 /// metadata for a configured, externally reachable role service.
 #[derive(Debug, Clone, PartialEq, Eq)]

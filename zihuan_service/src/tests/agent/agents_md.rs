@@ -3,11 +3,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
-use zihuan_core::agent::service_config::{
-    RoleServiceConfig, RoleServiceType, WorkspaceAgentServiceConfig,
-};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage, MessageRole};
+use zihuan_core::role::service_config::RoleServiceConfig;
+use zihuan_workspace_service::role_config::WorkspaceRoleServiceConfig;
 use zihuan_workspace_service::workspace_agent_service::load_inference_tool_provider;
 
 static ENV_MUTEX: Mutex<()> = Mutex::new(());
@@ -38,8 +37,9 @@ impl Drop for TempDir {
 }
 
 fn provider(enabled: bool) -> Arc<dyn InferenceToolProvider> {
-    let config = WorkspaceAgentServiceConfig {
+    let config = WorkspaceRoleServiceConfig {
         llm_ref_id: None,
+        orchestration_llm_ref_id: None,
         image_understand_llm_ref_id: None,
         agents_md_enabled: enabled,
         memory_enabled: false,
@@ -54,7 +54,7 @@ fn provider(enabled: bool) -> Arc<dyn InferenceToolProvider> {
         id: "test-agent".to_string(),
         config_id: "test-config".to_string(),
         name: "Test Agent".to_string(),
-        role_service_type: RoleServiceType::Workspace(config.clone()),
+        role_service_type: crate::role::workspace_from(config.clone()),
         enabled: true,
         auto_start: false,
         is_default: false,
@@ -77,7 +77,7 @@ fn unused_llm() -> Arc<dyn LLMBase> {
             32 * 1024
         }
 
-        fn inference(&self, _param: &InferenceParam) -> LLMMessage {
+        fn inference(&self, _param: &InferenceParam) -> zihuan_core::error::Result<LLMMessage> {
             panic!("unused test LLM")
         }
     }

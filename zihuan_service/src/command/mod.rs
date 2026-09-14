@@ -1,21 +1,7 @@
-mod auth_command;
-mod emotion_command;
-mod help_command;
-mod learn_style_command;
-mod new_command;
-mod task_command;
-
 use std::sync::Arc;
 
-use zihuan_core::command::{CommandDefinition, CommandRegistry, CommandScope};
+use zihuan_core::command::{CommandRegistry, CommandScope, CommandSpec, Step};
 use zihuan_core::task_context::AgentTaskRuntime;
-
-use auth_command::AuthCommand;
-use emotion_command::EmotionCommand;
-use help_command::HelpCommand;
-use learn_style_command::LearnStyleCommand;
-use new_command::NewCommand;
-use task_command::TaskCommand;
 
 /// Initialize the global command registry. Must be called once during startup.
 pub fn init_global_command_registry() -> Arc<CommandRegistry> {
@@ -56,123 +42,157 @@ pub fn build_help_text() -> Option<String> {
 //
 // ## Purpose
 //
-// Creates and populates the global `CommandRegistry` with all built-in
-// slash-commands. Called once during service startup by
+// Creates and populates the global `CommandRegistry` with all slash-commands
+// as data-driven `CommandSpec`s. Called once during service startup by
 // `init_global_command_registry`.
 //
 // ## Design
 //
-// - Registers `NewCommand` under `/new` (aliases: `clear`, `reset`) and
-//   `TaskCommand` under `/task`.
-// - The `/help` command uses a **lazy registry reference** (`Arc<Mutex<Option<...>>>`)
-//   to avoid a circular dependency: the help handler needs the registry, but the
-//   registry creation calls this builder. The reference is resolved after the
-//   registry is fully constructed.
-// - All built-in commands are scoped to `CommandScope::All` (available in both
-//   QQ Chat and HTTP stream services).
+// - Builtin commands (`new`, `task`, `help`) execute through `builtin://*` step
+//   ops shared by every channel runtime.
+// - QQ privileged specs (`auth`, `emotion`, `adjust_emotion`,
+//   `learn_global_style`, `learn_group_style`) declare only their data; the QQ
+//   channel runtime implements the `ims://*` ops. They carry `allow_steer_bypass:
+//   false` so they queue behind a busy session instead of executing out of band.
+// - All builtin commands are `CommandScope::All`.
 pub fn build_command_registry() -> Arc<CommandRegistry> {
     let mut registry = CommandRegistry::new();
 
-    let reg_ptr = Arc::new(std::sync::Mutex::new(None::<Arc<CommandRegistry>>));
+    registry.register(CommandSpec {
+        name: "new".to_string(),
+        aliases: vec!["clear".to_string(), "reset".to_string()],
+        description: "清除对话历史，开始新对话".to_string(),
+        scope: CommandScope::All,
+        accepted_arg_count: 0,
+        allow_steer_bypass: false,
+        setup: Vec::new(),
+        conditions: Vec::new(),
+        body: vec![Step::new("builtin://new")],
+    });
 
-    registry.register(
-        CommandDefinition {
-            name: "new".to_string(),
-            aliases: vec!["clear".to_string(), "reset".to_string()],
-            description: "清除对话历史，开始新对话".to_string(),
-            scope: CommandScope::All,
-            accepted_arg_count: 0,
-            allow_steer_bypass: false,
-        },
-        Arc::new(NewCommand),
-    );
+    registry.register(CommandSpec {
+        name: "task".to_string(),
+        aliases: Vec::new(),
+        description: "查看最近任务状态".to_string(),
+        scope: CommandScope::All,
+        accepted_arg_count: 2,
+        allow_steer_bypass: true,
+        setup: Vec::new(),
+        conditions: Vec::new(),
+        body: vec![Step::new("builtin://task")],
+    });
 
-    registry.register(
-        CommandDefinition {
-            name: "task".to_string(),
-            aliases: vec![],
-            description: "查看最近任务状态".to_string(),
-            scope: CommandScope::All,
-            accepted_arg_count: 2,
-            allow_steer_bypass: true,
-        },
-        Arc::new(TaskCommand),
-    );
+    registry.register(CommandSpec {
+        name: "help".to_string(),
+        aliases: vec!["h".to_string()],
+        description: "列出可用命令".to_string(),
+        scope: CommandScope::All,
+        accepted_arg_count: 0,
+        allow_steer_bypass: false,
+        setup: Vec::new(),
+        conditions: Vec::new(),
+        body: vec![Step::new("builtin://help")],
+    });
 
-    registry.register(
-        CommandDefinition {
-            name: "help".to_string(),
-            aliases: vec!["h".to_string()],
-            description: "列出可用命令".to_string(),
-            scope: CommandScope::All,
-            accepted_arg_count: 0,
-            allow_steer_bypass: false,
-        },
-        Arc::new(HelpCommand { registry: reg_ptr.clone() }),
-    );
+    registry.register(CommandSpec {
+        name: "auth".to_string(),
+        aliases: Vec::new(),
+        description: "输入临时授权密钥，完成特权提权".to_string(),
+        scope: CommandScope::QqChat,
+        accepted_arg_count: 1,
+        allow_steer_bypass: false,
+        setup: Vec::new(),
+        conditions: Vec::new(),
+        body: vec![Step::new("ims://auth/verify")],
+    });
 
-    registry.register(
-        CommandDefinition {
-            name: "auth".to_string(),
-            aliases: vec![],
-            description: "输入临时授权密钥，完成特权提权".to_string(),
-            scope: CommandScope::QqChat,
-            accepted_arg_count: 1,
-            allow_steer_bypass: false,
-        },
-        Arc::new(AuthCommand),
-    );
+    registry.register(CommandSpec {
+        name: "learn_global_style".to_string(),
+        aliases: Vec::new(),
+        description: "学习全局聊天语言风格（需管理员权限和特权）".to_string(),
+        scope: CommandScope::QqChat,
+        accepted_arg_count: 0,
+        allow_steer_bypass: false,
+        setup: vec![Step::with_params(
+            "ims://style/prepare_waiting_task",
+            "创建等待授权的全局风格学习任务",
+            serde_json::json!({ "display": "学习全局语言风格" }),
+        )],
+        conditions: vec![Step::with_params(
+            "ims://privilege/active",
+            "校验管理员特权",
+            serde_json::json!({ "purpose": "learn_global_style" }),
+        )],
+        body: vec![Step::with_params(
+            "ims://style/start",
+            "启动全局风格学习",
+            serde_json::json!({ "scope": "global" }),
+        )],
+    });
 
-    registry.register(
-        CommandDefinition {
-            name: "learn_global_style".to_string(),
-            aliases: vec![],
-            description: "学习全局聊天语言风格（需管理员权限和特权）".to_string(),
-            scope: CommandScope::QqChat,
-            accepted_arg_count: 0,
-            allow_steer_bypass: false,
-        },
-        Arc::new(LearnStyleCommand),
-    );
+    registry.register(CommandSpec {
+        name: "learn_group_style".to_string(),
+        aliases: Vec::new(),
+        description: "学习当前群聊语言风格（需管理员权限和特权）".to_string(),
+        scope: CommandScope::QqChat,
+        accepted_arg_count: 0,
+        allow_steer_bypass: false,
+        setup: vec![Step::with_params(
+            "ims://style/prepare_waiting_task",
+            "创建等待授权的群聊风格学习任务",
+            serde_json::json!({ "display": "学习群聊语言风格" }),
+        )],
+        conditions: vec![Step::with_params(
+            "ims://privilege/active",
+            "校验管理员特权",
+            serde_json::json!({ "purpose": "learn_group_style" }),
+        )],
+        body: vec![Step::with_params(
+            "ims://style/start",
+            "启动群聊风格学习",
+            serde_json::json!({ "scope": "group" }),
+        )],
+    });
 
-    registry.register(
-        CommandDefinition {
-            name: "learn_group_style".to_string(),
-            aliases: vec![],
-            description: "学习当前群聊语言风格（需管理员权限和特权）".to_string(),
-            scope: CommandScope::QqChat,
-            accepted_arg_count: 0,
-            allow_steer_bypass: false,
-        },
-        Arc::new(LearnStyleCommand),
-    );
+    registry.register(CommandSpec {
+        name: "emotion".to_string(),
+        aliases: Vec::new(),
+        description: "查看当前 Agent 情绪维度（需管理员权限和特权）".to_string(),
+        scope: CommandScope::QqChat,
+        accepted_arg_count: 0,
+        allow_steer_bypass: false,
+        setup: Vec::new(),
+        conditions: vec![Step::with_params(
+            "ims://privilege/active",
+            "校验管理员特权",
+            serde_json::json!({ "purpose": "emotion" }),
+        )],
+        body: vec![Step::with_params(
+            "ims://emotion/execute",
+            "读取当前情绪维度",
+            serde_json::json!({ "command": "emotion" }),
+        )],
+    });
 
-    registry.register(
-        CommandDefinition {
-            name: "emotion".to_string(),
-            aliases: vec![],
-            description: "查看当前 Agent 情绪维度（需管理员权限和特权）".to_string(),
-            scope: CommandScope::QqChat,
-            accepted_arg_count: 0,
-            allow_steer_bypass: false,
-        },
-        Arc::new(EmotionCommand),
-    );
+    registry.register(CommandSpec {
+        name: "adjust_emotion".to_string(),
+        aliases: Vec::new(),
+        description: "调整当前 Agent 情绪维度（需管理员权限和特权）".to_string(),
+        scope: CommandScope::QqChat,
+        accepted_arg_count: 2,
+        allow_steer_bypass: false,
+        setup: Vec::new(),
+        conditions: vec![Step::with_params(
+            "ims://privilege/active",
+            "校验管理员特权",
+            serde_json::json!({ "purpose": "adjust_emotion" }),
+        )],
+        body: vec![Step::with_params(
+            "ims://emotion/execute",
+            "调整情绪维度",
+            serde_json::json!({ "command": "adjust_emotion" }),
+        )],
+    });
 
-    registry.register(
-        CommandDefinition {
-            name: "adjust_emotion".to_string(),
-            aliases: vec![],
-            description: "调整当前 Agent 情绪维度（需管理员权限和特权）".to_string(),
-            scope: CommandScope::QqChat,
-            accepted_arg_count: 2,
-            allow_steer_bypass: false,
-        },
-        Arc::new(EmotionCommand),
-    );
-
-    let registry = Arc::new(registry);
-    *reg_ptr.lock().unwrap() = Some(Arc::clone(&registry));
-
-    registry
+    Arc::new(registry)
 }

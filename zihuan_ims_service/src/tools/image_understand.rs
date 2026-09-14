@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::qq_chat::resources::current_qq_chat_role_service_config;
+use crate::role_config::image_understand_llm_ref_id;
 use log::warn;
 use serde_json::Value;
-use zihuan_core::agent::qq_chat::image_understand_llm_ref_id;
-use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
 use zihuan_core::agent::tools::{Tool, ToolExecutionOutput};
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -147,19 +147,21 @@ fn resolve_image_understand_s3_ref(s3_ref: Option<Arc<S3Ref>>) -> Result<Option<
     if s3_ref.is_some() {
         return Ok(s3_ref);
     }
-    load_agent_s3_ref().transpose()
+    load_agent_s3_ref()
 }
 
-fn load_agent_s3_ref() -> Option<Result<Arc<S3Ref>>> {
-    let config = current_qq_chat_agent_service_config().ok()?;
-    let connection_id = config
+fn load_agent_s3_ref() -> Result<Option<Arc<S3Ref>>> {
+    let config = current_qq_chat_role_service_config()?;
+    let Some(connection_id) = config
         .rustfs_connection_id
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty())?;
-    Some(block_async(
-        RuntimeStorageConnectionManager::shared().get_or_create_s3_ref(connection_id),
-    ))
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+    block_async(RuntimeStorageConnectionManager::shared().get_or_create_s3_ref(connection_id))
+        .map(Some)
 }
 
 fn analyze_persisted_media(
@@ -195,7 +197,9 @@ fn analyze_persisted_media(
         ),
         LLMMessage::user_with_parts(vec![MessagePart::text(prompt), resolved.part]),
     ];
-    let response = llm.inference(&InferenceParam { messages: &messages, tools: None });
+    let response = llm
+        .inference(&InferenceParam { messages: &messages, tools: None })
+        .map_err(|err| Error::StringError(format!("image_understand inference failed: {err}")))?;
 
     let content = response.content_text_owned().unwrap_or_default();
     let trimmed = content.trim();
@@ -207,7 +211,7 @@ fn analyze_persisted_media(
 }
 
 fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>> {
-    let agent = current_qq_chat_agent_service_config()?;
+    let agent = current_qq_chat_role_service_config()?;
     let llm_refs = load_llm_refs()?;
     let llm_ref_id = image_understand_llm_ref_id(&agent)
         .map(str::trim)

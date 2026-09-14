@@ -201,9 +201,9 @@
                   <div v-if="form.dream_enabled" class="agent-service-form-grid" style="margin-top: 8px">
                     <t-input-number v-model="form.dream_interval_value" :min="1" />
                     <t-select v-model="form.dream_interval_unit">
-                      <t-option value="minutes" label="分" />
-                      <t-option value="hours" label="时" />
-                      <t-option value="days" label="天" />
+                      <t-option value="minute" label="分" />
+                      <t-option value="hour" label="时" />
+                      <t-option value="day" label="天" />
                     </t-select>
                   </div>
                   <div v-if="form.dream_enabled && !form.rdb_id" class="agent-service-form-hint">Dream 需要配置关系数据库连接。</div>

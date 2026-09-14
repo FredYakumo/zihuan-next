@@ -149,7 +149,7 @@ export interface ServiceFormState {
   max_message_length: number;
   dream_enabled: boolean;
   dream_interval_value: number;
-  dream_interval_unit: "minutes" | "hours" | "days";
+  dream_interval_unit: "minute" | "hour" | "day";
   max_steer_count: number;
   emotion_dimensions: QqChatEmotionDimensionFormItem[];
   default_tools_enabled: Record<string, boolean>;
@@ -168,6 +168,7 @@ export interface ServiceFormState {
   http_memory_backend: "" | "local_file" | "weaviate" | "elasticsearch";
   task_db_connection_id: string;
   agents_md_enabled: boolean;
+  workspace_orchestration_llm_ref_id: string;
   workspace_memory_enabled: boolean;
   workspace_embedding_model_ref_id: string;
   workspace_weaviate_memory_connection_id: string;
@@ -249,8 +250,7 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
     label: "save_image",
     description: "保存图片到图片库",
   },
-  { id: "memory_agent", label: "memory_agent", description: "由记忆 Agent 自动检索或更新记忆" },
-  { id: "memory_agent_with_context", label: "memory_agent_with_context", description: "按聊天上下文搜索或更新记忆" },
+  { id: "memory_agent", label: "memory_agent", description: "由记忆 Agent 自动检索或更新记忆，也可通过 operation 参数强制指定检索或更新" },
 ];
 
 export const WORKSPACE_DEFAULT_TOOLS: DefaultToolOption[] = [
@@ -429,7 +429,7 @@ export function defaultServiceForm(): ServiceFormState {
     max_message_length: 500,
     dream_enabled: false,
     dream_interval_value: 30,
-    dream_interval_unit: "minutes",
+    dream_interval_unit: "minute",
     max_steer_count: 4,
     emotion_dimensions: defaultQqChatEmotionDimensions(),
     default_tools_enabled: defaultQqChatDefaultToolsEnabled(),
@@ -448,6 +448,7 @@ export function defaultServiceForm(): ServiceFormState {
     http_memory_backend: "",
     task_db_connection_id: "",
     agents_md_enabled: false,
+    workspace_orchestration_llm_ref_id: "",
     workspace_memory_enabled: false,
     workspace_embedding_model_ref_id: "",
     workspace_weaviate_memory_connection_id: "",
@@ -479,7 +480,7 @@ function normalizeQqChatMessageRateLimitRule(
   const windowSize =
     Number.isFinite(rawWindowSize) && rawWindowSize > 0 ? Math.trunc(rawWindowSize) : 1;
   if (
-    (windowUnit !== "minute" && windowUnit !== "hour" && windowUnit !== "day") ||
+    !normalizeTimeUnitValue(windowUnit, null) ||
     !Number.isFinite(maxCalls) ||
     maxCalls <= 0
   ) {
@@ -487,10 +488,31 @@ function normalizeQqChatMessageRateLimitRule(
   }
   return {
     unlimited: false,
-    window_unit: windowUnit as QqChatMessageRateLimitWindowUnit,
+    window_unit: normalizeTimeUnitValue(windowUnit, "day") as QqChatMessageRateLimitWindowUnit,
     window_size: windowSize,
     max_calls: maxCalls,
   };
+}
+
+/** Canonicalizes a time-unit label to its singular form, or returns `fallback`
+ *  when the value is missing. Accepts both singular and legacy plural spellings. */
+function normalizeTimeUnitValue(
+  value: unknown,
+  fallback: null,
+): "minute" | "hour" | "day" | null;
+function normalizeTimeUnitValue(
+  value: unknown,
+  fallback: "minute" | "hour" | "day",
+): "minute" | "hour" | "day";
+function normalizeTimeUnitValue(
+  value: unknown,
+  fallback: "minute" | "hour" | "day" | null,
+): "minute" | "hour" | "day" | null {
+  const unit = String(value ?? "").trim().toLowerCase();
+  if (unit === "minute" || unit === "minutes") return "minute";
+  if (unit === "hour" || unit === "hours") return "hour";
+  if (unit === "day" || unit === "days") return "day";
+  return fallback;
 }
 
 function buildQqChatMessageRateLimitRulePayload(
@@ -903,7 +925,10 @@ export function serviceFormFromConfig(
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.dream_enabled = Boolean(agentType.dream_enabled ?? false);
     form.dream_interval_value = Number(agentType.dream_interval_value ?? 30);
-    form.dream_interval_unit = (agentType.dream_interval_unit === "hours" || agentType.dream_interval_unit === "days") ? agentType.dream_interval_unit : "minutes";
+    form.dream_interval_unit = normalizeTimeUnitValue(
+      agentType.dream_interval_unit,
+      "minute",
+    );
     form.max_steer_count = Number(agentType.max_steer_count ?? 4);
     form.emotion_dimensions = normalizeQqChatEmotionDimensions(
       agentType.emotion_dimensions,
@@ -976,6 +1001,7 @@ export function serviceFormFromConfig(
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
     form.image_understand_llm_ref_id = String(agentType.image_understand_llm_ref_id ?? "");
     form.agents_md_enabled = Boolean(agentType.agents_md_enabled ?? false);
+    form.workspace_orchestration_llm_ref_id = String(agentType.orchestration_llm_ref_id ?? "");
     form.workspace_memory_enabled = Boolean(agentType.memory_enabled ?? false);
     form.workspace_embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
     form.workspace_weaviate_memory_connection_id = String(agentType.weaviate_memory_connection_id ?? "");
@@ -1151,6 +1177,7 @@ export function buildServicePayload(form: ServiceFormState): {
     role_service_type: {
       type: "workspace",
       llm_ref_id: form.llm_ref_id || null,
+      orchestration_llm_ref_id: form.workspace_orchestration_llm_ref_id || null,
       image_understand_llm_ref_id: form.image_understand_llm_ref_id || null,
       agents_md_enabled: form.agents_md_enabled,
       memory_enabled: form.workspace_memory_enabled,

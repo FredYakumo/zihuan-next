@@ -2,8 +2,10 @@ pub mod utils {
     pub mod bm25;
     pub mod hash_string;
     pub mod string_utils;
+    pub mod time_unit;
 }
 pub mod agent;
+pub mod chat_history;
 pub mod command;
 pub mod config;
 pub mod connection_manager;
@@ -12,7 +14,6 @@ pub mod database;
 pub mod error;
 pub mod graph;
 pub mod ims_bot_adapter;
-pub mod memory_agent;
 pub mod message_part;
 pub mod model_inference;
 pub mod nlp;
@@ -20,6 +21,7 @@ pub mod rag;
 pub mod role;
 pub mod runtime;
 pub mod scheduled_task;
+pub mod scheduler;
 pub mod setup_wizard;
 pub mod steer;
 pub mod storage;
