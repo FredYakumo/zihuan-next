@@ -14,7 +14,6 @@ pub mod database;
 pub mod error;
 pub mod graph;
 pub mod ims_bot_adapter;
-pub mod memory_agent;
 pub mod message_part;
 pub mod model_inference;
 pub mod nlp;

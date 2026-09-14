@@ -5,11 +5,12 @@ use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatEmotionDimensionConfig;
 use async_trait::async_trait;
 use log::{info, warn};
+use zihuan_core::agent::tools::memory_tools::register_memory_tools;
 use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason};
-use zihuan_core::agent::{Agent, AgentContext};
+use zihuan_core::agent::yaml_agent::YamlAgentHost;
+use zihuan_core::agent::{Agent, AgentContext, LLM_KIND_MAIN};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
-use zihuan_core::memory_agent::{MemoryBrainAgent, MemoryBrainAgentContextTool};
 use zihuan_core::model_inference::inference_function::compact_message::{
     compact_message_history, compaction_threshold,
 };
@@ -24,9 +25,9 @@ use crate::qq_chat::logging::{QqChatTaskTrace, QqChatToolCallingObserver};
 use crate::qq_chat::PreparedCurrentTurnUserInput;
 use crate::storage::qq_chat_history_store::{load_history, save_history};
 use crate::tools::{
-    AgentMemoryToolResources, GetRecentGroupMessagesTool, GetRecentUserMessagesTool,
+    AgentMemoryToolResources, GetRecentGroupMessagesTool, GetRecentUserMessagesTool, SharedTool,
     ToolNotificationTarget, UpdateAgentStateTool, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
-    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT,
+    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_MEMORY_AGENT,
 };
 
 const LOG_PREFIX: &str = "[QqBeforeBrainAgent]";
@@ -44,7 +45,7 @@ fn build_chat_preprompt_agent_system_prompt(
          Based on the current event and the independent emotion history, decide whether the emotion should be adjusted. Call `update_agent_state` only when a change is truly warranted; do not call any tool when no change is needed. When an adjustment is needed, specify an emotion dimension and `increase` or `decrease`. You may adjust multiple dimensions in the same event if each is genuinely necessary.\n\
          \n[Responsibility 2: Recall & consistency preprompt]\n\
          - Extract the key nouns / entities / proper nouns from the user's current message.\n\
-         - For each, call `memory_agent_with_context` with the complete current chat context and `search_memory` to check whether you have related memory or an existing stance.\n\
+         - For each, call `memory_agent` with the complete current chat context as `content` and `operation` set to `search_memory` to check whether you have related memory or an existing stance.\n\
          - When memory contains your prior stance on a topic, surface it so the main agent stays consistent and does not flip its likes/dislikes or opinions across turns.\n\
          - If a [Candidate Dream Memory] block is present, judge whether it is relevant to the current event. Only include relevant durable facts or continuity in the final context; omit unrelated Dream content completely.\n\
          - For nouns that have no related memory and that you do not already know, include in the final context block a line exactly like: 「xxx」这些名词没有相关内容，可能需要联网查询？\n\
@@ -280,14 +281,17 @@ fn run_preprompt(
     ));
 
     let is_enabled = |name: &str| *ctx.default_tools_enabled.get(name).unwrap_or(&true);
-    if let Some(resources) = ctx
-        .memory_resources
-        .clone()
-        .filter(|_| is_enabled(DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT))
+    if let Some(resources) =
+        ctx.memory_resources.clone().filter(|_| is_enabled(DEFAULT_TOOL_MEMORY_AGENT))
     {
         ctx.trace
             .record_graph_phase("名词处理", serde_json::json!({"status": "preprompt"}));
-        brain.add_tool(MemoryBrainAgentContextTool::new(MemoryBrainAgent::new(resources)));
+        let mut host = YamlAgentHost::new();
+        register_memory_tools(&mut host, resources);
+        host.register_llm(LLM_KIND_MAIN, Arc::clone(ctx.llm));
+        if let Some(tool) = host.publish_logged(DEFAULT_TOOL_MEMORY_AGENT) {
+            brain.add_tool(SharedTool::new(tool));
+        }
     }
 
     let notification_target =

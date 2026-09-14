@@ -315,7 +315,6 @@ fn default_qq_chat_default_tools_enabled() -> HashMap<String, bool> {
         "save_image",
         "image_understand",
         "memory_agent",
-        "memory_agent_with_context",
     ]
     .into_iter()
     .map(|name| (name.to_string(), true))

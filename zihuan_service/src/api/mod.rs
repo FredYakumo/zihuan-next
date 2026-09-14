@@ -129,12 +129,14 @@ pub fn build_router(
                         ),
                 )
                 .push(
-                    Router::with_path("subagents").get(config::role_services::list_subagents).push(
-                        Router::with_path("<id>")
-                            .get(config::role_services::get_subagent)
-                            .put(config::role_services::save_subagent)
-                            .delete(config::role_services::delete_subagent),
-                    ),
+                    Router::with_path("subagents")
+                        .get(config::role_services::list_yaml_agents)
+                        .push(
+                            Router::with_path("<id>")
+                                .get(config::role_services::get_yaml_agent)
+                                .put(config::role_services::save_yaml_agent)
+                                .delete(config::role_services::delete_yaml_agent),
+                        ),
                 )
                 .push(
                     Router::with_path("command-permissions")

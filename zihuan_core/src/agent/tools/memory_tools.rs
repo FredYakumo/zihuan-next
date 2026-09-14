@@ -4,12 +4,13 @@ use chrono::{Duration, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::agent::tools::{Tool, ToolCallingEngine, ToolCallingStopReason};
+use crate::agent::tools::Tool;
+use crate::agent::yaml_agent::YamlAgentHost;
 use crate::error::{Error, Result};
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::tooling::FunctionTool;
-use crate::model_inference::llm::{InferenceParam, LLMMessage, MessageRole};
+use crate::model_inference::llm::{InferenceParam, LLMMessage};
 use crate::storage::{
     create_elasticsearch_memory_record, create_memory_record_with_vector,
     list_elasticsearch_memory_keys, list_recent_memory_keys, search_elasticsearch_memory,
@@ -20,14 +21,6 @@ use crate::weaviate::WeaviateRef;
 
 const DEFAULT_MEMORY_TOP_N: i64 = 5;
 const MAX_MEMORY_TOP_N: i64 = 20;
-
-// prompt engineering
-
-const MEMORY_AGENT_SYSTEM_PROMPT: &str = "You are a memory management agent with private tools for searching, listing, and writing memories. Based on the request, decide whether to retrieve relevant memories, update facts worth retaining long term, or state that no relevant memories exist. Do not fabricate memories. Return only a concise result useful to the caller.";
-const SEARCH_OPERATION_PROMPT: &str = "\n\n[Memory Operation]\nSearch memories: you must use the memory search tool to find saved memories relevant to the chat context above. Return only relevant memories and explicitly state when none are found. Do not write any memories.";
-const UPDATE_OPERATION_PROMPT: &str = "\n\n[Memory Operation]\nUpdate memories: you must attempt to extract facts, preferences, or relationships from the chat context above that are worth retaining long term, and save them with the memory writing tool. You may search first to verify them. If there is nothing appropriate to save, explicitly state that no memories were updated.";
-
-//
 
 #[derive(Clone)]
 pub struct MemoryAgentResources {
@@ -44,154 +37,21 @@ pub enum MemoryBackend {
     Elasticsearch(Arc<ElasticsearchRef>),
 }
 
-#[derive(Clone)]
-pub struct MemoryBrainAgent {
-    resources: MemoryAgentResources,
-}
-
-impl MemoryBrainAgent {
-    pub fn new(resources: MemoryAgentResources) -> Self {
-        Self { resources }
-    }
-
-    pub fn tool(&self) -> MemoryBrainAgentTool {
-        MemoryBrainAgentTool::new(self.clone())
-    }
-
-    pub fn context_tool(&self) -> MemoryBrainAgentContextTool {
-        MemoryBrainAgentContextTool::new(self.clone())
-    }
-
-    fn run(&self, user_message: String) -> Result<String> {
-        let agent = self.clone();
-        std::thread::Builder::new()
-            .name("memory-brain-agent".to_string())
-            .spawn(move || agent.run_inner(user_message))
-            .map_err(|error| {
-                crate::string_error!(
-                    "failed to start Memory ToolCallingEngine Agent thread: {error}"
-                )
-            })?
-            .join()
-            .map_err(|_| crate::string_error!("Memory ToolCallingEngine Agent thread panicked"))?
-    }
-
-    fn run_inner(&self, user_message: String) -> Result<String> {
-        let mut brain = ToolCallingEngine::new(Arc::clone(&self.resources.llm));
-        brain.add_tool(ListMemoryKeysTool::new(self.resources.clone()));
-        brain.add_tool(SearchMemoryTool::new(self.resources.clone()));
-        brain.add_tool(RememberMemoryTool::new(self.resources.clone()));
-        let (output, stop_reason) = brain.run(vec![
-            LLMMessage::system(MEMORY_AGENT_SYSTEM_PROMPT),
-            LLMMessage::user(user_message),
-        ]);
-        if !matches!(stop_reason, ToolCallingStopReason::Done) {
-            return Err(crate::string_error!(
-                "Memory ToolCallingEngine Agent did not complete normally: {stop_reason:?}"
-            ));
-        }
-        output
-            .iter()
-            .rev()
-            .find(|message| matches!(message.role, MessageRole::Assistant))
-            .and_then(LLMMessage::content_text_owned)
-            .filter(|content| !content.trim().is_empty())
-            .ok_or_else(|| crate::string_error!("Memory ToolCallingEngine Agent returned no text"))
-    }
-
-    fn run_content(&self, content: String) -> Result<String> {
-        self.run(content)
-    }
-
-    fn run_context(&self, chat_context: String, operation: MemoryAgentOperation) -> Result<String> {
-        let operation_prompt = match operation {
-            MemoryAgentOperation::SearchMemory => SEARCH_OPERATION_PROMPT,
-            MemoryAgentOperation::UpdateMemory => UPDATE_OPERATION_PROMPT,
-        };
-        self.run(format!("{chat_context}{operation_prompt}"))
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum MemoryAgentOperation {
-    SearchMemory,
-    UpdateMemory,
-}
-
-impl MemoryAgentOperation {
-    fn parse(value: &str) -> Result<Self> {
-        match value.trim() {
-            "search_memory" => Ok(Self::SearchMemory),
-            "update_memory" => Ok(Self::UpdateMemory),
-            _ => Err(Error::ValidationError(
-                "operation must be search_memory or update_memory".to_string(),
-            )),
-        }
-    }
-}
-
-pub struct MemoryBrainAgentTool {
-    agent: MemoryBrainAgent,
-}
-
-impl MemoryBrainAgentTool {
-    pub fn new(agent: MemoryBrainAgent) -> Self {
-        Self { agent }
-    }
-}
-
-impl Tool for MemoryBrainAgentTool {
-    fn spec(&self) -> Arc<dyn FunctionTool> {
-        Arc::new(MemoryFunctionToolSpec::new(
-            "memory_agent",
-            "Call the Memory ToolCallingEngine Agent. Given content, it independently decides whether to retrieve relevant memories, update memories worth saving, or report that no relevant memories exist.",
-            json!({"type":"object","properties":{"content":{"type":"string","description":"Content for the memory agent to process"}},"required":["content"],"additionalProperties":false}),
-        ))
-    }
-
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
-        let result = required_string_argument(arguments, "content")
-            .and_then(|content| self.agent.run_content(content));
-        render_result(result)
-    }
-}
-
-pub struct MemoryBrainAgentContextTool {
-    agent: MemoryBrainAgent,
-}
-
-impl MemoryBrainAgentContextTool {
-    pub fn new(agent: MemoryBrainAgent) -> Self {
-        Self { agent }
-    }
-}
-
-impl Tool for MemoryBrainAgentContextTool {
-    fn spec(&self) -> Arc<dyn FunctionTool> {
-        Arc::new(MemoryFunctionToolSpec::new(
-            "memory_agent_with_context",
-            "Call the Memory ToolCallingEngine Agent with chat context. Search returns relevant memories; update extracts and saves memories worth retaining long term.",
-            json!({"type":"object","properties":{"chat_context":{"type":"string","description":"Complete chat context"},"operation":{"type":"string","enum":["search_memory","update_memory"],"description":"Memory operation"}},"required":["chat_context","operation"],"additionalProperties":false}),
-        ))
-    }
-
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
-        let result = (|| -> Result<String> {
-            let context = required_string_argument(arguments, "chat_context")?;
-            let operation = required_string_argument(arguments, "operation")?;
-            self.agent.run_context(context, MemoryAgentOperation::parse(&operation)?)
-        })();
-        render_result(result)
-    }
-}
-
-struct ListMemoryKeysTool {
+pub struct ListMemoryKeysTool {
     resources: MemoryAgentResources,
 }
 impl ListMemoryKeysTool {
-    fn new(resources: MemoryAgentResources) -> Self {
+    pub fn new(resources: MemoryAgentResources) -> Self {
         Self { resources }
     }
+}
+
+/// Registers the built-in memory tools on a [`YamlAgentHost`] under the ids referenced by the
+/// `memory_agent` YAML definition.
+pub fn register_memory_tools(host: &mut YamlAgentHost, resources: MemoryAgentResources) {
+    host.register_tool("list_memory_keys", Arc::new(ListMemoryKeysTool::new(resources.clone())));
+    host.register_tool("search_memory", Arc::new(SearchMemoryTool::new(resources.clone())));
+    host.register_tool("update_memory", Arc::new(RememberMemoryTool::new(resources)));
 }
 impl Tool for ListMemoryKeysTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
@@ -245,11 +105,11 @@ impl Tool for ListMemoryKeysTool {
     }
 }
 
-struct SearchMemoryTool {
+pub struct SearchMemoryTool {
     resources: MemoryAgentResources,
 }
 impl SearchMemoryTool {
-    fn new(resources: MemoryAgentResources) -> Self {
+    pub fn new(resources: MemoryAgentResources) -> Self {
         Self { resources }
     }
 }
@@ -285,11 +145,11 @@ impl Tool for SearchMemoryTool {
     }
 }
 
-struct RememberMemoryTool {
+pub struct RememberMemoryTool {
     resources: MemoryAgentResources,
 }
 impl RememberMemoryTool {
-    fn new(resources: MemoryAgentResources) -> Self {
+    pub fn new(resources: MemoryAgentResources) -> Self {
         Self { resources }
     }
 }
@@ -365,7 +225,8 @@ fn split_memory_items(
     if let Some(text) = resources
         .llm
         .inference(&InferenceParam { messages: &prompt, tools: None })
-        .content_text_owned()
+        .ok()
+        .and_then(|response| response.content_text_owned())
     {
         if let Some(items) = parse_memory_json(&text) {
             let items = normalize_draft_items(items);
@@ -436,9 +297,6 @@ fn optional_string_argument(arguments: &Value, name: &str) -> Option<String> {
 fn required_string_argument(arguments: &Value, name: &str) -> Result<String> {
     optional_string_argument(arguments, name)
         .ok_or_else(|| Error::ValidationError(format!("{name} is required")))
-}
-fn render_result(result: Result<String>) -> String {
-    result.unwrap_or_else(|error| json!({"ok":false,"error":error.to_string()}).to_string())
 }
 fn render_value_result(result: Result<Value>) -> String {
     result

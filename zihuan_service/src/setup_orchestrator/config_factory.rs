@@ -234,7 +234,6 @@ fn build_qq_chat_agent_service() -> RoleServiceConfig {
         "search_similar_images",
         "image_understand",
         "memory_agent",
-        "memory_agent_with_context",
         "remove_memory",
     ] {
         default_tools.insert(tool.to_string(), true);

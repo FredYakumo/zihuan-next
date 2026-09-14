@@ -3,9 +3,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Map, Value};
 
-use crate::agent::tools::{
-    Tool, ToolCallingEngine, ToolCallingStopReason, ToolExecutionOutput, ToolRunDuration,
-};
+use crate::agent::tools::{Tool, ToolExecutionOutput, ToolRunDuration};
 use crate::graph::function_graph::{
     sync_function_subgraph_signature, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,
 };
@@ -16,25 +14,19 @@ use crate::graph::util::function::{
     data_value_from_json_with_declared_type, inject_runtime_values_into_function_inputs_node,
 };
 use crate::graph::{DataType, DataValue};
-use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::tooling::FunctionTool;
-use crate::model_inference::llm::LLMMessage;
 
-const DREAM_SYSTEM_PROMPT: &str =
-    "You are the Dream memory consolidation agent. Produce concise long-term memories in English. Do not address the user. Use the available node graph tools synchronously when they are relevant to consolidating the memory.";
-
-fn build_dream_user_prompt(previous_memory: &str, transcript: &str) -> String {
-    format!(
-        "Combine the previous Dream memory with this conversation. Record durable facts, preferences, relationships, emotions, and emotional continuity. Do not invent information.\n\nPrevious Dream memory:\n{previous_memory}\n\nCurrent conversation:\n{transcript}"
-    )
-}
-
-struct DreamNodeGraphTool {
+/// Exposes a node-graph [`ToolDefinition`] as a callable tool.
+///
+/// The graph's `function_inputs` boundary is fed the declared parameters plus the assistant
+/// `call_content`; the `function_outputs` boundary result is mapped back onto the declared
+/// outputs and serialized as a JSON object.
+pub struct NodeGraphTool {
     definition: ToolDefinition,
 }
 
-impl DreamNodeGraphTool {
-    fn new(definition: ToolDefinition) -> Self {
+impl NodeGraphTool {
+    pub fn new(definition: ToolDefinition) -> Self {
         Self { definition }
     }
 
@@ -45,7 +37,7 @@ impl DreamNodeGraphTool {
     ) -> crate::error::Result<String> {
         let arguments = arguments.as_object().ok_or_else(|| {
             crate::error::Error::ValidationError(format!(
-                "Dream node graph tool '{}' requires JSON object arguments",
+                "Node graph tool '{}' requires JSON object arguments",
                 self.definition.name
             ))
         })?;
@@ -55,7 +47,7 @@ impl DreamNodeGraphTool {
             let Some(value) = arguments.get(&parameter.name) else {
                 if parameter.required {
                     return Err(crate::error::Error::ValidationError(format!(
-                        "Dream node graph tool '{}' is missing required parameter '{}'",
+                        "Node graph tool '{}' is missing required parameter '{}'",
                         self.definition.name, parameter.name
                     )));
                 }
@@ -86,7 +78,7 @@ impl DreamNodeGraphTool {
             .find(|node| node.id == FUNCTION_INPUTS_NODE_ID)
             .ok_or_else(|| {
                 crate::error::Error::ValidationError(format!(
-                    "Dream node graph tool '{}' is missing the function_inputs boundary node",
+                    "Node graph tool '{}' is missing the function_inputs boundary node",
                     self.definition.name
                 ))
             })?;
@@ -100,7 +92,7 @@ impl DreamNodeGraphTool {
             .find(|node| node.id == FUNCTION_OUTPUTS_NODE_ID)
             .ok_or_else(|| {
                 crate::error::Error::ValidationError(format!(
-                    "Dream node graph tool '{}' is missing the function_outputs boundary node",
+                    "Node graph tool '{}' is missing the function_outputs boundary node",
                     self.definition.name
                 ))
             })?;
@@ -110,28 +102,28 @@ impl DreamNodeGraphTool {
         );
         let mut graph = build_node_graph_from_definition(&subgraph).map_err(|error| {
             crate::error::Error::ValidationError(format!(
-                "Dream node graph tool '{}' could not build its subgraph: {error}",
+                "Node graph tool '{}' could not build its subgraph: {error}",
                 self.definition.name
             ))
         })?;
         inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values.into())
             .map_err(|error| {
                 crate::error::Error::ValidationError(format!(
-                    "Dream node graph tool '{}' could not inject runtime inputs: {error}",
+                    "Node graph tool '{}' could not inject runtime inputs: {error}",
                     self.definition.name
                 ))
             })?;
         let execution_result = graph.execute_and_capture_results();
         if let Some(error) = execution_result.error_message {
             return Err(crate::error::Error::ValidationError(format!(
-                "Dream node graph tool '{}' failed: {error}",
+                "Node graph tool '{}' failed: {error}",
                 self.definition.name
             )));
         }
         let output_values =
             execution_result.node_results.get(FUNCTION_OUTPUTS_NODE_ID).ok_or_else(|| {
                 crate::error::Error::ValidationError(format!(
-                    "Dream node graph tool '{}' produced no function_outputs result",
+                    "Node graph tool '{}' produced no function_outputs result",
                     self.definition.name
                 ))
             })?;
@@ -139,13 +131,13 @@ impl DreamNodeGraphTool {
         for output in &self.definition.outputs {
             let value = output_values.get(&output.name).ok_or_else(|| {
                 crate::error::Error::ValidationError(format!(
-                    "Dream node graph tool '{}' did not provide output '{}'",
+                    "Node graph tool '{}' did not provide output '{}'",
                     self.definition.name, output.name
                 ))
             })?;
             if !output.data_type.is_compatible_with(&value.data_type()) {
                 return Err(crate::error::Error::ValidationError(format!(
-                    "Dream node graph tool '{}' output '{}' type mismatch: expected {}, got {}",
+                    "Node graph tool '{}' output '{}' type mismatch: expected {}, got {}",
                     self.definition.name,
                     output.name,
                     output.data_type,
@@ -158,16 +150,16 @@ impl DreamNodeGraphTool {
     }
 }
 
-impl Tool for DreamNodeGraphTool {
+impl Tool for NodeGraphTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
-        Arc::new(DreamNodeGraphFunctionTool { definition: self.definition.clone() })
+        Arc::new(NodeGraphFunctionTool { definition: self.definition.clone() })
     }
     fn run_duration(&self) -> ToolRunDuration {
         self.definition.run_duration
     }
     fn execute(&self, call_content: &str, arguments: &Value) -> String {
         self.run_node_graph(call_content, arguments).unwrap_or_else(|error| {
-            format!("Dream node graph tool '{}' failed: {error}", self.definition.name)
+            format!("Node graph tool '{}' failed: {error}", self.definition.name)
         })
     }
     fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
@@ -176,11 +168,11 @@ impl Tool for DreamNodeGraphTool {
 }
 
 #[derive(Debug)]
-struct DreamNodeGraphFunctionTool {
+struct NodeGraphFunctionTool {
     definition: ToolDefinition,
 }
 
-impl FunctionTool for DreamNodeGraphFunctionTool {
+impl FunctionTool for NodeGraphFunctionTool {
     fn name(&self) -> &str {
         &self.definition.name
     }
@@ -202,7 +194,13 @@ fn tool_parameters_to_json_schema(parameters: &[ToolParamDef]) -> Value {
         if parameter.required {
             required.push(Value::String(parameter.name.clone()));
         }
-        properties.insert(parameter.name.clone(), json!({"type": data_type_to_json_schema_type(&parameter.data_type), "description": parameter.desc}));
+        properties.insert(
+            parameter.name.clone(),
+            json!({
+                "type": data_type_to_json_schema_type(&parameter.data_type),
+                "description": parameter.desc,
+            }),
+        );
     }
     json!({"type": "object", "properties": properties, "required": required})
 }
@@ -216,29 +214,4 @@ fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         DataType::Vec(_) | DataType::Vector => "array",
         _ => "object",
     }
-}
-
-pub fn run_dream_agent(
-    llm: Arc<dyn LLMBase>,
-    previous_memory: &str,
-    transcript: &str,
-    tool_definitions: Vec<ToolDefinition>,
-) -> crate::error::Result<String> {
-    let messages = vec![
-        LLMMessage::system(DREAM_SYSTEM_PROMPT),
-        LLMMessage::user(build_dream_user_prompt(previous_memory, transcript)),
-    ];
-    let mut brain = ToolCallingEngine::new(llm);
-    for definition in tool_definitions.into_iter().filter(ToolDefinition::uses_subgraph) {
-        brain.add_tool(DreamNodeGraphTool::new(definition));
-    }
-    let (output, stop_reason) = brain.run(messages);
-    if !matches!(stop_reason, ToolCallingStopReason::Done) {
-        return Err(crate::string_error!("Dream Agent did not complete normally"));
-    }
-    output
-        .last()
-        .and_then(LLMMessage::content_text_owned)
-        .filter(|content| !content.trim().is_empty())
-        .ok_or_else(|| crate::string_error!("Dream Agent returned no text"))
 }

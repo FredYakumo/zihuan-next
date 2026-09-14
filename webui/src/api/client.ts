@@ -439,13 +439,27 @@ export interface SubAgentPort {
   required: boolean;
 }
 
+export interface SubAgentPromptPart {
+  port: string;
+  equals?: string | null;
+  template: string;
+}
+
 export interface SubAgentDefinition {
   id: string;
   name: string;
+  description: string;
   builtin: boolean;
   inputs: SubAgentPort[];
   outputs: SubAgentPort[];
   system_prompt: string;
+  user_prompt?: string | null;
+  prompt_parts?: SubAgentPromptPart[];
+  output_mode: "json_ports" | "text";
+  llm_kind: string;
+  progress_message?: string | null;
+  include_graph_tools: boolean;
+  run_duration: "Short" | "Long";
   tool_ids: string[];
 }
 

@@ -250,8 +250,7 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
     label: "save_image",
     description: "保存图片到图片库",
   },
-  { id: "memory_agent", label: "memory_agent", description: "由记忆 Agent 自动检索或更新记忆" },
-  { id: "memory_agent_with_context", label: "memory_agent_with_context", description: "按聊天上下文搜索或更新记忆" },
+  { id: "memory_agent", label: "memory_agent", description: "由记忆 Agent 自动检索或更新记忆，也可通过 operation 参数强制指定检索或更新" },
 ];
 
 export const WORKSPACE_DEFAULT_TOOLS: DefaultToolOption[] = [

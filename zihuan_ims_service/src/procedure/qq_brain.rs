@@ -6,15 +6,15 @@ use crate::role_config::QqChatEmotionDimensionConfig;
 use async_trait::async_trait;
 use log::info;
 use zihuan_core::agent::runtime_context::current_agent_resources;
+use zihuan_core::agent::tools::memory_tools::register_memory_tools;
 use zihuan_core::agent::tools::{LongTaskContext, ToolCallingEngine, ToolCallingStopReason};
+use zihuan_core::agent::yaml_agent::YamlAgentHost;
+use zihuan_core::agent::{LLM_KIND_MAIN, LLM_KIND_MATH_PROGRAMMING};
 use zihuan_core::error::Result;
 use zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_OWNER_TYPE;
 use zihuan_core::graph::DataValue;
 use zihuan_core::ims_bot_adapter::tools::group_members::GetCurrentGroupMembersTool;
 use zihuan_core::ims_bot_adapter::tools::qq_profile::{GetBotProfileTool, GetQqUserProfileTool};
-use zihuan_core::memory_agent::{
-    MemoryBrainAgent, MemoryBrainAgentContextTool, MemoryBrainAgentTool,
-};
 use zihuan_core::model_inference::inference_function::compact_message::estimate_messages_tokens;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::LLMMessage;
@@ -35,13 +35,12 @@ use crate::qq_chat::{
 use crate::tools::{
     AgentMemoryBackend, AgentMemoryToolResources, EditableQqAgentTool, GetAgentPublicInfoTool,
     GetFunctionListTool, GetRecentGroupMessagesTool, GetRecentUserMessagesTool,
-    ImageUnderstandTool, ReplyMessageTool, RunResearchSubagentTool, SaveImageTool,
-    SearchSimilarImagesTool, ToolNotificationTarget, WebSearchTool,
-    DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
-    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
-    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_MEMORY_AGENT,
-    DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT, DEFAULT_TOOL_SAVE_IMAGE,
-    DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
+    ImageUnderstandTool, ReplyMessageTool, SaveImageTool, SearchSimilarImagesTool, SharedTool,
+    ToolNotificationTarget, WebSearchTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
+    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
+    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
+    DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_SAVE_IMAGE, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
+    DEFAULT_TOOL_WEB_SEARCH,
 };
 
 /// Output of the QQ brain invocation for one turn.
@@ -135,7 +134,7 @@ impl QqBrain {
                     .map(AgentMemoryBackend::Elasticsearch)
                     .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate))
             });
-        if let Some(memory_backend) = &memory_backend {
+        let memory_resources = memory_backend.as_ref().and_then(|memory_backend| {
             let embedding_model = ctx.embedding_model.cloned();
             if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_))
                 && embedding_model.is_none()
@@ -143,8 +142,9 @@ impl QqBrain {
                 log::warn!(
                     "memory tools disabled because the configured backend has no embedding model"
                 );
+                None
             } else {
-                let memory_resources = AgentMemoryToolResources {
+                Some(AgentMemoryToolResources {
                     memory_backend: memory_backend.clone(),
                     embedding_model,
                     llm: Arc::clone(ctx.llm),
@@ -159,21 +159,56 @@ impl QqBrain {
                         admin: false,
                         skip_expiry_extend: false,
                     },
-                };
-                let memory_agent = MemoryBrainAgent::new(memory_resources);
-                if service.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
-                    brain.add_tool(wrap_brain_tool_with_quota(
-                        MemoryBrainAgentTool::new(memory_agent.clone()),
-                        tool_quota.clone(),
-                    ));
-                }
-                if service.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT) {
-                    brain.add_tool(wrap_brain_tool_with_quota(
-                        MemoryBrainAgentContextTool::new(memory_agent),
-                        tool_quota.clone(),
-                    ));
-                }
+                })
             }
+        });
+
+        // YAML agent host for this turn: memory tools plus the web/image tools the research
+        // agent escalates to, and the LLM handles their `llm_kind` resolves to.
+        let mut yaml_agents = YamlAgentHost::new();
+        match memory_resources {
+            Some(resources) => register_memory_tools(&mut yaml_agents, resources),
+            None => {
+                yaml_agents.register_disabled_tools(
+                    ["list_memory_keys", "search_memory", "update_memory"],
+                    "memory backend is not configured",
+                );
+            }
+        }
+        yaml_agents.register_tool(
+            DEFAULT_TOOL_WEB_SEARCH,
+            Arc::new(wrap_brain_tool_with_quota(
+                WebSearchTool::new(ctx.web_search_engine.clone()),
+                tool_quota.clone(),
+            )),
+        );
+        yaml_agents.register_tool(
+            DEFAULT_TOOL_IMAGE_UNDERSTAND,
+            Arc::new(ImageUnderstandTool::new(
+                Some(prepared_input.event.clone()),
+                ctx.rdb_pool.cloned(),
+                ctx.s3_ref.cloned(),
+                ToolNotificationTarget::dashboard(),
+            )),
+        );
+        // `main` is the service's main model; the memory agent uses it, the research agent
+        // (`math_programming`) use the dedicated math/programming model.
+        yaml_agents.register_llm(LLM_KIND_MAIN, Arc::clone(ctx.llm));
+        yaml_agents.register_llm(LLM_KIND_MATH_PROGRAMMING, Arc::clone(ctx.math_programming_llm));
+
+        // Publish the memory agent first so the research agent can reference it.
+        let memory_enabled = memory_backend.is_some();
+        if let Some(tool) = yaml_agents.publish_logged(DEFAULT_TOOL_MEMORY_AGENT) {
+            if memory_enabled && service.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
+                brain.add_tool(wrap_brain_tool_with_quota(
+                    SharedTool::new(tool),
+                    tool_quota.clone(),
+                ));
+            }
+        }
+
+        if let Some(tool) = yaml_agents.publish_logged("run_research_subagent") {
+            brain.add_tool(wrap_brain_tool_with_quota(SharedTool::new(tool), tool_quota.clone()));
         }
 
         if service.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
@@ -194,44 +229,6 @@ impl QqBrain {
             brain.add_tool(wrap_brain_tool_with_quota(GetFunctionListTool, tool_quota.clone()));
         }
 
-        brain.add_tool(wrap_brain_tool_with_quota(
-            RunResearchSubagentTool::new(
-                Arc::clone(ctx.math_programming_llm),
-                Arc::clone(ctx.web_search_engine),
-                ctx.rdb_pool.cloned(),
-                ctx.s3_ref.cloned(),
-                ctx.weaviate_image_ref.cloned(),
-                Some(prepared_input.event.clone()),
-                ToolNotificationTarget::dashboard(),
-                memory_backend.as_ref().and_then(|memory_backend| {
-                    let embedding_model = ctx.embedding_model.cloned();
-                    if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_))
-                        && embedding_model.is_none()
-                    {
-                        None
-                    } else {
-                        Some(AgentMemoryToolResources {
-                            memory_backend: memory_backend.clone(),
-                            embedding_model,
-                            llm: Arc::clone(turn_llm),
-                            access: AgentMemoryAccessContext {
-                                sender_id: Some(sender_id.to_string()),
-                                group_id: if is_group {
-                                    Some(target_id.to_string())
-                                } else {
-                                    prepared_input.event.group_id.map(|value| value.to_string())
-                                },
-                                is_group,
-                                admin: false,
-                                skip_expiry_extend: false,
-                            },
-                        })
-                    }
-                }),
-                tool_quota.clone(),
-            ),
-            tool_quota.clone(),
-        ));
         brain.add_tool(wrap_brain_tool_with_quota(
             ReplyMessageTool::new(Arc::clone(&shared_runtime_values)),
             tool_quota.clone(),

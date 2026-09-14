@@ -9,9 +9,8 @@ pub const LLM_KIND_NATURAL_LANGUAGE_REPLY: &str = "natural_language_reply";
 pub mod agent;
 pub mod resource_provider;
 pub mod runtime_context;
-pub mod sub_agent;
-pub mod sub_agent_manager;
 pub mod tool_config;
+pub mod yaml_agent;
 
 pub fn normalize_llm_kind(llm_kind: Option<&str>) -> crate::error::Result<&'static str> {
     match llm_kind
@@ -54,7 +53,6 @@ fn default_retry_count() -> u32 {
     2
 }
 
-pub mod dream_agent;
 pub mod inference_provider;
 pub mod resource_resolver;
 mod shared_tool;
@@ -66,6 +64,9 @@ pub use crate::model_inference::llm::tooling::FunctionTool;
 pub use agent::{
     Agent, AgentCancellation, AgentContext, ContextCompactionEvent, ContextCompactionObserver,
 };
-pub(crate) use shared_tool::SharedTool;
-pub use sub_agent::{SubAgent, SubAgentDefinition, SubAgentTool};
+pub use shared_tool::SharedTool;
 pub use tools::{AgentExecutor, ToolCallingEngine, ToolCallingRequest, ToolCallingResult};
+pub use yaml_agent::{
+    YamlAgent, YamlAgentDefinition, YamlAgentHost, YamlAgentOutput, YamlAgentOutputMode,
+    YamlAgentPromptPart, YamlAgentTool,
+};

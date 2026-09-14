@@ -13,9 +13,9 @@ use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use zihuan_core::agent::sub_agent::{
-    delete_subagent_definition, list_subagent_definitions, load_subagent_definition,
-    save_subagent_definition, SubAgentDefinition,
+use zihuan_core::agent::yaml_agent::{
+    delete_agent_definition, list_agent_definitions, list_agent_ids, load_agent_definition,
+    save_agent_definition, YamlAgentDefinition,
 };
 use zihuan_core::config::ConfigRecord;
 use zihuan_core::ims_bot_adapter::{
@@ -424,13 +424,13 @@ pub struct UpdateAgentRequest {
 }
 
 #[derive(Deserialize)]
-pub struct SubAgentMutationRequest {
-    pub definition: SubAgentDefinition,
+pub struct YamlAgentMutationRequest {
+    pub definition: YamlAgentDefinition,
     #[serde(default)]
     pub available_tool_ids: Vec<String>,
 }
 
-fn subagent_available_tool_ids(
+fn yaml_agent_available_tool_ids(
     tool_ids: impl IntoIterator<Item = String>,
 ) -> std::collections::HashSet<String> {
     tool_ids
@@ -440,12 +440,14 @@ fn subagent_available_tool_ids(
             "update_memory".to_string(),
             "list_memory_keys".to_string(),
         ])
+        // Existing agent ids are callable tools too, so a definition can reference another.
+        .chain(list_agent_ids())
         .collect()
 }
 
 #[handler]
-pub async fn list_subagents(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
-    let available_tool_ids = subagent_available_tool_ids(
+pub async fn list_yaml_agents(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let available_tool_ids = yaml_agent_available_tool_ids(
         req.query::<String>("available_tool_ids")
             .unwrap_or_default()
             .split(',')
@@ -453,16 +455,16 @@ pub async fn list_subagents(req: &mut Request, res: &mut Response, _depot: &mut 
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned),
     );
-    match list_subagent_definitions(&available_tool_ids) {
+    match list_agent_definitions(&available_tool_ids) {
         Ok(definitions) => res.render(Json(definitions)),
         Err(error) => render_unprocessable_entity(res, error.to_string()),
     }
 }
 
 #[handler]
-pub async fn get_subagent(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn get_yaml_agent(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
-    let available_tool_ids = subagent_available_tool_ids(
+    let available_tool_ids = yaml_agent_available_tool_ids(
         req.query::<String>("available_tool_ids")
             .unwrap_or_default()
             .split(',')
@@ -470,36 +472,36 @@ pub async fn get_subagent(req: &mut Request, res: &mut Response, _depot: &mut De
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned),
     );
-    match load_subagent_definition(&id, &available_tool_ids) {
+    match load_agent_definition(&id, &available_tool_ids) {
         Ok(definition) => res.render(Json(definition)),
         Err(error) => render_unprocessable_entity(res, error.to_string()),
     }
 }
 
 #[handler]
-pub async fn save_subagent(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn save_yaml_agent(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
-    let body: SubAgentMutationRequest = match req.parse_json().await {
+    let body: YamlAgentMutationRequest = match req.parse_json().await {
         Ok(body) => body,
         Err(error) => return render_bad_request(res, error.to_string()),
     };
     if body.definition.id != id {
         return render_bad_request(
             res,
-            "SubAgent ID in the URL must match the definition ID".to_string(),
+            "YAML agent ID in the URL must match the definition ID".to_string(),
         );
     }
-    let available_tool_ids = subagent_available_tool_ids(body.available_tool_ids);
-    match save_subagent_definition(&body.definition, &available_tool_ids) {
+    let available_tool_ids = yaml_agent_available_tool_ids(body.available_tool_ids);
+    match save_agent_definition(&body.definition, &available_tool_ids) {
         Ok(()) => res.render(Json(body.definition)),
         Err(error) => render_unprocessable_entity(res, error.to_string()),
     }
 }
 
 #[handler]
-pub async fn delete_subagent(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn delete_yaml_agent(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
-    match delete_subagent_definition(&id) {
+    match delete_agent_definition(&id) {
         Ok(()) => res.render(Json(ok_response())),
         Err(error) if error.to_string().contains("not found") => {
             render_not_found(res, &error.to_string())

@@ -9,10 +9,10 @@ use serde_json::Value;
 /// This wrapper only forwards the tool contract and execution behavior; it
 /// does not add business logic. The shared ownership lets agents register the
 /// same tool instance without taking ownership of it.
-pub(crate) struct SharedTool(Arc<dyn Tool>);
+pub struct SharedTool(Arc<dyn Tool>);
 
 impl SharedTool {
-    pub(crate) fn new(tool: Arc<dyn Tool>) -> Self {
+    pub fn new(tool: Arc<dyn Tool>) -> Self {
         Self(tool)
     }
 }
