@@ -21,7 +21,11 @@ pub struct Step {
 
 impl Step {
     pub fn new(op: impl Into<String>) -> Self {
-        Self { op: op.into(), desc: String::new(), params: serde_json::Value::Null }
+        Self {
+            op: op.into(),
+            desc: String::new(),
+            params: serde_json::Value::Null,
+        }
     }
 
     pub fn with_params(

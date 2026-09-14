@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use zihuan_core::command::Effect;
 use zihuan_core::command::{
-    execute_builtin, CmdState, CommandChannel, CommandContext, CommandRuntime,
-    ExecutionSnapshot, InputGate, Invocation, ResumeAction, Step, StepControl, StepRun,
+    execute_builtin, CmdState, CommandChannel, CommandContext, CommandRuntime, ExecutionSnapshot,
+    InputGate, Invocation, ResumeAction, Step, StepControl, StepRun,
 };
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
@@ -52,21 +52,14 @@ impl<'a> QqChatCommandRuntime<'a> {
     /// channel; resumed legacy commands carry their own context instead.
     fn channel_target(&self, inv: &Invocation) -> (String, bool) {
         match &inv.ctx.channel {
-            CommandChannel::QqChat { target_id, is_group, .. } => {
-                (target_id.clone(), *is_group)
-            }
+            CommandChannel::QqChat { target_id, is_group, .. } => (target_id.clone(), *is_group),
             _ => (self.target_id.to_string(), self.is_group),
         }
     }
 }
 
 impl<'a> CommandRuntime for QqChatCommandRuntime<'a> {
-    fn run_step(
-        &mut self,
-        step: &Step,
-        inv: &Invocation,
-        state: &mut CmdState,
-    ) -> Result<StepRun> {
+    fn run_step(&mut self, step: &Step, inv: &Invocation, state: &mut CmdState) -> Result<StepRun> {
         if let Some(op) = step.op.strip_prefix("builtin://") {
             return execute_builtin_step(op, inv);
         }
@@ -80,11 +73,8 @@ impl<'a> CommandRuntime for QqChatCommandRuntime<'a> {
                 )? {
                     return Ok(StepRun::continue_with(Vec::new()));
                 }
-                let purpose = step
-                    .params
-                    .get("purpose")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(&step.op);
+                let purpose =
+                    step.params.get("purpose").and_then(|v| v.as_str()).unwrap_or(&step.op);
                 let prompt = crate::qq_chat::privilege_gate::render_privilege_auth_prompt(purpose);
                 Ok(StepRun {
                     effects: vec![Effect::Text(prompt)],
@@ -109,10 +99,7 @@ impl<'a> CommandRuntime for QqChatCommandRuntime<'a> {
             "ims://style/prepare_waiting_task" => self.prepare_waiting_task(state, step),
             "ims://style/start" => self.start_style_learning(inv, state, step),
             "ims://auth/verify" => self.verify_auth(inv),
-            _ => Err(Error::ValidationError(format!(
-                "命令执行器不支持操作 '{}'",
-                step.op
-            ))),
+            _ => Err(Error::ValidationError(format!("命令执行器不支持操作 '{}'", step.op))),
         }
     }
 
@@ -147,12 +134,11 @@ impl<'a> CommandRuntime for QqChatCommandRuntime<'a> {
                     bot_id: self.bot_id,
                     bot_name: self.ctx.bot_name,
                     mention_target_id: None,
-                    persistence:
-                        crate::storage::qq_chat_session_store::build_outbound_persistence(
-                            self.ctx.rdb_pool,
-                            self.group_name(),
-                            self.ctx.bot_name,
-                        ),
+                    persistence: crate::storage::qq_chat_session_store::build_outbound_persistence(
+                        self.ctx.rdb_pool,
+                        self.group_name(),
+                        self.ctx.bot_name,
+                    ),
                     max_text_chars: self.ctx.max_message_length,
                 };
                 crate::qq_chat::msg_send::send_forward_content(&send_ctx, content)?;
@@ -215,14 +201,15 @@ impl<'a> QqChatCommandRuntime<'a> {
             .get("display")
             .and_then(|v| v.as_str())
             .unwrap_or("学习全局语言风格");
-        let waiting = runtime.start_waiting_auth_task(zihuan_core::task_context::AgentTaskRequest {
-            task_name: task_name.to_string(),
-            agent_id: self.agent_id.to_string(),
-            agent_name: self.ctx.bot_name.to_string(),
-            user_ip: None,
-            owner_id: Some(self.sender_id.to_string()),
-            task_db_connection_id: self.ctx.task_db_connection_id.clone(),
-        });
+        let waiting =
+            runtime.start_waiting_auth_task(zihuan_core::task_context::AgentTaskRequest {
+                task_name: task_name.to_string(),
+                agent_id: self.agent_id.to_string(),
+                agent_name: self.ctx.bot_name.to_string(),
+                user_ip: None,
+                owner_id: Some(self.sender_id.to_string()),
+                task_db_connection_id: self.ctx.task_db_connection_id.clone(),
+            });
         state.insert("style_waiting_task_id", serde_json::json!(waiting.task_id));
         Ok(StepRun::continue_with(Vec::new()))
     }
@@ -253,10 +240,7 @@ impl<'a> QqChatCommandRuntime<'a> {
         let Some(task_runtime) = self.ctx.task_runtime.clone() else {
             return Err(Error::ValidationError("task runtime is not available".to_string()));
         };
-        let task_id = state
-            .get_str("style_waiting_task_id")
-            .unwrap_or_default()
-            .to_string();
+        let task_id = state.get_str("style_waiting_task_id").unwrap_or_default().to_string();
         if task_id.is_empty() {
             return Err(Error::ValidationError(
                 "pending style-learning task id is missing".to_string(),
@@ -310,9 +294,7 @@ impl<'a> QqChatCommandRuntime<'a> {
             }),
         );
         if !resumed {
-            return Err(Error::ValidationError(
-                "等待授权的风格学习任务无法恢复".to_string(),
-            ));
+            return Err(Error::ValidationError("等待授权的风格学习任务无法恢复".to_string()));
         }
         Ok(StepRun::stop_with(Vec::new()))
     }
@@ -340,9 +322,9 @@ impl<'a> QqChatCommandRuntime<'a> {
                     self.sender_id,
                 )?;
                 if let Some(json) = snapshot_json {
-                    let snapshot: ExecutionSnapshot = serde_json::from_str(&json).map_err(
-                        |e| Error::ValidationError(format!("命令挂起快照反序列化失败: {e}")),
-                    )?;
+                    let snapshot: ExecutionSnapshot = serde_json::from_str(&json).map_err(|e| {
+                        Error::ValidationError(format!("命令挂起快照反序列化失败: {e}"))
+                    })?;
                     return Ok(StepRun {
                         effects,
                         control: StepControl::Resume(ResumeAction::Snapshot(snapshot)),
@@ -351,10 +333,8 @@ impl<'a> QqChatCommandRuntime<'a> {
                 // Legacy rows: purpose-based resume, reconstructing the original
                 // context from the stored pending fields.
                 let purpose = pending.command.command_name().to_string();
-                let target_id = pending
-                    .pending_target_id
-                    .clone()
-                    .unwrap_or_else(|| self.target_id.to_string());
+                let target_id =
+                    pending.pending_target_id.clone().unwrap_or_else(|| self.target_id.to_string());
                 let ctx = CommandContext {
                     agent_type: "qq_chat".to_string(),
                     agent_id: self.agent_id.to_string(),
@@ -449,9 +429,8 @@ pub(crate) fn run_command_effects_now(
         )?;
         return Ok(true);
     }
-    let emotion_dimensions =
-        crate::qq_chat::resources::current_qq_chat_role_service_config()?
-            .resolved_emotion_dimensions();
+    let emotion_dimensions = crate::qq_chat::resources::current_qq_chat_role_service_config()?
+        .resolved_emotion_dimensions();
     let mut rt = make_runtime_with_emotion(
         trace,
         ctx,
@@ -538,7 +517,6 @@ pub(super) fn make_runtime_with_emotion<'a>(
     }
 }
 
-
 fn execute_emotion_impl(
     session_state_store: &Arc<Mutex<QqChatSessionState>>,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
@@ -580,15 +558,14 @@ fn execute_emotion_impl(
                 crate::qq_session_state::EmotionAdjustmentDirection::Increase => "增加",
                 crate::qq_session_state::EmotionAdjustmentDirection::Decrease => "降低",
             };
-            let current_value =
-                match session_state_store.lock().unwrap().apply_emotion_adjustment(
-                    emotion_dimensions,
-                    dimension_name,
-                    direction,
-                ) {
-                    Ok(value) => value,
-                    Err(error) => return format!("调整情绪维度失败：{error}"),
-                };
+            let current_value = match session_state_store.lock().unwrap().apply_emotion_adjustment(
+                emotion_dimensions,
+                dimension_name,
+                direction,
+            ) {
+                Ok(value) => value,
+                Err(error) => return format!("调整情绪维度失败：{error}"),
+            };
             format!(
                 "已{direction_label} Agent 情绪维度「{dimension_name}」，当前值：{current_value}"
             )

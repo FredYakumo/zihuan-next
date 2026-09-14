@@ -17,12 +17,7 @@ pub const MAX_COMMAND_STEPS: usize = 128;
 pub trait CommandRuntime {
     /// Execute one step. Emit zero or more effects and return how the engine
     /// should continue.
-    fn run_step(
-        &mut self,
-        step: &Step,
-        inv: &Invocation,
-        state: &mut CmdState,
-    ) -> Result<StepRun>;
+    fn run_step(&mut self, step: &Step, inv: &Invocation, state: &mut CmdState) -> Result<StepRun>;
 
     /// Render one effect to the channel output.
     fn apply_effect(&mut self, effect: &Effect) -> Result<()>;
@@ -49,7 +44,10 @@ impl StepRun {
     }
 
     pub fn emit(effect: Effect) -> Self {
-        Self { effects: vec![effect], control: StepControl::Continue }
+        Self {
+            effects: vec![effect],
+            control: StepControl::Continue,
+        }
     }
 
     pub fn stop_with(effects: Vec<Effect>) -> Self {
@@ -57,11 +55,17 @@ impl StepRun {
     }
 
     pub fn expand(steps: Vec<Step>) -> Self {
-        Self { effects: Vec::new(), control: StepControl::Expand(steps) }
+        Self {
+            effects: Vec::new(),
+            control: StepControl::Expand(steps),
+        }
     }
 
     pub fn require_input(gate: InputGate) -> Self {
-        Self { effects: Vec::new(), control: StepControl::RequireInput(gate) }
+        Self {
+            effects: Vec::new(),
+            control: StepControl::RequireInput(gate),
+        }
     }
 
     pub fn resume_command(command: impl Into<String>, args: Vec<String>) -> Self {
@@ -110,7 +114,10 @@ impl StepRun {
     }
 
     pub fn resume_snapshot(snapshot: ExecutionSnapshot) -> Self {
-        Self { effects: Vec::new(), control: StepControl::Resume(ResumeAction::Snapshot(snapshot)) }
+        Self {
+            effects: Vec::new(),
+            control: StepControl::Resume(ResumeAction::Snapshot(snapshot)),
+        }
     }
 }
 
@@ -169,7 +176,12 @@ impl ExecutionResult {
     pub fn finish(mut effects: Vec<Effect>, passthrough: Option<String>) -> Self {
         let new_session = effects.iter().any(|e| matches!(e, Effect::StartNewConversation));
         effects.shrink_to_fit();
-        Self { effects, passthrough, new_session, waiting: None }
+        Self {
+            effects,
+            passthrough,
+            new_session,
+            waiting: None,
+        }
     }
 
     pub fn paused(
@@ -177,7 +189,12 @@ impl ExecutionResult {
         passthrough: Option<String>,
         snapshot: ExecutionSnapshot,
     ) -> Self {
-        Self { effects, passthrough, new_session: false, waiting: Some(snapshot) }
+        Self {
+            effects,
+            passthrough,
+            new_session: false,
+            waiting: Some(snapshot),
+        }
     }
 }
 
@@ -324,7 +341,12 @@ fn run_machine(
                 ));
             }
             StepControl::Resume(action) => match action {
-                ResumeAction::Command { command, args, ctx_override, initial_state } => {
+                ResumeAction::Command {
+                    command,
+                    args,
+                    ctx_override,
+                    initial_state,
+                } => {
                     let Some(spec) = resolve(&command) else {
                         return Err(crate::validation_error!(
                             "resume target '/{command}' is not registered"
@@ -337,7 +359,12 @@ fn run_machine(
                         idx: 0,
                         expanded: Vec::new(),
                         state: initial_state,
-                        invocation: Invocation { ctx, args, passthrough: None, resumed: true },
+                        invocation: Invocation {
+                            ctx,
+                            args,
+                            passthrough: None,
+                            resumed: true,
+                        },
                     };
                 }
                 ResumeAction::Snapshot(snapshot) => {
@@ -365,11 +392,12 @@ fn run_machine(
     Ok(ExecutionResult::finish(pending_effects, run.invocation.passthrough))
 }
 
-fn start_run(
-    spec: Arc<CommandSpec>,
-    invocation: Invocation,
-) -> RunState {
-    let phase = if invocation.resumed { Phase::Conditions } else { Phase::Setup };
+fn start_run(spec: Arc<CommandSpec>, invocation: Invocation) -> RunState {
+    let phase = if invocation.resumed {
+        Phase::Conditions
+    } else {
+        Phase::Setup
+    };
     RunState {
         spec,
         phase,

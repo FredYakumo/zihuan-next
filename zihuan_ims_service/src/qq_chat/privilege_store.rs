@@ -257,9 +257,8 @@ pub fn update_snapshot_blocking(
     let connection = connection.clone();
     let agent_id = agent_id.to_string();
     let sender_id = sender_id.to_string();
-    let run = async move {
-        update_snapshot(&connection, &agent_id, &sender_id, snapshot_json).await
-    };
+    let run =
+        async move { update_snapshot(&connection, &agent_id, &sender_id, snapshot_json).await };
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         block_in_place(|| handle.block_on(run))
     } else {

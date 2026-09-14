@@ -15,11 +15,7 @@ use crate::task_context::AgentTaskRuntime;
 ///   message.
 /// - `Effect::Forward` — QQ renders a forward node (used for task detail which
 ///   QQ historically forwarded); Dashboard renders assistant text.
-pub fn execute_builtin(
-    op: &str,
-    args: &[String],
-    owner_id: &str,
-) -> Option<Result<Vec<Effect>>> {
+pub fn execute_builtin(op: &str, args: &[String], owner_id: &str) -> Option<Result<Vec<Effect>>> {
     match op {
         "builtin://new" => Some(Ok(vec![
             Effect::StartNewConversation,

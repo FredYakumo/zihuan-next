@@ -508,14 +508,9 @@ impl zihuan_core::command::CommandRuntime for DashboardCommandRuntime {
     ) -> Result<zihuan_core::command::StepRun> {
         if let Some(op) = step.op.strip_prefix("builtin://") {
             return match zihuan_core::command::execute_builtin(op, &inv.args, &inv.ctx.caller_id) {
-                Some(Ok(effects)) => {
-                    Ok(zihuan_core::command::StepRun::stop_with(effects))
-                }
+                Some(Ok(effects)) => Ok(zihuan_core::command::StepRun::stop_with(effects)),
                 Some(Err(err)) => Err(err),
-                None => Err(zihuan_core::string_error!(
-                    "builtin 操作不存在: {}",
-                    step.op
-                )),
+                None => Err(zihuan_core::string_error!("builtin 操作不存在: {}", step.op)),
             };
         }
         // QQ-only privileged command reached a non-QQ channel.
@@ -711,9 +706,8 @@ fn try_dispatch_dashboard_command(
     // Permission gate.
     let permission = command_registry.check_permission(&command_context, &raw_user_text);
     if permission.matched && !permission.allowed {
-        immediate_output_messages = Some(vec![LLMMessage::assistant_text(
-            "你没有权限使用此命令。".to_string(),
-        )]);
+        immediate_output_messages =
+            Some(vec![LLMMessage::assistant_text("你没有权限使用此命令。".to_string())]);
         should_run_inference = false;
         return Ok(CommandDispatchOutcome {
             session_id,
@@ -770,7 +764,8 @@ fn try_dispatch_dashboard_command(
         } else {
             // A matched command that produced no visible output still consumes
             // the turn rather than falling through to inference.
-            immediate_output_messages = Some(vec![LLMMessage::assistant_text("命令已执行。".to_string())]);
+            immediate_output_messages =
+                Some(vec![LLMMessage::assistant_text("命令已执行。".to_string())]);
         }
     }
 

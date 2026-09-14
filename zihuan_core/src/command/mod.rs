@@ -20,9 +20,7 @@ pub use engine::{
     execute_command, resume_from_snapshot, CommandRuntime, ExecutionResult, ResumeAction,
     StepControl, StepRun, MAX_COMMAND_STEPS,
 };
-pub use snapshot::{
-    CmdState, ExecutionSnapshot, InputGate, Invocation, Phase,
-};
+pub use snapshot::{CmdState, ExecutionSnapshot, InputGate, Invocation, Phase};
 pub use step::{CommandSpec, Step};
 
 static GLOBAL_COMMAND_REGISTRY: OnceLock<Arc<CommandRegistry>> = OnceLock::new();
@@ -77,7 +75,9 @@ pub enum CommandScope {
     Workspace,
     /// Legacy, not produced by any current runtime.
     HttpStream,
-    Specific { agent_ids: Vec<String> },
+    Specific {
+        agent_ids: Vec<String>,
+    },
 }
 
 impl Default for CommandScope {
@@ -272,7 +272,10 @@ impl CommandRegistry {
         let name = spec.name.clone();
         self.commands.insert(
             name,
-            CommandEntry { spec: Arc::new(spec), permissions: Mutex::new(permissions) },
+            CommandEntry {
+                spec: Arc::new(spec),
+                permissions: Mutex::new(permissions),
+            },
         );
     }
 
