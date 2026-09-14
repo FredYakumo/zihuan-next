@@ -73,6 +73,11 @@ async fn main() {
         error!("Failed to seed default YAML agents: {error}");
     }
 
+    if let Err(error) = zihuan_core::scheduler::init_script_jobs() {
+        error!("Failed to initialize scheduled jobs: {error}");
+    }
+    zihuan_core::scheduler::start_scheduler_kernel();
+
     let state = Arc::new(api::state::AppState::new());
     let broadcast = api::ws::create_broadcast();
     log_forwarder::set_app_state(Arc::clone(&state));

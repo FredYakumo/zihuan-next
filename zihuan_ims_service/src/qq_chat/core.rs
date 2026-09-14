@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use crate::agent::utils::build_state_system_prefix_lines;
@@ -22,14 +21,13 @@ use super::msg_send::{
     send_notification_text, QqChatServiceSendContext,
 };
 use crate::role_config::QqChatEmotionDimensionConfig;
-use crate::storage::qq_chat_history_store::{clear_history, load_history};
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use zihuan_core::agent::tools::LongTaskNotifier;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::graph::tool_spec::{ToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-use zihuan_core::model_inference::llm::{LLMMessage, MessagePart, MessageRole};
+use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
 use zihuan_core::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode,
@@ -48,7 +46,6 @@ pub(crate) use crate::qq_chat::model::{
     QqChatAgentServiceRuntimeConfig, QqChatServiceHandleReport, QqChatServiceTurnResult,
     QqLongTaskNotifier,
 };
-use zihuan_core::agent::dream_agent::run_dream_agent;
 
 pub(crate) const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const MAX_REPLY_CHARS: usize = 250;
@@ -821,6 +818,9 @@ impl QqChatAgentServiceInner {
 }
 
 impl QqChatAgentService {
+    /// Schedules the `Dream` memory consolidation for one sender: cancels any pending Dream
+    /// task of the same sender and inserts a fresh task. The scheduler kernel fires the
+    /// script-defined Dream job once the sender stays silent for the configured interval.
     fn schedule_dream(&self, sender_id: String) {
         let Some(delay_seconds) = self.config.qq_chat_config.dream_interval_seconds() else {
             return;
@@ -829,111 +829,28 @@ impl QqChatAgentService {
             return;
         };
         let agent_id = self.config.agent_id.clone();
-        let cache = Arc::clone(&self.config.cache);
-        let llm = Arc::clone(&self.config.llm);
-        let tool_definitions = self.config.tool_definitions.clone();
         tokio::spawn(async move {
-            if let Err(err) = zihuan_core::scheduled_task::cancel_pending_dreams(
+            if let Err(err) = zihuan_core::scheduled_task::cancel_pending_tasks(
                 &connection,
+                zihuan_core::scheduler::DREAM_TASK_NAME,
                 &agent_id,
                 &sender_id,
+                Some("被新的用户消息替换"),
             )
             .await
             {
                 warn!("[Dream] failed to cancel previous task: {err}");
                 return;
             }
-            let task = zihuan_core::scheduled_task::ScheduledTaskEntry::dream(
-                agent_id.clone(),
-                sender_id.clone(),
+            let task = zihuan_core::scheduled_task::ScheduledTaskEntry::new(
+                zihuan_core::scheduler::DREAM_TASK_NAME,
+                agent_id,
+                Some(sender_id),
                 chrono::Local::now() + chrono::Duration::seconds(delay_seconds as i64),
+                Some("等待用户静默后生成 Dream 记忆"),
             );
             if let Err(err) = zihuan_core::scheduled_task::insert_task(&connection, &task).await {
                 warn!("[Dream] failed to create task: {err}");
-                return;
-            }
-            tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
-            let pending = zihuan_core::scheduled_task::list_tasks(
-                &connection,
-                Some(&agent_id),
-                Some("pending"),
-            )
-            .await
-            .map(|tasks| tasks.into_iter().any(|entry| entry.id == task.id))
-            .unwrap_or(false);
-            if !pending {
-                return;
-            }
-            let history = load_history(&cache, &sender_id);
-            let transcript = history
-                .iter()
-                .filter_map(|message| match message.role {
-                    MessageRole::User | MessageRole::Assistant => {
-                        message.content_text_owned().map(|text| (message.role.clone(), text))
-                    }
-                    _ => None,
-                })
-                .map(|(role, text)| {
-                    format!(
-                        "{}: {text}",
-                        if role == MessageRole::User {
-                            "用户"
-                        } else {
-                            "Bot"
-                        }
-                    )
-                })
-                .collect::<Vec<_>>();
-            let chars = transcript.iter().map(|text| text.chars().count() as i64).sum();
-            let previous = zihuan_core::scheduled_task::latest_dream_memory(
-                &connection,
-                &agent_id,
-                &sender_id,
-            )
-            .await
-            .unwrap_or(None)
-            .unwrap_or_default();
-            match run_dream_agent(llm, &previous, &transcript.join("\n"), tool_definitions) {
-                Ok(content) => match zihuan_core::scheduled_task::insert_dream_memory(
-                    &connection,
-                    &agent_id,
-                    &sender_id,
-                    chars,
-                    &content,
-                )
-                .await
-                {
-                    Ok(()) => {
-                        if let Err(err) = clear_history(&cache, &sender_id) {
-                            warn!("[Dream] memory saved but history clear failed: {err}");
-                        }
-                        let _ = zihuan_core::scheduled_task::finish_task(
-                            &connection,
-                            &task.id,
-                            zihuan_core::scheduled_task::ScheduledTaskStatus::Succeeded,
-                            Some("Dream 记忆已生成"),
-                        )
-                        .await;
-                    }
-                    Err(err) => {
-                        let _ = zihuan_core::scheduled_task::finish_task(
-                            &connection,
-                            &task.id,
-                            zihuan_core::scheduled_task::ScheduledTaskStatus::Failed,
-                            Some(&err.to_string()),
-                        )
-                        .await;
-                    }
-                },
-                Err(err) => {
-                    let _ = zihuan_core::scheduled_task::finish_task(
-                        &connection,
-                        &task.id,
-                        zihuan_core::scheduled_task::ScheduledTaskStatus::Failed,
-                        Some(&err.to_string()),
-                    )
-                    .await;
-                }
             }
         });
     }

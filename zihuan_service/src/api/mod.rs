@@ -11,6 +11,7 @@ pub mod model_http;
 pub mod plugins;
 pub mod registry;
 pub mod scheduled_tasks;
+pub mod scheduler;
 pub mod settings;
 pub mod setup_wizard;
 pub mod state;
@@ -240,6 +241,7 @@ pub fn build_router(
                         .post(scheduled_tasks::cancel_scheduled_task),
                 ),
         )
+        .push(Router::with_path("scheduler/jobs").get(scheduler::list_scheduler_jobs))
         // File I/O (not graph-scoped)
         .push(Router::with_path("file/open").post(file_io::open_file))
         .push(Router::with_path("file/upload").post(file_io::upload_graph))

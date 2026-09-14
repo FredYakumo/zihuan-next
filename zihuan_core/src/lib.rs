@@ -21,6 +21,7 @@ pub mod rag;
 pub mod role;
 pub mod runtime;
 pub mod scheduled_task;
+pub mod scheduler;
 pub mod setup_wizard;
 pub mod steer;
 pub mod storage;

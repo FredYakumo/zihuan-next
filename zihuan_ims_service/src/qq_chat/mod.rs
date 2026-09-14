@@ -46,6 +46,7 @@ use crate::storage::message_rate_limit_store::{
 pub use crate::storage::message_rate_limit_store::{
     list_message_rate_limit_usage, reset_message_rate_limit_usage,
 };
+use crate::storage::qq_chat_history_store::{clear_history, load_history};
 use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
 use chrono::Local;
 use log::{error, info, warn};
@@ -484,6 +485,36 @@ pub async fn spawn(
         register_rdb_pool(rdb_pool.clone());
     }
 
+    let cache =
+        Arc::new(LLMMessageSessionCacheRef::new(format!("service_agent_cache_{}", agent.id)));
+
+    // Register the service's job resources with the scheduler kernel so script-defined
+    // jobs (e.g. Dream) can reach this service's LLM, tools, and history cache. The guard
+    // lives in the service task below; stopping the service unregisters the resources.
+    let scheduler_guard = if config.dream_enabled {
+        rdb_pool
+            .as_ref()
+            .map(|connection| {
+                let history_cache = Arc::clone(&cache);
+                let clear_cache = Arc::clone(&cache);
+                zihuan_core::scheduler::register_service(zihuan_core::scheduler::JobResources {
+                    agent_id: agent.id.clone(),
+                    connection: connection.clone(),
+                    llm: Arc::clone(&llm),
+                    tool_definitions: tool_definitions.clone(),
+                    history_loader: Arc::new(move |sender_id: &str| {
+                        load_history(&history_cache, sender_id)
+                    }),
+                    history_clearer: Arc::new(move |sender_id: &str| {
+                        clear_history(&clear_cache, sender_id)
+                    }),
+                })
+            })
+            .transpose()?
+    } else {
+        None
+    };
+
     let service = Arc::new(QqChatAgentService::new(QqChatAgentServiceRuntimeConfig {
         agent_id: agent.id.clone(),
         qq_chat_config: config.clone(),
@@ -494,12 +525,9 @@ pub async fn spawn(
             config.bot_name.clone()
         },
         system_prompt: config.system_prompt.clone(),
-        cache: Arc::new(LLMMessageSessionCacheRef::new(format!(
-            "service_agent_cache_{}",
-            agent.id
-        ))),
+        cache: Arc::clone(&cache),
         session: Arc::new(SessionStateRef::new(format!("service_agent_session_{}", agent.id))),
-        llm,
+        llm: Arc::clone(&llm),
         intent_classification_llm,
         math_programming_llm,
         natural_language_reply_llm,
@@ -517,7 +545,7 @@ pub async fn spawn(
         reply_batch_builder: Some(build_reply_batch_builder(tokenizer_segmenter)),
         default_tools_enabled: config.default_tools_enabled.clone(),
         shared_inputs: Vec::<FunctionPortDef>::new(),
-        tool_definitions,
+        tool_definitions: tool_definitions.clone(),
         shared_runtime_values: HashMap::new(),
         session_state_store: Arc::new(Mutex::new(QqChatSessionState::default())),
         task_runtime,
@@ -556,6 +584,7 @@ pub async fn spawn(
     let handler_id_for_cleanup = handler_id.clone();
 
     Ok(tokio::spawn(async move {
+        let _scheduler_guard = scheduler_guard;
         info!("[service] starting QQ Chat Agent Service '{}'", agent_name);
         let mut tasks = tokio::task::JoinSet::new();
         inbox.spawn_consumers(&mut tasks);

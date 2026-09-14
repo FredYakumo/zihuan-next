@@ -14,12 +14,23 @@ from zihuan_sdk import Host, NodeExecutionContext, ZihuanSdk, hydrate_resources,
 
 ENGINE_DIR = Path(__file__).resolve().parent
 NODE_DIR = Path(os.environ.get("ZIHUAN_DAG_NODES", ENGINE_DIR.parent / "dag_nodes"))
+SCHEDULED_JOBS_DIR = Path(os.environ.get("ZIHUAN_SCHEDULED_JOBS", ENGINE_DIR.parent / "scheduled_jobs"))
+
+
+def _display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(NODE_DIR))
+    except ValueError:
+        return str(path)
 
 
 def load_module(path: Path) -> tuple[Any | None, str | None]:
     from zihuan_sdk import _CURRENT_SCRIPT_PATH
     try:
-        script_path = path.relative_to(Path.cwd())
+        try:
+            script_path = path.relative_to(Path.cwd())
+        except ValueError:
+            script_path = path
         sys.path.insert(0, str(path.parent))
         spec = importlib.util.spec_from_file_location(f"zihuan_node_{path.stem}", path)
         if spec is None or spec.loader is None: raise RuntimeError("cannot create module specification")
@@ -31,7 +42,7 @@ def load_module(path: Path) -> tuple[Any | None, str | None]:
         zihuan_sdk._CURRENT_SCRIPT_PATH = None
         return module, None
     except Exception as error:
-        return None, f"failed to load {path.relative_to(NODE_DIR)}: {error}"
+        return None, f"failed to load {_display_path(path)}: {error}"
     finally:
         if sys.path and sys.path[0] == str(path.parent): sys.path.pop(0)
 
@@ -44,6 +55,21 @@ def load_nodes() -> tuple[dict[str, Any], list[dict[str, str]]]:
             if failure: diagnostics.append({"language": "python", "message": failure})
     nodes = {definition.type_id: definition for definition in registered_nodes()}
     return nodes, diagnostics
+
+
+def load_jobs(paths: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    jobs: list[dict[str, Any]] = []
+    diagnostics: list[dict[str, str]] = []
+    for relative in paths:
+        path = Path(SCHEDULED_JOBS_DIR, relative)
+        module, failure = load_module(path)
+        if failure: diagnostics.append({"language": "python", "message": failure}); continue
+        manifest = getattr(module, "JOB_MANIFEST", None)
+        if not isinstance(manifest, dict):
+            diagnostics.append({"language": "python", "message": f"{relative} must define a JOB_MANIFEST dict"})
+            continue
+        jobs.append({"task_name": manifest.get("task_name"), "script": relative, "entry": manifest.get("entry") or "run_job", "description": manifest.get("description") or ""})
+    return jobs, diagnostics
 
 
 def definition_json(definition: Any) -> dict[str, Any]:
@@ -67,9 +93,14 @@ def main() -> int:
     parser.add_argument("--catalog", action="store_true")
     parser.add_argument("--ports", action="store_true")
     parser.add_argument("--serve", action="store_true")
+    parser.add_argument("--jobs-catalog", action="store_true")
     args = parser.parse_args()
-    if sum((args.catalog, args.ports, args.serve)) != 1:
-        parser.error("expected exactly one of --catalog, --ports, or --serve")
+    if sum((args.catalog, args.ports, args.serve, args.jobs_catalog)) != 1:
+        parser.error("expected exactly one of --catalog, --ports, --serve, or --jobs-catalog")
+    if args.jobs_catalog:
+        request = json.loads(sys.stdin.read() or "{}")
+        jobs, diagnostics = load_jobs(request.get("paths", []))
+        print(json.dumps({"jobs": jobs, "diagnostics": diagnostics}, ensure_ascii=False)); return 0
     nodes, diagnostics = load_nodes()
     if args.catalog: print(json.dumps({"nodes": [definition_json(node) for node in nodes.values()], "diagnostics": diagnostics}, ensure_ascii=False)); return 0
     if args.ports:

@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -49,7 +49,7 @@ impl ScriptLanguage {
     fn runner_file(self) -> &'static str {
         match self {
             Self::JavaScript => "engine.mjs",
-            Self::Python => "python_node_runtime.py",
+            Self::Python => "engine_runtime.py",
         }
     }
 }
@@ -331,6 +331,10 @@ fn command_failure(prefix: &str, stderr: &[u8]) -> EngineError {
 }
 
 pub fn discover_languages(workspace: &Path) -> Result<BTreeSet<ScriptLanguage>> {
+    discover_languages_in(&workspace.join("dag_nodes"))
+}
+
+fn discover_languages_in(directory: &Path) -> Result<BTreeSet<ScriptLanguage>> {
     fn visit(directory: &Path, languages: &mut BTreeSet<ScriptLanguage>) -> std::io::Result<()> {
         for entry in fs::read_dir(directory)? {
             let entry = entry?;
@@ -344,11 +348,132 @@ pub fn discover_languages(workspace: &Path) -> Result<BTreeSet<ScriptLanguage>> 
         Ok(())
     }
     let mut languages = BTreeSet::new();
-    let directory = workspace.join("dag_nodes");
-    if directory.is_dir() {
-        visit(&directory, &mut languages)?;
+    if !directory.is_dir() {
+        return Ok(languages);
     }
+    visit(directory, &mut languages)?;
     Ok(languages)
+}
+
+/// One scheduler job manifest reported by a runner's `--jobs-catalog` mode. `script` is
+/// relative to the job directory that was scanned.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobCatalogEntry {
+    pub task_name: String,
+    pub script: String,
+    #[serde(default = "default_job_entry")]
+    pub entry: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+fn default_job_entry() -> String {
+    "run_job".to_string()
+}
+
+/// Aggregated scheduler job manifest catalog across script runtimes. Runner or script
+/// failures become diagnostics so one broken job cannot hide the others.
+#[derive(Debug, Clone, Default)]
+pub struct JobCatalog {
+    pub jobs: Vec<JobCatalogEntry>,
+    pub diagnostics: Vec<ScriptDiagnostic>,
+}
+
+/// Recursively collects the job scripts under `directory`, pairing each script's POSIX
+/// display path (relative to `directory`) with the language its extension implies.
+/// Other extensions are ignored and the result is sorted into a deterministic order.
+fn job_scripts_in(directory: &Path) -> Result<Vec<(String, ScriptLanguage)>> {
+    fn visit(
+        directory: &Path,
+        base: &Path,
+        scripts: &mut Vec<(String, ScriptLanguage)>,
+    ) -> std::io::Result<()> {
+        for entry in fs::read_dir(directory)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                visit(&path, base, scripts)?;
+            } else if let Some(language) = ScriptLanguage::from_path(&path) {
+                let display = path
+                    .strip_prefix(base)
+                    .unwrap_or(&path)
+                    .components()
+                    .map(|component| component.as_os_str().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                scripts.push((display, language));
+            }
+        }
+        Ok(())
+    }
+    let mut scripts = Vec::new();
+    if !directory.is_dir() {
+        return Ok(scripts);
+    }
+    visit(directory, directory, &mut scripts)?;
+    scripts.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(scripts)
+}
+
+/// Loads scheduler job manifests declared inside the scripts of `job_directory`.
+///
+/// Traversal lives in Rust: the scripts are discovered here and handed to the language
+/// runner as an explicit path list, so a runner only imports the files it is given and
+/// reports the metadata they export (`job_manifest` export for `.mjs`, `JOB_MANIFEST` dict
+/// for `.py`).
+pub fn load_job_catalog(
+    workspace: &Path,
+    job_directory: &Path,
+    node: &NodeRuntimeConfig,
+    python: &PythonRuntimeConfig,
+) -> Result<JobCatalog> {
+    let mut catalog = JobCatalog::default();
+    let mut paths_by_language: BTreeMap<ScriptLanguage, Vec<String>> = BTreeMap::new();
+    for (display, language) in job_scripts_in(job_directory)? {
+        paths_by_language.entry(language).or_default().push(display);
+    }
+    for (language, paths) in paths_by_language {
+        let command = match language {
+            ScriptLanguage::JavaScript => resolve_node_runtime(workspace, node),
+            ScriptLanguage::Python => resolve_python_runtime(workspace, python),
+        };
+        let command = match command {
+            Ok(command) => command,
+            Err(error) => {
+                catalog
+                    .diagnostics
+                    .push(ScriptDiagnostic { language, message: error.to_string() });
+                continue;
+            }
+        };
+        match run_once(
+            workspace,
+            language,
+            &command,
+            "--jobs-catalog",
+            Some(&json!({ "paths": paths })),
+        ) {
+            Ok(Value::Object(mut response)) => {
+                let diagnostics: Vec<ScriptDiagnostic> = response
+                    .remove("diagnostics")
+                    .and_then(|value| serde_json::from_value(value).ok())
+                    .unwrap_or_default();
+                catalog.diagnostics.extend(diagnostics);
+                let jobs = response
+                    .remove("jobs")
+                    .and_then(|value| value.as_array().cloned())
+                    .unwrap_or_default();
+                for job in jobs {
+                    let entry: JobCatalogEntry = serde_json::from_value(job)?;
+                    catalog.jobs.push(entry);
+                }
+            }
+            Ok(_) => return Err(message(format!("{language:?} job 目录响应无效"))),
+            Err(error) => catalog
+                .diagnostics
+                .push(ScriptDiagnostic { language, message: error.to_string() }),
+        }
+    }
+    Ok(catalog)
 }
 
 pub fn load_script_catalog(
@@ -554,6 +679,52 @@ fn run_once(
         .map_err(|error| message(format!("动态脚本运行时响应不是合法 JSON: {error}")))
 }
 
+/// Runs a tool-style script request: the script file is loaded on demand, its exported
+/// `entry` function receives the request object (plus `script_path` and `entry`), and the
+/// returned value is expected to follow the `{ ok: bool, result?/error? }` contract.
+///
+/// Works for both [`ScriptLanguage::Python`] and [`ScriptLanguage::JavaScript`]; the JS
+/// runtime (`engine.mjs --serve`) dispatches the same `tool_execute` request kind.
+#[allow(clippy::too_many_arguments)]
+pub fn execute_script_tool(
+    workspace: &Path,
+    language: ScriptLanguage,
+    node: &NodeRuntimeConfig,
+    python: &PythonRuntimeConfig,
+    script_path: &Path,
+    entry: &str,
+    request: &Value,
+    host: &mut HostHandler<'_>,
+) -> Result<Value> {
+    let script_path = if script_path.is_absolute() {
+        script_path.to_path_buf()
+    } else {
+        workspace.join(script_path)
+    };
+    if !script_path.is_file() {
+        return Err(message(format!("脚本文件不存在: {}", script_path.display())));
+    }
+    let mut request = request.clone();
+    let object = request.as_object_mut().ok_or_else(|| message("脚本工具请求必须是对象"))?;
+    object.insert("script_path".to_string(), Value::String(script_path.display().to_string()));
+    object.insert("entry".to_string(), Value::String(entry.to_string()));
+    let response = request_script_runtime(
+        workspace,
+        language,
+        node,
+        python,
+        &json!({"kind":"tool_execute","request":request}),
+        host,
+    )?;
+    if let Some(result) = response.get("response") {
+        return Ok(result.clone());
+    }
+    if let Some(error) = response.get("error").and_then(Value::as_str) {
+        return Err(message(error.to_string()));
+    }
+    Err(message("脚本工具响应缺少 response"))
+}
+
 pub fn execute_python_script(
     workspace: &Path,
     config: &PythonRuntimeConfig,
@@ -563,28 +734,14 @@ pub fn execute_python_script(
     request: &Value,
     host: &mut HostHandler<'_>,
 ) -> Result<Value> {
-    if !script_path.is_file() {
-        return Err(message(format!("Python 脚本不存在: {}", script_path.display())));
-    }
-    let mut request = request.clone();
-    request
-        .as_object_mut()
-        .ok_or_else(|| message("Python 工具请求必须是对象"))?
-        .insert("script_path".to_string(), Value::String(script_path.display().to_string()));
-    request
-        .as_object_mut()
-        .expect("object")
-        .insert("entry".to_string(), Value::String(entry.to_string()));
-    let response = request_script_runtime(
+    execute_script_tool(
         workspace,
         ScriptLanguage::Python,
         &NodeRuntimeConfig::default(),
         config,
-        &json!({"kind":"tool_execute","request":request}),
+        script_path,
+        entry,
+        request,
         host,
-    )?;
-    response
-        .get("response")
-        .cloned()
-        .ok_or_else(|| message("Python 工具响应缺少 response"))
+    )
 }
