@@ -1,3 +1,4 @@
+mod natural_language_reply;
 mod qq_after_brain;
 mod qq_before_brain;
 mod qq_brain;
@@ -11,6 +12,9 @@ use zihuan_core::role::procedure::{
 };
 use zihuan_core::runtime::block_async;
 
+pub(crate) use natural_language_reply::{
+    AfterBrainAgent, ModelIdentityContext, QqReplyReviewRequest, QqReplyReviewResult,
+};
 pub(crate) use qq_after_brain::{run_after_brain, QqAfterBrain, QqAfterBrainContext};
 pub(crate) use qq_before_brain::run_before_brain;
 pub(crate) use qq_brain::{QqBrain, QqBrainOutput};

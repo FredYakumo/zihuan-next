@@ -14,9 +14,7 @@ use zihuan_core::system_config::current_context_compaction_percent;
 
 use zihuan_core::agent::tools::ToolCallingStopReason;
 
-use crate::agent::emotion::utils::{
-    emotion_expression_prompt, has_noticeable_emotion_expression,
-};
+use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use crate::qq_chat::resources::current_qq_chat_role_service_config;
 use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatEmotionDimensionConfig;
@@ -30,8 +28,8 @@ use zihuan_core::graph::tool_spec::{
 use zihuan_core::graph::DataValue;
 
 use super::super::super::tools::{
-    format_public_info_message, AgentMemoryBackend, AgentMemoryToolResources, ModelIdentityContext,
-    QqReplyReviewRequest, QqReplyReviewResult, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
+    format_public_info_message, AgentMemoryBackend, AgentMemoryToolResources,
+    QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 use zihuan_core::storage::AgentMemoryAccessContext;
 
@@ -55,8 +53,9 @@ use super::{
 
 use crate::agent::before_brain_agent::PrepromptContext;
 use crate::procedure::{
-    qq_procedure_context, run_before_brain, QqAfterBrain, QqAfterBrainContext, QqBrain,
-    QqBrainOutput, QqMetaQueryBrain,
+    qq_procedure_context, run_before_brain, ModelIdentityContext, QqAfterBrain,
+    QqAfterBrainContext, QqBrain, QqBrainOutput, QqMetaQueryBrain, QqReplyReviewRequest,
+    QqReplyReviewResult,
 };
 use zihuan_core::role::procedure::execute_blocking_procedure_chain;
 use zihuan_core::runtime::block_async;

@@ -12,14 +12,14 @@ use zihuan_core::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskResult, AgentTaskStatus,
 };
 
-use crate::procedure::{qq_procedure_context, run_after_brain, QqAfterBrainContext};
+use crate::procedure::{
+    qq_procedure_context, run_after_brain, QqAfterBrainContext, QqReplyReviewRequest,
+};
 use crate::qq_chat::language_style_store::{upsert_language_style, LanguageStyleScope};
 use crate::qq_chat::logging::QqChatTaskTrace;
 use crate::qq_chat::msg_send::{
     build_reply_result, send_planned_batches, QqChatServiceSendContext,
 };
-use crate::tools::QqReplyReviewRequest;
-
 const STYLE_LEARNING_SAMPLE_LIMIT: i64 = 200;
 const STYLE_LEARNING_MIN_SAMPLES: usize = 20;
 

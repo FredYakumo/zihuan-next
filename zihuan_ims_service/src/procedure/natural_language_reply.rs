@@ -61,8 +61,9 @@ pub(crate) fn review_and_rewrite_reply(
     let protected_media = ProtectedImageProtocolTags::from_message(&request.candidate_message);
     let review_messages =
         build_review_messages(reply_system_prompt, request, &protected_media.masked_message);
-    let review_response =
-        review_llm.inference(&InferenceParam { messages: &review_messages, tools: None });
+    let review_response = review_llm
+        .inference(&InferenceParam { messages: &review_messages, tools: None })
+        .map_err(|err| Error::StringError(format!("reply review inference failed: {err}")))?;
     let review_text = review_response
         .content_text_owned()
         .filter(|text| !text.trim().is_empty())
@@ -96,8 +97,9 @@ pub(crate) fn review_and_rewrite_reply(
 
     let rewrite_messages =
         build_rewrite_messages(reply_system_prompt, request, &protected_media.masked_message);
-    let rewrite_response =
-        rewrite_llm.inference(&InferenceParam { messages: &rewrite_messages, tools: None });
+    let rewrite_response = rewrite_llm
+        .inference(&InferenceParam { messages: &rewrite_messages, tools: None })
+        .map_err(|err| Error::StringError(format!("reply rewrite inference failed: {err}")))?;
     let rewritten_message = rewrite_response.content_text_owned().unwrap_or_default();
     let rewritten_message = parse_force_rewrite_result(&rewritten_message)?;
     let rewritten_message = protected_media.restore(rewritten_message.trim());
