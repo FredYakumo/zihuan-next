@@ -7,8 +7,8 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 
 use super::JobResources;
+use crate::agent::declarative_agent::{AgentDefinition, AgentHost};
 use crate::agent::tools::NodeGraphTool;
-use crate::agent::yaml_agent::{YamlAgentDefinition, YamlAgentHost};
 use crate::agent::LLM_KIND_MAIN;
 use crate::error::{Error, Result};
 use crate::graph::DataValue;
@@ -37,14 +37,15 @@ fn dispatch_inner(resources: &JobResources, method: &str, params: &Value) -> Res
 }
 
 fn run_subagent(resources: &JobResources, params: &Value) -> Result<Value> {
-    let definition_text = params.get("definition").and_then(Value::as_str).ok_or_else(|| {
-        Error::ValidationError("subagent.run 缺少 definition YAML".to_string())
-    })?;
+    let definition_text = params
+        .get("definition")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error::ValidationError("subagent.run 缺少 definition".to_string()))?;
     let inputs = params
         .get("inputs")
         .and_then(Value::as_object)
         .ok_or_else(|| Error::ValidationError("subagent.run 缺少 inputs 对象".to_string()))?;
-    let mut host = YamlAgentHost::new();
+    let mut host = AgentHost::new();
     for definition in resources
         .tool_definitions
         .iter()
@@ -53,9 +54,9 @@ fn run_subagent(resources: &JobResources, params: &Value) -> Result<Value> {
         host.register_graph_tool(Arc::new(NodeGraphTool::new(definition.clone())));
     }
     host.register_llm(LLM_KIND_MAIN, resources.llm.clone());
-    let mut definition: YamlAgentDefinition =
+    let mut definition: AgentDefinition =
         serde_yaml::from_str(definition_text).map_err(|error| {
-            Error::ValidationError(format!("subagent.run definition 不是有效的代理 YAML: {error}"))
+            Error::ValidationError(format!("subagent.run definition 不是有效的代理定义: {error}"))
         })?;
     definition.validate(&host.available_tool_ids())?;
     let agent = host.build_definition(definition)?;

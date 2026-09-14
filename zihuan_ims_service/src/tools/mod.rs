@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use zihuan_core::agent::declarative_agent::AgentHost;
 use zihuan_core::agent::tools::memory_tools::{
     register_memory_tools, MemoryAgentResources, MemoryBackend,
 };
 use zihuan_core::agent::tools::Tool;
-use zihuan_core::agent::yaml_agent::YamlAgentHost;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::graph::object_storage::S3Ref;
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
@@ -148,7 +148,7 @@ pub fn build_info_brain_tools(
             llm: Arc::clone(&llm),
             access: memory_access,
         };
-        let mut host = YamlAgentHost::new();
+        let mut host = AgentHost::new();
         register_memory_tools(&mut host, memory_resources);
         host.register_llm("main", llm);
         if is_enabled(default_tools_enabled, DEFAULT_TOOL_MEMORY_AGENT) {

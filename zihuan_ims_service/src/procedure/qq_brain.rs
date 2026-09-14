@@ -5,10 +5,10 @@ use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatEmotionDimensionConfig;
 use async_trait::async_trait;
 use log::info;
+use zihuan_core::agent::declarative_agent::AgentHost;
 use zihuan_core::agent::runtime_context::current_agent_resources;
 use zihuan_core::agent::tools::memory_tools::register_memory_tools;
 use zihuan_core::agent::tools::{LongTaskContext, ToolCallingEngine, ToolCallingStopReason};
-use zihuan_core::agent::yaml_agent::YamlAgentHost;
 use zihuan_core::agent::{LLM_KIND_MAIN, LLM_KIND_MATH_PROGRAMMING};
 use zihuan_core::error::Result;
 use zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_OWNER_TYPE;
@@ -163,26 +163,26 @@ impl QqBrain {
             }
         });
 
-        // YAML agent host for this turn: memory tools plus the web/image tools the research
+        // Definition-driven agent host for this turn: memory tools plus the web/image tools the research
         // agent escalates to, and the LLM handles their `llm_kind` resolves to.
-        let mut yaml_agents = YamlAgentHost::new();
+        let mut agent_host = AgentHost::new();
         match memory_resources {
-            Some(resources) => register_memory_tools(&mut yaml_agents, resources),
+            Some(resources) => register_memory_tools(&mut agent_host, resources),
             None => {
-                yaml_agents.register_disabled_tools(
+                agent_host.register_disabled_tools(
                     ["list_memory_keys", "search_memory", "update_memory"],
                     "memory backend is not configured",
                 );
             }
         }
-        yaml_agents.register_tool(
+        agent_host.register_tool(
             DEFAULT_TOOL_WEB_SEARCH,
             Arc::new(wrap_brain_tool_with_quota(
                 WebSearchTool::new(ctx.web_search_engine.clone()),
                 tool_quota.clone(),
             )),
         );
-        yaml_agents.register_tool(
+        agent_host.register_tool(
             DEFAULT_TOOL_IMAGE_UNDERSTAND,
             Arc::new(ImageUnderstandTool::new(
                 Some(prepared_input.event.clone()),
@@ -193,12 +193,12 @@ impl QqBrain {
         );
         // `main` is the service's main model; the memory agent uses it, the research agent
         // (`math_programming`) use the dedicated math/programming model.
-        yaml_agents.register_llm(LLM_KIND_MAIN, Arc::clone(ctx.llm));
-        yaml_agents.register_llm(LLM_KIND_MATH_PROGRAMMING, Arc::clone(ctx.math_programming_llm));
+        agent_host.register_llm(LLM_KIND_MAIN, Arc::clone(ctx.llm));
+        agent_host.register_llm(LLM_KIND_MATH_PROGRAMMING, Arc::clone(ctx.math_programming_llm));
 
         // Publish the memory agent first so the research agent can reference it.
         let memory_enabled = memory_backend.is_some();
-        if let Some(tool) = yaml_agents.publish_logged(DEFAULT_TOOL_MEMORY_AGENT) {
+        if let Some(tool) = agent_host.publish_logged(DEFAULT_TOOL_MEMORY_AGENT) {
             if memory_enabled && service.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
                 brain.add_tool(wrap_brain_tool_with_quota(
                     SharedTool::new(tool),
@@ -207,7 +207,7 @@ impl QqBrain {
             }
         }
 
-        if let Some(tool) = yaml_agents.publish_logged("run_research_subagent") {
+        if let Some(tool) = agent_host.publish_logged("run_research_subagent") {
             brain.add_tool(wrap_brain_tool_with_quota(SharedTool::new(tool), tool_quota.clone()));
         }
 

@@ -7,10 +7,10 @@ pub const LLM_KIND_MATH_PROGRAMMING: &str = "math_programming";
 pub const LLM_KIND_NATURAL_LANGUAGE_REPLY: &str = "natural_language_reply";
 
 pub mod agent;
+pub mod declarative_agent;
 pub mod resource_provider;
 pub mod runtime_context;
 pub mod tool_config;
-pub mod yaml_agent;
 
 pub fn normalize_llm_kind(llm_kind: Option<&str>) -> crate::error::Result<&'static str> {
     match llm_kind
@@ -64,9 +64,9 @@ pub use crate::model_inference::llm::tooling::FunctionTool;
 pub use agent::{
     Agent, AgentCancellation, AgentContext, ContextCompactionEvent, ContextCompactionObserver,
 };
+pub use declarative_agent::{
+    AgentDefinition, AgentHost, AgentOutput, AgentOutputMode, AgentPromptPart, DeclarativeAgent,
+    DeclarativeAgentTool,
+};
 pub use shared_tool::SharedTool;
 pub use tools::{AgentExecutor, ToolCallingEngine, ToolCallingRequest, ToolCallingResult};
-pub use yaml_agent::{
-    YamlAgent, YamlAgentDefinition, YamlAgentHost, YamlAgentOutput, YamlAgentOutputMode,
-    YamlAgentPromptPart, YamlAgentTool,
-};

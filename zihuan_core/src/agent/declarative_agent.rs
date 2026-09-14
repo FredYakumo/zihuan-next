@@ -69,10 +69,10 @@ fn seed_builtin_agents_at(directory: &Path) -> Result<()> {
     Ok(())
 }
 
-/// How a YAML agent turns its final assistant message into a tool result.
+/// How a declarative agent turns its final assistant message into a tool result.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
-pub enum YamlAgentOutputMode {
+pub enum AgentOutputMode {
     /// Parse the final assistant message as JSON and map it onto the declared output ports.
     #[default]
     JsonPorts,
@@ -86,7 +86,7 @@ pub enum YamlAgentOutputMode {
 /// input's value equals it; otherwise the fragment is appended whenever the input is present
 /// and non-empty. `{placeholders}` inside `template` are substituted from the input values.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct YamlAgentPromptPart {
+pub struct AgentPromptPart {
     pub port: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub equals: Option<String>,
@@ -94,7 +94,7 @@ pub struct YamlAgentPromptPart {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct YamlAgentDefinition {
+pub struct AgentDefinition {
     pub id: String,
     pub name: String,
     /// LLM-facing tool description; falls back to `name` when empty.
@@ -111,9 +111,9 @@ pub struct YamlAgentDefinition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub prompt_parts: Vec<YamlAgentPromptPart>,
+    pub prompt_parts: Vec<AgentPromptPart>,
     #[serde(default)]
-    pub output_mode: YamlAgentOutputMode,
+    pub output_mode: AgentOutputMode,
     /// LLM handle kind the host resolves for this agent; falls back to `main`.
     #[serde(default = "default_llm_kind")]
     pub llm_kind: String,
@@ -133,7 +133,7 @@ fn default_llm_kind() -> String {
     "main".to_string()
 }
 
-impl YamlAgentDefinition {
+impl AgentDefinition {
     pub fn validate(&self, available_tool_ids: &HashSet<String>) -> Result<()> {
         validate_agent_id(&self.id)?;
         if self.name.trim().is_empty() {
@@ -141,7 +141,7 @@ impl YamlAgentDefinition {
         }
         validate_ports("input", &self.inputs)?;
         validate_ports("output", &self.outputs)?;
-        if self.output_mode == YamlAgentOutputMode::Text {
+        if self.output_mode == AgentOutputMode::Text {
             if self.outputs.len() > 1 {
                 return Err(Error::ValidationError(format!(
                     "agent '{}' uses text output but declares more than one output port",
@@ -221,13 +221,13 @@ fn validate_ports(kind: &str, ports: &[FunctionPortDef]) -> Result<()> {
 pub fn load_agent_definition(
     id: &str,
     available_tool_ids: &HashSet<String>,
-) -> Result<YamlAgentDefinition> {
+) -> Result<AgentDefinition> {
     validate_agent_id(id)?;
     let path = agent_dir().join(format!("{id}.yaml"));
     let content = fs::read_to_string(&path).map_err(|error| {
         Error::ValidationError(format!("failed to read agent '{}': {error}", path.display()))
     })?;
-    let definition: YamlAgentDefinition = serde_yaml::from_str(&content).map_err(|error| {
+    let definition: AgentDefinition = serde_yaml::from_str(&content).map_err(|error| {
         Error::ValidationError(format!("invalid agent '{}': {error}", path.display()))
     })?;
     definition.validate(available_tool_ids)?;
@@ -235,7 +235,7 @@ pub fn load_agent_definition(
 }
 
 pub fn save_agent_definition(
-    definition: &YamlAgentDefinition,
+    definition: &AgentDefinition,
     available_tool_ids: &HashSet<String>,
 ) -> Result<()> {
     definition.validate(available_tool_ids)?;
@@ -248,7 +248,7 @@ pub fn save_agent_definition(
 
 pub fn list_agent_definitions(
     available_tool_ids: &HashSet<String>,
-) -> Result<Vec<YamlAgentDefinition>> {
+) -> Result<Vec<AgentDefinition>> {
     let directory = agent_dir();
     if !directory.exists() {
         return Ok(Vec::new());
@@ -267,10 +267,9 @@ pub fn list_agent_definitions(
                     path.display()
                 ))
             })?;
-            let definition: YamlAgentDefinition =
-                serde_yaml::from_str(&content).map_err(|error| {
-                    Error::ValidationError(format!("invalid agent '{}': {error}", path.display()))
-                })?;
+            let definition: AgentDefinition = serde_yaml::from_str(&content).map_err(|error| {
+                Error::ValidationError(format!("invalid agent '{}': {error}", path.display()))
+            })?;
             definition.validate(available_tool_ids)?;
             Ok(definition)
         })
@@ -311,7 +310,7 @@ pub fn delete_agent_definition(id: &str) -> Result<()> {
     })
 }
 
-fn save_agent_definition_at(path: &Path, definition: &YamlAgentDefinition) -> Result<()> {
+fn save_agent_definition_at(path: &Path, definition: &AgentDefinition) -> Result<()> {
     let yaml = serde_yaml::to_string(definition).map_err(|error| {
         Error::ValidationError(format!("failed to serialize agent '{}': {error}", definition.id))
     })?;
@@ -320,14 +319,14 @@ fn save_agent_definition_at(path: &Path, definition: &YamlAgentDefinition) -> Re
     })
 }
 
-/// Result of one agent turn, shaped by [`YamlAgentOutputMode`].
+/// Result of one agent turn, shaped by [`AgentOutputMode`].
 #[derive(Debug, Clone)]
-pub enum YamlAgentOutput {
+pub enum AgentOutput {
     Text(String),
     Ports(HashMap<String, DataValue>),
 }
 
-impl YamlAgentOutput {
+impl AgentOutput {
     /// Renders the output as the string handed back to the calling LLM.
     pub fn as_tool_result(&self) -> String {
         match self {
@@ -340,16 +339,16 @@ impl YamlAgentOutput {
     }
 }
 
-pub struct YamlAgent {
-    definition: YamlAgentDefinition,
+pub struct DeclarativeAgent {
+    definition: AgentDefinition,
     llm: Arc<dyn LLMBase>,
     tools: HashMap<String, Arc<dyn Tool>>,
     graph_tools: Vec<Arc<dyn Tool>>,
 }
 
-impl YamlAgent {
+impl DeclarativeAgent {
     pub fn new(
-        definition: YamlAgentDefinition,
+        definition: AgentDefinition,
         llm: Arc<dyn LLMBase>,
         tools: HashMap<String, Arc<dyn Tool>>,
         graph_tools: Vec<Arc<dyn Tool>>,
@@ -358,7 +357,7 @@ impl YamlAgent {
         Ok(Self { definition, llm, tools, graph_tools })
     }
 
-    pub fn definition(&self) -> &YamlAgentDefinition {
+    pub fn definition(&self) -> &AgentDefinition {
         &self.definition
     }
 
@@ -373,10 +372,7 @@ impl YamlAgent {
 
 /// Renders the user message: the base template (or the default JSON envelope) followed by any
 /// conditional prompt parts whose input condition matches.
-fn render_user_prompt(
-    definition: &YamlAgentDefinition,
-    input: &HashMap<String, DataValue>,
-) -> String {
+fn render_user_prompt(definition: &AgentDefinition, input: &HashMap<String, DataValue>) -> String {
     let mut user = match definition.user_prompt.as_deref() {
         Some(template) => render_template(template, input),
         None => {
@@ -405,10 +401,10 @@ fn render_user_prompt(
     user
 }
 
-impl YamlAgent {
+impl DeclarativeAgent {
     /// Validates the declared input ports, runs one tool-calling turn, and shapes the result
     /// according to the definition's output mode.
-    pub fn run(&self, input: HashMap<String, DataValue>) -> Result<YamlAgentOutput> {
+    pub fn run(&self, input: HashMap<String, DataValue>) -> Result<AgentOutput> {
         for port in &self.definition.inputs {
             let value = input.get(&port.name);
             if port.required && value.is_none() {
@@ -465,8 +461,8 @@ impl YamlAgent {
             })?;
 
         match self.definition.output_mode {
-            YamlAgentOutputMode::Text => Ok(YamlAgentOutput::Text(text)),
-            YamlAgentOutputMode::JsonPorts => {
+            AgentOutputMode::Text => Ok(AgentOutput::Text(text)),
+            AgentOutputMode::JsonPorts => {
                 let output: Map<String, Value> = serde_json::from_str(&text).map_err(|error| {
                     Error::ValidationError(format!(
                         "agent '{}' returned invalid output JSON: {error}",
@@ -489,16 +485,16 @@ impl YamlAgent {
                         );
                     }
                 }
-                Ok(YamlAgentOutput::Ports(values))
+                Ok(AgentOutput::Ports(values))
             }
         }
     }
 
-    /// Runs one turn synchronously and requires [`YamlAgentOutputMode::Text`].
+    /// Runs one turn synchronously and requires [`AgentOutputMode::Text`].
     pub fn run_text(&self, input: HashMap<String, DataValue>) -> Result<String> {
         match self.run(input)? {
-            YamlAgentOutput::Text(text) => Ok(text),
-            YamlAgentOutput::Ports(_) => Err(Error::ValidationError(format!(
+            AgentOutput::Text(text) => Ok(text),
+            AgentOutput::Ports(_) => Err(Error::ValidationError(format!(
                 "agent '{}' is not configured for text output",
                 self.definition.id
             ))),
@@ -543,15 +539,15 @@ fn render_template(template: &str, input: &HashMap<String, DataValue>) -> String
 }
 
 /// Registry that resolves an agent's `tool_ids` and `llm_kind` against constructed instances,
-/// and builds runnable [`YamlAgent`]s (`YamlAgentTool`s) from YAML definitions.
+/// and builds runnable [`DeclarativeAgent`]s (`DeclarativeAgentTool`s) from agent definitions.
 #[derive(Default)]
-pub struct YamlAgentHost {
+pub struct AgentHost {
     tools: HashMap<String, Arc<dyn Tool>>,
     graph_tools: Vec<Arc<dyn Tool>>,
     llms: HashMap<String, Arc<dyn LLMBase>>,
 }
 
-impl YamlAgentHost {
+impl AgentHost {
     pub fn new() -> Self {
         Self::default()
     }
@@ -605,12 +601,12 @@ impl YamlAgentHost {
         self.tools.keys().cloned().collect()
     }
 
-    pub fn load_definition(&self, id: &str) -> Result<YamlAgentDefinition> {
+    pub fn load_definition(&self, id: &str) -> Result<AgentDefinition> {
         load_agent_definition(id, &self.available_tool_ids())
     }
 
     /// Builds an agent from an already-parsed definition without registering it as a tool.
-    pub fn build_definition(&self, definition: YamlAgentDefinition) -> Result<YamlAgent> {
+    pub fn build_definition(&self, definition: AgentDefinition) -> Result<DeclarativeAgent> {
         let llm = self
             .llms
             .get(definition.llm_kind.as_str())
@@ -637,18 +633,18 @@ impl YamlAgentHost {
         } else {
             Vec::new()
         };
-        YamlAgent::new(definition, llm, tools, graph_tools)
+        DeclarativeAgent::new(definition, llm, tools, graph_tools)
     }
 
-    /// Builds an agent from its YAML definition without registering it as a tool.
-    pub fn build(&self, id: &str) -> Result<YamlAgent> {
+    /// Builds an agent from its stored definition without registering it as a tool.
+    pub fn build(&self, id: &str) -> Result<DeclarativeAgent> {
         self.build_definition(self.load_definition(id)?)
     }
 
     /// Builds an agent and registers it as a callable tool under its id.
     pub fn publish(&mut self, id: &str) -> Result<Arc<dyn Tool>> {
         let agent = Arc::new(self.build(id)?);
-        let tool: Arc<dyn Tool> = Arc::new(YamlAgentTool::new(Arc::clone(&agent)));
+        let tool: Arc<dyn Tool> = Arc::new(DeclarativeAgentTool::new(Arc::clone(&agent)));
         self.tools.insert(id.to_string(), Arc::clone(&tool));
         Ok(tool)
     }
@@ -666,8 +662,8 @@ impl YamlAgentHost {
     }
 }
 
-pub struct YamlAgentTool {
-    agent: Arc<YamlAgent>,
+pub struct DeclarativeAgentTool {
+    agent: Arc<DeclarativeAgent>,
 }
 
 /// Stand-in for a tool id whose backing resource is unavailable; every call returns `reason`.
@@ -717,14 +713,14 @@ impl FunctionTool for DisabledToolSpec {
         Ok(arguments)
     }
 }
-impl YamlAgentTool {
-    pub fn new(agent: Arc<YamlAgent>) -> Self {
+impl DeclarativeAgentTool {
+    pub fn new(agent: Arc<DeclarativeAgent>) -> Self {
         Self { agent }
     }
 }
-impl Tool for YamlAgentTool {
+impl Tool for DeclarativeAgentTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
-        Arc::new(YamlAgentToolSpec {
+        Arc::new(DeclarativeAgentToolSpec {
             definition: self.agent.definition.clone(),
         })
     }
@@ -763,10 +759,10 @@ fn agent_input_from_tool_arguments(
 }
 
 #[derive(Debug)]
-struct YamlAgentToolSpec {
-    definition: YamlAgentDefinition,
+struct DeclarativeAgentToolSpec {
+    definition: AgentDefinition,
 }
-impl FunctionTool for YamlAgentToolSpec {
+impl FunctionTool for DeclarativeAgentToolSpec {
     fn name(&self) -> &str {
         &self.definition.id
     }
@@ -823,8 +819,8 @@ mod tests {
             .collect()
     }
 
-    fn sample_definition(id: &str) -> YamlAgentDefinition {
-        YamlAgentDefinition {
+    fn sample_definition(id: &str) -> AgentDefinition {
+        AgentDefinition {
             id: id.to_string(),
             name: "Memory".to_string(),
             description: String::new(),
@@ -834,7 +830,7 @@ mod tests {
             system_prompt: String::new(),
             user_prompt: None,
             prompt_parts: vec![],
-            output_mode: YamlAgentOutputMode::JsonPorts,
+            output_mode: AgentOutputMode::JsonPorts,
             llm_kind: default_llm_kind(),
             progress_message: None,
             include_graph_tools: false,
@@ -847,7 +843,7 @@ mod tests {
     fn definition_round_trips_through_yaml() {
         let definition = sample_definition("memory");
         let yaml = serde_yaml::to_string(&definition).unwrap();
-        let parsed: YamlAgentDefinition = serde_yaml::from_str(&yaml).unwrap();
+        let parsed: AgentDefinition = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed, definition);
         parsed.validate(&available_tools()).unwrap();
     }
@@ -855,8 +851,8 @@ mod tests {
     #[test]
     fn legacy_definition_without_new_fields_parses() {
         let yaml = "id: memory\nname: Memory\nsystem_prompt: hi\ntool_ids: [search_memory]\n";
-        let parsed: YamlAgentDefinition = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(parsed.output_mode, YamlAgentOutputMode::JsonPorts);
+        let parsed: AgentDefinition = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(parsed.output_mode, AgentOutputMode::JsonPorts);
         assert!(parsed.user_prompt.is_none());
         parsed.validate(&available_tools()).unwrap();
     }
@@ -929,9 +925,9 @@ mod tests {
 
     #[test]
     fn prompt_parts_match_on_input_value() {
-        let definition = YamlAgentDefinition {
+        let definition = AgentDefinition {
             user_prompt: Some("{chat_context}".to_string()),
-            prompt_parts: vec![YamlAgentPromptPart {
+            prompt_parts: vec![AgentPromptPart {
                 port: "operation".to_string(),
                 equals: Some("search_memory".to_string()),
                 template: "\nSEARCH".to_string(),

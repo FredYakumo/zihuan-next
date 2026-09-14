@@ -234,7 +234,7 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
             tools.push(Box::new(ImageUnderstandTool::new(context.image_media.clone(), image_llm)));
         }
         if let Some(resources) = &self.memory_resources {
-            let mut host = zihuan_core::agent::yaml_agent::YamlAgentHost::new();
+            let mut host = zihuan_core::agent::declarative_agent::AgentHost::new();
             register_memory_tools(&mut host, resources.with_llm(Arc::clone(&context.llm)));
             host.register_llm(zihuan_core::agent::LLM_KIND_MAIN, Arc::clone(&context.llm));
             if let Some(tool) = host.publish_logged("memory_agent") {

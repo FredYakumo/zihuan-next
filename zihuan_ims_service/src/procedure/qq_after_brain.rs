@@ -7,10 +7,10 @@ use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
 };
 
+use super::natural_language_reply::{AfterBrainAgent, QqReplyReviewRequest, QqReplyReviewResult};
 use super::qq_brain::QqBrainOutput;
 use super::run_blocking;
 use crate::qq_chat::logging::QqChatTaskTrace;
-use super::natural_language_reply::{AfterBrainAgent, QqReplyReviewRequest, QqReplyReviewResult};
 
 /// Inputs of the QQ after-brain procedure (reply review and rewrite).
 ///

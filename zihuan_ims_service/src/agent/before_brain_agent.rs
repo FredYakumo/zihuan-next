@@ -5,9 +5,9 @@ use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatEmotionDimensionConfig;
 use async_trait::async_trait;
 use log::{info, warn};
+use zihuan_core::agent::declarative_agent::AgentHost;
 use zihuan_core::agent::tools::memory_tools::register_memory_tools;
 use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason};
-use zihuan_core::agent::yaml_agent::YamlAgentHost;
 use zihuan_core::agent::{Agent, AgentContext, LLM_KIND_MAIN};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
@@ -286,7 +286,7 @@ fn run_preprompt(
     {
         ctx.trace
             .record_graph_phase("名词处理", serde_json::json!({"status": "preprompt"}));
-        let mut host = YamlAgentHost::new();
+        let mut host = AgentHost::new();
         register_memory_tools(&mut host, resources);
         host.register_llm(LLM_KIND_MAIN, Arc::clone(ctx.llm));
         if let Some(tool) = host.publish_logged(DEFAULT_TOOL_MEMORY_AGENT) {

@@ -69,8 +69,8 @@ async fn main() {
 
     let args = Args::parse();
 
-    if let Err(error) = zihuan_core::agent::yaml_agent::seed_builtin_agents() {
-        error!("Failed to seed default YAML agents: {error}");
+    if let Err(error) = zihuan_core::agent::declarative_agent::seed_builtin_agents() {
+        error!("Failed to seed default agent definitions: {error}");
     }
 
     if let Err(error) = zihuan_core::scheduler::init_script_jobs() {

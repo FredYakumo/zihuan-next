@@ -4,8 +4,8 @@ use chrono::{Duration, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::agent::declarative_agent::AgentHost;
 use crate::agent::tools::Tool;
-use crate::agent::yaml_agent::YamlAgentHost;
 use crate::error::{Error, Result};
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::model_inference::llm::llm_base::LLMBase;
@@ -46,9 +46,9 @@ impl ListMemoryKeysTool {
     }
 }
 
-/// Registers the built-in memory tools on a [`YamlAgentHost`] under the ids referenced by the
-/// `memory_agent` YAML definition.
-pub fn register_memory_tools(host: &mut YamlAgentHost, resources: MemoryAgentResources) {
+/// Registers the built-in memory tools on an [`AgentHost`] under the ids referenced by the
+/// `memory_agent` definition.
+pub fn register_memory_tools(host: &mut AgentHost, resources: MemoryAgentResources) {
     host.register_tool("list_memory_keys", Arc::new(ListMemoryKeysTool::new(resources.clone())));
     host.register_tool("search_memory", Arc::new(SearchMemoryTool::new(resources.clone())));
     host.register_tool("update_memory", Arc::new(RememberMemoryTool::new(resources)));
