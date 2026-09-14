@@ -1,29 +1,28 @@
 # Procedure
 
-Procedure 是 RoleService 内部固定生命周期点的处理单元，用于完成主推理（BrainAgent）以外的额外处理与副作用。
+Procedure 是 RoleService 在处理一次事件时的处理单元。一次处理从收到事件开始，到把结果交回渠道结束；中间除生命周期管理以外的每一件事——准备上下文、主推理、主推理之后的收尾——都是一个 Procedure。
 
-RoleService 的概念性顺序固定为：
+把这些处理统一称为 Procedure，是为了让它们共用同一条处理链、同一套执行和日志规则。链上不需要为「主推理」和「额外处理」维护两套机制。
+
+## 处理链
+
+一次处理的 Procedure 串成一条链，按顺序执行：
 
 ```text
-Transport -> BeforeBrain Procedures -> BrainAgent -> AfterBrain Procedures -> Transport
+收到事件 -> 推理前处理 -> 主推理 -> 推理后处理 -> 交回结果
 ```
 
-## BeforeBrain Procedure
+顺序就是链的顺序，没有额外的层级。链上的每个位置代表处理过程中的一个固定节点：主推理之前、主推理本身、主推理之后。
 
-BeforeBrain Procedure 在主 Brain 执行前运行。当前实现包括：
+主推理本身也是一个 Procedure。因此链上只有一种处理单元，任何一个 RoleService 都可以替换自己的主推理，或者在某一段挂上自己的处理，链的执行方式都不变；链上的各个处理之间也不需要互相了解，它们各自只关心自己拿到的输入和要产出的结果。
 
-- QQ 的 `qq_before_brain`（BeforeBrainAgent）：记忆召回、情绪状态更新、Dream 记忆候选读取和最近消息查询，产出注入主推理 prompt 的上下文块。
-- Workspace 的会话命名（`workspace_session_title`）：新会话的首条消息由 Agent编排模型生成会话标题，作为该会话在会话列表中的名字。
+## 运行方式
 
-## AfterBrain Procedure
+Procedure 有两种运行方式：
 
-AfterBrain Procedure 在主 Brain 产生候选回复后执行验证和必要的改写。QQ 的 `qq_after_brain`（AfterBrainAgent）额外保护 QQ 媒体占位符与发送协议；其他 RoleService 可在相同的固定后置位置执行自己的渠道约束。
+- **阻塞**：顺序执行，它的结果会参与后续判断，出错则整次处理失败。
+- **后台**：放到后台跑，不等待、不阻塞主流程。它的结果只通过自身产生的影响体现，出错只记录日志。
 
-## 执行方式
+判断标准是这件事的结果是否影响这次给用户的答复。影响答复的用阻塞，只是附带做的事用后台。
 
-Procedure 按执行方式分为两类：
-
-- `Blocking`：在管道内同步执行，结果返回给调用方参与后续决策（如 QQ 的回复审查）。
-- `Background`：后台异步执行，失败仅记录日志，不阻塞主推理（如 Workspace 的会话命名）。
-
-所有 RoleService 中除主推理以外的额外处理与副作用都必须实现为 procedure——即 `zihuan_core::role::procedure` 的 `Procedure` trait。trait 锚定了 procedure 的执行流程：实现方只提供 `run()`，所有 procedure 统一经由 trait 的 `execute()` 锚点执行（统一开始/完成/失败日志），执行器不会绕过该锚点直接调用 `run()`。每个 procedure 的代码放在对应 RoleService crate 的 `procedure` 模块下，以 procedure 的名字命名 `.rs` 文件。
+每次处理用哪些 Procedure，由当次场景决定。一个 RoleService 只需要关心「这次要用哪些处理」，不必到处写分支判断。
