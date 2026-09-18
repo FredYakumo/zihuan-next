@@ -188,7 +188,7 @@ export function openTaskManagerDialog(store: TaskManagerStore): void {
       });
       actionCell.appendChild(logBtn);
 
-      if (task.is_running && task.task_type !== "agent_service") {
+      if (task.is_running && task.task_type !== "agent_service" && task.task_type !== "scheduled_job") {
         const stopBtn = document.createElement("button");
         stopBtn.className = "task-action-btn danger";
         stopBtn.textContent = "结束";

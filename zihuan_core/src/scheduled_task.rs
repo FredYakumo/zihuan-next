@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
 
+/// Where a scheduled task stands between being written and being finished: still waiting,
+/// being run, or already settled.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ScheduledTaskStatus {
@@ -15,6 +17,8 @@ pub enum ScheduledTaskStatus {
     Cancelled,
 }
 
+/// One planned execution of a job at a fixed time. The record is written when the task is
+/// scheduled, updated with the outcome once it runs, and kept afterwards as history.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduledTaskEntry {
     pub id: String,

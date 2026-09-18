@@ -239,7 +239,17 @@ pub fn build_router(
                         .post(scheduled_tasks::cancel_scheduled_task),
                 ),
         )
-        .push(Router::with_path("scheduler/jobs").get(scheduler::list_scheduler_jobs))
+        .push(
+            Router::with_path("scheduler/jobs")
+                .get(scheduler::list_scheduler_jobs)
+                .push(
+                    Router::with_path("script")
+                        .get(scheduler::get_scheduler_job_script)
+                        .post(scheduler::save_scheduler_job_script)
+                        .delete(scheduler::delete_scheduler_job_script),
+                )
+                .push(Router::with_path("reload").post(scheduler::reload_scheduler_jobs)),
+        )
         // File I/O (not graph-scoped)
         .push(Router::with_path("file/open").post(file_io::open_file))
         .push(Router::with_path("file/upload").post(file_io::upload_graph))

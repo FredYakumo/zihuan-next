@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { promises as fsPromises } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createZihuanSdk, hydrateResources } from "./zihuan_sdk.mjs";
+import { createJobSdk, createZihuanSdk, hydrateResources } from "./zihuan_sdk.mjs";
 
 const engineDirectory = path.dirname(fileURLToPath(import.meta.url));
 const nodeDirectory = path.resolve(engineDirectory, "../dag_nodes");
@@ -159,7 +159,7 @@ const toolModules = new Map();
 
 /**
  * Executes a tool-style script request: imports the script on demand, calls the exported
- * entry with the request object plus a `zihuan` SDK instance, and writes the `{ response }`
+ * entry with the request object plus a `JobSdk` instance, and writes the `{ response }`
  * envelope. Script errors are reported through the `{ ok: false, error }` contract instead
  * of tearing down the worker.
  *
@@ -178,7 +178,7 @@ async function executeTool(tool) {
         if (typeof entry !== "function") {
             throw new Error(`script ${tool.script_path} does not export function: ${tool.entry}`);
         }
-        const result = await entry(tool, createZihuanSdk(hostCall));
+        const result = await entry(tool, createJobSdk(hostCall));
         process.stdout.write(`${JSON.stringify({ response: result })}\n`);
     } catch (error) {
         process.stdout.write(`${JSON.stringify({ response: { ok: false, error: String(error) } })}\n`);

@@ -9,6 +9,7 @@
   },
   "include": [
     "./**/*.mjs",
-    "../dag_nodes/**/*.mjs"
+    "../dag_nodes/**/*.mjs",
+    "../scheduled_jobs/**/*.mjs"
   ]
 }

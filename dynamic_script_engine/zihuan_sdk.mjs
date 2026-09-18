@@ -1,5 +1,7 @@
 /** @typedef {import("./zihuan_sdk.d.ts").NodeDefinition} NodeDefinition */
 /** @typedef {import("./zihuan_sdk.d.ts").ZihuanSdk} ZihuanSdkContract */
+/** @typedef {import("./zihuan_sdk.d.ts").JobHost} JobHostContract */
+/** @typedef {import("./zihuan_sdk.d.ts").JobSdk} JobSdkContract */
 
 /**
  * Declares a static or dynamically resolved port on a script node.
@@ -221,4 +223,101 @@ export class ZihuanSdk {
  */
 export function createZihuanSdk(request) {
   return new ZihuanSdk(request);
+}
+
+/**
+ * Typed facade over the scheduler kernel's named host capabilities.
+ *
+ * Scheduled job scripts reach the host only through this class, which names the
+ * same capabilities the kernel dispatches. A job script either receives an
+ * instance as its second argument, or builds its own from an injected
+ * `ZihuanSdk` via `new JobSdk(zihuan.host)`.
+ *
+ * @implements {JobSdkContract}
+ */
+export class JobSdk {
+  /**
+   * @param {JobHostContract} host Host gateway exposing `call(method, params)`.
+   */
+  constructor(host) {
+    this._call = async (method, params = {}) => hydrateResources(await host.call(method, params));
+    Object.freeze(this);
+  }
+
+  /**
+   * Reads one sender's conversation history.
+   *
+   * @param {string} senderId Sender whose history is loaded.
+   * @returns {Promise<import("./zihuan_sdk.d.ts").JobMessage[]>} Role/text messages in order.
+   */
+  loadHistory(senderId) {
+    return this._call("history.load", { sender_id: senderId });
+  }
+
+  /**
+   * Drops one sender's stored conversation history.
+   *
+   * @param {string} senderId Sender whose history is cleared.
+   * @returns {Promise<null>} Nothing on success.
+   */
+  clearHistory(senderId) {
+    return this._call("history.clear", { sender_id: senderId });
+  }
+
+  /**
+   * Reads the latest persisted Dream memory for one sender.
+   *
+   * @param {string} agentId Agent owning the memory.
+   * @param {string} senderId Sender whose memory is read.
+   * @returns {Promise<string | null>} Latest memory content, or null when absent.
+   */
+  latestDreamMemory(agentId, senderId) {
+    return this._call("dream_memory.latest", { agent_id: agentId, sender_id: senderId });
+  }
+
+  /**
+   * Persists one consolidated Dream memory snapshot for one sender.
+   *
+   * @param {string} agentId Agent owning the memory.
+   * @param {string} senderId Sender the memory belongs to.
+   * @param {number} chars Character count of the transcript the memory was built from.
+   * @param {string} content Consolidated memory text.
+   * @returns {Promise<null>} Nothing on success.
+   */
+  insertDreamMemory(agentId, senderId, chars, content) {
+    return this._call("dream_memory.insert", { agent_id: agentId, sender_id: senderId, chars, content });
+  }
+
+  /**
+   * Runs one inline sub-agent definition and returns its text result.
+   *
+   * @param {string} definition Agent definition as YAML text.
+   * @param {Record<string, string>} [inputs={}] String inputs bound to the definition's input ports.
+   * @returns {Promise<string>} The sub-agent's text output.
+   */
+  runSubagent(definition, inputs = {}) {
+    return this._call("subagent.run", { definition, inputs });
+  }
+
+  /**
+   * Forwards one log line to the scheduler host.
+   *
+   * @param {string} message Line to log.
+   * @param {"info" | "warn" | "error"} [level="info"] Log level.
+   * @returns {Promise<null>} Nothing on success.
+   */
+  log(message, level = "info") {
+    return this._call("log", { level, message });
+  }
+}
+
+/**
+ * Creates the scheduler capability facade for one job execution.
+ *
+ * @param {(method: string, params?: Record<string, unknown>) => Promise<unknown>} request
+ * Function that transports a named scheduler capability call to the Rust host.
+ * @returns {JobSdk} Frozen scheduler capability facade.
+ */
+export function createJobSdk(request) {
+  return new JobSdk({ call: request });
 }

@@ -27,7 +27,7 @@
             <div class="task-cell-title">
               <strong>{{ row.graph_name }}</strong>
               <t-tag variant="light" :theme="row.task_type !== 'node_graph' ? 'primary' : 'default'">
-                {{ row.task_type === "workspace_chat" ? "Workspace 对话" : row.task_type === "agent_service" ? "RoleService 工具" : "节点图" }}
+                {{ taskTypeLabel(row.task_type) }}
               </t-tag>
             </div>
             <div class="mono task-cell-id">{{ row.id }}</div>
@@ -44,7 +44,12 @@
             <t-tag variant="light" :theme="statusTagTheme(row.status)">{{ row.status }}</t-tag>
           </template>
           <template #actions="{ row }">
-            <t-button variant="text" size="small" :disabled="!row.is_running || row.task_type === 'agent_service'" @click="stopTask(row.id)">
+            <t-button
+              variant="text"
+              size="small"
+              :disabled="!row.is_running || row.task_type === 'agent_service' || row.task_type === 'scheduled_job'"
+              @click="stopTask(row.id)"
+            >
               停止
             </t-button>
             <t-button variant="text" size="small" :disabled="!row.can_rerun" @click="rerunTask(row.id)">重跑</t-button>
@@ -52,7 +57,7 @@
             <t-button v-if="row.task_type === 'workspace_chat'" variant="text" size="small" :disabled="!row.chat_session_id" @click="openChatSession(row)">
               打开对话
             </t-button>
-            <t-button v-else variant="text" size="small" :disabled="row.task_type !== 'agent_service' || !row.file_path" @click="openTaskGraph(row.id)">
+            <t-button v-else-if="row.task_type !== 'scheduled_job'" variant="text" size="small" :disabled="row.task_type !== 'agent_service' || !row.file_path" @click="openTaskGraph(row.id)">
               打开节点图
             </t-button>
             <t-button variant="text" theme="danger" size="small" @click="deleteSingleTask(row)">删除</t-button>
@@ -165,6 +170,17 @@ const {
 } = useTasks();
 
 const selectedRowKeys = computed(() => [...selectedTaskIds.value]);
+
+const TASK_TYPE_LABELS: Record<TaskEntry["task_type"], string> = {
+  node_graph: "节点图",
+  agent_service: "RoleService 工具",
+  workspace_chat: "Workspace 对话",
+  scheduled_job: "计划任务",
+};
+
+function taskTypeLabel(taskType: TaskEntry["task_type"]) {
+  return TASK_TYPE_LABELS[taskType] ?? taskType;
+}
 
 function onSelectChange(keys: Array<string | number>) {
   selectedTaskIds.value = new Set(keys as string[]);

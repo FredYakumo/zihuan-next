@@ -30,6 +30,7 @@ fn message(value: impl Into<String>) -> EngineError {
     EngineError::Message(value.into())
 }
 
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[serde(rename_all = "snake_case")]
 pub enum ScriptLanguage {
@@ -127,6 +128,14 @@ impl From<NodeRuntimeKind> for NodeRuntimeConfig {
     }
 }
 
+/// Environment pinned on every script runtime process.
+///
+/// Runners report manifests and results as JSON on stdout. A Python interpreter on Windows
+/// defaults its stdio encoding to the console code page, so non-ASCII text comes back as
+/// bytes that are not valid UTF-8, and the host parses those streams strictly. Pinning UTF-8
+/// on the child keeps the two sides agreeing on encoding regardless of the host's locale.
+const SCRIPT_RUNTIME_ENV: [(&str, &str); 2] = [("PYTHONUTF8", "1"), ("PYTHONIOENCODING", "utf-8")];
+
 #[derive(Debug, Clone)]
 pub struct RuntimeCommand {
     pub program: PathBuf,
@@ -136,6 +145,7 @@ impl RuntimeCommand {
     pub fn to_command(&self) -> Command {
         let mut command = Command::new(&self.program);
         command.args(&self.args);
+        command.envs(SCRIPT_RUNTIME_ENV);
         command
     }
     pub fn display(&self) -> String {
@@ -290,6 +300,7 @@ async fn timed_output(command: Command, label: &str) -> Result<std::process::Out
     let directory = command.get_current_dir().map(PathBuf::from);
     let mut command = tokio::process::Command::new(program);
     command.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    command.envs(SCRIPT_RUNTIME_ENV);
     if let Some(directory) = directory {
         command.current_dir(directory);
     }
@@ -463,8 +474,20 @@ pub fn load_job_catalog(
                     .and_then(|value| value.as_array().cloned())
                     .unwrap_or_default();
                 for job in jobs {
-                    let entry: JobCatalogEntry = serde_json::from_value(job)?;
-                    catalog.jobs.push(entry);
+                    // A malformed manifest is that script's own problem: report it and keep the
+                    // other jobs, so one broken script cannot abort the whole catalog.
+                    let script = job
+                        .get("script")
+                        .and_then(Value::as_str)
+                        .unwrap_or("<unknown>")
+                        .to_string();
+                    match serde_json::from_value::<JobCatalogEntry>(job) {
+                        Ok(entry) => catalog.jobs.push(entry),
+                        Err(error) => catalog.diagnostics.push(ScriptDiagnostic {
+                            language,
+                            message: format!("{script} 的 job 清单无效: {error}"),
+                        }),
+                    }
                 }
             }
             Ok(_) => return Err(message(format!("{language:?} job 目录响应无效"))),

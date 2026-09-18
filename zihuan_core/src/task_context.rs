@@ -67,6 +67,16 @@ pub struct AgentTaskRequest {
     pub task_db_connection_id: Option<String>,
 }
 
+/// One firing of a scheduled job, described for the task manager. The scheduler kernel owns
+/// the `scheduled_task` row lifecycle; this request only mirrors the run into task history.
+#[derive(Debug, Clone)]
+pub struct ScheduledJobTaskRequest {
+    pub task_name: String,
+    pub source_service: String,
+    /// What triggered the run, e.g. the sender whose silence fired a Dream job.
+    pub triggered_by: Option<String>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct AgentTaskResult {
     pub status: Option<AgentTaskStatus>,
@@ -74,6 +84,8 @@ pub struct AgentTaskResult {
     pub error_message: Option<String>,
 }
 
+/// The handle a caller holds on a task it started. The runner reports the outcome through it,
+/// and that report is what ends the task.
 pub struct AgentTaskHandle {
     pub task_id: String,
     finish: Mutex<Option<Box<dyn FnOnce(AgentTaskResult) + Send + 'static>>>,
@@ -97,7 +109,7 @@ impl AgentTaskHandle {
     }
 }
 
-/// Read-only snapshot of a background task's state.
+/// snapshot of a background task's state.
 ///
 /// Returned by [`AgentTaskRuntime::query_task`] and
 /// [`AgentTaskRuntime::list_tasks`]. The `progress` field accumulates
@@ -124,6 +136,10 @@ pub trait AgentTaskRuntime: Send + Sync {
         task_id: &str,
         runner: Box<dyn FnOnce(Arc<AgentTaskHandle>) + Send + 'static>,
     ) -> bool;
+
+    /// Record one scheduled-job firing as a task. The caller owns the job execution and must
+    /// call [`AgentTaskHandle::finish`] with the outcome when the run ends.
+    fn start_scheduled_job_task(&self, request: ScheduledJobTaskRequest) -> Arc<AgentTaskHandle>;
 
     /// Spawn a runner function as a background task managed by this runtime.
     ///

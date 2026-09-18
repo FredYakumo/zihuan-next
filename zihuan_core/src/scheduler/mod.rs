@@ -20,8 +20,15 @@ use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::LLMMessage;
 use crate::runtime::block_async;
 use crate::scheduled_task::{self, ScheduledTaskEntry, ScheduledTaskStatus};
+use crate::task_context::{
+    scope_task_id, AgentTaskResult, AgentTaskStatus, ScheduledJobTaskRequest,
+};
 
-pub use job_script::{ensure_default_jobs, init_script_jobs, JobManifest, DREAM_TASK_NAME};
+pub use job_script::{
+    builtin_schedulers, delete_job_script, ensure_default_jobs, init_script_jobs,
+    is_builtin_scheduler, is_builtin_script, read_job_script, reload_script_jobs, save_job_script,
+    BuiltinScheduler, JobManifest, SavedJobScript, DREAM_TASK_NAME,
+};
 
 /// How often the kernel scans for due tasks.
 const TICK_SECONDS: u64 = 5;
@@ -115,6 +122,19 @@ pub fn register_job(manifest: JobManifest, job: Arc<dyn SchedulerJob>) {
     log::info!("[Scheduler] job registered: {task_name}");
 }
 
+/// Drops every registered job body, so a directory re-scan can rebuild the set from scratch
+/// without tripping the duplicate-`task_name` error in [`register_job`]. Service registrations
+/// are untouched: they describe which resources exist, not which jobs do.
+pub(crate) fn clear_jobs() {
+    let mut state = registry().write().unwrap();
+    let removed = state.jobs.len();
+    state.jobs.clear();
+    state.manifests.clear();
+    if removed > 0 {
+        log::info!("[Scheduler] cleared {removed} registered job(s) for reload");
+    }
+}
+
 /// Starts the dispatch loop; idempotent. Pending tasks that came due while the process was
 /// down are picked up on the first ticks after their service re-registers.
 pub fn start_scheduler_kernel() {
@@ -166,15 +186,35 @@ async fn tick() {
                     continue;
                 }
             }
+            // Mirror the run into task history so it shows up in the task manager. The
+            // `scheduled_task` row stays authoritative for scheduling and crash recovery.
+            let task_handle = match crate::command::global_task_runtime() {
+                Some(runtime) => Some(runtime.start_scheduled_job_task(ScheduledJobTaskRequest {
+                    task_name: task.task_name.clone(),
+                    source_service: task.source_service.clone(),
+                    triggered_by: task.triggered_by.clone(),
+                })),
+                None => {
+                    log::warn!(
+                        "[Scheduler] task runtime unavailable; scheduled task '{}' will not be recorded as a task",
+                        task.id
+                    );
+                    None
+                }
+            };
             let context = JobRunContext {
                 task: task.clone(),
                 resources: Arc::clone(&resources),
             };
             let connection = resources.connection.clone();
             let task_id = task.id.clone();
+            let job_task_id = task_handle.as_ref().map(|handle| handle.task_id.clone());
             tokio::spawn(async move {
                 let outcome = tokio::task::spawn_blocking(move || {
-                    std::panic::catch_unwind(AssertUnwindSafe(|| job.run(&context)))
+                    std::panic::catch_unwind(AssertUnwindSafe(|| match &job_task_id {
+                        Some(task_id) => scope_task_id(task_id.clone(), || job.run(&context)),
+                        None => job.run(&context),
+                    }))
                 })
                 .await;
                 let (status, summary) = match outcome {
@@ -191,11 +231,29 @@ async fn tick() {
                         (ScheduledTaskStatus::Failed, Some(format!("job worker failed: {error}")))
                     }
                 };
-                if let Err(error) =
-                    scheduled_task::finish_task(&connection, &task_id, status, summary.as_deref())
-                        .await
+                if let Err(error) = scheduled_task::finish_task(
+                    &connection,
+                    &task_id,
+                    status.clone(),
+                    summary.as_deref(),
+                )
+                .await
                 {
                     log::warn!("[Scheduler] failed to finish task {task_id}: {error}");
+                }
+                if let Some(handle) = task_handle {
+                    handle.finish(match status {
+                        ScheduledTaskStatus::Failed => AgentTaskResult {
+                            status: Some(AgentTaskStatus::Failed),
+                            result_summary: None,
+                            error_message: summary,
+                        },
+                        _ => AgentTaskResult {
+                            status: Some(AgentTaskStatus::Success),
+                            result_summary: summary,
+                            error_message: None,
+                        },
+                    });
                 }
             });
         }
@@ -212,6 +270,7 @@ fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
+/// One registered job, as reported for diagnostics.
 #[derive(Debug, Serialize)]
 pub struct SchedulerJobStatus {
     pub task_name: String,
@@ -219,21 +278,26 @@ pub struct SchedulerJobStatus {
     pub entry: String,
     pub description: String,
     pub language: String,
+    /// True when the job ships with the application rather than being operator-provided.
+    pub builtin: bool,
 }
 
+/// A service that has registered its job resources with the scheduler. A service runs only the
+/// tasks stored in its own database.
 #[derive(Debug, Serialize)]
 pub struct SchedulerServiceStatus {
     pub source_service: String,
     pub agent_id: String,
 }
 
+/// snapshot of the scheduler registry.
 #[derive(Debug, Serialize)]
 pub struct SchedulerStatus {
     pub jobs: Vec<SchedulerJobStatus>,
     pub services: Vec<SchedulerServiceStatus>,
 }
 
-/// Read-only snapshot of the scheduler registry for diagnostics.
+/// snapshot of the scheduler registry for diagnostics.
 pub fn status() -> SchedulerStatus {
     let state = registry().read().unwrap();
     let jobs = state
@@ -245,6 +309,7 @@ pub fn status() -> SchedulerStatus {
             entry: manifest.entry.clone(),
             description: manifest.description.clone(),
             language: script_language_name(Path::new(&manifest.script)),
+            builtin: is_builtin_scheduler(&manifest.task_name),
         })
         .collect();
     let services = state

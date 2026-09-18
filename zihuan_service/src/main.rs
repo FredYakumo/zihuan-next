@@ -82,6 +82,9 @@ async fn main() {
     let broadcast = api::ws::create_broadcast();
     log_forwarder::set_app_state(Arc::clone(&state));
     log_forwarder::set_broadcast(broadcast.clone());
+    // Register the task runtime before the first scheduler tick so scheduled job runs are
+    // recorded as tasks even when no role service has been started yet.
+    api::config::role_services::build_agent_task_runtime(Arc::clone(&state), broadcast.clone());
 
     startup_recover_orphan_tasks(&state).await;
     spawn_task_ttl_cleanup(Arc::clone(&state));

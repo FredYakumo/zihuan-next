@@ -170,7 +170,7 @@ export interface ValidationResult {
 
 export interface TaskEntry {
   id: string;
-  task_type: "node_graph" | "agent_service" | "workspace_chat";
+  task_type: "node_graph" | "agent_service" | "workspace_chat" | "scheduled_job";
   graph_name: string;
   graph_session_id: string;
   chat_session_id: string | null;
@@ -194,6 +194,32 @@ export interface TaskLogEntry {
   message: string;
 }
 
+
+export interface SchedulerJobStatus {
+  task_name: string;
+  script: string;
+  entry: string;
+  description: string;
+  language: string;
+  builtin: boolean;
+}
+
+
+export interface SchedulerServiceStatus {
+  source_service: string;
+  agent_id: string;
+}
+
+/** Read-only snapshot of the scheduler registry. */
+export interface SchedulerStatus {
+  jobs: SchedulerJobStatus[];
+  services: SchedulerServiceStatus[];
+}
+
+/**
+ * One planned execution of a job at a fixed time. The record is written when the task is
+ * scheduled, updated with the outcome once it runs, and kept afterwards as history.
+ */
 export interface ScheduledTaskEntry {
   id: string;
   task_name: string;

@@ -27,7 +27,7 @@ use zihuan_core::storage::{
 };
 use zihuan_core::task_context::{
     AgentTaskHandle, AgentTaskInfo, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
-    AgentTaskStatus,
+    AgentTaskStatus, ScheduledJobTaskRequest,
 };
 
 use log::{info, warn};
@@ -305,6 +305,64 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
             runner(handle);
         });
         true
+    }
+
+    fn start_scheduled_job_task(&self, request: ScheduledJobTaskRequest) -> Arc<AgentTaskHandle> {
+        let task_id = self.state.tasks.lock().unwrap().add_scheduled_job_task(
+            request.task_name.clone(),
+            request.source_service.clone(),
+            request.triggered_by.clone(),
+        );
+
+        let _ = self.broadcast_tx.send(ServerMessage::TaskStarted {
+            task_id: task_id.clone(),
+            graph_name: request.task_name,
+            graph_session_id: request.source_service,
+        });
+
+        let state = Arc::clone(&self.state);
+        let broadcast_tx = self.broadcast_tx.clone();
+        AgentTaskHandle::new(task_id.clone(), move |result: AgentTaskResult| {
+            let task_status = match result.status.unwrap_or_else(|| {
+                if result.error_message.is_some() {
+                    AgentTaskStatus::Failed
+                } else {
+                    AgentTaskStatus::Success
+                }
+            }) {
+                AgentTaskStatus::Failed => TaskStatus::Failed,
+                AgentTaskStatus::Stopped => TaskStatus::Stopped,
+                _ => TaskStatus::Success,
+            };
+
+            state.tasks.lock().unwrap().finish_task(
+                &task_id,
+                task_status.clone(),
+                result.error_message.clone(),
+                result.result_summary.clone(),
+            );
+
+            match task_status {
+                TaskStatus::Failed => {
+                    let _ = broadcast_tx.send(ServerMessage::TaskFinished {
+                        task_id: task_id.clone(),
+                        success: false,
+                        error: result.error_message,
+                    });
+                }
+                TaskStatus::Stopped => {
+                    let _ =
+                        broadcast_tx.send(ServerMessage::TaskStopped { task_id: task_id.clone() });
+                }
+                _ => {
+                    let _ = broadcast_tx.send(ServerMessage::TaskFinished {
+                        task_id: task_id.clone(),
+                        success: true,
+                        error: None,
+                    });
+                }
+            }
+        })
     }
 
     fn spawn_task(
