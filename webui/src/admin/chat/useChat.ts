@@ -13,6 +13,7 @@ import {
     type ChatHistoryRecord,
     type ChatToolCall,
     type ChatSessionSummary,
+    type TaskEntry,
     type ChatStreamEvent,
     type ChatResponseMetrics,
     type ChatMessagePart,
@@ -384,6 +385,10 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     const directoryPickerError = ref("");
     const activeRequestCount = ref(0);
     const sending = computed(() => activeRequestCount.value > 0);
+    // Sessions whose workspace task the dashboard already asked the server to stop, mapped to
+    // the stopped task id. Stopping is only observed between tool iterations, so a cancelled
+    // task keeps reporting `running` for a while; the stop button must not come back meanwhile.
+    const stoppedChatTaskIds = new Map<string, string>();
     let activeStreamController: AbortController | null = null;
     let activeChatTask: { sessionId: string; taskId: string } | null = null;
     let pendingWorkspaceStop: { streamController: AbortController } | null = null;
@@ -1443,6 +1448,25 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     }
 
     /**
+     * Purpose: derive the session's running-task fields from a server task entry.
+     * Function: forget the marker once the task no longer runs and hide tasks the dashboard
+     * already asked to stop, so the stop button does not return while the cancelled turn winds down.
+     */
+    function resolveSessionTaskState(
+        sessionId: string,
+        task: TaskEntry | null | undefined,
+    ): { running_task_id: string | null; task_status: ChatSessionSummary["task_status"] } {
+        if (!task?.is_running) {
+            stoppedChatTaskIds.delete(sessionId);
+            return { running_task_id: null, task_status: null };
+        }
+        if (stoppedChatTaskIds.get(sessionId) === task.id) {
+            return { running_task_id: null, task_status: null };
+        }
+        return { running_task_id: task.id, task_status: task.status };
+    }
+
+    /**
      * Purpose: refresh session metadata and track history updates after workspace chat tasks finish.
      * Function: load sessions and tasks in parallel, map running tasks to sessions,
      * and mark sessions whose tasks have finished for a history refresh.
@@ -1463,11 +1487,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 .filter((task) => task.task_type === "workspace_chat" && task.is_running && task.chat_session_id)
                 .map((task) => [task.chat_session_id as string, task]));
             sessions.value = result.sessions.map((session) => {
-                const task = runningBySession.get(session.session_id);
                 return {
                     ...session,
-                    running_task_id: task?.id ?? null,
-                    task_status: task?.status ?? null,
+                    ...resolveSessionTaskState(session.session_id, runningBySession.get(session.session_id)),
                 };
             });
         } finally {
@@ -1485,8 +1507,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         const session = sessions.value.find((item) => item.session_id === sessionId);
         if (!session) return;
         if (!task && session.task_status === "running") return;
-        session.running_task_id = task?.id ?? null;
-        session.task_status = task?.status ?? null;
+        Object.assign(session, resolveSessionTaskState(sessionId, task));
     }
 
     async function refreshPendingCommandApproval(): Promise<void> {
@@ -2176,6 +2197,11 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 ? { sessionId: event.session_id, taskId: event.task_id }
                 : null;
             if (event.session_id) {
+                if (event.task_id && stoppedChatTaskIds.get(event.session_id) !== event.task_id) {
+                    // A new turn registers a new task, so a marker left over from the previous
+                    // stopped task must not suppress this turn's running state.
+                    stoppedChatTaskIds.delete(event.session_id);
+                }
                 const session = sessions.value.find((item) => item.session_id === event.session_id);
                 if (session && event.task_id) {
                     session.running_task_id = event.task_id;
@@ -2423,6 +2449,14 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 ? { sessionId: activeSessionId.value, taskId: sessionTask.running_task_id }
                 : null;
         if (task) {
+            // The server only observes a stop between tool iterations, so its task keeps
+            // reporting `running` for a while. Hide it locally right away and remember it, so
+            // the stop button turns back into the send button without waiting for the wind-down.
+            stoppedChatTaskIds.set(task.sessionId, task.taskId);
+            if (sessionTask) {
+                sessionTask.running_task_id = null;
+                sessionTask.task_status = null;
+            }
             chat.stop(task.sessionId, task.taskId).catch((error) => {
                 console.warn("Failed to stop Workspace chat task:", error);
             });
