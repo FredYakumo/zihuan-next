@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::role_config::WorkspaceRoleServiceConfig;
 use zihuan_core::agent::resource_provider::{
-    AgentResourceProvider, ConnectionKind, SharedAgentResourceProvider,
+    AgentResourceProvider, AgentConnectionSlot, SharedAgentResourceProvider,
 };
 use zihuan_core::agent::resource_resolver::resolve_local_embedding_model_name;
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
@@ -313,9 +313,9 @@ impl AgentResourceProvider for WorkspaceRoleServiceResources {
         self.config.embedding_model_ref_id.clone()
     }
 
-    fn connection_id(&self, kind: ConnectionKind) -> Option<String> {
+    fn connection_id(&self, kind: AgentConnectionSlot) -> Option<String> {
         match kind {
-            ConnectionKind::WebSearch => self.config.web_search_engine_connection_id.clone(),
+            AgentConnectionSlot::WebSearch => self.config.web_search_engine_connection_id.clone(),
             _ => None,
         }
     }

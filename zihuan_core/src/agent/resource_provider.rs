@@ -1,28 +1,38 @@
 use std::any::Any;
 use std::sync::Arc;
 
-/// 连接类资源种类，由引擎统一识别，具体取值逻辑由业务方实现。
+/// Identifies a connection resource understood by the agent runtime.
+///
+/// Implementations decide how each kind maps to their service configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConnectionKind {
+pub enum AgentConnectionSlot {
     Rdb,
     S3,
     ImageWeaviate,
     WebSearch,
 }
 
-/// Agent 运行时资源契约：引擎（子图工具、脚本节点）只通过该抽象
-/// 获取当前 Agent 的模型与连接资源，不感知具体服务配置类型。
+/// Provides the model and connection resources required by an agent runtime.
 ///
-/// 业务方在需要取回完整配置（如限流规则、情绪维度等引擎无关字段）时，
-/// 通过 [`AgentResourceProvider::as_any`] 下钻到具体类型。
+/// Runtime consumers, such as subgraph tools and script nodes, use this trait
+/// without depending on concrete service configuration types. Business logic
+/// that requires the complete configuration can downcast the provider through
+/// [`AgentResourceProvider::as_any`].
 pub trait AgentResourceProvider: Send + Sync {
-    /// 按用途返回 LLM 引用 ID，业务回退链（如缺省回落主模型）由实现方处理。
+    /// Returns the LLM reference ID for the requested usage.
+    ///
+    /// Implementations are responsible for applying their fallback policy.
     fn llm_ref_id(&self, kind: &str) -> Option<String>;
-    fn embedding_model_ref_id(&self) -> Option<String>;
-    fn connection_id(&self, kind: ConnectionKind) -> Option<String>;
 
-    /// 下钻到具体配置类型，供业务代码取回引擎无关的完整配置。
+    /// Returns the embedding model reference ID.
+    fn embedding_model_ref_id(&self) -> Option<String>;
+
+    /// Returns the connection ID for the requested resource kind.
+    fn connection_id(&self, kind: AgentConnectionSlot) -> Option<String>;
+
+    /// Exposes the concrete provider for business-specific downcasting.
     fn as_any(&self) -> &dyn Any;
 }
 
+///  shared agent resource provider.
 pub type SharedAgentResourceProvider = Arc<dyn AgentResourceProvider>;
