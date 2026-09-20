@@ -10,6 +10,7 @@ import type {
   TaskEntry,
   TaskLogEntry,
   ScheduledTaskEntry,
+  SchedulerStatus,
   HyperParameter,
   GraphVariable,
   GraphMetadata,
@@ -278,6 +279,9 @@ export const tasks = {
 };
 
 export const scheduledTasks = {
+  catalog(): Promise<SchedulerStatus> {
+    return request("GET", "/scheduler/jobs");
+  },
   list(serviceId: string, status?: string): Promise<ScheduledTaskEntry[]> {
     const query = new URLSearchParams({ service_id: serviceId });
     if (status) query.set("status", status);
@@ -285,6 +289,18 @@ export const scheduledTasks = {
   },
   cancel(serviceId: string, taskId: string): Promise<{ ok: boolean }> {
     return request("POST", `/scheduled-tasks/${encodeURIComponent(taskId)}/cancel?service_id=${encodeURIComponent(serviceId)}`, {});
+  },
+  script(script: string): Promise<{ script: string; content: string }> {
+    return request("GET", `/scheduler/jobs/script?script=${encodeURIComponent(script)}`);
+  },
+  saveScript(script: string, content: string): Promise<{ ok: boolean; script: string; task_name: string }> {
+    return request("POST", "/scheduler/jobs/script", { script, content });
+  },
+  deleteScript(script: string): Promise<{ ok: boolean }> {
+    return request("DELETE", `/scheduler/jobs/script?script=${encodeURIComponent(script)}`);
+  },
+  reload(): Promise<{ ok: boolean; count: number }> {
+    return request("POST", "/scheduler/jobs/reload", {});
   },
 };
 
@@ -439,13 +455,27 @@ export interface SubAgentPort {
   required: boolean;
 }
 
+export interface SubAgentPromptPart {
+  port: string;
+  equals?: string | null;
+  template: string;
+}
+
 export interface SubAgentDefinition {
   id: string;
   name: string;
+  description: string;
   builtin: boolean;
   inputs: SubAgentPort[];
   outputs: SubAgentPort[];
   system_prompt: string;
+  user_prompt?: string | null;
+  prompt_parts?: SubAgentPromptPart[];
+  output_mode: "json_ports" | "text";
+  llm_kind: string;
+  progress_message?: string | null;
+  include_graph_tools: boolean;
+  run_duration: "Short" | "Long";
   tool_ids: string[];
 }
 

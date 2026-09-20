@@ -2,10 +2,11 @@ import fs from "node:fs";
 import { promises as fsPromises } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createZihuanSdk, hydrateResources } from "./zihuan_sdk.mjs";
+import { createJobSdk, createZihuanSdk, hydrateResources } from "./zihuan_sdk.mjs";
 
 const engineDirectory = path.dirname(fileURLToPath(import.meta.url));
 const nodeDirectory = path.resolve(engineDirectory, "../dag_nodes");
+const scheduledJobsDirectory = path.resolve(engineDirectory, "../scheduled_jobs");
 const argument = process.argv[2];
 let requestId = 0;
 const pendingHostCalls = new Map();
@@ -75,6 +76,43 @@ async function loadNodes() {
 }
 
 /**
+ * Loads scheduler job manifests from the script paths supplied by the Rust host.
+ *
+ * Directory discovery lives in Rust; a runner only imports the given `.mjs` files and
+ * reports the `job_manifest` they export. Modules that fail to import or lack the export
+ * are reported as diagnostics instead of failing the catalog.
+ *
+ * @param {string[]} paths Job script paths relative to `scheduled_jobs/`, using POSIX separators.
+ * @returns {Promise<{jobs: Record<string, unknown>[], diagnostics: {language: string, message: string}[]}>}
+ */
+async function loadJobs(paths) {
+    const jobs = [];
+    const diagnostics = [];
+    for (const relative of paths) {
+        const file = path.resolve(scheduledJobsDirectory, relative);
+        let module;
+        try {
+            module = await import(pathToFileURL(file).href);
+        } catch (error) {
+            diagnostics.push({ language: "javascript", message: `failed to load ${relative}: ${error.message}` });
+            continue;
+        }
+        const manifest = module.job_manifest;
+        if (!manifest || typeof manifest !== "object") {
+            diagnostics.push({ language: "javascript", message: `${relative} must export a job_manifest object` });
+            continue;
+        }
+        jobs.push({
+            task_name: manifest.task_name,
+            script: relative,
+            entry: manifest.entry ?? "run_job",
+            description: manifest.description ?? "",
+        });
+    }
+    return { jobs, diagnostics };
+}
+
+/**
  * Sends a ZiHuan runtime API request to the Rust host and waits for its matching response.
  *
  * The `--serve` protocol writes the request to stdout. Rust replies on stdin
@@ -109,8 +147,43 @@ function executionContext(request) {
     };
 }
 
-const { nodes, diagnostics } = await loadNodes();
-const nodeByType = new Map(nodes.map((node) => [node.type_id, node]));
+let nodes = [];
+let diagnostics = [];
+let nodeByType = new Map();
+if (argument !== "--jobs-catalog") {
+    ({ nodes, diagnostics } = await loadNodes());
+    nodeByType = new Map(nodes.map((node) => [node.type_id, node]));
+}
+
+const toolModules = new Map();
+
+/**
+ * Executes a tool-style script request: imports the script on demand, calls the exported
+ * entry with the request object plus a `JobSdk` instance, and writes the `{ response }`
+ * envelope. Script errors are reported through the `{ ok: false, error }` contract instead
+ * of tearing down the worker.
+ *
+ * @param {Record<string, unknown>} tool Tool request carrying `script_path` and `entry`.
+ * @returns {Promise<void>} Resolves after the response has been written.
+ */
+async function executeTool(tool) {
+    try {
+        const file = path.resolve(tool.script_path);
+        let module = toolModules.get(file);
+        if (!module) {
+            module = await import(pathToFileURL(file).href);
+            toolModules.set(file, module);
+        }
+        const entry = module[tool.entry];
+        if (typeof entry !== "function") {
+            throw new Error(`script ${tool.script_path} does not export function: ${tool.entry}`);
+        }
+        const result = await entry(tool, createJobSdk(hostCall));
+        process.stdout.write(`${JSON.stringify({ response: result })}\n`);
+    } catch (error) {
+        process.stdout.write(`${JSON.stringify({ response: { ok: false, error: String(error) } })}\n`);
+    }
+}
 
 /**
  * Resolves a node's static or inline-configuration-dependent ports.
@@ -132,6 +205,9 @@ function resolvedPorts(node, inlineValues) {
 
 if (argument === "--catalog") {
     process.stdout.write(JSON.stringify({ nodes: nodes.map(({ execute, ...definition }) => definition), diagnostics }));
+} else if (argument === "--jobs-catalog") {
+    const { paths = [] } = JSON.parse(fs.readFileSync(0, "utf8") || "{}");
+    process.stdout.write(JSON.stringify(await loadJobs(paths)));
 } else if (argument === "--ports") {
     const request = JSON.parse(fs.readFileSync(0, "utf8"));
     const node = nodeByType.get(request.type_id);
@@ -180,6 +256,10 @@ if (argument === "--catalog") {
                     if (request.error) pending?.reject(new Error(request.error)); else pending?.resolve(request.result);
                     continue;
                 }
+                if (request.kind === "tool_execute") {
+                    void executeTool(request.request ?? {});
+                    continue;
+                }
                 void execute(request);
             } catch (error) {
                 process.stdout.write(`${JSON.stringify({ kind: "execute_response", error: String(error) })}\n`);
@@ -187,5 +267,5 @@ if (argument === "--catalog") {
         }
     });
 } else {
-    throw new Error("expected --catalog, --ports, --execute, or --serve");
+    throw new Error("expected --catalog, --ports, --execute, --jobs-catalog, or --serve");
 }

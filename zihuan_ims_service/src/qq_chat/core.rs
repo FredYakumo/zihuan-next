@@ -1,20 +1,18 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use crate::agent::utils::build_state_system_prefix_lines;
-use log::{info, warn};
+use crate::qq_session_state::QqChatSessionState;
+use log::warn;
 use serde_json::Value;
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 
 pub(crate) use super::super::tools::build_info_brain_tools;
 use super::super::tools::{
     DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
     DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
-    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_MEMORY_AGENT,
-    DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT, DEFAULT_TOOL_SAVE_IMAGE,
+    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_SAVE_IMAGE,
     DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
 };
 pub(crate) use super::logging::QqChatTaskTrace;
@@ -22,45 +20,32 @@ use super::msg_send::{
     build_long_task_complete_content, build_long_task_start_text, send_forward_content,
     send_notification_text, QqChatServiceSendContext,
 };
-use crate::storage::qq_chat_history_store::{clear_history, load_history};
+use crate::role_config::QqChatEmotionDimensionConfig;
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
-use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
 use zihuan_core::agent::tools::LongTaskNotifier;
-use zihuan_core::command::{
-    CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
-};
-use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
 use zihuan_core::graph::function_graph::FunctionPortDef;
-use zihuan_core::graph::object_storage::S3Ref;
 use zihuan_core::graph::tool_spec::{ToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
-use zihuan_core::graph::DataValue;
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
-use zihuan_core::model_inference::llm::{LLMMessage, MessagePart, MessageRole};
+use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
 use zihuan_core::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode,
 };
 use zihuan_core::utils::string_utils::extract_string_field;
-use zihuan_core::weaviate::WeaviateRef;
 
-use super::tool_quota::{QqChatToolQuotaContext, SessionToolQuotaState};
+use super::tool_quota::QqChatToolQuotaContext;
 pub(crate) use super::user_input::{
-    append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference,
-    flush_text_part, prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
+    append_prepared_parts, expand_messages_for_inference, flush_text_part,
+    prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
     PreparedCurrentTurnUserInput,
 };
 use crate::qq_chat::language_style_store::get_applicable_language_style_blocking;
-use crate::qq_chat::language_style_store::QqChatAgentServiceLanguageStyle;
 pub(crate) use crate::qq_chat::model::{
     QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner,
-    QqChatAgentServiceRuntimeConfig, QqChatServiceHandleReport, QqChatServiceReplyBatchBuilder,
-    QqChatServiceReplyBuildRequest, QqChatServiceReplyBuildResult, QqChatServiceTurnResult,
-    QqCommandSideEffectContext, QqLongTaskNotifier,
+    QqChatAgentServiceRuntimeConfig, QqChatServiceHandleReport, QqChatServiceTurnResult,
+    QqLongTaskNotifier,
 };
-use zihuan_core::agent::dream_agent::run_dream_agent;
 
 pub(crate) const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const MAX_REPLY_CHARS: usize = 250;
@@ -76,37 +61,6 @@ pub(crate) const LAST_INJECTED_GROUP_NAME_KEY: &str = "qq_chat_last_injected_gro
 pub(crate) const LAST_INJECTED_ROLE_KEY: &str = "qq_chat_last_injected_role";
 pub(crate) const LAST_INJECTED_EMOTION_KEY: &str = "qq_chat_last_injected_emotion";
 
-impl SideEffectContext for QqCommandSideEffectContext<'_> {
-    fn command_context(&self) -> &CommandContext {
-        self.command_context
-    }
-
-    fn start_new_conversation(&self, request: &NewConversationRequest) -> Result<()> {
-        let CommandChannel::QqChat { sender_id, .. } = &request.channel else {
-            return Err(Error::ValidationError(
-                "QQ command context received a non-QQ new conversation request".to_string(),
-            ));
-        };
-
-        clear_history(self.cache, sender_id)
-    }
-
-    fn send_forward_content(&self, content: &str) -> Result<()> {
-        let send_ctx = QqChatServiceSendContext {
-            adapter: self.adapter,
-            target_id: self.target_id,
-            is_group: self.is_group,
-            group_name: self.group_name,
-            bot_id: self.bot_id,
-            bot_name: self.bot_name,
-            mention_target_id: None,
-            persistence: build_outbound_persistence(self.rdb_pool, self.group_name, self.bot_name),
-            max_text_chars: MAX_REPLY_CHARS,
-        };
-        send_forward_content(&send_ctx, content)
-    }
-}
-
 fn default_tools_enabled_map() -> HashMap<String, bool> {
     [
         DEFAULT_TOOL_WEB_SEARCH,
@@ -118,7 +72,6 @@ fn default_tools_enabled_map() -> HashMap<String, bool> {
         DEFAULT_TOOL_SAVE_IMAGE,
         DEFAULT_TOOL_IMAGE_UNDERSTAND,
         DEFAULT_TOOL_MEMORY_AGENT,
-        DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT,
     ]
     .into_iter()
     .map(|name| (name.to_string(), true))
@@ -333,7 +286,7 @@ pub(crate) fn build_user_message(
     character_instructions: &str,
     style_prompt: Option<&str>,
     message_rate_limit_warning: Option<&str>,
-    session_state: &mut QqChatAgentServiceSessionState,
+    session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
     preprompt_context: Option<&str>,
 ) -> LLMMessage {
@@ -454,7 +407,7 @@ pub(crate) fn build_user_message(
 }
 
 pub(crate) fn build_state_delta_lines(
-    session_state: &mut QqChatAgentServiceSessionState,
+    session_state: &mut QqChatSessionState,
     current_input: &PreparedCurrentTurnUserInput,
     bot_name: &str,
     adapter: &SharedBotAdapter,
@@ -865,6 +818,9 @@ impl QqChatAgentServiceInner {
 }
 
 impl QqChatAgentService {
+    /// Schedules the `Dream` memory consolidation for one sender: cancels any pending Dream
+    /// task of the same sender and inserts a fresh task. The scheduler kernel fires the
+    /// script-defined Dream job once the sender stays silent for the configured interval.
     fn schedule_dream(&self, sender_id: String) {
         let Some(delay_seconds) = self.config.qq_chat_config.dream_interval_seconds() else {
             return;
@@ -873,111 +829,28 @@ impl QqChatAgentService {
             return;
         };
         let agent_id = self.config.agent_id.clone();
-        let cache = Arc::clone(&self.config.cache);
-        let llm = Arc::clone(&self.config.llm);
-        let tool_definitions = self.config.tool_definitions.clone();
         tokio::spawn(async move {
-            if let Err(err) = zihuan_core::scheduled_task::cancel_pending_dreams(
+            if let Err(err) = zihuan_core::scheduled_task::cancel_pending_tasks(
                 &connection,
+                zihuan_core::scheduler::DREAM_TASK_NAME,
                 &agent_id,
                 &sender_id,
+                Some("被新的用户消息替换"),
             )
             .await
             {
                 warn!("[Dream] failed to cancel previous task: {err}");
                 return;
             }
-            let task = zihuan_core::scheduled_task::ScheduledTaskEntry::dream(
-                agent_id.clone(),
-                sender_id.clone(),
+            let task = zihuan_core::scheduled_task::ScheduledTaskEntry::new(
+                zihuan_core::scheduler::DREAM_TASK_NAME,
+                agent_id,
+                Some(sender_id),
                 chrono::Local::now() + chrono::Duration::seconds(delay_seconds as i64),
+                Some("等待用户静默后生成 Dream 记忆"),
             );
             if let Err(err) = zihuan_core::scheduled_task::insert_task(&connection, &task).await {
                 warn!("[Dream] failed to create task: {err}");
-                return;
-            }
-            tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
-            let pending = zihuan_core::scheduled_task::list_tasks(
-                &connection,
-                Some(&agent_id),
-                Some("pending"),
-            )
-            .await
-            .map(|tasks| tasks.into_iter().any(|entry| entry.id == task.id))
-            .unwrap_or(false);
-            if !pending {
-                return;
-            }
-            let history = load_history(&cache, &sender_id);
-            let transcript = history
-                .iter()
-                .filter_map(|message| match message.role {
-                    MessageRole::User | MessageRole::Assistant => {
-                        message.content_text_owned().map(|text| (message.role.clone(), text))
-                    }
-                    _ => None,
-                })
-                .map(|(role, text)| {
-                    format!(
-                        "{}: {text}",
-                        if role == MessageRole::User {
-                            "用户"
-                        } else {
-                            "Bot"
-                        }
-                    )
-                })
-                .collect::<Vec<_>>();
-            let chars = transcript.iter().map(|text| text.chars().count() as i64).sum();
-            let previous = zihuan_core::scheduled_task::latest_dream_memory(
-                &connection,
-                &agent_id,
-                &sender_id,
-            )
-            .await
-            .unwrap_or(None)
-            .unwrap_or_default();
-            match run_dream_agent(llm, &previous, &transcript.join("\n"), tool_definitions) {
-                Ok(content) => match zihuan_core::scheduled_task::insert_dream_memory(
-                    &connection,
-                    &agent_id,
-                    &sender_id,
-                    chars,
-                    &content,
-                )
-                .await
-                {
-                    Ok(()) => {
-                        if let Err(err) = clear_history(&cache, &sender_id) {
-                            warn!("[Dream] memory saved but history clear failed: {err}");
-                        }
-                        let _ = zihuan_core::scheduled_task::finish_task(
-                            &connection,
-                            &task.id,
-                            zihuan_core::scheduled_task::ScheduledTaskStatus::Succeeded,
-                            Some("Dream 记忆已生成"),
-                        )
-                        .await;
-                    }
-                    Err(err) => {
-                        let _ = zihuan_core::scheduled_task::finish_task(
-                            &connection,
-                            &task.id,
-                            zihuan_core::scheduled_task::ScheduledTaskStatus::Failed,
-                            Some(&err.to_string()),
-                        )
-                        .await;
-                    }
-                },
-                Err(err) => {
-                    let _ = zihuan_core::scheduled_task::finish_task(
-                        &connection,
-                        &task.id,
-                        zihuan_core::scheduled_task::ScheduledTaskStatus::Failed,
-                        Some(&err.to_string()),
-                    )
-                    .await;
-                }
             }
         });
     }
@@ -1060,9 +933,12 @@ impl QqChatAgentService {
         };
 
         zihuan_core::agent::runtime_context::with_current_agent_runtime_context(
-            zihuan_core::agent::runtime_context::AgentRuntimeContext::QqChat(
-                self.config.qq_chat_config.clone(),
-            ),
+            zihuan_core::agent::runtime_context::AgentRuntimeContext {
+                resources: crate::qq_chat::resources::QqChatRoleServiceResources::new(
+                    self.config.qq_chat_config.clone(),
+                )
+                .into_shared(),
+            },
             || {
                 self.inner.handle(
                     event,

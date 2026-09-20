@@ -1,3 +1,4 @@
+pub(crate) mod command;
 mod core;
 pub mod ignore_store;
 mod inbox;
@@ -7,11 +8,12 @@ pub(crate) mod model;
 pub(crate) mod msg_send;
 pub mod privilege_gate;
 pub mod privilege_store;
-mod steer;
+pub mod resources;
+pub(crate) mod steer;
 pub mod style_learner;
 pub(crate) mod tool_quota;
 pub mod tool_quota_store;
-mod user_input;
+pub(crate) mod user_input;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -19,21 +21,24 @@ use std::sync::{Arc, Mutex};
 
 use self::core::{
     build_info_brain_tools, expand_messages_for_inference,
-    prepare_current_turn_user_input_from_event, QqChatTaskTrace, LOG_PREFIX,
-    LOG_TEXT_PREVIEW_CHARS,
+    prepare_current_turn_user_input_from_event,
 };
+pub(crate) use self::core::{QqChatTaskTrace, LOG_PREFIX};
 use self::ignore_store::should_ignore_message_blocking;
 use self::inbox::QqChatAgentServiceInbox;
 use self::language_style_store::get_applicable_language_style_blocking;
 use self::model::{
-    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner,
-    QqChatAgentServiceRuntimeConfig, QqChatServiceReplyBatchBuilder, QqInferenceToolProvider,
-    QqLoadedInferenceResources,
+    QqChatAgentService, QqChatAgentServiceRuntimeConfig, QqChatServiceReplyBatchBuilder,
+    QqInferenceToolProvider, QqLoadedInferenceResources,
 };
+pub(crate) use self::model::{QqChatAgentServiceContext, QqChatAgentServiceInner};
 use self::msg_send::{
     build_reply_batch_builder as build_unified_reply_batch_builder,
     send_direct_notification_text_reply,
 };
+use crate::qq_chat::resources::current_qq_chat_role_service_config;
+use crate::qq_session_state::QqChatSessionState;
+use crate::role_config::QqChatRoleServiceConfig;
 use crate::storage::message_rate_limit_store::{
     consume_message_rate_limit_blocking, MessageRateLimitBlockAction,
     MESSAGE_RATE_LIMIT_BLOCKED_REPLY,
@@ -41,19 +46,16 @@ use crate::storage::message_rate_limit_store::{
 pub use crate::storage::message_rate_limit_store::{
     list_message_rate_limit_usage, reset_message_rate_limit_usage,
 };
+use crate::storage::qq_chat_history_store::{clear_history, load_history};
 use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
 use chrono::Local;
 use log::{error, info, warn};
 use tokio::task::JoinHandle;
 use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
-use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
 use zihuan_core::agent::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config,
     resolve_local_embedding_model_name,
 };
-use zihuan_core::agent::runtime_context::current_qq_chat_agent_service_config;
-use zihuan_core::agent::service_config::{MemoryBackendKind, RoleServiceConfig};
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
 use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::config::llm_refs::load_llm_refs;
@@ -75,6 +77,7 @@ use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::nlp::{build_segmenter, TextSegmenter};
+use zihuan_core::role::service_config::{MemoryBackendKind, RoleServiceConfig};
 use zihuan_core::runtime::block_async;
 use zihuan_core::steer::PendingSteerEvent;
 use zihuan_core::storage::{
@@ -152,7 +155,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
 
 pub fn load_inference_tool_provider(
     agent: &RoleServiceConfig,
-    config: &QqChatAgentServiceConfig,
+    config: &QqChatRoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     Ok(Arc::new(QqInferenceToolProvider {
@@ -163,7 +166,7 @@ pub fn load_inference_tool_provider(
 
 fn load_qq_resources(
     agent: &RoleServiceConfig,
-    config: &QqChatAgentServiceConfig,
+    config: &QqChatRoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<QqLoadedInferenceResources> {
     if config.memory_backend != Some(MemoryBackendKind::LocalFile)
@@ -372,7 +375,7 @@ pub type RuntimeFinishedCallback = Arc<dyn Fn(bool, Option<String>) + Send + Syn
 
 pub async fn spawn(
     agent: RoleServiceConfig,
-    config: QqChatAgentServiceConfig,
+    config: QqChatRoleServiceConfig,
     connections: Vec<ConnectionConfig>,
     on_finish: RuntimeFinishedCallback,
     task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
@@ -482,6 +485,36 @@ pub async fn spawn(
         register_rdb_pool(rdb_pool.clone());
     }
 
+    let cache =
+        Arc::new(LLMMessageSessionCacheRef::new(format!("service_agent_cache_{}", agent.id)));
+
+    // Register the service's job resources with the scheduler kernel so script-defined
+    // jobs (e.g. Dream) can reach this service's LLM, tools, and history cache. The guard
+    // lives in the service task below; stopping the service unregisters the resources.
+    let scheduler_guard = if config.dream_enabled {
+        rdb_pool
+            .as_ref()
+            .map(|connection| {
+                let history_cache = Arc::clone(&cache);
+                let clear_cache = Arc::clone(&cache);
+                zihuan_core::scheduler::register_service(zihuan_core::scheduler::JobResources {
+                    agent_id: agent.id.clone(),
+                    connection: connection.clone(),
+                    llm: Arc::clone(&llm),
+                    tool_definitions: tool_definitions.clone(),
+                    history_loader: Arc::new(move |sender_id: &str| {
+                        load_history(&history_cache, sender_id)
+                    }),
+                    history_clearer: Arc::new(move |sender_id: &str| {
+                        clear_history(&clear_cache, sender_id)
+                    }),
+                })
+            })
+            .transpose()?
+    } else {
+        None
+    };
+
     let service = Arc::new(QqChatAgentService::new(QqChatAgentServiceRuntimeConfig {
         agent_id: agent.id.clone(),
         qq_chat_config: config.clone(),
@@ -492,12 +525,9 @@ pub async fn spawn(
             config.bot_name.clone()
         },
         system_prompt: config.system_prompt.clone(),
-        cache: Arc::new(LLMMessageSessionCacheRef::new(format!(
-            "service_agent_cache_{}",
-            agent.id
-        ))),
+        cache: Arc::clone(&cache),
         session: Arc::new(SessionStateRef::new(format!("service_agent_session_{}", agent.id))),
-        llm,
+        llm: Arc::clone(&llm),
         intent_classification_llm,
         math_programming_llm,
         natural_language_reply_llm,
@@ -515,9 +545,9 @@ pub async fn spawn(
         reply_batch_builder: Some(build_reply_batch_builder(tokenizer_segmenter)),
         default_tools_enabled: config.default_tools_enabled.clone(),
         shared_inputs: Vec::<FunctionPortDef>::new(),
-        tool_definitions,
+        tool_definitions: tool_definitions.clone(),
         shared_runtime_values: HashMap::new(),
-        session_state_store: Arc::new(Mutex::new(QqChatAgentServiceSessionState::default())),
+        session_state_store: Arc::new(Mutex::new(QqChatSessionState::default())),
         task_runtime,
         tool_quota_session_state: Arc::new(Mutex::new(SessionToolQuotaState::default())),
     })?);
@@ -554,6 +584,7 @@ pub async fn spawn(
     let handler_id_for_cleanup = handler_id.clone();
 
     Ok(tokio::spawn(async move {
+        let _scheduler_guard = scheduler_guard;
         info!("[service] starting QQ Chat Agent Service '{}'", agent_name);
         let mut tasks = tokio::task::JoinSet::new();
         inbox.spawn_consumers(&mut tasks);
@@ -580,7 +611,7 @@ pub async fn spawn(
 }
 
 fn resolve_tokenizer_segmenter(
-    config: &QqChatAgentServiceConfig,
+    config: &QqChatRoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Arc<dyn TextSegmenter> {
     let tokenizer_path = config
@@ -704,7 +735,7 @@ impl QqChatAgentServiceInner {
         let mut message_rate_limit_warning = None;
         if let Some(rdb_pool) = ctx.rdb_pool {
             let group_id_text = event.group_id.map(|value| value.to_string());
-            let config = current_qq_chat_agent_service_config()?;
+            let config = current_qq_chat_role_service_config()?;
             let rate_limit_result = consume_message_rate_limit_blocking(
                 rdb_pool,
                 agent_id,

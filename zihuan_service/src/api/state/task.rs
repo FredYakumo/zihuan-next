@@ -9,12 +9,15 @@ use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use zihuan_core::data_refs::RelationalDbConnection;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskType {
     NodeGraph,
     AgentService,
     WorkspaceChat,
+    /// One firing of a scheduler job, recorded by the scheduler kernel.
+    ScheduledJob,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +59,7 @@ pub enum TaskStatus {
     WaitingAuth,
 }
 
+/// One line of a task's log, with when it was produced and how serious it is.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskLogEntry {
     pub timestamp: String,
@@ -63,6 +67,52 @@ pub struct TaskLogEntry {
     pub message: String,
 }
 
+/// A task the caller wants recorded, before [`TaskManager`] fills in the fields it owns: the id,
+/// the start time, the running flags, and the log path.
+///
+/// Build one with [`TaskDraft::new`] and override only the fields the task type actually carries,
+/// so every call site names the values it passes instead of counting positional arguments.
+#[derive(Debug, Clone)]
+struct TaskDraft {
+    task_type: TaskType,
+    graph_name: String,
+    graph_session_id: String,
+    chat_session_id: Option<String>,
+    file_path: Option<String>,
+    is_workflow_set: bool,
+    user_ip: Option<String>,
+    owner_id: Option<String>,
+    stop_flag: Option<Arc<AtomicBool>>,
+    can_rerun: bool,
+    task_db_connection_id: Option<String>,
+}
+
+impl TaskDraft {
+    /// Every task carries a type, a display name, and a session id; the rest start unset and are
+    /// overridden by the caller when its task type uses them.
+    fn new(
+        task_type: TaskType,
+        graph_name: impl Into<String>,
+        graph_session_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            task_type,
+            graph_name: graph_name.into(),
+            graph_session_id: graph_session_id.into(),
+            chat_session_id: None,
+            file_path: None,
+            is_workflow_set: false,
+            user_ip: None,
+            owner_id: None,
+            stop_flag: None,
+            can_rerun: false,
+            task_db_connection_id: None,
+        }
+    }
+}
+
+/// The record of every task the service knows about. A task is added when it starts, and its
+/// state and log stay readable after the run ends.
 pub struct TaskManager {
     tasks: Vec<TaskEntry>,
     db_pools: HashMap<String, RelationalDbConnection>,
@@ -92,18 +142,14 @@ impl TaskManager {
         stop_flag: Arc<AtomicBool>,
     ) -> String {
         let can_rerun = file_path.is_some();
-        self.add_task_with_type(
-            TaskType::NodeGraph,
-            graph_name,
-            graph_session_id,
+        self.register_task(TaskDraft {
             file_path,
             is_workflow_set,
             user_ip,
-            None,
-            Some(stop_flag),
+            stop_flag: Some(stop_flag),
             can_rerun,
-            None,
-        )
+            ..TaskDraft::new(TaskType::NodeGraph, graph_name, graph_session_id)
+        })
     }
 
     pub fn add_agent_response_task(
@@ -114,18 +160,12 @@ impl TaskManager {
         owner_id: Option<String>,
         task_db_connection_id: Option<String>,
     ) -> String {
-        self.add_task_with_type(
-            TaskType::AgentService,
-            task_name,
-            agent_id,
-            None,
-            false,
+        self.register_task(TaskDraft {
             user_ip,
             owner_id,
-            None,
-            false,
             task_db_connection_id,
-        )
+            ..TaskDraft::new(TaskType::AgentService, task_name, agent_id)
+        })
     }
 
     pub fn add_workspace_chat_task(
@@ -143,73 +183,57 @@ impl TaskManager {
         }) {
             return None;
         }
-        let id = Uuid::new_v4().to_string();
-        let entry = TaskEntry {
-            id: id.clone(),
-            task_type: TaskType::WorkspaceChat,
-            graph_name: agent_name,
-            graph_session_id: agent_id,
+        let id = self.register_task(TaskDraft {
             chat_session_id: Some(session_id),
             file_path: workspace_path,
-            is_workflow_set: false,
-            start_time: Local::now(),
-            is_running: true,
-            end_time: None,
-            duration_ms: None,
-            user_ip: None,
-            owner_id: None,
-            status: TaskStatus::Running,
-            error_message: None,
-            result_summary: None,
-            log_path: Self::task_log_path(&id).ok(),
-            can_rerun: false,
-            graph_snapshot: None,
-            task_db_connection_id: None,
             stop_flag: Some(stop_flag),
-        };
-        self.tasks.push(entry);
-        self.persist_index();
+            ..TaskDraft::new(TaskType::WorkspaceChat, agent_name, agent_id)
+        });
         Some(id)
     }
 
-    fn add_task_with_type(
+    /// Records one scheduled-job firing as a task; the scheduler kernel calls this when it
+    /// starts a job. `triggered_by` lands in `file_path`, the field the task list shows as 来源.
+    pub fn add_scheduled_job_task(
         &mut self,
-        task_type: TaskType,
-        graph_name: String,
-        graph_session_id: String,
-        file_path: Option<String>,
-        is_workflow_set: bool,
-        user_ip: Option<String>,
-        owner_id: Option<String>,
-        stop_flag: Option<Arc<AtomicBool>>,
-        can_rerun: bool,
-        task_db_connection_id: Option<String>,
+        task_name: String,
+        source_service: String,
+        triggered_by: Option<String>,
     ) -> String {
+        self.register_task(TaskDraft {
+            file_path: triggered_by,
+            ..TaskDraft::new(TaskType::ScheduledJob, task_name, source_service)
+        })
+    }
+
+    /// Registers one task from a draft: fills in the fields the manager owns, mirrors the record
+    /// into the task database when the draft names a connection, and returns the new task id.
+    fn register_task(&mut self, draft: TaskDraft) -> String {
         let id = Uuid::new_v4().to_string();
         let log_path = Self::task_log_path(&id).ok();
-        let task_db_connection_id_for_insert = task_db_connection_id.clone();
+        let task_db_connection_id_for_insert = draft.task_db_connection_id.clone();
         let entry = TaskEntry {
             id: id.clone(),
-            task_type,
-            graph_name,
-            graph_session_id,
-            chat_session_id: None,
-            can_rerun,
-            file_path,
-            is_workflow_set,
+            task_type: draft.task_type,
+            graph_name: draft.graph_name,
+            graph_session_id: draft.graph_session_id,
+            chat_session_id: draft.chat_session_id,
+            can_rerun: draft.can_rerun,
+            file_path: draft.file_path,
+            is_workflow_set: draft.is_workflow_set,
             start_time: Local::now(),
             is_running: true,
             end_time: None,
             duration_ms: None,
-            user_ip,
-            owner_id,
+            user_ip: draft.user_ip,
+            owner_id: draft.owner_id,
             status: TaskStatus::Running,
             error_message: None,
             result_summary: None,
             log_path,
             graph_snapshot: None,
-            task_db_connection_id,
-            stop_flag,
+            task_db_connection_id: draft.task_db_connection_id,
+            stop_flag: draft.stop_flag,
         };
 
         if let Some(conn_id) = &task_db_connection_id_for_insert {

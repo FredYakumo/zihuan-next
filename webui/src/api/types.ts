@@ -19,7 +19,7 @@ export type DataTypeMetaDataObject = { Vec: DataTypeMetaData } | { Custom: strin
  */
 export type DataTypeMetaData = string | DataTypeMetaDataObject;
 export interface UiComponentDefinition { type: string; props?: Record<string, JsonValue>; value_key?: string; event?: string; children?: UiComponentDefinition[]; }
-export interface NodeUiDefinition { template_path?: string; card?: UiComponentDefinition[]; panel?: UiComponentDefinition[]; }
+export interface NodeUiDefinition { template_path?: string; style_path?: string; card?: UiComponentDefinition[]; panel?: UiComponentDefinition[]; }
 
 export interface PortInfo {
   name: string;
@@ -170,7 +170,7 @@ export interface ValidationResult {
 
 export interface TaskEntry {
   id: string;
-  task_type: "node_graph" | "agent_service" | "workspace_chat";
+  task_type: "node_graph" | "agent_service" | "workspace_chat" | "scheduled_job";
   graph_name: string;
   graph_session_id: string;
   chat_session_id: string | null;
@@ -194,6 +194,32 @@ export interface TaskLogEntry {
   message: string;
 }
 
+
+export interface SchedulerJobStatus {
+  task_name: string;
+  script: string;
+  entry: string;
+  description: string;
+  language: string;
+  builtin: boolean;
+}
+
+
+export interface SchedulerServiceStatus {
+  source_service: string;
+  agent_id: string;
+}
+
+/** Read-only snapshot of the scheduler registry. */
+export interface SchedulerStatus {
+  jobs: SchedulerJobStatus[];
+  services: SchedulerServiceStatus[];
+}
+
+/**
+ * One planned execution of a job at a fixed time. The record is written when the task is
+ * scheduled, updated with the outcome once it runs, and kept afterwards as history.
+ */
 export interface ScheduledTaskEntry {
   id: string;
   task_name: string;
@@ -207,7 +233,6 @@ export interface ScheduledTaskEntry {
 }
 
 // WebSocket message types
-import type { QQMessageItem } from "../ui/dialogs/types";
 
 export type ServerMessage =
   | { type: "TaskStarted"; task_id: string; graph_name: string; graph_session_id: string }
@@ -215,13 +240,6 @@ export type ServerMessage =
   | { type: "TaskStopped"; task_id: string }
   | { type: "LogMessage"; level: string; message: string; timestamp: string }
   | { type: "GraphValidationResult"; graph_id: string; issues: ValidationIssue[] }
-  | {
-      type: "NodePreviewQQMessages";
-      task_id: string;
-      graph_session_id: string;
-      node_id: string;
-      messages: QQMessageItem[];
-    }
   | { type: "NodeUiUpdate"; task_id: string; graph_session_id: string; node_id: string; revision: number; state: JsonValue };
 
 export type ClientMessage =

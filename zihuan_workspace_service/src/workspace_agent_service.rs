@@ -1,19 +1,21 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::role_config::WorkspaceRoleServiceConfig;
+use zihuan_core::agent::resource_provider::{
+    AgentResourceProvider, ConnectionKind, SharedAgentResourceProvider,
+};
 use zihuan_core::agent::resource_resolver::resolve_local_embedding_model_name;
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
-use zihuan_core::agent::service_config::{
-    MemoryBackendKind, RoleServiceConfig, WorkspaceAgentServiceConfig,
+use zihuan_core::agent::tools::memory_tools::{
+    register_memory_tools, MemoryAgentResources, MemoryBackend,
 };
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::graph::tool_spec::ToolDefinition;
-use zihuan_core::memory_agent::{
-    MemoryAgentResources, MemoryBackend, MemoryBrainAgent, MemoryBrainAgentTool,
-};
 use zihuan_core::model_inference::llm::{llm_base::LLMBase, LLMMessage};
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use zihuan_core::role::service_config::{MemoryBackendKind, RoleServiceConfig};
 use zihuan_core::runtime::block_async;
 use zihuan_core::storage::{
     build_elasticsearch_ref, build_weaviate_ref, build_web_search_engine_ref,
@@ -232,9 +234,12 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
             tools.push(Box::new(ImageUnderstandTool::new(context.image_media.clone(), image_llm)));
         }
         if let Some(resources) = &self.memory_resources {
-            tools.push(Box::new(MemoryBrainAgentTool::new(MemoryBrainAgent::new(
-                resources.with_llm(Arc::clone(&context.llm)),
-            ))));
+            let mut host = zihuan_core::agent::declarative_agent::AgentHost::new();
+            register_memory_tools(&mut host, resources.with_llm(Arc::clone(&context.llm)));
+            host.register_llm(zihuan_core::agent::LLM_KIND_MAIN, Arc::clone(&context.llm));
+            if let Some(tool) = host.publish_logged("memory_agent") {
+                tools.push(Box::new(zihuan_core::agent::SharedTool::new(tool)));
+            }
         }
         tools
     }
@@ -246,7 +251,7 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
 
 pub fn load_inference_tool_provider(
     agent: &RoleServiceConfig,
-    config: &WorkspaceAgentServiceConfig,
+    config: &WorkspaceRoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     let image_understand_llm =
@@ -271,8 +276,57 @@ pub fn load_inference_tool_provider(
     }))
 }
 
+/// Workspace 角色服务在引擎运行时的资源提供者：向引擎暴露资源契约，
+/// 供子图工具的 `agent.*` 表达式读取当前服务的模型与连接配置。
+#[derive(Clone)]
+pub struct WorkspaceRoleServiceResources {
+    config: WorkspaceRoleServiceConfig,
+}
+
+impl WorkspaceRoleServiceResources {
+    pub fn new(config: WorkspaceRoleServiceConfig) -> Self {
+        Self { config }
+    }
+
+    pub fn into_shared(self) -> SharedAgentResourceProvider {
+        std::sync::Arc::new(self)
+    }
+}
+
+impl AgentResourceProvider for WorkspaceRoleServiceResources {
+    fn llm_ref_id(&self, kind: &str) -> Option<String> {
+        // Workspace 无意图/数学/自然语言分桶，统一回落到主模型或编排模型。
+        let fallback = || {
+            self.config
+                .llm_ref_id
+                .as_deref()
+                .or(self.config.orchestration_llm_ref_id.as_deref())
+        };
+        match kind {
+            zihuan_core::agent::LLM_KIND_MAIN => self.config.llm_ref_id.as_deref(),
+            _ => fallback(),
+        }
+        .map(ToOwned::to_owned)
+    }
+
+    fn embedding_model_ref_id(&self) -> Option<String> {
+        self.config.embedding_model_ref_id.clone()
+    }
+
+    fn connection_id(&self, kind: ConnectionKind) -> Option<String> {
+        match kind {
+            ConnectionKind::WebSearch => self.config.web_search_engine_connection_id.clone(),
+            _ => None,
+        }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
 fn load_web_search_engine(
-    config: &WorkspaceAgentServiceConfig,
+    config: &WorkspaceRoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> std::result::Result<Arc<dyn zihuan_core::rag::WebSearchEngine>, String> {
     let connection_id = config
@@ -307,7 +361,7 @@ impl WorkspaceMemoryResources {
 }
 
 fn load_memory_resources(
-    config: &WorkspaceAgentServiceConfig,
+    config: &WorkspaceRoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Option<WorkspaceMemoryResources> {
     if !config.memory_enabled {

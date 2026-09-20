@@ -29,6 +29,17 @@
           </t-select>
         </div>
       </t-form-item>
+      <t-form-item v-if="form.type === 'workspace'" label="Agent编排模型">
+        <t-select
+          v-model="form.workspace_orchestration_llm_ref_id"
+          placeholder="使用主模型"
+          clearable
+          filterable
+        >
+          <t-option value="" label="使用主模型" />
+          <t-option v-for="item in chatModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
+        </t-select>
+      </t-form-item>
       <t-form-item v-if="form.type === 'workspace'" class="agent-service-agents-item">
         <t-checkbox v-model="form.agents_md_enabled">关注AGENTS.md</t-checkbox>
       </t-form-item>

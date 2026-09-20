@@ -7,11 +7,15 @@ use crate::model_inference::llm::tooling::FunctionTool;
 pub use crate::tool_runtime::ToolRunDuration;
 use crate::workspace::AskUserRequest;
 
+pub mod memory_tools;
+pub mod node_graph_tool;
 pub mod tool_calling_engine;
 pub mod tool_calling_types;
 pub(crate) mod tool_progress;
 pub mod web_search;
 
+pub use memory_tools::{register_memory_tools, MemoryAgentResources, MemoryBackend};
+pub use node_graph_tool::NodeGraphTool;
 pub use tool_calling_engine::{ToolCallingEngine, MAX_TOOL_ITERATIONS};
 pub use tool_calling_types::{
     AgentExecutor, LongTaskContext, LongTaskNotifier, ToolCallingMiddleware, ToolCallingObserver,

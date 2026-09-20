@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use zihuan_core::agent::declarative_agent::AgentHost;
+use zihuan_core::agent::tools::memory_tools::{
+    register_memory_tools, MemoryAgentResources, MemoryBackend,
+};
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::graph::object_storage::S3Ref;
-use zihuan_core::memory_agent::{
-    MemoryAgentResources, MemoryBackend, MemoryBrainAgent, MemoryBrainAgentContextTool,
-    MemoryBrainAgentTool,
-};
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngine;
@@ -18,36 +18,29 @@ use zihuan_core::weaviate::WeaviateRef;
 
 mod agent_state;
 mod common;
-mod deep_research;
 mod editable_qq_agent_tool;
 mod image_save;
 mod image_search;
 mod image_understand;
 mod info_tools;
-mod natural_language_reply;
 mod recent_messages;
 mod reply_message;
-mod research;
 mod web_search;
 
 pub(crate) use agent_state::UpdateAgentStateTool;
 pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS};
-pub(crate) use deep_research::RunDeepResearchSubagentTool;
 pub(crate) use editable_qq_agent_tool::EditableQqAgentTool;
 pub(crate) use image_save::SaveImageTool;
 pub(crate) use image_search::SearchSimilarImagesTool;
 pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstandTool};
 pub(crate) use info_tools::{GetAgentPublicInfoTool, GetFunctionListTool};
-pub(crate) use natural_language_reply::{
-    AfterBrainAgent, ModelIdentityContext, QqReplyReviewRequest, QqReplyReviewResult,
-};
 pub(crate) use recent_messages::{GetRecentGroupMessagesTool, GetRecentUserMessagesTool};
 pub(crate) use reply_message::ReplyMessageTool;
-pub(crate) use research::RunResearchSubagentTool;
 pub(crate) use web_search::WebSearchTool;
-pub(crate) use zihuan_core::memory_agent::{
+pub(crate) use zihuan_core::agent::tools::memory_tools::{
     MemoryAgentResources as AgentMemoryToolResources, MemoryBackend as AgentMemoryBackend,
 };
+pub(crate) use zihuan_core::agent::SharedTool;
 
 pub(crate) const DEFAULT_TOOL_WEB_SEARCH: &str = "web_search";
 pub(crate) const DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO: &str = "get_agent_public_info";
@@ -58,7 +51,6 @@ pub(crate) const DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES: &str = "search_similar_imag
 pub(crate) const DEFAULT_TOOL_SAVE_IMAGE: &str = "save_image";
 pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
 pub(crate) const DEFAULT_TOOL_MEMORY_AGENT: &str = "memory_agent";
-pub(crate) const DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT: &str = "memory_agent_with_context";
 const AGENT_PUBLIC_NAME: &str = "紫幻zihuan-next";
 const AGENT_GITHUB_REPOSITORY: &str = "https://github.com/FredYakumo/zihuan-next";
 const AGENT_GIT_COMMIT_ID: &str = "unknown";
@@ -153,15 +145,16 @@ pub fn build_info_brain_tools(
         let memory_resources = MemoryAgentResources {
             memory_backend,
             embedding_model,
-            llm,
+            llm: Arc::clone(&llm),
             access: memory_access,
         };
-        let memory_agent = MemoryBrainAgent::new(memory_resources);
+        let mut host = AgentHost::new();
+        register_memory_tools(&mut host, memory_resources);
+        host.register_llm("main", llm);
         if is_enabled(default_tools_enabled, DEFAULT_TOOL_MEMORY_AGENT) {
-            tools.push(Box::new(MemoryBrainAgentTool::new(memory_agent.clone())));
-        }
-        if is_enabled(default_tools_enabled, DEFAULT_TOOL_MEMORY_AGENT_WITH_CONTEXT) {
-            tools.push(Box::new(MemoryBrainAgentContextTool::new(memory_agent)));
+            if let Some(tool) = host.publish_logged(DEFAULT_TOOL_MEMORY_AGENT) {
+                tools.push(Box::new(SharedTool::new(tool)));
+            }
         }
     }
 

@@ -1,0 +1,33 @@
+id: memory_agent
+name: Memory
+description: Call the Memory Agent. Given content, it independently decides whether to retrieve relevant memories, update memories worth saving, or report that no relevant memories exist. Pass operation to force a specific memory operation.
+builtin: true
+inputs:
+- name: content
+  data_type: String
+  description: Content for the memory agent to process
+  required: true
+- name: operation
+  data_type: String
+  description: 'Optional: force a memory operation, either search_memory or update_memory. Omit to let the agent decide by itself.'
+  required: false
+outputs:
+- name: result
+  data_type: String
+  description: Memory result
+  required: true
+system_prompt: |-
+  You are a memory management agent with private tools for searching, listing, and writing memories. Based on the request, decide whether to retrieve relevant memories, update facts worth retaining long term, or state that no relevant memories exist. Do not fabricate memories. Return only a concise result useful to the caller.
+user_prompt: '{content}'
+prompt_parts:
+- port: operation
+  equals: search_memory
+  template: "\n\n[Memory Operation]\nSearch memories: you must use the memory search tool to find saved memories relevant to the content above. Return only relevant memories and explicitly state when none are found. Do not write any memories."
+- port: operation
+  equals: update_memory
+  template: "\n\n[Memory Operation]\nUpdate memories: you must attempt to extract facts, preferences, or relationships from the content above that are worth retaining long term, and save them with the memory writing tool. You may search first to verify them. If there is nothing appropriate to save, explicitly state that no memories were updated."
+output_mode: text
+tool_ids:
+- list_memory_keys
+- search_memory
+- update_memory

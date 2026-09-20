@@ -7,7 +7,6 @@ import { setupFunctionWidgets } from "./node_widgets/function_node";
 import { setupJsonExtractWidgets } from "./node_widgets/json_extract";
 import { setupLLMMessageListWidgets } from "./node_widgets/llm_message_list_data";
 import { setupQQMessageListWidgets } from "./node_widgets/qq_message_list_data";
-import { setupQQMessagePreviewWidgets } from "./node_widgets/qq_message_preview";
 import { setupStringDataWidgets } from "./node_widgets/string_data";
 import type {
   EnterSubgraphCallback,
@@ -48,9 +47,6 @@ export function setupNodeWidgets(
       break;
     case "qq_message_list_data":
       setupQQMessageListWidgets(lNode, nodeDef, getSessionId, onRefresh);
-      break;
-    case "qq_message_preview":
-      setupQQMessagePreviewWidgets(lNode, nodeDef);
       break;
     default:
       setupSimpleInlineWidgets(lNode, nodeDef, getSessionId, onMutated);

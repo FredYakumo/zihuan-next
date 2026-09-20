@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use zihuan_core::agent::qq_chat::QqChatAgentServiceConfig;
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use crate::qq_session_state::QqChatSessionState;
+use crate::role_config::QqChatRoleServiceConfig;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::graph::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
 use zihuan_core::graph::function_graph::FunctionPortDef;
@@ -46,7 +46,7 @@ pub(crate) struct QqChatAgentServiceContext<'a> {
     pub(crate) max_steer_count: usize,
     pub(crate) reply_batch_builder: Option<&'a QqChatServiceReplyBatchBuilder>,
     pub(crate) shared_runtime_values: HashMap<String, DataValue>,
-    pub(crate) session_state_store: &'a Arc<Mutex<QqChatAgentServiceSessionState>>,
+    pub(crate) session_state_store: &'a Arc<Mutex<QqChatSessionState>>,
     pub(crate) pending_steer: &'a Arc<PendingSteerStore>,
     pub(crate) task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     pub(crate) task_db_connection_id: Option<String>,
@@ -76,7 +76,7 @@ impl<'a> QqChatAgentServiceContext<'a> {
 #[derive(Clone)]
 pub struct QqChatAgentServiceRuntimeConfig {
     pub agent_id: String,
-    pub qq_chat_config: QqChatAgentServiceConfig,
+    pub qq_chat_config: QqChatRoleServiceConfig,
     pub node_id: String,
     pub bot_name: String,
     pub system_prompt: Option<String>,
@@ -101,7 +101,7 @@ pub struct QqChatAgentServiceRuntimeConfig {
     pub shared_inputs: Vec<FunctionPortDef>,
     pub tool_definitions: Vec<ToolDefinition>,
     pub shared_runtime_values: HashMap<String, DataValue>,
-    pub session_state_store: Arc<Mutex<QqChatAgentServiceSessionState>>,
+    pub session_state_store: Arc<Mutex<QqChatSessionState>>,
     pub task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     pub tool_quota_session_state: Arc<Mutex<SessionToolQuotaState>>,
 }

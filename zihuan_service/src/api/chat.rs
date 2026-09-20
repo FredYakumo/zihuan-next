@@ -16,30 +16,37 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use uuid::Uuid;
-use zihuan_core::agent::service_config::{RoleServiceConfig, RoleServiceType};
+use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
 use zihuan_core::agent::tools::{ToolCallingObserver, ToolCallingStopReason};
-use zihuan_core::agent::AgentCancellation;
-use zihuan_core::command::{
-    CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
+use zihuan_core::agent::{
+    Agent, AgentCancellation, ContextCompactionEvent, ContextCompactionObserver,
 };
+use zihuan_core::chat_history::{
+    chat_history_dir, delete_session_title, load_session_title, write_session_title,
+};
+use zihuan_core::command::{CommandChannel, CommandContext};
+use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::resolve_fallback_bot_profile;
 use zihuan_core::message_part::MessagePart;
 use zihuan_core::model_inference::llm::tooling::ToolCalls;
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken, TokenUsage};
+use zihuan_core::role::procedure::ProcedureContext;
+use zihuan_core::role::service_config::RoleServiceConfig;
+use zihuan_core::role::TransportSink;
 use zihuan_core::storage::ConnectionConfig;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
 use zihuan_workspace_service::api::workspace_changes;
+use zihuan_workspace_service::procedure::WorkspaceBrain;
 use zihuan_workspace_service::task_tracking::{
     delete_workspace_tasks, interrupt_workspace_tasks, load_workspace_tasks,
 };
 
 use crate::api::state::{RunningChatMessage, RunningChatToolCall, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
-use zihuan_service::role::{ContextCompactionEvent, ContextCompactionObserver};
+use zihuan_service::role::RoleAgent;
 
-const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const CHAT_STREAM_MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 const CHAT_FORK_METADATA_SUFFIX: &str = ".fork.json";
 
@@ -51,20 +58,42 @@ impl AgentCancellation for WorkspaceChatCancellation {
     }
 }
 
+/// SSE adapter's transport out boundary (documents/transport.md).
+///
+/// **Design:** Holds the sending halves of the token and brain-event channels; the relay loops
+/// in `execute_chat_streaming` own the receiving halves. Procedures emit through the sink via
+/// the `TransportSink` impl, and all sender clones dropped when the turn task ends let the
+/// relay drain and exit.
+struct SseTransportSink {
+    token_tx: mpsc::UnboundedSender<StreamToken>,
+    event_tx: mpsc::UnboundedSender<Value>,
+}
+
+impl TransportSink for SseTransportSink {
+    fn token_sender(&self) -> mpsc::UnboundedSender<StreamToken> {
+        self.token_tx.clone()
+    }
+
+    fn send_event(&self, event: Value) {
+        let _ = self.event_tx.send(event);
+    }
+}
+
 /// Bridges ToolCallingObserver callbacks into the SSE event stream.
 ///
-/// **Purpose:** The ToolCallingEngine tool-call loop emits structured events (tool start/finish) that the
-/// dashboard needs to display in real time. This observer translates those callbacks into JSON
-/// payloads and pushes them onto the same unbounded channel that the token stream uses, so the
-/// relay loop can multiplex both onto a single SSE connection.
+/// **Purpose:** The ToolCallingEngine tool-call loop emits structured events (tool start/finish)
+/// that the dashboard needs to display in real time. This observer translates those callbacks
+/// into JSON payloads and pushes them onto the same unbounded channel that the token stream
+/// uses, so the relay loop can multiplex both onto a single SSE connection.
 ///
 /// **Design:** Uses an unbounded sender intentionally — the relay loop drains both the token and
 /// event channels via `tokio::select!`, so backpressure is managed by the SSE sender, not the
 /// observer. Errors from `send` are silently ignored because a closed channel means the client
 /// has disconnected and the entire streaming task will tear down.
 ///
-/// **Architecture:** Created per-request inside `execute_chat_streaming`, passed as
-/// `Arc<dyn ToolCallingObserver>` into `infer_role_response_streaming`.
+/// **Architecture:** Created per-request inside the spawned turn task of
+/// `execute_chat_streaming`, passed as the turn's `ToolCallingObserver` into the brain
+/// procedure.
 struct SseToolCallingObserver {
     event_tx: mpsc::UnboundedSender<Value>,
     session_id: String,
@@ -427,11 +456,11 @@ struct AgentSnapshot {
     avatar_url: Option<String>,
 }
 
-/// Shared mutable state for command side-effects that run on the dashboard channel.
+/// Shared mutable state for command effects that run on the dashboard channel.
 ///
 /// **Purpose:** Commands like "new conversation" need to issue a fresh session ID that the
-/// streaming task must pick up. Rather than threading return values through the trait-based
-/// `SideEffectContext`, we store the ID here and read it after `execute` returns.
+/// streaming task must pick up. The dashboard command runtime records the new-session signal
+/// here and the caller reads it after the engine run completes.
 ///
 /// **Design:** Uses `Arc<Mutex<Option<String>>>` — minimal overhead for a rarely-contended
 /// single-write-then-read pattern. The mutex guard is held only briefly during `issue_new_session_id`
@@ -452,24 +481,58 @@ impl DashboardCommandSideEffectState {
     }
 }
 
-/// `SideEffectContext` implementation for the dashboard chat channel.
+/// Dashboard (SSE) channel command runtime.
 ///
-/// **Purpose:** Adapts the generic `SideEffectContext` trait so that dashboard-originated commands
-/// can trigger side-effects (e.g. starting a new conversation) while the streaming task is in
-/// progress. The `state` is shared with the caller so the emitted session ID can be retrieved
-/// after all side-effects have executed.
-struct DashboardCommandSideEffectContext {
-    command_context: CommandContext,
+/// Executes `builtin://*` steps shared with the QQ channel and renders effects
+/// into dashboard outputs: assistant texts plus an optional new-session signal.
+/// QQ-only privileged specs (`ims://*`) fall back to a channel-unsupported
+/// message, preserving the pre-engine stub behavior for QQ-kind agents served
+/// over the dashboard transport.
+struct DashboardCommandRuntime {
     state: DashboardCommandSideEffectState,
+    output_texts: Vec<String>,
 }
 
-impl SideEffectContext for DashboardCommandSideEffectContext {
-    fn command_context(&self) -> &CommandContext {
-        &self.command_context
+impl DashboardCommandRuntime {
+    fn new(state: DashboardCommandSideEffectState) -> Self {
+        Self { state, output_texts: Vec::new() }
+    }
+}
+
+impl zihuan_core::command::CommandRuntime for DashboardCommandRuntime {
+    fn run_step(
+        &mut self,
+        step: &zihuan_core::command::Step,
+        inv: &zihuan_core::command::Invocation,
+        _state: &mut zihuan_core::command::CmdState,
+    ) -> Result<zihuan_core::command::StepRun> {
+        if let Some(op) = step.op.strip_prefix("builtin://") {
+            return match zihuan_core::command::execute_builtin(op, &inv.args, &inv.ctx.caller_id) {
+                Some(Ok(effects)) => Ok(zihuan_core::command::StepRun::stop_with(effects)),
+                Some(Err(err)) => Err(err),
+                None => Err(zihuan_core::string_error!("builtin 操作不存在: {}", step.op)),
+            };
+        }
+        // QQ-only privileged command reached a non-QQ channel.
+        Ok(zihuan_core::command::StepRun::stop_with(vec![
+            zihuan_core::command::Effect::Text(
+                "该命令仅能在 QQ Chat Agent 运行时中使用。".to_string(),
+            ),
+        ]))
     }
 
-    fn start_new_conversation(&self, _request: &NewConversationRequest) -> Result<()> {
-        self.state.issue_new_session_id();
+    fn apply_effect(&mut self, effect: &zihuan_core::command::Effect) -> Result<()> {
+        match effect {
+            zihuan_core::command::Effect::Text(text)
+            | zihuan_core::command::Effect::Notice(text)
+            | zihuan_core::command::Effect::Forward(text) => self.output_texts.push(text.clone()),
+            zihuan_core::command::Effect::StartNewConversation => {
+                self.state.issue_new_session_id();
+            }
+            // The engine folds SetContext into the shared CmdState before
+            // delivery; dashboard never receives one.
+            zihuan_core::command::Effect::SetContext { .. } => {}
+        }
         Ok(())
     }
 }
@@ -478,24 +541,19 @@ fn extract_agent_snapshot(
     agent: &RoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> AgentSnapshot {
-    let role_service_type = match &agent.role_service_type {
-        RoleServiceType::QqChat(_) => "qq_chat",
-        RoleServiceType::Workspace(_) => "workspace",
-    };
-
-    let avatar_url = match &agent.role_service_type {
-        RoleServiceType::QqChat(config) => {
+    let avatar_url =
+        if let Some(config) = zihuan_service::role::optional_qq_chat(&agent.role_service_type) {
             resolve_fallback_bot_profile(connections, &config.ims_bot_adapter_connection_id)
                 .ok()
                 .flatten()
                 .and_then(|profile| profile.avatar_url)
-        }
-        RoleServiceType::Workspace(_) => agent.avatar_url.clone(),
-    };
+        } else {
+            agent.avatar_url.clone()
+        };
 
     AgentSnapshot {
         name: agent.name.clone(),
-        role_service_type: role_service_type.to_string(),
+        role_service_type: agent.role_service_type.kind_tag().into(),
         avatar_url,
     }
 }
@@ -569,10 +627,10 @@ fn resolve_chat_agent(
 /// what to do next.
 ///
 /// **Design:** The function follows an early-return pattern for the "no command" case (returns
-/// the default outcome). When a command matches, it executes side-effects through
-/// `DashboardCommandSideEffectContext`, then constructs the appropriate outcome based on whether
-/// the command produced a passthrough text, an immediate reply, or triggered a new-conversation
-/// side-effect. The three exit paths are documented on `CommandDispatchOutcome`.
+/// the default outcome). When a command matches, it runs the command state machine through the
+/// `DashboardCommandRuntime`, then constructs the appropriate outcome based on whether the
+/// command produced a passthrough text, an immediate reply, or triggered a new-conversation
+/// effect. The three exit paths are documented on `CommandDispatchOutcome`.
 ///
 /// **Architecture:** Called after `resolve_chat_agent` in `execute_chat_streaming`. Depends on
 /// the global `CommandRegistry` from `zihuan_service`. Does **not** touch the SSE sender —
@@ -633,7 +691,7 @@ fn try_dispatch_dashboard_command(
         },
     };
 
-    let Some(dispatch_result) = command_registry.dispatch(&command_context, &raw_user_text) else {
+    let Some((spec, parsed)) = command_registry.spec_for(&command_context, &raw_user_text) else {
         return Ok(CommandDispatchOutcome {
             session_id,
             messages,
@@ -645,43 +703,70 @@ fn try_dispatch_dashboard_command(
         });
     };
 
-    let side_effect_state = DashboardCommandSideEffectState::default();
-    let side_effect_context = DashboardCommandSideEffectContext {
-        command_context: command_context.clone(),
-        state: side_effect_state.clone(),
-    };
-    for effect in &dispatch_result.result.side_effects {
-        if let Err(err) = effect.execute(&side_effect_context) {
-            return Err(json!({ "type": "error", "error": err.to_string() }));
-        }
+    // Permission gate.
+    let permission = command_registry.check_permission(&command_context, &raw_user_text);
+    if permission.matched && !permission.allowed {
+        immediate_output_messages =
+            Some(vec![LLMMessage::assistant_text("你没有权限使用此命令。".to_string())]);
+        should_run_inference = false;
+        return Ok(CommandDispatchOutcome {
+            session_id,
+            messages,
+            latest_user_message,
+            should_run_inference,
+            should_persist,
+            requires_assistant_message,
+            immediate_output_messages,
+        });
     }
+
+    let side_effect_state = DashboardCommandSideEffectState::default();
+    let mut runtime = DashboardCommandRuntime::new(side_effect_state.clone());
+    let invocation = zihuan_core::command::Invocation {
+        ctx: command_context,
+        args: parsed.args,
+        passthrough: parsed.passthrough_text,
+        resumed: false,
+    };
+    let execution = match zihuan_core::command::execute_command(&mut runtime, spec, invocation) {
+        Ok(execution) => execution,
+        Err(err) => return Err(json!({ "type": "error", "error": err.to_string() })),
+    };
 
     let issued_new_session_id = side_effect_state.current_new_session_id();
     if let Some(next_session_id) = issued_new_session_id.clone() {
         session_id = next_session_id;
     }
 
-    if let Some(passthrough_text) = dispatch_result.passthrough_text {
+    let passthrough_text = execution.passthrough;
+    let output_text = runtime.output_texts.join("\n");
+
+    if let Some(passthrough_text) = passthrough_text {
         let passthrough_message = LLMMessage::user(passthrough_text.clone());
         latest_user_message = Some(passthrough_message.clone());
 
         if issued_new_session_id.is_some() {
             messages = vec![passthrough_message];
-        } else if dispatch_result.result.inject_to_llm {
-            messages.push(LLMMessage::assistant_text(dispatch_result.result.reply));
-            messages.push(passthrough_message);
         } else {
             replace_last_user_message(&mut messages, passthrough_message);
         }
     } else if issued_new_session_id.is_some() {
+        // Starting a new conversation consumes the turn without emitting an
+        // assistant message (mirrors the pre-engine `/new` behavior).
         should_run_inference = false;
         should_persist = false;
         requires_assistant_message = false;
         latest_user_message = None;
     } else {
         should_run_inference = false;
-        immediate_output_messages =
-            Some(vec![LLMMessage::assistant_text(dispatch_result.result.reply)]);
+        if !output_text.is_empty() {
+            immediate_output_messages = Some(vec![LLMMessage::assistant_text(output_text)]);
+        } else {
+            // A matched command that produced no visible output still consumes
+            // the turn rather than falling through to inference.
+            immediate_output_messages =
+                Some(vec![LLMMessage::assistant_text("命令已执行。".to_string())]);
+        }
     }
 
     Ok(CommandDispatchOutcome {
@@ -947,12 +1032,9 @@ pub async fn stop_chat(req: &mut Request, res: &mut Response, depot: &mut Depot)
         .lock()
         .unwrap()
         .stop_workspace_chat_task(&session_id, body.task_id.as_deref());
-    if !stopped {
-        res.status_code(salvo::http::StatusCode::NOT_FOUND);
-        res.render(Json(json!({ "error": "running Workspace chat task not found" })));
-        return;
-    }
-    res.render(Json(json!({ "ok": true })));
+    // Stopping is intentionally idempotent. A second click may arrive after the turn has
+    // already observed the cancellation flag and removed itself from the running-task list.
+    res.render(Json(json!({ "ok": true, "stopped": stopped })));
 }
 
 #[handler]
@@ -1042,9 +1124,10 @@ pub async fn delete_chat_session(req: &mut Request, res: &mut Response, _depot: 
 /// 2. **Command dispatch** (`try_dispatch_dashboard_command`) — intercepts slash-commands
 ///    before inference; may short-circuit the pipeline with an immediate reply or a session
 ///    switch.
-/// 3. **Inference + relay** — if inference is required, spawns `infer_role_response_streaming`
-///    in a background task and either `relay_inference_stream` (token-by-token) or
-///    `relay_collected_text` (batch) to forward results to the client.
+/// 3. **Procedure chain + relay** — if inference is required, spawns the RoleService procedure
+///    chain (`run_procedure_chain`, whose Brain procedure drives the inference) in a background
+///    task and either `relay_inference_stream` (token-by-token) or `relay_collected_text`
+///    (batch) to forward results to the client.
 /// 4. **Persistence** (`persist_chat_records`) — writes the user message and all output
 ///    messages to the session's `.jsonl` file.
 ///
@@ -1200,11 +1283,41 @@ async fn execute_chat_streaming(
         }
     };
 
+    // Turn context shared by the whole procedure chain (documents/procedure.md). The
+    // new-conversation check must happen before any persistence: Workspace turns create the
+    // session file with the user message right below.
+    let is_new_conversation =
+        !chat_session_file_path(&session_id).map(|path| path.exists()).unwrap_or(false);
+    let (token_tx, mut token_rx) = mpsc::unbounded_channel::<StreamToken>();
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
+    let transport_sink: Arc<dyn TransportSink> =
+        Arc::new(SseTransportSink { token_tx, event_tx: event_tx.clone() });
+    let procedure_context = ProcedureContext {
+        session_id: session_id.clone(),
+        is_new_conversation,
+        latest_user_text: latest_user_message.as_ref().and_then(LLMMessage::content_text_owned),
+        workspace_path: effective_workspace_path.clone(),
+        transport_out: Some(transport_sink),
+        procedure_outputs: Vec::new(),
+        role_context: None,
+    };
+    if !should_run_inference {
+        // Command-only turns skip the brain, so the role's side-effect procedures (e.g. /new
+        // session naming) run here; inference turns run the whole chain inside the spawned
+        // turn task below.
+        if let Err(err) = state
+            .role_service_manager
+            .run_procedure_chain(&agent, procedure_context.clone(), Vec::new())
+            .await
+        {
+            log::error!("role procedures failed for agent '{}': {err}", agent.name);
+        }
+    }
+
     let assistant_message_id =
         requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
 
-    let workspace_task = if should_run_inference
-        && matches!(agent.role_service_type, RoleServiceType::Workspace(_))
+    let workspace_task = if should_run_inference && zihuan_service::role::is_workspace_agent(&agent)
     {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let task_id = state.tasks.lock().unwrap().add_workspace_chat_task(
@@ -1335,82 +1448,123 @@ async fn execute_chat_streaming(
         snapshot
     });
 
-    let (token_tx, mut token_rx) = mpsc::unbounded_channel::<StreamToken>();
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
-    let observer: Arc<dyn ToolCallingObserver> = Arc::new(SseToolCallingObserver {
-        event_tx: event_tx.clone(),
-        session_id: session_id.clone(),
-        message_id: assistant_message_id.clone(),
-        change_recorder: workspace_changes::WorkspaceChangeRecorder::new(
-            session_id.clone(),
-            effective_workspace_path.clone(),
-        ),
-        running_chat_message: running_chat_message.clone(),
-    });
-    let compaction_observer: ContextCompactionObserver = {
-        let event_tx = event_tx.clone();
-        let message_id = assistant_message_id.clone();
-        Arc::new(move |event| {
-            let payload = match event {
-                ContextCompactionEvent::Started => json!({
-                    "type": "context_compaction_start",
-                    "message_id": message_id,
-                }),
-                ContextCompactionEvent::Completed {
-                    estimated_tokens_before,
-                    estimated_tokens_after,
-                    duration,
-                } => json!({
-                    "type": "context_compaction_complete",
-                    "message_id": message_id,
-                    "estimated_tokens_before": estimated_tokens_before,
-                    "estimated_tokens_after": estimated_tokens_after,
-                    "duration_ms": duration.as_millis() as u64,
-                }),
-                ContextCompactionEvent::Failed => json!({
-                    "type": "context_compaction_failed",
-                    "message_id": message_id,
-                }),
+    let inference_started_at = Instant::now();
+    let cancellation: Option<Arc<dyn AgentCancellation>> =
+        workspace_task.as_ref().map(|(_, stop_flag)| {
+            Arc::new(WorkspaceChatCancellation(Arc::clone(stop_flag))) as Arc<dyn AgentCancellation>
+        });
+    let turn_handle = {
+        let manager = state.role_service_manager.clone();
+        let agent_id = agent_id.clone();
+        let agent_config = agent.clone();
+        let procedure_context = procedure_context;
+        let turn_event_tx = event_tx;
+        let turn_session_id = session_id.clone();
+        let turn_workspace_path = effective_workspace_path.clone();
+        let turn_model_config_id = model_config_id.clone();
+        let turn_image_understand_model_config_id = image_understand_model_config_id.clone();
+        let turn_running_chat_message = running_chat_message.clone();
+        let turn_assistant_message_id = assistant_message_id.clone();
+        tokio::spawn(async move {
+            // Resolve the running agent at turn time like the old inference task did; a
+            // missing service flows through the standard turn failure handling below.
+            let Some(role_service) = manager.running_role_service(&agent_id) else {
+                return Err(zihuan_core::string_error!("agent '{agent_id}' is not running"));
             };
-            let _ = event_tx.send(payload);
+            // Bind this turn's model overrides into a turn-scoped agent at inference time, so
+            // the agent handed to the brain procedure already carries its models. With no
+            // override the role's own configured binding is used as-is.
+            let brain_agent: Arc<RoleAgent> = if turn_model_config_id.is_some()
+                || turn_image_understand_model_config_id.is_some()
+            {
+                let llm_refs = load_llm_refs()?;
+                let (llm, model_name) = match turn_model_config_id.as_deref() {
+                    Some(model_id) => {
+                        let mut llm_config = resolve_llm_service_config(
+                            Some(model_id),
+                            &llm_refs,
+                            role_service.agent().name.as_str(),
+                        )?;
+                        if let Some(override_value) = thinking_type {
+                            llm_config.thinking_type = Some(override_value);
+                        }
+                        if let Some(override_value) = reasoning_effort {
+                            llm_config.reasoning_effort = Some(override_value);
+                        }
+                        let model_name = llm_config.model_name.clone();
+                        (build_llm_model(&llm_config)?, model_name)
+                    }
+                    None => (role_service.llm(), role_service.model_name().to_string()),
+                };
+                let image_understand_llm = match turn_image_understand_model_config_id.as_deref() {
+                    Some(image_model_id) => {
+                        let llm_config = resolve_llm_service_config(
+                            Some(image_model_id),
+                            &llm_refs,
+                            role_service.agent().name.as_str(),
+                        )?;
+                        Some(build_llm_model(&llm_config)?)
+                    }
+                    None => None,
+                };
+                Arc::new(role_service.with_llm_override(llm, model_name, image_understand_llm))
+            } else {
+                role_service
+            };
+            let observer: Arc<dyn ToolCallingObserver> = Arc::new(SseToolCallingObserver {
+                event_tx: turn_event_tx.clone(),
+                session_id: turn_session_id.clone(),
+                message_id: turn_assistant_message_id.clone(),
+                change_recorder: workspace_changes::WorkspaceChangeRecorder::new(
+                    turn_session_id.clone(),
+                    turn_workspace_path.clone(),
+                ),
+                running_chat_message: turn_running_chat_message.clone(),
+            });
+            let compaction_observer: ContextCompactionObserver = {
+                let event_tx = turn_event_tx;
+                let message_id = turn_assistant_message_id;
+                Arc::new(move |event| {
+                    let payload = match event {
+                        ContextCompactionEvent::Started => json!({
+                            "type": "context_compaction_start",
+                            "message_id": message_id,
+                        }),
+                        ContextCompactionEvent::Completed {
+                            estimated_tokens_before,
+                            estimated_tokens_after,
+                            duration,
+                        } => json!({
+                            "type": "context_compaction_complete",
+                            "message_id": message_id,
+                            "estimated_tokens_before": estimated_tokens_before,
+                            "estimated_tokens_after": estimated_tokens_after,
+                            "duration_ms": duration.as_millis() as u64,
+                        }),
+                        ContextCompactionEvent::Failed => json!({
+                            "type": "context_compaction_failed",
+                            "message_id": message_id,
+                        }),
+                    };
+                    let _ = event_tx.send(payload);
+                })
+            };
+            let brain = Arc::new(WorkspaceBrain::<RoleAgent>::new(
+                brain_agent,
+                messages,
+                Some(turn_session_id),
+                turn_workspace_path,
+                cancellation,
+                Some(observer),
+                Some(compaction_observer),
+            ));
+            manager.run_procedure_chain(&agent_config, procedure_context, vec![brain]).await
         })
     };
 
-    let chat_workspace_path = effective_workspace_path.clone();
-    let inference_session_id = session_id.clone();
-    let inference_started_at = Instant::now();
-    let inference_handle = tokio::spawn({
-        let state = state.clone();
-        let agent_id = agent_id.clone();
-        let model_config_id = model_config_id.clone();
-        let image_understand_model_config_id = image_understand_model_config_id.clone();
-        let cancellation = workspace_task.as_ref().map(|(_, stop_flag)| {
-            Arc::new(WorkspaceChatCancellation(Arc::clone(stop_flag))) as Arc<dyn AgentCancellation>
-        });
-        async move {
-            state
-                .role_service_manager
-                .infer_role_response_streaming_with_model(
-                    &agent_id,
-                    messages,
-                    token_tx,
-                    Some(observer),
-                    Some(compaction_observer),
-                    model_config_id.as_deref(),
-                    image_understand_model_config_id.as_deref(),
-                    thinking_type,
-                    reasoning_effort,
-                    chat_workspace_path.clone(),
-                    Some(inference_session_id.clone()),
-                    cancellation,
-                )
-                .await
-        }
-    });
-
     let stop_watch = workspace_task.as_ref().map(|(_, flag)| {
         let flag = Arc::clone(flag);
-        let abort_handle = inference_handle.abort_handle();
+        let abort_handle = turn_handle.abort_handle();
         tokio::spawn(async move {
             while !flag.load(Ordering::Relaxed) {
                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -1440,80 +1594,59 @@ async fn execute_chat_streaming(
     // already stopped consuming events, but the inference result is still awaited
     // and persisted below.
 
-    let (output_messages, stop_reason) = match inference_handle.await {
-        Ok(Ok(result)) => result,
-        Ok(Err(err)) => {
-            if let Some(snapshot) = running_chat_message.as_ref() {
-                if let Err(persist_err) =
-                    persist_running_chat_message(&session_id, &agent, &agent_snapshot, snapshot)
-                {
-                    log::warn!("failed to persist running chat message after inference error: {persist_err}");
+    let (output_messages, stop_reason) = {
+        let turn_result = match turn_handle.await {
+            Ok(result) => result,
+            Err(err) => Err(zihuan_core::string_error!("failed to join chat task: {err}")),
+        };
+        match turn_result.and_then(|outputs| {
+            outputs
+                .iter()
+                .rev()
+                .find_map(|output| output.cloned::<(Vec<LLMMessage>, ToolCallingStopReason)>())
+                .ok_or_else(|| {
+                    zihuan_core::string_error!("brain procedure produced no turn output")
+                })
+        }) {
+            Ok(result) => result,
+            Err(err) => {
+                if let Some(snapshot) = running_chat_message.as_ref() {
+                    if let Err(persist_err) =
+                        persist_running_chat_message(&session_id, &agent, &agent_snapshot, snapshot)
+                    {
+                        log::warn!("failed to persist running chat message after inference error: {persist_err}");
+                    }
                 }
-            }
-            clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
-            let stopped =
-                workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
-            if let Some((task_id, _)) = &workspace_task {
-                finish_workspace_task(
-                    &state,
-                    &broadcast_tx,
-                    task_id,
-                    if stopped {
-                        TaskStatus::Stopped
-                    } else {
-                        TaskStatus::Failed
-                    },
-                    (!stopped).then(|| err.to_string()),
-                    None,
-                );
-            }
-            if stopped {
-                if let Err(error) = interrupt_workspace_tasks(&session_id, "用户手动停止推理")
-                {
-                    log::warn!("failed to interrupt workspace tasks: {error}");
+                clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
+                let stopped =
+                    workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
+                if let Some((task_id, _)) = &workspace_task {
+                    finish_workspace_task(
+                        &state,
+                        &broadcast_tx,
+                        task_id,
+                        if stopped {
+                            TaskStatus::Stopped
+                        } else {
+                            TaskStatus::Failed
+                        },
+                        (!stopped).then(|| err.to_string()),
+                        None,
+                    );
+                }
+                if stopped {
+                    if let Err(error) = interrupt_workspace_tasks(&session_id, "用户手动停止推理")
+                    {
+                        log::warn!("failed to interrupt workspace tasks: {error}");
+                    }
+                    return;
+                }
+                let event = json!({ "type": "error", "error": err.to_string() });
+                if client_connected {
+                    let _ = sender.send_data(format!("data: {event}\n\n")).await;
                 }
                 return;
             }
-            let event = json!({ "type": "error", "error": err.to_string() });
-            if client_connected {
-                let _ = sender.send_data(format!("data: {event}\n\n")).await;
-            }
-            return;
-        }
-        Err(err) => {
-            if let Some(snapshot) = running_chat_message.as_ref() {
-                if let Err(persist_err) =
-                    persist_running_chat_message(&session_id, &agent, &agent_snapshot, snapshot)
-                {
-                    log::warn!("failed to persist running chat message after chat task join failure: {persist_err}");
-                }
-            }
-            clear_running_chat_message(&state, &session_id, running_chat_message.as_ref());
-            let stopped =
-                workspace_task.as_ref().is_some_and(|(_, flag)| flag.load(Ordering::Relaxed));
-            if let Some((task_id, _)) = &workspace_task {
-                finish_workspace_task(
-                    &state,
-                    &broadcast_tx,
-                    task_id,
-                    if stopped {
-                        TaskStatus::Stopped
-                    } else {
-                        TaskStatus::Failed
-                    },
-                    (!stopped).then(|| format!("failed to join chat task: {err}")),
-                    None,
-                );
-            }
-            if stopped {
-                return;
-            }
-            let event =
-                json!({ "type": "error", "error": format!("failed to join chat task: {err}") });
-            if client_connected {
-                let _ = sender.send_data(format!("data: {event}\n\n")).await;
-            }
-            return;
         }
     };
 
@@ -1535,7 +1668,7 @@ async fn execute_chat_streaming(
         if let Some((task_id, _)) = &workspace_task {
             finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Stopped, None, None);
         }
-        if matches!(agent.role_service_type, RoleServiceType::Workspace(_)) {
+        if zihuan_service::role::is_workspace_agent(&agent) {
             if let Err(error) = interrupt_workspace_tasks(&session_id, "用户手动停止推理") {
                 log::warn!("failed to interrupt workspace tasks: {error}");
             }
@@ -2142,6 +2275,9 @@ fn fork_chat_session_history(source_session_id: &str, source_message_id: &str) -
         created_at: Utc::now().to_rfc3339(),
     };
     write_fork_metadata(&forked_session_id, &metadata)?;
+    if let Some(title) = load_session_title(source_session_id)? {
+        write_session_title(&forked_session_id, &title)?;
+    }
     Ok(forked_session_id)
 }
 
@@ -2296,7 +2432,10 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
 
         let first_record = read_first_record(&path).ok().flatten();
         let first_user_message = read_first_user_message(&path).ok().flatten();
-        let title = build_session_title(first_user_message.as_deref(), stem);
+        let title = load_session_title(stem)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| build_session_title(first_user_message.as_deref(), stem));
 
         if let Some(filter) = filter_agent_id {
             if first_record.as_ref().map(|r| r.agent_id.as_str()) != Some(filter) {
@@ -2433,7 +2572,7 @@ fn resolve_effective_workspace_path(
     session_id: Option<&str>,
     requested_workspace_path: Option<&str>,
 ) -> Result<Option<String>> {
-    if !matches!(agent.role_service_type, RoleServiceType::Workspace(_)) {
+    if !zihuan_service::role::is_workspace_agent(&agent) {
         return Ok(None);
     }
 
@@ -2456,11 +2595,6 @@ fn resolve_effective_workspace_path(
         "Workspace Agent Service requires a workspace_path for new sessions and could not determine current directory"
             .to_string(),
     ))
-}
-
-fn chat_history_dir() -> Result<PathBuf> {
-    let root = zihuan_core::system_config::application_data_dir().join(CHAT_HISTORY_DIR_NAME);
-    Ok(root)
 }
 
 fn chat_session_file_path(session_id: &str) -> Result<PathBuf> {
@@ -2486,6 +2620,7 @@ fn delete_chat_session_file(session_id: &str) -> Result<()> {
     if metadata_path.exists() {
         fs::remove_file(metadata_path)?;
     }
+    delete_session_title(session_id)?;
     Ok(())
 }
 

@@ -3,7 +3,7 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 export type DataType = string | { Vec: DataType } | { [key: string]: DataType };
 export type PortDefinition = { name: string; data_type: DataType; required: boolean; hidden: boolean; description: string | null };
 export type NodeConfigField = { key: string; data_type: DataType; description?: string; required?: boolean; widget?: string; connection_kind?: string | null };
-export type NodeUiDefinition = { template_path?: string; card?: UiComponent[]; panel?: UiComponent[] };
+export type NodeUiDefinition = { template_path?: string; style_path?: string; card?: UiComponent[]; panel?: UiComponent[] };
 export type UiComponent = { type: string; props?: Record<string, JsonValue>; value_key?: string; event?: string; children?: UiComponent[] };
 
 export class ResourceHandle {
@@ -29,6 +29,7 @@ export type NodeInputs = Record<string, JsonValue | ResourceHandle | undefined>;
 export type NodeOutputs = Record<string, JsonValue | ResourceHandle | undefined>;
 
 export interface ZihuanSdk {
+  readonly host: JobHost;
   readonly ui: {
     publish(state: JsonValue): Promise<boolean>;
     update(patch: JsonValue): Promise<boolean>;
@@ -141,3 +142,38 @@ export function resourceFromWire(value: JsonValue): JsonValue | ResourceHandle;
 export function hydrateResources(value: JsonValue): JsonValue | ResourceHandle;
 export class ZihuanSdk { constructor(request: (method: string, params?: Record<string, JsonValue | ResourceHandle | undefined>) => Promise<JsonValue>); }
 export function createZihuanSdk(request: (method: string, params?: Record<string, JsonValue | ResourceHandle | undefined>) => Promise<JsonValue>): ZihuanSdk;
+
+export type JobRole = "user" | "assistant" | "system" | "tool";
+export type JobMessage = { role: JobRole; text: string };
+export type JobTask = {
+  id: string;
+  task_name: string;
+  source_service: string;
+  triggered_by: string | null;
+  start_time: string;
+};
+export type JobRequest = {
+  task: JobTask;
+  agent_id: string;
+  sender_id: string | null;
+  script_path: string;
+  entry: string;
+};
+export type JobManifest = { task_name: string; entry?: string; description?: string };
+export type JobResult = { ok: true; result?: string } | { ok: false; error: string };
+export type JobLogLevel = "info" | "warn" | "error";
+
+export interface JobHost {
+  call(method: string, params?: Record<string, JsonValue>): Promise<JsonValue>;
+}
+
+export class JobSdk {
+  constructor(host: JobHost);
+  loadHistory(senderId: string): Promise<JobMessage[]>;
+  clearHistory(senderId: string): Promise<null>;
+  latestDreamMemory(agentId: string, senderId: string): Promise<string | null>;
+  insertDreamMemory(agentId: string, senderId: string, chars: number, content: string): Promise<null>;
+  runSubagent(definition: string, inputs?: Record<string, string>): Promise<string>;
+  log(message: string, level?: JobLogLevel): Promise<null>;
+}
+export function createJobSdk(request: (method: string, params?: Record<string, JsonValue>) => Promise<JsonValue>): JobSdk;

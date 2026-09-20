@@ -523,45 +523,73 @@ fn load_ui_template(
     script_dir: &Path,
     ui: Option<&serde_json::Value>,
 ) -> (Option<String>, Option<String>) {
-    let Some(path_value) = ui.and_then(|value| value.get("template_path")).and_then(Value::as_str)
-    else {
+    let template_path = ui.and_then(|value| value.get("template_path")).and_then(Value::as_str);
+    let style_path = ui.and_then(|value| value.get("style_path")).and_then(Value::as_str);
+    if template_path.is_none() && style_path.is_none() {
         return (None, None);
-    };
+    }
+
+    let mut document = String::new();
+    if let Some(path_value) = style_path {
+        match read_ui_file(script_dir, path_value, &["css", "scss"]) {
+            Ok((extension, content)) => match ui_file_block(&extension, &content) {
+                Ok(block) => document.push_str(&block),
+                Err(error) => return (None, Some(error)),
+            },
+            Err(error) => return (None, Some(error)),
+        }
+    }
+    if let Some(path_value) = template_path {
+        match read_ui_file(script_dir, path_value, &["html", "css", "scss"]) {
+            Ok((extension, content)) => match ui_file_block(&extension, &content) {
+                Ok(block) => document.push_str(&block),
+                Err(error) => return (None, Some(error)),
+            },
+            Err(error) => return (None, Some(error)),
+        }
+    }
+    (Some(sanitize_ui_template(&document)), None)
+}
+
+fn read_ui_file(
+    script_dir: &Path,
+    path_value: &str,
+    allowed_extensions: &[&str],
+) -> std::result::Result<(String, String), String> {
     let relative = Path::new(path_value);
 
     // Validate the path form.
     if relative.is_absolute()
         || relative.components().any(|c| matches!(c, std::path::Component::ParentDir))
     {
-        return (None, Some("UI 模板路径必须是相对路径且不能包含 ..".to_string()));
+        return Err("UI 模板路径必须是相对路径且不能包含 ..".to_string());
     }
 
     // Validate the file extension.
-    let allowed_extensions = ["html", "css", "scss"];
-    let ext = relative.extension().and_then(|e| e.to_str());
-    if !ext.map(|e| allowed_extensions.contains(&e)).unwrap_or(false) {
-        return (
-            None,
-            Some(format!("UI 模板路径必须是 .html、.css 或 .scss 文件，当前: {:?}", ext)),
-        );
+    let extension = relative
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    if !allowed_extensions.contains(&extension.as_str()) {
+        return Err(format!(
+            "UI 模板路径必须是 {:?} 文件，当前: {:?}",
+            allowed_extensions,
+            relative.extension().and_then(|e| e.to_str())
+        ));
     }
 
     // Resolve the path relative to the declaring script's directory.
     let path = script_dir.join(relative);
 
     // Canonicalize the directories so containment can be checked reliably.
-    let canonical_script_dir = match script_dir.canonicalize() {
-        Ok(path) => path,
-        Err(error) => return (None, Some(format!("脚本目录不可用: {error}"))),
-    };
-    let canonical = match path.canonicalize() {
-        Ok(path) => path,
-        Err(error) => return (None, Some(format!("UI 模板读取失败: {error}"))),
-    };
+    let canonical_script_dir =
+        script_dir.canonicalize().map_err(|error| format!("脚本目录不可用: {error}"))?;
+    let canonical = path.canonicalize().map_err(|error| format!("UI 模板读取失败: {error}"))?;
 
     // Ensure the resolved path stays inside the script directory.
     if !canonical.starts_with(&canonical_script_dir) {
-        return (None, Some("UI 模板路径超出脚本目录范围".to_string()));
+        return Err("UI 模板路径超出脚本目录范围".to_string());
     }
 
     // Enforce a size limit on the template.
@@ -570,13 +598,30 @@ fn load_ui_template(
         .map(|m| m.len() > MAX_TEMPLATE_BYTES)
         .unwrap_or(true)
     {
-        return (None, Some("UI 模板超过 512 KiB 限制".to_string()));
+        return Err("UI 模板超过 512 KiB 限制".to_string());
     }
 
-    // Read and sanitize the template content.
-    match std::fs::read_to_string(canonical) {
-        Ok(content) => (Some(sanitize_ui_template(&content)), None),
-        Err(error) => (None, Some(format!("UI 模板读取失败: {error}"))),
+    let content =
+        std::fs::read_to_string(canonical).map_err(|error| format!("UI 模板读取失败: {error}"))?;
+    Ok((extension, content))
+}
+
+// Wrap raw CSS (or compiled SCSS) so the frontend template injection applies it.
+fn style_block(css: &str) -> String {
+    format!("<style>\n{css}\n</style>")
+}
+
+fn compile_scss(source: &str) -> std::result::Result<String, String> {
+    grass::from_string(source.to_owned(), &grass::Options::default())
+        .map_err(|error| format!("SCSS 编译失败: {error}"))
+}
+
+fn ui_file_block(extension: &str, content: &str) -> std::result::Result<String, String> {
+    match extension {
+        "html" => Ok(content.to_string()),
+        "css" => Ok(style_block(content)),
+        "scss" => compile_scss(content).map(|css| style_block(&css)),
+        _ => Ok(String::new()),
     }
 }
 
@@ -791,23 +836,21 @@ impl Node for DynamicScriptNode {
                     Ok(Value::Bool(ok))
                 }
                 "agent.llm" => {
-                    let config =
-                        crate::agent::runtime_context::current_qq_chat_agent_service_config()?;
+                    let resources = crate::agent::runtime_context::current_agent_resources()?;
                     let kind = crate::agent::normalize_llm_kind(
                         params.get("llm_kind").and_then(Value::as_str),
                     )?;
                     let model =
                         crate::model_inference::agent_config_support::build_llm_from_ref_id(
-                            crate::agent::qq_chat::llm_ref_id_for_kind(&config, kind),
+                            resources.llm_ref_id(kind).as_deref(),
                         )?;
                     Ok(store_script_resource(DataValue::LLModel(model)))
                 }
                 "agent.embedding_model" => {
-                    let config =
-                        crate::agent::runtime_context::current_qq_chat_agent_service_config()?;
+                    let resources = crate::agent::runtime_context::current_agent_resources()?;
                     let model =
                         crate::model_inference::agent_config_support::build_embedding_from_ref_id(
-                            config.embedding_model_ref_id.as_deref(),
+                            resources.embedding_model_ref_id().as_deref(),
                         )?;
                     Ok(store_script_resource(DataValue::EmbeddingModel(model)))
                 }
@@ -816,47 +859,44 @@ impl Node for DynamicScriptNode {
                     Ok(json!({"task_id": task_id, "has_task": !task_id.trim().is_empty()}))
                 }
                 "agent.rdb" => {
-                    let config =
-                        crate::agent::runtime_context::current_qq_chat_agent_service_config()?;
-                    let connection_id = config
-                        .resolved_rdb_id()
-                        .map(str::trim)
+                    let resources = crate::agent::runtime_context::current_agent_resources()?;
+                    let connection_id = resources
+                        .connection_id(crate::agent::resource_provider::ConnectionKind::Rdb)
+                        .map(|value| value.trim().to_string())
                         .filter(|value| !value.is_empty())
                         .ok_or_else(|| {
                             Error::ValidationError("rdb_connection_id is required".to_string())
                         })?;
                     let reference = crate::runtime::block_async(
                         crate::storage::RuntimeStorageConnectionManager::shared()
-                            .get_or_create_mysql_ref(connection_id),
+                            .get_or_create_mysql_ref(&connection_id),
                     )?;
                     Ok(store_script_resource(DataValue::RdbRef(
                         crate::data_refs::RelationalDbConnection::MySql(reference),
                     )))
                 }
                 "agent.s3" => {
-                    let config =
-                        crate::agent::runtime_context::current_qq_chat_agent_service_config()?;
-                    let connection_id = config
-                        .rustfs_connection_id
-                        .as_deref()
-                        .map(str::trim)
+                    let resources = crate::agent::runtime_context::current_agent_resources()?;
+                    let connection_id = resources
+                        .connection_id(crate::agent::resource_provider::ConnectionKind::S3)
+                        .map(|value| value.trim().to_string())
                         .filter(|value| !value.is_empty())
                         .ok_or_else(|| {
                             Error::ValidationError("rustfs_connection_id is required".to_string())
                         })?;
                     let reference = crate::runtime::block_async(
                         crate::storage::RuntimeStorageConnectionManager::shared()
-                            .get_or_create_s3_ref(connection_id),
+                            .get_or_create_s3_ref(&connection_id),
                     )?;
                     Ok(store_script_resource(DataValue::S3Ref(reference)))
                 }
                 "agent.image_weaviate" => {
-                    let config =
-                        crate::agent::runtime_context::current_qq_chat_agent_service_config()?;
-                    let connection_id = config
-                        .weaviate_image_connection_id
-                        .as_deref()
-                        .map(str::trim)
+                    let resources = crate::agent::runtime_context::current_agent_resources()?;
+                    let connection_id = resources
+                        .connection_id(
+                            crate::agent::resource_provider::ConnectionKind::ImageWeaviate,
+                        )
+                        .map(|value| value.trim().to_string())
                         .filter(|value| !value.is_empty())
                         .ok_or_else(|| {
                             Error::ValidationError(
@@ -864,7 +904,7 @@ impl Node for DynamicScriptNode {
                             )
                         })?;
                     let reference = crate::storage::resource_resolver::build_weaviate_ref(
-                        Some(connection_id),
+                        Some(&connection_id),
                         &crate::storage::load_connections()?,
                         Some(crate::storage::WeaviateCollectionSchema::ImageSemantic),
                     )?
@@ -881,16 +921,18 @@ impl Node for DynamicScriptNode {
                     Ok(store_script_resource(DataValue::WeaviateRef(reference)))
                 }
                 "agent.web_search" => {
-                    let config =
-                        crate::agent::runtime_context::current_qq_chat_agent_service_config()?;
-                    let connection_id = config.web_search_engine_connection_id.trim();
-                    if connection_id.is_empty() {
-                        return Err(Error::ValidationError(
-                            "web_search_engine_connection_id is required".to_string(),
-                        ));
-                    }
+                    let resources = crate::agent::runtime_context::current_agent_resources()?;
+                    let connection_id = resources
+                        .connection_id(crate::agent::resource_provider::ConnectionKind::WebSearch)
+                        .map(|value| value.trim().to_string())
+                        .filter(|value| !value.is_empty())
+                        .ok_or_else(|| {
+                            Error::ValidationError(
+                                "web_search_engine_connection_id is required".to_string(),
+                            )
+                        })?;
                     let reference = crate::storage::resource_resolver::build_web_search_engine_ref(
-                        Some(connection_id),
+                        Some(&connection_id),
                         &crate::storage::load_connections()?,
                     )?
                     .ok_or_else(|| {
@@ -1257,10 +1299,11 @@ impl Node for DynamicScriptNode {
                         })?,
                         "messages",
                     )?;
-                    let response = model.inference(&crate::model_inference::llm::InferenceParam {
-                        messages: &messages,
-                        tools: None,
-                    });
+                    let response =
+                        model.inference(&crate::model_inference::llm::InferenceParam {
+                            messages: &messages,
+                            tools: None,
+                        })?;
                     Ok(json!({"response": [response]}))
                 }
                 "model.create_llm_from_ref" => {

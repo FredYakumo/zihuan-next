@@ -69,14 +69,22 @@ async fn main() {
 
     let args = Args::parse();
 
-    if let Err(error) = zihuan_core::agent::sub_agent_manager::ensure_default_subagents() {
-        error!("Failed to initialize default SubAgents: {error}");
+    if let Err(error) = zihuan_core::agent::declarative_agent::seed_builtin_agents() {
+        error!("Failed to seed default agent definitions: {error}");
     }
+
+    if let Err(error) = zihuan_core::scheduler::init_script_jobs() {
+        error!("Failed to initialize scheduled jobs: {error}");
+    }
+    zihuan_core::scheduler::start_scheduler_kernel();
 
     let state = Arc::new(api::state::AppState::new());
     let broadcast = api::ws::create_broadcast();
     log_forwarder::set_app_state(Arc::clone(&state));
     log_forwarder::set_broadcast(broadcast.clone());
+    // Register the task runtime before the first scheduler tick so scheduled job runs are
+    // recorded as tasks even when no role service has been started yet.
+    api::config::role_services::build_agent_task_runtime(Arc::clone(&state), broadcast.clone());
 
     startup_recover_orphan_tasks(&state).await;
     spawn_task_ttl_cleanup(Arc::clone(&state));

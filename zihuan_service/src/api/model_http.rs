@@ -178,7 +178,12 @@ pub async fn chat_completions(req: &mut Request, res: &mut Response) {
         messages: &messages,
         tools: tools.as_ref(),
     };
-    let message = llm.inference(&param);
+    let message = match llm.inference(&param) {
+        Ok(message) => message,
+        Err(error) => {
+            return render_error(res, StatusCode::BAD_GATEWAY, "server_error", &error.to_string());
+        }
+    };
     let completion_id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
     let created = Utc::now().timestamp();
     if body.stream {

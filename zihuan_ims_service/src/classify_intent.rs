@@ -573,8 +573,13 @@ pub fn classify_intent_with_trace(
         }
     }
     messages.push(LLMMessage::user(message.to_string()));
-    let response = llm.inference(&InferenceParam { messages: &messages, tools: None });
-    let label = response.content_text_owned().unwrap_or_default();
+    let label = match llm.inference(&InferenceParam { messages: &messages, tools: None }) {
+        Ok(response) => response.content_text_owned().unwrap_or_default(),
+        Err(err) => {
+            warn!("{LOG_PREFIX} Intent classification LLM inference failed: {err}");
+            String::new()
+        }
+    };
     let trimmed = label.trim();
     let category = IntentCategory::from_label(trimmed).unwrap_or(IntentCategory::Other);
     if category == IntentCategory::Other && trimmed != IntentCategory::Other.label() {

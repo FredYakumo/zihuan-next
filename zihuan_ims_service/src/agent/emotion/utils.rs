@@ -1,5 +1,5 @@
-use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use crate::qq_session_state::QqChatSessionState;
+use crate::role_config::QqChatEmotionDimensionConfig;
 
 const NOTICEABLE_EMOTION_THRESHOLD: f64 = 20.0;
 const STRONG_EMOTION_THRESHOLD: f64 = 60.0;
@@ -9,7 +9,7 @@ const STRONG_EMOTION_THRESHOLD: f64 = 60.0;
 /// Each line follows the pattern: `{name}: {value}`.
 /// Returns `[No emotion dimensions]` when no dimensions are configured.
 pub fn emotion_dimensions_text(
-    session_state: &QqChatAgentServiceSessionState,
+    session_state: &QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> String {
     let lines: Vec<String> = session_state
@@ -27,7 +27,7 @@ pub fn emotion_dimensions_text(
 /// Builds model-facing emotion instructions from dynamically generated prompts and current weights.
 /// Raw dimension names and numeric values intentionally never leave this module.
 pub fn emotion_expression_prompt(
-    session_state: &QqChatAgentServiceSessionState,
+    session_state: &QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> String {
     emotion_prompt_entries(session_state, emotion_dimensions)
@@ -47,7 +47,7 @@ pub fn emotion_expression_prompt(
 
 /// Returns whether an emotion instruction is strong enough to take precedence over language style.
 pub fn has_noticeable_emotion_expression(
-    session_state: &QqChatAgentServiceSessionState,
+    session_state: &QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> bool {
     emotion_prompt_entries(session_state, emotion_dimensions)
@@ -56,7 +56,7 @@ pub fn has_noticeable_emotion_expression(
 }
 
 fn emotion_prompt_entries(
-    session_state: &QqChatAgentServiceSessionState,
+    session_state: &QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> Vec<(f64, String)> {
     emotion_dimensions

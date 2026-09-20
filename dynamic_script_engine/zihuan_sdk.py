@@ -5,9 +5,58 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Callable, Protocol, TypeAlias
+from typing import Any, Callable, Literal, NotRequired, Protocol, TypedDict, TypeAlias
 
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
+
+JobRole: TypeAlias = Literal["user", "assistant", "system", "tool"]
+JobLogLevel: TypeAlias = Literal["info", "warn", "error"]
+
+
+class JobMessage(TypedDict):
+    """One conversation-history entry as reported to a scheduler job script."""
+    role: JobRole
+    text: str
+
+
+class JobTask(TypedDict):
+    """The scheduled task a job script was fired for."""
+    id: str
+    task_name: str
+    source_service: str
+    triggered_by: str | None
+    start_time: str
+
+
+class JobRequest(TypedDict):
+    """The request object a scheduler job entry point receives."""
+    task: JobTask
+    agent_id: str
+    sender_id: str | None
+    script_path: str
+    entry: str
+
+
+class JobManifest(TypedDict):
+    """The `JOB_MANIFEST` a job script declares; `entry` defaults to `run_job` when omitted."""
+    task_name: str
+    entry: NotRequired[str]
+    description: NotRequired[str]
+
+
+class JobSuccess(TypedDict):
+    """A job's successful return value; `result` becomes the task summary."""
+    ok: Literal[True]
+    result: str
+
+
+class JobFailure(TypedDict):
+    """A job's failed return value; `error` becomes the task's failure summary."""
+    ok: Literal[False]
+    error: str
+
+
+JobResult: TypeAlias = JobSuccess | JobFailure
 
 
 @dataclass(frozen=True)
@@ -65,6 +114,36 @@ class Host:
         if response.get("id") != request_id: raise RuntimeError("unexpected host RPC response")
         if response.get("error"): raise RuntimeError(str(response["error"]))
         return hydrate_resources(response.get("result"))
+
+
+class JobSdk:
+    """Purpose: expose the scheduler kernel's named host capabilities to Python job scripts."""
+
+    def __init__(self, host: Host) -> None: self._host = host
+
+    def load_history(self, sender_id: str) -> list[JobMessage]:
+        """Purpose: load one sender's conversation history as role/text messages."""
+        return self._host.call("history.load", {"sender_id": sender_id})
+
+    def clear_history(self, sender_id: str) -> None:
+        """Purpose: drop one sender's stored conversation history."""
+        self._host.call("history.clear", {"sender_id": sender_id})
+
+    def latest_dream_memory(self, agent_id: str, sender_id: str) -> str | None:
+        """Purpose: read the latest persisted Dream memory for one sender, or null when absent."""
+        return self._host.call("dream_memory.latest", {"agent_id": agent_id, "sender_id": sender_id})
+
+    def insert_dream_memory(self, agent_id: str, sender_id: str, chars: int, content: str) -> None:
+        """Purpose: persist one consolidated Dream memory snapshot for one sender."""
+        self._host.call("dream_memory.insert", {"agent_id": agent_id, "sender_id": sender_id, "chars": chars, "content": content})
+
+    def run_subagent(self, definition: str, **inputs: str) -> str:
+        """Purpose: run one inline sub-agent definition with string inputs and return its text result."""
+        return self._host.call("subagent.run", {"definition": definition, "inputs": inputs})
+
+    def log(self, message: str, level: JobLogLevel = "info") -> None:
+        """Purpose: forward one log line to the scheduler host."""
+        self._host.call("log", {"level": level, "message": message})
 
 
 class _Namespace:

@@ -6,10 +6,11 @@ use log::{info, warn};
 
 use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use crate::agent::utils::build_state_system_prefix_lines;
-use zihuan_core::agent::session_state::QqChatAgentServiceSessionState;
+use crate::qq_session_state::QqChatSessionState;
 use zihuan_core::agent::tools::ToolCallingMiddleware;
+use zihuan_core::command::{CommandChannel, CommandContext};
 
-use zihuan_core::agent::qq_chat::QqChatEmotionDimensionConfig;
+use crate::role_config::QqChatEmotionDimensionConfig;
 use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{
@@ -23,14 +24,13 @@ use zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT;
 use zihuan_core::graph::DataValue;
 
 use zihuan_core::ims_bot_adapter::message_helpers::get_bot_id;
-use zihuan_core::ims_bot_adapter::{CURRENT_MESSAGE_LABEL, IMAGE_ANALYSIS_LABEL};
+use zihuan_core::ims_bot_adapter::IMAGE_ANALYSIS_LABEL;
 
 use super::user_input::{
     append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference,
     flush_text_part, prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
     PreparedCurrentTurnUserInput,
 };
-use crate::storage::qq_chat_history_store::{conversation_history_key, load_history};
 
 use super::core::{
     build_state_delta_lines, build_user_message, merge_character_and_style_prompt,
@@ -52,7 +52,7 @@ fn build_steer_user_message(
     api_style: Option<&str>,
     system_prompt: &str,
     style_prompt: Option<&str>,
-    session_state: &mut QqChatAgentServiceSessionState,
+    session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
     preprompt_context: Option<&str>,
 ) -> LLMMessage {
@@ -80,7 +80,7 @@ fn build_merged_steer_user_message(
     api_style: Option<&str>,
     system_prompt: &str,
     style_prompt: Option<&str>,
-    session_state: &mut QqChatAgentServiceSessionState,
+    session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
     preprompt_context: Option<&str>,
 ) -> LLMMessage {
@@ -239,7 +239,7 @@ pub(crate) struct QqChatServiceSteerHook {
     pub(crate) shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
     pub(crate) system_prompt: String,
     pub(crate) style_prompt: Option<String>,
-    pub(crate) session_state: Arc<Mutex<QqChatAgentServiceSessionState>>,
+    pub(crate) session_state: Arc<Mutex<QqChatSessionState>>,
     pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     pub(crate) preprompt_context: Option<String>,
 }
@@ -353,47 +353,47 @@ impl QqChatAgentServiceInner {
         .current_text_for_prompt()
         .to_string();
         if let Some(command_registry) = zihuan_core::command::global_command_registry() {
-            let cmd_ctx = self.build_command_context(
-                sender_id,
-                target_id,
-                is_group,
-                inference_event.group_id,
-            );
+            let cmd_ctx = CommandContext {
+                agent_type: "qq_chat".to_string(),
+                agent_id: self.id.clone(),
+                caller_id: sender_id.to_string(),
+                channel: CommandChannel::QqChat {
+                    sender_id: sender_id.to_string(),
+                    is_group,
+                    group_id: inference_event.group_id,
+                    target_id: target_id.to_string(),
+                },
+            };
             if let Some(preview) = command_registry.preview(&cmd_ctx, &current_message) {
-                if preview.definition.allow_steer_bypass && preview.passthrough_text.is_none() {
+                if preview.spec.allow_steer_bypass && preview.passthrough_text.is_none() {
                     info!(
                         "{LOG_PREFIX} Session busy for {sender_id}, executing command via steer bypass: message_id={} command=/{}",
                         event.message_id,
-                        preview.definition.name
+                        preview.spec.name
                     );
-                    if let Some(dispatch_result) =
-                        command_registry.dispatch(&cmd_ctx, &current_message)
-                    {
-                        let history_key = conversation_history_key(sender_id);
-                        let mut history = load_history(ctx.cache, &history_key);
-                        let trace = QqChatTaskTrace::new(Local::now());
-                        self.execute_command_dispatch(
-                            &trace,
-                            &cmd_ctx,
-                            dispatch_result,
-                            &prepared_input.event,
-                            &inference_event,
-                            sender_id,
-                            target_id,
-                            &bot_id,
-                            &mut history,
-                            None,
-                            ctx,
-                        )?;
-                        trace.finish_with_summary();
+                    let trace = QqChatTaskTrace::new(Local::now());
+                    let executed = crate::qq_chat::command::run_command_effects_now(
+                        &trace,
+                        ctx,
+                        &self.id,
+                        &prepared_input.event,
+                        &inference_event,
+                        sender_id,
+                        target_id,
+                        &bot_id,
+                        is_group,
+                        &current_message,
+                    )?;
+                    trace.finish_with_summary();
+                    if executed {
                         return Ok(());
                     }
                 } else {
                     info!(
                         "{LOG_PREFIX} Session busy for {sender_id}, command falls back to steer: message_id={} command=/{} allow_steer_bypass={} has_passthrough={}",
                         event.message_id,
-                        preview.definition.name,
-                        preview.definition.allow_steer_bypass,
+                        preview.spec.name,
+                        preview.spec.allow_steer_bypass,
                         preview.passthrough_text.is_some()
                     );
                 }

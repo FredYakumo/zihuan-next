@@ -183,7 +183,7 @@
             <div v-if="isWorkspaceService" class="workspace-path-display">
               <span class="path-label">当前工作目录：</span>
               <span class="path-value" :class="{ 'path-unset': !workspacePath }">
-                {{ workspacePath || '未选择工作目录' }}
+                {{ workspacePathDisplay || '未选择工作目录' }}
               </span>
             </div>
             <aside v-if="showWorkspaceTaskPanel" class="workspace-task-panel" aria-label="当前任务">
@@ -347,6 +347,17 @@
                               )
                             "
                           />
+                          <pre
+                            v-if="
+                              classifyToolCall(
+                                toolCall.function.name,
+                                toolCall.function.arguments,
+                                getToolResultText(toolCall.id),
+                              ).type === 'exec_cmd' &&
+                              !message.liveToolCalls?.some((liveCall) => liveCall.call_id === toolCall.id)
+                            "
+                            class="chat-tool-live-output"
+                          >{{ toolCallExecOutput(toolCall.function.name, toolCall.function.arguments, getToolResultText(toolCall.id)) }}</pre>
                         </template>
                       </div>
                       <WorkspaceTaskList
@@ -581,6 +592,17 @@
                               )
                             "
                           />
+                          <pre
+                            v-if="
+                              classifyToolCall(
+                                toolCall.function.name,
+                                toolCall.function.arguments,
+                                getToolResultText(toolCall.id),
+                              ).type === 'exec_cmd' &&
+                              !message.liveToolCalls?.some((liveCall) => liveCall.call_id === toolCall.id)
+                            "
+                            class="chat-tool-live-output"
+                          >{{ toolCallExecOutput(toolCall.function.name, toolCall.function.arguments, getToolResultText(toolCall.id)) }}</pre>
                         </template>
                       </div>
                       <WorkspaceTaskList
@@ -832,7 +854,7 @@
                           class="model-chip"
                           @click.stop="openPicker = openPicker === 'model' ? null : 'model'"
                         >
-                          {{ selectedModelLabel }}
+                          <span class="chip-label">{{ selectedModelLabel }}</span>
                           <svg
                             class="chip-chevron"
                             viewBox="0 0 24 24"
@@ -870,7 +892,7 @@
                           class="model-chip"
                           @click.stop="openPicker = openPicker === 'thinking' ? null : 'thinking'"
                         >
-                          {{ selectedThinkingLabel }}
+                          <span class="chip-label">{{ selectedThinkingLabel }}</span>
                           <svg
                             class="chip-chevron"
                             viewBox="0 0 24 24"
@@ -913,7 +935,7 @@
                           class="model-chip"
                           @click.stop="openPicker = openPicker === 'effort' ? null : 'effort'"
                         >
-                          {{ selectedEffortLabel }}
+                          <span class="chip-label">{{ selectedEffortLabel }}</span>
                           <svg
                             class="chip-chevron"
                             viewBox="0 0 24 24"
@@ -984,7 +1006,21 @@
                         title="管理 AGENTS.md"
                         @click.stop="openAgentsMdDialog"
                       >
-                        AGENTS.md
+                        <svg
+                          class="agents-md-icon"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                          <line x1="9" y1="13" x2="15" y2="13" />
+                          <line x1="9" y1="17" x2="15" y2="17" />
+                        </svg>
+                        <span class="agents-md-label">AGENTS.md</span>
                       </button>
 
                       <div class="model-settings" :class="{ open: openPicker === 'settings' }">
@@ -1577,7 +1613,16 @@ const emit = defineEmits<{
 }>();
 
 const HISTORY_COLLAPSED_KEY = "zihuan.chat.history-collapsed";
-const historyCollapsed = ref(!props.embedded && localStorage.getItem(HISTORY_COLLAPSED_KEY) === "1");
+const SMALL_SCREEN_HISTORY_QUERY = "(max-width: 1180px)";
+
+function resolveInitialHistoryCollapsed(): boolean {
+  if (props.embedded) return false;
+  const stored = localStorage.getItem(HISTORY_COLLAPSED_KEY);
+  if (stored !== null) return stored === "1";
+  return window.matchMedia(SMALL_SCREEN_HISTORY_QUERY).matches;
+}
+
+const historyCollapsed = ref(resolveInitialHistoryCollapsed());
 
 const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskUpdate", "TaskGet", "TaskList"]);
 
@@ -1622,6 +1667,7 @@ const {
   draftImageAttachments,
   imagePreviewAttachment,
   workspacePath,
+  workspacePathDisplay,
   directoryPickerOpen,
   directoryPickerLoading,
   directoryPickerSelecting,
@@ -1698,6 +1744,7 @@ const {
   toggleLiveToolCall,
   formatToolPayload,
   liveExecOutput,
+  toolCallExecOutput,
   formatChatTime,
   renderMessageContent,
   scrollToBottom,
@@ -2011,7 +2058,7 @@ function formatCacheHitRate(rate: number) {
 .tool-call-limit-continue { background: #2ba471; color: #fff; }
 .tool-call-limit-stop { background: #d54941; color: #fff; }
 
-.chat-tool-live-output {
+.chat-live-tool-wrapper .chat-tool-live-output {
   order: 2;
 }
 

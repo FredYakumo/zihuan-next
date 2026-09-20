@@ -7,7 +7,7 @@ pub(crate) mod reply;
 pub(crate) use context::{QqChatAgentServiceContext, QqChatAgentServiceRuntimeConfig};
 pub(crate) use inference::{QqInferenceToolProvider, QqLoadedInferenceResources};
 pub(crate) use inner::{QqChatAgentService, QqChatAgentServiceInner};
-pub(crate) use notifier::{QqCommandSideEffectContext, QqLongTaskNotifier};
+pub(crate) use notifier::QqLongTaskNotifier;
 pub(crate) use reply::{
     QqChatServiceHandleReport, QqChatServiceReplyBatchBuilder, QqChatServiceReplyBuildRequest,
     QqChatServiceReplyBuildResult, QqChatServiceTurnResult,

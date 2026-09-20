@@ -15,11 +15,11 @@ async fn connection_for_service(
         .into_iter()
         .find(|agent| agent.id == service_id)
         .ok_or_else(|| "Service not found".to_string())?;
-    let zihuan_core::agent::service_config::RoleServiceType::QqChat(config) =
-        agent.role_service_type
-    else {
+    if !zihuan_service::role::is_qq_chat_agent(&agent) {
         return Err("计划任务目前仅支持 QQ Chat Service".to_string());
-    };
+    }
+    let config = zihuan_service::role::qq_chat_of(&agent.role_service_type)
+        .map_err(|err| err.to_string())?;
     let rdb_id = config
         .resolved_rdb_id()
         .ok_or_else(|| "该 Service 未配置关系数据库".to_string())?;

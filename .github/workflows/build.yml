@@ -151,7 +151,7 @@ jobs:
           Copy-Item "target/release/zihuan_next${{ matrix.binary_extension }}" $packageRoot
           Copy-Item "package.json" $packageRoot
           Copy-Item "dag_nodes/*" "$packageRoot/dag_nodes" -Recurse
-          $runtimeFiles = @("engine.mjs", "python_node_runtime.py", "zihuan_sdk.mjs", "zihuan_sdk.py")
+          $runtimeFiles = @("engine.mjs", "engine_runtime.py", "zihuan_sdk.mjs", "zihuan_sdk.py")
           foreach ($file in $runtimeFiles) {
             Copy-Item "dynamic_script_engine/$file" "$packageRoot/dynamic_script_engine"
           }
@@ -167,7 +167,7 @@ jobs:
           cp "target/release/zihuan_next${{ matrix.binary_extension }}" "$package_root/"
           cp package.json "$package_root/"
           cp -R dag_nodes/. "$package_root/dag_nodes/"
-          cp dynamic_script_engine/{engine.mjs,python_node_runtime.py,zihuan_sdk.mjs,zihuan_sdk.py} "$package_root/dynamic_script_engine/"
+          cp dynamic_script_engine/{engine.mjs,engine_runtime.py,zihuan_sdk.mjs,zihuan_sdk.py} "$package_root/dynamic_script_engine/"
           if [[ "${{ matrix.package_extension }}" == ".tar.xz" ]]; then
             tar -cJf "${archive_base}.tar.xz" -C package zihuan_next
           else

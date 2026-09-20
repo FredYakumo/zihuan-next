@@ -1,3 +1,4 @@
+use crate::error::Error;
 use crate::model_inference::llm::llm_base::{LLMBase, StreamingLLMBase};
 use crate::model_inference::llm::message::convert::{
     build_chat_completions_request_body, build_responses_image_url_object_compat_request_body,
@@ -420,10 +421,12 @@ impl LLMBase for LLMAPI {
         Some(self)
     }
 
-    fn inference(&self, param: &InferenceParam) -> LLMMessage {
+    fn inference(&self, param: &InferenceParam) -> crate::error::Result<LLMMessage> {
         if matches!(self.api_style, LlmApiStyle::CandleGguf | LlmApiStyle::CandleHf) {
             error!("Local Candle styles should be routed through the local runtime, not LLMAPI");
-            return LLMMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
+            return Err(crate::string_error!(
+                "Local Candle styles should be routed through the local runtime, not LLMAPI"
+            ));
         }
 
         let messages =
@@ -510,7 +513,7 @@ impl LLMBase for LLMAPI {
                             Some((attempt, max_attempts)),
                         )
                     );
-                    return msg;
+                    return Ok(msg);
                 }
                 Err(RequestError::Retryable { message }) => {
                     last_error = Some(message.clone());
@@ -539,16 +542,16 @@ impl LLMBase for LLMAPI {
             }
         }
 
-        if let Some(err_msg) = last_error {
-            error!(
-                "Returning sanitized LLM API error to caller; detailed error kept in logs: {}",
-                err_msg
-            );
-        } else {
-            error!("Returning sanitized LLM API error to caller without detailed context");
+        match last_error {
+            Some(err_msg) => {
+                error!("LLM API request failed; returning error to caller: {err_msg}");
+                Err(Error::StringError(err_msg))
+            }
+            None => {
+                error!("LLM API request failed without detailed context");
+                Err(Error::StaticStrError("LLM API request failed"))
+            }
         }
-
-        LLMMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR)
     }
 }
 
