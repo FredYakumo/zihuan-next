@@ -49,7 +49,6 @@ pub struct TaskEntry {
     pub stop_flag: Option<Arc<AtomicBool>>,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {

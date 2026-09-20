@@ -30,7 +30,6 @@ fn message(value: impl Into<String>) -> EngineError {
     EngineError::Message(value.into())
 }
 
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[serde(rename_all = "snake_case")]
 pub enum ScriptLanguage {
