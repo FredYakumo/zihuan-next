@@ -13,7 +13,7 @@
     </t-card>
     <t-alert v-if="listError" theme="error" :message="listError" class="agent-config-alert" />
     <t-dialog v-model:visible="showTypePicker" header="选择 Agent 类型" :confirm-btn="null" cancel-btn="取消" width="440px"><t-button block variant="outline" class="agent-type-card" @click="startCreate"><strong>SubAgent</strong><span>通过提示词、输入输出和工具列表定义全局子 Agent。</span></t-button></t-dialog>
-    <t-dialog v-model:visible="editorVisible" :header="isCreating ? '新增 SubAgent' : `${form.id} 配置`" :confirm-btn="{ content: '保存', loading: saving }" cancel-btn="取消" width="760px" @confirm="save">
+    <t-dialog v-model:visible="editorVisible" :header="isCreating ? '新增 SubAgent' : `${form.id} 配置`" :confirm-btn="{ content: '保存', loading: saving }" cancel-btn="取消" width="760px" top="5vh" @confirm="save">
       <t-form label-align="top"><div class="form-grid"><t-form-item label="ID" required><t-input v-model="form.id" :disabled="!isCreating" placeholder="例如 research_agent" /></t-form-item><t-form-item label="名称" required><t-input v-model="form.name" /></t-form-item></div>
         <t-form-item label="描述"><t-input v-model="form.description" placeholder="提供给 LLM 的工具描述，留空则使用名称" /></t-form-item>
         <div class="form-grid"><t-form-item label="模型用途"><t-input v-model="form.llm_kind" placeholder="main / math_programming" /></t-form-item><t-form-item label="运行时长"><t-select v-model="form.run_duration"><t-option value="Short" label="Short" /><t-option value="Long" label="Long" /></t-select></t-form-item></div>
