@@ -26,7 +26,7 @@
       </template>
       <div v-if="showCreateForm" class="agent-service-drawer-body">
         <t-form class="agent-service-form" label-align="top">
-          <!-- RoleService 配置 -->
+
           <t-card class="agent-service-form-section" :bordered="false">
             <template #title>{{ form.type === 'qq_chat' ? 'RoleService 配置' : '基本信息' }}</template>
             <div class="agent-service-form-grid">
@@ -108,7 +108,7 @@
             </div>
           </t-card>
 
-          <!-- QQ Chat 专属字段 -->
+
           <template v-if="form.type === 'qq_chat'">
             <t-card class="agent-service-form-section" :bordered="false">
               <template #title>RAG 配置</template>
@@ -230,7 +230,7 @@
             </t-card>
           </template>
 
-          <!-- 工具和能力 -->
+
           <t-card class="agent-service-form-section" :bordered="false">
             <template #title>
               <div class="agent-service-section-title-row">
@@ -568,7 +568,7 @@
           </t-table>
         </t-card>
 
-        <!-- 工具调用上限回文 -->
+
         <t-card v-if="form.type === 'qq_chat'" class="agent-service-form-section" :bordered="false">
           <template #title>工具调用上限回文</template>
           <t-form-item label="达到调用上限回文（可选）" class="agent-service-form-item-full">
@@ -586,7 +586,7 @@
       </template>
     </t-drawer>
 
-    <!-- 默认工具编辑抽屉 -->
+
     <t-drawer
       v-model:visible="showDefaultToolEditModal"
       :header="'编辑默认工具'"
@@ -614,7 +614,7 @@
       </template>
     </t-drawer>
 
-    <!-- 自定义工具编辑抽屉 -->
+
     <t-drawer
       v-model:visible="showToolEditModal"
       :header="editingToolIndex === -1 ? '增加工具' : '编辑工具'"
@@ -716,7 +716,7 @@
       </template>
     </t-drawer>
 
-    <!-- 情绪维度抽屉 -->
+
     <t-drawer
       v-model:visible="showEmotionDimensionsModal"
       header="情绪维度"
@@ -769,7 +769,6 @@
 
         <div v-if="!emotionDimensionAdding && form.emotion_dimensions.length === 0" class="agent-service-empty-state">还没有配置情绪维度。点击「新增维度」开始添加。</div>
 
-        <!-- 已有维度卡片 -->
         <t-card v-for="(dimension, index) in form.emotion_dimensions" :key="`${dimension.name}-${index}`" :bordered="true" style="margin-top: 12px">
           <template #title>
             <div v-if="emotionDimensionEditingIndex === index" class="agent-service-tool-header">
@@ -813,7 +812,7 @@
             </div>
           </template>
 
-          <!-- 展示态 -->
+
           <template v-else>
             <div class="agent-service-emotion-bars">
               <div class="agent-service-emotion-bar-row">
@@ -847,7 +846,7 @@
       </t-card>
     </t-drawer>
 
-    <!-- Ignore Rules 抽屉 -->
+
     <t-drawer
       v-model:visible="showIgnoreRulesModal"
       header="Ignore Rules"
@@ -901,7 +900,7 @@
       </t-card>
     </t-drawer>
 
-    <!-- Rate Limit 抽屉 -->
+
     <t-drawer
       v-model:visible="showRateLimitModal"
       header="Rate Limit"
@@ -944,7 +943,7 @@
         </div>
       </t-card>
 
-      <!-- 群组规则 -->
+
       <t-card class="agent-service-form-section" :bordered="false" style="margin-top: 12px">
         <template #title>
           <div class="agent-service-section-title-row">
@@ -989,7 +988,7 @@
         </t-card>
       </t-card>
 
-      <!-- 用户规则 -->
+
       <t-card class="agent-service-form-section" :bordered="false" style="margin-top: 12px">
         <template #title>
           <div class="agent-service-section-title-row">
@@ -1041,7 +1040,7 @@
       </template>
     </t-drawer>
 
-    <!-- Service 列表 -->
+
     <t-card class="agent-service-card" bordered>
       <div class="agent-service-toolbar">
         <t-input v-model="filters.keyword" clearable placeholder="搜索名称或 Config ID" />
@@ -1087,427 +1086,55 @@
         <template #empty><div class="agent-service-empty">暂无匹配的 Service。</div></template>
       </t-table>
     </t-card>
-    <t-dialog
+    <ConfigImportDialog
       v-model:visible="showModelConfigDialog"
-      header="新增模型配置"
-      :confirm-btn="null"
-      cancel-btn="取消"
-      :close-on-overlay-click="false"
-    >
-      <div class="agent-service-model-config-actions">
-        <t-button block theme="primary" @click="openModelCreatePage">新增模型配置</t-button>
-        <t-button block variant="outline" :loading="modelImporting" @click="importModelFromClipboard">从剪贴板导入</t-button>
-        <t-button block variant="outline" :loading="modelImporting" @click="triggerModelImportFile">从 JSON 导入</t-button>
-        <input ref="modelImportFileInput" type="file" accept=".json,application/json" class="agent-service-import-input" @change="handleModelFileChange" />
-      </div>
-    </t-dialog>
-    <t-dialog
+      title="新增模型配置"
+      create-label="新增模型配置"
+      :loading="modelImporting"
+      @create="openModelCreatePage"
+      @clipboard-import="importModelFromClipboard"
+      @file-change="handleModelFileChange"
+    />
+    <ConfigImportDialog
       v-model:visible="showRetrievalDatabaseDialog"
-      header="新增检索数据库"
-      :confirm-btn="null"
-      cancel-btn="取消"
-      :close-on-overlay-click="false"
-    >
-      <div class="agent-service-model-config-actions">
-        <t-button block theme="primary" @click="openRetrievalDatabaseCreatePage">新增检索数据库</t-button>
-        <t-button block variant="outline" :loading="retrievalDatabaseImporting" @click="importRetrievalDatabaseFromClipboard">从剪贴板导入</t-button>
-        <t-button block variant="outline" :loading="retrievalDatabaseImporting" @click="triggerRetrievalDatabaseImportFile">从 JSON 导入</t-button>
-        <input ref="retrievalDatabaseImportFileInput" type="file" accept=".json,application/json" class="agent-service-import-input" @change="handleRetrievalDatabaseFileChange" />
-      </div>
-    </t-dialog>
-    <t-dialog
+      title="新增检索数据库"
+      create-label="新增检索数据库"
+      :loading="retrievalDatabaseImporting"
+      @create="openRetrievalDatabaseCreatePage"
+      @clipboard-import="importRetrievalDatabaseFromClipboard"
+      @file-change="handleRetrievalDatabaseFileChange"
+    />
+    <ConfigImportDialog
       v-model:visible="showWebSearchDialog"
-      header="新增 Web Search"
-      :confirm-btn="null"
-      cancel-btn="取消"
-      :close-on-overlay-click="false"
-    >
-      <div class="agent-service-model-config-actions">
-        <t-button block theme="primary" @click="openWebSearchCreatePage">新增 Web Search</t-button>
-        <t-button block variant="outline" :loading="webSearchImporting" @click="importWebSearchFromClipboard">从剪贴板导入</t-button>
-        <t-button block variant="outline" :loading="webSearchImporting" @click="triggerWebSearchImportFile">从 JSON 导入</t-button>
-        <input ref="webSearchImportFileInput" type="file" accept=".json,application/json" class="agent-service-import-input" @change="handleWebSearchFileChange" />
-      </div>
-    </t-dialog>
+      title="新增 Web Search"
+      create-label="新增 Web Search"
+      :loading="webSearchImporting"
+      @create="openWebSearchCreatePage"
+      @clipboard-import="importWebSearchFromClipboard"
+      @file-change="handleWebSearchFileChange"
+    />
   </section>
 </template>
 
-<script setup lang="ts">
-import { computed, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
+<script lang="ts">
+import { defineComponent } from "vue";
 import { AddIcon, CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
-import { system, type ServiceWithRuntime } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
+import ConfigImportDialog from "../components/ConfigImportDialog.vue";
 import ServiceModelConfig from "../components/ServiceModelConfig.vue";
-import { useAgents } from "./useAgents";
-import { assertConnectionConfig, assertLlmConfig } from "../model";
+import { useRoleServicePage } from "./roleServicePage";
 
-const {
-  serviceTypes,
-  services,
-  servicesLoading,
-  connections,
-  llm,
-  workflows,
-  form,
-  showCreatePicker,
-  showCreateForm,
-  showEditModal,
-  showEmotionDimensionsModal,
-  showRateLimitModal,
-  showIgnoreRulesModal,
-  ignoreRulesLoading,
-  ignoreRules,
-  ignoreRuleSubmitting,
-  ignoreRuleDeletingId,
-  ignoreRuleError,
-  ignoreRuleForm,
-  emotionDimensionAdding,
-  emotionDimensionDraft,
-  emotionDimensionEditingIndex,
-  toolSearchQuery,
-  toolRows,
-  filteredToolRows,
-  toolRowClassName,
-  showDefaultToolEditModal,
-  editingDefaultToolId,
-  defaultToolEditDraft,
-  currentEditingDefaultTool,
-  openDefaultToolEditModal,
-  closeDefaultToolEditModal,
-  confirmDefaultToolEdit,
-  chatModels,
-  multimodalChatModels,
-  embeddingModels,
-  botConnections,
-  rustfsConnections,
-  webSearchEngineConnections,
-  taskDbConnections,
-  tokenizerConnections,
-  imageWeaviateConnections,
-  memoryWeaviateConnections,
-  imageElasticsearchConnections,
-  memoryElasticsearchConnections,
-  retrievalConnections,
-  ignoreRulesDisabledReason,
-  resetForm,
-  avatarUploading,
-  handleAvatarFileSelect,
-  uploadAvatarFile,
-  clearAvatar,
-  clearEditingAgent,
-  ignoreRulePreview,
-  formatRequestError,
-  startCreate,
-  closeCreatePicker,
-  pickCreateType,
-  closeEditor,
-  load,
-  editService,
-  duplicateService,
-  closeEditModal,
-  openEmotionDimensionsModal,
-  closeEmotionDimensionsModal,
-  resetEmotionDimensionDraft,
-  startAddEmotionDimension,
-  cancelAddEmotionDimension,
-  buildEmotionDimensionPayload,
-  confirmAddEmotionDimension,
-  editEmotionDimension,
-  cancelEditEmotionDimension,
-  confirmEditEmotionDimension,
-  removeEmotionDimension,
-  resetIgnoreRuleForm,
-  formatIgnoreRule,
-  loadIgnoreRules,
-  openIgnoreRulesModal,
-  closeIgnoreRulesModal,
-  openRateLimitModal,
-  closeRateLimitModal,
-  addGroupRateLimitRule,
-  removeGroupRateLimitRule,
-  addUserRateLimitRule,
-  removeUserRateLimitRule,
-  editIgnoreRule,
-  submitIgnoreRule,
-  removeIgnoreRule,
-  showToolEditModal,
-  editingToolIndex,
-  toolEditDraft,
-  toolEditCallLimit,
-  openNewTool,
-  openToolEdit,
-  closeToolEditModal,
-  confirmToolEdit,
-  removeTool,
-  validateImageUnderstandModelSelection,
-  isGeneratedToolId,
-  syncingToolIndex,
-  syncToolFromGraph,
-  handleToolTargetTypeChange,
-  applyWorkflowSetMetadata,
-  submitForm,
-  removeService,
-  startAgent,
-  stopAgent,
-  toggleServiceRuntime,
-  llmName,
-  llmRefName,
-  runtimeBadgeText,
-  compactId,
-  formatTime,
-  statusTone,
-  summarizeIds,
-  getAvatarDisplayUrl,
-  agentAvatarUrl,
-  agentInitial,
-  serviceCopiedId,
-  copyServiceConfig,
-  handleServiceFileChange,
-} = useAgents();
-
-const router = useRouter();
-const showModelConfigDialog = ref(false);
-const modelImportFileInput = ref<HTMLInputElement | null>(null);
-const modelImporting = ref(false);
-const showRetrievalDatabaseDialog = ref(false);
-const retrievalDatabaseImportFileInput = ref<HTMLInputElement | null>(null);
-const retrievalDatabaseImporting = ref(false);
-const showWebSearchDialog = ref(false);
-const webSearchImportFileInput = ref<HTMLInputElement | null>(null);
-const webSearchImporting = ref(false);
-
-function handlePrimaryModelChange(value: string | number) {
-  if (String(value) !== "__add_model__") return;
-  form.llm_ref_id = "";
-  showModelConfigDialog.value = true;
-}
-
-function handleImageUnderstandModelChange(value: string | number) {
-  if (String(value) !== "__add_model__") return;
-  form.image_understand_llm_ref_id = "";
-  showModelConfigDialog.value = true;
-}
-
-function handleMemoryBackendChange(value: string | number) {
-  if (String(value) !== "__add_retrieval_database__") return;
-  form.workspace_memory_backend = "";
-  showRetrievalDatabaseDialog.value = true;
-}
-
-function handleWebSearchChange(value: string | number) {
-  if (String(value) !== "__add_web_search__") return;
-  form.web_search_engine_connection_id = "";
-  showWebSearchDialog.value = true;
-}
-
-function openModelCreatePage() {
-  showModelConfigDialog.value = false;
-  router.push({ path: "/llm", query: { action: "create" } });
-}
-
-function openRetrievalDatabaseCreatePage() {
-  showRetrievalDatabaseDialog.value = false;
-  router.push({ path: "/connections", query: { action: "create" } });
-}
-
-function openWebSearchCreatePage() {
-  showWebSearchDialog.value = false;
-  router.push({ path: "/connections", query: { action: "create", type: "web_search_engine" } });
-}
-
-async function importModelFromText(raw: string) {
-  if (modelImporting.value) return;
-  modelImporting.value = true;
-  try {
-    const config = assertLlmConfig(JSON.parse(raw));
-    const created = await system.llm.create({ name: config.name, enabled: config.enabled, model: config.model });
-    await load();
-    form.llm_ref_id = created.config_id;
-    showModelConfigDialog.value = false;
-  } catch (error) {
-    alert(`模型配置导入失败：${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    modelImporting.value = false;
-  }
-}
-
-async function importModelFromClipboard() {
-  try {
-    await importModelFromText(await navigator.clipboard.readText());
-  } catch (error) {
-    alert(`读取剪贴板失败：${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-function triggerModelImportFile() { modelImportFileInput.value?.click(); }
-function handleModelFileChange(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => { void importModelFromText(String(reader.result)); input.value = ""; };
-  reader.onerror = () => { alert("文件读取失败"); input.value = ""; };
-  reader.readAsText(file);
-}
-
-async function importRetrievalDatabaseFromText(raw: string) {
-  if (retrievalDatabaseImporting.value) return;
-  retrievalDatabaseImporting.value = true;
-  try {
-    const config = assertConnectionConfig(JSON.parse(raw));
-    const type = String(config.kind.type);
-    if (type !== "weaviate" && type !== "elasticsearch") {
-      throw new Error("检索数据库仅支持 Weaviate 或 Elasticsearch 连接配置");
-    }
-    const created = await system.connections.create({ name: config.name, enabled: config.enabled, kind: config.kind });
-    await load();
-    form.workspace_memory_backend = type;
-    if (type === "weaviate") form.workspace_weaviate_memory_connection_id = created.config_id;
-    else form.workspace_elasticsearch_memory_connection_id = created.config_id;
-    showRetrievalDatabaseDialog.value = false;
-  } catch (error) {
-    alert(`检索数据库导入失败：${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    retrievalDatabaseImporting.value = false;
-  }
-}
-
-async function importRetrievalDatabaseFromClipboard() {
-  try {
-    await importRetrievalDatabaseFromText(await navigator.clipboard.readText());
-  } catch (error) {
-    alert(`读取剪贴板失败：${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-function triggerRetrievalDatabaseImportFile() { retrievalDatabaseImportFileInput.value?.click(); }
-function handleRetrievalDatabaseFileChange(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => { void importRetrievalDatabaseFromText(String(reader.result)); input.value = ""; };
-  reader.onerror = () => { alert("文件读取失败"); input.value = ""; };
-  reader.readAsText(file);
-}
-
-async function importWebSearchFromText(raw: string) {
-  if (webSearchImporting.value) return;
-  webSearchImporting.value = true;
-  try {
-    const config = assertConnectionConfig(JSON.parse(raw));
-    if (config.kind.type !== "web_search_engine") {
-      throw new Error("Web Search 仅支持 Web Search Engine 连接配置");
-    }
-    const created = await system.connections.create({ name: config.name, enabled: config.enabled, kind: config.kind });
-    await load();
-    form.web_search_engine_connection_id = created.config_id;
-    showWebSearchDialog.value = false;
-  } catch (error) {
-    alert(`Web Search 导入失败：${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    webSearchImporting.value = false;
-  }
-}
-
-async function importWebSearchFromClipboard() {
-  try {
-    await importWebSearchFromText(await navigator.clipboard.readText());
-  } catch (error) {
-    alert(`读取剪贴板失败：${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-function triggerWebSearchImportFile() { webSearchImportFileInput.value?.click(); }
-function handleWebSearchFileChange(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => { void importWebSearchFromText(String(reader.result)); input.value = ""; };
-  reader.onerror = () => { alert("文件读取失败"); input.value = ""; };
-  reader.readAsText(file);
-}
-
-const serviceImportFileInput = ref<HTMLInputElement | null>(null);
-const filters = reactive({
-  keyword: "",
-  type: "all",
-  status: "all",
+export default defineComponent({
+  components: {
+    AddIcon,
+    AdminPageHeader,
+    CloseIcon,
+    ConfigImportDialog,
+    InfoCircleIcon,
+    ServiceModelConfig,
+  },
+  setup: useRoleServicePage,
 });
-
-const filteredServices = computed(() => {
-  const keyword = filters.keyword.trim().toLowerCase();
-  return services.value.filter((service) => {
-    if (filters.type !== "all" && service.role_service_type.type !== filters.type) {
-      return false;
-    }
-    if (filters.status !== "all" && service.runtime.status !== filters.status) {
-      return false;
-    }
-    if (!keyword) {
-      return true;
-    }
-    return `${service.name} ${service.config_id}`.toLowerCase().includes(keyword);
-  });
-});
-
-const columns = [
-  { colKey: "name", title: "Service 名称", width: 230 },
-  { colKey: "type", title: "Service 类型", width: 185 },
-  { colKey: "model", title: "模型配置", ellipsis: true },
-  { colKey: "runtime", title: "运行状态", width: 150 },
-  { colKey: "enabled", title: "配置状态", width: 100 },
-  { colKey: "updated", title: "启动时间", width: 170 },
-  { colKey: "actions", title: "操作", width: 310, fixed: "right" },
-];
-
-const toolColumns = [
-  { colKey: "label", title: "工具名称", width: 150 },
-  { colKey: "id", title: "工具 ID", width: 160 },
-  { colKey: "description", title: "说明", ellipsis: true },
-  { colKey: "enabled", title: "启用", width: 70 },
-  { colKey: "actions", title: "操作", width: 130 },
-];
-
-function triggerServiceImportFile() {
-  serviceImportFileInput.value?.click();
-}
-
-function serviceTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    qq_chat: "QQ Chat",
-    workspace: "Workspace",
-  };
-  return labels[type] ?? type;
-}
-
-function runtimeTheme(status: string): "success" | "warning" | "danger" | "default" {
-  if (status === "running") {
-    return "success";
-  }
-  if (status === "starting") {
-    return "warning";
-  }
-  if (status === "error") {
-    return "danger";
-  }
-  return "default";
-}
-
-function copyServiceConfigItem(service: ServiceWithRuntime) {
-  const payload = {
-    name: service.name,
-    enabled: service.enabled,
-    auto_start: service.auto_start,
-    is_default: service.is_default,
-    role_service_type: service.role_service_type,
-    tools: service.tools,
-    ...(service.avatar_url ? { avatar_url: service.avatar_url } : {}),
-  };
-  copyServiceConfig(payload, service.config_id);
-}
 </script>
 
 <style scoped lang="scss">
@@ -1662,11 +1289,6 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   gap: 24px;
   margin-top: 12px;
   flex-wrap: wrap;
-}
-
-.agent-service-model-config-actions {
-  display: grid;
-  gap: 12px;
 }
 
 :global(.t-select-option.agent-service-add-model-option) {

@@ -1,3 +1,14 @@
+//! Declarative agent definitions, persistence, runtime construction, and tool integration.
+//!
+//! This module turns YAML files in the `sub_agents` directory into runnable agents. It defines
+//! the serialized agent contract, validates declared input and output ports and tool access,
+//! renders prompts from runtime input, and executes agents through the tool-calling engine.
+//!
+//! [`AgentHost`] resolves each definition's LLM and tool dependencies, while
+//! [`DeclarativeAgentTool`] exposes a configured agent through the standard [`Tool`] interface so
+//! it can be called by another agent. The module also seeds the built-in definitions shipped with
+//! the application and provides the filesystem operations used to manage agent definitions.
+
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
