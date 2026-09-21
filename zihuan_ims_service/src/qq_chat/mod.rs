@@ -56,7 +56,9 @@ use zihuan_core::agent::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config,
     resolve_local_embedding_model_name,
 };
-use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
+use zihuan_core::agent::tool_definitions::{
+    build_enabled_tool_definitions, selected_sub_agent_ids,
+};
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -546,6 +548,7 @@ pub async fn spawn(
         default_tools_enabled: config.default_tools_enabled.clone(),
         shared_inputs: Vec::<FunctionPortDef>::new(),
         tool_definitions: tool_definitions.clone(),
+        sub_agent_ids: selected_sub_agent_ids(&agent.tools),
         shared_runtime_values: HashMap::new(),
         session_state_store: Arc::new(Mutex::new(QqChatSessionState::default())),
         task_runtime,

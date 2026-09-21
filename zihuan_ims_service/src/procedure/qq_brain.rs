@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatEmotionDimensionConfig;
 use async_trait::async_trait;
-use log::info;
-use zihuan_core::agent::declarative_agent::AgentHost;
+use log::{info, warn};
+use zihuan_core::agent::declarative_agent::{list_agent_ids, AgentHost};
 use zihuan_core::agent::runtime_context::current_agent_resources;
 use zihuan_core::agent::tools::memory_tools::register_memory_tools;
 use zihuan_core::agent::tools::{LongTaskContext, ToolCallingEngine, ToolCallingStopReason};
@@ -198,17 +198,44 @@ impl QqBrain {
 
         // Publish the memory agent first so the research agent can reference it.
         let memory_enabled = memory_backend.is_some();
+        let mut added_agent_ids = HashSet::new();
         if let Some(tool) = agent_host.publish_logged(DEFAULT_TOOL_MEMORY_AGENT) {
             if memory_enabled && service.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
                 brain.add_tool(wrap_brain_tool_with_quota(
                     SharedTool::new(tool),
                     tool_quota.clone(),
                 ));
+                added_agent_ids.insert(DEFAULT_TOOL_MEMORY_AGENT.to_string());
             }
         }
 
         if let Some(tool) = agent_host.publish_logged("run_research_subagent") {
             brain.add_tool(wrap_brain_tool_with_quota(SharedTool::new(tool), tool_quota.clone()));
+            added_agent_ids.insert("run_research_subagent".to_string());
+        }
+
+        // Sub-agents the service selects. Publish every remaining on-disk definition first so a
+        // selected sub-agent may reference another one, then expose the selected ids that the
+        // built-in tools above have not already added.
+        if !service.sub_agent_ids.is_empty() {
+            for id in list_agent_ids() {
+                if agent_host.tool(&id).is_none() {
+                    agent_host.publish_logged(&id);
+                }
+            }
+            for id in &service.sub_agent_ids {
+                if added_agent_ids.contains(id) {
+                    continue;
+                }
+                let Some(tool) = agent_host.tool(id) else {
+                    warn!("{LOG_PREFIX} configured sub-agent '{id}' is unavailable");
+                    continue;
+                };
+                brain.add_tool(wrap_brain_tool_with_quota(
+                    SharedTool::new(tool),
+                    tool_quota.clone(),
+                ));
+            }
         }
 
         if service.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {

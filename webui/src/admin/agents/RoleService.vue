@@ -617,33 +617,98 @@
 
     <t-drawer
       v-model:visible="showToolEditModal"
-      :header="editingToolIndex === -1 ? '增加工具' : '编辑工具'"
       size="560px"
       :close-on-overlay-click="false"
       @close="closeToolEditModal"
     >
-      <t-form class="agent-service-form" label-align="top">
+      <template #header>
+        <div class="agent-service-tool-drawer-header">
+          <t-tooltip v-if="showToolTypeBack" content="返回选择工具类型">
+            <t-button variant="text" shape="square" aria-label="返回" @click="backToToolTypePicker">
+              <ChevronLeftIcon />
+            </t-button>
+          </t-tooltip>
+          <strong>{{ editingToolIndex === -1 ? '增加工具' : '编辑工具' }}</strong>
+        </div>
+      </template>
+      <div v-if="editingToolIndex === -1 && toolCreateStep === 'picker'" class="agent-service-tool-type-picker">
+        <p class="agent-service-tool-type-title">选择工具类型</p>
+        <div class="agent-service-tool-type-grid">
+          <button v-for="item in toolTypeOptions" :key="item.value" type="button" class="agent-service-tool-type-card" @click="selectToolType(item.value)">
+            <component :is="item.icon" class="agent-service-tool-type-icon" />
+            <strong class="agent-service-tool-type-name">{{ item.label }}</strong>
+            <span class="agent-service-tool-type-desc">{{ item.desc }}</span>
+          </button>
+        </div>
+      </div>
+      <t-form v-else class="agent-service-form" label-align="top">
         <t-card class="agent-service-form-section" :bordered="false">
           <div class="agent-service-form-grid">
-            <t-form-item label="ID">
-              <t-input v-model="toolEditDraft.id" />
+            <t-form-item v-if="toolEditDraft.implementation === 'sub_agent'" label="Sub-agent" required>
+              <t-select v-model="toolEditDraft.subAgentId" placeholder="请选择" @change="selectSubAgent(String($event))">
+                <t-option v-for="agent in subAgents" :key="agent.id" :value="agent.id" :label="agent.name" />
+              </t-select>
+              <div v-if="subAgents.length === 0" class="agent-service-form-hint">还没有可用的 Sub-agent，请先在 Agent 配置中创建。</div>
             </t-form-item>
-            <t-form-item label="名称">
+            <t-form-item v-if="toolEditDraft.implementation === 'sub_agent'" style="align-self: end">
+              <t-checkbox v-model="toolEditDraft.enabled">启用该工具</t-checkbox>
+            </t-form-item>
+            <div v-if="toolEditDraft.implementation === 'sub_agent' && selectedSubAgent" class="agent-service-subagent-preview agent-service-form-item-full">
+              <div class="agent-service-subagent-preview-head">
+                <strong>{{ selectedSubAgent.name }}</strong>
+                <code>{{ selectedSubAgent.id }}</code>
+                <t-tag v-if="selectedSubAgent.builtin" size="small" variant="light" theme="success">Built-in</t-tag>
+              </div>
+              <p v-if="selectedSubAgent.description" class="agent-service-subagent-preview-desc">{{ selectedSubAgent.description }}</p>
+              <dl class="agent-service-subagent-preview-meta">
+                <div><dt>运行时长</dt><dd>{{ selectedSubAgent.run_duration }}</dd></div>
+                <div><dt>输出模式</dt><dd>{{ subAgentOutputModeLabel }}</dd></div>
+                <div><dt>模型用途</dt><dd>{{ selectedSubAgent.llm_kind }}</dd></div>
+              </dl>
+              <div class="agent-service-subagent-preview-ports">
+                <div class="agent-service-subagent-preview-port-group">
+                  <span class="agent-service-subagent-preview-port-title">输入</span>
+                  <div v-if="selectedSubAgent.inputs.length === 0" class="agent-service-form-hint">无</div>
+                  <div v-for="port in selectedSubAgent.inputs" :key="`in-${port.name}`" class="agent-service-subagent-preview-port">
+                    <code>{{ port.name }}</code>
+                    <span class="agent-service-subagent-preview-port-type">{{ formatDataType(port.data_type) }}</span>
+                    <t-tag v-if="port.required" size="small" variant="light" theme="warning">必填</t-tag>
+                    <span v-if="port.description" class="agent-service-subagent-preview-port-desc">{{ port.description }}</span>
+                  </div>
+                </div>
+                <div class="agent-service-subagent-preview-port-group">
+                  <span class="agent-service-subagent-preview-port-title">输出</span>
+                  <div v-if="selectedSubAgent.outputs.length === 0" class="agent-service-form-hint">无</div>
+                  <div v-for="port in selectedSubAgent.outputs" :key="`out-${port.name}`" class="agent-service-subagent-preview-port">
+                    <code>{{ port.name }}</code>
+                    <span class="agent-service-subagent-preview-port-type">{{ formatDataType(port.data_type) }}</span>
+                    <t-tag v-if="port.required" size="small" variant="light" theme="warning">必填</t-tag>
+                    <span v-if="port.description" class="agent-service-subagent-preview-port-desc">{{ port.description }}</span>
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedSubAgent.system_prompt" class="agent-service-subagent-preview-prompt">
+                <span class="agent-service-subagent-preview-port-title">System Prompt</span>
+                <pre class="agent-service-subagent-preview-prompt-text">{{ selectedSubAgent.system_prompt }}</pre>
+              </div>
+              <div class="agent-service-subagent-preview-tools">
+                <span class="agent-service-subagent-preview-port-title">可调用工具（{{ selectedSubAgent.tool_ids.length }}）</span>
+                <div v-if="selectedSubAgent.tool_ids.length === 0" class="agent-service-form-hint">无</div>
+                <div v-else class="agent-service-subagent-preview-tool-tags">
+                  <t-tag v-for="toolId in selectedSubAgent.tool_ids" :key="toolId" size="small" variant="outline">{{ toolId }}</t-tag>
+                </div>
+              </div>
+            </div>
+            <t-form-item v-if="toolEditDraft.implementation === 'node_graph'" label="名称">
               <t-input v-model="toolEditDraft.name" />
             </t-form-item>
-            <t-form-item label="描述" class="agent-service-form-item-full">
+            <t-form-item v-if="toolEditDraft.implementation === 'node_graph'" label="描述" class="agent-service-form-item-full">
               <t-input v-model="toolEditDraft.description" />
             </t-form-item>
-            <t-form-item label="运行时长">
+            <t-form-item v-if="toolEditDraft.implementation === 'node_graph'" label="运行时长">
               <t-select v-model="toolEditDraft.runDuration">
                 <t-option value="Short" label="Short（短时）" />
                 <t-option value="Long" label="Long（长时）" />
-              </t-select>
-            </t-form-item>
-            <t-form-item label="工具模式">
-              <t-select v-model="toolEditDraft.implementation">
-                <t-option value="node_graph" label="node_graph" />
-                <t-option value="python_script" label="python_script" />
               </t-select>
             </t-form-item>
             <t-form-item v-if="toolEditDraft.implementation === 'node_graph'" label="目标类型">
@@ -653,7 +718,7 @@
                 <t-option value="inline_graph" label="inline_graph" />
               </t-select>
             </t-form-item>
-            <t-form-item style="align-self: end">
+            <t-form-item v-if="toolEditDraft.implementation === 'node_graph'" style="align-self: end">
               <t-checkbox v-model="toolEditDraft.enabled">启用该工具</t-checkbox>
             </t-form-item>
             <t-form-item v-if="form.type === 'qq_chat' && toolEditDraft.enabled" label="单次会话调用上限">
@@ -671,45 +736,25 @@
             <t-form-item v-else-if="toolEditDraft.implementation === 'node_graph'" label="Inline Graph JSON" class="agent-service-form-item-full">
               <t-textarea v-model="toolEditDraft.inlineGraphJson" />
             </t-form-item>
-            <t-form-item v-else label="Python 脚本路径" class="agent-service-form-item-full">
-              <t-input v-model="toolEditDraft.pythonScriptPath" placeholder="utils/python_tools/echo_tool.py" />
-            </t-form-item>
-            <t-form-item v-if="toolEditDraft.implementation === 'python_script'" label="入口函数名">
-              <t-input v-model="toolEditDraft.pythonModuleEntry" placeholder="run_tool" />
-            </t-form-item>
-            <t-form-item v-if="toolEditDraft.implementation === 'python_script'" label="Python 运行时">
-              <t-select v-model="toolEditDraft.pythonMode">
-                <t-option value="inherit" label="继承全局设置" />
-                <t-option value="uv_project" label="uv_project" />
-                <t-option value="project_venv" label="project_venv" />
-                <t-option value="custom_executable" label="custom_executable" />
-              </t-select>
-            </t-form-item>
-            <t-form-item v-if="toolEditDraft.implementation === 'python_script' && toolEditDraft.pythonMode === 'custom_executable'" label="自定义 Python 路径" class="agent-service-form-item-full">
-              <t-input v-model="toolEditDraft.pythonExecutablePath" placeholder="C:\\Python311\\python.exe" />
-            </t-form-item>
-            <t-form-item v-if="toolEditDraft.implementation === 'python_script'" label="超时（秒）">
-              <t-input-number v-model="toolEditDraft.pythonTimeoutSecs" :min="1" />
-            </t-form-item>
-            <t-form-item label="Parameters JSON" class="agent-service-form-item-full">
+            <t-form-item v-if="toolEditDraft.implementation === 'node_graph'" label="Parameters JSON" class="agent-service-form-item-full">
               <template #label>
                 <div class="agent-service-params-label">
                   <span>Parameters JSON</span>
-                  <t-button v-if="toolEditDraft.implementation === 'node_graph' && toolEditDraft.targetType === 'workflow_set' && toolEditDraft.workflowName" variant="text" size="small" :disabled="syncingToolIndex === editingToolIndex" @click="syncToolFromGraph(toolEditDraft, editingToolIndex)">
+                  <t-button v-if="toolEditDraft.targetType === 'workflow_set' && toolEditDraft.workflowName" variant="text" size="small" :disabled="syncingToolIndex === editingToolIndex" @click="syncToolFromGraph(toolEditDraft, editingToolIndex)">
                     {{ syncingToolIndex === editingToolIndex ? '同步中…' : '从节点图更新' }}
                   </t-button>
                 </div>
               </template>
               <t-textarea v-model="toolEditDraft.parametersJson" />
             </t-form-item>
-            <t-form-item label="Outputs JSON" class="agent-service-form-item-full">
+            <t-form-item v-if="toolEditDraft.implementation === 'node_graph'" label="Outputs JSON" class="agent-service-form-item-full">
               <t-textarea v-model="toolEditDraft.outputsJson" />
             </t-form-item>
           </div>
         </t-card>
       </t-form>
       <template #footer>
-        <div class="agent-service-drawer-footer">
+        <div v-if="editingToolIndex !== -1 || toolCreateStep === 'config'" class="agent-service-drawer-footer">
           <t-button variant="outline" @click="closeToolEditModal">取消</t-button>
           <t-button theme="primary" @click="confirmToolEdit">保存</t-button>
         </div>
@@ -969,7 +1014,7 @@
 
 <script lang="ts">
 import { defineComponent } from "vue";
-import { AddIcon, CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
+import { AddIcon, ChevronLeftIcon, CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import ConfigImportDialog from "../components/ConfigImportDialog.vue";
 import IgnoreRulesList from "../components/IgnoreRulesList.vue";
@@ -981,6 +1026,7 @@ export default defineComponent({
   components: {
     AddIcon,
     AdminPageHeader,
+    ChevronLeftIcon,
     CloseIcon,
     ConfigImportDialog,
     IgnoreRulesList,

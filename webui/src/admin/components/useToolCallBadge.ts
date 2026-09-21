@@ -44,6 +44,7 @@ type ToolCallKind =
   | { type: "grep" | "rg"; pattern: string; matches: SearchMatch[]; totalMatches: number; matchedFiles: number; skippedBinary: number; truncated: boolean }
   | { type: "ask_user"; question: string }
   | { type: "memory_agent"; action: "recall" | "remember"; content: string }
+  | { type: "sub_agent"; agentId: string; agentName: string; arguments: string; result: string }
   | { type: "web_search"; query: string; url: string; results: WebSearchResult[]; error: string | null }
   | { type: "generic"; name: string };
 

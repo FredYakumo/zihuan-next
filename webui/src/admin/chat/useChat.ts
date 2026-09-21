@@ -28,6 +28,7 @@ import {
     agentAvatarUrl,
     agentInitial,
     getAvatarDisplayUrl,
+    subAgentReferenceableToolIds,
     CHAT_ELIGIBLE_SERVICE_TYPES,
 } from "../model";
 import { createUuid } from "../../ui/uuid";
@@ -184,6 +185,18 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 type: "memory_agent",
                 action: /(?:remember|save|store|记录|保存|写入)/i.test(content) ? "remember" : "recall",
                 content,
+            };
+        }
+        // A configured sub-agent is published as a tool named by its definition id, so an
+        // unknown tool name matching a known definition is a sub-agent call.
+        const subAgentName = subAgentNames.value[name];
+        if (subAgentName != null) {
+            return {
+                type: "sub_agent",
+                agentId: name,
+                agentName: subAgentName,
+                arguments: typeof arguments_ === "string" ? arguments_ : JSON.stringify(arguments_ ?? {}, null, 2),
+                result: result?.trim() ?? "",
             };
         }
         if (name === "create_file") {
@@ -363,6 +376,8 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
 
     const services = ref<ServiceWithRuntime[]>([]);
     const servicesLoading = ref(false);
+    /** Sub-agent definitions by id, used to label their tool calls as sub-agent cards. */
+    const subAgentNames = ref<Record<string, string>>({});
     const sessions = ref<ChatSessionSummary[]>([]);
     const sessionsLoading = ref(false);
     const activeSessionId = ref("");
@@ -2688,11 +2703,16 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     async function load() {
         servicesLoading.value = true;
         try {
-            const [connections, llm, loadedAgents, contextCompactionSettings] = await Promise.all([
+            const [connections, llm, loadedAgents, contextCompactionSettings, loadedSubAgents] = await Promise.all([
                 system.connections.list(),
                 system.llm.list(),
                 system.services.list(),
                 getContextCompactionSettings(),
+                // Display-only: a bad definition must not block the chat page from loading.
+                system.subagents.list(subAgentReferenceableToolIds()).catch((error) => {
+                    console.warn("Failed to load sub-agent definitions:", error);
+                    return [];
+                }),
             ]);
             stats.connections = connections.length;
             stats.llm = llm.length;
@@ -2700,6 +2720,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             services.value = loadedAgents;
             llmModels.value = llm;
             contextCompactionPercent.value = contextCompactionSettings.percent;
+            subAgentNames.value = Object.fromEntries(loadedSubAgents.map((agent) => [agent.id, agent.name]));
 
             const eligible = loadedAgents.filter((agent) => CHAT_ELIGIBLE_SERVICE_TYPES.has(agent.role_service_type.type));
             const requestedAgent = props.agentId
