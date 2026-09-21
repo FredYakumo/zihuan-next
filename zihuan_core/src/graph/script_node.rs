@@ -923,7 +923,9 @@ impl Node for DynamicScriptNode {
                 "agent.web_search" => {
                     let resources = crate::agent::runtime_context::current_agent_resources()?;
                     let connection_id = resources
-                        .connection_id(crate::agent::resource_provider::AgentConnectionSlot::WebSearch)
+                        .connection_id(
+                            crate::agent::resource_provider::AgentConnectionSlot::WebSearch,
+                        )
                         .map(|value| value.trim().to_string())
                         .filter(|value| !value.is_empty())
                         .ok_or_else(|| {

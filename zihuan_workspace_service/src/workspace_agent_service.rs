@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::role_config::WorkspaceRoleServiceConfig;
 use zihuan_core::agent::resource_provider::{
-    AgentResourceProvider, AgentConnectionSlot, SharedAgentResourceProvider,
+    AgentConnectionSlot, AgentResourceProvider, SharedAgentResourceProvider,
 };
 use zihuan_core::agent::resource_resolver::resolve_local_embedding_model_name;
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};

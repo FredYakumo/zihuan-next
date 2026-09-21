@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::role_config::{llm_ref_id_for_kind, QqChatRoleServiceConfig};
 use zihuan_core::agent::resource_provider::{
-    AgentResourceProvider, AgentConnectionSlot, SharedAgentResourceProvider,
+    AgentConnectionSlot, AgentResourceProvider, SharedAgentResourceProvider,
 };
 use zihuan_core::agent::runtime_context::current_agent_resources;
 use zihuan_core::error::{Error, Result};
@@ -43,7 +43,9 @@ impl AgentResourceProvider for QqChatRoleServiceResources {
             AgentConnectionSlot::Rdb => self.config.resolved_rdb_id().map(ToOwned::to_owned),
             AgentConnectionSlot::S3 => self.config.rustfs_connection_id.clone(),
             AgentConnectionSlot::ImageWeaviate => self.config.weaviate_image_connection_id.clone(),
-            AgentConnectionSlot::WebSearch => Some(self.config.web_search_engine_connection_id.clone()),
+            AgentConnectionSlot::WebSearch => {
+                Some(self.config.web_search_engine_connection_id.clone())
+            }
         }
     }
 
