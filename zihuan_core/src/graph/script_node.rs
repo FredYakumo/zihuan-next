@@ -861,7 +861,7 @@ impl Node for DynamicScriptNode {
                 "agent.rdb" => {
                     let resources = crate::agent::runtime_context::current_agent_resources()?;
                     let connection_id = resources
-                        .connection_id(crate::agent::resource_provider::ConnectionKind::Rdb)
+                        .connection_id(crate::agent::resource_provider::AgentConnectionSlot::Rdb)
                         .map(|value| value.trim().to_string())
                         .filter(|value| !value.is_empty())
                         .ok_or_else(|| {
@@ -878,7 +878,7 @@ impl Node for DynamicScriptNode {
                 "agent.s3" => {
                     let resources = crate::agent::runtime_context::current_agent_resources()?;
                     let connection_id = resources
-                        .connection_id(crate::agent::resource_provider::ConnectionKind::S3)
+                        .connection_id(crate::agent::resource_provider::AgentConnectionSlot::S3)
                         .map(|value| value.trim().to_string())
                         .filter(|value| !value.is_empty())
                         .ok_or_else(|| {
@@ -894,7 +894,7 @@ impl Node for DynamicScriptNode {
                     let resources = crate::agent::runtime_context::current_agent_resources()?;
                     let connection_id = resources
                         .connection_id(
-                            crate::agent::resource_provider::ConnectionKind::ImageWeaviate,
+                            crate::agent::resource_provider::AgentConnectionSlot::ImageWeaviate,
                         )
                         .map(|value| value.trim().to_string())
                         .filter(|value| !value.is_empty())
@@ -923,7 +923,9 @@ impl Node for DynamicScriptNode {
                 "agent.web_search" => {
                     let resources = crate::agent::runtime_context::current_agent_resources()?;
                     let connection_id = resources
-                        .connection_id(crate::agent::resource_provider::ConnectionKind::WebSearch)
+                        .connection_id(
+                            crate::agent::resource_provider::AgentConnectionSlot::WebSearch,
+                        )
                         .map(|value| value.trim().to_string())
                         .filter(|value| !value.is_empty())
                         .ok_or_else(|| {

@@ -230,23 +230,26 @@
             </t-card>
           </template>
 
-          <!-- 默认工具 -->
-          <t-card v-if="currentDefaultTools.length > 0" class="agent-service-form-section" :bordered="false">
-            <template #title>工具和能力</template>
-            <div class="agent-service-default-tools-search">
-              <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具" clearable>
-                <template v-if="defaultToolSearchQuery" #suffixIcon>
-                  <t-button variant="text" size="small" @click="defaultToolSearchQuery = ''">清空</t-button>
-                </template>
-              </t-input>
-            </div>
-            <div v-if="filteredDefaultTools.length === 0" class="agent-service-empty-state">没有匹配的工具。</div>
-            <t-table v-else :data="filteredDefaultTools" :columns="defaultToolColumns" :hover="true" :pagination="false" row-key="id" table-layout="fixed">
+          <!-- 工具和能力 -->
+          <t-card class="agent-service-form-section" :bordered="false">
+            <template #title>
+              <div class="agent-service-section-title-row">
+                <span>工具和能力</span>
+                <div class="agent-service-tools-toolbar">
+                  <t-input v-model="toolSearchQuery" placeholder="搜索工具" clearable class="agent-service-tools-search-input" />
+                  <t-button variant="text" @click="openNewTool">增加工具</t-button>
+                </div>
+              </div>
+            </template>
+            <div v-if="filteredToolRows.length === 0" class="agent-service-empty-state">没有匹配的工具。</div>
+            <t-table v-else :data="filteredToolRows" :columns="toolColumns" :hover="true" :pagination="false" row-key="key" table-layout="fixed" :row-class-name="toolRowClassName">
               <template #enabled="{ row }">
-                <t-checkbox v-model="form.default_tools_enabled[row.id]" />
+                <t-checkbox v-if="row.kind === 'builtin'" v-model="form.default_tools_enabled[row.id]" />
+                <t-checkbox v-else-if="row.tool" v-model="row.tool.enabled" />
               </template>
-              <template #edit="{ row }">
-                <t-button variant="text" size="small" @click="openDefaultToolEditModal(row.id)">编辑</t-button>
+              <template #actions="{ row }">
+                <t-button variant="text" size="small" @click="row.kind === 'builtin' ? openDefaultToolEditModal(row.id) : openToolEdit(row.toolIndex ?? -1)">编辑</t-button>
+                <t-button v-if="row.kind === 'custom'" variant="text" theme="danger" size="small" @click="removeTool(row.toolIndex ?? -1)">移除</t-button>
               </template>
             </t-table>
           </t-card>
@@ -258,109 +261,6 @@
               <t-textarea v-model="form.tool_session_limit_message" placeholder="当前工具已经达到 [{limit_scope}]的调用次数限制，但是你不要把这个直接当成自然语言输出给用户，仅当用户问及详细原因时，再告知" />
             </t-form-item>
             <div class="agent-service-form-hint">留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为"单次会话"或"用户"）。</div>
-          </t-card>
-
-          <!-- 工具配置 -->
-          <t-card class="agent-service-form-section" :bordered="false">
-            <template #title>
-              <div class="agent-service-section-title-row">
-                <span>工具配置</span>
-                <t-button variant="text" @click="addTool">新增工具</t-button>
-              </div>
-            </template>
-            <div v-if="form.tools.length === 0" class="agent-service-empty-state">还没有配置工具。</div>
-            <div v-for="(tool, index) in form.tools" :key="tool.id" class="agent-service-tool-block">
-              <t-card :bordered="true" style="margin-top: 12px">
-                <template #title>
-                  <div class="agent-service-tool-header">
-                    <strong>工具 {{ index + 1 }}</strong>
-                    <t-button variant="text" theme="danger" size="small" @click="removeTool(index)">移除</t-button>
-                  </div>
-                </template>
-                <div class="agent-service-form-grid">
-                  <t-form-item label="ID">
-                    <t-input v-model="tool.id" />
-                  </t-form-item>
-                  <t-form-item label="名称">
-                    <t-input v-model="tool.name" />
-                  </t-form-item>
-                  <t-form-item label="描述" class="agent-service-form-item-full">
-                    <t-input v-model="tool.description" />
-                  </t-form-item>
-                  <t-form-item label="运行时长">
-                    <t-select v-model="tool.runDuration">
-                      <t-option value="Short" label="Short（短时）" />
-                      <t-option value="Long" label="Long（长时）" />
-                    </t-select>
-                  </t-form-item>
-                  <t-form-item label="工具模式">
-                    <t-select v-model="tool.implementation">
-                      <t-option value="node_graph" label="node_graph" />
-                      <t-option value="python_script" label="python_script" />
-                    </t-select>
-                  </t-form-item>
-                  <t-form-item v-if="tool.implementation === 'node_graph'" label="目标类型">
-                    <t-select v-model="tool.targetType" @change="handleToolTargetTypeChange(tool)">
-                      <t-option value="workflow_set" label="workflow_set" />
-                      <t-option value="file_path" label="file_path" />
-                      <t-option value="inline_graph" label="inline_graph" />
-                    </t-select>
-                  </t-form-item>
-                  <t-form-item style="align-self: end">
-                    <t-checkbox v-model="tool.enabled">启用该工具</t-checkbox>
-                  </t-form-item>
-                  <t-form-item v-if="form.type === 'qq_chat' && tool.enabled" label="单次会话调用上限">
-                    <t-input-number v-model="form.tool_session_call_limits[tool.name]" :min="0" placeholder="不限制" />
-                    <div class="agent-service-form-hint" style="font-size: 12px">0 或留空表示不限制</div>
-                  </t-form-item>
-                  <t-form-item v-if="tool.implementation === 'node_graph' && tool.targetType === 'workflow_set'" label="Workflow Set 名称" class="agent-service-form-item-full">
-                    <t-select v-model="tool.workflowName" @change="applyWorkflowSetMetadata(tool)" placeholder="请选择">
-                      <t-option v-for="workflow in workflows" :key="workflow.name" :value="workflow.name" :label="workflow.display_name || workflow.name" />
-                    </t-select>
-                  </t-form-item>
-                  <t-form-item v-else-if="tool.implementation === 'node_graph' && tool.targetType === 'file_path'" label="文件路径" class="agent-service-form-item-full">
-                    <t-input v-model="tool.filePath" placeholder="workflow_set/demo.json" />
-                  </t-form-item>
-                  <t-form-item v-else-if="tool.implementation === 'node_graph'" label="Inline Graph JSON" class="agent-service-form-item-full">
-                    <t-textarea v-model="tool.inlineGraphJson" />
-                  </t-form-item>
-                  <t-form-item v-else label="Python 脚本路径" class="agent-service-form-item-full">
-                    <t-input v-model="tool.pythonScriptPath" placeholder="utils/python_tools/echo_tool.py" />
-                  </t-form-item>
-                  <t-form-item v-if="tool.implementation === 'python_script'" label="入口函数名">
-                    <t-input v-model="tool.pythonModuleEntry" placeholder="run_tool" />
-                  </t-form-item>
-                  <t-form-item v-if="tool.implementation === 'python_script'" label="Python 运行时">
-                    <t-select v-model="tool.pythonMode">
-                      <t-option value="inherit" label="继承全局设置" />
-                      <t-option value="uv_project" label="uv_project" />
-                      <t-option value="project_venv" label="project_venv" />
-                      <t-option value="custom_executable" label="custom_executable" />
-                    </t-select>
-                  </t-form-item>
-                  <t-form-item v-if="tool.implementation === 'python_script' && tool.pythonMode === 'custom_executable'" label="自定义 Python 路径" class="agent-service-form-item-full">
-                    <t-input v-model="tool.pythonExecutablePath" placeholder="C:\\Python311\\python.exe" />
-                  </t-form-item>
-                  <t-form-item v-if="tool.implementation === 'python_script'" label="超时（秒）">
-                    <t-input-number v-model="tool.pythonTimeoutSecs" :min="1" />
-                  </t-form-item>
-                  <t-form-item label="Parameters JSON" class="agent-service-form-item-full">
-                    <template #label>
-                      <div class="agent-service-params-label">
-                        <span>Parameters JSON</span>
-                        <t-button v-if="tool.implementation === 'node_graph' && tool.targetType === 'workflow_set' && tool.workflowName" variant="text" size="small" :disabled="syncingToolIndex === index" @click="syncToolFromGraph(tool, index)">
-                          {{ syncingToolIndex === index ? '同步中…' : '从节点图更新' }}
-                        </t-button>
-                      </div>
-                    </template>
-                    <t-textarea v-model="tool.parametersJson" />
-                  </t-form-item>
-                  <t-form-item label="Outputs JSON" class="agent-service-form-item-full">
-                    <t-textarea v-model="tool.outputsJson" />
-                  </t-form-item>
-                </div>
-              </t-card>
-            </div>
           </t-card>
         </t-form>
 
@@ -644,19 +544,26 @@
           </t-card>
         </template>
 
-        <!-- 默认工具 -->
+        <!-- 工具和能力 -->
         <t-card class="agent-service-form-section" :bordered="false">
-          <template #title>工具和能力</template>
-          <div class="agent-service-default-tools-search">
-            <t-input v-model="defaultToolSearchQuery" placeholder="搜索工具" clearable />
-          </div>
-          <div v-if="filteredDefaultTools.length === 0" class="agent-service-empty-state">没有匹配的工具。</div>
-          <t-table v-else :data="filteredDefaultTools" :columns="defaultToolColumns" :hover="true" :pagination="false" row-key="id" table-layout="fixed">
+          <template #title>
+            <div class="agent-service-section-title-row">
+              <span>工具和能力</span>
+              <div class="agent-service-tools-toolbar">
+                <t-input v-model="toolSearchQuery" placeholder="搜索工具" clearable class="agent-service-tools-search-input" />
+                <t-button variant="text" @click="openNewTool">增加工具</t-button>
+              </div>
+            </div>
+          </template>
+          <div v-if="filteredToolRows.length === 0" class="agent-service-empty-state">没有匹配的工具。</div>
+          <t-table v-else :data="filteredToolRows" :columns="toolColumns" :hover="true" :pagination="false" row-key="key" table-layout="fixed" :row-class-name="toolRowClassName">
             <template #enabled="{ row }">
-              <t-checkbox v-model="form.default_tools_enabled[row.id]" />
+              <t-checkbox v-if="row.kind === 'builtin'" v-model="form.default_tools_enabled[row.id]" />
+              <t-checkbox v-else-if="row.tool" v-model="row.tool.enabled" />
             </template>
-            <template #edit="{ row }">
-              <t-button variant="text" size="small" @click="openDefaultToolEditModal(row.id)">编辑</t-button>
+            <template #actions="{ row }">
+              <t-button variant="text" size="small" @click="row.kind === 'builtin' ? openDefaultToolEditModal(row.id) : openToolEdit(row.toolIndex ?? -1)">编辑</t-button>
+              <t-button v-if="row.kind === 'custom'" variant="text" theme="danger" size="small" @click="removeTool(row.toolIndex ?? -1)">移除</t-button>
             </template>
           </t-table>
         </t-card>
@@ -668,109 +575,6 @@
             <t-textarea v-model="form.tool_session_limit_message" placeholder="当前工具已经达到 [{limit_scope}]的调用次数限制，但是你不要把这个直接当成自然语言输出给用户，仅当用户问及详细原因时，再告知" />
           </t-form-item>
           <div class="agent-service-form-hint">留空则使用默认提示。可用 {limit_scope} 占位符表示限制范围（会替换为"单次会话"或"用户"）。</div>
-        </t-card>
-
-        <!-- 工具配置 -->
-        <t-card class="agent-service-form-section" :bordered="false">
-          <template #title>
-            <div class="agent-service-section-title-row">
-              <span>工具配置</span>
-              <t-button variant="text" @click="addTool">新增工具</t-button>
-            </div>
-          </template>
-          <div v-if="form.tools.length === 0" class="agent-service-empty-state">还没有配置工具。</div>
-          <div v-for="(tool, index) in form.tools" :key="tool.id" class="agent-service-tool-block">
-            <t-card :bordered="true" style="margin-top: 12px">
-              <template #title>
-                <div class="agent-service-tool-header">
-                  <strong>工具 {{ index + 1 }}</strong>
-                  <t-button variant="text" theme="danger" size="small" @click="removeTool(index)">移除</t-button>
-                </div>
-              </template>
-              <div class="agent-service-form-grid">
-                <t-form-item label="ID">
-                  <t-input v-model="tool.id" />
-                </t-form-item>
-                <t-form-item label="名称">
-                  <t-input v-model="tool.name" />
-                </t-form-item>
-                <t-form-item label="描述" class="agent-service-form-item-full">
-                  <t-input v-model="tool.description" />
-                </t-form-item>
-                <t-form-item label="运行时长">
-                  <t-select v-model="tool.runDuration">
-                    <t-option value="Short" label="Short（短时）" />
-                    <t-option value="Long" label="Long（长时）" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item label="工具模式">
-                  <t-select v-model="tool.implementation">
-                    <t-option value="node_graph" label="node_graph" />
-                    <t-option value="python_script" label="python_script" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item v-if="tool.implementation === 'node_graph'" label="目标类型">
-                  <t-select v-model="tool.targetType" @change="handleToolTargetTypeChange(tool)">
-                    <t-option value="workflow_set" label="workflow_set" />
-                    <t-option value="file_path" label="file_path" />
-                    <t-option value="inline_graph" label="inline_graph" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item style="align-self: end">
-                  <t-checkbox v-model="tool.enabled">启用该工具</t-checkbox>
-                </t-form-item>
-                <t-form-item v-if="form.type === 'qq_chat' && tool.enabled" label="单次会话调用上限">
-                  <t-input-number v-model="form.tool_session_call_limits[tool.name]" :min="0" placeholder="不限制" />
-                  <div class="agent-service-form-hint" style="font-size: 12px">0 或留空表示不限制</div>
-                </t-form-item>
-                <t-form-item v-if="tool.implementation === 'node_graph' && tool.targetType === 'workflow_set'" label="Workflow Set 名称" class="agent-service-form-item-full">
-                  <t-select v-model="tool.workflowName" @change="applyWorkflowSetMetadata(tool)" placeholder="请选择">
-                    <t-option v-for="workflow in workflows" :key="workflow.name" :value="workflow.name" :label="workflow.display_name || workflow.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item v-else-if="tool.implementation === 'node_graph' && tool.targetType === 'file_path'" label="文件路径" class="agent-service-form-item-full">
-                  <t-input v-model="tool.filePath" placeholder="workflow_set/demo.json" />
-                </t-form-item>
-                <t-form-item v-else-if="tool.implementation === 'node_graph'" label="Inline Graph JSON" class="agent-service-form-item-full">
-                  <t-textarea v-model="tool.inlineGraphJson" />
-                </t-form-item>
-                <t-form-item v-else label="Python 脚本路径" class="agent-service-form-item-full">
-                  <t-input v-model="tool.pythonScriptPath" placeholder="utils/python_tools/echo_tool.py" />
-                </t-form-item>
-                <t-form-item v-if="tool.implementation === 'python_script'" label="入口函数名">
-                  <t-input v-model="tool.pythonModuleEntry" placeholder="run_tool" />
-                </t-form-item>
-                <t-form-item v-if="tool.implementation === 'python_script'" label="Python 运行时">
-                  <t-select v-model="tool.pythonMode">
-                    <t-option value="inherit" label="继承全局设置" />
-                    <t-option value="uv_project" label="uv_project" />
-                    <t-option value="project_venv" label="project_venv" />
-                    <t-option value="custom_executable" label="custom_executable" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item v-if="tool.implementation === 'python_script' && tool.pythonMode === 'custom_executable'" label="自定义 Python 路径" class="agent-service-form-item-full">
-                  <t-input v-model="tool.pythonExecutablePath" placeholder="C:\\Python311\\python.exe" />
-                </t-form-item>
-                <t-form-item v-if="tool.implementation === 'python_script'" label="超时（秒）">
-                  <t-input-number v-model="tool.pythonTimeoutSecs" :min="1" />
-                </t-form-item>
-                <t-form-item label="Parameters JSON" class="agent-service-form-item-full">
-                  <template #label>
-                    <div class="agent-service-params-label">
-                      <span>Parameters JSON</span>
-                      <t-button v-if="tool.implementation === 'node_graph' && tool.targetType === 'workflow_set' && tool.workflowName" variant="text" size="small" :disabled="syncingToolIndex === index" @click="syncToolFromGraph(tool, index)">
-                        {{ syncingToolIndex === index ? '同步中…' : '从节点图更新' }}
-                      </t-button>
-                    </div>
-                  </template>
-                  <t-textarea v-model="tool.parametersJson" />
-                </t-form-item>
-                <t-form-item label="Outputs JSON" class="agent-service-form-item-full">
-                  <t-textarea v-model="tool.outputsJson" />
-                </t-form-item>
-              </div>
-            </t-card>
-          </div>
         </t-card>
       </t-form>
 
@@ -806,6 +610,108 @@
         <div class="agent-service-drawer-footer">
           <t-button variant="outline" @click="closeDefaultToolEditModal">取消</t-button>
           <t-button theme="primary" @click="confirmDefaultToolEdit">保存</t-button>
+        </div>
+      </template>
+    </t-drawer>
+
+    <!-- 自定义工具编辑抽屉 -->
+    <t-drawer
+      v-model:visible="showToolEditModal"
+      :header="editingToolIndex === -1 ? '增加工具' : '编辑工具'"
+      size="560px"
+      :close-on-overlay-click="false"
+      @close="closeToolEditModal"
+    >
+      <t-form class="agent-service-form" label-align="top">
+        <t-card class="agent-service-form-section" :bordered="false">
+          <div class="agent-service-form-grid">
+            <t-form-item label="ID">
+              <t-input v-model="toolEditDraft.id" />
+            </t-form-item>
+            <t-form-item label="名称">
+              <t-input v-model="toolEditDraft.name" />
+            </t-form-item>
+            <t-form-item label="描述" class="agent-service-form-item-full">
+              <t-input v-model="toolEditDraft.description" />
+            </t-form-item>
+            <t-form-item label="运行时长">
+              <t-select v-model="toolEditDraft.runDuration">
+                <t-option value="Short" label="Short（短时）" />
+                <t-option value="Long" label="Long（长时）" />
+              </t-select>
+            </t-form-item>
+            <t-form-item label="工具模式">
+              <t-select v-model="toolEditDraft.implementation">
+                <t-option value="node_graph" label="node_graph" />
+                <t-option value="python_script" label="python_script" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'node_graph'" label="目标类型">
+              <t-select v-model="toolEditDraft.targetType" @change="handleToolTargetTypeChange(toolEditDraft)">
+                <t-option value="workflow_set" label="workflow_set" />
+                <t-option value="file_path" label="file_path" />
+                <t-option value="inline_graph" label="inline_graph" />
+              </t-select>
+            </t-form-item>
+            <t-form-item style="align-self: end">
+              <t-checkbox v-model="toolEditDraft.enabled">启用该工具</t-checkbox>
+            </t-form-item>
+            <t-form-item v-if="form.type === 'qq_chat' && toolEditDraft.enabled" label="单次会话调用上限">
+              <t-input-number v-model="toolEditCallLimit" :min="0" placeholder="不限制" />
+              <div class="agent-service-form-hint" style="font-size: 12px">0 或留空表示不限制</div>
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'node_graph' && toolEditDraft.targetType === 'workflow_set'" label="Workflow Set 名称" class="agent-service-form-item-full">
+              <t-select v-model="toolEditDraft.workflowName" @change="applyWorkflowSetMetadata(toolEditDraft)" placeholder="请选择">
+                <t-option v-for="workflow in workflows" :key="workflow.name" :value="workflow.name" :label="workflow.display_name || workflow.name" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-else-if="toolEditDraft.implementation === 'node_graph' && toolEditDraft.targetType === 'file_path'" label="文件路径" class="agent-service-form-item-full">
+              <t-input v-model="toolEditDraft.filePath" placeholder="workflow_set/demo.json" />
+            </t-form-item>
+            <t-form-item v-else-if="toolEditDraft.implementation === 'node_graph'" label="Inline Graph JSON" class="agent-service-form-item-full">
+              <t-textarea v-model="toolEditDraft.inlineGraphJson" />
+            </t-form-item>
+            <t-form-item v-else label="Python 脚本路径" class="agent-service-form-item-full">
+              <t-input v-model="toolEditDraft.pythonScriptPath" placeholder="utils/python_tools/echo_tool.py" />
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'python_script'" label="入口函数名">
+              <t-input v-model="toolEditDraft.pythonModuleEntry" placeholder="run_tool" />
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'python_script'" label="Python 运行时">
+              <t-select v-model="toolEditDraft.pythonMode">
+                <t-option value="inherit" label="继承全局设置" />
+                <t-option value="uv_project" label="uv_project" />
+                <t-option value="project_venv" label="project_venv" />
+                <t-option value="custom_executable" label="custom_executable" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'python_script' && toolEditDraft.pythonMode === 'custom_executable'" label="自定义 Python 路径" class="agent-service-form-item-full">
+              <t-input v-model="toolEditDraft.pythonExecutablePath" placeholder="C:\\Python311\\python.exe" />
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'python_script'" label="超时（秒）">
+              <t-input-number v-model="toolEditDraft.pythonTimeoutSecs" :min="1" />
+            </t-form-item>
+            <t-form-item label="Parameters JSON" class="agent-service-form-item-full">
+              <template #label>
+                <div class="agent-service-params-label">
+                  <span>Parameters JSON</span>
+                  <t-button v-if="toolEditDraft.implementation === 'node_graph' && toolEditDraft.targetType === 'workflow_set' && toolEditDraft.workflowName" variant="text" size="small" :disabled="syncingToolIndex === editingToolIndex" @click="syncToolFromGraph(toolEditDraft, editingToolIndex)">
+                    {{ syncingToolIndex === editingToolIndex ? '同步中…' : '从节点图更新' }}
+                  </t-button>
+                </div>
+              </template>
+              <t-textarea v-model="toolEditDraft.parametersJson" />
+            </t-form-item>
+            <t-form-item label="Outputs JSON" class="agent-service-form-item-full">
+              <t-textarea v-model="toolEditDraft.outputsJson" />
+            </t-form-item>
+          </div>
+        </t-card>
+      </t-form>
+      <template #footer>
+        <div class="agent-service-drawer-footer">
+          <t-button variant="outline" @click="closeToolEditModal">取消</t-button>
+          <t-button theme="primary" @click="confirmToolEdit">保存</t-button>
         </div>
       </template>
     </t-drawer>
@@ -1259,11 +1165,10 @@ const {
   emotionDimensionAdding,
   emotionDimensionDraft,
   emotionDimensionEditingIndex,
-  qqChatDefaultTools,
-  workspaceDefaultTools,
-  currentDefaultTools,
-  defaultToolSearchQuery,
-  filteredDefaultTools,
+  toolSearchQuery,
+  toolRows,
+  filteredToolRows,
+  toolRowClassName,
   showDefaultToolEditModal,
   editingDefaultToolId,
   defaultToolEditDraft,
@@ -1326,7 +1231,14 @@ const {
   editIgnoreRule,
   submitIgnoreRule,
   removeIgnoreRule,
-  addTool,
+  showToolEditModal,
+  editingToolIndex,
+  toolEditDraft,
+  toolEditCallLimit,
+  openNewTool,
+  openToolEdit,
+  closeToolEditModal,
+  confirmToolEdit,
   removeTool,
   validateImageUnderstandModelSelection,
   isGeneratedToolId,
@@ -1551,12 +1463,12 @@ const columns = [
   { colKey: "actions", title: "操作", width: 310, fixed: "right" },
 ];
 
-const defaultToolColumns = [
+const toolColumns = [
   { colKey: "label", title: "工具名称", width: 150 },
   { colKey: "id", title: "工具 ID", width: 160 },
   { colKey: "description", title: "说明", ellipsis: true },
   { colKey: "enabled", title: "启用", width: 70 },
-  { colKey: "edit", title: "编辑", width: 70 },
+  { colKey: "actions", title: "操作", width: 130 },
 ];
 
 function triggerServiceImportFile() {
@@ -1712,6 +1624,13 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   margin-bottom: 16px;
 }
 
+/* TDesign wraps .t-card__title in an unclassed div that is the flex item in the
+   card header, so the title must grow on that wrapper for the row to fill it. */
+.agent-service-form-section :deep(.t-card__header-wrapper > div:not([class])) {
+  flex: 1;
+  min-width: 0;
+}
+
 .agent-service-form-section :deep(.t-card__title) {
   font-size: 15px;
   font-weight: 600;
@@ -1833,8 +1752,26 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   gap: 8px;
 }
 
-.agent-service-tool-block {
-  margin-top: 0;
+.agent-service-tools-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.agent-service-tools-search-input {
+  width: 180px;
+}
+
+:deep(.t-table tbody tr.tool-row--builtin > td) {
+  background-color: color-mix(in srgb, var(--td-success-color) 16%, transparent);
+  font-weight: 600;
+}
+
+:deep(.t-table tbody tr.tool-row--builtin-inactive > td) {
+  background-color: color-mix(in srgb, var(--td-text-color-placeholder) 14%, transparent);
+  color: var(--td-text-color-placeholder);
+  font-weight: 600;
 }
 
 .agent-service-params-label {
@@ -1901,10 +1838,6 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
   font-size: 13px;
   color: var(--td-text-color-placeholder);
   font-weight: 400;
-}
-
-.agent-service-default-tools-search {
-  margin-bottom: 10px;
 }
 
 .agent-service-emotion-bars {
