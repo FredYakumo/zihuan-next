@@ -18,7 +18,6 @@ import {
   defaultServiceForm,
   defaultQqChatDefaultToolsEnabled,
   defaultToolForm,
-  defaultQqChatMessageRateLimitRule,
   defaultWorkspaceDefaultToolsEnabled,
   assertServiceConfig,
   compactId,
@@ -714,32 +713,6 @@ function openRateLimitModal() {
   showRateLimitModal.value = true;
 }
 
-function closeRateLimitModal() {
-  showRateLimitModal.value = false;
-}
-
-function addGroupRateLimitRule() {
-  form.message_rate_limit_groups.push({
-    group_id: "",
-    ...defaultQqChatMessageRateLimitRule(),
-  });
-}
-
-function removeGroupRateLimitRule(index: number) {
-  form.message_rate_limit_groups.splice(index, 1);
-}
-
-function addUserRateLimitRule() {
-  form.message_rate_limit_users.push({
-    sender_id: "",
-    ...defaultQqChatMessageRateLimitRule(),
-  });
-}
-
-function removeUserRateLimitRule(index: number) {
-  form.message_rate_limit_users.splice(index, 1);
-}
-
 function editIgnoreRule(rule: QqChatAgentServiceIgnoreRule) {
   ignoreRuleForm.id = rule.id;
   ignoreRuleForm.sender_id = rule.sender_id ?? "";
@@ -1130,11 +1103,6 @@ onMounted(() => {
     openIgnoreRulesModal,
     closeIgnoreRulesModal,
     openRateLimitModal,
-    closeRateLimitModal,
-    addGroupRateLimitRule,
-    removeGroupRateLimitRule,
-    addUserRateLimitRule,
-    removeUserRateLimitRule,
     editIgnoreRule,
     submitIgnoreRule,
     removeIgnoreRule,

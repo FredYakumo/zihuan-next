@@ -901,144 +901,7 @@
     </t-drawer>
 
 
-    <t-drawer
-      v-model:visible="showRateLimitModal"
-      header="Rate Limit"
-      size="820px"
-      :close-on-overlay-click="false"
-      @close="closeRateLimitModal"
-    >
-      <div class="agent-service-form-hint">调用频率限制，优先级：用户 &gt; 群组 &gt; 默认。窗口可按 N 分钟 / N 小时 / N 天，计数跟随用户（跨群与私聊共享）。</div>
-
-      <!-- 默认规则 -->
-      <t-card class="agent-service-form-section" :bordered="false" style="margin-top: 12px">
-        <template #title>
-          <div class="agent-service-section-title-row">
-            <span>默认规则</span>
-            <t-checkbox v-model="form.message_rate_limit_default_enabled">启用</t-checkbox>
-          </div>
-        </template>
-        <div v-if="form.message_rate_limit_default_enabled" class="agent-service-form-grid">
-          <t-form-item label="模式">
-            <t-select v-model="form.message_rate_limit_default.unlimited">
-              <t-option :value="false" label="限次" />
-              <t-option :value="true" label="无限" />
-            </t-select>
-          </t-form-item>
-          <template v-if="!form.message_rate_limit_default.unlimited">
-            <t-form-item label="窗口">
-              <div style="display: flex; gap: 6px">
-                <t-input-number v-model="form.message_rate_limit_default.window_size" :min="1" style="width: 100px" />
-                <t-select v-model="form.message_rate_limit_default.window_unit" style="width: 100px">
-                  <t-option value="minute" label="分钟" />
-                  <t-option value="hour" label="小时" />
-                  <t-option value="day" label="天" />
-                </t-select>
-              </div>
-            </t-form-item>
-            <t-form-item label="次数">
-              <t-input-number v-model="form.message_rate_limit_default.max_calls" :min="1" />
-            </t-form-item>
-          </template>
-        </div>
-      </t-card>
-
-
-      <t-card class="agent-service-form-section" :bordered="false" style="margin-top: 12px">
-        <template #title>
-          <div class="agent-service-section-title-row">
-            <span>群组规则</span>
-            <t-button variant="text" @click="addGroupRateLimitRule">新增群组规则</t-button>
-          </div>
-        </template>
-        <div v-if="form.message_rate_limit_groups.length === 0" class="agent-service-empty-state">还没有群组规则。</div>
-        <t-card v-for="(rule, index) in form.message_rate_limit_groups" :key="`group-${index}`" :bordered="true" style="margin-top: 12px">
-          <template #title>
-            <div class="agent-service-tool-header">
-              <strong>群组规则 {{ index + 1 }}</strong>
-              <t-button variant="text" theme="danger" size="small" @click="removeGroupRateLimitRule(index)">移除</t-button>
-            </div>
-          </template>
-          <div class="agent-service-form-grid">
-            <t-form-item label="Group ID">
-              <t-input v-model="rule.group_id" />
-            </t-form-item>
-            <t-form-item label="模式">
-              <t-select v-model="rule.unlimited">
-                <t-option :value="false" label="限次" />
-                <t-option :value="true" label="无限" />
-              </t-select>
-            </t-form-item>
-            <template v-if="!rule.unlimited">
-              <t-form-item label="窗口">
-                <div style="display: flex; gap: 6px">
-                  <t-input-number v-model="rule.window_size" :min="1" style="width: 100px" />
-                  <t-select v-model="rule.window_unit" style="width: 100px">
-                    <t-option value="minute" label="分钟" />
-                    <t-option value="hour" label="小时" />
-                    <t-option value="day" label="天" />
-                  </t-select>
-                </div>
-              </t-form-item>
-              <t-form-item label="次数">
-                <t-input-number v-model="rule.max_calls" :min="1" />
-              </t-form-item>
-            </template>
-          </div>
-        </t-card>
-      </t-card>
-
-
-      <t-card class="agent-service-form-section" :bordered="false" style="margin-top: 12px">
-        <template #title>
-          <div class="agent-service-section-title-row">
-            <span>用户规则</span>
-            <t-button variant="text" @click="addUserRateLimitRule">新增用户规则</t-button>
-          </div>
-        </template>
-        <div v-if="form.message_rate_limit_users.length === 0" class="agent-service-empty-state">还没有用户规则。</div>
-        <t-card v-for="(rule, index) in form.message_rate_limit_users" :key="`user-${index}`" :bordered="true" style="margin-top: 12px">
-          <template #title>
-            <div class="agent-service-tool-header">
-              <strong>用户规则 {{ index + 1 }}</strong>
-              <t-button variant="text" theme="danger" size="small" @click="removeUserRateLimitRule(index)">移除</t-button>
-            </div>
-          </template>
-          <div class="agent-service-form-grid">
-            <t-form-item label="Sender ID">
-              <t-input v-model="rule.sender_id" />
-            </t-form-item>
-            <t-form-item label="模式">
-              <t-select v-model="rule.unlimited">
-                <t-option :value="false" label="限次" />
-                <t-option :value="true" label="无限" />
-              </t-select>
-            </t-form-item>
-            <template v-if="!rule.unlimited">
-              <t-form-item label="窗口">
-                <div style="display: flex; gap: 6px">
-                  <t-input-number v-model="rule.window_size" :min="1" style="width: 100px" />
-                  <t-select v-model="rule.window_unit" style="width: 100px">
-                    <t-option value="minute" label="分钟" />
-                    <t-option value="hour" label="小时" />
-                    <t-option value="day" label="天" />
-                  </t-select>
-                </div>
-              </t-form-item>
-              <t-form-item label="次数">
-                <t-input-number v-model="rule.max_calls" :min="1" />
-              </t-form-item>
-            </template>
-          </div>
-        </t-card>
-      </t-card>
-
-      <template #footer>
-        <div class="agent-service-drawer-footer">
-          <t-button theme="primary" @click="closeRateLimitModal">完成</t-button>
-        </div>
-      </template>
-    </t-drawer>
+    <RateLimitConfigDrawer v-model:visible="showRateLimitModal" :form="form" />
 
 
     <t-card class="agent-service-card" bordered>
@@ -1121,6 +984,7 @@ import { defineComponent } from "vue";
 import { AddIcon, CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import ConfigImportDialog from "../components/ConfigImportDialog.vue";
+import RateLimitConfigDrawer from "../components/RateLimitConfigDrawer.vue";
 import ServiceModelConfig from "../components/ServiceModelConfig.vue";
 import { useRoleServicePage } from "./roleServicePage";
 
@@ -1131,6 +995,7 @@ export default defineComponent({
     CloseIcon,
     ConfigImportDialog,
     InfoCircleIcon,
+    RateLimitConfigDrawer,
     ServiceModelConfig,
   },
   setup: useRoleServicePage,
