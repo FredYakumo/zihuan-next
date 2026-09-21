@@ -111,27 +111,63 @@ const { copiedId: serviceCopiedId, copyConfig: copyServiceConfig, handleFileChan
   isEnabled: () => !showCreatePicker.value && !showEditModal.value,
 });
 
-const qqChatDefaultTools = QQ_CHAT_DEFAULT_TOOLS;
-const workspaceDefaultTools = WORKSPACE_DEFAULT_TOOLS;
-
 const currentDefaultTools = computed(() => {
-  if (form.type === "qq_chat") return qqChatDefaultTools;
-  if (form.type === "workspace") return workspaceDefaultTools;
+  if (form.type === "qq_chat") return QQ_CHAT_DEFAULT_TOOLS;
+  if (form.type === "workspace") return WORKSPACE_DEFAULT_TOOLS;
   return [];
 });
 
-const defaultToolSearchQuery = ref("");
+type ToolTableRow = {
+  key: string;
+  kind: "builtin" | "custom";
+  label: string;
+  id: string;
+  description: string;
+  toolIndex?: number;
+  tool?: ServiceFormState["tools"][number];
+};
 
-const filteredDefaultTools = computed(() => {
-  const q = defaultToolSearchQuery.value.trim().toLowerCase();
-  if (!q) return currentDefaultTools.value;
-  return currentDefaultTools.value.filter(
-    (t) =>
-      t.label.toLowerCase().includes(q) ||
-      t.id.toLowerCase().includes(q) ||
-      t.description.toLowerCase().includes(q),
+const toolSearchQuery = ref("");
+
+const toolRows = computed<ToolTableRow[]>(() => {
+  const builtinRows: ToolTableRow[] = currentDefaultTools.value.map((tool) => ({
+    key: `builtin:${tool.id}`,
+    kind: "builtin",
+    label: tool.label,
+    id: tool.id,
+    description: tool.description,
+  }));
+  const customRows: ToolTableRow[] = form.tools.map((tool, index) => ({
+    key: `custom:${tool.id}:${index}`,
+    kind: "custom",
+    label: tool.name,
+    id: tool.id,
+    description: tool.description,
+    toolIndex: index,
+    tool,
+  }));
+  return [...builtinRows, ...customRows];
+});
+
+const filteredToolRows = computed(() => {
+  const q = toolSearchQuery.value.trim().toLowerCase();
+  if (!q) return toolRows.value;
+  return toolRows.value.filter(
+    (row) =>
+      row.label.toLowerCase().includes(q) ||
+      row.id.toLowerCase().includes(q) ||
+      row.description.toLowerCase().includes(q),
   );
 });
+
+function toolRowClassName({ row }: { row: ToolTableRow }): string {
+  if (row.kind === "custom") {
+    return "tool-row--custom";
+  }
+  return form.default_tools_enabled[row.id] !== false
+    ? "tool-row--builtin"
+    : "tool-row--builtin-inactive";
+}
 
 const showDefaultToolEditModal = ref(false);
 const editingDefaultToolId = ref("");
@@ -169,6 +205,56 @@ function confirmDefaultToolEdit() {
     form.image_understand_llm_ref_id = defaultToolEditDraft.imageUnderstandLlmRefId;
   }
   showDefaultToolEditModal.value = false;
+}
+
+const showToolEditModal = ref(false);
+const editingToolIndex = ref(-1);
+const toolEditDraft = reactive(defaultToolForm());
+const toolEditCallLimit = ref<number | null>(null);
+const toolEditOriginalName = ref("");
+
+function openNewTool() {
+  Object.assign(toolEditDraft, defaultToolForm());
+  editingToolIndex.value = -1;
+  toolEditCallLimit.value = null;
+  toolEditOriginalName.value = "";
+  showToolEditModal.value = true;
+}
+
+function openToolEdit(index: number) {
+  const tool = form.tools[index];
+  if (!tool) return;
+  Object.assign(toolEditDraft, tool);
+  editingToolIndex.value = index;
+  toolEditCallLimit.value = form.tool_session_call_limits[tool.name] ?? null;
+  toolEditOriginalName.value = tool.name;
+  showToolEditModal.value = true;
+}
+
+function closeToolEditModal() {
+  showToolEditModal.value = false;
+}
+
+function confirmToolEdit() {
+  const draft = { ...toolEditDraft };
+  const previousName = editingToolIndex.value === -1 ? "" : toolEditOriginalName.value;
+  if (editingToolIndex.value === -1) {
+    form.tools.push(draft);
+  } else {
+    const existing = form.tools[editingToolIndex.value];
+    if (existing) {
+      Object.assign(existing, draft);
+    }
+  }
+  if (previousName && previousName !== draft.name) {
+    delete form.tool_session_call_limits[previousName];
+  }
+  if (draft.name && toolEditCallLimit.value != null && toolEditCallLimit.value > 0) {
+    form.tool_session_call_limits[draft.name] = toolEditCallLimit.value;
+  } else if (draft.name) {
+    delete form.tool_session_call_limits[draft.name];
+  }
+  showToolEditModal.value = false;
 }
 
 const chatModels = computed(() =>
@@ -715,10 +801,6 @@ async function removeIgnoreRule(ruleId: number) {
   }
 }
 
-function addTool() {
-  form.tools.push(defaultToolForm());
-}
-
 function removeTool(index: number) {
   form.tools.splice(index, 1);
 }
@@ -987,11 +1069,11 @@ onMounted(() => {
     emotionDimensionAdding,
     emotionDimensionDraft,
     emotionDimensionEditingIndex,
-    qqChatDefaultTools,
-    workspaceDefaultTools,
     currentDefaultTools,
-    defaultToolSearchQuery,
-    filteredDefaultTools,
+    toolSearchQuery,
+    toolRows,
+    filteredToolRows,
+    toolRowClassName,
     showDefaultToolEditModal,
     editingDefaultToolId,
     defaultToolEditDraft,
@@ -1056,7 +1138,14 @@ onMounted(() => {
     editIgnoreRule,
     submitIgnoreRule,
     removeIgnoreRule,
-    addTool,
+    showToolEditModal,
+    editingToolIndex,
+    toolEditDraft,
+    toolEditCallLimit,
+    openNewTool,
+    openToolEdit,
+    closeToolEditModal,
+    confirmToolEdit,
     removeTool,
     validateImageUnderstandModelSelection,
     isGeneratedToolId,
