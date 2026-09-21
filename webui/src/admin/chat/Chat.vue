@@ -1603,6 +1603,7 @@ import {
   ChatIcon,
   BookmarkIcon,
   InternetIcon,
+  RobotIcon,
   StopIcon,
   RefreshIcon,
 } from "tdesign-icons-vue-next";
