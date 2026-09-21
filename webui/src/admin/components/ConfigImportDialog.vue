@@ -48,13 +48,6 @@ const emit = defineEmits<{
 const fileInput = ref<HTMLInputElement | null>(null);
 </script>
 
-<style scoped>
-.config-import-dialog-actions {
-  display: grid;
-  gap: 12px;
-}
-
-.config-import-dialog-file-input {
-  display: none;
-}
+<style scoped lang="scss">
+@use "./config-import-dialog" as *;
 </style>

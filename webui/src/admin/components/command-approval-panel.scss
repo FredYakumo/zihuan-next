@@ -1,0 +1,9 @@
+.command-approval { display:flex; align-items:center; flex-wrap:wrap; gap:4px 6px; padding:6px 8px; border:1px solid var(--border,#d9d9d9); border-radius:4px; }
+.command-approval--input { order:0; margin:0 20px 8px; background:var(--admin-bg-panel,#fff); }
+.command-approval__command { flex-basis:100%; overflow:hidden; padding:4px 6px; border:1px solid #334155; background:#0f172a; color:#f8fafc; font-size:12px; line-height:18px; text-overflow:ellipsis; white-space:nowrap; }
+.command-approval__actions { display:flex; flex-wrap:wrap; gap:6px; }
+.command-approval .btn { min-height:28px; padding:3px 9px; font-size:13px; }
+.session-command-approvals { position:absolute; z-index:1200; right:20px; bottom:calc(100% + 8px); width:min(320px,calc(100vw - 32px)); padding:12px; border:1px solid var(--admin-border,#d9d9d9); border-radius:6px; background:var(--admin-bg-panel,#fff); box-shadow:0 8px 28px rgb(0 0 0 / 18%); }
+.session-command-approval-row { display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid var(--admin-border,#eee); }
+.session-command-approval-row code { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.session-command-approval-close { display:inline-grid; flex:0 0 30px; width:30px; height:30px; place-items:center; padding:0; border:0; background:transparent; cursor:pointer; }

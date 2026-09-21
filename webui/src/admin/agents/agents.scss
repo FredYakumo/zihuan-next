@@ -23,7 +23,7 @@
   }
 }
 
-/* ── Emotion Dimensions Modal ── */
+/* Emotion Dimensions Modal */
 
 .emotion-dim-modal {
   max-width: 760px;
@@ -60,7 +60,7 @@
   }
 }
 
-/* ── Dimension Card ── */
+/* Dimension Card  */
 
 .emotion-dim-card {
   background: color-mix(in srgb, var(--admin-bg-panel-strong) 60%, transparent);
@@ -82,7 +82,7 @@
   justify-content: space-between;
 }
 
-/* ── Progress Bars ── */
+/* Progress Bars */
 
 .emotion-dim-bars {
   margin-top: 12px;
@@ -136,7 +136,7 @@
   text-align: right;
 }
 
-/* ── Inline weight inputs in editing card ── */
+/* Inline weight inputs in editing card */
 
 .emotion-dim-weight-value {
   display: inline-block;
@@ -154,7 +154,7 @@
   margin-top: 12px;
 }
 
-/* ── Range input styling ── */
+/* Range input styling */
 
 .emotion-dim-card input[type="range"] {
   -webkit-appearance: none;
@@ -192,7 +192,7 @@
   cursor: pointer;
 }
 
-/* ── Prompt display in dimension card ── */
+/* Prompt display in dimension card */
 
 .emotion-dim-prompts {
   border-top: 1px dashed var(--admin-border);
@@ -257,7 +257,7 @@
   color: color-mix(in srgb, var(--admin-ink) 74%, transparent);
 }
 
-/* ── Service Edit Modal ── */
+/* Service Edit Modal */
 
 .service-edit-modal-backdrop {
   position: fixed;
@@ -346,7 +346,7 @@
   }
 }
 
-/* ── Default Tools Table ── */
+/* Default Tools Table */
 
 .default-tools-search {
   display: flex;

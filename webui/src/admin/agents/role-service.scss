@@ -388,19 +388,6 @@
   color: var(--td-text-color-secondary);
 }
 
-.agent-service-key-value {
-  display: flex;
-  gap: 8px;
-  font-size: 13px;
-  margin-top: 6px;
-}
-
-.agent-service-key-value strong {
-  flex-shrink: 0;
-  min-width: 80px;
-  color: var(--td-text-color-placeholder);
-}
-
 @media (max-width: 840px) {
   .agent-service-toolbar {
     grid-template-columns: 1fr 1fr;

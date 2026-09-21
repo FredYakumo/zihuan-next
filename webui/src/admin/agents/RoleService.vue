@@ -877,27 +877,15 @@
         </div>
       </t-card>
 
-      <t-card class="agent-service-form-section" :bordered="false" style="margin-top: 16px">
-        <template #title>现有规则</template>
-        <div v-if="ignoreRulesLoading" class="agent-service-empty-state">加载中...</div>
-        <div v-else-if="ignoreRules.length === 0" class="agent-service-empty-state">还没有规则。</div>
-        <t-card v-for="rule in ignoreRules" :key="rule.id" :bordered="true" style="margin-top: 12px">
-          <template #title>
-            <div class="agent-service-tool-header">
-              <strong>#{{ rule.id }}</strong>
-              <div>
-                <t-button variant="text" size="small" :disabled="ignoreRuleSubmitting || ignoreRuleDeletingId === rule.id" @click="editIgnoreRule(rule)">编辑</t-button>
-                <t-button variant="text" theme="danger" size="small" :disabled="ignoreRuleSubmitting || ignoreRuleDeletingId === rule.id" @click="removeIgnoreRule(rule.id)">
-                  {{ ignoreRuleDeletingId === rule.id ? '删除中…' : '删除' }}
-                </t-button>
-              </div>
-            </div>
-          </template>
-          <div class="agent-service-key-value"><strong>sender_id</strong><span>{{ rule.sender_id || '未设置' }}</span></div>
-          <div class="agent-service-key-value"><strong>group_id</strong><span>{{ rule.group_id || '未设置' }}</span></div>
-          <div class="agent-service-key-value"><strong>含义</strong><span>{{ formatIgnoreRule(rule.sender_id, rule.group_id) }}</span></div>
-        </t-card>
-      </t-card>
+      <IgnoreRulesList
+        :rules="ignoreRules"
+        :loading="ignoreRulesLoading"
+        :submitting="ignoreRuleSubmitting"
+        :deleting-id="ignoreRuleDeletingId"
+        :format-rule="formatIgnoreRule"
+        @edit="editIgnoreRule"
+        @remove="removeIgnoreRule"
+      />
     </t-drawer>
 
 
@@ -984,6 +972,7 @@ import { defineComponent } from "vue";
 import { AddIcon, CloseIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import ConfigImportDialog from "../components/ConfigImportDialog.vue";
+import IgnoreRulesList from "../components/IgnoreRulesList.vue";
 import RateLimitConfigDrawer from "../components/RateLimitConfigDrawer.vue";
 import ServiceModelConfig from "../components/ServiceModelConfig.vue";
 import { useRoleServicePage } from "./roleServicePage";
@@ -994,6 +983,7 @@ export default defineComponent({
     AdminPageHeader,
     CloseIcon,
     ConfigImportDialog,
+    IgnoreRulesList,
     InfoCircleIcon,
     RateLimitConfigDrawer,
     ServiceModelConfig,

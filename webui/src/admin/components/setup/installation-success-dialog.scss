@@ -1,0 +1,13 @@
+.installation-success { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 16px 8px 8px;
+  h2, h3, p { margin: 0; }
+  > .t-button { min-width: 112px; margin-top: 8px; }
+}
+.installation-success__icon { width: 84px; height: 84px; color: var(--td-success-color); animation: installation-success-enter 360ms ease-out both; }
+.installation-success__description { color: var(--admin-muted); }
+.installation-success__artifact { width: 100%; display: grid; gap: 8px; padding: 12px; box-sizing: border-box; border: 1px solid var(--admin-border); border-radius: 8px; text-align: left; }
+.installation-success__artifact-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.installation-success__artifact h3 { font-size: 14px; }
+.installation-success__artifact textarea { width: 100%; min-height: 120px; box-sizing: border-box; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.5; }
+.installation-success__copied { color: var(--td-success-color); font-size: 13px; }
+.installation-success__error { width: 100%; color: var(--td-error-color); text-align: left; }
+@keyframes installation-success-enter { from { opacity: 0; transform: scale(0.55); } to { opacity: 1; transform: scale(1); } }
