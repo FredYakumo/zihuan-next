@@ -772,6 +772,7 @@ impl QqChatAgentServiceInner {
             default_tools_enabled: default_tools_enabled_map(),
             shared_inputs: Vec::new(),
             tool_definitions: Vec::new(),
+            sub_agent_ids: Vec::new(),
         }
     }
 
@@ -860,6 +861,7 @@ impl QqChatAgentService {
         inner.set_default_tools_enabled(config.default_tools_enabled.clone());
         inner.set_shared_inputs(config.shared_inputs.clone())?;
         inner.set_tool_definitions(config.tool_definitions.clone())?;
+        inner.sub_agent_ids = config.sub_agent_ids.clone();
         Ok(Self {
             inner,
             config,

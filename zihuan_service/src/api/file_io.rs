@@ -311,7 +311,7 @@ fn agent_uses_saved_graph(
                 }
                 NodeGraphToolConfig::InlineGraph { .. } => false,
             },
-            AgentToolType::PythonScript(_) => false,
+            AgentToolType::SubAgent(_) => false,
         })
 }
 

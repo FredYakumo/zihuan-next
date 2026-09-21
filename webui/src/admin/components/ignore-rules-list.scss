@@ -1,0 +1,43 @@
+.ignore-rules-list {
+  margin-top: 16px;
+}
+
+.ignore-rules-list :deep(.t-card__header-wrapper > div:not([class])) {
+  flex: 1;
+  min-width: 0;
+}
+
+.ignore-rules-list :deep(.t-card__title) {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.ignore-rules-list__empty {
+  padding: 24px 0;
+  color: var(--td-text-color-placeholder);
+  text-align: center;
+}
+
+.ignore-rules-list__card {
+  margin-top: 12px;
+}
+
+.ignore-rules-list__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.ignore-rules-list__field {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.ignore-rules-list__field strong {
+  flex-shrink: 0;
+  min-width: 80px;
+  color: var(--td-text-color-placeholder);
+}

@@ -4,12 +4,15 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
+use zihuan_core::agent::tool_definitions::selected_sub_agent_ids;
 use zihuan_core::agent::tools::{
     Tool, ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason, ToolExecutionOutput,
-    ToolExecutionResource, ToolRunDuration, MAX_TOOL_ITERATIONS,
+    ToolRunDuration, MAX_TOOL_ITERATIONS,
 };
 use zihuan_core::agent::{
+    declarative_agent::{list_agent_ids, AgentHost},
     Agent, AgentCancellation, AgentContext, ContextCompactionEvent, ContextCompactionObserver,
+    SharedTool,
 };
 use zihuan_core::config::llm_refs::{load_llm_refs, LlmRefConfig};
 use zihuan_core::error::{Error, Result};
@@ -119,47 +122,6 @@ impl Tool for ServiceSubgraphTool {
         arguments: &serde_json::Value,
     ) -> ToolExecutionOutput {
         ToolExecutionOutput::text(self.execute(call_content, arguments))
-    }
-}
-
-struct DynToolWrapper(Box<dyn Tool>);
-
-impl Tool for DynToolWrapper {
-    fn spec(&self) -> Arc<dyn FunctionTool> {
-        self.0.spec()
-    }
-
-    fn run_duration(&self) -> ToolRunDuration {
-        self.0.run_duration()
-    }
-
-    fn execute(&self, call_content: &str, arguments: &serde_json::Value) -> String {
-        self.0.execute(call_content, arguments)
-    }
-
-    fn execute_with_outcome(
-        &self,
-        call_content: &str,
-        arguments: &serde_json::Value,
-    ) -> ToolExecutionOutput {
-        self.0.execute_with_outcome(call_content, arguments)
-    }
-
-    fn execute_with_progress(
-        &self,
-        call_content: &str,
-        arguments: &serde_json::Value,
-        on_output: Arc<dyn Fn(&str, &str) + Send + Sync>,
-    ) -> ToolExecutionOutput {
-        self.0.execute_with_progress(call_content, arguments, on_output)
-    }
-
-    fn execution_resource(&self, arguments: &serde_json::Value) -> ToolExecutionResource {
-        self.0.execution_resource(arguments)
-    }
-
-    fn requires_user_confirmation(&self, arguments: &serde_json::Value) -> bool {
-        self.0.requires_user_confirmation(arguments)
     }
 }
 
@@ -452,10 +414,14 @@ fn build_tool_calling_engine(
     default_tools: Vec<Box<dyn Tool>>,
     tool_definitions: Vec<ToolDefinition>,
 ) -> ToolCallingEngine {
-    let mut brain = ToolCallingEngine::new(llm);
+    let mut brain = ToolCallingEngine::new(Arc::clone(&llm));
+    let mut host = AgentHost::new();
+    host.register_llm("main", llm);
 
     for tool in default_tools {
-        brain.add_tool(DynToolWrapper(tool));
+        let tool: Arc<dyn Tool> = Arc::from(tool);
+        host.register_tool(tool.spec().name(), Arc::clone(&tool));
+        brain.add_tool(SharedTool::new(tool));
     }
 
     let resources: Option<SharedAgentResourceProvider> =
@@ -480,7 +446,7 @@ fn build_tool_calling_engine(
     }
 
     for tool_def in tool_definitions {
-        brain.add_tool(ServiceSubgraphTool {
+        let tool: Arc<dyn Tool> = Arc::new(ServiceSubgraphTool {
             runner: ToolSubgraphRunner {
                 node_id: format!("agent_inference_{}", agent.id),
                 owner_node_type: "tool_calling".to_string(),
@@ -497,6 +463,26 @@ fn build_tool_calling_engine(
                 ),
             },
         });
+        host.register_graph_tool(Arc::clone(&tool));
+        host.register_tool(tool.spec().name(), Arc::clone(&tool));
+        brain.add_tool(SharedTool::new(tool));
+    }
+
+    let selected_sub_agents = selected_sub_agent_ids(&agent.tools);
+    let mut pending = list_agent_ids();
+    while !pending.is_empty() {
+        let before = pending.len();
+        pending.retain(|id| host.publish(id).is_err());
+        if pending.len() == before {
+            break;
+        }
+    }
+    for id in selected_sub_agents {
+        if let Some(tool) = host.tool(&id) {
+            brain.add_tool(SharedTool::new(tool));
+        } else {
+            log::warn!("configured sub-agent '{}' could not be published", id);
+        }
     }
 
     brain

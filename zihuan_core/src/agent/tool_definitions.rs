@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 
-use crate::agent::tool_config::{
-    AgentToolConfig, AgentToolType, NodeGraphToolConfig, PythonScriptAgentToolConfig,
-};
+use crate::agent::tool_config::{AgentToolConfig, AgentToolType, NodeGraphToolConfig};
 use crate::error::{Error, Result};
 use crate::graph::function_graph::FunctionPortDef;
 use crate::graph::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
@@ -19,12 +17,28 @@ pub fn build_enabled_tool_definitions(tools: &[AgentToolConfig]) -> Result<Vec<T
             AgentToolType::NodeGraph(config) => {
                 definitions.push(build_node_graph_tool_definition(tool, config)?);
             }
-            AgentToolType::PythonScript(config) => {
-                definitions.push(build_python_script_tool_definition(tool, config)?);
-            }
+            AgentToolType::SubAgent(_) => {}
         }
     }
     Ok(definitions)
+}
+
+/// The enabled sub-agent ids a configuration's tools select.
+///
+/// Sub-agents are not [`ToolDefinition`]s: the owning runtime publishes them through its
+/// [`AgentHost`](crate::agent::declarative_agent::AgentHost) instead, so they are resolved
+/// separately from [`build_enabled_tool_definitions`]. Selecting one twice is collapsed to a
+/// single entry, because a repeated id would register the same LLM-callable tool twice.
+pub fn selected_sub_agent_ids(tools: &[AgentToolConfig]) -> Vec<String> {
+    let mut ids = Vec::new();
+    for tool in tools.iter().filter(|tool| tool.enabled) {
+        if let AgentToolType::SubAgent(config) = &tool.tool_type {
+            if !ids.contains(&config.sub_agent_id) {
+                ids.push(config.sub_agent_id.clone());
+            }
+        }
+    }
+    ids
 }
 
 fn build_node_graph_tool_definition(
@@ -73,48 +87,6 @@ fn build_node_graph_tool_definition(
         parameters,
         outputs,
         subgraph,
-    })
-}
-
-fn build_python_script_tool_definition(
-    tool: &AgentToolConfig,
-    config: &PythonScriptAgentToolConfig,
-) -> Result<ToolDefinition> {
-    let python_config = config.to_runtime_config();
-    if python_config.script_path.trim().is_empty() {
-        return Err(Error::ValidationError(format!(
-            "agent tool '{}' 的 script_path 不能为空",
-            tool.name
-        )));
-    }
-    if !python_config.script_path.trim().ends_with(".py") {
-        return Err(Error::ValidationError(format!(
-            "agent tool '{}' 的 script_path 必须指向 .py 文件",
-            tool.name
-        )));
-    }
-    if config.outputs.is_empty() {
-        return Err(Error::ValidationError(format!(
-            "agent tool '{}' 的 python_script 必须定义 outputs",
-            tool.name
-        )));
-    }
-
-    for parameter in &config.parameters {
-        validate_python_parameter(tool, parameter)?;
-    }
-
-    Ok(ToolDefinition {
-        id: tool.id.clone(),
-        name: tool.name.clone(),
-        description: tool.description.clone(),
-        run_duration: tool.run_duration,
-        implementation: ToolImplementation::PythonScript,
-        built_in_kind: None,
-        python_config: Some(python_config),
-        parameters: config.parameters.clone(),
-        outputs: config.outputs.clone(),
-        subgraph: Default::default(),
     })
 }
 
@@ -209,23 +181,6 @@ fn validate_tool_graph_input_port(tool: &AgentToolConfig, port: &FunctionPortDef
         "agent tool '{}' 的节点图输入 '{}' 类型必须是基础类型 int/float/string/boolean，或受支持的保留运行时输入；实际为 {}",
         tool.name, port.name, port.data_type
     )))
-}
-
-fn validate_python_parameter(tool: &AgentToolConfig, param: &ToolParamDef) -> Result<()> {
-    let trimmed = param.name.trim();
-    if trimmed.is_empty() {
-        return Err(Error::ValidationError(format!(
-            "agent tool '{}' 的 python 参数名不能为空",
-            tool.name
-        )));
-    }
-    if reserved_tool_graph_input_type(trimmed).is_some() {
-        return Err(Error::ValidationError(format!(
-            "agent tool '{}' 的 python 参数 '{}' 与保留运行时输入冲突",
-            tool.name, trimmed
-        )));
-    }
-    Ok(())
 }
 
 fn reserved_tool_graph_input_type(name: &str) -> Option<DataType> {

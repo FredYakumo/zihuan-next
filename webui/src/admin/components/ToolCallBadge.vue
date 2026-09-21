@@ -15,6 +15,7 @@ import {
   SearchIcon,
   ChatIcon,
   InternetIcon,
+  RobotIcon,
 } from "tdesign-icons-vue-next";
 
 import { useToolCallBadge, type ToolCallKind } from "./useToolCallBadge";
@@ -48,6 +49,7 @@ const { kind, loading } = useToolCallBadge(props, emit);
       'tool-badge--move': kind.type === 'move_file',
       'tool-badge--git': kind.type === 'git_status',
       'tool-badge--memory': kind.type === 'memory_agent',
+      'tool-badge--sub-agent': kind.type === 'sub_agent',
       'tool-badge--web-search': kind.type === 'web_search',
       'tool-badge--error': kind.type === 'web_search' && kind.error != null,
     }"
@@ -123,6 +125,10 @@ const { kind, loading } = useToolCallBadge(props, emit);
     <template v-else-if="kind.type === 'memory_agent'">
       <BookmarkIcon class="badge-icon" />
       {{ kind.action === 'remember' ? '记录记忆' : '回忆记忆' }}
+    </template>
+    <template v-else-if="kind.type === 'sub_agent'">
+      <RobotIcon class="badge-icon" />
+      Sub Agent: {{ kind.agentName }}
     </template>
     <template v-else-if="kind.type === 'web_search'">
       <InternetIcon class="badge-icon" />

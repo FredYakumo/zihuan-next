@@ -13,6 +13,7 @@ pub struct QqChatAgentServiceInner {
     pub(crate) default_tools_enabled: HashMap<String, bool>,
     pub(crate) shared_inputs: Vec<FunctionPortDef>,
     pub(crate) tool_definitions: Vec<ToolDefinition>,
+    pub(crate) sub_agent_ids: Vec<String>,
 }
 
 /// Top-level QQ chat agent service that owns the runtime config and dispatches events.

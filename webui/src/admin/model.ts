@@ -8,6 +8,7 @@ import type {
   ModelRefSpec,
   LlmServiceConfig,
 } from "../api/client";
+import type { DataTypeMetaData } from "../api/types";
 import { createUuid } from "../ui/uuid";
 
 export type ConnectionType =
@@ -36,10 +37,8 @@ export type LlmApiStyle =
   | "open_ai_responses"
   | "open_ai_responses_message_compat"
   | "open_ai_responses_image_url_object_compat";
-export type ToolImplementation = "node_graph" | "python_script";
+export type ToolImplementation = "node_graph" | "sub_agent";
 export type ToolTargetType = "workflow_set" | "file_path" | "inline_graph";
-export type PythonToolMode = "uv_project" | "project_venv" | "custom_executable";
-export type PythonToolRuntimeOverride = "inherit" | PythonToolMode;
 
 export const DEFAULT_MYSQL_MAX_CONNECTIONS = 32;
 export const DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS = 30;
@@ -111,15 +110,11 @@ export interface ToolFormState {
   enabled: boolean;
   runDuration: ToolRunDuration;
   implementation: ToolImplementation;
+  subAgentId: string;
   targetType: ToolTargetType;
   workflowName: string;
   filePath: string;
   inlineGraphJson: string;
-  pythonScriptPath: string;
-  pythonModuleEntry: string;
-  pythonMode: PythonToolRuntimeOverride;
-  pythonExecutablePath: string;
-  pythonTimeoutSecs: number;
   parametersJson: string;
   outputsJson: string;
 }
@@ -275,6 +270,33 @@ export function defaultQqChatDefaultToolsEnabled(): Record<string, boolean> {
   return { image_understand: true, ...Object.fromEntries(QQ_CHAT_DEFAULT_TOOLS.map((tool) => [tool.id, true])) };
 }
 
+/**
+ * Tool ids a Sub-agent definition may reference.
+ *
+ * `image_understand` is reachable through its own switch rather than a default-tool entry, so it
+ * is added explicitly. Existing sub-agents are callable as tools too, but the backend already
+ * extends this list with every id on disk.
+ */
+export function subAgentReferenceableToolIds(): string[] {
+  const ids = [
+    ...QQ_CHAT_DEFAULT_TOOLS.map((tool) => tool.id),
+    ...WORKSPACE_DEFAULT_TOOLS.map((tool) => tool.id),
+    "image_understand",
+  ];
+  return [...new Set(ids)];
+}
+
+/** Renders a Rust-serialized data type for display: `"String"`, `{ Vec: "Float" }` → `Vec<Float>`. */
+export function formatDataType(dataType: DataTypeMetaData): string {
+  if (typeof dataType === "string") {
+    return dataType;
+  }
+  if ("Vec" in dataType) {
+    return `Vec<${formatDataType(dataType.Vec)}>`;
+  }
+  return dataType.Custom;
+}
+
 export function defaultQqChatEmotionDimensions(): QqChatEmotionDimensionFormItem[] {
   return [
     { name: "开心", increase_weight: 1, decrease_weight: 1, dissipation_hours: 5 },
@@ -388,16 +410,12 @@ export function defaultToolForm(): ToolFormState {
     enabled: true,
     runDuration: "Short",
     implementation: "node_graph",
+    subAgentId: "",
     targetType: "workflow_set",
     workflowName: "",
     filePath: "",
     inlineGraphJson:
       '{\n  "nodes": [],\n  "edges": [],\n  "graph_inputs": [],\n  "graph_outputs": [],\n  "hyperparameter_groups": [],\n  "hyperparameters": [],\n  "variables": [],\n  "metadata": { "name": null, "description": null, "version": null }\n}',
-    pythonScriptPath: "",
-    pythonModuleEntry: "run_tool",
-    pythonMode: "inherit",
-    pythonExecutablePath: "",
-    pythonTimeoutSecs: 60,
     parametersJson: "[]",
     outputsJson: "[]",
   };
@@ -827,19 +845,9 @@ export function toolFormFromConfig(tool: ServiceToolConfig): ToolFormState {
   const toolType = tool.tool_type as Record<string, unknown>;
   form.parametersJson = JSON.stringify(toolType.parameters ?? [], null, 2);
   form.outputsJson = JSON.stringify(toolType.outputs ?? [], null, 2);
-  if (toolType.type === "python_script") {
-    form.implementation = "python_script";
-    form.pythonScriptPath = String(toolType.script_path ?? "");
-    form.pythonModuleEntry = String(toolType.module_entry ?? "run_tool");
-    const runtime = toolType.python_runtime as Record<string, unknown> | null;
-    const legacyMode = String(toolType.python_mode ?? "");
-    const runtimeMode = String(runtime?.kind ?? legacyMode);
-    form.pythonMode = runtimeMode === "venv_python" ? "project_venv" :
-      (["uv_project", "project_venv", "custom_executable"].includes(runtimeMode)
-        ? runtimeMode as PythonToolMode
-        : "inherit");
-    form.pythonExecutablePath = String(runtime?.executable_path ?? "");
-    form.pythonTimeoutSecs = Number(toolType.timeout_secs ?? 60);
+  if (toolType.type === "sub_agent") {
+    form.implementation = "sub_agent";
+    form.subAgentId = String(toolType.sub_agent_id ?? "");
   } else {
     form.implementation = "node_graph";
     const targetType = String(toolType.target_type ?? "workflow_set") as ToolTargetType;
@@ -1029,25 +1037,15 @@ export function serviceFormFromConfig(
 }
 
 export function buildToolPayload(form: ToolFormState): ServiceToolConfig {
-  const parameters = JSON.parse(form.parametersJson || "[]");
-  const outputs = JSON.parse(form.outputsJson || "[]");
   let toolType: Record<string, unknown> & { type: string };
-  if (form.implementation === "python_script") {
+  if (form.implementation === "sub_agent") {
     toolType = {
-      type: "python_script",
-      script_path: form.pythonScriptPath.trim(),
-      module_entry: form.pythonModuleEntry.trim() || "run_tool",
-      timeout_secs: form.pythonTimeoutSecs,
-      parameters,
-      outputs,
+      type: "sub_agent",
+      sub_agent_id: form.subAgentId,
     };
-    if (form.pythonMode !== "inherit") {
-      toolType.python_runtime = {
-        kind: form.pythonMode,
-        executable_path: form.pythonMode === "custom_executable" ? form.pythonExecutablePath.trim() || null : null,
-      };
-    }
   } else {
+    const parameters = JSON.parse(form.parametersJson || "[]");
+    const outputs = JSON.parse(form.outputsJson || "[]");
     if (form.targetType === "workflow_set") {
       toolType = {
         type: "node_graph",

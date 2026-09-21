@@ -1044,6 +1044,41 @@
   border: 1px solid color-mix(in srgb, var(--admin-accent) 22%, transparent);
 }
 
+.tool-preview-info pre {
+  margin: 0;
+  max-height: 40vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: color-mix(in srgb, var(--admin-bg) 82%, black 18%);
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  scrollbar-gutter: stable;
+
+  &::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--admin-subtle);
+    border-radius: 5px;
+    border: 2px solid color-mix(in srgb, var(--admin-bg) 82%, black 18%);
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--admin-muted);
+  }
+}
+
 .web-search-results-table {
   margin-top: 14px;
   max-height: 52vh;

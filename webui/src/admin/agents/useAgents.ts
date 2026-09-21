@@ -1,4 +1,5 @@
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, markRaw, onMounted, reactive, ref } from "vue";
+import { FlowchartIcon, RobotIcon } from "tdesign-icons-vue-next";
 
 import {
   system,
@@ -8,6 +9,7 @@ import {
   type LlmConfig,
   type QqChatAgentServiceIgnoreRule,
   type WorkflowInfo,
+  type SubAgentDefinition,
 } from "../../api/client";
 import {
   serviceFormFromConfig,
@@ -18,7 +20,6 @@ import {
   defaultServiceForm,
   defaultQqChatDefaultToolsEnabled,
   defaultToolForm,
-  defaultQqChatMessageRateLimitRule,
   defaultWorkspaceDefaultToolsEnabled,
   assertServiceConfig,
   compactId,
@@ -28,6 +29,8 @@ import {
   getAvatarDisplayUrl,
   agentAvatarUrl,
   agentInitial,
+  subAgentReferenceableToolIds,
+  formatDataType,
   type ServiceFormState,
   type ServiceTypeName,
   type QqChatEmotionDimensionFormItem,
@@ -59,6 +62,7 @@ const servicesLoading = ref(false);
 const connections = ref<ConnectionConfig[]>([]);
 const llm = ref<LlmConfig[]>([]);
 const workflows = ref<WorkflowInfo[]>([]);
+const subAgents = ref<SubAgentDefinition[]>([]);
 const form = reactive<ServiceFormState>(defaultServiceForm());
 const editingServiceId = ref("");
 const showCreatePicker = ref(false);
@@ -208,18 +212,80 @@ function confirmDefaultToolEdit() {
 }
 
 const showToolEditModal = ref(false);
+const toolCreateStep = ref<"picker" | "config">("config");
 const editingToolIndex = ref(-1);
 const toolEditDraft = reactive(defaultToolForm());
 const toolEditCallLimit = ref<number | null>(null);
 const toolEditOriginalName = ref("");
+
+type ToolTypeOption = {
+  value: ServiceFormState["tools"][number]["implementation"];
+  label: string;
+  desc: string;
+  icon: unknown;
+};
+
+const toolTypeOptions: ToolTypeOption[] = [
+  {
+    value: "sub_agent",
+    label: "Sub-agents",
+    desc: "调用已定义的 Sub-agent",
+    icon: markRaw(RobotIcon),
+  },
+  {
+    value: "node_graph",
+    label: "节点图",
+    desc: "调用节点图 / Workflow Set",
+    icon: markRaw(FlowchartIcon),
+  },
+];
+
+/** The type picker only fronts tool creation; editing goes straight to the config form. */
+const showToolTypeBack = computed(
+  () => editingToolIndex.value === -1 && toolCreateStep.value === "config",
+);
 
 function openNewTool() {
   Object.assign(toolEditDraft, defaultToolForm());
   editingToolIndex.value = -1;
   toolEditCallLimit.value = null;
   toolEditOriginalName.value = "";
+  toolCreateStep.value = "picker";
   showToolEditModal.value = true;
 }
+
+function selectToolType(type: ServiceFormState["tools"][number]["implementation"]) {
+  Object.assign(toolEditDraft, defaultToolForm(), { implementation: type });
+  toolEditCallLimit.value = null;
+  editingToolIndex.value = -1;
+  toolCreateStep.value = "config";
+}
+
+function backToToolTypePicker() {
+  Object.assign(toolEditDraft, defaultToolForm());
+  toolEditCallLimit.value = null;
+  toolCreateStep.value = "picker";
+}
+
+function selectSubAgent(id: string) {
+  const definition = subAgents.value.find((item) => item.id === id);
+  if (!definition) return;
+  // The published sub-agent tool is named by its definition id, so the tool inherits it.
+  toolEditDraft.id = definition.id;
+  toolEditDraft.subAgentId = definition.id;
+  toolEditDraft.name = definition.id;
+  toolEditDraft.description = definition.description || definition.name;
+  toolEditDraft.runDuration = definition.run_duration;
+}
+
+/** The definition behind `toolEditDraft.subAgentId`, previewed under the selector. */
+const selectedSubAgent = computed(() =>
+  subAgents.value.find((item) => item.id === toolEditDraft.subAgentId),
+);
+
+const subAgentOutputModeLabel = computed(() =>
+  selectedSubAgent.value?.output_mode === "text" ? "纯文本" : "JSON 输出端口",
+);
 
 function openToolEdit(index: number) {
   const tool = form.tools[index];
@@ -228,6 +294,7 @@ function openToolEdit(index: number) {
   editingToolIndex.value = index;
   toolEditCallLimit.value = form.tool_session_call_limits[tool.name] ?? null;
   toolEditOriginalName.value = tool.name;
+  toolCreateStep.value = "config";
   showToolEditModal.value = true;
 }
 
@@ -236,6 +303,9 @@ function closeToolEditModal() {
 }
 
 function confirmToolEdit() {
+  if (!validateToolDraft()) {
+    return;
+  }
   const draft = { ...toolEditDraft };
   const previousName = editingToolIndex.value === -1 ? "" : toolEditOriginalName.value;
   if (editingToolIndex.value === -1) {
@@ -255,6 +325,76 @@ function confirmToolEdit() {
     delete form.tool_session_call_limits[draft.name];
   }
   showToolEditModal.value = false;
+}
+
+function validateToolDraft(): boolean {
+  if (toolEditDraft.implementation === "sub_agent") {
+    if (!toolEditDraft.subAgentId) {
+      alert("请选择 Sub-agent");
+      return false;
+    }
+    const duplicated = form.tools.some(
+      (tool, index) =>
+        tool.implementation === "sub_agent" &&
+        tool.subAgentId === toolEditDraft.subAgentId &&
+        index !== editingToolIndex.value,
+    );
+    if (duplicated) {
+      alert(`Sub-agent '${toolEditDraft.subAgentId}' 已经添加过了`);
+      return false;
+    }
+    return true;
+  }
+
+  if (!toolEditDraft.name.trim()) {
+    alert("请填写工具名称");
+    return false;
+  }
+  if (toolEditDraft.targetType === "workflow_set" && !toolEditDraft.workflowName) {
+    alert("请选择节点图");
+    return false;
+  }
+  if (toolEditDraft.targetType === "file_path" && !toolEditDraft.filePath.trim()) {
+    alert("请填写文件路径");
+    return false;
+  }
+  if (toolEditDraft.targetType === "inline_graph" && !isJsonObject(toolEditDraft.inlineGraphJson)) {
+    alert("Inline Graph JSON 不是合法的 JSON 对象");
+    return false;
+  }
+  if (!isJsonArray(toolEditDraft.parametersJson)) {
+    alert("Parameters JSON 不是合法的 JSON 数组");
+    return false;
+  }
+  if (!isJsonArray(toolEditDraft.outputsJson)) {
+    alert("Outputs JSON 不是合法的 JSON 数组");
+    return false;
+  }
+  const nameTaken = form.tools.some(
+    (tool, index) => tool.name === toolEditDraft.name.trim() && index !== editingToolIndex.value,
+  );
+  if (nameTaken) {
+    alert(`工具名称 '${toolEditDraft.name.trim()}' 已经存在`);
+    return false;
+  }
+  return true;
+}
+
+function isJsonArray(raw: string): boolean {
+  try {
+    return Array.isArray(JSON.parse(raw || "[]"));
+  } catch {
+    return false;
+  }
+}
+
+function isJsonObject(raw: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(raw || "{}");
+    return Boolean(parsed) && typeof parsed === "object" && !Array.isArray(parsed);
+  } catch {
+    return false;
+  }
 }
 
 const chatModels = computed(() =>
@@ -459,17 +599,19 @@ function closeEditor() {
 async function load() {
   servicesLoading.value = true;
   try {
-    const [loadedAgents, loadedConnections, loadedLlm, loadedWorkflows] =
+    const [loadedAgents, loadedConnections, loadedLlm, loadedWorkflows, loadedSubAgents] =
       await Promise.all([
         system.services.list(),
         system.connections.list(),
         system.llm.list(),
         workflowApi.listDetailed(),
+        system.subagents.list(subAgentReferenceableToolIds()),
       ]);
     services.value = loadedAgents;
     connections.value = loadedConnections;
     llm.value = loadedLlm;
     workflows.value = loadedWorkflows.workflows;
+    subAgents.value = loadedSubAgents;
   } finally {
     servicesLoading.value = false;
   }
@@ -714,32 +856,6 @@ function openRateLimitModal() {
   showRateLimitModal.value = true;
 }
 
-function closeRateLimitModal() {
-  showRateLimitModal.value = false;
-}
-
-function addGroupRateLimitRule() {
-  form.message_rate_limit_groups.push({
-    group_id: "",
-    ...defaultQqChatMessageRateLimitRule(),
-  });
-}
-
-function removeGroupRateLimitRule(index: number) {
-  form.message_rate_limit_groups.splice(index, 1);
-}
-
-function addUserRateLimitRule() {
-  form.message_rate_limit_users.push({
-    sender_id: "",
-    ...defaultQqChatMessageRateLimitRule(),
-  });
-}
-
-function removeUserRateLimitRule(index: number) {
-  form.message_rate_limit_users.splice(index, 1);
-}
-
 function editIgnoreRule(rule: QqChatAgentServiceIgnoreRule) {
   ignoreRuleForm.id = rule.id;
   ignoreRuleForm.sender_id = rule.sender_id ?? "";
@@ -834,12 +950,6 @@ const RESERVED_TOOL_RUNTIME_INPUTS = new Set([
   "qq_ims_bot_adapter",
 ]);
 
-function isGeneratedToolId(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    value.trim(),
-  );
-}
-
 const syncingToolIndex = ref<number | null>(null);
 
 async function syncToolFromGraph(
@@ -876,9 +986,9 @@ function applyWorkflowSetMetadata(tool: ServiceFormState["tools"][number]) {
     return;
   }
 
-  if (!tool.id.trim() || isGeneratedToolId(tool.id)) {
-    tool.id = workflow.name;
-  }
+  // The tool id is system-assigned: a workflow-set tool is identified by the workflow it calls,
+  // which also keeps the id unique across the service's tool list.
+  tool.id = workflow.name;
   tool.name = workflow.name;
   tool.description = workflow.description ?? "";
   tool.parametersJson = JSON.stringify(
@@ -1130,25 +1240,29 @@ onMounted(() => {
     openIgnoreRulesModal,
     closeIgnoreRulesModal,
     openRateLimitModal,
-    closeRateLimitModal,
-    addGroupRateLimitRule,
-    removeGroupRateLimitRule,
-    addUserRateLimitRule,
-    removeUserRateLimitRule,
     editIgnoreRule,
     submitIgnoreRule,
     removeIgnoreRule,
     showToolEditModal,
+    toolCreateStep,
+    toolTypeOptions,
+    showToolTypeBack,
+    subAgents,
     editingToolIndex,
     toolEditDraft,
     toolEditCallLimit,
     openNewTool,
+    selectToolType,
+    backToToolTypePicker,
+    selectSubAgent,
+    selectedSubAgent,
+    subAgentOutputModeLabel,
     openToolEdit,
     closeToolEditModal,
     confirmToolEdit,
+    validateToolDraft,
     removeTool,
     validateImageUnderstandModelSelection,
-    isGeneratedToolId,
     syncingToolIndex,
     syncToolFromGraph,
     handleToolTargetTypeChange,
@@ -1168,6 +1282,7 @@ onMounted(() => {
     getAvatarDisplayUrl,
     agentAvatarUrl,
     agentInitial,
+    formatDataType,
     serviceCopiedId,
     copyServiceConfig,
     handleServiceFileChange,

@@ -34,8 +34,11 @@ use crate::tools::{
     DEFAULT_TOOL_TASK_CREATE, DEFAULT_TOOL_TASK_GET, DEFAULT_TOOL_TASK_LIST,
     DEFAULT_TOOL_TASK_UPDATE, DEFAULT_TOOL_WEB_SEARCH,
 };
+use zihuan_core::agent::declarative_agent::list_agent_ids;
 use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
-use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
+use zihuan_core::agent::tool_definitions::{
+    build_enabled_tool_definitions, selected_sub_agent_ids,
+};
 use zihuan_core::agent::tools::WebSearchTool;
 use zihuan_core::error::Result;
 
@@ -120,6 +123,8 @@ pub struct WorkspaceInferenceToolProvider {
     memory_resources: Option<WorkspaceMemoryResources>,
     web_search_engine: std::result::Result<Arc<dyn zihuan_core::rag::WebSearchEngine>, String>,
     tool_definitions: Vec<ToolDefinition>,
+    /// Enabled sub-agent ids this service calls; published per turn alongside the built-ins.
+    sub_agent_ids: Vec<String>,
     image_understand_llm: Option<Arc<dyn LLMBase>>,
 }
 
@@ -241,6 +246,21 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
                 tools.push(Box::new(zihuan_core::agent::SharedTool::new(tool)));
             }
         }
+        if !self.sub_agent_ids.is_empty() {
+            let mut host = zihuan_core::agent::declarative_agent::AgentHost::new();
+            host.register_llm(zihuan_core::agent::LLM_KIND_MAIN, Arc::clone(&context.llm));
+            // Publish every definition first so a selected sub-agent may reference another.
+            for id in list_agent_ids() {
+                host.publish_logged(&id);
+            }
+            for id in &self.sub_agent_ids {
+                let Some(tool) = host.tool(id) else {
+                    log::warn!("configured sub-agent '{id}' is unavailable");
+                    continue;
+                };
+                tools.push(Box::new(zihuan_core::agent::SharedTool::new(tool)));
+            }
+        }
         tools
     }
 
@@ -272,6 +292,7 @@ pub fn load_inference_tool_provider(
         memory_resources: load_memory_resources(config, connections),
         web_search_engine: load_web_search_engine(config, connections),
         tool_definitions: build_enabled_tool_definitions(&agent.tools)?,
+        sub_agent_ids: selected_sub_agent_ids(&agent.tools),
         image_understand_llm,
     }))
 }

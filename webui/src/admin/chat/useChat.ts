@@ -28,9 +28,11 @@ import {
     agentAvatarUrl,
     agentInitial,
     getAvatarDisplayUrl,
+    subAgentReferenceableToolIds,
     CHAT_ELIGIBLE_SERVICE_TYPES,
 } from "../model";
 import { createUuid } from "../../ui/uuid";
+import type { ToolCallKind } from "../components/useToolCallBadge";
 
 export interface ChatProps {
     agentId?: string;
@@ -114,30 +116,6 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         context_after?: string[];
     };
     type WebSearchResult = { title: string; url: string; content: string; score: number | null };
-    type ToolCallKind =
-        | { type: "create_file"; filename: string; lineCount: number; content: string }
-        | { type: "delete_file"; filename: string; lineCount: number | null }
-        | { type: "edit_file"; filename: string; addedLines: number; removedLines: number; patch: string }
-        | { type: "copy_file" | "move_file"; src: string; dest: string; overwritten: boolean }
-        | { type: "file_info"; filename: string; metadata: Record<string, unknown> }
-        | { type: "find_files"; pattern: string; matches: Array<{ name: string; path: string; type: string }>; truncated: boolean }
-        | { type: "git_status"; branch: string; changes: Array<{ status: string; path: string }>; truncated: boolean }
-        | { type: "exec_cmd"; command: string; hasResult: boolean; stdout?: string; stderr?: string; shell?: string; exitCode?: number | null; truncated?: boolean }
-        | {
-            type: "read_file";
-            filename: string;
-            startLine: number | null;
-            endLine: number | null;
-            totalLines: number | null;
-            content: string;
-            encoding?: string;
-        }
-        | { type: "list_dir"; dirname: string; entries: Array<{ name: string; path: string; type: string }>; truncated: boolean; tree?: string }
-        | { type: "grep" | "rg"; pattern: string; matches: SearchMatch[]; totalMatches: number; matchedFiles: number; skippedBinary: number; truncated: boolean }
-        | { type: "ask_user"; question: string }
-        | { type: "memory_agent"; action: "recall" | "remember"; content: string }
-        | { type: "web_search"; query: string; url: string; results: WebSearchResult[]; error: string | null }
-        | { type: "generic"; name: string };
 
 
 
@@ -184,6 +162,18 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 type: "memory_agent",
                 action: /(?:remember|save|store|记录|保存|写入)/i.test(content) ? "remember" : "recall",
                 content,
+            };
+        }
+        // A configured sub-agent is published as a tool named by its definition id, so an
+        // unknown tool name matching a known definition is a sub-agent call.
+        const subAgentName = subAgentNames.value[name];
+        if (subAgentName != null) {
+            return {
+                type: "sub_agent",
+                agentId: name,
+                agentName: subAgentName,
+                arguments: typeof arguments_ === "string" ? arguments_ : JSON.stringify(arguments_ ?? {}, null, 2),
+                result: result?.trim() ?? "",
             };
         }
         if (name === "create_file") {
@@ -363,6 +353,8 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
 
     const services = ref<ServiceWithRuntime[]>([]);
     const servicesLoading = ref(false);
+    /** Sub-agent definitions by id, used to label their tool calls as sub-agent cards. */
+    const subAgentNames = ref<Record<string, string>>({});
     const sessions = ref<ChatSessionSummary[]>([]);
     const sessionsLoading = ref(false);
     const activeSessionId = ref("");
@@ -2688,11 +2680,16 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     async function load() {
         servicesLoading.value = true;
         try {
-            const [connections, llm, loadedAgents, contextCompactionSettings] = await Promise.all([
+            const [connections, llm, loadedAgents, contextCompactionSettings, loadedSubAgents] = await Promise.all([
                 system.connections.list(),
                 system.llm.list(),
                 system.services.list(),
                 getContextCompactionSettings(),
+                // Display-only: a bad definition must not block the chat page from loading.
+                system.subagents.list(subAgentReferenceableToolIds()).catch((error) => {
+                    console.warn("Failed to load sub-agent definitions:", error);
+                    return [];
+                }),
             ]);
             stats.connections = connections.length;
             stats.llm = llm.length;
@@ -2700,6 +2697,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             services.value = loadedAgents;
             llmModels.value = llm;
             contextCompactionPercent.value = contextCompactionSettings.percent;
+            subAgentNames.value = Object.fromEntries(loadedSubAgents.map((agent) => [agent.id, agent.name]));
 
             const eligible = loadedAgents.filter((agent) => CHAT_ELIGIBLE_SERVICE_TYPES.has(agent.role_service_type.type));
             const requestedAgent = props.agentId

@@ -1329,6 +1329,9 @@
             <template v-else-if="toolPreviewState.kind.type === 'memory_agent'">
               <BookmarkIcon class="badge-icon" /> {{ toolPreviewState.kind.action === 'remember' ? '记录记忆' : '回忆记忆' }}
             </template>
+            <template v-else-if="toolPreviewState.kind.type === 'sub_agent'">
+              <RobotIcon class="badge-icon" /> Sub Agent: {{ toolPreviewState.kind.agentName }}
+            </template>
             <template v-else-if="toolPreviewState.kind.type === 'web_search'">
               <InternetIcon class="badge-icon" /> Web Search
             </template>
@@ -1373,6 +1376,15 @@
                     </div>
                   </div>
                 </div>
+              </div>
+            </template>
+            <template v-else-if="toolPreviewState.kind.type === 'sub_agent'">
+              <div class="tool-preview-info">
+                <p>Sub Agent: <code>{{ toolPreviewState.kind.agentId }}</code></p>
+                <div class="chat-tool-detail-caption">arguments</div>
+                <pre>{{ toolPreviewState.kind.arguments || '(无参数)' }}</pre>
+                <div class="chat-tool-detail-caption">result</div>
+                <pre>{{ toolPreviewState.kind.result || '(空结果)' }}</pre>
               </div>
             </template>
             <template v-else-if="toolPreviewState.kind.type === 'edit_file'">
@@ -1591,6 +1603,7 @@ import {
   ChatIcon,
   BookmarkIcon,
   InternetIcon,
+  RobotIcon,
   StopIcon,
   RefreshIcon,
 } from "tdesign-icons-vue-next";
