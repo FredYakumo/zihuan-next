@@ -37,8 +37,9 @@ export type LlmApiStyle =
   | "open_ai_responses"
   | "open_ai_responses_message_compat"
   | "open_ai_responses_image_url_object_compat";
-export type ToolImplementation = "node_graph" | "sub_agent";
+export type ToolImplementation = "node_graph" | "sub_agent" | "script";
 export type ToolTargetType = "workflow_set" | "file_path" | "inline_graph";
+export type ScriptLanguageForm = "typescript" | "python";
 
 export const DEFAULT_MYSQL_MAX_CONNECTIONS = 32;
 export const DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS = 30;
@@ -115,6 +116,10 @@ export interface ToolFormState {
   workflowName: string;
   filePath: string;
   inlineGraphJson: string;
+  scriptLanguage: ScriptLanguageForm;
+  scriptSource: string;
+  scriptEntry: string;
+  scriptTimeoutSecs: number;
   parametersJson: string;
   outputsJson: string;
 }
@@ -416,6 +421,10 @@ export function defaultToolForm(): ToolFormState {
     filePath: "",
     inlineGraphJson:
       '{\n  "nodes": [],\n  "edges": [],\n  "graph_inputs": [],\n  "graph_outputs": [],\n  "hyperparameter_groups": [],\n  "hyperparameters": [],\n  "variables": [],\n  "metadata": { "name": null, "description": null, "version": null }\n}',
+    scriptLanguage: "typescript",
+    scriptSource: "",
+    scriptEntry: "run_tool",
+    scriptTimeoutSecs: 60,
     parametersJson: "[]",
     outputsJson: "[]",
   };
@@ -848,6 +857,12 @@ export function toolFormFromConfig(tool: ServiceToolConfig): ToolFormState {
   if (toolType.type === "sub_agent") {
     form.implementation = "sub_agent";
     form.subAgentId = String(toolType.sub_agent_id ?? "");
+  } else if (toolType.type === "script") {
+    form.implementation = "script";
+    form.scriptLanguage = (toolType.language === "python" ? "python" : "typescript") as ScriptLanguageForm;
+    form.scriptSource = String(toolType.source ?? "");
+    form.scriptEntry = String(toolType.entry ?? "run_tool");
+    form.scriptTimeoutSecs = Number(toolType.timeout_secs ?? 60) || 60;
   } else {
     form.implementation = "node_graph";
     const targetType = String(toolType.target_type ?? "workflow_set") as ToolTargetType;
@@ -1042,6 +1057,16 @@ export function buildToolPayload(form: ToolFormState): ServiceToolConfig {
     toolType = {
       type: "sub_agent",
       sub_agent_id: form.subAgentId,
+    };
+  } else if (form.implementation === "script") {
+    toolType = {
+      type: "script",
+      language: form.scriptLanguage,
+      source: form.scriptSource,
+      entry: form.scriptEntry.trim() || "run_tool",
+      timeout_secs: form.scriptTimeoutSecs,
+      parameters: JSON.parse(form.parametersJson || "[]"),
+      outputs: JSON.parse(form.outputsJson || "[]"),
     };
   } else {
     const parameters = JSON.parse(form.parametersJson || "[]");

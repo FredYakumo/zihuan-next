@@ -16,6 +16,8 @@
 	color: var(--text); font-size: 13px; margin-bottom: 10px;
 }
 .zh-dialog textarea { resize: vertical; min-height: 80px; font-family: monospace; }
+/* A script tool's source is edited here rather than uploaded, so give it room to show code. */
+.zh-dialog textarea.zh-script-source { min-height: 220px; font-size: 12px; line-height: 1.5; white-space: pre; }
 .zh-dialog .zh-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .zh-dialog .zh-row input, .zh-dialog .zh-row select { margin-bottom: 0; }
 .zh-dialog .zh-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }

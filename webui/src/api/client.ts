@@ -455,6 +455,12 @@ export interface SubAgentPort {
   required: boolean;
 }
 
+/** The LLM-facing signature a script tool declares through its manifest export. */
+export interface ScriptToolManifest {
+  parameters: Array<{ name: string; data_type: string | Record<string, unknown>; desc: string; required?: boolean }>;
+  outputs: Array<{ name: string; data_type: string | Record<string, unknown>; description?: string; required?: boolean }>;
+}
+
 export interface SubAgentPromptPart {
   port: string;
   equals?: string | null;
@@ -838,6 +844,12 @@ export const system = {
     },
     remove(id: string): Promise<{ ok: boolean }> {
       return request("DELETE", `/system/subagents/${encodeURIComponent(id)}`);
+    },
+  },
+  scriptTools: {
+    /** Reads the parameters and outputs a script declares, without running its tool entry. */
+    manifest(payload: { language: string; source: string; entry: string }): Promise<ScriptToolManifest> {
+      return request("POST", "/system/script-tools/manifest", payload);
     },
   },
   browseWorkspaceDirectories(path?: string): Promise<WorkspaceDirectoryBrowser> {

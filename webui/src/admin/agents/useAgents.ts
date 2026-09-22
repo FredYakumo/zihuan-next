@@ -1,5 +1,5 @@
 import { computed, markRaw, onMounted, reactive, ref } from "vue";
-import { FlowchartIcon, RobotIcon } from "tdesign-icons-vue-next";
+import { CodeIcon, FlowchartIcon, RobotIcon, TerminalIcon } from "tdesign-icons-vue-next";
 
 import {
   system,
@@ -33,6 +33,7 @@ import {
   formatDataType,
   type ServiceFormState,
   type ServiceTypeName,
+  type ScriptLanguageForm,
   type QqChatEmotionDimensionFormItem,
 } from "../model";
 import { useAdminClipboard } from "../components/useAdminClipboard";
@@ -219,7 +220,10 @@ const toolEditCallLimit = ref<number | null>(null);
 const toolEditOriginalName = ref("");
 
 type ToolTypeOption = {
+  /** The implementation this card creates. */
   value: ServiceFormState["tools"][number]["implementation"];
+  /** Script tools share one implementation, so the card carries the language it presets. */
+  scriptLanguage?: ScriptLanguageForm;
   label: string;
   desc: string;
   icon: unknown;
@@ -238,6 +242,20 @@ const toolTypeOptions: ToolTypeOption[] = [
     desc: "调用节点图 / Workflow Set",
     icon: markRaw(FlowchartIcon),
   },
+  {
+    value: "script",
+    scriptLanguage: "typescript",
+    label: "TypeScript 脚本",
+    desc: "用 TypeScript 编写工具逻辑",
+    icon: markRaw(CodeIcon),
+  },
+  {
+    value: "script",
+    scriptLanguage: "python",
+    label: "Python 脚本",
+    desc: "",
+    icon: markRaw(TerminalIcon),
+  },
 ];
 
 /** The type picker only fronts tool creation; editing goes straight to the config form. */
@@ -250,20 +268,26 @@ function openNewTool() {
   editingToolIndex.value = -1;
   toolEditCallLimit.value = null;
   toolEditOriginalName.value = "";
+  resetScriptDraftState();
   toolCreateStep.value = "picker";
   showToolEditModal.value = true;
 }
 
-function selectToolType(type: ServiceFormState["tools"][number]["implementation"]) {
-  Object.assign(toolEditDraft, defaultToolForm(), { implementation: type });
+function selectToolType(option: ToolTypeOption) {
+  Object.assign(toolEditDraft, defaultToolForm(), {
+    implementation: option.value,
+    scriptLanguage: option.scriptLanguage ?? toolEditDraft.scriptLanguage,
+  });
   toolEditCallLimit.value = null;
   editingToolIndex.value = -1;
+  resetScriptDraftState();
   toolCreateStep.value = "config";
 }
 
 function backToToolTypePicker() {
   Object.assign(toolEditDraft, defaultToolForm());
   toolEditCallLimit.value = null;
+  resetScriptDraftState();
   toolCreateStep.value = "picker";
 }
 
@@ -294,6 +318,9 @@ function openToolEdit(index: number) {
   editingToolIndex.value = index;
   toolEditCallLimit.value = form.tool_session_call_limits[tool.name] ?? null;
   toolEditOriginalName.value = tool.name;
+  // An existing tool already has its entry; inference would only fight the saved value.
+  resetScriptDraftState();
+  scriptEntryManuallyEdited.value = true;
   toolCreateStep.value = "config";
   showToolEditModal.value = true;
 }
@@ -350,6 +377,59 @@ function validateToolDraft(): boolean {
     alert("请填写工具名称");
     return false;
   }
+  if (toolEditDraft.implementation === "script") {
+    if (!toolEditDraft.scriptSource.trim()) {
+      alert("请填写脚本内容或上传脚本文件");
+      return false;
+    }
+    if (!toolEditDraft.scriptEntry.trim()) {
+      alert("请填写入口函数");
+      return false;
+    }
+    if (!Number.isFinite(toolEditDraft.scriptTimeoutSecs) || toolEditDraft.scriptTimeoutSecs < 1) {
+      alert("超时时间必须大于 0 秒");
+      return false;
+    }
+    if (!isJsonArray(toolEditDraft.parametersJson)) {
+      alert("Parameters JSON 不是合法的 JSON 数组");
+      return false;
+    }
+    if (!isJsonArray(toolEditDraft.outputsJson)) {
+      alert("Outputs JSON 不是合法的 JSON 数组");
+      return false;
+    }
+    // The runtime enforces the output signature when the service starts; checking it here keeps
+    // a mismatch in the editor instead of surfacing it as a start failure.
+    const outputs = JSON.parse(toolEditDraft.outputsJson || "[]") as Array<{
+      name?: unknown;
+      data_type?: unknown;
+    }>;
+    if (form.type === "qq_chat") {
+      // qq_chat hands tool results to the model as plain text, so exactly one String output is
+      // allowed and the script returns that string directly.
+      if (outputs.length !== 1) {
+        alert("qq_chat Service 的脚本工具必须声明且只声明一个输出");
+        return false;
+      }
+      const dataType = outputs[0]?.data_type;
+      if (dataType !== "String") {
+        alert("qq_chat Service 的脚本工具输出必须是 String 类型");
+        return false;
+      }
+    } else if (outputs.length === 0) {
+      alert("脚本工具至少需要一个输出");
+      return false;
+    }
+    const scriptNameTaken = form.tools.some(
+      (tool, index) => tool.name === toolEditDraft.name.trim() && index !== editingToolIndex.value,
+    );
+    if (scriptNameTaken) {
+      alert(`工具名称 '${toolEditDraft.name.trim()}' 已经存在`);
+      return false;
+    }
+    return true;
+  }
+
   if (toolEditDraft.targetType === "workflow_set" && !toolEditDraft.workflowName) {
     alert("请选择节点图");
     return false;
@@ -975,6 +1055,152 @@ function handleToolTargetTypeChange(tool: ServiceFormState["tools"][number]) {
   }
 }
 
+/** Extensions the file picker accepts for one script language. */
+const SCRIPT_FILE_EXTENSIONS: Record<ScriptLanguageForm, string[]> = {
+  typescript: [".ts", ".mts", ".mjs"],
+  python: [".py"],
+};
+
+/** Mirrors the backend's stored-script cap so an oversized file is rejected before upload. */
+const MAX_SCRIPT_SOURCE_BYTES = 256 * 1024;
+
+const scriptUploadInput = ref<HTMLInputElement | null>(null);
+
+function scriptFileAccept(language: ScriptLanguageForm): string {
+  return SCRIPT_FILE_EXTENSIONS[language].join(",");
+}
+
+/** The file name last read into the editor, shown so an upload is visibly acknowledged. */
+const scriptSourceFileName = ref("");
+
+function openScriptFilePicker() {
+  scriptUploadInput.value?.click();
+}
+
+async function handleScriptFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) {
+    return;
+  }
+  const extensions = SCRIPT_FILE_EXTENSIONS[toolEditDraft.scriptLanguage];
+  if (!extensions.some((extension) => file.name.toLowerCase().endsWith(extension))) {
+    alert(`请选择 ${extensions.join(" / ")} 文件`);
+    return;
+  }
+  if (file.size > MAX_SCRIPT_SOURCE_BYTES) {
+    alert(`脚本文件不能超过 ${MAX_SCRIPT_SOURCE_BYTES / 1024} KiB`);
+    return;
+  }
+  toolEditDraft.scriptSource = await file.text();
+  scriptSourceFileName.value = file.name;
+  inferScriptEntryIfUntouched();
+  if (!toolEditDraft.name.trim()) {
+    toolEditDraft.name = file.name.replace(/\.[^.]+$/, "");
+  }
+}
+
+const syncingScriptManifest = ref(false);
+
+/** Skeleton shown in the empty script editor, matching the selected language's syntax. */
+const scriptEditorPlaceholder = computed(() =>
+  toolEditDraft.scriptLanguage === "python"
+    ? 'def run_tool(request, zihuan):\n    text = request["arguments"].get("text", "")\n    return {"ok": True, "result": {"result": f"echo: {text}"}}'
+    : 'export async function run_tool(request, zihuan) {\n  const text = request.arguments?.text ?? "";\n  return { ok: true, result: { result: `echo: ${text}` } };\n}',
+);
+
+/** True once the user edits the entry field in this dialog; inference stops for good after that. */
+const scriptEntryManuallyEdited = ref(false);
+
+/** Clears the per-draft script state, so a new tool starts inferring its entry again. */
+function resetScriptDraftState() {
+  scriptEntryManuallyEdited.value = false;
+  scriptSourceFileName.value = "";
+}
+
+/**
+ * Guesses a script's entry function name from its source.
+ *
+ * Returns null when the source declares nothing recognizable, so a half-written script never
+ * clears the field. A Python script is read for its first module-level `def`, a TypeScript one
+ * for an exported function, then for an exported arrow function.
+ */
+function inferScriptEntry(language: ScriptLanguageForm, source: string): string | null {
+  if (language === "python") {
+    for (const line of source.split(/\r?\n/)) {
+      const match = /^def\s+([A-Za-z_]\w*)\s*\(/.exec(line);
+      if (match && !match[1].startsWith("_")) {
+        return match[1];
+      }
+    }
+    return null;
+  }
+  const declared = /^\s*export\s+(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/m.exec(source);
+  if (declared) {
+    return declared[1];
+  }
+  const bound = /^\s*export\s+const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(?[^)=\n]*\)?\s*=>/m.exec(source);
+  return bound ? bound[1] : null;
+}
+
+/** Fills the entry field from the script, unless the user has taken that field over. */
+function inferScriptEntryIfUntouched() {
+  if (scriptEntryManuallyEdited.value) {
+    return;
+  }
+  const inferred = inferScriptEntry(toolEditDraft.scriptLanguage, toolEditDraft.scriptSource);
+  if (inferred) {
+    toolEditDraft.scriptEntry = inferred;
+  }
+}
+
+/** Called as the script source changes, so the entry field tracks the code being written. */
+function handleScriptSourceEdited() {
+  inferScriptEntryIfUntouched();
+}
+
+/** Called when the language changes: the same source is read by a different parser. */
+function handleScriptLanguageChanged() {
+  inferScriptEntryIfUntouched();
+}
+
+/** Called when the user touches the entry field, which ends inference for this draft. */
+function handleScriptEntryEdited() {
+  scriptEntryManuallyEdited.value = true;
+}
+
+/**
+ * Fills the parameters and outputs from the script's own manifest export.
+ *
+ * Reading the manifest is what lets a script describe its LLM-facing signature in code; a script
+ * without one keeps whatever the form already holds.
+ */
+async function syncToolManifestFromScript() {
+  if (!toolEditDraft.scriptSource.trim()) {
+    alert("请先填写脚本内容或上传脚本文件");
+    return;
+  }
+  syncingScriptManifest.value = true;
+  try {
+    const manifest = await system.scriptTools.manifest({
+      language: toolEditDraft.scriptLanguage,
+      source: toolEditDraft.scriptSource,
+      entry: toolEditDraft.scriptEntry.trim() || "run_tool",
+    });
+    if (manifest.parameters.length === 0 && manifest.outputs.length === 0) {
+      alert("脚本未声明 TOOL_MANIFEST / tool_manifest，请手动填写 Parameters 与 Outputs");
+      return;
+    }
+    toolEditDraft.parametersJson = JSON.stringify(manifest.parameters, null, 2);
+    toolEditDraft.outputsJson = JSON.stringify(manifest.outputs, null, 2);
+  } catch (error) {
+    alert(error instanceof Error ? error.message : String(error));
+  } finally {
+    syncingScriptManifest.value = false;
+  }
+}
+
 function applyWorkflowSetMetadata(tool: ServiceFormState["tools"][number]) {
   if (tool.implementation !== "node_graph" || tool.targetType !== "workflow_set" || !tool.workflowName) {
     return;
@@ -1267,6 +1493,18 @@ onMounted(() => {
     syncToolFromGraph,
     handleToolTargetTypeChange,
     applyWorkflowSetMetadata,
+    scriptUploadInput,
+    scriptSourceFileName,
+    scriptFileAccept,
+    openScriptFilePicker,
+    handleScriptFileSelected,
+    syncingScriptManifest,
+    syncToolManifestFromScript,
+    scriptEditorPlaceholder,
+    scriptEntryManuallyEdited,
+    handleScriptSourceEdited,
+    handleScriptLanguageChanged,
+    handleScriptEntryEdited,
     submitForm,
     removeService,
     startAgent,

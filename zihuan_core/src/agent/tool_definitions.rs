@@ -1,9 +1,12 @@
 use std::path::PathBuf;
 
-use crate::agent::tool_config::{AgentToolConfig, AgentToolType, NodeGraphToolConfig};
+use crate::agent::tool_config::{
+    AgentToolConfig, AgentToolType, NodeGraphToolConfig, ScriptAgentToolConfig,
+};
 use crate::error::{Error, Result};
 use crate::graph::function_graph::FunctionPortDef;
 use crate::graph::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
+use crate::graph::script_tool::validate_script_tool_config;
 use crate::graph::tool_spec::{
     fixed_tool_runtime_inputs, ToolDefinition, ToolImplementation, ToolParamDef,
     QQ_AGENT_TOOL_OWNER_TYPE,
@@ -16,6 +19,9 @@ pub fn build_enabled_tool_definitions(tools: &[AgentToolConfig]) -> Result<Vec<T
         match &tool.tool_type {
             AgentToolType::NodeGraph(config) => {
                 definitions.push(build_node_graph_tool_definition(tool, config)?);
+            }
+            AgentToolType::Script(config) => {
+                definitions.push(build_script_tool_definition(tool, config)?);
             }
             AgentToolType::SubAgent(_) => {}
         }
@@ -83,10 +89,47 @@ fn build_node_graph_tool_definition(
         run_duration: tool.run_duration,
         implementation: ToolImplementation::NodeGraph,
         built_in_kind: None,
-        python_config: None,
+        script_config: None,
         parameters,
         outputs,
         subgraph,
+    })
+}
+
+/// Builds the runtime definition of a script tool.
+///
+/// Unlike a graph tool, the signature is not derived from anything on disk: the configuration
+/// carries both the script and the parameters/outputs the LLM sees, so a service stays valid
+/// without the script ever having been imported.
+fn build_script_tool_definition(
+    tool: &AgentToolConfig,
+    config: &ScriptAgentToolConfig,
+) -> Result<ToolDefinition> {
+    validate_script_tool_config(&tool.name, &config.script)?;
+    if config.outputs.is_empty() {
+        return Err(Error::ValidationError(format!(
+            "工具 '{}' 未定义 outputs，脚本必须声明至少一个输出",
+            tool.name
+        )));
+    }
+    if config.outputs.iter().any(|output| output.name.trim().is_empty()) {
+        return Err(Error::ValidationError(format!(
+            "工具 '{}' 的 outputs 包含空的输出名",
+            tool.name
+        )));
+    }
+
+    Ok(ToolDefinition {
+        id: tool.id.clone(),
+        name: tool.name.clone(),
+        description: tool.description.clone(),
+        run_duration: tool.run_duration,
+        implementation: ToolImplementation::Script,
+        built_in_kind: None,
+        script_config: Some(config.script.clone()),
+        parameters: config.parameters.clone(),
+        outputs: config.outputs.clone(),
+        subgraph: Default::default(),
     })
 }
 

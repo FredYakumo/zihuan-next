@@ -158,6 +158,22 @@ if (argument !== "--jobs-catalog") {
 const toolModules = new Map();
 
 /**
+ * Imports one script module, caching it per absolute path.
+ *
+ * @param {string} scriptPath Absolute path of the script file to import.
+ * @returns {Promise<Record<string, unknown>>} The imported module namespace.
+ */
+async function importScript(scriptPath) {
+    const file = path.resolve(scriptPath);
+    let module = toolModules.get(file);
+    if (!module) {
+        module = await import(pathToFileURL(file).href);
+        toolModules.set(file, module);
+    }
+    return module;
+}
+
+/**
  * Executes a tool-style script request: imports the script on demand, calls the exported
  * entry with the request object plus a `JobSdk` instance, and writes the `{ response }`
  * envelope. Script errors are reported through the `{ ok: false, error }` contract instead
@@ -168,12 +184,7 @@ const toolModules = new Map();
  */
 async function executeTool(tool) {
     try {
-        const file = path.resolve(tool.script_path);
-        let module = toolModules.get(file);
-        if (!module) {
-            module = await import(pathToFileURL(file).href);
-            toolModules.set(file, module);
-        }
+        const module = await importScript(tool.script_path);
         const entry = module[tool.entry];
         if (typeof entry !== "function") {
             throw new Error(`script ${tool.script_path} does not export function: ${tool.entry}`);
@@ -182,6 +193,46 @@ async function executeTool(tool) {
         process.stdout.write(`${JSON.stringify({ response: result })}\n`);
     } catch (error) {
         process.stdout.write(`${JSON.stringify({ response: { ok: false, error: String(error) } })}\n`);
+    }
+}
+
+/**
+ * Executes an agent script tool: same envelope as `executeTool`, but the entry receives the
+ * ZiHuan SDK facade so the script can call host capabilities (models, storage, bot, search).
+ *
+ * @param {Record<string, unknown>} tool Script tool request carrying `script_path` and `entry`.
+ * @returns {Promise<void>} Resolves after the response has been written.
+ */
+async function executeScriptTool(tool) {
+    try {
+        const module = await importScript(tool.script_path);
+        const entry = module[tool.entry];
+        if (typeof entry !== "function") {
+            throw new Error(`script ${tool.script_path} does not export function: ${tool.entry}`);
+        }
+        const result = await entry(tool, createZihuanSdk(hostCall));
+        process.stdout.write(`${JSON.stringify({ response: result })}\n`);
+    } catch (error) {
+        process.stdout.write(`${JSON.stringify({ response: { ok: false, error: String(error) } })}\n`);
+    }
+}
+
+/**
+ * Reports the parameters and outputs a script declares through its `tool_manifest` export.
+ *
+ * @param {Record<string, unknown>} request Request carrying the `script_path` to inspect.
+ * @returns {Promise<void>} Resolves after the manifest has been written.
+ */
+async function reportToolManifest(request) {
+    try {
+        const module = await importScript(request.script_path);
+        const manifest = module.tool_manifest ?? {};
+        process.stdout.write(`${JSON.stringify({
+            parameters: manifest.parameters ?? [],
+            outputs: manifest.outputs ?? [],
+        })}\n`);
+    } catch (error) {
+        process.stdout.write(`${JSON.stringify({ error: String(error) })}\n`);
     }
 }
 
@@ -213,6 +264,9 @@ if (argument === "--catalog") {
     const node = nodeByType.get(request.type_id);
     if (!node) throw new Error(`unknown DAG node: ${request.type_id}`);
     process.stdout.write(JSON.stringify(resolvedPorts(node, request.inline_values)));
+} else if (argument === "--tool-manifest") {
+    const request = JSON.parse(fs.readFileSync(0, "utf8"));
+    await reportToolManifest(request);
 } else if (argument === "--execute") {
     const request = JSON.parse(fs.readFileSync(0, "utf8"));
     const node = nodeByType.get(request.type_id);
@@ -260,6 +314,10 @@ if (argument === "--catalog") {
                     void executeTool(request.request ?? {});
                     continue;
                 }
+                if (request.kind === "script_tool_execute") {
+                    void executeScriptTool(request.request ?? {});
+                    continue;
+                }
                 void execute(request);
             } catch (error) {
                 process.stdout.write(`${JSON.stringify({ kind: "execute_response", error: String(error) })}\n`);
@@ -267,5 +325,5 @@ if (argument === "--catalog") {
         }
     });
 } else {
-    throw new Error("expected --catalog, --ports, --execute, --jobs-catalog, or --serve");
+    throw new Error("expected --catalog, --ports, --execute, --tool-manifest, --jobs-catalog, or --serve");
 }

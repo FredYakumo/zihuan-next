@@ -1,5 +1,5 @@
 pub use crate::tool_runtime::ToolRunDuration;
-use dynamic_script_engine::{PythonRuntimeConfig, PythonRuntimeKind};
+use dynamic_script_engine::ScriptLanguage;
 use serde::{Deserialize, Serialize};
 
 use crate::graph::function_graph::{
@@ -22,7 +22,7 @@ pub enum ToolImplementation {
     #[default]
     NodeGraph,
     BuiltIn,
-    PythonScript,
+    Script,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -31,34 +31,60 @@ pub enum BuiltInToolKind {
     ImageUnderstand,
 }
 
-pub type PythonToolMode = PythonRuntimeKind;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PythonScriptToolConfig {
-    pub script_path: String,
-    #[serde(default = "default_python_module_entry")]
-    pub module_entry: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub python_runtime: Option<PythonRuntimeConfig>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub python_mode: Option<PythonToolMode>,
-    #[serde(default = "default_python_timeout_secs")]
-    pub timeout_secs: u64,
+/// The script languages a script tool can be authored in.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ScriptToolLanguage {
+    #[default]
+    TypeScript,
+    Python,
 }
 
-impl PythonScriptToolConfig {
-    pub fn runtime_override(&self) -> Option<PythonRuntimeConfig> {
-        self.python_runtime
-            .clone()
-            .or_else(|| self.python_mode.map(PythonRuntimeConfig::from))
+impl ScriptToolLanguage {
+    /// File extension the materialized script is written with.
+    pub fn file_extension(self) -> &'static str {
+        match self {
+            Self::TypeScript => "ts",
+            Self::Python => "py",
+        }
+    }
+
+    /// The runtime that executes this language.
+    pub fn engine_language(self) -> ScriptLanguage {
+        match self {
+            Self::TypeScript => ScriptLanguage::JavaScript,
+            Self::Python => ScriptLanguage::Python,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::TypeScript => "TypeScript",
+            Self::Python => "Python",
+        }
     }
 }
 
-fn default_python_module_entry() -> String {
+/// A tool whose body is a script executed by the dynamic script engine.
+///
+/// The source travels with the configuration instead of pointing at a file on disk, so exporting,
+/// importing, or copying a service carries the tool's code with it. [`crate::graph::script_tool`]
+/// materializes it into a file at call time, which is what the engine loads.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ScriptToolConfig {
+    pub language: ScriptToolLanguage,
+    pub source: String,
+    #[serde(default = "default_script_entry")]
+    pub entry: String,
+    #[serde(default = "default_script_timeout_secs")]
+    pub timeout_secs: u64,
+}
+
+fn default_script_entry() -> String {
     "run_tool".to_string()
 }
 
-fn default_python_timeout_secs() -> u64 {
+fn default_script_timeout_secs() -> u64 {
     60
 }
 
@@ -90,7 +116,7 @@ pub struct ToolDefinition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub built_in_kind: Option<BuiltInToolKind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub python_config: Option<PythonScriptToolConfig>,
+    pub script_config: Option<ScriptToolConfig>,
     #[serde(default)]
     pub parameters: Vec<ToolParamDef>,
     #[serde(default)]
@@ -121,8 +147,8 @@ impl ToolDefinition {
         self.built_in_kind
     }
 
-    pub fn python_config(&self) -> Option<&PythonScriptToolConfig> {
-        self.python_config.as_ref()
+    pub fn script_config(&self) -> Option<&ScriptToolConfig> {
+        self.script_config.as_ref()
     }
 
     pub fn output_boundary_node_id() -> &'static str {

@@ -11,8 +11,7 @@ import type {
   EmbeddedFunctionConfig,
   FunctionPortDef,
   LLMMessageItem,
-  PythonToolMode,
-  PythonScriptToolConfig,
+  ScriptToolConfig,
   QQMessageItem,
   ToolParamDef,
 } from "./types";
@@ -461,9 +460,10 @@ export function openToolCallingToolsEditor(
         description: "",
         implementation: "node_graph",
         run_duration: "Short",
-        python_config: {
-          script_path: "",
-          module_entry: "run_tool",
+        script_config: {
+          language: "typescript",
+          source: "",
+          entry: "run_tool",
           timeout_secs: 60,
         },
         parameters: [],
@@ -595,7 +595,7 @@ export function openToolCallingToolsEditor(
     const currentImplementation = tool.implementation ?? "node_graph";
     [
       { value: "node_graph", label: "node_graph" },
-      { value: "python_script", label: "python_script" },
+      { value: "script", label: "script" },
     ].forEach((option) => {
       const opt = document.createElement("option");
       opt.value = option.value;
@@ -608,10 +608,11 @@ export function openToolCallingToolsEditor(
     implementationSelect.addEventListener("change", () => {
       const nextImplementation = implementationSelect.value as ToolImplementation;
       tools[idx].implementation = nextImplementation;
-      if (nextImplementation === "python_script" && !tools[idx].python_config) {
-        tools[idx].python_config = {
-          script_path: "",
-          module_entry: "run_tool",
+      if (nextImplementation === "script" && !tools[idx].script_config) {
+        tools[idx].script_config = {
+          language: "typescript",
+          source: "",
+          entry: "run_tool",
           timeout_secs: 60,
         };
       }
@@ -626,99 +627,72 @@ export function openToolCallingToolsEditor(
     card.appendChild(implementationLabel);
     card.appendChild(implementationSelect);
 
-    const pythonConfig = (tool.python_config ?? {
-      script_path: "",
-      module_entry: "run_tool",
+    const scriptConfig = (tool.script_config ?? {
+      language: "typescript",
+      source: "",
+      entry: "run_tool",
       timeout_secs: 60,
-    }) as PythonScriptToolConfig;
-    if ((tool.implementation ?? "node_graph") === "python_script") {
-      const scriptPathLabel = document.createElement("label");
-      scriptPathLabel.textContent = "脚本路径";
-      const scriptPathInput = document.createElement("input");
-      scriptPathInput.type = "text";
-      scriptPathInput.value = pythonConfig.script_path ?? "";
-      scriptPathInput.placeholder = "utils/python_tools/echo_tool.py";
-      scriptPathInput.addEventListener("change", () => {
-        tools[idx].python_config = { ...pythonConfig, script_path: scriptPathInput.value.trim() };
+    }) as ScriptToolConfig;
+    if ((tool.implementation ?? "node_graph") === "script") {
+      const languageLabel = document.createElement("label");
+      languageLabel.textContent = "脚本语言";
+      const languageSelect = document.createElement("select");
+      [
+        { value: "typescript", label: "TypeScript (.ts)" },
+        { value: "python", label: "Python (.py)" },
+      ].forEach((option) => {
+        const opt = document.createElement("option");
+        opt.value = option.value;
+        opt.textContent = option.label;
+        if ((scriptConfig.language ?? "typescript") === option.value) {
+          opt.selected = true;
+        }
+        languageSelect.appendChild(opt);
       });
-      card.appendChild(scriptPathLabel);
-      card.appendChild(scriptPathInput);
+      languageSelect.addEventListener("change", () => {
+        tools[idx].script_config = { ...scriptConfig, language: languageSelect.value as ScriptToolConfig["language"] };
+      });
+      card.appendChild(languageLabel);
+      card.appendChild(languageSelect);
+
+      // The source area is tall enough to edit in place: a node's tool is authored here rather
+      // than uploaded, because this editor has no upload affordance of its own.
+      const sourceLabel = document.createElement("label");
+      sourceLabel.textContent = "脚本内容";
+      const sourceInput = document.createElement("textarea");
+      sourceInput.className = "zh-script-source";
+      sourceInput.rows = 14;
+      sourceInput.value = scriptConfig.source ?? "";
+      sourceInput.placeholder = scriptConfig.language === "python"
+        ? 'def run_tool(request, zihuan):\n    return {"ok": True, "result": {"result": "..."}}'
+        : 'export async function run_tool(request, zihuan) {\n  return { ok: true, result: { result: "..." } };\n}';
+      sourceInput.addEventListener("change", () => {
+        tools[idx].script_config = { ...scriptConfig, source: sourceInput.value };
+      });
+      card.appendChild(sourceLabel);
+      card.appendChild(sourceInput);
 
       const entryLabel = document.createElement("label");
       entryLabel.textContent = "入口函数";
       const entryInput = document.createElement("input");
       entryInput.type = "text";
-      entryInput.value = pythonConfig.module_entry ?? "run_tool";
+      entryInput.value = scriptConfig.entry ?? "run_tool";
       entryInput.placeholder = "run_tool";
       entryInput.addEventListener("change", () => {
-        tools[idx].python_config = { ...pythonConfig, module_entry: entryInput.value.trim() || "run_tool" };
+        tools[idx].script_config = { ...scriptConfig, entry: entryInput.value.trim() || "run_tool" };
       });
       card.appendChild(entryLabel);
       card.appendChild(entryInput);
-
-      const modeLabel = document.createElement("label");
-      modeLabel.textContent = "Python 运行时";
-      const modeSelect = document.createElement("select");
-      [
-        { value: "inherit", label: "继承全局设置" },
-        { value: "uv_project", label: "项目 uv" },
-        { value: "project_venv", label: "项目 .venv" },
-        { value: "custom_executable", label: "自定义解释器" },
-      ].forEach((option) => {
-        const opt = document.createElement("option");
-        opt.value = option.value;
-        opt.textContent = option.label;
-        const configuredMode = (pythonConfig.python_runtime?.kind ?? pythonConfig.python_mode) as string | undefined;
-        const currentMode = configuredMode === "venv_python" ? "project_venv" : configuredMode ?? "inherit";
-        if (currentMode === option.value) {
-          opt.selected = true;
-        }
-        modeSelect.appendChild(opt);
-      });
-      modeSelect.addEventListener("change", () => {
-        const runtime = modeSelect.value === "inherit" ? null : { kind: modeSelect.value as PythonToolMode };
-        tools[idx].python_config = { ...pythonConfig, python_runtime: runtime, python_mode: undefined };
-        close();
-        openToolCallingToolsEditor(
-          { ...nodeDef, inline_values: { ...nodeDef.inline_values, tools_config: tools, shared_inputs: readSharedInputs() } },
-          sessionId,
-          onSaved,
-          onEditToolSubgraph,
-        );
-      });
-      card.appendChild(modeLabel);
-      card.appendChild(modeSelect);
-
-      if (pythonConfig.python_runtime?.kind === "custom_executable") {
-        const executableLabel = document.createElement("label");
-        executableLabel.textContent = "自定义 Python 路径";
-        const executableInput = document.createElement("input");
-        executableInput.type = "text";
-        executableInput.value = pythonConfig.python_runtime.executable_path ?? "";
-        executableInput.placeholder = "C:\\Python311\\python.exe";
-        executableInput.addEventListener("change", () => {
-          tools[idx].python_config = {
-            ...pythonConfig,
-            python_runtime: {
-              kind: "custom_executable",
-              executable_path: executableInput.value.trim() || null,
-            },
-            python_mode: undefined,
-          };
-        });
-        card.appendChild(executableLabel);
-        card.appendChild(executableInput);
-      }
 
       const timeoutLabel = document.createElement("label");
       timeoutLabel.textContent = "超时（秒）";
       const timeoutInput = document.createElement("input");
       timeoutInput.type = "number";
       timeoutInput.min = "1";
-      timeoutInput.value = String(pythonConfig.timeout_secs ?? 60);
+      timeoutInput.value = String(scriptConfig.timeout_secs ?? 60);
       timeoutInput.addEventListener("change", () => {
         const parsed = parseInt(timeoutInput.value, 10);
-        tools[idx].python_config = { ...pythonConfig, timeout_secs: Number.isFinite(parsed) && parsed > 0 ? parsed : 60 };
+        tools[idx].script_config = { ...scriptConfig, timeout_secs: Number.isFinite(parsed) && parsed > 0 ? parsed : 60 };
       });
       card.appendChild(timeoutLabel);
       card.appendChild(timeoutInput);

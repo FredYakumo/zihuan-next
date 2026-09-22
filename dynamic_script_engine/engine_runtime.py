@@ -81,6 +81,15 @@ def resolve_ports(definition: Any, values: dict[str, Any]) -> dict[str, Any]:
     return {"input_ports": [port.to_json() for port in resolved.get("input_ports", definition.input_ports)], "output_ports": [port.to_json() for port in resolved.get("output_ports", definition.output_ports)]}
 
 
+def report_tool_manifest(script_path: str) -> dict[str, Any]:
+    """Purpose: report the parameters and outputs a script declares through TOOL_MANIFEST."""
+    module, failure = load_module(Path(script_path).resolve())
+    if failure: return {"error": failure}
+    manifest = getattr(module, "TOOL_MANIFEST", None) or {}
+    if not isinstance(manifest, dict): return {"error": "TOOL_MANIFEST must be a dict"}
+    return {"parameters": manifest.get("parameters") or [], "outputs": manifest.get("outputs") or []}
+
+
 def invoke(execute: Any, context: NodeExecutionContext) -> dict[str, Any]:
     result = execute(context)
     if inspect.isawaitable(result): result = asyncio.run(result)
@@ -94,9 +103,13 @@ def main() -> int:
     parser.add_argument("--ports", action="store_true")
     parser.add_argument("--serve", action="store_true")
     parser.add_argument("--jobs-catalog", action="store_true")
+    parser.add_argument("--tool-manifest", action="store_true")
     args = parser.parse_args()
-    if sum((args.catalog, args.ports, args.serve, args.jobs_catalog)) != 1:
-        parser.error("expected exactly one of --catalog, --ports, --serve, or --jobs-catalog")
+    if sum((args.catalog, args.ports, args.serve, args.jobs_catalog, args.tool_manifest)) != 1:
+        parser.error("expected exactly one of --catalog, --ports, --serve, --jobs-catalog, or --tool-manifest")
+    if args.tool_manifest:
+        request = json.loads(sys.stdin.read() or "{}")
+        print(json.dumps(report_tool_manifest(request["script_path"]), ensure_ascii=False)); return 0
     if args.jobs_catalog:
         request = json.loads(sys.stdin.read() or "{}")
         jobs, diagnostics = load_jobs(request.get("paths", []))
@@ -111,10 +124,13 @@ def main() -> int:
         try:
             request = json.loads(line)
             if request.get("kind") == "host_response": continue
-            if request.get("kind") == "tool_execute":
+            if request.get("kind") in ("tool_execute", "script_tool_execute"):
                 tool = request["request"]; module, failure = load_module(Path(tool["script_path"]).resolve())
                 if failure: raise RuntimeError(failure)
-                entry = getattr(module, tool["entry"]); result = entry(tool)
+                entry = getattr(module, tool["entry"])
+                # A scheduler job script builds its own JobSdk; an agent script tool is handed
+                # the ZiHuan SDK facade so it can reach host capabilities directly.
+                result = entry(tool) if request["kind"] == "tool_execute" else entry(tool, ZihuanSdk(Host()))
                 print(json.dumps({"response": result}, ensure_ascii=False), flush=True); continue
             node = nodes.get(request.get("type_id"))
             if node is None: raise RuntimeError(f"unknown DAG node: {request.get('type_id')}")

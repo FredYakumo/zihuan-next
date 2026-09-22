@@ -312,6 +312,7 @@ fn agent_uses_saved_graph(
                 NodeGraphToolConfig::InlineGraph { .. } => false,
             },
             AgentToolType::SubAgent(_) => false,
+            AgentToolType::Script(_) => false,
         })
 }
 

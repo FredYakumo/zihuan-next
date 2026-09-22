@@ -592,6 +592,63 @@
   color: var(--td-text-color-secondary);
 }
 
+.agent-service-script-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-service-script-file-name {
+  color: var(--td-text-color-placeholder);
+  font-size: 12px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// The hidden file input backs the "上传脚本文件" button; the browser picker is the real control.
+.agent-service-script-file-input {
+  display: none;
+}
+
+// TDesign reserves 24px at the right of a top-aligned label. These labels carry an action button
+// instead, and the reserve would inset that button from the field edge below it, so it is dropped.
+.agent-service-label-action {
+  :deep(.t-form__label) {
+    padding-right: 0;
+  }
+}
+
+// The script source is the point of this form, so it gets the full drawer width, a code face and
+// room to breathe. TDesign lays form content out as a centred flex row, which shrinks a textarea
+// to its intrinsic width; the item opts out of that so the editor fills the drawer.
+.agent-service-script-source-item {
+  :deep(.t-form__controls-content) {
+    display: block;
+  }
+}
+
+// Code blocks are read as text, not as one-line values, so they wrap instead of scrolling
+// sideways and keep TDesign's default control spacing out of the way.
+.agent-service-script-editor,
+.agent-service-script-json {
+  display: block;
+  width: 100%;
+
+  :deep(.t-textarea__inner),
+  :deep(textarea) {
+    padding: 10px 12px;
+    background: var(--td-bg-color-container);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 12.5px;
+    line-height: 1.7;
+    tab-size: 2;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}
+
 @media (max-width: 840px) {
   .agent-service-toolbar {
     grid-template-columns: 1fr 1fr;
