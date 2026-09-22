@@ -276,6 +276,7 @@ class Agent(_Namespace):
     def s3(self) -> S3Ref: return self._call("s3")
     def image_weaviate(self) -> WeaviateRef: return self._call("image_weaviate")
     def web_search(self) -> WebSearchEngineRef: return self._call("web_search")
+    def image_search(self, query: str, **options: Any) -> dict[str, Any]: return self._call("image_search", query=query, **options)
 
 
 class Bot(_Namespace):
@@ -300,9 +301,21 @@ def _snake(value: str) -> str:
 
 class Resources:
     """Purpose: validate that an input is the expected typed resource handle before SDK use."""
+
+    # Names whose handle class is not spelled by capitalizing the accessor plus "Ref".
+    _ALIASES = {
+        "web_search": WebSearchEngineRef,
+        "session_state": SessionStateRef,
+        "message_cache": LLMMessageSessionCacheRef,
+        "llm_model": LLModel,
+        "embedding_model": EmbeddingModel,
+        "image_weaviate": WeaviateRef,
+    }
+
     def __getattr__(self, name: str) -> Callable[[Any], ResourceHandle]:
-        names = {"web_search": WebSearchEngineRef, "session_state": SessionStateRef, "message_cache": LLMMessageSessionCacheRef, "llm_model": LLModel, "embedding_model": EmbeddingModel, "bot_adapter": BotAdapterRef}
-        cls = names.get(name) or _RESOURCE_TYPES["".join(part.capitalize() for part in _snake(name).split("_"))]
+        camel = "".join(part.capitalize() for part in _snake(name).split("_"))
+        cls = self._ALIASES.get(name) or _RESOURCE_TYPES.get(camel) or _RESOURCE_TYPES.get(f"{camel}Ref")
+        if cls is None: raise AttributeError(f"unknown resource '{name}'")
         return lambda value: value if isinstance(value, cls) else (_ for _ in ()).throw(TypeError(f"expected {cls.__name__}"))
 
 

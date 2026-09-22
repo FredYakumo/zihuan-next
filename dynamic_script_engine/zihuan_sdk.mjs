@@ -185,6 +185,7 @@ export class ZihuanSdk {
       s3: () => this._request("agent.s3"),
       imageWeaviate: () => this._request("agent.image_weaviate"),
       webSearch: () => this._request("agent.web_search"),
+      imageSearch: (query, options = {}) => this._request("agent.image_search", { query, ...options }),
     });
     this.bot = Object.freeze({
       adapter: (configId) => this._request("bot.adapter", { config_id: configId }),
@@ -209,6 +210,7 @@ export class ZihuanSdk {
       llmModel: (value) => requireResource(value, LLModel, "LLModel"),
       embeddingModel: (value) => requireResource(value, EmbeddingModel, "EmbeddingModel"),
       botAdapter: (value) => requireResource(value, BotAdapterRef, "BotAdapterRef"),
+      imageWeaviate: (value) => requireResource(value, WeaviateRef, "WeaviateRef"),
     });
     Object.freeze(this);
   }

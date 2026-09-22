@@ -292,6 +292,112 @@ fn weaviate_resource(params: &Value, field: &str) -> Result<Arc<crate::weaviate:
     }
 }
 
+/// The image count an agent-scoped search returns when the caller omits `limit`.
+const DEFAULT_AGENT_IMAGE_SEARCH_LIMIT: i64 = 5;
+
+/// Resolves the image library the active agent is configured with.
+fn agent_image_weaviate_ref() -> Result<Arc<crate::weaviate::WeaviateRef>> {
+    let resources = crate::agent::runtime_context::current_agent_resources()?;
+    let connection_id = resources
+        .connection_id(crate::agent::resource_provider::AgentConnectionSlot::ImageWeaviate)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            Error::ValidationError("weaviate_image_connection_id is required".to_string())
+        })?;
+    let reference = crate::storage::resource_resolver::build_weaviate_ref(
+        Some(&connection_id),
+        &crate::storage::load_connections()?,
+        Some(crate::storage::WeaviateCollectionSchema::ImageSemantic),
+    )?
+    .ok_or_else(|| {
+        Error::ValidationError("weaviate_image_connection_id is required".to_string())
+    })?;
+    crate::storage::ensure_collection_schema(
+        &reference,
+        crate::storage::WeaviateCollectionSchema::ImageSemantic,
+        false,
+    )?;
+    Ok(reference)
+}
+
+/// Resolves the embedding model the active agent is configured with.
+fn agent_embedding_model(
+) -> Result<Arc<dyn crate::model_inference::llm::embedding_base::EmbeddingBase>> {
+    let resources = crate::agent::runtime_context::current_agent_resources()?;
+    crate::model_inference::agent_config_support::build_embedding_from_ref_id(
+        resources.embedding_model_ref_id().as_deref(),
+    )
+}
+
+/// Runs one semantic image search and shapes it as the shared `{images, has_results}` payload.
+///
+/// Both the explicit `storage.search_images` call and the agent-scoped `agent.image_search`
+/// one land here, so the two entry points cannot drift apart. `default_limit` is what an
+/// omitted `limit` falls back to; the explicit call passes `None` and so keeps requiring it.
+/// The parsed arguments of one semantic image search.
+#[derive(Debug)]
+pub(crate) struct ImageSearchOptions {
+    pub(crate) query: String,
+    pub(crate) limit: usize,
+    pub(crate) max_distance: Option<f64>,
+    pub(crate) target_vector: Option<String>,
+}
+
+/// Parses the shared image-search arguments.
+///
+/// Split out of [`run_image_search`] so the argument contract is testable without a live
+/// vector store. `default_limit` is what an omitted `limit` falls back to; the explicit
+/// `storage.search_images` call passes `None` and so keeps requiring it.
+pub(crate) fn image_search_options(
+    params: &Value,
+    default_limit: Option<i64>,
+) -> Result<ImageSearchOptions> {
+    let query = required_string(params, "query")?;
+    let limit = params
+        .get("limit")
+        .and_then(Value::as_i64)
+        .or(default_limit)
+        .ok_or_else(|| Error::ValidationError("limit is required".to_string()))?;
+    if limit <= 0 {
+        return Err(Error::ValidationError("limit must be greater than 0".to_string()));
+    }
+    let max_distance = match params.get("max_distance") {
+        None | Some(Value::Null) => Some(crate::storage::DEFAULT_MAX_DISTANCE),
+        Some(value) => Some(value.as_f64().filter(|value| *value >= 0.0).ok_or_else(|| {
+            Error::ValidationError("max_distance must be a non-negative number".to_string())
+        })?),
+    };
+    Ok(ImageSearchOptions {
+        query,
+        limit: limit as usize,
+        max_distance,
+        target_vector: optional_string(params, "target_vector"),
+    })
+}
+
+/// Runs one semantic image search and shapes it as the shared `{images, has_results}` payload.
+///
+/// Both the explicit `storage.search_images` call and the agent-scoped `agent.image_search`
+/// one land here, so the two entry points cannot drift apart.
+fn run_image_search(
+    weaviate_ref: &Arc<crate::weaviate::WeaviateRef>,
+    embedding_model: &dyn crate::model_inference::llm::embedding_base::EmbeddingBase,
+    params: &Value,
+    default_limit: Option<i64>,
+) -> Result<Value> {
+    let options = image_search_options(params, default_limit)?;
+    let images = crate::storage::search_images(
+        weaviate_ref,
+        embedding_model,
+        &options.query,
+        options.limit,
+        options.max_distance,
+        options.target_vector.as_deref(),
+    )?;
+    Ok(json!({"images": images, "has_results": !images.is_empty()}))
+}
+
 fn qq_messages_param(
     params: &Value,
     field: &str,
@@ -934,11 +1040,7 @@ pub fn dispatch_script_host_call(
             Ok(store_script_resource(DataValue::LLModel(model)))
         }
         "agent.embedding_model" => {
-            let resources = crate::agent::runtime_context::current_agent_resources()?;
-            let model = crate::model_inference::agent_config_support::build_embedding_from_ref_id(
-                resources.embedding_model_ref_id().as_deref(),
-            )?;
-            Ok(store_script_resource(DataValue::EmbeddingModel(model)))
+            Ok(store_script_resource(DataValue::EmbeddingModel(agent_embedding_model()?)))
         }
         "agent.task" => {
             let task_id = crate::task_context::current_task_id().unwrap_or_default();
@@ -977,28 +1079,17 @@ pub fn dispatch_script_host_call(
             Ok(store_script_resource(DataValue::S3Ref(reference)))
         }
         "agent.image_weaviate" => {
-            let resources = crate::agent::runtime_context::current_agent_resources()?;
-            let connection_id = resources
-                .connection_id(crate::agent::resource_provider::AgentConnectionSlot::ImageWeaviate)
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| {
-                    Error::ValidationError("weaviate_image_connection_id is required".to_string())
-                })?;
-            let reference = crate::storage::resource_resolver::build_weaviate_ref(
-                Some(&connection_id),
-                &crate::storage::load_connections()?,
-                Some(crate::storage::WeaviateCollectionSchema::ImageSemantic),
-            )?
-            .ok_or_else(|| {
-                Error::ValidationError("weaviate_image_connection_id is required".to_string())
-            })?;
-            crate::storage::ensure_collection_schema(
-                &reference,
-                crate::storage::WeaviateCollectionSchema::ImageSemantic,
-                false,
-            )?;
-            Ok(store_script_resource(DataValue::WeaviateRef(reference)))
+            Ok(store_script_resource(DataValue::WeaviateRef(agent_image_weaviate_ref()?)))
+        }
+        "agent.image_search" => {
+            let weaviate_ref = agent_image_weaviate_ref()?;
+            let embedding_model = agent_embedding_model()?;
+            run_image_search(
+                &weaviate_ref,
+                embedding_model.as_ref(),
+                params,
+                Some(DEFAULT_AGENT_IMAGE_SEARCH_LIMIT),
+            )
         }
         "agent.web_search" => {
             let resources = crate::agent::runtime_context::current_agent_resources()?;
@@ -1678,33 +1769,7 @@ pub fn dispatch_script_host_call(
         "storage.search_images" => {
             let weaviate_ref = weaviate_resource(params, "weaviate_ref")?;
             let embedding_model = embedding_model_resource(params)?;
-            let query = required_string(params, "query")?;
-            let limit = params
-                .get("limit")
-                .and_then(Value::as_i64)
-                .filter(|value| *value > 0)
-                .ok_or_else(|| Error::ValidationError("limit must be greater than 0".to_string()))?
-                as usize;
-            let max_distance = match params.get("max_distance") {
-                None | Some(Value::Null) => Some(crate::storage::DEFAULT_MAX_DISTANCE),
-                Some(value) => {
-                    Some(value.as_f64().filter(|value| *value >= 0.0).ok_or_else(|| {
-                        Error::ValidationError(
-                            "max_distance must be a non-negative number".to_string(),
-                        )
-                    })?)
-                }
-            };
-            let target_vector = optional_string(params, "target_vector");
-            let images = crate::storage::search_images(
-                &weaviate_ref,
-                embedding_model.as_ref(),
-                &query,
-                limit,
-                max_distance,
-                target_vector.as_deref(),
-            )?;
-            Ok(json!({"images": images, "has_results": !images.is_empty()}))
+            run_image_search(&weaviate_ref, embedding_model.as_ref(), params, None)
         }
         "search.create_provider" => {
             let config_id = required_string(params, "config_id")?;

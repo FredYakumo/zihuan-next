@@ -105,6 +105,7 @@ export interface ZihuanSdk {
     s3(): Promise<S3Ref>;
     imageWeaviate(): Promise<WeaviateRef>;
     webSearch(): Promise<WebSearchEngineRef>;
+    imageSearch(query: string, options?: { limit?: number; max_distance?: number; target_vector?: string }): Promise<{ images: JsonValue[]; has_results: boolean }>;
   };
   readonly bot: {
     adapter(configId: string): Promise<BotAdapterRef>;
@@ -129,6 +130,7 @@ export interface ZihuanSdk {
     llmModel(value: unknown): LLModel;
     embeddingModel(value: unknown): EmbeddingModel;
     botAdapter(value: unknown): BotAdapterRef;
+    imageWeaviate(value: unknown): WeaviateRef;
   };
 }
 
