@@ -1905,6 +1905,9 @@
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   white-space: nowrap;
   background: var(--admin-bg-panel);
   border: 1px solid var(--admin-border);
@@ -1918,6 +1921,15 @@
     opacity 0.18s ease,
     transform 0.18s ease,
     visibility 0.18s;
+}
+
+.context-usage-tooltip-line {
+  display: block;
+}
+
+.context-usage-tooltip-label {
+  font-weight: 600;
+  color: var(--admin-ink);
 }
 
 .context-usage:hover .context-usage-tooltip {

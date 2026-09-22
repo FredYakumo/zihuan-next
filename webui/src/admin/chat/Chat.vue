@@ -1013,8 +1013,48 @@
                       >
                         <span class="context-usage-chart" aria-hidden="true" />
                         <span class="context-usage-tooltip" role="tooltip">
-                          context {{ formatTokenCount(contextTokenUsage.usedTokens) }}/{{ formatTokenCount(contextTokenUsage.contextLength) }} tokens
-                          (可用上限: {{ formatTokenCount(contextTokenUsage.compactionThreshold) }} tokens)
+                          <span class="context-usage-tooltip-line">
+                            <strong class="context-usage-tooltip-label">context</strong> {{ formatTokenCount(contextTokenUsage.usedTokens) }}/{{ formatTokenCount(contextTokenUsage.contextLength) }} tokens
+                            (可用上限: {{ formatTokenCount(contextTokenUsage.compactionThreshold) }} tokens)
+                          </span>
+                          <template v-if="conversationTokenStats">
+                            <span
+                              v-if="conversationTokenStats.inputTokens != null"
+                              class="context-usage-tooltip-line"
+                            >
+                              <strong class="context-usage-tooltip-label">总输入</strong> {{ formatTokenCount(conversationTokenStats.inputTokens) }} tokens
+                            </span>
+                            <span
+                              v-if="conversationTokenStats.cachedTokens != null"
+                              class="context-usage-tooltip-line"
+                            >
+                              <strong class="context-usage-tooltip-label">缓存</strong> {{ formatTokenCount(conversationTokenStats.cachedTokens) }} tokens
+                            </span>
+                            <span
+                              v-if="conversationTokenStats.outputTokens != null"
+                              class="context-usage-tooltip-line"
+                            >
+                              <strong class="context-usage-tooltip-label">输出</strong> {{ formatTokenCount(conversationTokenStats.outputTokens) }} tokens
+                            </span>
+                            <span
+                              v-if="conversationTokenStats.cacheHitRate != null"
+                              class="context-usage-tooltip-line"
+                            >
+                              <strong class="context-usage-tooltip-label">缓存命中率</strong> {{ formatCacheHitRate(conversationTokenStats.cacheHitRate) }}
+                            </span>
+                            <span
+                              v-if="conversationTokenStats.averageFirstTokenMs != null"
+                              class="context-usage-tooltip-line"
+                            >
+                              <strong class="context-usage-tooltip-label">平均首 token</strong> {{ formatDuration(conversationTokenStats.averageFirstTokenMs) }}
+                            </span>
+                            <span
+                              v-if="conversationTokenStats.averageTokensPerSecond != null"
+                              class="context-usage-tooltip-line"
+                            >
+                              <strong class="context-usage-tooltip-label">平均</strong> {{ formatOutputSpeed(conversationTokenStats.averageTokensPerSecond) }} tokens/s
+                            </span>
+                          </template>
                         </span>
                       </div>
 
@@ -1740,6 +1780,7 @@ const {
   selectedThinkingLabel,
   selectedEffortLabel,
   contextTokenUsage,
+  conversationTokenStats,
   canSend,
   selectedAgentAvatarUrl,
   selectedAgentAvatarFallback,

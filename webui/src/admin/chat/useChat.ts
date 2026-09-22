@@ -647,6 +647,83 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             usagePercent: Math.min((usedTokens / contextLength) * 100, 100),
         };
     });
+    /**
+     * Purpose: aggregate every assistant response metric recorded in the current conversation.
+     * Function: sum input, cached and output tokens, derive the cache hit rate from the summed
+     * ratio, and average the first-token latency and output speed over the responses that report them.
+     */
+    const conversationTokenStats = computed(() => {
+        const metricsList = messages.value
+            .filter((message) => message.role === "assistant" && message.metrics)
+            .map((message) => message.metrics as ChatResponseMetrics);
+        if (metricsList.length === 0) {
+            return null;
+        }
+
+        let inputTokens = 0;
+        let cachedTokens = 0;
+        let outputTokens = 0;
+        let hasInputTokens = false;
+        let hasCachedTokens = false;
+        let hasOutputTokens = false;
+        let firstTokenTotalMs = 0;
+        let firstTokenSamples = 0;
+        let speedTotal = 0;
+        let speedSamples = 0;
+        let cacheRateTotal = 0;
+        let cacheRateSamples = 0;
+
+        for (const metrics of metricsList) {
+            // Some providers only report the cache split, so fall back to hit plus miss tokens.
+            const promptTokens =
+                metrics.prompt_tokens ??
+                (metrics.cached_prompt_tokens != null && metrics.prompt_cache_miss_tokens != null
+                    ? metrics.cached_prompt_tokens + metrics.prompt_cache_miss_tokens
+                    : null);
+            if (promptTokens != null) {
+                inputTokens += promptTokens;
+                hasInputTokens = true;
+            }
+            if (metrics.cached_prompt_tokens != null) {
+                cachedTokens += metrics.cached_prompt_tokens;
+                hasCachedTokens = true;
+            }
+            if (metrics.completion_tokens != null) {
+                outputTokens += metrics.completion_tokens;
+                hasOutputTokens = true;
+            }
+            if (metrics.time_to_first_token_ms != null) {
+                firstTokenTotalMs += metrics.time_to_first_token_ms;
+                firstTokenSamples += 1;
+            }
+            if (metrics.output_tokens_per_second != null) {
+                speedTotal += metrics.output_tokens_per_second;
+                speedSamples += 1;
+            }
+            if (metrics.cache_hit_rate != null) {
+                cacheRateTotal += metrics.cache_hit_rate;
+                cacheRateSamples += 1;
+            }
+        }
+
+        // The summed ratio weighs long responses more than short ones; fall back to the mean
+        // of the reported rates when no response exposes cached token counts.
+        let cacheHitRate: number | null = null;
+        if (hasCachedTokens && inputTokens > 0) {
+            cacheHitRate = cachedTokens / inputTokens;
+        } else if (cacheRateSamples > 0) {
+            cacheHitRate = cacheRateTotal / cacheRateSamples;
+        }
+
+        return {
+            inputTokens: hasInputTokens ? inputTokens : null,
+            cachedTokens: hasCachedTokens ? cachedTokens : null,
+            outputTokens: hasOutputTokens ? outputTokens : null,
+            cacheHitRate,
+            averageFirstTokenMs: firstTokenSamples > 0 ? firstTokenTotalMs / firstTokenSamples : null,
+            averageTokensPerSecond: speedSamples > 0 ? speedTotal / speedSamples : null,
+        };
+    });
     const canSend = computed(() =>
         !!selectedService.value &&
         isChatEligible.value &&
@@ -2834,6 +2911,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         selectedThinkingLabel,
         selectedEffortLabel,
         contextTokenUsage,
+        conversationTokenStats,
         canSend,
         selectedAgentAvatarUrl,
         selectedAgentAvatarFallback,
