@@ -113,6 +113,7 @@ pub mod object_storage;
 pub mod qq_message_list_rdb_persistence;
 pub mod registry;
 pub mod script_node;
+pub mod script_tool;
 pub mod tool_spec;
 pub mod util;
 

@@ -28,6 +28,24 @@ export type QQMessage = JsonValue;
 export type NodeInputs = Record<string, JsonValue | ResourceHandle | undefined>;
 export type NodeOutputs = Record<string, JsonValue | ResourceHandle | undefined>;
 
+export type ToolParamDef = { name: string; data_type: DataType; desc: string; required: boolean };
+export type ToolOutputDef = { name: string; data_type: DataType; description?: string; required?: boolean };
+export type ToolManifest = { parameters?: ToolParamDef[]; outputs?: ToolOutputDef[] };
+export type ScriptToolRequest = {
+  call_content: string;
+  arguments: Record<string, JsonValue>;
+  parameters: ToolParamDef[];
+  outputs: ToolOutputDef[];
+  shared_inputs: Record<string, JsonValue | ResourceHandle>;
+  fixed_runtime_inputs: Record<string, JsonValue | ResourceHandle>;
+  owner_node_type: string;
+  script_path: string;
+  entry: string;
+};
+export type ScriptToolResult =
+  | { ok: true; result?: JsonValue; error?: null }
+  | { ok: false; error: string; result?: null };
+
 export interface ZihuanSdk {
   readonly host: JobHost;
   readonly ui: {
@@ -177,3 +195,15 @@ export class JobSdk {
   log(message: string, level?: JobLogLevel): Promise<null>;
 }
 export function createJobSdk(request: (method: string, params?: Record<string, JsonValue>) => Promise<JsonValue>): JobSdk;
+
+/**
+ * Entry point of an agent script tool, invoked when the LLM calls the tool.
+ *
+ * The request carries the tool call plus the resolved inputs; `zihuan` is the same SDK a dynamic
+ * script node receives, so script tools reach models, storage, bot and search the same way.
+ * Return `{ ok: true, result }` on success, or `{ ok: false, error }` to report a failure.
+ */
+export type ScriptToolEntry = (request: ScriptToolRequest, zihuan: ZihuanSdk) => ScriptToolResult | Promise<ScriptToolResult>;
+
+/** Declares the LLM-facing signature of a script tool; a script without it is described by hand. */
+export const tool_manifest: ToolManifest | undefined;

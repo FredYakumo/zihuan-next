@@ -138,6 +138,10 @@ pub fn build_router(
                     ),
                 )
                 .push(
+                    Router::with_path("script-tools/manifest")
+                        .post(config::script_tools::read_script_tool_manifest),
+                )
+                .push(
                     Router::with_path("command-permissions")
                         .get(config::commands::list_command_permissions)
                         .post(config::commands::create_command_permission)

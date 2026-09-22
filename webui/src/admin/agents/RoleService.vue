@@ -634,7 +634,7 @@
       <div v-if="editingToolIndex === -1 && toolCreateStep === 'picker'" class="agent-service-tool-type-picker">
         <p class="agent-service-tool-type-title">选择工具类型</p>
         <div class="agent-service-tool-type-grid">
-          <button v-for="item in toolTypeOptions" :key="item.value" type="button" class="agent-service-tool-type-card" @click="selectToolType(item.value)">
+          <button v-for="item in toolTypeOptions" :key="`${item.value}-${item.scriptLanguage ?? ''}`" type="button" class="agent-service-tool-type-card" @click="selectToolType(item)">
             <component :is="item.icon" class="agent-service-tool-type-icon" />
             <strong class="agent-service-tool-type-name">{{ item.label }}</strong>
             <span class="agent-service-tool-type-desc">{{ item.desc }}</span>
@@ -736,7 +736,9 @@
             <t-form-item v-else-if="toolEditDraft.implementation === 'node_graph'" label="Inline Graph JSON" class="agent-service-form-item-full">
               <t-textarea v-model="toolEditDraft.inlineGraphJson" />
             </t-form-item>
-            <t-form-item v-if="toolEditDraft.implementation === 'node_graph'" label="Parameters JSON" class="agent-service-form-item-full">
+            <!-- The label slot is the label: TDesign prefers the `label` prop over the slot, so
+                 passing both would silently drop the action button next to the title. -->
+            <t-form-item v-if="toolEditDraft.implementation === 'node_graph'" class="agent-service-form-item-full agent-service-label-action">
               <template #label>
                 <div class="agent-service-params-label">
                   <span>Parameters JSON</span>
@@ -749,6 +751,72 @@
             </t-form-item>
             <t-form-item v-if="toolEditDraft.implementation === 'node_graph'" label="Outputs JSON" class="agent-service-form-item-full">
               <t-textarea v-model="toolEditDraft.outputsJson" />
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'script'" label="名称">
+              <t-input v-model="toolEditDraft.name" />
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'script'" label="脚本语言">
+              <t-select v-model="toolEditDraft.scriptLanguage" @change="handleScriptLanguageChanged">
+                <t-option value="typescript" label="TypeScript (.ts)" />
+                <t-option value="python" label="Python (.py)" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'script'" label="描述" class="agent-service-form-item-full">
+              <t-input v-model="toolEditDraft.description" placeholder="告诉模型这个工具做什么" />
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'script'" label="运行时长">
+              <t-select v-model="toolEditDraft.runDuration">
+                <t-option value="Short" label="Short（短时）" />
+                <t-option value="Long" label="Long（长时）" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'script'" label="超时（秒）">
+              <t-input-number v-model="toolEditDraft.scriptTimeoutSecs" :min="1" />
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'script'" label="入口函数">
+              <t-input v-model="toolEditDraft.scriptEntry" placeholder="run_tool" @change="handleScriptEntryEdited" />
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'script'" style="align-self: end">
+              <t-checkbox v-model="toolEditDraft.enabled">启用该工具</t-checkbox>
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'script'" class="agent-service-form-item-full agent-service-script-source-item agent-service-label-action">
+              <template #label>
+                <div class="agent-service-params-label">
+                  <span>脚本内容</span>
+                  <span class="agent-service-script-toolbar">
+                    <span v-if="scriptSourceFileName" class="agent-service-script-file-name">{{ scriptSourceFileName }}</span>
+                    <t-button variant="outline" size="small" @click="openScriptFilePicker">上传脚本文件</t-button>
+                  </span>
+                </div>
+              </template>
+              <t-textarea
+                v-model="toolEditDraft.scriptSource"
+                class="agent-service-script-editor"
+                :autosize="{ minRows: 14, maxRows: 30 }"
+                :placeholder="scriptEditorPlaceholder"
+                @change="handleScriptSourceEdited"
+              />
+              <input
+                ref="scriptUploadInput"
+                type="file"
+                class="agent-service-script-file-input"
+                :accept="scriptFileAccept(toolEditDraft.scriptLanguage)"
+                @change="handleScriptFileSelected"
+              />
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'script'" class="agent-service-form-item-full agent-service-label-action">
+              <template #label>
+                <div class="agent-service-params-label">
+                  <span>Parameters JSON</span>
+                  <t-button variant="text" size="small" :disabled="syncingScriptManifest" @click="syncToolManifestFromScript">
+                    {{ syncingScriptManifest ? '读取中…' : '从脚本读取' }}
+                  </t-button>
+                </div>
+              </template>
+              <t-textarea v-model="toolEditDraft.parametersJson" class="agent-service-script-json" :autosize="{ minRows: 5, maxRows: 16 }" />
+            </t-form-item>
+            <t-form-item v-if="toolEditDraft.implementation === 'script'" label="Outputs JSON" class="agent-service-form-item-full">
+              <t-textarea v-model="toolEditDraft.outputsJson" class="agent-service-script-json" :autosize="{ minRows: 5, maxRows: 16 }" />
             </t-form-item>
           </div>
         </t-card>

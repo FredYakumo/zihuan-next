@@ -1,6 +1,7 @@
 import type { NodeGraphDefinition, DataTypeMetaData } from "../../api/types";
 
-export type ToolImplementation = "node_graph" | "built_in" | "python_script";
+export type ToolImplementation = "node_graph" | "built_in" | "script";
+export type ScriptToolLanguage = "typescript" | "python";
 export type PythonToolMode = "uv_project" | "project_venv" | "custom_executable";
 
 export interface PythonRuntimeConfig {
@@ -29,11 +30,10 @@ export interface ToolParamDef {
   required?: boolean;
 }
 
-export interface PythonScriptToolConfig {
-  script_path: string;
-  module_entry: string;
-  python_mode?: PythonToolMode;
-  python_runtime?: PythonRuntimeConfig | null;
+export interface ScriptToolConfig {
+  language: ScriptToolLanguage;
+  source: string;
+  entry: string;
   timeout_secs: number;
 }
 
@@ -44,7 +44,7 @@ export interface ToolDefinition {
   implementation?: ToolImplementation;
   run_duration?: "Short" | "Long";
   built_in_kind?: "image_understand";
-  python_config?: PythonScriptToolConfig | null;
+  script_config?: ScriptToolConfig | null;
   parameters: ToolParamDef[];
   outputs: FunctionPortDef[];
   subgraph: NodeGraphDefinition;

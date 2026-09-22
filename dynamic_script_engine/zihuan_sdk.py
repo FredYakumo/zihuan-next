@@ -59,6 +59,44 @@ class JobFailure(TypedDict):
 JobResult: TypeAlias = JobSuccess | JobFailure
 
 
+class ToolParamDef(TypedDict):
+    """One LLM-facing tool parameter: its name, ZiHuan data type, description, and requiredness."""
+    name: str
+    data_type: Any
+    desc: str
+    required: bool
+
+
+class ToolOutputDef(TypedDict, total=False):
+    """One tool output port; `result` consumers read it by name from the returned object."""
+    name: str
+    data_type: Any
+    description: str
+    required: bool
+
+
+class ToolManifest(TypedDict, total=False):
+    """The signature a script tool declares through its module-level `TOOL_MANIFEST`."""
+    parameters: list[ToolParamDef]
+    outputs: list[ToolOutputDef]
+
+
+class ScriptToolRequest(TypedDict):
+    """The request handed to a script tool's entry: the call content, arguments, and inputs."""
+    call_content: str
+    arguments: dict[str, Any]
+    parameters: list[ToolParamDef]
+    outputs: list[ToolOutputDef]
+    shared_inputs: dict[str, Any]
+    fixed_runtime_inputs: dict[str, Any]
+    owner_node_type: str
+    script_path: str
+    entry: str
+
+
+ScriptToolResult: TypeAlias = dict[str, Any]
+
+
 @dataclass(frozen=True)
 class ResourceHandle:
     """Purpose: represent a Rust-owned resource that scripts may pass but never dereference."""
@@ -148,7 +186,9 @@ class JobSdk:
 
 class _Namespace:
     def __init__(self, host: Host, prefix: str) -> None: self._host, self._prefix = host, prefix
-    def _call(self, name: str, **params: Any) -> Any: return self._host.call(f"{self._prefix}.{name}", params)
+    # The method name is positional and namespaced calls also pass payload keys as keywords, so the
+    # parameter must not be named after any payload key: `variables.set(name=...)` would bind twice.
+    def _call(self, method: str, **params: Any) -> Any: return self._host.call(f"{self._prefix}.{method}", params)
 
 
 class Variables(_Namespace):

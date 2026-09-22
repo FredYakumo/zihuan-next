@@ -2,6 +2,7 @@ pub mod commands;
 pub mod connections;
 pub mod llm_refs;
 pub mod role_services;
+pub mod script_tools;
 
 use chrono::Utc;
 use salvo::prelude::*;

@@ -3,7 +3,9 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 
 use once_cell::sync::Lazy;
@@ -238,6 +240,97 @@ fn custom_executable(workspace: &Path, raw: Option<&str>, label: &str) -> Result
     Ok(path)
 }
 
+/// Resolves the command that launches one language runner.
+///
+/// The Node command additionally carries the TypeScript type-stripping flags, because script
+/// tools may be authored as `.ts` modules. `.mjs` and `.py` scripts are unaffected: the flags
+/// are inert for them, and they are never added when the installed Node cannot accept them.
+pub fn resolve_runner_command(
+    workspace: &Path,
+    language: ScriptLanguage,
+    node: &NodeRuntimeConfig,
+    python: &PythonRuntimeConfig,
+) -> Result<RuntimeCommand> {
+    match language {
+        ScriptLanguage::JavaScript => {
+            let mut command = resolve_node_runtime(workspace, node)?;
+            command.args.extend(node_type_strip_args(&command.program));
+            Ok(command)
+        }
+        ScriptLanguage::Python => resolve_python_runtime(workspace, python),
+    }
+}
+
+/// Verifies that the resolved Node.js can import TypeScript modules directly.
+///
+/// Type stripping reached Node in 22.6; that is the floor a `.ts` script tool needs. Older
+/// runtimes (and undetectable ones) are rejected here with a readable message instead of
+/// failing later with Node's own extension error.
+pub fn require_typescript_node(workspace: &Path, node: &NodeRuntimeConfig) -> Result<()> {
+    let command = resolve_node_runtime(workspace, node)?;
+    match node_version(&command.program) {
+        Some((major, minor)) if major > 22 || (major == 22 && minor >= 6) => Ok(()),
+        Some((major, minor)) => Err(message(format!(
+            "当前 Node.js（{major}.{minor}）无法直接运行 TypeScript 脚本，请升级到 Node.js 22.6 以上，或改用 Python 脚本"
+        ))),
+        None => Err(message(format!(
+            "无法检测动态脚本运行时的 Node.js 版本: {}",
+            command.display()
+        ))),
+    }
+}
+
+/// Type-stripping flags for the Node command, empty when the runtime strips types by default.
+fn node_type_strip_args(program: &Path) -> Vec<String> {
+    match node_version(program) {
+        // 22.18 and 23.6 turned type stripping on by default.
+        Some((major, minor))
+            if major > 23 || (major == 23 && minor >= 6) || (major == 22 && minor >= 18) =>
+        {
+            Vec::new()
+        }
+        // Between 22.6 and those releases the flag is required.
+        Some((major, minor)) if major > 22 || (major == 22 && minor >= 6) => {
+            vec!["--experimental-strip-types".to_string()]
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// The major and minor of an interpreter, as `node --version` reports them.
+type NodeVersion = (u32, u32);
+
+/// Reads the major/minor of the resolved Node.js, caching per executable.
+///
+/// The probe runs at most once per interpreter path: it costs a process spawn, and the answer
+/// cannot change while the service is up.
+fn node_version(program: &Path) -> Option<NodeVersion> {
+    static CACHE: Lazy<Mutex<HashMap<PathBuf, Option<NodeVersion>>>> =
+        Lazy::new(|| Mutex::new(HashMap::new()));
+    if let Some(cached) = CACHE.lock().ok().and_then(|cache| cache.get(program).copied()) {
+        return cached;
+    }
+    let version = Command::new(program)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| parse_node_version(&String::from_utf8_lossy(&output.stdout)));
+    if let Ok(mut cache) = CACHE.lock() {
+        cache.insert(program.to_path_buf(), version);
+    }
+    version
+}
+
+fn parse_node_version(raw: &str) -> Option<NodeVersion> {
+    let mut parts = raw.trim().trim_start_matches('v').split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().unwrap_or("0").parse().ok()?;
+    Some((major, minor))
+}
+
 pub async fn check_node_runtime(
     workspace: &Path,
     config: &NodeRuntimeConfig,
@@ -442,10 +535,7 @@ pub fn load_job_catalog(
         paths_by_language.entry(language).or_default().push(display);
     }
     for (language, paths) in paths_by_language {
-        let command = match language {
-            ScriptLanguage::JavaScript => resolve_node_runtime(workspace, node),
-            ScriptLanguage::Python => resolve_python_runtime(workspace, python),
-        };
+        let command = resolve_runner_command(workspace, language, node, python);
         let command = match command {
             Ok(command) => command,
             Err(error) => {
@@ -508,10 +598,7 @@ pub fn load_script_catalog(
         diagnostics: Vec::new(),
     };
     for language in discover_languages(workspace)? {
-        let command = match language {
-            ScriptLanguage::JavaScript => resolve_node_runtime(workspace, node),
-            ScriptLanguage::Python => resolve_python_runtime(workspace, python),
-        };
+        let command = resolve_runner_command(workspace, language, node, python);
         let command = match command {
             Ok(command) => command,
             Err(error) => {
@@ -587,6 +674,9 @@ impl Worker {
     fn running(&mut self) -> Result<bool> {
         Ok(self.child.try_wait()?.is_none())
     }
+    fn child_id(&self) -> u32 {
+        self.child.id()
+    }
     fn request(&mut self, request: &Value, host: &mut HostHandler<'_>) -> Result<Value> {
         serde_json::to_writer(&mut self.stdin, request)?;
         self.stdin.write_all(b"\n")?;
@@ -624,10 +714,7 @@ pub fn start_script_runtime(
     node: &NodeRuntimeConfig,
     python: &PythonRuntimeConfig,
 ) -> Result<()> {
-    let command = match language {
-        ScriptLanguage::JavaScript => resolve_node_runtime(workspace, node),
-        ScriptLanguage::Python => resolve_python_runtime(workspace, python),
-    }?;
+    let command = resolve_runner_command(workspace, language, node, python)?;
     let mut workers = WORKERS.lock().map_err(|_| message("动态脚本运行时互斥锁不可用"))?;
     if workers
         .get_mut(&language)
@@ -640,6 +727,12 @@ pub fn start_script_runtime(
     workers.insert(language, Worker::start(workspace, language, &command)?);
     Ok(())
 }
+/// Sends one request to the worker for `language`, starting it on demand.
+///
+/// `limit` bounds the whole exchange the way [`execute_script_tool_with_sdk`] needs: a script
+/// that overruns is killed (see [`TimeoutWatchdog`]) and its worker dropped, so the failure
+/// surfaces as an error and the next request starts a fresh runner. A failed protocol exchange
+/// always drops the worker, because the runner has no way to resynchronize its line stream.
 pub fn request_script_runtime(
     workspace: &Path,
     language: ScriptLanguage,
@@ -647,10 +740,22 @@ pub fn request_script_runtime(
     python: &PythonRuntimeConfig,
     request: &Value,
     host: &mut HostHandler<'_>,
+    limit: Option<Duration>,
 ) -> Result<Value> {
     start_script_runtime(workspace, language, node, python)?;
     let mut workers = WORKERS.lock().map_err(|_| message("动态脚本运行时互斥锁不可用"))?;
-    let result = workers.get_mut(&language).expect("worker initialized").request(request, host);
+    let worker = workers.get_mut(&language).expect("worker initialized");
+    let watchdog = limit.map(|limit| TimeoutWatchdog::start(worker.child_id(), limit));
+    let result = worker.request(request, host);
+    if let Some(watchdog) = watchdog {
+        if watchdog.disarm() {
+            workers.remove(&language);
+            return Err(message(format!(
+                "脚本运行超时（{} 秒）已终止",
+                limit.unwrap_or_default().as_secs()
+            )));
+        }
+    }
     if result.is_err() {
         workers.remove(&language);
     }
@@ -663,10 +768,7 @@ pub fn resolve_script_ports(
     python: &PythonRuntimeConfig,
     request: &Value,
 ) -> Result<Value> {
-    let command = match language {
-        ScriptLanguage::JavaScript => resolve_node_runtime(workspace, node),
-        ScriptLanguage::Python => resolve_python_runtime(workspace, python),
-    }?;
+    let command = resolve_runner_command(workspace, language, node, python)?;
     run_once(workspace, language, &command, "--ports", Some(request))
 }
 fn run_once(
@@ -675,6 +777,16 @@ fn run_once(
     command: &RuntimeCommand,
     argument: &str,
     request: Option<&Value>,
+) -> Result<Value> {
+    run_once_timed(workspace, language, command, argument, request, None)
+}
+fn run_once_timed(
+    workspace: &Path,
+    language: ScriptLanguage,
+    command: &RuntimeCommand,
+    argument: &str,
+    request: Option<&Value>,
+    limit: Option<Duration>,
 ) -> Result<Value> {
     let mut command = command.to_command();
     command
@@ -687,6 +799,7 @@ fn run_once(
         command.stdin(Stdio::piped());
     }
     let mut child = command.spawn()?;
+    let watchdog = limit.map(|limit| TimeoutWatchdog::start(child.id(), limit));
     if let Some(request) = request {
         serde_json::to_writer(
             child.stdin.as_mut().ok_or_else(|| message("无法打开动态脚本运行时 stdin"))?,
@@ -694,11 +807,71 @@ fn run_once(
         )?;
     }
     let output = child.wait_with_output()?;
+    let timed_out = watchdog.map(|watchdog| watchdog.disarm()).unwrap_or(false);
+    if timed_out {
+        return Err(message(format!(
+            "脚本运行超时（{} 秒）已终止",
+            limit.unwrap_or_default().as_secs()
+        )));
+    }
     if !output.status.success() {
         return Err(message(String::from_utf8_lossy(&output.stderr).trim().to_string()));
     }
     serde_json::from_slice(&output.stdout)
         .map_err(|error| message(format!("动态脚本运行时响应不是合法 JSON: {error}")))
+}
+
+/// Terminates a runner that overran its deadline.
+///
+/// The runner protocol is one line in, one line out, with no cancellation frame, so an
+/// overrunning script is killed and its worker discarded; the next request starts a fresh one.
+struct TimeoutWatchdog {
+    done: Arc<AtomicBool>,
+}
+
+impl TimeoutWatchdog {
+    fn start(pid: u32, limit: Duration) -> Self {
+        let done = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&done);
+        thread::spawn(move || {
+            let deadline = std::time::Instant::now() + limit;
+            while std::time::Instant::now() < deadline {
+                if flag.load(Ordering::Acquire) {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(50).min(limit));
+            }
+            if !flag.load(Ordering::Acquire) {
+                terminate_process(pid);
+            }
+        });
+        Self { done }
+    }
+
+    /// Stops the countdown, reporting whether the watched process was already terminated.
+    fn disarm(self) -> bool {
+        self.done.swap(true, Ordering::AcqRel)
+    }
+}
+
+#[cfg(windows)]
+fn terminate_process(pid: u32) {
+    let _ = Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+#[cfg(not(windows))]
+fn terminate_process(pid: u32) {
+    let _ = Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
 /// Runs a tool-style script request: the script file is loaded on demand, its exported
@@ -718,14 +891,98 @@ pub fn execute_script_tool(
     request: &Value,
     host: &mut HostHandler<'_>,
 ) -> Result<Value> {
-    let script_path = if script_path.is_absolute() {
-        script_path.to_path_buf()
+    execute_tool_request(
+        workspace,
+        language,
+        node,
+        python,
+        "tool_execute",
+        script_path,
+        entry,
+        None,
+        request,
+        host,
+    )
+}
+
+/// Runs an agent script tool: same contract as [`execute_script_tool`], but the entry receives
+/// the ZiHuan SDK facade as its second argument and the call is bounded by `timeout_secs`.
+///
+/// The entry signature is `entry(request, zihuan)`; that is the difference from a scheduler job
+/// script, which builds its own job facade from the request alone.
+#[allow(clippy::too_many_arguments)]
+pub fn execute_script_tool_with_sdk(
+    workspace: &Path,
+    language: ScriptLanguage,
+    node: &NodeRuntimeConfig,
+    python: &PythonRuntimeConfig,
+    script_path: &Path,
+    entry: &str,
+    timeout_secs: u64,
+    request: &Value,
+    host: &mut HostHandler<'_>,
+) -> Result<Value> {
+    let limit = if timeout_secs == 0 {
+        None
     } else {
-        workspace.join(script_path)
+        Some(Duration::from_secs(timeout_secs))
     };
-    if !script_path.is_file() {
-        return Err(message(format!("脚本文件不存在: {}", script_path.display())));
+    execute_tool_request(
+        workspace,
+        language,
+        node,
+        python,
+        "script_tool_execute",
+        script_path,
+        entry,
+        limit,
+        request,
+        host,
+    )
+}
+
+/// Reads the parameters and outputs a script declares, without running its tool entry.
+///
+/// Script tools keep their LLM-facing signature next to the code that serves it: a Python script
+/// exports `TOOL_MANIFEST`, a JavaScript or TypeScript one exports `tool_manifest`. Scripts that
+/// declare nothing come back empty, and the caller falls back to hand-written parameters.
+pub fn load_tool_manifest(
+    workspace: &Path,
+    language: ScriptLanguage,
+    node: &NodeRuntimeConfig,
+    python: &PythonRuntimeConfig,
+    script_path: &Path,
+) -> Result<Value> {
+    let script_path = resolve_script_path(workspace, script_path)?;
+    let command = resolve_runner_command(workspace, language, node, python)?;
+    let response = run_once_timed(
+        workspace,
+        language,
+        &command,
+        "--tool-manifest",
+        Some(&json!({ "script_path": script_path.display().to_string() })),
+        Some(Duration::from_secs(60)),
+    )?;
+    if let Some(error) = response.get("error").and_then(Value::as_str) {
+        return Err(message(error.to_string()));
     }
+    Ok(response)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_tool_request(
+    workspace: &Path,
+    language: ScriptLanguage,
+    node: &NodeRuntimeConfig,
+    python: &PythonRuntimeConfig,
+    request_kind: &str,
+    script_path: &Path,
+    entry: &str,
+    limit: Option<Duration>,
+    request: &Value,
+    host: &mut HostHandler<'_>,
+) -> Result<Value> {
+    let script_path = resolve_script_path(workspace, script_path)?;
     let mut request = request.clone();
     let object = request.as_object_mut().ok_or_else(|| message("脚本工具请求必须是对象"))?;
     object.insert("script_path".to_string(), Value::String(script_path.display().to_string()));
@@ -735,8 +992,9 @@ pub fn execute_script_tool(
         language,
         node,
         python,
-        &json!({"kind":"tool_execute","request":request}),
+        &json!({"kind": request_kind, "request": request}),
         host,
+        limit,
     )?;
     if let Some(result) = response.get("response") {
         return Ok(result.clone());
@@ -747,23 +1005,14 @@ pub fn execute_script_tool(
     Err(message("脚本工具响应缺少 response"))
 }
 
-pub fn execute_python_script(
-    workspace: &Path,
-    config: &PythonRuntimeConfig,
-    script_path: &Path,
-    entry: &str,
-    _timeout_secs: u64,
-    request: &Value,
-    host: &mut HostHandler<'_>,
-) -> Result<Value> {
-    execute_script_tool(
-        workspace,
-        ScriptLanguage::Python,
-        &NodeRuntimeConfig::default(),
-        config,
-        script_path,
-        entry,
-        request,
-        host,
-    )
+fn resolve_script_path(workspace: &Path, script_path: &Path) -> Result<PathBuf> {
+    let script_path = if script_path.is_absolute() {
+        script_path.to_path_buf()
+    } else {
+        workspace.join(script_path)
+    };
+    if !script_path.is_file() {
+        return Err(message(format!("脚本文件不存在: {}", script_path.display())));
+    }
+    Ok(script_path)
 }

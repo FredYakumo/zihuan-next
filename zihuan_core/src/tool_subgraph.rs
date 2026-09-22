@@ -5,7 +5,6 @@ use log::{info, warn};
 use serde_json::{json, Map, Value};
 
 use crate::agent::runtime_context::{scope_agent_runtime_context, AgentRuntimeContext};
-use crate::config::ConfigCenter;
 use crate::error::{Error, Result};
 use crate::graph::function_graph::{
     sync_function_subgraph_signature, FunctionPortDef, FUNCTION_INPUTS_NODE_ID,
@@ -15,7 +14,7 @@ use crate::graph::graph_io::refresh_port_types;
 use crate::graph::registry::{build_node_graph_from_definition, NODE_REGISTRY};
 use crate::graph::tool_spec::{
     fixed_tool_runtime_inputs, tool_calling_tool_input_signature, BuiltInToolKind,
-    PythonScriptToolConfig, ToolDefinition, ToolImplementation, ToolParamDef,
+    ScriptToolConfig, ToolDefinition, ToolImplementation, ToolParamDef,
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
     QQ_AGENT_TOOL_OWNER_TYPE, TOOL_CALLING_FIXED_CONTENT_INPUT,
 };
@@ -214,44 +213,16 @@ fn validate_tool_implementation(tool: &ToolDefinition) -> Result<()> {
                 tool.name.trim()
             ))),
         },
-        ToolImplementation::PythonScript => {
-            let python_config = tool.python_config().ok_or_else(|| {
+        ToolImplementation::Script => {
+            let config = tool.script_config().ok_or_else(|| {
                 Error::ValidationError(format!(
-                    "Tool '{}' 使用 python_script implementation 时必须声明 python_config",
+                    "Tool '{}' 使用 script implementation 时必须声明 script_config",
                     tool.name.trim()
                 ))
             })?;
-            validate_python_tool_config(tool.name.trim(), python_config)
+            crate::graph::script_tool::validate_script_tool_config(tool.name.trim(), config)
         }
     }
-}
-
-fn validate_python_tool_config(tool_name: &str, config: &PythonScriptToolConfig) -> Result<()> {
-    if config.script_path.trim().is_empty() {
-        return Err(Error::ValidationError(format!(
-            "Tool '{}' 的 python script_path 不能为空",
-            tool_name
-        )));
-    }
-    if !config.script_path.trim().ends_with(".py") {
-        return Err(Error::ValidationError(format!(
-            "Tool '{}' 的 python script_path 必须指向 .py 文件",
-            tool_name
-        )));
-    }
-    if config.module_entry.trim().is_empty() {
-        return Err(Error::ValidationError(format!(
-            "Tool '{}' 的 python module_entry 不能为空",
-            tool_name
-        )));
-    }
-    if config.timeout_secs == 0 {
-        return Err(Error::ValidationError(format!(
-            "Tool '{}' 的 python timeout_secs 必须大于 0",
-            tool_name
-        )));
-    }
-    Ok(())
 }
 
 pub fn validate_tool_definitions(
@@ -577,14 +548,14 @@ impl ToolSubgraphRunner {
                 }?;
                 self.format_scalar_result(tool, result)
             }
-            ToolImplementation::PythonScript => {
-                let result = self.run_python_script_tool(
+            ToolImplementation::Script => {
+                let result = self.run_script_tool(
                     tool,
                     tool_call_content,
                     builtin_arguments,
                     runtime_values,
                 )?;
-                self.format_python_result(tool, result)
+                self.format_script_result(tool, result)
             }
             ToolImplementation::NodeGraph => {
                 Err(self.wrap_error(format!("Tool '{}' 非预期地进入了非子图分支", tool.name)))
@@ -617,20 +588,17 @@ impl ToolSubgraphRunner {
         }
     }
 
-    fn format_python_result(&self, tool: &ToolDefinition, result: Value) -> Result<String> {
+    fn format_script_result(&self, tool: &ToolDefinition, result: Value) -> Result<String> {
         match self.result_mode {
             ToolResultMode::JsonObject => {
                 let object = result.as_object().ok_or_else(|| {
-                    self.wrap_error(format!(
-                        "Tool '{}' 的 python 返回 result 必须是对象",
-                        tool.name
-                    ))
+                    self.wrap_error(format!("Tool '{}' 的脚本返回 result 必须是对象", tool.name))
                 })?;
                 let mut result_payload = Map::new();
                 for port in &tool.outputs {
                     let value = object.get(&port.name).ok_or_else(|| {
                         self.wrap_error(format!(
-                            "Tool '{}' 输出 '{}' 未在 python result 中提供",
+                            "Tool '{}' 输出 '{}' 未在脚本 result 中提供",
                             tool.name, port.name
                         ))
                     })?;
@@ -651,10 +619,7 @@ impl ToolSubgraphRunner {
             }
             ToolResultMode::SingleString => {
                 let text = result.as_str().ok_or_else(|| {
-                    self.wrap_error(format!(
-                        "Tool '{}' 的 python 返回 result 必须是字符串",
-                        tool.name
-                    ))
+                    self.wrap_error(format!("Tool '{}' 的脚本返回 result 必须是字符串", tool.name))
                 })?;
                 info!(
                     "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
@@ -665,36 +630,44 @@ impl ToolSubgraphRunner {
         }
     }
 
-    fn run_python_script_tool(
+    fn run_script_tool(
         &self,
         tool: &ToolDefinition,
         tool_call_content: &str,
         builtin_arguments: &Value,
         runtime_values: &HashMap<String, DataValue>,
     ) -> Result<Value> {
-        let python_config = tool
-            .python_config()
-            .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 python_config", tool.name)))?;
-        let request =
-            self.build_python_request(tool_call_content, builtin_arguments, runtime_values);
-        let raw = self.execute_python_process(tool, python_config, &request)?;
-        let response: Value = serde_json::from_str(&raw).map_err(|e| {
-            self.wrap_error(format!("Tool '{}' 的 python 输出不是合法 JSON: {e}", tool.name))
-        })?;
-        let ok = response.get("ok").and_then(Value::as_bool).unwrap_or(false);
-        if !ok {
-            let error = response
-                .get("error")
-                .and_then(Value::as_str)
-                .unwrap_or("python tool returned unknown error");
-            return Err(self.wrap_error(format!("Tool '{}' python 执行失败: {}", tool.name, error)));
-        }
-        response.get("result").cloned().ok_or_else(|| {
-            self.wrap_error(format!("Tool '{}' 的 python 输出缺少 result 字段", tool.name))
+        let script_config = tool
+            .script_config()
+            .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 script_config", tool.name)))?;
+        // Both ends of the resource handshake happen in here: building the request mints handles
+        // for the opaque resources among the tool's inputs, and the script passes those handles
+        // back through the SDK. Scoping the store to the call keeps one tool call's handles from
+        // accumulating on the worker thread for the lifetime of the process.
+        crate::graph::script_node::with_dynamic_script_resources(|| {
+            let request =
+                self.build_script_request(tool_call_content, builtin_arguments, runtime_values);
+            let raw = self.execute_script_process(tool, script_config, &request)?;
+            let response: Value = serde_json::from_str(&raw).map_err(|e| {
+                self.wrap_error(format!("Tool '{}' 的脚本输出不是合法 JSON: {e}", tool.name))
+            })?;
+            let ok = response.get("ok").and_then(Value::as_bool).unwrap_or(false);
+            if !ok {
+                let error = response
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("script tool returned unknown error");
+                return Err(
+                    self.wrap_error(format!("Tool '{}' 脚本执行失败: {}", tool.name, error))
+                );
+            }
+            response.get("result").cloned().ok_or_else(|| {
+                self.wrap_error(format!("Tool '{}' 的脚本输出缺少 result 字段", tool.name))
+            })
         })
     }
 
-    fn build_python_request(
+    fn build_script_request(
         &self,
         tool_call_content: &str,
         builtin_arguments: &Value,
@@ -730,68 +703,58 @@ impl ToolSubgraphRunner {
         })
     }
 
-    fn execute_python_process(
+    /// Runs one script tool and returns its raw `{ ok, result | error }` envelope.
+    ///
+    /// The script is materialized to a file first, then executed inside the owning agent's
+    /// runtime scope: that scope is what makes `zihuan.agent.*` and the bot capabilities resolve
+    /// while the script is running, exactly as they do for a graph tool.
+    fn execute_script_process(
         &self,
         tool: &ToolDefinition,
-        config: &PythonScriptToolConfig,
+        config: &ScriptToolConfig,
         request: &Value,
     ) -> Result<String> {
         let workspace_root = std::env::current_dir().map_err(|e| {
             self.wrap_error(format!("Tool '{}' 无法获取当前工作目录: {e}", tool.name))
         })?;
-        let runtime_config = match config.runtime_override() {
-            Some(runtime) => runtime,
-            None => {
-                ConfigCenter::shared()
-                    .load_root()
-                    .map_err(|error| {
-                        self.wrap_error(format!(
-                            "Tool '{}' 无法加载 Python 运行时配置: {error}",
-                            tool.name
-                        ))
-                    })?
-                    .python_runtime
-            }
+        let runtime = crate::config::ConfigCenter::shared().load_root().map_err(|error| {
+            self.wrap_error(format!("Tool '{}' 无法加载脚本运行时配置: {error}", tool.name))
+        })?;
+        let script_path = crate::graph::script_tool::materialize_script_source(&tool.id, config)
+            .map_err(|error| {
+                self.wrap_error(format!("Tool '{}' 写入脚本文件失败: {error}", tool.name))
+            })?;
+        let language = config.language.engine_language();
+        let variables = crate::graph::script_node::ScriptVariableStore::Shared(Arc::clone(
+            &self.shared_runtime_values,
+        ));
+        let context = crate::graph::script_node::ScriptHostContext {
+            node_id: self.node_id.clone(),
+            variables: Some(variables),
         };
-        let script_path = {
-            let path = std::path::PathBuf::from(&config.script_path);
-            if path.is_absolute() {
-                path
-            } else {
-                workspace_root.join(path)
-            }
-        };
-        let response = dynamic_script_engine::execute_python_script(
-            &workspace_root, &runtime_config, &script_path, &config.module_entry, config.timeout_secs, request,
-            &mut |method, params| match method {
-                "variables.get" => {
-                    let name = params.get("name").and_then(Value::as_str).filter(|name| !name.trim().is_empty()).ok_or_else(|| "variables.get 缺少 name".to_string())?;
-                    Ok(self.shared_runtime_values.lock().map_err(|_| "运行时变量存储不可用".to_string())?.get(name).map(crate::graph::script_node::host_value_to_json).unwrap_or(Value::Null))
-                }
-                "variables.set" => {
-                    let name = params.get("name").and_then(Value::as_str).filter(|name| !name.trim().is_empty()).ok_or_else(|| "variables.set 缺少 name".to_string())?;
-                    let value = params.get("value").ok_or_else(|| "variables.set 缺少 value".to_string())?;
-                    let value = crate::graph::registry::json_to_data_value(value, &DataType::Any).ok_or_else(|| "variables.set value 无效".to_string())?;
-                    self.shared_runtime_values.lock().map_err(|_| "运行时变量存储不可用".to_string())?.insert(name.to_string(), value);
-                    Ok(Value::Bool(true))
-                }
-                "task.progress" => {
-                    let progress = params.get("message").and_then(Value::as_str).filter(|value| !value.trim().is_empty()).ok_or_else(|| "task.progress 缺少 message".to_string())?;
-                    let task_id = crate::task_context::current_task_id().filter(|value| !value.trim().is_empty()).ok_or_else(|| "当前节点未关联任务".to_string())?;
-                    crate::command::global_task_runtime().ok_or_else(|| "任务运行时不可用".to_string())?.append_task_progress(&task_id, progress.to_string());
-                    Ok(Value::Bool(true))
-                }
-                "task.append" => {
-                    let task_id = params.get("task_id").and_then(Value::as_str).filter(|value| !value.trim().is_empty());
-                    let progress = params.get("message").and_then(Value::as_str).filter(|value| !value.trim().is_empty());
-                    Ok(Value::Bool(matches!((task_id, progress, crate::command::global_task_runtime()), (Some(task_id), Some(progress), Some(runtime)) if { runtime.append_task_progress(task_id, progress.to_string()); true })))
-                }
-                _ => Err(format!("不支持的 Python 宿主调用: {method}")),
+        let response = scope_agent_runtime_context(
+            self.resources.clone().map(AgentRuntimeContext::from_resources),
+            || {
+                dynamic_script_engine::execute_script_tool_with_sdk(
+                    &workspace_root,
+                    language,
+                    &runtime.node_runtime,
+                    &runtime.python_runtime,
+                    &script_path,
+                    config.entry.trim(),
+                    config.timeout_secs,
+                    request,
+                    &mut |method, params| {
+                        crate::graph::script_node::dispatch_script_host_call(
+                            method, params, &context,
+                        )
+                        .map_err(|error| error.to_string())
+                    },
+                )
             },
-        ).map_err(|error| self.wrap_error(format!("Tool '{}' Python 执行失败: {error}", tool.name)))?;
-        let payload = response.get("response").cloned().unwrap_or(response);
-        serde_json::to_string(&payload).map_err(|e| {
-            self.wrap_error(format!("Tool '{}' 序列化 python 响应失败: {e}", tool.name))
-        })
+        )
+        .map_err(|error| self.wrap_error(format!("Tool '{}' 脚本执行失败: {error}", tool.name)))?;
+        serde_json::to_string(&response)
+            .map_err(|e| self.wrap_error(format!("Tool '{}' 序列化脚本响应失败: {e}", tool.name)))
     }
 }
