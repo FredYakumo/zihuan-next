@@ -741,7 +741,13 @@ impl Tool for DeclarativeAgentTool {
             let output = self.agent.run(input)?;
             Ok(output.as_tool_result())
         })();
-        result.unwrap_or_else(|error| json!({"ok": false, "error": error.to_string()}).to_string())
+        result.unwrap_or_else(|error| {
+            log::error!(
+                "[DeclarativeAgentTool] agent '{}' failed; returning error to caller: {error}",
+                self.agent.definition.id
+            );
+            json!({"ok": false, "error": error.to_string()}).to_string()
+        })
     }
     fn run_duration(&self) -> ToolRunDuration {
         self.agent.definition.run_duration

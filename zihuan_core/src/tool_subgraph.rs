@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use log::{info, warn};
+use log::{error, info};
 use serde_json::{json, Map, Value};
 
 use crate::agent::runtime_context::{scope_agent_runtime_context, AgentRuntimeContext};
@@ -323,7 +323,7 @@ impl ToolSubgraphRunner {
         match self.run_subgraph(call_content.to_string(), arguments.clone()) {
             Ok(result) => result,
             Err(e) => {
-                warn!(
+                error!(
                     "[ToolSubgraph:{}] tool '{}' failed; returning sanitized error to caller: {e}",
                     self.node_id, self.definition.name
                 );
@@ -453,7 +453,7 @@ impl ToolSubgraphRunner {
             || graph.execute_and_capture_results(),
         );
         if let Some(ref error_message) = execution_result.error_message {
-            warn!(
+            error!(
                 "[ToolSubgraph:{}] tool '{}' execution failed: {error_message}",
                 self.node_id, tool.name
             );
