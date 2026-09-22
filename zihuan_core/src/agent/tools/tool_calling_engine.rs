@@ -584,6 +584,7 @@ impl ToolCallingEngine {
                     question: "工具调用已达到本段上限，是否继续执行？".to_string(),
                     details: Some(format!("本段已执行 {MAX_TOOL_ITERATIONS} 次工具调用。")),
                     placeholder: None,
+                    options: None,
                     command_confirmation: None,
                     tool_call_limit: Some(ToolCallLimitRequest { used_calls: MAX_TOOL_ITERATIONS }),
                 };
@@ -847,6 +848,7 @@ impl ToolCallingEngine {
                     question: "工具调用已达到本段上限，是否继续执行？".to_string(),
                     details: Some(format!("本段已执行 {MAX_TOOL_ITERATIONS} 次工具调用。")),
                     placeholder: None,
+                    options: None,
                     command_confirmation: None,
                     tool_call_limit: Some(ToolCallLimitRequest { used_calls: MAX_TOOL_ITERATIONS }),
                 };

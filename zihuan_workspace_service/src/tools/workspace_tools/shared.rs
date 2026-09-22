@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use regex::Regex;
 use serde::Deserialize;
@@ -38,6 +40,27 @@ pub(crate) fn json_error(message: impl Into<String>) -> String {
 
 pub(crate) fn success_json(value: Value) -> String {
     value.to_string()
+}
+
+pub(crate) fn content_hash(bytes: &[u8]) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn read_snapshots() -> &'static Mutex<std::collections::HashMap<PathBuf, String>> {
+    static SNAPSHOTS: OnceLock<Mutex<std::collections::HashMap<PathBuf, String>>> = OnceLock::new();
+    SNAPSHOTS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+
+pub(crate) fn remember_snapshot(path: &Path, hash: String) {
+    if let Ok(mut snapshots) = read_snapshots().lock() {
+        snapshots.insert(path.to_path_buf(), hash);
+    }
+}
+
+pub(crate) fn snapshot_for(path: &Path) -> Option<String> {
+    read_snapshots().lock().ok()?.get(path).cloned()
 }
 
 pub(crate) fn path_resource(

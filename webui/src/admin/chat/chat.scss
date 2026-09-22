@@ -1507,6 +1507,42 @@
   white-space: pre-wrap;
 }
 
+.ask-user-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ask-user-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: var(--admin-bg);
+  color: var(--admin-ink);
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.ask-user-option:hover:not(:disabled) {
+  transform: translateX(2px);
+  border-color: color-mix(in srgb, var(--admin-accent) 42%, var(--admin-border) 58%);
+  background: color-mix(in srgb, var(--admin-accent) 12%, var(--admin-bg) 88%);
+}
+
+.ask-user-option:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ask-user-defer {
+  flex: 0 0 auto;
+}
+
 .ask-user-row {
   display: flex;
   gap: 10px;

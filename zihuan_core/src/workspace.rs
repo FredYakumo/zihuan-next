@@ -16,6 +16,9 @@ pub struct AskUserRequest {
     pub details: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
+    /// Suggested answers the dashboard renders as one-click choices.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_confirmation: Option<CommandConfirmationRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

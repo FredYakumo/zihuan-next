@@ -809,11 +809,22 @@
                   <div v-if="pendingAskUser.details" class="ask-user-details">
                     {{ pendingAskUser.details }}
                   </div>
+                  <div v-if="pendingAskUser.options?.length" class="ask-user-options">
+                    <button
+                      v-for="option in pendingAskUser.options"
+                      :key="option"
+                      class="ask-user-option"
+                      :disabled="!canSubmitAskUserChoice"
+                      @click="chooseAskUserOption(option)"
+                    >
+                      {{ option }}
+                    </button>
+                  </div>
                   <div class="ask-user-row">
                     <input
                       v-model="askUserAnswer"
                       type="text"
-                      :placeholder="pendingAskUser.placeholder || '请输入补充信息'"
+                      :placeholder="askUserInputPlaceholder"
                       @input="clearChatError"
                       @keydown.enter.prevent="submitAskUserAnswer"
                     />
@@ -824,9 +835,16 @@
                     >
                       提交补充信息
                     </button>
+                    <button
+                      class="btn ghost ask-user-defer"
+                      :disabled="!canSubmitAskUserChoice"
+                      @click="deferAskUserAnswer"
+                    >
+                      暂时不想回答
+                    </button>
                   </div>
                 </div>
-                <div v-if="draftImageAttachments.length" class="chat-draft-images">
+                <div v-if="!isAwaitingAskUser && draftImageAttachments.length" class="chat-draft-images">
                   <div v-for="attachment in draftImageAttachments" :key="attachment.id" class="chat-draft-image">
                     <button class="chat-draft-image-preview" :title="attachment.name" @click="openImagePreview(attachment)">
                       <img :src="attachment.url" :alt="attachment.name" />
@@ -840,7 +858,7 @@
                     </button>
                   </div>
                 </div>
-                <div class="chat-input-box">
+                <div v-if="!isAwaitingAskUser" class="chat-input-box">
                   <textarea
                     v-model="draftMessage"
                     placeholder="输入消息"
@@ -853,7 +871,7 @@
                 <div class="chat-input-actions">
                   <button class="btn ghost" @click="startNewSession">新对话</button>
                   <div class="chat-input-right">
-                    <template v-if="isChatEligible">
+                    <template v-if="isChatEligible && !isAwaitingAskUser">
                       <input
                         id="chat-image-upload"
                         class="chat-image-upload-input"
@@ -1141,7 +1159,7 @@
                         <StopIcon />
                       </t-button>
                     </t-tooltip>
-                    <button v-else class="btn primary" :disabled="!canSend" @click="sendMessage">发送</button>
+                    <button v-else-if="!isAwaitingAskUser" class="btn primary" :disabled="!canSend" @click="sendMessage">发送</button>
                   </div>
                 </div>
                 <CommandApprovalPanel :allowed-commands="sessionCommandApprovals" @revoke="revokeSessionCommand" />
@@ -1792,7 +1810,12 @@ const {
   workspaceChangeDialogOpen,
   workspaceChangeError,
   askUserAnswer,
+  askUserInputPlaceholder,
+  isAwaitingAskUser,
   canSubmitAskUser,
+  canSubmitAskUserChoice,
+  chooseAskUserOption,
+  deferAskUserAnswer,
   toolCallLimitDecisionLoading,
   messageGroups,
   activeToolDetail,

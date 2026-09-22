@@ -42,6 +42,11 @@ export interface ChatProps {
 
 export type ChatEmit = (e: "update:sessionId", sessionId: string) => void;
 
+/** Hint for the free-form input that sits below the suggested options. */
+const OTHER_ANSWER_PLACEHOLDER = "其它...";
+/** Reply sent when the user defers instead of answering the question. */
+const ASK_USER_UNANSWERED_REPLY = "用户暂未回答";
+
 export function useChat(props: ChatProps, emit: ChatEmit) {
     type ChatRole = "user" | "assistant" | "tool" | "error";
     type LiveToolCall = {
@@ -336,6 +341,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         question: string;
         details?: string;
         placeholder?: string;
+        options?: string[];
         commandConfirmation?: { command: string; shell: string; decision?: "once" | "session" | "reject" };
         toolCallLimit?: { usedCalls: number };
     };
@@ -756,13 +762,29 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     );
     const askUserAnswer = ref("");
     const toolCallLimitDecisionLoading = ref(false);
-    const canSubmitAskUser = computed(() =>
+    // True while the ask_user answer form owns the input area: the composer's text,
+    // image and send controls are hidden so the reply goes through the form instead.
+    const isAwaitingAskUser = computed(() =>
+        !!pendingAskUser.value &&
+        !pendingAskUser.value.commandConfirmation &&
+        !pendingAskUser.value.toolCallLimit,
+    );
+    // Every ask-user decision form (suggested option, free-form input, "暂时不想回答")
+    // shares this readiness gate; only the free-form path additionally needs text.
+    const canSubmitAskUserChoice = computed(() =>
         isChatEligible.value &&
         isWorkspaceService.value &&
         !!pendingAskUser.value &&
         selectedService.value?.runtime.status === "running" &&
-        askUserAnswer.value.trim().length > 0 &&
         !sending.value,
+    );
+    const canSubmitAskUser = computed(() =>
+        canSubmitAskUserChoice.value && askUserAnswer.value.trim().length > 0,
+    );
+    const askUserInputPlaceholder = computed(() =>
+        pendingAskUser.value?.options?.length
+            ? OTHER_ANSWER_PLACEHOLDER
+            : pendingAskUser.value?.placeholder || "请输入补充信息",
     );
 
     function parseNewConversationCommand(input: string): PendingNewConversationCommand | null {
@@ -1745,6 +1767,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 question: latestRecord.pending_ask_user.question,
                 details: latestRecord.pending_ask_user.details ?? undefined,
                 placeholder: latestRecord.pending_ask_user.placeholder ?? undefined,
+                options: latestRecord.pending_ask_user.options ?? undefined,
                 commandConfirmation: latestRecord.pending_ask_user.command_confirmation ?? undefined,
                 toolCallLimit: latestRecord.pending_ask_user.tool_call_limit ? { usedCalls: latestRecord.pending_ask_user.tool_call_limit.used_calls } : undefined,
             };
@@ -2268,6 +2291,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 question: event.question,
                 details: event.details ?? undefined,
                 placeholder: event.placeholder ?? undefined,
+                options: event.options ?? undefined,
                 commandConfirmation: event.command_confirmation,
                 toolCallLimit: event.tool_call_limit ? { usedCalls: event.tool_call_limit.used_calls } : undefined,
             };
@@ -2584,6 +2608,14 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         await sendMessageWithText(askUserAnswer.value, true);
     }
 
+    async function chooseAskUserOption(option: string) {
+        await sendMessageWithText(option, true);
+    }
+
+    async function deferAskUserAnswer() {
+        await sendMessageWithText(ASK_USER_UNANSWERED_REPLY, true);
+    }
+
     async function decideToolCallLimit(continuation: "continue" | "stop") {
         if (!activeSessionId.value || !selectedServiceId.value || !pendingAskUser.value?.toolCallLimit || toolCallLimitDecisionLoading.value) return;
         const pendingRequest = pendingAskUser.value;
@@ -2665,7 +2697,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         if (!fromAskUser && !options.isEdit && !canSend.value) {
             return;
         }
-        if (fromAskUser && !canSubmitAskUser.value) {
+        // Ask-user replies carry their text either from a clicked option, the
+        // free-form input, or the deferral choice, so any empty reply is a no-op.
+        if (fromAskUser && (!userText || !canSubmitAskUserChoice.value)) {
             return;
         }
         clearChatError();
@@ -2939,7 +2973,12 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         saveAgentsMd,
         deleteAgentsMd,
         askUserAnswer,
+        askUserInputPlaceholder,
+        isAwaitingAskUser,
         canSubmitAskUser,
+        canSubmitAskUserChoice,
+        chooseAskUserOption,
+        deferAskUserAnswer,
         messageGroups,
         activeToolDetail,
         toolPreviewState,

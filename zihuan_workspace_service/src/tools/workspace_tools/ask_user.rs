@@ -16,13 +16,44 @@ struct AskUserArgs {
     details: Option<String>,
     #[serde(default)]
     placeholder: Option<String>,
+    #[serde(default)]
+    options: Option<Vec<String>>,
 }
 impl Tool for AskUserTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: DEFAULT_TOOL_ASK_USER,
-            description: "Ask the dashboard user for missing details and pause until they reply",
-            parameters: serde_json::json!({"type":"object","properties":{"question":{"type":"string"},"details":{"type":"string"},"placeholder":{"type":"string"}},"required":["question"]}),
+            description: "Ask the dashboard user for missing details and pause until they reply. \
+                Always provide 2-3 candidate answers in `options`, each written as the reply the \
+                user would send: when the question has explicit choices, list them; when it is \
+                open-ended, list the 2-3 most likely interpretations or answers, because the \
+                dashboard renders them as one-click choices next to a free-form input and a \
+                \"暂时不想回答\" choice. If the reply is \"用户暂未回答\", the user declined to \
+                answer: continue with your best assumption and make that assumption explicit \
+                instead of asking again.",
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "The single question that blocks progress."
+                    },
+                    "details": {
+                        "type": "string",
+                        "description": "Optional background or context shown under the question."
+                    },
+                    "options": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "2-3 short candidate answers offered as one-click choices, each written as the reply the user would send."
+                    },
+                    "placeholder": {
+                        "type": "string",
+                        "description": "Optional hint for the free-form answer input; only shown when `options` is omitted."
+                    }
+                },
+                "required": ["question"]
+            }),
         })
     }
     fn execute_with_outcome(&self, _: &str, a: &Value) -> ToolExecutionOutput {
@@ -38,10 +69,12 @@ impl Tool for AskUserTool {
         if question.is_empty() {
             return ToolExecutionOutput::text(json_error("question must not be empty"));
         }
+        let options = normalize_options(args.options);
         let request = AskUserRequest {
             question: question.clone(),
             details: args.details.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
             placeholder: args.placeholder.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+            options,
             command_confirmation: None,
             tool_call_limit: None,
         };
@@ -57,4 +90,17 @@ impl Tool for AskUserTool {
     fn execution_resource(&self, _: &Value) -> ToolExecutionResource {
         ToolExecutionResource::Exclusive
     }
+}
+
+/// Drops blank and repeated candidate answers while preserving the model's order.
+fn normalize_options(options: Option<Vec<String>>) -> Option<Vec<String>> {
+    let mut normalized: Vec<String> = Vec::new();
+    for option in options.unwrap_or_default() {
+        let option = option.trim().to_string();
+        if option.is_empty() || normalized.contains(&option) {
+            continue;
+        }
+        normalized.push(option);
+    }
+    (!normalized.is_empty()).then_some(normalized)
 }

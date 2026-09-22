@@ -1,4 +1,6 @@
-use super::shared::{json_error, path_resource, resolve_tool_path, success_json};
+use super::shared::{
+    content_hash, json_error, path_resource, remember_snapshot, resolve_tool_path, success_json,
+};
 use base64::Engine;
 use serde::Deserialize;
 use serde_json::Value;
@@ -63,18 +65,26 @@ impl Tool for ReadFileTool {
             }
             let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes[start..end]);
             return success_json(
-                serde_json::json!({"ok":true,"path":path.display().to_string(),"encoding":"base64","byte_start":start,"byte_end":end,"total_bytes":bytes.len(),"content":encoded}),
+                serde_json::json!({"ok":true,"path":path.display().to_string(),"encoding":"base64","byte_start":start,"byte_end":end,"total_bytes":bytes.len(),"content":encoded,"content_hash":content_hash(&bytes)}),
             );
         }
         if encoding != "utf8" {
             return json_error("encoding must be utf8 or base64");
         }
-        let content = match fs::read_to_string(&path) {
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                return json_error(format!("failed to read file '{}': {err}", path.display()))
+            }
+        };
+        let content = match String::from_utf8(bytes.clone()) {
             Ok(content) => content,
             Err(err) => {
                 return json_error(format!("failed to read file '{}': {err}", path.display()))
             }
         };
+        let file_hash = content_hash(&bytes);
+        remember_snapshot(&path, file_hash.clone());
         let lines: Vec<&str> = content.lines().collect();
         let total_lines = lines.len();
         let start_line = args.start_line.unwrap_or(1);
@@ -89,14 +99,14 @@ impl Tool for ReadFileTool {
                 return json_error("line range is out of bounds for an empty file");
             }
             return success_json(
-                serde_json::json!({"ok":true,"path":path.display().to_string(),"start_line":0,"end_line":0,"total_lines":0,"content":""}),
+                serde_json::json!({"ok":true,"path":path.display().to_string(),"start_line":0,"end_line":0,"total_lines":0,"content":"","content_hash":file_hash}),
             );
         }
         if start_line > total_lines || end_line > total_lines {
             return json_error(format!("line range [{start_line}-{end_line}] is out of bounds for file '{}' with {total_lines} lines", path.display()));
         }
         success_json(
-            serde_json::json!({"ok":true,"path":path.display().to_string(),"start_line":start_line,"end_line":end_line,"total_lines":total_lines,"content":lines[start_line-1..end_line].join("\n")}),
+            serde_json::json!({"ok":true,"path":path.display().to_string(),"start_line":start_line,"end_line":end_line,"total_lines":total_lines,"content":lines[start_line-1..end_line].join("\n"),"content_hash":file_hash}),
         )
     }
     fn execution_resource(&self, arguments: &Value) -> ToolExecutionResource {
