@@ -127,6 +127,9 @@ pub trait Procedure: Send + Sync {
 /// procedures are spawned onto the tokio runtime as detached tasks: failures are logged and
 /// never affect the chain. Only `Blocking` outputs are returned, in execution order.
 ///
+/// A `Background` procedure outlives the turn, so its context clone is detached from the
+/// turn's transport (see below) and it must publish results through its own side effects.
+///
 /// Procedures may carry borrowed data (QQ turn contexts) but then cannot be `Background` —
 /// spawning requires `'static`. Use [`execute_blocking_procedure_chain`] for borrowed-only
 /// chains.
@@ -144,7 +147,13 @@ pub async fn execute_procedure_chain(
             }
             ProcedureExecution::Background => {
                 let procedure = Arc::clone(&procedure);
-                let background_context = context.clone();
+                let mut background_context = context.clone();
+                // The transport sink owns the senders of the turn's token and event channels,
+                // and a transport adapter treats their closure as "this turn is done". A
+                // detached task holding a sink would keep the stream open until the background
+                // work finishes, delaying the turn's final events (and any `ask_user` request
+                // that is emitted after inference) by however long that work takes.
+                background_context.transport_out = None;
                 tokio::spawn(async move {
                     if let Err(err) = procedure.execute(&background_context).await {
                         log::warn!(
