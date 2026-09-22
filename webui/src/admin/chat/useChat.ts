@@ -42,8 +42,13 @@ export interface ChatProps {
 
 export type ChatEmit = (e: "update:sessionId", sessionId: string) => void;
 
+/** Hint for the free-form input that sits below the suggested options. */
+const OTHER_ANSWER_PLACEHOLDER = "其它...";
+/** Reply sent when the user defers instead of answering the question. */
+const ASK_USER_UNANSWERED_REPLY = "用户暂未回答";
+
 export function useChat(props: ChatProps, emit: ChatEmit) {
-    type ChatRole = "user" | "assistant" | "tool";
+    type ChatRole = "user" | "assistant" | "tool" | "error";
     type LiveToolCall = {
         call_id: string;
         name: string;
@@ -336,6 +341,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         question: string;
         details?: string;
         placeholder?: string;
+        options?: string[];
         commandConfirmation?: { command: string; shell: string; decision?: "once" | "session" | "reject" };
         toolCallLimit?: { usedCalls: number };
     };
@@ -632,10 +638,11 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         const usedTokens = messages.value
             .filter(
                 (message) =>
-                    message.content.trim().length > 0 ||
-                    message.imageAttachments?.length ||
-                    message.toolCalls.length > 0 ||
-                    !!message.toolCallId,
+                    message.role !== "error" &&
+                    (message.content.trim().length > 0 ||
+                        message.imageAttachments?.length ||
+                        message.toolCalls.length > 0 ||
+                        !!message.toolCallId),
             )
             .reduce((total, message) => total + estimateChatMessageTokens(message), 0);
 
@@ -644,6 +651,83 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             contextLength,
             compactionThreshold: Math.floor(contextLength * contextCompactionPercent.value / 100),
             usagePercent: Math.min((usedTokens / contextLength) * 100, 100),
+        };
+    });
+    /**
+     * Purpose: aggregate every assistant response metric recorded in the current conversation.
+     * Function: sum input, cached and output tokens, derive the cache hit rate from the summed
+     * ratio, and average the first-token latency and output speed over the responses that report them.
+     */
+    const conversationTokenStats = computed(() => {
+        const metricsList = messages.value
+            .filter((message) => message.role === "assistant" && message.metrics)
+            .map((message) => message.metrics as ChatResponseMetrics);
+        if (metricsList.length === 0) {
+            return null;
+        }
+
+        let inputTokens = 0;
+        let cachedTokens = 0;
+        let outputTokens = 0;
+        let hasInputTokens = false;
+        let hasCachedTokens = false;
+        let hasOutputTokens = false;
+        let firstTokenTotalMs = 0;
+        let firstTokenSamples = 0;
+        let speedTotal = 0;
+        let speedSamples = 0;
+        let cacheRateTotal = 0;
+        let cacheRateSamples = 0;
+
+        for (const metrics of metricsList) {
+            // Some providers only report the cache split, so fall back to hit plus miss tokens.
+            const promptTokens =
+                metrics.prompt_tokens ??
+                (metrics.cached_prompt_tokens != null && metrics.prompt_cache_miss_tokens != null
+                    ? metrics.cached_prompt_tokens + metrics.prompt_cache_miss_tokens
+                    : null);
+            if (promptTokens != null) {
+                inputTokens += promptTokens;
+                hasInputTokens = true;
+            }
+            if (metrics.cached_prompt_tokens != null) {
+                cachedTokens += metrics.cached_prompt_tokens;
+                hasCachedTokens = true;
+            }
+            if (metrics.completion_tokens != null) {
+                outputTokens += metrics.completion_tokens;
+                hasOutputTokens = true;
+            }
+            if (metrics.time_to_first_token_ms != null) {
+                firstTokenTotalMs += metrics.time_to_first_token_ms;
+                firstTokenSamples += 1;
+            }
+            if (metrics.output_tokens_per_second != null) {
+                speedTotal += metrics.output_tokens_per_second;
+                speedSamples += 1;
+            }
+            if (metrics.cache_hit_rate != null) {
+                cacheRateTotal += metrics.cache_hit_rate;
+                cacheRateSamples += 1;
+            }
+        }
+
+        // The summed ratio weighs long responses more than short ones; fall back to the mean
+        // of the reported rates when no response exposes cached token counts.
+        let cacheHitRate: number | null = null;
+        if (hasCachedTokens && inputTokens > 0) {
+            cacheHitRate = cachedTokens / inputTokens;
+        } else if (cacheRateSamples > 0) {
+            cacheHitRate = cacheRateTotal / cacheRateSamples;
+        }
+
+        return {
+            inputTokens: hasInputTokens ? inputTokens : null,
+            cachedTokens: hasCachedTokens ? cachedTokens : null,
+            outputTokens: hasOutputTokens ? outputTokens : null,
+            cacheHitRate,
+            averageFirstTokenMs: firstTokenSamples > 0 ? firstTokenTotalMs / firstTokenSamples : null,
+            averageTokensPerSecond: speedSamples > 0 ? speedTotal / speedSamples : null,
         };
     });
     const canSend = computed(() =>
@@ -678,13 +762,29 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     );
     const askUserAnswer = ref("");
     const toolCallLimitDecisionLoading = ref(false);
-    const canSubmitAskUser = computed(() =>
+    // True while the ask_user answer form owns the input area: the composer's text,
+    // image and send controls are hidden so the reply goes through the form instead.
+    const isAwaitingAskUser = computed(() =>
+        !!pendingAskUser.value &&
+        !pendingAskUser.value.commandConfirmation &&
+        !pendingAskUser.value.toolCallLimit,
+    );
+    // Every ask-user decision form (suggested option, free-form input, "暂时不想回答")
+    // shares this readiness gate; only the free-form path additionally needs text.
+    const canSubmitAskUserChoice = computed(() =>
         isChatEligible.value &&
         isWorkspaceService.value &&
         !!pendingAskUser.value &&
         selectedService.value?.runtime.status === "running" &&
-        askUserAnswer.value.trim().length > 0 &&
         !sending.value,
+    );
+    const canSubmitAskUser = computed(() =>
+        canSubmitAskUserChoice.value && askUserAnswer.value.trim().length > 0,
+    );
+    const askUserInputPlaceholder = computed(() =>
+        pendingAskUser.value?.options?.length
+            ? OTHER_ANSWER_PLACEHOLDER
+            : pendingAskUser.value?.placeholder || "请输入补充信息",
     );
 
     function parseNewConversationCommand(input: string): PendingNewConversationCommand | null {
@@ -719,6 +819,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         const filtered = messages.value.filter((m) => m.role !== "tool");
         const groups: MessageGroup[] = [];
         let currentGroup: MessageGroup | null = null;
+        // An error bubble belongs to the agent turn it interrupted, so it renders with the
+        // same avatar gutter as an assistant message.
+        const usesAgentAvatar = (role: ChatRole) => role === "assistant" || role === "error";
 
         for (const message of filtered) {
             if (currentGroup && currentGroup.role === message.role) {
@@ -728,10 +831,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                     id: `group-${message.id}`,
                     role: message.role,
                     messages: [message],
-                    avatarUrl:
-                        message.role === "assistant"
-                            ? message.agentAvatarUrl || selectedAgentAvatarUrl.value || undefined
-                            : undefined,
+                    avatarUrl: usesAgentAvatar(message.role)
+                        ? message.agentAvatarUrl || selectedAgentAvatarUrl.value || undefined
+                        : undefined,
                     agentName: message.agentName || selectedService.value?.name,
                 };
                 groups.push(currentGroup);
@@ -861,10 +963,11 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         return messages.value
             .filter(
                 (item) =>
-                    item.content.trim().length > 0 ||
-                    item.imageAttachments?.length ||
-                    item.toolCalls.length > 0 ||
-                    !!item.toolCallId,
+                    item.role !== "error" &&
+                    (item.content.trim().length > 0 ||
+                        item.imageAttachments?.length ||
+                        item.toolCalls.length > 0 ||
+                        !!item.toolCallId),
             )
             .map((item) => ({
                 role: item.role,
@@ -1179,6 +1282,12 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     function showChatError(message: string) {
         chatErrorMessage.value = message;
         chatErrorDialogMessage.value = message;
+        // An error raised with no transcript to attach to (a pre-send validation in a fresh
+        // conversation) only gets the banner and dialog; anything raised during an ongoing
+        // conversation is also recorded inline so it stays visible after the dialog is closed.
+        if (messages.value.length > 0) {
+            appendChatErrorMessage(message);
+        }
     }
 
     function createStreamingAssistantMessage(): ChatMessage {
@@ -1431,6 +1540,28 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         }
     }
 
+    function appendChatErrorMessage(message: string): string {
+        const errorMessage: ChatMessage = {
+            id: `local-error-${createUuid()}`,
+            role: "error",
+            content: message,
+            timestamp: new Date().toISOString(),
+            toolCalls: [],
+            toolCallId: null,
+            linkedToolCall: null,
+        };
+        messages.value.push(errorMessage);
+        scrollToBottom();
+        return errorMessage.id;
+    }
+
+    function dismissChatErrorMessage(messageId: string) {
+        const index = messages.value.findIndex((item) => item.id === messageId);
+        if (index >= 0) {
+            messages.value.splice(index, 1);
+        }
+    }
+
     function applyInferenceFailure(streamState: StreamState, errorMessage: string) {
         pruneFailedAssistantPlaceholder(streamState.assistantMessageId);
         showChatError(`推理失败: ${errorMessage}`);
@@ -1636,6 +1767,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 question: latestRecord.pending_ask_user.question,
                 details: latestRecord.pending_ask_user.details ?? undefined,
                 placeholder: latestRecord.pending_ask_user.placeholder ?? undefined,
+                options: latestRecord.pending_ask_user.options ?? undefined,
                 commandConfirmation: latestRecord.pending_ask_user.command_confirmation ?? undefined,
                 toolCallLimit: latestRecord.pending_ask_user.tool_call_limit ? { usedCalls: latestRecord.pending_ask_user.tool_call_limit.used_calls } : undefined,
             };
@@ -2159,6 +2291,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 question: event.question,
                 details: event.details ?? undefined,
                 placeholder: event.placeholder ?? undefined,
+                options: event.options ?? undefined,
                 commandConfirmation: event.command_confirmation,
                 toolCallLimit: event.tool_call_limit ? { usedCalls: event.tool_call_limit.used_calls } : undefined,
             };
@@ -2475,6 +2608,14 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         await sendMessageWithText(askUserAnswer.value, true);
     }
 
+    async function chooseAskUserOption(option: string) {
+        await sendMessageWithText(option, true);
+    }
+
+    async function deferAskUserAnswer() {
+        await sendMessageWithText(ASK_USER_UNANSWERED_REPLY, true);
+    }
+
     async function decideToolCallLimit(continuation: "continue" | "stop") {
         if (!activeSessionId.value || !selectedServiceId.value || !pendingAskUser.value?.toolCallLimit || toolCallLimitDecisionLoading.value) return;
         const pendingRequest = pendingAskUser.value;
@@ -2556,7 +2697,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         if (!fromAskUser && !options.isEdit && !canSend.value) {
             return;
         }
-        if (fromAskUser && !canSubmitAskUser.value) {
+        // Ask-user replies carry their text either from a clicked option, the
+        // free-form input, or the deferral choice, so any empty reply is a no-op.
+        if (fromAskUser && (!userText || !canSubmitAskUserChoice.value)) {
             return;
         }
         clearChatError();
@@ -2802,6 +2945,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         selectedThinkingLabel,
         selectedEffortLabel,
         contextTokenUsage,
+        conversationTokenStats,
         canSend,
         selectedAgentAvatarUrl,
         selectedAgentAvatarFallback,
@@ -2829,7 +2973,12 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         saveAgentsMd,
         deleteAgentsMd,
         askUserAnswer,
+        askUserInputPlaceholder,
+        isAwaitingAskUser,
         canSubmitAskUser,
+        canSubmitAskUserChoice,
+        chooseAskUserOption,
+        deferAskUserAnswer,
         messageGroups,
         activeToolDetail,
         toolPreviewState,
@@ -2875,6 +3024,8 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         cancelWorkspaceChange,
         workspaceChangePathLabel,
         pruneFailedAssistantPlaceholder,
+        appendChatErrorMessage,
+        dismissChatErrorMessage,
         applyInferenceFailure,
         reloadSessions,
         refreshSessionStatus,

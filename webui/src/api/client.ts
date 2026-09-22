@@ -537,6 +537,7 @@ export interface ChatStreamEvent {
   question?: string;
   details?: string;
   placeholder?: string;
+  options?: string[];
   command?: string;
   shell?: string;
   command_confirmation?: { command: string; shell: string };
@@ -657,6 +658,7 @@ export interface ChatHistoryRecord {
     question: string;
     details?: string | null;
     placeholder?: string | null;
+    options?: string[] | null;
     command_confirmation?: { command: string; shell: string } | null;
     tool_call_limit?: { used_calls: number } | null;
   } | null;
@@ -683,6 +685,7 @@ export interface ChatSessionSummary {
     question: string;
     details?: string | null;
     placeholder?: string | null;
+    options?: string[] | null;
     command_confirmation?: { command: string; shell: string } | null;
     tool_call_limit?: { used_calls: number } | null;
   } | null;

@@ -1746,6 +1746,7 @@ async fn execute_chat_streaming(
             "question": request.question,
             "details": request.details,
             "placeholder": request.placeholder,
+            "options": request.options,
             "command_confirmation": request.command_confirmation,
             "tool_call_limit": request.tool_call_limit,
         });

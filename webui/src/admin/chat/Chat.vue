@@ -203,13 +203,13 @@
                 :class="group.role"
               >
                 <img
-                  v-if="group.role === 'assistant' && group.avatarUrl"
+                  v-if="(group.role === 'assistant' || group.role === 'error') && group.avatarUrl"
                   class="chat-message-avatar"
                   :src="group.avatarUrl"
                   alt="bot avatar"
                 />
                 <div
-                  v-else-if="group.role === 'assistant'"
+                  v-else-if="group.role === 'assistant' || group.role === 'error'"
                   class="chat-message-avatar chat-message-avatar--fallback"
                 >
                   {{ agentInitial(group.agentName || "Bot") }}
@@ -655,7 +655,25 @@
                     </div>
                   </div>
                 </div>
-                <div v-if="group.role !== 'assistant'" class="chat-bubble-col">
+                <div v-if="group.role === 'error'" class="chat-bubble-col chat-error-message-col">
+                  <div
+                    v-for="(message, idx) in group.messages"
+                    :key="message.id + '-' + idx"
+                    class="chat-error-message"
+                    role="alert"
+                  >
+                    <button
+                      class="chat-error-message-close"
+                      aria-label="关闭错误提示"
+                      title="关闭"
+                      @click="dismissChatErrorMessage(message.id)"
+                    >
+                      <CloseIcon />
+                    </button>
+                    <div class="chat-error-message-body">{{ message.content }}</div>
+                  </div>
+                </div>
+                <div v-if="group.role === 'user'" class="chat-bubble-col">
                   <div
                     v-for="(message, idx) in group.messages"
                     :key="message.id + '-' + idx"
@@ -791,11 +809,22 @@
                   <div v-if="pendingAskUser.details" class="ask-user-details">
                     {{ pendingAskUser.details }}
                   </div>
+                  <div v-if="pendingAskUser.options?.length" class="ask-user-options">
+                    <button
+                      v-for="option in pendingAskUser.options"
+                      :key="option"
+                      class="ask-user-option"
+                      :disabled="!canSubmitAskUserChoice"
+                      @click="chooseAskUserOption(option)"
+                    >
+                      {{ option }}
+                    </button>
+                  </div>
                   <div class="ask-user-row">
                     <input
                       v-model="askUserAnswer"
                       type="text"
-                      :placeholder="pendingAskUser.placeholder || '请输入补充信息'"
+                      :placeholder="askUserInputPlaceholder"
                       @input="clearChatError"
                       @keydown.enter.prevent="submitAskUserAnswer"
                     />
@@ -806,9 +835,16 @@
                     >
                       提交补充信息
                     </button>
+                    <button
+                      class="btn ghost ask-user-defer"
+                      :disabled="!canSubmitAskUserChoice"
+                      @click="deferAskUserAnswer"
+                    >
+                      暂时不想回答
+                    </button>
                   </div>
                 </div>
-                <div v-if="draftImageAttachments.length" class="chat-draft-images">
+                <div v-if="!isAwaitingAskUser && draftImageAttachments.length" class="chat-draft-images">
                   <div v-for="attachment in draftImageAttachments" :key="attachment.id" class="chat-draft-image">
                     <button class="chat-draft-image-preview" :title="attachment.name" @click="openImagePreview(attachment)">
                       <img :src="attachment.url" :alt="attachment.name" />
@@ -822,7 +858,7 @@
                     </button>
                   </div>
                 </div>
-                <div class="chat-input-box">
+                <div v-if="!isAwaitingAskUser" class="chat-input-box">
                   <textarea
                     v-model="draftMessage"
                     placeholder="输入消息"
@@ -835,7 +871,7 @@
                 <div class="chat-input-actions">
                   <button class="btn ghost" @click="startNewSession">新对话</button>
                   <div class="chat-input-right">
-                    <template v-if="isChatEligible">
+                    <template v-if="isChatEligible && !isAwaitingAskUser">
                       <input
                         id="chat-image-upload"
                         class="chat-image-upload-input"
@@ -995,8 +1031,48 @@
                       >
                         <span class="context-usage-chart" aria-hidden="true" />
                         <span class="context-usage-tooltip" role="tooltip">
-                          context {{ formatTokenCount(contextTokenUsage.usedTokens) }}/{{ formatTokenCount(contextTokenUsage.contextLength) }} tokens
-                          (可用上限: {{ formatTokenCount(contextTokenUsage.compactionThreshold) }} tokens)
+                          <span class="context-usage-tooltip-line">
+                            <strong class="context-usage-tooltip-label">context</strong> {{ formatTokenCount(contextTokenUsage.usedTokens) }}/{{ formatTokenCount(contextTokenUsage.contextLength) }} tokens
+                            (可用上限: {{ formatTokenCount(contextTokenUsage.compactionThreshold) }} tokens)
+                          </span>
+                          <template v-if="conversationTokenStats">
+                            <span
+                              v-if="conversationTokenStats.inputTokens != null"
+                              class="context-usage-tooltip-line"
+                            >
+                              <strong class="context-usage-tooltip-label">总输入</strong> {{ formatTokenCount(conversationTokenStats.inputTokens) }} tokens
+                            </span>
+                            <span
+                              v-if="conversationTokenStats.cachedTokens != null"
+                              class="context-usage-tooltip-line"
+                            >
+                              <strong class="context-usage-tooltip-label">缓存</strong> {{ formatTokenCount(conversationTokenStats.cachedTokens) }} tokens
+                            </span>
+                            <span
+                              v-if="conversationTokenStats.outputTokens != null"
+                              class="context-usage-tooltip-line"
+                            >
+                              <strong class="context-usage-tooltip-label">输出</strong> {{ formatTokenCount(conversationTokenStats.outputTokens) }} tokens
+                            </span>
+                            <span
+                              v-if="conversationTokenStats.cacheHitRate != null"
+                              class="context-usage-tooltip-line"
+                            >
+                              <strong class="context-usage-tooltip-label">缓存命中率</strong> {{ formatCacheHitRate(conversationTokenStats.cacheHitRate) }}
+                            </span>
+                            <span
+                              v-if="conversationTokenStats.averageFirstTokenMs != null"
+                              class="context-usage-tooltip-line"
+                            >
+                              <strong class="context-usage-tooltip-label">平均首 token</strong> {{ formatDuration(conversationTokenStats.averageFirstTokenMs) }}
+                            </span>
+                            <span
+                              v-if="conversationTokenStats.averageTokensPerSecond != null"
+                              class="context-usage-tooltip-line"
+                            >
+                              <strong class="context-usage-tooltip-label">平均</strong> {{ formatOutputSpeed(conversationTokenStats.averageTokensPerSecond) }} tokens/s
+                            </span>
+                          </template>
                         </span>
                       </div>
 
@@ -1083,7 +1159,7 @@
                         <StopIcon />
                       </t-button>
                     </t-tooltip>
-                    <button v-else class="btn primary" :disabled="!canSend" @click="sendMessage">发送</button>
+                    <button v-else-if="!isAwaitingAskUser" class="btn primary" :disabled="!canSend" @click="sendMessage">发送</button>
                   </div>
                 </div>
                 <CommandApprovalPanel :allowed-commands="sessionCommandApprovals" @revoke="revokeSessionCommand" />
@@ -1722,6 +1798,7 @@ const {
   selectedThinkingLabel,
   selectedEffortLabel,
   contextTokenUsage,
+  conversationTokenStats,
   canSend,
   selectedAgentAvatarUrl,
   selectedAgentAvatarFallback,
@@ -1733,7 +1810,12 @@ const {
   workspaceChangeDialogOpen,
   workspaceChangeError,
   askUserAnswer,
+  askUserInputPlaceholder,
+  isAwaitingAskUser,
   canSubmitAskUser,
+  canSubmitAskUserChoice,
+  chooseAskUserOption,
+  deferAskUserAnswer,
   toolCallLimitDecisionLoading,
   messageGroups,
   activeToolDetail,
@@ -1783,6 +1865,7 @@ const {
   cancelWorkspaceChange,
   workspaceChangePathLabel,
   pruneFailedAssistantPlaceholder,
+  dismissChatErrorMessage,
   applyInferenceFailure,
   reloadSessions,
   openSession,

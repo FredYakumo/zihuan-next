@@ -8,7 +8,9 @@ use serde_json::Value;
 use zihuan_core::agent::tools::{Tool, ToolExecutionResource};
 use zihuan_core::model_inference::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
 
-use super::shared::{json_error, path_resource, resolve_tool_path, success_json};
+use super::shared::{
+    content_hash, json_error, path_resource, resolve_tool_path, snapshot_for, success_json,
+};
 
 pub(crate) const DEFAULT_TOOL_EDIT_FILE: &str = "edit_file";
 
@@ -35,7 +37,7 @@ impl Tool for EditFileTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: DEFAULT_TOOL_EDIT_FILE,
-            description: "Apply a Codex-format context patch to one or more existing UTF-8 files. The patch must use *** Begin Patch, one or more *** Update File: path sections with @@ context chunks, and *** End Patch. Every removed/context line must match the current file exactly; if it does not, re-read the file and create a new patch. This tool never creates or deletes files.",
+            description: "Apply a Codex-format context patch to existing UTF-8 files. The tool rejects edits when a file changed after it was last read. The patch must use *** Begin Patch, Update File sections, @@ chunks, and *** End Patch. This tool never creates or deletes files.",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": { "patch": { "type": "string", "minLength": 1 } },
@@ -54,6 +56,14 @@ impl Tool for EditFileTool {
             Ok(plans) => plans,
             Err(error) => return json_error(error),
         };
+        for plan in &plans {
+            if let Some(expected) = snapshot_for(&plan.path) {
+                let actual = content_hash(plan.original.as_bytes());
+                if expected != actual {
+                    return json_error(format!("file '{}' has been modified since it was read; re-read the file and create a new patch", plan.path.display()));
+                }
+            }
+        }
         for plan in &plans {
             if let Err(error) = fs::write(&plan.path, &plan.rewritten) {
                 return json_error(format!(

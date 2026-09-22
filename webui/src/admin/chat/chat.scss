@@ -781,6 +781,51 @@
   align-items: flex-end;
 }
 
+.chat-error-message-col {
+  gap: 8px;
+}
+
+.chat-error-message {
+  position: relative;
+  max-width: 100%;
+  padding: 12px 40px 12px 18px;
+  border: 1px solid color-mix(in srgb, var(--admin-danger, #e34d59) 40%, var(--admin-border) 60%);
+  border-radius: 12px;
+  border-bottom-left-radius: 4px;
+  background: color-mix(in srgb, var(--admin-danger, #e34d59) 10%, var(--admin-bg-elevated) 90%);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--admin-bg) 40%, transparent);
+  color: color-mix(in srgb, var(--admin-danger, #e34d59) 78%, var(--admin-ink) 22%);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.chat-error-message-body {
+  word-break: break-word;
+}
+
+.chat-error-message-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  padding: 4px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--admin-danger, #e34d59) 70%, var(--admin-muted) 30%);
+  background: transparent;
+  cursor: pointer;
+}
+
+.chat-error-message-close:hover {
+  color: var(--admin-danger, #e34d59);
+  background: color-mix(in srgb, var(--admin-danger, #e34d59) 14%, transparent 86%);
+}
+
 .chat-message-actions {
   display: flex;
   align-items: center;
@@ -1462,6 +1507,42 @@
   white-space: pre-wrap;
 }
 
+.ask-user-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ask-user-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: var(--admin-bg);
+  color: var(--admin-ink);
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.ask-user-option:hover:not(:disabled) {
+  transform: translateX(2px);
+  border-color: color-mix(in srgb, var(--admin-accent) 42%, var(--admin-border) 58%);
+  background: color-mix(in srgb, var(--admin-accent) 12%, var(--admin-bg) 88%);
+}
+
+.ask-user-option:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ask-user-defer {
+  flex: 0 0 auto;
+}
+
 .ask-user-row {
   display: flex;
   gap: 10px;
@@ -1860,6 +1941,9 @@
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   white-space: nowrap;
   background: var(--admin-bg-panel);
   border: 1px solid var(--admin-border);
@@ -1873,6 +1957,15 @@
     opacity 0.18s ease,
     transform 0.18s ease,
     visibility 0.18s;
+}
+
+.context-usage-tooltip-line {
+  display: block;
+}
+
+.context-usage-tooltip-label {
+  font-weight: 600;
+  color: var(--admin-ink);
 }
 
 .context-usage:hover .context-usage-tooltip {
