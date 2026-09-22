@@ -203,13 +203,13 @@
                 :class="group.role"
               >
                 <img
-                  v-if="group.role === 'assistant' && group.avatarUrl"
+                  v-if="(group.role === 'assistant' || group.role === 'error') && group.avatarUrl"
                   class="chat-message-avatar"
                   :src="group.avatarUrl"
                   alt="bot avatar"
                 />
                 <div
-                  v-else-if="group.role === 'assistant'"
+                  v-else-if="group.role === 'assistant' || group.role === 'error'"
                   class="chat-message-avatar chat-message-avatar--fallback"
                 >
                   {{ agentInitial(group.agentName || "Bot") }}
@@ -655,7 +655,25 @@
                     </div>
                   </div>
                 </div>
-                <div v-if="group.role !== 'assistant'" class="chat-bubble-col">
+                <div v-if="group.role === 'error'" class="chat-bubble-col chat-error-message-col">
+                  <div
+                    v-for="(message, idx) in group.messages"
+                    :key="message.id + '-' + idx"
+                    class="chat-error-message"
+                    role="alert"
+                  >
+                    <button
+                      class="chat-error-message-close"
+                      aria-label="关闭错误提示"
+                      title="关闭"
+                      @click="dismissChatErrorMessage(message.id)"
+                    >
+                      <CloseIcon />
+                    </button>
+                    <div class="chat-error-message-body">{{ message.content }}</div>
+                  </div>
+                </div>
+                <div v-if="group.role === 'user'" class="chat-bubble-col">
                   <div
                     v-for="(message, idx) in group.messages"
                     :key="message.id + '-' + idx"
@@ -1783,6 +1801,7 @@ const {
   cancelWorkspaceChange,
   workspaceChangePathLabel,
   pruneFailedAssistantPlaceholder,
+  dismissChatErrorMessage,
   applyInferenceFailure,
   reloadSessions,
   openSession,

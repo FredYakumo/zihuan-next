@@ -43,7 +43,7 @@ export interface ChatProps {
 export type ChatEmit = (e: "update:sessionId", sessionId: string) => void;
 
 export function useChat(props: ChatProps, emit: ChatEmit) {
-    type ChatRole = "user" | "assistant" | "tool";
+    type ChatRole = "user" | "assistant" | "tool" | "error";
     type LiveToolCall = {
         call_id: string;
         name: string;
@@ -632,10 +632,11 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         const usedTokens = messages.value
             .filter(
                 (message) =>
-                    message.content.trim().length > 0 ||
-                    message.imageAttachments?.length ||
-                    message.toolCalls.length > 0 ||
-                    !!message.toolCallId,
+                    message.role !== "error" &&
+                    (message.content.trim().length > 0 ||
+                        message.imageAttachments?.length ||
+                        message.toolCalls.length > 0 ||
+                        !!message.toolCallId),
             )
             .reduce((total, message) => total + estimateChatMessageTokens(message), 0);
 
@@ -719,6 +720,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         const filtered = messages.value.filter((m) => m.role !== "tool");
         const groups: MessageGroup[] = [];
         let currentGroup: MessageGroup | null = null;
+        // An error bubble belongs to the agent turn it interrupted, so it renders with the
+        // same avatar gutter as an assistant message.
+        const usesAgentAvatar = (role: ChatRole) => role === "assistant" || role === "error";
 
         for (const message of filtered) {
             if (currentGroup && currentGroup.role === message.role) {
@@ -728,10 +732,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                     id: `group-${message.id}`,
                     role: message.role,
                     messages: [message],
-                    avatarUrl:
-                        message.role === "assistant"
-                            ? message.agentAvatarUrl || selectedAgentAvatarUrl.value || undefined
-                            : undefined,
+                    avatarUrl: usesAgentAvatar(message.role)
+                        ? message.agentAvatarUrl || selectedAgentAvatarUrl.value || undefined
+                        : undefined,
                     agentName: message.agentName || selectedService.value?.name,
                 };
                 groups.push(currentGroup);
@@ -861,10 +864,11 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         return messages.value
             .filter(
                 (item) =>
-                    item.content.trim().length > 0 ||
-                    item.imageAttachments?.length ||
-                    item.toolCalls.length > 0 ||
-                    !!item.toolCallId,
+                    item.role !== "error" &&
+                    (item.content.trim().length > 0 ||
+                        item.imageAttachments?.length ||
+                        item.toolCalls.length > 0 ||
+                        !!item.toolCallId),
             )
             .map((item) => ({
                 role: item.role,
@@ -1179,6 +1183,12 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     function showChatError(message: string) {
         chatErrorMessage.value = message;
         chatErrorDialogMessage.value = message;
+        // An error raised with no transcript to attach to (a pre-send validation in a fresh
+        // conversation) only gets the banner and dialog; anything raised during an ongoing
+        // conversation is also recorded inline so it stays visible after the dialog is closed.
+        if (messages.value.length > 0) {
+            appendChatErrorMessage(message);
+        }
     }
 
     function createStreamingAssistantMessage(): ChatMessage {
@@ -1427,6 +1437,28 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         const hasToolActivity =
             (message.liveToolCalls?.length ?? 0) > 0 || message.toolCalls.length > 0;
         if (!hasVisibleContent && !hasToolActivity) {
+            messages.value.splice(index, 1);
+        }
+    }
+
+    function appendChatErrorMessage(message: string): string {
+        const errorMessage: ChatMessage = {
+            id: `local-error-${createUuid()}`,
+            role: "error",
+            content: message,
+            timestamp: new Date().toISOString(),
+            toolCalls: [],
+            toolCallId: null,
+            linkedToolCall: null,
+        };
+        messages.value.push(errorMessage);
+        scrollToBottom();
+        return errorMessage.id;
+    }
+
+    function dismissChatErrorMessage(messageId: string) {
+        const index = messages.value.findIndex((item) => item.id === messageId);
+        if (index >= 0) {
             messages.value.splice(index, 1);
         }
     }
@@ -2875,6 +2907,8 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         cancelWorkspaceChange,
         workspaceChangePathLabel,
         pruneFailedAssistantPlaceholder,
+        appendChatErrorMessage,
+        dismissChatErrorMessage,
         applyInferenceFailure,
         reloadSessions,
         refreshSessionStatus,
