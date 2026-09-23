@@ -551,10 +551,23 @@ pub fn load_script_catalog(
     for diagnostic in catalog.diagnostics {
         log::warn!("dynamic script {:?}: {}", diagnostic.language, diagnostic.message);
     }
-    let definitions: Vec<DynamicScriptNodeDefinition> =
-        serde_json::from_value(Value::Array(catalog.nodes)).map_err(|error| {
-            Error::ValidationError(format!("动态脚本运行时目录不是合法 JSON: {error}"))
-        })?;
+    // Parse one node at a time so a single bad definition reports its own script and
+    // fields instead of failing the whole catalog with an anonymous parse error.
+    let definitions = catalog
+        .nodes
+        .into_iter()
+        .map(|node| {
+            let origin = script_node_origin(&node);
+            serde_json::from_value::<DynamicScriptNodeDefinition>(node.clone()).map_err(|error| {
+                let mut detail = error.to_string();
+                let invalid = invalid_data_type_locations(&node);
+                if !invalid.is_empty() {
+                    detail.push_str(&format!("；无效的数据类型: {}", invalid.join("，")));
+                }
+                Error::ValidationError(format!("动态脚本节点定义无效（{origin}）: {detail}"))
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
     let mut ids = std::collections::HashSet::new();
     for definition in &definitions {
         if definition.type_id.trim().is_empty() || !ids.insert(definition.type_id.clone()) {
@@ -566,6 +579,112 @@ pub fn load_script_catalog(
     }
     Ok(definitions)
 }
+
+/// Describes where one catalog node came from, for error messages.
+fn script_node_origin(node: &Value) -> String {
+    let type_id = node.get("type_id").and_then(Value::as_str).unwrap_or("<未知 type_id>");
+    let script_path = node.get("script_path").and_then(Value::as_str).unwrap_or("<未知脚本路径>");
+    let language = node
+        .get("language")
+        .and_then(|value| serde_json::from_value::<ScriptLanguage>(value.clone()).ok())
+        .map(script_language_label)
+        .unwrap_or("unknown");
+    format!("脚本: {script_path}, type_id: {type_id}, language: {language}")
+}
+
+/// Human-readable label for a script language in error messages.
+fn script_language_label(language: ScriptLanguage) -> &'static str {
+    match language {
+        ScriptLanguage::JavaScript => "JavaScript",
+        ScriptLanguage::Python => "Python",
+    }
+}
+
+/// Collects the locations of invalid `data_type` values in one node definition.
+///
+/// Only `data_type` keys are inspected, so free-form values such as port descriptions
+/// cannot be reported as invalid types.
+fn invalid_data_type_locations(node: &Value) -> Vec<String> {
+    let mut locations = Vec::new();
+    for field in ["input_ports", "output_ports", "config_fields"] {
+        if let Some(value) = node.get(field) {
+            collect_invalid_data_types(value, field, &mut locations);
+        }
+    }
+    locations
+}
+
+fn collect_invalid_data_types(value: &Value, path: &str, locations: &mut Vec<String>) {
+    match value {
+        Value::Object(map) => {
+            for (key, inner) in map {
+                if key == "data_type" {
+                    if let Some(repr) = invalid_data_type_repr(inner) {
+                        locations.push(format!("{path}.{key} = {repr}"));
+                    }
+                } else {
+                    collect_invalid_data_types(inner, &format!("{path}.{key}"), locations);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                collect_invalid_data_types(item, &format!("{path}[{index}]"), locations);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Returns a printable form of `value` when it is not an accepted data type, else `None`.
+fn invalid_data_type_repr(value: &Value) -> Option<String> {
+    match value {
+        Value::String(name) => {
+            (!VALID_DATA_TYPE_NAMES.contains(&name.as_str())).then(|| format!("\"{name}\""))
+        }
+        Value::Object(map) if map.len() == 1 => {
+            let (key, inner) = map.iter().next()?;
+            match key.as_str() {
+                "Vec" => invalid_data_type_repr(inner).map(|inner| format!("{{ Vec: {inner} }}")),
+                "Custom" => None,
+                other => Some(format!("{{ {other}: ... }}")),
+            }
+        }
+        _ => Some(value.to_string()),
+    }
+}
+
+/// Scalar data type names accepted by [`crate::graph::DataType`], mirroring its deserializer.
+const VALID_DATA_TYPE_NAMES: &[&str] = &[
+    "Any",
+    "String",
+    "Integer",
+    "Float",
+    "Boolean",
+    "Json",
+    "Binary",
+    "Vector",
+    "MessageEvent",
+    "Sender",
+    "LLMMessage",
+    "Message",
+    "QQMessage",
+    "Image",
+    "MessagePart",
+    "FunctionTools",
+    "BotAdapterRef",
+    "S3Ref",
+    "RedisRef",
+    "RdbRef",
+    "RetrievalStoreRef",
+    "WebSearchEngineRef",
+    "SessionStateRef",
+    "LLMMessageSessionCacheRef",
+    "Password",
+    "LLModel",
+    "EmbeddingModel",
+    "LoopControlRef",
+];
 
 pub fn register_script_catalog(
     registry: &NodeRegistry,
