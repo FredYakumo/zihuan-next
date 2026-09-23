@@ -8,7 +8,8 @@ use std::sync::Arc;
 pub enum AgentConnectionSlot {
     Rdb,
     S3,
-    ImageWeaviate,
+    /// The agent's unified retrieval store, which serves every retrieval schema.
+    RetrievalStore,
     WebSearch,
 }
 
@@ -29,6 +30,13 @@ pub trait AgentResourceProvider: Send + Sync {
 
     /// Returns the connection ID for the requested resource kind.
     fn connection_id(&self, kind: AgentConnectionSlot) -> Option<String>;
+
+    /// Whether the agent's retrieval store is the local on-disk backend rather
+    /// than an external service. Defaults to `false` for providers that only
+    /// support external stores.
+    fn retrieval_store_is_local(&self) -> bool {
+        false
+    }
 
     /// Exposes the concrete provider for business-specific downcasting.
     fn as_any(&self) -> &dyn Any;

@@ -7,11 +7,12 @@ use crate::graph::data_value::RedisConfig;
 use crate::graph::object_storage::S3Ref;
 use crate::graph::DataValue;
 use crate::rag::{BraveSearch, TavilySearch, WebSearchEngine};
+use crate::retrieval::{RetrievalSchema, RetrievalStoreRef};
 use crate::weaviate::WeaviateRef;
 
 use crate::storage::{
     redis::build_redis_connection_url, ConnectionConfig, ConnectionKind, ElasticsearchRef,
-    RuntimeStorageConnectionManager, WeaviateCollectionSchema,
+    RuntimeStorageConnectionManager,
 };
 
 pub fn find_connection<'a>(
@@ -78,39 +79,34 @@ pub fn build_redis_ref(
     ))))
 }
 
+/// Builds a Weaviate reference bound to one retrieval schema's class, reusing the
+/// cached runtime instance for that (connection, schema) pair.
 pub fn build_weaviate_ref(
     connection_id: Option<&str>,
     connections: &[ConnectionConfig],
-    expected_schema: Option<WeaviateCollectionSchema>,
+    schema: RetrievalSchema,
 ) -> Result<Option<Arc<WeaviateRef>>> {
     let Some(connection_id) = connection_id else {
         return Ok(None);
     };
     let connection = find_connection(connections, connection_id)?;
-    let ConnectionKind::Weaviate(weaviate) = &connection.kind else {
+    let ConnectionKind::Weaviate(_) = &connection.kind else {
         return Err(Error::ValidationError(format!(
             "connection '{}' is not a weaviate connection",
             connection.name
         )));
     };
-
-    if let Some(expected_schema) = expected_schema {
-        if weaviate.collection_schema != expected_schema {
-            return Err(Error::ValidationError(format!(
-                "weaviate connection '{}' schema mismatch: expected {:?}, got {:?}",
-                connection.name, expected_schema, weaviate.collection_schema
-            )));
-        }
-    }
     Ok(Some(crate::runtime::block_async(
-        RuntimeStorageConnectionManager::shared().get_or_create_weaviate_ref(connection_id),
+        RuntimeStorageConnectionManager::shared()
+            .get_or_create_weaviate_ref_for_schema(connection_id, schema),
     )?))
 }
 
+/// Builds an Elasticsearch reference bound to one retrieval schema's index.
 pub fn build_elasticsearch_ref(
     connection_id: Option<&str>,
     connections: &[ConnectionConfig],
-    expected_schema: Option<WeaviateCollectionSchema>,
+    schema: RetrievalSchema,
 ) -> Result<Option<Arc<ElasticsearchRef>>> {
     let Some(connection_id) = connection_id else {
         return Ok(None);
@@ -122,15 +118,19 @@ pub fn build_elasticsearch_ref(
             connection.name
         )));
     };
-    if let Some(expected_schema) = expected_schema {
-        if elasticsearch.collection_schema != expected_schema {
-            return Err(Error::ValidationError(format!(
-                "elasticsearch connection '{}' schema mismatch",
-                connection.name
-            )));
-        }
-    }
-    Ok(Some(Arc::new(ElasticsearchRef::new(elasticsearch.clone())?)))
+    Ok(Some(Arc::new(ElasticsearchRef::new(elasticsearch.clone(), schema)?)))
+}
+
+/// Resolves one retrieval-store connection into a schema-agnostic store reference.
+///
+/// The connection kind decides the backend; consumers pick the schema at the
+/// operation call, so one configured retrieval store backs image semantic search
+/// and agent memory without reconfiguration.
+pub fn build_retrieval_store_ref(
+    connection_id: &str,
+    connections: &[ConnectionConfig],
+) -> Result<RetrievalStoreRef> {
+    RetrievalStoreRef::resolve(connection_id, connections)
 }
 
 pub async fn build_s3_ref(
@@ -201,9 +201,9 @@ pub async fn resolve_connection_data_value(
         }
         crate::graph::DataType::RedisRef => build_redis_ref(Some(connection_id), connections)
             .map(|value| value.map(DataValue::RedisRef)),
-        crate::graph::DataType::WeaviateRef => {
-            build_weaviate_ref(Some(connection_id), connections, None)
-                .map(|value| value.map(DataValue::WeaviateRef))
+        crate::graph::DataType::RetrievalStoreRef => {
+            build_retrieval_store_ref(connection_id, connections)
+                .map(|value| Some(DataValue::RetrievalStoreRef(value)))
         }
         crate::graph::DataType::S3Ref => build_s3_ref(Some(connection_id), connections)
             .await

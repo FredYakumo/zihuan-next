@@ -6,15 +6,8 @@ use zihuan_core::agent::{
     EmbeddingServiceConfig, LLM_KIND_INTENT_CLASSIFICATION, LLM_KIND_MAIN,
     LLM_KIND_MATH_PROGRAMMING, LLM_KIND_NATURAL_LANGUAGE_REPLY,
 };
-use zihuan_core::role::service_config::MemoryBackendKind;
+use zihuan_core::retrieval::RetrievalStoreConfig;
 use zihuan_core::utils::time_unit::TimeUnit;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum RetrievalStoreConfig {
-    LocalMarkdown,
-    Connection { connection_id: String },
-}
 
 pub fn llm_ref_id_for_kind<'a>(
     config: &'a QqChatRoleServiceConfig,
@@ -153,16 +146,6 @@ pub struct QqChatRoleServiceConfig {
     #[serde(default)]
     #[serde(skip_serializing)]
     pub task_db_connection_id: Option<String>,
-    #[serde(default)]
-    pub weaviate_image_connection_id: Option<String>,
-    #[serde(default)]
-    pub elasticsearch_image_connection_id: Option<String>,
-    #[serde(default)]
-    pub weaviate_memory_connection_id: Option<String>,
-    #[serde(default)]
-    pub elasticsearch_memory_connection_id: Option<String>,
-    #[serde(default)]
-    pub memory_backend: Option<MemoryBackendKind>,
     #[serde(default = "default_max_message_length")]
     pub max_message_length: usize,
     #[serde(default)]
@@ -217,6 +200,16 @@ impl QqChatRoleServiceConfig {
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
             })
+    }
+
+    /// The configured retrieval-store connection, when the agent uses an external store.
+    pub fn retrieval_store_connection_id(&self) -> Option<&str> {
+        self.retrieval_store.as_ref().and_then(RetrievalStoreConfig::connection_id)
+    }
+
+    /// Whether the agent's retrieval store is the local on-disk backend.
+    pub fn retrieval_store_is_local(&self) -> bool {
+        self.retrieval_store.as_ref().is_some_and(RetrievalStoreConfig::is_local)
     }
 
     pub fn resolved_emotion_dimensions(&self) -> Vec<QqChatEmotionDimensionConfig> {

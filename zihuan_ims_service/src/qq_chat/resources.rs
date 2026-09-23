@@ -42,11 +42,17 @@ impl AgentResourceProvider for QqChatRoleServiceResources {
         match kind {
             AgentConnectionSlot::Rdb => self.config.resolved_rdb_id().map(ToOwned::to_owned),
             AgentConnectionSlot::S3 => self.config.rustfs_connection_id.clone(),
-            AgentConnectionSlot::ImageWeaviate => self.config.weaviate_image_connection_id.clone(),
+            AgentConnectionSlot::RetrievalStore => {
+                self.config.retrieval_store_connection_id().map(ToOwned::to_owned)
+            }
             AgentConnectionSlot::WebSearch => {
                 Some(self.config.web_search_engine_connection_id.clone())
             }
         }
+    }
+
+    fn retrieval_store_is_local(&self) -> bool {
+        self.config.retrieval_store_is_local()
     }
 
     fn as_any(&self) -> &dyn Any {

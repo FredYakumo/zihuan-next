@@ -173,16 +173,16 @@
       "disabled": false
     },
     {
-      "id": "agent_image_db",
-      "name": "agent image db ref",
+      "id": "agent_retrieval_store",
+      "name": "agent retrieval store ref",
       "description": null,
-      "node_type": "agent_image_db_ref",
+      "node_type": "agent_retrieval_store_ref",
       "input_ports": [],
       "output_ports": [
         {
-          "name": "weaviate_ref",
-          "data_type": "WeaviateRef",
-          "description": "Agent 图片向量库引用",
+          "name": "retrieval_store_ref",
+          "data_type": "RetrievalStoreRef",
+          "description": "Agent 检索数据库引用",
           "required": true,
           "hidden": false
         }
@@ -330,13 +330,13 @@
     {
       "id": "search_images",
       "name": "Search Images",
-      "description": "使用本地 Weaviate 图片库做语义检索，输出标准化图片结果 JSON",
-      "node_type": "weaviate_image_search",
+      "description": "使用检索数据库的图片语义集合做语义检索，输出标准化图片结果 JSON",
+      "node_type": "retrieval_image_search",
       "input_ports": [
         {
-          "name": "weaviate_ref",
-          "data_type": "WeaviateRef",
-          "description": "Weaviate 图片 collection 引用",
+          "name": "retrieval_store_ref",
+          "data_type": "RetrievalStoreRef",
+          "description": "检索数据库引用",
           "required": true,
           "hidden": false
         },
@@ -549,10 +549,10 @@
       "to_port": "messages"
     },
     {
-      "from_node_id": "agent_image_db",
-      "from_port": "weaviate_ref",
+      "from_node_id": "agent_retrieval_store",
+      "from_port": "retrieval_store_ref",
       "to_node_id": "search_images",
-      "to_port": "weaviate_ref"
+      "to_port": "retrieval_store_ref"
     },
     {
       "from_node_id": "agent_embedding_model",

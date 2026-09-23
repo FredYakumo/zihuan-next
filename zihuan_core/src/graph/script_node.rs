@@ -177,7 +177,7 @@ fn is_opaque_script_resource(value: &DataValue) -> bool {
             | DataValue::S3Ref(_)
             | DataValue::RedisRef(_)
             | DataValue::RdbRef(_)
-            | DataValue::WeaviateRef(_)
+            | DataValue::RetrievalStoreRef(_)
             | DataValue::WebSearchEngineRef(_)
             | DataValue::SessionStateRef(_)
             | DataValue::LLMMessageSessionCacheRef(_)
@@ -282,43 +282,37 @@ fn embedding_model_resource(
     }
 }
 
-fn weaviate_resource(params: &Value, field: &str) -> Result<Arc<crate::weaviate::WeaviateRef>> {
+/// Reads one retrieval-store resource handle from the action parameters.
+fn retrieval_store_resource(
+    params: &Value,
+    field: &str,
+) -> Result<crate::retrieval::RetrievalStoreRef> {
     let value = params
         .get(field)
         .ok_or_else(|| Error::ValidationError(format!("{field} is required")))?;
-    match resource_from_json(value, &super::DataType::WeaviateRef) {
-        Some(DataValue::WeaviateRef(reference)) => Ok(reference),
-        _ => Err(Error::ValidationError(format!("{field} must be a WeaviateRef handle"))),
+    match resource_from_json(value, &super::DataType::RetrievalStoreRef) {
+        Some(DataValue::RetrievalStoreRef(store)) => Ok(store),
+        _ => Err(Error::ValidationError(format!("{field} must be a RetrievalStoreRef handle"))),
     }
 }
 
 /// The image count an agent-scoped search returns when the caller omits `limit`.
 const DEFAULT_AGENT_IMAGE_SEARCH_LIMIT: i64 = 5;
 
-/// Resolves the image library the active agent is configured with.
-fn agent_image_weaviate_ref() -> Result<Arc<crate::weaviate::WeaviateRef>> {
+/// Resolves the retrieval store the active agent is configured with.
+fn agent_retrieval_store() -> Result<crate::retrieval::RetrievalStoreRef> {
     let resources = crate::agent::runtime_context::current_agent_resources()?;
     let connection_id = resources
-        .connection_id(crate::agent::resource_provider::AgentConnectionSlot::ImageWeaviate)
+        .connection_id(crate::agent::resource_provider::AgentConnectionSlot::RetrievalStore)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
-            Error::ValidationError("weaviate_image_connection_id is required".to_string())
+            Error::ValidationError("retrieval_store connection is required".to_string())
         })?;
-    let reference = crate::storage::resource_resolver::build_weaviate_ref(
-        Some(&connection_id),
+    crate::storage::resource_resolver::build_retrieval_store_ref(
+        &connection_id,
         &crate::storage::load_connections()?,
-        Some(crate::storage::WeaviateCollectionSchema::ImageSemantic),
-    )?
-    .ok_or_else(|| {
-        Error::ValidationError("weaviate_image_connection_id is required".to_string())
-    })?;
-    crate::storage::ensure_collection_schema(
-        &reference,
-        crate::storage::WeaviateCollectionSchema::ImageSemantic,
-        false,
-    )?;
-    Ok(reference)
+    )
 }
 
 /// Resolves the embedding model the active agent is configured with.
@@ -374,28 +368,6 @@ pub(crate) fn image_search_options(
         max_distance,
         target_vector: optional_string(params, "target_vector"),
     })
-}
-
-/// Runs one semantic image search and shapes it as the shared `{images, has_results}` payload.
-///
-/// Both the explicit `storage.search_images` call and the agent-scoped `agent.image_search`
-/// one land here, so the two entry points cannot drift apart.
-fn run_image_search(
-    weaviate_ref: &Arc<crate::weaviate::WeaviateRef>,
-    embedding_model: &dyn crate::model_inference::llm::embedding_base::EmbeddingBase,
-    params: &Value,
-    default_limit: Option<i64>,
-) -> Result<Value> {
-    let options = image_search_options(params, default_limit)?;
-    let images = crate::storage::search_images(
-        weaviate_ref,
-        embedding_model,
-        &options.query,
-        options.limit,
-        options.max_distance,
-        options.target_vector.as_deref(),
-    )?;
-    Ok(json!({"images": images, "has_results": !images.is_empty()}))
 }
 
 fn qq_messages_param(
@@ -1078,17 +1050,20 @@ pub fn dispatch_script_host_call(
             )?;
             Ok(store_script_resource(DataValue::S3Ref(reference)))
         }
-        "agent.image_weaviate" => {
-            Ok(store_script_resource(DataValue::WeaviateRef(agent_image_weaviate_ref()?)))
+        "agent.retrieval_store" => {
+            Ok(store_script_resource(DataValue::RetrievalStoreRef(agent_retrieval_store()?)))
         }
         "agent.image_search" => {
-            let weaviate_ref = agent_image_weaviate_ref()?;
+            let store = agent_retrieval_store()?;
             let embedding_model = agent_embedding_model()?;
-            run_image_search(
-                &weaviate_ref,
+            let options = image_search_options(params, Some(DEFAULT_AGENT_IMAGE_SEARCH_LIMIT))?;
+            crate::storage::search_images_in_store(
+                &store,
                 embedding_model.as_ref(),
-                params,
-                Some(DEFAULT_AGENT_IMAGE_SEARCH_LIMIT),
+                &options.query,
+                options.limit,
+                options.max_distance,
+                options.target_vector.as_deref(),
             )
         }
         "agent.web_search" => {
@@ -1598,13 +1573,13 @@ pub fn dispatch_script_host_call(
             )?;
             Ok(store_script_resource(DataValue::S3Ref(reference)))
         }
-        "storage.create_weaviate" => {
+        "storage.create_retrieval_store" => {
             let config_id = required_string(params, "config_id")?;
-            let reference = crate::runtime::block_async(
-                crate::storage::RuntimeStorageConnectionManager::shared()
-                    .get_or_create_weaviate_ref(&config_id),
+            let store = crate::storage::resource_resolver::build_retrieval_store_ref(
+                &config_id,
+                &crate::storage::load_connections()?,
             )?;
-            Ok(store_script_resource(DataValue::WeaviateRef(reference)))
+            Ok(store_script_resource(DataValue::RetrievalStoreRef(store)))
         }
         "storage.user_history" => {
             let reference = mysql_resource(params, "rdb_ref")?;
@@ -1701,18 +1676,18 @@ pub fn dispatch_script_host_call(
             Ok(history_messages_json(rows, limit as usize))
         }
         "storage.persist_qq_message_vectors" => {
-            let weaviate_ref = weaviate_resource(params, "weaviate_ref")?;
+            let store = retrieval_store_resource(params, "retrieval_store_ref")?;
             let embedding_model = embedding_model_resource(params)?;
             let messages = qq_messages_param(params, "qq_message_list")?;
-            let success = crate::storage::persist_qq_message_list(
-                &weaviate_ref,
-                embedding_model.as_ref(),
+            let success = crate::storage::persist_qq_message_list_to_store(
+                &store,
                 &messages,
                 &required_string(params, "message_id")?,
                 &required_string(params, "sender_id")?,
                 &required_string(params, "sender_name")?,
                 optional_string(params, "group_id").as_deref(),
                 optional_string(params, "group_name").as_deref(),
+                embedding_model.as_ref(),
             )?;
             Ok(Value::Bool(success))
         }
@@ -1731,7 +1706,7 @@ pub fn dispatch_script_host_call(
             Ok(Value::Bool(success))
         }
         "storage.persist_image_vector" => {
-            let weaviate_ref = weaviate_resource(params, "weaviate_ref")?;
+            let store = retrieval_store_resource(params, "retrieval_store_ref")?;
             let embedding_model = match params.get("embedding_model") {
                 Some(value) if !value.is_null() => Some(embedding_model_resource(params)?),
                 _ => None,
@@ -1750,8 +1725,8 @@ pub fn dispatch_script_host_call(
                         .collect::<Result<Vec<_>>>()
                 })
                 .transpose()?;
-            let success = crate::storage::persist_image_record(
-                &weaviate_ref,
+            let success = crate::storage::persist_image_record_to_store(
+                &store,
                 crate::storage::ImagePersistenceRequest {
                     object_storage_path: &required_string(params, "object_storage_path")?,
                     description: &required_string(params, "description")?,
@@ -1767,9 +1742,17 @@ pub fn dispatch_script_host_call(
             Ok(Value::Bool(success))
         }
         "storage.search_images" => {
-            let weaviate_ref = weaviate_resource(params, "weaviate_ref")?;
+            let store = retrieval_store_resource(params, "retrieval_store_ref")?;
             let embedding_model = embedding_model_resource(params)?;
-            run_image_search(&weaviate_ref, embedding_model.as_ref(), params, None)
+            let options = image_search_options(params, None)?;
+            crate::storage::search_images_in_store(
+                &store,
+                embedding_model.as_ref(),
+                &options.query,
+                options.limit,
+                options.max_distance,
+                options.target_vector.as_deref(),
+            )
         }
         "search.create_provider" => {
             let config_id = required_string(params, "config_id")?;

@@ -23,7 +23,6 @@ use zihuan_core::ims_bot_adapter::{
 };
 use zihuan_core::storage::{
     first_available_agent_avatar_store, AgentAvatarStore, ConnectionConfig, ConnectionKind,
-    WeaviateCollectionSchema,
 };
 use zihuan_core::task_context::{
     AgentTaskHandle, AgentTaskInfo, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
@@ -1028,18 +1027,7 @@ fn validate_agent_connection_schemas(
             return Err("Dream requires a relational database connection".to_string());
         }
     }
-    validate_weaviate_connection_schema(
-        connections,
-        config.weaviate_image_connection_id.as_deref(),
-        WeaviateCollectionSchema::ImageSemantic,
-        "weaviate_image_connection_id",
-    )?;
-    validate_weaviate_connection_schema(
-        connections,
-        config.weaviate_memory_connection_id.as_deref(),
-        WeaviateCollectionSchema::AgentMemory,
-        "weaviate_memory_connection_id",
-    )?;
+    validate_retrieval_store_connection(connections, config.retrieval_store_connection_id())?;
     Ok(())
 }
 
@@ -1242,11 +1230,9 @@ fn validate_rdb_connection(
     Ok(())
 }
 
-fn validate_weaviate_connection_schema(
+fn validate_retrieval_store_connection(
     connections: &[ConnectionConfig],
     connection_id: Option<&str>,
-    expected_schema: WeaviateCollectionSchema,
-    field_name: &str,
 ) -> Result<(), String> {
     let Some(connection_id) = connection_id.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(());
@@ -1254,14 +1240,11 @@ fn validate_weaviate_connection_schema(
     let connection = connections
         .iter()
         .find(|item| item.id == connection_id || item.config_id == connection_id)
-        .ok_or_else(|| format!("{field_name} '{}' not found", connection_id))?;
-    let ConnectionKind::Weaviate(weaviate) = &connection.kind else {
-        return Err(format!("{field_name} '{}' is not a weaviate connection", connection.name));
-    };
-    if weaviate.collection_schema != expected_schema {
+        .ok_or_else(|| format!("retrieval_store '{}' not found", connection_id))?;
+    if !matches!(connection.kind, ConnectionKind::Weaviate(_) | ConnectionKind::Elasticsearch(_)) {
         return Err(format!(
-            "{} '{}' schema mismatch: expected {:?}, got {:?}",
-            field_name, connection.name, expected_schema, weaviate.collection_schema
+            "retrieval_store '{}' is not a Weaviate or Elasticsearch connection",
+            connection.name
         ));
     }
     Ok(())

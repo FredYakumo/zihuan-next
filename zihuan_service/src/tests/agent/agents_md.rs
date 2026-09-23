@@ -44,9 +44,7 @@ fn provider(enabled: bool) -> Arc<dyn InferenceToolProvider> {
         agents_md_enabled: enabled,
         memory_enabled: false,
         embedding_model_ref_id: None,
-        weaviate_memory_connection_id: None,
-        elasticsearch_memory_connection_id: None,
-        memory_backend: None,
+        retrieval_store: None,
         web_search_engine_connection_id: None,
         default_tools_enabled: HashMap::from([("image_understand".to_string(), false)]),
     };

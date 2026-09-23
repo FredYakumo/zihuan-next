@@ -9,6 +9,7 @@ use crate::data_refs::{MySqlConfig, SqliteConfig};
 use crate::error::{Error, Result};
 use crate::graph::data_value::RedisConfig;
 use crate::graph::object_storage::S3Ref;
+use crate::retrieval::RetrievalSchema;
 use crate::weaviate::WeaviateRef;
 use async_trait::async_trait;
 use chrono::Utc;
@@ -68,6 +69,9 @@ impl StorageRuntimePayload {
 struct StorageRuntimeInstance {
     summary: RuntimeInstanceInfo,
     payload: StorageRuntimePayload,
+    /// Distinguishes multiple runtime instances built from one config that differ by
+    /// the schema they serve; empty for configs that resolve to a single instance.
+    variant: String,
     _runtime: Option<Arc<tokio::runtime::Runtime>>,
 }
 
@@ -117,8 +121,13 @@ impl RuntimeStorageConnectionManager {
         }
     }
 
-    pub async fn get_or_create_weaviate_ref(&self, config_id: &str) -> Result<Arc<WeaviateRef>> {
-        match self.get_or_create(config_id).await? {
+    /// Builds the Weaviate runtime instance serving one retrieval schema.
+    pub async fn get_or_create_weaviate_ref_for_schema(
+        &self,
+        config_id: &str,
+        schema: RetrievalSchema,
+    ) -> Result<Arc<WeaviateRef>> {
+        match self.get_or_create_variant(config_id, schema.as_str()).await? {
             StorageRuntimeHandle::Weaviate(value) => Ok(value),
             _ => Err(Error::ValidationError(format!(
                 "config '{}' is not a weaviate runtime connection",
@@ -130,6 +139,7 @@ impl RuntimeStorageConnectionManager {
     async fn build_runtime_instance(
         &self,
         config_id: &str,
+        variant: &str,
     ) -> Result<(StorageRuntimeInstance, StorageRuntimeHandle)> {
         let connections = load_connections()?;
         let connection = find_connection(&connections, config_id)?;
@@ -229,14 +239,14 @@ impl RuntimeStorageConnectionManager {
                 (StorageRuntimePayload::S3(s3_ref), "rustfs".to_string(), None)
             }
             ConnectionKind::Weaviate(weaviate) => {
+                let schema = RetrievalSchema::parse(variant)?;
                 let weaviate_ref = build_weaviate_direct_ref(
                     &weaviate.base_url,
-                    &weaviate.class_name,
+                    schema,
                     weaviate.username.clone(),
                     weaviate.password.clone(),
                     weaviate.api_key.clone(),
                     weaviate.auth_method,
-                    weaviate.collection_schema,
                 )?;
                 (StorageRuntimePayload::Weaviate(weaviate_ref), "weaviate".to_string(), None)
             }
@@ -311,22 +321,51 @@ impl RuntimeStorageConnectionManager {
             status: RuntimeConnectionStatus::Running,
         };
         info!(
-            "[storage_instance_manager] instantiated runtime instance_id={} config_id={} kind={} name='{}'",
-            summary.instance_id, summary.config_id, summary.kind, summary.name
+            "[storage_instance_manager] instantiated runtime instance_id={} config_id={} kind={} name='{}' variant='{}'",
+            summary.instance_id, summary.config_id, summary.kind, summary.name, variant
         );
         let handle = payload.clone_handle();
-        Ok((StorageRuntimeInstance { summary, payload, _runtime: runtime }, handle))
+        Ok((
+            StorageRuntimeInstance {
+                summary,
+                payload,
+                variant: variant.to_string(),
+                _runtime: runtime,
+            },
+            handle,
+        ))
     }
 
     async fn mark_used_and_clone(
         &self,
         config_id: &str,
+        variant: &str,
         instances: &mut HashMap<String, Vec<StorageRuntimeInstance>>,
     ) -> Option<StorageRuntimeHandle> {
         let bucket = instances.get_mut(config_id)?;
-        let first = bucket.first_mut()?;
-        first.summary.last_used_at = Utc::now();
-        Some(first.payload.clone_handle())
+        let instance = bucket.iter_mut().find(|instance| instance.variant == variant)?;
+        instance.summary.last_used_at = Utc::now();
+        Some(instance.payload.clone_handle())
+    }
+
+    async fn get_or_create_variant(
+        &self,
+        config_id: &str,
+        variant: &str,
+    ) -> Result<StorageRuntimeHandle> {
+        self.cleanup_stale_instances().await?;
+        {
+            let mut instances = self.instances.write().await;
+            if let Some(handle) = self.mark_used_and_clone(config_id, variant, &mut instances).await
+            {
+                return Ok(handle);
+            }
+        }
+
+        let (instance, handle) = self.build_runtime_instance(config_id, variant).await?;
+        let mut instances = self.instances.write().await;
+        instances.entry(config_id.to_string()).or_default().push(instance);
+        Ok(handle)
     }
 }
 
@@ -358,18 +397,7 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
     type Handle = StorageRuntimeHandle;
 
     async fn get_or_create(&self, config_id: &str) -> Result<Self::Handle> {
-        self.cleanup_stale_instances().await?;
-        {
-            let mut instances = self.instances.write().await;
-            if let Some(handle) = self.mark_used_and_clone(config_id, &mut instances).await {
-                return Ok(handle);
-            }
-        }
-
-        let (instance, handle) = self.build_runtime_instance(config_id).await?;
-        let mut instances = self.instances.write().await;
-        instances.entry(config_id.to_string()).or_default().push(instance);
-        Ok(handle)
+        self.get_or_create_variant(config_id, "").await
     }
 
     async fn list_instances(&self) -> Result<Vec<RuntimeInstanceInfo>> {
@@ -512,14 +540,17 @@ mod tests {
                             status: RuntimeConnectionStatus::Running,
                         },
                         payload: StorageRuntimePayload::MySql(Arc::clone(&mysql_ref)),
+                        variant: String::new(),
                         _runtime: None,
                     }],
                 );
             }
 
             let mut guard = manager.instances.write().await;
-            let handle =
-                manager.mark_used_and_clone("cfg-1", &mut guard).await.expect("cached handle");
+            let handle = manager
+                .mark_used_and_clone("cfg-1", "", &mut guard)
+                .await
+                .expect("cached handle");
             drop(guard);
 
             match handle {

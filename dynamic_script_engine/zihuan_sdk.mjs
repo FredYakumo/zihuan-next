@@ -49,7 +49,7 @@ export class ResourceHandle {
 export class RedisRef extends ResourceHandle {}
 export class RdbRef extends ResourceHandle {}
 export class S3Ref extends ResourceHandle {}
-export class WeaviateRef extends ResourceHandle {}
+export class RetrievalStoreRef extends ResourceHandle {}
 export class WebSearchEngineRef extends ResourceHandle {}
 export class SessionStateRef extends ResourceHandle {}
 export class LLMMessageSessionCacheRef extends ResourceHandle {}
@@ -58,7 +58,8 @@ export class EmbeddingModel extends ResourceHandle {}
 export class BotAdapterRef extends ResourceHandle {}
 
 const resourceTypes = new Map([
-  ["RedisRef", RedisRef], ["RdbRef", RdbRef], ["S3Ref", S3Ref], ["WeaviateRef", WeaviateRef],
+  ["RedisRef", RedisRef], ["RdbRef", RdbRef], ["S3Ref", S3Ref],
+  ["RetrievalStoreRef", RetrievalStoreRef],
   ["WebSearchEngineRef", WebSearchEngineRef], ["SessionStateRef", SessionStateRef],
   ["LLMMessageSessionCacheRef", LLMMessageSessionCacheRef], ["LLModel", LLModel],
   ["EmbeddingModel", EmbeddingModel], ["BotAdapterRef", BotAdapterRef],
@@ -168,14 +169,14 @@ export class ZihuanSdk {
       mysql: (configId) => this._request("storage.create_mysql", { config_id: configId }),
       sqlite: (configId) => this._request("storage.create_sqlite", { config_id: configId }),
       s3: (configId) => this._request("storage.create_s3", { config_id: configId }),
-      weaviate: (configId) => this._request("storage.create_weaviate", { config_id: configId }),
+      retrievalStore: (configId) => this._request("storage.create_retrieval_store", { config_id: configId }),
       userHistory: (rdbRef, senderId, groupId, limit) => this._request("storage.user_history", { rdb_ref: rdbRef, sender_id: senderId, group_id: groupId, limit }),
       groupHistory: (rdbRef, groupId, limit) => this._request("storage.group_history", { rdb_ref: rdbRef, group_id: groupId, limit }),
       searchMessages: (rdbRef, filters) => this._request("storage.search_messages", { rdb_ref: rdbRef, ...filters }),
-      persistQQMessageVectors: (weaviateRef, embeddingModel, messages, metadata) => this._request("storage.persist_qq_message_vectors", { weaviate_ref: weaviateRef, embedding_model: embeddingModel, qq_message_list: messages, ...metadata }),
+      persistQQMessageVectors: (retrievalStoreRef, embeddingModel, messages, metadata) => this._request("storage.persist_qq_message_vectors", { retrieval_store_ref: retrievalStoreRef, embedding_model: embeddingModel, qq_message_list: messages, ...metadata }),
       persistQQMessageRdb: (rdbRef, messages, metadata) => this._request("storage.persist_qq_message_rdb", { rdb_ref: rdbRef, qq_message_list: messages, ...metadata }),
-      persistImageVector: (weaviateRef, request) => this._request("storage.persist_image_vector", { weaviate_ref: weaviateRef, ...request }),
-      searchImages: (weaviateRef, embeddingModel, query, options) => this._request("storage.search_images", { weaviate_ref: weaviateRef, embedding_model: embeddingModel, query, ...options }),
+      persistImageVector: (retrievalStoreRef, request) => this._request("storage.persist_image_vector", { retrieval_store_ref: retrievalStoreRef, ...request }),
+      searchImages: (retrievalStoreRef, embeddingModel, query, options) => this._request("storage.search_images", { retrieval_store_ref: retrievalStoreRef, embedding_model: embeddingModel, query, ...options }),
     });
     this.agent = Object.freeze({
       llm: (kind) => this._request("agent.llm", { llm_kind: kind }),
@@ -183,7 +184,7 @@ export class ZihuanSdk {
       task: () => this._request("agent.task"),
       rdb: () => this._request("agent.rdb"),
       s3: () => this._request("agent.s3"),
-      imageWeaviate: () => this._request("agent.image_weaviate"),
+      retrievalStore: () => this._request("agent.retrieval_store"),
       webSearch: () => this._request("agent.web_search"),
       imageSearch: (query, options = {}) => this._request("agent.image_search", { query, ...options }),
     });
@@ -203,14 +204,13 @@ export class ZihuanSdk {
       redis: (value) => requireResource(value, RedisRef, "RedisRef"),
       rdb: (value) => requireResource(value, RdbRef, "RdbRef"),
       s3: (value) => requireResource(value, S3Ref, "S3Ref"),
-      weaviate: (value) => requireResource(value, WeaviateRef, "WeaviateRef"),
+      retrievalStore: (value) => requireResource(value, RetrievalStoreRef, "RetrievalStoreRef"),
       webSearch: (value) => requireResource(value, WebSearchEngineRef, "WebSearchEngineRef"),
       sessionState: (value) => requireResource(value, SessionStateRef, "SessionStateRef"),
       messageCache: (value) => requireResource(value, LLMMessageSessionCacheRef, "LLMMessageSessionCacheRef"),
       llmModel: (value) => requireResource(value, LLModel, "LLModel"),
       embeddingModel: (value) => requireResource(value, EmbeddingModel, "EmbeddingModel"),
       botAdapter: (value) => requireResource(value, BotAdapterRef, "BotAdapterRef"),
-      imageWeaviate: (value) => requireResource(value, WeaviateRef, "WeaviateRef"),
     });
     Object.freeze(this);
   }

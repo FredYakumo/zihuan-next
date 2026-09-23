@@ -6,7 +6,6 @@ use crate::ims_bot_adapter::models::sender_model::Sender as GraphSender;
 use crate::model_inference::llm::tooling::FunctionTool;
 use crate::model_inference::llm::MessagePart;
 pub use crate::rag::{WebSearchEngine, WebSearchImage};
-pub use crate::weaviate::WeaviateRef;
 use redis::{aio::Connection, AsyncCommands};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -642,7 +641,7 @@ pub enum DataType {
     S3Ref,
     RedisRef,
     RdbRef,
-    WeaviateRef,
+    RetrievalStoreRef,
     WebSearchEngineRef,
     SessionStateRef,
     LLMMessageSessionCacheRef,
@@ -687,7 +686,7 @@ impl fmt::Display for DataType {
             DataType::S3Ref => write!(f, "S3Ref"),
             DataType::RedisRef => write!(f, "RedisRef"),
             DataType::RdbRef => write!(f, "RdbRef"),
-            DataType::WeaviateRef => write!(f, "WeaviateRef"),
+            DataType::RetrievalStoreRef => write!(f, "RetrievalStoreRef"),
             DataType::WebSearchEngineRef => write!(f, "WebSearchEngineRef"),
             DataType::SessionStateRef => write!(f, "SessionStateRef"),
             DataType::LLMMessageSessionCacheRef => write!(f, "LLMMessageSessionCacheRef"),
@@ -735,7 +734,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "S3Ref" => Ok(DataType::S3Ref),
                     "RedisRef" => Ok(DataType::RedisRef),
                     "RdbRef" => Ok(DataType::RdbRef),
-                    "WeaviateRef" => Ok(DataType::WeaviateRef),
+                    "RetrievalStoreRef" => Ok(DataType::RetrievalStoreRef),
                     "WebSearchEngineRef" => Ok(DataType::WebSearchEngineRef),
                     "SessionStateRef" => Ok(DataType::SessionStateRef),
                     "LLMMessageSessionCacheRef" => Ok(DataType::LLMMessageSessionCacheRef),
@@ -767,7 +766,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "S3Ref",
                             "RedisRef",
                             "RdbRef",
-                            "WeaviateRef",
+                            "RetrievalStoreRef",
                             "WebSearchEngineRef",
                             "SessionStateRef",
                             "LLMMessageSessionCacheRef",
@@ -836,7 +835,7 @@ pub enum DataValue {
     S3Ref(Arc<S3Ref>),
     RedisRef(Arc<RedisConfig>),
     RdbRef(RelationalDbConnection),
-    WeaviateRef(Arc<WeaviateRef>),
+    RetrievalStoreRef(crate::retrieval::RetrievalStoreRef),
     WebSearchEngineRef(Arc<dyn WebSearchEngine>),
     SessionStateRef(Arc<SessionStateRef>),
     LLMMessageSessionCacheRef(Arc<LLMMessageSessionCacheRef>),
@@ -868,7 +867,7 @@ impl DataValue {
             DataValue::S3Ref(_) => DataType::S3Ref,
             DataValue::RedisRef(_) => DataType::RedisRef,
             DataValue::RdbRef(_) => DataType::RdbRef,
-            DataValue::WeaviateRef(_) => DataType::WeaviateRef,
+            DataValue::RetrievalStoreRef(_) => DataType::RetrievalStoreRef,
             DataValue::WebSearchEngineRef(_) => DataType::WebSearchEngineRef,
             DataValue::SessionStateRef(_) => DataType::SessionStateRef,
             DataValue::LLMMessageSessionCacheRef(_) => DataType::LLMMessageSessionCacheRef,
@@ -888,7 +887,7 @@ impl DataValue {
             DataValue::Vector(_) => "Vector".to_string(),
             DataValue::BotAdapterRef(_) => "BotAdapterRef".to_string(),
             DataValue::S3Ref(_) => "S3Ref".to_string(),
-            DataValue::WeaviateRef(_) => "WeaviateRef".to_string(),
+            DataValue::RetrievalStoreRef(_) => "RetrievalStoreRef".to_string(),
             DataValue::WebSearchEngineRef(_) => "WebSearchEngineRef".to_string(),
             DataValue::LoopControlRef(_) => "LoopControlRef".to_string(),
             DataValue::EmbeddingModel(_) => "EmbeddingModel".to_string(),
@@ -976,11 +975,10 @@ impl DataValue {
                     "path": config.path,
                 }),
             },
-            DataValue::WeaviateRef(weaviate_ref) => serde_json::json!({
-                "type": "WeaviateRef",
-                "base_url": weaviate_ref.base_url,
-                "class_name": weaviate_ref.class_name,
-                "timeout_secs": weaviate_ref.timeout.as_secs(),
+            DataValue::RetrievalStoreRef(store) => serde_json::json!({
+                "type": "RetrievalStoreRef",
+                "backend": store.backend().as_str(),
+                "connection_id": store.connection_id(),
             }),
             DataValue::WebSearchEngineRef(_) => serde_json::json!({
                 "type": "WebSearchEngineRef",
@@ -1020,8 +1018,8 @@ impl fmt::Debug for DataValue {
             DataValue::S3Ref(config) => f.debug_tuple("S3Ref").field(config).finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::RdbRef(connection) => f.debug_tuple("RdbRef").field(connection).finish(),
-            DataValue::WeaviateRef(weaviate_ref) => {
-                f.debug_tuple("WeaviateRef").field(weaviate_ref).finish()
+            DataValue::RetrievalStoreRef(store) => {
+                f.debug_tuple("RetrievalStoreRef").field(store).finish()
             }
             DataValue::WebSearchEngineRef(_) => f.debug_tuple("WebSearchEngineRef").finish(),
             DataValue::SessionStateRef(session_ref) => {

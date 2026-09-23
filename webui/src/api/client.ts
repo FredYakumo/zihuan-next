@@ -938,7 +938,7 @@ export interface WeaviateExploreResponse {
   total: number;
   limit: number;
   class_name: string;
-  collection_schema: "image_semantic" | "agent_memory";
+  schema: "image_semantic" | "agent_memory" | "qq_message";
 }
 
 export interface AgentMemoryRecord {
@@ -1078,6 +1078,7 @@ export const explorer = {
 
   queryWeaviate(params: {
     connection_id: string;
+    schema?: "image_semantic" | "agent_memory" | "qq_message";
     embedding_model_ref_id?: string;
     query?: string;
     limit?: number;

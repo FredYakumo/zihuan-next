@@ -3,7 +3,6 @@ import { port } from "#zihuan-sdk";
 function connectionField(connection_kind, description) {
   return { key: "config_id", data_type: "String", description, required: true, widget: "connection_select", connection_kind };
 }
-
 function configId(inline_values) {
   return inline_values.config_id ?? inline_values.connection_id;
 }
@@ -31,8 +30,8 @@ export const nodes = [
     execute: async ({ inline_values, zihuan }) => ({ s3_ref: await zihuan.storage.s3(configId(inline_values)) }),
   },
   {
-    type_id: "weaviate", display_name: "Weaviate向量数据库", category: "数据库", description: "从系统连接配置中选择 Weaviate 并输出 WeaviateRef 引用",
-    config_fields: [connectionField("weaviate", "选择系统中的 Weaviate 连接配置")], input_ports: [], output_ports: [port("weaviate_ref", "WeaviateRef")],
-    execute: async ({ inline_values, zihuan }) => ({ weaviate_ref: await zihuan.storage.weaviate(configId(inline_values)) }),
+    type_id: "retrieval_store", display_name: "检索数据库连接", category: "数据库", description: "从系统连接配置中选择检索数据库（Weaviate 或 Elasticsearch）并输出 RetrievalStoreRef 引用，具体 schema 由下游节点决定",
+    config_fields: [connectionField("retrieval_store", "选择系统中的检索数据库连接")], input_ports: [], output_ports: [port("retrieval_store_ref", "RetrievalStoreRef")],
+    execute: async ({ inline_values, zihuan }) => ({ retrieval_store_ref: await zihuan.storage.retrievalStore(configId(inline_values)) }),
   },
 ];

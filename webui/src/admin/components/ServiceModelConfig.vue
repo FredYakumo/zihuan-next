@@ -61,8 +61,7 @@
               <span class="agent-service-add-model-option-content"><AddIcon />新增检索数据库</span>
             </t-option>
             <t-option value="local_file" label="本地文件" />
-            <t-option value="weaviate" label="Weaviate" />
-            <t-option value="elasticsearch" label="Elasticsearch" />
+            <t-option value="retrieval_store" label="检索数据库" />
           </t-select>
         </div>
       </t-form-item>

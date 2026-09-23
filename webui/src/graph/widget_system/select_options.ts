@@ -61,10 +61,16 @@ export async function getChatLlmRefs(): Promise<LlmConfig[]> {
   return llmRefs.filter((item) => item.enabled && item.model.type === "chat_llm");
 }
 
+const BOT_ADAPTER_KINDS = new Set(["bot_adapter", "ims_bot_adapter"]);
+const RETRIEVAL_STORE_KINDS = new Set(["weaviate", "elasticsearch"]);
+
 export function matchesConnectionKind(actualKind: string, expectedKind: string): boolean {
   if (actualKind === expectedKind) return true;
-  const botAdapterKinds = new Set(["bot_adapter", "ims_bot_adapter"]);
-  if (botAdapterKinds.has(actualKind) && botAdapterKinds.has(expectedKind)) {
+  if (BOT_ADAPTER_KINDS.has(actualKind) && BOT_ADAPTER_KINDS.has(expectedKind)) {
+    return true;
+  }
+  // A retrieval store is any vector backend; the schema is chosen at call time.
+  if (expectedKind === "retrieval_store" && RETRIEVAL_STORE_KINDS.has(actualKind)) {
     return true;
   }
   return false;

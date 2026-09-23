@@ -7,13 +7,6 @@ use std::time::Duration;
 
 use crate::error::{Error, Result};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WeaviateCollectionSchema {
-    ImageSemantic,
-    AgentMemory,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WeaviateEnsureCollectionResult {
     Existing,

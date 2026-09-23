@@ -48,10 +48,6 @@ const {
   webSearchEngineConnections,
   taskDbConnections,
   tokenizerConnections,
-  imageWeaviateConnections,
-  memoryWeaviateConnections,
-  imageElasticsearchConnections,
-  memoryElasticsearchConnections,
   retrievalConnections,
   ignoreRulesDisabledReason,
   resetForm,
@@ -157,7 +153,6 @@ function handleMemoryBackendChange(value: string | number) {
   form.workspace_memory_backend = "";
   showRetrievalDatabaseDialog.value = true;
 }
-
 function handleWebSearchChange(value: string | number) {
   if (String(value) !== "__add_web_search__") return;
   form.web_search_engine_connection_id = "";
@@ -224,9 +219,8 @@ async function importRetrievalDatabaseFromText(raw: string) {
     }
     const created = await system.connections.create({ name: config.name, enabled: config.enabled, kind: config.kind });
     await load();
-    form.workspace_memory_backend = type;
-    if (type === "weaviate") form.workspace_weaviate_memory_connection_id = created.config_id;
-    else form.workspace_elasticsearch_memory_connection_id = created.config_id;
+    form.workspace_memory_backend = "retrieval_store";
+    form.workspace_retrieval_store_id = created.config_id;
     showRetrievalDatabaseDialog.value = false;
   } catch (error) {
     alert(`检索数据库导入失败：${error instanceof Error ? error.message : String(error)}`);

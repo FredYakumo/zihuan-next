@@ -2,20 +2,25 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::error::{Error, Result};
+use crate::retrieval::RetrievalSchema;
 use crate::weaviate::{
-    WeaviateCollectionConfig, WeaviateCollectionSchema, WeaviateEnsureCollectionResult,
-    WeaviateNamedVectorizerConfig, WeaviatePropertyConfig, WeaviateRef, WeaviateVectorConfigEntry,
+    WeaviateCollectionConfig, WeaviateEnsureCollectionResult, WeaviateNamedVectorizerConfig,
+    WeaviatePropertyConfig, WeaviateRef, WeaviateVectorConfigEntry,
 };
 
 use crate::storage::WeaviateClient;
 
-pub fn collection_config_for_schema(
-    schema: WeaviateCollectionSchema,
-    class_name: String,
-) -> WeaviateCollectionConfig {
+pub fn collection_config_for_schema(schema: RetrievalSchema) -> WeaviateCollectionConfig {
     match schema {
-        WeaviateCollectionSchema::ImageSemantic => image_vector_collection_config(class_name),
-        WeaviateCollectionSchema::AgentMemory => agent_memory_collection_config(class_name),
+        RetrievalSchema::ImageSemantic => {
+            image_vector_collection_config(schema.weaviate_class_name().to_string())
+        }
+        RetrievalSchema::AgentMemory => {
+            agent_memory_collection_config(schema.weaviate_class_name().to_string())
+        }
+        RetrievalSchema::QqMessage => {
+            qq_message_collection_config(schema.weaviate_class_name().to_string())
+        }
     }
 }
 
@@ -120,10 +125,10 @@ pub fn validate_collection_schema(
 
 pub fn ensure_collection_schema(
     weaviate_ref: &WeaviateRef,
-    schema: WeaviateCollectionSchema,
+    schema: RetrievalSchema,
     create_missing: bool,
 ) -> Result<WeaviateEnsureCollectionResult> {
-    let collection = collection_config_for_schema(schema, weaviate_ref.class_name.clone());
+    let collection = collection_config_for_schema(schema);
     match weaviate_ref.find_collection_schema(&collection.class_name)? {
         Some(existing) => {
             validate_collection_schema(&existing, &collection)?;
@@ -209,6 +214,26 @@ fn agent_memory_collection_config(class_name: String) -> WeaviateCollectionConfi
             text_array_property("group_id_list", "Accessible group ids"),
             date_property("created_at", "Record creation time"),
             date_property("updated_at", "Record update time"),
+        ],
+        vectorizer: Some("none".to_string()),
+        vector_config: None,
+    }
+}
+
+fn qq_message_collection_config(class_name: String) -> WeaviateCollectionConfig {
+    WeaviateCollectionConfig {
+        class_name,
+        description: Some("QQ message vector storage".to_string()),
+        properties: vec![
+            text_property("message_id", "Message id"),
+            text_property("sender_id", "Sender id"),
+            text_property("sender_name", "Sender display name"),
+            text_property("send_time", "Send time"),
+            text_property("group_id", "Group id"),
+            text_property("group_name", "Group name"),
+            text_property("content", "Message content"),
+            text_property("at_target_list", "At target ids"),
+            text_property("media_json", "Attached media records"),
         ],
         vectorizer: Some("none".to_string()),
         vector_config: None,

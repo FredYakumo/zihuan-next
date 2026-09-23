@@ -18,7 +18,7 @@ export const HP_TYPES = [
   "Boolean",
   "Password",
   "MySqlRef",
-  "WeaviateRef",
+  "RetrievalStoreRef",
   "RedisRef",
   "S3Ref",
   "BotAdapterRef",
@@ -29,7 +29,6 @@ const HP_SCALAR_TYPES = HP_TYPES;
 
 const CONNECTION_KIND_BY_HP_TYPE: Partial<Record<(typeof HP_TYPES)[number], ConnectionConfig["kind"]["type"]>> = {
   MySqlRef: "mysql",
-  WeaviateRef: "weaviate",
   RedisRef: "redis",
   S3Ref: "rustfs",
   BotAdapterRef: "ims_bot_adapter",

@@ -79,20 +79,19 @@ use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::nlp::{build_segmenter, TextSegmenter};
-use zihuan_core::role::service_config::{MemoryBackendKind, RoleServiceConfig};
+use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::runtime::block_async;
 use zihuan_core::steer::PendingSteerEvent;
 use zihuan_core::storage::{
-    build_elasticsearch_ref, build_relational_db_connection_for_connection, build_s3_ref,
-    build_weaviate_ref, build_web_search_engine_ref, find_connection, ConnectionConfig,
-    ConnectionKind, LocalMemoryStore, WeaviateCollectionSchema,
+    build_relational_db_connection_for_connection, build_retrieval_store_ref, build_s3_ref,
+    build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind,
+    LocalMemoryStore, RetrievalStoreRef,
 };
 use zihuan_core::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
     AgentTaskStatus,
 };
 use zihuan_core::utils::string_utils::shorten_text;
-use zihuan_core::weaviate::WeaviateRef;
 
 use self::tool_quota::SessionToolQuotaState;
 
@@ -138,10 +137,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
             self.resources.web_search_engine_ref.clone(),
             self.resources.rdb_pool.clone(),
             self.resources.s3_ref.clone(),
-            self.resources.weaviate_image_ref.clone(),
-            self.resources.elasticsearch_image_ref.clone(),
-            self.resources.weaviate_memory_ref.clone(),
-            self.resources.elasticsearch_memory_ref.clone(),
+            self.resources.retrieval_store.clone(),
             self.resources.local_memory_store.clone(),
             self.resources.embedding_model.clone(),
             self.resources.memory_llm.clone(),
@@ -171,34 +167,6 @@ fn load_qq_resources(
     config: &QqChatRoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<QqLoadedInferenceResources> {
-    if config.memory_backend != Some(MemoryBackendKind::LocalFile)
-        && config
-            .weaviate_memory_connection_id
-            .as_deref()
-            .is_some_and(|value| !value.trim().is_empty())
-        && config
-            .elasticsearch_memory_connection_id
-            .as_deref()
-            .is_some_and(|value| !value.trim().is_empty())
-    {
-        return Err(Error::ValidationError(
-            "configure either Weaviate or Elasticsearch for agent memory, not both".to_string(),
-        ));
-    }
-    if config
-        .weaviate_image_connection_id
-        .as_deref()
-        .is_some_and(|value| !value.trim().is_empty())
-        && config
-            .elasticsearch_image_connection_id
-            .as_deref()
-            .is_some_and(|value| !value.trim().is_empty())
-    {
-        return Err(Error::ValidationError(
-            "configure either Weaviate or Elasticsearch for image semantic storage, not both"
-                .to_string(),
-        ));
-    }
     let web_search_engine_ref = build_web_search_engine_ref(
         if config.web_search_engine_connection_id.trim().is_empty() {
             None
@@ -225,81 +193,10 @@ fn load_qq_resources(
             None
         });
 
-    let weaviate_image_ref = tokio::task::block_in_place(|| {
-        build_weaviate_ref(
-            if config
-                .weaviate_image_connection_id
-                .as_deref()
-                .map(str::trim)
-                .unwrap_or("")
-                .is_empty()
-            {
-                None
-            } else {
-                config.weaviate_image_connection_id.as_deref()
-            },
-            connections,
-            Some(WeaviateCollectionSchema::ImageSemantic),
-        )
-    })
-    .unwrap_or_else(|e| {
-        warn!("[inference][qq_agent] weaviate image connection unavailable: {e}");
-        None
-    });
-    let local_memory_store = (config.memory_backend == Some(MemoryBackendKind::LocalFile))
+    let retrieval_store = resolve_retrieval_store(config, connections);
+    let local_memory_store = config
+        .retrieval_store_is_local()
         .then(|| Arc::new(LocalMemoryStore::in_app_data_dir()));
-    let weaviate_memory_ref = if matches!(
-        config.memory_backend,
-        Some(MemoryBackendKind::LocalFile | MemoryBackendKind::Elasticsearch)
-    ) {
-        None
-    } else {
-        tokio::task::block_in_place(|| {
-            build_weaviate_ref(
-                config
-                    .weaviate_memory_connection_id
-                    .as_deref()
-                    .filter(|value| !value.trim().is_empty()),
-                connections,
-                Some(WeaviateCollectionSchema::AgentMemory),
-            )
-        })
-        .unwrap_or_else(|e| {
-            warn!("[inference][qq_agent] weaviate memory connection unavailable: {e}");
-            None
-        })
-    };
-    let elasticsearch_image_ref = build_elasticsearch_ref(
-        config
-            .elasticsearch_image_connection_id
-            .as_deref()
-            .filter(|value| !value.trim().is_empty()),
-        connections,
-        Some(WeaviateCollectionSchema::ImageSemantic),
-    )
-    .unwrap_or_else(|error| {
-        warn!("[inference][qq_agent] elasticsearch image connection unavailable: {error}");
-        None
-    });
-    let elasticsearch_memory_ref = if matches!(
-        config.memory_backend,
-        Some(MemoryBackendKind::LocalFile | MemoryBackendKind::Weaviate)
-    ) {
-        None
-    } else {
-        build_elasticsearch_ref(
-            config
-                .elasticsearch_memory_connection_id
-                .as_deref()
-                .filter(|value| !value.trim().is_empty()),
-            connections,
-            Some(WeaviateCollectionSchema::AgentMemory),
-        )
-        .unwrap_or_else(|error| {
-            warn!("[inference][qq_agent] elasticsearch memory connection unavailable: {error}");
-            None
-        })
-    };
 
     let embedding_model = if local_memory_store.is_some() {
         None
@@ -348,20 +245,33 @@ fn load_qq_resources(
         web_search_engine_ref,
         rdb_pool,
         s3_ref,
-        weaviate_image_ref,
-        elasticsearch_image_ref,
-        weaviate_memory_ref,
-        elasticsearch_memory_ref,
+        retrieval_store,
         local_memory_store,
         embedding_model,
         memory_llm,
     })
 }
 
+/// Resolves the configured retrieval store, warning instead of failing so a
+/// misconfigured store does not prevent the agent from starting.
+fn resolve_retrieval_store(
+    config: &QqChatRoleServiceConfig,
+    connections: &[ConnectionConfig],
+) -> Option<Arc<RetrievalStoreRef>> {
+    let connection_id = config.retrieval_store_connection_id()?;
+    match build_retrieval_store_ref(connection_id, connections) {
+        Ok(store) => Some(Arc::new(store)),
+        Err(error) => {
+            warn!("[inference][qq_agent] retrieval store unavailable: {error}");
+            None
+        }
+    }
+}
+
 /// Purpose: Bootstrap and launch a long-running QQ Chat Agent Service instance.
 ///
 /// Resolves all runtime dependencies (llm, embedding_model, tavily, s3_ref,
-/// rdb_pool, weaviate_image_ref), wires the IMS bot adapter event handler
+/// rdb_pool, retrieval_store), wires the IMS bot adapter event handler
 /// through an inbox queue, then spawns a background task that runs the
 /// BotAdapter::start loop until exit.
 ///
@@ -382,19 +292,6 @@ pub async fn spawn(
     on_finish: RuntimeFinishedCallback,
     task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
 ) -> Result<JoinHandle<()>> {
-    if config
-        .weaviate_memory_connection_id
-        .as_deref()
-        .is_some_and(|value| !value.trim().is_empty())
-        && config
-            .elasticsearch_memory_connection_id
-            .as_deref()
-            .is_some_and(|value| !value.trim().is_empty())
-    {
-        return Err(Error::ValidationError(
-            "configure either Weaviate or Elasticsearch for agent memory, not both".to_string(),
-        ));
-    }
     let llm_refs = load_llm_refs()?;
     let bot_connection = find_connection(&connections, &config.ims_bot_adapter_connection_id)?;
     let ConnectionKind::BotAdapter(_) = &bot_connection.kind else {
@@ -455,31 +352,7 @@ pub async fn spawn(
         None => None,
     };
     let redis_ref = resolve_inbox_redis_ref(&connections)?;
-    let weaviate_image_ref = tokio::task::block_in_place(|| {
-        build_weaviate_ref(
-            config.weaviate_image_connection_id.as_deref(),
-            &connections,
-            Some(WeaviateCollectionSchema::ImageSemantic),
-        )
-    })?;
-    let elasticsearch_memory_ref = build_elasticsearch_ref(
-        config
-            .elasticsearch_memory_connection_id
-            .as_deref()
-            .filter(|value| !value.trim().is_empty()),
-        &connections,
-        Some(WeaviateCollectionSchema::AgentMemory),
-    )?;
-    let weaviate_memory_ref = tokio::task::block_in_place(|| {
-        build_weaviate_ref(
-            config
-                .weaviate_memory_connection_id
-                .as_deref()
-                .filter(|value| !value.trim().is_empty()),
-            &connections,
-            Some(WeaviateCollectionSchema::AgentMemory),
-        )
-    })?;
+    let retrieval_store = resolve_retrieval_store(&config, &connections);
     let tool_definitions = build_enabled_tool_definitions(&agent.tools)?;
     let tokenizer_segmenter = resolve_tokenizer_segmenter(&config, &connections);
 
@@ -534,10 +407,9 @@ pub async fn spawn(
         math_programming_llm,
         natural_language_reply_llm,
         rdb_pool,
-        weaviate_image_ref,
-        weaviate_memory_ref,
-        elasticsearch_memory_ref,
-        local_memory_store: (config.memory_backend == Some(MemoryBackendKind::LocalFile))
+        retrieval_store,
+        local_memory_store: config
+            .retrieval_store_is_local()
             .then(|| Arc::new(LocalMemoryStore::in_app_data_dir())),
         embedding_model,
         web_search_engine,

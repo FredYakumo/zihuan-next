@@ -33,9 +33,9 @@ export const nodes = [
     execute: async ({ zihuan }) => ({ s3_ref: await zihuan.agent.s3() }),
   },
   {
-    type_id: "agent_image_db_ref", display_name: "读取Agent图片库连接", category: "Agent", description: "从当前 Agent 工具调用上下文中读取图片向量库连接并输出 WeaviateRef",
-    input_ports: [], output_ports: [port("weaviate_ref", "WeaviateRef")],
-    execute: async ({ zihuan }) => ({ weaviate_ref: await zihuan.agent.imageWeaviate() }),
+    type_id: "agent_retrieval_store_ref", display_name: "读取Agent检索数据库连接", category: "Agent", description: "从当前 Agent 工具调用上下文中读取统一检索数据库连接并输出 RetrievalStoreRef",
+    input_ports: [], output_ports: [port("retrieval_store_ref", "RetrievalStoreRef")],
+    execute: async ({ zihuan }) => ({ retrieval_store_ref: await zihuan.agent.retrievalStore() }),
   },
   {
     type_id: "agent_tavily_ref", display_name: "读取Agent Web Search Engine连接", category: "Agent", description: "从当前 Agent 工具调用上下文中读取 Web Search Engine 连接并输出 WebSearchEngineRef",

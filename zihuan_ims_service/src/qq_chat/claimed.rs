@@ -195,13 +195,11 @@ impl QqChatAgentServiceInner {
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
         let chat_preprompt_history_key = chat_preprompt_history_key(sender_id);
-        let preprompt_memory_backend =
-            ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(|| {
-                ctx.elasticsearch_memory_ref
-                    .cloned()
-                    .map(AgentMemoryBackend::Elasticsearch)
-                    .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate))
-            });
+        let preprompt_memory_backend = ctx
+            .local_memory_store
+            .cloned()
+            .map(AgentMemoryBackend::LocalFile)
+            .or_else(|| ctx.retrieval_store.cloned().map(AgentMemoryBackend::RetrievalStore));
         let preprompt_memory_resources = preprompt_memory_backend.and_then(|memory_backend| {
             let embedding_model = ctx.embedding_model.cloned();
             if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_))

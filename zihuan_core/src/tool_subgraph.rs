@@ -97,7 +97,7 @@ pub fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         | DataType::S3Ref
         | DataType::RedisRef
         | DataType::RdbRef
-        | DataType::WeaviateRef
+        | DataType::RetrievalStoreRef
         | DataType::WebSearchEngineRef
         | DataType::SessionStateRef
         | DataType::LLMMessageSessionCacheRef

@@ -6,14 +6,14 @@ use crate::system_config;
 use zihuan_core::config::llm_refs::LlmRefConfig;
 use zihuan_core::ims_bot_adapter::BotAdapterConnection;
 use zihuan_core::model_inference::model_config::{LlmApiStyle, LlmServiceConfig, ModelRefSpec};
+use zihuan_core::retrieval::RetrievalStoreConfig;
 use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::storage::{
     ConnectionAuthMethod, ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection,
     SqliteConnection, WeaviateConnection, WebSearchEngineConnection,
 };
 use zihuan_core::utils::time_unit::TimeUnit;
-use zihuan_core::weaviate::WeaviateCollectionSchema;
-use zihuan_ims_service::role_config::{QqChatRoleServiceConfig, RetrievalStoreConfig};
+use zihuan_ims_service::role_config::QqChatRoleServiceConfig;
 use zihuan_workspace_service::role_config::WorkspaceRoleServiceConfig;
 
 pub async fn create_chat_assistant_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {
@@ -52,35 +52,18 @@ pub async fn create_qq_bot_stack(
     );
     save_connection(redis)?;
 
-    let weaviate_image = build_connection(
-        "setup-default-weaviate-image",
-        "Weaviate Image",
+    let retrieval_store = build_connection(
+        "setup-default-retrieval-store",
+        "Retrieval Store",
         ConnectionKind::Weaviate(WeaviateConnection {
             base_url: "http://127.0.0.1:8080".to_string(),
-            class_name: "ImageSemantic".to_string(),
             username: None,
             password: None,
             api_key: Some("zihuan-weaviate-api-key".to_string()),
             auth_method: ConnectionAuthMethod::ApiKey,
-            collection_schema: WeaviateCollectionSchema::ImageSemantic,
         }),
     );
-    save_connection(weaviate_image)?;
-
-    let weaviate_memory = build_connection(
-        "setup-default-weaviate-memory",
-        "Weaviate Memory",
-        ConnectionKind::Weaviate(WeaviateConnection {
-            base_url: "http://127.0.0.1:8080".to_string(),
-            class_name: "AgentMemory".to_string(),
-            username: None,
-            password: None,
-            api_key: Some("zihuan-weaviate-api-key".to_string()),
-            auth_method: ConnectionAuthMethod::ApiKey,
-            collection_schema: WeaviateCollectionSchema::AgentMemory,
-        }),
-    );
-    save_connection(weaviate_memory)?;
+    save_connection(retrieval_store)?;
 
     let rustfs = build_connection(
         "setup-default-rustfs",
@@ -255,16 +238,11 @@ fn build_qq_chat_agent_service() -> RoleServiceConfig {
         web_search_engine_connection_id: "setup-default-web-search".to_string(),
         rdb_id: Some("setup-default-sqlite".to_string()),
         retrieval_store: Some(RetrievalStoreConfig::Connection {
-            connection_id: "setup-default-weaviate-memory".to_string(),
+            connection_id: "setup-default-retrieval-store".to_string(),
         }),
         embedding: None,
         mysql_connection_id: None,
         task_db_connection_id: None,
-        weaviate_image_connection_id: Some("setup-default-weaviate-image".to_string()),
-        elasticsearch_image_connection_id: None,
-        weaviate_memory_connection_id: Some("setup-default-weaviate-memory".to_string()),
-        elasticsearch_memory_connection_id: None,
-        memory_backend: None,
         max_message_length: 500,
         dream_enabled: false,
         dream_interval_value: 15,
@@ -305,9 +283,7 @@ fn build_workspace_agent_service(
         agents_md_enabled: true,
         memory_enabled: false,
         embedding_model_ref_id: None,
-        weaviate_memory_connection_id: None,
-        elasticsearch_memory_connection_id: None,
-        memory_backend: None,
+        retrieval_store: None,
         web_search_engine_connection_id: None,
         default_tools_enabled: default_workspace_tools(),
     };

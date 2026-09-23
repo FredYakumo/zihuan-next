@@ -127,13 +127,11 @@ impl QqBrain {
             preprompt_context: preprompt_context.clone(),
         }));
 
-        let memory_backend =
-            ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(|| {
-                ctx.elasticsearch_memory_ref
-                    .cloned()
-                    .map(AgentMemoryBackend::Elasticsearch)
-                    .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate))
-            });
+        let memory_backend = ctx
+            .local_memory_store
+            .cloned()
+            .map(AgentMemoryBackend::LocalFile)
+            .or_else(|| ctx.retrieval_store.cloned().map(AgentMemoryBackend::RetrievalStore));
         let memory_resources = memory_backend.as_ref().and_then(|memory_backend| {
             let embedding_model = ctx.embedding_model.cloned();
             if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_))
@@ -304,7 +302,7 @@ impl QqBrain {
         if service.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
             brain.add_tool(wrap_brain_tool_with_quota(
                 SearchSimilarImagesTool::new(
-                    ctx.weaviate_image_ref.cloned(),
+                    ctx.retrieval_store.cloned(),
                     ctx.embedding_model.cloned(),
                     ctx.web_search_engine.clone(),
                     ctx.s3_ref.cloned(),
@@ -326,13 +324,12 @@ impl QqBrain {
 
         if service.is_default_tool_enabled(DEFAULT_TOOL_SAVE_IMAGE)
             && ctx.s3_ref.is_some()
-            && ctx.weaviate_image_ref.is_some()
+            && ctx.retrieval_store.is_some()
             && ctx.embedding_model.is_some()
         {
             brain.add_tool(wrap_brain_tool_with_quota(
                 SaveImageTool::new(
-                    ctx.weaviate_image_ref.cloned(),
-                    None,
+                    ctx.retrieval_store.cloned(),
                     ctx.embedding_model.cloned(),
                     ctx.s3_ref.cloned(),
                     ctx.rdb_pool.cloned(),
