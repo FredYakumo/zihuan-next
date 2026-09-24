@@ -211,7 +211,6 @@ impl QqBrain {
             brain.add_tool(wrap_brain_tool_with_quota(SharedTool::new(tool), tool_quota.clone()));
             added_agent_ids.insert("run_research_subagent".to_string());
         }
-
         // Sub-agents the service selects. Publish every remaining on-disk definition first so a
         // selected sub-agent may reference another one, then expose the selected ids that the
         // built-in tools above have not already added.

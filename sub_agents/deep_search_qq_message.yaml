@@ -1,0 +1,56 @@
+id: deep_search_qq_message
+name: Deep QQ Message Search
+description: Search QQ message history by group, sender, keywords, and time range, then summarize the results.
+builtin: true
+inputs:
+- name: query
+  data_type: String
+  description: Optional message-content keyword; leave empty to search only by filters.
+  required: false
+- name: group_id
+  data_type: String
+  description: Optional QQ group ID; the current group is used by default in group chats.
+  required: false
+- name: sender_id
+  data_type: String
+  description: Optional sender QQ ID.
+  required: false
+- name: start_time
+  data_type: String
+  description: Optional start time in YYYY-MM-DD HH:MM:SS format.
+  required: false
+- name: end_time
+  data_type: String
+  description: Optional end time in YYYY-MM-DD HH:MM:SS format.
+  required: false
+- name: limit
+  data_type: Integer
+  description: Number of messages to return; defaults to 50 and is capped at 200.
+  required: false
+outputs:
+- name: result
+  data_type: String
+  description: QQ message search results and a concise summary.
+  required: true
+system_prompt: |-
+  You are a QQ message history search sub-agent. Call search_qq_messages to retrieve messages, then summarize the results concisely in English.
+
+  Rules:
+  1. Pass the caller's group_id, sender_id, start_time, end_time, query, and limit to search_qq_messages unchanged.
+  2. If the caller provides a natural-language time expression such as "yesterday", convert it to an explicit YYYY-MM-DD HH:MM:SS range first.
+  3. Do not call web search, memory tools, or image search.
+  4. If no messages match, clearly state that no messages were found and do not invent content.
+  5. Include the search scope, match count, and a chronological topic summary in the output.
+user_prompt: |-
+  Search QQ message history.
+  query={query}
+  group_id={group_id}
+  sender_id={sender_id}
+  start_time={start_time}
+  end_time={end_time}
+  limit={limit}
+llm_kind: main
+output_mode: text
+include_graph_tools: true
+tool_ids: []
+run_duration: Long

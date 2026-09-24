@@ -19,7 +19,7 @@ export const nodes = [
     execute: async ({ inputs, zihuan }) => zihuan.storage.groupHistory(inputs.mysql_ref, inputs.group_id, inputs.limit),
   },
   {
-    type_id: "message_rdb_search", display_name: "搜索消息记录", category: "消息存储", description: "在消息记录中搜索，支持发送者、群组、内容关键词、时间范围过滤",
+    type_id: "search_qq_messages", display_name: "Search QQ Messages", category: "Message Storage", description: "Search QQ message records with optional sender, group, keyword, and time-range filters.",
     input_ports: [port("mysql_ref", "RdbRef"), port("sender_id", "String", { required: false }), port("group_id", "String", { required: false }), port("contain", "String", { required: false }), port("start_time", "String", { required: false }), port("end_time", "String", { required: false }), port("limit", "Integer"), port("sort_by_time_desc", "Boolean")], output_ports: [port("messages", { Vec: "String" })],
     execute: async ({ inputs, zihuan }) => zihuan.storage.searchMessages(inputs.mysql_ref, inputs),
   },

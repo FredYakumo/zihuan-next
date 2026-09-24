@@ -46,6 +46,13 @@ const BUILTIN_AGENT_DEFINITIONS: &[(&str, &str)] = &[
             "/../sub_agents/run_research_subagent.yaml"
         )),
     ),
+    (
+        "deep_search_qq_message",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../sub_agents/deep_search_qq_message.yaml"
+        )),
+    ),
 ];
 
 /// Agent definitions live in the `sub_agents` directory relative to the current working
