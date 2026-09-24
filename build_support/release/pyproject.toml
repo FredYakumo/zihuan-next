@@ -1,0 +1,10 @@
+# Minimal manifest shipped inside release packages. The default `uv_project`
+# Python runtime requires a pyproject.toml next to the binary, and `uv run`
+# syncs whatever this file declares, so it must stay dependency-free — never
+# replace it with the repo-root pyproject.toml (torch/transformers/... would
+# be downloaded on the user's machine at first run).
+[project]
+name = "zihuan-next-runtime"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = []
