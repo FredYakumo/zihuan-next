@@ -220,6 +220,54 @@ pub(crate) fn format_history_messages(mut records: Vec<MessageHistoryRecord>) ->
     messages
 }
 
+/// Filters for [`search_message_records`].
+///
+/// Every field except the limit is optional, so a caller may search by any combination of
+/// sender, group, content keyword, and time range.
+#[derive(Debug, Clone, Default)]
+pub struct MessageSearchFilters {
+    pub sender_id: Option<String>,
+    pub group_id: Option<String>,
+    /// Substring matched against the message content.
+    pub contain: Option<String>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+    pub sort_by_time_desc: bool,
+    pub limit: u32,
+}
+
+/// Runs one filtered search over `message_record`, returning the same formatted
+/// `[time] name(id)说: content` lines the history loaders produce.
+pub fn search_message_records(
+    mysql: &Arc<MySqlConfig>,
+    filters: MessageSearchFilters,
+) -> Result<Vec<String>> {
+    let limit = filters.limit;
+    let (sql, query_params) = SearchMessagesQueryBuilder {
+        sender_id: filters.sender_id,
+        group_id: filters.group_id,
+        contain: filters.contain,
+        start_time: filters.start_time,
+        end_time: filters.end_time,
+        sort_by_time_desc: filters.sort_by_time_desc,
+        limit,
+    }
+    .build();
+    let rows = run_mysql_query(mysql, move |pool| {
+        Box::pin(async move {
+            let mut query = sqlx::query(&sql);
+            for parameter in &query_params {
+                query = query.bind(parameter);
+            }
+            query.fetch_all(pool).await
+        })
+    })?;
+    Ok(format_history_messages(aggregate_history_rows(
+        rows.into_iter().map(message_history_chunk_row_from_row).collect(),
+        limit as usize,
+    )))
+}
+
 pub fn load_group_history(
     mysql: &Arc<MySqlConfig>,
     group_id: String,

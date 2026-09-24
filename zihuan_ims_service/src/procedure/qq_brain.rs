@@ -35,12 +35,12 @@ use crate::qq_chat::{
 use crate::tools::{
     AgentMemoryBackend, AgentMemoryToolResources, EditableQqAgentTool, GetAgentPublicInfoTool,
     GetFunctionListTool, GetRecentGroupMessagesTool, GetRecentUserMessagesTool,
-    ImageUnderstandTool, ReplyMessageTool, SaveImageTool, SearchSimilarImagesTool, SharedTool,
-    ToolNotificationTarget, WebSearchTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
-    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
-    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
-    DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_SAVE_IMAGE, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
-    DEFAULT_TOOL_WEB_SEARCH,
+    ImageUnderstandTool, ReplyMessageTool, SaveImageTool, SearchQqMessagesTool,
+    SearchSimilarImagesTool, SharedTool, ToolNotificationTarget, WebSearchTool,
+    DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
+    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
+    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_SAVE_IMAGE,
+    DEFAULT_TOOL_SEARCH_QQ_MESSAGES, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
 };
 
 /// Output of the QQ brain invocation for one turn.
@@ -187,6 +187,14 @@ impl QqBrain {
                 ctx.rdb_pool.cloned(),
                 ctx.s3_ref.cloned(),
                 ToolNotificationTarget::dashboard(),
+            )),
+        );
+        // Bound to this turn's session so a caller that omits the group searches the current one.
+        agent_host.register_tool(
+            DEFAULT_TOOL_SEARCH_QQ_MESSAGES,
+            Arc::new(SearchQqMessagesTool::new(
+                ctx.rdb_pool.cloned(),
+                ToolNotificationTarget::new(None, target_id.to_string(), None, is_group, false),
             )),
         );
         // `main` is the service's main model; the memory agent uses it, the research agent

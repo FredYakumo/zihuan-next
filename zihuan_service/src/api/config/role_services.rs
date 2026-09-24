@@ -499,6 +499,8 @@ fn subagent_available_tool_ids(
         ])
         // Existing agent ids are callable tools too, so a definition can reference another.
         .chain(list_agent_ids())
+        // A registered DAG node is callable as a tool on its own, so a definition may name one.
+        .chain(zihuan_core::agent::node_tool::available_node_tool_ids())
         .collect()
 }
 

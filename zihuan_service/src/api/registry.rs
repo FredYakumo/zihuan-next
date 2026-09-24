@@ -131,3 +131,30 @@ pub async fn get_categories(_req: &mut Request, res: &mut Response, _depot: &mut
     let cats = NODE_REGISTRY.get_categories();
     res.render(Json(cats));
 }
+
+/// One registered node type that an agent or sub-agent may name as a tool.
+#[derive(Serialize)]
+pub struct NodeToolInfo {
+    pub id: String,
+    pub name: String,
+    pub category: String,
+    pub description: String,
+}
+
+/// Lists the node types callable as tools, so an editor can offer them next to built-in tools.
+#[handler]
+pub async fn get_node_tools(_req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let mut tools: Vec<NodeToolInfo> = zihuan_core::agent::node_tool::available_node_tool_ids()
+        .into_iter()
+        .filter_map(|type_id| {
+            NODE_REGISTRY.get_node_metadata(&type_id).map(|metadata| NodeToolInfo {
+                id: type_id,
+                name: metadata.display_name,
+                category: metadata.category,
+                description: metadata.description,
+            })
+        })
+        .collect();
+    tools.sort_by(|a, b| a.category.cmp(&b.category).then_with(|| a.name.cmp(&b.name)));
+    res.render(Json(tools));
+}

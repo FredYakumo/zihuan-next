@@ -51,6 +51,7 @@ user_prompt: |-
   limit={limit}
 llm_kind: main
 output_mode: text
-include_graph_tools: true
-tool_ids: []
+include_graph_tools: false
+tool_ids:
+- search_qq_messages
 run_duration: Long

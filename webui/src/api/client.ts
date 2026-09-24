@@ -6,6 +6,7 @@ import type {
   NodeDefinition,
   EdgeDefinition,
   NodeTypeInfo,
+  NodeToolInfo,
   ValidationResult,
   TaskEntry,
   TaskLogEntry,
@@ -70,6 +71,10 @@ export const registry = {
   },
   getCategories(): Promise<string[]> {
     return request("GET", "/registry/categories");
+  },
+  /** Node types callable as tools by an agent or sub-agent. */
+  getNodeTools(): Promise<NodeToolInfo[]> {
+    return request("GET", "/registry/node_tools");
   },
 };
 

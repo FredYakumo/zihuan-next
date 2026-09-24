@@ -20,7 +20,7 @@ export const nodes = [
   },
   {
     type_id: "search_qq_messages", display_name: "Search QQ Messages", category: "Message Storage", description: "Search QQ message records with optional sender, group, keyword, and time-range filters.",
-    input_ports: [port("mysql_ref", "RdbRef"), port("sender_id", "String", { required: false }), port("group_id", "String", { required: false }), port("contain", "String", { required: false }), port("start_time", "String", { required: false }), port("end_time", "String", { required: false }), port("limit", "Integer"), port("sort_by_time_desc", "Boolean")], output_ports: [port("messages", { Vec: "String" })],
+    input_ports: [port("mysql_ref", "RdbRef"), port("sender_id", "String", { required: false }), port("group_id", "String", { required: false }), port("query", "String", { required: false }), port("start_time", "String", { required: false }), port("end_time", "String", { required: false }), port("limit", "Integer", { required: false }), port("sort_by_time_desc", "Boolean", { required: false })], output_ports: [port("messages", { Vec: "String" })],
     execute: async ({ inputs, zihuan }) => zihuan.storage.searchMessages(inputs.mysql_ref, inputs),
   },
 ];

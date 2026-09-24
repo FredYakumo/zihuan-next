@@ -1770,7 +1770,7 @@ pub fn dispatch_script_host_call(
             let builder = crate::graph::message_rdb_history_common::SearchMessagesQueryBuilder {
                 sender_id: optional_string(params, "sender_id"),
                 group_id: optional_string(params, "group_id"),
-                contain: optional_string(params, "contain"),
+                contain: optional_string(params, "query"),
                 start_time: optional_string(params, "start_time"),
                 end_time: optional_string(params, "end_time"),
                 sort_by_time_desc: params

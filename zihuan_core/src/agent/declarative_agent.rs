@@ -615,8 +615,27 @@ impl AgentHost {
         self.tools.get(id).cloned()
     }
 
+    /// Every id an agent definition may name in `tool_ids`.
+    ///
+    /// Registered tools come first; on top of them, a registered DAG node type is callable as a
+    /// tool in its own right, which is what lets a sub-agent reuse one node instead of a whole
+    /// graph.
     pub fn available_tool_ids(&self) -> HashSet<String> {
-        self.tools.keys().cloned().collect()
+        let mut ids: HashSet<String> = self.tools.keys().cloned().collect();
+        ids.extend(crate::agent::node_tool::available_node_tool_ids());
+        ids
+    }
+
+    /// Resolves one `tool_ids` entry to a callable tool.
+    ///
+    /// Registered tools win; otherwise the id is treated as a DAG node type and wrapped into a
+    /// single-node tool.
+    fn resolve_tool(&self, id: &str) -> Result<Arc<dyn Tool>> {
+        if let Some(tool) = self.tools.get(id) {
+            return Ok(Arc::clone(tool));
+        }
+        let definition = crate::agent::node_tool::build_node_tool_definition(id)?;
+        Ok(Arc::new(crate::agent::tools::NodeGraphTool::new(definition)))
     }
 
     pub fn load_definition(&self, id: &str) -> Result<AgentDefinition> {
@@ -638,9 +657,9 @@ impl AgentHost {
             })?;
         let mut tools = HashMap::new();
         for tool_id in &definition.tool_ids {
-            let tool = self.tools.get(tool_id).cloned().ok_or_else(|| {
+            let tool = self.resolve_tool(tool_id).map_err(|error| {
                 Error::ValidationError(format!(
-                    "agent '{}' references unregistered tool '{tool_id}'",
+                    "agent '{}' references unregistered tool '{tool_id}': {error}",
                     definition.id
                 ))
             })?;

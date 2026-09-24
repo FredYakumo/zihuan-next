@@ -48,7 +48,8 @@ pub fn build_router(
         .push(
             Router::with_path("registry")
                 .push(Router::with_path("types").get(registry::get_registry))
-                .push(Router::with_path("categories").get(registry::get_categories)),
+                .push(Router::with_path("categories").get(registry::get_categories))
+                .push(Router::with_path("node_tools").get(registry::get_node_tools)),
         )
         .push(
             Router::with_path("system")
