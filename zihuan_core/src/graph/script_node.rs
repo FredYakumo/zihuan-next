@@ -1773,13 +1773,15 @@ pub fn dispatch_script_host_call(
                 contain: optional_string(params, "query"),
                 start_time: optional_string(params, "start_time"),
                 end_time: optional_string(params, "end_time"),
+                before_time: optional_string(params, "before_time"),
+                before_id: params.get("before_id").and_then(Value::as_i64),
                 sort_by_time_desc: params
                     .get("sort_by_time_desc")
                     .and_then(Value::as_bool)
                     .unwrap_or(true),
                 limit,
             };
-            let (sql, query_params) = builder.build();
+            let (sql, query_params) = builder.build_page_query();
             let rows = crate::graph::message_rdb_history_common::run_mysql_query(
                 &reference,
                 move |pool| {

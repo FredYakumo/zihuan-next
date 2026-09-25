@@ -154,6 +154,119 @@ pub fn compact_message_history(
     )
 }
 
+pub struct ToolLoopCompactionResult {
+    pub messages: Vec<LLMMessage>,
+    pub did_compact: bool,
+    pub estimated_tokens_before: usize,
+    pub estimated_tokens_after: usize,
+}
+
+// === Prompt Engineering ====
+const TOOL_LOOP_DIGEST_SYSTEM_PROMPT: &str = "You are compacting earlier tool-call exchanges from an agent's tool loop.\n\
+     Summarize ONLY the information contained in the messages below; do not invent facts.\n\
+     Requirements:\n\
+     1. For each tool result, preserve the call parameters, the returned count, the covered time range or data scope, and whether more data remained.\n\
+     2. Preserve key topics, participants, notable content, and important conclusions from the result contents.\n\
+     3. Output plain text only, no JSON, markdown, or code blocks.";
+const TOOL_LOOP_DIGEST_NOTICE: &str = "The following is a compacted digest of earlier tool results from this conversation; the original results were removed to stay within the model context window. Continue the task using this digest together with the most recent tool results below.";
+// ====
+
+/// Compacts a tool-calling loop conversation once its estimated tokens exceed
+/// `compact_threshold`.
+///
+/// The leading system prompt and initial setup messages, plus the most recent
+/// assistant tool-call exchange with its tool results, are kept verbatim; every older
+/// exchange is replaced by a single LLM-generated digest message, so long pagination
+/// loops keep their accumulated findings without overflowing the context window.
+pub fn compact_tool_loop_conversation(
+    llm: &Arc<dyn LLMBase>,
+    conversation: Vec<LLMMessage>,
+    compact_threshold: usize,
+) -> ToolLoopCompactionResult {
+    let estimated_tokens_before = estimate_messages_tokens(&conversation);
+    let keep_original = |messages: Vec<LLMMessage>| ToolLoopCompactionResult {
+        estimated_tokens_after: estimated_tokens_before,
+        messages,
+        did_compact: false,
+        estimated_tokens_before,
+    };
+
+    if compact_threshold == 0 || estimated_tokens_before <= compact_threshold {
+        return keep_original(conversation);
+    }
+
+    let Some((setup, older_exchanges, current_exchange)) =
+        split_tool_loop_conversation(&conversation)
+    else {
+        return keep_original(conversation);
+    };
+    if older_exchanges.is_empty() {
+        return keep_original(conversation);
+    }
+
+    let prompt_messages = vec![
+        LLMMessage::system(TOOL_LOOP_DIGEST_SYSTEM_PROMPT),
+        LLMMessage::user(build_compaction_prompt(&older_exchanges)),
+    ];
+    let response = match llm.inference(&InferenceParam { messages: &prompt_messages, tools: None })
+    {
+        Ok(response) => response,
+        Err(err) => {
+            warn!("[ContextCompaction] Tool-loop digest inference failed: {err}");
+            return keep_original(conversation);
+        }
+    };
+
+    let Some(digest_text) = response
+        .content_text_owned()
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+    else {
+        warn!("[ContextCompaction] Empty tool-loop digest response, keeping original conversation");
+        return keep_original(conversation);
+    };
+
+    let mut compacted_messages = setup;
+    compacted_messages
+        .push(LLMMessage::user(format!("{TOOL_LOOP_DIGEST_NOTICE}\n\n{digest_text}")));
+    compacted_messages.extend(current_exchange);
+
+    let estimated_tokens_after = estimate_messages_tokens(&compacted_messages);
+
+    ToolLoopCompactionResult {
+        messages: compacted_messages,
+        did_compact: true,
+        estimated_tokens_before,
+        estimated_tokens_after,
+    }
+}
+
+/// Splits a tool-loop conversation into `(setup, older_exchanges, current_exchange)`.
+///
+/// `setup` spans the leading system prompt and the initial messages before the first
+/// assistant message; `current_exchange` starts at the last assistant message carrying
+/// tool calls so its tool results stay attached; everything in between is compactable.
+fn split_tool_loop_conversation(
+    conversation: &[LLMMessage],
+) -> Option<(Vec<LLMMessage>, Vec<LLMMessage>, Vec<LLMMessage>)> {
+    let tail_start = conversation.iter().rposition(|message| {
+        matches!(message.role, MessageRole::Assistant) && !message.tool_calls.is_empty()
+    })?;
+    let setup_end = conversation
+        .iter()
+        .position(|message| matches!(message.role, MessageRole::Assistant))
+        .unwrap_or(tail_start);
+    if setup_end >= tail_start {
+        return None;
+    }
+
+    Some((
+        conversation[..setup_end].to_vec(),
+        conversation[setup_end..tail_start].to_vec(),
+        conversation[tail_start..].to_vec(),
+    ))
+}
+
 pub fn estimate_messages_tokens(messages: &[LLMMessage]) -> usize {
     messages.iter().map(estimate_message_tokens).sum()
 }

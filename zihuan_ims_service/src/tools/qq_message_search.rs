@@ -57,7 +57,7 @@ impl Tool for SearchQqMessagesTool {
         Arc::new(StaticFunctionToolSpec {
             name: "search_qq_messages",
             description:
-                "在 QQ 聊天记录中按条件检索消息，支持群号、发送者、内容关键词与时间范围过滤，返回按时间排序的消息列表。",
+                "在 QQ 聊天记录中按条件检索消息，支持群号、发送者、内容关键词与时间范围过滤，返回按时间排序的消息列表。返回体包含 total（过滤条件命中的消息总数）、has_more（是否还有更早的消息）与分页游标 oldest_send_time/oldest_id；当 has_more 为 true 时，把这两个游标作为 before_time/before_id 传入即可继续获取更早的消息。",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -66,6 +66,8 @@ impl Tool for SearchQqMessagesTool {
                     "sender_id": { "type": "string", "description": "可选：按发送者 QQ 号过滤" },
                     "start_time": { "type": "string", "description": "可选：起始时间，格式 YYYY-MM-DD HH:MM:SS" },
                     "end_time": { "type": "string", "description": "可选：结束时间，格式 YYYY-MM-DD HH:MM:SS" },
+                    "before_time": { "type": "string", "description": "可选：分页游标，上一批结果返回的 oldest_send_time，与 before_id 成对使用" },
+                    "before_id": { "type": "integer", "description": "可选：分页游标，上一批结果返回的 oldest_id，与 before_time 成对使用" },
                     "limit": { "type": "integer", "description": "返回消息数量，默认 50，最大 200" }
                 },
                 "additionalProperties": false
@@ -86,6 +88,13 @@ impl Tool for SearchQqMessagesTool {
             let group_id = optional_string_argument(arguments, "group_id")
                 .filter(|value| !value.trim().is_empty())
                 .or_else(|| self.default_group_id());
+            let before_time = optional_string_argument(arguments, "before_time")
+                .filter(|value| !value.trim().is_empty());
+            let before_id = arguments.get("before_id").and_then(|value| match value {
+                Value::Number(number) => number.as_i64(),
+                Value::String(text) => text.trim().parse::<i64>().ok(),
+                _ => None,
+            });
             let filters = MessageSearchFilters {
                 sender_id: optional_string_argument(arguments, "sender_id")
                     .filter(|value| !value.trim().is_empty()),
@@ -96,6 +105,8 @@ impl Tool for SearchQqMessagesTool {
                     .filter(|value| !value.trim().is_empty()),
                 end_time: optional_string_argument(arguments, "end_time")
                     .filter(|value| !value.trim().is_empty()),
+                before_time,
+                before_id,
                 sort_by_time_desc: true,
                 limit: sanitize_positive_limit(
                     arguments.get("limit").and_then(Value::as_i64),
@@ -103,11 +114,15 @@ impl Tool for SearchQqMessagesTool {
                     MAX_SEARCH_LIMIT,
                 ) as u32,
             };
-            let messages = search_message_records(mysql, filters)?;
+            let page = search_message_records(mysql, filters)?;
             Ok(serde_json::json!({
                 "ok": true,
-                "count": messages.len(),
-                "messages": messages,
+                "count": page.messages.len(),
+                "total": page.total,
+                "has_more": page.has_more,
+                "oldest_send_time": page.oldest_send_time,
+                "oldest_id": page.oldest_id,
+                "messages": page.messages,
             }))
         })();
 
