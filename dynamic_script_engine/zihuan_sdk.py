@@ -111,7 +111,7 @@ class ResourceHandle:
 class RedisRef(ResourceHandle): pass
 class RdbRef(ResourceHandle): pass
 class S3Ref(ResourceHandle): pass
-class WeaviateRef(ResourceHandle): pass
+class RetrievalStoreRef(ResourceHandle): pass
 class WebSearchEngineRef(ResourceHandle): pass
 class SessionStateRef(ResourceHandle): pass
 class LLMMessageSessionCacheRef(ResourceHandle): pass
@@ -120,7 +120,7 @@ class EmbeddingModel(ResourceHandle): pass
 class BotAdapterRef(ResourceHandle): pass
 
 
-_RESOURCE_TYPES = {cls.__name__: cls for cls in (RedisRef, RdbRef, S3Ref, WeaviateRef, WebSearchEngineRef, SessionStateRef, LLMMessageSessionCacheRef, LLModel, EmbeddingModel, BotAdapterRef)}
+_RESOURCE_TYPES = {cls.__name__: cls for cls in (RedisRef, RdbRef, S3Ref, RetrievalStoreRef, WebSearchEngineRef, SessionStateRef, LLMMessageSessionCacheRef, LLModel, EmbeddingModel, BotAdapterRef)}
 
 
 def hydrate_resources(value: Any) -> Any:
@@ -257,14 +257,14 @@ class Storage(_Namespace):
     def mysql(self, config_id: str) -> RdbRef: return self._call("create_mysql", config_id=config_id)
     def sqlite(self, config_id: str) -> RdbRef: return self._call("create_sqlite", config_id=config_id)
     def s3(self, config_id: str) -> S3Ref: return self._call("create_s3", config_id=config_id)
-    def weaviate(self, config_id: str) -> WeaviateRef: return self._call("create_weaviate", config_id=config_id)
+    def retrieval_store(self, config_id: str) -> RetrievalStoreRef: return self._call("create_retrieval_store", config_id=config_id)
     def user_history(self, rdb_ref: RdbRef, sender_id: str, group_id: str | None, limit: int) -> dict[str, Any]: return self._call("user_history", rdb_ref=rdb_ref, sender_id=sender_id, group_id=group_id, limit=limit)
     def group_history(self, rdb_ref: RdbRef, group_id: str, limit: int) -> dict[str, Any]: return self._call("group_history", rdb_ref=rdb_ref, group_id=group_id, limit=limit)
     def search_messages(self, rdb_ref: RdbRef, **filters: Any) -> dict[str, Any]: return self._call("search_messages", rdb_ref=rdb_ref, **filters)
-    def persist_qq_message_vectors(self, weaviate_ref: WeaviateRef, embedding_model: EmbeddingModel, qq_message_list: list[JsonValue], **metadata: Any) -> bool: return self._call("persist_qq_message_vectors", weaviate_ref=weaviate_ref, embedding_model=embedding_model, qq_message_list=qq_message_list, **metadata)
+    def persist_qq_message_vectors(self, retrieval_store_ref: RetrievalStoreRef, embedding_model: EmbeddingModel, qq_message_list: list[JsonValue], **metadata: Any) -> bool: return self._call("persist_qq_message_vectors", retrieval_store_ref=retrieval_store_ref, embedding_model=embedding_model, qq_message_list=qq_message_list, **metadata)
     def persist_qq_message_rdb(self, rdb_ref: RdbRef, qq_message_list: list[JsonValue], **metadata: Any) -> bool: return self._call("persist_qq_message_rdb", rdb_ref=rdb_ref, qq_message_list=qq_message_list, **metadata)
-    def persist_image_vector(self, weaviate_ref: WeaviateRef, **request: Any) -> bool: return self._call("persist_image_vector", weaviate_ref=weaviate_ref, **request)
-    def search_images(self, weaviate_ref: WeaviateRef, embedding_model: EmbeddingModel, query: str, **options: Any) -> dict[str, Any]: return self._call("search_images", weaviate_ref=weaviate_ref, embedding_model=embedding_model, query=query, **options)
+    def persist_image_vector(self, retrieval_store_ref: RetrievalStoreRef, **request: Any) -> bool: return self._call("persist_image_vector", retrieval_store_ref=retrieval_store_ref, **request)
+    def search_images(self, retrieval_store_ref: RetrievalStoreRef, embedding_model: EmbeddingModel, query: str, **options: Any) -> dict[str, Any]: return self._call("search_images", retrieval_store_ref=retrieval_store_ref, embedding_model=embedding_model, query=query, **options)
 
 
 class Agent(_Namespace):
@@ -274,8 +274,9 @@ class Agent(_Namespace):
     def task(self) -> dict[str, Any]: return self._call("task")
     def rdb(self) -> RdbRef: return self._call("rdb")
     def s3(self) -> S3Ref: return self._call("s3")
-    def image_weaviate(self) -> WeaviateRef: return self._call("image_weaviate")
+    def retrieval_store(self) -> RetrievalStoreRef: return self._call("retrieval_store")
     def web_search(self) -> WebSearchEngineRef: return self._call("web_search")
+    def image_search(self, query: str, **options: Any) -> dict[str, Any]: return self._call("image_search", query=query, **options)
 
 
 class Bot(_Namespace):
@@ -300,9 +301,21 @@ def _snake(value: str) -> str:
 
 class Resources:
     """Purpose: validate that an input is the expected typed resource handle before SDK use."""
+
+    # Names whose handle class is not spelled by capitalizing the accessor plus "Ref".
+    _ALIASES = {
+        "web_search": WebSearchEngineRef,
+        "session_state": SessionStateRef,
+        "message_cache": LLMMessageSessionCacheRef,
+        "llm_model": LLModel,
+        "embedding_model": EmbeddingModel,
+        "retrieval_store": RetrievalStoreRef,
+    }
+
     def __getattr__(self, name: str) -> Callable[[Any], ResourceHandle]:
-        names = {"web_search": WebSearchEngineRef, "session_state": SessionStateRef, "message_cache": LLMMessageSessionCacheRef, "llm_model": LLModel, "embedding_model": EmbeddingModel, "bot_adapter": BotAdapterRef}
-        cls = names.get(name) or _RESOURCE_TYPES["".join(part.capitalize() for part in _snake(name).split("_"))]
+        camel = "".join(part.capitalize() for part in _snake(name).split("_"))
+        cls = self._ALIASES.get(name) or _RESOURCE_TYPES.get(camel) or _RESOURCE_TYPES.get(f"{camel}Ref")
+        if cls is None: raise AttributeError(f"unknown resource '{name}'")
         return lambda value: value if isinstance(value, cls) else (_ for _ in ()).throw(TypeError(f"expected {cls.__name__}"))
 
 

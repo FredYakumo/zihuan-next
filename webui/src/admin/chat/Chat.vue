@@ -234,7 +234,7 @@
                       v-if="
                         idx === group.messages.length - 1 &&
                         ((message.liveToolCalls && message.liveToolCalls.length > 0) ||
-                          message.toolCalls.length > 0 ||
+                          visibleToolCalls(message).length > 0 ||
                           activeToolDetail?.messageId === message.id)
                       "
                       class="chat-tool-above-content"
@@ -294,6 +294,10 @@
                               classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result),
                             )"
                           />
+                          <div
+                            v-if="askUserAnswerText(liveCall.call_id)"
+                            class="chat-ask-user-answer"
+                          >{{ askUserAnswerText(liveCall.call_id) }}</div>
                           <pre
                             v-if="
                               classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result).type ===
@@ -312,8 +316,8 @@
                           </div>
                         </div>
                       </div>
-                      <div v-if="message.toolCalls.length > 0" class="chat-tool-inline-list">
-                        <template v-for="toolCall in message.toolCalls" :key="toolCall.id">
+                      <div v-if="visibleToolCalls(message).length > 0" class="chat-tool-inline-list">
+                        <template v-for="toolCall in visibleToolCalls(message)" :key="toolCall.id">
                           <button
                             v-if="
                               classifyToolCall(
@@ -347,6 +351,10 @@
                               )
                             "
                           />
+                          <div
+                            v-if="askUserAnswerText(toolCall.id)"
+                            class="chat-ask-user-answer"
+                          >{{ askUserAnswerText(toolCall.id) }}</div>
                           <pre
                             v-if="
                               classifyToolCall(
@@ -479,7 +487,7 @@
                       v-if="
                         idx !== group.messages.length - 1 &&
                         ((message.liveToolCalls && message.liveToolCalls.length > 0) ||
-                          message.toolCalls.length > 0 ||
+                          visibleToolCalls(message).length > 0 ||
                           activeToolDetail?.messageId === message.id)
                       "
                       class="chat-tool-below-content"
@@ -539,6 +547,10 @@
                               classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result),
                             )"
                           />
+                          <div
+                            v-if="askUserAnswerText(liveCall.call_id)"
+                            class="chat-ask-user-answer"
+                          >{{ askUserAnswerText(liveCall.call_id) }}</div>
                           <pre
                             v-if="
                               classifyToolCall(liveCall.name, liveCall.arguments, liveCall.result).type ===
@@ -557,8 +569,8 @@
                           </div>
                         </div>
                       </div>
-                      <div v-if="message.toolCalls.length > 0" class="chat-tool-inline-list">
-                        <template v-for="toolCall in message.toolCalls" :key="toolCall.id">
+                      <div v-if="visibleToolCalls(message).length > 0" class="chat-tool-inline-list">
+                        <template v-for="toolCall in visibleToolCalls(message)" :key="toolCall.id">
                           <button
                             v-if="
                               classifyToolCall(
@@ -592,6 +604,10 @@
                               )
                             "
                           />
+                          <div
+                            v-if="askUserAnswerText(toolCall.id)"
+                            class="chat-ask-user-answer"
+                          >{{ askUserAnswerText(toolCall.id) }}</div>
                           <pre
                             v-if="
                               classifyToolCall(
@@ -1816,6 +1832,8 @@ const {
   canSubmitAskUserChoice,
   chooseAskUserOption,
   deferAskUserAnswer,
+  askUserAnswerText,
+  visibleToolCalls,
   toolCallLimitDecisionLoading,
   messageGroups,
   activeToolDetail,

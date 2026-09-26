@@ -8,6 +8,7 @@ pub const LLM_KIND_NATURAL_LANGUAGE_REPLY: &str = "natural_language_reply";
 
 pub mod agent;
 pub mod declarative_agent;
+pub mod node_tool;
 pub mod resource_provider;
 pub mod runtime_context;
 pub mod tool_config;

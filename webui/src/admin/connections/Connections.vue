@@ -120,20 +120,16 @@
 
             <template v-else-if="form.type === 'weaviate'">
               <t-form-item label="Base URL" required><t-input v-model="form.weaviate_base_url" /></t-form-item>
-              <t-form-item label="Class Name" required><t-input v-model="form.weaviate_class_name" /></t-form-item>
               <t-form-item label="认证方式"><t-select v-model="form.weaviate_auth_method" @change="clearInactiveConnectionCredentials('weaviate')"><t-option value="password" label="密码" /><t-option value="api_key" label="API Key" /></t-select></t-form-item>
               <t-form-item v-if="form.weaviate_auth_method === 'password'" label="用户名" required><t-input v-model="form.weaviate_username" /></t-form-item>
               <t-form-item :label="form.weaviate_auth_method === 'password' ? '密码' : 'API Key'" required><ConnectionCredentialInput v-if="form.weaviate_auth_method === 'password'" v-model="form.weaviate_password" /><ConnectionCredentialInput v-else v-model="form.weaviate_api_key" /></t-form-item>
-              <t-form-item label="Collection Schema"><t-select v-model="form.weaviate_collection_schema"><t-option value="image_semantic" label="图片语义" /><t-option value="agent_memory" label="Agent 记忆" /></t-select></t-form-item>
             </template>
 
             <template v-else-if="form.type === 'elasticsearch'">
               <t-form-item label="Base URL" required><t-input v-model="form.elasticsearch_base_url" placeholder="https://localhost:9200" /></t-form-item>
-              <t-form-item label="Index Name" required><t-input v-model="form.elasticsearch_index_name" /></t-form-item>
               <t-form-item label="认证方式"><t-select v-model="form.elasticsearch_auth_method" @change="clearInactiveConnectionCredentials('elasticsearch')"><t-option value="password" label="密码" /><t-option value="api_key" label="API Key" /></t-select></t-form-item>
               <t-form-item v-if="form.elasticsearch_auth_method === 'password'" label="用户名" required><t-input v-model="form.elasticsearch_username" /></t-form-item>
               <t-form-item :label="form.elasticsearch_auth_method === 'password' ? '密码' : 'API Key'" required><ConnectionCredentialInput v-if="form.elasticsearch_auth_method === 'password'" v-model="form.elasticsearch_password" /><ConnectionCredentialInput v-else v-model="form.elasticsearch_api_key" /></t-form-item>
-              <t-form-item label="索引用途"><t-select v-model="form.elasticsearch_collection_schema"><t-option value="agent_memory" label="Agent 记忆" /><t-option value="image_semantic" label="图片语义" /></t-select></t-form-item>
               <t-form-item label="向量维度"><t-input-number v-model="form.elasticsearch_vector_dimensions" :min="1" /></t-form-item>
             </template>
 

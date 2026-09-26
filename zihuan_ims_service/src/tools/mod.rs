@@ -11,10 +11,9 @@ use zihuan_core::graph::object_storage::S3Ref;
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngine;
+use zihuan_core::retrieval::RetrievalStoreRef;
 use zihuan_core::storage::AgentMemoryAccessContext;
-use zihuan_core::storage::ElasticsearchRef;
 use zihuan_core::storage::LocalMemoryStore;
-use zihuan_core::weaviate::WeaviateRef;
 
 mod agent_state;
 mod common;
@@ -23,6 +22,7 @@ mod image_save;
 mod image_search;
 mod image_understand;
 mod info_tools;
+mod qq_message_search;
 mod recent_messages;
 mod reply_message;
 mod web_search;
@@ -34,6 +34,7 @@ pub(crate) use image_save::SaveImageTool;
 pub(crate) use image_search::SearchSimilarImagesTool;
 pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstandTool};
 pub(crate) use info_tools::{GetAgentPublicInfoTool, GetFunctionListTool};
+pub(crate) use qq_message_search::SearchQqMessagesTool;
 pub(crate) use recent_messages::{GetRecentGroupMessagesTool, GetRecentUserMessagesTool};
 pub(crate) use reply_message::ReplyMessageTool;
 pub(crate) use web_search::WebSearchTool;
@@ -47,6 +48,7 @@ pub(crate) const DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO: &str = "get_agent_public_in
 pub(crate) const DEFAULT_TOOL_GET_FUNCTION_LIST: &str = "get_function_list";
 pub(crate) const DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES: &str = "get_recent_group_messages";
 pub(crate) const DEFAULT_TOOL_GET_RECENT_USER_MESSAGES: &str = "get_recent_user_messages";
+pub(crate) const DEFAULT_TOOL_SEARCH_QQ_MESSAGES: &str = "search_qq_messages";
 pub(crate) const DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES: &str = "search_similar_images";
 pub(crate) const DEFAULT_TOOL_SAVE_IMAGE: &str = "save_image";
 pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
@@ -60,10 +62,7 @@ pub fn build_info_brain_tools(
     web_search_engine_ref: Option<Arc<dyn WebSearchEngine>>,
     rdb_pool: Option<RelationalDbConnection>,
     s3_ref: Option<Arc<S3Ref>>,
-    weaviate_image_ref: Option<Arc<WeaviateRef>>,
-    elasticsearch_image_ref: Option<Arc<ElasticsearchRef>>,
-    weaviate_memory_ref: Option<Arc<WeaviateRef>>,
-    elasticsearch_memory_ref: Option<Arc<ElasticsearchRef>>,
+    retrieval_store: Option<Arc<RetrievalStoreRef>>,
     local_memory_store: Option<Arc<LocalMemoryStore>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     llm: Option<Arc<dyn LLMBase>>,
@@ -108,7 +107,7 @@ pub fn build_info_brain_tools(
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
         if let Some(engine) = web_search_engine_ref {
             tools.push(Box::new(SearchSimilarImagesTool::new(
-                weaviate_image_ref.clone(),
+                retrieval_store.clone(),
                 embedding_model.clone(),
                 engine,
                 None,
@@ -118,13 +117,9 @@ pub fn build_info_brain_tools(
     }
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_SAVE_IMAGE) {
-        if s3_ref.is_some()
-            && (weaviate_image_ref.is_some() || elasticsearch_image_ref.is_some())
-            && embedding_model.is_some()
-        {
+        if s3_ref.is_some() && retrieval_store.is_some() && embedding_model.is_some() {
             tools.push(Box::new(SaveImageTool::new(
-                weaviate_image_ref.clone(),
-                elasticsearch_image_ref.clone(),
+                retrieval_store.clone(),
                 embedding_model.clone(),
                 s3_ref.clone(),
                 rdb_pool.clone(),
@@ -136,11 +131,9 @@ pub fn build_info_brain_tools(
         tools.push(Box::new(ImageUnderstandTool::new(None, rdb_pool, s3_ref, dashboard_target)));
     }
 
-    let memory_backend = local_memory_store.map(MemoryBackend::LocalFile).or_else(|| {
-        elasticsearch_memory_ref
-            .map(MemoryBackend::Elasticsearch)
-            .or_else(|| weaviate_memory_ref.map(MemoryBackend::Weaviate))
-    });
+    let memory_backend = local_memory_store
+        .map(MemoryBackend::LocalFile)
+        .or_else(|| retrieval_store.map(MemoryBackend::RetrievalStore));
     if let (Some(memory_backend), Some(llm)) = (memory_backend, llm) {
         let memory_resources = MemoryAgentResources {
             memory_backend,

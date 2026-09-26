@@ -9,8 +9,8 @@ use zihuan_core::graph::graph_io::{NodeGraphDefinition, PortBindingKind};
 use zihuan_core::graph::{DataValue, NodeGraph};
 use zihuan_core::ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
 use zihuan_core::storage::{
-    build_rdb_ref, build_redis_ref, build_s3_ref, build_weaviate_ref, build_web_search_engine_ref,
-    load_connections, ConnectionConfig,
+    build_rdb_ref, build_redis_ref, build_retrieval_store_ref, build_s3_ref,
+    build_web_search_engine_ref, load_connections, ConnectionConfig,
 };
 
 use zihuan_core::graph::hyperparam_store;
@@ -146,10 +146,10 @@ async fn resolve_connection_hyperparameter(
         }
         DataType::RedisRef => build_redis_ref(Some(connection_id), connections)
             .map(|value| value.map(|value| (DataValue::RedisRef(value), None))),
-        DataType::WeaviateRef => tokio::task::block_in_place(|| {
-            build_weaviate_ref(Some(connection_id), connections, None)
-        })
-        .map(|value| value.map(|value| (DataValue::WeaviateRef(value), None))),
+        DataType::RetrievalStoreRef => {
+            tokio::task::block_in_place(|| build_retrieval_store_ref(connection_id, connections))
+                .map(|value| Some((DataValue::RetrievalStoreRef(value), None)))
+        }
         DataType::S3Ref => build_s3_ref(Some(connection_id), connections)
             .await
             .map(|value| value.map(|value| (DataValue::S3Ref(value), None))),

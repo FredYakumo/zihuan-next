@@ -35,12 +35,12 @@ use crate::qq_chat::{
 use crate::tools::{
     AgentMemoryBackend, AgentMemoryToolResources, EditableQqAgentTool, GetAgentPublicInfoTool,
     GetFunctionListTool, GetRecentGroupMessagesTool, GetRecentUserMessagesTool,
-    ImageUnderstandTool, ReplyMessageTool, SaveImageTool, SearchSimilarImagesTool, SharedTool,
-    ToolNotificationTarget, WebSearchTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
-    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
-    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
-    DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_SAVE_IMAGE, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
-    DEFAULT_TOOL_WEB_SEARCH,
+    ImageUnderstandTool, ReplyMessageTool, SaveImageTool, SearchQqMessagesTool,
+    SearchSimilarImagesTool, SharedTool, ToolNotificationTarget, WebSearchTool,
+    DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
+    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
+    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_SAVE_IMAGE,
+    DEFAULT_TOOL_SEARCH_QQ_MESSAGES, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
 };
 
 /// Output of the QQ brain invocation for one turn.
@@ -127,13 +127,11 @@ impl QqBrain {
             preprompt_context: preprompt_context.clone(),
         }));
 
-        let memory_backend =
-            ctx.local_memory_store.cloned().map(AgentMemoryBackend::LocalFile).or_else(|| {
-                ctx.elasticsearch_memory_ref
-                    .cloned()
-                    .map(AgentMemoryBackend::Elasticsearch)
-                    .or_else(|| ctx.weaviate_memory_ref.cloned().map(AgentMemoryBackend::Weaviate))
-            });
+        let memory_backend = ctx
+            .local_memory_store
+            .cloned()
+            .map(AgentMemoryBackend::LocalFile)
+            .or_else(|| ctx.retrieval_store.cloned().map(AgentMemoryBackend::RetrievalStore));
         let memory_resources = memory_backend.as_ref().and_then(|memory_backend| {
             let embedding_model = ctx.embedding_model.cloned();
             if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_))
@@ -191,6 +189,14 @@ impl QqBrain {
                 ToolNotificationTarget::dashboard(),
             )),
         );
+        // Bound to this turn's session so a caller that omits the group searches the current one.
+        agent_host.register_tool(
+            DEFAULT_TOOL_SEARCH_QQ_MESSAGES,
+            Arc::new(SearchQqMessagesTool::new(
+                ctx.rdb_pool.cloned(),
+                ToolNotificationTarget::new(None, target_id.to_string(), None, is_group, false),
+            )),
+        );
         // `main` is the service's main model; the memory agent uses it, the research agent
         // (`math_programming`) use the dedicated math/programming model.
         agent_host.register_llm(LLM_KIND_MAIN, Arc::clone(ctx.llm));
@@ -213,7 +219,6 @@ impl QqBrain {
             brain.add_tool(wrap_brain_tool_with_quota(SharedTool::new(tool), tool_quota.clone()));
             added_agent_ids.insert("run_research_subagent".to_string());
         }
-
         // Sub-agents the service selects. Publish every remaining on-disk definition first so a
         // selected sub-agent may reference another one, then expose the selected ids that the
         // built-in tools above have not already added.
@@ -304,7 +309,7 @@ impl QqBrain {
         if service.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
             brain.add_tool(wrap_brain_tool_with_quota(
                 SearchSimilarImagesTool::new(
-                    ctx.weaviate_image_ref.cloned(),
+                    ctx.retrieval_store.cloned(),
                     ctx.embedding_model.cloned(),
                     ctx.web_search_engine.clone(),
                     ctx.s3_ref.cloned(),
@@ -326,13 +331,12 @@ impl QqBrain {
 
         if service.is_default_tool_enabled(DEFAULT_TOOL_SAVE_IMAGE)
             && ctx.s3_ref.is_some()
-            && ctx.weaviate_image_ref.is_some()
+            && ctx.retrieval_store.is_some()
             && ctx.embedding_model.is_some()
         {
             brain.add_tool(wrap_brain_tool_with_quota(
                 SaveImageTool::new(
-                    ctx.weaviate_image_ref.cloned(),
-                    None,
+                    ctx.retrieval_store.cloned(),
                     ctx.embedding_model.cloned(),
                     ctx.s3_ref.cloned(),
                     ctx.rdb_pool.cloned(),

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use zihuan_core::role::service_config::MemoryBackendKind;
+use zihuan_core::retrieval::RetrievalStoreConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceRoleServiceConfig {
@@ -19,15 +19,23 @@ pub struct WorkspaceRoleServiceConfig {
     #[serde(default)]
     pub embedding_model_ref_id: Option<String>,
     #[serde(default)]
-    pub weaviate_memory_connection_id: Option<String>,
-    #[serde(default)]
-    pub elasticsearch_memory_connection_id: Option<String>,
-    #[serde(default)]
-    pub memory_backend: Option<MemoryBackendKind>,
+    pub retrieval_store: Option<RetrievalStoreConfig>,
     #[serde(default)]
     pub web_search_engine_connection_id: Option<String>,
     #[serde(default = "default_workspace_default_tools_enabled")]
     pub default_tools_enabled: HashMap<String, bool>,
+}
+
+impl WorkspaceRoleServiceConfig {
+    /// The configured retrieval-store connection, when the agent uses an external store.
+    pub fn retrieval_store_connection_id(&self) -> Option<&str> {
+        self.retrieval_store.as_ref().and_then(RetrievalStoreConfig::connection_id)
+    }
+
+    /// Whether the agent's retrieval store is the local on-disk backend.
+    pub fn retrieval_store_is_local(&self) -> bool {
+        self.retrieval_store.as_ref().is_some_and(RetrievalStoreConfig::is_local)
+    }
 }
 
 fn default_workspace_default_tools_enabled() -> HashMap<String, bool> {

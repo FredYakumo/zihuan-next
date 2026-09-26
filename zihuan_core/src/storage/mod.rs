@@ -4,7 +4,6 @@ mod agent_memory_weaviate;
 mod connection_manager;
 mod db_schema;
 mod elasticsearch;
-mod image_weaviate_persistence;
 mod local_memory;
 mod message_record;
 pub mod mysql;
@@ -13,13 +12,13 @@ mod qq_message_list_weaviate_persistence;
 pub mod rdb;
 pub mod redis;
 pub mod resource_resolver;
+mod retrieval_ops;
 pub mod rustfs;
 pub mod sqlite;
 pub mod weaviate;
 mod weaviate_client;
 mod weaviate_image_search_node;
 
-pub(crate) use image_weaviate_persistence::{persist_image_record, ImagePersistenceRequest};
 pub(crate) use qq_message_list_weaviate_persistence::persist_qq_message_list;
 pub(crate) use weaviate_image_search_node::{search_images, DEFAULT_MAX_DISTANCE};
 mod weaviate_persistence;
@@ -31,7 +30,9 @@ use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-pub use crate::weaviate::WeaviateCollectionSchema;
+pub use crate::retrieval::{
+    RetrievalBackend, RetrievalSchema, RetrievalStoreConfig, RetrievalStoreRef,
+};
 pub use agent_avatar_rdb_store::{first_available_agent_avatar_store, RdbAgentAvatarStore};
 pub use agent_avatar_store::{AgentAvatarData, AgentAvatarStore};
 pub use agent_memory_weaviate::{
@@ -50,7 +51,7 @@ pub use db_schema::ensure_tables_for_connection;
 pub use elasticsearch::{
     create_elasticsearch_memory_record, ensure_elasticsearch_index, list_elasticsearch_memory_keys,
     search_elasticsearch_images, search_elasticsearch_memory, upsert_elasticsearch_image,
-    ElasticsearchImageSearchHit, ElasticsearchIndexSchema, ElasticsearchRef,
+    ElasticsearchImageSearchHit, ElasticsearchRef,
 };
 pub use local_memory::LocalMemoryStore;
 pub use message_record::MessageRecord;
@@ -63,8 +64,14 @@ pub use rdb::{
     build_relational_db_connection_for_connection, build_relational_db_connection_for_kind,
 };
 pub use resource_resolver::{
-    build_elasticsearch_ref, build_rdb_ref, build_redis_ref, build_s3_ref, build_weaviate_ref,
-    build_web_search_engine_ref, find_connection, resolve_connection_data_value,
+    build_elasticsearch_ref, build_rdb_ref, build_redis_ref, build_retrieval_store_ref,
+    build_s3_ref, build_weaviate_ref, build_web_search_engine_ref, find_connection,
+    resolve_connection_data_value,
+};
+pub use retrieval_ops::{
+    list_memory_in_store, persist_image_record_to_store, persist_media_to_store,
+    persist_qq_message_list_to_store, search_images_in_store, search_memory_in_store,
+    upsert_memory_in_store, ImagePersistenceRequest,
 };
 pub use weaviate_client::WeaviateClient;
 pub use weaviate_persistence::{
@@ -140,7 +147,6 @@ impl Default for ConnectionAuthMethod {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeaviateConnection {
     pub base_url: String,
-    pub class_name: String,
     #[serde(default)]
     pub username: Option<String>,
     #[serde(default)]
@@ -149,13 +155,11 @@ pub struct WeaviateConnection {
     pub api_key: Option<String>,
     #[serde(default)]
     pub auth_method: ConnectionAuthMethod,
-    pub collection_schema: WeaviateCollectionSchema,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElasticsearchConnection {
     pub base_url: String,
-    pub index_name: String,
     #[serde(default)]
     pub username: Option<String>,
     #[serde(default)]
@@ -164,7 +168,6 @@ pub struct ElasticsearchConnection {
     pub api_key: Option<String>,
     #[serde(default)]
     pub auth_method: ConnectionAuthMethod,
-    pub collection_schema: WeaviateCollectionSchema,
     pub vector_dimensions: usize,
 }
 
@@ -350,10 +353,8 @@ impl ConfigRecord for ConnectionConfig {
                     "elasticsearch base_url must use http:// or https://"
                 ));
             }
-            if elasticsearch.index_name.trim().is_empty() || elasticsearch.vector_dimensions == 0 {
-                return Err(crate::string_error!(
-                    "elasticsearch index_name and vector_dimensions are required"
-                ));
+            if elasticsearch.vector_dimensions == 0 {
+                return Err(crate::string_error!("vector_dimensions is required"));
             }
         }
         if let ConnectionKind::Weaviate(weaviate) = &self.kind {
@@ -523,15 +524,12 @@ fn migrate_connection_spec(record: &StoredConfigRecord) -> (Value, bool) {
         return (spec, false);
     };
     let mut migrated = false;
-    if record.kind == ConfigKind::ConnectionWeaviate && !object.contains_key("collection_schema") {
-        let class_name = object.get("class_name").and_then(Value::as_str).unwrap_or_default();
-        let inferred = infer_weaviate_collection_schema(&record.name, class_name);
-        object.insert(
-            "collection_schema".to_string(),
-            serde_json::to_value(inferred)
-                .unwrap_or_else(|_| Value::String("agent_memory".to_string())),
-        );
-        migrated = true;
+    // Legacy weaviate connections carried a fixed class and schema; both are now
+    // derived per schema at runtime, so drop them so stale values cannot mislead.
+    for legacy_key in ["class_name", "collection_schema", "index_name"] {
+        if object.remove(legacy_key).is_some() {
+            migrated = true;
+        }
     }
     if !object.contains_key("auth_method") {
         let api_key = object
@@ -567,21 +565,6 @@ fn migrate_connection_spec(record: &StoredConfigRecord) -> (Value, bool) {
         migrated = true;
     }
     (spec, migrated)
-}
-
-pub fn infer_weaviate_collection_schema(
-    connection_name: &str,
-    class_name: &str,
-) -> WeaviateCollectionSchema {
-    let haystack = format!("{connection_name} {class_name}").to_lowercase();
-    if ["image", "img", "picture", "photo", "图片", "图像"]
-        .iter()
-        .any(|needle| haystack.contains(needle))
-    {
-        WeaviateCollectionSchema::ImageSemantic
-    } else {
-        WeaviateCollectionSchema::AgentMemory
-    }
 }
 
 pub fn init_node_registry() -> Result<()> {

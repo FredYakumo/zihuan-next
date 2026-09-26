@@ -21,12 +21,16 @@ use crate::agent::runtime_context::{
 };
 use crate::agent::tools::{Tool, ToolExecutionOutput, ToolExecutionResource, ToolRunDuration};
 use crate::agent::{AgentCancellation, AgentContext};
+use crate::model_inference::inference_function::compact_message::{
+    compact_tool_loop_conversation, compaction_threshold, estimate_messages_tokens,
+};
 use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::tooling::FunctionTool;
 use crate::model_inference::llm::tooling::ToolCalls;
 use crate::model_inference::llm::{
     InferenceParam, LLMMessage, MessagePart, MessageRole, StreamToken,
 };
+use crate::system_config::current_context_compaction_percent;
 use crate::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskStatus,
 };
@@ -455,6 +459,7 @@ impl ToolCallingEngine {
             if iteration > 0 {
                 self.append_iteration_messages(iteration + 1, &mut conversation);
             }
+            self.compact_conversation_if_over_threshold(&mut conversation);
             let response = match self.llm.inference(&InferenceParam {
                 messages: &conversation,
                 tools: if tool_specs.is_empty() {
@@ -597,6 +602,28 @@ impl ToolCallingEngine {
 
         warn!("[ToolCallingEngine] Tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})");
         (output, ToolCallingStopReason::MaxIterationsReached)
+    }
+
+    /// Compacts the loop conversation when its estimated tokens exceed the configured
+    /// share of the model context window. The leading system/setup messages and the most
+    /// recent tool exchange are preserved verbatim; older exchanges are replaced by an
+    /// LLM digest, so long pagination loops cannot overflow the context.
+    fn compact_conversation_if_over_threshold(&self, conversation: &mut Vec<LLMMessage>) {
+        let threshold =
+            compaction_threshold(self.llm.context_length(), current_context_compaction_percent());
+        if threshold == 0 || estimate_messages_tokens(conversation) <= threshold {
+            return;
+        }
+
+        let taken = std::mem::take(conversation);
+        let result = compact_tool_loop_conversation(&self.llm, taken, threshold);
+        if result.did_compact {
+            info!(
+                "[ToolCallingEngine] conversation compacted mid-loop: estimated tokens {} -> {}",
+                result.estimated_tokens_before, result.estimated_tokens_after
+            );
+        }
+        *conversation = result.messages;
     }
 
     pub async fn run_streaming(

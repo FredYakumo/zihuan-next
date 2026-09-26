@@ -4,13 +4,14 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::sync::broadcast;
 
+use zihuan_core::retrieval::RetrievalSchema;
 use zihuan_core::setup_wizard::{load_setup_wizard_state, save_setup_wizard_state};
 use zihuan_core::storage::{
     ensure_collection_schema, ensure_elasticsearch_index, ConnectionAuthMethod, ConnectionConfig,
     ConnectionKind, ElasticsearchConnection, ElasticsearchRef, MysqlConnection, RedisConnection,
     RustfsConnection, SqliteConnection, WeaviateConnection,
 };
-use zihuan_core::weaviate::{WeaviateCollectionSchema, WeaviateRef};
+use zihuan_core::weaviate::WeaviateRef;
 
 pub mod config_factory;
 
@@ -677,83 +678,61 @@ fn detailed_connection_configs(config: &DetailedSetupConfig) -> Vec<ConnectionCo
         } else {
             config.search.base_url.clone()
         };
-        for (suffix, schema) in [
-            ("memory", WeaviateCollectionSchema::AgentMemory),
-            ("image", WeaviateCollectionSchema::ImageSemantic),
-        ] {
-            let id = format!("setup-detailed-{}-{suffix}", config.search.search_type);
-            let name = format!("{} {suffix}", config.search.search_type);
-            let kind = if config.search.search_type == "elasticsearch" {
-                // ConnectionKind::Elasticsearch(ElasticsearchConnection {
-                //     base_url: base_url.clone(),
-                //     index_name: format!("zihuan_{suffix}"),
-                //     username: config.search.username.clone(),
-                //     password: config.search.password.clone(),
-                //     api_key: config.search.api_key.clone(),
-                //     collection_schema: schema,
-                //     vector_dimensions: config.search.vector_dimensions,
-                // })
-                ConnectionKind::Elasticsearch(ElasticsearchConnection {
-                    base_url: base_url.clone(),
-                    index_name: format!("zihuan_{suffix}"),
-                    username: if config.search.source == DetailedComponentSource::Install {
-                        Some("elastic".to_string())
-                    } else if config.search.auth_method == DetailedSearchAuthMethod::Password {
-                        config.search.username.clone()
-                    } else {
-                        None
-                    },
-                    password: if config.search.auth_method == DetailedSearchAuthMethod::Password {
-                        config.search.password.clone()
-                    } else {
-                        None
-                    },
-                    // A wizard-installed Docker image creates the elastic user from
-                    // ELASTIC_PASSWORD but does not create an API key.
-                    api_key: if config.search.auth_method == DetailedSearchAuthMethod::ApiKey {
-                        config.search.api_key.clone()
-                    } else {
-                        None
-                    },
-                    auth_method: match config.search.auth_method {
-                        DetailedSearchAuthMethod::Password => ConnectionAuthMethod::Password,
-                        DetailedSearchAuthMethod::ApiKey => ConnectionAuthMethod::ApiKey,
-                    },
-                    collection_schema: schema,
-                    vector_dimensions: config.search.vector_dimensions,
-                })
-            } else {
-                ConnectionKind::Weaviate(WeaviateConnection {
-                    base_url: base_url.clone(),
-                    class_name: if suffix == "memory" {
-                        "AgentMemory".to_string()
-                    } else {
-                        "ImageSemantic".to_string()
-                    },
-                    username: if config.search.auth_method == DetailedSearchAuthMethod::Password {
-                        config.search.username.clone()
-                    } else {
-                        None
-                    },
-                    password: if config.search.auth_method == DetailedSearchAuthMethod::Password {
-                        config.search.password.clone()
-                    } else {
-                        None
-                    },
-                    api_key: if config.search.auth_method == DetailedSearchAuthMethod::ApiKey {
-                        config.search.api_key.clone()
-                    } else {
-                        None
-                    },
-                    auth_method: match config.search.auth_method {
-                        DetailedSearchAuthMethod::Password => ConnectionAuthMethod::Password,
-                        DetailedSearchAuthMethod::ApiKey => ConnectionAuthMethod::ApiKey,
-                    },
-                    collection_schema: schema,
-                })
-            };
-            connections.push(config_factory::build_connection(&id, &name, kind));
-        }
+        let id = format!("setup-detailed-{}", config.search.search_type);
+        let name = config.search.search_type.clone();
+        let kind = if config.search.search_type == "elasticsearch" {
+            ConnectionKind::Elasticsearch(ElasticsearchConnection {
+                base_url: base_url.clone(),
+                username: if config.search.source == DetailedComponentSource::Install {
+                    Some("elastic".to_string())
+                } else if config.search.auth_method == DetailedSearchAuthMethod::Password {
+                    config.search.username.clone()
+                } else {
+                    None
+                },
+                password: if config.search.auth_method == DetailedSearchAuthMethod::Password {
+                    config.search.password.clone()
+                } else {
+                    None
+                },
+                // A wizard-installed Docker image creates the elastic user from
+                // ELASTIC_PASSWORD but does not create an API key.
+                api_key: if config.search.auth_method == DetailedSearchAuthMethod::ApiKey {
+                    config.search.api_key.clone()
+                } else {
+                    None
+                },
+                auth_method: match config.search.auth_method {
+                    DetailedSearchAuthMethod::Password => ConnectionAuthMethod::Password,
+                    DetailedSearchAuthMethod::ApiKey => ConnectionAuthMethod::ApiKey,
+                },
+                vector_dimensions: config.search.vector_dimensions,
+            })
+        } else {
+            ConnectionKind::Weaviate(WeaviateConnection {
+                base_url: base_url.clone(),
+                username: if config.search.auth_method == DetailedSearchAuthMethod::Password {
+                    config.search.username.clone()
+                } else {
+                    None
+                },
+                password: if config.search.auth_method == DetailedSearchAuthMethod::Password {
+                    config.search.password.clone()
+                } else {
+                    None
+                },
+                api_key: if config.search.auth_method == DetailedSearchAuthMethod::ApiKey {
+                    config.search.api_key.clone()
+                } else {
+                    None
+                },
+                auth_method: match config.search.auth_method {
+                    DetailedSearchAuthMethod::Password => ConnectionAuthMethod::Password,
+                    DetailedSearchAuthMethod::ApiKey => ConnectionAuthMethod::ApiKey,
+                },
+            })
+        };
+        connections.push(config_factory::build_connection(&id, &name, kind));
     }
     connections
 }
@@ -1059,136 +1038,112 @@ async fn save_detailed_connections(config: &DetailedSetupConfig) -> Result<(), S
         ))?;
     }
     if config.search.enabled {
-        for (suffix, schema) in [
-            ("memory", WeaviateCollectionSchema::AgentMemory),
-            ("image", WeaviateCollectionSchema::ImageSemantic),
-        ] {
-            let id = format!("setup-detailed-{}-{suffix}", config.search.search_type);
-            let name = format!("{} {}", config.search.search_type, suffix);
-            let kind = if config.search.search_type == "elasticsearch" {
-                // Previous implementation:
-                // ConnectionKind::Elasticsearch(ElasticsearchConnection {
-                //     base_url: config.search.base_url.clone(),
-                //     index_name: format!("zihuan_{suffix}"),
-                //     username: config.search.username.clone(),
-                //     password: config.search.password.clone(),
-                //     api_key: config.search.api_key.clone(),
-                //     collection_schema: schema,
-                //     vector_dimensions: config.search.vector_dimensions,
-                // })
-                ConnectionKind::Elasticsearch(ElasticsearchConnection {
-                    base_url: config.search.base_url.clone(),
-                    index_name: format!("zihuan_{suffix}"),
-                    username: if config.search.source == DetailedComponentSource::Install {
-                        Some("elastic".to_string())
-                    } else if config.search.auth_method == DetailedSearchAuthMethod::Password {
-                        config.search.username.clone()
-                    } else {
-                        None
-                    },
-                    password: if config.search.auth_method == DetailedSearchAuthMethod::Password {
-                        config.search.password.clone()
-                    } else {
-                        None
-                    },
-                    // A wizard-installed Docker image creates the elastic user from
-                    // ELASTIC_PASSWORD but does not create an API key.
-                    api_key: if config.search.auth_method == DetailedSearchAuthMethod::ApiKey {
-                        config.search.api_key.clone()
-                    } else {
-                        None
-                    },
-                    auth_method: match config.search.auth_method {
-                        DetailedSearchAuthMethod::Password => ConnectionAuthMethod::Password,
-                        DetailedSearchAuthMethod::ApiKey => ConnectionAuthMethod::ApiKey,
-                    },
-                    collection_schema: schema,
-                    vector_dimensions: config.search.vector_dimensions,
-                })
-            } else {
-                ConnectionKind::Weaviate(WeaviateConnection {
-                    base_url: config.search.base_url.clone(),
-                    class_name: if suffix == "memory" {
-                        "AgentMemory".to_string()
-                    } else {
-                        "ImageSemantic".to_string()
-                    },
-                    username: if config.search.auth_method == DetailedSearchAuthMethod::Password {
-                        config.search.username.clone()
-                    } else {
-                        None
-                    },
-                    password: if config.search.auth_method == DetailedSearchAuthMethod::Password {
-                        config.search.password.clone()
-                    } else {
-                        None
-                    },
-                    api_key: if config.search.auth_method == DetailedSearchAuthMethod::ApiKey {
-                        config.search.api_key.clone()
-                    } else {
-                        None
-                    },
-                    auth_method: match config.search.auth_method {
-                        DetailedSearchAuthMethod::Password => ConnectionAuthMethod::Password,
-                        DetailedSearchAuthMethod::ApiKey => ConnectionAuthMethod::ApiKey,
-                    },
-                    collection_schema: schema,
-                })
-            };
-            let initialization_kind = kind.clone();
+        let id = format!("setup-detailed-{}", config.search.search_type);
+        let name = config.search.search_type.clone();
+        let kind = if config.search.search_type == "elasticsearch" {
+            ConnectionKind::Elasticsearch(ElasticsearchConnection {
+                base_url: config.search.base_url.clone(),
+                username: if config.search.source == DetailedComponentSource::Install {
+                    Some("elastic".to_string())
+                } else if config.search.auth_method == DetailedSearchAuthMethod::Password {
+                    config.search.username.clone()
+                } else {
+                    None
+                },
+                password: if config.search.auth_method == DetailedSearchAuthMethod::Password {
+                    config.search.password.clone()
+                } else {
+                    None
+                },
+                // A wizard-installed Docker image creates the elastic user from
+                // ELASTIC_PASSWORD but does not create an API key.
+                api_key: if config.search.auth_method == DetailedSearchAuthMethod::ApiKey {
+                    config.search.api_key.clone()
+                } else {
+                    None
+                },
+                auth_method: match config.search.auth_method {
+                    DetailedSearchAuthMethod::Password => ConnectionAuthMethod::Password,
+                    DetailedSearchAuthMethod::ApiKey => ConnectionAuthMethod::ApiKey,
+                },
+                vector_dimensions: config.search.vector_dimensions,
+            })
+        } else {
+            ConnectionKind::Weaviate(WeaviateConnection {
+                base_url: config.search.base_url.clone(),
+                username: if config.search.auth_method == DetailedSearchAuthMethod::Password {
+                    config.search.username.clone()
+                } else {
+                    None
+                },
+                password: if config.search.auth_method == DetailedSearchAuthMethod::Password {
+                    config.search.password.clone()
+                } else {
+                    None
+                },
+                api_key: if config.search.auth_method == DetailedSearchAuthMethod::ApiKey {
+                    config.search.api_key.clone()
+                } else {
+                    None
+                },
+                auth_method: match config.search.auth_method {
+                    DetailedSearchAuthMethod::Password => ConnectionAuthMethod::Password,
+                    DetailedSearchAuthMethod::ApiKey => ConnectionAuthMethod::ApiKey,
+                },
+            })
+        };
+        let initialization_kind = kind.clone();
 
-            // match &kind {
-            //     ConnectionKind::Elasticsearch(elasticsearch) => {
-            //         let reference = ElasticsearchRef::new(elasticsearch.clone())?;
-            //         ensure_elasticsearch_index(&reference, true)?;
-            //     }
-            //     ConnectionKind::Weaviate(weaviate) => {
-            //         let reference = WeaviateRef::new(
-            //             weaviate.base_url.clone(), weaviate.class_name.clone(),
-            //             weaviate.username.clone(), weaviate.password.clone(),
-            //             weaviate.api_key.clone(), Duration::from_secs(30),
-            //         )?;
-            //         ensure_collection_schema(&reference, schema, true)?;
-            //     }
-            //     _ => {}
-            // }
-
-            // initialized search indexes directly in this
-            // async task, causing reqwest::blocking's runtime to drop on Tokio
-
-            // Index setup uses blocking HTTP clients; keep their runtime lifetime
-            // entirely inside the blocking pool rather than an async worker.
-            tokio::task::spawn_blocking(move || -> Result<(), String> {
-                match initialization_kind {
-                    ConnectionKind::Elasticsearch(elasticsearch) => {
-                        let reference =
-                            ElasticsearchRef::new(elasticsearch).map_err(|err| err.to_string())?;
+        // Index setup uses blocking HTTP clients; keep their runtime lifetime
+        // entirely inside the blocking pool rather than an async worker. One
+        // retrieval connection serves every schema, so initialize them all here.
+        tokio::task::spawn_blocking(move || -> Result<(), String> {
+            let schemas = [
+                RetrievalSchema::ImageSemantic,
+                RetrievalSchema::AgentMemory,
+                RetrievalSchema::QqMessage,
+            ];
+            match initialization_kind {
+                ConnectionKind::Elasticsearch(elasticsearch) => {
+                    for schema in schemas {
+                        if !elasticsearch_supports_schema(schema) {
+                            continue;
+                        }
+                        let reference = ElasticsearchRef::new(elasticsearch.clone(), schema)
+                            .map_err(|err| err.to_string())?;
                         ensure_elasticsearch_index(&reference, true)
                             .map_err(|err| err.to_string())?;
                     }
-                    ConnectionKind::Weaviate(weaviate) => {
+                }
+                ConnectionKind::Weaviate(weaviate) => {
+                    for schema in schemas {
                         let reference = WeaviateRef::new(
-                            weaviate.base_url,
-                            weaviate.class_name,
-                            weaviate.username,
-                            weaviate.password,
-                            weaviate.api_key,
+                            weaviate.base_url.clone(),
+                            schema.weaviate_class_name(),
+                            weaviate.username.clone(),
+                            weaviate.password.clone(),
+                            weaviate.api_key.clone(),
                             Duration::from_secs(30),
                         )
                         .map_err(|err| err.to_string())?;
                         ensure_collection_schema(&reference, schema, true)
                             .map_err(|err| err.to_string())?;
                     }
-                    _ => {}
                 }
-                Ok(())
-            })
-            .await
-            .map_err(|err| format!("search database initialization task failed: {err}"))??;
-            config_factory::save_connection(config_factory::build_connection(&id, &name, kind))?;
-        }
+                _ => {}
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|err| format!("search database initialization task failed: {err}"))??;
+        config_factory::save_connection(config_factory::build_connection(&id, &name, kind))?;
     }
     Ok(())
+}
+
+/// Elasticsearch has no QQ message index schema yet; Weaviate serves that schema.
+fn elasticsearch_supports_schema(schema: RetrievalSchema) -> bool {
+    !matches!(schema, RetrievalSchema::QqMessage)
 }
 
 async fn verify_detailed_connections(config: &DetailedSetupConfig) -> Result<(), String> {

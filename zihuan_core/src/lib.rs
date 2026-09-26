@@ -18,6 +18,7 @@ pub mod message_part;
 pub mod model_inference;
 pub mod nlp;
 pub mod rag;
+pub mod retrieval;
 pub mod role;
 pub mod runtime;
 pub mod scheduled_task;

@@ -7,9 +7,8 @@ use zihuan_core::graph::tool_spec::ToolDefinition;
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngine;
-use zihuan_core::storage::ElasticsearchRef;
+use zihuan_core::retrieval::RetrievalStoreRef;
 use zihuan_core::storage::LocalMemoryStore;
-use zihuan_core::weaviate::WeaviateRef;
 
 /// Loaded inference resources for the QQ chat agent.
 #[derive(Clone)]
@@ -19,10 +18,7 @@ pub(crate) struct QqLoadedInferenceResources {
     pub(crate) web_search_engine_ref: Option<Arc<dyn WebSearchEngine>>,
     pub(crate) rdb_pool: Option<RelationalDbConnection>,
     pub(crate) s3_ref: Option<Arc<S3Ref>>,
-    pub(crate) weaviate_image_ref: Option<Arc<WeaviateRef>>,
-    pub(crate) elasticsearch_image_ref: Option<Arc<ElasticsearchRef>>,
-    pub(crate) weaviate_memory_ref: Option<Arc<WeaviateRef>>,
-    pub(crate) elasticsearch_memory_ref: Option<Arc<ElasticsearchRef>>,
+    pub(crate) retrieval_store: Option<Arc<RetrievalStoreRef>>,
     pub(crate) local_memory_store: Option<Arc<LocalMemoryStore>>,
     pub(crate) embedding_model: Option<Arc<dyn EmbeddingBase>>,
     pub(crate) memory_llm: Option<Arc<dyn LLMBase>>,

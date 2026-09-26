@@ -59,6 +59,14 @@ export interface RegistryResponse {
   categories: string[];
 }
 
+/** One registered node type that an agent or sub-agent may name as a tool. */
+export interface NodeToolInfo {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+}
+
 export interface GraphPosition {
   x: number;
   y: number;

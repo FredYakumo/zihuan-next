@@ -1,19 +1,20 @@
 use std::sync::Arc;
 
 use crate::error::Result;
-use crate::weaviate::{WeaviateCollectionSchema, WeaviateRef};
+use crate::retrieval::RetrievalSchema;
+use crate::weaviate::WeaviateRef;
 
 use crate::storage::weaviate_schema::ensure_collection_schema;
 use crate::storage::{validate_connection_authentication, ConnectionAuthMethod};
 
+/// Builds a live Weaviate reference bound to one retrieval schema's class.
 pub fn build_weaviate_ref(
     base_url: &str,
-    class_name: &str,
+    schema: RetrievalSchema,
     username: Option<String>,
     password: Option<String>,
     api_key: Option<String>,
     auth_method: ConnectionAuthMethod,
-    collection_schema: WeaviateCollectionSchema,
 ) -> Result<Arc<WeaviateRef>> {
     validate_connection_authentication(
         auth_method,
@@ -24,7 +25,7 @@ pub fn build_weaviate_ref(
     )?;
     let weaviate_ref = Arc::new(WeaviateRef::new(
         base_url,
-        class_name,
+        schema.weaviate_class_name(),
         username,
         password,
         api_key,
@@ -33,6 +34,6 @@ pub fn build_weaviate_ref(
     if !weaviate_ref.ready()? {
         return Err(crate::string_error!("Weaviate is reachable but not ready yet"));
     }
-    ensure_collection_schema(&weaviate_ref, collection_schema, true)?;
+    ensure_collection_schema(&weaviate_ref, schema, true)?;
     Ok(weaviate_ref)
 }

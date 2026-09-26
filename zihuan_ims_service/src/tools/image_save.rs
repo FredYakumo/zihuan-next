@@ -11,19 +11,16 @@ use zihuan_core::graph::object_storage::S3Ref;
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
-use zihuan_core::storage::{
-    upload_remote_image_to_s3, upsert_elasticsearch_image, upsert_image_record, ElasticsearchRef,
-};
+use zihuan_core::retrieval::RetrievalStoreRef;
+use zihuan_core::storage::{persist_media_to_store, upload_remote_image_to_s3};
 use zihuan_core::url_utils::content_type_from_url;
-use zihuan_core::weaviate::WeaviateRef;
 
 use super::common::{optional_string_argument, StaticFunctionToolSpec};
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 
 pub(crate) struct SaveImageTool {
-    weaviate_image_ref: Option<Arc<WeaviateRef>>,
-    elasticsearch_image_ref: Option<Arc<ElasticsearchRef>>,
+    retrieval_store: Option<Arc<RetrievalStoreRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     s3_ref: Option<Arc<S3Ref>>,
     rdb_pool: Option<RelationalDbConnection>,
@@ -31,15 +28,13 @@ pub(crate) struct SaveImageTool {
 
 impl SaveImageTool {
     pub(crate) fn new(
-        weaviate_image_ref: Option<Arc<WeaviateRef>>,
-        elasticsearch_image_ref: Option<Arc<ElasticsearchRef>>,
+        retrieval_store: Option<Arc<RetrievalStoreRef>>,
         embedding_model: Option<Arc<dyn EmbeddingBase>>,
         s3_ref: Option<Arc<S3Ref>>,
         rdb_pool: Option<RelationalDbConnection>,
     ) -> Self {
         Self {
-            weaviate_image_ref,
-            elasticsearch_image_ref,
+            retrieval_store,
             embedding_model,
             s3_ref,
             rdb_pool,
@@ -121,8 +116,8 @@ impl Tool for SaveImageTool {
                 Some(content_type_from_url(&resolved_url).to_string()),
             );
 
-            if let (Some(weaviate_image_ref), Some(embedding_model)) =
-                (self.weaviate_image_ref.as_ref(), self.embedding_model.as_ref())
+            if let (Some(retrieval_store), Some(embedding_model)) =
+                (self.retrieval_store.as_ref(), self.embedding_model.as_ref())
             {
                 let embedding_text = description.as_deref().unwrap_or(&resolved_url);
                 let description_vector =
@@ -132,28 +127,18 @@ impl Tool for SaveImageTool {
 
                 if !description_vector.is_empty() {
                     if let Err(err) =
-                        upsert_image_record(weaviate_image_ref, &media, &description_vector, None)
+                        persist_media_to_store(retrieval_store, &media, &description_vector, None)
                     {
-                        warn!("{LOG_PREFIX} save_image failed to persist image record into Weaviate: {}", err);
+                        warn!(
+                            "{LOG_PREFIX} save_image failed to persist image record into retrieval store: {}",
+                            err
+                        );
                     }
                 } else {
                     info!(
-                        "{LOG_PREFIX} save_image skipped Weaviate upsert for image_url='{}' because embedding vector is empty",
+                        "{LOG_PREFIX} save_image skipped vector upsert for image_url='{}' because embedding vector is empty",
                         resolved_url
                     );
-                }
-            }
-            if let (Some(elasticsearch_image_ref), Some(embedding_model)) =
-                (self.elasticsearch_image_ref.as_ref(), self.embedding_model.as_ref())
-            {
-                let embedding_text = description.as_deref().unwrap_or(&resolved_url);
-                let vector = embedding_model.inference(embedding_text).unwrap_or_default();
-                if !vector.is_empty() {
-                    if let Err(err) =
-                        upsert_elasticsearch_image(elasticsearch_image_ref, &media, vector, None)
-                    {
-                        warn!("{LOG_PREFIX} save_image failed to persist image record into Elasticsearch: {err}");
-                    }
                 }
             }
 

@@ -29,7 +29,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
-import { system, type SubAgentDefinition } from "../../api/client";
+import { system, registry, type NodeToolInfo, type SubAgentDefinition } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { QQ_CHAT_DEFAULT_TOOLS, WORKSPACE_DEFAULT_TOOLS } from "../model";
 
@@ -42,13 +42,15 @@ const availableTools = computed(() => {
   // Existing sub-agents are callable tools too, so a definition can reference another.
   const known = new Set(defaults.map((tool) => tool.id));
   const nested = subagents.value.filter((agent) => !known.has(agent.id)).map((agent) => ({ id: agent.id, name: agent.name }));
-  return [...defaults, ...nested];
+  // A registered DAG node is callable as a tool on its own, so a definition may name one.
+  const nodes = nodeTools.value.filter((tool) => !known.has(tool.id) && !nested.some((item) => item.id === tool.id)).map((tool) => ({ id: tool.id, name: `${tool.name}（节点）` }));
+  return [...defaults, ...nested, ...nodes];
 });
-const subagents = ref<SubAgentDefinition[]>([]); const loading = ref(false); const showTypePicker = ref(false); const editorVisible = ref(false); const isCreating = ref(false); const saving = ref(false); const error = ref(""); const listError = ref("");
+const subagents = ref<SubAgentDefinition[]>([]); const nodeTools = ref<NodeToolInfo[]>([]); const loading = ref(false); const showTypePicker = ref(false); const editorVisible = ref(false); const isCreating = ref(false); const saving = ref(false); const error = ref(""); const listError = ref("");
 const emptySubAgentForm = (): SubAgentDefinition => ({ id: "", name: "", description: "", builtin: false, inputs: [], outputs: [], system_prompt: "", user_prompt: "", prompt_parts: [], output_mode: "json_ports", llm_kind: "main", progress_message: "", include_graph_tools: false, run_duration: "Short", tool_ids: [] });
 const form = reactive<SubAgentDefinition>(emptySubAgentForm());
 const columns = [{ colKey: "name", title: "名称", ellipsis: true }, { colKey: "id", title: "ID", width: 180 }, { colKey: "tools", title: "工具", width: 100 }, { colKey: "actions", title: "操作", width: 130 }];
-async function load() { loading.value = true; listError.value = ""; try { subagents.value = await system.subagents.list(availableTools.value.map((tool) => tool.id)); } catch (cause) { subagents.value = []; listError.value = cause instanceof Error ? cause.message : String(cause); } finally { loading.value = false; } }
+async function load() { loading.value = true; listError.value = ""; try { const [definitions, nodes] = await Promise.all([system.subagents.list(availableTools.value.map((tool) => tool.id)), registry.getNodeTools().catch(() => [])]); subagents.value = definitions; nodeTools.value = nodes; } catch (cause) { subagents.value = []; listError.value = cause instanceof Error ? cause.message : String(cause); } finally { loading.value = false; } }
 function startCreate() { showTypePicker.value = false; isCreating.value = true; error.value = ""; Object.assign(form, emptySubAgentForm()); editorVisible.value = true; }
 async function openEditor(id: string) { error.value = ""; listError.value = ""; try { const definition = await system.subagents.get(id, availableTools.value.map((tool) => tool.id)); // Reset before assigning: a definition that omits an optional text field must not inherit the previous one.
   Object.assign(form, emptySubAgentForm(), definition, { user_prompt: definition.user_prompt ?? "", progress_message: definition.progress_message ?? "" }); isCreating.value = false; editorVisible.value = true; } catch (cause) { listError.value = cause instanceof Error ? cause.message : String(cause); } }

@@ -81,19 +81,14 @@
           <t-card v-if="form.type === 'workspace' && (form.workspace_memory_enabled || form.default_tools_enabled.web_search)" class="agent-service-form-section" :bordered="false">
             <template #title>检索增强生成</template>
             <div class="agent-service-form-grid">
-              <t-form-item v-if="form.workspace_memory_backend === 'weaviate' || form.workspace_memory_backend === 'elasticsearch'" label="文本向量模型" required :status="!form.workspace_embedding_model_ref_id ? 'error' : undefined" :help="!form.workspace_embedding_model_ref_id ? '必须选择文本向量模型。' : undefined">
+              <t-form-item v-if="form.workspace_memory_backend === 'retrieval_store'" label="文本向量模型" required :status="!form.workspace_embedding_model_ref_id ? 'error' : undefined" :help="!form.workspace_embedding_model_ref_id ? '必须选择文本向量模型。' : undefined">
                 <t-select v-model="form.workspace_embedding_model_ref_id" placeholder="请选择文本向量模型">
                   <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
-              <t-form-item v-if="form.workspace_memory_backend === 'weaviate'" label="Weaviate Memory Connection" required :status="!form.workspace_weaviate_memory_connection_id ? 'error' : undefined" :help="!form.workspace_weaviate_memory_connection_id ? '必须选择记忆库连接。' : undefined">
-                <t-select v-model="form.workspace_weaviate_memory_connection_id" placeholder="请选择记忆库连接">
-                  <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-              </t-form-item>
-              <t-form-item v-if="form.workspace_memory_backend === 'elasticsearch'" label="Elasticsearch Memory Connection" required :status="!form.workspace_elasticsearch_memory_connection_id ? 'error' : undefined" :help="!form.workspace_elasticsearch_memory_connection_id ? '必须选择记忆库连接。' : undefined">
-                <t-select v-model="form.workspace_elasticsearch_memory_connection_id" placeholder="请选择记忆库连接">
-                  <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              <t-form-item v-if="form.workspace_memory_backend === 'retrieval_store'" label="检索数据库" required :status="!form.workspace_retrieval_store_id ? 'error' : undefined" :help="!form.workspace_retrieval_store_id ? '必须选择记忆库连接。' : undefined">
+                <t-select v-model="form.workspace_retrieval_store_id" placeholder="请选择记忆库连接">
+                  <t-option v-for="item in retrievalConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
               <t-form-item v-if="form.default_tools_enabled.web_search" label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
@@ -145,30 +140,6 @@
                   <t-select v-model="form.embedding_model_ref_id" placeholder="不使用" clearable>
                     <t-option value="" label="不使用" />
                     <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item v-if="false" label="Weaviate 图片检索连接">
-                  <t-select v-model="form.weaviate_image_connection_id" placeholder="不使用" clearable>
-                    <t-option value="" label="不使用" />
-                    <t-option v-for="item in imageWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item v-if="false" label="Weaviate 记忆连接">
-                  <t-select v-model="form.weaviate_memory_connection_id" placeholder="不使用" clearable>
-                    <t-option value="" label="不使用" />
-                    <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item v-if="false" label="Elasticsearch 图片检索连接">
-                  <t-select v-model="form.elasticsearch_image_connection_id" placeholder="不使用" clearable>
-                    <t-option value="" label="不使用" />
-                    <t-option v-for="item in imageElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                  </t-select>
-                </t-form-item>
-                <t-form-item v-if="false" label="Elasticsearch 记忆连接">
-                  <t-select v-model="form.elasticsearch_memory_connection_id" placeholder="不使用" clearable>
-                    <t-option value="" label="不使用" />
-                    <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                   </t-select>
                 </t-form-item>
               </div>
@@ -345,19 +316,14 @@
         <t-card v-if="form.type === 'workspace' && (form.workspace_memory_enabled || form.default_tools_enabled.web_search)" class="agent-service-form-section" :bordered="false">
           <template #title>检索增强生成</template>
           <div class="agent-service-form-grid">
-            <t-form-item v-if="form.workspace_memory_backend === 'weaviate' || form.workspace_memory_backend === 'elasticsearch'" label="文本向量模型" required :status="!form.workspace_embedding_model_ref_id ? 'error' : undefined" :help="!form.workspace_embedding_model_ref_id ? '必须选择文本向量模型。' : undefined">
+            <t-form-item v-if="form.workspace_memory_backend === 'retrieval_store'" label="文本向量模型" required :status="!form.workspace_embedding_model_ref_id ? 'error' : undefined" :help="!form.workspace_embedding_model_ref_id ? '必须选择文本向量模型。' : undefined">
               <t-select v-model="form.workspace_embedding_model_ref_id" placeholder="请选择文本向量模型">
                 <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
               </t-select>
             </t-form-item>
-            <t-form-item v-if="form.workspace_memory_backend === 'weaviate'" label="Weaviate Memory Connection" required :status="!form.workspace_weaviate_memory_connection_id ? 'error' : undefined" :help="!form.workspace_weaviate_memory_connection_id ? '必须选择记忆库连接。' : undefined">
-              <t-select v-model="form.workspace_weaviate_memory_connection_id" placeholder="请选择记忆库连接">
-                <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-              </t-select>
-            </t-form-item>
-            <t-form-item v-if="form.workspace_memory_backend === 'elasticsearch'" label="Elasticsearch Memory Connection" required :status="!form.workspace_elasticsearch_memory_connection_id ? 'error' : undefined" :help="!form.workspace_elasticsearch_memory_connection_id ? '必须选择记忆库连接。' : undefined">
-              <t-select v-model="form.workspace_elasticsearch_memory_connection_id" placeholder="请选择记忆库连接">
-                <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+            <t-form-item v-if="form.workspace_memory_backend === 'retrieval_store'" label="检索数据库" required :status="!form.workspace_retrieval_store_id ? 'error' : undefined" :help="!form.workspace_retrieval_store_id ? '必须选择记忆库连接。' : undefined">
+              <t-select v-model="form.workspace_retrieval_store_id" placeholder="请选择记忆库连接">
+                <t-option v-for="item in retrievalConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
               </t-select>
             </t-form-item>
             <t-form-item v-if="form.default_tools_enabled.web_search" label="Web Search Engine" required :status="!form.web_search_engine_connection_id ? 'error' : undefined" :help="!form.web_search_engine_connection_id ? '启用联网搜索后必须选择连接。' : undefined">
@@ -472,30 +438,6 @@
                 <t-select v-model="form.embedding_model_ref_id" placeholder="不使用" clearable>
                   <t-option value="" label="不使用" />
                   <t-option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-              </t-form-item>
-              <t-form-item v-if="false" label="Weaviate 图片检索连接">
-                <t-select v-model="form.weaviate_image_connection_id" placeholder="不使用" clearable>
-                  <t-option value="" label="不使用" />
-                  <t-option v-for="item in imageWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-              </t-form-item>
-              <t-form-item v-if="false" label="Weaviate 记忆连接">
-                <t-select v-model="form.weaviate_memory_connection_id" placeholder="不使用" clearable>
-                  <t-option value="" label="不使用" />
-                  <t-option v-for="item in memoryWeaviateConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-              </t-form-item>
-              <t-form-item v-if="false" label="Elasticsearch 图片检索连接">
-                <t-select v-model="form.elasticsearch_image_connection_id" placeholder="不使用" clearable>
-                  <t-option value="" label="不使用" />
-                  <t-option v-for="item in imageElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
-                </t-select>
-              </t-form-item>
-              <t-form-item v-if="false" label="Elasticsearch 记忆连接">
-                <t-select v-model="form.elasticsearch_memory_connection_id" placeholder="不使用" clearable>
-                  <t-option value="" label="不使用" />
-                  <t-option v-for="item in memoryElasticsearchConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
                 </t-select>
               </t-form-item>
             </div>

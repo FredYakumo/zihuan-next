@@ -184,10 +184,6 @@ export function useConnections() {
         alert("请填写 Weaviate Base URL");
         return;
       }
-      if (!form.weaviate_class_name.trim()) {
-        alert("请填写 Weaviate Class Name");
-        return;
-      }
       if (form.weaviate_auth_method === "password") {
         if (!form.weaviate_username.trim() || !form.weaviate_password.trim()) {
           alert("请填写 Weaviate 用户名和密码");
@@ -199,8 +195,8 @@ export function useConnections() {
       }
     }
     if (form.type === "elasticsearch") {
-      if (!form.elasticsearch_base_url.trim() || !form.elasticsearch_index_name.trim()) {
-        alert("请填写 Elasticsearch Base URL 和 Index Name");
+      if (!form.elasticsearch_base_url.trim()) {
+        alert("请填写 Elasticsearch Base URL");
         return;
       }
       if (!Number.isInteger(form.elasticsearch_vector_dimensions) || form.elasticsearch_vector_dimensions <= 0) {
@@ -223,10 +219,10 @@ export function useConnections() {
     }
     try {
       const payload = buildConnectionPayload(form);
-      const result = await saveConnection(payload, false);
+      const result = await saveConnection(payload, true);
       if (!result) return;
       if (result.collection_created) {
-        alert(`已自动创建 Weaviate collection: ${form.weaviate_class_name.trim()}`);
+        alert("已自动创建检索数据库所需的集合/索引。");
       }
       closeDrawer();
       await load();
@@ -240,31 +236,14 @@ export function useConnections() {
     payload: ReturnType<typeof buildConnectionPayload>,
     allowCreateCollection: boolean,
   ) {
-    try {
-      const requestPayload = {
-        ...payload,
-        allow_create_collection: allowCreateCollection,
-      };
-      if (form.id) {
-        return await system.connections.update(form.id, requestPayload);
-      }
-      return await system.connections.create(requestPayload);
-    } catch (error) {
-      if (error instanceof ApiError && error.code === "weaviate_collection_missing") {
-        const className = String(error.details.class_name ?? form.weaviate_class_name.trim());
-        if (window.confirm(`Weaviate collection "${className}" 不存在，是否自动新建？`)) {
-          return await saveConnection(payload, true);
-        }
-        return null;
-      }
-      if (form.type === "elasticsearch" && error instanceof ApiError && error.message.includes("does not exist")) {
-        if (window.confirm(`Elasticsearch index "${form.elasticsearch_index_name.trim()}" 不存在，是否自动新建？`)) {
-          return await saveConnection(payload, true);
-        }
-        return null;
-      }
-      throw error;
+    const requestPayload = {
+      ...payload,
+      allow_create_collection: allowCreateCollection,
+    };
+    if (form.id) {
+      return await system.connections.update(form.id, requestPayload);
     }
+    return await system.connections.create(requestPayload);
   }
 
   function formatSaveErrorMessage(error: unknown): string {
@@ -327,9 +306,7 @@ export function useConnections() {
         return [
           ...base,
           { label: "Base URL", value: String(kind.base_url ?? "") },
-          { label: "Class", value: String(kind.class_name ?? "") },
           { label: "API Key", value: String(kind.api_key ?? "") ? "已配置" : "未设置" },
-          { label: "Schema", value: formatWeaviateSchema(String(kind.collection_schema ?? "")) },
         ];
       case "rustfs":
         return [
@@ -372,12 +349,6 @@ export function useConnections() {
 
   function runtimeInstanceCount(configId: string): number {
     return runtimeInstances.value.filter((item) => item.config_id === configId).length;
-  }
-
-  function formatWeaviateSchema(schema: string): string {
-    if (schema === "image_semantic") return "图片语义";
-    if (schema === "agent_memory") return "Agent 记忆";
-    return schema || "未设置";
   }
 
   function summarizeConnectionInstances(configId: string): string {

@@ -138,6 +138,11 @@ impl NodeRegistry {
         self.metadata.read().unwrap().values().cloned().collect()
     }
 
+    /// Metadata for one registered type, or `None` when it is unknown.
+    pub fn get_node_metadata(&self, type_id: &str) -> Option<NodeTypeMetadata> {
+        self.metadata.read().unwrap().get(type_id).cloned()
+    }
+
     /// Get node types by category
     pub fn get_types_by_category(&self, category: &str) -> Vec<NodeTypeMetadata> {
         self.metadata

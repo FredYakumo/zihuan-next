@@ -72,15 +72,41 @@ RUN cargo build --release -p zihuan_service --bin zihuan_next
 # ---- Runtime ----
 FROM debian:bookworm-slim
 
+# libstdc++6 is required by the Node binary copied from the frontend stage.
+# python3 (3.11 on bookworm) + python3-venv back the default `uv_project`
+# runtime of the dynamic script engine; uv is pinned to the system interpreter
+# so the first run creates its venv without downloading anything.
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     libgcc-s1 \
+    libstdc++6 \
+    python3 \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uvx /usr/local/bin/uvx
+ENV UV_PYTHON_PREFERENCE=only-system \
+    UV_PYTHON_DOWNLOADS=never
 
 WORKDIR /app
 
+# Same layout as the CI release package: the workspace root is the process CWD
+# and the script engine resolves dag_nodes/ and package.json relative to it.
 COPY --from=backend-builder /build/target/release/zihuan_next /app/zihuan_next
+COPY package.json /app/package.json
+COPY build_support/release/pyproject.toml /app/pyproject.toml
+COPY dag_nodes/ /app/dag_nodes/
+COPY sub_agents/ /app/sub_agents/
+COPY scheduled_jobs/ /app/scheduled_jobs/
+COPY dynamic_script_engine/engine.mjs \
+     dynamic_script_engine/engine_runtime.py \
+     dynamic_script_engine/zihuan_sdk.mjs \
+     dynamic_script_engine/zihuan_sdk.py \
+     dynamic_script_engine/package.json \
+     /app/dynamic_script_engine/
 
 ENV ZIHUAN_HOST=0.0.0.0
 ENV ZIHUAN_PORT=9951

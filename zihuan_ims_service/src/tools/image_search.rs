@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::sync::Arc;
 
 use log::{info, warn};
@@ -11,8 +10,10 @@ use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMed
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::rag::{WebSearchEngine, WebSearchImage};
-use zihuan_core::storage::{upload_remote_image_to_s3, upsert_image_record};
-use zihuan_core::weaviate::WeaviateRef;
+use zihuan_core::retrieval::RetrievalStoreRef;
+use zihuan_core::storage::{
+    persist_media_to_store, search_images_in_store, upload_remote_image_to_s3,
+};
 
 use super::common::{
     extract_string_field, optional_bool_argument, optional_string_argument,
@@ -26,7 +27,7 @@ const MAX_SEMANTIC_SEARCH_LIMIT: i64 = 20;
 const WEAVIATE_IMAGE_MAX_GOOD_DISTANCE: f64 = 0.55;
 
 pub(crate) struct SearchSimilarImagesTool {
-    weaviate_image_ref: Option<Arc<WeaviateRef>>,
+    retrieval_store: Option<Arc<RetrievalStoreRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     web_search_engine_ref: Arc<dyn WebSearchEngine>,
     s3_ref: Option<Arc<S3Ref>>,
@@ -34,14 +35,14 @@ pub(crate) struct SearchSimilarImagesTool {
 
 impl SearchSimilarImagesTool {
     pub(crate) fn new(
-        weaviate_image_ref: Option<Arc<WeaviateRef>>,
+        retrieval_store: Option<Arc<RetrievalStoreRef>>,
         embedding_model: Option<Arc<dyn EmbeddingBase>>,
         web_search_engine_ref: Arc<dyn WebSearchEngine>,
         s3_ref: Option<Arc<S3Ref>>,
         _notification_target: ToolNotificationTarget,
     ) -> Self {
         Self {
-            weaviate_image_ref,
+            retrieval_store,
             embedding_model,
             web_search_engine_ref,
             s3_ref,
@@ -79,19 +80,22 @@ impl Tool for SearchSimilarImagesTool {
                 optional_bool_argument(arguments, "force_web_search").unwrap_or(false);
 
             if !force_web_search {
-                if let (Some(weaviate_image_ref), Some(embedding_model)) =
-                    (self.weaviate_image_ref.as_ref(), self.embedding_model.as_ref())
+                if let (Some(retrieval_store), Some(embedding_model)) =
+                    (self.retrieval_store.as_ref(), self.embedding_model.as_ref())
                 {
-                    let vector = embedding_model.inference(&query)?;
-                    let mut items = run_weaviate_image_get_query(
-                        weaviate_image_ref,
-                        limit,
-                        Some(&vector),
+                    let payload = search_images_in_store(
+                        retrieval_store,
+                        embedding_model.as_ref(),
+                        &query,
+                        limit as usize,
+                        Some(WEAVIATE_IMAGE_MAX_GOOD_DISTANCE),
                         None,
-                        None,
-                        true,
                     )?;
-                    items.sort_by(semantic_result_order);
+                    let mut items = payload
+                        .get("images")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
                     items.retain(|item| {
                         extract_string_field(item, "rustfs_path")
                             .map(|value| !value.trim().is_empty())
@@ -106,50 +110,18 @@ impl Tool for SearchSimilarImagesTool {
                                 .unwrap_or(false)
                         });
                     }
-                    let candidate_count_after_path_filters = items.len();
-                    let dropped_by_distance: Vec<String> = items
-                        .iter()
-                        .filter(|item| {
-                            extract_distance(item)
-                                .map(|d| d > WEAVIATE_IMAGE_MAX_GOOD_DISTANCE)
-                                .unwrap_or(false)
-                        })
-                        .map(format_weaviate_image_candidate_for_log)
-                        .collect();
-                    items.retain(|item| {
-                        item.get("distance")
-                            .and_then(Value::as_f64)
-                            .map(|d| d <= WEAVIATE_IMAGE_MAX_GOOD_DISTANCE)
-                            .unwrap_or(true)
-                    });
-                    if !dropped_by_distance.is_empty() {
-                        info!(
-                            "{LOG_PREFIX} search_similar_images dropped {} Weaviate candidates after URL/path filtering for query='{}' because distance exceeded {}: {}",
-                            dropped_by_distance.len(),
-                            query,
-                            WEAVIATE_IMAGE_MAX_GOOD_DISTANCE,
-                            dropped_by_distance.join(", ")
-                        );
-                    }
-                    if candidate_count_after_path_filters > 0 && items.is_empty() {
-                        info!(
-                            "{LOG_PREFIX} search_similar_images will fall back to Tavily for query='{}' because no Weaviate candidates remained after distance filtering (threshold={})",
-                            query,
-                            WEAVIATE_IMAGE_MAX_GOOD_DISTANCE
-                        );
-                    }
 
                     if !items.is_empty() {
                         return Ok(serde_json::json!({
                             "ok": true,
-                            "source": "weaviate",
+                            "source": retrieval_store.backend().as_str(),
                             "images": format_image_lookup_results(&items),
                         }));
                     }
                 }
             } else {
                 info!(
-                    "{LOG_PREFIX} search_similar_images skipping Weaviate and forcing Tavily web search for query='{}'",
+                    "{LOG_PREFIX} search_similar_images skipping retrieval store and forcing Tavily web search for query='{}'",
                     query
                 );
             }
@@ -197,21 +169,21 @@ impl Tool for SearchSimilarImagesTool {
                     "source": media.source.to_string(),
                 }));
 
-                if let (Some(weaviate_image_ref), Some(embedding_model)) =
-                    (self.weaviate_image_ref.as_ref(), self.embedding_model.as_ref())
+                if let (Some(retrieval_store), Some(embedding_model)) =
+                    (self.retrieval_store.as_ref(), self.embedding_model.as_ref())
                 {
                     let description_vector = embedding_model
                         .inference(description)
                         .unwrap_or_else(|_| embedding_model.inference(&query).unwrap_or_default());
                     if !description_vector.is_empty() {
-                        if let Err(err) = upsert_image_record(
-                            weaviate_image_ref,
+                        if let Err(err) = persist_media_to_store(
+                            retrieval_store,
                             &media,
                             &description_vector,
                             None,
                         ) {
                             warn!(
-                                "{LOG_PREFIX} Failed to persist web search image fallback result into weaviate: {}",
+                                "{LOG_PREFIX} Failed to persist web search image fallback result into retrieval store: {}",
                                 err
                             );
                         }
@@ -233,51 +205,11 @@ impl Tool for SearchSimilarImagesTool {
     }
 }
 
-fn build_get_query_arguments(
-    limit: usize,
-    near_vector: Option<&[f32]>,
-    where_filter: Option<&str>,
-    sort: Option<&str>,
-) -> String {
-    let mut args = Vec::new();
-    if let Some(vector) = near_vector {
-        let vector_body = vector
-            .iter()
-            .map(|value| {
-                let mut rendered = value.to_string();
-                if !rendered.contains('.') && !rendered.contains('e') && !rendered.contains('E') {
-                    rendered.push_str(".0");
-                }
-                rendered
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        args.push(format!("nearVector: {{ vector: [{vector_body}] }}"));
-    }
-    if let Some(where_filter) = where_filter {
-        args.push(format!("where: {where_filter}"));
-    }
-    if let Some(sort) = sort {
-        args.push(format!("sort: [{sort}]"));
-    }
-    args.push(format!("limit: {limit}"));
-    format!("({})", args.join(", "))
-}
-
 fn extract_distance(value: &Value) -> Option<f64> {
     value
         .get("_additional")
         .and_then(|extra| extra.get("distance"))
         .and_then(Value::as_f64)
-}
-
-fn format_weaviate_image_candidate_for_log(value: &Value) -> String {
-    let path =
-        extract_string_field(value, "rustfs_path").unwrap_or_else(|| "<missing-path>".to_string());
-    let distance = extract_distance(value)
-        .map(|d| format!("{d:.4}"))
-        .unwrap_or_else(|| "none".to_string());
-    format!("{path} (distance={distance})")
 }
 
 fn format_image_lookup_results(items: &[Value]) -> Value {
@@ -300,41 +232,6 @@ fn format_image_lookup_results(items: &[Value]) -> Value {
     )
 }
 
-fn run_weaviate_image_get_query(
-    weaviate_ref: &WeaviateRef,
-    limit: usize,
-    near_vector: Option<&[f32]>,
-    where_filter: Option<&str>,
-    sort: Option<&str>,
-    include_distance: bool,
-) -> Result<Vec<Value>> {
-    let arguments = build_get_query_arguments(limit, near_vector, where_filter, sort);
-    let mut fields = vec![
-        "media_id",
-        "original_source",
-        "rustfs_path",
-        "name",
-        "description",
-        "mime_type",
-        "source",
-    ]
-    .join(" ");
-    if include_distance {
-        fields.push_str(" _additional { id distance }");
-    }
-
-    let query =
-        format!("{{ Get {{ {}{} {{ {} }} }} }}", weaviate_ref.class_name, arguments, fields);
-    let response = weaviate_ref.execute_graphql_query(&query)?;
-    Ok(response
-        .get("data")
-        .and_then(|value| value.get("Get"))
-        .and_then(|value| value.get(&weaviate_ref.class_name))
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default())
-}
-
 fn s3_local_base(s3_ref: &S3Ref) -> String {
     if let Some(ref pub_base) = s3_ref.public_base_url {
         pub_base.trim_end_matches('/').to_string()
@@ -347,15 +244,4 @@ fn s3_local_base(s3_ref: &S3Ref) -> String {
 
 fn is_local_s3_path(path: &str, local_base: &str) -> bool {
     !(path.starts_with("http://") || path.starts_with("https://")) || path.starts_with(local_base)
-}
-
-fn semantic_result_order(left: &Value, right: &Value) -> Ordering {
-    let left_distance = extract_distance(left).unwrap_or(f64::INFINITY);
-    let right_distance = extract_distance(right).unwrap_or(f64::INFINITY);
-    match left_distance.total_cmp(&right_distance) {
-        Ordering::Equal => {
-            extract_string_field(right, "send_time").cmp(&extract_string_field(left, "send_time"))
-        }
-        other => other,
-    }
 }

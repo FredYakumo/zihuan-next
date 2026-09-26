@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use crate::weaviate::WeaviateCollectionSchema;
+use crate::retrieval::RetrievalSchema;
 
 use crate::ims_bot_adapter::models::message::PersistedMedia;
 use crate::storage::{
@@ -21,27 +21,12 @@ const INDEX_CHECK_RETRY_ATTEMPTS: usize = 5;
 const INDEX_CHECK_RETRY_DELAY: Duration = Duration::from_secs(30);
 const MAX_QUERY_CANDIDATES: usize = 100;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ElasticsearchIndexSchema {
-    AgentMemory,
-    ImageSemantic,
-}
-
-impl From<WeaviateCollectionSchema> for ElasticsearchIndexSchema {
-    fn from(value: WeaviateCollectionSchema) -> Self {
-        match value {
-            WeaviateCollectionSchema::AgentMemory => Self::AgentMemory,
-            WeaviateCollectionSchema::ImageSemantic => Self::ImageSemantic,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ElasticsearchRef {
     client: Client,
     base_url: String,
     pub index_name: String,
-    pub schema: ElasticsearchIndexSchema,
+    pub schema: RetrievalSchema,
     pub vector_dimensions: usize,
 }
 
@@ -54,16 +39,17 @@ pub struct ElasticsearchImageSearchHit {
 }
 
 impl ElasticsearchRef {
-    pub fn new(config: ElasticsearchConnection) -> Result<Self> {
+    /// Builds a reference bound to the index hosting `schema`.
+    pub fn new(config: ElasticsearchConnection, schema: RetrievalSchema) -> Result<Self> {
         let base_url = config.base_url.trim().trim_end_matches('/').to_string();
         if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
             return Err(Error::ValidationError(
                 "elasticsearch base_url must use http:// or https://".to_string(),
             ));
         }
-        if config.index_name.trim().is_empty() || config.vector_dimensions == 0 {
+        if config.vector_dimensions == 0 {
             return Err(Error::ValidationError(
-                "elasticsearch index_name and vector_dimensions are required".to_string(),
+                "elasticsearch vector_dimensions is required".to_string(),
             ));
         }
         validate_connection_authentication(
@@ -113,8 +99,8 @@ impl ElasticsearchRef {
                 crate::string_error!("build elasticsearch client failed: {error}")
             })?,
             base_url,
-            index_name: config.index_name.trim().to_string(),
-            schema: config.collection_schema.into(),
+            index_name: schema.elasticsearch_index_name().to_string(),
+            schema,
             vector_dimensions: config.vector_dimensions,
         })
     }
@@ -171,7 +157,7 @@ pub fn ensure_elasticsearch_index(
         reference.request(
             reqwest::Method::PUT,
             &format!("/{}", reference.index_name),
-            Some(index_definition(reference)),
+            Some(index_definition(reference)?),
         )?;
         return Ok(true);
     }
@@ -181,7 +167,11 @@ pub fn ensure_elasticsearch_index(
         None,
     )?;
     let dims = mapping
-        .pointer(&format!("/{}/mappings/properties/embedding/dims", reference.index_name))
+        .pointer(&format!(
+            "/{}/mappings/properties/{}/dims",
+            reference.index_name,
+            reference.schema.vector_field()
+        ))
         .and_then(Value::as_u64);
     if dims != Some(reference.vector_dimensions as u64) {
         return Err(Error::ValidationError(format!(
@@ -476,15 +466,23 @@ fn validate_vector(reference: &ElasticsearchRef, vector: &[f32]) -> Result<()> {
     Ok(())
 }
 
-fn index_definition(reference: &ElasticsearchRef) -> Value {
+fn index_definition(reference: &ElasticsearchRef) -> Result<Value> {
     let text = json!({"type":"text","analyzer":"icu_analyzer","fields":{"pinyin":{"type":"text","analyzer":"pinyin_analyzer","search_analyzer":"pinyin_analyzer"}}});
     let properties = match reference.schema {
-        ElasticsearchIndexSchema::AgentMemory => {
+        RetrievalSchema::AgentMemory => {
             json!({"key":text,"value":text,"embedding":{"type":"dense_vector","dims":reference.vector_dimensions,"index":true,"similarity":"cosine"},"expires_at":{"type":"date"},"sender_id_list":{"type":"keyword"},"group_id_list":{"type":"keyword"},"created_at":{"type":"date"},"updated_at":{"type":"date"}})
         }
-        ElasticsearchIndexSchema::ImageSemantic => {
+        RetrievalSchema::ImageSemantic => {
             json!({"media_id":{"type":"keyword"},"original_source":{"type":"keyword","index":false},"rustfs_path":{"type":"keyword"},"name":text,"description":text,"description_vector":{"type":"dense_vector","dims":reference.vector_dimensions,"index":true,"similarity":"cosine"},"name_vector":{"type":"dense_vector","dims":reference.vector_dimensions,"index":true,"similarity":"cosine"},"mime_type":{"type":"keyword"},"source":{"type":"keyword"}})
         }
+        RetrievalSchema::QqMessage => {
+            return Err(Error::ValidationError(
+                "QQ message vectors are not supported by the elasticsearch retrieval backend"
+                    .to_string(),
+            ))
+        }
     };
-    json!({"settings":{"analysis":{"analyzer":{"pinyin_analyzer":{"tokenizer":"standard","filter":["lowercase","pinyin"]}}}},"mappings":{"properties":properties}})
+    Ok(
+        json!({"settings":{"analysis":{"analyzer":{"pinyin_analyzer":{"tokenizer":"standard","filter":["lowercase","pinyin"]}}}},"mappings":{"properties":properties}}),
+    )
 }

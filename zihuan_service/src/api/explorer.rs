@@ -18,7 +18,7 @@ use zihuan_core::storage::{
     update_memory_record_with_vector,
     weaviate::build_weaviate_ref as build_storage_weaviate_ref,
     AgentMemoryAccessContext, AgentMemorySearchHit, AgentMemoryUpsert, ConnectionKind,
-    WeaviateClient, WeaviateCollectionSchema,
+    RetrievalSchema, WeaviateClient,
 };
 use zihuan_ims_service::qq_chat::{list_message_rate_limit_usage, reset_message_rate_limit_usage};
 
@@ -532,7 +532,7 @@ struct WeaviateExploreResponse {
     total: usize,
     limit: usize,
     class_name: String,
-    collection_schema: WeaviateCollectionSchema,
+    schema: RetrievalSchema,
 }
 
 #[derive(Serialize)]
@@ -570,6 +570,13 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
     let limit = req.query::<usize>("limit").unwrap_or(10).clamp(1, 50);
+    let schema = match req.query::<String>("schema") {
+        Some(value) => match RetrievalSchema::parse(&value) {
+            Ok(schema) => schema,
+            Err(error) => return render_bad_request(res, error.to_string()),
+        },
+        None => RetrievalSchema::AgentMemory,
+    };
 
     let connections = match load_connections() {
         Ok(c) => c,
@@ -583,16 +590,14 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
     let ConnectionKind::Weaviate(weaviate) = &connection.kind else {
         return render_bad_request(res, "connection is not a weaviate connection".into());
     };
-    let collection_schema = weaviate.collection_schema;
 
     let weaviate_ref = match build_storage_weaviate_ref(
         &weaviate.base_url,
-        &weaviate.class_name,
+        schema,
         weaviate.username.clone(),
         weaviate.password.clone(),
         weaviate.api_key.clone(),
         weaviate.auth_method,
-        collection_schema,
     ) {
         Ok(weaviate_ref) => weaviate_ref,
         Err(err) => return render_internal_error(res, err),
@@ -604,7 +609,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         Err(err) => return render_internal_error(res, err),
     };
 
-    if collection_schema == WeaviateCollectionSchema::AgentMemory {
+    if schema == RetrievalSchema::AgentMemory {
         let access = AgentMemoryAccessContext {
             admin: true,
             skip_expiry_extend: true,
@@ -665,7 +670,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
             total: results.len(),
             limit,
             class_name: weaviate_ref.class_name.clone(),
-            collection_schema,
+            schema,
             items: results,
         }));
         return;
@@ -686,9 +691,9 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
             Err(err) => return render_internal_error(res, err),
         };
 
-        let target_vector = match collection_schema {
-            WeaviateCollectionSchema::ImageSemantic => Some("description_vector".to_string()),
-            WeaviateCollectionSchema::AgentMemory => None,
+        let target_vector = match schema {
+            RetrievalSchema::ImageSemantic => Some("description_vector".to_string()),
+            RetrievalSchema::AgentMemory | RetrievalSchema::QqMessage => None,
         };
 
         match weaviate_ref.query_near_vector(
@@ -725,7 +730,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         total: items.len(),
         limit,
         class_name: weaviate_ref.class_name.clone(),
-        collection_schema,
+        schema,
         items,
     }));
 }
@@ -934,20 +939,13 @@ fn resolve_agent_memory_weaviate_ref(
             "connection is not a weaviate connection".to_string(),
         ));
     };
-    if weaviate.collection_schema != WeaviateCollectionSchema::AgentMemory {
-        return Err(zihuan_core::error::Error::ValidationError(format!(
-            "connection '{}' is not an agent_memory collection",
-            connection.name
-        )));
-    }
     let weaviate_ref = build_storage_weaviate_ref(
         &weaviate.base_url,
-        &weaviate.class_name,
+        RetrievalSchema::AgentMemory,
         weaviate.username.clone(),
         weaviate.password.clone(),
         weaviate.api_key.clone(),
         weaviate.auth_method,
-        weaviate.collection_schema,
     )?;
     Ok(weaviate_ref)
 }
@@ -1120,106 +1118,115 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
         Ok(value) => value,
         Err(error) => return render_bad_request(res, error.to_string()),
     };
-    let (weaviate_id, elasticsearch_id, embedding_id) = service_memory_config(&agent);
+    let (retrieval_store_id, embedding_id) = service_retrieval_store_config(&agent);
     let access = AgentMemoryAccessContext {
         admin: true,
         skip_expiry_extend: true,
         ..Default::default()
     };
-    if let Some(connection_id) = weaviate_id {
-        let reference = match resource_resolver::build_weaviate_ref(
-            Some(&connection_id),
-            &connections,
-            Some(WeaviateCollectionSchema::AgentMemory),
-        ) {
-            Ok(Some(reference)) => reference,
-            Ok(None) => {
-                return render_bad_request(res, "memory connection is not configured".into())
-            }
-            Err(error) => return render_internal_error(res, error),
-        };
-        let hits = match query.as_deref() {
-            Some(value) => {
-                let Some(model_id) = embedding_id.as_deref() else {
-                    return render_bad_request(
-                        res,
-                        "Service has no memory embedding model configured".into(),
-                    );
-                };
-                let vector = match service_memory_query_vector(model_id, value).await {
-                    Ok(vector) => vector,
-                    Err(error) => return render_internal_error(res, error),
-                };
-                match search_memory_content_by_vector(&reference, &access, &vector, limit) {
-                    Ok(hits) => hits,
-                    Err(error) => return render_internal_error(res, error),
-                }
-            }
-            None => match list_recent_memory_keys(&reference, &access, limit, None) {
-                Ok(hits) => hits,
-                Err(error) => return render_internal_error(res, error),
-            },
-        };
-        res.render(Json(ServiceMemoryResponse {
-            items: memory_items(
-                hits,
-                if query.is_some() {
-                    "semantic"
-                } else {
-                    "recent"
-                },
-                "weaviate",
-                true,
-            ),
-            backend: "weaviate",
-            mutable: true,
-        }));
-        return;
-    }
-    let Some(connection_id) = elasticsearch_id else {
+    let Some(connection_id) = retrieval_store_id else {
         return render_bad_request(res, "Service has no memory store configured".into());
     };
-    let reference = match resource_resolver::build_elasticsearch_ref(
-        Some(&connection_id),
-        &connections,
-        Some(WeaviateCollectionSchema::AgentMemory),
-    ) {
-        Ok(Some(reference)) => reference,
-        Ok(None) => return render_bad_request(res, "memory connection is not configured".into()),
-        Err(error) => return render_internal_error(res, error),
+    let Some(kind) = retrieval_backend_for_connection(&connections, &connection_id) else {
+        return render_bad_request(res, "memory connection is not configured".into());
     };
-    let hits = match query.as_deref() {
-        Some(value) => {
-            let Some(model_id) = embedding_id.as_deref() else {
-                return render_bad_request(
-                    res,
-                    "Service has no memory embedding model configured".into(),
-                );
-            };
-            let vector = match service_memory_query_vector(model_id, value).await {
-                Ok(vector) => vector,
+    match kind {
+        ConnectionKind::Weaviate(_) => {
+            let reference = match resource_resolver::build_weaviate_ref(
+                Some(&connection_id),
+                &connections,
+                RetrievalSchema::AgentMemory,
+            ) {
+                Ok(Some(reference)) => reference,
+                Ok(None) => {
+                    return render_bad_request(res, "memory connection is not configured".into())
+                }
                 Err(error) => return render_internal_error(res, error),
             };
-            match search_elasticsearch_memory(&reference, &access, value, &vector, limit) {
-                Ok(hits) => hits,
-                Err(error) => return render_internal_error(res, error),
-            }
+            let hits = match query.as_deref() {
+                Some(value) => {
+                    let Some(model_id) = embedding_id.as_deref() else {
+                        return render_bad_request(
+                            res,
+                            "Service has no memory embedding model configured".into(),
+                        );
+                    };
+                    let vector = match service_memory_query_vector(model_id, value).await {
+                        Ok(vector) => vector,
+                        Err(error) => return render_internal_error(res, error),
+                    };
+                    match search_memory_content_by_vector(&reference, &access, &vector, limit) {
+                        Ok(hits) => hits,
+                        Err(error) => return render_internal_error(res, error),
+                    }
+                }
+                None => match list_recent_memory_keys(&reference, &access, limit, None) {
+                    Ok(hits) => hits,
+                    Err(error) => return render_internal_error(res, error),
+                },
+            };
+            res.render(Json(ServiceMemoryResponse {
+                items: memory_items(
+                    hits,
+                    if query.is_some() {
+                        "semantic"
+                    } else {
+                        "recent"
+                    },
+                    "weaviate",
+                    true,
+                ),
+                backend: "weaviate",
+                mutable: true,
+            }));
         }
-        None => match list_elasticsearch_memory_keys(&reference, &access, limit, None) {
-            Ok(hits) => hits,
-            Err(error) => return render_internal_error(res, error),
-        },
-    };
-    res.render(Json(ServiceMemoryResponse {
-        items: memory_items(
-            hits,
-            if query.is_some() { "hybrid" } else { "recent" },
-            "elasticsearch",
-            false,
-        ),
-        backend: "elasticsearch",
-        mutable: false,
-    }));
+        ConnectionKind::Elasticsearch(_) => {
+            let reference = match resource_resolver::build_elasticsearch_ref(
+                Some(&connection_id),
+                &connections,
+                RetrievalSchema::AgentMemory,
+            ) {
+                Ok(Some(reference)) => reference,
+                Ok(None) => {
+                    return render_bad_request(res, "memory connection is not configured".into())
+                }
+                Err(error) => return render_internal_error(res, error),
+            };
+            let hits = match query.as_deref() {
+                Some(value) => {
+                    let Some(model_id) = embedding_id.as_deref() else {
+                        return render_bad_request(
+                            res,
+                            "Service has no memory embedding model configured".into(),
+                        );
+                    };
+                    let vector = match service_memory_query_vector(model_id, value).await {
+                        Ok(vector) => vector,
+                        Err(error) => return render_internal_error(res, error),
+                    };
+                    match search_elasticsearch_memory(&reference, &access, value, &vector, limit) {
+                        Ok(hits) => hits,
+                        Err(error) => return render_internal_error(res, error),
+                    }
+                }
+                None => match list_elasticsearch_memory_keys(&reference, &access, limit, None) {
+                    Ok(hits) => hits,
+                    Err(error) => return render_internal_error(res, error),
+                },
+            };
+            res.render(Json(ServiceMemoryResponse {
+                items: memory_items(
+                    hits,
+                    if query.is_some() { "hybrid" } else { "recent" },
+                    "elasticsearch",
+                    false,
+                ),
+                backend: "elasticsearch",
+                mutable: false,
+            }));
+        }
+        _ => return render_bad_request(res, "memory connection is not a retrieval store".into()),
+    }
 }
 
 #[handler]
@@ -1238,7 +1245,7 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
         Ok(value) => value,
         Err(error) => return render_bad_request(res, error.to_string()),
     };
-    let (weaviate_id, elasticsearch_id, embedding_id) = service_image_config(&agent);
+    let (retrieval_store_id, embedding_id) = service_retrieval_store_config(&agent);
     let (name_vector, description_vector) = match embedding_vectors(
         embedding_id.as_deref(),
         name_query.as_deref(),
@@ -1249,11 +1256,17 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
         Ok(value) => value,
         Err(error) => return render_internal_error(res, error),
     };
-    if let Some(connection_id) = weaviate_id {
+    let Some(connection_id) = retrieval_store_id else {
+        return render_bad_request(res, "Service has no image store configured".into());
+    };
+    let Some(kind) = retrieval_backend_for_connection(&connections, &connection_id) else {
+        return render_bad_request(res, "image connection is not configured".into());
+    };
+    if matches!(kind, ConnectionKind::Weaviate(_)) {
         let reference = match resource_resolver::build_weaviate_ref(
             Some(&connection_id),
             &connections,
-            Some(WeaviateCollectionSchema::ImageSemantic),
+            RetrievalSchema::ImageSemantic,
         ) {
             Ok(Some(reference)) => reference,
             Ok(None) => {
@@ -1306,13 +1319,10 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
         res.render(Json(ServiceImageResponse { items, backend: "weaviate" }));
         return;
     }
-    let Some(connection_id) = elasticsearch_id else {
-        return render_bad_request(res, "Service has no image store configured".into());
-    };
     let reference = match resource_resolver::build_elasticsearch_ref(
         Some(&connection_id),
         &connections,
-        Some(WeaviateCollectionSchema::ImageSemantic),
+        RetrievalSchema::ImageSemantic,
     ) {
         Ok(Some(reference)) => reference,
         Ok(None) => return render_bad_request(res, "image connection is not configured".into()),
@@ -1361,34 +1371,33 @@ fn load_service_and_connections(
     Ok((agent, load_connections()?))
 }
 
-fn service_memory_config(
+fn service_retrieval_store_config(
     agent: &zihuan_core::role::service_config::RoleServiceConfig,
-) -> (Option<String>, Option<String>, Option<String>) {
-    zihuan_service::role::optional_qq_chat(&agent.role_service_type).map_or(
-        (None, None, None),
-        |config| {
-            (
-                config.weaviate_memory_connection_id.clone(),
-                config.elasticsearch_memory_connection_id.clone(),
-                config.embedding_model_ref_id.clone(),
-            )
-        },
-    )
+) -> (Option<String>, Option<String>) {
+    if let Some(config) = zihuan_service::role::optional_qq_chat(&agent.role_service_type) {
+        return (
+            config.retrieval_store_connection_id().map(ToOwned::to_owned),
+            config.embedding_model_ref_id.clone(),
+        );
+    }
+    if let Some(config) = zihuan_service::role::optional_workspace(&agent.role_service_type) {
+        return (
+            config.retrieval_store_connection_id().map(ToOwned::to_owned),
+            config.embedding_model_ref_id.clone(),
+        );
+    }
+    (None, None)
 }
 
-fn service_image_config(
-    agent: &zihuan_core::role::service_config::RoleServiceConfig,
-) -> (Option<String>, Option<String>, Option<String>) {
-    zihuan_service::role::optional_qq_chat(&agent.role_service_type).map_or(
-        (None, None, None),
-        |config| {
-            (
-                config.weaviate_image_connection_id.clone(),
-                config.elasticsearch_image_connection_id.clone(),
-                config.embedding_model_ref_id.clone(),
-            )
-        },
-    )
+/// The backend serving one retrieval connection, or `None` when it is not a
+/// retrieval store.
+fn retrieval_backend_for_connection(
+    connections: &[zihuan_core::storage::ConnectionConfig],
+    connection_id: &str,
+) -> Option<ConnectionKind> {
+    let connection = resource_resolver::find_connection(connections, connection_id).ok()?;
+    matches!(connection.kind, ConnectionKind::Weaviate(_) | ConnectionKind::Elasticsearch(_))
+        .then(|| connection.kind.clone())
 }
 
 async fn embedding_vectors(

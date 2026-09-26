@@ -6,6 +6,7 @@ import type {
   NodeDefinition,
   EdgeDefinition,
   NodeTypeInfo,
+  NodeToolInfo,
   ValidationResult,
   TaskEntry,
   TaskLogEntry,
@@ -70,6 +71,10 @@ export const registry = {
   },
   getCategories(): Promise<string[]> {
     return request("GET", "/registry/categories");
+  },
+  /** Node types callable as tools by an agent or sub-agent. */
+  getNodeTools(): Promise<NodeToolInfo[]> {
+    return request("GET", "/registry/node_tools");
   },
 };
 
@@ -938,7 +943,7 @@ export interface WeaviateExploreResponse {
   total: number;
   limit: number;
   class_name: string;
-  collection_schema: "image_semantic" | "agent_memory";
+  schema: "image_semantic" | "agent_memory" | "qq_message";
 }
 
 export interface AgentMemoryRecord {
@@ -1078,6 +1083,7 @@ export const explorer = {
 
   queryWeaviate(params: {
     connection_id: string;
+    schema?: "image_semantic" | "agent_memory" | "qq_message";
     embedding_model_ref_id?: string;
     query?: string;
     limit?: number;

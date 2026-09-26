@@ -1,5 +1,5 @@
 use crate::data_refs::MySqlConfig;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use chrono::{Duration, NaiveDateTime};
 use sqlx::{
     mysql::{MySqlPool, MySqlRow},
@@ -91,17 +91,28 @@ pub(crate) fn aggregate_history_rows(
     rows: Vec<MessageHistoryChunkRow>,
     message_limit: usize,
 ) -> Vec<MessageHistoryRecord> {
+    aggregate_history_rows_with_cursor(rows, message_limit).0
+}
+
+/// Aggregates chunk rows into messages and also returns the last row consumed into the
+/// returned set, so a paged search can continue from it as a keyset cursor.
+pub(crate) fn aggregate_history_rows_with_cursor(
+    rows: Vec<MessageHistoryChunkRow>,
+    message_limit: usize,
+) -> (Vec<MessageHistoryRecord>, Option<MessageHistoryChunkRow>) {
     if rows.is_empty() || message_limit == 0 {
-        return Vec::new();
+        return (Vec::new(), None);
     }
 
     let mut aggregated = Vec::new();
     let mut current: Option<MessageHistoryRecord> = None;
     let mut chunk_buffer = VecDeque::new();
+    let mut last_consumed: Option<MessageHistoryChunkRow> = None;
 
     for row in rows {
         match current.as_mut() {
             Some(current_record) if current_record.message_id == row.message_id => {
+                last_consumed = Some(row.clone());
                 chunk_buffer.push_front(row.content);
             }
             Some(_) => {
@@ -109,10 +120,11 @@ pub(crate) fn aggregate_history_rows(
                     finished.content = chunk_buffer.into_iter().collect::<String>();
                     aggregated.push(finished);
                     if aggregated.len() == message_limit {
-                        return aggregated;
+                        return (aggregated, last_consumed);
                     }
                 }
 
+                last_consumed = Some(row.clone());
                 chunk_buffer = VecDeque::from([row.content]);
                 current = Some(MessageHistoryRecord {
                     message_id: row.message_id,
@@ -123,6 +135,7 @@ pub(crate) fn aggregate_history_rows(
                 });
             }
             None => {
+                last_consumed = Some(row.clone());
                 chunk_buffer.push_front(row.content);
                 current = Some(MessageHistoryRecord {
                     message_id: row.message_id,
@@ -141,7 +154,7 @@ pub(crate) fn aggregate_history_rows(
     }
 
     aggregated.truncate(message_limit);
-    aggregated
+    (aggregated, last_consumed)
 }
 
 pub(crate) fn run_mysql_query<T, F>(mysql_config: &Arc<MySqlConfig>, query_fn: F) -> Result<T>
@@ -220,6 +233,122 @@ pub(crate) fn format_history_messages(mut records: Vec<MessageHistoryRecord>) ->
     messages
 }
 
+/// Filters for [`search_message_records`].
+///
+/// Every field except the limit is optional, so a caller may search by any combination of
+/// sender, group, content keyword, and time range. `before_time`/`before_id` page backwards
+/// from a previous result: they must be provided together and require
+/// `sort_by_time_desc = true`, because the keyset compares against the DESC ordering.
+#[derive(Debug, Clone, Default)]
+pub struct MessageSearchFilters {
+    pub sender_id: Option<String>,
+    pub group_id: Option<String>,
+    /// Substring matched against the message content.
+    pub contain: Option<String>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+    /// Keyset cursor: `send_time` of the oldest message of the previous page.
+    pub before_time: Option<String>,
+    /// Keyset cursor: row `id` of the oldest message of the previous page.
+    pub before_id: Option<i64>,
+    pub sort_by_time_desc: bool,
+    pub limit: u32,
+}
+
+/// One page of a filtered search over `message_record`, with the metadata a caller
+/// needs to keep paging backwards through the remaining matches.
+pub struct MessageSearchPage {
+    /// Formatted `[time] name(id)说: content` lines, oldest first.
+    pub messages: Vec<String>,
+    /// Distinct messages matching the base filters, ignoring the pagination cursor.
+    pub total: i64,
+    /// True when messages older than this page's cursor still match the filters.
+    pub has_more: bool,
+    /// `send_time` of the oldest message on this page; pass it back as `before_time`.
+    pub oldest_send_time: Option<String>,
+    /// Row id of the oldest message on this page; pass it back as `before_id`.
+    pub oldest_id: Option<i64>,
+}
+
+/// Runs one filtered search over `message_record`, returning the same formatted
+/// `[time] name(id)说: content` lines the history loaders produce plus pagination
+/// metadata. `before_time`/`before_id` act as a keyset cursor continuing from a
+/// previous page's oldest message.
+pub fn search_message_records(
+    mysql: &Arc<MySqlConfig>,
+    filters: MessageSearchFilters,
+) -> Result<MessageSearchPage> {
+    if filters.before_time.is_some() != filters.before_id.is_some() {
+        return Err(Error::ValidationError(
+            "before_time and before_id must be provided together as a pagination cursor"
+                .to_string(),
+        ));
+    }
+    let limit = filters.limit;
+    let builder = SearchMessagesQueryBuilder {
+        sender_id: filters.sender_id,
+        group_id: filters.group_id,
+        contain: filters.contain,
+        start_time: filters.start_time,
+        end_time: filters.end_time,
+        before_time: filters.before_time,
+        before_id: filters.before_id,
+        sort_by_time_desc: filters.sort_by_time_desc,
+        limit,
+    };
+    let (page_sql, page_params) = builder.build_page_query();
+    let rows = run_mysql_query(mysql, move |pool| {
+        Box::pin(async move {
+            let mut query = sqlx::query(&page_sql);
+            for parameter in &page_params {
+                query = query.bind(parameter);
+            }
+            query.fetch_all(pool).await
+        })
+    })?;
+    let (records, cursor_row) = aggregate_history_rows_with_cursor(
+        rows.into_iter().map(message_history_chunk_row_from_row).collect(),
+        limit as usize,
+    );
+    let returned_count = records.len() as i64;
+    let messages = format_history_messages(records);
+
+    let total = run_message_count_query(mysql, &builder, false)?;
+    let matched = if builder.before_time.is_some() {
+        run_message_count_query(mysql, &builder, true)?
+    } else {
+        total
+    };
+
+    Ok(MessageSearchPage {
+        has_more: matched > returned_count,
+        oldest_id: cursor_row.as_ref().map(|row| row.id),
+        oldest_send_time: cursor_row
+            .as_ref()
+            .map(|row| row.send_time.format(HISTORY_TIME_FORMAT).to_string()),
+        total,
+        messages,
+    })
+}
+
+fn run_message_count_query(
+    mysql: &Arc<MySqlConfig>,
+    builder: &SearchMessagesQueryBuilder,
+    include_cursor: bool,
+) -> Result<i64> {
+    let (sql, count_params) = builder.build_count_query(include_cursor);
+    let row = run_mysql_query(mysql, move |pool| {
+        Box::pin(async move {
+            let mut query = sqlx::query(&sql);
+            for parameter in &count_params {
+                query = query.bind(parameter);
+            }
+            query.fetch_one(pool).await
+        })
+    })?;
+    Ok(row.try_get::<i64, _>(0).unwrap_or_default())
+}
+
 pub fn load_group_history(
     mysql: &Arc<MySqlConfig>,
     group_id: String,
@@ -276,12 +405,16 @@ pub(crate) struct SearchMessagesQueryBuilder {
     pub contain: Option<String>,
     pub start_time: Option<String>,
     pub end_time: Option<String>,
+    pub before_time: Option<String>,
+    pub before_id: Option<i64>,
     pub sort_by_time_desc: bool,
     pub limit: u32,
 }
 
 impl SearchMessagesQueryBuilder {
-    pub fn build(&self) -> (String, Vec<String>) {
+    /// Builds the shared `WHERE` clause: the base filters plus, when `include_cursor`
+    /// is set, the keyset cursor clause.
+    fn where_clause(&self, include_cursor: bool) -> (String, Vec<String>) {
         let mut where_clauses = Vec::new();
         let mut params = Vec::new();
 
@@ -305,17 +438,33 @@ impl SearchMessagesQueryBuilder {
             where_clauses.push("send_time <= ?".to_string());
             params.push(end_time.clone());
         }
-
-        let order = if self.sort_by_time_desc {
-            "ORDER BY send_time DESC, id DESC"
-        } else {
-            "ORDER BY send_time ASC, id ASC"
-        };
+        if include_cursor {
+            if let (Some(before_time), Some(before_id)) =
+                (self.before_time.as_ref(), self.before_id)
+            {
+                where_clauses.push("(send_time < ? OR (send_time = ? AND id < ?))".to_string());
+                params.push(before_time.to_string());
+                params.push(before_time.to_string());
+                params.push(before_id.to_string());
+            }
+        }
 
         let where_sql = if where_clauses.is_empty() {
             String::new()
         } else {
             format!("WHERE {}", where_clauses.join(" AND "))
+        };
+
+        (where_sql, params)
+    }
+
+    /// Builds the paged message query: `SELECT` plus ordering and row limit.
+    pub fn build_page_query(&self) -> (String, Vec<String>) {
+        let (where_sql, mut params) = self.where_clause(true);
+        let order = if self.sort_by_time_desc {
+            "ORDER BY send_time DESC, id DESC"
+        } else {
+            "ORDER BY send_time ASC, id ASC"
         };
 
         let sql = format!(
@@ -324,6 +473,17 @@ impl SearchMessagesQueryBuilder {
         params.push(history_query_row_limit(self.limit).to_string());
 
         (sql, params)
+    }
+
+    /// Builds a distinct-message count over the same filters; `include_cursor` decides
+    /// whether the keyset cursor clause participates, i.e. whether the count covers the
+    /// whole filtered window or only the messages at or before the cursor.
+    pub fn build_count_query(&self, include_cursor: bool) -> (String, Vec<String>) {
+        let (where_sql, params) = self.where_clause(include_cursor);
+        (
+            format!("SELECT COUNT(DISTINCT message_id) FROM message_record {where_sql}"),
+            params,
+        )
     }
 }
 

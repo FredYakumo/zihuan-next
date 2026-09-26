@@ -15,7 +15,7 @@ export class ResourceHandle {
 export class RedisRef extends ResourceHandle {}
 export class RdbRef extends ResourceHandle {}
 export class S3Ref extends ResourceHandle {}
-export class WeaviateRef extends ResourceHandle {}
+export class RetrievalStoreRef extends ResourceHandle {}
 export class WebSearchEngineRef extends ResourceHandle {}
 export class SessionStateRef extends ResourceHandle {}
 export class LLMMessageSessionCacheRef extends ResourceHandle {}
@@ -88,14 +88,14 @@ export interface ZihuanSdk {
     mysql(configId: string): Promise<RdbRef>;
     sqlite(configId: string): Promise<RdbRef>;
     s3(configId: string): Promise<S3Ref>;
-    weaviate(configId: string): Promise<WeaviateRef>;
+    retrievalStore(configId: string): Promise<RetrievalStoreRef>;
     userHistory(rdbRef: RdbRef, senderId: string, groupId: string | undefined, limit: number): Promise<{ messages: string[] }>;
     groupHistory(rdbRef: RdbRef, groupId: string, limit: number): Promise<{ messages: string[] }>;
     searchMessages(rdbRef: RdbRef, filters: Record<string, JsonValue | undefined>): Promise<{ messages: string[] }>;
-    persistQQMessageVectors(weaviateRef: WeaviateRef, embeddingModel: EmbeddingModel, messages: QQMessage[], metadata: { message_id: string; sender_id: string; sender_name: string; group_id?: string; group_name?: string }): Promise<boolean>;
+    persistQQMessageVectors(retrievalStoreRef: RetrievalStoreRef, embeddingModel: EmbeddingModel, messages: QQMessage[], metadata: { message_id: string; sender_id: string; sender_name: string; group_id?: string; group_name?: string }): Promise<boolean>;
     persistQQMessageRdb(rdbRef: RdbRef, messages: QQMessage[], metadata: { message_id: string; sender_id: string; sender_name: string; group_id?: string; group_name?: string }): Promise<boolean>;
-    persistImageVector(weaviateRef: WeaviateRef, request: { object_storage_path: string; description: string; embedding_model?: EmbeddingModel; vector?: number[]; source?: string; media_id?: string; original_source?: string; name?: string; mime_type?: string }): Promise<boolean>;
-    searchImages(weaviateRef: WeaviateRef, embeddingModel: EmbeddingModel, query: string, options: { limit: number; max_distance?: number; target_vector?: string }): Promise<{ images: JsonValue[]; has_results: boolean }>;
+    persistImageVector(retrievalStoreRef: RetrievalStoreRef, request: { object_storage_path: string; description: string; embedding_model?: EmbeddingModel; vector?: number[]; source?: string; media_id?: string; original_source?: string; name?: string; mime_type?: string }): Promise<boolean>;
+    searchImages(retrievalStoreRef: RetrievalStoreRef, embeddingModel: EmbeddingModel, query: string, options: { limit: number; max_distance?: number; target_vector?: string }): Promise<{ images: JsonValue[]; has_results: boolean }>;
   };
   readonly agent: {
     llm(kind?: JsonValue): Promise<LLModel>;
@@ -103,8 +103,9 @@ export interface ZihuanSdk {
     task(): Promise<{ task_id: string; has_task: boolean }>;
     rdb(): Promise<RdbRef>;
     s3(): Promise<S3Ref>;
-    imageWeaviate(): Promise<WeaviateRef>;
+    retrievalStore(): Promise<RetrievalStoreRef>;
     webSearch(): Promise<WebSearchEngineRef>;
+    imageSearch(query: string, options?: { limit?: number; max_distance?: number; target_vector?: string }): Promise<{ images: JsonValue[]; has_results: boolean }>;
   };
   readonly bot: {
     adapter(configId: string): Promise<BotAdapterRef>;
@@ -122,7 +123,7 @@ export interface ZihuanSdk {
     redis(value: unknown): RedisRef;
     rdb(value: unknown): RdbRef;
     s3(value: unknown): S3Ref;
-    weaviate(value: unknown): WeaviateRef;
+    retrievalStore(value: unknown): RetrievalStoreRef;
     webSearch(value: unknown): WebSearchEngineRef;
     sessionState(value: unknown): SessionStateRef;
     messageCache(value: unknown): LLMMessageSessionCacheRef;

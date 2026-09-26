@@ -42,10 +42,13 @@ export interface ChatProps {
 
 export type ChatEmit = (e: "update:sessionId", sessionId: string) => void;
 
+const ASK_USER_TOOL_NAME = "ask_user";
 /** Hint for the free-form input that sits below the suggested options. */
 const OTHER_ANSWER_PLACEHOLDER = "其它...";
 /** Reply sent when the user defers instead of answering the question. */
 const ASK_USER_UNANSWERED_REPLY = "用户暂未回答";
+/** Shown under a question the user deferred instead of answering. */
+const ASK_USER_DEFERRED_LABEL = "你选择了暂不回答";
 
 export function useChat(props: ChatProps, emit: ChatEmit) {
     type ChatRole = "user" | "assistant" | "tool" | "error";
@@ -69,6 +72,8 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         toolCalls: ChatToolCall[];
         toolCallId?: string | null;
         linkedToolCall?: ChatToolCall | null;
+        /** Set on a user message that replies to this `ask_user` call; rendered under the question. */
+        askUserAnswerFor?: string | null;
         agentAvatarUrl?: string;
         agentName?: string;
         metrics?: ChatResponseMetrics;
@@ -305,7 +310,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 };
             }
         }
-        if (name === "ask_user") {
+        if (name === ASK_USER_TOOL_NAME) {
             const args = safeParseJson<{ question?: string }>(arguments_);
             if (args?.question != null) return { type: "ask_user", question: args.question };
         }
@@ -786,6 +791,54 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             ? OTHER_ANSWER_PLACEHOLDER
             : pendingAskUser.value?.placeholder || "请输入补充信息",
     );
+    /** Ask-user replies keyed by the call id of the question they answer. */
+    const askUserAnswers = computed(() => {
+        const answers = new Map<string, string>();
+        for (const message of messages.value) {
+            if (message.role === "user" && message.askUserAnswerFor) {
+                answers.set(message.askUserAnswerFor, message.content);
+            }
+        }
+        return answers;
+    });
+    /**
+     * The oldest question still waiting for a reply, which is the one the answer form
+     * submits to. Questions are answered in the order they were asked, so the first
+     * unmatched call id is also the pending one.
+     */
+    const pendingAskUserCallId = computed(() => {
+        const answered = askUserAnswers.value;
+        for (const message of messages.value) {
+            for (const toolCall of message.toolCalls) {
+                if (toolCall.function.name === ASK_USER_TOOL_NAME && !answered.has(toolCall.id)) {
+                    return toolCall.id;
+                }
+            }
+            for (const liveCall of message.liveToolCalls ?? []) {
+                if (liveCall.name === ASK_USER_TOOL_NAME && !answered.has(liveCall.call_id)) {
+                    return liveCall.call_id;
+                }
+            }
+        }
+        return null;
+    });
+
+    /** Caption shown under an `ask_user` badge: the reply, or the deferral notice. */
+    function askUserAnswerText(callId: string): string | null {
+        const answer = askUserAnswers.value.get(callId);
+        if (answer == null) return null;
+        return answer === ASK_USER_UNANSWERED_REPLY ? ASK_USER_DEFERRED_LABEL : `你回答了: "${answer}"`;
+    }
+
+    /**
+     * Persisted tool calls to render for one message: a call already streaming as a live
+     * call must not be drawn a second time from the record that carries the same call id.
+     */
+    function visibleToolCalls(message: ChatMessage): ChatToolCall[] {
+        const liveCalls = message.liveToolCalls;
+        if (!liveCalls?.length) return message.toolCalls;
+        return message.toolCalls.filter((toolCall) => !liveCalls.some((live) => live.call_id === toolCall.id));
+    }
 
     function parseNewConversationCommand(input: string): PendingNewConversationCommand | null {
         const match = input.trim().match(/^\/(new|clear|reset)(?:\s+([\s\S]*))?$/i);
@@ -816,7 +869,11 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     };
 
     const messageGroups = computed(() => {
-        const filtered = messages.value.filter((m) => m.role !== "tool");
+        // Tool records feed tool-result lookups; ask-user replies are folded into the
+        // question badge, so neither gets a bubble of its own.
+        const filtered = messages.value.filter(
+            (m) => m.role !== "tool" && !(m.role === "user" && m.askUserAnswerFor),
+        );
         const groups: MessageGroup[] = [];
         let currentGroup: MessageGroup | null = null;
         // An error bubble belongs to the agent turn it interrupted, so it renders with the
@@ -1011,6 +1068,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 message.linkedToolCall = toolCallMap.get(message.toolCallId) ?? null;
             }
         }
+        markAskUserAnswers(mapped);
         messages.value = mapped;
         if (activeToolCallId.value) {
             const stillExists = mapped.some((message) =>
@@ -1032,36 +1090,96 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         })));
     }
 
+    /** Tags the user message that follows an `ask_user` tool result with the question it replies to. */
+    function markAskUserAnswers(messages_: ChatMessage[]) {
+        const askUserCallIds = new Set<string>();
+        for (const message of messages_) {
+            for (const toolCall of message.toolCalls) {
+                if (toolCall.function.name === ASK_USER_TOOL_NAME) {
+                    askUserCallIds.add(toolCall.id);
+                }
+            }
+        }
+        if (askUserCallIds.size === 0) return;
+        for (let index = 1; index < messages_.length; index += 1) {
+            const question = messages_[index - 1];
+            const reply = messages_[index];
+            if (reply.role !== "user" || question.role !== "tool" || !question.toolCallId) continue;
+            if (askUserCallIds.has(question.toolCallId)) {
+                reply.askUserAnswerFor = question.toolCallId;
+            }
+        }
+    }
+
     function mergeLiveSessionMessages(sessionId: string) {
         const snapshot = liveSessionMessages.get(sessionId);
         if (!snapshot?.length) return;
         const serverMessages = new Map(messages.value.map((message) => [message.id, message]));
-        // Local user messages keep client-generated ids that never match the
-        // server-generated record ids, so the id join alone would re-append a user
-        // message the server already persisted. Count server user contents as a
-        // multiset and drop local copies already accounted for.
+        // The live transcript splits a turn differently from the persisted records: every
+        // streamed tool call gets its own carrier message, while a record holds the text and
+        // the tool calls of one iteration together. Those carriers keep client-generated ids,
+        // so the id join alone would re-append text and tool calls the reload already restored.
+        // Count server texts as multisets and drop local copies already accounted for.
         const serverUserContents = new Map<string, number>();
+        const serverAssistantTexts = new Map<string, number>();
+        // Tool calls the server has already persisted, used to recognize live tool carriers.
+        const persistedCallIds = new Set<string>();
         for (const message of messages.value) {
-            if (message.role !== "user") continue;
-            serverUserContents.set(message.content, (serverUserContents.get(message.content) ?? 0) + 1);
+            if (message.role === "user") {
+                serverUserContents.set(message.content, (serverUserContents.get(message.content) ?? 0) + 1);
+            } else if (message.role === "assistant" && message.content.trim().length > 0) {
+                serverAssistantTexts.set(message.content, (serverAssistantTexts.get(message.content) ?? 0) + 1);
+            }
+            for (const toolCall of message.toolCalls) {
+                persistedCallIds.add(toolCall.id);
+            }
+            if (message.toolCallId) {
+                persistedCallIds.add(message.toolCallId);
+            }
         }
+        // Drops one copy of `text` from a server-content multiset; true when one was left.
+        const consumeServerCopy = (counts: Map<string, number>, text: string): boolean => {
+            const remaining = counts.get(text) ?? 0;
+            if (remaining <= 0) return false;
+            counts.set(text, remaining - 1);
+            return true;
+        };
         for (const localMessage of snapshot) {
             const serverMessage = serverMessages.get(localMessage.id);
             if (!serverMessage) {
-                const remainingServerCopies = localMessage.role === "user"
-                    ? serverUserContents.get(localMessage.content) ?? 0
-                    : 0;
-                if (remainingServerCopies > 0) {
-                    serverUserContents.set(localMessage.content, remainingServerCopies - 1);
+                if (localMessage.role === "user" && consumeServerCopy(serverUserContents, localMessage.content)) {
                     continue;
+                }
+                if (localMessage.role === "assistant") {
+                    const liveCalls = localMessage.liveToolCalls ?? [];
+                    if (liveCalls.length > 0 && liveCalls.every((call) => persistedCallIds.has(call.call_id))) {
+                        continue;
+                    }
+                    if (
+                        localMessage.content.trim().length > 0 &&
+                        consumeServerCopy(serverAssistantTexts, localMessage.content)
+                    ) {
+                        continue;
+                    }
+                    // A placeholder that never received text or a tool call has nothing to show.
+                    if (liveCalls.length === 0 && localMessage.toolCalls.length === 0 && !hasMessageContent(localMessage)) {
+                        continue;
+                    }
                 }
                 messages.value.push(localMessage);
                 continue;
             }
-            if (localMessage.content.length > serverMessage.content.length) {
+            // The id join only spans one streamed message: adopt local text when it is the
+            // same message with more text streamed. Unrelated text means the ids collided
+            // across a turn boundary, and the persisted record stays authoritative.
+            const textMatches = localMessage.content.startsWith(serverMessage.content)
+                || serverMessage.content.startsWith(localMessage.content);
+            if (textMatches && localMessage.content.length > serverMessage.content.length) {
                 serverMessage.content = localMessage.content;
             }
-            if ((localMessage.thinkingContent?.length ?? 0) > (serverMessage.thinkingContent?.length ?? 0)) {
+            const thinkingMatches = (localMessage.thinkingContent ?? "").startsWith(serverMessage.thinkingContent ?? "")
+                || (serverMessage.thinkingContent ?? "").startsWith(localMessage.thinkingContent ?? "");
+            if (thinkingMatches && (localMessage.thinkingContent?.length ?? 0) > (serverMessage.thinkingContent?.length ?? 0)) {
                 serverMessage.thinkingContent = localMessage.thinkingContent;
             }
             if (!serverMessage.liveToolCalls) serverMessage.liveToolCalls = [];
@@ -2722,6 +2840,8 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             },
         ];
 
+        // Capture the question before clearing it: the reply renders under that badge.
+        const answerForCallId = fromAskUser ? pendingAskUserCallId.value : null;
         if (fromAskUser) {
             clearPendingAskUser();
         } else if (!options.attachments) {
@@ -2750,6 +2870,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 toolCalls: [],
                 toolCallId: null,
                 linkedToolCall: null,
+                askUserAnswerFor: answerForCallId,
                 modelConfigId: options.modelConfigId ?? (selectedModelId.value || null),
                 imageUnderstandModelConfigId: options.imageUnderstandModelConfigId ?? (imageUnderstandingModelId.value || null),
                 imageAttachments: sentAttachments,
@@ -2979,6 +3100,8 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         canSubmitAskUserChoice,
         chooseAskUserOption,
         deferAskUserAnswer,
+        askUserAnswerText,
+        visibleToolCalls,
         messageGroups,
         activeToolDetail,
         toolPreviewState,

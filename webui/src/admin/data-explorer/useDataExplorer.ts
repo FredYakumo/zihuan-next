@@ -16,17 +16,24 @@ function stringConfig(service: ServiceWithRuntime, key: string): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function retrievalStoreConnectionId(service: ServiceWithRuntime): string {
+  const store = service.role_service_type.retrieval_store as
+    | { type?: string; connection_id?: string }
+    | undefined;
+  return store?.type === "connection" && typeof store.connection_id === "string"
+    ? store.connection_id.trim()
+    : "";
+}
+
 export function serviceCapabilities(service: ServiceWithRuntime): ServiceCapability[] {
   const type = service.role_service_type.type;
   const hasMessages = type === "qq_chat" && Boolean(
     stringConfig(service, "rdb_id") || stringConfig(service, "mysql_connection_id") || stringConfig(service, "task_db_connection_id"),
   );
-  const hasMemories = Boolean(
-    stringConfig(service, "weaviate_memory_connection_id") || stringConfig(service, "elasticsearch_memory_connection_id"),
-  );
-  const hasImages = type === "qq_chat" && Boolean(
-    stringConfig(service, "weaviate_image_connection_id") || stringConfig(service, "elasticsearch_image_connection_id"),
-  );
+  const hasRetrievalStore = Boolean(retrievalStoreConnectionId(service));
+  // The single retrieval store serves both agent memory and image semantic search.
+  const hasMemories = hasRetrievalStore;
+  const hasImages = type === "qq_chat" && hasRetrievalStore;
   return [hasMessages ? "messages" : null, hasMemories ? "memories" : null, hasImages ? "images" : null]
     .filter((item): item is ServiceCapability => item !== null);
 }
@@ -115,7 +122,7 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
 
   async function mutateMemory(kind: "create" | "edit" | "delete", item?: ServiceExplorerMemoryRecord) {
     const currentService = service.value;
-    const connectionId = currentService ? stringConfig(currentService, "weaviate_memory_connection_id") : "";
+    const connectionId = currentService ? retrievalStoreConnectionId(currentService) : "";
     const embeddingModelRefId = currentService ? stringConfig(currentService, "embedding_model_ref_id") : "";
     if (!connectionId || !embeddingModelRefId || !memory.value.mutable) return;
     if (kind === "delete") {

@@ -14,6 +14,7 @@ use zihuan_core::ims_bot_adapter::{
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::{
     close_runtime_embedding_instance, list_runtime_embedding_instances,
 };
+use zihuan_core::retrieval::RetrievalSchema;
 use zihuan_core::storage::{
     close_runtime_storage_instance, close_runtime_storage_instances_for_config, connection_exists,
     delete_connection as delete_stored_connection, list_runtime_storage_instances,
@@ -104,24 +105,25 @@ fn validate_connection(
     validate_connection_basics(kind).map_err(ConnectionValidationError::BadRequest)?;
     let ConnectionKind::Weaviate(weaviate) = kind else {
         if let ConnectionKind::Elasticsearch(elasticsearch) = kind {
-            let reference = zihuan_core::storage::ElasticsearchRef::new(elasticsearch.clone())
+            // A retrieval connection serves several schemas; ensure each index it
+            // can host so later tool calls never hit a missing index.
+            for schema in [RetrievalSchema::ImageSemantic, RetrievalSchema::AgentMemory] {
+                let reference =
+                    zihuan_core::storage::ElasticsearchRef::new(elasticsearch.clone(), schema)
+                        .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
+                zihuan_core::storage::ensure_elasticsearch_index(
+                    &reference,
+                    allow_create_collection,
+                )
                 .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
-            return zihuan_core::storage::ensure_elasticsearch_index(
-                &reference,
-                allow_create_collection,
-            )
-            .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()));
+            }
+            return Ok(false);
         }
         return Ok(false);
     };
     if weaviate.base_url.trim().is_empty() {
         return Err(ConnectionValidationError::BadRequest(
             "weaviate.base_url must not be empty".to_string(),
-        ));
-    }
-    if weaviate.class_name.trim().is_empty() {
-        return Err(ConnectionValidationError::BadRequest(
-            "weaviate.class_name must not be empty".to_string(),
         ));
     }
     validate_connection_authentication(
@@ -136,22 +138,30 @@ fn validate_connection(
         return Ok(false);
     }
 
-    let weaviate_ref = WeaviateRef::new(
-        weaviate.base_url.clone(),
-        weaviate.class_name.clone(),
-        weaviate.username.clone(),
-        weaviate.password.clone(),
-        weaviate.api_key.clone(),
-        Duration::from_secs(30),
-    )
-    .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
-    let result = zihuan_core::storage::ensure_collection_schema(
-        &weaviate_ref,
-        weaviate.collection_schema,
-        allow_create_collection,
-    )
-    .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
-    Ok(matches!(result, WeaviateEnsureCollectionResult::Created))
+    let mut created = false;
+    for schema in [
+        RetrievalSchema::ImageSemantic,
+        RetrievalSchema::AgentMemory,
+        RetrievalSchema::QqMessage,
+    ] {
+        let weaviate_ref = WeaviateRef::new(
+            weaviate.base_url.clone(),
+            schema.weaviate_class_name(),
+            weaviate.username.clone(),
+            weaviate.password.clone(),
+            weaviate.api_key.clone(),
+            Duration::from_secs(30),
+        )
+        .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
+        let result = zihuan_core::storage::ensure_collection_schema(
+            &weaviate_ref,
+            schema,
+            allow_create_collection,
+        )
+        .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
+        created |= matches!(result, WeaviateEnsureCollectionResult::Created);
+    }
+    Ok(created)
 }
 
 fn render_connection_validation_error(res: &mut Response, err: ConnectionValidationError) {

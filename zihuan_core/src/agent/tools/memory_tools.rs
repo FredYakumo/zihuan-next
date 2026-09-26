@@ -11,13 +11,11 @@ use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::tooling::FunctionTool;
 use crate::model_inference::llm::{InferenceParam, LLMMessage};
+use crate::retrieval::RetrievalStoreRef;
 use crate::storage::{
-    create_elasticsearch_memory_record, create_memory_record_with_vector,
-    list_elasticsearch_memory_keys, list_recent_memory_keys, search_elasticsearch_memory,
-    search_memory_content_by_vector, AgentMemoryAccessContext, AgentMemoryUpsert, ElasticsearchRef,
-    LocalMemoryStore,
+    list_memory_in_store, search_memory_in_store, upsert_memory_in_store, AgentMemoryAccessContext,
+    AgentMemoryUpsert, LocalMemoryStore,
 };
-use crate::weaviate::WeaviateRef;
 
 const DEFAULT_MEMORY_TOP_N: i64 = 5;
 const MAX_MEMORY_TOP_N: i64 = 20;
@@ -30,11 +28,14 @@ pub struct MemoryAgentResources {
     pub access: AgentMemoryAccessContext,
 }
 
+/// Where agent memory is stored.
+///
+/// External backends are reached through the agent's unified retrieval store,
+/// which selects the concrete Weaviate/Elasticsearch collection at call time.
 #[derive(Clone)]
 pub enum MemoryBackend {
     LocalFile(Arc<LocalMemoryStore>),
-    Weaviate(Arc<WeaviateRef>),
-    Elasticsearch(Arc<ElasticsearchRef>),
+    RetrievalStore(Arc<RetrievalStoreRef>),
 }
 
 pub struct ListMemoryKeysTool {
@@ -64,14 +65,8 @@ impl Tool for ListMemoryKeysTool {
             let hits = if let Some(query) = query.as_deref() {
                 let mut hits = match &self.resources.memory_backend {
                     MemoryBackend::LocalFile(store) => store.list(Some(query), top_n as usize)?,
-                    MemoryBackend::Weaviate(reference) => search_memory_content_by_vector(
-                        reference,
-                        &self.resources.access,
-                        &embedding_vector(&self.resources, query)?,
-                        top_n as usize,
-                    )?,
-                    MemoryBackend::Elasticsearch(reference) => search_elasticsearch_memory(
-                        reference,
+                    MemoryBackend::RetrievalStore(store) => search_memory_in_store(
+                        store,
                         &self.resources.access,
                         query,
                         &embedding_vector(&self.resources, query)?,
@@ -83,18 +78,9 @@ impl Tool for ListMemoryKeysTool {
             } else {
                 match &self.resources.memory_backend {
                     MemoryBackend::LocalFile(store) => store.list(None, top_n as usize)?,
-                    MemoryBackend::Weaviate(reference) => list_recent_memory_keys(
-                        reference,
-                        &self.resources.access,
-                        top_n as usize,
-                        None,
-                    )?,
-                    MemoryBackend::Elasticsearch(reference) => list_elasticsearch_memory_keys(
-                        reference,
-                        &self.resources.access,
-                        top_n as usize,
-                        None,
-                    )?,
+                    MemoryBackend::RetrievalStore(store) => {
+                        list_memory_in_store(store, &self.resources.access, top_n as usize)?
+                    }
                 }
             };
             Ok(
@@ -123,14 +109,8 @@ impl Tool for SearchMemoryTool {
             let top_n = memory_limit(arguments.get("top_n").and_then(Value::as_i64));
             let hits = match &self.resources.memory_backend {
                 MemoryBackend::LocalFile(store) => store.list(Some(&query), top_n as usize)?,
-                MemoryBackend::Weaviate(reference) => search_memory_content_by_vector(
-                    reference,
-                    &self.resources.access,
-                    &embedding_vector(&self.resources, &query)?,
-                    top_n as usize,
-                )?,
-                MemoryBackend::Elasticsearch(reference) => search_elasticsearch_memory(
-                    reference,
+                MemoryBackend::RetrievalStore(store) => search_memory_in_store(
+                    store,
                     &self.resources.access,
                     &query,
                     &embedding_vector(&self.resources, &query)?,
@@ -182,24 +162,14 @@ impl Tool for RememberMemoryTool {
                     };
                     match &self.resources.memory_backend {
                         MemoryBackend::LocalFile(store) => store.create_or_update(&input),
-                        MemoryBackend::Weaviate(reference) => create_memory_record_with_vector(
-                            reference,
+                        MemoryBackend::RetrievalStore(store) => upsert_memory_in_store(
+                            store,
                             &input,
-                            Some(embedding_vector(
+                            embedding_vector(
                                 &self.resources,
                                 &format!("{}\n{}", input.key, input.value),
-                            )?),
+                            )?,
                         ),
-                        MemoryBackend::Elasticsearch(reference) => {
-                            create_elasticsearch_memory_record(
-                                reference,
-                                &input,
-                                embedding_vector(
-                                    &self.resources,
-                                    &format!("{}\n{}", input.key, input.value),
-                                )?,
-                            )
-                        }
                     }
                 })
                 .collect::<Result<Vec<_>>>()?;

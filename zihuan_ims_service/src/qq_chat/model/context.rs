@@ -12,11 +12,10 @@ use zihuan_core::graph::DataValue;
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngine;
+use zihuan_core::retrieval::RetrievalStoreRef;
 use zihuan_core::steer::PendingSteerStore;
-use zihuan_core::storage::ElasticsearchRef;
 use zihuan_core::storage::LocalMemoryStore;
 use zihuan_core::task_context::AgentTaskRuntime;
-use zihuan_core::weaviate::WeaviateRef;
 
 use crate::qq_chat::language_style_store::QqChatAgentServiceLanguageStyle;
 use crate::qq_chat::model::reply::QqChatServiceReplyBatchBuilder;
@@ -35,9 +34,7 @@ pub(crate) struct QqChatAgentServiceContext<'a> {
     pub(crate) natural_language_reply_llm: &'a Arc<dyn LLMBase>,
     pub(crate) natural_language_reply_system_prompt: Option<&'a str>,
     pub(crate) rdb_pool: Option<&'a RelationalDbConnection>,
-    pub(crate) weaviate_image_ref: Option<&'a Arc<WeaviateRef>>,
-    pub(crate) weaviate_memory_ref: Option<&'a Arc<WeaviateRef>>,
-    pub(crate) elasticsearch_memory_ref: Option<&'a Arc<ElasticsearchRef>>,
+    pub(crate) retrieval_store: Option<&'a Arc<RetrievalStoreRef>>,
     pub(crate) local_memory_store: Option<&'a Arc<LocalMemoryStore>>,
     pub(crate) embedding_model: Option<&'a Arc<dyn EmbeddingBase>>,
     pub(crate) web_search_engine: &'a Arc<dyn WebSearchEngine>,
@@ -87,9 +84,7 @@ pub struct QqChatAgentServiceRuntimeConfig {
     pub math_programming_llm: Arc<dyn LLMBase>,
     pub natural_language_reply_llm: Arc<dyn LLMBase>,
     pub rdb_pool: Option<RelationalDbConnection>,
-    pub weaviate_image_ref: Option<Arc<WeaviateRef>>,
-    pub weaviate_memory_ref: Option<Arc<WeaviateRef>>,
-    pub elasticsearch_memory_ref: Option<Arc<ElasticsearchRef>>,
+    pub retrieval_store: Option<Arc<RetrievalStoreRef>>,
     pub local_memory_store: Option<Arc<LocalMemoryStore>>,
     pub embedding_model: Option<Arc<dyn EmbeddingBase>>,
     pub web_search_engine: Arc<dyn WebSearchEngine>,

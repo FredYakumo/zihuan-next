@@ -522,26 +522,6 @@ const taskDbConnections = computed(() =>
 const tokenizerConnections = computed(() =>
   connections.value.filter((item) => item.kind.type === "tokenizer"),
 );
-const imageWeaviateConnections = computed(() =>
-  connections.value.filter(
-    (item) =>
-      item.kind.type === "weaviate" &&
-      item.kind.collection_schema === "image_semantic",
-  ),
-);
-const memoryWeaviateConnections = computed(() =>
-  connections.value.filter(
-    (item) =>
-      item.kind.type === "weaviate" &&
-      item.kind.collection_schema === "agent_memory",
-  ),
-);
-const imageElasticsearchConnections = computed(() =>
-  connections.value.filter((item) => item.kind.type === "elasticsearch" && item.kind.collection_schema === "image_semantic"),
-);
-const memoryElasticsearchConnections = computed(() =>
-  connections.value.filter((item) => item.kind.type === "elasticsearch" && item.kind.collection_schema === "agent_memory"),
-);
 const retrievalConnections = computed(() =>
   connections.value.filter((item) => item.kind.type === "weaviate" || item.kind.type === "elasticsearch"),
 );
@@ -1256,17 +1236,10 @@ async function submitForm() {
         return;
       }
       if (
-        form.workspace_memory_backend === "weaviate" &&
-        (!form.workspace_weaviate_memory_connection_id || !form.workspace_embedding_model_ref_id)
+        form.workspace_memory_backend === "retrieval_store" &&
+        (!form.workspace_retrieval_store_id || !form.workspace_embedding_model_ref_id)
       ) {
-        alert("Weaviate 记忆库需要选择记忆库连接和文本向量模型");
-        return;
-      }
-      if (
-        form.workspace_memory_backend === "elasticsearch" &&
-        (!form.workspace_elasticsearch_memory_connection_id || !form.workspace_embedding_model_ref_id)
-      ) {
-        alert("Elasticsearch 记忆库需要选择记忆库连接和文本向量模型");
+        alert("检索数据库记忆库需要选择记忆库连接和文本向量模型");
         return;
       }
     }
@@ -1427,10 +1400,6 @@ onMounted(() => {
     webSearchEngineConnections,
     taskDbConnections,
     tokenizerConnections,
-    imageWeaviateConnections,
-    memoryWeaviateConnections,
-    imageElasticsearchConnections,
-    memoryElasticsearchConnections,
     retrievalConnections,
     ignoreRulesDisabledReason,
     resetForm,

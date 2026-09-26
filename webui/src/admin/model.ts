@@ -22,7 +22,6 @@ export type ConnectionType =
   | "web_search_engine"
   | "tokenizer"
   | "sqlite";
-export type WeaviateCollectionSchema = "image_semantic" | "agent_memory";
 export type ServiceTypeName = "qq_chat" | "workspace";
 
 /** Service types that support the Dashboard embedded Chat component. */
@@ -61,19 +60,15 @@ export interface ConnectionFormState {
   redis_username: string;
   redis_password: string;
   weaviate_base_url: string;
-  weaviate_class_name: string;
   weaviate_username: string;
   weaviate_password: string;
   weaviate_api_key: string;
   weaviate_auth_method: ConnectionAuthMethod;
-  weaviate_collection_schema: WeaviateCollectionSchema;
   elasticsearch_base_url: string;
-  elasticsearch_index_name: string;
   elasticsearch_username: string;
   elasticsearch_password: string;
   elasticsearch_api_key: string;
   elasticsearch_auth_method: ConnectionAuthMethod;
-  elasticsearch_collection_schema: WeaviateCollectionSchema;
   elasticsearch_vector_dimensions: number;
   rustfs_endpoint: string;
   rustfs_username: string;
@@ -171,9 +166,8 @@ export interface ServiceFormState {
   workspace_orchestration_llm_ref_id: string;
   workspace_memory_enabled: boolean;
   workspace_embedding_model_ref_id: string;
-  workspace_weaviate_memory_connection_id: string;
-  workspace_elasticsearch_memory_connection_id: string;
-  workspace_memory_backend: "" | "local_file" | "weaviate" | "elasticsearch";
+  workspace_retrieval_store_id: string;
+  workspace_memory_backend: "" | "local_file" | "retrieval_store";
   tools: ToolFormState[];
   avatar_url: string;
 }
@@ -361,19 +355,15 @@ export function defaultConnectionForm(): ConnectionFormState {
     redis_username: "",
     redis_password: "",
     weaviate_base_url: "",
-    weaviate_class_name: "",
     weaviate_username: "",
     weaviate_password: "",
     weaviate_api_key: "",
     weaviate_auth_method: "api_key",
-    weaviate_collection_schema: "agent_memory",
     elasticsearch_base_url: "",
-    elasticsearch_index_name: "",
     elasticsearch_username: "",
     elasticsearch_password: "",
     elasticsearch_api_key: "",
     elasticsearch_auth_method: "api_key",
-    elasticsearch_collection_schema: "agent_memory",
     elasticsearch_vector_dimensions: 1024,
     rustfs_endpoint: "",
     rustfs_username: "",
@@ -478,8 +468,7 @@ export function defaultServiceForm(): ServiceFormState {
     workspace_orchestration_llm_ref_id: "",
     workspace_memory_enabled: false,
     workspace_embedding_model_ref_id: "",
-    workspace_weaviate_memory_connection_id: "",
-    workspace_elasticsearch_memory_connection_id: "",
+    workspace_retrieval_store_id: "",
     workspace_memory_backend: "",
     tools: [],
     avatar_url: "",
@@ -594,7 +583,6 @@ export function connectionFormFromConfig(
       break;
     case "weaviate":
       form.weaviate_base_url = String(connection.kind.base_url ?? "");
-      form.weaviate_class_name = String(connection.kind.class_name ?? "");
       form.weaviate_username = String(connection.kind.username ?? "");
       form.weaviate_password = String(connection.kind.password ?? "");
       form.weaviate_api_key = String(connection.kind.api_key ?? "");
@@ -608,13 +596,9 @@ export function connectionFormFromConfig(
         form.weaviate_username = "";
         form.weaviate_password = "";
       }
-      form.weaviate_collection_schema = String(
-        connection.kind.collection_schema ?? "agent_memory",
-      ) as WeaviateCollectionSchema;
       break;
     case "elasticsearch":
       form.elasticsearch_base_url = String(connection.kind.base_url ?? "");
-      form.elasticsearch_index_name = String(connection.kind.index_name ?? "");
       form.elasticsearch_username = String(connection.kind.username ?? "");
       form.elasticsearch_password = String(connection.kind.password ?? "");
       form.elasticsearch_api_key = String(connection.kind.api_key ?? "");
@@ -628,7 +612,6 @@ export function connectionFormFromConfig(
         form.elasticsearch_username = "";
         form.elasticsearch_password = "";
       }
-      form.elasticsearch_collection_schema = String(connection.kind.collection_schema ?? "agent_memory") as WeaviateCollectionSchema;
       form.elasticsearch_vector_dimensions = Number(connection.kind.vector_dimensions ?? 1024);
       break;
     case "rustfs":
@@ -740,24 +723,20 @@ export function buildConnectionPayload(form: ConnectionFormState): {
       payload.kind = {
         type: "weaviate",
         base_url: form.weaviate_base_url.trim(),
-        class_name: form.weaviate_class_name.trim(),
         username: form.weaviate_auth_method === "password" ? form.weaviate_username.trim() || null : null,
         password: form.weaviate_auth_method === "password" ? form.weaviate_password.trim() || null : null,
         api_key: form.weaviate_auth_method === "api_key" ? form.weaviate_api_key.trim() || null : null,
         auth_method: form.weaviate_auth_method,
-        collection_schema: form.weaviate_collection_schema,
       };
       break;
     case "elasticsearch":
       payload.kind = {
         type: "elasticsearch",
         base_url: form.elasticsearch_base_url.trim(),
-        index_name: form.elasticsearch_index_name.trim(),
         username: form.elasticsearch_auth_method === "password" ? form.elasticsearch_username.trim() || null : null,
         password: form.elasticsearch_auth_method === "password" ? form.elasticsearch_password.trim() || null : null,
         api_key: form.elasticsearch_auth_method === "api_key" ? form.elasticsearch_api_key.trim() || null : null,
         auth_method: form.elasticsearch_auth_method,
-        collection_schema: form.elasticsearch_collection_schema,
         vector_dimensions: form.elasticsearch_vector_dimensions,
       };
       break;
@@ -1027,9 +1006,14 @@ export function serviceFormFromConfig(
     form.workspace_orchestration_llm_ref_id = String(agentType.orchestration_llm_ref_id ?? "");
     form.workspace_memory_enabled = Boolean(agentType.memory_enabled ?? false);
     form.workspace_embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
-    form.workspace_weaviate_memory_connection_id = String(agentType.weaviate_memory_connection_id ?? "");
-    form.workspace_elasticsearch_memory_connection_id = String(agentType.elasticsearch_memory_connection_id ?? "");
-    form.workspace_memory_backend = agentType.memory_backend === "local_file" || agentType.memory_backend === "weaviate" || agentType.memory_backend === "elasticsearch" ? agentType.memory_backend : "";
+    const workspaceRetrievalStore = agentType.retrieval_store as { type?: string; connection_id?: string } | undefined;
+    form.workspace_retrieval_store_id = workspaceRetrievalStore?.type === "local_markdown"
+      ? "__local_markdown__"
+      : String(workspaceRetrievalStore?.connection_id ?? "");
+    form.workspace_memory_backend = agentType.memory_enabled
+      ? (workspaceRetrievalStore?.type === "local_markdown" ? "local_file"
+        : workspaceRetrievalStore?.connection_id ? "retrieval_store" : "")
+      : "";
     form.web_search_engine_connection_id = String(agentType.web_search_engine_connection_id ?? "");
     const source = (agentType.default_tools_enabled ?? {}) as Record<
       string,
@@ -1205,9 +1189,11 @@ export function buildServicePayload(form: ServiceFormState): {
       agents_md_enabled: form.agents_md_enabled,
       memory_enabled: form.workspace_memory_enabled,
       embedding_model_ref_id: form.workspace_embedding_model_ref_id || null,
-      weaviate_memory_connection_id: form.workspace_weaviate_memory_connection_id || null,
-      elasticsearch_memory_connection_id: form.workspace_elasticsearch_memory_connection_id || null,
-      memory_backend: form.workspace_memory_backend || null,
+      retrieval_store: form.workspace_retrieval_store_id === "__local_markdown__"
+        ? { type: "local_markdown" }
+        : form.workspace_retrieval_store_id
+          ? { type: "connection", connection_id: form.workspace_retrieval_store_id }
+          : null,
       web_search_engine_connection_id: form.web_search_engine_connection_id || null,
       default_tools_enabled: {
         image_understand: form.default_tools_enabled.image_understand !== false,

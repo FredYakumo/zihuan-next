@@ -15,11 +15,11 @@ use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::graph::tool_spec::ToolDefinition;
 use zihuan_core::model_inference::llm::{llm_base::LLMBase, LLMMessage};
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_core::role::service_config::{MemoryBackendKind, RoleServiceConfig};
+use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::runtime::block_async;
 use zihuan_core::storage::{
-    build_elasticsearch_ref, build_weaviate_ref, build_web_search_engine_ref,
-    AgentMemoryAccessContext, ConnectionConfig, LocalMemoryStore, WeaviateCollectionSchema,
+    build_retrieval_store_ref, build_web_search_engine_ref, AgentMemoryAccessContext,
+    ConnectionConfig, LocalMemoryStore,
 };
 use zihuan_core::workspace::normalized_workspace_path;
 
@@ -337,8 +337,15 @@ impl AgentResourceProvider for WorkspaceRoleServiceResources {
     fn connection_id(&self, kind: AgentConnectionSlot) -> Option<String> {
         match kind {
             AgentConnectionSlot::WebSearch => self.config.web_search_engine_connection_id.clone(),
+            AgentConnectionSlot::RetrievalStore => {
+                self.config.retrieval_store_connection_id().map(ToOwned::to_owned)
+            }
             _ => None,
         }
+    }
+
+    fn retrieval_store_is_local(&self) -> bool {
+        self.config.retrieval_store_is_local()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -389,40 +396,18 @@ fn load_memory_resources(
         return None;
     }
 
-    let memory_backend = match config.memory_backend? {
-        MemoryBackendKind::LocalFile => {
-            MemoryBackend::LocalFile(Arc::new(LocalMemoryStore::in_app_data_dir()))
-        }
-        MemoryBackendKind::Weaviate => {
-            let reference = build_weaviate_ref(
-                config
-                    .weaviate_memory_connection_id
-                    .as_deref()
-                    .filter(|value| !value.trim().is_empty()),
-                connections,
-                Some(WeaviateCollectionSchema::AgentMemory),
-            )
-            .ok()??;
-            MemoryBackend::Weaviate(reference)
-        }
-        MemoryBackendKind::Elasticsearch => {
-            let reference = build_elasticsearch_ref(
-                config
-                    .elasticsearch_memory_connection_id
-                    .as_deref()
-                    .filter(|value| !value.trim().is_empty()),
-                connections,
-                Some(WeaviateCollectionSchema::AgentMemory),
-            )
-            .ok()??;
-            MemoryBackend::Elasticsearch(reference)
-        }
+    let memory_backend = if config.retrieval_store_is_local() {
+        MemoryBackend::LocalFile(Arc::new(LocalMemoryStore::in_app_data_dir()))
+    } else {
+        let store =
+            build_retrieval_store_ref(config.retrieval_store_connection_id()?, connections).ok()?;
+        MemoryBackend::RetrievalStore(Arc::new(store))
     };
 
     let llm_refs = load_llm_refs().ok()?;
-    let embedding_model = match config.memory_backend? {
-        MemoryBackendKind::LocalFile => None,
-        MemoryBackendKind::Weaviate | MemoryBackendKind::Elasticsearch => {
+    let embedding_model = match &memory_backend {
+        MemoryBackend::LocalFile(_) => None,
+        MemoryBackend::RetrievalStore(_) => {
             let model_ref_id = config
                 .embedding_model_ref_id
                 .as_deref()
