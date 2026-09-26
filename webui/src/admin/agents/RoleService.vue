@@ -906,6 +906,7 @@
       v-model:visible="showIgnoreRulesModal"
       header="Ignore Rules"
       size="760px"
+      :close-btn="true"
       :close-on-overlay-click="false"
       :footer="false"
       @close="closeIgnoreRulesModal"
