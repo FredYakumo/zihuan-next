@@ -506,8 +506,12 @@ impl zihuan_core::command::CommandRuntime for DashboardCommandRuntime {
         inv: &zihuan_core::command::Invocation,
         _state: &mut zihuan_core::command::CmdState,
     ) -> Result<zihuan_core::command::StepRun> {
-        if let Some(op) = step.op.strip_prefix("builtin://") {
-            return match zihuan_core::command::execute_builtin(op, &inv.args, &inv.ctx.caller_id) {
+        if step.op.starts_with("builtin://") {
+            return match zihuan_core::command::execute_builtin(
+                &step.op,
+                &inv.args,
+                &inv.ctx.caller_id,
+            ) {
                 Some(Ok(effects)) => Ok(zihuan_core::command::StepRun::stop_with(effects)),
                 Some(Err(err)) => Err(err),
                 None => Err(zihuan_core::string_error!("builtin 操作不存在: {}", step.op)),

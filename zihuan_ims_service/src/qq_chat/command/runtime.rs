@@ -60,8 +60,8 @@ impl<'a> QqChatCommandRuntime<'a> {
 
 impl<'a> CommandRuntime for QqChatCommandRuntime<'a> {
     fn run_step(&mut self, step: &Step, inv: &Invocation, state: &mut CmdState) -> Result<StepRun> {
-        if let Some(op) = step.op.strip_prefix("builtin://") {
-            return execute_builtin_step(op, inv);
+        if step.op.starts_with("builtin://") {
+            return execute_builtin_step(&step.op, inv);
         }
         match step.op.as_str() {
             "ims://privilege/active" => {
