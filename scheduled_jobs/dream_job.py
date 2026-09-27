@@ -12,7 +12,7 @@ from zihuan_sdk import Host, JobSdk
 JOB_MANIFEST = {
     "task_name": "Dream",
     "entry": "run_job",
-    "description": "用户静默后合并对话历史与上一次 Dream 记忆，生成新的长期记忆。",
+    "description": "用户一段时间后没有与Agent对话，则会自动总结对话并生成相关记忆",
 }
 
 DREAM_AGENT_YAML = """\
