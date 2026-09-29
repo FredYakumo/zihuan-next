@@ -70,6 +70,11 @@ def run_job(request):
             previous = record.get("value") or ""
             break
 
+    if not transcript.strip() and not previous.strip():
+        # Nothing to consolidate: never fabricate a memory from an empty transcript
+        # (e.g. a pending task whose conversation cache was wiped by a restart).
+        return {"ok": True, "result": "无对话内容，跳过 Dream 记忆生成"}
+
     result = sdk.run_subagent(DREAM_AGENT_YAML, previous_memory=previous, transcript=transcript)
 
     sdk.upsert_memory(key=memory_key, value=result, sender_id_list=[sender_id])

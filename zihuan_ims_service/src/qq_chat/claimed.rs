@@ -515,6 +515,10 @@ impl QqChatAgentServiceInner {
             ));
         }
         save_history(ctx.cache, &history_key, history);
+
+        if visible_assistant_history_text.is_some() {
+            zihuan_core::scheduler::rearm_triggered_jobs(ctx.agent_id, sender_id);
+        }
         *ctx.session_state_store.lock().unwrap() = turn_session_state.lock().unwrap().clone();
 
         let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {
@@ -704,6 +708,11 @@ impl QqChatAgentServiceInner {
             ));
         }
         save_history(ctx.cache, history_key, history);
+        // Same re-arm rule as the main reply path: only an actual reply to the sender
+        // starts their scheduled-job timers.
+        if visible_assistant_history_text.is_some() {
+            zihuan_core::scheduler::rearm_triggered_jobs(ctx.agent_id, sender_id);
+        }
         *ctx.session_state_store.lock().unwrap() = turn_session_state.lock().unwrap().clone();
 
         let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {

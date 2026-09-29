@@ -838,12 +838,6 @@ impl QqChatAgentService {
         adapter: &zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
         time: &str,
     ) -> Result<()> {
-        // Every inbound message re-arms the agent's scheduled jobs (e.g. sender-silence
-        // triggers); the scheduler no-ops when the service registered none.
-        zihuan_core::scheduler::rearm_triggered_jobs(
-            &self.config.agent_id,
-            &event.sender.user_id.to_string(),
-        );
         let task_db_connection_id =
             self.config.qq_chat_config.resolved_rdb_id().map(ToOwned::to_owned);
         let sender_id = event.sender.user_id.to_string();
