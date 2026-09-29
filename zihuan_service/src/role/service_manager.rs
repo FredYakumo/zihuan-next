@@ -6,6 +6,8 @@ use log::error;
 use serde::Serialize;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
+use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
+use zihuan_core::agent::tool_definitions::build_enabled_tool_definitions;
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::config::role_services::load_role_services;
 use zihuan_core::error::Result;
@@ -13,8 +15,12 @@ use zihuan_core::role::procedure::{
     execute_procedure_chain, Procedure, ProcedureContext, ProcedureOutput,
 };
 use zihuan_core::role::service_config::RoleServiceConfig;
-use zihuan_core::storage::{load_connections, ConnectionConfig};
+use zihuan_core::scheduler::{JobResources, ScheduledJobConfig, ServiceRegistrationGuard};
+use zihuan_core::storage::{
+    build_relational_db_connection_for_connection, load_connections, ConnectionConfig,
+};
 use zihuan_core::task_context::AgentTaskRuntime;
+use zihuan_workspace_service::role_config::WorkspaceRoleServiceConfig;
 
 use crate::role::{InferenceToolProvider, RoleAgent};
 
@@ -64,6 +70,10 @@ pub(super) struct RoleServiceRuntimeEntry {
     pub state: RoleServiceRuntimeState,
     pub task: Option<JoinHandle<()>>,
     pub on_finish: OnFinishShared,
+    /// Keeps the workspace agent's scheduler job resources registered while it runs;
+    /// dropping it unregisters the resources. QQ chat services hold their guard inside
+    /// the spawned service task instead.
+    pub scheduler: Option<ServiceRegistrationGuard>,
 }
 
 impl Default for RoleServiceRuntimeEntry {
@@ -73,6 +83,7 @@ impl Default for RoleServiceRuntimeEntry {
             state: RoleServiceRuntimeState::default(),
             task: None,
             on_finish: Arc::new(Mutex::new(None)),
+            scheduler: None,
         }
     }
 }
@@ -208,6 +219,9 @@ impl RoleServiceManager {
                 entry.on_finish = on_finish_shared;
                 Ok(())
             } else {
+                let config = super::service_type_ext::workspace_of(&agent.role_service_type)?;
+                let scheduler_guard =
+                    register_workspace_scheduler(agent, &config, &connections).await;
                 let started_at = Local::now().to_rfc3339();
                 let mut guard = self.inner.lock().unwrap();
                 let entry = guard.entry(agent.id.clone()).or_default();
@@ -220,6 +234,7 @@ impl RoleServiceManager {
                 };
                 entry.task = None;
                 entry.on_finish = Arc::new(Mutex::new(on_finish));
+                entry.scheduler = scheduler_guard;
                 Ok(())
             }
         }
@@ -298,8 +313,78 @@ impl RoleServiceManager {
         if entry.state.status != RoleServiceRuntimeStatus::Running {
             entry.role_service = None;
             entry.task = None;
+            entry.scheduler = None;
         }
     }
+}
+
+/// Registers the workspace agent's scheduler job resources so its scheduled jobs can fire,
+/// returning the guard that keeps the registration alive for as long as the entry does.
+/// `None` when the agent configures no scheduled jobs; a resource that cannot be built only
+/// logs, because scheduled jobs are auxiliary and must not block the agent from starting.
+async fn register_workspace_scheduler(
+    agent: &RoleServiceConfig,
+    config: &WorkspaceRoleServiceConfig,
+    connections: &[ConnectionConfig],
+) -> Option<ServiceRegistrationGuard> {
+    let scheduled_jobs = config.resolved_scheduled_jobs();
+    if scheduled_jobs.is_empty() {
+        return None;
+    }
+    match build_workspace_job_resources(agent, config, connections, scheduled_jobs).await {
+        Ok(resources) => match zihuan_core::scheduler::register_service(resources) {
+            Ok(registration) => Some(registration),
+            Err(err) => {
+                log::warn!(
+                    "[Scheduler] failed to register scheduled jobs for agent '{}': {err}",
+                    agent.name
+                );
+                None
+            }
+        },
+        Err(err) => {
+            log::warn!("[Scheduler] agent '{}' scheduled jobs unavailable: {err}", agent.name);
+            None
+        }
+    }
+}
+
+async fn build_workspace_job_resources(
+    agent: &RoleServiceConfig,
+    config: &WorkspaceRoleServiceConfig,
+    connections: &[ConnectionConfig],
+    scheduled_jobs: Vec<ScheduledJobConfig>,
+) -> Result<JobResources> {
+    let rdb_id = config.resolved_rdb_id().ok_or_else(|| {
+        zihuan_core::string_error!("scheduled jobs require a relational database connection")
+    })?;
+    let connection = build_relational_db_connection_for_connection(rdb_id, connections).await?;
+    let llm_config =
+        resolve_llm_service_config(config.llm_ref_id.as_deref(), &load_llm_refs()?, &agent.name)?;
+    let llm = build_llm_model(&llm_config)?;
+    let tool_definitions = build_enabled_tool_definitions(&agent.tools)?;
+    let memory = zihuan_workspace_service::workspace_agent_service::load_job_memory_resources(
+        config,
+        connections,
+    );
+    Ok(JobResources {
+        agent_id: agent.id.clone(),
+        connection,
+        llm,
+        tool_definitions,
+        // Workspace session history is the persisted conversation; loading it gives job
+        // scripts a real transcript, while clearing it is refused — a scheduled job must
+        // not delete what the user sees.
+        history_loader: Arc::new(|session_id: &str| {
+            zihuan_core::chat_history::load_session_history_messages(session_id).unwrap_or_default()
+        }),
+        history_clearer: Arc::new(|_session_id: &str| {
+            log::info!("[Scheduler] history.clear is a no-op for workspace agents");
+            Ok(())
+        }),
+        memory,
+        scheduled_jobs,
+    })
 }
 
 pub fn build_role_tool_provider(

@@ -1,11 +1,13 @@
 use std::fs;
 use std::fs::OpenOptions;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::message_part::MessagePart;
+use crate::model_inference::llm::{LLMMessage, MessageRole};
 use crate::system_config::application_data_dir;
 
 pub const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
@@ -15,6 +17,57 @@ const MAX_TITLE_LEN: usize = 30;
 
 pub fn chat_history_dir() -> Result<PathBuf> {
     Ok(application_data_dir().join(CHAT_HISTORY_DIR_NAME))
+}
+
+/// The JSONL file holding one chat session's persisted messages.
+pub fn chat_session_file_path(session_id: &str) -> Result<PathBuf> {
+    if session_id.trim().is_empty() {
+        return Err(Error::ValidationError("session_id must not be empty".to_string()));
+    }
+    Ok(chat_history_dir()?.join(format!("{session_id}.jsonl")))
+}
+
+/// One stored chat record reduced to the fields transcript consumers need; serde ignores
+/// the rest of the record schema.
+#[derive(Debug, Deserialize)]
+struct SessionHistoryEntry {
+    role: String,
+    #[serde(default)]
+    content: String,
+}
+
+/// Loads one chat session's persisted messages as plain role/text messages, for consumers
+/// that only need the transcript (e.g. scheduler job scripts) rather than the full record.
+pub fn load_session_history_messages(session_id: &str) -> Result<Vec<LLMMessage>> {
+    let path = chat_session_file_path(session_id)?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let file = OpenOptions::new().read(true).open(path)?;
+    let reader = BufReader::new(file);
+    let mut messages = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let entry: SessionHistoryEntry = serde_json::from_str(&line)
+            .map_err(|err| crate::string_error!("failed to parse chat record: {err}"))?;
+        messages.push(LLMMessage {
+            role: match entry.role.as_str() {
+                "user" => MessageRole::User,
+                "assistant" => MessageRole::Assistant,
+                "tool" => MessageRole::Tool,
+                _ => MessageRole::System,
+            },
+            parts: vec![MessagePart::text(entry.content)],
+            reasoning_content: None,
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            usage: None,
+        });
+    }
+    Ok(messages)
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -103,6 +103,19 @@
             </div>
           </t-card>
 
+          <t-card v-if="form.type === 'workspace'" class="agent-service-form-section" :bordered="false">
+            <template #title>计划任务</template>
+            <div class="agent-service-form-grid">
+              <t-form-item label="关系型数据库">
+                <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
+                  <t-option value="" label="不使用" />
+                  <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+                </t-select>
+              </t-form-item>
+            </div>
+            <ScheduledJobsEditor :jobs="form.scheduled_jobs" :available-jobs="schedulerJobs" :rdb-configured="Boolean(form.rdb_id)" @add="addScheduledJob" @remove="removeScheduledJob" />
+          </t-card>
+
 
           <template v-if="form.type === 'qq_chat'">
             <t-card class="agent-service-form-section" :bordered="false">
@@ -167,18 +180,8 @@
                   <t-input-number v-model="form.max_steer_count" :min="0" />
                   <div class="agent-service-form-hint">默认4次</div>
                 </t-form-item>
-                <t-form-item label="Dream">
-                  <t-checkbox v-model="form.dream_enabled">启用 Dream 记忆</t-checkbox>
-                  <div class="agent-service-form-hint" style="margin-top: 6px">用户一段时间后没有与Agent对话，则会自动总结对话并生成相关记忆</div>
-                  <div v-if="form.dream_enabled" class="agent-service-form-grid" style="margin-top: 8px">
-                    <t-input-number v-model="form.dream_interval_value" :min="1" />
-                    <t-select v-model="form.dream_interval_unit">
-                      <t-option value="minute" label="分" />
-                      <t-option value="hour" label="时" />
-                      <t-option value="day" label="天" />
-                    </t-select>
-                  </div>
-                  <div v-if="form.dream_enabled && !form.rdb_id" class="agent-service-form-hint">Dream 需要配置关系数据库连接。</div>
+                <t-form-item label="计划任务" class="agent-service-form-item-full">
+                  <ScheduledJobsEditor :jobs="form.scheduled_jobs" :available-jobs="schedulerJobs" :rdb-configured="Boolean(form.rdb_id)" @add="addScheduledJob" @remove="removeScheduledJob" />
                 </t-form-item>
               </div>
               <div class="agent-service-form-grid">
@@ -339,6 +342,19 @@
           </div>
         </t-card>
 
+        <t-card v-if="form.type === 'workspace'" class="agent-service-form-section" :bordered="false">
+          <template #title>计划任务</template>
+          <div class="agent-service-form-grid">
+            <t-form-item label="关系型数据库">
+              <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
+                <t-option value="" label="不使用" />
+                <t-option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id" :label="item.name" />
+              </t-select>
+            </t-form-item>
+          </div>
+          <ScheduledJobsEditor :jobs="form.scheduled_jobs" :available-jobs="schedulerJobs" :rdb-configured="Boolean(form.rdb_id)" @add="addScheduledJob" @remove="removeScheduledJob" />
+        </t-card>
+
         <!-- QQ Chat 专属 -->
         <template v-if="form.type === 'qq_chat'">
           <t-card v-if="false" class="agent-service-form-section" :bordered="false">
@@ -466,18 +482,8 @@
                 <t-input-number v-model="form.max_steer_count" :min="0" />
                 <div class="agent-service-form-hint">当 Service 还没发出最终回复时，用户继续发消息会被视为"插嘴 / steer"。这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出的消息会被丢弃。</div>
               </t-form-item>
-              <t-form-item label="Dream">
-                <t-checkbox v-model="form.dream_enabled">启用 Dream 记忆</t-checkbox>
-                <div class="agent-service-form-hint" style="margin-top: 6px">启用后，当某位用户静默超过下方设定的时长时，调度器会触发 Dream 任务，把该用户近期的对话整合为长期记忆，供后续回复参考。</div>
-                <div v-if="form.dream_enabled" class="agent-service-form-grid" style="margin-top: 8px">
-                  <t-input-number v-model="form.dream_interval_value" :min="1" />
-                  <t-select v-model="form.dream_interval_unit">
-                    <t-option value="minute" label="分" />
-                    <t-option value="hour" label="时" />
-                    <t-option value="day" label="天" />
-                  </t-select>
-                </div>
-                <div v-if="form.dream_enabled && !form.rdb_id" class="agent-service-form-hint">Dream 需要配置关系数据库连接。</div>
+              <t-form-item label="计划任务" class="agent-service-form-item-full">
+                <ScheduledJobsEditor :jobs="form.scheduled_jobs" :available-jobs="schedulerJobs" :rdb-configured="Boolean(form.rdb_id)" @add="addScheduledJob" @remove="removeScheduledJob" />
               </t-form-item>
             </div>
             <div class="agent-service-form-grid">
@@ -1044,6 +1050,7 @@ import AdminPageHeader from "../components/AdminPageHeader.vue";
 import ConfigImportDialog from "../components/ConfigImportDialog.vue";
 import IgnoreRulesList from "../components/IgnoreRulesList.vue";
 import RateLimitConfigDrawer from "../components/RateLimitConfigDrawer.vue";
+import ScheduledJobsEditor from "../components/ScheduledJobsEditor.vue";
 import ServiceModelConfig from "../components/ServiceModelConfig.vue";
 import { useRoleServicePage } from "./roleServicePage";
 
@@ -1057,6 +1064,7 @@ export default defineComponent({
     IgnoreRulesList,
     InfoCircleIcon,
     RateLimitConfigDrawer,
+    ScheduledJobsEditor,
     ServiceModelConfig,
   },
   setup: useRoleServicePage,

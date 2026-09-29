@@ -142,9 +142,7 @@ export interface ServiceFormState {
   rdb_id: string;
   retrieval_store_id: string;
   max_message_length: number;
-  dream_enabled: boolean;
-  dream_interval_value: number;
-  dream_interval_unit: "minute" | "hour" | "day";
+  scheduled_jobs: QqChatScheduledJobFormItem[];
   max_steer_count: number;
   emotion_dimensions: QqChatEmotionDimensionFormItem[];
   default_tools_enabled: Record<string, boolean>;
@@ -185,6 +183,16 @@ export type QqChatEmotionDimensionFormItem = {
   dissipation_hours?: number;
   positive_prompt?: string;
   negative_prompt?: string;
+};
+
+export type QqChatScheduledJobEvent = "sender_silence";
+
+export type QqChatScheduledJobFormItem = {
+  task_name: string;
+  enabled: boolean;
+  event: QqChatScheduledJobEvent;
+  interval_value: number;
+  interval_unit: "minute" | "hour" | "day";
 };
 
 export type QqChatMessageRateLimitWindowUnit = "minute" | "hour" | "day";
@@ -444,9 +452,7 @@ export function defaultServiceForm(): ServiceFormState {
     rdb_id: "",
     retrieval_store_id: "",
     max_message_length: 500,
-    dream_enabled: false,
-    dream_interval_value: 30,
-    dream_interval_unit: "minute",
+    scheduled_jobs: [],
     max_steer_count: 4,
     emotion_dimensions: defaultQqChatEmotionDimensions(),
     default_tools_enabled: defaultQqChatDefaultToolsEnabled(),
@@ -529,6 +535,38 @@ function normalizeTimeUnitValue(
   if (unit === "hour" || unit === "hours") return "hour";
   if (unit === "day" || unit === "days") return "day";
   return fallback;
+}
+
+function normalizeQqChatScheduledJobs(value: unknown): QqChatScheduledJobFormItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => {
+    const item = (entry ?? {}) as Record<string, unknown>;
+    const trigger = (item.trigger ?? {}) as Record<string, unknown>;
+    const rawInterval = Number(trigger.interval_value ?? 30);
+    // Unknown trigger types cannot reach here: the backend rejects them on load.
+    return {
+      task_name: String(item.task_name ?? ""),
+      enabled: Boolean(item.enabled ?? true),
+      event: "sender_silence",
+      interval_value:
+        Number.isFinite(rawInterval) && rawInterval > 0 ? Math.trunc(rawInterval) : 30,
+      interval_unit: normalizeTimeUnitValue(trigger.interval_unit, "minute"),
+    };
+  });
+}
+
+function buildScheduledJobsPayload(form: ServiceFormState): unknown[] {
+  return form.scheduled_jobs
+    .map((job) => ({
+      task_name: job.task_name.trim(),
+      enabled: job.enabled,
+      trigger: {
+        type: job.event,
+        interval_value: Math.max(1, Math.trunc(job.interval_value || 1)),
+        interval_unit: job.interval_unit,
+      },
+    }))
+    .filter((job) => job.task_name.length > 0);
 }
 
 function buildQqChatMessageRateLimitRulePayload(
@@ -925,12 +963,7 @@ export function serviceFormFromConfig(
       ? "__local_markdown__"
       : String(retrievalStore?.connection_id ?? "");
     form.max_message_length = Number(agentType.max_message_length ?? 500);
-    form.dream_enabled = Boolean(agentType.dream_enabled ?? false);
-    form.dream_interval_value = Number(agentType.dream_interval_value ?? 30);
-    form.dream_interval_unit = normalizeTimeUnitValue(
-      agentType.dream_interval_unit,
-      "minute",
-    );
+    form.scheduled_jobs = normalizeQqChatScheduledJobs(agentType.scheduled_jobs);
     form.max_steer_count = Number(agentType.max_steer_count ?? 4);
     form.emotion_dimensions = normalizeQqChatEmotionDimensions(
       agentType.emotion_dimensions,
@@ -1144,9 +1177,7 @@ export function buildServicePayload(form: ServiceFormState): {
             ? { type: "connection", connection_id: form.retrieval_store_id }
             : null,
         max_message_length: form.max_message_length,
-        dream_enabled: form.dream_enabled,
-        dream_interval_value: Math.max(1, Math.trunc(form.dream_interval_value || 1)),
-        dream_interval_unit: form.dream_interval_unit,
+        scheduled_jobs: buildScheduledJobsPayload(form),
         max_steer_count: form.max_steer_count,
         emotion_dimensions: normalizeQqChatEmotionDimensions(
           form.emotion_dimensions,
@@ -1195,6 +1226,8 @@ export function buildServicePayload(form: ServiceFormState): {
           ? { type: "connection", connection_id: form.workspace_retrieval_store_id }
           : null,
       web_search_engine_connection_id: form.web_search_engine_connection_id || null,
+      rdb_id: form.rdb_id || null,
+      scheduled_jobs: buildScheduledJobsPayload(form),
       default_tools_enabled: {
         image_understand: form.default_tools_enabled.image_understand !== false,
         ...Object.fromEntries(

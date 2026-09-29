@@ -424,6 +424,19 @@ fn load_memory_resources(
     Some(WorkspaceMemoryResources { memory_backend, embedding_model })
 }
 
+/// The scheduler-facing memory backend for one workspace agent: `None` when the agent has
+/// memory disabled or its backend cannot be built.
+pub fn load_job_memory_resources(
+    config: &WorkspaceRoleServiceConfig,
+    connections: &[ConnectionConfig],
+) -> Option<zihuan_core::scheduler::JobMemoryResources> {
+    let resources = load_memory_resources(config, connections)?;
+    Some(zihuan_core::scheduler::JobMemoryResources {
+        memory_backend: resources.memory_backend,
+        embedding_model: resources.embedding_model,
+    })
+}
+
 /// Location of an `AGENTS.md` candidate, listed in discovery priority order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentsMdLocation {

@@ -12,6 +12,7 @@ use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngine;
 use zihuan_core::retrieval::RetrievalStoreRef;
+use zihuan_core::scheduler::JobMemoryResources;
 use zihuan_core::storage::AgentMemoryAccessContext;
 use zihuan_core::storage::LocalMemoryStore;
 
@@ -131,27 +132,42 @@ pub fn build_info_brain_tools(
         tools.push(Box::new(ImageUnderstandTool::new(None, rdb_pool, s3_ref, dashboard_target)));
     }
 
-    let memory_backend = local_memory_store
-        .map(MemoryBackend::LocalFile)
-        .or_else(|| retrieval_store.map(MemoryBackend::RetrievalStore));
-    if let (Some(memory_backend), Some(llm)) = (memory_backend, llm) {
-        let memory_resources = MemoryAgentResources {
-            memory_backend,
-            embedding_model,
-            llm: Arc::clone(&llm),
-            access: memory_access,
-        };
-        let mut host = AgentHost::new();
-        register_memory_tools(&mut host, memory_resources);
-        host.register_llm("main", llm);
-        if is_enabled(default_tools_enabled, DEFAULT_TOOL_MEMORY_AGENT) {
-            if let Some(tool) = host.publish_logged(DEFAULT_TOOL_MEMORY_AGENT) {
-                tools.push(Box::new(SharedTool::new(tool)));
+    if let Some(llm) = llm {
+        if let Some(job_memory) =
+            build_job_memory_resources(local_memory_store, retrieval_store, embedding_model)
+        {
+            let memory_resources = MemoryAgentResources {
+                memory_backend: job_memory.memory_backend,
+                embedding_model: job_memory.embedding_model,
+                llm: Arc::clone(&llm),
+                access: memory_access,
+            };
+            let mut host = AgentHost::new();
+            register_memory_tools(&mut host, memory_resources);
+            host.register_llm("main", llm);
+            if is_enabled(default_tools_enabled, DEFAULT_TOOL_MEMORY_AGENT) {
+                if let Some(tool) = host.publish_logged(DEFAULT_TOOL_MEMORY_AGENT) {
+                    tools.push(Box::new(SharedTool::new(tool)));
+                }
             }
         }
     }
 
     tools
+}
+
+/// Resolves the memory backend job scripts share with the agent's memory tools: the local
+/// on-disk store when configured, otherwise the external retrieval store. `None` when the
+/// agent has no memory backend at all.
+pub(crate) fn build_job_memory_resources(
+    local_memory_store: Option<Arc<LocalMemoryStore>>,
+    retrieval_store: Option<Arc<RetrievalStoreRef>>,
+    embedding_model: Option<Arc<dyn EmbeddingBase>>,
+) -> Option<JobMemoryResources> {
+    let memory_backend = local_memory_store
+        .map(MemoryBackend::LocalFile)
+        .or_else(|| retrieval_store.map(MemoryBackend::RetrievalStore))?;
+    Some(JobMemoryResources { memory_backend, embedding_model })
 }
 pub(crate) fn format_public_info_message(message: &str) -> serde_json::Value {
     serde_json::json!({

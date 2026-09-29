@@ -48,6 +48,7 @@ pub use crate::storage::message_rate_limit_store::{
 };
 use crate::storage::qq_chat_history_store::{clear_history, load_history};
 use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
+use crate::tools::build_job_memory_resources;
 use chrono::Local;
 use log::{error, info, warn};
 use tokio::task::JoinHandle;
@@ -364,12 +365,21 @@ pub async fn spawn(
         Arc::new(LLMMessageSessionCacheRef::new(format!("service_agent_cache_{}", agent.id)));
 
     // Register the service's job resources with the scheduler kernel so script-defined
-    // jobs (e.g. Dream) can reach this service's LLM, tools, and history cache. The guard
-    // lives in the service task below; stopping the service unregisters the resources.
-    let scheduler_guard = if config.dream_enabled {
+    // jobs can reach this service's LLM, tools, history cache, and memory backend. The
+    // guard lives in the service task below; stopping the service unregisters the resources.
+    let job_memory = build_job_memory_resources(
+        config
+            .retrieval_store_is_local()
+            .then(|| Arc::new(LocalMemoryStore::in_app_data_dir())),
+        retrieval_store.clone(),
+        embedding_model.clone(),
+    );
+    let scheduled_jobs = config.resolved_scheduled_jobs();
+    let scheduler_guard = if !scheduled_jobs.is_empty() {
         rdb_pool
             .as_ref()
-            .map(|connection| {
+            .zip(job_memory.clone())
+            .map(|(connection, memory)| {
                 let history_cache = Arc::clone(&cache);
                 let clear_cache = Arc::clone(&cache);
                 zihuan_core::scheduler::register_service(zihuan_core::scheduler::JobResources {
@@ -383,12 +393,46 @@ pub async fn spawn(
                     history_clearer: Arc::new(move |sender_id: &str| {
                         clear_history(&clear_cache, sender_id)
                     }),
+                    memory: Some(memory),
+                    scheduled_jobs,
                 })
             })
             .transpose()?
     } else {
         None
     };
+
+    // One-time migration of the retired dream_memory table into the agent's memory store.
+    // Best-effort: when the backend is unavailable the rows stay for the next start.
+    if let (Some(connection), Some(memory)) = (rdb_pool.as_ref(), job_memory) {
+        match zihuan_core::scheduled_task::migrate_legacy_dream_memory(
+            connection,
+            &agent.id,
+            |sender_id, content| {
+                zihuan_core::scheduler::store_agent_memory(
+                    &memory,
+                    &zihuan_core::storage::AgentMemoryUpsert {
+                        key: format!("dream:{sender_id}"),
+                        value: content.to_string(),
+                        expires_at: None,
+                        sender_id_list: vec![sender_id.to_string()],
+                        group_id_list: Vec::new(),
+                    },
+                )
+                .map(|_| ())
+            },
+        )
+        .await
+        {
+            Ok(0) => {}
+            Ok(count) => {
+                info!("[Scheduler] migrated {count} legacy dream memory row(s) into the agent memory store");
+            }
+            Err(error) => {
+                warn!("[Scheduler] legacy dream memory migration deferred: {error}");
+            }
+        }
+    }
 
     let service = Arc::new(QqChatAgentService::new(QqChatAgentServiceRuntimeConfig {
         agent_id: agent.id.clone(),

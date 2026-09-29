@@ -3,6 +3,7 @@ import { CodeIcon, FlowchartIcon, RobotIcon, TerminalIcon } from "tdesign-icons-
 
 import {
   system,
+  scheduledTasks,
   workflows as workflowApi,
   type ServiceWithRuntime,
   type ConnectionConfig,
@@ -36,6 +37,7 @@ import {
   type ScriptLanguageForm,
   type QqChatEmotionDimensionFormItem,
 } from "../model";
+import type { SchedulerJobStatus } from "../../api/types";
 import { useAdminClipboard } from "../components/useAdminClipboard";
 
 export function useAgents() {
@@ -64,6 +66,7 @@ const connections = ref<ConnectionConfig[]>([]);
 const llm = ref<LlmConfig[]>([]);
 const workflows = ref<WorkflowInfo[]>([]);
 const subAgents = ref<SubAgentDefinition[]>([]);
+const schedulerJobs = ref<SchedulerJobStatus[]>([]);
 const form = reactive<ServiceFormState>(defaultServiceForm());
 const editingServiceId = ref("");
 const showCreatePicker = ref(false);
@@ -659,19 +662,23 @@ function closeEditor() {
 async function load() {
   servicesLoading.value = true;
   try {
-    const [loadedAgents, loadedConnections, loadedLlm, loadedWorkflows, loadedSubAgents] =
+    const [loadedAgents, loadedConnections, loadedLlm, loadedWorkflows, loadedSubAgents, loadedSchedulerJobs] =
       await Promise.all([
         system.services.list(),
         system.connections.list(),
         system.llm.list(),
         workflowApi.listDetailed(),
         system.subagents.list(subAgentReferenceableToolIds()),
+        // Best-effort: an unavailable scheduler catalog only empties the
+        // scheduled-job picker, it must not break the page load.
+        scheduledTasks.catalog().then((catalog) => catalog.jobs).catch(() => []),
       ]);
     services.value = loadedAgents;
     connections.value = loadedConnections;
     llm.value = loadedLlm;
     workflows.value = loadedWorkflows.workflows;
     subAgents.value = loadedSubAgents;
+    schedulerJobs.value = loadedSchedulerJobs;
   } finally {
     servicesLoading.value = false;
   }
@@ -852,6 +859,20 @@ function removeEmotionDimension(index: number) {
   ) {
     emotionDimensionEditingIndex.value -= 1;
   }
+}
+
+function addScheduledJob() {
+  form.scheduled_jobs.push({
+    task_name: "",
+    enabled: true,
+    event: "sender_silence",
+    interval_value: 30,
+    interval_unit: "minute",
+  });
+}
+
+function removeScheduledJob(index: number) {
+  form.scheduled_jobs.splice(index, 1);
 }
 
 function resetIgnoreRuleForm() {
@@ -1429,6 +1450,8 @@ onMounted(() => {
     cancelEditEmotionDimension,
     confirmEditEmotionDimension,
     removeEmotionDimension,
+    addScheduledJob,
+    removeScheduledJob,
     resetIgnoreRuleForm,
     formatIgnoreRule,
     loadIgnoreRules,
@@ -1443,6 +1466,7 @@ onMounted(() => {
     toolTypeOptions,
     showToolTypeBack,
     subAgents,
+    schedulerJobs,
     editingToolIndex,
     toolEditDraft,
     toolEditCallLimit,

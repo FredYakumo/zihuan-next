@@ -462,8 +462,12 @@ impl DeclarativeAgent {
 
         let (messages, stop_reason) = engine.run(self.build_messages(&input));
         if !matches!(stop_reason, ToolCallingStopReason::Done) {
+            log::warn!(
+                "[DeclarativeAgent] agent '{}' did not complete normally: {stop_reason:?}",
+                self.definition.id
+            );
             return Err(Error::ValidationError(format!(
-                "agent '{}' did not complete normally: {stop_reason:?}",
+                "agent '{}' did not complete normally",
                 self.definition.id
             )));
         }
@@ -481,12 +485,20 @@ impl DeclarativeAgent {
         match self.definition.output_mode {
             AgentOutputMode::Text => Ok(AgentOutput::Text(text)),
             AgentOutputMode::JsonPorts => {
-                let output: Map<String, Value> = serde_json::from_str(&text).map_err(|error| {
-                    Error::ValidationError(format!(
-                        "agent '{}' returned invalid output JSON: {error}",
-                        self.definition.id
-                    ))
-                })?;
+                let output: Map<String, Value> = match serde_json::from_str(&text) {
+                    Ok(output) => output,
+                    Err(error) => {
+                        log::warn!(
+                            "[DeclarativeAgent] agent '{}' returned invalid output JSON: {error}; text: {}",
+                            self.definition.id,
+                            crate::utils::string_utils::shorten_text(&text, 800)
+                        );
+                        return Err(Error::ValidationError(format!(
+                            "agent '{}' returned invalid output JSON",
+                            self.definition.id
+                        )));
+                    }
+                };
                 let mut values = HashMap::new();
                 for port in &self.definition.outputs {
                     let value = output.get(&port.name);

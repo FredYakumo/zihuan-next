@@ -167,13 +167,24 @@ class JobSdk:
         """Purpose: drop one sender's stored conversation history."""
         self._host.call("history.clear", {"sender_id": sender_id})
 
-    def latest_dream_memory(self, agent_id: str, sender_id: str) -> str | None:
-        """Purpose: read the latest persisted Dream memory for one sender, or null when absent."""
-        return self._host.call("dream_memory.latest", {"agent_id": agent_id, "sender_id": sender_id})
+    def upsert_memory(
+        self,
+        key: str,
+        value: str,
+        sender_id_list: list[str] | None = None,
+        group_id_list: list[str] | None = None,
+        expires_at: str | None = None,
+    ) -> dict:
+        """Purpose: create or update one memory record in the agent's memory store."""
+        return self._host.call("memory.upsert", {"key": key, "value": value, "sender_id_list": sender_id_list or [], "group_id_list": group_id_list or [], "expires_at": expires_at})
 
-    def insert_dream_memory(self, agent_id: str, sender_id: str, chars: int, content: str) -> None:
-        """Purpose: persist one consolidated Dream memory snapshot for one sender."""
-        self._host.call("dream_memory.insert", {"agent_id": agent_id, "sender_id": sender_id, "chars": chars, "content": content})
+    def search_memory(self, query: str, top_n: int = 5, sender_id: str | None = None) -> dict:
+        """Purpose: search the agent's memory store and return matching records with values."""
+        return self._host.call("memory.search", {"query": query, "top_n": top_n, "sender_id": sender_id})
+
+    def list_memory(self, limit: int = 20, sender_id: str | None = None) -> dict:
+        """Purpose: list recent memory records (key + value) from the agent's memory store."""
+        return self._host.call("memory.list", {"limit": limit, "sender_id": sender_id})
 
     def run_subagent(self, definition: str, **inputs: str) -> str:
         """Purpose: run one inline sub-agent definition with string inputs and return its text result."""

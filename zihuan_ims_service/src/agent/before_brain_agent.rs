@@ -16,7 +16,6 @@ use zihuan_core::model_inference::inference_function::compact_message::{
 };
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole};
-use zihuan_core::runtime::block_async;
 use zihuan_core::steer::message_with_api_style;
 use zihuan_core::system_config::current_context_compaction_percent;
 
@@ -47,11 +46,10 @@ fn build_chat_preprompt_agent_system_prompt(
          - Extract the key nouns / entities / proper nouns from the user's current message.\n\
          - For each, call `memory_agent` with the complete current chat context as `content` and `operation` set to `search_memory` to check whether you have related memory or an existing stance.\n\
          - When memory contains your prior stance on a topic, surface it so the main agent stays consistent and does not flip its likes/dislikes or opinions across turns.\n\
-         - If a [Candidate Dream Memory] block is present, judge whether it is relevant to the current event. Only include relevant durable facts or continuity in the final context; omit unrelated Dream content completely.\n\
          - For nouns that have no related memory and that you do not already know, include in the final context block a line exactly like: 「xxx」这些名词没有相关内容，可能需要联网查询？\n\
          - When the user's question references something you said before, or tests consistency of your preferences, call `get_recent_user_messages` with your own id to recall your own previous replies.\n\
          \n[Output contract]\n\
-         Your FINAL assistant message MUST be a concise context block, and nothing else. Use sections `[Recalled Memory]`, `[Dream Memory]`, `[Missing Knowledge]`, `[Recent Self Statements]`, and `[Emotion Note]` when applicable. If nothing relevant was found and no emotion changed, output a single line: [Preprompt] no recall needed. This block is injected into the main reply prompt; it is NOT a reply to the user. Never claim to have sent a message."
+         Your FINAL assistant message MUST be a concise context block, and nothing else. Use sections `[Recalled Memory]`, `[Missing Knowledge]`, `[Recent Self Statements]`, and `[Emotion Note]` when applicable. If nothing relevant was found and no emotion changed, output a single line: [Preprompt] no recall needed. This block is injected into the main reply prompt; it is NOT a reply to the user. Never claim to have sent a message."
     )
 }
 
@@ -62,18 +60,13 @@ fn build_chat_preprompt_agent_user_message(
     bot_name: &str,
     bot_id: &str,
     sender_id: &str,
-    dream_memory: Option<&str>,
 ) -> String {
     let sender_name = zihuan_core::ims_bot_adapter::utils::sender_display_name!(
         &input.event.sender.nickname,
         &input.event.sender.card
     );
-    let dream_candidate = dream_memory
-        .filter(|content| !content.trim().is_empty())
-        .map(|content| format!("\n\n[Candidate Dream Memory]\n{content}"))
-        .unwrap_or_default();
     format!(
-        "[Current QQ Event]\n`{sender_name}` sent a message to you (`{bot_name}`):\n{}\n\nYour own id is `{bot_id}`; the current sender's id is `{sender_id}`. Evaluate whether this event should change your emotion state, and prepare the preprompt context block per the output contract.{dream_candidate}",
+        "[Current QQ Event]\n`{sender_name}` sent a message to you (`{bot_name}`):\n{}\n\nYour own id is `{bot_id}`; the current sender's id is `{sender_id}`. Evaluate whether this event should change your emotion state, and prepare the preprompt context block per the output contract.",
         input.current_text_for_prompt(),
     )
 }
@@ -87,7 +80,6 @@ pub(crate) struct PrepromptContext<'a> {
     pub(crate) input: &'a PreparedCurrentTurnUserInput,
     pub(crate) bot_name: &'a str,
     pub(crate) bot_id: &'a str,
-    pub(crate) agent_id: &'a str,
     pub(crate) sender_id: &'a str,
     pub(crate) target_id: &'a str,
     pub(crate) is_group: bool,
@@ -213,24 +205,6 @@ fn run_preprompt(
     let emotion_dimensions_text =
         emotion_dimensions_text(&ctx.session_state.lock().unwrap(), &ctx.emotion_dimensions);
 
-    // Load the latest candidate dream memory for the current sender, if available.
-    let dream_memory = ctx.rdb_pool.as_ref().and_then(|connection| {
-        match block_async(zihuan_core::scheduled_task::latest_dream_memory(
-            connection,
-            ctx.agent_id,
-            ctx.sender_id,
-        )) {
-            Ok(memory) => memory,
-            Err(err) => {
-                warn!(
-                    "{LOG_PREFIX} failed to load Dream memory for sender={}: {err}",
-                    ctx.sender_id
-                );
-                None
-            }
-        }
-    });
-
     // Build the current turn and compact persisted history to fit the context budget.
     let user_message = message_with_api_style(
         LLMMessage::user(build_chat_preprompt_agent_user_message(
@@ -238,7 +212,6 @@ fn run_preprompt(
             ctx.bot_name,
             ctx.bot_id,
             ctx.sender_id,
-            dream_memory.as_deref(),
         )),
         ctx.llm.api_style(),
     );

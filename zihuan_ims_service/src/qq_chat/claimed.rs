@@ -234,7 +234,6 @@ impl QqChatAgentServiceInner {
                 input: &prepared_input,
                 bot_name: ctx.bot_name,
                 bot_id,
-                agent_id: ctx.agent_id,
                 sender_id,
                 target_id,
                 is_group,

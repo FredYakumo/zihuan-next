@@ -12,7 +12,6 @@ use zihuan_core::storage::{
     ConnectionAuthMethod, ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection,
     SqliteConnection, WeaviateConnection, WebSearchEngineConnection,
 };
-use zihuan_core::utils::time_unit::TimeUnit;
 use zihuan_ims_service::role_config::QqChatRoleServiceConfig;
 use zihuan_workspace_service::role_config::WorkspaceRoleServiceConfig;
 
@@ -244,9 +243,7 @@ fn build_qq_chat_agent_service() -> RoleServiceConfig {
         mysql_connection_id: None,
         task_db_connection_id: None,
         max_message_length: 500,
-        dream_enabled: false,
-        dream_interval_value: 15,
-        dream_interval_unit: TimeUnit::default(),
+        scheduled_jobs: vec![],
         max_steer_count: 4,
         default_tools_enabled: default_tools,
         tool_session_call_limits: HashMap::new(),
@@ -285,6 +282,8 @@ fn build_workspace_agent_service(
         embedding_model_ref_id: None,
         retrieval_store: None,
         web_search_engine_connection_id: None,
+        rdb_id: None,
+        scheduled_jobs: vec![],
         default_tools_enabled: default_workspace_tools(),
     };
     RoleServiceConfig {

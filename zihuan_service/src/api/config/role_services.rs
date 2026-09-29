@@ -1015,21 +1015,44 @@ fn validate_agent_connection_schemas(
     role_service_type: &RoleServiceType,
     connections: &[ConnectionConfig],
 ) -> Result<(), String> {
-    let Some(config) = zihuan_service::role::optional_qq_chat(role_service_type) else {
+    if let Some(config) = zihuan_service::role::optional_qq_chat(role_service_type) {
+        validate_scheduled_jobs(connections, config.resolved_rdb_id(), &config.scheduled_jobs)?;
+        validate_retrieval_store_connection(connections, config.retrieval_store_connection_id())?;
         return Ok(());
-    };
-    validate_rdb_connection(connections, config.resolved_rdb_id())?;
-    if config.dream_enabled {
-        if config.dream_interval_seconds().is_none() {
-            return Err(
-                "Dream interval must use minutes, hours, or days with a positive value".to_string()
-            );
+    }
+    if let Some(config) = zihuan_service::role::optional_workspace(role_service_type) {
+        validate_scheduled_jobs(connections, config.resolved_rdb_id(), &config.scheduled_jobs)?;
+        return Ok(());
+    }
+    Ok(())
+}
+
+/// Validates the scheduled-jobs config shared by role service types that support them: the
+/// configured relational database connection must exist, jobs need one to be effective, and
+/// every named entry needs a positive trigger interval.
+fn validate_scheduled_jobs(
+    connections: &[ConnectionConfig],
+    rdb_id: Option<&str>,
+    jobs: &[zihuan_core::scheduler::ScheduledJobConfig],
+) -> Result<(), String> {
+    validate_rdb_connection(connections, rdb_id)?;
+    if zihuan_core::scheduler::ScheduledJobConfig::resolved(jobs).is_empty() {
+        return Ok(());
+    }
+    if rdb_id.is_none() {
+        return Err("scheduled jobs require a relational database connection".to_string());
+    }
+    for job in jobs {
+        if job.task_name.trim().is_empty() {
+            continue;
         }
-        if config.resolved_rdb_id().is_none() {
-            return Err("Dream requires a relational database connection".to_string());
+        if job.trigger.delay_seconds().is_none() {
+            return Err(format!(
+                "scheduled job '{}' must use minutes, hours, or days with a positive value",
+                job.task_name.trim()
+            ));
         }
     }
-    validate_retrieval_store_connection(connections, config.retrieval_store_connection_id())?;
     Ok(())
 }
 
