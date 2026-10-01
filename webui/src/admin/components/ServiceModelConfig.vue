@@ -14,7 +14,8 @@
           </t-option>
         </CommonSelect>
       </t-form-item>
-      <t-form-item class="agent-service-image-understand-item">
+      <!-- label-width 0 keeps TDesign from rendering an empty label placeholder that would indent these label-less rows. -->
+      <t-form-item :label-width="0" class="agent-service-image-understand-item">
         <div class="agent-service-check-row">
           <t-checkbox v-model="form.default_tools_enabled.image_understand">启用视觉理解工具</t-checkbox>
           <CommonSelect
@@ -41,12 +42,13 @@
           :options="[{ value: '', label: '使用主模型' }, ...chatModelOptions]"
         />
       </t-form-item>
-      <t-form-item v-if="form.type === 'workspace'" class="agent-service-agents-item">
+      <t-form-item v-if="form.type === 'workspace'" :label-width="0" class="agent-service-agents-item">
         <t-checkbox v-model="form.agents_md_enabled">关注AGENTS.md</t-checkbox>
       </t-form-item>
       <t-form-item
         v-if="form.type === 'workspace'"
         class="agent-service-memory-item"
+        :label-width="0"
         :required="form.workspace_memory_enabled"
         :status="form.workspace_memory_enabled && !form.workspace_memory_backend ? 'error' : undefined"
       >

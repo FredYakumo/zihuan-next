@@ -546,6 +546,87 @@ function resetForm() {
 }
 
 const avatarUploading = ref(false);
+const avatarEditorVisible = ref(false);
+const avatarDraftUrl = ref("");
+const avatarDraftFile = ref<File | null>(null);
+const avatarZoom = ref(1);
+const avatarRotation = ref(0);
+const avatarCropRect = reactive({ x: 0, y: 0, width: 1, height: 1 });
+const avatarCropStart = reactive({ x: 0, y: 0 });
+const avatarCropping = ref(false);
+const avatarPan = reactive({ x: 0, y: 0 });
+const avatarPanStart = reactive({ x: 0, y: 0, pointerX: 0, pointerY: 0 });
+const avatarRotating = ref(false);
+const avatarRotationStart = reactive({ x: 0, value: 0 });
+
+function openAvatarEditor() {
+  avatarEditorVisible.value = true;
+  avatarDraftUrl.value = form.avatar_url ? getAvatarDisplayUrl(form.avatar_url) : "";
+  avatarDraftFile.value = null;
+  avatarZoom.value = 1;
+  avatarRotation.value = 0;
+  Object.assign(avatarPan, { x: 0, y: 0 });
+  Object.assign(avatarCropRect, { x: 0, y: 0, width: 1, height: 1 });
+}
+
+function closeAvatarEditor() {
+  avatarEditorVisible.value = false;
+  avatarDraftFile.value = null;
+  if (avatarDraftUrl.value.startsWith("blob:")) URL.revokeObjectURL(avatarDraftUrl.value);
+  avatarDraftUrl.value = "";
+}
+
+function rotateAvatar() {
+  avatarRotation.value = (avatarRotation.value + 90) % 360;
+}
+
+function resetAvatarTransform() {
+  avatarZoom.value = 1;
+  avatarRotation.value = 0;
+  Object.assign(avatarPan, { x: 0, y: 0 });
+}
+
+
+function startAvatarRotation(event: PointerEvent) {
+  if (!avatarDraftUrl.value) return;
+  avatarRotating.value = true;
+  avatarRotationStart.x = event.clientX;
+  avatarRotationStart.value = avatarRotation.value;
+  window.addEventListener("pointermove", moveAvatarRotation);
+  window.addEventListener("pointerup", endAvatarRotation, { once: true });
+}
+
+function moveAvatarRotation(event: PointerEvent) {
+  if (!avatarRotating.value) return;
+  avatarRotation.value = avatarRotationStart.value + (event.clientX - avatarRotationStart.x);
+}
+
+function endAvatarRotation() {
+  avatarRotating.value = false;
+  window.removeEventListener("pointermove", moveAvatarRotation);
+}
+
+function startAvatarCrop(event: PointerEvent) {
+  if (!avatarDraftUrl.value) return;
+  avatarPanStart.x = avatarPan.x;
+  avatarPanStart.y = avatarPan.y;
+  avatarPanStart.pointerX = event.clientX;
+  avatarPanStart.pointerY = event.clientY;
+  avatarCropping.value = true;
+  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+}
+
+function moveAvatarCrop(event: PointerEvent) {
+  if (!avatarCropping.value) return;
+  const limit = 140 * avatarZoom.value;
+  avatarPan.x = Math.max(-limit, Math.min(limit, avatarPanStart.x + event.clientX - avatarPanStart.pointerX));
+  avatarPan.y = Math.max(-limit, Math.min(limit, avatarPanStart.y + event.clientY - avatarPanStart.pointerY));
+}
+
+function endAvatarCrop() {
+  if (!avatarCropping.value) return;
+  avatarCropping.value = false;
+}
 
 function handleAvatarFileSelect(event: Event) {
   const input = event.target as HTMLInputElement;
@@ -565,10 +646,58 @@ function handleAvatarFileSelect(event: Event) {
     return;
   }
 
-  uploadAvatarFile(file);
+  if (avatarDraftUrl.value.startsWith("blob:")) URL.revokeObjectURL(avatarDraftUrl.value);
+  avatarDraftFile.value = file;
+  avatarDraftUrl.value = URL.createObjectURL(file);
+  avatarZoom.value = 1;
+  Object.assign(avatarPan, { x: 0, y: 0 });
 
   // Reset input
   input.value = '';
+}
+
+async function confirmAvatarCrop() {
+  if (!avatarDraftUrl.value) {
+    form.avatar_url = "";
+    closeAvatarEditor();
+    return;
+  }
+  if (!avatarDraftFile.value) {
+    closeAvatarEditor();
+    return;
+  }
+  const image = new Image();
+  image.src = avatarDraftUrl.value;
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("无法读取图片"));
+  });
+  const rotated = document.createElement("canvas");
+  const angle = (avatarRotation.value * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(angle));
+  const sin = Math.abs(Math.sin(angle));
+  rotated.width = Math.ceil(image.naturalWidth * cos + image.naturalHeight * sin);
+  rotated.height = Math.ceil(image.naturalWidth * sin + image.naturalHeight * cos);
+  const rotatedContext = rotated.getContext("2d");
+  if (!rotatedContext) return;
+  rotatedContext.translate(rotated.width / 2, rotated.height / 2);
+  rotatedContext.rotate(angle);
+  rotatedContext.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
+  const cropWidth = Math.min(rotated.width, rotated.height);
+  const cropHeight = cropWidth;
+  const cropX = Math.max(0, Math.min(rotated.width - cropWidth, Math.round((rotated.width - cropWidth) / 2 - (avatarPan.x / 280) * rotated.width / avatarZoom.value)));
+  const cropY = Math.max(0, Math.min(rotated.height - cropHeight, Math.round((rotated.height - cropHeight) / 2 - (avatarPan.y / 280) * rotated.height / avatarZoom.value)));
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 512;
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.drawImage(rotated, cropX, cropY, cropWidth, cropHeight, 0, 0, 512, 512);
+  const croppedFile = await new Promise<File>((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(new File([blob], "avatar.png", { type: "image/png" })) : reject(new Error("裁剪失败")), "image/png");
+  });
+  await uploadAvatarFile(croppedFile);
+  closeAvatarEditor();
 }
 
 async function uploadAvatarFile(file: File) {
@@ -602,7 +731,14 @@ async function uploadAvatarFile(file: File) {
 }
 
 function clearAvatar() {
-  form.avatar_url = '';
+  if (avatarUploading.value) return;
+  if (avatarDraftUrl.value.startsWith("blob:")) URL.revokeObjectURL(avatarDraftUrl.value);
+  avatarDraftUrl.value = "";
+  avatarDraftFile.value = null;
+  avatarZoom.value = 1;
+  avatarRotation.value = 0;
+  Object.assign(avatarPan, { x: 0, y: 0 });
+  Object.assign(avatarCropRect, { x: 0, y: 0, width: 1, height: 1 });
 }
 
 // Get display URL for avatar (handles avatar:// prefix)
@@ -1425,6 +1561,21 @@ onMounted(() => {
     ignoreRulesDisabledReason,
     resetForm,
     avatarUploading,
+    avatarEditorVisible,
+    avatarDraftUrl,
+    avatarZoom,
+    avatarRotation,
+    avatarCropRect,
+    avatarPan,
+    startAvatarCrop,
+    moveAvatarCrop,
+    endAvatarCrop,
+    rotateAvatar,
+    resetAvatarTransform,
+    startAvatarRotation,
+    openAvatarEditor,
+    closeAvatarEditor,
+    confirmAvatarCrop,
     handleAvatarFileSelect,
     uploadAvatarFile,
     clearAvatar,

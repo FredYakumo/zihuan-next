@@ -494,9 +494,167 @@
   font-weight: 700;
 }
 
-.agent-service-avatar-actions {
+// Click the avatar to change it; the hover overlay carries the edit affordance
+// instead of a text button beside it.
+.agent-service-avatar-trigger {
+  position: relative;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  line-height: 0;
+
+  &:focus-visible {
+    outline: 2px solid var(--td-brand-color);
+  }
+}
+
+.agent-service-avatar-overlay {
+  position: absolute;
+  inset: 0;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 45%);
+  color: var(--td-text-color-anti);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+
+  .t-icon {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+.agent-service-avatar-trigger:hover .agent-service-avatar-overlay,
+.agent-service-avatar-trigger:focus-visible .agent-service-avatar-overlay {
+  opacity: 1;
+}
+
+.agent-service-avatar-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 332px;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.agent-service-avatar-editor-preview-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 280px) 24px;
+  align-items: end;
+  column-gap: 2px;
+}
+
+.agent-service-avatar-preview-column {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 8px;
+}
+
+.agent-service-avatar-rotate-handle {
+  width: 30px;
+  height: 30px;
+}
+
+.agent-service-avatar-rotate-handle--active {
+  color: var(--td-brand-color);
+  border-color: var(--td-brand-color);
+}
+
+.agent-service-avatar-vertical-zoom {
+  grid-column: 1;
+  grid-row: 1;
+  height: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--td-text-color-secondary);
+  font-size: 12px;
+}
+
+.agent-service-avatar-vertical-zoom .t-slider {
+  height: 220px;
+}
+
+.agent-service-avatar-crop-window {
+  position: relative;
+  width: 280px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--td-bg-color-secondarycontainer);
+  outline: 1px solid var(--td-component-border);
+  cursor: grab;
+  touch-action: none;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.agent-service-avatar-crop-window--rotate {
+  cursor: ew-resize;
+}
+
+.agent-service-avatar-crop-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: none;
+  transform-origin: center center;
+  will-change: transform;
+  user-select: none;
+  pointer-events: none;
+}
+
+.agent-service-avatar-crop-selection {
+  position: absolute;
+  z-index: 1;
+  border: 2px solid var(--td-brand-color);
+  background: rgba(255, 255, 255, 12%);
+  pointer-events: none;
+}
+
+.agent-service-avatar-crop-selection--active {
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 35%);
+}
+
+.agent-service-avatar-crop-empty {
+  color: var(--td-text-color-secondary);
+}
+
+.agent-service-avatar-editor-actions,
+.agent-service-avatar-zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.agent-service-avatar-editor-actions,
+.agent-service-avatar-editor > .agent-service-form-hint {
+  margin-left: 26px;
+  margin-right: 26px;
+}
+
+.agent-service-avatar-editor > .agent-service-form-hint {
+  line-height: 1.6;
+}
+
+.agent-service-avatar-zoom-row .t-slider {
+  flex: 1;
 }
 
 .agent-service-type-grid {
