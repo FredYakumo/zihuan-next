@@ -573,15 +573,33 @@
   grid-row: 1;
   height: 280px;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--td-text-color-secondary);
-  font-size: 12px;
+  align-items: stretch;
+  justify-content: center;
+  gap: 2px;
 }
 
-.agent-service-avatar-vertical-zoom .t-slider {
-  height: 220px;
+.agent-service-avatar-vertical-zoom .t-slider__container {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.agent-service-avatar-zoom-ruler {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  height: 100%;
+}
+
+.agent-service-avatar-zoom-tick {
+  width: 4px;
+  height: 1px;
+  background-color: var(--td-component-border);
+}
+
+.agent-service-avatar-zoom-tick--major {
+  width: 8px;
+  background-color: var(--td-text-color-secondary);
 }
 
 .agent-service-avatar-crop-window {
@@ -599,6 +617,7 @@
   outline: 1px solid var(--td-component-border);
   cursor: grab;
   touch-action: none;
+  user-select: none;
 
   &:active {
     cursor: grabbing;

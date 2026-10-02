@@ -589,6 +589,7 @@ function resetAvatarTransform() {
 
 function startAvatarRotation(event: PointerEvent) {
   if (!avatarDraftUrl.value) return;
+  event.preventDefault();
   avatarRotating.value = true;
   avatarRotationStart.x = event.clientX;
   avatarRotationStart.value = avatarRotation.value;
@@ -608,6 +609,7 @@ function endAvatarRotation() {
 
 function startAvatarCrop(event: PointerEvent) {
   if (!avatarDraftUrl.value) return;
+  event.preventDefault();
   avatarPanStart.x = avatarPan.x;
   avatarPanStart.y = avatarPan.y;
   avatarPanStart.pointerX = event.clientX;

@@ -56,7 +56,7 @@ async function loadNodes() {
             diagnostics.push({ language: "javascript", message: `${path.relative(nodeDirectory, file)} must export a nodes array` });
             continue;
         }
-        // 为每个节点添加 script_path
+
         const scriptPath = path.relative(process.cwd(), file);
         const nodesWithScriptPath = module.nodes.map(node => ({
             ...node,

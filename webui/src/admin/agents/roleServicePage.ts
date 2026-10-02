@@ -4,6 +4,8 @@ import { system, type ServiceWithRuntime } from "../../api/client";
 import { useAgents } from "./useAgents";
 import { assertConnectionConfig, assertLlmConfig } from "../model";
 
+const AVATAR_ZOOM_RULER_TICKS = [3, 2.75, 2.5, 2.25, 2, 1.75, 1.5, 1.25, 1];
+
 export function useRoleServicePage() {
 const agents = useAgents();
 const {
@@ -379,6 +381,7 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
 
 return {
   ...agents,
+  avatarZoomRulerTicks: AVATAR_ZOOM_RULER_TICKS,
   showModelConfigDialog,
   modelImporting,
   showRetrievalDatabaseDialog,

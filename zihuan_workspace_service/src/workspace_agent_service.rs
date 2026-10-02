@@ -297,8 +297,9 @@ pub fn load_inference_tool_provider(
     }))
 }
 
-/// Workspace 角色服务在引擎运行时的资源提供者：向引擎暴露资源契约，
-/// 供子图工具的 `agent.*` 表达式读取当前服务的模型与连接配置。
+/// Engine-runtime resource provider for the workspace role service: exposes the
+/// resource contract to the engine so that `agent.*` expressions in subgraph
+/// tools can read this service's model and connection configuration.
 #[derive(Clone)]
 pub struct WorkspaceRoleServiceResources {
     config: WorkspaceRoleServiceConfig,
@@ -316,7 +317,8 @@ impl WorkspaceRoleServiceResources {
 
 impl AgentResourceProvider for WorkspaceRoleServiceResources {
     fn llm_ref_id(&self, kind: &str) -> Option<String> {
-        // Workspace 无意图/数学/自然语言分桶，统一回落到主模型或编排模型。
+        // Workspace has no intent/math/natural-language buckets; fall back to
+        // the main model, then the orchestration model.
         let fallback = || {
             self.config
                 .llm_ref_id
