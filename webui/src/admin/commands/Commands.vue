@@ -8,7 +8,7 @@
       <template #actions>
         <t-button variant="text" @click="loadData">刷新</t-button>
       </template>
-      <p class="muted">共 {{ commands.length }} 个命令，由系统代码注册，不可在此增删。</p>
+      <p class="muted">共 {{ commands.length }} 个命令</p>
 
       <div v-if="commands.length === 0" class="empty-state">正在加载...</div>
       <t-table v-else row-key="name" bordered size="small" :data="commands" :columns="commandColumns">
