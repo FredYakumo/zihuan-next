@@ -225,6 +225,10 @@ export function useSettings() {
 
   onMounted(reloadNodeRuntime);
 
+  async function reloadScriptRuntimes() {
+    await Promise.all([reloadPythonRuntime(), reloadNodeRuntime()]);
+  }
+
   const modelHttpEnabled = ref(false);
   const modelHttpSaving = ref(false);
   const modelHttpEndpoint = ref("");
@@ -455,6 +459,7 @@ export function useSettings() {
     nodeRuntimeChanging,
     nodeRuntimeError,
     reloadNodeRuntime,
+    reloadScriptRuntimes,
     setNodeRuntime,
     chooseNodeRuntime,
     modelHttpEnabled,

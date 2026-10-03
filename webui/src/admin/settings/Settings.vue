@@ -85,60 +85,61 @@
       </t-checkbox-group>
     </t-dialog>
 
-    <t-card title="Python 运行时" bordered header-bordered>
+    <t-card title="Dynamic Script Runtime" bordered header-bordered>
       <template #actions>
-        <t-button variant="text" :disabled="pythonRuntimeLoading" @click="reloadPythonRuntime">
+        <t-button
+          variant="text"
+          :disabled="pythonRuntimeLoading || nodeRuntimeLoading"
+          @click="reloadScriptRuntimes"
+        >
           重新检查
         </t-button>
       </template>
-      <p class="muted">Python 工具默认使用的解释器，可由单个工具覆盖。</p>
 
-      <div class="settings-python-body">
-        <div v-if="pythonRuntimeLoading" class="settings-python-pending">
-          <t-loading size="small" />
-          <span>检测中</span>
-        </div>
-        <div v-else-if="pythonRuntime" class="settings-python-status">
-          <t-tag variant="light" :theme="pythonRuntime.available ? 'success' : 'warning'">
-            {{ pythonRuntime.available ? "可用" : "不可用" }}
-          </t-tag>
-          <span v-if="pythonRuntime.executable_path" class="settings-path-label">Python 路径</span>
-          <code v-if="pythonRuntime.executable_path" class="settings-path-value">{{ pythonRuntime.executable_path }}</code>
-          <span v-if="pythonRuntime.version" class="muted">{{ pythonRuntime.version }}</span>
-          <span v-if="pythonRuntime.diagnostic" class="settings-python-error">{{ pythonRuntime.diagnostic }}</span>
-        </div>
-        <div v-else class="settings-python-pending">
-          <ErrorCircleIcon />
-          <span>暂未检测到</span>
+      <div class="settings-runtime-body">
+        <div class="settings-runtime-group">
+          <div class="settings-runtime-group-title">Python</div>
+          <div v-if="pythonRuntimeLoading" class="settings-runtime-pending">
+            <t-loading size="small" />
+            <span>检测中</span>
+          </div>
+          <div v-else-if="pythonRuntime" class="settings-runtime-status">
+            <t-tag variant="light" :theme="pythonRuntime.available ? 'success' : 'warning'">
+              {{ pythonRuntime.available ? "可用" : "不可用" }}
+            </t-tag>
+            <span v-if="pythonRuntime.executable_path" class="settings-path-label">Python 路径</span>
+            <code v-if="pythonRuntime.executable_path" class="settings-path-value">{{ pythonRuntime.executable_path }}</code>
+            <span v-if="pythonRuntime.version" class="muted">{{ pythonRuntime.version }}</span>
+            <span v-if="pythonRuntime.diagnostic" class="settings-runtime-error">{{ pythonRuntime.diagnostic }}</span>
+          </div>
+          <div v-else class="settings-runtime-pending">
+            <ErrorCircleIcon />
+            <span>暂未检测到</span>
+          </div>
+
+          <div class="settings-backup-actions">
+            <t-button theme="primary" :disabled="pythonRuntimeChanging" @click="changePythonRuntime">
+              {{ pythonRuntimeChanging ? "选择中…" : "更改" }}
+            </t-button>
+            <span v-if="pythonRuntimeError" class="settings-runtime-error">{{ pythonRuntimeError }}</span>
+          </div>
         </div>
 
-        <div class="settings-backup-actions">
-          <t-button theme="primary" :disabled="pythonRuntimeChanging" @click="changePythonRuntime">
-            {{ pythonRuntimeChanging ? "选择中…" : "更改" }}
-          </t-button>
-          <span v-if="pythonRuntimeError" class="settings-python-error">{{ pythonRuntimeError }}</span>
-        </div>
-      </div>
-    </t-card>
-
-    <t-card title="Dynamic Script Runtime" bordered header-bordered>
-      <template #actions>
-        <t-button variant="text" :disabled="nodeRuntimeLoading" @click="reloadNodeRuntime">重新检查</t-button>
-      </template>
-      <p class="muted">用于执行动态脚本节点</p>
-      <div class="settings-python-body">
-        <div v-if="nodeRuntimeLoading" class="settings-python-pending"><t-loading size="small" /><span>检测中</span></div>
-        <div v-else-if="nodeRuntime" class="settings-python-status">
-          <t-tag variant="light" :theme="nodeRuntime.available ? 'success' : 'warning'">{{ nodeRuntime.available ? "可用" : "不可用" }}</t-tag>
-          <span v-if="nodeRuntime.executable_path" class="settings-path-label">Node 路径</span>
-          <code v-if="nodeRuntime.executable_path" class="settings-path-value">{{ nodeRuntime.executable_path }}</code>
-          <span v-if="nodeRuntime.version" class="muted">{{ nodeRuntime.version }}</span>
-          <span v-if="nodeRuntime.diagnostic" class="settings-python-error">{{ nodeRuntime.diagnostic }}</span>
-        </div>
-        <div class="settings-backup-actions">
-          <t-button variant="outline" :disabled="nodeRuntimeChanging" @click="setNodeRuntime({ kind: 'project_node' })">使用项目 Node</t-button>
-          <t-button theme="primary" :disabled="nodeRuntimeChanging" @click="chooseNodeRuntime">{{ nodeRuntimeChanging ? "更改中…" : "更改" }}</t-button>
-          <span v-if="nodeRuntimeError" class="settings-python-error">{{ nodeRuntimeError }}</span>
+        <div class="settings-runtime-group">
+          <div class="settings-runtime-group-title">Node</div>
+          <div v-if="nodeRuntimeLoading" class="settings-runtime-pending"><t-loading size="small" /><span>检测中</span></div>
+          <div v-else-if="nodeRuntime" class="settings-runtime-status">
+            <t-tag variant="light" :theme="nodeRuntime.available ? 'success' : 'warning'">{{ nodeRuntime.available ? "可用" : "不可用" }}</t-tag>
+            <span v-if="nodeRuntime.executable_path" class="settings-path-label">Node 路径</span>
+            <code v-if="nodeRuntime.executable_path" class="settings-path-value">{{ nodeRuntime.executable_path }}</code>
+            <span v-if="nodeRuntime.version" class="muted">{{ nodeRuntime.version }}</span>
+            <span v-if="nodeRuntime.diagnostic" class="settings-runtime-error">{{ nodeRuntime.diagnostic }}</span>
+          </div>
+          <div class="settings-backup-actions">
+            <t-button variant="outline" :disabled="nodeRuntimeChanging" @click="setNodeRuntime({ kind: 'project_node' })">使用项目 Node</t-button>
+            <t-button theme="primary" :disabled="nodeRuntimeChanging" @click="chooseNodeRuntime">{{ nodeRuntimeChanging ? "更改中…" : "更改" }}</t-button>
+            <span v-if="nodeRuntimeError" class="settings-runtime-error">{{ nodeRuntimeError }}</span>
+          </div>
         </div>
       </div>
     </t-card>
@@ -253,13 +254,13 @@ const {
   pythonRuntimeLoading,
   pythonRuntimeChanging,
   pythonRuntimeError,
-  reloadPythonRuntime,
   changePythonRuntime,
   nodeRuntime,
   nodeRuntimeLoading,
   nodeRuntimeChanging,
   nodeRuntimeError,
   reloadNodeRuntime,
+  reloadScriptRuntimes,
   setNodeRuntime,
   chooseNodeRuntime,
   logErrorBadgeEnabled,
@@ -292,73 +293,4 @@ async function handleSaveModelHttpSettings() {
 
 <style scoped lang="scss">
 @use "./settings" as *;
-
-.model-http-service-actions {
-  display: grid;
-  grid-template-columns: 70% 20%;
-  column-gap: 10%;
-  align-items: center;
-}
-
-.model-http-service-endpoint {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  height: 32px;
-  padding-left: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--td-radius-default);
-  background: var(--bg);
-
-  code {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  :deep(.t-button) {
-    flex: none;
-    height: 30px;
-    margin-left: auto;
-  }
-}
-
-.model-http-service-config-button {
-  height: 32px;
-}
-
-.model-http-model-selection-header {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 16px;
-}
-
-.model-http-model-selection-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  max-height: 360px;
-  overflow-y: auto;
-  padding: 4px 10px 4px 4px;
-}
-
-.model-http-model-option {
-  min-width: 0;
-  margin: 0;
-  min-height: 60px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--td-radius-default);
-  font-size: 16px;
-
-  :deep(.t-checkbox__label) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 18px;
-    line-height: 26px;
-  }
-
-}
 </style>
