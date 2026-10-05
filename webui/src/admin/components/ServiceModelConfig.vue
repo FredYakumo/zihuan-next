@@ -68,6 +68,15 @@
               <span class="agent-service-add-model-option-content"><AddIcon />新增检索数据库</span>
             </t-option>
           </CommonSelect>
+          <t-button
+            v-if="form.workspace_memory_enabled"
+            variant="text"
+            shape="square"
+            title="编辑记忆提示词"
+            @click="openMemoryPromptsDialog"
+          >
+            <EditIcon />
+          </t-button>
         </div>
       </t-form-item>
       <t-form-item v-if="form.type === 'qq_chat'" label="数学/编程模型">
@@ -103,13 +112,59 @@
         />
       </t-form-item>
     </div>
+    <t-dialog
+      v-model:visible="memoryPromptsVisible"
+      header="记忆提示词"
+      :confirm-btn="{ content: '保存', loading: memoryPromptsSaving }"
+      cancel-btn="取消"
+      width="680px"
+      top="6vh"
+      @confirm="saveMemoryPrompts"
+    >
+      <div class="memory-prompts-form">
+        <p class="memory-prompts-hint">
+          记忆代理根据这些提示词决定检索还是写入长期记忆。留空保存会被拒绝；恢复默认可重新打开编辑后取消修改。
+        </p>
+        <div class="memory-prompts-field">
+          <label>系统提示词</label>
+          <t-textarea
+            v-model="memoryPrompts.system_prompt"
+            :autosize="{ minRows: 4, maxRows: 12 }"
+            placeholder="记忆代理的系统提示词"
+          />
+        </div>
+        <div class="memory-prompts-field">
+          <label>搜索模式提示词（追加到用户消息后）</label>
+          <t-textarea
+            v-model="memoryPrompts.search_operation_prompt"
+            :autosize="{ minRows: 3, maxRows: 10 }"
+            placeholder="调用方强制搜索记忆时追加的提示词"
+          />
+        </div>
+        <div class="memory-prompts-field">
+          <label>写入模式提示词（追加到用户消息后）</label>
+          <t-textarea
+            v-model="memoryPrompts.update_operation_prompt"
+            :autosize="{ minRows: 3, maxRows: 10 }"
+            placeholder="调用方强制写入记忆时追加的提示词"
+          />
+        </div>
+        <p v-if="memoryPromptsError" class="memory-prompts-error">{{ memoryPromptsError }}</p>
+      </div>
+    </t-dialog>
   </t-card>
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import { AddIcon } from "tdesign-icons-vue-next";
-import type { ConnectionConfig, LlmConfig } from "../../api/client";
+import { computed, ref } from "vue";
+import { AddIcon, EditIcon } from "tdesign-icons-vue-next";
+import {
+  getMemoryAgentPromptsSettings,
+  request,
+  type ConnectionConfig,
+  type LlmConfig,
+  type MemoryAgentPromptsSettings,
+} from "../../api/client";
 import type { ServiceFormState } from "../model";
 import CommonSelect from "./CommonSelect.vue";
 
@@ -138,6 +193,46 @@ const tokenizerOptions = computed(() =>
     label: connection.name,
   })),
 );
+
+const memoryPromptsVisible = ref(false);
+const memoryPromptsSaving = ref(false);
+const memoryPromptsError = ref("");
+const memoryPrompts = ref<MemoryAgentPromptsSettings>({
+  system_prompt: "",
+  search_operation_prompt: "",
+  update_operation_prompt: "",
+});
+
+async function openMemoryPromptsDialog() {
+  memoryPromptsError.value = "";
+  try {
+    memoryPrompts.value = await getMemoryAgentPromptsSettings();
+  } catch (cause) {
+    memoryPromptsError.value = cause instanceof Error ? cause.message : String(cause);
+  }
+  memoryPromptsVisible.value = true;
+}
+
+async function saveMemoryPrompts() {
+  memoryPromptsError.value = "";
+  memoryPromptsSaving.value = true;
+  try {
+    memoryPrompts.value = await request<MemoryAgentPromptsSettings>(
+      "PUT",
+      "/settings/memory-agent-settings",
+      {
+        system_prompt: memoryPrompts.value.system_prompt,
+        search_operation_prompt: memoryPrompts.value.search_operation_prompt,
+        update_operation_prompt: memoryPrompts.value.update_operation_prompt,
+      }
+    );
+    memoryPromptsVisible.value = false;
+  } catch (cause) {
+    memoryPromptsError.value = cause instanceof Error ? cause.message : String(cause);
+  } finally {
+    memoryPromptsSaving.value = false;
+  }
+}
 </script>
 
 <style scoped lang="scss">

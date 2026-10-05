@@ -7,7 +7,8 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 
 use super::{JobMemoryResources, JobResources};
-use crate::agent::declarative_agent::{AgentDefinition, AgentHost};
+use crate::agent::declarative_agent::AgentDefinition;
+use crate::agent::sub_agent_context::{AgentServiceContext, MemoryCapability};
 use crate::agent::tools::memory_tools::MemoryBackend;
 use crate::agent::tools::NodeGraphTool;
 use crate::agent::LLM_KIND_MAIN;
@@ -49,7 +50,16 @@ fn run_subagent(resources: &JobResources, params: &Value) -> Result<Value> {
         .get("inputs")
         .and_then(Value::as_object)
         .ok_or_else(|| Error::ValidationError("subagent.run 缺少 inputs 对象".to_string()))?;
-    let mut host = AgentHost::new();
+    // The job's memory backend backs the same memory tools the agent's memory sub agent
+    // uses, so an inline definition may declare them in `tool_ids`; without a backend they
+    // resolve as disabled placeholders and fail explicitly on call.
+    let service_context = AgentServiceContext::new()
+        .with_memory(resources.memory.as_ref().map(|memory| MemoryCapability {
+            backend: memory.memory_backend.clone(),
+            embedding_model: memory.embedding_model.clone(),
+        }))
+        .with_llm(LLM_KIND_MAIN, resources.llm.clone());
+    let mut host = service_context.build_host(job_memory_access(params));
     for definition in resources
         .tool_definitions
         .iter()
@@ -57,8 +67,7 @@ fn run_subagent(resources: &JobResources, params: &Value) -> Result<Value> {
     {
         host.register_graph_tool(Arc::new(NodeGraphTool::new(definition.clone())));
     }
-    host.register_llm(LLM_KIND_MAIN, resources.llm.clone());
-    let mut definition: AgentDefinition =
+    let definition: AgentDefinition =
         serde_yaml::from_str(definition_text).map_err(|error| {
             Error::ValidationError(format!("subagent.run definition 不是有效的代理定义: {error}"))
         })?;

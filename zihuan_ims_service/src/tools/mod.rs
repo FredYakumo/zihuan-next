@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use zihuan_core::agent::declarative_agent::AgentHost;
-use zihuan_core::agent::tools::memory_tools::{
-    register_memory_tools, MemoryAgentResources, MemoryBackend,
-};
+use zihuan_core::agent::sub_agent_context::{AgentServiceContext, MemoryCapability};
 use zihuan_core::agent::tools::Tool;
+use zihuan_core::agent::LLM_KIND_MAIN;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::graph::object_storage::S3Ref;
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
@@ -40,7 +38,7 @@ pub(crate) use recent_messages::{GetRecentGroupMessagesTool, GetRecentUserMessag
 pub(crate) use reply_message::ReplyMessageTool;
 pub(crate) use web_search::WebSearchTool;
 pub(crate) use zihuan_core::agent::tools::memory_tools::{
-    MemoryAgentResources as AgentMemoryToolResources, MemoryBackend as AgentMemoryBackend,
+    MemoryAgentResources as AgentMemoryToolResources,
 };
 pub(crate) use zihuan_core::agent::SharedTool;
 
@@ -133,20 +131,15 @@ pub fn build_info_brain_tools(
     }
 
     if let Some(llm) = llm {
-        if let Some(job_memory) =
-            build_job_memory_resources(local_memory_store, retrieval_store, embedding_model)
+        if let Some(memory) =
+            MemoryCapability::resolve(local_memory_store, retrieval_store, embedding_model)
         {
-            let memory_resources = MemoryAgentResources {
-                memory_backend: job_memory.memory_backend,
-                embedding_model: job_memory.embedding_model,
-                llm: Arc::clone(&llm),
-                access: memory_access,
-            };
-            let mut host = AgentHost::new();
-            register_memory_tools(&mut host, memory_resources);
-            host.register_llm("main", llm);
+            let service_context = AgentServiceContext::new()
+                .with_memory(Some(memory))
+                .with_llm(LLM_KIND_MAIN, llm);
+            let mut host = service_context.build_host(memory_access);
             if is_enabled(default_tools_enabled, DEFAULT_TOOL_MEMORY_AGENT) {
-                if let Some(tool) = host.publish_logged(DEFAULT_TOOL_MEMORY_AGENT) {
+                if let Some(tool) = host.tool(DEFAULT_TOOL_MEMORY_AGENT) {
                     tools.push(Box::new(SharedTool::new(tool)));
                 }
             }
@@ -154,6 +147,27 @@ pub fn build_info_brain_tools(
     }
 
     tools
+}
+
+/// Memory access context for one QQ turn: memories are scoped to the sending user and, in
+/// group chats, to the conversation; private chats fall back to the event's originating group.
+pub(crate) fn qq_memory_access_context(
+    sender_id: &str,
+    target_id: &str,
+    is_group: bool,
+    event_group_id: Option<i64>,
+) -> AgentMemoryAccessContext {
+    AgentMemoryAccessContext {
+        sender_id: Some(sender_id.to_string()),
+        group_id: if is_group {
+            Some(target_id.to_string())
+        } else {
+            event_group_id.map(|value| value.to_string())
+        },
+        is_group,
+        admin: false,
+        skip_expiry_extend: false,
+    }
 }
 
 /// Resolves the memory backend job scripts share with the agent's memory tools: the local
@@ -164,10 +178,12 @@ pub(crate) fn build_job_memory_resources(
     retrieval_store: Option<Arc<RetrievalStoreRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
 ) -> Option<JobMemoryResources> {
-    let memory_backend = local_memory_store
-        .map(MemoryBackend::LocalFile)
-        .or_else(|| retrieval_store.map(MemoryBackend::RetrievalStore))?;
-    Some(JobMemoryResources { memory_backend, embedding_model })
+    MemoryCapability::resolve(local_memory_store, retrieval_store, embedding_model).map(
+        |memory| JobMemoryResources {
+            memory_backend: memory.backend,
+            embedding_model: memory.embedding_model,
+        },
+    )
 }
 pub(crate) fn format_public_info_message(message: &str) -> serde_json::Value {
     serde_json::json!({

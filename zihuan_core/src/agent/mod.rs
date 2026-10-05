@@ -11,6 +11,7 @@ pub mod declarative_agent;
 pub mod node_tool;
 pub mod resource_provider;
 pub mod runtime_context;
+pub mod sub_agent_context;
 pub mod tool_config;
 
 pub fn normalize_llm_kind(llm_kind: Option<&str>) -> crate::error::Result<&'static str> {
@@ -70,4 +71,5 @@ pub use declarative_agent::{
     DeclarativeAgentTool,
 };
 pub use shared_tool::SharedTool;
+pub use sub_agent_context::{AgentServiceContext, MemoryCapability};
 pub use tools::{AgentExecutor, ToolCallingEngine, ToolCallingRequest, ToolCallingResult};

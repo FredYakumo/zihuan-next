@@ -34,11 +34,11 @@ use crate::tool_subgraph::data_type_to_json_schema_type;
 /// its `sub_agents` directory without any Rust-side definition.
 ///
 /// Paths are anchored at the crate root so they survive moving this file within `zihuan_core`.
+///
+/// The `memory_agent` is no longer a YAML definition — it is composed in Rust from the
+/// configurable prompts in [`crate::system_config::MemoryAgentPromptsSection`] and registered
+/// by [`crate::agent::tools::memory_tools::register_memory_agent_tool`].
 const BUILTIN_AGENT_DEFINITIONS: &[(&str, &str)] = &[
-    (
-        "memory_agent",
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../sub_agents/memory_agent.yaml")),
-    ),
     (
         "run_research_subagent",
         include_str!(concat!(
@@ -54,6 +54,11 @@ const BUILTIN_AGENT_DEFINITIONS: &[(&str, &str)] = &[
         )),
     ),
 ];
+
+/// Formerly built-in definitions that the application now provides in Rust. Startup removes
+/// their seeded YAML files so the on-disk catalog stays the source of truth for publishable
+/// agents; prompts that lived in them moved to the system configuration.
+const RETIRED_AGENT_DEFINITIONS: &[&str] = &["memory_agent"];
 
 /// Agent definitions live in the `sub_agents` directory relative to the current working
 /// directory, one YAML file per id.
@@ -80,6 +85,18 @@ pub fn seed_builtin_agents() -> Result<()> {
                 path.display()
             ))
         })?;
+    }
+
+    for id in RETIRED_AGENT_DEFINITIONS {
+        let path = directory.join(format!("{id}.yaml"));
+        if path.is_file() {
+            fs::remove_file(&path).map_err(|error| {
+                Error::ValidationError(format!(
+                    "failed to remove retired agent definition '{}': {error}",
+                    path.display()
+                ))
+            })?;
+        }
     }
     Ok(())
 }

@@ -7,9 +7,7 @@ use zihuan_core::agent::resource_provider::{
 };
 use zihuan_core::agent::resource_resolver::resolve_local_embedding_model_name;
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
-use zihuan_core::agent::tools::memory_tools::{
-    register_memory_tools, MemoryAgentResources, MemoryBackend,
-};
+use zihuan_core::agent::sub_agent_context::{AgentServiceContext, MemoryCapability};
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::graph::tool_spec::ToolDefinition;
@@ -120,7 +118,7 @@ pub struct WorkspaceInferenceToolProvider {
     service_name: String,
     agents_md_enabled: bool,
     default_tools_enabled: std::collections::HashMap<String, bool>,
-    memory_resources: Option<WorkspaceMemoryResources>,
+    memory_resources: Option<MemoryCapability>,
     web_search_engine: std::result::Result<Arc<dyn zihuan_core::rag::WebSearchEngine>, String>,
     tool_definitions: Vec<ToolDefinition>,
     /// Enabled sub-agent ids this service calls; published per turn alongside the built-ins.
@@ -221,37 +219,50 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_ASK_USER) {
             tools.push(Box::new(AskUserTool));
         }
+        let web_search_tool: Arc<dyn Tool> = Arc::new(match &self.web_search_engine {
+            Ok(engine) => WebSearchTool::new(Arc::clone(engine)),
+            Err(error) => WebSearchTool::unavailable(error.clone()),
+        });
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_WEB_SEARCH) {
-            let tool = match &self.web_search_engine {
-                Ok(engine) => WebSearchTool::new(Arc::clone(engine)),
-                Err(error) => WebSearchTool::unavailable(error.clone()),
-            };
-            tools.push(Box::new(tool));
+            tools.push(Box::new(zihuan_core::agent::SharedTool::new(Arc::clone(
+                &web_search_tool,
+            ))));
         }
+        let image_llm = if let Some(image_understand_llm) = &context.image_understand_llm {
+            Arc::clone(image_understand_llm)
+        } else if context.llm.supports_multimodal_input() {
+            Arc::clone(&context.llm)
+        } else {
+            self.image_understand_llm.clone().unwrap_or_else(|| Arc::clone(&context.llm))
+        };
+        let image_understand_tool: Arc<dyn Tool> =
+            Arc::new(ImageUnderstandTool::new(context.image_media.clone(), image_llm));
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_IMAGE_UNDERSTAND) {
-            let image_llm = if let Some(image_understand_llm) = &context.image_understand_llm {
-                Arc::clone(image_understand_llm)
-            } else if context.llm.supports_multimodal_input() {
-                Arc::clone(&context.llm)
-            } else {
-                self.image_understand_llm.clone().unwrap_or_else(|| Arc::clone(&context.llm))
-            };
-            tools.push(Box::new(ImageUnderstandTool::new(context.image_media.clone(), image_llm)));
+            tools.push(Box::new(zihuan_core::agent::SharedTool::new(Arc::clone(
+                &image_understand_tool,
+            ))));
         }
-        if let Some(resources) = &self.memory_resources {
-            let mut host = zihuan_core::agent::declarative_agent::AgentHost::new();
-            register_memory_tools(&mut host, resources.with_llm(Arc::clone(&context.llm)));
-            host.register_llm(zihuan_core::agent::LLM_KIND_MAIN, Arc::clone(&context.llm));
-            if let Some(tool) = host.publish_logged("memory_agent") {
+        // One context feeds both the built-in memory agent and the selected sub agents, so
+        // every published agent resolves the tools its `tool_ids` declare.
+        let service_context = AgentServiceContext::new()
+            .with_memory(self.memory_resources.clone())
+            .with_llm(zihuan_core::agent::LLM_KIND_MAIN, Arc::clone(&context.llm))
+            .with_tool(DEFAULT_TOOL_WEB_SEARCH, web_search_tool)
+            .with_tool(DEFAULT_TOOL_IMAGE_UNDERSTAND, image_understand_tool);
+        let mut host = service_context.build_host(AgentMemoryAccessContext::default());
+        // The memory agent is composed and registered by `build_host`; add it first so the
+        // other sub agents can reference it.
+        if let Some(tool) = host.tool(zihuan_core::agent::tools::memory_tools::MEMORY_AGENT_ID) {
+            if self.memory_resources.is_some() {
                 tools.push(Box::new(zihuan_core::agent::SharedTool::new(tool)));
             }
         }
         if !self.sub_agent_ids.is_empty() {
-            let mut host = zihuan_core::agent::declarative_agent::AgentHost::new();
-            host.register_llm(zihuan_core::agent::LLM_KIND_MAIN, Arc::clone(&context.llm));
             // Publish every definition first so a selected sub-agent may reference another.
             for id in list_agent_ids() {
-                host.publish_logged(&id);
+                if host.tool(&id).is_none() {
+                    host.publish_logged(&id);
+                }
             }
             for id in &self.sub_agent_ids {
                 let Some(tool) = host.tool(id) else {
@@ -369,61 +380,39 @@ fn load_web_search_engine(
         .ok_or_else(|| "Web Search Engine connection is not configured".to_string())
 }
 
-#[derive(Clone)]
-struct WorkspaceMemoryResources {
-    memory_backend: MemoryBackend,
-    embedding_model:
-        Option<Arc<dyn zihuan_core::model_inference::llm::embedding_base::EmbeddingBase>>,
-}
-
-impl WorkspaceMemoryResources {
-    fn with_llm(
-        &self,
-        llm: Arc<dyn zihuan_core::model_inference::llm::llm_base::LLMBase>,
-    ) -> MemoryAgentResources {
-        MemoryAgentResources {
-            memory_backend: self.memory_backend.clone(),
-            embedding_model: self.embedding_model.clone(),
-            llm,
-            access: AgentMemoryAccessContext::default(),
-        }
-    }
-}
-
 fn load_memory_resources(
     config: &WorkspaceRoleServiceConfig,
     connections: &[ConnectionConfig],
-) -> Option<WorkspaceMemoryResources> {
+) -> Option<MemoryCapability> {
     if !config.memory_enabled {
         return None;
     }
 
-    let memory_backend = if config.retrieval_store_is_local() {
-        MemoryBackend::LocalFile(Arc::new(LocalMemoryStore::in_app_data_dir()))
+    let is_local = config.retrieval_store_is_local();
+    let embedding_model = if is_local {
+        None
     } else {
-        let store =
-            build_retrieval_store_ref(config.retrieval_store_connection_id()?, connections).ok()?;
-        MemoryBackend::RetrievalStore(Arc::new(store))
+        let llm_refs = load_llm_refs().ok()?;
+        let model_ref_id = config
+            .embedding_model_ref_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())?;
+        resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, "workspace").ok()??;
+        block_async(
+            RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id),
+        )
+        .ok()
+    };
+    let local_memory_store = is_local.then(|| Arc::new(LocalMemoryStore::in_app_data_dir()));
+    let retrieval_store = if is_local {
+        None
+    } else {
+        Some(Arc::new(
+            build_retrieval_store_ref(config.retrieval_store_connection_id()?, connections).ok()?,
+        ))
     };
 
-    let llm_refs = load_llm_refs().ok()?;
-    let embedding_model = match &memory_backend {
-        MemoryBackend::LocalFile(_) => None,
-        MemoryBackend::RetrievalStore(_) => {
-            let model_ref_id = config
-                .embedding_model_ref_id
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())?;
-            resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, "workspace")
-                .ok()??;
-            block_async(
-                RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id),
-            )
-            .ok()
-        }
-    };
-
-    Some(WorkspaceMemoryResources { memory_backend, embedding_model })
+    MemoryCapability::resolve(local_memory_store, retrieval_store, embedding_model)
 }
 
 /// The scheduler-facing memory backend for one workspace agent: `None` when the agent has
@@ -432,10 +421,10 @@ pub fn load_job_memory_resources(
     config: &WorkspaceRoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Option<zihuan_core::scheduler::JobMemoryResources> {
-    let resources = load_memory_resources(config, connections)?;
+    let memory = load_memory_resources(config, connections)?;
     Some(zihuan_core::scheduler::JobMemoryResources {
-        memory_backend: resources.memory_backend,
-        embedding_model: resources.embedding_model,
+        memory_backend: memory.backend,
+        embedding_model: memory.embedding_model,
     })
 }
 

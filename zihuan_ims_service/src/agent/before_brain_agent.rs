@@ -6,7 +6,7 @@ use crate::role_config::QqChatEmotionDimensionConfig;
 use async_trait::async_trait;
 use log::{info, warn};
 use zihuan_core::agent::declarative_agent::AgentHost;
-use zihuan_core::agent::tools::memory_tools::register_memory_tools;
+use zihuan_core::agent::tools::memory_tools::{register_memory_agent_tool, register_memory_tools};
 use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason};
 use zihuan_core::agent::{Agent, AgentContext, LLM_KIND_MAIN};
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -262,8 +262,9 @@ fn run_preprompt(
         let mut host = AgentHost::new();
         register_memory_tools(&mut host, resources);
         host.register_llm(LLM_KIND_MAIN, Arc::clone(ctx.llm));
-        if let Some(tool) = host.publish_logged(DEFAULT_TOOL_MEMORY_AGENT) {
-            brain.add_tool(SharedTool::new(tool));
+        match register_memory_agent_tool(&mut host) {
+            Ok(tool) => brain.add_tool(SharedTool::new(tool)),
+            Err(error) => warn!("{LOG_PREFIX} memory agent unavailable: {error}"),
         }
     }
 
