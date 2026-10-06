@@ -224,9 +224,7 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
             Err(error) => WebSearchTool::unavailable(error.clone()),
         });
         if is_enabled(&self.default_tools_enabled, DEFAULT_TOOL_WEB_SEARCH) {
-            tools.push(Box::new(zihuan_core::agent::SharedTool::new(Arc::clone(
-                &web_search_tool,
-            ))));
+            tools.push(Box::new(zihuan_core::agent::SharedTool::new(Arc::clone(&web_search_tool))));
         }
         let image_llm = if let Some(image_understand_llm) = &context.image_understand_llm {
             Arc::clone(image_understand_llm)

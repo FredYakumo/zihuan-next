@@ -273,12 +273,9 @@ impl SystemConfigSection for WorkspaceDirectoryHistorySection {
     type Value = WorkspaceDirectoryHistory;
 }
 
-
 pub const DEFAULT_MEMORY_AGENT_SYSTEM_PROMPT: &str = "You are a memory management agent with private tools for searching, listing, and writing memories. Based on the request, decide whether to retrieve relevant memories, update facts worth retaining long term, or state that no relevant memories exist. Do not fabricate memories. Return only a concise result useful to the caller.";
 
-
 pub const DEFAULT_MEMORY_AGENT_SEARCH_PROMPT: &str = "[Memory Operation]\nSearch memories: you must use the memory search tool to find saved memories relevant to the content above. Return only relevant memories and explicitly state when none are found. Do not write any memories.";
-
 
 pub const DEFAULT_MEMORY_AGENT_UPDATE_PROMPT: &str = "[Memory Operation]\nUpdate memories: you must attempt to extract facts, preferences, or relationships from the content above that are worth retaining long term, and save them with the memory writing tool. You may search first to verify them. If there is nothing appropriate to save, explicitly state that no memories were updated.";
 

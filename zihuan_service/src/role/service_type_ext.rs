@@ -35,12 +35,10 @@ pub fn workspace_of(role_service_type: &RoleServiceType) -> Result<WorkspaceRole
     role_service_type.parse_typed_config()
 }
 
-
 pub fn qq_chat_from(config: QqChatRoleServiceConfig) -> RoleServiceType {
     RoleServiceType::from_typed_config(RoleServiceKind::QqChat, &config)
         .expect("qq_chat role service config must serialize to an object")
 }
-
 
 pub fn workspace_from(config: WorkspaceRoleServiceConfig) -> RoleServiceType {
     RoleServiceType::from_typed_config(RoleServiceKind::Workspace, &config)

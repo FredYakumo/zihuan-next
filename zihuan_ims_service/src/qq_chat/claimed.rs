@@ -12,8 +12,8 @@ use zihuan_core::model_inference::message_content_utils::{
 };
 use zihuan_core::system_config::current_context_compaction_percent;
 
-use zihuan_core::agent::MemoryCapability;
 use zihuan_core::agent::tools::ToolCallingStopReason;
+use zihuan_core::agent::MemoryCapability;
 
 use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use crate::qq_chat::resources::current_qq_chat_role_service_config;
@@ -29,8 +29,8 @@ use zihuan_core::graph::tool_spec::{
 use zihuan_core::graph::DataValue;
 
 use super::super::super::tools::{
-    format_public_info_message, AgentMemoryToolResources, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
-    qq_memory_access_context,
+    format_public_info_message, qq_memory_access_context, AgentMemoryToolResources,
+    QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 
 use crate::storage::qq_chat_history_store::{

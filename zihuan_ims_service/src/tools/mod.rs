@@ -37,9 +37,7 @@ pub(crate) use qq_message_search::SearchQqMessagesTool;
 pub(crate) use recent_messages::{GetRecentGroupMessagesTool, GetRecentUserMessagesTool};
 pub(crate) use reply_message::ReplyMessageTool;
 pub(crate) use web_search::WebSearchTool;
-pub(crate) use zihuan_core::agent::tools::memory_tools::{
-    MemoryAgentResources as AgentMemoryToolResources,
-};
+pub(crate) use zihuan_core::agent::tools::memory_tools::MemoryAgentResources as AgentMemoryToolResources;
 pub(crate) use zihuan_core::agent::SharedTool;
 
 pub(crate) const DEFAULT_TOOL_WEB_SEARCH: &str = "web_search";
@@ -178,12 +176,12 @@ pub(crate) fn build_job_memory_resources(
     retrieval_store: Option<Arc<RetrievalStoreRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
 ) -> Option<JobMemoryResources> {
-    MemoryCapability::resolve(local_memory_store, retrieval_store, embedding_model).map(
-        |memory| JobMemoryResources {
+    MemoryCapability::resolve(local_memory_store, retrieval_store, embedding_model).map(|memory| {
+        JobMemoryResources {
             memory_backend: memory.backend,
             embedding_model: memory.embedding_model,
-        },
-    )
+        }
+    })
 }
 pub(crate) fn format_public_info_message(message: &str) -> serde_json::Value {
     serde_json::json!({

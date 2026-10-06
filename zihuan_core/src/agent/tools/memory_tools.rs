@@ -78,7 +78,9 @@ fn memory_string_port(name: &str, description: &str, required: bool) -> Function
 
 /// Builds the memory agent definition from the configurable prompts. This replaces the
 /// former built-in `memory_agent.yaml`: same id, ports, prompt wiring, and tool ids.
-pub fn memory_agent_definition(prompts: &crate::system_config::MemoryAgentPrompts) -> AgentDefinition {
+pub fn memory_agent_definition(
+    prompts: &crate::system_config::MemoryAgentPrompts,
+) -> AgentDefinition {
     AgentDefinition {
         id: MEMORY_AGENT_ID.to_string(),
         name: MEMORY_AGENT_NAME.to_string(),

@@ -67,10 +67,9 @@ fn run_subagent(resources: &JobResources, params: &Value) -> Result<Value> {
     {
         host.register_graph_tool(Arc::new(NodeGraphTool::new(definition.clone())));
     }
-    let definition: AgentDefinition =
-        serde_yaml::from_str(definition_text).map_err(|error| {
-            Error::ValidationError(format!("subagent.run definition 不是有效的代理定义: {error}"))
-        })?;
+    let definition: AgentDefinition = serde_yaml::from_str(definition_text).map_err(|error| {
+        Error::ValidationError(format!("subagent.run definition 不是有效的代理定义: {error}"))
+    })?;
     definition.validate(&host.available_tool_ids())?;
     let agent = host.build_definition(definition)?;
     let mut input = HashMap::new();

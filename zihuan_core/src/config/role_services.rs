@@ -157,4 +157,3 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<RoleServiceConfig> {
             .filter(|value| !value.is_empty()),
     })
 }
-

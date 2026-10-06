@@ -8,7 +8,9 @@ use log::{info, warn};
 use zihuan_core::agent::declarative_agent::list_agent_ids;
 use zihuan_core::agent::runtime_context::current_agent_resources;
 use zihuan_core::agent::tools::{LongTaskContext, ToolCallingEngine, ToolCallingStopReason};
-use zihuan_core::agent::{AgentServiceContext, LLM_KIND_MAIN, LLM_KIND_MATH_PROGRAMMING, MemoryCapability};
+use zihuan_core::agent::{
+    AgentServiceContext, MemoryCapability, LLM_KIND_MAIN, LLM_KIND_MATH_PROGRAMMING,
+};
 use zihuan_core::error::Result;
 use zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_OWNER_TYPE;
 use zihuan_core::graph::DataValue;
@@ -31,14 +33,14 @@ use crate::qq_chat::{
     QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatTaskTrace, LOG_PREFIX,
 };
 use crate::tools::{
-    EditableQqAgentTool, GetAgentPublicInfoTool,
-    GetFunctionListTool, GetRecentGroupMessagesTool, GetRecentUserMessagesTool,
-    ImageUnderstandTool, ReplyMessageTool, SaveImageTool, SearchQqMessagesTool,
-    SearchSimilarImagesTool, SharedTool, ToolNotificationTarget, WebSearchTool,
-    qq_memory_access_context, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
-    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
-    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_SAVE_IMAGE,
-    DEFAULT_TOOL_SEARCH_QQ_MESSAGES, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
+    qq_memory_access_context, EditableQqAgentTool, GetAgentPublicInfoTool, GetFunctionListTool,
+    GetRecentGroupMessagesTool, GetRecentUserMessagesTool, ImageUnderstandTool, ReplyMessageTool,
+    SaveImageTool, SearchQqMessagesTool, SearchSimilarImagesTool, SharedTool,
+    ToolNotificationTarget, WebSearchTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
+    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
+    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
+    DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_SAVE_IMAGE, DEFAULT_TOOL_SEARCH_QQ_MESSAGES,
+    DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
 };
 
 /// Output of the QQ brain invocation for one turn.
@@ -125,12 +127,8 @@ impl QqBrain {
             preprompt_context: preprompt_context.clone(),
         }));
 
-        let memory_access = qq_memory_access_context(
-            sender_id,
-            target_id,
-            is_group,
-            prepared_input.event.group_id,
-        );
+        let memory_access =
+            qq_memory_access_context(sender_id, target_id, is_group, prepared_input.event.group_id);
         let service_context = AgentServiceContext::new()
             .with_memory(MemoryCapability::resolve(
                 ctx.local_memory_store.cloned(),
