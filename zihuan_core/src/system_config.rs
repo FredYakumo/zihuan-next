@@ -273,15 +273,14 @@ impl SystemConfigSection for WorkspaceDirectoryHistorySection {
     type Value = WorkspaceDirectoryHistory;
 }
 
-/// Default system prompt of the memory agent, carried over from the built-in
-/// `memory_agent` definition.
+
 pub const DEFAULT_MEMORY_AGENT_SYSTEM_PROMPT: &str = "You are a memory management agent with private tools for searching, listing, and writing memories. Based on the request, decide whether to retrieve relevant memories, update facts worth retaining long term, or state that no relevant memories exist. Do not fabricate memories. Return only a concise result useful to the caller.";
 
-/// Default prompt appended when the caller forces the memory search operation.
-pub const DEFAULT_MEMORY_AGENT_SEARCH_PROMPT: &str = "\n\n[Memory Operation]\nSearch memories: you must use the memory search tool to find saved memories relevant to the content above. Return only relevant memories and explicitly state when none are found. Do not write any memories.";
 
-/// Default prompt appended when the caller forces the memory update operation.
-pub const DEFAULT_MEMORY_AGENT_UPDATE_PROMPT: &str = "\n\n[Memory Operation]\nUpdate memories: you must attempt to extract facts, preferences, or relationships from the content above that are worth retaining long term, and save them with the memory writing tool. You may search first to verify them. If there is nothing appropriate to save, explicitly state that no memories were updated.";
+pub const DEFAULT_MEMORY_AGENT_SEARCH_PROMPT: &str = "[Memory Operation]\nSearch memories: you must use the memory search tool to find saved memories relevant to the content above. Return only relevant memories and explicitly state when none are found. Do not write any memories.";
+
+
+pub const DEFAULT_MEMORY_AGENT_UPDATE_PROMPT: &str = "[Memory Operation]\nUpdate memories: you must attempt to extract facts, preferences, or relationships from the content above that are worth retaining long term, and save them with the memory writing tool. You may search first to verify them. If there is nothing appropriate to save, explicitly state that no memories were updated.";
 
 /// Configurable prompts of the memory agent tool. Each field falls back to its
 /// default when absent from the persisted section.
@@ -328,4 +327,28 @@ impl SystemConfigSection for MemoryAgentPromptsSection {
 /// section cannot be read.
 pub fn current_memory_agent_prompts() -> MemoryAgentPrompts {
     load_section::<MemoryAgentPromptsSection>().unwrap_or_default()
+}
+
+/// Loads the memory agent prompts only when the section has been explicitly persisted with
+/// content that differs from the built-in defaults; `None` otherwise.
+pub fn configured_memory_agent_prompts() -> Result<Option<MemoryAgentPrompts>> {
+    let root = load_system_config_root()?;
+    let Some(value) = root.get(MemoryAgentPromptsSection::SECTION_KEY) else {
+        return Ok(None);
+    };
+    let prompts: MemoryAgentPrompts = serde_json::from_value(value.clone())
+        .map_err(|err| crate::string_error!("failed to parse memory agent prompts: {err}"))?;
+    let is_default = prompts.system_prompt == DEFAULT_MEMORY_AGENT_SYSTEM_PROMPT
+        && prompts.search_operation_prompt == DEFAULT_MEMORY_AGENT_SEARCH_PROMPT
+        && prompts.update_operation_prompt == DEFAULT_MEMORY_AGENT_UPDATE_PROMPT;
+    Ok((!is_default).then_some(prompts))
+}
+
+/// Removes the persisted memory agent prompts so the agent runs on the built-in defaults.
+pub fn reset_memory_agent_prompts() -> Result<()> {
+    let mut root = load_system_config_root()?;
+    if let Some(object) = root.as_object_mut() {
+        object.remove(MemoryAgentPromptsSection::SECTION_KEY);
+    }
+    save_system_config_root(&root)
 }

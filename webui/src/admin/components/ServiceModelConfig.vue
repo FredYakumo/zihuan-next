@@ -114,7 +114,7 @@
     </div>
     <t-dialog
       v-model:visible="memoryPromptsVisible"
-      header="记忆提示词"
+      header="Memory Agent配置"
       :confirm-btn="{ content: '保存', loading: memoryPromptsSaving }"
       cancel-btn="取消"
       width="680px"
@@ -122,31 +122,28 @@
       @confirm="saveMemoryPrompts"
     >
       <div class="memory-prompts-form">
-        <p class="memory-prompts-hint">
-          记忆代理根据这些提示词决定检索还是写入长期记忆。留空保存会被拒绝；恢复默认可重新打开编辑后取消修改。
-        </p>
         <div class="memory-prompts-field">
-          <label>系统提示词</label>
+          <label>Agent System Prompt</label>
           <t-textarea
             v-model="memoryPrompts.system_prompt"
             :autosize="{ minRows: 4, maxRows: 12 }"
-            placeholder="记忆代理的系统提示词"
+            :placeholder="memoryPromptDefaults.system_prompt"
           />
         </div>
         <div class="memory-prompts-field">
-          <label>搜索模式提示词（追加到用户消息后）</label>
+          <label>Search memory prompt</label>
           <t-textarea
             v-model="memoryPrompts.search_operation_prompt"
             :autosize="{ minRows: 3, maxRows: 10 }"
-            placeholder="调用方强制搜索记忆时追加的提示词"
+            :placeholder="memoryPromptDefaults.search_operation_prompt"
           />
         </div>
         <div class="memory-prompts-field">
-          <label>写入模式提示词（追加到用户消息后）</label>
+          <label>Write memory</label>
           <t-textarea
             v-model="memoryPrompts.update_operation_prompt"
             :autosize="{ minRows: 3, maxRows: 10 }"
-            placeholder="调用方强制写入记忆时追加的提示词"
+            :placeholder="memoryPromptDefaults.update_operation_prompt"
           />
         </div>
         <p v-if="memoryPromptsError" class="memory-prompts-error">{{ memoryPromptsError }}</p>
@@ -201,12 +198,22 @@ const memoryPrompts = ref<MemoryAgentPromptsSettings>({
   system_prompt: "",
   search_operation_prompt: "",
   update_operation_prompt: "",
+  defaults: { system_prompt: "", search_operation_prompt: "", update_operation_prompt: "" },
 });
+const GENERIC_MEMORY_PROMPT_PLACEHOLDERS = {
+  system_prompt: "记忆代理的系统提示词",
+  search_operation_prompt: "调用方强制搜索记忆时追加的提示词",
+  update_operation_prompt: "调用方强制写入记忆时追加的提示词",
+};
+const memoryPromptDefaults = ref({ ...GENERIC_MEMORY_PROMPT_PLACEHOLDERS });
 
 async function openMemoryPromptsDialog() {
   memoryPromptsError.value = "";
   try {
     memoryPrompts.value = await getMemoryAgentPromptsSettings();
+    memoryPromptDefaults.value = memoryPrompts.value.defaults ?? {
+      ...GENERIC_MEMORY_PROMPT_PLACEHOLDERS,
+    };
   } catch (cause) {
     memoryPromptsError.value = cause instanceof Error ? cause.message : String(cause);
   }
@@ -226,6 +233,7 @@ async function saveMemoryPrompts() {
         update_operation_prompt: memoryPrompts.value.update_operation_prompt,
       }
     );
+    memoryPromptDefaults.value = memoryPrompts.value.defaults;
     memoryPromptsVisible.value = false;
   } catch (cause) {
     memoryPromptsError.value = cause instanceof Error ? cause.message : String(cause);

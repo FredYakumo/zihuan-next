@@ -44,6 +44,11 @@ export interface MemoryAgentPromptsSettings {
   system_prompt: string;
   search_operation_prompt: string;
   update_operation_prompt: string;
+  defaults: {
+    system_prompt: string;
+    search_operation_prompt: string;
+    update_operation_prompt: string;
+  };
 }
 
 export async function request<T>(
