@@ -69,7 +69,7 @@ export class SaveManager {
     if (!name) return;
     try {
       const result = await workflowsApi.save(sid, name);
-      // 优先使用 metadata 中的中文名称，fallback 到文件名
+
       const metadata = await graphs.getMetadata(sid);
       const baseName = tabNameFrom(result.path, name);
       const displayName = metadata.name?.trim() || baseName;

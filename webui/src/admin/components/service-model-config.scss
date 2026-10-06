@@ -38,7 +38,7 @@
 .agent-service-check-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
 }
 
@@ -52,9 +52,11 @@
   min-width: 0;
 }
 
+/* 132px checkbox + 8px gap mirrors the label column (132px + 8px margin) so the
+   selects in these label-less rows line up with the labeled selects. */
 .agent-service-image-understand-item .agent-service-check-row :deep(.t-checkbox),
 .agent-service-memory-item .agent-service-check-row :deep(.t-checkbox) {
-  flex: 0 0 136px;
+  flex: 0 0 132px;
 }
 
 .agent-service-memory-item .agent-service-check-row :deep(.t-select) {
@@ -66,4 +68,34 @@
   .agent-service-model-config-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.memory-prompts-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.memory-prompts-hint {
+  margin: 0;
+  color: var(--td-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.memory-prompts-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  > label {
+    font-size: 13px;
+    font-weight: 500;
+  }
+}
+
+.memory-prompts-error {
+  margin: 0;
+  color: var(--td-error-color);
+  font-size: 12px;
 }

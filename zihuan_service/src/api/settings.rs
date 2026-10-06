@@ -15,8 +15,10 @@ use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::config::ConfigCenter;
 use zihuan_core::model_inference::model_config::ModelRefSpec;
 use zihuan_core::system_config::{
-    GlobalSettingsSection, ModelHttpApiKey, ModelHttpServiceSettings,
-    MAX_CONTEXT_COMPACTION_PERCENT, MIN_CONTEXT_COMPACTION_PERCENT,
+    GlobalSettingsSection, MemoryAgentPromptsSection, ModelHttpApiKey, ModelHttpServiceSettings,
+    DEFAULT_MEMORY_AGENT_SEARCH_PROMPT, DEFAULT_MEMORY_AGENT_SYSTEM_PROMPT,
+    DEFAULT_MEMORY_AGENT_UPDATE_PROMPT, MAX_CONTEXT_COMPACTION_PERCENT,
+    MIN_CONTEXT_COMPACTION_PERCENT,
 };
 
 use dynamic_script_engine::{check_node_runtime, check_python_runtime};
@@ -116,6 +118,29 @@ pub struct ContextCompactionSettingsResponse {
 #[derive(Deserialize)]
 pub struct UpdateContextCompactionSettingsRequest {
     pub percent: u8,
+}
+
+#[derive(Serialize)]
+pub struct MemoryAgentPromptDefaults {
+    pub system_prompt: String,
+    pub search_operation_prompt: String,
+    pub update_operation_prompt: String,
+}
+
+#[derive(Serialize)]
+pub struct MemoryAgentPromptsResponse {
+    pub system_prompt: String,
+    pub search_operation_prompt: String,
+    pub update_operation_prompt: String,
+    /// Built-in defaults, for the frontend to show as input placeholders.
+    pub defaults: MemoryAgentPromptDefaults,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateMemoryAgentPromptsRequest {
+    pub system_prompt: String,
+    pub search_operation_prompt: String,
+    pub update_operation_prompt: String,
 }
 
 #[derive(Deserialize)]
@@ -277,6 +302,92 @@ pub async fn update_context_compaction_settings(req: &mut Request, res: &mut Res
     settings.context_compaction_percent = body.percent;
     match zihuan_core::system_config::save_section::<GlobalSettingsSection>(&settings) {
         Ok(()) => res.render(Json(ContextCompactionSettingsResponse { percent: body.percent })),
+        Err(error) => {
+            render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+        }
+    }
+}
+
+fn memory_agent_prompts_response(
+    prompts: Option<zihuan_core::system_config::MemoryAgentPrompts>,
+) -> MemoryAgentPromptsResponse {
+    let defaults = MemoryAgentPromptDefaults {
+        system_prompt: DEFAULT_MEMORY_AGENT_SYSTEM_PROMPT.to_string(),
+        search_operation_prompt: DEFAULT_MEMORY_AGENT_SEARCH_PROMPT.to_string(),
+        update_operation_prompt: DEFAULT_MEMORY_AGENT_UPDATE_PROMPT.to_string(),
+    };
+    // Unconfigured prompts stay empty so the frontend shows the defaults as placeholders.
+    let (system_prompt, search_operation_prompt, update_operation_prompt) = match prompts {
+        Some(prompts) => (
+            prompts.system_prompt,
+            prompts.search_operation_prompt,
+            prompts.update_operation_prompt,
+        ),
+        None => (String::new(), String::new(), String::new()),
+    };
+    MemoryAgentPromptsResponse {
+        system_prompt,
+        search_operation_prompt,
+        update_operation_prompt,
+        defaults,
+    }
+}
+
+/// Resolves one prompt field: blank falls back to the built-in default.
+fn memory_agent_prompt_field(value: String, default: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        default.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+#[handler]
+pub async fn get_memory_agent_settings(_req: &mut Request, res: &mut Response) {
+    match zihuan_core::system_config::configured_memory_agent_prompts() {
+        Ok(prompts) => res.render(Json(memory_agent_prompts_response(prompts))),
+        Err(error) => {
+            render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+        }
+    }
+}
+
+#[handler]
+pub async fn update_memory_agent_settings(req: &mut Request, res: &mut Response) {
+    let body: UpdateMemoryAgentPromptsRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(error) => {
+            return render_settings_error(res, StatusCode::BAD_REQUEST, error.to_string())
+        }
+    };
+    let prompts = zihuan_core::system_config::MemoryAgentPrompts {
+        system_prompt: memory_agent_prompt_field(
+            body.system_prompt,
+            DEFAULT_MEMORY_AGENT_SYSTEM_PROMPT,
+        ),
+        search_operation_prompt: memory_agent_prompt_field(
+            body.search_operation_prompt,
+            DEFAULT_MEMORY_AGENT_SEARCH_PROMPT,
+        ),
+        update_operation_prompt: memory_agent_prompt_field(
+            body.update_operation_prompt,
+            DEFAULT_MEMORY_AGENT_UPDATE_PROMPT,
+        ),
+    };
+    // A submission identical to the built-in defaults is treated as unconfigured, keeping
+    // the UI in its placeholder state instead of persisting a copy of the defaults.
+    let fully_default = prompts.system_prompt == DEFAULT_MEMORY_AGENT_SYSTEM_PROMPT
+        && prompts.search_operation_prompt == DEFAULT_MEMORY_AGENT_SEARCH_PROMPT
+        && prompts.update_operation_prompt == DEFAULT_MEMORY_AGENT_UPDATE_PROMPT;
+    let saved = if fully_default {
+        zihuan_core::system_config::reset_memory_agent_prompts().map(|_| None)
+    } else {
+        zihuan_core::system_config::save_section::<MemoryAgentPromptsSection>(&prompts)
+            .map(|_| Some(prompts))
+    };
+    match saved {
+        Ok(prompts) => res.render(Json(memory_agent_prompts_response(prompts))),
         Err(error) => {
             render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
         }

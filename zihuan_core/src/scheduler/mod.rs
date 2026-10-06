@@ -4,6 +4,7 @@
 
 mod capabilities;
 mod job_script;
+mod scheduled_job;
 
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
@@ -13,9 +14,11 @@ use std::time::Duration;
 
 use serde::Serialize;
 
+use crate::agent::tools::memory_tools::MemoryBackend;
 use crate::data_refs::RelationalDbConnection;
 use crate::error::Result;
 use crate::graph::tool_spec::ToolDefinition;
+use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::LLMMessage;
 use crate::runtime::block_async;
@@ -24,11 +27,13 @@ use crate::task_context::{
     scope_task_id, AgentTaskResult, AgentTaskStatus, ScheduledJobTaskRequest,
 };
 
+pub use capabilities::store_agent_memory;
 pub use job_script::{
     builtin_schedulers, delete_job_script, ensure_default_jobs, init_script_jobs,
     is_builtin_scheduler, is_builtin_script, read_job_script, reload_script_jobs, save_job_script,
     BuiltinScheduler, JobManifest, SavedJobScript, DREAM_TASK_NAME,
 };
+pub use scheduled_job::{JobTrigger, ScheduledJobConfig};
 
 /// How often the kernel scans for due tasks.
 const TICK_SECONDS: u64 = 5;
@@ -44,6 +49,20 @@ pub struct JobResources {
     pub history_loader: Arc<dyn Fn(&str) -> Vec<LLMMessage> + Send + Sync>,
     /// Clears the conversation history for one sender.
     pub history_clearer: Arc<dyn Fn(&str) -> Result<()> + Send + Sync>,
+    /// Memory backend shared with the owning agent, reachable through the `memory.*`
+    /// capabilities. Absent when the agent has no memory backend configured.
+    pub memory: Option<JobMemoryResources>,
+    /// The resolved scheduled-job list the service registered with; [`rearm_triggered_jobs`]
+    /// reads it when an event source notifies.
+    pub scheduled_jobs: Vec<ScheduledJobConfig>,
+}
+
+/// The memory backend a job body reads and writes through the `memory.*` capabilities.
+/// The access scope is built per call from the request's `sender_id`.
+#[derive(Clone)]
+pub struct JobMemoryResources {
+    pub memory_backend: MemoryBackend,
+    pub embedding_model: Option<Arc<dyn EmbeddingBase>>,
 }
 
 /// Everything a job body sees for one firing.
@@ -104,6 +123,48 @@ pub fn register_service(resources: JobResources) -> Result<ServiceRegistrationGu
         .insert(agent_id.clone(), Arc::new(resources));
     log::info!("[Scheduler] service registered: {agent_id}");
     Ok(ServiceRegistrationGuard { source_service: agent_id })
+}
+
+/// Re-arms every scheduled job of one registered service for one trigger subject (a QQ
+/// sender, a chat session): cancels each job's pending task for the subject and schedules
+/// a fresh one at the job's trigger delay. No-op when the service is not registered with
+/// scheduled jobs — before its start finishes, or when it configures none.
+pub fn rearm_triggered_jobs(source_service: &str, triggered_by: &str) {
+    let (connection, agent_id, jobs) = {
+        let state = registry().read().unwrap();
+        match state.services.get(source_service) {
+            Some(resources) => (
+                resources.connection.clone(),
+                resources.agent_id.clone(),
+                resources.scheduled_jobs.clone(),
+            ),
+            None => return,
+        }
+    };
+    if jobs.is_empty() {
+        return;
+    }
+    let triggered_by = triggered_by.to_string();
+    tokio::spawn(async move {
+        for job in jobs {
+            let Some(delay) = job.trigger.delay_seconds() else {
+                continue;
+            };
+            if let Err(error) = scheduled_task::rearm_task(
+                &connection,
+                &job.task_name,
+                &agent_id,
+                &triggered_by,
+                delay,
+                Some("被新的用户消息替换"),
+                Some("等待事件条件满足后触发"),
+            )
+            .await
+            {
+                log::warn!("[Scheduler] failed to schedule job '{}': {error}", job.task_name);
+            }
+        }
+    });
 }
 
 pub fn register_job(manifest: JobManifest, job: Arc<dyn SchedulerJob>) {

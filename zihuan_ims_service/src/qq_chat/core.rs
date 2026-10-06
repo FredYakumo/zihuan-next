@@ -819,43 +819,6 @@ impl QqChatAgentServiceInner {
 }
 
 impl QqChatAgentService {
-    /// Schedules the `Dream` memory consolidation for one sender: cancels any pending Dream
-    /// task of the same sender and inserts a fresh task. The scheduler kernel fires the
-    /// script-defined Dream job once the sender stays silent for the configured interval.
-    fn schedule_dream(&self, sender_id: String) {
-        let Some(delay_seconds) = self.config.qq_chat_config.dream_interval_seconds() else {
-            return;
-        };
-        let Some(connection) = self.config.rdb_pool.clone() else {
-            return;
-        };
-        let agent_id = self.config.agent_id.clone();
-        tokio::spawn(async move {
-            if let Err(err) = zihuan_core::scheduled_task::cancel_pending_tasks(
-                &connection,
-                zihuan_core::scheduler::DREAM_TASK_NAME,
-                &agent_id,
-                &sender_id,
-                Some("被新的用户消息替换"),
-            )
-            .await
-            {
-                warn!("[Dream] failed to cancel previous task: {err}");
-                return;
-            }
-            let task = zihuan_core::scheduled_task::ScheduledTaskEntry::new(
-                zihuan_core::scheduler::DREAM_TASK_NAME,
-                agent_id,
-                Some(sender_id),
-                chrono::Local::now() + chrono::Duration::seconds(delay_seconds as i64),
-                Some("等待用户静默后生成 Dream 记忆"),
-            );
-            if let Err(err) = zihuan_core::scheduled_task::insert_task(&connection, &task).await {
-                warn!("[Dream] failed to create task: {err}");
-            }
-        });
-    }
-
     pub fn new(config: QqChatAgentServiceRuntimeConfig) -> Result<Self> {
         let mut inner = QqChatAgentServiceInner::new(config.node_id.clone());
         inner.set_default_tools_enabled(config.default_tools_enabled.clone());
@@ -875,7 +838,6 @@ impl QqChatAgentService {
         adapter: &zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
         time: &str,
     ) -> Result<()> {
-        self.schedule_dream(event.sender.user_id.to_string());
         let task_db_connection_id =
             self.config.qq_chat_config.resolved_rdb_id().map(ToOwned::to_owned);
         let sender_id = event.sender.user_id.to_string();

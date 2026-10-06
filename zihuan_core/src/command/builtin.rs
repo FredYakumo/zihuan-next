@@ -68,6 +68,7 @@ fn status_label(status: crate::task_context::AgentTaskStatus) -> &'static str {
 }
 
 fn render_task_detail(task: &crate::task_context::AgentTaskInfo) -> String {
+    let failed = task.status == crate::task_context::AgentTaskStatus::Failed;
     let mut lines = vec![
         format!("任务: {}", task.task_name),
         format!("ID: {}", task.task_id),
@@ -78,17 +79,17 @@ fn render_task_detail(task: &crate::task_context::AgentTaskInfo) -> String {
     if let Some(finished_at) = task.finished_at {
         lines.push(format!("完成时间: {}", finished_at.format("%Y-%m-%d %H:%M:%S")));
     }
-    if let Some(summary) = task.result_summary.as_deref().filter(|value| !value.trim().is_empty()) {
+    // Error details stay in the server logs and the admin task records; command output
+    // reaches end users, so failures only ever render a generic notice.
+    if failed {
+        lines.push(String::new());
+        lines.push("任务执行失败，详情请查看服务端日志。".to_string());
+    } else if let Some(summary) =
+        task.result_summary.as_deref().filter(|value| !value.trim().is_empty())
+    {
         lines.push(String::new());
         lines.push("结果:".to_string());
         lines.push(summary.to_string());
-    }
-    if let Some(error_message) =
-        task.error_message.as_deref().filter(|value| !value.trim().is_empty())
-    {
-        lines.push(String::new());
-        lines.push("错误:".to_string());
-        lines.push(error_message.to_string());
     }
     if !task.progress.is_empty() {
         lines.push(String::new());

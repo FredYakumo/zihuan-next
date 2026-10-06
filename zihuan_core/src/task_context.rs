@@ -73,7 +73,7 @@ pub struct AgentTaskRequest {
 pub struct ScheduledJobTaskRequest {
     pub task_name: String,
     pub source_service: String,
-    /// What triggered the run, e.g. the sender whose silence fired a Dream job.
+    /// What triggered the run, e.g. the sender whose silence fired a scheduled job.
     pub triggered_by: Option<String>,
 }
 

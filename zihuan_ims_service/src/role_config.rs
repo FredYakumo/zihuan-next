@@ -7,6 +7,7 @@ use zihuan_core::agent::{
     LLM_KIND_MATH_PROGRAMMING, LLM_KIND_NATURAL_LANGUAGE_REPLY,
 };
 use zihuan_core::retrieval::RetrievalStoreConfig;
+use zihuan_core::scheduler::ScheduledJobConfig;
 use zihuan_core::utils::time_unit::TimeUnit;
 
 pub fn llm_ref_id_for_kind<'a>(
@@ -149,11 +150,7 @@ pub struct QqChatRoleServiceConfig {
     #[serde(default = "default_max_message_length")]
     pub max_message_length: usize,
     #[serde(default)]
-    pub dream_enabled: bool,
-    #[serde(default = "default_dream_interval_value")]
-    pub dream_interval_value: usize,
-    #[serde(default)]
-    pub dream_interval_unit: TimeUnit,
+    pub scheduled_jobs: Vec<ScheduledJobConfig>,
     #[serde(default = "default_max_steer_count")]
     pub max_steer_count: usize,
     #[serde(default = "default_qq_chat_default_tools_enabled")]
@@ -175,13 +172,10 @@ pub struct QqChatRoleServiceConfig {
 }
 
 impl QqChatRoleServiceConfig {
-    pub fn dream_interval_seconds(&self) -> Option<u64> {
-        if !self.dream_enabled || self.dream_interval_value == 0 {
-            return None;
-        }
-        self.dream_interval_value
-            .checked_mul(self.dream_interval_unit.seconds() as usize)
-            .map(|value| value as u64)
+    /// The scheduled job entries that actually schedule: enabled, with a non-blank task
+    /// name, a valid trigger, and no duplicate task name.
+    pub fn resolved_scheduled_jobs(&self) -> Vec<ScheduledJobConfig> {
+        ScheduledJobConfig::resolved(&self.scheduled_jobs)
     }
     pub fn resolved_rdb_id(&self) -> Option<&str> {
         self.rdb_id
@@ -283,10 +277,6 @@ impl QqChatRoleServiceConfig {
 
 fn default_max_message_length() -> usize {
     500
-}
-
-fn default_dream_interval_value() -> usize {
-    15
 }
 
 fn default_max_steer_count() -> usize {

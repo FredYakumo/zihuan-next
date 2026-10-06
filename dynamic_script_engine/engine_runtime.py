@@ -35,7 +35,7 @@ def load_module(path: Path) -> tuple[Any | None, str | None]:
         spec = importlib.util.spec_from_file_location(f"zihuan_node_{path.stem}", path)
         if spec is None or spec.loader is None: raise RuntimeError("cannot create module specification")
         module = importlib.util.module_from_spec(spec)
-        # 设置当前脚本路径，供节点注册时使用
+        
         import zihuan_sdk
         zihuan_sdk._CURRENT_SCRIPT_PATH = str(script_path)
         spec.loader.exec_module(module)

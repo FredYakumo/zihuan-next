@@ -47,7 +47,7 @@
 
       <template v-else>
         <div class="search-form search-form--simple"><t-input v-model="image.nameQuery" placeholder="图片名" clearable @enter="searchImages" /><t-input v-model="image.descriptionQuery" placeholder="图片描述" clearable @enter="searchImages" /><t-input-number v-model="image.limit" :min="1" :max="50" /><t-button theme="primary" :loading="image.loading" @click="searchImages">搜索</t-button></div>
-        <div v-if="image.items.length" class="image-grid"><article v-for="item in image.items" :key="item.object_id" class="image-item"><img v-if="item.url" :src="item.url" :alt="item.name || item.media_id || '图片'" @error="onImageError" /><div v-else class="image-placeholder">无预览</div><div class="image-info"><strong>{{ item.name || item.media_id || '未命名图片' }}</strong><p>{{ item.description || '未提供图片描述' }}</p><div><t-tag v-for="kind in item.match_kinds" :key="kind" size="small" variant="light" :theme="kind === 'keyword' ? 'primary' : 'default'">{{ matchLabel(kind) }}</t-tag></div><span class="muted">{{ item.source || item.backend }}</span></div></article></div>
+        <div v-if="image.items.length" class="image-grid"><article v-for="item in image.items" :key="item.object_id" class="image-item"><img v-if="item.url && !failedPreviews.has(item.object_id)" :src="item.url" :alt="item.name || item.media_id || '图片'" referrerpolicy="no-referrer" loading="lazy" @error="onImageError(item.object_id)" /><div v-else class="image-placeholder">无预览</div><div class="image-info"><strong>{{ item.name || item.media_id || '未命名图片' }}</strong><p>{{ item.description || '未提供图片描述' }}</p><div><t-tag v-for="kind in item.match_kinds" :key="kind" size="small" variant="light" :theme="kind === 'keyword' ? 'primary' : 'default'">{{ matchLabel(kind) }}</t-tag></div><span class="muted">{{ item.source || item.backend }}</span></div></article></div>
         <div v-else-if="image.searched && !image.loading" class="empty-state">无匹配图片。</div>
       </template>
     </t-card>
@@ -55,7 +55,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { PrimaryTableCol } from "tdesign-vue-next";
 
@@ -75,7 +75,9 @@ function matchLabel(kind: string) {
 }
 function onMessagePaginationChange(info: { current: number; pageSize: number }) { message.value.pageSize = info.pageSize; changeMessagePage(info.current); }
 function returnToList() { void router.push("/data-explorer"); }
-function onImageError(event: Event) { (event.target as HTMLImageElement).style.display = "none"; }
+const failedPreviews = ref(new Set<string>());
+function onImageError(objectId: string) { failedPreviews.value.add(objectId); }
+watch(() => image.value.items, () => { failedPreviews.value = new Set<string>(); });
 </script>
 
 <style scoped lang="scss">

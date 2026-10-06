@@ -71,6 +71,21 @@ pub struct ToolExecutionOutput {
     pub ask_user: Option<AskUserRequest>,
 }
 
+/// Detects the shared tool failure envelope `{"ok":false,...}`.
+///
+/// Tools report failures inside a successful string return, so the engine uses this to
+/// record the task as failed and keep the payload out of chat notifications.
+pub fn tool_result_reports_failure(result: &str) -> bool {
+    matches!(
+        serde_json::from_str::<Value>(result.trim())
+            .ok()
+            .as_ref()
+            .and_then(|value| value.get("ok"))
+            .and_then(Value::as_bool),
+        Some(false)
+    )
+}
+
 impl ToolExecutionOutput {
     pub fn text(result: impl Into<String>) -> Self {
         Self { result: result.into(), ask_user: None }

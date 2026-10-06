@@ -19,7 +19,9 @@ use crate::agent::resource_provider::SharedAgentResourceProvider;
 use crate::agent::runtime_context::{
     current_agent_runtime_context, scope_agent_runtime_context, AgentRuntimeContext,
 };
-use crate::agent::tools::{Tool, ToolExecutionOutput, ToolExecutionResource, ToolRunDuration};
+use crate::agent::tools::{
+    tool_result_reports_failure, Tool, ToolExecutionOutput, ToolExecutionResource, ToolRunDuration,
+};
 use crate::agent::{AgentCancellation, AgentContext};
 use crate::model_inference::inference_function::compact_message::{
     compact_tool_loop_conversation, compaction_threshold, estimate_messages_tokens,
@@ -225,12 +227,26 @@ impl ToolCallingEngine {
                         })
                     })
                 });
+                let failed = tool_result_reports_failure(&result.result);
                 handle.finish(AgentTaskResult {
-                    status: Some(AgentTaskStatus::Success),
-                    result_summary: Some(result.result.clone()),
-                    error_message: None,
+                    status: Some(if failed {
+                        AgentTaskStatus::Failed
+                    } else {
+                        AgentTaskStatus::Success
+                    }),
+                    result_summary: (!failed).then(|| result.result.clone()),
+                    error_message: failed.then(|| result.result.clone()),
                 });
-                long_ctx.notifier.on_complete(&task_id, &task_name, &result.result);
+                if failed {
+                    // Failure details belong to the logs and the task record only; sending
+                    // them to the chat would leak internal diagnostics to end users.
+                    info!(
+                        "[ToolCallingEngine] tool '{}' failed as long task_id={}; completion notification suppressed",
+                        tool_name, task_id
+                    );
+                } else {
+                    long_ctx.notifier.on_complete(&task_id, &task_name, &result.result);
+                }
                 info!(
                     "[ToolCallingEngine] tool '{}' completed as long task_id={}",
                     tool_name, task_id

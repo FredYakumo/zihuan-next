@@ -34,15 +34,14 @@ function scrollToBottom(): void {
   if (bodyEl.value) bodyEl.value.scrollTop = bodyEl.value.scrollHeight;
 }
 
-// 距底部 30px 内视为贴底：给平滑滚动动画和像素取整留容差
+
 function isNearBottom(): boolean {
   const el = bodyEl.value;
   if (!el) return true;
   return el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
 }
 
-// 追踪最后一条的 seq 而非数组长度：日志达到 500 条上限后 push+裁剪使长度不变，
-// 监听 length 会在稳定状态下漏掉新日志
+
 watch(
   () => logs.value[logs.value.length - 1]?.seq,
   async () => {

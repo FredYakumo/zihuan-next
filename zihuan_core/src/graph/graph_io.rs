@@ -321,19 +321,21 @@ pub fn refresh_node_dynamic_ports(node: &mut NodeDefinition) {
     }
 }
 
-/// 根据外层图中连接到 function 节点输入端口的边，修正 function_config.inputs 中
-/// 保存了错误类型的条目（如旧版转换时将 BotAdapterRef/SessionStateRef 写成了 String）。
-/// 这是对旧 JSON 的加载迁移：以边另一端的源端口（已经过注册表刷新）为准，覆盖config里的错误类型。
+/// Fix entries in `function_config.inputs` that were saved with a wrong type, based on the
+/// edges in the outer graph that connect to the function node's input ports (e.g. older
+/// conversions wrote BotAdapterRef/SessionStateRef as String).
+/// This is a load-time migration for legacy JSON: the source port on the other end of the
+/// edge (already refreshed via the registry) is authoritative and overrides the wrong type in the config.
 fn fix_function_node_input_types_from_edges(graph: &mut NodeGraphDefinition) {
     use crate::graph::function_graph::{
         embedded_function_config_from_node, sync_function_node_definition,
     };
 
-    // 构建 node_id → output_ports 映射（端口类型已经过注册表刷新）
+    // Build a node_id → output_ports map (port types already refreshed via the registry)
     let output_port_map: HashMap<String, Vec<Port>> =
         graph.nodes.iter().map(|n| (n.id.clone(), n.output_ports.clone())).collect();
 
-    // 收集每个 function 节点应被修正的 (port_name → canonical DataType)
+    // Collect the (port_name → canonical DataType) corrections for each function node
     let mut corrections: HashMap<String, Vec<(String, DataType)>> = HashMap::new();
     for edge in &graph.edges {
         let Some(to_node) = graph.nodes.iter().find(|n| n.id == edge.to_node_id) else {

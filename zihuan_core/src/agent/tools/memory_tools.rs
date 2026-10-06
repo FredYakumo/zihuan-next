@@ -4,9 +4,13 @@ use chrono::{Duration, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::agent::declarative_agent::AgentHost;
+use crate::agent::declarative_agent::{
+    AgentDefinition, AgentHost, AgentOutputMode, AgentPromptPart, DeclarativeAgentTool,
+};
 use crate::agent::tools::Tool;
 use crate::error::{Error, Result};
+use crate::graph::function_graph::FunctionPortDef;
+use crate::graph::DataType;
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::tooling::FunctionTool;
@@ -16,6 +20,7 @@ use crate::storage::{
     list_memory_in_store, search_memory_in_store, upsert_memory_in_store, AgentMemoryAccessContext,
     AgentMemoryUpsert, LocalMemoryStore,
 };
+use crate::system_config::current_memory_agent_prompts;
 
 const DEFAULT_MEMORY_TOP_N: i64 = 5;
 const MAX_MEMORY_TOP_N: i64 = 20;
@@ -47,12 +52,81 @@ impl ListMemoryKeysTool {
     }
 }
 
+/// Ids the memory agent definition references in its `tool_ids`, in registration order.
+pub const MEMORY_TOOL_IDS: [&str; 3] = ["list_memory_keys", "search_memory", "update_memory"];
+
+pub const MEMORY_AGENT_ID: &str = "memory_agent";
+const MEMORY_AGENT_NAME: &str = "Memory";
+const MEMORY_AGENT_DESCRIPTION: &str = "Call the Memory Agent. Given content, it independently decides whether to retrieve relevant memories, update memories worth saving, or report that no relevant memories exist. Pass operation to force a specific memory operation.";
+
 /// Registers the built-in memory tools on an [`AgentHost`] under the ids referenced by the
-/// `memory_agent` definition.
+/// memory agent definition.
 pub fn register_memory_tools(host: &mut AgentHost, resources: MemoryAgentResources) {
     host.register_tool("list_memory_keys", Arc::new(ListMemoryKeysTool::new(resources.clone())));
     host.register_tool("search_memory", Arc::new(SearchMemoryTool::new(resources.clone())));
     host.register_tool("update_memory", Arc::new(RememberMemoryTool::new(resources)));
+}
+
+fn memory_string_port(name: &str, description: &str, required: bool) -> FunctionPortDef {
+    FunctionPortDef {
+        name: name.to_string(),
+        data_type: DataType::String,
+        description: description.to_string(),
+        required,
+    }
+}
+
+/// Builds the memory agent definition from the configurable prompts. This replaces the
+/// former built-in `memory_agent.yaml`: same id, ports, prompt wiring, and tool ids.
+pub fn memory_agent_definition(
+    prompts: &crate::system_config::MemoryAgentPrompts,
+) -> AgentDefinition {
+    AgentDefinition {
+        id: MEMORY_AGENT_ID.to_string(),
+        name: MEMORY_AGENT_NAME.to_string(),
+        description: MEMORY_AGENT_DESCRIPTION.to_string(),
+        builtin: true,
+        inputs: vec![
+            memory_string_port("content", "Content for the memory agent to process", true),
+            memory_string_port(
+                "operation",
+                "Optional: force a memory operation, either search_memory or update_memory. Omit to let the agent decide by itself.",
+                false,
+            ),
+        ],
+        outputs: vec![memory_string_port("result", "Memory result", true)],
+        system_prompt: prompts.system_prompt.clone(),
+        user_prompt: Some("{content}".to_string()),
+        prompt_parts: vec![
+            AgentPromptPart {
+                port: "operation".to_string(),
+                equals: Some("search_memory".to_string()),
+                template: prompts.search_operation_prompt.clone(),
+            },
+            AgentPromptPart {
+                port: "operation".to_string(),
+                equals: Some("update_memory".to_string()),
+                template: prompts.update_operation_prompt.clone(),
+            },
+        ],
+        output_mode: AgentOutputMode::Text,
+        llm_kind: crate::agent::LLM_KIND_MAIN.to_string(),
+        progress_message: None,
+        include_graph_tools: false,
+        run_duration: crate::tool_runtime::ToolRunDuration::default(),
+        tool_ids: MEMORY_TOOL_IDS.iter().map(|id| (*id).to_string()).collect(),
+    }
+}
+
+/// Composes the memory agent from the configured prompts and registers it as a callable
+/// tool under [`MEMORY_AGENT_ID`]. The memory tools and the `main` LLM must already be
+/// registered on the host.
+pub fn register_memory_agent_tool(host: &mut AgentHost) -> Result<Arc<dyn Tool>> {
+    let definition = memory_agent_definition(&current_memory_agent_prompts());
+    let agent = Arc::new(host.build_definition(definition)?);
+    let tool: Arc<dyn Tool> = Arc::new(DeclarativeAgentTool::new(agent));
+    host.register_tool(MEMORY_AGENT_ID, Arc::clone(&tool));
+    Ok(tool)
 }
 impl Tool for ListMemoryKeysTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {

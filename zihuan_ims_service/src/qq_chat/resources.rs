@@ -8,8 +8,9 @@ use zihuan_core::agent::resource_provider::{
 use zihuan_core::agent::runtime_context::current_agent_resources;
 use zihuan_core::error::{Error, Result};
 
-/// QQ 聊天服务在引擎运行时的资源提供者：持有完整配置，只向引擎暴露资源契约；
-/// 业务代码需要取回完整配置时通过 downcast（[`Self::config`]）恢复。
+/// Resource provider for the QQ chat service in the engine runtime: holds the full config
+/// and only exposes the resource contract to the engine; business code recovers the full
+/// config via downcast ([`Self::config`]).
 #[derive(Clone)]
 pub struct QqChatRoleServiceResources {
     config: QqChatRoleServiceConfig,
@@ -60,7 +61,6 @@ impl AgentResourceProvider for QqChatRoleServiceResources {
     }
 }
 
-/// 业务代码取回当前 QQ 服务的完整配置（限流规则、情绪维度等引擎无关字段）。
 pub fn current_qq_chat_role_service_config() -> Result<QqChatRoleServiceConfig> {
     let resources = current_agent_resources()?;
     resources

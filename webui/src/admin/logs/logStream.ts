@@ -35,8 +35,7 @@ function formatNow(): string {
 }
 
 function pushLog(entry: TaskLogEntry): void {
-  // seq 单调递增，作为 v-for 的稳定 key：日志达到上限从头部裁剪时，
-  // 剩余条目的 key 不变，避免 Vue 因 index 移位重建整个列表导致滚动位置丢失
+
   logs.value.push({ ...entry, seq: ++logSeq });
   if (logs.value.length > MAX_LOG_ENTRIES) {
     logs.value.splice(0, logs.value.length - MAX_LOG_ENTRIES);

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use zihuan_core::retrieval::RetrievalStoreConfig;
+use zihuan_core::scheduler::ScheduledJobConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceRoleServiceConfig {
@@ -22,6 +23,10 @@ pub struct WorkspaceRoleServiceConfig {
     pub retrieval_store: Option<RetrievalStoreConfig>,
     #[serde(default)]
     pub web_search_engine_connection_id: Option<String>,
+    #[serde(default)]
+    pub rdb_id: Option<String>,
+    #[serde(default)]
+    pub scheduled_jobs: Vec<ScheduledJobConfig>,
     #[serde(default = "default_workspace_default_tools_enabled")]
     pub default_tools_enabled: HashMap<String, bool>,
 }
@@ -35,6 +40,16 @@ impl WorkspaceRoleServiceConfig {
     /// Whether the agent's retrieval store is the local on-disk backend.
     pub fn retrieval_store_is_local(&self) -> bool {
         self.retrieval_store.as_ref().is_some_and(RetrievalStoreConfig::is_local)
+    }
+
+    pub fn resolved_rdb_id(&self) -> Option<&str> {
+        self.rdb_id.as_deref().map(str::trim).filter(|value| !value.is_empty())
+    }
+
+    /// The scheduled job entries that actually schedule: enabled, with a non-blank task
+    /// name, a valid trigger, and no duplicate task name.
+    pub fn resolved_scheduled_jobs(&self) -> Vec<ScheduledJobConfig> {
+        ScheduledJobConfig::resolved(&self.scheduled_jobs)
     }
 }
 

@@ -5,11 +5,12 @@ use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatEmotionDimensionConfig;
 use async_trait::async_trait;
 use log::{info, warn};
-use zihuan_core::agent::declarative_agent::{list_agent_ids, AgentHost};
+use zihuan_core::agent::declarative_agent::list_agent_ids;
 use zihuan_core::agent::runtime_context::current_agent_resources;
-use zihuan_core::agent::tools::memory_tools::register_memory_tools;
 use zihuan_core::agent::tools::{LongTaskContext, ToolCallingEngine, ToolCallingStopReason};
-use zihuan_core::agent::{LLM_KIND_MAIN, LLM_KIND_MATH_PROGRAMMING};
+use zihuan_core::agent::{
+    AgentServiceContext, MemoryCapability, LLM_KIND_MAIN, LLM_KIND_MATH_PROGRAMMING,
+};
 use zihuan_core::error::Result;
 use zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_OWNER_TYPE;
 use zihuan_core::graph::DataValue;
@@ -22,7 +23,6 @@ use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
 };
 use zihuan_core::steer::message_with_api_style;
-use zihuan_core::storage::AgentMemoryAccessContext;
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
 use crate::qq_chat::logging::QqChatToolCallingObserver;
@@ -33,14 +33,14 @@ use crate::qq_chat::{
     QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatTaskTrace, LOG_PREFIX,
 };
 use crate::tools::{
-    AgentMemoryBackend, AgentMemoryToolResources, EditableQqAgentTool, GetAgentPublicInfoTool,
-    GetFunctionListTool, GetRecentGroupMessagesTool, GetRecentUserMessagesTool,
-    ImageUnderstandTool, ReplyMessageTool, SaveImageTool, SearchQqMessagesTool,
-    SearchSimilarImagesTool, SharedTool, ToolNotificationTarget, WebSearchTool,
-    DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
-    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
-    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_SAVE_IMAGE,
-    DEFAULT_TOOL_SEARCH_QQ_MESSAGES, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
+    qq_memory_access_context, EditableQqAgentTool, GetAgentPublicInfoTool, GetFunctionListTool,
+    GetRecentGroupMessagesTool, GetRecentUserMessagesTool, ImageUnderstandTool, ReplyMessageTool,
+    SaveImageTool, SearchQqMessagesTool, SearchSimilarImagesTool, SharedTool,
+    ToolNotificationTarget, WebSearchTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
+    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
+    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
+    DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_SAVE_IMAGE, DEFAULT_TOOL_SEARCH_QQ_MESSAGES,
+    DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
 };
 
 /// Output of the QQ brain invocation for one turn.
@@ -127,85 +127,51 @@ impl QqBrain {
             preprompt_context: preprompt_context.clone(),
         }));
 
-        let memory_backend = ctx
-            .local_memory_store
-            .cloned()
-            .map(AgentMemoryBackend::LocalFile)
-            .or_else(|| ctx.retrieval_store.cloned().map(AgentMemoryBackend::RetrievalStore));
-        let memory_resources = memory_backend.as_ref().and_then(|memory_backend| {
-            let embedding_model = ctx.embedding_model.cloned();
-            if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_))
-                && embedding_model.is_none()
-            {
-                log::warn!(
-                    "memory tools disabled because the configured backend has no embedding model"
-                );
-                None
-            } else {
-                Some(AgentMemoryToolResources {
-                    memory_backend: memory_backend.clone(),
-                    embedding_model,
-                    llm: Arc::clone(ctx.llm),
-                    access: AgentMemoryAccessContext {
-                        sender_id: Some(sender_id.to_string()),
-                        group_id: if is_group {
-                            Some(target_id.to_string())
-                        } else {
-                            prepared_input.event.group_id.map(|value| value.to_string())
-                        },
-                        is_group,
-                        admin: false,
-                        skip_expiry_extend: false,
-                    },
-                })
-            }
-        });
+        let memory_access =
+            qq_memory_access_context(sender_id, target_id, is_group, prepared_input.event.group_id);
+        let service_context = AgentServiceContext::new()
+            .with_memory(MemoryCapability::resolve(
+                ctx.local_memory_store.cloned(),
+                ctx.retrieval_store.cloned(),
+                ctx.embedding_model.cloned(),
+            ))
+            .with_llm(LLM_KIND_MAIN, Arc::clone(ctx.llm))
+            .with_llm(LLM_KIND_MATH_PROGRAMMING, Arc::clone(ctx.math_programming_llm))
+            .with_tool(
+                DEFAULT_TOOL_WEB_SEARCH,
+                Arc::new(wrap_brain_tool_with_quota(
+                    WebSearchTool::new(ctx.web_search_engine.clone()),
+                    tool_quota.clone(),
+                )),
+            )
+            .with_tool(
+                DEFAULT_TOOL_IMAGE_UNDERSTAND,
+                Arc::new(ImageUnderstandTool::new(
+                    Some(prepared_input.event.clone()),
+                    ctx.rdb_pool.cloned(),
+                    ctx.s3_ref.cloned(),
+                    ToolNotificationTarget::dashboard(),
+                )),
+            )
+            .with_tool(
+                DEFAULT_TOOL_SEARCH_QQ_MESSAGES,
+                Arc::new(SearchQqMessagesTool::new(
+                    ctx.rdb_pool.cloned(),
+                    ToolNotificationTarget::new(None, target_id.to_string(), None, is_group, false),
+                )),
+            );
 
         // Definition-driven agent host for this turn: memory tools plus the web/image tools the research
-        // agent escalates to, and the LLM handles their `llm_kind` resolves to.
-        let mut agent_host = AgentHost::new();
-        match memory_resources {
-            Some(resources) => register_memory_tools(&mut agent_host, resources),
-            None => {
-                agent_host.register_disabled_tools(
-                    ["list_memory_keys", "search_memory", "update_memory"],
-                    "memory backend is not configured",
-                );
-            }
-        }
-        agent_host.register_tool(
-            DEFAULT_TOOL_WEB_SEARCH,
-            Arc::new(wrap_brain_tool_with_quota(
-                WebSearchTool::new(ctx.web_search_engine.clone()),
-                tool_quota.clone(),
-            )),
-        );
-        agent_host.register_tool(
-            DEFAULT_TOOL_IMAGE_UNDERSTAND,
-            Arc::new(ImageUnderstandTool::new(
-                Some(prepared_input.event.clone()),
-                ctx.rdb_pool.cloned(),
-                ctx.s3_ref.cloned(),
-                ToolNotificationTarget::dashboard(),
-            )),
-        );
-        // Bound to this turn's session so a caller that omits the group searches the current one.
-        agent_host.register_tool(
-            DEFAULT_TOOL_SEARCH_QQ_MESSAGES,
-            Arc::new(SearchQqMessagesTool::new(
-                ctx.rdb_pool.cloned(),
-                ToolNotificationTarget::new(None, target_id.to_string(), None, is_group, false),
-            )),
-        );
-        // `main` is the service's main model; the memory agent uses it, the research agent
-        // (`math_programming`) use the dedicated math/programming model.
-        agent_host.register_llm(LLM_KIND_MAIN, Arc::clone(ctx.llm));
-        agent_host.register_llm(LLM_KIND_MATH_PROGRAMMING, Arc::clone(ctx.math_programming_llm));
+        // agent escalates to, and the LLM handles their `llm_kind` resolves to. `main` is the
+        // service's main model; the memory agent uses it, the research agent (`math_programming`)
+        // uses the dedicated math/programming model.
+        let memory_enabled = service_context.memory().is_some();
+        let mut agent_host = service_context.build_host(memory_access);
 
-        // Publish the memory agent first so the research agent can reference it.
-        let memory_enabled = memory_backend.is_some();
+        // The memory agent is composed and registered by `build_host`; grab it first so the
+        // research agent can reference it.
         let mut added_agent_ids = HashSet::new();
-        if let Some(tool) = agent_host.publish_logged(DEFAULT_TOOL_MEMORY_AGENT) {
+        if let Some(tool) = agent_host.tool(DEFAULT_TOOL_MEMORY_AGENT) {
             if memory_enabled && service.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
                 brain.add_tool(wrap_brain_tool_with_quota(
                     SharedTool::new(tool),

@@ -13,6 +13,7 @@ use zihuan_core::model_inference::message_content_utils::{
 use zihuan_core::system_config::current_context_compaction_percent;
 
 use zihuan_core::agent::tools::ToolCallingStopReason;
+use zihuan_core::agent::MemoryCapability;
 
 use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use crate::qq_chat::resources::current_qq_chat_role_service_config;
@@ -28,10 +29,9 @@ use zihuan_core::graph::tool_spec::{
 use zihuan_core::graph::DataValue;
 
 use super::super::super::tools::{
-    format_public_info_message, AgentMemoryBackend, AgentMemoryToolResources,
+    format_public_info_message, qq_memory_access_context, AgentMemoryToolResources,
     QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
-use zihuan_core::storage::AgentMemoryAccessContext;
 
 use crate::storage::qq_chat_history_store::{
     chat_preprompt_history_key, conversation_history_key, load_history, save_history,
@@ -195,34 +195,21 @@ impl QqChatAgentServiceInner {
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
         let chat_preprompt_history_key = chat_preprompt_history_key(sender_id);
-        let preprompt_memory_backend = ctx
-            .local_memory_store
-            .cloned()
-            .map(AgentMemoryBackend::LocalFile)
-            .or_else(|| ctx.retrieval_store.cloned().map(AgentMemoryBackend::RetrievalStore));
-        let preprompt_memory_resources = preprompt_memory_backend.and_then(|memory_backend| {
-            let embedding_model = ctx.embedding_model.cloned();
-            if !matches!(memory_backend, AgentMemoryBackend::LocalFile(_))
-                && embedding_model.is_none()
-            {
-                return None;
-            }
-            Some(AgentMemoryToolResources {
-                memory_backend,
-                embedding_model,
-                llm: Arc::clone(ctx.llm),
-                access: AgentMemoryAccessContext {
-                    sender_id: Some(sender_id.to_string()),
-                    group_id: if is_group {
-                        Some(target_id.to_string())
-                    } else {
-                        prepared_input.event.group_id.map(|value| value.to_string())
-                    },
-                    is_group,
-                    admin: false,
-                    skip_expiry_extend: false,
-                },
-            })
+        let preprompt_memory_resources = MemoryCapability::resolve(
+            ctx.local_memory_store.cloned(),
+            ctx.retrieval_store.cloned(),
+            ctx.embedding_model.cloned(),
+        )
+        .map(|memory| AgentMemoryToolResources {
+            memory_backend: memory.backend,
+            embedding_model: memory.embedding_model,
+            llm: Arc::clone(ctx.llm),
+            access: qq_memory_access_context(
+                sender_id,
+                target_id,
+                is_group,
+                prepared_input.event.group_id,
+            ),
         });
         let preprompt_context = run_before_brain(
             &mut qq_procedure_context(&chat_preprompt_history_key, None),
@@ -234,7 +221,6 @@ impl QqChatAgentServiceInner {
                 input: &prepared_input,
                 bot_name: ctx.bot_name,
                 bot_id,
-                agent_id: ctx.agent_id,
                 sender_id,
                 target_id,
                 is_group,
@@ -516,6 +502,10 @@ impl QqChatAgentServiceInner {
             ));
         }
         save_history(ctx.cache, &history_key, history);
+
+        if visible_assistant_history_text.is_some() {
+            zihuan_core::scheduler::rearm_triggered_jobs(ctx.agent_id, sender_id);
+        }
         *ctx.session_state_store.lock().unwrap() = turn_session_state.lock().unwrap().clone();
 
         let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {
@@ -705,6 +695,11 @@ impl QqChatAgentServiceInner {
             ));
         }
         save_history(ctx.cache, history_key, history);
+        // Same re-arm rule as the main reply path: only an actual reply to the sender
+        // starts their scheduled-job timers.
+        if visible_assistant_history_text.is_some() {
+            zihuan_core::scheduler::rearm_triggered_jobs(ctx.agent_id, sender_id);
+        }
         *ctx.session_state_store.lock().unwrap() = turn_session_state.lock().unwrap().clone();
 
         let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {

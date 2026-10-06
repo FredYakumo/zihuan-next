@@ -46,6 +46,8 @@ fn provider(enabled: bool) -> Arc<dyn InferenceToolProvider> {
         embedding_model_ref_id: None,
         retrieval_store: None,
         web_search_engine_connection_id: None,
+        rdb_id: None,
+        scheduled_jobs: vec![],
         default_tools_enabled: HashMap::from([("image_understand".to_string(), false)]),
     };
     let agent = RoleServiceConfig {

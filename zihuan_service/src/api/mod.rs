@@ -341,6 +341,11 @@ pub fn build_router(
                 .put(settings::update_context_compaction_settings),
         )
         .push(
+            Router::with_path("settings/memory-agent-settings")
+                .get(settings::get_memory_agent_settings)
+                .put(settings::update_memory_agent_settings),
+        )
+        .push(
             Router::with_path("settings/python-runtime")
                 .get(settings::get_python_runtime)
                 .put(settings::update_python_runtime),
@@ -388,6 +393,7 @@ pub fn build_router(
                 )
                 .push(Router::with_path("redis").get(explorer::query_redis))
                 .push(Router::with_path("weaviate").get(explorer::query_weaviate))
+                .push(Router::with_path("media-image").get(explorer::serve_media_image))
                 .push(
                     Router::with_path("agent-memory").post(explorer::create_agent_memory).push(
                         Router::with_path("<object_id>")

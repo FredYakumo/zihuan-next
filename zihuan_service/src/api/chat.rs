@@ -22,7 +22,8 @@ use zihuan_core::agent::{
     Agent, AgentCancellation, ContextCompactionEvent, ContextCompactionObserver,
 };
 use zihuan_core::chat_history::{
-    chat_history_dir, delete_session_title, load_session_title, write_session_title,
+    chat_history_dir, chat_session_file_path, delete_session_title, load_session_title,
+    write_session_title,
 };
 use zihuan_core::command::{CommandChannel, CommandContext};
 use zihuan_core::config::llm_refs::load_llm_refs;
@@ -1475,6 +1476,13 @@ async fn execute_chat_streaming(
             let Some(role_service) = manager.running_role_service(&agent_id) else {
                 return Err(zihuan_core::string_error!("agent '{agent_id}' is not running"));
             };
+            // Every inbound user turn re-arms the agent's scheduled jobs (e.g. sender-silence
+            // triggers keyed by session); the scheduler no-ops when the agent registered none.
+            // QQ chat agents arm their jobs from adapter events keyed by real sender ids, so
+            // dashboard turns must not re-arm them under session ids.
+            if zihuan_service::role::is_workspace_agent(role_service.agent()) {
+                zihuan_core::scheduler::rearm_triggered_jobs(&agent_id, &turn_session_id);
+            }
             // Bind this turn's model overrides into a turn-scoped agent at inference time, so
             // the agent handed to the brain procedure already carries its models. With no
             // override the role's own configured binding is used as-is.
@@ -2600,13 +2608,6 @@ fn resolve_effective_workspace_path(
         "Workspace Agent Service requires a workspace_path for new sessions and could not determine current directory"
             .to_string(),
     ))
-}
-
-fn chat_session_file_path(session_id: &str) -> Result<PathBuf> {
-    if session_id.trim().is_empty() {
-        return Err(Error::ValidationError("session_id must not be empty".to_string()));
-    }
-    Ok(chat_history_dir()?.join(format!("{session_id}.jsonl")))
 }
 
 fn chat_fork_metadata_path(session_id: &str) -> Result<PathBuf> {

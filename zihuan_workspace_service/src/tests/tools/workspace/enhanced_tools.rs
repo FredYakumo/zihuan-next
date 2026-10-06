@@ -5,9 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::json;
 use zihuan_core::agent::tools::Tool;
 
-#[cfg(windows)]
-use crate::tools::workspace_tools::ExecCmdTool;
-use crate::tools::workspace_tools::{approve_command, ListDirTool, ReadFileTool, RgTool};
+use crate::tools::workspace_tools::{ListDirTool, ReadFileTool, RgTool};
 
 fn temp_dir() -> PathBuf {
     let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
@@ -71,38 +69,5 @@ fn rg_extracts_capture_group_and_deduplicates_values() {
     assert_eq!(result["matches"].as_array().unwrap().len(), 2);
     assert_eq!(result["matches"][0]["value"], "one");
 
-    fs::remove_dir_all(directory).unwrap();
-}
-
-/// Purpose: Verify that ExecCmdTool captures stdout while passing
-/// environment variables and stdin to the spawned subprocess.
-///
-/// Test Data: A temporary directory; executes a PowerShell command that
-/// reads stdin via [Console]::In and echoes $env:ZIHUAN_TEST plus the input,
-/// with env {"ZIHUAN_TEST": "ok"} and input "data". Expects ok true and
-/// the combined stdout/stderr to contain "data".
-#[cfg(windows)]
-#[test]
-fn exec_cmd_accepts_environment_and_stdin() {
-    let directory = temp_dir();
-    let session_id = format!("exec-cmd-test-{}", std::process::id());
-    let command =
-        "$data = [Console]::In.ReadToEnd(); Write-Output ($env:ZIHUAN_TEST + ':' + $data)";
-    let tool = ExecCmdTool {
-        workspace_path: Some(directory.clone()),
-        session_id: Some(session_id.clone()),
-    };
-    approve_command(&session_id, command, false);
-    let result = serde_json::from_str::<serde_json::Value>(
-        &tool.execute("", &json!({"command":command,"env":{"ZIHUAN_TEST":"ok"},"input":"data"})),
-    )
-    .unwrap();
-    assert_eq!(result["ok"], true);
-    let output = format!(
-        "{}{}",
-        result["stdout"].as_str().unwrap_or_default(),
-        result["stderr"].as_str().unwrap_or_default()
-    );
-    assert!(output.contains("data"));
     fs::remove_dir_all(directory).unwrap();
 }

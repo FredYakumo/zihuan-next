@@ -34,11 +34,11 @@ use crate::tool_subgraph::data_type_to_json_schema_type;
 /// its `sub_agents` directory without any Rust-side definition.
 ///
 /// Paths are anchored at the crate root so they survive moving this file within `zihuan_core`.
+///
+/// The `memory_agent` is no longer a YAML definition — it is composed in Rust from the
+/// configurable prompts in [`crate::system_config::MemoryAgentPromptsSection`] and registered
+/// by [`crate::agent::tools::memory_tools::register_memory_agent_tool`].
 const BUILTIN_AGENT_DEFINITIONS: &[(&str, &str)] = &[
-    (
-        "memory_agent",
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../sub_agents/memory_agent.yaml")),
-    ),
     (
         "run_research_subagent",
         include_str!(concat!(
@@ -54,6 +54,11 @@ const BUILTIN_AGENT_DEFINITIONS: &[(&str, &str)] = &[
         )),
     ),
 ];
+
+/// Formerly built-in definitions that the application now provides in Rust. Startup removes
+/// their seeded YAML files so the on-disk catalog stays the source of truth for publishable
+/// agents; prompts that lived in them moved to the system configuration.
+const RETIRED_AGENT_DEFINITIONS: &[&str] = &["memory_agent"];
 
 /// Agent definitions live in the `sub_agents` directory relative to the current working
 /// directory, one YAML file per id.
@@ -80,6 +85,18 @@ pub fn seed_builtin_agents() -> Result<()> {
                 path.display()
             ))
         })?;
+    }
+
+    for id in RETIRED_AGENT_DEFINITIONS {
+        let path = directory.join(format!("{id}.yaml"));
+        if path.is_file() {
+            fs::remove_file(&path).map_err(|error| {
+                Error::ValidationError(format!(
+                    "failed to remove retired agent definition '{}': {error}",
+                    path.display()
+                ))
+            })?;
+        }
     }
     Ok(())
 }
@@ -462,8 +479,12 @@ impl DeclarativeAgent {
 
         let (messages, stop_reason) = engine.run(self.build_messages(&input));
         if !matches!(stop_reason, ToolCallingStopReason::Done) {
+            log::warn!(
+                "[DeclarativeAgent] agent '{}' did not complete normally: {stop_reason:?}",
+                self.definition.id
+            );
             return Err(Error::ValidationError(format!(
-                "agent '{}' did not complete normally: {stop_reason:?}",
+                "agent '{}' did not complete normally",
                 self.definition.id
             )));
         }
@@ -481,12 +502,20 @@ impl DeclarativeAgent {
         match self.definition.output_mode {
             AgentOutputMode::Text => Ok(AgentOutput::Text(text)),
             AgentOutputMode::JsonPorts => {
-                let output: Map<String, Value> = serde_json::from_str(&text).map_err(|error| {
-                    Error::ValidationError(format!(
-                        "agent '{}' returned invalid output JSON: {error}",
-                        self.definition.id
-                    ))
-                })?;
+                let output: Map<String, Value> = match serde_json::from_str(&text) {
+                    Ok(output) => output,
+                    Err(error) => {
+                        log::warn!(
+                            "[DeclarativeAgent] agent '{}' returned invalid output JSON: {error}; text: {}",
+                            self.definition.id,
+                            crate::utils::string_utils::shorten_text(&text, 800)
+                        );
+                        return Err(Error::ValidationError(format!(
+                            "agent '{}' returned invalid output JSON",
+                            self.definition.id
+                        )));
+                    }
+                };
                 let mut values = HashMap::new();
                 for port in &self.definition.outputs {
                     let value = output.get(&port.name);

@@ -6,6 +6,9 @@ use serde_json::{json, Map, Value};
 use sqlx::Row as SqlxRow;
 use zihuan_core::config::role_services::load_role_services;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use zihuan_core::url_utils::{
+    content_type_from_url, image_content_type_from_bytes, pct_encode, supported_image_content_type,
+};
 
 use crate::system_config::load_connections;
 use zihuan_core::data_refs::RelationalDbConnection;
@@ -18,11 +21,11 @@ use zihuan_core::storage::{
     update_memory_record_with_vector,
     weaviate::build_weaviate_ref as build_storage_weaviate_ref,
     AgentMemoryAccessContext, AgentMemorySearchHit, AgentMemoryUpsert, ConnectionKind,
-    RetrievalSchema, WeaviateClient,
+    ObjectStorageConfig, RetrievalSchema, WeaviateClient,
 };
 use zihuan_ims_service::qq_chat::{list_message_rate_limit_usage, reset_message_rate_limit_usage};
 
-use super::config::{render_bad_request, render_internal_error};
+use super::config::{render_bad_request, render_internal_error, render_not_found};
 
 #[derive(Deserialize)]
 pub struct QqChatRateLimitUsageQuery {
@@ -1358,6 +1361,37 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
     res.render(Json(ServiceImageResponse { items, backend: "elasticsearch" }));
 }
 
+/// Streams one cached media object from object storage so the WebUI can
+/// preview images whose `rustfs_path` is not directly reachable.
+#[handler]
+pub async fn serve_media_image(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let Some(object_key) = req
+        .query::<String>("path")
+        .map(|value| value.trim().trim_start_matches('/').to_string())
+        .filter(|value| !value.is_empty() && !value.contains(".."))
+    else {
+        return render_bad_request(res, "path is required".into());
+    };
+    let Some(storage) = ObjectStorageConfig::from_env() else {
+        return render_internal_error(res, "object storage is not configured");
+    };
+    let bytes = match storage.as_ref().get_object_bytes(&object_key).await {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            log::warn!("[explorer] failed to load media object '{}': {}", object_key, error);
+            return render_not_found(res, "media object not found");
+        }
+    };
+    let content_type = req
+        .query::<String>("mime_type")
+        .and_then(|value| supported_image_content_type(&value).map(ToOwned::to_owned))
+        .or_else(|| image_content_type_from_bytes(&bytes).map(ToOwned::to_owned))
+        .unwrap_or_else(|| content_type_from_url(&object_key).to_string());
+    res.headers_mut()
+        .insert(salvo::http::header::CONTENT_TYPE, content_type.parse().unwrap());
+    res.write_body(bytes).ok();
+}
+
 fn load_service_and_connections(
     service_id: &str,
 ) -> zihuan_core::error::Result<(
@@ -1486,6 +1520,31 @@ fn weaviate_image_items(response: Value, kind: &'static str) -> Vec<ServiceImage
         })
         .collect()
 }
+
+/// URL the WebUI can use to preview this image: prefer the cached object
+/// storage copy served by the media proxy, then the original remote source.
+fn image_preview_url(
+    rustfs_path: Option<&str>,
+    original_source: Option<&str>,
+    mime_type: Option<&str>,
+) -> Option<String> {
+    if let Some(path) = rustfs_path.map(str::trim).filter(|value| !value.is_empty()) {
+        let mut url = format!("/api/explorer/media-image?path={}", pct_encode(path));
+        if let Some(mime) = mime_type.and_then(supported_image_content_type) {
+            url.push_str("&mime_type=");
+            url.push_str(mime);
+        }
+        return Some(url);
+    }
+    original_source
+        .filter(|value| {
+            value.starts_with("http://")
+                || value.starts_with("https://")
+                || value.starts_with("data:image/")
+        })
+        .map(ToOwned::to_owned)
+}
+
 fn image_item(
     object_id: String,
     value: &Value,
@@ -1494,16 +1553,21 @@ fn image_item(
     backend: &'static str,
 ) -> ServiceImageItem {
     let string = |key| value.get(key).and_then(Value::as_str).map(ToOwned::to_owned);
+    let rustfs_path = string("rustfs_path");
+    let mime_type = string("mime_type");
+    let original_source = string("original_source");
+    let url =
+        image_preview_url(rustfs_path.as_deref(), original_source.as_deref(), mime_type.as_deref());
     ServiceImageItem {
         object_id,
         media_id: string("media_id"),
         name: string("name"),
         description: string("description"),
-        original_source: string("original_source"),
-        rustfs_path: string("rustfs_path"),
-        mime_type: string("mime_type"),
+        original_source,
+        url,
+        rustfs_path,
+        mime_type,
         source: string("source"),
-        url: None,
         match_kinds: vec![kind],
         score,
         backend,

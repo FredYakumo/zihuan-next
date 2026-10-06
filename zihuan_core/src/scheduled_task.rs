@@ -1,6 +1,6 @@
 use crate::data_refs::RelationalDbConnection;
 use crate::error::{Error, Result};
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Duration, Local};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
@@ -196,35 +196,144 @@ pub async fn finish_task(
     Ok(())
 }
 
-pub async fn insert_dream_memory(
+/// Cancels every pending execution of one task for `triggered_by` and schedules a fresh one
+/// `delay` from now. This is the debounce primitive behind "run once the sender stays
+/// silent": each new event re-arms the task instead of queueing another run.
+pub async fn rearm_task(
     connection: &RelationalDbConnection,
-    agent_id: &str,
-    sender_id: &str,
-    chars: i64,
-    content: &str,
+    task_name: &str,
+    source_service: &str,
+    triggered_by: &str,
+    delay: Duration,
+    cancel_summary: Option<&str>,
+    schedule_summary: Option<&str>,
 ) -> Result<()> {
-    let id = Uuid::new_v4().to_string();
-    let now = Local::now();
-    match connection {
-        RelationalDbConnection::MySql(config) => {
-            sqlx::query("INSERT INTO dream_memory (id, agent_id, sender_id, created_at, chat_text_char_count, memory_content) VALUES (?, ?, ?, ?, ?, ?)").bind(id).bind(agent_id).bind(sender_id).bind(now).bind(chars).bind(content).execute(config.pool.as_ref().ok_or_else(pool_missing)?).await.map_err(Error::Database)?;
-        }
-        RelationalDbConnection::Sqlite(config) => {
-            sqlx::query("INSERT INTO dream_memory (id, agent_id, sender_id, created_at, chat_text_char_count, memory_content) VALUES (?, ?, ?, ?, ?, ?)").bind(id).bind(agent_id).bind(sender_id).bind(now.to_rfc3339()).bind(chars).bind(content).execute(config.pool.as_ref().ok_or_else(pool_missing)?).await.map_err(Error::Database)?;
-        }
-    }
-    Ok(())
+    cancel_pending_tasks(connection, task_name, source_service, triggered_by, cancel_summary)
+        .await?;
+    let entry = ScheduledTaskEntry::new(
+        task_name,
+        source_service,
+        Some(triggered_by.to_string()),
+        Local::now() + delay,
+        schedule_summary,
+    );
+    insert_task(connection, &entry).await
 }
 
-pub async fn latest_dream_memory(
+/// One-time migration for the retired `dream_memory` table: hands every stored memory of
+/// `agent_id` to `on_row` as `(sender_id, content)` and deletes the migrated rows, dropping
+/// the table once it is empty. Best-effort by design — when `on_row` fails, the remaining
+/// rows stay in place for the next start to retry.
+pub async fn migrate_legacy_dream_memory(
     connection: &RelationalDbConnection,
     agent_id: &str,
-    sender_id: &str,
-) -> Result<Option<String>> {
-    match connection {
-        RelationalDbConnection::MySql(config) => sqlx::query_scalar("SELECT memory_content FROM dream_memory WHERE agent_id = ? AND sender_id = ? ORDER BY created_at DESC LIMIT 1").bind(agent_id).bind(sender_id).fetch_optional(config.pool.as_ref().ok_or_else(pool_missing)?).await.map_err(Error::Database),
-        RelationalDbConnection::Sqlite(config) => sqlx::query_scalar("SELECT memory_content FROM dream_memory WHERE agent_id = ? AND sender_id = ? ORDER BY created_at DESC LIMIT 1").bind(agent_id).bind(sender_id).fetch_optional(config.pool.as_ref().ok_or_else(pool_missing)?).await.map_err(Error::Database),
+    mut on_row: impl FnMut(&str, &str) -> Result<()>,
+) -> Result<usize> {
+    let present: i64 = match connection {
+        RelationalDbConnection::MySql(config) => {
+            sqlx::query_scalar(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'dream_memory'",
+            )
+            .fetch_one(config.pool.as_ref().ok_or_else(pool_missing)?)
+            .await
+            .map_err(Error::Database)?
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'dream_memory'")
+                .fetch_one(config.pool.as_ref().ok_or_else(pool_missing)?)
+                .await
+                .map_err(Error::Database)?
+        }
+    };
+    if present == 0 {
+        return Ok(0);
     }
+    let rows: Vec<(String, String, String)> = match connection {
+        RelationalDbConnection::MySql(config) => sqlx::query(
+            "SELECT id, sender_id, memory_content FROM dream_memory WHERE agent_id = ? ORDER BY created_at ASC",
+        )
+        .bind(agent_id)
+        .fetch_all(config.pool.as_ref().ok_or_else(pool_missing)?)
+        .await
+        .map_err(Error::Database)?
+        .into_iter()
+        .map(|row| {
+            Ok((
+                row.try_get("id").map_err(Error::Database)?,
+                row.try_get("sender_id").map_err(Error::Database)?,
+                row.try_get("memory_content").map_err(Error::Database)?,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?,
+        RelationalDbConnection::Sqlite(config) => sqlx::query(
+            "SELECT id, sender_id, memory_content FROM dream_memory WHERE agent_id = ? ORDER BY created_at ASC",
+        )
+        .bind(agent_id)
+        .fetch_all(config.pool.as_ref().ok_or_else(pool_missing)?)
+        .await
+        .map_err(Error::Database)?
+        .into_iter()
+        .map(|row| {
+            Ok((
+                row.try_get("id").map_err(Error::Database)?,
+                row.try_get("sender_id").map_err(Error::Database)?,
+                row.try_get("memory_content").map_err(Error::Database)?,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?,
+    };
+    let mut migrated = 0;
+    for (id, sender_id, content) in rows {
+        on_row(&sender_id, &content)?;
+        match connection {
+            RelationalDbConnection::MySql(config) => {
+                sqlx::query("DELETE FROM dream_memory WHERE id = ?")
+                    .bind(&id)
+                    .execute(config.pool.as_ref().ok_or_else(pool_missing)?)
+                    .await
+                    .map_err(Error::Database)?;
+            }
+            RelationalDbConnection::Sqlite(config) => {
+                sqlx::query("DELETE FROM dream_memory WHERE id = ?")
+                    .bind(&id)
+                    .execute(config.pool.as_ref().ok_or_else(pool_missing)?)
+                    .await
+                    .map_err(Error::Database)?;
+            }
+        }
+        migrated += 1;
+    }
+    let remaining: i64 = match connection {
+        RelationalDbConnection::MySql(config) => {
+            sqlx::query_scalar("SELECT COUNT(*) FROM dream_memory")
+                .fetch_one(config.pool.as_ref().ok_or_else(pool_missing)?)
+                .await
+                .map_err(Error::Database)?
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            sqlx::query_scalar("SELECT COUNT(*) FROM dream_memory")
+                .fetch_one(config.pool.as_ref().ok_or_else(pool_missing)?)
+                .await
+                .map_err(Error::Database)?
+        }
+    };
+    if remaining == 0 {
+        match connection {
+            RelationalDbConnection::MySql(config) => {
+                sqlx::query("DROP TABLE IF EXISTS dream_memory")
+                    .execute(config.pool.as_ref().ok_or_else(pool_missing)?)
+                    .await
+                    .map_err(Error::Database)?;
+            }
+            RelationalDbConnection::Sqlite(config) => {
+                sqlx::query("DROP TABLE IF EXISTS dream_memory")
+                    .execute(config.pool.as_ref().ok_or_else(pool_missing)?)
+                    .await
+                    .map_err(Error::Database)?;
+            }
+        }
+    }
+    Ok(migrated)
 }
 
 pub async fn list_tasks(
