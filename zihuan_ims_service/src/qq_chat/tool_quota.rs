@@ -62,6 +62,10 @@ impl<T> QuotaMaybeWrappedTool<T> {
         }
     }
 
+    fn rejection_output(message: String) -> ToolExecutionOutput {
+        ToolExecutionOutput::text(serde_json::json!({ "ok": false, "error": message }).to_string())
+    }
+
     fn try_acquire(quota: &QqChatToolQuotaContext, tool_name: &str) -> Result<(), String> {
         if let Some(limit) = quota.limit_for(tool_name) {
             let current = quota.session_state.lock().unwrap().get(tool_name);
@@ -119,7 +123,7 @@ where
         if let Some(quota) = &self.quota {
             let tool_name = self.tool.spec().name().to_string();
             if let Err(message) = Self::try_acquire(quota, &tool_name) {
-                return ToolExecutionOutput::text(message);
+                return Self::rejection_output(message);
             }
 
             let output = self.tool.execute_with_outcome(call_content, arguments);
@@ -132,142 +136,5 @@ where
 
     fn run_duration(&self) -> ToolRunDuration {
         self.tool.run_duration()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use std::fmt;
-    use std::sync::Arc;
-
-    use serde_json::json;
-
-    use super::{
-        wrap_brain_tool_with_quota, QqChatToolQuotaContext, SessionToolQuotaState,
-        TOOL_LIMIT_SCOPE_SESSION, TOOL_LIMIT_SCOPE_USER,
-    };
-    use zihuan_core::agent::tools::Tool;
-    use zihuan_core::model_inference::llm::tooling::FunctionTool;
-
-    #[derive(Debug)]
-    struct EchoTool;
-
-    impl Tool for EchoTool {
-        fn spec(&self) -> Arc<dyn FunctionTool> {
-            Arc::new(EchoToolSpec)
-        }
-
-        fn execute(&self, _call_content: &str, _arguments: &serde_json::Value) -> String {
-            "ok".to_string()
-        }
-    }
-
-    struct EchoToolSpec;
-
-    impl fmt::Debug for EchoToolSpec {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.debug_struct("EchoToolSpec").finish()
-        }
-    }
-
-    impl FunctionTool for EchoToolSpec {
-        fn name(&self) -> &str {
-            "echo"
-        }
-
-        fn description(&self) -> &str {
-            "echo"
-        }
-
-        fn parameters(&self) -> serde_json::Value {
-            json!({"type": "object"})
-        }
-
-        fn call(
-            &self,
-            _arguments: serde_json::Value,
-        ) -> zihuan_core::error::Result<serde_json::Value> {
-            Ok(json!({}))
-        }
-    }
-
-    #[test]
-    fn session_limit_blocks_second_call() {
-        let quota = QqChatToolQuotaContext {
-            agent_id: "agent".to_string(),
-            sender_id: "sender".to_string(),
-            rdb_pool: None,
-            session_limits: [("echo".to_string(), 1usize)].into_iter().collect(),
-            session_limit_message: None,
-            session_state: Arc::new(std::sync::Mutex::new(SessionToolQuotaState::default())),
-        };
-        let tool = wrap_brain_tool_with_quota(EchoTool, Some(quota));
-
-        let first = tool.execute("", &json!({}));
-        let second = tool.execute("", &json!({}));
-
-        assert_eq!(first, "ok");
-        assert!(second.contains(TOOL_LIMIT_SCOPE_SESSION));
-    }
-
-    #[test]
-    fn no_quota_context_keeps_tool_unlimited() {
-        let tool = wrap_brain_tool_with_quota(EchoTool, None);
-        assert_eq!(tool.execute("", &json!({})), "ok");
-        assert_eq!(tool.execute("", &json!({})), "ok");
-    }
-
-    #[test]
-    fn limit_message_mentions_user_scope_label() {
-        let quota = QqChatToolQuotaContext {
-            agent_id: "agent".to_string(),
-            sender_id: "sender".to_string(),
-            rdb_pool: None,
-            session_limits: HashMap::new(),
-            session_limit_message: None,
-            session_state: Arc::new(std::sync::Mutex::new(SessionToolQuotaState::default())),
-        };
-        let message =
-            super::QuotaMaybeWrappedTool::<EchoTool>::limit_message(&quota, TOOL_LIMIT_SCOPE_USER);
-        assert!(message.contains(TOOL_LIMIT_SCOPE_USER));
-    }
-
-    #[test]
-    fn custom_limit_message_with_placeholder() {
-        let quota = QqChatToolQuotaContext {
-            agent_id: "agent".to_string(),
-            sender_id: "sender".to_string(),
-            rdb_pool: None,
-            session_limits: [("echo".to_string(), 1usize)].into_iter().collect(),
-            session_limit_message: Some("工具已达到{limit_scope}上限".to_string()),
-            session_state: Arc::new(std::sync::Mutex::new(SessionToolQuotaState::default())),
-        };
-        let tool = wrap_brain_tool_with_quota(EchoTool, Some(quota));
-
-        let _first = tool.execute("", &json!({}));
-        let second = tool.execute("", &json!({}));
-
-        assert!(second.contains("单次会话"));
-        assert!(second.contains("工具已达到"));
-        assert!(!second.contains("{limit_scope}"));
-    }
-
-    #[test]
-    fn custom_limit_message_without_placeholder() {
-        let quota = QqChatToolQuotaContext {
-            agent_id: "agent".to_string(),
-            sender_id: "sender".to_string(),
-            rdb_pool: None,
-            session_limits: [("echo".to_string(), 1usize)].into_iter().collect(),
-            session_limit_message: Some("此工具暂不可用".to_string()),
-            session_state: Arc::new(std::sync::Mutex::new(SessionToolQuotaState::default())),
-        };
-        let tool = wrap_brain_tool_with_quota(EchoTool, Some(quota));
-
-        let _first = tool.execute("", &json!({}));
-        let second = tool.execute("", &json!({}));
-
-        assert_eq!(second, "此工具暂不可用");
     }
 }

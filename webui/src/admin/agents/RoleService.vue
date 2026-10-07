@@ -93,7 +93,14 @@
                             <t-form-item v-if="form.workspace_memory_backend === 'retrieval_store'" label="检索数据库"
                                 required :status="!form.workspace_retrieval_store_id ? 'error' : undefined"
                                 :help="!form.workspace_retrieval_store_id ? '必须选择记忆库连接。' : undefined">
-                                <t-select v-model="form.workspace_retrieval_store_id" placeholder="请选择记忆库连接">
+                                <t-select v-model="form.workspace_retrieval_store_id" placeholder="请选择记忆库连接"
+                                    @change="handleWorkspaceRetrievalStoreChange">
+                                    <t-option class="agent-service-add-retrieval-option" value="__add_retrieval_database__"
+                                        label="新增检索数据库">
+                                        <span class="agent-service-add-model-option-content">
+                                            <AddIcon />新增检索数据库
+                                        </span>
+                                    </t-option>
                                     <t-option v-for="item in retrievalConnections" :key="item.config_id"
                                         :value="item.config_id" :label="item.name" />
                                 </t-select>
@@ -167,7 +174,14 @@
                                     </t-select>
                                 </t-form-item>
                                 <t-form-item label="检索数据库">
-                                    <t-select v-model="form.retrieval_store_id" placeholder="不使用" clearable>
+                                    <t-select v-model="form.retrieval_store_id" placeholder="不使用" clearable
+                                        @change="handleRetrievalStoreChange">
+                                        <t-option class="agent-service-add-retrieval-option" value="__add_retrieval_database__"
+                                            label="新增检索数据库">
+                                            <span class="agent-service-add-model-option-content">
+                                                <AddIcon />新增检索数据库
+                                            </span>
+                                        </t-option>
                                         <t-option value="" label="不使用" />
                                         <t-option value="__local_markdown__" label="本地 Markdown" />
                                         <t-option v-for="item in retrievalConnections" :key="item.config_id"
@@ -372,7 +386,14 @@
                         <t-form-item v-if="form.workspace_memory_backend === 'retrieval_store'" label="检索数据库" required
                             :status="!form.workspace_retrieval_store_id ? 'error' : undefined"
                             :help="!form.workspace_retrieval_store_id ? '必须选择记忆库连接。' : undefined">
-                            <t-select v-model="form.workspace_retrieval_store_id" placeholder="请选择记忆库连接">
+                            <t-select v-model="form.workspace_retrieval_store_id" placeholder="请选择记忆库连接"
+                                @change="handleWorkspaceRetrievalStoreChange">
+                                <t-option class="agent-service-add-retrieval-option" value="__add_retrieval_database__"
+                                    label="新增检索数据库">
+                                    <span class="agent-service-add-model-option-content">
+                                        <AddIcon />新增检索数据库
+                                    </span>
+                                </t-option>
                                 <t-option v-for="item in retrievalConnections" :key="item.config_id"
                                     :value="item.config_id" :label="item.name" />
                             </t-select>
@@ -514,7 +535,14 @@
                                 </t-select>
                             </t-form-item>
                             <t-form-item label="检索数据库">
-                                <t-select v-model="form.retrieval_store_id" placeholder="不使用" clearable>
+                                <t-select v-model="form.retrieval_store_id" placeholder="不使用" clearable
+                                    @change="handleRetrievalStoreChange">
+                                    <t-option class="agent-service-add-retrieval-option" value="__add_retrieval_database__"
+                                        label="新增检索数据库">
+                                        <span class="agent-service-add-model-option-content">
+                                            <AddIcon />新增检索数据库
+                                        </span>
+                                    </t-option>
                                     <t-option value="" label="不使用" />
                                     <t-option value="__local_markdown__" label="本地 Markdown" />
                                     <t-option v-for="item in retrievalConnections" :key="item.config_id"
@@ -1205,9 +1233,9 @@
         <ConfigImportDialog v-model:visible="showModelConfigDialog" title="新增模型配置" create-label="新增模型配置"
             :loading="modelImporting" @create="openModelCreatePage" @clipboard-import="importModelFromClipboard"
             @file-change="handleModelFileChange" />
-        <ConfigImportDialog v-model:visible="showRetrievalDatabaseDialog" title="新增检索数据库" create-label="新增检索数据库"
-            :loading="retrievalDatabaseImporting" @create="openRetrievalDatabaseCreatePage"
-            @clipboard-import="importRetrievalDatabaseFromClipboard" @file-change="handleRetrievalDatabaseFileChange" />
+        <RetrievalDatabaseDialog v-model:visible="showRetrievalDatabaseDialog" @created="handleRetrievalDatabaseCreated"
+            @create-page="openRetrievalDatabaseCreatePage" @clipboard-import="importRetrievalDatabaseFromClipboard"
+            @file-change="handleRetrievalDatabaseFileChange" />
         <ConfigImportDialog v-model:visible="showWebSearchDialog" title="新增 Web Search" create-label="新增 Web Search"
             :loading="webSearchImporting" @create="openWebSearchCreatePage"
             @clipboard-import="importWebSearchFromClipboard" @file-change="handleWebSearchFileChange" />
@@ -1221,6 +1249,7 @@ import AdminPageHeader from "../components/AdminPageHeader.vue";
 import ConfigImportDialog from "../components/ConfigImportDialog.vue";
 import IgnoreRulesList from "../components/IgnoreRulesList.vue";
 import RateLimitConfigDrawer from "../components/RateLimitConfigDrawer.vue";
+import RetrievalDatabaseDialog from "../components/RetrievalDatabaseDialog.vue";
 import ScheduledJobsEditor from "../components/ScheduledJobsEditor.vue";
 import ServiceModelConfig from "../components/ServiceModelConfig.vue";
 import { useRoleServicePage } from "./roleServicePage";
@@ -1238,6 +1267,7 @@ export default defineComponent({
         RotateIcon,
         RefreshIcon,
         RateLimitConfigDrawer,
+        RetrievalDatabaseDialog,
         ScheduledJobsEditor,
         ServiceModelConfig,
     },

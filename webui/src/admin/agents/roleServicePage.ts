@@ -1,6 +1,6 @@
 import { computed, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
-import { system, type ServiceWithRuntime } from "../../api/client";
+import { system, type ConnectionConfig, type ServiceWithRuntime } from "../../api/client";
 import { useAgents } from "./useAgents";
 import { assertConnectionConfig, assertLlmConfig } from "../model";
 
@@ -149,6 +149,7 @@ const showModelConfigDialog = ref(false);
 const modelImporting = ref(false);
 const showRetrievalDatabaseDialog = ref(false);
 const retrievalDatabaseImporting = ref(false);
+const retrievalDialogTarget = ref<"qq_chat" | "workspace">("workspace");
 const showWebSearchDialog = ref(false);
 const webSearchImporting = ref(false);
 
@@ -167,8 +168,43 @@ function handleImageUnderstandModelChange(value: string | number) {
 function handleMemoryBackendChange(value: string | number) {
   if (String(value) !== "__add_retrieval_database__") return;
   form.workspace_memory_backend = "";
+  retrievalDialogTarget.value = "workspace";
   showRetrievalDatabaseDialog.value = true;
 }
+
+function handleRetrievalStoreChange(value: string | number) {
+  if (String(value) !== "__add_retrieval_database__") return;
+  form.retrieval_store_id = "";
+  retrievalDialogTarget.value = "qq_chat";
+  showRetrievalDatabaseDialog.value = true;
+}
+
+function handleWorkspaceRetrievalStoreChange(value: string | number) {
+  if (String(value) !== "__add_retrieval_database__") return;
+  form.workspace_retrieval_store_id = "";
+  retrievalDialogTarget.value = "workspace";
+  showRetrievalDatabaseDialog.value = true;
+}
+
+async function selectCreatedRetrievalDatabase(connection: ConnectionConfig) {
+  await load();
+  if (retrievalDialogTarget.value === "qq_chat") {
+    form.retrieval_store_id = connection.config_id;
+  } else {
+    form.workspace_memory_backend = "retrieval_store";
+    form.workspace_retrieval_store_id = connection.config_id;
+  }
+  showRetrievalDatabaseDialog.value = false;
+}
+
+async function handleRetrievalDatabaseCreated(connection: ConnectionConfig) {
+  try {
+    await selectCreatedRetrievalDatabase(connection);
+  } catch (error) {
+    alert(`检索数据库选择失败：${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function handleWebSearchChange(value: string | number) {
   if (String(value) !== "__add_web_search__") return;
   form.web_search_engine_connection_id = "";
@@ -182,7 +218,7 @@ function openModelCreatePage() {
 
 function openRetrievalDatabaseCreatePage() {
   showRetrievalDatabaseDialog.value = false;
-  router.push({ path: "/connections", query: { action: "create" } });
+  router.push({ path: "/connections", query: { action: "create", type: "weaviate" } });
 }
 
 function openWebSearchCreatePage() {
@@ -234,10 +270,7 @@ async function importRetrievalDatabaseFromText(raw: string) {
       throw new Error("检索数据库仅支持 Weaviate 或 Elasticsearch 连接配置");
     }
     const created = await system.connections.create({ name: config.name, enabled: config.enabled, kind: config.kind });
-    await load();
-    form.workspace_memory_backend = "retrieval_store";
-    form.workspace_retrieval_store_id = created.config_id;
-    showRetrievalDatabaseDialog.value = false;
+    await selectCreatedRetrievalDatabase(created);
   } catch (error) {
     alert(`检索数据库导入失败：${error instanceof Error ? error.message : String(error)}`);
   } finally {
@@ -391,6 +424,9 @@ return {
   handlePrimaryModelChange,
   handleImageUnderstandModelChange,
   handleMemoryBackendChange,
+  handleRetrievalStoreChange,
+  handleWorkspaceRetrievalStoreChange,
+  handleRetrievalDatabaseCreated,
   handleWebSearchChange,
   openModelCreatePage,
   openRetrievalDatabaseCreatePage,

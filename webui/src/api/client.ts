@@ -772,6 +772,14 @@ export const system = {
       return request("DELETE", `/system/connections/${configId}`);
     },
   },
+  retrievalDatabases: {
+    generateInstallCommand(payload: RetrievalDatabaseInstallRequest): Promise<DetailedInstallCommandResult> {
+      return request("POST", "/system/retrieval-databases/install-command", payload);
+    },
+    install(payload: RetrievalDatabaseInstallRequest): Promise<{ accepted: boolean; task_id: string }> {
+      return request("POST", "/system/retrieval-databases/install", payload);
+    },
+  },
   llm: {
     list(): Promise<LlmConfig[]> {
       return request("GET", "/system/llm-refs");
@@ -1345,6 +1353,8 @@ export interface SetupProgressEvent {
   message: string;
   progress_percent: number | null;
   error: string | null;
+  /** Present on the finished event of a retrieval database install task. */
+  connection?: ConnectionConfig;
 }
 
 export interface LlmSetupConfig {
@@ -1442,6 +1452,11 @@ export interface DetailedSetupConfig {
 export interface DetailedInstallCommandResult {
   install_command: string;
   connections: ConnectionConfig[];
+}
+
+export interface RetrievalDatabaseInstallRequest {
+  install_method: DetailedSetupInstallMethod;
+  search: DetailedSearchSetupConfig;
 }
 
 export const setup = {

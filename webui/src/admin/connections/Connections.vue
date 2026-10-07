@@ -219,8 +219,13 @@ const createChoiceVisible = ref(false);
 
 function openCreateChoice() { createChoiceVisible.value = true; }
 if (route.query.action === "create") {
-  if (route.query.type === "web_search_engine") {
-    startCreate("web_search_engine");
+  const queryType = route.query.type;
+  if (
+    queryType === "web_search_engine" ||
+    queryType === "weaviate" ||
+    queryType === "elasticsearch"
+  ) {
+    startCreate(queryType);
   } else {
     openCreateChoice();
   }

@@ -76,6 +76,17 @@ pub fn build_router(
                         ),
                 )
                 .push(
+                    Router::with_path("retrieval-databases")
+                        .push(
+                            Router::with_path("install-command")
+                                .post(config::retrieval_databases::post_retrieval_install_command),
+                        )
+                        .push(
+                            Router::with_path("install")
+                                .post(config::retrieval_databases::post_retrieval_install),
+                        ),
+                )
+                .push(
                     Router::with_path("llm-refs")
                         .get(config::llm_refs::list_llm_refs)
                         .post(config::llm_refs::create_llm_ref)
