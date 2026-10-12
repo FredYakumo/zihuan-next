@@ -40,6 +40,7 @@
         <template #updated_at="{ row }">{{ formatTime(row.updated_at) }}</template>
         <template #actions="{ row }">
           <div class="llm-actions">
+            <t-button variant="text" size="small" @click="router.push('/data-explorer/models/' + encodeURIComponent(row.config_id))">使用详细</t-button>
             <t-button variant="text" size="small" @click="editItem(row)">编辑</t-button>
             <t-button variant="text" size="small" @click="copyLlmConfig(row)">{{ copiedId === row.config_id ? "已复制" : "复制" }}</t-button>
             <t-popconfirm content="确认删除这个模型配置吗？" @confirm="removeItem(row.config_id)"><t-button variant="text" theme="danger" size="small">删除</t-button></t-popconfirm>
@@ -119,7 +120,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import type { LlmConfig } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
@@ -129,6 +130,7 @@ import ConnectionCredentialInput from "../components/ConnectionCredentialInput.v
 const { filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, isCandleMode, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, updateEnabled, updatingEnabledIds, localLlmOptionLabel, compactId, formatTime, copiedId, copyConfig, handleFileChange } = useLlm();
 
 const route = useRoute();
+const router = useRouter();
 const importFileInput = ref<HTMLInputElement | null>(null);
 const columns = [
   { colKey: "name", title: "配置名称", width: 210 },
@@ -136,7 +138,7 @@ const columns = [
   { colKey: "model", title: "模型", ellipsis: true },
   { colKey: "endpoint", title: "接口地址", ellipsis: true },
   { colKey: "updated_at", title: "更新时间", width: 170 },
-  { colKey: "actions", title: "操作", width: 270, fixed: "right" },
+  { colKey: "actions", title: "操作", width: 340, fixed: "right" },
 ];
 const contextLengthPresets = [
   { label: "64K", value: 64 * 1024 },

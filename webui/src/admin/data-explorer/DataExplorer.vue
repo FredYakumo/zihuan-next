@@ -1,6 +1,7 @@
 <template>
   <section class="page data-explorer-page">
     <AdminPageHeader title="数据检索" />
+    <ModelStatistics />
 
     <t-card title="Service" bordered header-bordered>
       <t-table row-key="config_id" :data="explorerServices" :columns="columns" :hover="true">
@@ -26,6 +27,7 @@ import type { PrimaryTableCol } from "tdesign-vue-next";
 import { useRouter } from "vue-router";
 
 import type { ServiceWithRuntime } from "../../api/client";
+import ModelStatistics from "./ModelStatistics.vue";
 import { serviceCapabilities, type ServiceCapability, useDataExplorerList } from "./useDataExplorer";
 
 const router = useRouter();

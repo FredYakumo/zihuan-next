@@ -15,6 +15,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "echarts": "^6.1.0",
     "litegraph.js": "^0.7.18",
     "markdown-it": "^14.1.1",
     "tdesign-icons-vue-next": "^0.4.4",

@@ -1,4 +1,5 @@
 // REST API client for Zihuan Next backend
+import type { ModelUsageSummary } from "../admin/model";
 
 import type {
   GraphTabInfo,
@@ -801,6 +802,9 @@ export const system = {
     delete(configId: string): Promise<{ ok: boolean }> {
       return request("DELETE", `/system/llm-refs/${configId}`);
     },
+  },
+  modelUsage: {
+    list(): Promise<ModelUsageSummary[]> { return request("GET", "/system/model-usage"); },
   },
   services: {
     list(): Promise<ServiceWithRuntime[]> {

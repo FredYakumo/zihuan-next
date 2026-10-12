@@ -35,6 +35,23 @@ impl LlmRefConfig {
             ModelRefSpec::TextEmbeddingLocal { .. } => None,
         }
     }
+
+    /// The local model name when this ref is a `text_embedding_local` model.
+    pub fn local_embedding_model_name(&self) -> Result<String> {
+        match &self.model {
+            ModelRefSpec::TextEmbeddingLocal { model_name } if !model_name.trim().is_empty() => {
+                Ok(model_name.trim().to_string())
+            }
+            ModelRefSpec::TextEmbeddingLocal { .. } => Err(crate::string_error!(
+                "embedding model_ref '{}' has empty model_name",
+                self.name
+            )),
+            ModelRefSpec::ChatLlm { .. } => Err(crate::string_error!(
+                "model_ref '{}' is not a text_embedding_local config",
+                self.name
+            )),
+        }
+    }
 }
 
 impl ConfigRecord for LlmRefConfig {

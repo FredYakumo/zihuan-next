@@ -8,6 +8,7 @@ pub mod graph_exec_helpers;
 pub mod hyperparams;
 pub mod log;
 pub mod model_http;
+pub mod model_usage;
 pub mod plugins;
 pub mod registry;
 pub mod scheduled_tasks;
@@ -53,6 +54,7 @@ pub fn build_router(
         )
         .push(
             Router::with_path("system")
+                .push(Router::with_path("model-usage").get(model_usage::get_model_usage))
                 .push(
                     Router::with_path("connections")
                         .get(config::connections::list_connections)

@@ -1540,3 +1540,29 @@ export function agentAvatarUrl(
 export function agentInitial(name: string): string {
   return (name || "B").trim().slice(0, 1).toUpperCase();
 }
+export interface ModelUsageRecord {
+  config_id: string;
+  used_at: string;
+  usage: {
+    prompt_tokens?: number;
+    cached_prompt_tokens?: number;
+    prompt_cache_miss_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null;
+  output_tokens_per_second: number | null;
+  time_to_first_token_ms: number | null;
+}
+
+export interface ModelUsageSummary {
+  config_id: string;
+  last_used_at: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cached_input_tokens: number;
+  total_tokens: number;
+  average_cache_hit_rate: number | null;
+  average_tokens_per_second: number | null;
+  average_first_token_ms: number | null;
+  recent_records: ModelUsageRecord[];
+}
