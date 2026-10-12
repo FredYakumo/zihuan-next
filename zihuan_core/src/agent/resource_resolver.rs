@@ -22,8 +22,10 @@ pub fn resolve_llm_service_config(
     llm_ref_id: Option<&str>,
     llm_refs: &[LlmRefConfig],
 ) -> Result<LlmServiceConfig> {
-    let ref_id = trimmed_ref_id(llm_ref_id)
-        .ok_or_else(|| Error::ValidationError(format!("'{owner}' is missing llm_ref_id")))?;
+    let ref_id = llm_ref_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| Error::ValidationError("missing llm_ref_id".into()))?;
     let llm_ref = find_llm_ref(llm_refs, ref_id)
         .ok_or_else(|| Error::ValidationError(format!("references missing llm_ref '{ref_id}'")))?;
     if !llm_ref.enabled {
@@ -52,9 +54,11 @@ pub fn resolve_local_embedding_model_name(
     llm_refs: &[LlmRefConfig],
     owner: &str,
 ) -> Result<Option<String>> {
-    let Some(ref_id) = trimmed_ref_id(embedding_model_ref_id) else {
+    let Some(ref_id) = embedding_model_ref_id.map(str::trim).filter(|value| !value.is_empty())
+    else {
         return Ok(None);
     };
+    
     let llm_ref = find_llm_ref(llm_refs, ref_id).ok_or_else(|| {
         Error::ValidationError(format!(
             "'{owner}' references missing embedding model_ref '{ref_id}'"
@@ -93,10 +97,6 @@ pub fn build_embedding_model(config: &EmbeddingServiceConfig) -> Arc<dyn Embeddi
 
 pub fn build_local_embedding_model(model_name: &str) -> Result<Arc<dyn EmbeddingBase>> {
     Ok(Arc::new(QueuedEmbeddingModel::new(model_name.to_string())?))
-}
-
-fn trimmed_ref_id(value: Option<&str>) -> Option<&str> {
-    value.map(str::trim).filter(|value| !value.is_empty())
 }
 
 fn find_llm_ref<'a>(llm_refs: &'a [LlmRefConfig], ref_id: &str) -> Option<&'a LlmRefConfig> {
