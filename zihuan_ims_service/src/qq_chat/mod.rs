@@ -93,6 +93,7 @@ use zihuan_core::task_context::{
     AgentTaskStatus,
 };
 use zihuan_core::utils::string_utils::shorten_text;
+use zihuan_core::validation_error;
 
 use self::tool_quota::SessionToolQuotaState;
 
@@ -222,11 +223,10 @@ fn load_qq_resources(
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .map(|llm_ref_id| {
-            resolve_llm_service_config(
-                Some(llm_ref_id),
-                &load_llm_refs().unwrap_or_default(),
-                &agent.name,
-            )
+            resolve_llm_service_config(Some(llm_ref_id), &load_llm_refs().unwrap_or_default())
+                .map_err(|err| {
+                    validation_error!("[{}] Failed to load llm config: {err}", &agent.name)
+                })
         })
         .transpose()?
         .map(|llm_config| build_llm_model(&llm_config))
@@ -302,8 +302,8 @@ pub async fn spawn(
         )));
     };
 
-    let llm_config =
-        resolve_llm_service_config(config.llm_ref_id.as_deref(), &llm_refs, &agent.name)?;
+    let llm_config = resolve_llm_service_config(config.llm_ref_id.as_deref(), &llm_refs)
+        .map_err(|err| validation_error!("[{}] Failed to load llm config: {err}", &agent.name))?;
     let llm = build_llm_model(&llm_config)?;
     let intent_classification_llm_config = resolve_llm_service_config(
         config
@@ -311,20 +311,20 @@ pub async fn spawn(
             .as_deref()
             .or(config.llm_ref_id.as_deref()),
         &llm_refs,
-        &agent.name,
-    )?;
+    )
+    .map_err(|err| validation_error!("[{}] Failed to load llm config: {err}", &agent.name))?;
     let intent_classification_llm = build_llm_model(&intent_classification_llm_config)?;
     let math_programming_llm_config = resolve_llm_service_config(
         config.math_programming_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref()),
         &llm_refs,
-        &agent.name,
-    )?;
+    )
+    .map_err(|err| validation_error!("[{}] Failed to load llm config: {err}", &agent.name))?;
     let math_programming_llm = build_llm_model(&math_programming_llm_config)?;
     let natural_language_reply_llm_config = resolve_llm_service_config(
         config.natural_language_reply_llm_ref_id.as_deref(),
         &llm_refs,
-        &agent.name,
-    )?;
+    )
+    .map_err(|err| validation_error!("[{}] Failed to load llm config: {err}", &agent.name))?;
     let natural_language_reply_llm = build_llm_model(&natural_language_reply_llm_config)?;
     let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
         let model_name =

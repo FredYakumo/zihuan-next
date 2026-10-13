@@ -36,6 +36,7 @@ use zihuan_core::role::procedure::ProcedureContext;
 use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::role::TransportSink;
 use zihuan_core::storage::ConnectionConfig;
+use zihuan_core::validation_error;
 use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
 use zihuan_workspace_service::api::workspace_changes;
@@ -1492,11 +1493,13 @@ async fn execute_chat_streaming(
                 let llm_refs = load_llm_refs()?;
                 let (llm, model_name) = match turn_model_config_id.as_deref() {
                     Some(model_id) => {
-                        let mut llm_config = resolve_llm_service_config(
-                            Some(model_id),
-                            &llm_refs,
-                            role_service.agent().name.as_str(),
-                        )?;
+                        let mut llm_config =
+                            resolve_llm_service_config(Some(model_id), &llm_refs).map_err(|err| {
+                                validation_error!(
+                                    "[{}] Failed to load llm config: {err}",
+                                    role_service.agent().name.as_str()
+                                )
+                            })?;
                         if let Some(override_value) = thinking_type {
                             llm_config.thinking_type = Some(override_value);
                         }
@@ -1510,11 +1513,13 @@ async fn execute_chat_streaming(
                 };
                 let image_understand_llm = match turn_image_understand_model_config_id.as_deref() {
                     Some(image_model_id) => {
-                        let llm_config = resolve_llm_service_config(
-                            Some(image_model_id),
-                            &llm_refs,
-                            role_service.agent().name.as_str(),
-                        )?;
+                        let llm_config = resolve_llm_service_config(Some(image_model_id), &llm_refs)
+                            .map_err(|err| {
+                                validation_error!(
+                                    "[{}] Failed to load llm config: {err}",
+                                    role_service.agent().name.as_str()
+                                )
+                            })?;
                         Some(build_llm_model(&llm_config)?)
                     }
                     None => None,

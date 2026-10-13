@@ -1135,8 +1135,11 @@ pub fn dispatch_script_host_call(
             let kind =
                 crate::agent::normalize_llm_kind(params.get("llm_kind").and_then(Value::as_str))?;
             let model = crate::agent::resource_resolver::build_llm_from_ref_id(
-                resources.llm_ref_id(kind).as_deref()
-            ).unwrap_or_else(|err| Err(validation_error!("[Script host] Failed to resolve llm config: {err}"))));
+                resources.llm_ref_id(kind).as_deref(),
+            )
+            .map_err(|err| {
+                validation_error!("[Script host] Failed to resolve llm config: {err}")
+            })?;
             Ok(store_script_resource(DataValue::LLModel(model)))
         }
         "agent.embedding_model" => {
