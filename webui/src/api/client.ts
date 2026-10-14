@@ -804,7 +804,10 @@ export const system = {
     },
   },
   modelUsage: {
-    list(): Promise<ModelUsageSummary[]> { return request("GET", "/system/model-usage"); },
+    list(range?: { start: string; end: string }): Promise<ModelUsageSummary[]> {
+      const query = range ? `?${new URLSearchParams(range)}` : "";
+      return request("GET", `/system/model-usage${query}`);
+    },
   },
   services: {
     list(): Promise<ServiceWithRuntime[]> {

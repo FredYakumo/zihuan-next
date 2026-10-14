@@ -1,7 +1,8 @@
 <template>
-  <t-card title="模型统计" bordered header-bordered>
+  <section class="page model-statistics-page">
+    <AdminPageHeader title="模型统计"><t-button variant="outline" @click="router.push('/data-explorer')">返回数据检索</t-button></AdminPageHeader>
+    <t-card title="模型统计" bordered header-bordered>
     <template #actions><t-button variant="text" :loading="loading" @click="load">刷新</t-button></template>
-    <p class="statistics-note">统计从启用此功能后的调用开始积累，Tokens 仅汇总模型返回的使用量。</p>
     <t-alert v-if="error" theme="error" :message="error" />
     <t-loading :loading="loading">
       <div class="model-list">
@@ -22,7 +23,8 @@
         <div v-if="!loading && models.length === 0" class="empty-state">暂无模型配置。</div>
       </div>
     </t-loading>
-  </t-card>
+    </t-card>
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -56,6 +58,7 @@ onMounted(load);
 
 <style scoped lang="scss">
 .model-list { display: grid; gap: 16px; }
+.model-statistics-page { display: grid; gap: 16px; }
 .statistics-note { color: var(--td-text-color-secondary); font-size: 13px; margin: 0 0 16px; }
 .model-row { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(260px, 2fr) auto; gap: 24px; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--td-component-stroke); }
 .model-row:last-child { border-bottom: 0; }

@@ -9,7 +9,7 @@ import { CanvasRenderer } from "echarts/renderers";
 import type { ModelUsageRecord } from "../model";
 
 use([BarChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
-const props = defineProps<{ records: ModelUsageRecord[]; period?: string; compact?: boolean }>();
+const props = defineProps<{ records: ModelUsageRecord[]; period?: string; compact?: boolean; dateRange?: string[] }>();
 const element = ref<HTMLDivElement | null>(null);
 let chart: ECharts | undefined;
 let observer: ResizeObserver | undefined;
@@ -18,11 +18,13 @@ function render() {
   if (!chart || !element.value) return;
   const days = props.compact ? 3 : props.period === "day" ? 1 : props.period === "week" ? 7 : props.period === "month" ? 30 : 3;
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days + 1);
+  const customRange = !props.compact && props.period === "custom" && props.dateRange?.length === 2 ? props.dateRange : undefined;
+  const start = customRange ? new Date(`${customRange[0]}T00:00:00`) : new Date(now.getFullYear(), now.getMonth(), now.getDate() - days + 1);
+  const rangeEnd = customRange ? new Date(`${customRange[1]}T00:00:00`) : new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const buckets: { start: number; end: number; label: string; cached: number; missed: number; output: number; total: number }[] = [];
-  const hourly = !props.compact && days === 1;
+  const hourly = !props.compact && start.getTime() === rangeEnd.getTime();
   const slots = hourly ? 24 : props.compact ? 3 : 1;
-  for (let day = 0; day < days; day++) {
+  for (let day = 0; new Date(start.getFullYear(), start.getMonth(), start.getDate() + day) <= rangeEnd; day++) {
     for (let slot = 0; slot < slots; slot++) {
       const hours = props.compact ? [0, 12, 18, 24] : Array.from({ length: slots + 1 }, (_, index) => index * (24 / slots));
       const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + day, hours[slot]);
@@ -73,7 +75,7 @@ onMounted(() => {
   observer.observe(element.value);
   render();
 });
-watch(() => [props.records, props.period, props.compact], render, { deep: true });
+watch(() => [props.records, props.period, props.compact, props.dateRange], render, { deep: true });
 onBeforeUnmount(() => { observer?.disconnect(); chart?.dispose(); });
 </script>
 

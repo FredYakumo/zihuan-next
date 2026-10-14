@@ -12,17 +12,20 @@
         </div>
         <t-card title="Tokens 时段使用" bordered class="usage-card">
           <template #actions>
-            <t-radio-group v-model="period" variant="default-filled">
-              <t-radio-button value="day">天</t-radio-button>
-              <t-radio-button value="three">最近3天</t-radio-button>
-              <t-radio-button value="week">最近7天</t-radio-button>
-              <t-radio-button value="month">月</t-radio-button>
-            </t-radio-group>
+            <div class="usage-filters">
+              <t-radio-group v-model="period" variant="default-filled">
+                <t-radio-button value="day">天</t-radio-button>
+                <t-radio-button value="three">最近3天</t-radio-button>
+                <t-radio-button value="week">最近7天</t-radio-button>
+                <t-radio-button value="month">月</t-radio-button>
+                <t-radio-button value="custom">指定日期</t-radio-button>
+              </t-radio-group>
+              <t-date-range-picker v-if="period === 'custom'" v-model="dateRange" value-type="YYYY-MM-DD" :clearable="false" :allow-input="false" class="date-range" />
+            </div>
           </template>
-          <p class="metric-label">{{ period === "day" ? "今天，按小时统计" : period === "month" ? "最近30天，按天统计" : "包含今天，按天统计" }} · 本地时间</p>
-          <ModelUsageChart :records="summary.recent_records" :period="period" />
+          <p class="metric-label">{{ periodDescription }} · 本地时间</p>
+          <ModelUsageChart :records="summary.recent_records" :period="period" :date-range="period === 'custom' ? dateRange : undefined" />
         </t-card>
-        <p class="metric-label">指标为累计使用数据；缓存命中率、速度及首 token 时间仅对有对应指标的调用取平均。流式速度按首 token 后的生成耗时计算，非流式按请求总耗时计算。未提供的指标显示为 —。</p>
       </template>
       <t-card v-else-if="!loading && !error">模型配置不存在。</t-card>
     </t-loading>
@@ -43,6 +46,14 @@ const summary = ref<ModelUsageSummary | null>(null);
 const loading = ref(false);
 const error = ref("");
 const period = ref("three");
+const today = new Date();
+const dateRange = ref<string[]>([2, 0].map((daysAgo) => {
+  const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}));
+const periodDescription = computed(() => period.value === "custom"
+  ? `${dateRange.value[0]} 至 ${dateRange.value[1]}，${dateRange.value[0] === dateRange.value[1] ? "按小时统计" : "按天统计"}`
+  : period.value === "day" ? "今天，按小时统计" : period.value === "month" ? "最近30天，按天统计" : "包含今天，按天统计");
 const metrics = computed(() => {
   const data = summary.value;
   if (!data) return [];
@@ -62,7 +73,14 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const [models, summaries] = await Promise.all([system.llm.list(), system.modelUsage.list()]);
+    let range: { start: string; end: string } | undefined;
+    if (period.value === "custom") {
+      const start = new Date(`${dateRange.value[0]}T00:00:00`);
+      const end = new Date(`${dateRange.value[1]}T00:00:00`);
+      end.setDate(end.getDate() + 1);
+      range = { start: start.toISOString(), end: end.toISOString() };
+    }
+    const [models, summaries] = await Promise.all([system.llm.list(), system.modelUsage.list(range)]);
     if (current !== requestId) return;
     model.value = models.find((item) => item.config_id === id) ?? null;
     summary.value = summaries.find((item) => item.config_id === id) ?? null;
@@ -70,6 +88,9 @@ async function load() {
   finally { if (current === requestId) loading.value = false; }
 }
 watch(() => route.params.modelId, load, { immediate: true });
+watch([period, dateRange], ([currentPeriod], [previousPeriod]) => {
+  if (currentPeriod === "custom" || previousPeriod === "custom") void load();
+}, { deep: true });
 </script>
 
 <style scoped lang="scss">
@@ -78,5 +99,7 @@ watch(() => route.params.modelId, load, { immediate: true });
 .metric-label { color: var(--td-text-color-secondary); font-size: 13px; }
 .metric-value { display: block; margin-top: 12px; font-size: 26px; overflow-wrap: anywhere; }
 .usage-card { margin-top: 16px; }
+.usage-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; }
+.date-range { width: 280px; max-width: 100%; }
 @media (max-width: 700px) { .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

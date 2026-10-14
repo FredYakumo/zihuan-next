@@ -1,4 +1,4 @@
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::Serialize;
@@ -26,8 +26,28 @@ fn average(values: impl Iterator<Item = f64>) -> Option<f64> {
 }
 
 #[handler]
-pub async fn get_model_usage(res: &mut Response) {
-    let result = tokio::task::spawn_blocking(|| {
+pub async fn get_model_usage(req: &mut Request, res: &mut Response) {
+    let range = match (req.query::<String>("start"), req.query::<String>("end")) {
+        (None, None) => None,
+        (Some(start), Some(end)) => {
+            match (DateTime::parse_from_rfc3339(&start), DateTime::parse_from_rfc3339(&end)) {
+                (Ok(start), Ok(end)) if start < end => {
+                    Some((start.with_timezone(&Utc), end.with_timezone(&Utc)))
+                }
+                _ => {
+                    res.status_code(StatusCode::BAD_REQUEST);
+                    res.render(Json(serde_json::json!({ "error": "日期范围无效" })));
+                    return;
+                }
+            }
+        }
+        _ => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(serde_json::json!({ "error": "请同时提供开始和结束时间" })));
+            return;
+        }
+    };
+    let result = tokio::task::spawn_blocking(move || {
         let models = crate::system_config::load_llm_refs()?;
         let records = load_usage()?;
         let cutoff = Utc::now() - Duration::days(32);
@@ -35,8 +55,15 @@ pub async fn get_model_usage(res: &mut Response) {
             .into_iter()
             .map(|model| {
                 let config_id = model.canonical_config_id().to_string();
-                let matching: Vec<_> =
-                    records.iter().filter(|record| record.config_id == config_id).collect();
+                let matching: Vec<_> = records
+                    .iter()
+                    .filter(|record| {
+                        record.config_id == config_id
+                            && range.is_none_or(|(start, end)| {
+                                record.used_at >= start && record.used_at < end
+                            })
+                    })
+                    .collect();
                 let mut summary = ModelUsageSummary {
                     config_id,
                     last_used_at: matching
@@ -68,7 +95,7 @@ pub async fn get_model_usage(res: &mut Response) {
                             usage.prompt_tokens.unwrap_or(0) + usage.completion_tokens.unwrap_or(0)
                         }) as u64;
                     }
-                    if record.used_at >= cutoff {
+                    if range.is_some() || record.used_at >= cutoff {
                         summary.recent_records.push(ModelUsageRecord {
                             config_id: record.config_id.clone(),
                             used_at: record.used_at,
