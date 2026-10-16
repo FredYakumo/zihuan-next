@@ -54,8 +54,10 @@ function render() {
     textStyle: { color: textColor },
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
     legend: props.compact ? { show: false } : { top: 0, textStyle: { color: textColor } },
-    grid: { left: 12, right: 12, top: props.compact ? 15 : 45, bottom: 10, containLabel: true },
-    xAxis: { type: "category", data: buckets.map((bucket) => bucket.label), axisLabel: { color: textColor, rotate: props.compact ? 25 : 0 } },
+    grid: { left: 12, right: 12, top: props.compact ? 12 : 45, bottom: props.compact ? 6 : 10, containLabel: true },
+    xAxis: props.compact
+      ? { type: "category", data: buckets.map((bucket) => bucket.label), axisLabel: { show: false }, axisTick: { show: false }, axisLine: { show: false } }
+      : { type: "category", data: buckets.map((bucket) => bucket.label), axisLabel: { color: textColor } },
     yAxis: { type: "value", minInterval: 1, axisLabel: { color: textColor }, splitLine: { lineStyle: { opacity: 0.15 } } },
     series: props.compact
       ? [{ name: "Tokens", type: "bar", data: buckets.map((bucket) => bucket.total), barMaxWidth: 28 }]
@@ -81,5 +83,5 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.dispose(); });
 
 <style scoped>
 .model-usage-chart { width: 100%; height: 380px; }
-.model-usage-chart.compact { height: 190px; }
+.model-usage-chart.compact { height: 96px; }
 </style>
