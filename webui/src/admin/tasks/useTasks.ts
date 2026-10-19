@@ -1,4 +1,5 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import type { PrimaryTableCol } from "tdesign-vue-next";
 
 import { tasks, type TaskEntry, type TaskLogEntry } from "../../api/client";
 import { formatTaskDuration } from "../../app/task_manager";
@@ -187,6 +188,52 @@ export function useTasks() {
 
   let unsubWs: (() => void) | null = null;
 
+  const selectedRowKeys = computed(() => [...selectedTaskIds.value]);
+
+  const TASK_TYPE_LABELS: Record<TaskEntry["task_type"], string> = {
+    node_graph: "节点图",
+    agent_service: "RoleService 工具",
+    workspace_chat: "Workspace 对话",
+    scheduled_job: "计划任务",
+  };
+
+  function taskTypeLabel(taskType: TaskEntry["task_type"]) {
+    return TASK_TYPE_LABELS[taskType] ?? taskType;
+  }
+
+  function onSelectChange(keys: Array<string | number>) {
+    selectedTaskIds.value = new Set(keys as string[]);
+  }
+
+  function onPaginationChange(pageInfo: { current: number; pageSize: number }) {
+    pageSize.value = pageInfo.pageSize;
+    goToListPage(pageInfo.current);
+  }
+
+  function openTaskGraph(taskId: string) {
+    window.open(`/editor?task_graph=${encodeURIComponent(taskId)}`, "_blank", "noopener");
+  }
+
+  function openChatSession(task: TaskEntry) {
+    if (!task.chat_session_id) return;
+    const query = new URLSearchParams({
+      session_id: task.chat_session_id,
+      agent_id: task.graph_session_id,
+    });
+    window.open(`/chat?${query.toString()}`, "_blank", "noopener");
+  }
+
+  const columns: PrimaryTableCol<TaskEntry>[] = [
+    { colKey: "row-select", type: "multiple", width: 48 },
+    { colKey: "task", title: "任务" },
+    { colKey: "start_time", title: "开始时间" },
+    { colKey: "duration", title: "耗时" },
+    { colKey: "file_path", title: "来源" },
+    { colKey: "summary", title: "摘要" },
+    { colKey: "status", title: "状态" },
+    { colKey: "actions", title: "操作", width: 300 },
+  ];
+
   onMounted(() => {
     load().catch((error) => {
       console.error(error);
@@ -249,6 +296,13 @@ export function useTasks() {
     logLevelClass,
     prevPage,
     nextPage,
+    selectedRowKeys,
+    taskTypeLabel,
+    onSelectChange,
+    onPaginationChange,
+    openTaskGraph,
+    openChatSession,
+    columns,
   };
 }
 

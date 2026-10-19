@@ -1,0 +1,5 @@
+@use "../tasks/tasks" as *;
+
+.log-page-body {
+  height: min(82vh, 920px);
+}

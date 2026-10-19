@@ -22,17 +22,13 @@
 import { CheckCircleIcon, LoadingIcon, TimeIcon } from "tdesign-icons-vue-next";
 
 import type { WorkspaceTask } from "../../api/client";
+import { useWorkspaceTaskList } from "./WorkspaceTaskList";
 
-defineProps<{
+const props = defineProps<{
   tasks: WorkspaceTask[];
   interrupted?: boolean;
   compact?: boolean;
 }>();
 
-function taskColor(status: WorkspaceTask["status"], interrupted = false): string {
-  if ((interrupted || status === "interrupted") && status !== "completed") return "#9aa0a6";
-  if (status === "completed") return "#2ba471";
-  if (status === "pending") return "#eab308";
-  return "var(--admin-text-muted)";
-}
+const { taskColor } = useWorkspaceTaskList(props);
 </script>

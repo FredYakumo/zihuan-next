@@ -35,10 +35,8 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref, watch } from "vue";
-
-import type { SetupProgressEvent } from "../../api/client";
-import { useInstallationProgress } from "../../setup/useInstallationProgress";
+import type { SetupProgressEvent } from "../../../api/client";
+import { useInstallationProgressView } from "./InstallationProgress";
 
 const props = withDefaults(defineProps<{
   taskId: string;
@@ -55,15 +53,7 @@ const props = withDefaults(defineProps<{
 
 defineEmits<{ (e: "done"): void; (e: "retry"): void; (e: "back"): void }>();
 
-const { logs, error } = useInstallationProgress(props);
-const consoleElement = ref<HTMLElement | null>(null);
-
-watch(() => logs.value.length, async () => {
-  await nextTick();
-  if (consoleElement.value) {
-    consoleElement.value.scrollTop = consoleElement.value.scrollHeight;
-  }
-});
+const { logs, error, consoleElement } = useInstallationProgressView(props);
 </script>
 
 <style scoped lang="scss">

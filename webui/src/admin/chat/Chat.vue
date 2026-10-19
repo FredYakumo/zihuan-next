@@ -1700,9 +1700,7 @@ import {
   RefreshIcon,
 } from "tdesign-icons-vue-next";
 
-import { computed, ref, watch } from "vue";
-
-import { useChat } from "./useChat";
+import { useChatPage } from "./Chat";
 import ToolCallBadge from "../components/ToolCallBadge.vue";
 import WorkspaceTaskList from "../components/WorkspaceTaskList.vue";
 import CommandApprovalPanel from "../components/CommandApprovalPanel.vue";
@@ -1716,49 +1714,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "update:sessionId", sessionId: string): void;
 }>();
-
-const HISTORY_COLLAPSED_KEY = "zihuan.chat.history-collapsed";
-const SMALL_SCREEN_HISTORY_QUERY = "(max-width: 1180px)";
-
-function resolveInitialHistoryCollapsed(): boolean {
-  if (props.embedded) return false;
-  const stored = localStorage.getItem(HISTORY_COLLAPSED_KEY);
-  if (stored !== null) return stored === "1";
-  return window.matchMedia(SMALL_SCREEN_HISTORY_QUERY).matches;
-}
-
-const historyCollapsed = ref(resolveInitialHistoryCollapsed());
-
-const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskUpdate", "TaskGet", "TaskList"]);
-
-const activeSessionRunning = computed(() => {
-  const session = sessions.value.find((item) => item.session_id === activeSessionId.value);
-  return sending.value || session?.running_task_id != null || session?.task_status === "running";
-});
-const showWorkspaceTaskPanel = computed(
-  () => isWorkspaceService.value && workspaceTasks.value.length > 0 && activeSessionRunning.value,
-);
-const showInterruptedWorkspaceTasks = computed(
-  () => isWorkspaceService.value && workspaceTasks.value.some((task) => task.status !== "completed") && workspaceTaskInterrupted.value,
-);
-const lastAssistantMessageId = computed(
-  () => [...messages.value].reverse().find((message) => message.role === "assistant")?.id ?? "",
-);
-
-function hasWorkspaceTaskToolCall(message: { toolCalls: Array<{ function: { name: string } }>; liveToolCalls?: Array<{ name: string }> }) {
-  return message.toolCalls.some((call) => TASK_TOOL_NAMES.has(call.function.name)) ||
-    message.liveToolCalls?.some((call) => TASK_TOOL_NAMES.has(call.name)) === true;
-}
-
-function toggleHistory() {
-  historyCollapsed.value = !historyCollapsed.value;
-}
-
-watch(historyCollapsed, (collapsed) => {
-  if (!props.embedded) {
-    localStorage.setItem(HISTORY_COLLAPSED_KEY, collapsed ? "1" : "0");
-  }
-});
 
 const {
   services,
@@ -1936,310 +1891,27 @@ const {
   saveAgentsMd,
   deleteAgentsMd,
   CHAT_ELIGIBLE_SERVICE_TYPES,
-} = useChat(props, emit);
-
-const currentCommandConfirmation = computed(() => {
-  for (const message of [...messages.value].reverse()) {
-    const call = [...(message.liveToolCalls ?? [])].reverse().find((item) => isCurrentCommandConfirmation(item) && !item.commandConfirmation?.decision);
-    if (call?.commandConfirmation) return { call, ...call.commandConfirmation };
-  }
-  return null;
-});
-
-const agentsMdEditorRef = ref<HTMLTextAreaElement | null>(null);
-const agentsMdLineNumbersRef = ref<HTMLElement | null>(null);
-
-interface WorkspaceDiffRow {
-  path?: string;
-  showPath?: boolean;
-  before?: WorkspaceDiffCell;
-  after?: WorkspaceDiffCell;
-}
-
-interface WorkspaceDiffCell {
-  kind: "added" | "removed" | "context";
-  line: string;
-  lineNumber?: number;
-}
-
-interface WorkspaceDiffLine {
-  path?: string;
-  kind: "added" | "removed" | "context";
-  line: string;
-  before_line?: number;
-  after_line?: number;
-  hunk?: number;
-}
-
-function workspaceDiffRows(diff: WorkspaceDiffLine[]): WorkspaceDiffRow[] {
-  const rows: WorkspaceDiffRow[] = [];
-  let previousPath: string | undefined;
-  let start = 0;
-
-  while (start < diff.length) {
-    const hunk = diff[start].hunk ?? 0;
-    let end = start;
-    while (end < diff.length && (diff[end].hunk ?? 0) === hunk) {
-      end += 1;
-    }
-
-    const hunkLines = diff.slice(start, end);
-    let changeStart = 0;
-    while (changeStart < hunkLines.length) {
-      const change = hunkLines[changeStart];
-      if (change.kind === "context") {
-        rows.push({
-          path: change.path,
-          showPath: change.path !== previousPath,
-          before: { kind: "context", line: change.line, lineNumber: change.before_line },
-          after: { kind: "context", line: change.line, lineNumber: change.after_line },
-        });
-        previousPath = change.path;
-        changeStart += 1;
-        continue;
-      }
-
-      let changeEnd = changeStart;
-      while (changeEnd < hunkLines.length && hunkLines[changeEnd].kind !== "context") {
-        changeEnd += 1;
-      }
-
-      const removed = hunkLines.slice(changeStart, changeEnd).filter((line) => line.kind === "removed");
-      const added = hunkLines.slice(changeStart, changeEnd).filter((line) => line.kind === "added");
-      const rowCount = Math.max(removed.length, added.length);
-      for (let index = 0; index < rowCount; index += 1) {
-        const before = removed[index];
-        const after = added[index];
-        rows.push({
-          path: before?.path ?? after?.path,
-          showPath: (before?.path ?? after?.path) !== previousPath,
-          before: before && { kind: before.kind, line: before.line, lineNumber: before.before_line },
-          after: after && { kind: after.kind, line: after.line, lineNumber: after.after_line },
-        });
-        previousPath = before?.path ?? after?.path;
-      }
-
-      changeStart = changeEnd;
-    }
-
-    start = end;
-  }
-
-  return rows;
-}
-
-const agentsMdLineCount = computed(() => {
-  const content = agentsMdEditorContent.value;
-  if (!content) {
-    return 1;
-  }
-  return content.split("\n").length;
-});
-
-function syncAgentsMdScroll() {
-  const editor = agentsMdEditorRef.value;
-  const gutter = agentsMdLineNumbersRef.value;
-  if (editor && gutter) {
-    gutter.scrollTop = editor.scrollTop;
-  }
-}
-
-type MetricsMessage = {
-  metrics?: {
-    time_to_first_token_ms?: number;
-    output_tokens_per_second?: number;
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
-    cache_hit_rate?: number;
-  };
-};
-
-function hasMessageMetrics(message: MetricsMessage) {
-  const metrics = message.metrics;
-  return metrics?.time_to_first_token_ms != null
-    || metrics?.output_tokens_per_second != null
-    || metrics?.prompt_tokens != null
-    || metrics?.completion_tokens != null
-    || metrics?.total_tokens != null
-    || metrics?.cache_hit_rate != null;
-}
-
-function formatDuration(milliseconds: number) {
-  return `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 2 : 1)}s`;
-}
-
-function formatOutputSpeed(tokensPerSecond: number) {
-  return tokensPerSecond.toFixed(1);
-}
-
-function formatTokenCount(tokens: number) {
-  return new Intl.NumberFormat().format(tokens);
-}
-
-function formatCacheHitRate(rate: number) {
-  return `${(rate * 100).toFixed(1)}%`;
-}
+  historyCollapsed,
+  activeSessionRunning,
+  showWorkspaceTaskPanel,
+  showInterruptedWorkspaceTasks,
+  lastAssistantMessageId,
+  hasWorkspaceTaskToolCall,
+  toggleHistory,
+  currentCommandConfirmation,
+  agentsMdEditorRef,
+  agentsMdLineNumbersRef,
+  workspaceDiffRows,
+  agentsMdLineCount,
+  syncAgentsMdScroll,
+  hasMessageMetrics,
+  formatDuration,
+  formatOutputSpeed,
+  formatTokenCount,
+  formatCacheHitRate,
+} = useChatPage(props, emit);
 </script>
 
 <style scoped lang="scss">
 @use "./chat" as *;
-
-.chat-live-tool-wrapper {
-  display: flex;
-  flex-direction: column;
-}
-
-.chat-command-confirmation {
-  order: 1;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 6px;
-  margin-top: 6px;
-  padding: 6px 8px;
-  border: 1px solid var(--border, #d9d9d9);
-  border-radius: 12px;
-}
-.chat-command-confirmation--inline { display: none; }
-.chat-command-confirmation--input {
-  order: 0;
-  margin: 0 20px 8px;
-  background: var(--admin-bg-panel, #fff);
-}
-.chat-command-confirmation-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-
-.chat-command-confirmation-question {
-  font-weight: 600;
-}
-
-.chat-command-confirmation-command {
-  flex-basis: 100%;
-  overflow: hidden;
-  padding: 4px 6px;
-  border-radius: 12px;
-  border: 1px solid #334155;
-  background: #0f172a;
-  color: #f8fafc;
-  font-size: 12px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-command-approvals {
-  position: absolute;
-  z-index: 1200;
-  bottom: calc(100% + 8px);
-  right: 20px;
-  width: min(320px, calc(100vw - 32px));
-  padding: 12px;
-  border: 1px solid var(--admin-border, #d9d9d9);
-  border-radius: 12px;
-  background: var(--admin-bg-panel, #fff);
-  box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
-}
-.session-command-approvals__title { margin-bottom: 8px; font-weight: 600; }
-.session-command-approval-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--admin-border, #eee); }
-.session-command-approval-row code { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.session-command-approval-close {
-  position: relative;
-  z-index: 1;
-  display: inline-grid;
-  flex: 0 0 30px;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--admin-ink-muted, #666);
-  cursor: pointer;
-}
-.session-command-approval-close:hover { background: var(--admin-bg-soft, #f3f4f6); color: var(--admin-danger, #d54941); }
-
-.chat-command-confirmation .btn {
-  min-height: 28px;
-  padding: 3px 9px;
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.tool-call-limit-panel {
-  margin: 8px 0;
-}
-
-.tool-call-limit-continue { background: #2ba471; color: #fff; }
-.tool-call-limit-stop { background: #d54941; color: #fff; }
-
-.chat-live-tool-wrapper .chat-tool-live-output {
-  order: 2;
-}
-
-.directory-picker {
-  display: flex;
-  flex-direction: column;
-  width: min(680px, calc(100vw - 32px));
-  max-height: min(720px, calc(100vh - 32px));
-  overflow: hidden;
-  border: 1px solid var(--admin-border);
-  border-radius: 12px;
-  background: var(--admin-bg-panel);
-  color: var(--admin-ink);
-  box-shadow: var(--admin-card-shadow);
-}
-
-.directory-picker-backdrop {
-  position: fixed;
-  z-index: 1400;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--bg) 55%, transparent 45%);
-  backdrop-filter: blur(12px);
-}
-
-.directory-picker-header,
-.directory-picker-toolbar,
-.directory-picker-footer,
-.directory-picker-path {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-}
-
-.directory-picker-header {
-  justify-content: space-between;
-  border-bottom: 1px solid var(--admin-border);
-}
-
-.directory-picker-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.directory-picker-path { padding-bottom: 8px; }
-.directory-picker-path input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--admin-border); border-radius: 12px; background: var(--admin-bg-soft); color: var(--admin-ink); }
-.directory-picker-path input::placeholder { color: var(--admin-muted); }
-.directory-picker-icon-button, .directory-picker-tool { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--admin-border); border-radius: 12px; background: var(--admin-bg-soft); color: var(--admin-ink); cursor: pointer; }
-.directory-picker-icon-button:hover:not(:disabled), .directory-picker-tool:hover:not(:disabled) { border-color: var(--admin-accent); color: var(--admin-accent); }
-.directory-picker-icon-button:disabled, .directory-picker-tool:disabled { cursor: not-allowed; opacity: .5; }
-.directory-picker-toolbar { padding-top: 0; border-bottom: 1px solid var(--admin-border); }
-.directory-picker-current { min-width: 0; overflow: hidden; color: var(--admin-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.directory-picker-error { margin: 8px 16px 0; color: var(--admin-bad); font-size: 13px; }
-.directory-picker-content { display: grid; flex: 1; grid-template-columns: minmax(170px, .8fr) minmax(170px, .8fr) minmax(220px, 1.4fr); min-height: 220px; overflow: auto; }
-.directory-picker-section { min-width: 0; padding: 12px; border-right: 1px solid var(--admin-border); }
-.directory-picker-section:last-child { border-right: 0; }
-.directory-picker-section h4 { margin: 0 0 8px; color: var(--admin-muted); font-size: 12px; font-weight: 600; }
-.directory-picker-row { display: flex; width: 100%; align-items: center; gap: 8px; overflow: hidden; padding: 7px 8px; border: 0; border-radius: 12px; background: transparent; color: var(--admin-ink); cursor: pointer; text-align: left; }
-.directory-picker-row:hover { background: var(--admin-accent-soft); }
-.directory-picker-row svg { flex: 0 0 auto; color: var(--admin-accent); }
-.directory-picker-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.directory-picker-empty { padding: 8px; color: var(--admin-muted); font-size: 13px; }
-.directory-picker-footer { justify-content: flex-end; border-top: 1px solid var(--admin-border); }
-
-@media (max-width: 640px) {
-  .directory-picker-content { display: block; }
-  .directory-picker-section { border-right: 0; border-bottom: 1px solid var(--admin-border); }
-  .directory-picker-section:last-child { border-bottom: 0; }
-}
 </style>

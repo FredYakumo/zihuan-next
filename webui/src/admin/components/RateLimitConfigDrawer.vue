@@ -124,18 +124,13 @@
 </template>
 
 <script setup lang="ts">
-import { defaultQqChatMessageRateLimitRule, type ServiceFormState } from "../model";
+import type { ServiceFormState } from "../model";
+import { useRateLimitConfigDrawer } from "./RateLimitConfigDrawer";
 
 const visible = defineModel<boolean>("visible", { required: true });
 const props = defineProps<{ form: ServiceFormState }>();
 
-function addGroupRule() {
-  props.form.message_rate_limit_groups.push({ group_id: "", ...defaultQqChatMessageRateLimitRule() });
-}
-
-function addUserRule() {
-  props.form.message_rate_limit_users.push({ sender_id: "", ...defaultQqChatMessageRateLimitRule() });
-}
+const { addGroupRule, addUserRule } = useRateLimitConfigDrawer(props);
 </script>
 
 <style scoped lang="scss">

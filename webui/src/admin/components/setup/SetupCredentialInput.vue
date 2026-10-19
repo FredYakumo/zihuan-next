@@ -30,33 +30,15 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
 import { BrowseIcon, BrowseOffIcon, ErrorCircleIcon } from "tdesign-icons-vue-next";
 
-withDefaults(defineProps<{ inputType?: "password" | "text" }>(), { inputType: "password" });
+import { useSetupCredentialInput } from "./SetupCredentialInput";
+
+const props = withDefaults(defineProps<{ inputType?: "password" | "text" }>(), { inputType: "password" });
 
 const value = defineModel<string | null>({ required: true });
-const container = ref<HTMLElement | null>(null);
-const isOpen = ref(false);
-const isVisible = ref(false);
 
-const credentialCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-
-function suggestCredential() {
-  const randomBytes = new Uint32Array(32);
-  crypto.getRandomValues(randomBytes);
-  value.value = Array.from(randomBytes, (byte) => credentialCharacters[byte % credentialCharacters.length]).join("");
-  isOpen.value = false;
-}
-
-function closeWhenClickingOutside(event: MouseEvent) {
-  if (!container.value?.contains(event.target as Node)) {
-    isOpen.value = false;
-  }
-}
-
-onMounted(() => document.addEventListener("click", closeWhenClickingOutside));
-onBeforeUnmount(() => document.removeEventListener("click", closeWhenClickingOutside));
+const { container, isOpen, isVisible, suggestCredential } = useSetupCredentialInput(props, value);
 </script>
 
 <style scoped lang="scss">

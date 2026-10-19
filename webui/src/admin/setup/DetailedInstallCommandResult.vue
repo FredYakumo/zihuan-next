@@ -33,38 +33,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
 import { ArrowLeftIcon, CopyIcon } from "tdesign-icons-vue-next";
 
 import type { DetailedInstallCommandResult } from "../../api/client";
+import { useDetailedInstallCommandResult } from "./DetailedInstallCommandResult";
 
 const props = defineProps<{ result: DetailedInstallCommandResult }>();
 defineEmits<{ (event: "back"): void }>();
 
-const copied = ref<"command" | "connections" | null>(null);
-const copyError = ref<string | null>(null);
-const connectionsJson = computed(() => JSON.stringify(props.result.connections, null, 2));
-
-async function copyText(value: string, target: "command" | "connections") {
-  copyError.value = null;
-  try {
-    await navigator.clipboard.writeText(value);
-    copied.value = target;
-    window.setTimeout(() => {
-      if (copied.value === target) copied.value = null;
-    }, 1600);
-  } catch (error) {
-    copyError.value = `复制失败：${error instanceof Error ? error.message : String(error)}`;
-  }
-}
+const { copied, copyError, connectionsJson, copyText } = useDetailedInstallCommandResult(() => props.result);
 </script>
 
 <style scoped lang="scss">
-.detailed-install-command-result { display: grid; gap: 18px; }
-h2, h3, p { margin: 0; }
-.subtitle { color: var(--admin-muted); }
-.command-output { display: grid; gap: 10px; border: 1px solid var(--admin-border); border-radius: 8px; padding: 16px; }
-.command-output__header, .step-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-textarea { width: 100%; min-height: 220px; box-sizing: border-box; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.5; }
-.config-error { color: var(--admin-danger, #c0392b); }
+@use "./detailed-install-command-result" as *;
 </style>

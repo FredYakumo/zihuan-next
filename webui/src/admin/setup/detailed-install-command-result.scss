@@ -1,0 +1,43 @@
+.detailed-install-command-result {
+  display: grid;
+  gap: 18px;
+}
+
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+.subtitle {
+  color: var(--admin-muted);
+}
+
+.command-output {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.command-output__header,
+.step-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+textarea {
+  width: 100%;
+  min-height: 220px;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.5;
+}
+
+.config-error {
+  color: var(--admin-danger, #c0392b);
+}

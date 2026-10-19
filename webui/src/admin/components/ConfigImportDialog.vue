@@ -23,9 +23,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { useConfigImportDialog } from "./ConfigImportDialog";
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     visible: boolean;
     title: string;
@@ -45,7 +45,7 @@ const emit = defineEmits<{
   (event: "file-change", value: Event): void;
 }>();
 
-const fileInput = ref<HTMLInputElement | null>(null);
+const { fileInput } = useConfigImportDialog(props, emit);
 </script>
 
 <style scoped lang="scss">

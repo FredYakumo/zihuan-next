@@ -128,6 +128,9 @@ const {
   form,
   loadData,
   permissionFor,
+  permissionEnabled,
+  commandColumns,
+  permissionColumns,
   scopeLabel,
   ruleLabel,
   ruleDetail,
@@ -143,28 +146,6 @@ const {
   savePermission,
   deletePermission,
 } = useCommands();
-
-function permissionEnabled(commandName: string): boolean {
-  return permissionFor(commandName)?.enabled ?? false;
-}
-
-const commandColumns = [
-  { colKey: "name", title: "命令名" },
-  { colKey: "aliases", title: "别名" },
-  { colKey: "accepted_arg_count", title: "参数数" },
-  { colKey: "description", title: "描述" },
-  { colKey: "scope", title: "适用范围" },
-  { colKey: "permission", title: "权限状态" },
-  { colKey: "actions", title: "操作" },
-];
-
-const permissionColumns = [
-  { colKey: "command_name", title: "命令" },
-  { colKey: "rules", title: "规则" },
-  { colKey: "enabled", title: "状态" },
-  { colKey: "updated_at", title: "更新时间" },
-  { colKey: "actions", title: "操作" },
-];
 </script>
 
 <style scoped lang="scss">

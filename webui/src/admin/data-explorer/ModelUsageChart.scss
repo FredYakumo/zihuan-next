@@ -1,0 +1,8 @@
+.model-usage-chart {
+    width: 100%;
+    height: 380px;
+
+    &.compact {
+        height: 96px;
+    }
+}

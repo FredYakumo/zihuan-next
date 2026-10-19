@@ -236,6 +236,7 @@ export function useSettings() {
   const modelHttpApiKeys = ref<ModelHttpApiKey[]>([]);
   const enabledChatModels = ref<PublicChatModel[]>([]);
   const newModelHttpSecret = ref("");
+  const modelHttpDialogVisible = ref(false);
   const contextCompactionPercent = ref(80);
   const contextCompactionSaving = ref(false);
 
@@ -281,6 +282,15 @@ export function useSettings() {
       modelHttpApiKeys.value = response.api_keys;
     } finally {
       modelHttpSaving.value = false;
+    }
+  }
+
+  async function handleSaveModelHttpSettings() {
+    try {
+      await saveModelHttpSettings();
+      modelHttpDialogVisible.value = false;
+    } catch (error) {
+      window.alert(`保存模型配置失败：${String(error)}`);
     }
   }
 
@@ -465,6 +475,7 @@ export function useSettings() {
     modelHttpEnabled,
     modelHttpSaving,
     modelHttpEndpoint,
+    modelHttpDialogVisible,
     publicModelConfigIds,
     modelHttpApiKeys,
     enabledChatModels,
@@ -474,6 +485,7 @@ export function useSettings() {
     contextCompactionSaving,
     setModelHttpEnabled,
     saveModelHttpSettings,
+    handleSaveModelHttpSettings,
     saveContextCompactionSettings,
     toggleAllPublicModels,
     createModelHttpApiKey,

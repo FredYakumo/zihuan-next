@@ -1,0 +1,71 @@
+.agent-config-hint {
+  margin-bottom: 12px;
+  color: var(--td-text-color-placeholder);
+  font-size: 12px;
+}
+
+.agent-config-alert {
+  margin-top: 12px;
+}
+
+.agent-config-empty {
+  padding: 48px;
+  text-align: center;
+  color: var(--td-text-color-placeholder);
+}
+
+.agent-type-card {
+  display: grid;
+  gap: 8px;
+  padding: 20px;
+  text-align: left;
+}
+
+.agent-type-card span {
+  color: var(--td-text-color-placeholder);
+  font-size: 13px;
+}
+
+.agent-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agent-name-cell > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.port-list {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.port-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) 120px minmax(150px, 2fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-error {
+  color: var(--td-error-color);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .form-grid,
+  .port-row {
+    grid-template-columns: 1fr;
+  }
+}

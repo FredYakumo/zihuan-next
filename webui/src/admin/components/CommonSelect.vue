@@ -19,12 +19,7 @@
 <script setup lang="ts">
 import type { PropType } from "vue";
 
-interface CommonSelectOption {
-  value: string;
-  label: string;
-  /** Optional secondary text rendered right-aligned inside the dropdown list. */
-  description?: string;
-}
+import { useCommonSelect, type CommonSelectOption } from "./CommonSelect";
 
 const props = defineProps({
   options: { type: Array as PropType<CommonSelectOption[]>, default: () => [] },
@@ -40,16 +35,9 @@ const emit = defineEmits<{
 
 const model = defineModel<string>({ required: true });
 
-function onChange(value: unknown) {
-  emit("change", typeof value === "string" ? value : undefined);
-}
+const { onChange } = useCommonSelect(props, emit);
 </script>
 
-<style scoped>
-.common-select-option-desc {
-  float: right;
-  color: var(--td-text-color-placeholder);
-  font-size: 12px;
-  margin-left: 12px;
-}
+<style scoped lang="scss">
+@use "./CommonSelect" as *;
 </style>

@@ -1,0 +1,127 @@
+.page {
+    min-width: 0;
+}
+
+.task-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 0;
+}
+
+.task-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.scheduled-task-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.scheduled-task-filters > * {
+    width: 260px;
+    max-width: 100%;
+}
+
+.task-table-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+    margin-top: 12px;
+}
+
+.catalog-table {
+    min-width: 1180px;
+}
+
+.records-table {
+    min-width: 850px;
+}
+
+.task-table-scroll :deep(td) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.script-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.script-editor-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.script-editor-field > label {
+    font-size: 13px;
+    color: var(--td-text-color-secondary);
+}
+
+.script-editor-hint {
+    font-size: 12px;
+    color: var(--td-text-color-placeholder);
+}
+
+.script-editor-meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+    color: var(--td-text-color-secondary);
+}
+
+.script-editor-wrap {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    height: 420px;
+    overflow: hidden;
+}
+
+.script-editor-gutter {
+    padding: 12px 8px;
+    border: 1px solid var(--td-border-level-1-color);
+    border-right: 0;
+    border-radius: 6px 0 0 6px;
+    background: var(--td-bg-color-container-hover);
+    color: var(--td-text-color-placeholder);
+    text-align: right;
+    overflow: hidden;
+    font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+    user-select: none;
+}
+
+.script-editor-gutter > div {
+    min-height: 1.6em;
+}
+
+.script-editor-area {
+    min-width: 0;
+    resize: none;
+    border: 1px solid var(--td-border-level-1-color);
+    border-radius: 0 6px 6px 0;
+    padding: 12px;
+    background: var(--td-bg-color-container);
+    color: var(--td-text-color-primary);
+    outline: none;
+    overflow: auto;
+    white-space: pre;
+    font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.script-editor-area:focus {
+    border-color: var(--td-brand-color);
+}
+
+.script-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}

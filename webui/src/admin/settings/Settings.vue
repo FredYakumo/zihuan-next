@@ -223,7 +223,6 @@
 
 <script setup lang="ts">
 import { ErrorCircleIcon, FileCopyIcon } from "tdesign-icons-vue-next";
-import { ref } from "vue";
 
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useSettings } from "./useSettings";
@@ -268,27 +267,18 @@ const {
   modelHttpEnabled,
   modelHttpSaving,
   modelHttpEndpoint,
+  modelHttpDialogVisible,
   publicModelConfigIds,
   enabledChatModels,
   allPublicModelsSelected,
   setModelHttpEnabled,
-  saveModelHttpSettings,
+  handleSaveModelHttpSettings,
   toggleAllPublicModels,
   copyModelHttpEndpoint,
   contextCompactionPercent,
   contextCompactionSaving,
   saveContextCompactionSettings,
 } = useSettings();
-
-const modelHttpDialogVisible = ref(false);
-async function handleSaveModelHttpSettings() {
-  try {
-    await saveModelHttpSettings();
-    modelHttpDialogVisible.value = false;
-  } catch (error) {
-    window.alert(`保存模型配置失败：${String(error)}`);
-  }
-}
 </script>
 
 <style scoped lang="scss">

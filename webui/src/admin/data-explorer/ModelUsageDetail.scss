@@ -1,0 +1,45 @@
+.model-usage-page {
+    display: grid;
+    gap: 16px;
+}
+
+.metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.metric-label {
+    color: var(--td-text-color-secondary);
+    font-size: 13px;
+}
+
+.metric-value {
+    display: block;
+    margin-top: 12px;
+    font-size: 26px;
+    overflow-wrap: anywhere;
+}
+
+.usage-card {
+    margin-top: 16px;
+}
+
+.usage-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.date-range {
+    width: 280px;
+    max-width: 100%;
+}
+
+@media (max-width: 700px) {
+    .metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

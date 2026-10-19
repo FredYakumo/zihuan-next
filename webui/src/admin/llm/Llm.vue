@@ -119,44 +119,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
-
-import type { LlmConfig } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useLlm } from "./useLlm";
 import ConnectionCredentialInput from "../components/ConnectionCredentialInput.vue";
 
-const { filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, isCandleMode, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, updateEnabled, updatingEnabledIds, localLlmOptionLabel, compactId, formatTime, copiedId, copyConfig, handleFileChange } = useLlm();
-
-const route = useRoute();
-const router = useRouter();
-const importFileInput = ref<HTMLInputElement | null>(null);
-const columns = [
-  { colKey: "name", title: "配置名称", width: 210 },
-  { colKey: "model_type", title: "模型类型", width: 150 },
-  { colKey: "model", title: "模型", ellipsis: true },
-  { colKey: "endpoint", title: "接口地址", ellipsis: true },
-  { colKey: "updated_at", title: "更新时间", width: 170 },
-  { colKey: "actions", title: "操作", width: 340, fixed: "right" },
-];
-const contextLengthPresets = [
-  { label: "64K", value: 64 * 1024 },
-  { label: "256K", value: 256 * 1024 },
-  { label: "1M", value: 1024 * 1024 },
-];
-
-function triggerImportFile() { importFileInput.value?.click(); }
-if (route.query.action === "create") startCreate();
-function modelTypeLabel(type: string) { return type === "chat_llm" ? "聊天模型" : "文本向量模型"; }
-function modelName(item: LlmConfig) { return item.model.type === "chat_llm" ? item.model.llm.model_name : item.model.model_name; }
-function isCandleStyle(apiStyle: string) { return apiStyle === "candle_gguf" || apiStyle === "candle_hf"; }
-function apiStyleLabel(apiStyle: string) {
-  const labels: Record<string, string> = { candle_gguf: "Candle GGUF", candle_hf: "Candle HF", open_ai_chat_completions: "OpenAI Chat Completions", open_ai_chat_completions_tencent_multimodal_compat: "腾讯多模态兼容", open_ai_responses: "OpenAI Responses", open_ai_responses_message_compat: "Responses message 兼容", open_ai_responses_image_url_object_compat: "Responses image_url 兼容" };
-  return labels[apiStyle] ?? apiStyle;
-}
-function copyLlmConfig(item: LlmConfig) { copyConfig({ name: item.name, enabled: item.enabled, model: item.model }, item.config_id); }
-
+const { filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, isCandleMode, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, updateEnabled, updatingEnabledIds, localLlmOptionLabel, compactId, formatTime, copiedId, handleFileChange, router, importFileInput, columns, contextLengthPresets, triggerImportFile, modelTypeLabel, modelName, isCandleStyle, apiStyleLabel, copyLlmConfig } = useLlm();
 </script>
 
 <style scoped lang="scss">
