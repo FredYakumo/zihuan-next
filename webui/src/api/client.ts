@@ -17,6 +17,7 @@ import type {
   GraphVariable,
   GraphMetadata,
   DataTypeMetaData,
+  TokenUsage,
 } from "./types";
 
 export type { GraphTabInfo, TaskEntry, TaskLogEntry } from "./types";
@@ -1014,6 +1015,77 @@ export interface ServiceExplorerImageRecord {
   backend: "weaviate" | "elasticsearch";
 }
 
+export interface ServiceChatUserItem {
+  sender_id: string;
+  sender_name: string;
+  group_name?: string;
+  turn_count: number;
+  last_time?: string;
+}
+
+export interface ServiceChatUsersResponse {
+  backend: "memory" | "redis";
+  users: ServiceChatUserItem[];
+}
+
+export interface ServiceChatContextMedia {
+  media_id: string;
+  url?: string;
+  mime_type?: string;
+  name?: string;
+  size_bytes?: number;
+}
+
+export interface ServiceChatContextBubble {
+  role: "user" | "assistant" | "tool";
+  text: string;
+  media: ServiceChatContextMedia[];
+  usage?: TokenUsage;
+  estimated_tokens: number;
+}
+
+export type ServiceChatContextEntry =
+  | { kind: "stage"; at: string; stage: string; detail: unknown }
+  | {
+      kind: "tool_call";
+      at: string;
+      call_id: string;
+      name: string;
+      arguments: unknown;
+      result?: string;
+      duration_ms?: number;
+    };
+
+export interface ServiceChatContextTurn {
+  turn_id: string;
+  created_at: string;
+  user_text: string;
+  media: ServiceChatContextMedia[];
+  entries: ServiceChatContextEntry[];
+  assistant_text?: string;
+  reasoning_text?: string;
+  usage?: TokenUsage;
+  generation_ms?: number;
+  output_tokens_per_second?: number;
+  /** Steer follow-up of the previous turn: rendered in the same block, without a divider. */
+  continues_previous: boolean;
+  finished: boolean;
+}
+
+export interface ServiceChatContextResponse {
+  backend: "memory" | "redis";
+  sender_id: string;
+  system_prompt?: string;
+  bubbles: ServiceChatContextBubble[];
+  turns: ServiceChatContextTurn[];
+  /** Turns persisted in the relational database, oldest first. */
+  archived: ServiceChatContextTurn[];
+  estimated_context_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  average_cache_hit_rate?: number;
+}
+
 export interface QqChatMessageRateLimitUsageRow {
   sender_id: string;
   sender_name: string | null;
@@ -1074,6 +1146,15 @@ export const explorer = {
     const { service_id, ...query } = params;
     const qs = buildQueryString(query as Record<string, unknown>);
     return request("GET", `/explorer/services/${encodeURIComponent(service_id)}/images?${qs}`);
+  },
+
+  queryServiceChatUsers(serviceId: string): Promise<ServiceChatUsersResponse> {
+    return request("GET", `/explorer/services/${encodeURIComponent(serviceId)}/chat-users`);
+  },
+
+  queryServiceChatContext(serviceId: string, senderId: string): Promise<ServiceChatContextResponse> {
+    const qs = buildQueryString({ sender_id: senderId });
+    return request("GET", `/explorer/services/${encodeURIComponent(serviceId)}/chat-context?${qs}`);
   },
 
   queryMysql(params: {

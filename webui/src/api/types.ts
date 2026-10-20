@@ -248,7 +248,57 @@ export type ServerMessage =
   | { type: "TaskStopped"; task_id: string }
   | { type: "LogMessage"; level: string; message: string; timestamp: string }
   | { type: "GraphValidationResult"; graph_id: string; issues: ValidationIssue[] }
-  | { type: "NodeUiUpdate"; task_id: string; graph_session_id: string; node_id: string; revision: number; state: JsonValue };
+  | { type: "NodeUiUpdate"; task_id: string; graph_session_id: string; node_id: string; revision: number; state: JsonValue }
+  | { type: "QqContext"; event: QqChatContextEvent };
+
+export interface TokenUsage {
+  prompt_tokens?: number;
+  cached_prompt_tokens?: number;
+  prompt_cache_miss_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+export interface QqContextMediaRef {
+  media_id: string;
+  rustfs_path?: string;
+  original_source?: string;
+  mime_type?: string;
+  name?: string;
+  size_bytes?: number;
+}
+
+export type QqChatContextEvent =
+  | {
+      kind: "turn_started";
+      agent_id: string;
+      sender_id: string;
+      sender_name: string;
+      group_id?: string;
+      group_name?: string;
+      is_group: boolean;
+      turn_id: string;
+      created_at: string;
+      user_text: string;
+      media: QqContextMediaRef[];
+      /** Steer follow-up of the previous turn: shown in the same block, without a divider. */
+      continues_previous: boolean;
+    }
+  | { kind: "tool_started"; agent_id: string; sender_id: string; turn_id: string; call_id: string; tool_name: string; arguments: JsonValue }
+  | { kind: "tool_finished"; agent_id: string; sender_id: string; turn_id: string; call_id: string; tool_name: string; result: string; duration_ms: number }
+  | { kind: "stage"; agent_id: string; sender_id: string; turn_id: string; at: string; stage: string; detail: JsonValue }
+  | {
+      kind: "turn_finished";
+      agent_id: string;
+      sender_id: string;
+      turn_id: string;
+      assistant_text?: string;
+      reasoning_text?: string;
+      usage?: TokenUsage;
+      generation_ms?: number;
+      output_tokens_per_second?: number;
+    };
+
 
 export type ClientMessage =
   | { type: "Subscribe"; graph_id: string }

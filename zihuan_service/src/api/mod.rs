@@ -406,7 +406,14 @@ pub fn build_router(
                     Router::with_path("services/<service_id>")
                         .push(Router::with_path("messages").get(explorer::query_service_messages))
                         .push(Router::with_path("memories").get(explorer::query_service_memories))
-                        .push(Router::with_path("images").get(explorer::query_service_images)),
+                        .push(Router::with_path("images").get(explorer::query_service_images))
+                        .push(
+                            Router::with_path("chat-users").get(explorer::query_service_chat_users),
+                        )
+                        .push(
+                            Router::with_path("chat-context")
+                                .get(explorer::query_service_chat_context),
+                        ),
                 )
                 .push(Router::with_path("redis").get(explorer::query_redis))
                 .push(Router::with_path("weaviate").get(explorer::query_weaviate))

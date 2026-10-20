@@ -20,7 +20,7 @@ use zihuan_core::steer::message_with_api_style;
 use zihuan_core::system_config::current_context_compaction_percent;
 
 use crate::agent::emotion::utils::emotion_dimensions_text;
-use crate::qq_chat::logging::{QqChatTaskTrace, QqChatToolCallingObserver};
+use crate::qq_chat::logging::{QqChatTaskTrace, QqChatToolCallingObserver, QqChatTurnIdentity};
 use crate::qq_chat::PreparedCurrentTurnUserInput;
 use crate::storage::qq_chat_history_store::{load_history, save_history};
 use crate::tools::{
@@ -74,6 +74,9 @@ fn build_chat_preprompt_agent_user_message(
 #[derive(Clone)]
 pub(crate) struct PrepromptContext<'a> {
     pub(crate) trace: &'a QqChatTaskTrace,
+    /// Live context-view identity. When set, this agent's tool calls and stage land in the
+    /// Data Explorer turn flow; the observer stays trace-only otherwise.
+    pub(crate) identity: Option<QqChatTurnIdentity>,
     pub(crate) llm: &'a Arc<dyn LLMBase>,
     pub(crate) cache: &'a Arc<LLMMessageSessionCacheRef>,
     pub(crate) history_key: &'a str,
@@ -148,9 +151,13 @@ struct ComposedToolCallingObserver {
 }
 
 impl ComposedToolCallingObserver {
-    fn new(trace: QqChatTaskTrace, external: Option<Arc<dyn ToolCallingObserver>>) -> Self {
+    fn new(
+        trace: QqChatTaskTrace,
+        identity: Option<QqChatTurnIdentity>,
+        external: Option<Arc<dyn ToolCallingObserver>>,
+    ) -> Self {
         Self {
-            trace: QqChatToolCallingObserver { trace },
+            trace: QqChatToolCallingObserver { trace, identity },
             external,
         }
     }
@@ -202,6 +209,7 @@ fn run_preprompt(
     ctx: &PrepromptContext<'_>,
     external_observer: Option<Arc<dyn ToolCallingObserver>>,
 ) -> Option<String> {
+    let started_at = std::time::Instant::now();
     let emotion_dimensions_text =
         emotion_dimensions_text(&ctx.session_state.lock().unwrap(), &ctx.emotion_dimensions);
 
@@ -241,8 +249,12 @@ fn run_preprompt(
     let mut brain = ToolCallingEngine::new(Arc::clone(ctx.llm));
     brain.set_observer(Arc::new(ComposedToolCallingObserver::new(
         ctx.trace.clone(),
+        ctx.identity.clone(),
         external_observer,
     )));
+    // Names of the tools this run actually had available, reported on the stage so the flow
+    // shows which preprompt capabilities existed instead of a fixed description.
+    let mut enabled_tools = vec!["update_agent_state".to_string()];
 
     ctx.trace
         .record_graph_phase("情绪维度处理", serde_json::json!({"status": "preprompt"}));
@@ -263,7 +275,10 @@ fn run_preprompt(
         register_memory_tools(&mut host, resources);
         host.register_llm(LLM_KIND_MAIN, Arc::clone(ctx.llm));
         match register_memory_agent_tool(&mut host) {
-            Ok(tool) => brain.add_tool(SharedTool::new(tool)),
+            Ok(tool) => {
+                enabled_tools.push(DEFAULT_TOOL_MEMORY_AGENT.to_string());
+                brain.add_tool(SharedTool::new(tool));
+            }
             Err(error) => warn!("{LOG_PREFIX} memory agent unavailable: {error}"),
         }
     }
@@ -281,6 +296,7 @@ fn run_preprompt(
     }
 
     if ctx.rdb_pool.is_some() && is_enabled(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
+        enabled_tools.push(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES.to_string());
         brain.add_tool(GetRecentUserMessagesTool::new(
             ctx.rdb_pool.clone(),
             notification_target.clone(),
@@ -288,11 +304,30 @@ fn run_preprompt(
     }
     if ctx.is_group && ctx.rdb_pool.is_some() && is_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES)
     {
+        enabled_tools.push(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES.to_string());
         brain.add_tool(GetRecentGroupMessagesTool::new(ctx.rdb_pool.clone(), notification_target));
     }
 
     // Run the preprompt agent and extract its final assistant context block.
+    if let Some(identity) = ctx.identity.as_ref() {
+        // Announce the stage with what this run actually has, before any tool call it makes.
+        zihuan_core::qq_context::emit_qq_context_stage(
+            &identity.agent_id,
+            &identity.sender_id,
+            &identity.turn_id,
+            "Preprompt",
+            serde_json::json!({
+                "model": ctx.llm.get_model_name(),
+                "tools_available": enabled_tools,
+            }),
+        );
+    }
     let (output, stop_reason) = brain.run(conversation);
+    let tool_call_count: usize = output
+        .iter()
+        .filter(|message| matches!(message.role, MessageRole::Assistant))
+        .map(|message| message.tool_calls.len())
+        .sum();
     let context_block = match stop_reason {
         ToolCallingStopReason::Done => output
             .iter()
@@ -310,5 +345,21 @@ fn run_preprompt(
     history.push(user_message);
     history.extend(output);
     save_history(ctx.cache, ctx.history_key, history);
+
+    if let Some(identity) = ctx.identity.as_ref() {
+        // Report the result after the run so the flow shows what the stage actually produced.
+        zihuan_core::qq_context::emit_qq_context_stage(
+            &identity.agent_id,
+            &identity.sender_id,
+            &identity.turn_id,
+            "Preprompt 输出",
+            serde_json::json!({
+                "tool_calls": tool_call_count,
+                "duration_ms": started_at.elapsed().as_millis() as u64,
+                "stop_reason": format!("{stop_reason:?}"),
+                "context": context_block,
+            }),
+        );
+    }
     context_block
 }

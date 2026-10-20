@@ -43,6 +43,11 @@ pub enum ServerMessage {
         revision: u64,
         state: Value,
     },
+    /// One live event of a QQ Chat role agent's conversation context. Clients filter by
+    /// `event.agent_id` / `event.sender_id`.
+    QqContext {
+        event: zihuan_core::qq_context::QqChatContextEvent,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

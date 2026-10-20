@@ -70,7 +70,7 @@ async function main() {
       { path: "/data-explorer/models", component: ModelStatistics },
       { path: "/data-explorer/services", component: ServiceDataExplorer },
       { path: "/data-explorer/models/:modelId", component: ModelUsageDetail },
-      { path: "/data-explorer/:serviceId/:capability(messages|memories|images)", component: DataExplorerDetail },
+      { path: "/data-explorer/:serviceId/:capability(messages|memories|images|contexts)", component: DataExplorerDetail },
       { path: "/settings", component: Settings },
       { path: "/api-keys", component: ApiKeys },
       { path: "/plugins", component: Plugins },

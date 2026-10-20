@@ -66,6 +66,11 @@ impl ObjectStorageConfig {
     pub async fn put_object(&self, key: &str, content_type: &str, body: &[u8]) -> Result<String> {
         self.inner.put_object(key, content_type, body).await
     }
+
+    /// Object size in bytes when the object exists, for labeling without downloading.
+    pub async fn head_object_size(&self, key: &str) -> Option<u64> {
+        self.inner.head_object_size(key).await
+    }
 }
 
 pub async fn save_image_to_object_storage(

@@ -257,6 +257,7 @@ impl RoleServiceManager {
     }
 
     pub async fn stop_role_service(&self, role_service_id: &str) -> Result<()> {
+        zihuan_core::qq_context::unregister_qq_chat_history_cache(role_service_id);
         let (task, on_finish_shared) = {
             let mut guard = self.inner.lock().unwrap();
             match guard.get_mut(role_service_id) {

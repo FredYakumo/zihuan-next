@@ -29,6 +29,7 @@ use crate::model_inference::inference_function::compact_message::{
 use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::tooling::FunctionTool;
 use crate::model_inference::llm::tooling::ToolCalls;
+use crate::model_inference::llm::util::format_cache_hit_rate;
 use crate::model_inference::llm::{
     InferenceParam, LLMMessage, MessagePart, MessageRole, StreamToken,
 };
@@ -36,32 +37,11 @@ use crate::system_config::current_context_compaction_percent;
 use crate::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskStatus,
 };
+use crate::utils::string_utils::shorten_text;
 use crate::workspace::{AskUserRequest, ToolCallLimitRequest};
 
 pub const MAX_TOOL_ITERATIONS: usize = 25;
 const LOG_PREVIEW_CHARS: usize = 600;
-
-fn truncate_for_log(text: &str, max_chars: usize) -> String {
-    let total_chars = text.chars().count();
-    if total_chars <= max_chars {
-        return text.to_string();
-    }
-
-    let truncated: String = text.chars().take(max_chars).collect();
-    format!("{truncated}...(truncated,total_chars={total_chars})")
-}
-
-fn format_cache_hit_rate(
-    cached_prompt_tokens: Option<usize>,
-    prompt_tokens: Option<usize>,
-) -> String {
-    match (cached_prompt_tokens, prompt_tokens) {
-        (Some(cached), Some(prompt)) if prompt > 0 => {
-            format!("{:.2}%", (cached as f64 / prompt as f64) * 100.0)
-        }
-        _ => "unavailable".to_string(),
-    }
-}
 
 #[derive(Clone)]
 struct PreparedToolCall {
@@ -382,7 +362,7 @@ impl ToolCallingEngine {
             "[ToolCallingEngine] tool call id={} name={} result: {}",
             call.call_id,
             call.name,
-            truncate_for_log(&call.result.result, LOG_PREVIEW_CHARS)
+            shorten_text(&call.result.result, LOG_PREVIEW_CHARS)
         );
         if let Some(observer) = self.observer.as_ref() {
             observer.on_tool_finish(&call.name, &call.call_id, &call.result.result);
@@ -416,7 +396,7 @@ impl ToolCallingEngine {
             info!(
                 "[ToolCallingEngine] llm reasoning ({} chars): {}",
                 reasoning.len(),
-                truncate_for_log(reasoning, LOG_PREVIEW_CHARS)
+                shorten_text(reasoning, LOG_PREVIEW_CHARS)
             );
         }
 
@@ -476,6 +456,7 @@ impl ToolCallingEngine {
                 self.append_iteration_messages(iteration + 1, &mut conversation);
             }
             self.compact_conversation_if_over_threshold(&mut conversation);
+            let inference_started = std::time::Instant::now();
             let response = match self.llm.inference(&InferenceParam {
                 messages: &conversation,
                 tools: if tool_specs.is_empty() {
@@ -497,6 +478,9 @@ impl ToolCallingEngine {
                     return (output, ToolCallingStopReason::TransportError(message));
                 }
             };
+            if let Some(observer) = self.observer.as_ref() {
+                observer.on_inference_timing(iteration + 1, inference_started.elapsed(), None);
+            }
 
             self.log_llm_usage(&response);
 
@@ -514,14 +498,14 @@ impl ToolCallingEngine {
                     "[ToolCallingEngine] iteration {} reasoning ({} chars): {}",
                     iteration + 1,
                     reasoning.len(),
-                    truncate_for_log(reasoning, LOG_PREVIEW_CHARS)
+                    shorten_text(reasoning, LOG_PREVIEW_CHARS)
                 );
             }
             if !tool_call_content.is_empty() {
                 info!(
                     "[ToolCallingEngine] iteration {} assistant content: {}",
                     iteration + 1,
-                    truncate_for_log(&tool_call_content, LOG_PREVIEW_CHARS)
+                    shorten_text(&tool_call_content, LOG_PREVIEW_CHARS)
                 );
             }
             info!(
@@ -554,7 +538,7 @@ impl ToolCallingEngine {
                     "[ToolCallingEngine] tool call id={} name={} arguments={}",
                     call.call_id,
                     call.name,
-                    truncate_for_log(&call.arguments.to_string(), LOG_PREVIEW_CHARS)
+                    shorten_text(&call.arguments.to_string(), LOG_PREVIEW_CHARS)
                 );
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_tool_start(&call.name, &call.call_id, &call.arguments);
@@ -671,6 +655,7 @@ impl ToolCallingEngine {
                 Some(&tool_specs)
             };
 
+            let inference_started = std::time::Instant::now();
             let response = if let Some(streaming) = streaming_llm {
                 streaming
                     .inference_streaming(
@@ -702,6 +687,9 @@ impl ToolCallingEngine {
                     }
                 }
             };
+            if let Some(observer) = self.observer.as_ref() {
+                observer.on_inference_timing(iteration + 1, inference_started.elapsed(), None);
+            }
 
             if let Some(content) = response.content_text() {
                 if is_transport_error(content) {
@@ -727,7 +715,7 @@ impl ToolCallingEngine {
                 if !response_preview.is_empty() {
                     info!(
                         "[ToolCallingEngine] final assistant response: {}",
-                        truncate_for_log(&response_preview, LOG_PREVIEW_CHARS)
+                        shorten_text(&response_preview, LOG_PREVIEW_CHARS)
                     );
                 }
                 if let Some(observer) = self.observer.as_ref() {
@@ -743,14 +731,14 @@ impl ToolCallingEngine {
                     "[ToolCallingEngine] iteration {} reasoning ({} chars): {}",
                     iteration + 1,
                     reasoning.len(),
-                    truncate_for_log(reasoning, LOG_PREVIEW_CHARS)
+                    shorten_text(reasoning, LOG_PREVIEW_CHARS)
                 );
             }
             if !tool_call_content.is_empty() {
                 info!(
                     "[ToolCallingEngine] iteration {} assistant content: {}",
                     iteration + 1,
-                    truncate_for_log(&tool_call_content, LOG_PREVIEW_CHARS)
+                    shorten_text(&tool_call_content, LOG_PREVIEW_CHARS)
                 );
             }
             info!(
@@ -783,7 +771,7 @@ impl ToolCallingEngine {
                     "[ToolCallingEngine] tool call id={} name={} arguments={}",
                     call.call_id,
                     call.name,
-                    truncate_for_log(&call.arguments.to_string(), LOG_PREVIEW_CHARS)
+                    shorten_text(&call.arguments.to_string(), LOG_PREVIEW_CHARS)
                 );
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_tool_start(&call.name, &call.call_id, &call.arguments);

@@ -9,7 +9,7 @@ import {
   type ServiceWithRuntime,
 } from "../../api/client";
 
-export type ServiceCapability = "messages" | "memories" | "images";
+export type ServiceCapability = "messages" | "memories" | "images" | "contexts";
 
 function stringConfig(service: ServiceWithRuntime, key: string): string {
   const value = service.role_service_type[key];
@@ -34,7 +34,10 @@ export function serviceCapabilities(service: ServiceWithRuntime): ServiceCapabil
   // The single retrieval store serves both agent memory and image semantic search.
   const hasMemories = hasRetrievalStore;
   const hasImages = type === "qq_chat" && hasRetrievalStore;
-  return [hasMessages ? "messages" : null, hasMemories ? "memories" : null, hasImages ? "images" : null]
+  // The context view reads the running agent's conversation cache; a QQ chat service needs its
+  // own relational database configured (same gate as chat records).
+  const hasContexts = type === "qq_chat" && Boolean(stringConfig(service, "rdb_id") || stringConfig(service, "mysql_connection_id"));
+  return [hasMessages ? "messages" : null, hasMemories ? "memories" : null, hasImages ? "images" : null, hasContexts ? "contexts" : null]
     .filter((item): item is ServiceCapability => item !== null);
 }
 

@@ -82,6 +82,18 @@ async fn main() {
     let broadcast = api::ws::create_broadcast();
     log_forwarder::set_app_state(Arc::clone(&state));
     log_forwarder::set_broadcast(broadcast.clone());
+    // Bridge QQ Chat per-turn context events into the web socket broadcast so the Data Explorer
+    // context view can live-update. QQ turns run on blocking threads, and `broadcast::Sender::send`
+    // is synchronous, so the emitter can be called straight from there.
+    {
+        let context_broadcast = broadcast.clone();
+        zihuan_core::qq_context::set_qq_context_emitter(Arc::new(move |event| {
+            // Keep the turn log first: the context view reads it for tool calls, stages and
+            // usage, which the conversation cache does not hold.
+            zihuan_core::qq_context::record_qq_chat_turn_event(&event);
+            let _ = context_broadcast.send(api::ws::ServerMessage::QqContext { event });
+        }));
+    }
     // Register the task runtime before the first scheduler tick so scheduled job runs are
     // recorded as tasks even when no role service has been started yet.
     api::config::role_services::build_agent_task_runtime(Arc::clone(&state), broadcast.clone());

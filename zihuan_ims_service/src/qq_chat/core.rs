@@ -61,6 +61,17 @@ pub(crate) const LAST_INJECTED_GROUP_NAME_KEY: &str = "qq_chat_last_injected_gro
 pub(crate) const LAST_INJECTED_ROLE_KEY: &str = "qq_chat_last_injected_role";
 pub(crate) const LAST_INJECTED_EMOTION_KEY: &str = "qq_chat_last_injected_emotion";
 
+/// The state/system prefix that precedes `[Current User Message]` in an assembled turn input.
+///
+/// It is rebuilt on every turn (emotion, language style, preprompt block, chat environment), so
+/// the Data Explorer reports it per turn rather than once per conversation.
+pub(crate) fn split_system_prompt_prefix(user_text: &str) -> Option<String> {
+    let marker = format!("\n{CURRENT_USER_MESSAGE_LABEL}\n");
+    let index = user_text.find(&marker)?;
+    let prefix = user_text[..index].trim();
+    (!prefix.is_empty()).then(|| prefix.to_string())
+}
+
 fn default_tools_enabled_map() -> HashMap<String, bool> {
     [
         DEFAULT_TOOL_WEB_SEARCH,

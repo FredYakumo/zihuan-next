@@ -446,6 +446,9 @@ impl QqChatAgentServiceInner {
             let bot_id = get_bot_id(ctx.adapter);
             let mut current_event = event.clone();
             let mut current_time = time.to_string();
+            // The first pass handles the user's message; every later pass replays queued steer
+            // messages and is marked as a continuation in the context view.
+            let mut is_steer_follow_up = false;
             let result_summary = loop {
                 let turn_result = self.handle_claimed_turn(
                     trace,
@@ -456,6 +459,7 @@ impl QqChatAgentServiceInner {
                     is_group,
                     &bot_id,
                     message_rate_limit_warning,
+                    is_steer_follow_up,
                     ctx,
                 )?;
 
@@ -500,6 +504,7 @@ impl QqChatAgentServiceInner {
                     .last()
                     .map(|event| event.time.clone())
                     .unwrap_or_else(|| current_time.clone());
+                is_steer_follow_up = true;
             };
 
             Ok(QqChatServiceHandleReport { result_summary })

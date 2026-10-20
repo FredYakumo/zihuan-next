@@ -1,0 +1,161 @@
+.data-explorer-detail-page {
+    display: grid;
+    gap: 16px;
+}
+
+.service-card-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.service-name {
+    font-size: 20px;
+}
+
+.search-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.search-form :deep(.t-form__item) {
+    margin-bottom: 0;
+}
+
+.message-filter-row,
+.message-content-row {
+    display: flex;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.message-content-row {
+    align-items: flex-start;
+}
+
+.message-content-field {
+    flex: 1 1 560px;
+}
+
+.message-content-field :deep(.t-textarea) {
+    width: 100%;
+}
+
+.search-form--simple :deep(.t-input),
+.search-form--simple :deep(.t-input-number) {
+    width: min(280px, 100%);
+}
+
+.content-cell {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.pagination {
+    margin-top: 16px;
+}
+
+.memory-list {
+    display: grid;
+    gap: 10px;
+}
+
+.memory-item,
+.image-item {
+    border: 1px solid var(--td-component-border);
+    border-radius: 6px;
+}
+
+.memory-item {
+    padding: 14px 16px;
+}
+
+.memory-item-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.memory-item p,
+.image-info p {
+    margin: 8px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.memory-actions {
+    margin-top: 6px;
+}
+
+.image-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 12px;
+}
+
+.image-item {
+    overflow: hidden;
+    background: var(--td-bg-color-container);
+}
+
+.image-item img,
+.image-placeholder {
+    display: block;
+    width: 100%;
+    height: 160px;
+    object-fit: cover;
+    background: var(--td-bg-color-secondarycontainer);
+}
+
+.image-placeholder {
+    display: grid;
+    place-items: center;
+    color: var(--td-text-color-placeholder);
+}
+
+.image-info {
+    display: grid;
+    gap: 6px;
+    padding: 12px;
+}
+
+.image-info p {
+    min-height: 40px;
+    font-size: 13px;
+}
+
+.empty-state {
+    padding: 48px 16px;
+    text-align: center;
+    color: var(--td-text-color-placeholder);
+}
+
+.context-users :deep(.t-table__row) {
+    cursor: pointer;
+}
+
+.context-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.muted {
+    color: var(--td-text-color-placeholder);
+}
+
+@media (max-width: 768px) {
+    .search-form--simple :deep(.t-input),
+    .search-form--simple :deep(.t-input-number) {
+        width: 100%;
+    }
+}

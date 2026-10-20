@@ -1,0 +1,99 @@
+.context-flow {
+    display: grid;
+    gap: 16px;
+}
+
+.context-stats {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 16px;
+    border: 1px solid var(--td-component-border);
+    border-radius: 6px;
+    background: var(--td-bg-color-container);
+}
+
+.stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: var(--td-text-color-placeholder);
+}
+
+.stat-value {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.context-loading {
+    display: block;
+    padding: 24px 0;
+    text-align: center;
+}
+
+.context-bubble-row {
+    display: flex;
+    justify-content: center;
+}
+
+.context-bubble {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 14px;
+    line-height: 1.6;
+    background: var(--td-bg-color-secondarycontainer);
+}
+
+.context-bubble-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--td-text-color-secondary);
+}
+
+.context-bubble-note {
+    font-weight: 400;
+    color: var(--td-text-color-placeholder);
+}
+
+.context-archive {
+    display: grid;
+    gap: 8px;
+}
+
+/* Separates consecutive conversation rounds; steer follow-ups continue the same round. */
+.context-turn-divider {
+    height: 1px;
+    background: var(--td-component-border);
+}
+
+.context-archive-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--td-text-color-placeholder);
+}
+
+.context-archive-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 16px 0 8px;
+    color: var(--td-text-color-placeholder);
+    font-size: 12px;
+}
+
+.empty-state {
+    padding: 48px 16px;
+    text-align: center;
+    color: var(--td-text-color-placeholder);
+}
