@@ -1372,6 +1372,18 @@ export function assertConnectionConfig(json: unknown): ConnectionConfig {
   return obj as unknown as ConnectionConfig;
 }
 
+/**
+ * Install-command output serializes connections as an array, while manual
+ * imports usually use a single object. Accept both shapes.
+ */
+export function normalizeConnectionConfigs(json: unknown): ConnectionConfig[] {
+  const items = Array.isArray(json) ? json : [json];
+  if (items.length === 0) {
+    throw new Error("配置中没有连接");
+  }
+  return items.map(assertConnectionConfig);
+}
+
 export function assertLlmConfig(json: unknown): LlmConfig {
   if (!json || typeof json !== "object") {
     throw new Error("配置必须是 JSON 对象");

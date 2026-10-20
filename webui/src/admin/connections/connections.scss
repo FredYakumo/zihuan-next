@@ -6,6 +6,45 @@
   display: none;
 }
 
+.import-dialog-body {
+  display: grid;
+  gap: 12px;
+}
+
+.import-dropzone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 88px;
+  padding: 20px 16px;
+  color: var(--td-text-color-secondary);
+  text-align: center;
+  background: var(--td-bg-color-secondarycontainer);
+  border: 1px dashed var(--td-component-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.import-dropzone:hover,
+.import-dropzone:focus-visible,
+.import-dropzone--active {
+  background: var(--td-bg-color-container-hover);
+  border-color: var(--td-brand-color);
+  outline: 0;
+}
+
+.import-dropzone strong {
+  color: var(--td-text-color-primary);
+  font-weight: 600;
+}
+
+.import-dropzone span {
+  font-size: 13px;
+}
+
 .connections-card {
   border-radius: 0;
 }
@@ -135,3 +174,8 @@
     grid-column: auto;
   }
 }
+
+.create-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.create-choice { display: grid; gap: 8px; padding: 20px; text-align: left; border: 1px solid var(--admin-border); background: var(--admin-surface); border-radius: 8px; cursor: pointer; color: inherit; }
+.create-choice:hover { border-color: var(--td-brand-color); }
+.create-choice span { color: var(--admin-muted); font-size: 13px; }

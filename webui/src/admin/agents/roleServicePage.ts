@@ -2,7 +2,7 @@ import { computed, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { system, type ConnectionConfig, type ServiceWithRuntime } from "../../api/client";
 import { useAgents } from "./useAgents";
-import { assertConnectionConfig, assertLlmConfig } from "../model";
+import { assertConnectionConfig, assertLlmConfig, normalizeConnectionConfigs } from "../model";
 
 const AVATAR_ZOOM_RULER_TICKS = [3, 2.75, 2.5, 2.25, 2, 1.75, 1.5, 1.25, 1];
 
@@ -264,12 +264,20 @@ async function importRetrievalDatabaseFromText(raw: string) {
   if (retrievalDatabaseImporting.value) return;
   retrievalDatabaseImporting.value = true;
   try {
-    const config = assertConnectionConfig(JSON.parse(raw));
-    const type = String(config.kind.type);
-    if (type !== "weaviate" && type !== "elasticsearch") {
+    const configs = normalizeConnectionConfigs(JSON.parse(raw));
+    const config = configs.find((item) => {
+      const type = String(item.kind.type);
+      return type === "weaviate" || type === "elasticsearch";
+    });
+    if (!config) {
       throw new Error("检索数据库仅支持 Weaviate 或 Elasticsearch 连接配置");
     }
-    const created = await system.connections.create({ name: config.name, enabled: config.enabled, kind: config.kind });
+    const created = await system.connections.create({
+      name: config.name,
+      enabled: config.enabled,
+      kind: config.kind,
+      allow_create_collection: true,
+    });
     await selectCreatedRetrievalDatabase(created);
   } catch (error) {
     alert(`检索数据库导入失败：${error instanceof Error ? error.message : String(error)}`);

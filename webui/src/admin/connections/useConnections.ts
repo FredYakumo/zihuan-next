@@ -1,4 +1,5 @@
 import { computed, onMounted, reactive, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import {
   ApiError,
@@ -8,7 +9,6 @@ import {
   type RuntimeConnectionInstanceSummary,
 } from "../../api/client";
 import {
-  assertConnectionConfig,
   buildConnectionPayload,
   compactId,
   connectionFormFromConfig,
@@ -17,6 +17,7 @@ import {
   defaultConnectionForm,
   formatTime,
   isBotAdapterConnectionType,
+  normalizeConnectionConfigs,
   summarizeIds,
   type ConnectionFormState,
 } from "../model";
@@ -52,6 +53,10 @@ export function useConnections() {
   const tokenizerModels = ref<string[]>([]);
   const form = reactive<ConnectionFormState>(defaultConnectionForm());
   const drawerVisible = ref(false);
+  const importDialogVisible = ref(false);
+  const importJsonText = ref("");
+  const importDragging = ref(false);
+  const saving = ref(false);
   const filters = reactive<ConnectionFilters>({
     keyword: "",
     type: "all",
@@ -80,16 +85,73 @@ export function useConnections() {
     });
   });
 
-  const { copiedId, copyConfig, handleFileChange } = useAdminClipboard<ConnectionConfig>({
-    validate: assertConnectionConfig,
-    onImport: (config) => {
+  const { copiedId, copyConfig, importFromText } = useAdminClipboard<ConnectionConfig[]>({
+    validate: (value) => {
+      const configs = normalizeConnectionConfigs(value);
+      if (configs.length > 1) {
+        throw new Error("配置中包含多个连接，请一次导入一个连接配置");
+      }
+      return configs;
+    },
+    onImport: ([config]) => {
       Object.assign(form, connectionFormFromConfig(config));
       form.id = null;
       form.name = `${form.name} 副本`;
       drawerVisible.value = true;
     },
-    isEnabled: () => !drawerVisible.value,
+    isEnabled: () => !drawerVisible.value && !importDialogVisible.value,
   });
+
+  function openImportDialog() {
+    importJsonText.value = "";
+    importDialogVisible.value = true;
+  }
+
+  function readImportFile(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      importJsonText.value = String(reader.result ?? "");
+    };
+    reader.onerror = () => {
+      alert("文件读取失败");
+    };
+    reader.readAsText(file);
+  }
+
+  function handleImportFileChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file) {
+      readImportFile(file);
+    }
+    input.value = "";
+  }
+
+  function handleImportDragLeave(event: DragEvent) {
+    const zone = event.currentTarget as HTMLElement | null;
+    const related = event.relatedTarget as Node | null;
+    if (!zone || !related || !zone.contains(related)) {
+      importDragging.value = false;
+    }
+  }
+
+  function handleImportDrop(event: DragEvent) {
+    importDragging.value = false;
+    const file = event.dataTransfer?.files?.[0];
+    if (file) {
+      readImportFile(file);
+    }
+  }
+
+  function submitImport() {
+    if (!importJsonText.value.trim()) {
+      alert("请拖拽 JSON 文件或粘贴配置内容");
+      return;
+    }
+    if (importFromText(importJsonText.value)) {
+      importDialogVisible.value = false;
+    }
+  }
 
   function resetForm() {
     Object.assign(form, defaultConnectionForm());
@@ -150,6 +212,7 @@ export function useConnections() {
   }
 
   async function submitForm() {
+    if (saving.value) return;
     if (!form.name.trim()) {
       alert("请填写连接名称");
       return;
@@ -217,6 +280,7 @@ export function useConnections() {
       alert("请选择 Tokenizer 模型");
       return;
     }
+    saving.value = true;
     try {
       const payload = buildConnectionPayload(form);
       const result = await saveConnection(payload, true);
@@ -229,6 +293,8 @@ export function useConnections() {
     } catch (error) {
       console.error("连接保存失败", error);
       alert(`连接保存失败：${formatSaveErrorMessage(error)}`);
+    } finally {
+      saving.value = false;
     }
   }
 
@@ -257,6 +323,10 @@ export function useConnections() {
         lowerMessage.includes("authenticate through one of the available methods")
       ) {
         return "检索数据库鉴权失败：请检查所选认证方式的凭据是否正确。";
+      }
+
+      if (lowerMessage.includes("error sending request") || lowerMessage.includes("connection refused")) {
+        return "无法连接检索数据库：请确认服务已启动，且 Base URL 与端口正确。";
       }
 
       if (rawMessage) {
@@ -375,6 +445,45 @@ export function useConnections() {
     }
   }
 
+  const route = useRoute();
+  const router = useRouter();
+  const importFileInput = ref<HTMLInputElement | null>(null);
+  const createChoiceVisible = ref(false);
+
+  function openCreateChoice() { createChoiceVisible.value = true; }
+  if (route.query.action === "create") {
+    const queryType = route.query.type;
+    if (
+      queryType === "web_search_engine" ||
+      queryType === "weaviate" ||
+      queryType === "elasticsearch"
+    ) {
+      startCreate(queryType);
+    } else {
+      openCreateChoice();
+    }
+  }
+  function chooseExistingConnection() { createChoiceVisible.value = false; startCreate(); }
+  function choosePluginConnection() { createChoiceVisible.value = false; router.push("/plugins?install=1"); }
+
+  const columns = [
+    { colKey: "name", title: "连接名称", width: 210 },
+    { colKey: "type", title: "类型", width: 130 },
+    { colKey: "enabled", title: "状态", width: 100 },
+    { colKey: "summary", title: "连接摘要", ellipsis: true },
+    { colKey: "runtime", title: "运行时", width: 100 },
+    { colKey: "updated_at", title: "更新时间", width: 170 },
+    { colKey: "actions", title: "操作", width: 270, fixed: "right" },
+  ];
+
+  function connectionTypeLabel(type: string): string {
+    return connectionTypes.find((option) => option.value === type)?.label ?? type;
+  }
+
+  function copyConnectionConfig(connection: ConnectionConfig) {
+    copyConfig({ name: connection.name, enabled: connection.enabled, kind: connection.kind }, connection.config_id);
+  }
+
   onMounted(() => {
     load().catch((error) => {
       console.error(error);
@@ -389,6 +498,12 @@ export function useConnections() {
     tokenizerModels,
     form,
     drawerVisible,
+    importDialogVisible,
+    importJsonText,
+    importDragging,
+    importFileInput,
+    createChoiceVisible,
+    saving,
     isCreating,
     filters,
     connectionTypes,
@@ -407,7 +522,18 @@ export function useConnections() {
     isBotAdapterConnectionType,
     copiedId,
     copyConfig,
-    handleFileChange,
+    openImportDialog,
+    handleImportFileChange,
+    handleImportDragLeave,
+    handleImportDrop,
+    submitImport,
+    openCreateChoice,
+    chooseExistingConnection,
+    choosePluginConnection,
+    columns,
+    connectionTypeLabel,
+    copyConnectionConfig,
+    compactId,
   };
 }
 

@@ -17,8 +17,11 @@ use crate::storage::{
 };
 
 const REQUEST_TIMEOUT_SECS: u64 = 30;
-const INDEX_CHECK_RETRY_ATTEMPTS: usize = 5;
-const INDEX_CHECK_RETRY_DELAY: Duration = Duration::from_secs(30);
+const CONNECT_TIMEOUT_SECS: u64 = 5;
+/// Index initialization right after a container starts; the HTTP API becomes
+/// reachable slightly after the socket does.
+const INDEX_STARTUP_RETRY_TIMEOUT: Duration = Duration::from_secs(30);
+const INDEX_CHECK_RETRY_DELAY: Duration = Duration::from_secs(1);
 const MAX_QUERY_CANDIDATES: usize = 100;
 
 #[derive(Debug, Clone)]
@@ -93,6 +96,7 @@ impl ElasticsearchRef {
         }
         let builder = Client::builder()
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
             .default_headers(headers);
         Ok(Self {
             client: builder.build().map_err(|error| {
@@ -136,17 +140,21 @@ pub fn ensure_elasticsearch_index(
     create_missing: bool,
 ) -> Result<bool> {
     let index_url = format!("{}/{}", reference.base_url, reference.index_name);
-    let mut attempt = 0;
+    // A container that is still starting accepts the socket before its HTTP API
+    // answers, so timeouts are retried. A refused connection means nothing is
+    // listening at all, which is a configuration error: report it immediately
+    // instead of stalling the request.
+    let deadline = std::time::Instant::now() + INDEX_STARTUP_RETRY_TIMEOUT;
     let exists = loop {
         match reference.client.head(&index_url).send() {
             Ok(response) => break response.status().is_success(),
-            Err(error) if attempt + 1 == INDEX_CHECK_RETRY_ATTEMPTS => {
-                return Err(crate::string_error!(
-                    "elasticsearch index check failed after {INDEX_CHECK_RETRY_ATTEMPTS} attempts: {error}"
-                ));
-            }
-            Err(_) => {
-                attempt += 1;
+            Err(error) => {
+                let retryable = error.is_timeout() || !error.is_connect();
+                if !retryable || std::time::Instant::now() >= deadline {
+                    return Err(crate::string_error!(
+                        "elasticsearch index check failed for {index_url}: {error}"
+                    ));
+                }
                 std::thread::sleep(INDEX_CHECK_RETRY_DELAY);
             }
         }

@@ -23,13 +23,15 @@ export function useAdminClipboard<T>(options: UseAdminClipboardOptions<T>) {
     }
   }
 
-  function importFromText(raw: string): void {
+  function importFromText(raw: string): boolean {
     try {
       const parsed = JSON.parse(raw);
       const config = options.validate(parsed);
       options.onImport(config);
+      return true;
     } catch (error) {
       alert(error instanceof Error ? error.message : String(error));
+      return false;
     }
   }
 
@@ -83,6 +85,7 @@ export function useAdminClipboard<T>(options: UseAdminClipboardOptions<T>) {
   return {
     copiedId,
     copyConfig,
+    importFromText,
     handleFileChange,
   };
 }
