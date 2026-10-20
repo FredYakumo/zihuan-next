@@ -6,7 +6,7 @@ use std::time::Duration;
 use crate::ims_bot_adapter::runtime::active_adapter_manager::ActiveAdapterManager;
 use crate::ims_bot_adapter::runtime::system_config::BotAdapterConnection;
 use crate::ims_bot_adapter::runtime::ws_action::{
-    json_i64, next_echo, response_success, ws_send_action_async,
+    json_i64, next_echo, response_success, ws_send_action_with_timeout_async,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,12 +34,19 @@ pub async fn fetch_login_info(connection: &BotAdapterConnection) -> Result<BotLo
 pub async fn fetch_login_info_via_adapter_connection(connection_id: &str) -> Result<BotLoginInfo> {
     let adapter = ActiveAdapterManager::shared().get_or_create(connection_id).await?;
 
-    let max_retries = 10u32;
-    let retry_delay = Duration::from_millis(500);
+    let max_retries = 2u32;
+    let retry_delay = Duration::from_millis(100);
     let mut last_err = None;
 
     for attempt in 1..=max_retries {
-        match ws_send_action_async(&adapter, "get_login_info", serde_json::json!({})).await {
+        match ws_send_action_with_timeout_async(
+            &adapter,
+            "get_login_info",
+            serde_json::json!({}),
+            Duration::from_secs(1),
+        )
+        .await
+        {
             Ok(response) => return parse_login_info(&response),
             Err(err) => {
                 let err_msg = err.to_string();

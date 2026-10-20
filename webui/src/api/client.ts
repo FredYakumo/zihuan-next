@@ -867,6 +867,9 @@ export const system = {
     stop(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo }> {
       return request("POST", `/system/services/${configId}/stop`);
     },
+    syncAvatar(configId: string): Promise<{ avatar_url: string }> {
+      return request("POST", `/system/services/${configId}/avatar/sync`);
+    },
   },
   subagents: {
     list(availableToolIds: string[] = []): Promise<SubAgentDefinition[]> {

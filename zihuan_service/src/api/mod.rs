@@ -123,6 +123,10 @@ pub fn build_router(
                                         .post(config::role_services::stop_agent),
                                 )
                                 .push(
+                                    Router::with_path("avatar/sync")
+                                        .post(config::role_services::sync_agent_avatar),
+                                )
+                                .push(
                                     Router::with_path("notifications")
                                         .get(config::role_services::list_agent_notifications)
                                         .delete(config::role_services::delete_agent_notifications),

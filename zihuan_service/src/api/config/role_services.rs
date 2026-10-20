@@ -7,8 +7,10 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
+use futures_util::future::join_all;
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
@@ -62,7 +64,7 @@ struct AgentWithRuntime {
     qq_chat_profile: Option<QqChatProfile>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct QqChatProfile {
     bot_user_id: Option<String>,
     bot_nickname: Option<String>,
@@ -572,24 +574,54 @@ pub async fn delete_subagent(req: &mut Request, res: &mut Response, _depot: &mut
 #[handler]
 pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap();
+    let config_started = Instant::now();
     match system_config::load_role_services() {
         Ok(agents) => {
             let connections = match system_config::load_connections() {
                 Ok(connections) => connections,
                 Err(err) => return render_internal_error(res, err),
             };
+            let config_elapsed = config_started.elapsed();
+
+            let qq_started = Instant::now();
+            let profile_tasks = agents.iter().map(|agent| {
+                let runtime = state.role_service_manager.runtime_info(&agent.id);
+                let config = zihuan_service::role::optional_qq_chat(&agent.role_service_type)
+                    .map(|config| (config, runtime));
+                let connections = connections.clone();
+                async move {
+                    match config {
+                        Some((config, runtime)) => {
+                            let profile = tokio::time::timeout(
+                                Duration::from_secs(5),
+                                resolve_qq_chat_profile(&connections, &config, &runtime),
+                            )
+                            .await
+                            .ok()
+                            .flatten();
+                            (agent.id.clone(), profile)
+                        }
+                        None => (agent.id.clone(), None),
+                    }
+                }
+            });
+            let profiles = tokio::time::timeout(Duration::from_secs(5), join_all(profile_tasks))
+                .await
+                .unwrap_or_default();
+            let qq_elapsed = qq_started.elapsed();
+            log::info!(
+                "[agents] list timings: config_read_ms={} qq_query_ms={} avatar_download_ms=0 (deferred)",
+                config_elapsed.as_millis(),
+                qq_elapsed.as_millis()
+            );
 
             let mut items = Vec::with_capacity(agents.len());
             for mut agent in agents {
                 let runtime = state.role_service_manager.runtime_info(&agent.id);
-                let qq_config = zihuan_service::role::optional_qq_chat(&agent.role_service_type);
-                let qq_chat_profile = match qq_config.as_ref() {
-                    Some(config) => {
-                        resolve_qq_chat_profile(state, &mut agent, &connections, config, &runtime)
-                            .await
-                    }
-                    None => None,
-                };
+                let qq_chat_profile = profiles
+                    .iter()
+                    .find(|(agent_id, _)| agent_id == &agent.id)
+                    .and_then(|(_, profile)| profile.clone());
 
                 items.push(AgentWithRuntime { runtime, agent, qq_chat_profile });
             }
@@ -601,8 +633,6 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
 }
 
 async fn resolve_qq_chat_profile(
-    _state: &Arc<AppState>,
-    agent: &mut RoleServiceConfig,
     connections: &[ConnectionConfig],
     config: &QqChatRoleServiceConfig,
     runtime: &RoleServiceRuntimeInfo,
@@ -618,20 +648,70 @@ async fn resolve_qq_chat_profile(
             .flatten()
     }?;
 
-    if let Some(user_id) = profile.bot_user_id.as_deref() {
-        if let Err(err) = persist_qq_avatar_for_agent(agent, user_id).await {
-            warn!(
-                "[agents] failed to persist QQ avatar for agent '{}' (connection='{}'): {}",
-                agent.id, config.ims_bot_adapter_connection_id, err
-            );
-        }
-    }
-
     Some(QqChatProfile {
         bot_user_id: profile.bot_user_id,
         bot_nickname: profile.bot_nickname,
         bot_avatar_url: profile.avatar_url,
     })
+}
+
+#[handler]
+pub async fn sync_agent_avatar(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let mut agents = match system_config::load_role_services() {
+        Ok(agents) => agents,
+        Err(err) => return render_internal_error(res, err),
+    };
+    let Some(agent) = agents.iter_mut().find(|agent| agent.id == id) else {
+        return render_not_found(res, "Agent not found");
+    };
+    if let Some(existing) =
+        agent.avatar_url.as_deref().map(str::trim).filter(|value| !value.is_empty())
+    {
+        res.render(Json(serde_json::json!({ "avatar_url": existing })));
+        return;
+    }
+    let Some(config) = zihuan_service::role::optional_qq_chat(&agent.role_service_type) else {
+        return render_unprocessable_entity(
+            res,
+            "Agent is not a QQ Chat Agent Service".to_string(),
+        );
+    };
+    let connections = match system_config::load_connections() {
+        Ok(connections) => connections,
+        Err(err) => return render_internal_error(res, err),
+    };
+    let runtime = state.role_service_manager.runtime_info(&id);
+    let started = Instant::now();
+    let profile = match tokio::time::timeout(
+        Duration::from_secs(5),
+        resolve_qq_chat_profile(&connections, &config, &runtime),
+    )
+    .await
+    {
+        Ok(Some(profile)) => profile,
+        Ok(None) => {
+            return render_unprocessable_entity(res, "QQ bot profile unavailable".to_string())
+        }
+        Err(_) => {
+            return render_unprocessable_entity(res, "QQ bot profile lookup timed out".to_string())
+        }
+    };
+    let Some(user_id) = profile.bot_user_id.as_deref() else {
+        return render_unprocessable_entity(res, "QQ bot user ID unavailable".to_string());
+    };
+    match persist_qq_avatar_for_agent(agent, user_id).await {
+        Ok(avatar_url) => {
+            log::info!(
+                "[agents] avatar sync timing: agent_id={} avatar_download_ms={}",
+                id,
+                started.elapsed().as_millis()
+            );
+            res.render(Json(serde_json::json!({ "avatar_url": avatar_url })));
+        }
+        Err(err) => render_unprocessable_entity(res, err),
+    }
 }
 
 fn resolve_qq_chat_agent_service_config(
@@ -1120,6 +1200,20 @@ fn validate_qq_chat_agent_service_llms(
             )),
         }?;
 
+        // Both are optional: an empty value falls back to the main Brain model at runtime.
+        validate_optional_chat_llm_ref(
+            llm_refs,
+            config.intent_classification_llm_ref_id.as_deref(),
+            agent_name,
+            "intent_classification_llm_ref_id",
+        )?;
+        validate_optional_chat_llm_ref(
+            llm_refs,
+            config.math_programming_llm_ref_id.as_deref(),
+            agent_name,
+            "math_programming_llm_ref_id",
+        )?;
+
         validate_chat_llm_ref(
             llm_refs,
             config
@@ -1200,20 +1294,6 @@ fn validate_chat_llm_ref(
         }
     }
 }
-        // Both are optional: an empty value falls back to the main Brain model at runtime.
-        validate_optional_chat_llm_ref(
-            llm_refs,
-            config.intent_classification_llm_ref_id.as_deref(),
-            agent_name,
-            "intent_classification_llm_ref_id",
-        )?;
-        validate_optional_chat_llm_ref(
-            llm_refs,
-            config.math_programming_llm_ref_id.as_deref(),
-            agent_name,
-            "math_programming_llm_ref_id",
-        )?;
-
 
 fn validate_embedding_model_ref(
     llm_refs: &[LlmRefConfig],
@@ -1426,10 +1506,21 @@ async fn delete_avatar_by_agent_id(agent_id: &str) -> Result<(), String> {
 async fn persist_qq_avatar_for_agent(
     agent: &mut RoleServiceConfig,
     user_id: &str,
-) -> Result<(), String> {
+) -> Result<String, String> {
+    if let Some(existing) =
+        agent.avatar_url.as_deref().map(str::trim).filter(|value| !value.is_empty())
+    {
+        return Ok(existing.to_string());
+    }
     let avatar_url = zihuan_core::ims_bot_adapter::qq_avatar_url(user_id)
         .ok_or_else(|| "QQ avatar URL is empty".to_string())?;
-    let response = reqwest::get(&avatar_url)
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to create QQ avatar client: {}", e))?;
+    let response = client
+        .get(&avatar_url)
+        .send()
         .await
         .map_err(|e| format!("Failed to download QQ avatar: {}", e))?;
     if !response.status().is_success() {
@@ -1455,21 +1546,17 @@ async fn persist_qq_avatar_for_agent(
         .map_err(|e| e.to_string())?;
 
     let persisted_avatar_url = format!("avatar://{}", avatar_id);
-    if agent.avatar_url.as_deref() == Some(persisted_avatar_url.as_str()) {
-        return Ok(());
-    }
-
     agent.avatar_url = Some(persisted_avatar_url.clone());
     agent.updated_at = Utc::now().to_rfc3339();
 
     let mut agents = system_config::load_role_services().map_err(|e| e.to_string())?;
     if let Some(stored_agent) = agents.iter_mut().find(|item| item.id == agent.id) {
-        stored_agent.avatar_url = Some(persisted_avatar_url);
+        stored_agent.avatar_url = Some(persisted_avatar_url.clone());
         stored_agent.updated_at = agent.updated_at.clone();
         system_config::save_role_services(agents).map_err(|e| e.to_string())?;
     }
 
-    Ok(())
+    Ok(persisted_avatar_url)
 }
 
 async fn avatar_store() -> Result<Arc<dyn AgentAvatarStore>, String> {
