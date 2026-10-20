@@ -92,6 +92,23 @@ async fn ensure_context_turn_columns_mysql(conn: &mut MySqlConnection) -> Result
             )))
         })?;
     }
+    let has_quoted_json = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'qq_chat_context_turn' AND column_name = 'quoted_json'",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(Error::Database)?;
+    if has_quoted_json == 0 {
+        sqlx::query("ALTER TABLE qq_chat_context_turn ADD COLUMN quoted_json MEDIUMTEXT NULL")
+            .execute(&mut *conn)
+            .await
+            .map_err(|e| {
+                Error::Database(sqlx::Error::Protocol(format!(
+                    "MySQL ALTER TABLE failed for column 'quoted_json': {}",
+                    e
+                )))
+            })?;
+    }
     Ok(())
 }
 
@@ -122,6 +139,22 @@ async fn ensure_context_turn_columns_sqlite(conn: &mut SqliteConnection) -> Resu
                 e
             )))
         })?;
+    }
+    let has_quoted_json = rows.iter().any(|row| {
+        row.try_get::<String, _>("name")
+            .map(|name| name == "quoted_json")
+            .unwrap_or(false)
+    });
+    if !has_quoted_json {
+        sqlx::query("ALTER TABLE qq_chat_context_turn ADD COLUMN quoted_json TEXT NULL")
+            .execute(&mut *conn)
+            .await
+            .map_err(|e| {
+                Error::Database(sqlx::Error::Protocol(format!(
+                    "SQLite ALTER TABLE failed for column 'quoted_json': {}",
+                    e
+                )))
+            })?;
     }
     Ok(())
 }

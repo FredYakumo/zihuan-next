@@ -50,9 +50,9 @@ use super::{
     build_group_system_prompt, build_meta_query_system_prompt, build_meta_query_user_message,
     build_private_system_prompt, build_user_message, collect_available_media_from_brain_output,
     expand_messages_for_inference, prepare_current_turn_user_input,
-    prepare_current_turn_user_input_from_event, split_system_prompt_prefix,
-    QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatServiceTurnResult, QqChatTaskTrace,
-    LOG_PREFIX,
+    prepare_current_turn_user_input_from_event, split_current_user_body,
+    split_system_prompt_prefix, QqChatAgentServiceContext, QqChatAgentServiceInner,
+    QqChatServiceTurnResult, QqChatTaskTrace, LOG_PREFIX,
 };
 
 use crate::agent::before_brain_agent::PrepromptContext;
@@ -272,6 +272,7 @@ impl QqChatAgentServiceInner {
             turn_id: turn_id.clone(),
             created_at: chrono::Local::now().to_rfc3339(),
             user_text: raw_user_message.clone(),
+            quoted: prepared_input.quoted_message.clone(),
             media: turn_media.clone(),
             continues_previous,
         });
@@ -526,15 +527,42 @@ impl QqChatAgentServiceInner {
             downgrade_messages_for_model(conversation, turn_llm.supports_multimodal_input());
         let prompt_tokens_estimated = estimate_messages_tokens(&brain_conversation);
         trace.log_llm_conversation(&brain_conversation, prompt_tokens_estimated);
+        // What the brain actually receives: the assembled current-turn input plus the history it
+        // is sent with. The per-turn system prefix is reported separately as its own stage.
+        let current_user_body =
+            user_msg.content_text_owned().as_deref().and_then(split_current_user_body);
+        // History user messages carry their per-turn system prefix; show only the turn's own
+        // body so the list reads as the conversation instead of repeating the same prefix.
+        let history_input: Vec<serde_json::Value> = brain_conversation
+            .iter()
+            .take(brain_conversation.len().saturating_sub(1))
+            .map(|message| {
+                let full = message.content_text_owned().unwrap_or_default();
+                let is_user =
+                    matches!(message.role, zihuan_core::model_inference::llm::MessageRole::User);
+                let text = if is_user {
+                    split_current_user_body(&full).unwrap_or(full.clone())
+                } else {
+                    full.clone()
+                };
+                serde_json::json!({
+                    "role": format!("{:?}", message.role).to_lowercase(),
+                    "chars": text.chars().count(),
+                    "preview": zihuan_core::utils::string_utils::shorten_text(&text, 160),
+                })
+            })
+            .collect();
         zihuan_core::qq_context::emit_qq_context_stage(
             ctx.agent_id,
             sender_id,
             &turn_id,
-            "推理上下文",
+            "Brain 输入",
             serde_json::json!({
                 "model": turn_llm.get_model_name(),
-                "history_messages": history.len(),
-                "context_tokens_estimated": estimate_messages_tokens(&history),
+                "messages_sent": brain_conversation.len(),
+                "prompt_tokens_estimated": prompt_tokens_estimated,
+                "current_user_message": current_user_body,
+                "history": history_input,
                 "compacted": compact_result.did_compact,
                 "tokens_before_compaction": compact_result
                     .did_compact
@@ -543,8 +571,6 @@ impl QqChatAgentServiceInner {
                     .did_compact
                     .then_some(compact_result.estimated_tokens_after),
                 "removed_tool_related_messages": compact_result.removed_tool_related_messages,
-                "messages_sent": brain_conversation.len(),
-                "prompt_tokens_estimated": prompt_tokens_estimated,
             }),
         );
 

@@ -1517,6 +1517,9 @@ struct ContextTurn {
     turn_id: String,
     created_at: String,
     user_text: String,
+    /// The message the user quoted, rendered as a collapsible quote block inside the user bubble.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quoted: Option<zihuan_core::qq_context::QqChatQuotedMessage>,
     media: Vec<ContextMedia>,
     entries: Vec<ContextTurnEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1576,6 +1579,7 @@ fn archived_turn_to_context(turn: zihuan_ims_service::qq_chat::ArchivedTurn) -> 
         turn_id: turn.turn_id,
         created_at: turn.created_at,
         user_text: turn.user_text,
+        quoted: turn.quoted,
         media: turn.media.iter().map(context_media_from_ref).collect(),
         entries: turn
             .entries
@@ -1732,6 +1736,7 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
                 turn_id: turn.turn_id,
                 created_at: turn.created_at,
                 user_text: turn.user_text,
+                quoted: turn.quoted,
                 media: turn.media.iter().map(context_media_from_ref).collect(),
                 entries: turn
                     .entries

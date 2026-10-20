@@ -72,6 +72,22 @@ pub(crate) fn split_system_prompt_prefix(user_text: &str) -> Option<String> {
     (!prefix.is_empty()).then(|| prefix.to_string())
 }
 
+/// The current-turn body of an assembled user message: everything after
+/// `[Current User Message]`, without the trailing processing instructions.
+///
+/// This is what the brain receives as this turn's own input, so the Data Explorer shows it
+/// separately from the per-turn system prefix.
+pub(crate) fn split_current_user_body(user_text: &str) -> Option<String> {
+    let marker = format!("\n{CURRENT_USER_MESSAGE_LABEL}\n");
+    let index = user_text.find(&marker)?;
+    let mut body = user_text[index + marker.len()..].to_string();
+    if let Some(cut) = body.find(&format!("\n\n{PROCESSING_INSTRUCTION}")) {
+        body.truncate(cut);
+    }
+    let body = body.trim();
+    (!body.is_empty()).then(|| body.to_string())
+}
+
 fn default_tools_enabled_map() -> HashMap<String, bool> {
     [
         DEFAULT_TOOL_WEB_SEARCH,
@@ -591,6 +607,7 @@ mod build_user_message_tests {
                 is_group_message: true,
             },
             current_text: "你好".to_string(),
+            quoted_message: None,
             reference_blocks: Vec::new(),
             is_at_me: true,
             at_target_list: Vec::new(),

@@ -268,6 +268,13 @@ export interface QqContextMediaRef {
   size_bytes?: number;
 }
 
+export interface QqContextQuoted {
+  message_id: string;
+  sender_name?: string;
+  sender_id?: string;
+  text: string;
+}
+
 export type QqChatContextEvent =
   | {
       kind: "turn_started";
@@ -280,6 +287,8 @@ export type QqChatContextEvent =
       turn_id: string;
       created_at: string;
       user_text: string;
+      /** The message the user quoted, rendered as a collapsible block inside the user bubble. */
+      quoted?: QqContextQuoted;
       media: QqContextMediaRef[];
       /** Steer follow-up of the previous turn: shown in the same block, without a divider. */
       continues_previous: boolean;

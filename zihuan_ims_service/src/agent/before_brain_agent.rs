@@ -341,6 +341,14 @@ fn run_preprompt(
             None
         }
     };
+    // The preprompt model's own thinking, shown next to its result. Only the final assistant
+    // message matters; earlier iterations are tool-call steps whose reasoning is not the outcome.
+    let reasoning_block = output
+        .iter()
+        .rev()
+        .find(|message| matches!(message.role, MessageRole::Assistant))
+        .and_then(|message| message.reasoning_content.clone())
+        .filter(|text| !text.trim().is_empty());
 
     history.push(user_message);
     history.extend(output);
@@ -358,6 +366,7 @@ fn run_preprompt(
                 "duration_ms": started_at.elapsed().as_millis() as u64,
                 "stop_reason": format!("{stop_reason:?}"),
                 "context": context_block,
+                "reasoning": reasoning_block,
             }),
         );
     }

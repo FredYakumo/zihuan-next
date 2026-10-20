@@ -3,11 +3,12 @@ import { computed, onUnmounted, ref } from "vue";
 import {
   explorer,
   type ServiceChatContextMedia,
+  type ServiceChatContextQuoted,
   type ServiceChatContextResponse,
   type ServiceChatContextTurn,
   type ServiceChatUserItem,
 } from "../../api/client";
-import type { QqChatContextEvent, TokenUsage } from "../../api/types";
+import type { QqChatContextEvent, QqContextQuoted, TokenUsage } from "../../api/types";
 import { ws } from "../../api/ws";
 
 export type ContextBackend = "memory" | "redis";
@@ -35,10 +36,19 @@ export interface ContextToolItem {
 export type ContextEntryItem = ContextStageItem | ContextToolItem;
 
 /** One turn of the conversation: the user message plus everything that followed it. */
+export interface ContextQuotedMessage {
+  messageId: string;
+  senderName?: string;
+  senderId?: string;
+  text: string;
+}
+
 export interface ContextTurnView {
   turnId: string;
   createdAt: string;
   userText: string;
+  /** Quoted message shown as a collapsible block inside the user bubble. */
+  quoted?: ContextQuotedMessage;
   media: ServiceChatContextMedia[];
   entries: ContextEntryItem[];
   assistantText?: string;
@@ -104,31 +114,36 @@ export function useChatContext(serviceId: string) {
   }
 
   function toTurnView(turn: ServiceChatContextTurn): ContextTurnView {
+    const entries: ContextEntryItem[] = [];
+    turn.entries.forEach((entry, index) => {
+      if (entry.kind === "stage") {
+        entries.push({
+          kind: "stage",
+          id: `${turn.turn_id}:stage:${index}`,
+          at: entry.at,
+          stage: entry.stage,
+          detail: entry.detail,
+        });
+        return;
+      }
+      entries.push({
+        kind: "tool",
+        id: `${turn.turn_id}:tool:${entry.call_id}`,
+        callId: entry.call_id,
+        name: entry.name,
+        arguments: prettyJson(entry.arguments),
+        result: entry.result,
+        durationMs: entry.duration_ms,
+        running: false,
+      });
+    });
     return {
       turnId: turn.turn_id,
       createdAt: turn.created_at,
       userText: turn.user_text,
+      quoted: toQuotedView(turn.quoted),
       media: turn.media ?? [],
-      entries: turn.entries.map((entry, index) =>
-        entry.kind === "stage"
-          ? {
-              kind: "stage" as const,
-              id: `${turn.turn_id}:stage:${index}`,
-              at: entry.at,
-              stage: entry.stage,
-              detail: entry.detail,
-            }
-          : {
-              kind: "tool" as const,
-              id: `${turn.turn_id}:tool:${entry.call_id}`,
-              callId: entry.call_id,
-              name: entry.name,
-              arguments: prettyJson(entry.arguments),
-              result: entry.result,
-              durationMs: entry.duration_ms,
-              running: false,
-            },
-      ),
+      entries,
       assistantText: turn.assistant_text,
       reasoningText: turn.reasoning_text,
       usage: turn.usage,
@@ -197,6 +212,7 @@ export function useChatContext(serviceId: string) {
       turnId: event.turn_id,
       createdAt: "created_at" in event ? String(event.created_at) : new Date().toISOString(),
       userText: event.kind === "turn_started" ? event.user_text : "",
+      quoted: event.kind === "turn_started" ? toQuotedView(event.quoted) : undefined,
       media: event.kind === "turn_started" ? event.media ?? [] : [],
       entries: [],
       continuesPrevious: event.kind === "turn_started" ? event.continues_previous ?? false : false,
@@ -303,4 +319,14 @@ function prettyJson(value: unknown): string {
   } catch {
     return String(value ?? "");
   }
+}
+
+function toQuotedView(quoted?: ServiceChatContextQuoted | QqContextQuoted): ContextQuotedMessage | undefined {
+  if (!quoted) return undefined;
+  return {
+    messageId: quoted.message_id,
+    senderName: quoted.sender_name,
+    senderId: quoted.sender_id,
+    text: quoted.text,
+  };
 }

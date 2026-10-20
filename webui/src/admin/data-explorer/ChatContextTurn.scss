@@ -29,6 +29,91 @@
     border: 1px solid rgba(64, 158, 255, 0.32);
 }
 
+/* Quoted message nested inside the user bubble, between the title and the user's own text. */
+.context-quote {
+    position: relative;
+    margin-bottom: 8px;
+    padding: 6px 10px 22px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--td-brand-color) 24%, transparent);
+    border-left: 3px solid color-mix(in srgb, var(--td-brand-color) 60%, transparent);
+    background: color-mix(in srgb, var(--td-brand-color) 7%, transparent);
+}
+
+.context-quote.collapsed {
+    padding-bottom: 6px;
+}
+
+.context-quote-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--td-text-color-secondary);
+    text-align: left;
+    cursor: pointer;
+}
+
+.context-quote-head:hover .context-quote-label {
+    color: var(--td-brand-color);
+}
+
+.context-quote-label {
+    font-weight: 600;
+}
+
+.context-quote-arrow {
+    font-size: 10px;
+    color: var(--td-text-color-placeholder);
+}
+
+.context-quote-sender {
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+}
+
+.context-quote-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--td-text-color-placeholder);
+    overflow-wrap: anywhere;
+}
+
+.context-quote-toggle {
+    position: absolute;
+    right: 6px;
+    bottom: 2px;
+    padding: 0 4px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--td-text-color-placeholder);
+    cursor: pointer;
+}
+
+.context-quote-toggle:hover {
+    color: var(--td-brand-color);
+    background: color-mix(in srgb, var(--td-brand-color) 10%, transparent);
+}
+
+.context-quote-body {
+    margin-top: 4px;
+    max-height: 220px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--td-text-color-secondary);
+}
+
 .context-bubble--assistant {
     background: rgba(82, 196, 26, 0.13);
     border: 1px solid rgba(82, 196, 26, 0.3);
@@ -39,9 +124,52 @@
 }
 
 .context-bubble--stage {
-    background: transparent;
-    border: 1px dashed var(--td-component-border);
+    background: var(--td-bg-color-container);
+    border: 1px solid color-mix(in srgb, var(--phase-color, var(--td-component-border)) 22%, transparent);
     box-shadow: none;
+}
+
+/* One stage of the turn: a translucent colored frame holding that stage's individual steps. */
+.context-phase {
+    padding: 10px 12px 12px;
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--phase-color) 32%, transparent);
+    background: color-mix(in srgb, var(--phase-color) 7%, transparent);
+}
+
+.context-phase-name {
+    display: inline-flex;
+    align-items: center;
+    margin-bottom: 8px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--phase-color) 16%, transparent);
+    color: var(--phase-color);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.6;
+}
+
+.context-phase-body {
+    display: grid;
+    gap: 8px;
+}
+
+/* Floating name of the stage under the viewport's top edge, shown while browsing the flow. */
+.context-phase-badge {
+    position: fixed;
+    z-index: 1200;
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--phase-color) 45%, transparent);
+    background: color-mix(in srgb, var(--phase-color) 16%, var(--td-bg-color-container));
+    backdrop-filter: blur(8px);
+    color: var(--phase-color);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.6;
+    pointer-events: none;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 
 /* Rate limit is a per-turn decision, so give it a solid bubble instead of the dashed stage look. */
@@ -109,6 +237,58 @@
     font-size: 12px;
     font-weight: 600;
     color: var(--td-text-color-secondary);
+}
+
+/* One-line summary under a stage's readable text (model, duration, token counts). */
+.context-stage-meta {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--td-text-color-placeholder);
+}
+
+/* A stage's thinking reuses the assistant's "思考过程" block, so no separate style here. */
+
+/* History the brain was given alongside this turn's own input. */
+.context-stage-history {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--td-component-border);
+}
+
+.context-stage-history-label {
+    margin-bottom: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--td-text-color-secondary);
+}
+
+.context-stage-history-item {
+    display: flex;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--td-text-color-secondary);
+}
+
+.context-stage-history-role {
+    flex-shrink: 0;
+    min-width: 56px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--td-text-color-placeholder);
+}
+
+.context-stage-history-preview {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.context-stage-history-chars {
+    flex-shrink: 0;
+    color: var(--td-text-color-placeholder);
 }
 
 .context-pending {

@@ -1,8 +1,27 @@
 <template>
-  <section class="context-turn">
+  <section ref="rootEl" class="context-turn">
     <div class="context-bubble-row context-bubble-row--user">
       <div class="context-bubble context-bubble--user">
         <div class="context-bubble-head">用户输入</div>
+        <div v-if="turn.quoted" class="context-quote" :class="{ collapsed: !quoteOpen }">
+          <button
+            type="button"
+            class="context-quote-head"
+            :title="quoteOpen ? '折叠引用消息' : '展开引用消息'"
+            @click="toggleQuote"
+          >
+            <span class="context-quote-label">引用消息</span>
+            <span class="context-quote-arrow">{{ quoteOpen ? "▴" : "▾" }}</span>
+            <template v-if="quoteOpen">
+              <span v-if="quoteSender" class="context-quote-sender">{{ quoteSender }}</span>
+              <span class="context-quote-id">message_id: {{ turn.quoted.messageId }}</span>
+            </template>
+          </button>
+          <template v-if="quoteOpen">
+            <div class="context-quote-body">{{ turn.quoted.text }}</div>
+            <button type="button" class="context-quote-toggle" @click="toggleQuote">折叠</button>
+          </template>
+        </div>
         <div class="context-bubble-body">
           <template v-for="(segment, index) in segments" :key="index">
             <span v-if="segment.type === 'text'" class="context-inline-text">{{ segment.text }}</span>
@@ -18,43 +37,96 @@
       </div>
     </div>
 
-    <template v-for="entry in turn.entries" :key="entry.id">
-      <div v-if="entry.kind === 'stage'" class="context-bubble-row context-bubble-row--stage">
-        <div
-          class="context-bubble context-bubble--stage"
-          :class="rateLimitClass(entry.stage, entry.detail)"
-        >
-          <div class="context-bubble-head">
-            {{ entry.stage === RATE_LIMIT_STAGE ? "限流" : `阶段 · ${entry.stage}` }}
-            <span class="context-bubble-time">{{ formatTime(entry.at) }}</span>
+    <div
+      v-for="phase in phases"
+      :key="phase.key"
+      :ref="(el) => registerPhase(phase.key, el)"
+      class="context-phase"
+      :style="{ '--phase-color': phase.color }"
+    >
+      <div class="context-phase-name">{{ phase.name }}</div>
+      <div class="context-phase-body">
+        <template v-for="entry in phase.entries" :key="entry.id">
+          <div v-if="entry.kind === 'stage'" class="context-bubble-row context-bubble-row--stage">
+            <div
+              class="context-bubble context-bubble--stage"
+              :class="rateLimitClass(entry.stage, entry.detail)"
+            >
+              <div class="context-bubble-head">
+                {{ entry.stage === RATE_LIMIT_STAGE ? "限流" : `环节 · ${entry.stage}` }}
+                <span class="context-bubble-time">{{ formatTime(entry.at) }}</span>
+              </div>
+              <div v-if="rateLimitText(entry.stage, entry.detail)" class="context-rate-limit">
+                {{ rateLimitText(entry.stage, entry.detail) }}
+              </div>
+              <template v-else>
+                <pre
+                  v-if="stageViews.get(entry.id)"
+                  class="context-system-prompt"
+                >{{ stageViews.get(entry.id)?.text }}</pre>
+                <div v-if="stageViews.get(entry.id)?.meta" class="context-stage-meta">
+                  {{ stageViews.get(entry.id)?.meta }}
+                </div>
+                <div
+                  v-if="stageViews.get(entry.id)?.reasoning"
+                  class="context-thinking"
+                  :class="{ collapsed: !stageThinkingOpen(entry.id) }"
+                >
+                  <button
+                    type="button"
+                    class="context-thinking-toggle"
+                    @click="toggleStageThinking(entry.id)"
+                  >
+                    <span class="context-thinking-icon">
+                      {{ stageThinkingOpen(entry.id) ? "▾" : "▸" }}
+                    </span>
+                    思考过程
+                  </button>
+                  <pre
+                    v-if="stageThinkingOpen(entry.id)"
+                    class="context-thinking-content"
+                  >{{ stageViews.get(entry.id)?.reasoning }}</pre>
+                </div>
+                <div
+                  v-if="stageViews.get(entry.id)?.history?.length"
+                  class="context-stage-history"
+                >
+                  <div class="context-stage-history-label">
+                    随本轮发送的历史消息（{{ stageViews.get(entry.id)?.history?.length }} 条）
+                  </div>
+                  <div
+                    v-for="(item, historyIndex) in stageViews.get(entry.id)?.history"
+                    :key="historyIndex"
+                    class="context-stage-history-item"
+                  >
+                    <span class="context-stage-history-role">{{ item.role }}</span>
+                    <span class="context-stage-history-preview">{{ item.preview }}</span>
+                    <span class="context-stage-history-chars">{{ item.chars }} 字</span>
+                  </div>
+                </div>
+                <JsonView v-if="!stageViews.get(entry.id)" :source="entry.detail" />
+              </template>
+            </div>
           </div>
-          <div v-if="rateLimitText(entry.stage, entry.detail)" class="context-rate-limit">
-            {{ rateLimitText(entry.stage, entry.detail) }}
+          <div v-else class="context-bubble-row context-bubble-row--tool">
+            <div class="context-bubble context-bubble--tool">
+              <div class="context-bubble-head">
+                <span class="context-tool-title">工具调用 · {{ entry.name }}</span>
+                <span class="context-tool-status">
+                  <t-loading v-if="entry.running" size="12px" />
+                  <span v-else-if="entry.durationMs !== undefined" class="muted">{{ entry.durationMs }} ms</span>
+                </span>
+              </div>
+              <JsonView :source="entry.arguments" />
+              <template v-if="entry.result !== undefined">
+                <div class="context-tool-result-label">结果</div>
+                <JsonView :source="entry.result" />
+              </template>
+            </div>
           </div>
-          <pre
-            v-else-if="systemPromptText(entry.stage, entry.detail)"
-            class="context-system-prompt"
-          >{{ systemPromptText(entry.stage, entry.detail) }}</pre>
-          <JsonView v-else :source="entry.detail" />
-        </div>
+        </template>
       </div>
-      <div v-else class="context-bubble-row context-bubble-row--tool">
-        <div class="context-bubble context-bubble--tool">
-          <div class="context-bubble-head">
-            <span class="context-tool-title">工具调用 · {{ entry.name }}</span>
-            <span class="context-tool-status">
-              <t-loading v-if="entry.running" size="12px" />
-              <span v-else-if="entry.durationMs !== undefined" class="muted">{{ entry.durationMs }} ms</span>
-            </span>
-          </div>
-          <JsonView :source="entry.arguments" />
-          <template v-if="entry.result !== undefined">
-            <div class="context-tool-result-label">结果</div>
-            <JsonView :source="entry.result" />
-          </template>
-        </div>
-      </div>
-    </template>
+    </div>
 
     <div class="context-bubble-row context-bubble-row--assistant">
       <div class="context-bubble context-bubble--assistant">
@@ -86,6 +158,14 @@
     </div>
 
     <Teleport to="body">
+      <div
+        v-if="activePhase"
+        class="context-phase-badge"
+        :style="{ ...badgeStyle, '--phase-color': activePhase.color }"
+      >
+        <!-- 正在浏览 · {{ activePhase.name }} -->
+        {{ activePhase.name }}
+      </div>
       <div v-if="previewUrl" class="context-preview-overlay" @click.self="closePreview">
         <img :src="previewUrl" alt="预览" />
         <button type="button" class="context-preview-close" @click="closePreview">×</button>
@@ -100,7 +180,6 @@ import {
   RATE_LIMIT_STAGE,
   rateLimitSeverity,
   rateLimitText,
-  systemPromptText,
   useChatContextTurn,
 } from "./ChatContextTurn";
 import JsonView from "./JsonView.vue";
@@ -113,8 +192,19 @@ function rateLimitClass(stage: string, detail: unknown): string {
 }
 
 const {
+  rootEl,
   previewUrl,
   thinkingOpen,
+  quoteOpen,
+  quoteSender,
+  toggleQuote,
+  stageThinkingOpen,
+  toggleStageThinking,
+  phases,
+  activePhase,
+  badgeStyle,
+  registerPhase,
+  stageViews,
   segments,
   cacheHit,
   formatPercent,

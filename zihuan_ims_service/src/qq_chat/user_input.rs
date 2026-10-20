@@ -18,6 +18,7 @@ use zihuan_core::ims_bot_adapter::{
     REPLY_START_MARKER, SENDER_LABEL,
 };
 use zihuan_core::model_inference::llm::MessagePart;
+use zihuan_core::qq_context::QqChatQuotedMessage;
 use zihuan_core::runtime::block_async;
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
@@ -54,6 +55,8 @@ impl MultimodalImageStats {
 pub struct PreparedCurrentTurnUserInput {
     pub event: MessageEvent,
     pub current_text: String,
+    /// The message this turn replies to, captured for the context view's quote block.
+    pub quoted_message: Option<QqChatQuotedMessage>,
     pub reference_blocks: Vec<String>,
     pub is_at_me: bool,
     pub at_target_list: Vec<String>,
@@ -116,6 +119,7 @@ pub(crate) fn prepare_current_turn_user_input_from_event(
     }
 
     let reference_blocks = collect_reference_context_text(&event.message_list);
+    let quoted_message = collect_quoted_message(&event.message_list);
     if current_text.trim().is_empty() && reference_blocks.is_empty() {
         current_text = "(无文本内容，可能是仅@或回复)".to_string();
     }
@@ -176,6 +180,7 @@ pub(crate) fn prepare_current_turn_user_input_from_event(
     PreparedCurrentTurnUserInput {
         event: event.clone(),
         current_text,
+        quoted_message,
         reference_blocks,
         is_at_me: msg_prop.is_at_me,
         at_target_list: msg_prop.at_target_list,
@@ -494,6 +499,39 @@ fn valid_reply_source_messages(reply: &ReplyMessage) -> Option<&[Message]> {
     } else {
         None
     }
+}
+
+/// The message the turn replies to, rendered for the context view.
+///
+/// A QQ message quotes at most one message, so only the first top-level reply counts. A
+/// forward is not a quote, and nested replies stay part of the prompt's reference block rather
+/// than becoming their own quote block.
+fn collect_quoted_message(messages: &[Message]) -> Option<QqChatQuotedMessage> {
+    for message in messages {
+        let Message::Reply(reply) = message else {
+            continue;
+        };
+        let source_messages = valid_reply_source_messages(reply)?;
+        let rendered = zihuan_core::ims_bot_adapter::models::message::render_messages_readable(
+            source_messages,
+        );
+        let text = rendered.trim();
+        if text.is_empty() {
+            return None;
+        }
+        // The restored segments carry no sender, so resolve it from the persisted record.
+        let sender = zihuan_core::graph::message_restore::lookup_message_sender(reply.id)
+            .unwrap_or_default();
+        let sender_id = (!sender.0.is_empty()).then_some(sender.0);
+        let sender_name = (!sender.1.is_empty()).then_some(sender.1);
+        return Some(QqChatQuotedMessage {
+            message_id: reply.id.to_string(),
+            sender_name,
+            sender_id,
+            text: text.to_string(),
+        });
+    }
+    None
 }
 
 fn collect_reference_context_text(messages: &[Message]) -> Vec<String> {

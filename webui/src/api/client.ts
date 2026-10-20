@@ -1056,10 +1056,19 @@ export type ServiceChatContextEntry =
       duration_ms?: number;
     };
 
+export interface ServiceChatContextQuoted {
+  message_id: string;
+  sender_name?: string;
+  sender_id?: string;
+  text: string;
+}
+
 export interface ServiceChatContextTurn {
   turn_id: string;
   created_at: string;
   user_text: string;
+  /** The message the user quoted, rendered as a collapsible block inside the user bubble. */
+  quoted?: ServiceChatContextQuoted;
   media: ServiceChatContextMedia[];
   entries: ServiceChatContextEntry[];
   assistant_text?: string;

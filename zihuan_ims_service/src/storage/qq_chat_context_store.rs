@@ -8,7 +8,7 @@ use chrono::{DateTime, Local, NaiveDateTime};
 use sqlx::Row;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::Result;
-use zihuan_core::qq_context::{MediaRef, QqChatTurnEntry, QqChatTurnRecord};
+use zihuan_core::qq_context::{MediaRef, QqChatQuotedMessage, QqChatTurnEntry, QqChatTurnRecord};
 
 const LOG_PREFIX: &str = "[qq_context_store]";
 
@@ -17,6 +17,7 @@ pub struct ArchivedTurn {
     pub turn_id: String,
     pub created_at: String,
     pub user_text: String,
+    pub quoted: Option<QqChatQuotedMessage>,
     pub media: Vec<MediaRef>,
     pub entries: Vec<QqChatTurnEntry>,
     pub assistant_text: Option<String>,
@@ -46,6 +47,7 @@ fn persist_turn_inner(
 ) -> Result<()> {
     let media_json = serde_json::to_string(&record.media).ok();
     let entries_json = serde_json::to_string(&record.entries).ok();
+    let quoted_json = record.quoted.as_ref().and_then(|quoted| serde_json::to_string(quoted).ok());
     let created_at = DateTime::parse_from_rfc3339(&record.created_at)
         .map(|value| value.naive_local().to_string())
         .unwrap_or_else(|_| Local::now().naive_local().to_string());
@@ -66,9 +68,9 @@ fn persist_turn_inner(
                 zihuan_core::string_error!("context turn archive mysql pool is not initialized")
             })?;
             let query = sqlx::query(
-                "INSERT INTO qq_chat_context_turn (turn_id, agent_id, sender_id, sender_name, group_name, is_group, created_at, user_text, media_json, entries_json, assistant_text, reasoning_text, prompt_tokens, cached_prompt_tokens, prompt_cache_miss_tokens, completion_tokens, total_tokens, generation_ms, output_tokens_per_second, continues_previous, finished) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
-                 ON DUPLICATE KEY UPDATE user_text = VALUES(user_text), media_json = VALUES(media_json), entries_json = VALUES(entries_json), assistant_text = VALUES(assistant_text), reasoning_text = VALUES(reasoning_text), prompt_tokens = VALUES(prompt_tokens), cached_prompt_tokens = VALUES(cached_prompt_tokens), prompt_cache_miss_tokens = VALUES(prompt_cache_miss_tokens), completion_tokens = VALUES(completion_tokens), total_tokens = VALUES(total_tokens), generation_ms = VALUES(generation_ms), output_tokens_per_second = VALUES(output_tokens_per_second), continues_previous = VALUES(continues_previous), finished = VALUES(finished)",
+                "INSERT INTO qq_chat_context_turn (turn_id, agent_id, sender_id, sender_name, group_name, is_group, created_at, user_text, quoted_json, media_json, entries_json, assistant_text, reasoning_text, prompt_tokens, cached_prompt_tokens, prompt_cache_miss_tokens, completion_tokens, total_tokens, generation_ms, output_tokens_per_second, continues_previous, finished) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+                 ON DUPLICATE KEY UPDATE user_text = VALUES(user_text), quoted_json = VALUES(quoted_json), media_json = VALUES(media_json), entries_json = VALUES(entries_json), assistant_text = VALUES(assistant_text), reasoning_text = VALUES(reasoning_text), prompt_tokens = VALUES(prompt_tokens), cached_prompt_tokens = VALUES(cached_prompt_tokens), prompt_cache_miss_tokens = VALUES(prompt_cache_miss_tokens), completion_tokens = VALUES(completion_tokens), total_tokens = VALUES(total_tokens), generation_ms = VALUES(generation_ms), output_tokens_per_second = VALUES(output_tokens_per_second), continues_previous = VALUES(continues_previous), finished = VALUES(finished)",
             )
             .bind(&record.turn_id)
             .bind(&record.agent_id)
@@ -78,6 +80,7 @@ fn persist_turn_inner(
             .bind(record.is_group as i64)
             .bind(&created_at)
             .bind(&record.user_text)
+            .bind(&quoted_json)
             .bind(&media_json)
             .bind(&entries_json)
             .bind(&record.assistant_text)
@@ -99,8 +102,8 @@ fn persist_turn_inner(
                 zihuan_core::string_error!("context turn archive sqlite pool is not initialized")
             })?;
             let query = sqlx::query(
-                "INSERT OR REPLACE INTO qq_chat_context_turn (turn_id, agent_id, sender_id, sender_name, group_name, is_group, created_at, user_text, media_json, entries_json, assistant_text, reasoning_text, prompt_tokens, cached_prompt_tokens, prompt_cache_miss_tokens, completion_tokens, total_tokens, generation_ms, output_tokens_per_second, continues_previous, finished) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO qq_chat_context_turn (turn_id, agent_id, sender_id, sender_name, group_name, is_group, created_at, user_text, quoted_json, media_json, entries_json, assistant_text, reasoning_text, prompt_tokens, cached_prompt_tokens, prompt_cache_miss_tokens, completion_tokens, total_tokens, generation_ms, output_tokens_per_second, continues_previous, finished) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(&record.turn_id)
             .bind(&record.agent_id)
@@ -110,6 +113,7 @@ fn persist_turn_inner(
             .bind(record.is_group as i64)
             .bind(&created_at)
             .bind(&record.user_text)
+            .bind(&quoted_json)
             .bind(&media_json)
             .bind(&entries_json)
             .bind(&record.assistant_text)
@@ -131,7 +135,7 @@ fn persist_turn_inner(
     Ok(())
 }
 
-const SELECT_SQL: &str = "SELECT turn_id, created_at, user_text, media_json, entries_json, assistant_text, reasoning_text, prompt_tokens, cached_prompt_tokens, prompt_cache_miss_tokens, completion_tokens, total_tokens, generation_ms, output_tokens_per_second, continues_previous, finished FROM qq_chat_context_turn WHERE agent_id = ? AND sender_id = ? ORDER BY created_at ASC LIMIT ?";
+const SELECT_SQL: &str = "SELECT turn_id, created_at, user_text, quoted_json, media_json, entries_json, assistant_text, reasoning_text, prompt_tokens, cached_prompt_tokens, prompt_cache_miss_tokens, completion_tokens, total_tokens, generation_ms, output_tokens_per_second, continues_previous, finished FROM qq_chat_context_turn WHERE agent_id = ? AND sender_id = ? ORDER BY created_at ASC LIMIT ?";
 
 /// Archived turns for one sender, oldest first.
 pub fn load_turns(
@@ -163,6 +167,7 @@ pub fn load_turns(
                         .map(|value| value.format("%Y-%m-%d %H:%M:%S").to_string())
                         .unwrap_or_default(),
                     user_text: row.try_get("user_text").unwrap_or_default(),
+                    quoted: parse_quoted(row.try_get("quoted_json").unwrap_or(None)),
                     media: parse_media(row.try_get("media_json").unwrap_or(None)),
                     entries: parse_entries(row.try_get("entries_json").unwrap_or(None)),
                     assistant_text: row.try_get("assistant_text").unwrap_or(None),
@@ -203,6 +208,7 @@ pub fn load_turns(
                     turn_id: row.try_get("turn_id").unwrap_or_default(),
                     created_at: row.try_get("created_at").unwrap_or_default(),
                     user_text: row.try_get("user_text").unwrap_or_default(),
+                    quoted: parse_quoted(row.try_get("quoted_json").unwrap_or(None)),
                     media: parse_media(row.try_get("media_json").unwrap_or(None)),
                     entries: parse_entries(row.try_get("entries_json").unwrap_or(None)),
                     assistant_text: row.try_get("assistant_text").unwrap_or(None),
@@ -225,6 +231,10 @@ pub fn load_turns(
                 .collect())
         }
     }
+}
+
+fn parse_quoted(raw: Option<String>) -> Option<QqChatQuotedMessage> {
+    raw.and_then(|raw| serde_json::from_str(&raw).ok())
 }
 
 fn parse_entries(raw: Option<String>) -> Vec<QqChatTurnEntry> {

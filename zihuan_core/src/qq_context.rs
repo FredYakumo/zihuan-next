@@ -46,6 +46,18 @@ pub struct MediaRef {
 /// model. Each turn builds its own prefix, so the Data Explorer shows it per turn.
 pub const QQ_CONTEXT_STAGE_SYSTEM_PROMPT: &str = "System Prompt";
 
+/// The message a turn replies to, captured for the Data Explorer's quote block.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QqChatQuotedMessage {
+    pub message_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender_id: Option<String>,
+    /// Rendered text of the quoted message.
+    pub text: String,
+}
+
 /// One turn-scoped context event, emitted while a QQ turn runs and pushed to the WebUI over
 /// the existing global web socket broadcast.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +76,9 @@ pub enum QqChatContextEvent {
         turn_id: String,
         created_at: String,
         user_text: String,
+        /// The message the user quoted, shown inside the user bubble in the Data Explorer flow.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        quoted: Option<QqChatQuotedMessage>,
         #[serde(default)]
         media: Vec<MediaRef>,
         /// This turn is a steer follow-up of the previous turn, so the UI does not separate
@@ -159,6 +174,9 @@ pub struct QqChatTurnRecord {
     pub group_name: Option<String>,
     pub is_group: bool,
     pub user_text: String,
+    /// The quoted message this turn replies to, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quoted: Option<QqChatQuotedMessage>,
     #[serde(default)]
     pub media: Vec<MediaRef>,
     #[serde(default)]
@@ -219,6 +237,7 @@ pub fn record_qq_chat_turn_event(event: &QqChatContextEvent) {
                 group_name,
                 is_group,
                 user_text,
+                quoted,
                 media,
                 continues_previous,
                 ..
@@ -235,6 +254,7 @@ pub fn record_qq_chat_turn_event(event: &QqChatContextEvent) {
                         group_name: group_name.clone(),
                         is_group: *is_group,
                         user_text: user_text.clone(),
+                        quoted: quoted.clone(),
                         media: media.clone(),
                         entries: Vec::new(),
                         assistant_text: None,
