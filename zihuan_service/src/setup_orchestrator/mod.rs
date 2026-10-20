@@ -687,8 +687,54 @@ fn placeholder_deployment_config() -> DetailedDeploymentConfig {
     }
 }
 
+/// Index definitions use the ICU and pinyin analyzers, which Elasticsearch only
+/// provides through the `analysis-icu` and `analysis-pinyin` plugins. The official
+/// image ships without them, so index creation fails with a 400 until they exist.
+const ELASTICSEARCH_PINYIN_PLUGIN_URL: &str =
+    "https://get.infini.cloud/elasticsearch/analysis-pinyin";
+
+/// Installs the analyzers required by the index definitions on every container
+/// start, then hands over to the stock entrypoint. Already-installed plugins are
+/// skipped, and an install failure only warns: the node still boots so the
+/// remaining services stay reachable.
+fn elasticsearch_container_startup_script() -> String {
+    format!(
+        "ES_VERSION=\"$$(bin/elasticsearch --version 2>/dev/null | sed -n 's/^Version: \\([0-9][0-9.]*\\).*/\\1/p' | head -n1)\"\n\
+if bin/elasticsearch-plugin list | grep -qx analysis-icu; then\n\
+echo 'analysis-icu is already installed'\n\
+else\n\
+bin/elasticsearch-plugin install --batch analysis-icu || echo 'WARNING: failed to install analysis-icu; Elasticsearch will not create the Zihuan indices'\n\
+fi\n\
+if bin/elasticsearch-plugin list | grep -qx analysis-pinyin; then\n\
+echo 'analysis-pinyin is already installed'\n\
+else\n\
+bin/elasticsearch-plugin install --batch \"{ELASTICSEARCH_PINYIN_PLUGIN_URL}/$${{ES_VERSION}}\" || echo 'WARNING: failed to install analysis-pinyin; Elasticsearch will not create the Zihuan indices'\n\
+fi\n\
+exec /usr/local/bin/docker-entrypoint.sh eswrapper"
+    )
+}
+
+/// Compose `command:` block that runs [`elasticsearch_container_startup_script`].
+/// `$` is doubled because Compose interpolates the file before the container sees it.
+fn elasticsearch_compose_command() -> String {
+    let mut block = String::from("command:\n      - /bin/bash\n      - -c\n      - |\n");
+    for line in elasticsearch_container_startup_script().lines() {
+        block.push_str("        ");
+        block.push_str(line);
+        block.push('\n');
+    }
+    block
+}
+
 fn elasticsearch_binary_install_command() -> String {
-    "# Run on the target Linux machine (dnf: sudo dnf install -y elasticsearch, macOS with Homebrew: brew install elasticsearch)\nsudo apt-get update && sudo apt-get install -y elasticsearch\nsudo systemctl enable --now elasticsearch".to_string()
+    format!(
+        "# Run on the target Linux machine (dnf: sudo dnf install -y elasticsearch, macOS with Homebrew: brew install elasticsearch)\n\
+sudo apt-get update && sudo apt-get install -y elasticsearch\n\
+ES_VERSION=\"$(/usr/share/elasticsearch/bin/elasticsearch --version 2>/dev/null | sed -n 's/^Version: \\([0-9][0-9.]*\\).*/\\1/p' | head -n1)\"\n\
+sudo /usr/share/elasticsearch/bin/elasticsearch-plugin install --batch analysis-icu\n\
+sudo /usr/share/elasticsearch/bin/elasticsearch-plugin install --batch \"{ELASTICSEARCH_PINYIN_PLUGIN_URL}/$ES_VERSION\"\n\
+sudo systemctl enable --now elasticsearch"
+    )
 }
 
 fn weaviate_binary_install_command(config: &DetailedSetupConfig) -> String {
@@ -1288,7 +1334,7 @@ fn detailed_compose(config: &DetailedSetupConfig) -> String {
     if config.search.enabled && config.search.source == DetailedComponentSource::Install {
         let d = &config.search.deployment;
         if config.search.search_type == "elasticsearch" {
-            services.push_str(&format!("  elasticsearch:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9200\"]\n    volumes: [{}]\n    environment:\n      discovery.type: single-node\n      xpack.security.enabled: 'true'\n      ELASTIC_PASSWORD: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/usr/share/elasticsearch/data"), yaml_quote(config.search.password.as_deref().unwrap_or_default())));
+            services.push_str(&format!("  elasticsearch:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9200\"]\n    volumes: [{}]\n    environment:\n      discovery.type: single-node\n      xpack.security.enabled: 'true'\n      ELASTIC_PASSWORD: {}\n    {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/usr/share/elasticsearch/data"), yaml_quote(config.search.password.as_deref().unwrap_or_default()), elasticsearch_compose_command()));
         } else {
             let authentication = format!("      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'false'\n      AUTHENTICATION_APIKEY_ENABLED: 'true'\n      AUTHENTICATION_APIKEY_ALLOWED_KEYS: {}\n", yaml_quote(config.search.api_key.as_deref().unwrap_or_default()));
             services.push_str(&format!("  weaviate:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:8080\"]\n    volumes: [{}]\n    environment:\n{}      DEFAULT_VECTORIZER_MODULE: none\n      CLUSTER_HOSTNAME: node1\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/var/lib/weaviate"), authentication));
