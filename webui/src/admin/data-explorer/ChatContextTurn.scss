@@ -44,6 +44,23 @@
     box-shadow: none;
 }
 
+/* Rate limit is a per-turn decision, so give it a solid bubble instead of the dashed stage look. */
+.context-bubble--stage.context-bubble--limit-warning {
+    background: color-mix(in srgb, var(--td-warning-color) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--td-warning-color) 45%, transparent);
+}
+
+.context-bubble--stage.context-bubble--limit-danger {
+    background: color-mix(in srgb, var(--td-error-color) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--td-error-color) 45%, transparent);
+}
+
+.context-rate-limit {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--td-text-color-primary);
+}
+
 .context-bubble-head {
     display: flex;
     justify-content: space-between;

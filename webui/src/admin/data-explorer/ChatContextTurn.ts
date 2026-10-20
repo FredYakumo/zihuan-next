@@ -9,6 +9,60 @@ type Segment = { type: "text"; text: string } | { type: "image"; media: ServiceC
 /** Stage name the backend uses for the per-turn assembled system prompt. */
 export const SYSTEM_PROMPT_STAGE = "System Prompt";
 
+/** Stage the QQ Chat runtime emits with the rate-limit decision of the turn. */
+export const RATE_LIMIT_STAGE = "限流";
+
+interface RateLimitStageDetail {
+  configured?: boolean;
+  unlimited?: boolean;
+  scope_type?: string | null;
+  window_unit?: string | null;
+  window_size?: number | null;
+  max_calls?: number | null;
+  used_calls?: number | null;
+  warning_level?: "warning" | "severe" | null;
+}
+
+function rateLimitDetail(stage: string, detail: unknown): RateLimitStageDetail | undefined {
+  if (stage !== RATE_LIMIT_STAGE) return undefined;
+  if (!detail || typeof detail !== "object") return undefined;
+  return detail as RateLimitStageDetail;
+}
+
+const WINDOW_UNIT_LABELS: Record<string, string> = { minute: "分钟", hour: "小时", day: "天" };
+const SCOPE_LABELS: Record<string, string> = { user: "用户规则", group: "群组规则", default: "默认规则" };
+
+/** One-line summary of the quota that applied to a turn, e.g. `用户规则 · 每小时 5 次 · 已用 3/5`. */
+export function rateLimitText(stage: string, detail: unknown): string | undefined {
+  const parsed = rateLimitDetail(stage, detail);
+  if (!parsed) return undefined;
+  const scope = parsed.scope_type ? SCOPE_LABELS[parsed.scope_type] : undefined;
+  if (!parsed.configured || parsed.unlimited) {
+    return scope ? `${scope} · 无限制` : "无限制";
+  }
+
+  const parts: string[] = [];
+  if (scope) parts.push(scope);
+  const unit = parsed.window_unit ? WINDOW_UNIT_LABELS[parsed.window_unit] : undefined;
+  const size = parsed.window_size ?? 1;
+  if (unit && parsed.max_calls != null) {
+    parts.push(size === 1 ? `每${unit} ${parsed.max_calls} 次` : `每 ${size} ${unit} ${parsed.max_calls} 次`);
+  }
+  if (parsed.max_calls != null) {
+    parts.push(`已用 ${parsed.used_calls ?? 0}/${parsed.max_calls}`);
+  }
+  return parts.length ? parts.join(" · ") : "无限制";
+}
+
+/** Tone for the rate-limit bubble: the runtime warns as the quota runs out. */
+export function rateLimitSeverity(stage: string, detail: unknown): "warning" | "danger" | undefined {
+  const parsed = rateLimitDetail(stage, detail);
+  if (!parsed) return undefined;
+  if (parsed.warning_level === "severe") return "danger";
+  if (parsed.warning_level === "warning") return "warning";
+  return undefined;
+}
+
 /** System prompt text of a stage entry, or undefined when the entry is another stage. */
 export function systemPromptText(stage: string, detail: unknown): string | undefined {
   if (stage !== SYSTEM_PROMPT_STAGE) return undefined;

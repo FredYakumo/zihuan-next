@@ -11,6 +11,7 @@ use zihuan_core::agent::tools::ToolCallingMiddleware;
 use zihuan_core::command::{CommandChannel, CommandContext};
 
 use crate::role_config::QqChatEmotionDimensionConfig;
+use crate::storage::message_rate_limit_store::MessageRateLimitCheckResult;
 use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{
@@ -439,7 +440,7 @@ impl QqChatAgentServiceInner {
         sender_id: &str,
         target_id: &str,
         is_group: bool,
-        message_rate_limit_warning: Option<&str>,
+        message_rate_limit: Option<&MessageRateLimitCheckResult>,
         ctx: &QqChatAgentServiceContext<'_>,
     ) -> Result<QqChatServiceHandleReport> {
         (|| -> Result<QqChatServiceHandleReport> {
@@ -458,7 +459,7 @@ impl QqChatAgentServiceInner {
                     target_id,
                     is_group,
                     &bot_id,
-                    message_rate_limit_warning,
+                    message_rate_limit,
                     is_steer_follow_up,
                     ctx,
                 )?;

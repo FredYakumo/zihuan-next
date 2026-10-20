@@ -19,6 +19,7 @@ use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emo
 use crate::qq_chat::resources::current_qq_chat_role_service_config;
 use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatEmotionDimensionConfig;
+use crate::storage::message_rate_limit_store::MessageRateLimitCheckResult;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::message_part::MessagePart;
 use zihuan_core::model_inference::llm::LLMMessage;
@@ -181,12 +182,14 @@ impl QqChatAgentServiceInner {
         target_id: &str,
         is_group: bool,
         bot_id: &str,
-        message_rate_limit_warning: Option<&str>,
+        message_rate_limit: Option<&MessageRateLimitCheckResult>,
         // True when this turn replays queued steer messages after a previous turn in the same
         // session; the context view then keeps both inside one block.
         continues_previous: bool,
         ctx: &QqChatAgentServiceContext<'_>,
     ) -> Result<QqChatServiceTurnResult> {
+        let message_rate_limit_warning =
+            message_rate_limit.and_then(|result| result.warning_prompt.as_deref());
         let prepared_input =
             prepare_current_turn_user_input(event, ctx.adapter, bot_id, ctx.bot_name, ctx.s3_ref);
         let mut inference_event = prepared_input.event.clone();
@@ -272,6 +275,19 @@ impl QqChatAgentServiceInner {
             media: turn_media.clone(),
             continues_previous,
         });
+
+        // Report the rate-limit decision once per turn so the context view can show which
+        // quota applied and how much of it had been consumed. Steer follow-ups share the
+        // original turn's block and would otherwise repeat the same snapshot.
+        if !continues_previous {
+            zihuan_core::qq_context::emit_qq_context_stage(
+                ctx.agent_id,
+                sender_id,
+                &turn_id,
+                "限流",
+                rate_limit_stage_detail(message_rate_limit),
+            );
+        }
 
         let chat_preprompt_history_key = chat_preprompt_history_key(sender_id);
         let preprompt_memory_resources = MemoryCapability::resolve(
@@ -1074,6 +1090,28 @@ impl QqChatAgentServiceInner {
 
         Ok(QqChatServiceTurnResult { result_summary })
     }
+}
+
+/// The rate-limit snapshot the context view shows for one turn: which rule applied
+/// (user/group/default), its window and quota, and how much of it this message used.
+fn rate_limit_stage_detail(
+    result: Option<&MessageRateLimitCheckResult>,
+) -> serde_json::Value {
+    let Some(result) = result else {
+        // No relational database: the runtime skips rate limiting entirely for this turn.
+        return serde_json::json!({ "configured": false, "unlimited": true });
+    };
+    let rule = result.resolved_limit.as_ref().map(|resolved| &resolved.rule);
+    serde_json::json!({
+        "configured": rule.is_some(),
+        "unlimited": rule.is_none_or(|rule| rule.is_effectively_unlimited()),
+        "scope_type": result.resolved_limit.as_ref().map(|resolved| resolved.scope_type.as_str()),
+        "window_unit": rule.and_then(|rule| rule.window_unit).map(|unit| unit.as_str()),
+        "window_size": rule.map(|rule| rule.window_size),
+        "max_calls": result.max_calls,
+        "used_calls": result.used_calls_after_increment,
+        "warning_level": result.warning_level,
+    })
 }
 
 /// Close the context-view turn for a meta-query path, which skips the brain loop.

@@ -665,7 +665,7 @@ impl QqChatAgentServiceInner {
             }
         }
 
-        let mut message_rate_limit_warning = None;
+        let mut message_rate_limit = None;
         if let Some(rdb_pool) = ctx.rdb_pool {
             let group_id_text = event.group_id.map(|value| value.to_string());
             let config = current_qq_chat_role_service_config()?;
@@ -719,7 +719,7 @@ impl QqChatAgentServiceInner {
                 }
                 return Ok(());
             }
-            message_rate_limit_warning = rate_limit_result.warning_prompt;
+            message_rate_limit = Some(rate_limit_result);
         }
 
         let (claimed, claim_token) = try_claim_session(session, &sender_id);
@@ -753,7 +753,7 @@ impl QqChatAgentServiceInner {
                             &sender_id,
                             &target_id,
                             is_group,
-                            message_rate_limit_warning.as_deref(),
+                            message_rate_limit.as_ref(),
                             ctx,
                         )
                     })
@@ -767,7 +767,7 @@ impl QqChatAgentServiceInner {
                         &sender_id,
                         &target_id,
                         is_group,
-                        message_rate_limit_warning.as_deref(),
+                        message_rate_limit.as_ref(),
                         ctx,
                     )
                 })
@@ -780,7 +780,7 @@ impl QqChatAgentServiceInner {
                 &sender_id,
                 &target_id,
                 is_group,
-                message_rate_limit_warning.as_deref(),
+                message_rate_limit.as_ref(),
                 ctx,
             )
         };

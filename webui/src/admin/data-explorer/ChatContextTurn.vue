@@ -20,10 +20,19 @@
 
     <template v-for="entry in turn.entries" :key="entry.id">
       <div v-if="entry.kind === 'stage'" class="context-bubble-row context-bubble-row--stage">
-        <div class="context-bubble context-bubble--stage">
-          <div class="context-bubble-head">阶段 · {{ entry.stage }}<span class="context-bubble-time">{{ formatTime(entry.at) }}</span></div>
+        <div
+          class="context-bubble context-bubble--stage"
+          :class="rateLimitClass(entry.stage, entry.detail)"
+        >
+          <div class="context-bubble-head">
+            {{ entry.stage === RATE_LIMIT_STAGE ? "限流" : `阶段 · ${entry.stage}` }}
+            <span class="context-bubble-time">{{ formatTime(entry.at) }}</span>
+          </div>
+          <div v-if="rateLimitText(entry.stage, entry.detail)" class="context-rate-limit">
+            {{ rateLimitText(entry.stage, entry.detail) }}
+          </div>
           <pre
-            v-if="systemPromptText(entry.stage, entry.detail)"
+            v-else-if="systemPromptText(entry.stage, entry.detail)"
             class="context-system-prompt"
           >{{ systemPromptText(entry.stage, entry.detail) }}</pre>
           <JsonView v-else :source="entry.detail" />
@@ -87,10 +96,21 @@
 
 <script setup lang="ts">
 import type { ContextTurnView } from "./useChatContext";
-import { systemPromptText, useChatContextTurn } from "./ChatContextTurn";
+import {
+  RATE_LIMIT_STAGE,
+  rateLimitSeverity,
+  rateLimitText,
+  systemPromptText,
+  useChatContextTurn,
+} from "./ChatContextTurn";
 import JsonView from "./JsonView.vue";
 
 const props = defineProps<{ turn: ContextTurnView }>();
+
+function rateLimitClass(stage: string, detail: unknown): string {
+  const severity = rateLimitSeverity(stage, detail);
+  return severity ? `context-bubble--limit-${severity}` : "";
+}
 
 const {
   previewUrl,
