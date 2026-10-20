@@ -106,24 +106,28 @@ impl ElasticsearchRef {
     }
 
     fn request(&self, method: reqwest::Method, path: &str, body: Option<Value>) -> Result<Value> {
-        let url = format!("{}{}", self.base_url, path);
-        let request = self.client.request(method, url);
-        let request = if let Some(body) = body {
-            request.json(&body)
-        } else {
-            request
-        };
-        let response = request
-            .send()
-            .map_err(|error| crate::string_error!("elasticsearch request failed: {error}"))?;
-        let status = response.status();
-        let value = response.json::<Value>().unwrap_or(Value::Null);
-        if !status.is_success() {
-            return Err(Error::ValidationError(format!(
-                "elasticsearch request failed ({status}): {value}"
-            )));
-        }
-        Ok(value)
+        // `reqwest::blocking` creates and drops its own runtime, which must not happen while an
+        // async context is entered.
+        crate::runtime::run_outside_async_runtime(|| {
+            let url = format!("{}{}", self.base_url, path);
+            let request = self.client.request(method, url);
+            let request = if let Some(body) = body {
+                request.json(&body)
+            } else {
+                request
+            };
+            let response = request
+                .send()
+                .map_err(|error| crate::string_error!("elasticsearch request failed: {error}"))?;
+            let status = response.status();
+            let value = response.json::<Value>().unwrap_or(Value::Null);
+            if !status.is_success() {
+                return Err(Error::ValidationError(format!(
+                    "elasticsearch request failed ({status}): {value}"
+                )));
+            }
+            Ok(value)
+        })
     }
 }
 

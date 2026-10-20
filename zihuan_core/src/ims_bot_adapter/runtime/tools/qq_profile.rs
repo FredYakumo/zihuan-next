@@ -371,18 +371,17 @@ fn resolve_avatar_media(user_id: &str, s3_ref: &Option<Arc<S3Ref>>) -> Option<Pe
     let avatar_url = qq_avatar_url(user_id)?;
     info!("{LOG_PREFIX} downloading avatar for user_id={user_id} from {avatar_url}");
 
-    let bytes = match reqwest::blocking::get(&avatar_url) {
-        Ok(response) => match response.bytes() {
-            Ok(bytes) if !bytes.is_empty() => bytes.to_vec(),
-            Ok(_) => {
-                warn!("{LOG_PREFIX} avatar download returned empty body for user_id={user_id}");
-                return None;
-            }
-            Err(e) => {
-                warn!("{LOG_PREFIX} failed to read avatar body for user_id={user_id}: {e}");
-                return None;
-            }
-        },
+    // `reqwest::blocking` creates and drops its own runtime, which must not happen while an
+    // async context is entered, so the whole request runs on a context-free thread.
+    let bytes = match crate::runtime::run_outside_async_runtime(|| {
+        let response = reqwest::blocking::get(&avatar_url)?;
+        Ok::<Vec<u8>, reqwest::Error>(response.bytes()?.to_vec())
+    }) {
+        Ok(bytes) if !bytes.is_empty() => bytes,
+        Ok(_) => {
+            warn!("{LOG_PREFIX} avatar download returned empty body for user_id={user_id}");
+            return None;
+        }
         Err(e) => {
             warn!("{LOG_PREFIX} failed to download avatar for user_id={user_id}: {e}");
             return None;

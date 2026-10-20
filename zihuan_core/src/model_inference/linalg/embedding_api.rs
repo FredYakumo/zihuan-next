@@ -132,10 +132,14 @@ impl EmbeddingBase for EmbeddingAPI {
             ));
         }
 
-        let mut vectors = self.execute_embedding_request(&[text.to_string()])?;
-        vectors
-            .pop()
-            .ok_or_else(|| crate::string_error!("embedding API returned an empty data list"))
+        // `reqwest::blocking` creates and drops its own runtime, which must not happen while an
+        // async context is entered.
+        crate::runtime::run_outside_async_runtime(|| {
+            let mut vectors = self.execute_embedding_request(&[text.to_string()])?;
+            vectors
+                .pop()
+                .ok_or_else(|| crate::string_error!("embedding API returned an empty data list"))
+        })
     }
 
     fn batch_inference(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
@@ -150,6 +154,6 @@ impl EmbeddingBase for EmbeddingAPI {
             ));
         }
 
-        self.execute_embedding_request(texts)
+        crate::runtime::run_outside_async_runtime(|| self.execute_embedding_request(texts))
     }
 }
