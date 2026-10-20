@@ -69,6 +69,14 @@ async fn main() {
 
     let args = Args::parse();
 
+    match tokio::task::spawn_blocking(zihuan_core::system_database::initialize).await {
+        Ok(Ok(())) => info!("System configuration database initialized"),
+        result => {
+            error!("Failed to initialize system configuration database: {result:?}");
+            std::process::exit(1);
+        }
+    }
+
     if let Err(error) = zihuan_core::agent::declarative_agent::seed_builtin_agents() {
         error!("Failed to seed default agent definitions: {error}");
     }

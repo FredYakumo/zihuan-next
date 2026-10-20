@@ -90,6 +90,39 @@ interface PublicChatModel {
 
 
 export function useSettings() {
+  const systemDatabaseId = ref("");
+  const pendingSystemDatabaseId = ref("");
+  const systemDatabaseSaving = ref(false);
+  const systemDatabaseError = ref("");
+  const systemDatabaseDialogVisible = ref(false);
+
+  onMounted(async () => {
+    try {
+      const settings = await request<{ connection_id: string }>("GET", "/settings/system-database");
+      systemDatabaseId.value = settings.connection_id;
+    } catch (error) { systemDatabaseError.value = String(error); }
+  });
+
+  function chooseSystemDatabase(connectionId: string) {
+    if (!connectionId || connectionId === systemDatabaseId.value) return;
+    pendingSystemDatabaseId.value = connectionId;
+    systemDatabaseError.value = "";
+    systemDatabaseDialogVisible.value = true;
+  }
+
+  async function saveSystemDatabase(migrate: boolean) {
+    systemDatabaseSaving.value = true;
+    systemDatabaseError.value = "";
+    try {
+      const settings = await request<{ connection_id: string }>("PUT", "/settings/system-database", {
+        connection_id: pendingSystemDatabaseId.value, migrate,
+      });
+      systemDatabaseId.value = settings.connection_id;
+      systemDatabaseDialogVisible.value = false;
+    } catch (error) { systemDatabaseError.value = String(error); }
+    finally { systemDatabaseSaving.value = false; }
+  }
+
   const themeOptions = getThemeNames();
   const currentThemeName = ref(getCurrentThemeName());
   const selectedTheme = ref(getStoredThemeName() ?? "system");
@@ -442,6 +475,12 @@ export function useSettings() {
   }
 
   return {
+    systemDatabaseId,
+    systemDatabaseSaving,
+    systemDatabaseError,
+    systemDatabaseDialogVisible,
+    chooseSystemDatabase,
+    saveSystemDatabase,
     themeOptions,
     currentThemeName,
     selectedTheme,

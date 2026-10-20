@@ -128,11 +128,7 @@
                         <template #title>计划任务</template>
                         <div class="agent-service-form-grid">
                             <t-form-item label="关系型数据库">
-                                <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
-                                    <t-option value="" label="不使用" />
-                                    <t-option v-for="item in taskDbConnections" :key="item.config_id"
-                                        :value="item.config_id" :label="item.name" />
-                                </t-select>
+                                <RelationalDatabaseSelect v-model="form.rdb_id" placeholder="不使用" clearable />
                             </t-form-item>
                         </div>
                         <ScheduledJobsEditor :jobs="form.scheduled_jobs" :available-jobs="schedulerJobs"
@@ -146,11 +142,7 @@
                             <template #title>RAG 配置</template>
                             <div class="agent-service-form-grid">
                                 <t-form-item label="关系型数据库">
-                                    <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
-                                        <t-option value="" label="不使用" />
-                                        <t-option v-for="item in taskDbConnections" :key="item.config_id"
-                                            :value="item.config_id" :label="item.name" />
-                                    </t-select>
+                                    <RelationalDatabaseSelect v-model="form.rdb_id" placeholder="不使用" clearable />
                                 </t-form-item>
                                 <t-form-item label="RustFS">
                                     <t-select v-model="form.rustfs_connection_id" placeholder="不使用" clearable>
@@ -421,11 +413,7 @@
                     <template #title>计划任务</template>
                     <div class="agent-service-form-grid">
                         <t-form-item label="关系型数据库">
-                            <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
-                                <t-option value="" label="不使用" />
-                                <t-option v-for="item in taskDbConnections" :key="item.config_id"
-                                    :value="item.config_id" :label="item.name" />
-                            </t-select>
+                            <RelationalDatabaseSelect v-model="form.rdb_id" placeholder="不使用" clearable />
                         </t-form-item>
                     </div>
                     <ScheduledJobsEditor :jobs="form.scheduled_jobs" :available-jobs="schedulerJobs"
@@ -528,11 +516,7 @@
                                 </t-select>
                             </t-form-item>
                             <t-form-item label="关系型数据库">
-                                <t-select v-model="form.rdb_id" placeholder="不使用" clearable>
-                                    <t-option value="" label="不使用" />
-                                    <t-option v-for="item in taskDbConnections" :key="item.config_id"
-                                        :value="item.config_id" :label="item.name" />
-                                </t-select>
+                                <RelationalDatabaseSelect v-model="form.rdb_id" placeholder="不使用" clearable />
                             </t-form-item>
                             <t-form-item label="检索数据库">
                                 <t-select v-model="form.retrieval_store_id" placeholder="不使用" clearable
@@ -1250,6 +1234,7 @@ import ConfigImportDialog from "../components/ConfigImportDialog.vue";
 import IgnoreRulesList from "../components/IgnoreRulesList.vue";
 import RateLimitConfigDrawer from "../components/RateLimitConfigDrawer.vue";
 import RetrievalDatabaseDialog from "../components/RetrievalDatabaseDialog.vue";
+import RelationalDatabaseSelect from "../components/RelationalDatabaseSelect.vue";
 import ScheduledJobsEditor from "../components/ScheduledJobsEditor.vue";
 import ServiceModelConfig from "../components/ServiceModelConfig.vue";
 import { useRoleServicePage } from "./roleServicePage";
@@ -1268,6 +1253,7 @@ export default defineComponent({
         RefreshIcon,
         RateLimitConfigDrawer,
         RetrievalDatabaseDialog,
+        RelationalDatabaseSelect,
         ScheduledJobsEditor,
         ServiceModelConfig,
     },

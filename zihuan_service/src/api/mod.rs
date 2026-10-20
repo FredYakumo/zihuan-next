@@ -353,6 +353,11 @@ pub fn build_router(
         // Settings
         .push(Router::with_path("settings/storage-info").get(settings::get_storage_info))
         .push(
+            Router::with_path("settings/system-database")
+                .get(settings::get_system_database)
+                .put(settings::update_system_database),
+        )
+        .push(
             Router::with_path("settings/context-compaction")
                 .get(settings::get_context_compaction_settings)
                 .put(settings::update_context_compaction_settings),
