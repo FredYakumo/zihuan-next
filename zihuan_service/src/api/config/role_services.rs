@@ -1200,6 +1200,20 @@ fn validate_chat_llm_ref(
         }
     }
 }
+        // Both are optional: an empty value falls back to the main Brain model at runtime.
+        validate_optional_chat_llm_ref(
+            llm_refs,
+            config.intent_classification_llm_ref_id.as_deref(),
+            agent_name,
+            "intent_classification_llm_ref_id",
+        )?;
+        validate_optional_chat_llm_ref(
+            llm_refs,
+            config.math_programming_llm_ref_id.as_deref(),
+            agent_name,
+            "math_programming_llm_ref_id",
+        )?;
+
 
 fn validate_embedding_model_ref(
     llm_refs: &[LlmRefConfig],

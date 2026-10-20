@@ -215,7 +215,8 @@ impl QqChatAgentServiceInner {
             &mut qq_procedure_context(&chat_preprompt_history_key, None),
             PrepromptContext {
                 trace,
-                llm: ctx.natural_language_reply_llm,
+                // The "Preprompt 模型" setting; when unset it falls back to the main Brain model.
+                llm: ctx.intent_classification_llm,
                 cache: ctx.cache,
                 history_key: &chat_preprompt_history_key,
                 input: &prepared_input,
