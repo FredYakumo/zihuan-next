@@ -160,7 +160,9 @@ impl RoleAgent {
         let llm_ref_id_owned =
             super::service_type_ext::primary_llm_ref_id(&agent.role_service_type);
         let llm_config = resolve_llm_service_config(llm_ref_id_owned.as_deref(), llm_refs)
-            .map_err(|err| validation_error!("[{}] Failed to load llm config: {err}", &agent.name))?;
+            .map_err(|err| {
+                validation_error!("[{}] Failed to load llm config: {err}", &agent.name)
+            })?;
         let model_name = llm_config.model_name.clone();
         let llm = build_llm_model(&llm_config)?;
         Self::new(RoleAgentConfig {

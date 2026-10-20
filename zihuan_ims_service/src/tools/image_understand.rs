@@ -226,7 +226,7 @@ fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::model_inference::llm::ll
     let llm_config = resolve_llm_service_config(Some(llm_ref_id), &llm_refs).map_err(|err| {
         validation_error!("[{DEFAULT_TOOL_IMAGE_UNDERSTAND}] Failed to load llm config: {err}")
     })?;
-    
+
     if !llm_config.supports_multimodal_input {
         let error_message = if agent
             .image_understand_llm_ref_id

@@ -15,11 +15,11 @@ use zihuan_core::model_inference::llm::{llm_base::LLMBase, LLMMessage};
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::runtime::block_async;
-use zihuan_core::validation_error;
 use zihuan_core::storage::{
     build_retrieval_store_ref, build_web_search_engine_ref, AgentMemoryAccessContext,
     ConnectionConfig, LocalMemoryStore,
 };
+use zihuan_core::validation_error;
 use zihuan_core::workspace::normalized_workspace_path;
 
 use crate::tools::{

@@ -16,11 +16,11 @@ use zihuan_core::role::procedure::{
 };
 use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::scheduler::{JobResources, ScheduledJobConfig, ServiceRegistrationGuard};
-use zihuan_core::validation_error;
 use zihuan_core::storage::{
     build_relational_db_connection_for_connection, load_connections, ConnectionConfig,
 };
 use zihuan_core::task_context::AgentTaskRuntime;
+use zihuan_core::validation_error;
 use zihuan_workspace_service::role_config::WorkspaceRoleServiceConfig;
 
 use crate::role::{InferenceToolProvider, RoleAgent};
@@ -381,7 +381,6 @@ async fn build_workspace_job_resources(
             zihuan_core::chat_history::load_session_history_messages(session_id).unwrap_or_default()
         }),
 
-        
         history_clearer: Arc::new(|_session_id: &str| {
             log::info!("[Scheduler] history.clear is a no-op for workspace agents");
             Ok(())

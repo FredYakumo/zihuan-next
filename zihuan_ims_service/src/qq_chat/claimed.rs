@@ -1094,9 +1094,7 @@ impl QqChatAgentServiceInner {
 
 /// The rate-limit snapshot the context view shows for one turn: which rule applied
 /// (user/group/default), its window and quota, and how much of it this message used.
-fn rate_limit_stage_detail(
-    result: Option<&MessageRateLimitCheckResult>,
-) -> serde_json::Value {
+fn rate_limit_stage_detail(result: Option<&MessageRateLimitCheckResult>) -> serde_json::Value {
     let Some(result) = result else {
         // No relational database: the runtime skips rate limiting entirely for this turn.
         return serde_json::json!({ "configured": false, "unlimited": true });

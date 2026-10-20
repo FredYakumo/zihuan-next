@@ -58,7 +58,7 @@ pub fn resolve_local_embedding_model_name(
     else {
         return Ok(None);
     };
-    
+
     let llm_ref = find_llm_ref(llm_refs, ref_id).ok_or_else(|| {
         Error::ValidationError(format!(
             "'{owner}' references missing embedding model_ref '{ref_id}'"
