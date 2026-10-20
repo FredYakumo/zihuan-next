@@ -1493,8 +1493,8 @@ async fn execute_chat_streaming(
                 let llm_refs = load_llm_refs()?;
                 let (llm, model_name) = match turn_model_config_id.as_deref() {
                     Some(model_id) => {
-                        let mut llm_config =
-                            resolve_llm_service_config(Some(model_id), &llm_refs).map_err(|err| {
+                        let mut llm_config = resolve_llm_service_config(Some(model_id), &llm_refs)
+                            .map_err(|err| {
                                 validation_error!(
                                     "[{}] Failed to load llm config: {err}",
                                     role_service.agent().name.as_str()
@@ -1513,13 +1513,15 @@ async fn execute_chat_streaming(
                 };
                 let image_understand_llm = match turn_image_understand_model_config_id.as_deref() {
                     Some(image_model_id) => {
-                        let llm_config = resolve_llm_service_config(Some(image_model_id), &llm_refs)
-                            .map_err(|err| {
-                                validation_error!(
-                                    "[{}] Failed to load llm config: {err}",
-                                    role_service.agent().name.as_str()
-                                )
-                            })?;
+                        let llm_config =
+                            resolve_llm_service_config(Some(image_model_id), &llm_refs).map_err(
+                                |err| {
+                                    validation_error!(
+                                        "[{}] Failed to load llm config: {err}",
+                                        role_service.agent().name.as_str()
+                                    )
+                                },
+                            )?;
                         Some(build_llm_model(&llm_config)?)
                     }
                     None => None,
