@@ -229,7 +229,10 @@ export function stageText(stage: string | undefined, detail: unknown): StageText
 
 export function useChatContextTurn(turn: () => ContextTurnView) {
   const rootEl = ref<HTMLElement | null>(null);
-  const previewUrl = ref("");
+  const previewMedia = ref<ServiceChatContextMedia | null>(null);
+  // Rich view replaces `[Image: media_id=...]` placeholders with the actual images; the original
+  // view shows the recorded user text exactly as the agent received it.
+  const richView = ref(true);
   const failedMedia = ref(new Set<string>());
   // Reasoning is the model's own explanation of the turn, so it starts visible instead of
   // hidden behind a toggle; it can still be folded away.
@@ -265,7 +268,9 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     if (name && id) return `${name}(${id})`;
     return name || id || "";
   });
-  const mediaIdPattern = /media_id=([^\s\]]+)/g;
+  // Matches the placeholder the message renderer writes for an image, e.g.
+  // `[Image: media_id=2026-...]`; the whole placeholder is replaced by the image itself.
+  const mediaIdPattern = /\[Image:?\s+media_id=([^\s\]]+)\]/g;
 
   /** Steps of this turn grouped into stages, each with its own palette color. */
   const phases = computed(() =>
@@ -331,15 +336,23 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
   }
 
   function hideImage(media: ServiceChatContextMedia) {
-    failedMedia.value.add(media.media_id);
+    const next = new Set(failedMedia.value);
+    next.add(media.media_id);
+    failedMedia.value = next;
+    if (previewMedia.value?.media_id === media.media_id) closePreview();
+  }
+
+  function toggleRichView() {
+    richView.value = !richView.value;
+    closePreview();
   }
 
   function openPreview(media: ServiceChatContextMedia) {
-    if (media.url) previewUrl.value = media.url;
+    if (media.url) previewMedia.value = media;
   }
 
   function closePreview() {
-    previewUrl.value = "";
+    previewMedia.value = null;
   }
 
   // The phase currently under the top of the scroll viewport, shown as a floating badge while
@@ -413,7 +426,9 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
 
   return {
     rootEl,
-    previewUrl,
+    previewMedia,
+    richView,
+    toggleRichView,
     thinkingOpen,
     quoteOpen,
     quoteSender,

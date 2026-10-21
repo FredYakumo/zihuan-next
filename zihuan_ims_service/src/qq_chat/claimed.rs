@@ -21,9 +21,8 @@ use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatEmotionDimensionConfig;
 use crate::storage::message_rate_limit_store::MessageRateLimitCheckResult;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::message_part::MessagePart;
 use zihuan_core::model_inference::llm::LLMMessage;
-use zihuan_core::qq_context::{MediaRef, QqChatContextEvent};
+use zihuan_core::qq_context::{collect_turn_media_refs, QqChatContextEvent};
 use zihuan_core::steer::message_with_api_style;
 
 use zihuan_core::graph::tool_spec::{
@@ -64,26 +63,6 @@ use crate::procedure::{
 use crate::qq_chat::logging::QqChatTurnIdentity;
 use zihuan_core::role::procedure::execute_blocking_procedure_chain;
 use zihuan_core::runtime::block_async;
-
-/// Collect the image/video media the current user message carries, for the live context view.
-fn collect_turn_media_refs(parts: &[MessagePart]) -> Vec<MediaRef> {
-    parts
-        .iter()
-        .filter_map(|part| match part {
-            MessagePart::Image { media } | MessagePart::Video { media } => Some(MediaRef {
-                media_id: media.media_id.clone(),
-                rustfs_path: Some(media.rustfs_path.clone())
-                    .filter(|value| !value.trim().is_empty()),
-                original_source: Some(media.original_source.clone())
-                    .filter(|value| !value.trim().is_empty()),
-                mime_type: media.mime_type.clone(),
-                name: media.name.clone(),
-                size_bytes: None,
-            }),
-            MessagePart::Text { .. } => None,
-        })
-        .collect()
-}
 
 /// Close the context-view turn when a step fails, so the flow does not stay stuck at
 /// "推理中" after the turn was announced.
@@ -207,7 +186,7 @@ impl QqChatAgentServiceInner {
 
         // Identity for this turn's live context events (Data Explorer view).
         let turn_id = uuid::Uuid::new_v4().to_string();
-        let turn_media = collect_turn_media_refs(&prepared_input.current_parts);
+        let turn_media = collect_turn_media_refs(&prepared_input.event.message_list);
 
         let emotion_dimensions =
             current_qq_chat_role_service_config()?.resolved_emotion_dimensions();

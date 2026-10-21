@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::graph::data_value::LLMMessageSessionCacheRef;
+use crate::ims_bot_adapter::models::message::Message;
 use crate::model_inference::llm::TokenUsage;
 
 /// Which backend an agent's conversation context cache is actually using.
@@ -40,6 +41,34 @@ pub struct MediaRef {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
+}
+
+/// Collect the images the current user message carries, for the live context view.
+///
+/// This reads the original messages rather than the resolved multimodal parts: resolving an
+/// image yields a data-URL part with a freshly generated media id, while the rendered user text
+/// still carries the original `[Image: media_id=...]` placeholder. Taking the ids from the
+/// messages keeps both sides pointing at the same image.
+pub fn collect_turn_media_refs(messages: &[Message]) -> Vec<MediaRef> {
+    messages
+        .iter()
+        .filter_map(|message| match message {
+            Message::Image(image) => {
+                let media = &image.media;
+                Some(MediaRef {
+                    media_id: media.media_id.clone(),
+                    rustfs_path: Some(media.rustfs_path.clone())
+                        .filter(|value| !value.trim().is_empty()),
+                    original_source: Some(media.original_source.clone())
+                        .filter(|value| !value.trim().is_empty()),
+                    mime_type: media.mime_type.clone(),
+                    name: media.name.clone(),
+                    size_bytes: None,
+                })
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Stage name under which a turn reports the assembled state/system prefix it sent to the

@@ -23,17 +23,25 @@
           </template>
         </div>
         <div class="context-bubble-body">
-          <template v-for="(segment, index) in segments" :key="index">
-            <span v-if="segment.type === 'text'" class="context-inline-text">{{ segment.text }}</span>
-            <button v-else type="button" class="context-inline-image" @click.stop="openPreview(segment.media)">
-              <img :src="segment.media.url" :alt="segment.media.name || segment.media.media_id" referrerpolicy="no-referrer" @error="hideImage(segment.media)" />
-              <span class="context-inline-image-tip">
-                <span class="mono">{{ segment.media.media_id }}</span>
-                <span v-if="segment.media.size_bytes">{{ formatBytes(segment.media.size_bytes) }}</span>
-              </span>
-            </button>
+          <template v-if="richView">
+            <template v-for="(segment, index) in segments" :key="index">
+              <span v-if="segment.type === 'text'" class="context-inline-text">{{ segment.text }}</span>
+              <button
+                v-else
+                type="button"
+                class="context-inline-image"
+                @mouseenter="openPreview(segment.media)"
+                @mouseleave="closePreview"
+              >
+                <img :src="segment.media.url" :alt="segment.media.name || segment.media.media_id" referrerpolicy="no-referrer" @error="hideImage(segment.media)" />
+              </button>
+            </template>
           </template>
+          <span v-else class="context-inline-text">{{ turn.userText }}</span>
         </div>
+        <button type="button" class="context-view-toggle" @click="toggleRichView">
+          {{ richView ? "原始视图" : "rich视图" }}
+        </button>
       </div>
     </div>
 
@@ -166,9 +174,15 @@
         <!-- 正在浏览 · {{ activePhase.name }} -->
         {{ activePhase.name }}
       </div>
-      <div v-if="previewUrl" class="context-preview-overlay" @click.self="closePreview">
-        <img :src="previewUrl" alt="预览" />
-        <button type="button" class="context-preview-close" @click="closePreview">×</button>
+      <div v-if="previewMedia?.url" class="context-preview-overlay">
+        <figure class="context-preview-frame">
+          <img :src="previewMedia.url" :alt="previewMedia.name || previewMedia.media_id" referrerpolicy="no-referrer" />
+          <figcaption class="context-preview-caption">
+            <span class="mono">{{ previewMedia.media_id }}</span>
+            <span v-if="previewMedia.name">{{ previewMedia.name }}</span>
+            <span v-if="previewMedia.size_bytes">{{ formatBytes(previewMedia.size_bytes) }}</span>
+          </figcaption>
+        </figure>
       </div>
     </Teleport>
   </section>
@@ -193,7 +207,9 @@ function rateLimitClass(stage: string, detail: unknown): string {
 
 const {
   rootEl,
-  previewUrl,
+  previewMedia,
+  richView,
+  toggleRichView,
   thinkingOpen,
   quoteOpen,
   quoteSender,

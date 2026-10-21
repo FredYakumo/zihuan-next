@@ -1122,7 +1122,7 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
         Ok(value) => value,
         Err(error) => return render_bad_request(res, error.to_string()),
     };
-    let (retrieval_store_id, embedding_id) = service_retrieval_store_config(&agent);
+    let (retrieval_store_id, embedding_id) = zihuan_service::role::retrieval_store_config(&agent);
     let access = AgentMemoryAccessContext {
         admin: true,
         skip_expiry_extend: true,
@@ -1249,7 +1249,9 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
         Ok(value) => value,
         Err(error) => return render_bad_request(res, error.to_string()),
     };
-    let (retrieval_store_id, embedding_id) = service_retrieval_store_config(&agent);
+    let (retrieval_store_id, embedding_id) = zihuan_service::role::retrieval_store_config(&agent);
+    let object_storage_connection_id = zihuan_service::role::object_storage_connection_id(&agent);
+    let object_storage_connection_id = object_storage_connection_id.as_deref();
     let (name_vector, description_vector) = match embedding_vectors(
         embedding_id.as_deref(),
         name_query.as_deref(),
@@ -1293,7 +1295,10 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
                 if let Ok(response) =
                     reference.query_with_args(&reference.class_name, &args, &properties)
                 {
-                    merge_image_items(&mut items, weaviate_image_items(response, "keyword"));
+                    merge_image_items(
+                        &mut items,
+                        weaviate_image_items(response, "keyword", object_storage_connection_id),
+                    );
                 }
             }
         }
@@ -1311,13 +1316,19 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
                     true,
                     false,
                 ) {
-                    merge_image_items(&mut items, weaviate_image_items(response, "semantic"));
+                    merge_image_items(
+                        &mut items,
+                        weaviate_image_items(response, "semantic", object_storage_connection_id),
+                    );
                 }
             }
         }
         if name_query.is_none() && description_query.is_none() {
             if let Ok(response) = reference.query_all(&reference.class_name, limit, &properties) {
-                merge_image_items(&mut items, weaviate_image_items(response, "recent"));
+                merge_image_items(
+                    &mut items,
+                    weaviate_image_items(response, "recent", object_storage_connection_id),
+                );
             }
         }
         res.render(Json(ServiceImageResponse { items, backend: "weaviate" }));
@@ -1356,6 +1367,7 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
                 },
                 hit.score,
                 "elasticsearch",
+                object_storage_connection_id,
             )
         })
         .collect();
@@ -1559,13 +1571,17 @@ enum ContextTurnEntry {
     },
 }
 
-fn context_media_from_ref(media: &zihuan_core::qq_context::MediaRef) -> ContextMedia {
+fn context_media_from_ref(
+    media: &zihuan_core::qq_context::MediaRef,
+    object_storage_connection_id: Option<&str>,
+) -> ContextMedia {
     ContextMedia {
         media_id: media.media_id.clone(),
         url: image_preview_url(
             media.rustfs_path.as_deref(),
             media.original_source.as_deref(),
             media.mime_type.as_deref(),
+            object_storage_connection_id,
         ),
         mime_type: media.mime_type.clone(),
         name: media.name.clone(),
@@ -1573,14 +1589,21 @@ fn context_media_from_ref(media: &zihuan_core::qq_context::MediaRef) -> ContextM
     }
 }
 
-fn archived_turn_to_context(turn: zihuan_ims_service::qq_chat::ArchivedTurn) -> ContextTurn {
+fn archived_turn_to_context(
+    turn: zihuan_ims_service::qq_chat::ArchivedTurn,
+    object_storage_connection_id: Option<&str>,
+) -> ContextTurn {
     use zihuan_core::model_inference::llm::TokenUsage;
     ContextTurn {
         turn_id: turn.turn_id,
         created_at: turn.created_at,
         user_text: turn.user_text,
         quoted: turn.quoted,
-        media: turn.media.iter().map(context_media_from_ref).collect(),
+        media: turn
+            .media
+            .iter()
+            .map(|media| context_media_from_ref(media, object_storage_connection_id))
+            .collect(),
         entries: turn
             .entries
             .into_iter()
@@ -1651,6 +1674,18 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
         Ok(messages) => messages,
         Err(error) => return render_internal_error(res, error.to_string()),
     };
+    // The service's own RustFS connection is what cached the images, so its id is carried on
+    // every preview URL for the media proxy to resolve.
+    let object_storage_connection_id = load_service_and_connections(&service_id)
+        .ok()
+        .and_then(|(agent, _)| zihuan_service::role::object_storage_connection_id(&agent));
+    let object_storage_connection_id = object_storage_connection_id.as_deref();
+    // Object sizes are a label on the preview, so a missing or unreachable store just leaves
+    // them blank instead of failing the context request.
+    let object_storage = match object_storage_connection_id {
+        Some(id) => resource_resolver::build_s3_ref(Some(id), &[]).await.ok().flatten(),
+        None => None,
+    };
 
     let mut bubbles = Vec::with_capacity(messages.len());
     let mut system_prompt: Option<String> = None;
@@ -1677,6 +1712,7 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
                         Some(image.rustfs_path.as_str()),
                         Some(image.original_source.as_str()),
                         image.mime_type.as_deref(),
+                        object_storage_connection_id,
                     ),
                     mime_type: image.mime_type.clone(),
                     name: image.name.clone(),
@@ -1685,7 +1721,7 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
                 media_paths.push(rustfs_path);
             }
         }
-        if let Some(storage) = ObjectStorageConfig::from_env() {
+        if let Some(storage) = object_storage.as_deref() {
             for (item, path) in media.iter_mut().zip(media_paths.iter()) {
                 if let Some(path) = path {
                     item.size_bytes = storage.head_object_size(path).await;
@@ -1737,7 +1773,11 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
                 created_at: turn.created_at,
                 user_text: turn.user_text,
                 quoted: turn.quoted,
-                media: turn.media.iter().map(context_media_from_ref).collect(),
+                media: turn
+                    .media
+                    .iter()
+                    .map(|media| context_media_from_ref(media, object_storage_connection_id))
+                    .collect(),
                 entries: turn
                     .entries
                     .into_iter()
@@ -1793,7 +1833,7 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
             .map(|rows| {
                 rows.into_iter()
                     .filter(|turn| !live_ids.contains(&turn.turn_id))
-                    .map(|turn| archived_turn_to_context(turn))
+                    .map(|turn| archived_turn_to_context(turn, object_storage_connection_id))
                     .collect()
             })
             .unwrap_or_default()
@@ -1843,8 +1883,24 @@ pub async fn serve_media_image(req: &mut Request, res: &mut Response, _depot: &m
     else {
         return render_bad_request(res, "path is required".into());
     };
-    let Some(storage) = ObjectStorageConfig::from_env() else {
-        return render_internal_error(res, "object storage is not configured");
+    // Prefer the connection the caller names: the preview URL was built from the service that
+    // cached the object, so it points at the bucket that actually holds it.
+    let storage = match req
+        .query::<String>("connection_id")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        Some(connection_id) => {
+            match resource_resolver::build_s3_ref(Some(&connection_id), &[]).await {
+                Ok(Some(storage)) => storage,
+                Ok(None) => return render_not_found(res, "object storage connection not found"),
+                Err(error) => return render_internal_error(res, error.to_string()),
+            }
+        }
+        None => match ObjectStorageConfig::from_env() {
+            Some(storage) => storage.into_inner(),
+            None => return render_internal_error(res, "object storage is not configured"),
+        },
     };
     let bytes = match storage.as_ref().get_object_bytes(&object_key).await {
         Ok(bytes) => bytes,
@@ -1874,24 +1930,6 @@ fn load_service_and_connections(
         .find(|item| item.id == service_id)
         .ok_or_else(|| zihuan_core::string_error!("Service '{}' not found", service_id))?;
     Ok((agent, load_connections()?))
-}
-
-fn service_retrieval_store_config(
-    agent: &zihuan_core::role::service_config::RoleServiceConfig,
-) -> (Option<String>, Option<String>) {
-    if let Some(config) = zihuan_service::role::optional_qq_chat(&agent.role_service_type) {
-        return (
-            config.retrieval_store_connection_id().map(ToOwned::to_owned),
-            config.embedding_model_ref_id.clone(),
-        );
-    }
-    if let Some(config) = zihuan_service::role::optional_workspace(&agent.role_service_type) {
-        return (
-            config.retrieval_store_connection_id().map(ToOwned::to_owned),
-            config.embedding_model_ref_id.clone(),
-        );
-    }
-    (None, None)
 }
 
 /// The backend serving one retrieval connection, or `None` when it is not a
@@ -1965,7 +2003,11 @@ fn image_property_names() -> Vec<String> {
     .map(str::to_string)
     .collect()
 }
-fn weaviate_image_items(response: Value, kind: &'static str) -> Vec<ServiceImageItem> {
+fn weaviate_image_items(
+    response: Value,
+    kind: &'static str,
+    object_storage_connection_id: Option<&str>,
+) -> Vec<ServiceImageItem> {
     response
         .get("data")
         .and_then(|value| value.get("Get"))
@@ -1987,6 +2029,7 @@ fn weaviate_image_items(response: Value, kind: &'static str) -> Vec<ServiceImage
                     .and_then(|value| value.get("distance"))
                     .and_then(Value::as_f64),
                 "weaviate",
+                object_storage_connection_id,
             ))
         })
         .collect()
@@ -1998,12 +2041,17 @@ fn image_preview_url(
     rustfs_path: Option<&str>,
     original_source: Option<&str>,
     mime_type: Option<&str>,
+    connection_id: Option<&str>,
 ) -> Option<String> {
     if let Some(path) = rustfs_path.map(str::trim).filter(|value| !value.is_empty()) {
         let mut url = format!("/api/explorer/media-image?path={}", pct_encode(path));
         if let Some(mime) = mime_type.and_then(supported_image_content_type) {
             url.push_str("&mime_type=");
             url.push_str(mime);
+        }
+        if let Some(connection_id) = connection_id.filter(|value| !value.trim().is_empty()) {
+            url.push_str("&connection_id=");
+            url.push_str(&pct_encode(connection_id));
         }
         return Some(url);
     }
@@ -2022,13 +2070,18 @@ fn image_item(
     kind: &'static str,
     score: Option<f64>,
     backend: &'static str,
+    object_storage_connection_id: Option<&str>,
 ) -> ServiceImageItem {
     let string = |key| value.get(key).and_then(Value::as_str).map(ToOwned::to_owned);
     let rustfs_path = string("rustfs_path");
     let mime_type = string("mime_type");
     let original_source = string("original_source");
-    let url =
-        image_preview_url(rustfs_path.as_deref(), original_source.as_deref(), mime_type.as_deref());
+    let url = image_preview_url(
+        rustfs_path.as_deref(),
+        original_source.as_deref(),
+        mime_type.as_deref(),
+        object_storage_connection_id,
+    );
     ServiceImageItem {
         object_id,
         media_id: string("media_id"),
