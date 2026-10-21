@@ -12,6 +12,7 @@ use crate::error::{Error, Result};
 use crate::graph::data_value::{
     LLMMessageSessionCacheRef, SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT,
 };
+use crate::validation_error;
 use dynamic_script_engine::{NodeRuntimeConfig, ScriptLanguage};
 
 use super::registry::{NodeFactory, NodeRegistry};
@@ -319,8 +320,16 @@ fn agent_retrieval_store() -> Result<crate::retrieval::RetrievalStoreRef> {
 fn agent_embedding_model(
 ) -> Result<Arc<dyn crate::model_inference::llm::embedding_base::EmbeddingBase>> {
     let resources = crate::agent::runtime_context::current_agent_resources()?;
-    crate::model_inference::agent_config_support::build_embedding_from_ref_id(
-        resources.embedding_model_ref_id().as_deref(),
+    let embedding_ref = resources.embedding_model_ref_id();
+    let ref_id = embedding_ref
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| Error::ValidationError("embedding_model_ref_id is required".to_string()))?;
+    crate::runtime::block_async(
+        crate::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager::shared(
+        )
+        .get_or_create_embedding_model(ref_id),
     )
 }
 
@@ -1125,9 +1134,12 @@ pub fn dispatch_script_host_call(
             let resources = crate::agent::runtime_context::current_agent_resources()?;
             let kind =
                 crate::agent::normalize_llm_kind(params.get("llm_kind").and_then(Value::as_str))?;
-            let model = crate::model_inference::agent_config_support::build_llm_from_ref_id(
+            let model = crate::agent::resource_resolver::build_llm_from_ref_id(
                 resources.llm_ref_id(kind).as_deref(),
-            )?;
+            )
+            .map_err(|err| {
+                validation_error!("[Script host] Failed to resolve llm config: {err}")
+            })?;
             Ok(store_script_resource(DataValue::LLModel(model)))
         }
         "agent.embedding_model" => {
@@ -1570,7 +1582,8 @@ pub fn dispatch_script_host_call(
                     llm_ref.name
                 )));
             }
-            let config = match llm_ref.model {
+            let config_id = llm_ref.canonical_config_id().to_string();
+            let mut config = match llm_ref.model {
                 crate::model_inference::model_config::ModelRefSpec::ChatLlm { llm } => llm,
                 crate::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal {
                     ..
@@ -1581,6 +1594,7 @@ pub fn dispatch_script_host_call(
                     )));
                 }
             };
+            config.usage_config_id = Some(config_id);
             let model = crate::model_inference::model_factory::build_llm(config)?;
             Ok(store_script_resource(DataValue::LLModel(model)))
         }

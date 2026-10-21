@@ -39,6 +39,15 @@
         </div>
       </t-card>
 
+      <t-card title="系统配置数据库" bordered header-bordered>
+        <div class="settings-database-body">
+          <p class="muted">保存模型用量等系统运行数据，更换数据库时可选择迁移已有数据。</p>
+          <RelationalDatabaseSelect :model-value="systemDatabaseId" :disabled="systemDatabaseSaving"
+            @update:model-value="chooseSystemDatabase" />
+          <p v-if="systemDatabaseError" role="alert">{{ systemDatabaseError }}</p>
+        </div>
+      </t-card>
+
       <t-card title="日志提示" bordered header-bordered>
         <p class="muted">在导航栏"日志"旁显示未读错误数量红点。</p>
         <t-checkbox :checked="logErrorBadgeEnabled" @change="handleLogErrorBadgeToggle">显示错误提示</t-checkbox>
@@ -83,6 +92,15 @@
           {{ model.name }}<span v-if="model.has_duplicate_model_name">（{{ model.model_name }}）</span>
         </t-checkbox>
       </t-checkbox-group>
+    </t-dialog>
+
+    <t-dialog v-model:visible="systemDatabaseDialogVisible" header="更换系统配置数据库"
+      :close-on-overlay-click="false" :close-btn="!systemDatabaseSaving"
+      :confirm-btn="{ content: '迁移数据并切换', loading: systemDatabaseSaving }"
+      :cancel-btn="{ content: '取消', disabled: systemDatabaseSaving }" @confirm="saveSystemDatabase(true)">
+      <p>是否将当前系统配置数据库的数据迁移至所选数据库？原数据库的数据会保留。</p>
+      <p v-if="systemDatabaseError" role="alert">{{ systemDatabaseError }}</p>
+      <t-button variant="outline" :disabled="systemDatabaseSaving" @click="saveSystemDatabase(false)">不迁移，直接切换</t-button>
     </t-dialog>
 
     <t-card title="Dynamic Script Runtime" bordered header-bordered>
@@ -223,12 +241,18 @@
 
 <script setup lang="ts">
 import { ErrorCircleIcon, FileCopyIcon } from "tdesign-icons-vue-next";
-import { ref } from "vue";
 
 import AdminPageHeader from "../components/AdminPageHeader.vue";
+import RelationalDatabaseSelect from "../components/RelationalDatabaseSelect.vue";
 import { useSettings } from "./useSettings";
 
 const {
+  systemDatabaseId,
+  systemDatabaseSaving,
+  systemDatabaseError,
+  systemDatabaseDialogVisible,
+  chooseSystemDatabase,
+  saveSystemDatabase,
   themeOptions,
   selectedTheme,
   currentThemeLabel,
@@ -268,27 +292,18 @@ const {
   modelHttpEnabled,
   modelHttpSaving,
   modelHttpEndpoint,
+  modelHttpDialogVisible,
   publicModelConfigIds,
   enabledChatModels,
   allPublicModelsSelected,
   setModelHttpEnabled,
-  saveModelHttpSettings,
+  handleSaveModelHttpSettings,
   toggleAllPublicModels,
   copyModelHttpEndpoint,
   contextCompactionPercent,
   contextCompactionSaving,
   saveContextCompactionSettings,
 } = useSettings();
-
-const modelHttpDialogVisible = ref(false);
-async function handleSaveModelHttpSettings() {
-  try {
-    await saveModelHttpSettings();
-    modelHttpDialogVisible.value = false;
-  } catch (error) {
-    window.alert(`保存模型配置失败：${String(error)}`);
-  }
-}
 </script>
 
 <style scoped lang="scss">

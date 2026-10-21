@@ -15,6 +15,7 @@ use zihuan_core::graph::graph_io::{
 use zihuan_core::graph::{DataType, Port};
 use zihuan_core::ims_bot_adapter::models::message::Message;
 use zihuan_core::model_inference::llm::tooling::ToolCalls;
+use zihuan_core::model_inference::llm::util::format_cache_hit_rate;
 use zihuan_core::model_inference::llm::{LLMMessage, TokenUsage};
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
@@ -82,6 +83,8 @@ struct QqChatTaskTraceInner {
     exact_usage_available: bool,
     reply_suppress_send: Option<bool>,
     reply_sent: Option<bool>,
+    /// Wall-clock time of the final model call of the turn, used to derive tokens per second.
+    inference_elapsed_ms: Option<u128>,
     graph_nodes: Vec<NodeDefinition>,
     graph_edges: Vec<EdgeDefinition>,
 }
@@ -118,6 +121,7 @@ impl QqChatTaskTrace {
                 exact_usage_available: false,
                 reply_suppress_send: None,
                 reply_sent: None,
+                inference_elapsed_ms: None,
                 graph_nodes: Vec::new(),
                 graph_edges: Vec::new(),
             })),
@@ -326,7 +330,7 @@ impl QqChatTaskTrace {
         *inner.tool_call_counts.entry(name.to_string()).or_insert(0) += 1;
     }
 
-    pub(crate) fn record_tool_finish(&self, name: &str, result: &str) {
+    pub(crate) fn record_tool_finish(&self, name: &str, result: &str) -> u128 {
         let finished_at = TracePoint::now();
         let (duration_ms, graph_node_id) = {
             let mut inner = self.inner.lock().unwrap();
@@ -357,6 +361,19 @@ impl QqChatTaskTrace {
             duration_ms,
             format!("result={}", truncate_for_log(result, LOG_TOOL_PREVIEW_CHARS)),
         );
+
+        duration_ms
+    }
+
+    /// Record the wall-clock duration of one model call. Later calls overwrite earlier ones so
+    /// the snapshot reflects the final inference of the turn.
+    pub(crate) fn record_inference_timing(&self, elapsed_ms: u128) {
+        self.inner.lock().unwrap().inference_elapsed_ms = Some(elapsed_ms);
+    }
+
+    /// The final model call's duration in milliseconds, if a timing was recorded.
+    pub(crate) fn inference_elapsed_ms(&self) -> Option<u128> {
+        self.inner.lock().unwrap().inference_elapsed_ms
     }
 
     pub(crate) fn record_llm_final_result(
@@ -677,12 +694,7 @@ impl QqChatTaskTrace {
                 .prompt_cache_miss_tokens
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| "unavailable".to_string()),
-            match (inner.cached_prompt_tokens, inner.prompt_tokens_estimated) {
-                (Some(cached), Some(prompt)) if prompt > 0 => {
-                    format!("{:.2}%", (cached as f64 / prompt as f64) * 100.0)
-                }
-                _ => "unavailable".to_string(),
-            }
+            format_cache_hit_rate(inner.cached_prompt_tokens, inner.prompt_tokens_estimated)
         ));
         lines.push(format!(
             "历史消息队列数量={}，token总数={}",
@@ -829,8 +841,25 @@ fn task_graph_node_visual_height(node: &NodeDefinition) -> f32 {
     TASK_GRAPH_BASE_NODE_HEIGHT
 }
 
+/// Identity of the turn a context-event-emitting observer belongs to.
+#[derive(Clone)]
+pub(crate) struct QqChatTurnIdentity {
+    pub(crate) agent_id: String,
+    pub(crate) sender_id: String,
+    pub(crate) turn_id: String,
+}
+
 pub(crate) struct QqChatToolCallingObserver {
     pub(crate) trace: QqChatTaskTrace,
+    /// When set, the observer also emits live context events for the Data Explorer view.
+    /// The preprompt agent reuses this observer for tracing only and leaves it `None`.
+    pub(crate) identity: Option<QqChatTurnIdentity>,
+}
+
+impl QqChatToolCallingObserver {
+    fn emit(&self, event: zihuan_core::qq_context::QqChatContextEvent) {
+        zihuan_core::qq_context::emit_qq_context_event(event);
+    }
 }
 
 impl ToolCallingObserver for QqChatToolCallingObserver {
@@ -838,12 +867,42 @@ impl ToolCallingObserver for QqChatToolCallingObserver {
         self.trace.record_tool_request(iteration, content, tool_calls);
     }
 
-    fn on_tool_start(&self, name: &str, _call_id: &str, arguments: &Value) {
+    fn on_tool_start(&self, name: &str, call_id: &str, arguments: &Value) {
         self.trace.record_tool_start(name, arguments);
+        if let Some(identity) = self.identity.as_ref() {
+            self.emit(zihuan_core::qq_context::QqChatContextEvent::ToolStarted {
+                agent_id: identity.agent_id.clone(),
+                sender_id: identity.sender_id.clone(),
+                turn_id: identity.turn_id.clone(),
+                call_id: call_id.to_string(),
+                tool_name: name.to_string(),
+                arguments: arguments.clone(),
+            });
+        }
     }
 
-    fn on_tool_finish(&self, name: &str, _call_id: &str, result: &str) {
-        self.trace.record_tool_finish(name, result);
+    fn on_tool_finish(&self, name: &str, call_id: &str, result: &str) {
+        let duration_ms = self.trace.record_tool_finish(name, result);
+        if let Some(identity) = self.identity.as_ref() {
+            self.emit(zihuan_core::qq_context::QqChatContextEvent::ToolFinished {
+                agent_id: identity.agent_id.clone(),
+                sender_id: identity.sender_id.clone(),
+                turn_id: identity.turn_id.clone(),
+                call_id: call_id.to_string(),
+                tool_name: name.to_string(),
+                result: result.to_string(),
+                duration_ms,
+            });
+        }
+    }
+
+    fn on_inference_timing(
+        &self,
+        _iteration: usize,
+        elapsed: std::time::Duration,
+        _first_token: Option<std::time::Duration>,
+    ) {
+        self.trace.record_inference_timing(elapsed.as_millis());
     }
 }
 

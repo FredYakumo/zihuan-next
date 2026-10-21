@@ -27,6 +27,14 @@ const LOOKUP_SQL: &str = r#"
     ORDER BY id ASC
     "#;
 
+const SENDER_LOOKUP_SQL: &str = r#"
+    SELECT sender_id, sender_name
+    FROM message_record
+    WHERE message_id = ?
+    ORDER BY id ASC
+    LIMIT 1
+    "#;
+
 const MEDIA_RECORD_LOOKUP_SQL: &str = r#"
     SELECT source, original_source, rustfs_path, name, description, mime_type
     FROM media_record
@@ -224,6 +232,43 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
     }
 
     Ok(Some(RestoredMessageSnapshot { messages, source }))
+}
+
+/// Sender of a message recorded in the relational store, as `(sender_id, sender_name)`.
+///
+/// The restored message list only carries the message segments, so the quote block in the
+/// Data Explorer resolves the quoted message's sender from the persisted record instead.
+pub fn lookup_message_sender(message_id: i64) -> Option<(String, String)> {
+    let rdb_pool = match LATEST_RDB_POOL.read() {
+        Ok(guard) => guard.clone()?,
+        Err(_) => return None,
+    };
+    let message_id = message_id.to_string();
+    let (sender_id, sender_name) = match &rdb_pool {
+        RelationalDbConnection::MySql(config) => {
+            let pool = mysql_pool(config).ok()?.clone();
+            let run = async move {
+                sqlx::query(SENDER_LOOKUP_SQL).bind(&message_id).fetch_optional(&pool).await
+            };
+            let row = crate::runtime::block_async(run).ok().flatten()?;
+            (
+                row.try_get::<String, _>("sender_id").ok()?,
+                row.try_get::<String, _>("sender_name").ok()?,
+            )
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            let pool = sqlite_pool(config).ok()?.clone();
+            let run = async move {
+                sqlx::query(SENDER_LOOKUP_SQL).bind(&message_id).fetch_optional(&pool).await
+            };
+            let row = crate::runtime::block_async(run).ok().flatten()?;
+            (
+                row.try_get::<String, _>("sender_id").ok()?,
+                row.try_get::<String, _>("sender_name").ok()?,
+            )
+        }
+    };
+    Some((sender_id, sender_name))
 }
 
 pub fn query_media_by_id(

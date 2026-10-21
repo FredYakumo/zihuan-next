@@ -428,7 +428,14 @@ impl LLMBase for LLMAPI {
                 "Local Candle styles should be routed through the local runtime, not LLMAPI"
             ));
         }
+        // `reqwest::blocking` internally creates and drops a Tokio runtime; that must not happen
+        // while an async context is entered (QQ turns call this from inside `block_async`).
+        crate::runtime::run_outside_async_runtime(|| self.inference_inner(param))
+    }
+}
 
+impl LLMAPI {
+    fn inference_inner(&self, param: &InferenceParam) -> crate::error::Result<LLMMessage> {
         let messages =
             downgrade_messages_for_model(param.messages.clone(), self.supports_multimodal_input);
         let param = InferenceParam { messages: &messages, tools: param.tools };

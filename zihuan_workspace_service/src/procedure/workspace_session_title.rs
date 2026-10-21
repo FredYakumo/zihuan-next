@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use zihuan_core::role::service_config::{RoleServiceConfig, RoleServiceKind};
 
 use crate::role_config::WorkspaceRoleServiceConfig;
+use zihuan_core::agent::resource_resolver::build_llm_from_ref_id;
 use zihuan_core::chat_history::{sanitize_session_title, write_session_title};
 use zihuan_core::error::Result;
-use zihuan_core::model_inference::agent_config_support::build_llm_from_ref_id;
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,

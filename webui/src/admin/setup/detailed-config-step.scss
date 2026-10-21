@@ -30,3 +30,9 @@
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }.field { display: grid; gap: 6px; }.field label { color: var(--admin-muted); font-size: 13px; }.field input, .field select { width: 100%; box-sizing: border-box; }.step-actions { display: flex; justify-content: space-between; }
 .step-actions--selection { margin-top: auto; }
 @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
+
+.credential-auth-field {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+}

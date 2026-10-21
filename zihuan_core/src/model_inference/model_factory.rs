@@ -8,7 +8,8 @@ use crate::model_inference::nn::local_candle_llm_gguf::build_local_candle_gguf_l
 use crate::model_inference::nn::local_candle_llm_hf::build_local_candle_hf_llm;
 
 pub fn build_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
-    match config.api_style {
+    let config_id = config.usage_config_id.clone();
+    let model = match config.api_style {
         LlmApiStyle::OpenAiChatCompletions
         | LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat
         | LlmApiStyle::OpenAiResponses
@@ -28,9 +29,13 @@ pub fn build_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
                 std::time::Duration::from_secs(config.timeout_secs),
             )
             .with_retry_count(config.retry_count);
-            Ok(Arc::new(api))
+            Ok(Arc::new(api) as Arc<dyn LLMBase>)
         }
         LlmApiStyle::CandleGguf => build_local_candle_gguf_llm(config),
         LlmApiStyle::CandleHf => build_local_candle_hf_llm(config),
-    }
+    }?;
+    Ok(match config_id {
+        Some(config_id) => Arc::new(super::model_usage::TrackedLlm { config_id, inner: model }),
+        None => model,
+    })
 }

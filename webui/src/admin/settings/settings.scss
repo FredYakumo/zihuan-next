@@ -4,6 +4,15 @@
   max-width: 380px;
 }
 
+.settings-database-body {
+  display: grid;
+  gap: 14px;
+
+  p {
+    margin: 0;
+  }
+}
+
 .settings-storage-body {
   display: grid;
   gap: 10px;

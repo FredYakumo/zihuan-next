@@ -1,0 +1,37 @@
+.common-select-option-desc {
+  float: right;
+  color: var(--td-text-color-placeholder);
+  font-size: 12px;
+  margin-left: 12px;
+}
+
+:global(.t-select-option.common-select-create-option) {
+  position: relative;
+  margin-bottom: 6px;
+  color: var(--td-brand-color);
+  font-weight: 600;
+}
+
+:global(.common-select-create-option-content) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+:global(.common-select-create-option-content .t-icon) {
+  width: 16px;
+  height: 16px;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--td-brand-color);
+  color: var(--td-text-color-anti);
+}
+
+:global(.t-select-option.common-select-create-option::after) {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: -4px;
+  left: 8px;
+  border-bottom: 1px solid var(--td-component-border);
+}

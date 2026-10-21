@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -57,6 +58,17 @@ pub trait ToolCallingObserver: Send + Sync + 'static {
     fn on_tool_finish(&self, _name: &str, _call_id: &str, _result: &str) {}
     fn on_ask_user(&self, _call_id: &str, _request: &AskUserRequest) {}
     fn on_final_assistant(&self, _response: &LLMMessage, _stop_reason: &ToolCallingStopReason) {}
+
+    /// One inference iteration finished. `elapsed` is the wall time of the model call and
+    /// `first_token` how long until the first streamed token (unavailable for blocking calls).
+    /// Observers that surface throughput to a UI can use these to compute tokens per second.
+    fn on_inference_timing(
+        &self,
+        _iteration: usize,
+        _elapsed: Duration,
+        _first_token: Option<Duration>,
+    ) {
+    }
 }
 
 pub trait ToolCallingMiddleware: Send + Sync + 'static {

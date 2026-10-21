@@ -22,16 +22,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
 import { BrowseIcon, BrowseOffIcon } from "tdesign-icons-vue-next";
 
-withDefaults(defineProps<{ placeholder?: string; inputClass?: string }>(), {
+import { useConnectionCredentialInput } from "./ConnectionCredentialInput";
+
+const props = withDefaults(defineProps<{ placeholder?: string; inputClass?: string }>(), {
   placeholder: "",
   inputClass: "",
 });
 
 const value = defineModel<string>({ required: true });
-const isVisible = ref(false);
+
+const { isVisible } = useConnectionCredentialInput(props);
 </script>
 
 <style scoped lang="scss">

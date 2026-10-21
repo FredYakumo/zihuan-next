@@ -20,6 +20,7 @@ use zihuan_core::storage::{
     build_relational_db_connection_for_connection, load_connections, ConnectionConfig,
 };
 use zihuan_core::task_context::AgentTaskRuntime;
+use zihuan_core::validation_error;
 use zihuan_workspace_service::role_config::WorkspaceRoleServiceConfig;
 
 use crate::role::{InferenceToolProvider, RoleAgent};
@@ -256,6 +257,7 @@ impl RoleServiceManager {
     }
 
     pub async fn stop_role_service(&self, role_service_id: &str) -> Result<()> {
+        zihuan_core::qq_context::unregister_qq_chat_history_cache(role_service_id);
         let (task, on_finish_shared) = {
             let mut guard = self.inner.lock().unwrap();
             match guard.get_mut(role_service_id) {
@@ -359,8 +361,8 @@ async fn build_workspace_job_resources(
         zihuan_core::string_error!("scheduled jobs require a relational database connection")
     })?;
     let connection = build_relational_db_connection_for_connection(rdb_id, connections).await?;
-    let llm_config =
-        resolve_llm_service_config(config.llm_ref_id.as_deref(), &load_llm_refs()?, &agent.name)?;
+    let llm_config = resolve_llm_service_config(config.llm_ref_id.as_deref(), &load_llm_refs()?)
+        .map_err(|err| validation_error!("[{}] Failed to load llm config: {err}", &agent.name))?;
     let llm = build_llm_model(&llm_config)?;
     let tool_definitions = build_enabled_tool_definitions(&agent.tools)?;
     let memory = zihuan_workspace_service::workspace_agent_service::load_job_memory_resources(
@@ -378,6 +380,7 @@ async fn build_workspace_job_resources(
         history_loader: Arc::new(|session_id: &str| {
             zihuan_core::chat_history::load_session_history_messages(session_id).unwrap_or_default()
         }),
+
         history_clearer: Arc::new(|_session_id: &str| {
             log::info!("[Scheduler] history.clear is a no-op for workspace agents");
             Ok(())

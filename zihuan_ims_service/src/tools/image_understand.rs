@@ -19,6 +19,7 @@ use zihuan_core::runtime::block_async;
 use zihuan_core::storage::RuntimeStorageConnectionManager;
 
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
+use zihuan_core::validation_error;
 
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
 
@@ -221,8 +222,11 @@ fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::model_inference::llm::ll
                 "image_understand requires a main llm_ref_id or a dedicated image_understand_llm_ref_id".to_string(),
             )
         })?;
-    let llm_config =
-        resolve_llm_service_config(Some(llm_ref_id), &llm_refs, DEFAULT_TOOL_IMAGE_UNDERSTAND)?;
+
+    let llm_config = resolve_llm_service_config(Some(llm_ref_id), &llm_refs).map_err(|err| {
+        validation_error!("[{DEFAULT_TOOL_IMAGE_UNDERSTAND}] Failed to load llm config: {err}")
+    })?;
+
     if !llm_config.supports_multimodal_input {
         let error_message = if agent
             .image_understand_llm_ref_id

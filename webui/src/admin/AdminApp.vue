@@ -44,8 +44,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
-import { RouterView, useRoute } from "vue-router";
+import { RouterView } from "vue-router";
 import {
   ArticleIcon, ChatIcon, ControlPlatformIcon, DashboardIcon, ExtensionIcon, KeyIcon, LinkIcon,
   MenuFoldIcon, MenuUnfoldIcon, MindMapIcon, SearchIcon, ServerIcon, SettingIcon, SitemapIcon,
@@ -53,22 +52,19 @@ import {
 } from "tdesign-icons-vue-next";
 
 import brandLogoSrc from "../assets/brand-icon.png";
-import { onThemeChange } from "../ui/theme";
 import { useAdminApp } from "./components/useAdminApp";
 import { errorCount, logErrorBadgeEnabled } from "./logs/logStream";
 
-const { isSetupRoute, sidebarOpen, sidebarCollapsed, showOverlay, closeSidebar, toggleSidebar } = useAdminApp();
-const route = useRoute();
-const activeMenuValue = computed(() => route.path.startsWith("/data-explorer/") ? "/data-explorer" : route.path);
-
-function readMenuTheme(): "light" | "dark" {
-  return document.documentElement.getAttribute("theme-mode") === "light" ? "light" : "dark";
-}
-
-const menuTheme = ref(readMenuTheme());
-let unsubscribeTheme: (() => void) | undefined;
-onMounted(() => { unsubscribeTheme = onThemeChange(() => { menuTheme.value = readMenuTheme(); }); });
-onUnmounted(() => { unsubscribeTheme?.(); });
+const {
+  isSetupRoute,
+  sidebarOpen,
+  sidebarCollapsed,
+  showOverlay,
+  closeSidebar,
+  toggleSidebar,
+  activeMenuValue,
+  menuTheme,
+} = useAdminApp();
 </script>
 
 <style scoped lang="scss">

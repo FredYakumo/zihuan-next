@@ -11,7 +11,7 @@ use chrono::Utc;
 use log::info;
 use tokio::sync::RwLock;
 
-use crate::config::llm_refs::{load_llm_refs, LlmRefConfig};
+use crate::config::llm_refs::load_llm_refs;
 use crate::model_inference::model_config::ModelRefSpec;
 use crate::model_inference::nn::queued_embedding_model::QueuedEmbeddingModel;
 
@@ -47,13 +47,14 @@ struct EmbeddingRuntimeInstance {
 
 #[derive(Debug)]
 struct LoggedEmbeddingModel {
+    config_id: String,
     instance_id: String,
     inner: Arc<dyn EmbeddingBase>,
 }
 
 impl LoggedEmbeddingModel {
-    fn new(instance_id: String, inner: Arc<dyn EmbeddingBase>) -> Self {
-        Self { instance_id, inner }
+    fn new(config_id: String, instance_id: String, inner: Arc<dyn EmbeddingBase>) -> Self {
+        Self { config_id, instance_id, inner }
     }
 }
 
@@ -65,6 +66,12 @@ impl EmbeddingBase for LoggedEmbeddingModel {
     fn inference(&self, text: &str) -> Result<Vec<f32>> {
         let started = Instant::now();
         let vector = self.inner.inference(text)?;
+        crate::model_inference::model_usage::record_usage(
+            &self.config_id,
+            None,
+            started.elapsed(),
+            None,
+        );
         info!(
             "[embedding_runtime] instance_id={} model={} input_count=1 input_chars={} preview=\"{}\" inference_ms={} shape=[{}]",
             self.instance_id,
@@ -80,6 +87,12 @@ impl EmbeddingBase for LoggedEmbeddingModel {
     fn batch_inference(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let started = Instant::now();
         let vectors = self.inner.batch_inference(texts)?;
+        crate::model_inference::model_usage::record_usage(
+            &self.config_id,
+            None,
+            started.elapsed(),
+            None,
+        );
         let dim = vectors.first().map(Vec::len).unwrap_or(0);
         let total_chars = texts.iter().map(|text| text_char_count(text)).sum::<usize>();
         let preview = texts.first().map(|text| preview_text(text)).unwrap_or_default();
@@ -135,12 +148,15 @@ impl RuntimeEmbeddingModelManager {
             )));
         }
 
-        let model_name = local_model_name(llm_ref)?;
+        let model_name = llm_ref.local_embedding_model_name()?;
         let inner_model: Arc<dyn EmbeddingBase> = Arc::new(QueuedEmbeddingModel::new(model_name)?);
         let started_at = Utc::now();
         let instance_id = next_instance_id();
-        let model: Arc<dyn EmbeddingBase> =
-            Arc::new(LoggedEmbeddingModel::new(instance_id.clone(), inner_model));
+        let model: Arc<dyn EmbeddingBase> = Arc::new(LoggedEmbeddingModel::new(
+            llm_ref.canonical_config_id().to_string(),
+            instance_id.clone(),
+            inner_model,
+        ));
         let summary = RuntimeInstanceInfo {
             instance_id,
             config_id: llm_ref.id.clone(),
@@ -246,22 +262,6 @@ impl RuntimeEmbeddingModelManager {
 
         instances.retain(|_, bucket| !bucket.is_empty());
         Ok(removed)
-    }
-}
-
-fn local_model_name(llm_ref: &LlmRefConfig) -> Result<String> {
-    match &llm_ref.model {
-        ModelRefSpec::TextEmbeddingLocal { model_name } if !model_name.trim().is_empty() => {
-            Ok(model_name.trim().to_string())
-        }
-        ModelRefSpec::TextEmbeddingLocal { .. } => Err(Error::ValidationError(format!(
-            "embedding model_ref '{}' has empty model_name",
-            llm_ref.name
-        ))),
-        ModelRefSpec::ChatLlm { .. } => Err(Error::ValidationError(format!(
-            "model_ref '{}' is not a text_embedding_local config",
-            llm_ref.name
-        ))),
     }
 }
 

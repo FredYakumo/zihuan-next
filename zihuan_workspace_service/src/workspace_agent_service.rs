@@ -19,6 +19,7 @@ use zihuan_core::storage::{
     build_retrieval_store_ref, build_web_search_engine_ref, AgentMemoryAccessContext,
     ConnectionConfig, LocalMemoryStore,
 };
+use zihuan_core::validation_error;
 use zihuan_core::workspace::normalized_workspace_path;
 
 use crate::tools::{
@@ -288,8 +289,11 @@ pub fn load_inference_tool_provider(
             let llm_ref_id =
                 config.image_understand_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref());
             let llm_refs = load_llm_refs()?;
-            let llm_config =
-                resolve_llm_service_config(llm_ref_id, &llm_refs, DEFAULT_TOOL_IMAGE_UNDERSTAND)?;
+            let llm_config = resolve_llm_service_config(llm_ref_id, &llm_refs).map_err(|err| {
+                validation_error!(
+                    "[{DEFAULT_TOOL_IMAGE_UNDERSTAND}] Failed to load llm config: {err}"
+                )
+            })?;
             Some(build_llm_model(&llm_config)?)
         } else {
             None

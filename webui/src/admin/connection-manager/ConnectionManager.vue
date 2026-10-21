@@ -79,6 +79,7 @@ const {
   pageSize,
   total,
   totalPages,
+  columns,
   runningCount,
   keepAliveCount,
   load,
@@ -90,19 +91,6 @@ const {
   compactId,
   formatTime,
 } = useConnectionManager();
-
-const columns = [
-  { colKey: "name", title: "名称" },
-  { colKey: "kind", title: "实例类型" },
-  { colKey: "config_id", title: "Config ID" },
-  { colKey: "instance_id", title: "Instance ID" },
-  { colKey: "started_at", title: "开始时间" },
-  { colKey: "duration", title: "持续时间" },
-  { colKey: "keep_alive", title: "长连接" },
-  { colKey: "heartbeat_interval_secs", title: "心跳" },
-  { colKey: "status", title: "状态" },
-  { colKey: "actions", title: "操作" },
-];
 </script>
 
 <style scoped lang="scss">

@@ -183,6 +183,8 @@ async fn hot_reload_agents_for_llm_ref(state: &crate::api::state::AppState, llm_
 fn agent_uses_llm_ref(agent: &RoleServiceConfig, llm_ref_id: &str) -> bool {
     if let Some(config) = zihuan_service::role::optional_qq_chat(&agent.role_service_type) {
         return config.llm_ref_id.as_deref() == Some(llm_ref_id)
+            || config.image_understand_llm_ref_id.as_deref() == Some(llm_ref_id)
+            || config.intent_classification_llm_ref_id.as_deref() == Some(llm_ref_id)
             || config.math_programming_llm_ref_id.as_deref() == Some(llm_ref_id)
             || config.natural_language_reply_llm_ref_id.as_deref() == Some(llm_ref_id)
             || config.embedding_model_ref_id.as_deref() == Some(llm_ref_id);

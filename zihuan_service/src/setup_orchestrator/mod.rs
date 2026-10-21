@@ -24,6 +24,8 @@ pub struct SetupProgressEvent {
     pub progress_percent: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection: Option<ConnectionConfig>,
 }
 
 #[derive(Clone)]
@@ -394,6 +396,61 @@ impl SetupOrchestrator {
         Ok(())
     }
 
+    /// Installs only the retrieval database described by `search` and saves
+    /// its connection. Unlike `run_detailed`, the setup wizard state is left
+    /// untouched so this can run from the Service page at any time.
+    pub async fn run_retrieval_database_install(
+        &self,
+        search: DetailedSearchSetupConfig,
+        install_method: DetailedInstallMethod,
+    ) -> Result<ConnectionConfig, String> {
+        let config = build_search_only_config(search, install_method.clone());
+        self.emit(
+            "validating_detailed_config",
+            "running",
+            "Validating retrieval database configuration...",
+            Some(5),
+        );
+        validate_detailed_config(&config)?;
+        let search_type = config.search.search_type.clone();
+        self.emit(
+            "installing_retrieval_database",
+            "running",
+            &format!("Installing {search_type}..."),
+            Some(15),
+        );
+        match &install_method {
+            DetailedInstallMethod::Docker => {
+                run_detailed_docker(&config, &detailed_install_services(&config)).await?
+            }
+            DetailedInstallMethod::Binary => match search_type.as_str() {
+                "weaviate" => install_weaviate_binary(&config.search).await?,
+                _ => run_detailed_binary(&config, &detailed_install_services(&config)).await?,
+            },
+        }
+        self.emit(
+            "installing_retrieval_database",
+            "success",
+            "Retrieval database is running",
+            Some(55),
+        );
+        self.emit(
+            "verifying_connections",
+            "running",
+            "Verifying retrieval database connection...",
+            Some(65),
+        );
+        verify_detailed_connections(&config).await?;
+        let connection = save_search_connection(&config).await?;
+        self.emit(
+            "verifying_connections",
+            "success",
+            "Retrieval database connection saved",
+            Some(90),
+        );
+        Ok(connection)
+    }
+
     pub fn emit(&self, step: &str, status: &str, message: &str, progress_percent: Option<u8>) {
         let event = SetupProgressEvent {
             step: step.to_string(),
@@ -405,12 +462,25 @@ impl SetupOrchestrator {
             } else {
                 None
             },
+            connection: None,
+        };
+        let _ = self.progress_tx.send(event);
+    }
+
+    pub fn emit_finished_with_connection(&self, message: &str, connection: ConnectionConfig) {
+        let event = SetupProgressEvent {
+            step: "finished".to_string(),
+            status: "success".to_string(),
+            message: message.to_string(),
+            progress_percent: Some(100),
+            error: None,
+            connection: Some(connection),
         };
         let _ = self.progress_tx.send(event);
     }
 }
 
-fn validate_detailed_config(config: &DetailedSetupConfig) -> Result<(), String> {
+pub fn validate_detailed_config(config: &DetailedSetupConfig) -> Result<(), String> {
     if !config.relational.enabled
         && !config.rustfs.enabled
         && !config.search.enabled
@@ -528,6 +598,156 @@ pub fn generate_detailed_install_command(
         install_command,
         connections: detailed_connection_configs(config),
     })
+}
+
+/// Generates a copyable install command that only sets up the retrieval
+/// database described by `search`.
+pub fn generate_retrieval_install_command(
+    search: &DetailedSearchSetupConfig,
+    install_method: &DetailedInstallMethod,
+) -> Result<DetailedInstallCommand, String> {
+    let config = build_search_only_config(search.clone(), install_method.clone());
+    validate_detailed_config(&config)?;
+
+    let install_command = match install_method {
+        DetailedInstallMethod::Docker => {
+            docker_install_command(&config, &detailed_compose(&config))
+        }
+        DetailedInstallMethod::Binary => match config.search.search_type.as_str() {
+            "weaviate" => weaviate_binary_install_command(&config),
+            "elasticsearch" => elasticsearch_binary_install_command(),
+            _ => return Err("Unsupported search database type".to_string()),
+        },
+    };
+
+    Ok(DetailedInstallCommand {
+        install_command,
+        connections: detailed_connection_configs(&config),
+    })
+}
+
+/// Builds a [`DetailedSetupConfig`] where only the search component is
+/// enabled and marked for installation, so the single-service compose
+/// generation and connection saving can be reused from the setup wizard.
+pub fn build_search_only_config(
+    mut search: DetailedSearchSetupConfig,
+    install_method: DetailedInstallMethod,
+) -> DetailedSetupConfig {
+    search.enabled = true;
+    search.source = DetailedComponentSource::Install;
+    DetailedSetupConfig {
+        install_method,
+        target_machine_address: String::new(),
+        expose_public_access: false,
+        use_target_machine_address: false,
+        relational: DetailedRelationalSetupConfig {
+            enabled: false,
+            source: DetailedComponentSource::Install,
+            database_type: "sqlite".to_string(),
+            deployment: placeholder_deployment_config(),
+            host: "127.0.0.1".to_string(),
+            username: String::new(),
+            password: String::new(),
+            database: String::new(),
+            sqlite_path: String::new(),
+            max_connections: 32,
+            acquire_timeout_secs: 30,
+        },
+        rustfs: DetailedRustfsSetupConfig {
+            enabled: false,
+            source: DetailedComponentSource::Install,
+            deployment: placeholder_deployment_config(),
+            endpoint: "http://127.0.0.1:9000".to_string(),
+            bucket: "zihuan".to_string(),
+            region: "us-east-1".to_string(),
+            access_key: String::new(),
+            secret_key: String::new(),
+            public_base_url: None,
+            path_style: true,
+        },
+        search,
+        redis: DetailedRedisSetupConfig {
+            enabled: false,
+            source: DetailedComponentSource::Install,
+            deployment: placeholder_deployment_config(),
+            url: "redis://127.0.0.1:6379".to_string(),
+            username: None,
+            password: None,
+        },
+    }
+}
+
+fn placeholder_deployment_config() -> DetailedDeploymentConfig {
+    DetailedDeploymentConfig {
+        image: String::new(),
+        port: 0,
+        data_dir: String::new(),
+        container_name: String::new(),
+        restart_policy: "unless-stopped".to_string(),
+    }
+}
+
+/// Index definitions use the ICU and pinyin analyzers, which Elasticsearch only
+/// provides through the `analysis-icu` and `analysis-pinyin` plugins. The official
+/// image ships without them, so index creation fails with a 400 until they exist.
+const ELASTICSEARCH_PINYIN_PLUGIN_URL: &str =
+    "https://get.infini.cloud/elasticsearch/analysis-pinyin";
+
+/// Installs the analyzers required by the index definitions on every container
+/// start, then hands over to the stock entrypoint. Already-installed plugins are
+/// skipped, and an install failure only warns: the node still boots so the
+/// remaining services stay reachable.
+fn elasticsearch_container_startup_script() -> String {
+    format!(
+        "ES_VERSION=\"$$(bin/elasticsearch --version 2>/dev/null | sed -n 's/^Version: \\([0-9][0-9.]*\\).*/\\1/p' | head -n1)\"\n\
+if bin/elasticsearch-plugin list | grep -qx analysis-icu; then\n\
+echo 'analysis-icu is already installed'\n\
+else\n\
+bin/elasticsearch-plugin install --batch analysis-icu || echo 'WARNING: failed to install analysis-icu; Elasticsearch will not create the Zihuan indices'\n\
+fi\n\
+if bin/elasticsearch-plugin list | grep -qx analysis-pinyin; then\n\
+echo 'analysis-pinyin is already installed'\n\
+else\n\
+bin/elasticsearch-plugin install --batch \"{ELASTICSEARCH_PINYIN_PLUGIN_URL}/$${{ES_VERSION}}\" || echo 'WARNING: failed to install analysis-pinyin; Elasticsearch will not create the Zihuan indices'\n\
+fi\n\
+exec /usr/local/bin/docker-entrypoint.sh eswrapper"
+    )
+}
+
+/// Compose `command:` block that runs [`elasticsearch_container_startup_script`].
+/// `$` is doubled because Compose interpolates the file before the container sees it.
+fn elasticsearch_compose_command() -> String {
+    let mut block = String::from("command:\n      - /bin/bash\n      - -c\n      - |\n");
+    for line in elasticsearch_container_startup_script().lines() {
+        block.push_str("        ");
+        block.push_str(line);
+        block.push('\n');
+    }
+    block
+}
+
+fn elasticsearch_binary_install_command() -> String {
+    format!(
+        "# Run on the target Linux machine (dnf: sudo dnf install -y elasticsearch, macOS with Homebrew: brew install elasticsearch)\n\
+sudo apt-get update && sudo apt-get install -y elasticsearch\n\
+ES_VERSION=\"$(/usr/share/elasticsearch/bin/elasticsearch --version 2>/dev/null | sed -n 's/^Version: \\([0-9][0-9.]*\\).*/\\1/p' | head -n1)\"\n\
+sudo /usr/share/elasticsearch/bin/elasticsearch-plugin install --batch analysis-icu\n\
+sudo /usr/share/elasticsearch/bin/elasticsearch-plugin install --batch \"{ELASTICSEARCH_PINYIN_PLUGIN_URL}/$ES_VERSION\"\n\
+sudo systemctl enable --now elasticsearch"
+    )
+}
+
+fn weaviate_binary_install_command(config: &DetailedSetupConfig) -> String {
+    let api_key = config.search.api_key.as_deref().unwrap_or_default();
+    let port = config.search.deployment.port;
+    let version = WEAVIATE_BINARY_VERSION;
+    format!(
+        "# Run on the target Linux x86_64 machine (arm64: replace amd64 with arm64 in the download URL)\n\
+sudo mkdir -p /opt/zihuan-weaviate/data && cd /opt/zihuan-weaviate\n\
+sudo curl -fL -o weaviate.tar.gz 'https://github.com/weaviate/weaviate/releases/download/v{version}/weaviate-v{version}-linux-amd64.tar.gz'\n\
+sudo tar -xzf weaviate.tar.gz\n\
+sudo sh -c 'BIN=$(find . -type f -name weaviate | head -n 1); chmod +x \"$BIN\"; AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=false AUTHENTICATION_APIKEY_ENABLED=true AUTHENTICATION_APIKEY_ALLOWED_KEYS=\"{api_key}\" DEFAULT_VECTORIZER_MODULE=none CLUSTER_HOSTNAME=node1 PERSISTENCE_DATA_PATH=/opt/zihuan-weaviate/data GO_PORT={port} nohup \"$BIN\" > weaviate.log 2>&1 &'\n"
+    )
 }
 
 fn docker_install_command(config: &DetailedSetupConfig, compose: &str) -> String {
@@ -866,6 +1086,180 @@ async fn run_detailed_binary(
     }
 }
 
+const WEAVIATE_BINARY_VERSION: &str = "1.30.5";
+
+/// Installs Weaviate from its official GitHub release binary. Weaviate does
+/// not publish Windows binaries, so this path only exists for Linux and macOS
+/// hosts.
+async fn install_weaviate_binary(search: &DetailedSearchSetupConfig) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = search;
+        Err(
+            "Weaviate does not publish an official Windows binary. Use the Docker install method, or run the binary install command on a Linux machine."
+                .to_string(),
+        )
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let arch = match std::env::consts::ARCH {
+            "x86_64" => "amd64",
+            "aarch64" => "arm64",
+            other => {
+                return Err(format!("Weaviate binary install is unavailable for {other} machines"))
+            }
+        };
+        let install_root =
+            zihuan_core::system_config::application_data_dir().join("bin").join("weaviate");
+        tokio::fs::create_dir_all(&install_root)
+            .await
+            .map_err(|err| format!("Failed to create Weaviate install directory: {err}"))?;
+
+        let asset_name = if cfg!(target_os = "macos") {
+            format!("weaviate-v{WEAVIATE_BINARY_VERSION}-darwin-all.zip")
+        } else {
+            format!("weaviate-v{WEAVIATE_BINARY_VERSION}-linux-{arch}.tar.gz")
+        };
+        let archive_path = install_root.join(&asset_name);
+        if !archive_path.exists() {
+            download_weaviate_archive(&asset_name, &archive_path).await?;
+        }
+        let binary_path = extract_weaviate_archive(&archive_path, &install_root).await?;
+
+        let port = search.deployment.port;
+        if tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_ok() {
+            log::info!(
+                "[setup_orchestrator] port {port} is in use; assuming Weaviate is already running"
+            );
+            return Ok(());
+        }
+
+        let data_dir = install_root.join("data");
+        tokio::fs::create_dir_all(&data_dir)
+            .await
+            .map_err(|err| format!("Failed to create Weaviate data directory: {err}"))?;
+
+        let log_path = install_root.join("weaviate.log");
+        let stdout = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .map_err(|err| format!("Failed to open Weaviate log file: {err}"))?;
+        let stderr = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .map_err(|err| format!("Failed to open Weaviate log file: {err}"))?;
+
+        let child = tokio::process::Command::new(&binary_path)
+            .env("AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED", "false")
+            .env("AUTHENTICATION_APIKEY_ENABLED", "true")
+            .env("AUTHENTICATION_APIKEY_ALLOWED_KEYS", search.api_key.clone().unwrap_or_default())
+            .env("DEFAULT_VECTORIZER_MODULE", "none")
+            .env("CLUSTER_HOSTNAME", "node1")
+            .env("PERSISTENCE_DATA_PATH", &data_dir)
+            .env("GO_PORT", port.to_string())
+            .current_dir(&install_root)
+            .stdout(std::process::Stdio::from(stdout))
+            .stderr(std::process::Stdio::from(stderr))
+            .spawn()
+            .map_err(|err| format!("Failed to start Weaviate: {err}"))?;
+        if let Some(pid) = child.id() {
+            let _ = tokio::fs::write(install_root.join("weaviate.pid"), pid.to_string()).await;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn download_weaviate_archive(asset_name: &str, destination: &Path) -> Result<(), String> {
+    let url = format!(
+        "https://github.com/weaviate/weaviate/releases/download/v{WEAVIATE_BINARY_VERSION}/{asset_name}"
+    );
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(600))
+        .build()
+        .map_err(|err| format!("Failed to build HTTP client: {err}"))?;
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|err| format!("Failed to download Weaviate binary: {err}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "Weaviate binary download failed with status {}: {url}",
+            response.status().as_u16()
+        ));
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|err| format!("Failed to read Weaviate binary download: {err}"))?;
+    tokio::fs::write(destination, &bytes)
+        .await
+        .map_err(|err| format!("Failed to save Weaviate archive: {err}"))
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn extract_weaviate_archive(
+    archive_path: &Path,
+    install_root: &Path,
+) -> Result<PathBuf, String> {
+    let archive = archive_path.to_path_buf();
+    let target_dir = install_root.to_path_buf();
+    tokio::task::spawn_blocking(move || -> Result<PathBuf, String> {
+        if archive.extension().map(|ext| ext == "zip").unwrap_or(false) {
+            let file = std::fs::File::open(&archive)
+                .map_err(|err| format!("Failed to open Weaviate archive: {err}"))?;
+            let mut zip = zip::ZipArchive::new(file)
+                .map_err(|err| format!("Failed to read Weaviate archive: {err}"))?;
+            zip.extract(&target_dir)
+                .map_err(|err| format!("Failed to extract Weaviate archive: {err}"))?;
+        } else {
+            let output = std::process::Command::new("tar")
+                .arg("-xzf")
+                .arg(&archive)
+                .arg("-C")
+                .arg(&target_dir)
+                .output()
+                .map_err(|err| format!("Failed to extract Weaviate archive: {err}"))?;
+            if !output.status.success() {
+                return Err(format!(
+                    "Failed to extract Weaviate archive: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ));
+            }
+        }
+        let binary_path = find_weaviate_binary(&target_dir)
+            .ok_or_else(|| "Weaviate binary was not found in the downloaded archive".to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&binary_path, std::fs::Permissions::from_mode(0o755))
+                .map_err(|err| format!("Failed to mark Weaviate binary executable: {err}"))?;
+        }
+        Ok(binary_path)
+    })
+    .await
+    .map_err(|err| format!("Weaviate binary extraction task failed: {err}"))?
+}
+
+#[cfg(not(target_os = "windows"))]
+fn find_weaviate_binary(dir: &Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(found) = find_weaviate_binary(&path) {
+                return Some(found);
+            }
+        } else if path.file_name().is_some_and(|name| name == "weaviate") {
+            return Some(path);
+        }
+    }
+    None
+}
+
 fn detailed_compose_path() -> PathBuf {
     zihuan_core::system_config::application_data_dir().join("detailed-compose.yaml")
 }
@@ -940,7 +1334,7 @@ fn detailed_compose(config: &DetailedSetupConfig) -> String {
     if config.search.enabled && config.search.source == DetailedComponentSource::Install {
         let d = &config.search.deployment;
         if config.search.search_type == "elasticsearch" {
-            services.push_str(&format!("  elasticsearch:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9200\"]\n    volumes: [{}]\n    environment:\n      discovery.type: single-node\n      xpack.security.enabled: 'true'\n      ELASTIC_PASSWORD: {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/usr/share/elasticsearch/data"), yaml_quote(config.search.password.as_deref().unwrap_or_default())));
+            services.push_str(&format!("  elasticsearch:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:9200\"]\n    volumes: [{}]\n    environment:\n      discovery.type: single-node\n      xpack.security.enabled: 'true'\n      ELASTIC_PASSWORD: {}\n    {}\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/usr/share/elasticsearch/data"), yaml_quote(config.search.password.as_deref().unwrap_or_default()), elasticsearch_compose_command()));
         } else {
             let authentication = format!("      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'false'\n      AUTHENTICATION_APIKEY_ENABLED: 'true'\n      AUTHENTICATION_APIKEY_ALLOWED_KEYS: {}\n", yaml_quote(config.search.api_key.as_deref().unwrap_or_default()));
             services.push_str(&format!("  weaviate:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:8080\"]\n    volumes: [{}]\n    environment:\n{}      DEFAULT_VECTORIZER_MODULE: none\n      CLUSTER_HOSTNAME: node1\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/var/lib/weaviate"), authentication));
@@ -1038,107 +1432,112 @@ async fn save_detailed_connections(config: &DetailedSetupConfig) -> Result<(), S
         ))?;
     }
     if config.search.enabled {
-        let id = format!("setup-detailed-{}", config.search.search_type);
-        let name = config.search.search_type.clone();
-        let kind = if config.search.search_type == "elasticsearch" {
-            ConnectionKind::Elasticsearch(ElasticsearchConnection {
-                base_url: config.search.base_url.clone(),
-                username: if config.search.source == DetailedComponentSource::Install {
-                    Some("elastic".to_string())
-                } else if config.search.auth_method == DetailedSearchAuthMethod::Password {
-                    config.search.username.clone()
-                } else {
-                    None
-                },
-                password: if config.search.auth_method == DetailedSearchAuthMethod::Password {
-                    config.search.password.clone()
-                } else {
-                    None
-                },
-                // A wizard-installed Docker image creates the elastic user from
-                // ELASTIC_PASSWORD but does not create an API key.
-                api_key: if config.search.auth_method == DetailedSearchAuthMethod::ApiKey {
-                    config.search.api_key.clone()
-                } else {
-                    None
-                },
-                auth_method: match config.search.auth_method {
-                    DetailedSearchAuthMethod::Password => ConnectionAuthMethod::Password,
-                    DetailedSearchAuthMethod::ApiKey => ConnectionAuthMethod::ApiKey,
-                },
-                vector_dimensions: config.search.vector_dimensions,
-            })
-        } else {
-            ConnectionKind::Weaviate(WeaviateConnection {
-                base_url: config.search.base_url.clone(),
-                username: if config.search.auth_method == DetailedSearchAuthMethod::Password {
-                    config.search.username.clone()
-                } else {
-                    None
-                },
-                password: if config.search.auth_method == DetailedSearchAuthMethod::Password {
-                    config.search.password.clone()
-                } else {
-                    None
-                },
-                api_key: if config.search.auth_method == DetailedSearchAuthMethod::ApiKey {
-                    config.search.api_key.clone()
-                } else {
-                    None
-                },
-                auth_method: match config.search.auth_method {
-                    DetailedSearchAuthMethod::Password => ConnectionAuthMethod::Password,
-                    DetailedSearchAuthMethod::ApiKey => ConnectionAuthMethod::ApiKey,
-                },
-            })
-        };
-        let initialization_kind = kind.clone();
-
-        // Index setup uses blocking HTTP clients; keep their runtime lifetime
-        // entirely inside the blocking pool rather than an async worker. One
-        // retrieval connection serves every schema, so initialize them all here.
-        tokio::task::spawn_blocking(move || -> Result<(), String> {
-            let schemas = [
-                RetrievalSchema::ImageSemantic,
-                RetrievalSchema::AgentMemory,
-                RetrievalSchema::QqMessage,
-            ];
-            match initialization_kind {
-                ConnectionKind::Elasticsearch(elasticsearch) => {
-                    for schema in schemas {
-                        if !elasticsearch_supports_schema(schema) {
-                            continue;
-                        }
-                        let reference = ElasticsearchRef::new(elasticsearch.clone(), schema)
-                            .map_err(|err| err.to_string())?;
-                        ensure_elasticsearch_index(&reference, true)
-                            .map_err(|err| err.to_string())?;
-                    }
-                }
-                ConnectionKind::Weaviate(weaviate) => {
-                    for schema in schemas {
-                        let reference = WeaviateRef::new(
-                            weaviate.base_url.clone(),
-                            schema.weaviate_class_name(),
-                            weaviate.username.clone(),
-                            weaviate.password.clone(),
-                            weaviate.api_key.clone(),
-                            Duration::from_secs(30),
-                        )
-                        .map_err(|err| err.to_string())?;
-                        ensure_collection_schema(&reference, schema, true)
-                            .map_err(|err| err.to_string())?;
-                    }
-                }
-                _ => {}
-            }
-            Ok(())
-        })
-        .await
-        .map_err(|err| format!("search database initialization task failed: {err}"))??;
-        config_factory::save_connection(config_factory::build_connection(&id, &name, kind))?;
+        save_search_connection(config).await?;
     }
     Ok(())
+}
+
+async fn save_search_connection(config: &DetailedSetupConfig) -> Result<ConnectionConfig, String> {
+    let id = format!("setup-detailed-{}", config.search.search_type);
+    let name = config.search.search_type.clone();
+    let kind = if config.search.search_type == "elasticsearch" {
+        ConnectionKind::Elasticsearch(ElasticsearchConnection {
+            base_url: config.search.base_url.clone(),
+            username: if config.search.source == DetailedComponentSource::Install {
+                Some("elastic".to_string())
+            } else if config.search.auth_method == DetailedSearchAuthMethod::Password {
+                config.search.username.clone()
+            } else {
+                None
+            },
+            password: if config.search.auth_method == DetailedSearchAuthMethod::Password {
+                config.search.password.clone()
+            } else {
+                None
+            },
+            // A wizard-installed Docker image creates the elastic user from
+            // ELASTIC_PASSWORD but does not create an API key.
+            api_key: if config.search.auth_method == DetailedSearchAuthMethod::ApiKey {
+                config.search.api_key.clone()
+            } else {
+                None
+            },
+            auth_method: match config.search.auth_method {
+                DetailedSearchAuthMethod::Password => ConnectionAuthMethod::Password,
+                DetailedSearchAuthMethod::ApiKey => ConnectionAuthMethod::ApiKey,
+            },
+            vector_dimensions: config.search.vector_dimensions,
+        })
+    } else {
+        ConnectionKind::Weaviate(WeaviateConnection {
+            base_url: config.search.base_url.clone(),
+            username: if config.search.auth_method == DetailedSearchAuthMethod::Password {
+                config.search.username.clone()
+            } else {
+                None
+            },
+            password: if config.search.auth_method == DetailedSearchAuthMethod::Password {
+                config.search.password.clone()
+            } else {
+                None
+            },
+            api_key: if config.search.auth_method == DetailedSearchAuthMethod::ApiKey {
+                config.search.api_key.clone()
+            } else {
+                None
+            },
+            auth_method: match config.search.auth_method {
+                DetailedSearchAuthMethod::Password => ConnectionAuthMethod::Password,
+                DetailedSearchAuthMethod::ApiKey => ConnectionAuthMethod::ApiKey,
+            },
+        })
+    };
+    let initialization_kind = kind.clone();
+
+    // Index setup uses blocking HTTP clients; keep their runtime lifetime
+    // entirely inside the blocking pool rather than an async worker. One
+    // retrieval connection serves every schema, so initialize them all here.
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let schemas = [
+            RetrievalSchema::ImageSemantic,
+            RetrievalSchema::AgentMemory,
+            RetrievalSchema::QqMessage,
+        ];
+        match initialization_kind {
+            ConnectionKind::Elasticsearch(elasticsearch) => {
+                for schema in schemas {
+                    if !elasticsearch_supports_schema(schema) {
+                        continue;
+                    }
+                    let reference = ElasticsearchRef::new(elasticsearch.clone(), schema)
+                        .map_err(|err| err.to_string())?;
+                    ensure_elasticsearch_index(&reference, true).map_err(|err| err.to_string())?;
+                }
+            }
+            ConnectionKind::Weaviate(weaviate) => {
+                for schema in schemas {
+                    let reference = WeaviateRef::new(
+                        weaviate.base_url.clone(),
+                        schema.weaviate_class_name(),
+                        weaviate.username.clone(),
+                        weaviate.password.clone(),
+                        weaviate.api_key.clone(),
+                        Duration::from_secs(30),
+                    )
+                    .map_err(|err| err.to_string())?;
+                    ensure_collection_schema(&reference, schema, true)
+                        .map_err(|err| err.to_string())?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|err| format!("search database initialization task failed: {err}"))??;
+    let connection = config_factory::build_connection(&id, &name, kind);
+    config_factory::save_connection(connection.clone())?;
+    Ok(connection)
 }
 
 /// Elasticsearch has no QQ message index schema yet; Weaviate serves that schema.
@@ -1146,26 +1545,42 @@ fn elasticsearch_supports_schema(schema: RetrievalSchema) -> bool {
     !matches!(schema, RetrievalSchema::QqMessage)
 }
 
+/// Startup budgets for [verify_detailed_connections]. Containers report a
+/// running state long before their protocol port answers, and a wizard-installed
+/// Elasticsearch container installs analyzer plugins before it even boots, so
+/// each component gets a budget that matches its real cold start.
+const MYSQL_VERIFY_TIMEOUT: Duration = Duration::from_secs(120);
+const RUSTFS_VERIFY_TIMEOUT: Duration = Duration::from_secs(60);
+const REDIS_VERIFY_TIMEOUT: Duration = Duration::from_secs(60);
+const WEAVIATE_VERIFY_TIMEOUT: Duration = Duration::from_secs(120);
+const ELASTICSEARCH_VERIFY_TIMEOUT: Duration = Duration::from_secs(240);
+
 async fn verify_detailed_connections(config: &DetailedSetupConfig) -> Result<(), String> {
     if config.relational.enabled && config.relational.database_type == "mysql" {
-        wait_for_tcp(&config.relational.host, config.relational.deployment.port, "MySQL").await?;
+        wait_for_tcp(
+            &config.relational.host,
+            config.relational.deployment.port,
+            "MySQL",
+            MYSQL_VERIFY_TIMEOUT,
+        )
+        .await?;
     }
     if config.rustfs.enabled {
         let (host, port) = endpoint_host_port(&config.rustfs.endpoint, 9000)?;
-        wait_for_tcp(&host, port, "RustFS").await?;
+        wait_for_tcp(&host, port, "RustFS", RUSTFS_VERIFY_TIMEOUT).await?;
     }
     if config.search.enabled {
-        let default_port = if config.search.search_type == "elasticsearch" {
-            9200
+        let (default_port, timeout) = if config.search.search_type == "elasticsearch" {
+            (9200, ELASTICSEARCH_VERIFY_TIMEOUT)
         } else {
-            8080
+            (8080, WEAVIATE_VERIFY_TIMEOUT)
         };
         let (host, port) = endpoint_host_port(&config.search.base_url, default_port)?;
-        wait_for_tcp(&host, port, "search database").await?;
+        wait_for_tcp(&host, port, "search database", timeout).await?;
     }
     if config.redis.enabled {
         let (host, port) = endpoint_host_port(&config.redis.url, 6379)?;
-        wait_for_tcp(&host, port, "Redis").await?;
+        wait_for_tcp(&host, port, "Redis", REDIS_VERIFY_TIMEOUT).await?;
     }
     Ok(())
 }
@@ -1191,14 +1606,26 @@ fn endpoint_host_port(value: &str, default_port: u16) -> Result<(String, u16), S
     Ok((authority.to_string(), default_port))
 }
 
-async fn wait_for_tcp(host: &str, port: u16, service: &str) -> Result<(), String> {
-    for _ in 0..15 {
+async fn wait_for_tcp(
+    host: &str,
+    port: u16,
+    service: &str,
+    timeout: Duration,
+) -> Result<(), String> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
         if tokio::net::TcpStream::connect((host, port)).await.is_ok() {
             return Ok(());
         }
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
-    Err(format!("Could not connect to {service} at {host}:{port}. Start the service and retry using '使用现有配置'."))
+    Err(format!(
+        "Could not connect to {service} at {host}:{port} within {} seconds. Ensure the service is running and the address and port are correct.",
+        timeout.as_secs()
+    ))
 }
 
 #[derive(Clone, Deserialize, Default)]

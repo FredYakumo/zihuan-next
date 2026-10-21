@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sqlx::Row as SqlxRow;
 use zihuan_core::config::role_services::load_role_services;
+use zihuan_core::model_inference::inference_function::compact_message::estimate_messages_tokens;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::url_utils::{
     content_type_from_url, image_content_type_from_bytes, pct_encode, supported_image_content_type,
@@ -1121,7 +1122,7 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
         Ok(value) => value,
         Err(error) => return render_bad_request(res, error.to_string()),
     };
-    let (retrieval_store_id, embedding_id) = service_retrieval_store_config(&agent);
+    let (retrieval_store_id, embedding_id) = zihuan_service::role::retrieval_store_config(&agent);
     let access = AgentMemoryAccessContext {
         admin: true,
         skip_expiry_extend: true,
@@ -1248,7 +1249,9 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
         Ok(value) => value,
         Err(error) => return render_bad_request(res, error.to_string()),
     };
-    let (retrieval_store_id, embedding_id) = service_retrieval_store_config(&agent);
+    let (retrieval_store_id, embedding_id) = zihuan_service::role::retrieval_store_config(&agent);
+    let object_storage_connection_id = zihuan_service::role::object_storage_connection_id(&agent);
+    let object_storage_connection_id = object_storage_connection_id.as_deref();
     let (name_vector, description_vector) = match embedding_vectors(
         embedding_id.as_deref(),
         name_query.as_deref(),
@@ -1292,7 +1295,10 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
                 if let Ok(response) =
                     reference.query_with_args(&reference.class_name, &args, &properties)
                 {
-                    merge_image_items(&mut items, weaviate_image_items(response, "keyword"));
+                    merge_image_items(
+                        &mut items,
+                        weaviate_image_items(response, "keyword", object_storage_connection_id),
+                    );
                 }
             }
         }
@@ -1310,13 +1316,19 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
                     true,
                     false,
                 ) {
-                    merge_image_items(&mut items, weaviate_image_items(response, "semantic"));
+                    merge_image_items(
+                        &mut items,
+                        weaviate_image_items(response, "semantic", object_storage_connection_id),
+                    );
                 }
             }
         }
         if name_query.is_none() && description_query.is_none() {
             if let Ok(response) = reference.query_all(&reference.class_name, limit, &properties) {
-                merge_image_items(&mut items, weaviate_image_items(response, "recent"));
+                merge_image_items(
+                    &mut items,
+                    weaviate_image_items(response, "recent", object_storage_connection_id),
+                );
             }
         }
         res.render(Json(ServiceImageResponse { items, backend: "weaviate" }));
@@ -1355,10 +1367,509 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
                 },
                 hit.score,
                 "elasticsearch",
+                object_storage_connection_id,
             )
         })
         .collect();
     res.render(Json(ServiceImageResponse { items, backend: "elasticsearch" }));
+}
+
+#[derive(Serialize)]
+struct ServiceChatUserItem {
+    sender_id: String,
+    sender_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group_name: Option<String>,
+    turn_count: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_time: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ServiceChatUsersResponse {
+    backend: &'static str,
+    users: Vec<ServiceChatUserItem>,
+}
+
+/// The QQ users that currently have a live conversation context with this role agent.
+///
+/// The senders come from the agent's real conversation cache (so no bot and every entry is
+/// viewable); display names, groups, and timestamps are enriched from `message_record`.
+#[handler]
+pub async fn query_service_chat_users(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let service_id = req.param::<String>("service_id").unwrap_or_default();
+    let Some(cache) = zihuan_core::qq_context::qq_chat_history_cache(&service_id) else {
+        // No running agent: nothing to read. Report an empty list rather than an error.
+        return res.render(Json(ServiceChatUsersResponse { backend: "memory", users: Vec::new() }));
+    };
+    let backend = match cache.backend().await {
+        zihuan_core::qq_context::QqChatContextBackend::Redis => "redis",
+        zihuan_core::qq_context::QqChatContextBackend::Memory => "memory",
+    };
+    let sender_ids = cache.list_sender_ids().await;
+    if sender_ids.is_empty() {
+        return res.render(Json(ServiceChatUsersResponse { backend, users: Vec::new() }));
+    }
+
+    let profiles = match resolve_agent_rdb_connection(&service_id).await {
+        Ok(connection) => load_message_sender_profiles(&connection).await.unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+
+    let mut users: Vec<ServiceChatUserItem> = sender_ids
+        .into_iter()
+        .map(|sender_id| {
+            let profile = profiles.iter().find(|row| row.0 == sender_id);
+            ServiceChatUserItem {
+                sender_name: profile
+                    .map(|row| row.1.clone())
+                    .filter(|name| !name.trim().is_empty())
+                    .unwrap_or_else(|| sender_id.clone()),
+                group_name: profile.and_then(|row| row.2.clone()),
+                turn_count: profile.map(|row| row.3).unwrap_or(0),
+                last_time: profile.and_then(|row| row.4.clone()),
+                sender_id,
+            }
+        })
+        .collect();
+    users.sort_by(|left, right| right.last_time.cmp(&left.last_time));
+    res.render(Json(ServiceChatUsersResponse { backend, users }));
+}
+
+/// `(sender_id, sender_name, group_name, message_count, last_send_time)` per sender.
+async fn load_message_sender_profiles(
+    connection: &RelationalDbConnection,
+) -> zihuan_core::error::Result<Vec<(String, String, Option<String>, i64, Option<String>)>> {
+    const SQL: &str = "SELECT sender_id, MAX(sender_name) AS sender_name, MAX(group_name) AS group_name, COUNT(*) AS cnt, MAX(send_time) AS last_time FROM message_record GROUP BY sender_id";
+    let mut rows = Vec::new();
+    match connection {
+        RelationalDbConnection::MySql(config) => {
+            let pool = config
+                .pool
+                .as_ref()
+                .ok_or_else(|| zihuan_core::string_error!("mysql pool not available"))?;
+            let records = sqlx::query(SQL).fetch_all(pool).await?;
+            for row in records {
+                rows.push((
+                    row.try_get::<String, _>("sender_id").unwrap_or_default(),
+                    row.try_get::<String, _>("sender_name").unwrap_or_default(),
+                    row.try_get::<Option<String>, _>("group_name").unwrap_or(None),
+                    row.try_get::<i64, _>("cnt").unwrap_or(0),
+                    row.try_get::<chrono::NaiveDateTime, _>("last_time")
+                        .map(|time| time.format("%Y-%m-%d %H:%M:%S").to_string())
+                        .ok(),
+                ));
+            }
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            let pool = config
+                .pool
+                .as_ref()
+                .ok_or_else(|| zihuan_core::string_error!("sqlite pool not available"))?;
+            let records = sqlx::query(SQL).fetch_all(pool).await?;
+            for row in records {
+                rows.push((
+                    row.try_get::<String, _>("sender_id").unwrap_or_default(),
+                    row.try_get::<String, _>("sender_name").unwrap_or_default(),
+                    row.try_get::<Option<String>, _>("group_name").unwrap_or(None),
+                    row.try_get::<i64, _>("cnt").unwrap_or(0),
+                    row.try_get::<String, _>("last_time").ok(),
+                ));
+            }
+        }
+    }
+    Ok(rows)
+}
+
+#[derive(Serialize)]
+struct ContextBubble {
+    role: &'static str,
+    text: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    media: Vec<ContextMedia>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usage: Option<zihuan_core::model_inference::llm::TokenUsage>,
+    estimated_tokens: usize,
+}
+
+#[derive(Serialize)]
+struct ContextMedia {
+    media_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mime_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    size_bytes: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct ServiceChatContextResponse {
+    backend: &'static str,
+    sender_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system_prompt: Option<String>,
+    bubbles: Vec<ContextBubble>,
+    /// Complete recorded turns, including tool calls, stages and per-turn usage. The UI renders
+    /// this flow; `bubbles` mirrors the conversation cache for context totals.
+    turns: Vec<ContextTurn>,
+    /// Turns archived in the relational database, oldest first, excluding those still in `turns`.
+    archived: Vec<ContextTurn>,
+    estimated_context_tokens: usize,
+    input_tokens: usize,
+    output_tokens: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    average_cache_hit_rate: Option<f64>,
+}
+
+#[derive(Serialize)]
+struct ContextTurn {
+    turn_id: String,
+    created_at: String,
+    user_text: String,
+    /// The message the user quoted, rendered as a collapsible quote block inside the user bubble.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quoted: Option<zihuan_core::qq_context::QqChatQuotedMessage>,
+    media: Vec<ContextMedia>,
+    entries: Vec<ContextTurnEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    assistant_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usage: Option<zihuan_core::model_inference::llm::TokenUsage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    generation_ms: Option<u128>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_tokens_per_second: Option<f64>,
+    /// This turn continues the previous one with queued steer messages; the UI keeps both in
+    /// one block instead of drawing a divider.
+    #[serde(default)]
+    continues_previous: bool,
+    finished: bool,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum ContextTurnEntry {
+    Stage {
+        at: String,
+        stage: String,
+        detail: serde_json::Value,
+    },
+    ToolCall {
+        at: String,
+        call_id: String,
+        name: String,
+        arguments: serde_json::Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        result: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        duration_ms: Option<u128>,
+    },
+}
+
+fn context_media_from_ref(
+    media: &zihuan_core::qq_context::MediaRef,
+    object_storage_connection_id: Option<&str>,
+) -> ContextMedia {
+    ContextMedia {
+        media_id: media.media_id.clone(),
+        url: image_preview_url(
+            media.rustfs_path.as_deref(),
+            media.original_source.as_deref(),
+            media.mime_type.as_deref(),
+            object_storage_connection_id,
+        ),
+        mime_type: media.mime_type.clone(),
+        name: media.name.clone(),
+        size_bytes: media.size_bytes,
+    }
+}
+
+fn archived_turn_to_context(
+    turn: zihuan_ims_service::qq_chat::ArchivedTurn,
+    object_storage_connection_id: Option<&str>,
+) -> ContextTurn {
+    use zihuan_core::model_inference::llm::TokenUsage;
+    ContextTurn {
+        turn_id: turn.turn_id,
+        created_at: turn.created_at,
+        user_text: turn.user_text,
+        quoted: turn.quoted,
+        media: turn
+            .media
+            .iter()
+            .map(|media| context_media_from_ref(media, object_storage_connection_id))
+            .collect(),
+        entries: turn
+            .entries
+            .into_iter()
+            .map(|entry| match entry {
+                zihuan_core::qq_context::QqChatTurnEntry::Stage { at, stage, detail } => {
+                    ContextTurnEntry::Stage { at, stage, detail }
+                }
+                zihuan_core::qq_context::QqChatTurnEntry::ToolCall {
+                    at,
+                    call_id,
+                    name,
+                    arguments,
+                    result,
+                    duration_ms,
+                } => ContextTurnEntry::ToolCall {
+                    at,
+                    call_id,
+                    name,
+                    arguments,
+                    result,
+                    duration_ms,
+                },
+            })
+            .collect(),
+        assistant_text: turn.assistant_text,
+        reasoning_text: turn.reasoning_text,
+        usage: match (turn.prompt_tokens, turn.completion_tokens) {
+            (None, None) => None,
+            (prompt, completion) => Some(TokenUsage {
+                prompt_tokens: prompt.map(|value| value as usize),
+                cached_prompt_tokens: turn.cached_prompt_tokens.map(|value| value as usize),
+                prompt_cache_miss_tokens: turn.prompt_cache_miss_tokens.map(|value| value as usize),
+                completion_tokens: completion.map(|value| value as usize),
+                total_tokens: turn.total_tokens.map(|value| value as usize),
+            }),
+        },
+        generation_ms: turn.generation_ms.map(|value| value as u128),
+        output_tokens_per_second: turn.output_tokens_per_second,
+        continues_previous: turn.continues_previous,
+        finished: turn.finished,
+    }
+}
+
+/// The live conversation context the role agent currently holds for one sender, in message
+/// order. Read straight from the agent's cache; the system prompt is split out of the first
+/// user message for readability.
+#[handler]
+pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let service_id = req.param::<String>("service_id").unwrap_or_default();
+    let sender_id = req
+        .query::<String>("sender_id")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let Some(sender_id) = sender_id else {
+        return render_bad_request(res, "sender_id is required".into());
+    };
+    let Some(cache) = zihuan_core::qq_context::qq_chat_history_cache(&service_id) else {
+        return render_bad_request(
+            res,
+            "Service is not running; no live context is available".into(),
+        );
+    };
+    let backend = match cache.backend().await {
+        zihuan_core::qq_context::QqChatContextBackend::Redis => "redis",
+        zihuan_core::qq_context::QqChatContextBackend::Memory => "memory",
+    };
+    let messages = match cache.get_messages(&sender_id).await {
+        Ok(messages) => messages,
+        Err(error) => return render_internal_error(res, error.to_string()),
+    };
+    // The service's own RustFS connection is what cached the images, so its id is carried on
+    // every preview URL for the media proxy to resolve.
+    let object_storage_connection_id = load_service_and_connections(&service_id)
+        .ok()
+        .and_then(|(agent, _)| zihuan_service::role::object_storage_connection_id(&agent));
+    let object_storage_connection_id = object_storage_connection_id.as_deref();
+    // Object sizes are a label on the preview, so a missing or unreachable store just leaves
+    // them blank instead of failing the context request.
+    let object_storage = match object_storage_connection_id {
+        Some(id) => resource_resolver::build_s3_ref(Some(id), &[]).await.ok().flatten(),
+        None => None,
+    };
+
+    let mut bubbles = Vec::with_capacity(messages.len());
+    let mut system_prompt: Option<String> = None;
+    let mut input_tokens = 0usize;
+    let mut output_tokens = 0usize;
+    let mut cache_hit_rates: Vec<f64> = Vec::new();
+    for message in &messages {
+        let role = match message.role {
+            zihuan_core::model_inference::llm::MessageRole::Assistant => "assistant",
+            zihuan_core::model_inference::llm::MessageRole::Tool => "tool",
+            _ => "user",
+        };
+        let mut media = Vec::new();
+        let mut media_paths: Vec<Option<String>> = Vec::new();
+        for part in &message.parts {
+            if let zihuan_core::message_part::MessagePart::Image { media: image }
+            | zihuan_core::message_part::MessagePart::Video { media: image } = part
+            {
+                let rustfs_path =
+                    Some(image.rustfs_path.clone()).filter(|value| !value.trim().is_empty());
+                media.push(ContextMedia {
+                    media_id: image.media_id.clone(),
+                    url: image_preview_url(
+                        Some(image.rustfs_path.as_str()),
+                        Some(image.original_source.as_str()),
+                        image.mime_type.as_deref(),
+                        object_storage_connection_id,
+                    ),
+                    mime_type: image.mime_type.clone(),
+                    name: image.name.clone(),
+                    size_bytes: None,
+                });
+                media_paths.push(rustfs_path);
+            }
+        }
+        if let Some(storage) = object_storage.as_deref() {
+            for (item, path) in media.iter_mut().zip(media_paths.iter()) {
+                if let Some(path) = path {
+                    item.size_bytes = storage.head_object_size(path).await;
+                }
+            }
+        }
+        let mut text = message.content_text_owned().unwrap_or_default();
+        if role == "user" {
+            let (prefix, body) = split_user_context(&text);
+            if system_prompt.is_none() {
+                if let Some(prefix) = prefix {
+                    system_prompt = Some(prefix);
+                }
+            }
+            if let Some(body) = body {
+                text = body;
+            }
+        }
+        if let Some(usage) = &message.usage {
+            input_tokens += usage.prompt_tokens.unwrap_or(0);
+            output_tokens += usage.completion_tokens.unwrap_or(0);
+            if let (Some(cached), Some(prompt)) = (usage.cached_prompt_tokens, usage.prompt_tokens)
+            {
+                if prompt > 0 {
+                    cache_hit_rates.push(cached as f64 / prompt as f64);
+                }
+            }
+        }
+        bubbles.push(ContextBubble {
+            role,
+            estimated_tokens: estimate_messages_tokens(std::slice::from_ref(message)),
+            text,
+            media,
+            usage: message.usage.clone(),
+        });
+    }
+
+    let average_cache_hit_rate = if cache_hit_rates.is_empty() {
+        None
+    } else {
+        Some(cache_hit_rates.iter().sum::<f64>() / cache_hit_rates.len() as f64)
+    };
+    let turns: Vec<ContextTurn> =
+        zihuan_core::qq_context::qq_chat_turn_records(&service_id, &sender_id)
+            .await
+            .into_iter()
+            .map(|turn| ContextTurn {
+                turn_id: turn.turn_id,
+                created_at: turn.created_at,
+                user_text: turn.user_text,
+                quoted: turn.quoted,
+                media: turn
+                    .media
+                    .iter()
+                    .map(|media| context_media_from_ref(media, object_storage_connection_id))
+                    .collect(),
+                entries: turn
+                    .entries
+                    .into_iter()
+                    .map(|entry| match entry {
+                        zihuan_core::qq_context::QqChatTurnEntry::Stage { at, stage, detail } => {
+                            ContextTurnEntry::Stage { at, stage, detail }
+                        }
+                        zihuan_core::qq_context::QqChatTurnEntry::ToolCall {
+                            at,
+                            call_id,
+                            name,
+                            arguments,
+                            result,
+                            duration_ms,
+                        } => ContextTurnEntry::ToolCall {
+                            at,
+                            call_id,
+                            name,
+                            arguments,
+                            result,
+                            duration_ms,
+                        },
+                    })
+                    .collect(),
+                assistant_text: turn.assistant_text,
+                reasoning_text: turn.reasoning_text,
+                usage: turn.usage,
+                generation_ms: turn.generation_ms,
+                output_tokens_per_second: turn.output_tokens_per_second,
+                continues_previous: turn.continues_previous,
+                finished: turn.finished,
+            })
+            .collect();
+    // Archived turns come from the relational database; the live turns above come from the
+    // runtime context (memory/Redis). The UI shows the archive first, separated from the live
+    // window by a divider.
+    let archived: Vec<ContextTurn> = match resolve_agent_rdb_connection(&service_id).await {
+        Ok(connection) => {
+            // One-time migration: turns recorded by a previous build sat in a Redis key that is
+            // no longer read as live context. Move them into the archive so they stay visible.
+            for legacy in
+                zihuan_core::qq_context::take_legacy_turn_records(&service_id, &sender_id).await
+            {
+                zihuan_ims_service::qq_chat::persist_archived_context_turn(&connection, &legacy);
+            }
+            let live_ids: Vec<String> = turns.iter().map(|turn| turn.turn_id.clone()).collect();
+            zihuan_ims_service::qq_chat::load_archived_context_turns(
+                &connection,
+                &service_id,
+                &sender_id,
+                500,
+            )
+            .map(|rows| {
+                rows.into_iter()
+                    .filter(|turn| !live_ids.contains(&turn.turn_id))
+                    .map(|turn| archived_turn_to_context(turn, object_storage_connection_id))
+                    .collect()
+            })
+            .unwrap_or_default()
+        }
+        Err(_) => Vec::new(),
+    };
+    res.render(Json(ServiceChatContextResponse {
+        backend,
+        sender_id,
+        system_prompt,
+        estimated_context_tokens: estimate_messages_tokens(&messages),
+        bubbles,
+        turns,
+        archived,
+        input_tokens,
+        output_tokens,
+        average_cache_hit_rate,
+    }));
+}
+
+/// Split an assembled QQ user message into its leading system/instruction prefix and the
+/// remaining body. The body still carries the per-turn template; both halves are best-effort.
+fn split_user_context(text: &str) -> (Option<String>, Option<String>) {
+    const LABEL: &str = "\n[Current User Message]\n";
+    let Some(index) = text.find(LABEL) else {
+        return (None, None);
+    };
+    let prefix = text[..index].trim();
+    let mut body = text[index + LABEL.len()..].to_string();
+    if let Some(cut) = body.find("\n\n[Processing Instructions]") {
+        body.truncate(cut);
+    }
+    let prefix = (!prefix.is_empty()).then(|| prefix.to_string());
+    let body = body.trim();
+    let body = (!body.is_empty()).then(|| body.to_string());
+    (prefix, body)
 }
 
 /// Streams one cached media object from object storage so the WebUI can
@@ -1372,8 +1883,24 @@ pub async fn serve_media_image(req: &mut Request, res: &mut Response, _depot: &m
     else {
         return render_bad_request(res, "path is required".into());
     };
-    let Some(storage) = ObjectStorageConfig::from_env() else {
-        return render_internal_error(res, "object storage is not configured");
+    // Prefer the connection the caller names: the preview URL was built from the service that
+    // cached the object, so it points at the bucket that actually holds it.
+    let storage = match req
+        .query::<String>("connection_id")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        Some(connection_id) => {
+            match resource_resolver::build_s3_ref(Some(&connection_id), &[]).await {
+                Ok(Some(storage)) => storage,
+                Ok(None) => return render_not_found(res, "object storage connection not found"),
+                Err(error) => return render_internal_error(res, error.to_string()),
+            }
+        }
+        None => match ObjectStorageConfig::from_env() {
+            Some(storage) => storage.into_inner(),
+            None => return render_internal_error(res, "object storage is not configured"),
+        },
     };
     let bytes = match storage.as_ref().get_object_bytes(&object_key).await {
         Ok(bytes) => bytes,
@@ -1403,24 +1930,6 @@ fn load_service_and_connections(
         .find(|item| item.id == service_id)
         .ok_or_else(|| zihuan_core::string_error!("Service '{}' not found", service_id))?;
     Ok((agent, load_connections()?))
-}
-
-fn service_retrieval_store_config(
-    agent: &zihuan_core::role::service_config::RoleServiceConfig,
-) -> (Option<String>, Option<String>) {
-    if let Some(config) = zihuan_service::role::optional_qq_chat(&agent.role_service_type) {
-        return (
-            config.retrieval_store_connection_id().map(ToOwned::to_owned),
-            config.embedding_model_ref_id.clone(),
-        );
-    }
-    if let Some(config) = zihuan_service::role::optional_workspace(&agent.role_service_type) {
-        return (
-            config.retrieval_store_connection_id().map(ToOwned::to_owned),
-            config.embedding_model_ref_id.clone(),
-        );
-    }
-    (None, None)
 }
 
 /// The backend serving one retrieval connection, or `None` when it is not a
@@ -1494,7 +2003,11 @@ fn image_property_names() -> Vec<String> {
     .map(str::to_string)
     .collect()
 }
-fn weaviate_image_items(response: Value, kind: &'static str) -> Vec<ServiceImageItem> {
+fn weaviate_image_items(
+    response: Value,
+    kind: &'static str,
+    object_storage_connection_id: Option<&str>,
+) -> Vec<ServiceImageItem> {
     response
         .get("data")
         .and_then(|value| value.get("Get"))
@@ -1516,6 +2029,7 @@ fn weaviate_image_items(response: Value, kind: &'static str) -> Vec<ServiceImage
                     .and_then(|value| value.get("distance"))
                     .and_then(Value::as_f64),
                 "weaviate",
+                object_storage_connection_id,
             ))
         })
         .collect()
@@ -1527,12 +2041,17 @@ fn image_preview_url(
     rustfs_path: Option<&str>,
     original_source: Option<&str>,
     mime_type: Option<&str>,
+    connection_id: Option<&str>,
 ) -> Option<String> {
     if let Some(path) = rustfs_path.map(str::trim).filter(|value| !value.is_empty()) {
         let mut url = format!("/api/explorer/media-image?path={}", pct_encode(path));
         if let Some(mime) = mime_type.and_then(supported_image_content_type) {
             url.push_str("&mime_type=");
             url.push_str(mime);
+        }
+        if let Some(connection_id) = connection_id.filter(|value| !value.trim().is_empty()) {
+            url.push_str("&connection_id=");
+            url.push_str(&pct_encode(connection_id));
         }
         return Some(url);
     }
@@ -1551,13 +2070,18 @@ fn image_item(
     kind: &'static str,
     score: Option<f64>,
     backend: &'static str,
+    object_storage_connection_id: Option<&str>,
 ) -> ServiceImageItem {
     let string = |key| value.get(key).and_then(Value::as_str).map(ToOwned::to_owned);
     let rustfs_path = string("rustfs_path");
     let mime_type = string("mime_type");
     let original_source = string("original_source");
-    let url =
-        image_preview_url(rustfs_path.as_deref(), original_source.as_deref(), mime_type.as_deref());
+    let url = image_preview_url(
+        rustfs_path.as_deref(),
+        original_source.as_deref(),
+        mime_type.as_deref(),
+        object_storage_connection_id,
+    );
     ServiceImageItem {
         object_id,
         media_id: string("media_id"),

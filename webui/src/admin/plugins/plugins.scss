@@ -1,0 +1,160 @@
+.component-picker-title {
+    margin: 0 0 12px;
+    font-weight: 600;
+    color: var(--admin-ink);
+}
+
+.component-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.component-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 18px 12px;
+    border: 1px solid var(--admin-border);
+    border-radius: 8px;
+    background: var(--admin-bg-panel);
+    color: var(--admin-ink);
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+
+    &:hover,
+    &:focus-visible {
+        border-color: var(--admin-accent);
+        outline: none;
+    }
+
+    &.active {
+        border-color: var(--admin-accent);
+        box-shadow: inset 0 0 0 1px var(--admin-accent);
+    }
+}
+
+.component-card-icon {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+}
+
+.component-card-name {
+    font-size: 14px;
+}
+
+.component-card-desc {
+    font-size: 12px;
+    color: var(--admin-muted);
+    text-align: center;
+}
+
+.selected-component-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    border: 1px solid var(--admin-border);
+    border-radius: 8px;
+    background: var(--admin-bg-panel);
+}
+
+.dialog-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.dialog-back {
+    margin-left: -8px;
+}
+
+.dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.selected-component-icon {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+}
+
+.selected-component-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    line-height: 1.4;
+
+    span {
+        font-size: 12px;
+        color: var(--admin-muted);
+    }
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.install-method-item {
+    grid-column: 1 / -1;
+}
+
+.install-method {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    align-items: center;
+
+    label {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+    }
+
+    label.unavailable {
+        color: var(--admin-muted);
+        cursor: not-allowed;
+    }
+
+    small {
+        color: var(--admin-muted);
+    }
+}
+
+.install-method-status {
+    color: var(--admin-muted);
+}
+
+.global-config {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.progress-line {
+    color: var(--admin-muted);
+}
+
+textarea {
+    width: 100%;
+    min-height: 140px;
+    font-family: ui-monospace, monospace;
+}
+
+.plugin-command-dialog {
+    display: grid;
+    gap: 8px;
+}
+
+.plugin-command-dialog > :first-child {
+    justify-self: end;
+}

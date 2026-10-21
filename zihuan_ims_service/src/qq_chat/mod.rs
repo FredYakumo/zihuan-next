@@ -46,6 +46,10 @@ use crate::storage::message_rate_limit_store::{
 pub use crate::storage::message_rate_limit_store::{
     list_message_rate_limit_usage, reset_message_rate_limit_usage,
 };
+pub use crate::storage::qq_chat_context_store::{
+    load_turns as load_archived_context_turns, persist_turn as persist_archived_context_turn,
+    ArchivedTurn,
+};
 use crate::storage::qq_chat_history_store::{clear_history, load_history};
 use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
 use crate::tools::build_job_memory_resources;
@@ -93,6 +97,7 @@ use zihuan_core::task_context::{
     AgentTaskStatus,
 };
 use zihuan_core::utils::string_utils::shorten_text;
+use zihuan_core::validation_error;
 
 use self::tool_quota::SessionToolQuotaState;
 
@@ -222,11 +227,10 @@ fn load_qq_resources(
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .map(|llm_ref_id| {
-            resolve_llm_service_config(
-                Some(llm_ref_id),
-                &load_llm_refs().unwrap_or_default(),
-                &agent.name,
-            )
+            resolve_llm_service_config(Some(llm_ref_id), &load_llm_refs().unwrap_or_default())
+                .map_err(|err| {
+                    validation_error!("[{}] Failed to load llm config: {err}", &agent.name)
+                })
         })
         .transpose()?
         .map(|llm_config| build_llm_model(&llm_config))
@@ -302,8 +306,8 @@ pub async fn spawn(
         )));
     };
 
-    let llm_config =
-        resolve_llm_service_config(config.llm_ref_id.as_deref(), &llm_refs, &agent.name)?;
+    let llm_config = resolve_llm_service_config(config.llm_ref_id.as_deref(), &llm_refs)
+        .map_err(|err| validation_error!("[{}] Failed to load llm config: {err}", &agent.name))?;
     let llm = build_llm_model(&llm_config)?;
     let intent_classification_llm_config = resolve_llm_service_config(
         config
@@ -311,20 +315,20 @@ pub async fn spawn(
             .as_deref()
             .or(config.llm_ref_id.as_deref()),
         &llm_refs,
-        &agent.name,
-    )?;
+    )
+    .map_err(|err| validation_error!("[{}] Failed to load llm config: {err}", &agent.name))?;
     let intent_classification_llm = build_llm_model(&intent_classification_llm_config)?;
     let math_programming_llm_config = resolve_llm_service_config(
         config.math_programming_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref()),
         &llm_refs,
-        &agent.name,
-    )?;
+    )
+    .map_err(|err| validation_error!("[{}] Failed to load llm config: {err}", &agent.name))?;
     let math_programming_llm = build_llm_model(&math_programming_llm_config)?;
-    let natural_language_reply_llm_config = resolve_llm_service_config(
-        config.natural_language_reply_llm_ref_id.as_deref(),
-        &llm_refs,
-        &agent.name,
-    )?;
+    let natural_language_reply_llm_config =
+        resolve_llm_service_config(config.natural_language_reply_llm_ref_id.as_deref(), &llm_refs)
+            .map_err(|err| {
+                validation_error!("[{}] Failed to load llm config: {err}", &agent.name)
+            })?;
     let natural_language_reply_llm = build_llm_model(&natural_language_reply_llm_config)?;
     let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
         let model_name =
@@ -363,6 +367,16 @@ pub async fn spawn(
 
     let cache =
         Arc::new(LLMMessageSessionCacheRef::new(format!("service_agent_cache_{}", agent.id)));
+
+    // Back the conversation context with the same Redis the inbox uses, when one is configured,
+    // so the live context (and the Data Explorer view over it) survives a process restart.
+    // Without a Redis connection the cache stays process-memory only.
+    if let Some(redis_ref) = redis_ref.as_ref() {
+        if let Some(url) = redis_ref.url.clone() {
+            *cache.cached_redis_url.lock().await = Some(url);
+        }
+    }
+    zihuan_core::qq_context::register_qq_chat_history_cache(&agent.id, Arc::clone(&cache));
 
     // Register the service's job resources with the scheduler kernel so script-defined
     // jobs can reach this service's LLM, tools, history cache, and memory backend. The
@@ -651,7 +665,7 @@ impl QqChatAgentServiceInner {
             }
         }
 
-        let mut message_rate_limit_warning = None;
+        let mut message_rate_limit = None;
         if let Some(rdb_pool) = ctx.rdb_pool {
             let group_id_text = event.group_id.map(|value| value.to_string());
             let config = current_qq_chat_role_service_config()?;
@@ -705,7 +719,7 @@ impl QqChatAgentServiceInner {
                 }
                 return Ok(());
             }
-            message_rate_limit_warning = rate_limit_result.warning_prompt;
+            message_rate_limit = Some(rate_limit_result);
         }
 
         let (claimed, claim_token) = try_claim_session(session, &sender_id);
@@ -739,7 +753,7 @@ impl QqChatAgentServiceInner {
                             &sender_id,
                             &target_id,
                             is_group,
-                            message_rate_limit_warning.as_deref(),
+                            message_rate_limit.as_ref(),
                             ctx,
                         )
                     })
@@ -753,7 +767,7 @@ impl QqChatAgentServiceInner {
                         &sender_id,
                         &target_id,
                         is_group,
-                        message_rate_limit_warning.as_deref(),
+                        message_rate_limit.as_ref(),
                         ctx,
                     )
                 })
@@ -766,7 +780,7 @@ impl QqChatAgentServiceInner {
                 &sender_id,
                 &target_id,
                 is_group,
-                message_rate_limit_warning.as_deref(),
+                message_rate_limit.as_ref(),
                 ctx,
             )
         };

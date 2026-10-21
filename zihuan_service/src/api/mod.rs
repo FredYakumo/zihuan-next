@@ -8,6 +8,7 @@ pub mod graph_exec_helpers;
 pub mod hyperparams;
 pub mod log;
 pub mod model_http;
+pub mod model_usage;
 pub mod plugins;
 pub mod registry;
 pub mod scheduled_tasks;
@@ -53,6 +54,7 @@ pub fn build_router(
         )
         .push(
             Router::with_path("system")
+                .push(Router::with_path("model-usage").get(model_usage::get_model_usage))
                 .push(
                     Router::with_path("connections")
                         .get(config::connections::list_connections)
@@ -73,6 +75,17 @@ pub fn build_router(
                             Router::with_path("<id>")
                                 .put(config::connections::update_connection)
                                 .delete(config::connections::delete_connection),
+                        ),
+                )
+                .push(
+                    Router::with_path("retrieval-databases")
+                        .push(
+                            Router::with_path("install-command")
+                                .post(config::retrieval_databases::post_retrieval_install_command),
+                        )
+                        .push(
+                            Router::with_path("install")
+                                .post(config::retrieval_databases::post_retrieval_install),
                         ),
                 )
                 .push(
@@ -108,6 +121,10 @@ pub fn build_router(
                                 .push(
                                     Router::with_path("stop")
                                         .post(config::role_services::stop_agent),
+                                )
+                                .push(
+                                    Router::with_path("avatar/sync")
+                                        .post(config::role_services::sync_agent_avatar),
                                 )
                                 .push(
                                     Router::with_path("notifications")
@@ -336,6 +353,11 @@ pub fn build_router(
         // Settings
         .push(Router::with_path("settings/storage-info").get(settings::get_storage_info))
         .push(
+            Router::with_path("settings/system-database")
+                .get(settings::get_system_database)
+                .put(settings::update_system_database),
+        )
+        .push(
             Router::with_path("settings/context-compaction")
                 .get(settings::get_context_compaction_settings)
                 .put(settings::update_context_compaction_settings),
@@ -389,7 +411,14 @@ pub fn build_router(
                     Router::with_path("services/<service_id>")
                         .push(Router::with_path("messages").get(explorer::query_service_messages))
                         .push(Router::with_path("memories").get(explorer::query_service_memories))
-                        .push(Router::with_path("images").get(explorer::query_service_images)),
+                        .push(Router::with_path("images").get(explorer::query_service_images))
+                        .push(
+                            Router::with_path("chat-users").get(explorer::query_service_chat_users),
+                        )
+                        .push(
+                            Router::with_path("chat-context")
+                                .get(explorer::query_service_chat_context),
+                        ),
                 )
                 .push(Router::with_path("redis").get(explorer::query_redis))
                 .push(Router::with_path("weaviate").get(explorer::query_weaviate))

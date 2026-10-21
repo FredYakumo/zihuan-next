@@ -85,6 +85,14 @@ impl S3Ref {
         self.object_url_for_key(key).await
     }
 
+    /// Object size in bytes via a HEAD request, when the object exists. Used to label media
+    /// without downloading it.
+    pub async fn head_object_size(&self, key: &str) -> Option<u64> {
+        let client = self.s3_client().await.ok()?;
+        let response = client.head_object().bucket(&self.bucket).key(key).send().await.ok()?;
+        response.content_length().and_then(|value| u64::try_from(value).ok())
+    }
+
     pub async fn get_object_bytes(&self, key: &str) -> Result<Vec<u8>> {
         let client = self.s3_client().await?;
         let response = client

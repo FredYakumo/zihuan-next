@@ -45,6 +45,39 @@
         <div v-else-if="memory.searched && !memory.loading" class="empty-state">无匹配记忆。</div>
       </template>
 
+      <template v-else-if="capability === 'contexts'">
+        <div v-if="!selectedSenderId" class="context-users">
+          <div class="search-form search-form--simple">
+            <t-button variant="outline" :loading="loadingUsers" @click="loadUsers">刷新用户列表</t-button>
+            <span class="muted">共 {{ users.length }} 位用户与当前角色有运行时上下文{{ backend === "redis" ? "（Redis 后端）" : "（内存后端，重启丢失）" }}</span>
+          </div>
+          <t-table v-if="users.length" row-key="sender_id" :data="users" :columns="userColumns" :hover="true" @row-click="onUserRowClick">
+            <template #sender="{ row }"><div>{{ row.sender_name }}</div><div class="mono muted">{{ row.sender_id }}</div></template>
+            <template #group="{ row }">{{ row.group_name || '-' }}</template>
+            <template #last="{ row }">{{ row.last_time || '-' }}</template>
+          </t-table>
+          <div v-else-if="!loadingUsers" class="empty-state">暂无用户运行时上下文。仅显示启用本功能后与该角色对话过的用户。</div>
+        </div>
+        <div v-else class="context-detail">
+          <div class="context-detail-head">
+            <t-button variant="outline" @click="clearSelection">返回用户列表</t-button>
+            <strong>{{ selectedTitle }}</strong>
+            <span class="mono muted">{{ selectedSenderId }}</span>
+          </div>
+          <ChatContextFlow
+            :backend="backend"
+            :loading-context="loadingContext"
+            :turns="turns"
+            :archived-turns="archivedTurns"
+            :estimated-context-tokens="estimatedContextTokens"
+            :input-tokens="inputTokens"
+            :output-tokens="outputTokens"
+            :average-tokens-per-second="averageTokensPerSecond"
+            :average-cache-hit-rate="averageCacheHitRate"
+          />
+        </div>
+      </template>
+
       <template v-else>
         <div class="search-form search-form--simple"><t-input v-model="image.nameQuery" placeholder="图片名" clearable @enter="searchImages" /><t-input v-model="image.descriptionQuery" placeholder="图片描述" clearable @enter="searchImages" /><t-input-number v-model="image.limit" :min="1" :max="50" /><t-button theme="primary" :loading="image.loading" @click="searchImages">搜索</t-button></div>
         <div v-if="image.items.length" class="image-grid"><article v-for="item in image.items" :key="item.object_id" class="image-item"><img v-if="item.url && !failedPreviews.has(item.object_id)" :src="item.url" :alt="item.name || item.media_id || '图片'" referrerpolicy="no-referrer" loading="lazy" @error="onImageError(item.object_id)" /><div v-else class="image-placeholder">无预览</div><div class="image-info"><strong>{{ item.name || item.media_id || '未命名图片' }}</strong><p>{{ item.description || '未提供图片描述' }}</p><div><t-tag v-for="kind in item.match_kinds" :key="kind" size="small" variant="light" :theme="kind === 'keyword' ? 'primary' : 'default'">{{ matchLabel(kind) }}</t-tag></div><span class="muted">{{ item.source || item.backend }}</span></div></article></div>
@@ -55,56 +88,49 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import type { PrimaryTableCol } from "tdesign-vue-next";
+import { useDataExplorerDetailPage } from "./DataExplorerDetail";
+import ChatContextFlow from "./ChatContextFlow.vue";
 
-import type { MysqlRecord } from "../../api/client";
-import { type ServiceCapability, useDataExplorerDetail } from "./useDataExplorer";
-
-const route = useRoute();
-const router = useRouter();
-const serviceId = String(route.params.serviceId ?? "");
-const capability = String(route.params.capability ?? "") as ServiceCapability;
-const { service, loadingService, unavailable, message, searchMessages, changeMessagePage, memory, searchMemories, image, searchImages, mutateMemory } = useDataExplorerDetail(serviceId, capability);
-const pageTitle = computed(() => capability === "messages" ? "聊天记录" : capability === "memories" ? "记忆" : "图片库");
-const messageColumns: PrimaryTableCol<MysqlRecord>[] = [{ colKey: "message_id", title: "消息 ID", width: 160 }, { colKey: "sender", title: "发送者", width: 160 }, { colKey: "send_time", title: "发送时间", width: 180 }, { colKey: "group", title: "群组", width: 150 }, { colKey: "content", title: "内容" }];
-function serviceTypeLabel(type: string) { return type === "qq_chat" ? "QQ Chat" : type === "http_stream" ? "HTTP Stream" : "Workspace"; }
-function matchLabel(kind: string) {
-  return kind === "keyword" ? "关键词" : kind === "semantic" ? "语义" : kind === "hybrid" ? "混合" : "最近更新";
-}
-function onMessagePaginationChange(info: { current: number; pageSize: number }) { message.value.pageSize = info.pageSize; changeMessagePage(info.current); }
-function returnToList() { void router.push("/data-explorer"); }
-const failedPreviews = ref(new Set<string>());
-function onImageError(objectId: string) { failedPreviews.value.add(objectId); }
-watch(() => image.value.items, () => { failedPreviews.value = new Set<string>(); });
+const {
+  capability,
+  service,
+  loadingService,
+  unavailable,
+  message,
+  messageColumns,
+  searchMessages,
+  onMessagePaginationChange,
+  memory,
+  searchMemories,
+  mutateMemory,
+  image,
+  searchImages,
+  failedPreviews,
+  onImageError,
+  pageTitle,
+  userColumns,
+  onUserRowClick,
+  serviceTypeLabel,
+  matchLabel,
+  returnToList,
+  backend,
+  loadingUsers,
+  users,
+  selectedSenderId,
+  selectedTitle,
+  loadingContext,
+  turns,
+  archivedTurns,
+  estimatedContextTokens,
+  inputTokens,
+  outputTokens,
+  averageTokensPerSecond,
+  averageCacheHitRate,
+  loadUsers,
+  clearSelection,
+} = useDataExplorerDetailPage();
 </script>
 
 <style scoped lang="scss">
-.data-explorer-detail-page { display: grid; gap: 16px; }
-.service-card-title { display: flex; align-items: center; gap: 12px; }
-.service-name { font-size: 20px; }
-.search-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 16px; }
-.search-form :deep(.t-form__item) { margin-bottom: 0; }
-.message-filter-row, .message-content-row { display: flex; width: 100%; flex-wrap: wrap; gap: 12px; }
-.message-content-row { align-items: flex-start; }
-.message-content-field { flex: 1 1 560px; }
-.message-content-field :deep(.t-textarea) { width: 100%; }
-.search-form--simple :deep(.t-input), .search-form--simple :deep(.t-input-number) { width: min(280px, 100%); }
-.content-cell { white-space: pre-wrap; word-break: break-word; }
-.pagination { margin-top: 16px; }
-.memory-list { display: grid; gap: 10px; }
-.memory-item, .image-item { border: 1px solid var(--td-component-border); border-radius: 6px; }
-.memory-item { padding: 14px 16px; }
-.memory-item-header { display: flex; justify-content: space-between; gap: 12px; }
-.memory-item p, .image-info p { margin: 8px 0; white-space: pre-wrap; word-break: break-word; }
-.memory-actions { margin-top: 6px; }
-.image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
-.image-item { overflow: hidden; background: var(--td-bg-color-container); }
-.image-item img, .image-placeholder { display: block; width: 100%; height: 160px; object-fit: cover; background: var(--td-bg-color-secondarycontainer); }
-.image-placeholder { display: grid; place-items: center; color: var(--td-text-color-placeholder); }
-.image-info { display: grid; gap: 6px; padding: 12px; }
-.image-info p { min-height: 40px; font-size: 13px; }
-.empty-state { padding: 48px 16px; text-align: center; color: var(--td-text-color-placeholder); }
-@media (max-width: 768px) { .search-form--simple :deep(.t-input), .search-form--simple :deep(.t-input-number) { width: 100%; } }
+@use "./DataExplorerDetail" as *;
 </style>

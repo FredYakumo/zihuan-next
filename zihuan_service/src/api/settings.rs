@@ -29,6 +29,46 @@ const CHAT_HISTORY_DIR: &str = "chat_history";
 const UPLOADED_IMAGES_DIR: &str = "uploaded_images";
 const TEXT_EMBEDDING_MODEL_DIR: &str = "models/text_embedding";
 
+#[derive(Deserialize)]
+pub struct UpdateSystemDatabaseRequest {
+    pub connection_id: String,
+    pub migrate: bool,
+}
+
+#[handler]
+pub async fn get_system_database(res: &mut Response) {
+    match task::spawn_blocking(zihuan_core::system_database::settings).await {
+        Ok(Ok(settings)) => res.render(Json(settings)),
+        Ok(Err(error)) => {
+            render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+        }
+        Err(error) => {
+            render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+        }
+    }
+}
+
+#[handler]
+pub async fn update_system_database(req: &mut Request, res: &mut Response) {
+    let body: UpdateSystemDatabaseRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(error) => {
+            return render_settings_error(res, StatusCode::BAD_REQUEST, error.to_string())
+        }
+    };
+    match task::spawn_blocking(move || {
+        zihuan_core::system_database::change(&body.connection_id, body.migrate)
+    })
+    .await
+    {
+        Ok(Ok(settings)) => res.render(Json(settings)),
+        Ok(Err(error)) => render_settings_error(res, StatusCode::BAD_REQUEST, error.to_string()),
+        Err(error) => {
+            render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct StorageEntry {
     pub label: String,

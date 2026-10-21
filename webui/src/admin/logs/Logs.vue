@@ -23,50 +23,12 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-
 import AdminPageHeader from "../components/AdminPageHeader.vue";
-import { clearLogs, enterLogsPage, leaveLogsPage, logLevelClass, logs } from "./logStream";
+import { useLogsPage } from "./Logs";
 
-const bodyEl = ref<HTMLElement | null>(null);
-
-function scrollToBottom(): void {
-  if (bodyEl.value) bodyEl.value.scrollTop = bodyEl.value.scrollHeight;
-}
-
-
-function isNearBottom(): boolean {
-  const el = bodyEl.value;
-  if (!el) return true;
-  return el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
-}
-
-
-watch(
-  () => logs.value[logs.value.length - 1]?.seq,
-  async () => {
-    // watch 默认 flush: 'pre'，回调时 DOM 尚未更新，读到的是新日志渲染前用户所处的位置
-    const followBottom = isNearBottom();
-    await nextTick();
-    if (followBottom) scrollToBottom();
-  }
-);
-
-onMounted(async () => {
-  enterLogsPage();
-  await nextTick();
-  scrollToBottom();
-});
-
-onUnmounted(() => {
-  leaveLogsPage();
-});
+const { bodyEl, logs, logLevelClass, clearLogs } = useLogsPage();
 </script>
 
 <style scoped lang="scss">
-@use "../tasks/tasks" as *;
-
-.log-page-body {
-  height: min(82vh, 920px);
-}
+@use "./logs" as *;
 </style>

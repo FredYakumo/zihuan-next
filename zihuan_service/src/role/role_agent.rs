@@ -28,6 +28,7 @@ use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::storage::ConnectionConfig;
 use zihuan_core::system_config::current_context_compaction_percent;
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
+use zihuan_core::validation_error;
 
 use zihuan_core::agent::resource_provider::SharedAgentResourceProvider;
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
@@ -158,8 +159,10 @@ impl RoleAgent {
     ) -> Result<Self> {
         let llm_ref_id_owned =
             super::service_type_ext::primary_llm_ref_id(&agent.role_service_type);
-        let llm_config =
-            resolve_llm_service_config(llm_ref_id_owned.as_deref(), llm_refs, &agent.name)?;
+        let llm_config = resolve_llm_service_config(llm_ref_id_owned.as_deref(), llm_refs)
+            .map_err(|err| {
+                validation_error!("[{}] Failed to load llm config: {err}", &agent.name)
+            })?;
         let model_name = llm_config.model_name.clone();
         let llm = build_llm_model(&llm_config)?;
         Self::new(RoleAgentConfig {

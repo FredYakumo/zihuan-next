@@ -144,7 +144,9 @@ pub async fn chat_completions(req: &mut Request, res: &mut Response) {
     let ModelRefSpec::ChatLlm { llm } = &config.model else {
         unreachable!()
     };
-    let llm = match build_llm_model(llm) {
+    let mut llm = llm.clone();
+    llm.usage_config_id = Some(config.canonical_config_id().to_string());
+    let llm = match build_llm_model(&llm) {
         Ok(model) => model,
         Err(error) => {
             return render_error(

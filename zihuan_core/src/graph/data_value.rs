@@ -376,6 +376,107 @@ impl LLMMessageSessionCacheRef {
         Ok(cache.get(&key).cloned().unwrap_or_default())
     }
 
+    /// Which backend currently serves this cache's reads and writes.
+    ///
+    /// Redis is used whenever a URL has been seeded; otherwise the cache is process-memory
+    /// only and is lost on restart.
+    pub async fn backend(&self) -> crate::qq_context::QqChatContextBackend {
+        if self.cached_redis_url.lock().await.is_some() {
+            crate::qq_context::QqChatContextBackend::Redis
+        } else {
+            crate::qq_context::QqChatContextBackend::Memory
+        }
+    }
+
+    /// Every sender id that currently has a cached conversation in this session cache.
+    ///
+    /// Reads the in-process memory map and, when Redis is attached, unions the ids recorded in
+    /// the Redis tracker sets so senders carried over from a previous process are included too.
+    pub async fn list_sender_ids(&self) -> Vec<String> {
+        let prefix = format!("llm_message_session:{}:", self.node_id);
+        let mut senders = std::collections::BTreeSet::new();
+
+        {
+            let cache = self.memory_cache.lock().await;
+            for key in cache.keys() {
+                if let Some(sender_id) = Self::parse_sender_id(key, &prefix) {
+                    senders.insert(sender_id);
+                }
+            }
+        }
+
+        let redis_url = self.cached_redis_url.lock().await.clone();
+        if let Some(url) = redis_url {
+            let mut cm_guard = self.redis_cm.lock().await;
+            let mut url_guard = self.cached_redis_url.lock().await;
+            if url_guard.as_deref() != Some(url.as_str()) {
+                *cm_guard = None;
+                *url_guard = Some(url.clone());
+            }
+            if cm_guard.is_none() {
+                if let Ok(client) = redis::Client::open(url.as_str()) {
+                    if let Ok(conn) = client.get_tokio_connection().await {
+                        *cm_guard = Some(conn);
+                    }
+                }
+            }
+            if let Some(cm) = cm_guard.as_mut() {
+                let registry_key = format!("llm_message_session:{}:tracker_sets", self.node_id);
+                let tracker_keys: Vec<String> =
+                    cm.smembers(&registry_key).await.unwrap_or_default();
+                for tracker_key in tracker_keys {
+                    let keys: Vec<String> = cm.smembers(&tracker_key).await.unwrap_or_default();
+                    for key in keys {
+                        if let Some(sender_id) = Self::parse_sender_id(&key, &prefix) {
+                            senders.insert(sender_id);
+                        }
+                    }
+                }
+            }
+        }
+
+        senders.into_iter().collect()
+    }
+
+    /// Split a storage key `llm_message_session:{node}:{bucket}:{sender}` into its sender id.
+    ///
+    /// The same cache also holds auxiliary histories whose key adds another segment, such as the
+    /// preprompt agent's `chat_preprompt:{sender}`. Those are not user conversations and must not
+    /// surface as senders, so only single-segment keys qualify.
+    fn parse_sender_id(key: &str, prefix: &str) -> Option<String> {
+        let remainder = key.strip_prefix(prefix)?;
+        let (_, sender_id) = remainder.split_once(':')?;
+        if sender_id.is_empty() || sender_id.contains(':') {
+            return None;
+        }
+        Some(sender_id.to_string())
+    }
+
+    /// Read and delete an auxiliary string value from the Redis backing this cache.
+    ///
+    /// Used to migrate data out of a legacy key exactly once; returns `None` when the cache is
+    /// memory-only or the key is absent.
+    pub async fn redis_take_string(&self, key: &str) -> Option<String> {
+        let url = self.cached_redis_url.lock().await.clone()?;
+        let mut cm_guard = self.redis_cm.lock().await;
+        let mut url_guard = self.cached_redis_url.lock().await;
+        if url_guard.as_deref() != Some(url.as_str()) {
+            *cm_guard = None;
+            *url_guard = Some(url.clone());
+        }
+        drop(url_guard);
+        if cm_guard.is_none() {
+            let client = redis::Client::open(url.as_str()).ok()?;
+            *cm_guard = Some(client.get_tokio_connection().await.ok()?);
+        }
+        let cm = cm_guard.as_mut()?;
+        let value: Option<String> = cm.get(key).await.ok().flatten();
+        if value.is_some() {
+            let _: redis::RedisResult<i32> = cm.del(key).await;
+        }
+        value
+    }
+
     pub async fn clear_messages(&self, sender_id: &str) -> crate::error::Result<bool> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {

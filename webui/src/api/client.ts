@@ -1,4 +1,5 @@
 // REST API client for Zihuan Next backend
+import type { ModelUsageSummary } from "../admin/model";
 
 import type {
   GraphTabInfo,
@@ -16,6 +17,7 @@ import type {
   GraphVariable,
   GraphMetadata,
   DataTypeMetaData,
+  TokenUsage,
 } from "./types";
 
 export type { GraphTabInfo, TaskEntry, TaskLogEntry } from "./types";
@@ -772,6 +774,14 @@ export const system = {
       return request("DELETE", `/system/connections/${configId}`);
     },
   },
+  retrievalDatabases: {
+    generateInstallCommand(payload: RetrievalDatabaseInstallRequest): Promise<DetailedInstallCommandResult> {
+      return request("POST", "/system/retrieval-databases/install-command", payload);
+    },
+    install(payload: RetrievalDatabaseInstallRequest): Promise<{ accepted: boolean; task_id: string }> {
+      return request("POST", "/system/retrieval-databases/install", payload);
+    },
+  },
   llm: {
     list(): Promise<LlmConfig[]> {
       return request("GET", "/system/llm-refs");
@@ -792,6 +802,12 @@ export const system = {
     },
     delete(configId: string): Promise<{ ok: boolean }> {
       return request("DELETE", `/system/llm-refs/${configId}`);
+    },
+  },
+  modelUsage: {
+    list(range?: { start: string; end: string }): Promise<ModelUsageSummary[]> {
+      const query = range ? `?${new URLSearchParams(range)}` : "";
+      return request("GET", `/system/model-usage${query}`);
     },
   },
   services: {
@@ -851,6 +867,9 @@ export const system = {
     },
     stop(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo }> {
       return request("POST", `/system/services/${configId}/stop`);
+    },
+    syncAvatar(configId: string): Promise<{ avatar_url: string }> {
+      return request("POST", `/system/services/${configId}/avatar/sync`);
     },
   },
   subagents: {
@@ -996,6 +1015,86 @@ export interface ServiceExplorerImageRecord {
   backend: "weaviate" | "elasticsearch";
 }
 
+export interface ServiceChatUserItem {
+  sender_id: string;
+  sender_name: string;
+  group_name?: string;
+  turn_count: number;
+  last_time?: string;
+}
+
+export interface ServiceChatUsersResponse {
+  backend: "memory" | "redis";
+  users: ServiceChatUserItem[];
+}
+
+export interface ServiceChatContextMedia {
+  media_id: string;
+  url?: string;
+  mime_type?: string;
+  name?: string;
+  size_bytes?: number;
+}
+
+export interface ServiceChatContextBubble {
+  role: "user" | "assistant" | "tool";
+  text: string;
+  media: ServiceChatContextMedia[];
+  usage?: TokenUsage;
+  estimated_tokens: number;
+}
+
+export type ServiceChatContextEntry =
+  | { kind: "stage"; at: string; stage: string; detail: unknown }
+  | {
+      kind: "tool_call";
+      at: string;
+      call_id: string;
+      name: string;
+      arguments: unknown;
+      result?: string;
+      duration_ms?: number;
+    };
+
+export interface ServiceChatContextQuoted {
+  message_id: string;
+  sender_name?: string;
+  sender_id?: string;
+  text: string;
+}
+
+export interface ServiceChatContextTurn {
+  turn_id: string;
+  created_at: string;
+  user_text: string;
+  /** The message the user quoted, rendered as a collapsible block inside the user bubble. */
+  quoted?: ServiceChatContextQuoted;
+  media: ServiceChatContextMedia[];
+  entries: ServiceChatContextEntry[];
+  assistant_text?: string;
+  reasoning_text?: string;
+  usage?: TokenUsage;
+  generation_ms?: number;
+  output_tokens_per_second?: number;
+  /** Steer follow-up of the previous turn: rendered in the same block, without a divider. */
+  continues_previous: boolean;
+  finished: boolean;
+}
+
+export interface ServiceChatContextResponse {
+  backend: "memory" | "redis";
+  sender_id: string;
+  system_prompt?: string;
+  bubbles: ServiceChatContextBubble[];
+  turns: ServiceChatContextTurn[];
+  /** Turns persisted in the relational database, oldest first. */
+  archived: ServiceChatContextTurn[];
+  estimated_context_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  average_cache_hit_rate?: number;
+}
+
 export interface QqChatMessageRateLimitUsageRow {
   sender_id: string;
   sender_name: string | null;
@@ -1056,6 +1155,15 @@ export const explorer = {
     const { service_id, ...query } = params;
     const qs = buildQueryString(query as Record<string, unknown>);
     return request("GET", `/explorer/services/${encodeURIComponent(service_id)}/images?${qs}`);
+  },
+
+  queryServiceChatUsers(serviceId: string): Promise<ServiceChatUsersResponse> {
+    return request("GET", `/explorer/services/${encodeURIComponent(serviceId)}/chat-users`);
+  },
+
+  queryServiceChatContext(serviceId: string, senderId: string): Promise<ServiceChatContextResponse> {
+    const qs = buildQueryString({ sender_id: senderId });
+    return request("GET", `/explorer/services/${encodeURIComponent(serviceId)}/chat-context?${qs}`);
   },
 
   queryMysql(params: {
@@ -1345,6 +1453,8 @@ export interface SetupProgressEvent {
   message: string;
   progress_percent: number | null;
   error: string | null;
+  /** Present on the finished event of a retrieval database install task. */
+  connection?: ConnectionConfig;
 }
 
 export interface LlmSetupConfig {
@@ -1442,6 +1552,11 @@ export interface DetailedSetupConfig {
 export interface DetailedInstallCommandResult {
   install_command: string;
   connections: ConnectionConfig[];
+}
+
+export interface RetrievalDatabaseInstallRequest {
+  install_method: DetailedSetupInstallMethod;
+  search: DetailedSearchSetupConfig;
 }
 
 export const setup = {

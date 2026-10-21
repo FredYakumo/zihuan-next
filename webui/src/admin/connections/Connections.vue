@@ -1,8 +1,7 @@
 <template>
   <section class="page connections-page">
     <AdminPageHeader title="连接配置">
-      <t-button variant="outline" @click="triggerImportFile">导入配置</t-button>
-      <input ref="importFileInput" type="file" accept=".json" class="connection-import-input" @change="handleFileChange" />
+      <t-button variant="outline" @click="openImportDialog">导入配置</t-button>
       <t-button theme="primary" @click="openCreateChoice">新建连接</t-button>
     </AdminPageHeader>
 
@@ -73,6 +72,47 @@
       <div class="create-choice-grid">
         <button class="create-choice" @click="chooseExistingConnection"><strong>现有连接</strong><span>使用当前连接配置逻辑</span></button>
         <button class="create-choice" @click="choosePluginConnection"><strong>安装插件</strong><span>安装基础设施并自动创建连接</span></button>
+      </div>
+    </t-dialog>
+
+    <t-dialog
+      v-model:visible="importDialogVisible"
+      header="导入连接配置"
+      width="640px"
+      :close-on-overlay-click="false"
+      :confirm-btn="{ content: '导入', disabled: !importJsonText.trim() }"
+      cancel-btn="取消"
+      @confirm="submitImport"
+    >
+      <div class="import-dialog-body">
+        <div
+          class="import-dropzone"
+          :class="{ 'import-dropzone--active': importDragging }"
+          role="button"
+          tabindex="0"
+          @click="importFileInput?.click()"
+          @keydown.enter.prevent="importFileInput?.click()"
+          @keydown.space.prevent="importFileInput?.click()"
+          @dragover.prevent="importDragging = true"
+          @dragleave.prevent="handleImportDragLeave"
+          @drop.prevent="handleImportDrop"
+        >
+          <strong>拖拽 JSON 文件到此处</strong>
+          <span>或点击选择 JSON 文件</span>
+        </div>
+        <input
+          ref="importFileInput"
+          type="file"
+          accept=".json,application/json"
+          class="connection-import-input"
+          @change="handleImportFileChange"
+        />
+        <t-textarea
+          v-model="importJsonText"
+          class="import-json-textarea"
+          :autosize="{ minRows: 10, maxRows: 18 }"
+          placeholder="也可以在此直接输入连接配置 JSON"
+        />
       </div>
     </t-dialog>
 
@@ -169,8 +209,8 @@
 
       <template #footer>
         <div class="connection-drawer-footer">
-          <t-button variant="outline" @click="closeDrawer">取消</t-button>
-          <t-button theme="primary" @click="submitForm">{{ isCreating ? "创建连接" : "保存修改" }}</t-button>
+          <t-button variant="outline" :disabled="saving" @click="closeDrawer">取消</t-button>
+          <t-button theme="primary" :loading="saving" @click="submitForm">{{ isCreating ? "创建连接" : "保存修改" }}</t-button>
         </div>
       </template>
     </t-drawer>
@@ -178,12 +218,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
-
-import type { ConnectionConfig } from "../../api/client";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
-import { compactId } from "../model";
 import { useConnections } from "./useConnections";
 import ConnectionCredentialInput from "../components/ConnectionCredentialInput.vue";
 
@@ -192,6 +227,12 @@ const {
   tokenizerModels,
   form,
   drawerVisible,
+  importDialogVisible,
+  importJsonText,
+  importDragging,
+  importFileInput,
+  createChoiceVisible,
+  saving,
   isCreating,
   filters,
   connectionTypes,
@@ -208,54 +249,21 @@ const {
   formatTime,
   isBotAdapterConnectionType,
   copiedId,
-  copyConfig,
-  handleFileChange,
+  openImportDialog,
+  handleImportFileChange,
+  handleImportDragLeave,
+  handleImportDrop,
+  submitImport,
+  openCreateChoice,
+  chooseExistingConnection,
+  choosePluginConnection,
+  columns,
+  connectionTypeLabel,
+  copyConnectionConfig,
+  compactId,
 } = useConnections();
-
-const importFileInput = ref<HTMLInputElement | null>(null);
-const route = useRoute();
-const router = useRouter();
-const createChoiceVisible = ref(false);
-
-function openCreateChoice() { createChoiceVisible.value = true; }
-if (route.query.action === "create") {
-  if (route.query.type === "web_search_engine") {
-    startCreate("web_search_engine");
-  } else {
-    openCreateChoice();
-  }
-}
-function chooseExistingConnection() { createChoiceVisible.value = false; startCreate(); }
-function choosePluginConnection() { createChoiceVisible.value = false; router.push("/plugins?install=1"); }
-
-const columns = [
-  { colKey: "name", title: "连接名称", width: 210 },
-  { colKey: "type", title: "类型", width: 130 },
-  { colKey: "enabled", title: "状态", width: 100 },
-  { colKey: "summary", title: "连接摘要", ellipsis: true },
-  { colKey: "runtime", title: "运行时", width: 100 },
-  { colKey: "updated_at", title: "更新时间", width: 170 },
-  { colKey: "actions", title: "操作", width: 270, fixed: "right" },
-];
-
-function triggerImportFile() {
-  importFileInput.value?.click();
-}
-
-function connectionTypeLabel(type: string): string {
-  return connectionTypes.find((option) => option.value === type)?.label ?? type;
-}
-
-function copyConnectionConfig(connection: ConnectionConfig) {
-  copyConfig({ name: connection.name, enabled: connection.enabled, kind: connection.kind }, connection.config_id);
-}
 </script>
 
 <style scoped lang="scss">
 @use "./connections" as *;
-
-.create-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.create-choice { display: grid; gap: 8px; padding: 20px; text-align: left; border: 1px solid var(--admin-border); background: var(--admin-surface); border-radius: 8px; cursor: pointer; color: inherit; }
-.create-choice:hover { border-color: var(--td-brand-color); }
-.create-choice span { color: var(--admin-muted); font-size: 13px; }
 </style>

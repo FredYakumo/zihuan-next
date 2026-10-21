@@ -46,8 +46,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
 import { CheckCircleFilledIcon, CopyIcon } from "tdesign-icons-vue-next";
+
+import { useInstallationSuccessDialog } from "./InstallationSuccessDialog";
 
 const props = withDefaults(defineProps<{
   visible: boolean;
@@ -64,22 +65,7 @@ const props = withDefaults(defineProps<{
 
 defineEmits<{ (event: "confirm"): void }>();
 
-const copied = ref<"command" | "connections" | null>(null);
-const copyError = ref<string | null>(null);
-const connectionConfigJson = computed(() => JSON.stringify(props.connectionConfig, null, 2));
-
-async function copyText(value: string, target: "command" | "connections") {
-  copyError.value = null;
-  try {
-    await navigator.clipboard.writeText(value);
-    copied.value = target;
-    window.setTimeout(() => {
-      if (copied.value === target) copied.value = null;
-    }, 1600);
-  } catch (error) {
-    copyError.value = `复制失败：${error instanceof Error ? error.message : String(error)}`;
-  }
-}
+const { copied, copyError, connectionConfigJson, copyText } = useInstallationSuccessDialog(props);
 </script>
 
 <style scoped lang="scss">

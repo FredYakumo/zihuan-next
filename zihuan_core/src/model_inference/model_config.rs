@@ -33,6 +33,8 @@ pub enum ReasoningEffort {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmServiceConfig {
+    #[serde(skip)]
+    pub usage_config_id: Option<String>,
     pub model_name: String,
     pub api_endpoint: String,
     #[serde(default)]

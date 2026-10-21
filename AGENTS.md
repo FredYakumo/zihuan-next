@@ -1,19 +1,13 @@
-# ZiHuan Next
+# Instructions
 
-Act as this project's professional development engineer. Treat user prompts as implementation requirements, not code or documentation content to copy verbatim, unless the user explicitly asks to write that content into code or documentation.
+## Development Guidelines
 
-Keep changes focused, preserve unrelated worktree changes, and treat current code as authoritative when documentation differs.
+- **Design before coding.** For feature development, plan around the requested functionality before implementation.
+- **Reuse existing code.** Search for existing utilities before creating new ones. Prefer extending or adapting existing utilities over introducing duplicates.
+- **Avoid over-abstraction.** Do not introduce unnecessary abstraction layers, engines, architectures, classes, or structs unless explicitly requested.
+- **Tests by request only.** Do not create or run unit tests unless explicitly requested. Unit tests should generally be reserved for shared utilities and critical functions widely used across the codebase.
 
-This project is always current: treat every existing change as the latest intended behavior. Do not add backwards compatibility unless the user explicitly requests compatibility with a named target.
+## Documentation
 
-Read the skill matching the task before editing. Skills contain the detailed project rules.
-
-- Rust architecture and shared types: `.agents/skills/zihuan-rust-architecture/SKILL.md`
-- Agents and Brain runtime: `.agents/skills/zihuan-agent-dev/SKILL.md`
-- Agent tools: `.agents/skills/zihuan-agent-tool-dev/SKILL.md`
-- WebUI: `.agents/skills/zihuan-frontend-dev/SKILL.md`
-- DAG nodes and macros: `.agents/skills/zihuan-node-dev/SKILL.md`
-- Python utilities and database code: `.agents/skills/zihuan-python-dev/SKILL.md`
-- Build and run: `.agents/skills/zihuan-build/SKILL.md`
-- Tests: `.agents/skills/zihuan-test/SKILL.md`
-- Formatting and linting: `.agents/skills/zihuan-lint/SKILL.md`
+- **Read the project documentation** in `documents/` before making changes.
+- Check `documents/version_logs/` for release history and planned changes. Treat a version log as current planning context if its version is newer than the latest Git tag, or if no newer Git tag exists.

@@ -25,7 +25,7 @@ use zihuan_core::role::procedure::{
 use zihuan_core::steer::message_with_api_style;
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
-use crate::qq_chat::logging::QqChatToolCallingObserver;
+use crate::qq_chat::logging::{QqChatToolCallingObserver, QqChatTurnIdentity};
 use crate::qq_chat::steer::QqChatServiceSteerHook;
 use crate::qq_chat::tool_quota::wrap_brain_tool_with_quota;
 use crate::qq_chat::user_input::PreparedCurrentTurnUserInput;
@@ -92,6 +92,7 @@ impl QqBrain {
         target_id: &str,
         bot_id: &str,
         is_group: bool,
+        turn_id: &str,
         event_group_name: Option<String>,
         brain_conversation: Vec<LLMMessage>,
         base_system_prompt: String,
@@ -103,7 +104,14 @@ impl QqBrain {
     ) -> Result<Self> {
         let tool_quota = ctx.tool_quota.clone();
         let mut brain = ToolCallingEngine::new(Arc::clone(turn_llm));
-        brain.set_observer(Arc::new(QqChatToolCallingObserver { trace: trace.clone() }));
+        brain.set_observer(Arc::new(QqChatToolCallingObserver {
+            trace: trace.clone(),
+            identity: Some(QqChatTurnIdentity {
+                agent_id: ctx.agent_id.to_string(),
+                sender_id: sender_id.to_string(),
+                turn_id: turn_id.to_string(),
+            }),
+        }));
         brain.set_iteration_hook(Arc::new(QqChatServiceSteerHook {
             pending_steer: Arc::clone(ctx.pending_steer),
             sender_id: sender_id.to_string(),

@@ -66,6 +66,11 @@ impl ObjectStorageConfig {
     pub async fn put_object(&self, key: &str, content_type: &str, body: &[u8]) -> Result<String> {
         self.inner.put_object(key, content_type, body).await
     }
+
+    /// Object size in bytes when the object exists, for labeling without downloading.
+    pub async fn head_object_size(&self, key: &str) -> Option<u64> {
+        self.inner.head_object_size(key).await
+    }
 }
 
 pub async fn save_image_to_object_storage(
@@ -93,24 +98,29 @@ fn build_object_key(message_id: i64, segment_index: usize, file_name: &str) -> S
 }
 
 pub fn upload_remote_image_to_s3(s3_ref: &S3Ref, url: &str) -> Result<String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()?;
-    let resp = client.get(url).send()?;
-    if !resp.status().is_success() {
-        return Err(crate::string_error!("image download returned status {}", resp.status()));
-    }
-    let response_content_type = resp
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .map(ToOwned::to_owned);
-    let bytes = resp.bytes()?.to_vec();
-    let content_type = verified_image_content_type(response_content_type.as_deref(), &bytes)?;
+    // `reqwest::blocking` creates and drops its own runtime, which must not happen while an
+    // async context is entered.
+    let (bytes, content_type) = crate::runtime::run_outside_async_runtime(|| {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .build()?;
+        let resp = client.get(url).send()?;
+        if !resp.status().is_success() {
+            return Err(crate::string_error!("image download returned status {}", resp.status()));
+        }
+        let response_content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned);
+        let bytes = resp.bytes()?.to_vec();
+        let content_type = verified_image_content_type(response_content_type.as_deref(), &bytes)?;
+        Ok::<_, crate::error::Error>((bytes, content_type))
+    })?;
     let key = crate::utils::string_utils::derive_tavily_s3_key(url);
     let s3_ref_clone = s3_ref.clone();
     block_async(async move {
-        s3_ref_clone.put_object(&key, content_type, &bytes).await?;
+        s3_ref_clone.put_object(&key, &content_type, &bytes).await?;
         Ok(key)
     })
 }
