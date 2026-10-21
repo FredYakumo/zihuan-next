@@ -5,6 +5,7 @@ pub mod utils {
     pub mod time_unit;
 }
 pub mod agent;
+pub mod algorithm;
 pub mod chat_history;
 pub mod command;
 pub mod config;
