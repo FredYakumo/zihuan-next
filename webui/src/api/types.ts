@@ -275,6 +275,15 @@ export interface QqContextQuoted {
   text: string;
 }
 
+/** One step of a sub-agent's own tool-calling loop, shown inside the sub-agent box. */
+export type QqSubAgentEntry =
+  | { kind: "input"; system_prompt?: string; user_prompt: string }
+  | { kind: "assistant"; iteration?: number; content: string; reasoning?: string; final_response: boolean }
+  /** Live delta of the streaming response; the settled `assistant` entry follows it. */
+  | { kind: "assistant_chunk"; content: string; reasoning: string }
+  | { kind: "tool_started"; call_id: string; name: string; arguments: unknown }
+  | { kind: "tool_finished"; call_id: string; name: string; result: string; duration_ms: number };
+
 export type QqChatContextEvent =
   | {
       kind: "turn_started";
@@ -296,6 +305,16 @@ export type QqChatContextEvent =
   | { kind: "tool_started"; agent_id: string; sender_id: string; turn_id: string; call_id: string; tool_name: string; arguments: JsonValue }
   | { kind: "tool_finished"; agent_id: string; sender_id: string; turn_id: string; call_id: string; tool_name: string; result: string; duration_ms: number }
   | { kind: "stage"; agent_id: string; sender_id: string; turn_id: string; at: string; stage: string; detail: JsonValue }
+  | {
+      kind: "sub_agent";
+      agent_id: string;
+      sender_id: string;
+      turn_id: string;
+      at: string;
+      /** Enclosing tool call ids, outermost first; the last one owns this step. */
+      path: string[];
+      event: QqSubAgentEntry;
+    }
   | {
       kind: "turn_finished";
       agent_id: string;

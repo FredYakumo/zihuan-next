@@ -18,7 +18,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use super::SharedTool;
-use crate::agent::tools::{Tool, ToolCallingEngine, ToolCallingStopReason};
+use crate::agent::tools::tool_calling_types::{
+    current_nested_observer,
+    NestedToolCallingEvent::{
+        self, Assistant as NestedAssistant, Input as NestedInput,
+        ToolFinished as NestedToolFinished, ToolStarted as NestedToolStarted,
+    },
+};
+use crate::agent::tools::{Tool, ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason};
 use crate::error::{Error, Result};
 use crate::graph::function_graph::FunctionPortDef;
 use crate::graph::util::function::data_value_from_json_with_declared_type;
@@ -378,6 +385,208 @@ pub struct DeclarativeAgent {
     graph_tools: Vec<Arc<dyn Tool>>,
 }
 
+/// Forwards one sub-agent's loop events to the observer of the loop that called it, tagged
+/// with the call path reaching this agent. The path makes nested sub-agents render one level
+/// deeper instead of flattening into the parent's flow.
+struct NestedLoopObserver {
+    outer: Arc<dyn ToolCallingObserver>,
+    path: Vec<String>,
+    started: std::sync::Mutex<HashMap<String, std::time::Instant>>,
+}
+
+impl NestedLoopObserver {
+    fn new(outer: Arc<dyn ToolCallingObserver>, path: Vec<String>) -> Self {
+        Self {
+            outer,
+            path,
+            started: std::sync::Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn report(&self, event: NestedToolCallingEvent) {
+        self.outer.on_nested_event(&self.path, &event);
+    }
+}
+
+impl ToolCallingObserver for NestedLoopObserver {
+    fn on_assistant_message(&self, iteration: usize, response: &LLMMessage) {
+        self.report(NestedAssistant {
+            iteration: Some(iteration),
+            content: response.content_text_owned().unwrap_or_default(),
+            reasoning: response.reasoning_content.clone().filter(|text| !text.trim().is_empty()),
+            final_response: response.tool_calls.is_empty(),
+        });
+    }
+
+    fn on_tool_start(&self, name: &str, call_id: &str, arguments: &Value) {
+        if let Ok(mut started) = self.started.lock() {
+            started.insert(call_id.to_string(), std::time::Instant::now());
+        }
+        self.report(NestedToolStarted {
+            call_id: call_id.to_string(),
+            name: name.to_string(),
+            arguments: arguments.clone(),
+        });
+    }
+
+    fn on_tool_finish(&self, name: &str, call_id: &str, result: &str) {
+        let duration_ms = self
+            .started
+            .lock()
+            .ok()
+            .and_then(|mut started| started.remove(call_id))
+            .map(|at| at.elapsed().as_millis())
+            .unwrap_or_default();
+        self.report(NestedToolFinished {
+            call_id: call_id.to_string(),
+            name: name.to_string(),
+            result: result.to_string(),
+            duration_ms,
+        });
+    }
+
+    fn on_nested_event(&self, path: &[String], event: &NestedToolCallingEvent) {
+        // A sub-agent called by this agent reports an absolute path of its own.
+        self.outer.on_nested_event(path, event);
+    }
+}
+
+/// LLM handle of a sub-agent that has somewhere to report to.
+///
+/// The sub-agent loop is synchronous, so a streaming call is driven on a dedicated thread while
+/// this one forwards each delta as it arrives. Every delta is reported before the call returns,
+/// which keeps them ahead of the assistant message the loop reports next, and independent
+/// sub-agents stream concurrently because each drives its own thread.
+struct NestedStreamingLlm {
+    inner: Arc<dyn LLMBase>,
+    observer: Arc<dyn ToolCallingObserver>,
+    path: Vec<String>,
+    pending: std::sync::Mutex<PendingStream>,
+}
+
+/// Streamed text not yet reported. Deltas are batched so a fast model does not put one web
+/// socket message per token on the wire, while a slow one still shows progress.
+#[derive(Default)]
+struct PendingStream {
+    content: String,
+    reasoning: String,
+    last_flush: Option<std::time::Instant>,
+}
+
+/// Flush once this much text has accumulated, or after this long since the last flush.
+const STREAM_FLUSH_CHARS: usize = 120;
+const STREAM_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(80);
+
+impl std::fmt::Debug for NestedStreamingLlm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NestedStreamingLlm").field("inner", &self.inner).finish()
+    }
+}
+
+impl NestedStreamingLlm {
+    fn forward(&self, token: crate::model_inference::llm::StreamToken) {
+        let Some((content, reasoning)) = self.push(token) else {
+            return;
+        };
+        self.report(content, reasoning);
+    }
+
+    /// Adds a delta to the pending buffer and returns what to report now, if anything.
+    fn push(&self, token: crate::model_inference::llm::StreamToken) -> Option<(String, String)> {
+        use crate::model_inference::llm::StreamToken;
+        let Ok(mut pending) = self.pending.lock() else {
+            return None;
+        };
+        match token {
+            StreamToken::Content(text) => pending.content.push_str(&text),
+            StreamToken::Thinking(text) => pending.reasoning.push_str(&text),
+        }
+        let now = std::time::Instant::now();
+        let due = pending.content.len() + pending.reasoning.len() >= STREAM_FLUSH_CHARS
+            || pending
+                .last_flush
+                .is_none_or(|at| now.duration_since(at) >= STREAM_FLUSH_INTERVAL);
+        if !due {
+            return None;
+        }
+        pending.last_flush = Some(now);
+        Some((std::mem::take(&mut pending.content), std::mem::take(&mut pending.reasoning)))
+    }
+
+    /// Reports whatever is still buffered, so the text is complete before the settled message.
+    fn flush(&self) {
+        let Ok(mut pending) = self.pending.lock() else {
+            return;
+        };
+        let content = std::mem::take(&mut pending.content);
+        let reasoning = std::mem::take(&mut pending.reasoning);
+        drop(pending);
+        if !content.is_empty() || !reasoning.is_empty() {
+            self.report(content, reasoning);
+        }
+    }
+
+    fn report(&self, content: String, reasoning: String) {
+        self.observer.on_nested_event(
+            &self.path,
+            &NestedToolCallingEvent::AssistantChunk { content, reasoning },
+        );
+    }
+}
+
+impl LLMBase for NestedStreamingLlm {
+    fn get_model_name(&self) -> &str {
+        self.inner.get_model_name()
+    }
+
+    fn context_length(&self) -> usize {
+        self.inner.context_length()
+    }
+
+    fn api_style(&self) -> Option<&str> {
+        self.inner.api_style()
+    }
+
+    fn supports_multimodal_input(&self) -> bool {
+        self.inner.supports_multimodal_input()
+    }
+
+    fn inference(
+        &self,
+        param: &crate::model_inference::llm::InferenceParam,
+    ) -> crate::error::Result<LLMMessage> {
+        let Some(streaming) = self.inner.as_streaming() else {
+            return self.inner.inference(param);
+        };
+        let (tx, mut rx) =
+            tokio::sync::mpsc::unbounded_channel::<crate::model_inference::llm::StreamToken>();
+        // The request runs on its own thread with its own runtime: the caller is a blocking tool
+        // thread that may already sit inside a runtime where blocking is not allowed.
+        std::thread::scope(|scope| {
+            let request = scope.spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("streaming runtime");
+                runtime.block_on(streaming.inference_streaming(param, tx))
+            });
+            // Ends when the request thread drops its sender.
+            while let Some(token) = rx.blocking_recv() {
+                self.forward(token);
+            }
+            // The deltas must all be reported before the loop reports the settled message.
+            self.flush();
+            Ok(request.join().expect("nested streaming inference panicked"))
+        })
+    }
+
+    /// This handle is never asked for its streaming form: the streaming call above already
+    /// forwards deltas, and reporting the same run twice would duplicate the sub-agent's text.
+    fn as_streaming(&self) -> Option<&dyn crate::model_inference::llm::StreamingLLMBase> {
+        None
+    }
+}
+
 impl DeclarativeAgent {
     pub fn new(
         definition: AgentDefinition,
@@ -465,7 +674,41 @@ impl DeclarativeAgent {
             append_current_task_progress(render_template(progress, &input));
         }
 
-        let mut engine = ToolCallingEngine::new(Arc::clone(&self.llm));
+        // A nested agent (one called by a tool) reports its whole loop through the caller's
+        // observer. Its LLM forwards streamed deltas as they arrive, so the flow view shows the
+        // sub-agent's text while it is written; the calling sub-agents stay independent, so
+        // several of them stream and run their tools concurrently.
+        let nested = current_nested_observer();
+        let llm: Arc<dyn LLMBase> = match nested.as_ref() {
+            Some((observer, path)) => Arc::new(NestedStreamingLlm {
+                inner: Arc::clone(&self.llm),
+                observer: Arc::clone(observer),
+                path: path.clone(),
+                pending: std::sync::Mutex::new(PendingStream::default()),
+            }),
+            None => Arc::clone(&self.llm),
+        };
+
+        let mut engine = ToolCallingEngine::new(llm);
+        let messages = self.build_messages(&input);
+        if let Some((observer, path)) = nested.as_ref() {
+            let system_prompt = messages
+                .iter()
+                .find(|message| matches!(message.role, MessageRole::System))
+                .and_then(LLMMessage::content_text_owned)
+                .unwrap_or_default();
+            let user_prompt = messages
+                .iter()
+                .find(|message| matches!(message.role, MessageRole::User))
+                .and_then(LLMMessage::content_text_owned)
+                .unwrap_or_default();
+            observer.on_nested_event(path, &NestedInput { system_prompt, user_prompt });
+            engine.set_observer(Arc::new(NestedLoopObserver::new(
+                Arc::clone(observer),
+                path.clone(),
+            )));
+            engine.set_observer_path(path.clone());
+        }
         for tool_id in &self.definition.tool_ids {
             engine.add_tool(SharedTool::new(Arc::clone(
                 self.tools.get(tool_id).expect("validated tool id"),
@@ -477,7 +720,7 @@ impl DeclarativeAgent {
             }
         }
 
-        let (messages, stop_reason) = engine.run(self.build_messages(&input));
+        let (messages, stop_reason) = engine.run(messages);
         if !matches!(stop_reason, ToolCallingStopReason::Done) {
             log::warn!(
                 "[DeclarativeAgent] agent '{}' did not complete normally: {stop_reason:?}",

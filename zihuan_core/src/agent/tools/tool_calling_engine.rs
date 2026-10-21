@@ -11,8 +11,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
 use super::tool_calling_types::{
-    AgentExecutor, LongTaskContext, ToolCallingMiddleware, ToolCallingObserver, ToolCallingRequest,
-    ToolCallingResult, ToolCallingStopReason,
+    self, AgentExecutor, LongTaskContext, ToolCallingMiddleware, ToolCallingObserver,
+    ToolCallingRequest, ToolCallingResult, ToolCallingStopReason,
 };
 use super::tool_progress::{current_task_progress_message, ToolProgressScopeGuard};
 use crate::agent::resource_provider::SharedAgentResourceProvider;
@@ -81,6 +81,10 @@ pub struct ToolCallingEngine {
     llm: Arc<dyn LLMBase>,
     tools: Vec<Arc<dyn Tool>>,
     observer: Option<Arc<dyn ToolCallingObserver>>,
+    /// Absolute chain of enclosing tool call ids when this engine is the loop of a nested
+    /// agent. Sub-agents it calls extend this prefix, so every reported step stays addressable
+    /// from the turn root.
+    observer_path: Vec<String>,
     iteration_hook: Option<Arc<dyn ToolCallingMiddleware>>,
     long_task_context: Option<LongTaskContext>,
     cancellation: Option<Arc<dyn AgentCancellation>>,
@@ -94,6 +98,7 @@ impl ToolCallingEngine {
             llm,
             tools: Vec::new(),
             observer: None,
+            observer_path: Vec::new(),
             iteration_hook: None,
             long_task_context: None,
             cancellation: None,
@@ -152,6 +157,12 @@ impl ToolCallingEngine {
         self.observer = Some(observer);
     }
 
+    /// Declares the enclosing call chain this engine's steps belong to. Nested agents set
+    /// this to their own sub-agent call path so their tool calls nest one level deeper.
+    pub fn set_observer_path(&mut self, path: Vec<String>) {
+        self.observer_path = path;
+    }
+
     pub fn with_iteration_hook(mut self, hook: Arc<dyn ToolCallingMiddleware>) -> Self {
         self.iteration_hook = Some(hook);
         self
@@ -170,10 +181,15 @@ impl ToolCallingEngine {
         tool_name: &str,
         call_id: &str,
         observer: Option<&Arc<dyn ToolCallingObserver>>,
+        observer_path: &[String],
         long_task_context: Option<&LongTaskContext>,
         confirmation_gate: Option<&Mutex<()>>,
         agent_runtime_context: Option<AgentRuntimeContext>,
     ) -> ToolExecutionOutput {
+        // The tool body may run a nested agent with its own tool loop; this scope tells that
+        // loop which observer to report through and where it sits in the call tree.
+        let nested_scope =
+            tool_calling_types::nested_observer_scope(observer, observer_path, call_id);
         // Calls that block waiting for user confirmation must run serially so
         // that at most one confirmation dialog is shown at a time. The guard is
         // held across registration, confirmation event emission, and the wait.
@@ -200,10 +216,12 @@ impl ToolCallingEngine {
                 }
                 long_ctx.notifier.on_start(&task_id, &task_name, call_content);
                 let on_output = tool_output_callback(observer, tool_name, call_id);
-                let result = scope_agent_runtime_context(agent_runtime_context.clone(), || {
-                    scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
-                        scope_task_id(task_id.clone(), || {
-                            tool.execute_with_progress(call_content, arguments, on_output)
+                let result = tool_calling_types::scope_nested_observer(nested_scope, || {
+                    scope_agent_runtime_context(agent_runtime_context.clone(), || {
+                        scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
+                            scope_task_id(task_id.clone(), || {
+                                tool.execute_with_progress(call_content, arguments, on_output)
+                            })
                         })
                     })
                 });
@@ -235,8 +253,10 @@ impl ToolCallingEngine {
             }
         }
         let on_output = tool_output_callback(observer, tool_name, call_id);
-        scope_agent_runtime_context(agent_runtime_context, || {
-            tool.execute_with_progress(call_content, arguments, on_output)
+        tool_calling_types::scope_nested_observer(nested_scope, || {
+            scope_agent_runtime_context(agent_runtime_context, || {
+                tool.execute_with_progress(call_content, arguments, on_output)
+            })
         })
     }
 
@@ -315,6 +335,7 @@ impl ToolCallingEngine {
             call,
             self.long_task_context.as_ref(),
             self.observer.as_ref(),
+            &self.observer_path,
             Some(&self.confirmation_gate),
             self.agent_runtime_context.clone(),
         )
@@ -325,6 +346,7 @@ impl ToolCallingEngine {
         call: PreparedToolCall,
         long_task_context: Option<&LongTaskContext>,
         observer: Option<&Arc<dyn ToolCallingObserver>>,
+        observer_path: &[String],
         confirmation_gate: Option<&Mutex<()>>,
         agent_runtime_context: Option<AgentRuntimeContext>,
     ) -> PreparedToolResult {
@@ -336,6 +358,7 @@ impl ToolCallingEngine {
                 &call.name,
                 &call.call_id,
                 observer,
+                observer_path,
                 long_task_context,
                 confirmation_gate,
                 agent_runtime_context,
@@ -483,6 +506,10 @@ impl ToolCallingEngine {
             }
 
             self.log_llm_usage(&response);
+
+            if let Some(observer) = self.observer.as_ref() {
+                observer.on_assistant_message(iteration + 1, &response);
+            }
 
             if response.tool_calls.is_empty() {
                 if let Some(observer) = self.observer.as_ref() {
@@ -649,6 +676,7 @@ impl ToolCallingEngine {
             if iteration > 0 {
                 self.append_iteration_messages(iteration + 1, &mut conversation);
             }
+            self.compact_conversation_if_over_threshold(&mut conversation);
             let tools_param: Option<&Vec<Arc<dyn FunctionTool>>> = if tool_specs.is_empty() {
                 None
             } else {
@@ -709,6 +737,10 @@ impl ToolCallingEngine {
             }
 
             self.log_llm_usage(&response);
+
+            if let Some(observer) = self.observer.as_ref() {
+                observer.on_assistant_message(iteration + 1, &response);
+            }
 
             if response.tool_calls.is_empty() {
                 let response_preview = response.content_text_owned().unwrap_or_default();
@@ -782,6 +814,7 @@ impl ToolCallingEngine {
                 if Self::can_execute_in_parallel(&prepared_calls) {
                     let long_task_context = self.long_task_context.clone();
                     let observer_handle = self.observer.clone();
+                    let observer_path = self.observer_path.clone();
                     let confirmation_gate = Arc::clone(&self.confirmation_gate);
                     let cancellation = self.cancellation.clone();
                     let agent_runtime_context = self.agent_runtime_context.clone();
@@ -802,6 +835,7 @@ impl ToolCallingEngine {
                         let call_content = tool_call_content.clone();
                         let long_task_context = long_task_context.clone();
                         let task_observer = observer_handle.clone();
+                        let task_observer_path = observer_path.clone();
                         let gate = Arc::clone(&confirmation_gate);
                         let cancellation_guard = cancellation.clone();
                         let agent_runtime_context = agent_runtime_context.clone();
@@ -826,6 +860,7 @@ impl ToolCallingEngine {
                                 call,
                                 long_task_context.as_ref(),
                                 task_observer.as_ref(),
+                                &task_observer_path,
                                 Some(&*gate),
                                 agent_runtime_context,
                             )

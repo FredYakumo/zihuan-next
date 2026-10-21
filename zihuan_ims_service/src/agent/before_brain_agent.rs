@@ -203,6 +203,24 @@ impl ToolCallingObserver for ComposedToolCallingObserver {
             external.on_final_assistant(response, stop_reason);
         }
     }
+
+    fn on_assistant_message(&self, iteration: usize, response: &LLMMessage) {
+        self.trace.on_assistant_message(iteration, response);
+        if let Some(external) = &self.external {
+            external.on_assistant_message(iteration, response);
+        }
+    }
+
+    fn on_nested_event(
+        &self,
+        path: &[String],
+        event: &zihuan_core::agent::tools::NestedToolCallingEvent,
+    ) {
+        self.trace.on_nested_event(path, event);
+        if let Some(external) = &self.external {
+            external.on_nested_event(path, event);
+        }
+    }
 }
 
 fn run_preprompt(

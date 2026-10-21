@@ -8,7 +8,12 @@ import {
   type ServiceChatContextTurn,
   type ServiceChatUserItem,
 } from "../../api/client";
-import type { QqChatContextEvent, QqContextQuoted, TokenUsage } from "../../api/types";
+import type {
+  QqChatContextEvent,
+  QqContextQuoted,
+  QqSubAgentEntry,
+  TokenUsage,
+} from "../../api/types";
 import { ws } from "../../api/ws";
 
 export type ContextBackend = "memory" | "redis";
@@ -32,8 +37,20 @@ export interface ContextToolItem {
   running: boolean;
 }
 
+/**
+ * One step of a sub-agent's own tool-calling loop. `path` names the enclosing tool calls,
+ * outermost first, so the box it renders in can be nested and indented.
+ */
+export interface ContextSubAgentItem {
+  kind: "sub-agent";
+  id: string;
+  at: string;
+  path: string[];
+  event: QqSubAgentEntry;
+}
+
 /** A stage or tool call, kept in the order it happened so the flow reads chronologically. */
-export type ContextEntryItem = ContextStageItem | ContextToolItem;
+export type ContextEntryItem = ContextStageItem | ContextToolItem | ContextSubAgentItem;
 
 /** One turn of the conversation: the user message plus everything that followed it. */
 export interface ContextQuotedMessage {
@@ -71,6 +88,11 @@ export function useChatContext(serviceId: string) {
 
   const loadingContext = ref(false);
   const turns = ref<ContextTurnView[]>([]);
+  /**
+   * Partly written sub-agent messages, keyed by `turn id + call path`. A live stream keeps
+   * appending to the same entry; the settled message removes it.
+   */
+  const liveChunkEntries = new Map<string, ContextSubAgentItem>();
   /** Turns restored from the relational archive; shown above a divider, before the live window. */
   const archivedTurns = ref<ContextTurnView[]>([]);
   const inputTokens = ref(0);
@@ -107,6 +129,7 @@ export function useChatContext(serviceId: string) {
   function resetFlow() {
     turns.value = [];
     archivedTurns.value = [];
+    liveChunkEntries.clear();
     inputTokens.value = 0;
     outputTokens.value = 0;
     estimatedContextTokens.value = 0;
@@ -123,6 +146,16 @@ export function useChatContext(serviceId: string) {
           at: entry.at,
           stage: entry.stage,
           detail: entry.detail,
+        });
+        return;
+      }
+      if (entry.kind === "sub_agent") {
+        entries.push({
+          kind: "sub-agent",
+          id: `${turn.turn_id}:sub-agent:${index}`,
+          at: entry.at,
+          path: entry.path,
+          event: entry.event,
         });
         return;
       }
@@ -158,6 +191,8 @@ export function useChatContext(serviceId: string) {
     backend.value = response.backend;
     turns.value = response.turns.map(toTurnView);
     archivedTurns.value = (response.archived ?? []).map(toTurnView);
+    // The recorded log holds settled messages only, so any live entry it replaces is done.
+    liveChunkEntries.clear();
     inputTokens.value = response.input_tokens;
     outputTokens.value = response.output_tokens;
     estimatedContextTokens.value = response.estimated_context_tokens;
@@ -264,6 +299,45 @@ export function useChatContext(serviceId: string) {
         at: event.at,
         stage: event.stage,
         detail: event.detail,
+      });
+      return;
+    }
+    if (event.kind === "sub_agent") {
+      const turn = ensureTurn(event);
+      // Several sub-agents may stream at once, so each partly written message gets its own entry
+      // and is looked up by call path instead of by position.
+      const liveKey = `${event.turn_id}\u0000${event.path.join("\u0000")}`;
+      if (event.event.kind === "assistant_chunk") {
+        const existing = liveChunkEntries.get(liveKey);
+        if (existing && existing.event.kind === "assistant_chunk") {
+          existing.event = {
+            kind: "assistant_chunk",
+            content: existing.event.content + event.event.content,
+            reasoning: existing.event.reasoning + event.event.reasoning,
+          };
+          return;
+        }
+        const entry: ContextSubAgentItem = {
+          kind: "sub-agent",
+          id: `${event.turn_id}:sub-agent:${turn.entries.length}`,
+          at: event.at,
+          path: event.path,
+          event: event.event,
+        };
+        turn.entries.push(entry);
+        // Keep the reactive element, not the raw object pushed: later deltas mutate it in
+        // place, and only the proxy's writes re-render the flow.
+        liveChunkEntries.set(liveKey, turn.entries[turn.entries.length - 1] as ContextSubAgentItem);
+        return;
+      }
+      // The settled message replaces the live text; the next response streams into a new entry.
+      liveChunkEntries.delete(liveKey);
+      turn.entries.push({
+        kind: "sub-agent",
+        id: `${event.turn_id}:sub-agent:${turn.entries.length}`,
+        at: event.at,
+        path: event.path,
+        event: event.event,
       });
       return;
     }

@@ -1612,6 +1612,12 @@ enum ContextTurnEntry {
         #[serde(skip_serializing_if = "Option::is_none")]
         duration_ms: Option<u128>,
     },
+    /// One step of a sub-agent's own flow, nested under the tool call named by `path`.
+    SubAgent {
+        at: String,
+        path: Vec<String>,
+        event: zihuan_core::qq_context::QqChatSubAgentEntry,
+    },
 }
 
 fn context_media_from_ref(
@@ -1669,6 +1675,9 @@ fn archived_turn_to_context(
                     result,
                     duration_ms,
                 },
+                zihuan_core::qq_context::QqChatTurnEntry::SubAgent { at, path, event } => {
+                    ContextTurnEntry::SubAgent { at, path, event }
+                }
             })
             .collect(),
         assistant_text: turn.assistant_text,
@@ -1843,6 +1852,9 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
                             result,
                             duration_ms,
                         },
+                        zihuan_core::qq_context::QqChatTurnEntry::SubAgent { at, path, event } => {
+                            ContextTurnEntry::SubAgent { at, path, event }
+                        }
                     })
                     .collect(),
                 assistant_text: turn.assistant_text,
