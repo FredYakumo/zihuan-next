@@ -117,7 +117,7 @@ pub(crate) fn plugin_from_request(request: &InstallPluginRequest, status: &str) 
         );
     }
     PluginRecord {
-        id: default_plugin_id(),
+        id: reusable_plugin_id(&request.name.trim().to_string()).unwrap_or_else(default_plugin_id),
         name: request.name.trim().to_string(),
         version: request.version.trim().to_string(),
         installed_at: now.clone(),
@@ -128,6 +128,49 @@ pub(crate) fn plugin_from_request(request: &InstallPluginRequest, status: &str) 
         connection_ids: Vec::new(),
         updated_at: now,
     }
+}
+
+/// A retry of a failed or still pending installation must update the existing
+/// record instead of appending a second plugin with the same name.
+fn reusable_plugin_id(name: &str) -> Option<String> {
+    load_plugins().ok()?.into_iter().find_map(|item| {
+        if item.name == name && matches!(item.status.as_str(), "failed" | "installing") {
+            Some(item.id)
+        } else {
+            None
+        }
+    })
+}
+
+/// Finds the record owning a plugin name. A usable record wins over a leftover
+/// `failed`/`installing` one so a retry cannot extend a legacy duplicate name.
+fn find_plugin_by_name(name: &str) -> Result<Option<PluginRecord>, String> {
+    let mut fallback = None;
+    for item in load_plugins()? {
+        if item.name != name {
+            continue;
+        }
+        if !matches!(item.status.as_str(), "failed" | "installing") {
+            return Ok(Some(item));
+        }
+        fallback.get_or_insert(item);
+    }
+    Ok(fallback)
+}
+
+/// Reports whether the background task recorded on a plugin is still running.
+/// A record left in `installing` by a crashed process has no live task and may
+/// be retried, while a retry during a real install is rejected.
+fn has_live_install_task(depot: &Depot, plugin: &PluginRecord) -> bool {
+    let Some(task_id) =
+        plugin.extra_install_metadata.get("install_task_id").and_then(Value::as_str)
+    else {
+        return false;
+    };
+    depot
+        .obtain::<Arc<AppState>>()
+        .map(|state| state.setup_tasks.lock().unwrap().contains_key(task_id))
+        .unwrap_or(false)
 }
 
 pub(crate) fn save_plugin_record(plugin: &PluginRecord) -> Result<(), String> {
@@ -245,6 +288,26 @@ pub async fn install_plugin(req: &mut Request, res: &mut Response, depot: &mut D
             "Plugin name, version and component type are required".to_string(),
         );
     }
+    match find_plugin_by_name(request.name.trim()) {
+        Ok(Some(existing))
+            if existing.status == "installing" && has_live_install_task(depot, &existing) =>
+        {
+            return render_error(
+                res,
+                StatusCode::CONFLICT,
+                format!("Plugin '{}' is still being installed", existing.name),
+            )
+        }
+        Ok(Some(existing)) if !matches!(existing.status.as_str(), "failed" | "installing") => {
+            return render_error(
+                res,
+                StatusCode::CONFLICT,
+                format!("Plugin '{}' already exists", existing.name),
+            )
+        }
+        Ok(_) => {}
+        Err(error) => return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error),
+    }
     if let Some(installer) = special_installers::installer_for(&request.component_type) {
         return match installer.install(&request).await {
             Ok(plugin) => res.render(Json(serde_json::json!({ "plugin": plugin }))),
@@ -341,37 +404,49 @@ pub async fn install_plugin(req: &mut Request, res: &mut Response, depot: &mut D
     state.setup_tasks.lock().unwrap().insert(task_id.clone(), progress_tx.clone());
     let orchestrator = SetupOrchestrator::new(task_id.clone(), progress_tx);
     let plugin_id = plugin.id.clone();
+    plugin.extra_install_metadata["install_task_id"] = Value::String(task_id.clone());
+    if let Err(error) = save_plugin_record(&plugin) {
+        return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error);
+    }
     tokio::spawn(async move {
         let result = orchestrator.run_detailed(detailed_config).await;
-        let mut current = match find_plugin(&plugin_id) {
-            Ok(value) => value,
-            Err(_) => return,
-        };
-        match result {
-            Ok(()) => {
-                if let Some(path) =
-                    current.extra_install_metadata.get("compose_path").and_then(Value::as_str)
-                {
-                    let source = zihuan_core::system_config::application_data_dir()
-                        .join("detailed-compose.yaml");
-                    let _ = tokio::fs::copy(source, path).await;
+        // A retry reuses the record, so a stale task must not overwrite the
+        // status of the attempt that currently owns it.
+        if let Ok(mut current) = find_plugin(&plugin_id) {
+            let owns_record =
+                current.extra_install_metadata.get("install_task_id").and_then(Value::as_str)
+                    == Some(task_id_for_task.as_str());
+            if owns_record {
+                match result {
+                    Ok(()) => {
+                        if let Some(path) = current
+                            .extra_install_metadata
+                            .get("compose_path")
+                            .and_then(Value::as_str)
+                        {
+                            let source = zihuan_core::system_config::application_data_dir()
+                                .join("detailed-compose.yaml");
+                            let _ = tokio::fs::copy(source, path).await;
+                        }
+                        if let Ok(connections) = storage::load_connections() {
+                            current.connection_ids = connections
+                                .iter()
+                                .filter(|c| c.name.starts_with("setup-detailed-"))
+                                .map(|c| c.config_id.clone())
+                                .collect();
+                        }
+                        current.status = "installed".to_string();
+                        current.updated_at = chrono::Utc::now().to_rfc3339();
+                        let _ = save_plugin_record(&current);
+                    }
+                    Err(error) => {
+                        current.status = "failed".to_string();
+                        current.extra_install_metadata["last_error"] = Value::String(error.clone());
+                        current.updated_at = chrono::Utc::now().to_rfc3339();
+                        let _ = save_plugin_record(&current);
+                        orchestrator.emit("failed", "error", &error, None);
+                    }
                 }
-                if let Ok(connections) = storage::load_connections() {
-                    current.connection_ids = connections
-                        .iter()
-                        .filter(|c| c.name.starts_with("setup-detailed-"))
-                        .map(|c| c.config_id.clone())
-                        .collect();
-                }
-                current.status = "installed".to_string();
-                current.updated_at = chrono::Utc::now().to_rfc3339();
-                let _ = save_plugin_record(&current);
-            }
-            Err(error) => {
-                current.status = "failed".to_string();
-                current.extra_install_metadata["last_error"] = Value::String(error);
-                current.updated_at = chrono::Utc::now().to_rfc3339();
-                let _ = save_plugin_record(&current);
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;

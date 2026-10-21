@@ -19,8 +19,9 @@ use crate::storage::{
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 const CONNECT_TIMEOUT_SECS: u64 = 5;
 /// Index initialization right after a container starts; the HTTP API becomes
-/// reachable slightly after the socket does.
-const INDEX_STARTUP_RETRY_TIMEOUT: Duration = Duration::from_secs(30);
+/// reachable slightly after the socket does and answers 503 until the cluster
+/// finishes forming.
+const INDEX_STARTUP_RETRY_TIMEOUT: Duration = Duration::from_secs(60);
 const INDEX_CHECK_RETRY_DELAY: Duration = Duration::from_secs(1);
 const MAX_QUERY_CANDIDATES: usize = 100;
 
@@ -147,7 +148,16 @@ pub fn ensure_elasticsearch_index(
     let deadline = std::time::Instant::now() + INDEX_STARTUP_RETRY_TIMEOUT;
     let exists = loop {
         match reference.client.head(&index_url).send() {
-            Ok(response) => break response.status().is_success(),
+            Ok(response) => {
+                let status = response.status();
+                // A cluster that is still forming reports itself as unavailable
+                // with 503; that is a startup state, not a missing index.
+                if status.is_server_error() && std::time::Instant::now() < deadline {
+                    std::thread::sleep(INDEX_CHECK_RETRY_DELAY);
+                    continue;
+                }
+                break status.is_success();
+            }
             Err(error) => {
                 let retryable = error.is_timeout() || !error.is_connect();
                 if !retryable || std::time::Instant::now() >= deadline {

@@ -152,6 +152,22 @@ export function usePluginsPage() {
   }
   async function install() {
     if (!form.name.trim()) { error.value = "请填写插件名称"; return; }
+    // The retry button is only offered from the progress step. The background
+    // task may have finished regardless of the stream state, so check the
+    // record before submitting a second installation for the same name.
+    if (installStep.value === "progress") {
+      try {
+        const list = await pluginsApi.list();
+        const existing = list.find((item) => item.name === form.name.trim());
+        if (existing?.status === "installed") {
+          plugins.value = list;
+          await showInstallationSuccess(installAttempt, metadataString(existing, "install_command") ?? undefined, existing.extra_install_metadata?.connection_config);
+          return;
+        }
+      } catch {
+        // Fall through and let the install request report the real problem.
+      }
+    }
     const showProgress = form.component_type !== "sqlite" && (form.install_method === "docker" || form.install_method === "binary");
     const attempt = ++installAttempt;
     clearInstallationSideEffects();
@@ -189,10 +205,30 @@ export function usePluginsPage() {
               void showInstallationSuccess(attempt, result.install_command, result.connections);
             }, 500);
           }
-        }, () => {
+        }, async () => {
           if (attempt !== installAttempt || !saving.value) return;
           clearInstallationSideEffects();
           saving.value = false;
+          // The task may have finished right before the stream closed; read the
+          // record back so the dialog reports the real outcome instead of a
+          // misleading disconnection warning.
+          try {
+            const list = await pluginsApi.list();
+            if (attempt !== installAttempt) return;
+            plugins.value = list;
+            const record = list.find((item) => item.id === result.plugin?.id);
+            if (record?.status === "installed") {
+              await showInstallationSuccess(attempt, result.install_command, result.connections);
+              return;
+            }
+            if (record?.status === "failed") {
+              const lastError = record.extra_install_metadata?.last_error;
+              error.value = typeof lastError === "string" && lastError.trim() ? lastError : "安装失败。";
+              return;
+            }
+          } catch {
+            // Fall through to the generic disconnection message.
+          }
           error.value = "安装进度连接已断开。后台任务可能仍在运行，请返回插件列表确认状态后再重试。";
         });
         return;
@@ -208,6 +244,7 @@ export function usePluginsPage() {
   }
   async function toggle(plugin: PluginRecord) { try { const result = plugin.status === "installed" ? await pluginsApi.disable(plugin.id) : await pluginsApi.enable(plugin.id); if (result.command) { await navigator.clipboard.writeText(result.command); window.alert(`命令已复制：\n${result.command}`); } await load(); } catch (e) { error.value = String(e); } }
   function metadataString(plugin: PluginRecord, key: string): string | null { const value = plugin.extra_install_metadata?.[key]; return typeof value === "string" && value.trim() ? value : null; }
+  function statusTitle(plugin: PluginRecord): string | undefined { return plugin.status === "failed" ? metadataString(plugin, "last_error") ?? undefined : undefined; }
   function installCommand(plugin: PluginRecord): string | null { return metadataString(plugin, "install_command"); }
   function connectionConfigJson(plugin: PluginRecord): string | null { const value = plugin.extra_install_metadata?.connection_config; return value == null ? null : JSON.stringify(value, null, 2); }
   async function copyPluginValue(value: string, label: string) { try { await navigator.clipboard.writeText(value); } catch (e) { error.value = `复制${label}失败：${String(e)}`; } }
@@ -245,6 +282,7 @@ export function usePluginsPage() {
     columns,
     statusLabel,
     statusTheme,
+    statusTitle,
     load,
     selectComponent,
     openInstall,

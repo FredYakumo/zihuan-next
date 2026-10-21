@@ -1545,26 +1545,42 @@ fn elasticsearch_supports_schema(schema: RetrievalSchema) -> bool {
     !matches!(schema, RetrievalSchema::QqMessage)
 }
 
+/// Startup budgets for [verify_detailed_connections]. Containers report a
+/// running state long before their protocol port answers, and a wizard-installed
+/// Elasticsearch container installs analyzer plugins before it even boots, so
+/// each component gets a budget that matches its real cold start.
+const MYSQL_VERIFY_TIMEOUT: Duration = Duration::from_secs(120);
+const RUSTFS_VERIFY_TIMEOUT: Duration = Duration::from_secs(60);
+const REDIS_VERIFY_TIMEOUT: Duration = Duration::from_secs(60);
+const WEAVIATE_VERIFY_TIMEOUT: Duration = Duration::from_secs(120);
+const ELASTICSEARCH_VERIFY_TIMEOUT: Duration = Duration::from_secs(240);
+
 async fn verify_detailed_connections(config: &DetailedSetupConfig) -> Result<(), String> {
     if config.relational.enabled && config.relational.database_type == "mysql" {
-        wait_for_tcp(&config.relational.host, config.relational.deployment.port, "MySQL").await?;
+        wait_for_tcp(
+            &config.relational.host,
+            config.relational.deployment.port,
+            "MySQL",
+            MYSQL_VERIFY_TIMEOUT,
+        )
+        .await?;
     }
     if config.rustfs.enabled {
         let (host, port) = endpoint_host_port(&config.rustfs.endpoint, 9000)?;
-        wait_for_tcp(&host, port, "RustFS").await?;
+        wait_for_tcp(&host, port, "RustFS", RUSTFS_VERIFY_TIMEOUT).await?;
     }
     if config.search.enabled {
-        let default_port = if config.search.search_type == "elasticsearch" {
-            9200
+        let (default_port, timeout) = if config.search.search_type == "elasticsearch" {
+            (9200, ELASTICSEARCH_VERIFY_TIMEOUT)
         } else {
-            8080
+            (8080, WEAVIATE_VERIFY_TIMEOUT)
         };
         let (host, port) = endpoint_host_port(&config.search.base_url, default_port)?;
-        wait_for_tcp(&host, port, "search database").await?;
+        wait_for_tcp(&host, port, "search database", timeout).await?;
     }
     if config.redis.enabled {
         let (host, port) = endpoint_host_port(&config.redis.url, 6379)?;
-        wait_for_tcp(&host, port, "Redis").await?;
+        wait_for_tcp(&host, port, "Redis", REDIS_VERIFY_TIMEOUT).await?;
     }
     Ok(())
 }
@@ -1590,14 +1606,26 @@ fn endpoint_host_port(value: &str, default_port: u16) -> Result<(String, u16), S
     Ok((authority.to_string(), default_port))
 }
 
-async fn wait_for_tcp(host: &str, port: u16, service: &str) -> Result<(), String> {
-    for _ in 0..15 {
+async fn wait_for_tcp(
+    host: &str,
+    port: u16,
+    service: &str,
+    timeout: Duration,
+) -> Result<(), String> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
         if tokio::net::TcpStream::connect((host, port)).await.is_ok() {
             return Ok(());
         }
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
-    Err(format!("Could not connect to {service} at {host}:{port}. Start the service and retry using '使用现有配置'."))
+    Err(format!(
+        "Could not connect to {service} at {host}:{port} within {} seconds. Ensure the service is running and the address and port are correct.",
+        timeout.as_secs()
+    ))
 }
 
 #[derive(Clone, Deserialize, Default)]

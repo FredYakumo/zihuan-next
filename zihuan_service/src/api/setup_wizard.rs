@@ -234,13 +234,27 @@ pub async fn stream_setup_progress(req: &mut Request, res: &mut Response, depot:
     res.body = body;
 
     tokio::spawn(async move {
-        while let Ok(event) = rx.recv().await {
-            let data = format!("data: {}\n\n", serde_json::to_string(&event).unwrap_or_default());
-            if sender.send_data(data).await.is_err() {
-                break;
-            }
-            if event.step == "finished" || event.status == "error" {
-                break;
+        loop {
+            match tokio::time::timeout(std::time::Duration::from_secs(15), rx.recv()).await {
+                Ok(Ok(event)) => {
+                    let data =
+                        format!("data: {}\n\n", serde_json::to_string(&event).unwrap_or_default());
+                    if sender.send_data(data).await.is_err() {
+                        break;
+                    }
+                    if event.step == "finished" || event.status == "error" {
+                        break;
+                    }
+                }
+                Ok(Err(_)) => break,
+                // A component install can stay silent for minutes while a
+                // container pulls an image or finishes booting; keep the stream
+                // alive so clients do not treat the idle period as a disconnect.
+                Err(_) => {
+                    if sender.send_data(": keep-alive\n\n".to_string()).await.is_err() {
+                        break;
+                    }
+                }
             }
         }
     });

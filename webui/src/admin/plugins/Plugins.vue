@@ -4,7 +4,7 @@
     <t-card title="已安装插件" bordered header-bordered>
       <template #actions><t-button theme="primary" @click="openInstall">安装插件</t-button></template>
       <t-table :data="plugins" :columns="columns" row-key="id" :loading="loading" :pagination="false" size="small">
-        <template #status="{ row }"><t-tag :theme="statusTheme(row.status)" variant="light">{{ statusLabel(row.status) }}</t-tag></template>
+        <template #status="{ row }"><t-tag :theme="statusTheme(row.status)" variant="light" :title="statusTitle(row)">{{ statusLabel(row.status) }}</t-tag></template>
         <template #connection_ids="{ row }"><span>{{ row.connection_ids?.length ?? 0 }} 个连接</span></template>
         <template #actions="{ row }"><t-space size="small"><t-button v-if="installCommand(row)" variant="text" @click="copyPluginValue(installCommand(row)!, '安装命令')"><template #icon><CopyIcon /></template>复制安装命令</t-button><t-button v-if="connectionConfigJson(row)" variant="text" @click="copyPluginValue(connectionConfigJson(row)!, '连接 JSON')"><template #icon><CopyIcon /></template>复制连接 JSON</t-button><t-button v-if="row.status === 'installed'" variant="text" @click="toggle(row)">停用</t-button><t-button v-else-if="row.status === 'disabled'" variant="text" @click="toggle(row)">启用</t-button><t-popconfirm content="确认卸载插件并删除关联连接吗？" @confirm="removePlugin(row.id)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></t-space></template>
       </t-table>
@@ -176,6 +176,7 @@ const {
   columns,
   statusLabel,
   statusTheme,
+  statusTitle,
   selectComponent,
   openInstall,
   requestCloseInstall,
