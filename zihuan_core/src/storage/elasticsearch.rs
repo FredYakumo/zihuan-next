@@ -220,10 +220,45 @@ pub fn create_elasticsearch_memory_record(
     let document = json!({"key": key, "value": value, "embedding": vector, "expires_at": input.expires_at, "sender_id_list": input.sender_id_list, "group_id_list": input.group_id_list, "created_at": now, "updated_at": now});
     reference.request(
         reqwest::Method::PUT,
-        &format!("/{}/_doc/{}", reference.index_name, object_id),
+        &format!("/{}/_doc/{}?refresh=wait_for", reference.index_name, object_id),
         Some(document),
     )?;
-    get_memory_record(reference, &object_id)
+    get_elasticsearch_memory_record(reference, &object_id)
+}
+
+pub fn update_elasticsearch_memory_record(
+    reference: &ElasticsearchRef,
+    object_id: &str,
+    input: &AgentMemoryUpsert,
+    vector: Vec<f32>,
+) -> Result<AgentMemoryRecord> {
+    validate_vector(reference, &vector)?;
+    let key = input.key.trim();
+    let value = input.value.trim();
+    if key.is_empty() || value.is_empty() {
+        return Err(Error::ValidationError("memory title and value must not be empty".to_string()));
+    }
+    let existing = get_elasticsearch_memory_record(reference, object_id)?;
+    let now = Utc::now().to_rfc3339();
+    let document = json!({"key": key, "value": value, "embedding": vector, "expires_at": input.expires_at, "sender_id_list": input.sender_id_list, "group_id_list": input.group_id_list, "created_at": existing.created_at, "updated_at": now});
+    reference.request(
+        reqwest::Method::PUT,
+        &format!("/{}/_doc/{}?refresh=wait_for", reference.index_name, object_id),
+        Some(document),
+    )?;
+    get_elasticsearch_memory_record(reference, object_id)
+}
+
+pub fn delete_elasticsearch_memory_record(
+    reference: &ElasticsearchRef,
+    object_id: &str,
+) -> Result<()> {
+    reference.request(
+        reqwest::Method::DELETE,
+        &format!("/{}/_doc/{}?refresh=wait_for", reference.index_name, object_id),
+        None,
+    )?;
+    Ok(())
 }
 
 pub fn upsert_elasticsearch_image(
@@ -438,7 +473,10 @@ fn parse_memory_hits(
     Ok(hits)
 }
 
-fn get_memory_record(reference: &ElasticsearchRef, object_id: &str) -> Result<AgentMemoryRecord> {
+pub fn get_elasticsearch_memory_record(
+    reference: &ElasticsearchRef,
+    object_id: &str,
+) -> Result<AgentMemoryRecord> {
     let value = reference.request(
         reqwest::Method::GET,
         &format!("/{}/_doc/{}", reference.index_name, object_id),

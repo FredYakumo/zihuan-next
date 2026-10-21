@@ -124,13 +124,26 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
   }
 
   async function mutateMemory(kind: "create" | "edit" | "delete", item?: ServiceExplorerMemoryRecord) {
+    if (!memory.value.mutable) return;
     const currentService = service.value;
     const connectionId = currentService ? retrievalStoreConnectionId(currentService) : "";
-    const embeddingModelRefId = currentService ? stringConfig(currentService, "embedding_model_ref_id") : "";
-    if (!connectionId || !embeddingModelRefId || !memory.value.mutable) return;
+    if (!connectionId) {
+      alert("当前 Service 未配置记忆检索连接");
+      return;
+    }
     if (kind === "delete") {
-      if (item && window.confirm("确认删除这条记忆吗？")) await explorer.deleteAgentMemory(connectionId, item.object_id);
-      await searchMemories();
+      if (!item || !window.confirm("确认删除这条记忆吗？")) return;
+      try {
+        await explorer.deleteAgentMemory(connectionId, item.object_id);
+        await searchMemories();
+      } catch (error: unknown) {
+        alert((error as Error).message);
+      }
+      return;
+    }
+    const embeddingModelRefId = currentService ? stringConfig(currentService, "embedding_model_ref_id") : "";
+    if (!embeddingModelRefId) {
+      alert("创建或编辑记忆前请先为 Service 选择 Text Embedding 模型");
       return;
     }
     const title = window.prompt("记忆标题", item?.title ?? "");
@@ -145,9 +158,13 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
       sender_id_list: (sender ?? "").split(",").map((value) => value.trim()).filter(Boolean),
       group_id_list: (group ?? "").split(",").map((value) => value.trim()).filter(Boolean),
     };
-    if (kind === "create") await explorer.createAgentMemory(connectionId, embeddingModelRefId, payload);
-    if (kind === "edit" && item) await explorer.updateAgentMemory(connectionId, embeddingModelRefId, item.object_id, payload);
-    await searchMemories();
+    try {
+      if (kind === "create") await explorer.createAgentMemory(connectionId, embeddingModelRefId, payload);
+      if (kind === "edit" && item) await explorer.updateAgentMemory(connectionId, embeddingModelRefId, item.object_id, payload);
+      await searchMemories();
+    } catch (error: unknown) {
+      alert((error as Error).message);
+    }
   }
 
   onMounted(async () => {
