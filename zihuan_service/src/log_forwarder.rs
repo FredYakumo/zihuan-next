@@ -50,7 +50,13 @@ impl Log for LogForwarder {
             let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
             if let Some(task_id) = current_task_id() {
                 if let Some(state) = APP_STATE.get() {
-                    
+                    // Fix: use `try_lock` and skip the task log when the lock is taken instead
+                    // of blocking. The panic hook runs before unwinding, so the panicking thread
+                    // may still hold this lock; waiting with `lock()` there deadlocks against the
+                    // same thread's panic and freezes WebSocket log forwarding too, which hides
+                    // the panic instead of surfacing it.
+                    //
+                    // Previous implementation (blocking, deadlock risk on the panic path):
                     // let _ = state.tasks.lock().unwrap().append_task_log(
                     //     &task_id,
                     //     &TaskLogEntry {
@@ -59,9 +65,6 @@ impl Log for LogForwarder {
                     //         message: message.clone(),
                     //     },
                     // );
-
-                    // Never block here: a panic hook logs before unwinding, so a record emitted
-                    // by a thread that panicked while holding this lock must not wait for it.
                     if let Ok(tasks) = state.tasks.try_lock() {
                         let _ = tasks.append_task_log(
                             &task_id,

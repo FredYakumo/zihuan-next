@@ -97,14 +97,47 @@ impl ElasticsearchRef {
                 );
             }
         }
-        let builder = Client::builder()
-            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-            .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
-            .default_headers(headers);
+        // Fix: `reqwest::blocking::ClientBuilder::build()` creates and immediately drops a
+        // temporary current-thread tokio runtime in debug builds (see reqwest
+        // `blocking::wait::enter`) to assert the caller is not blocking an async thread.
+        // Dropping a runtime from within an entered async context panics with
+        // "Cannot drop a runtime in a context where blocking is not allowed".
+        //
+        // This function is called synchronously from tokio async handlers (for example the
+        // Data Explorer memory and image endpoints, which build a reference per request). The
+        // panic aborted the handler task before any response was written, so the connection was
+        // reset and the frontend only saw `Failed to fetch`.
+        //
+        // Building the client on a thread spawned by `run_outside_async_runtime` avoids the
+        // problem: that thread has no entered async context, so the temporary runtime is created
+        // and dropped safely. Every caller works afterwards, whether it is an async handler, a
+        // blocking thread, or a scheduled job. The `request()` method below already re-entered
+        // through the same helper for each HTTP call; this was the missing construction step.
+        //
+        // Previous implementation (built on the calling thread, panics in an async context):
+        // let builder = Client::builder()
+        //     .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        //     .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
+        //     .default_headers(headers);
+        // Ok(Self {
+        //     client: builder.build().map_err(|error| {
+        //         crate::string_error!("build elasticsearch client failed: {error}")
+        //     })?,
+        //     base_url,
+        //     index_name: schema.elasticsearch_index_name().to_string(),
+        //     schema,
+        //     vector_dimensions: config.vector_dimensions,
+        // })
+        let client = crate::runtime::run_outside_async_runtime(|| {
+            Client::builder()
+                .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+                .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
+                .default_headers(headers)
+                .build()
+                .map_err(|error| crate::string_error!("build elasticsearch client failed: {error}"))
+        })?;
         Ok(Self {
-            client: builder.build().map_err(|error| {
-                crate::string_error!("build elasticsearch client failed: {error}")
-            })?,
+            client,
             base_url,
             index_name: schema.elasticsearch_index_name().to_string(),
             schema,
