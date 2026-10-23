@@ -111,24 +111,27 @@ async fn main() {
     spawn_task_ttl_cleanup(Arc::clone(&state));
 
     {
-        let agents = crate::system_config::load_role_services().unwrap_or_else(|e| {
-            error!("Failed to load agents for auto start: {e}");
+        let role_services = crate::system_config::load_role_services().unwrap_or_else(|e| {
+            error!("Failed to load role services for auto start: {e}");
             Vec::new()
         });
         let connections = crate::system_config::load_connections().unwrap_or_else(|e| {
             error!("Failed to load connections for auto start: {e}");
             Vec::new()
         });
-        for agent in agents.into_iter().filter(|a| a.enabled && a.auto_start) {
-            if let Err(err) = api::config::role_services::start_role_service(
+        for role_service in role_services.into_iter().filter(|a| a.enabled && a.auto_start) {
+            if let Err(err) = api::config::role_services::start_role_service_runtime(
                 Arc::clone(&state),
                 broadcast.clone(),
-                &agent,
+                &role_service,
                 connections.clone(),
             )
             .await
             {
-                error!("Failed to auto start agent '{}' (id={}): {}", agent.name, agent.id, err);
+                error!(
+                    "Failed to auto start role service '{}' (id={}): {}",
+                    role_service.name, role_service.id, err
+                );
             }
         }
     }

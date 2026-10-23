@@ -55,12 +55,12 @@ pub fn optional_workspace(
     workspace_of(role_service_type).ok()
 }
 
-pub fn is_workspace_agent(agent: &RoleServiceConfig) -> bool {
-    is_workspace(&agent.role_service_type)
+pub fn is_workspace_role_service(role_service: &RoleServiceConfig) -> bool {
+    is_workspace(&role_service.role_service_type)
 }
 
-pub fn is_qq_chat_agent(agent: &RoleServiceConfig) -> bool {
-    is_qq_chat(&agent.role_service_type)
+pub fn is_qq_chat_role_service(role_service: &RoleServiceConfig) -> bool {
+    is_qq_chat(&role_service.role_service_type)
 }
 
 /// Both QQ and workspace payloads carry a primary `llm_ref_id` at the top level.
@@ -72,14 +72,16 @@ pub fn primary_llm_ref_id(role_service_type: &RoleServiceType) -> Option<String>
 
 /// The retrieval-store connection and embedding model a service resolves against. Only QQ
 /// and workspace payloads carry them; anything else resolves to a pair of `None`s.
-pub fn retrieval_store_config(agent: &RoleServiceConfig) -> (Option<String>, Option<String>) {
-    if let Some(config) = optional_qq_chat(&agent.role_service_type) {
+pub fn retrieval_store_config(
+    role_service: &RoleServiceConfig,
+) -> (Option<String>, Option<String>) {
+    if let Some(config) = optional_qq_chat(&role_service.role_service_type) {
         return (
             config.retrieval_store_connection_id().map(ToOwned::to_owned),
             config.embedding_model_ref_id,
         );
     }
-    if let Some(config) = optional_workspace(&agent.role_service_type) {
+    if let Some(config) = optional_workspace(&role_service.role_service_type) {
         return (
             config.retrieval_store_connection_id().map(ToOwned::to_owned),
             config.embedding_model_ref_id,
@@ -89,9 +91,9 @@ pub fn retrieval_store_config(agent: &RoleServiceConfig) -> (Option<String>, Opt
 }
 
 /// RustFS connection the service caches its media into; preview URLs name it so the media proxy
-/// reads from the same bucket the agent wrote to. Only QQ payloads configure it.
-pub fn object_storage_connection_id(agent: &RoleServiceConfig) -> Option<String> {
-    optional_qq_chat(&agent.role_service_type)
+/// reads from the same bucket the role service wrote to. Only QQ payloads configure it.
+pub fn object_storage_connection_id(role_service: &RoleServiceConfig) -> Option<String> {
+    optional_qq_chat(&role_service.role_service_type)
         .and_then(|config| config.rustfs_connection_id)
         .filter(|value| !value.trim().is_empty())
 }

@@ -1323,7 +1323,8 @@ async fn execute_chat_streaming(
     let assistant_message_id =
         requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
 
-    let workspace_task = if should_run_inference && zihuan_service::role::is_workspace_agent(&agent)
+    let workspace_task = if should_run_inference
+        && zihuan_service::role::is_workspace_role_service(&agent)
     {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let task_id = state.tasks.lock().unwrap().add_workspace_chat_task(
@@ -1481,7 +1482,7 @@ async fn execute_chat_streaming(
             // triggers keyed by session); the scheduler no-ops when the agent registered none.
             // QQ chat agents arm their jobs from adapter events keyed by real sender ids, so
             // dashboard turns must not re-arm them under session ids.
-            if zihuan_service::role::is_workspace_agent(role_service.agent()) {
+            if zihuan_service::role::is_workspace_role_service(role_service.agent()) {
                 zihuan_core::scheduler::rearm_triggered_jobs(&agent_id, &turn_session_id);
             }
             // Bind this turn's model overrides into a turn-scoped agent at inference time, so
@@ -1687,7 +1688,7 @@ async fn execute_chat_streaming(
         if let Some((task_id, _)) = &workspace_task {
             finish_workspace_task(&state, &broadcast_tx, task_id, TaskStatus::Stopped, None, None);
         }
-        if zihuan_service::role::is_workspace_agent(&agent) {
+        if zihuan_service::role::is_workspace_role_service(&agent) {
             if let Err(error) = interrupt_workspace_tasks(&session_id, "用户手动停止推理") {
                 log::warn!("failed to interrupt workspace tasks: {error}");
             }
@@ -2592,7 +2593,7 @@ fn resolve_effective_workspace_path(
     session_id: Option<&str>,
     requested_workspace_path: Option<&str>,
 ) -> Result<Option<String>> {
-    if !zihuan_service::role::is_workspace_agent(&agent) {
+    if !zihuan_service::role::is_workspace_role_service(&agent) {
         return Ok(None);
     }
 

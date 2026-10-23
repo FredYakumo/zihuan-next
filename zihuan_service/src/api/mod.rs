@@ -101,8 +101,8 @@ pub fn build_router(
                 )
                 .push(
                     Router::with_path("services")
-                        .get(config::role_services::list_agents)
-                        .post(config::role_services::create_agent)
+                        .get(config::role_services::list_role_services)
+                        .post(config::role_services::create_role_service)
                         .push(
                             Router::with_path("avatar")
                                 .post(config::role_services::upload_avatar)
@@ -113,36 +113,36 @@ pub fn build_router(
                         )
                         .push(
                             Router::with_path("<id>")
-                                .put(config::role_services::update_agent)
-                                .delete(config::role_services::delete_agent)
+                                .put(config::role_services::update_role_service)
+                                .delete(config::role_services::delete_role_service)
                                 .push(
                                     Router::with_path("start")
-                                        .post(config::role_services::start_agent),
+                                        .post(config::role_services::start_role_service),
                                 )
                                 .push(
                                     Router::with_path("stop")
-                                        .post(config::role_services::stop_agent),
+                                        .post(config::role_services::stop_role_service),
                                 )
                                 .push(
                                     Router::with_path("avatar/sync")
-                                        .post(config::role_services::sync_agent_avatar),
+                                        .post(config::role_services::sync_role_avatar),
                                 )
                                 .push(
                                     Router::with_path("notifications")
-                                        .get(config::role_services::list_agent_notifications)
-                                        .delete(config::role_services::delete_agent_notifications),
+                                        .get(config::role_services::list_role_service_notifications)
+                                        .delete(config::role_services::delete_role_service_notifications),
                                 )
                                 .push(
                                     Router::with_path("ignore-rules")
-                                        .get(config::role_services::list_agent_ignore_rules)
-                                        .post(config::role_services::create_agent_ignore_rule)
+                                        .get(config::role_services::list_role_service_ignore_rules)
+                                        .post(config::role_services::create_role_service_ignore_rule)
                                         .push(
                                             Router::with_path("<rule_id>")
                                                 .put(
-                                                    config::role_services::update_agent_ignore_rule,
+                                                    config::role_services::update_role_service_ignore_rule,
                                                 )
                                                 .delete(
-                                                    config::role_services::delete_agent_ignore_rule,
+                                                    config::role_services::delete_role_service_ignore_rule,
                                                 ),
                                         ),
                                 ),
