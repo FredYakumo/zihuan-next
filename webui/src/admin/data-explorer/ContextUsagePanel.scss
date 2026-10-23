@@ -7,9 +7,11 @@
     --usage-color: var(--admin-accent);
 
     /* Floats in the top-right corner of the viewport; `.context-detail` reserves the same
-       width on its right so the turn flow never runs underneath it. */
+       width on its right so the turn flow never runs underneath it. The top offset leaves
+       room for the stage badge pinned near the content's top edge (`.context-phase-badge`),
+       which otherwise sits in the same corner. */
     position: fixed;
-    top: 18px;
+    top: 64px;
     right: 24px;
     z-index: 30;
     display: grid;
