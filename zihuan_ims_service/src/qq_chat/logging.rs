@@ -904,6 +904,74 @@ impl ToolCallingObserver for QqChatToolCallingObserver {
     ) {
         self.trace.record_inference_timing(elapsed.as_millis());
     }
+
+    fn on_nested_event(
+        &self,
+        path: &[String],
+        event: &zihuan_core::agent::tools::NestedToolCallingEvent,
+    ) {
+        let Some(identity) = self.identity.as_ref() else {
+            return;
+        };
+        let Some(entry) = sub_agent_entry(event) else {
+            return;
+        };
+        zihuan_core::qq_context::emit_qq_context_sub_agent(
+            &identity.agent_id,
+            &identity.sender_id,
+            &identity.turn_id,
+            path,
+            entry,
+        );
+    }
+}
+
+/// Maps one nested-loop event onto the context entry recorded for the flow view.
+fn sub_agent_entry(
+    event: &zihuan_core::agent::tools::NestedToolCallingEvent,
+) -> Option<zihuan_core::qq_context::QqChatSubAgentEntry> {
+    use zihuan_core::agent::tools::NestedToolCallingEvent as Nested;
+    use zihuan_core::qq_context::QqChatSubAgentEntry;
+    match event {
+        Nested::Input { system_prompt, user_prompt } => Some(QqChatSubAgentEntry::Input {
+            system_prompt: system_prompt.clone(),
+            user_prompt: user_prompt.clone(),
+        }),
+        Nested::AssistantChunk { content, reasoning } => {
+            Some(QqChatSubAgentEntry::AssistantChunk {
+                content: content.clone(),
+                reasoning: reasoning.clone(),
+            })
+        }
+        // Reported even when empty: the settled message tells the view to drop the live text
+        // streamed for it, which a pure tool-call response still needs.
+        Nested::Assistant {
+            iteration,
+            content,
+            reasoning,
+            final_response,
+        } => Some(QqChatSubAgentEntry::Assistant {
+            iteration: *iteration,
+            content: content.clone(),
+            reasoning: reasoning.clone(),
+            final_response: *final_response,
+        }),
+        Nested::ToolStarted { call_id, name, arguments } => {
+            Some(QqChatSubAgentEntry::ToolStarted {
+                call_id: call_id.clone(),
+                name: name.clone(),
+                arguments: arguments.clone(),
+            })
+        }
+        Nested::ToolFinished { call_id, name, result, duration_ms } => {
+            Some(QqChatSubAgentEntry::ToolFinished {
+                call_id: call_id.clone(),
+                name: name.clone(),
+                result: result.clone(),
+                duration_ms: *duration_ms,
+            })
+        }
+    }
 }
 
 fn format_time(time: &DateTime<Local>) -> String {

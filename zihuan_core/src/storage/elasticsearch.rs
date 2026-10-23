@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use base64::Engine;
@@ -7,6 +8,7 @@ use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use crate::algorithm::rrf::{reciprocal_rank_fusion, DEFAULT_RRF_RANK_CONSTANT};
 use crate::error::{Error, Result};
 use crate::retrieval::RetrievalSchema;
 
@@ -220,10 +222,45 @@ pub fn create_elasticsearch_memory_record(
     let document = json!({"key": key, "value": value, "embedding": vector, "expires_at": input.expires_at, "sender_id_list": input.sender_id_list, "group_id_list": input.group_id_list, "created_at": now, "updated_at": now});
     reference.request(
         reqwest::Method::PUT,
-        &format!("/{}/_doc/{}", reference.index_name, object_id),
+        &format!("/{}/_doc/{}?refresh=wait_for", reference.index_name, object_id),
         Some(document),
     )?;
-    get_memory_record(reference, &object_id)
+    get_elasticsearch_memory_record(reference, &object_id)
+}
+
+pub fn update_elasticsearch_memory_record(
+    reference: &ElasticsearchRef,
+    object_id: &str,
+    input: &AgentMemoryUpsert,
+    vector: Vec<f32>,
+) -> Result<AgentMemoryRecord> {
+    validate_vector(reference, &vector)?;
+    let key = input.key.trim();
+    let value = input.value.trim();
+    if key.is_empty() || value.is_empty() {
+        return Err(Error::ValidationError("memory title and value must not be empty".to_string()));
+    }
+    let existing = get_elasticsearch_memory_record(reference, object_id)?;
+    let now = Utc::now().to_rfc3339();
+    let document = json!({"key": key, "value": value, "embedding": vector, "expires_at": input.expires_at, "sender_id_list": input.sender_id_list, "group_id_list": input.group_id_list, "created_at": existing.created_at, "updated_at": now});
+    reference.request(
+        reqwest::Method::PUT,
+        &format!("/{}/_doc/{}?refresh=wait_for", reference.index_name, object_id),
+        Some(document),
+    )?;
+    get_elasticsearch_memory_record(reference, object_id)
+}
+
+pub fn delete_elasticsearch_memory_record(
+    reference: &ElasticsearchRef,
+    object_id: &str,
+) -> Result<()> {
+    reference.request(
+        reqwest::Method::DELETE,
+        &format!("/{}/_doc/{}?refresh=wait_for", reference.index_name, object_id),
+        None,
+    )?;
+    Ok(())
 }
 
 pub fn upsert_elasticsearch_image(
@@ -337,7 +374,7 @@ pub fn list_elasticsearch_memory_keys(
     let body = if query.is_empty() {
         json!({"size": top_n.min(MAX_QUERY_CANDIDATES), "sort": [{"updated_at": "desc"}], "query": access_filter(access)})
     } else {
-        memory_search_body(access, query, None, top_n)
+        memory_lexical_body(access, query, memory_result_size(top_n))
     };
     parse_memory_hits(
         reference.request(
@@ -357,34 +394,74 @@ pub fn search_elasticsearch_memory(
     top_n: usize,
 ) -> Result<Vec<AgentMemorySearchHit>> {
     validate_vector(reference, vector)?;
-    let response = reference.request(
-        reqwest::Method::POST,
-        &format!("/{}/_search", reference.index_name),
-        Some(memory_search_body(access, query, Some(vector), top_n)),
+    let size = memory_result_size(top_n);
+    let window = (size * 5).min(MAX_QUERY_CANDIDATES);
+    // Lexical and vector retrieval are issued as separate plain searches and
+    // fused locally: the server-side `rrf` retriever is an Enterprise feature,
+    // and a retriever cannot be combined with a top-level sort.
+    let lexical = parse_memory_hits(
+        reference.request(
+            reqwest::Method::POST,
+            &format!("/{}/_search", reference.index_name),
+            Some(memory_lexical_body(access, query, window)),
+        )?,
+        access,
     )?;
-    parse_memory_hits(response, access)
+    let semantic = parse_memory_hits(
+        reference.request(
+            reqwest::Method::POST,
+            &format!("/{}/_search", reference.index_name),
+            Some(memory_vector_body(access, vector, window)),
+        )?,
+        access,
+    )?;
+    Ok(fuse_memory_hits(&[lexical, semantic], size))
 }
 
-fn memory_search_body(
-    access: &AgentMemoryAccessContext,
-    query: &str,
-    vector: Option<&[f32]>,
-    top_n: usize,
-) -> Value {
-    let size = top_n.max(1).min(20);
-    let window = (size * 5).min(MAX_QUERY_CANDIDATES);
-    let lexical = json!({"bool":{"filter":[access_filter(access)],"should":[
+fn memory_result_size(top_n: usize) -> usize {
+    top_n.max(1).min(20)
+}
+
+fn memory_lexical_body(access: &AgentMemoryAccessContext, query: &str, size: usize) -> Value {
+    json!({"size":size,"query":memory_lexical_query(access, query),"sort":[{"_score":"desc"},{"updated_at":"desc"}]})
+}
+
+fn memory_lexical_query(access: &AgentMemoryAccessContext, query: &str) -> Value {
+    json!({"bool":{"filter":[access_filter(access)],"should":[
         {"multi_match":{"query":query,"fields":["key^5","value^2"],"type":"best_fields","operator":"and"}},
         {"multi_match":{"query":query,"fields":["key.pinyin^4","value.pinyin"],"type":"best_fields"}}
-    ],"minimum_should_match":1}});
-    let mut retrievers = vec![json!({"standard":{"query":lexical}})];
-    if let Some(vector) = vector {
-        retrievers.push(json!({"knn":{"field":"embedding","query_vector":vector,"k":window,"num_candidates":window,"filter":access_filter(access)}}));
+    ],"minimum_should_match":1}})
+}
+
+fn memory_vector_body(access: &AgentMemoryAccessContext, vector: &[f32], size: usize) -> Value {
+    json!({"size":size,"knn":{"field":"embedding","query_vector":vector,"k":size,"num_candidates":size,"filter":access_filter(access)}})
+}
+
+fn fuse_memory_hits(
+    rankings: &[Vec<AgentMemorySearchHit>],
+    limit: usize,
+) -> Vec<AgentMemorySearchHit> {
+    let object_ids = rankings
+        .iter()
+        .map(|hits| hits.iter().map(|hit| hit.record.object_id.clone()).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    let ranking_ids = object_ids.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    let fused = reciprocal_rank_fusion(&ranking_ids, DEFAULT_RRF_RANK_CONSTANT);
+    let mut by_id = HashMap::new();
+    for hit in rankings.iter().flatten() {
+        by_id.entry(hit.record.object_id.clone()).or_insert_with(|| hit.clone());
     }
-    if retrievers.len() == 1 {
-        return json!({"size":size,"query":retrievers.remove(0)["standard"]["query"].clone(),"sort":[{"_score":"desc"},{"updated_at":"desc"}]});
-    }
-    json!({"size":size,"retriever":{"rrf":{"retrievers":retrievers,"rank_window_size":window,"rank_constant":60}},"sort":[{"updated_at":"desc"}]})
+    let mut hits = fused
+        .into_iter()
+        .filter_map(|(object_id, score)| {
+            by_id.get(&object_id).map(|hit| AgentMemorySearchHit {
+                record: hit.record.clone(),
+                distance: Some(score),
+            })
+        })
+        .collect::<Vec<_>>();
+    hits.truncate(limit);
+    hits
 }
 
 fn access_filter(access: &AgentMemoryAccessContext) -> Value {
@@ -438,7 +515,10 @@ fn parse_memory_hits(
     Ok(hits)
 }
 
-fn get_memory_record(reference: &ElasticsearchRef, object_id: &str) -> Result<AgentMemoryRecord> {
+pub fn get_elasticsearch_memory_record(
+    reference: &ElasticsearchRef,
+    object_id: &str,
+) -> Result<AgentMemoryRecord> {
     let value = reference.request(
         reqwest::Method::GET,
         &format!("/{}/_doc/{}", reference.index_name, object_id),

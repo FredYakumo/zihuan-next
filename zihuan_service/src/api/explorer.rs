@@ -14,12 +14,13 @@ use zihuan_core::url_utils::{
 use crate::system_config::load_connections;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::storage::{
-    build_relational_db_connection_for_connection, create_memory_record_with_vector,
-    delete_memory_record, get_memory_record, list_elasticsearch_memory_keys,
+    build_relational_db_connection_for_connection, create_elasticsearch_memory_record,
+    create_memory_record_with_vector, delete_elasticsearch_memory_record, delete_memory_record,
+    get_elasticsearch_memory_record, get_memory_record, list_elasticsearch_memory_keys,
     list_recent_memory_keys,
     resource_resolver::{self, build_rdb_ref},
     search_elasticsearch_images, search_elasticsearch_memory, search_memory_content_by_vector,
-    update_memory_record_with_vector,
+    update_elasticsearch_memory_record, update_memory_record_with_vector,
     weaviate::build_weaviate_ref as build_storage_weaviate_ref,
     AgentMemoryAccessContext, AgentMemorySearchHit, AgentMemoryUpsert, ConnectionKind,
     ObjectStorageConfig, RetrievalSchema, WeaviateClient,
@@ -753,8 +754,8 @@ pub async fn create_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Ok(body) => body,
         Err(err) => return render_bad_request(res, err.to_string()),
     };
-    let weaviate_ref = match resolve_agent_memory_weaviate_ref(&connection_id) {
-        Ok(weaviate_ref) => weaviate_ref,
+    let backend = match resolve_agent_memory_backend(&connection_id) {
+        Ok(backend) => backend,
         Err(err) => return render_internal_error(res, err),
     };
     let embedding_model = match RuntimeEmbeddingModelManager::shared()
@@ -770,17 +771,22 @@ pub async fn create_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Ok(vector) => vector,
         Err(err) => return render_internal_error(res, err),
     };
-    match create_memory_record_with_vector(
-        &weaviate_ref,
-        &AgentMemoryUpsert {
-            key: body.title,
-            value: body.value,
-            expires_at: body.expires_at,
-            sender_id_list: body.sender_id_list,
-            group_id_list: body.group_id_list,
-        },
-        Some(vector),
-    ) {
+    let input = AgentMemoryUpsert {
+        key: body.title,
+        value: body.value,
+        expires_at: body.expires_at,
+        sender_id_list: body.sender_id_list,
+        group_id_list: body.group_id_list,
+    };
+    let result = match &backend {
+        AgentMemoryBackendRef::Weaviate(reference) => {
+            create_memory_record_with_vector(reference, &input, Some(vector))
+        }
+        AgentMemoryBackendRef::Elasticsearch(reference) => {
+            create_elasticsearch_memory_record(reference, &input, vector)
+        }
+    };
+    match result {
         Ok(record) => res.render(Json(record)),
         Err(err) => render_internal_error(res, err),
     }
@@ -804,8 +810,8 @@ pub async fn update_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Ok(body) => body,
         Err(err) => return render_bad_request(res, err.to_string()),
     };
-    let weaviate_ref = match resolve_agent_memory_weaviate_ref(&connection_id) {
-        Ok(weaviate_ref) => weaviate_ref,
+    let backend = match resolve_agent_memory_backend(&connection_id) {
+        Ok(backend) => backend,
         Err(err) => return render_internal_error(res, err),
     };
     let embedding_model = match RuntimeEmbeddingModelManager::shared()
@@ -821,18 +827,22 @@ pub async fn update_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Ok(vector) => vector,
         Err(err) => return render_internal_error(res, err),
     };
-    match update_memory_record_with_vector(
-        &weaviate_ref,
-        &object_id,
-        &AgentMemoryUpsert {
-            key: body.title,
-            value: body.value,
-            expires_at: body.expires_at,
-            sender_id_list: body.sender_id_list,
-            group_id_list: body.group_id_list,
-        },
-        Some(vector),
-    ) {
+    let input = AgentMemoryUpsert {
+        key: body.title,
+        value: body.value,
+        expires_at: body.expires_at,
+        sender_id_list: body.sender_id_list,
+        group_id_list: body.group_id_list,
+    };
+    let result = match &backend {
+        AgentMemoryBackendRef::Weaviate(reference) => {
+            update_memory_record_with_vector(reference, &object_id, &input, Some(vector))
+        }
+        AgentMemoryBackendRef::Elasticsearch(reference) => {
+            update_elasticsearch_memory_record(reference, &object_id, &input, vector)
+        }
+    };
+    match result {
         Ok(record) => res.render(Json(record)),
         Err(err) => render_internal_error(res, err),
     }
@@ -848,11 +858,17 @@ pub async fn delete_agent_memory(req: &mut Request, res: &mut Response, _depot: 
     if object_id.trim().is_empty() {
         return render_bad_request(res, "object_id is required".into());
     }
-    let weaviate_ref = match resolve_agent_memory_weaviate_ref(&connection_id) {
-        Ok(weaviate_ref) => weaviate_ref,
+    let backend = match resolve_agent_memory_backend(&connection_id) {
+        Ok(backend) => backend,
         Err(err) => return render_internal_error(res, err),
     };
-    match delete_memory_record(&weaviate_ref, &object_id) {
+    let result = match &backend {
+        AgentMemoryBackendRef::Weaviate(reference) => delete_memory_record(reference, &object_id),
+        AgentMemoryBackendRef::Elasticsearch(reference) => {
+            delete_elasticsearch_memory_record(reference, &object_id)
+        }
+    };
+    match result {
         Ok(()) => res.render(Json(serde_json::json!({ "ok": true }))),
         Err(err) => render_internal_error(res, err),
     }
@@ -868,11 +884,17 @@ pub async fn get_agent_memory(req: &mut Request, res: &mut Response, _depot: &mu
     if object_id.trim().is_empty() {
         return render_bad_request(res, "object_id is required".into());
     }
-    let weaviate_ref = match resolve_agent_memory_weaviate_ref(&connection_id) {
-        Ok(weaviate_ref) => weaviate_ref,
+    let backend = match resolve_agent_memory_backend(&connection_id) {
+        Ok(backend) => backend,
         Err(err) => return render_internal_error(res, err),
     };
-    match get_memory_record(&weaviate_ref, &object_id) {
+    let result = match &backend {
+        AgentMemoryBackendRef::Weaviate(reference) => get_memory_record(reference, &object_id),
+        AgentMemoryBackendRef::Elasticsearch(reference) => {
+            get_elasticsearch_memory_record(reference, &object_id)
+        }
+    };
+    match result {
         Ok(record) => res.render(Json(record)),
         Err(err) => render_internal_error(res, err),
     }
@@ -933,25 +955,46 @@ fn weaviate_search_result_from_value(value: Value) -> WeaviateSearchResult {
     }
 }
 
-fn resolve_agent_memory_weaviate_ref(
+enum AgentMemoryBackendRef {
+    Weaviate(std::sync::Arc<zihuan_core::weaviate::WeaviateRef>),
+    Elasticsearch(std::sync::Arc<zihuan_core::storage::ElasticsearchRef>),
+}
+
+/// Resolves the agent-memory collection for whichever retrieval backend hosts the service's
+/// store, so admin mutations work on both Weaviate and Elasticsearch.
+fn resolve_agent_memory_backend(
     connection_id: &str,
-) -> zihuan_core::error::Result<std::sync::Arc<zihuan_core::weaviate::WeaviateRef>> {
+) -> zihuan_core::error::Result<AgentMemoryBackendRef> {
     let connections = load_connections()?;
     let connection = resource_resolver::find_connection(&connections, connection_id)?;
-    let ConnectionKind::Weaviate(weaviate) = &connection.kind else {
-        return Err(zihuan_core::error::Error::ValidationError(
-            "connection is not a weaviate connection".to_string(),
-        ));
-    };
-    let weaviate_ref = build_storage_weaviate_ref(
-        &weaviate.base_url,
-        RetrievalSchema::AgentMemory,
-        weaviate.username.clone(),
-        weaviate.password.clone(),
-        weaviate.api_key.clone(),
-        weaviate.auth_method,
-    )?;
-    Ok(weaviate_ref)
+    match &connection.kind {
+        ConnectionKind::Weaviate(weaviate) => {
+            Ok(AgentMemoryBackendRef::Weaviate(build_storage_weaviate_ref(
+                &weaviate.base_url,
+                RetrievalSchema::AgentMemory,
+                weaviate.username.clone(),
+                weaviate.password.clone(),
+                weaviate.api_key.clone(),
+                weaviate.auth_method,
+            )?))
+        }
+        ConnectionKind::Elasticsearch(_) => {
+            let reference = resource_resolver::build_elasticsearch_ref(
+                Some(connection_id),
+                &connections,
+                RetrievalSchema::AgentMemory,
+            )?
+            .ok_or_else(|| {
+                zihuan_core::error::Error::ValidationError(
+                    "memory connection is not configured".to_string(),
+                )
+            })?;
+            Ok(AgentMemoryBackendRef::Elasticsearch(reference))
+        }
+        _ => Err(zihuan_core::error::Error::ValidationError(
+            "connection is not a retrieval store (weaviate or elasticsearch)".to_string(),
+        )),
+    }
 }
 
 #[derive(Serialize)]
@@ -1223,10 +1266,10 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
                     hits,
                     if query.is_some() { "hybrid" } else { "recent" },
                     "elasticsearch",
-                    false,
+                    true,
                 ),
                 backend: "elasticsearch",
-                mutable: false,
+                mutable: true,
             }));
         }
         _ => return render_bad_request(res, "memory connection is not a retrieval store".into()),
@@ -1569,6 +1612,12 @@ enum ContextTurnEntry {
         #[serde(skip_serializing_if = "Option::is_none")]
         duration_ms: Option<u128>,
     },
+    /// One step of a sub-agent's own flow, nested under the tool call named by `path`.
+    SubAgent {
+        at: String,
+        path: Vec<String>,
+        event: zihuan_core::qq_context::QqChatSubAgentEntry,
+    },
 }
 
 fn context_media_from_ref(
@@ -1626,6 +1675,9 @@ fn archived_turn_to_context(
                     result,
                     duration_ms,
                 },
+                zihuan_core::qq_context::QqChatTurnEntry::SubAgent { at, path, event } => {
+                    ContextTurnEntry::SubAgent { at, path, event }
+                }
             })
             .collect(),
         assistant_text: turn.assistant_text,
@@ -1800,6 +1852,9 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
                             result,
                             duration_ms,
                         },
+                        zihuan_core::qq_context::QqChatTurnEntry::SubAgent { at, path, event } => {
+                            ContextTurnEntry::SubAgent { at, path, event }
+                        }
                     })
                     .collect(),
                 assistant_text: turn.assistant_text,

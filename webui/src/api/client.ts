@@ -18,6 +18,7 @@ import type {
   GraphMetadata,
   DataTypeMetaData,
   TokenUsage,
+  QqSubAgentEntry,
 } from "./types";
 
 export type { GraphTabInfo, TaskEntry, TaskLogEntry } from "./types";
@@ -1054,7 +1055,9 @@ export type ServiceChatContextEntry =
       arguments: unknown;
       result?: string;
       duration_ms?: number;
-    };
+    }
+  /** One step of a sub-agent loop, placed under the tool call named by `path`. */
+  | { kind: "sub_agent"; at: string; path: string[]; event: QqSubAgentEntry };
 
 export interface ServiceChatContextQuoted {
   message_id: string;

@@ -1,8 +1,13 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
 import type { ServiceChatContextMedia } from "../../api/client";
-import type { TokenUsage } from "../../api/types";
-import type { ContextEntryItem, ContextTurnView } from "./useChatContext";
+import type { QqSubAgentEntry, TokenUsage } from "../../api/types";
+import type {
+  ContextEntryItem,
+  ContextStageItem,
+  ContextToolItem,
+  ContextTurnView,
+} from "./useChatContext";
 
 type Segment = { type: "text"; text: string } | { type: "image"; media: ServiceChatContextMedia };
 
@@ -25,7 +30,8 @@ export const RATE_LIMIT_STAGE = "限流";
 export interface ContextPhase {
   key: string;
   name: string;
-  entries: ContextEntryItem[];
+  /** Stage and tool steps of the phase; sub-agent steps render inside their call's box. */
+  entries: Array<ContextStageItem | ContextToolItem>;
 }
 
 /**
@@ -65,11 +71,13 @@ export function phaseColor(index: number): string {
  *
  * Grouping is sequential rather than by name: a stage that reappears after another one (for
  * example the error report after a failed step) starts a new container instead of being merged
- * backwards.
+ * backwards. Sub-agent steps are not stages of the turn; they render inside the box attached to
+ * the tool call that started them.
  */
 export function groupEntriesByPhase(entries: ContextEntryItem[]): ContextPhase[] {
   const phases: ContextPhase[] = [];
   for (const entry of entries) {
+    if (entry.kind === "sub-agent") continue;
     const name =
       entry.kind === "tool" ? BRAIN_PHASE : (PHASE_OF_STAGE[entry.stage] ?? entry.stage);
     const last = phases[phases.length - 1];
@@ -80,6 +88,154 @@ export function groupEntriesByPhase(entries: ContextEntryItem[]): ContextPhase[]
     phases.push({ key: `${entry.id}:phase`, name, entries: [entry] });
   }
   return phases;
+}
+
+/** One tool call inside a sub-agent's loop, pairing its start event with its result. */
+export interface SubAgentToolCall {
+  callId: string;
+  name: string;
+  arguments: unknown;
+  result?: string;
+  durationMs?: number;
+  running: boolean;
+}
+
+/** A sub-agent assistant message, as reported by its own loop. */
+export type SubAgentMessage = Extract<QqSubAgentEntry, { kind: "assistant" }>;
+
+/** One step of a sub-agent's loop, kept in the order it happened. */
+export type SubAgentStep =
+  | { kind: "assistant"; message: SubAgentMessage }
+  | { kind: "tool"; call: SubAgentToolCall };
+
+/** The response currently being streamed by a sub-agent. */
+export interface SubAgentStream {
+  content: string;
+  reasoning: string;
+}
+
+/** A sub-agent invocation and everything its own loop did, nested under its tool call. */
+export interface SubAgentNode {
+  key: string;
+  callId: string;
+  /** 1 for a sub-agent called by the turn's brain; deeper values are nested sub-agents. */
+  depth: number;
+  name: string;
+  /** Assistant messages and tool calls of the sub-agent's loop, in chronological order. */
+  steps: SubAgentStep[];
+  /** Every tool call this sub-agent made, in order; the same objects `steps` references. */
+  toolCalls: SubAgentToolCall[];
+  /** Text streamed so far for the response still being written; settled messages replace it. */
+  live?: SubAgentStream;
+  /** The prompt the sub-agent received. */
+  input?: Extract<QqSubAgentEntry, { kind: "input" }>;
+  children: SubAgentNode[];
+}
+
+/** Assistant messages of a sub-agent, in order. */
+export function subAgentMessages(node: SubAgentNode): SubAgentMessage[] {
+  return node.steps.flatMap((step) => (step.kind === "assistant" ? [step.message] : []));
+}
+
+/**
+ * Rebuilds the sub-agent call tree from the flat, chronological sub-agent entries.
+ *
+ * Every entry carries its enclosing call ids, so the tree is derived from those paths rather
+ * than from arrival order: a nested sub-agent always lands under the call that started it,
+ * even while its parent is still running.
+ */
+export function buildSubAgentTrees(entries: ContextEntryItem[]): Map<string, SubAgentNode> {
+  // Names of every tool call: top-level calls from the turn's tool entries, and calls made by
+  // sub-agents from their own start events. A nested sub-agent is addressed by the id of the
+  // call that started it, so both sources are needed to label the boxes.
+  const toolNames = new Map<string, string>();
+  for (const entry of entries) {
+    if (entry.kind === "tool") {
+      toolNames.set(entry.callId, entry.name);
+    } else if (entry.kind === "sub-agent" && entry.event.kind === "tool_started") {
+      toolNames.set(entry.event.call_id, entry.event.name);
+    }
+  }
+
+  const nodes = new Map<string, SubAgentNode>();
+  const ensureNode = (path: string[], parent?: SubAgentNode): SubAgentNode => {
+    const key = path.join("\u0000");
+    const existing = nodes.get(key);
+    if (existing) return existing;
+    const callId = path[path.length - 1];
+    const node: SubAgentNode = {
+      key,
+      callId,
+      depth: path.length,
+      name: toolNames.get(callId) ?? callId,
+      steps: [],
+      toolCalls: [],
+      children: [],
+    };
+    nodes.set(key, node);
+    parent?.children.push(node);
+    return node;
+  };
+
+  const toolCalls = new Map<string, SubAgentToolCall>();
+  for (const entry of entries) {
+    if (entry.kind !== "sub-agent" || !entry.path.length) continue;
+    let parent: SubAgentNode | undefined;
+    let node: SubAgentNode | undefined;
+    for (let index = 0; index < entry.path.length; index += 1) {
+      node = ensureNode(entry.path.slice(0, index + 1), parent);
+      parent = node;
+    }
+    if (!node) continue;
+    const event = entry.event;
+    if (event.kind === "input") {
+      node.input = event;
+    } else if (event.kind === "assistant_chunk") {
+      // A delta starts the live block; later deltas of the same response append to it.
+      const live = node.live ?? { content: "", reasoning: "" };
+      node.live = {
+        content: live.content + event.content,
+        reasoning: live.reasoning + event.reasoning,
+      };
+    } else if (event.kind === "assistant") {
+      // The settled message replaces the deltas that built it. Responses with neither text nor
+      // reasoning only opened the tool call that follows, so they add no step.
+      node.live = undefined;
+      if (event.content.trim() || event.reasoning) {
+        node.steps.push({ kind: "assistant", message: event });
+      }
+    } else if (event.kind === "tool_started") {
+      const call: SubAgentToolCall = {
+        callId: event.call_id,
+        name: event.name,
+        arguments: event.arguments,
+        running: true,
+      };
+      node.toolCalls.push(call);
+      node.steps.push({ kind: "tool", call });
+      toolCalls.set(`${node.key}\u0000${event.call_id}`, call);
+    } else {
+      const call = toolCalls.get(`${node.key}\u0000${event.call_id}`);
+      if (call) {
+        call.running = false;
+        call.result = event.result;
+        call.durationMs = event.duration_ms;
+      } else {
+        // A result without its start event (truncated log): show it as its own step.
+        const orphan: SubAgentToolCall = {
+          callId: event.call_id,
+          name: event.name,
+          arguments: undefined,
+          result: event.result,
+          durationMs: event.duration_ms,
+          running: false,
+        };
+        node.toolCalls.push(orphan);
+        node.steps.push({ kind: "tool", call: orphan });
+      }
+    }
+  }
+  return nodes;
 }
 
 interface RateLimitStageDetail {
@@ -280,6 +436,30 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     })),
   );
 
+  /** Sub-agent call trees, keyed by the joined call path of each sub-agent invocation. */
+  const subAgentTrees = computed(() => buildSubAgentTrees(turn().entries));
+
+  /** The sub-agent node a top-level tool call started, if this call is a sub-agent. */
+  function subAgentsFor(callId: string): SubAgentNode[] {
+    const node = subAgentTrees.value.get(callId);
+    return node && node.depth === 1 ? [node] : [];
+  }
+
+  /**
+   * Top-level sub-agent flows whose enclosing tool call is not part of the turn (an archive
+   * recorded without it, or a truncated log). They still render, below the stages, so no step
+   * is lost.
+   */
+  const orphanSubAgents = computed(() => {
+    const callIds = new Set<string>();
+    for (const entry of turn().entries) {
+      if (entry.kind === "tool") callIds.add(entry.callId);
+    }
+    return [...subAgentTrees.value.values()].filter(
+      (node) => node.depth === 1 && !callIds.has(node.callId),
+    );
+  });
+
   /** Readable text for each stage entry, keyed by entry id. */
   const stageViews = computed(() => {
     const views = new Map<string, StageText | undefined>();
@@ -436,6 +616,8 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     stageThinkingOpen,
     toggleStageThinking,
     phases,
+    subAgentsFor,
+    orphanSubAgents,
     activePhase,
     badgeStyle,
     registerPhase,

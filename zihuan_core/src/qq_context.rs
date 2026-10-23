@@ -20,7 +20,6 @@ use crate::model_inference::llm::TokenUsage;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QqChatContextBackend {
-    /// Process memory only — lost on restart.
     Memory,
     /// Redis-backed — survives a restart while Redis holds the values.
     Redis,
@@ -87,6 +86,45 @@ pub struct QqChatQuotedMessage {
     pub text: String,
 }
 
+/// One step of a sub-agent's own tool-calling loop. The step is recorded under the tool call
+/// that started the sub-agent; the enclosing entry carries the call path, so nested sub-agents
+/// are rendered one level deeper.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum QqChatSubAgentEntry {
+    /// The prompt the sub-agent was given.
+    Input {
+        #[serde(default)]
+        system_prompt: String,
+        user_prompt: String,
+    },
+    /// One assistant message of the sub-agent's loop. `final_response` marks the message that
+    /// ended the loop.
+    Assistant {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        iteration: Option<usize>,
+        content: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reasoning: Option<String>,
+        #[serde(default)]
+        final_response: bool,
+    },
+    /// A live delta of the sub-agent's streaming response. Only broadcast to the WebUI; the
+    /// completed [`Self::Assistant`] message is what gets archived.
+    AssistantChunk { content: String, reasoning: String },
+    ToolStarted {
+        call_id: String,
+        name: String,
+        arguments: Value,
+    },
+    ToolFinished {
+        call_id: String,
+        name: String,
+        result: String,
+        duration_ms: u128,
+    },
+}
+
 /// One turn-scoped context event, emitted while a QQ turn runs and pushed to the WebUI over
 /// the existing global web socket broadcast.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,6 +181,16 @@ pub enum QqChatContextEvent {
         stage: String,
         detail: Value,
     },
+    /// One step of a sub-agent started by a tool call of this turn. `path` lists the enclosing
+    /// tool call ids, outermost first; the last one is the sub-agent call that owns the step.
+    SubAgent {
+        agent_id: String,
+        sender_id: String,
+        turn_id: String,
+        at: String,
+        path: Vec<String>,
+        event: QqChatSubAgentEntry,
+    },
     /// The turn finished and produced its final assistant output plus token usage.
     TurnFinished {
         agent_id: String,
@@ -187,6 +235,12 @@ pub enum QqChatTurnEntry {
         result: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         duration_ms: Option<u128>,
+    },
+    /// One step of a sub-agent's own flow, nested under the tool call named by `path`.
+    SubAgent {
+        at: String,
+        path: Vec<String>,
+        event: QqChatSubAgentEntry,
     },
 }
 
@@ -248,6 +302,7 @@ pub fn record_qq_chat_turn_event(event: &QqChatContextEvent) {
         | QqChatContextEvent::ToolStarted { agent_id, sender_id, .. }
         | QqChatContextEvent::ToolFinished { agent_id, sender_id, .. }
         | QqChatContextEvent::Stage { agent_id, sender_id, .. }
+        | QqChatContextEvent::SubAgent { agent_id, sender_id, .. }
         | QqChatContextEvent::TurnFinished { agent_id, sender_id, .. } => {
             (agent_id.as_str(), sender_id.as_str())
         }
@@ -338,6 +393,21 @@ pub fn record_qq_chat_turn_event(event: &QqChatContextEvent) {
                         stage: stage.clone(),
                         detail: detail.clone(),
                     });
+                }
+                false
+            }
+            QqChatContextEvent::SubAgent { turn_id, at, path, event, .. } => {
+                if let Some(turn) = turns.iter_mut().find(|turn| turn.turn_id == *turn_id) {
+                    // Streaming deltas are a live signal only: the settled assistant message is
+                    // recorded right after them, so archiving every token would just bloat the
+                    // turn log.
+                    if !matches!(event, QqChatSubAgentEntry::AssistantChunk { .. }) {
+                        turn.entries.push(QqChatTurnEntry::SubAgent {
+                            at: at.clone(),
+                            path: path.clone(),
+                            event: event.clone(),
+                        });
+                    }
                 }
                 false
             }
@@ -471,5 +541,24 @@ pub fn emit_qq_context_stage(
         at: now_rfc3339(),
         stage: stage.to_string(),
         detail,
+    });
+}
+
+/// Emit one step of a sub-agent flow for a running turn, placed under the tool call chain
+/// named by `path`.
+pub fn emit_qq_context_sub_agent(
+    agent_id: &str,
+    sender_id: &str,
+    turn_id: &str,
+    path: &[String],
+    event: QqChatSubAgentEntry,
+) {
+    emit_qq_context_event(QqChatContextEvent::SubAgent {
+        agent_id: agent_id.to_string(),
+        sender_id: sender_id.to_string(),
+        turn_id: turn_id.to_string(),
+        at: now_rfc3339(),
+        path: path.to_vec(),
+        event,
     });
 }

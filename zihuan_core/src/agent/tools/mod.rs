@@ -18,8 +18,9 @@ pub use memory_tools::{register_memory_tools, MemoryAgentResources, MemoryBacken
 pub use node_graph_tool::NodeGraphTool;
 pub use tool_calling_engine::{ToolCallingEngine, MAX_TOOL_ITERATIONS};
 pub use tool_calling_types::{
-    AgentExecutor, LongTaskContext, LongTaskNotifier, ToolCallingMiddleware, ToolCallingObserver,
-    ToolCallingRequest, ToolCallingResult, ToolCallingStopReason,
+    AgentExecutor, LongTaskContext, LongTaskNotifier, NestedToolCallingEvent,
+    ToolCallingMiddleware, ToolCallingObserver, ToolCallingRequest, ToolCallingResult,
+    ToolCallingStopReason,
 };
 pub use tool_progress::{consume_tool_progress_notification, current_task_progress_message};
 pub use web_search::WebSearchTool;

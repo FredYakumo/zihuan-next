@@ -116,24 +116,44 @@
               </template>
             </div>
           </div>
-          <div v-else class="context-bubble-row context-bubble-row--tool">
-            <div class="context-bubble context-bubble--tool">
-              <div class="context-bubble-head">
-                <span class="context-tool-title">工具调用 · {{ entry.name }}</span>
-                <span class="context-tool-status">
-                  <t-loading v-if="entry.running" size="12px" />
-                  <span v-else-if="entry.durationMs !== undefined" class="muted">{{ entry.durationMs }} ms</span>
-                </span>
+          <template v-else>
+            <div class="context-bubble-row context-bubble-row--tool">
+              <div class="context-bubble context-bubble--tool">
+                <div class="context-bubble-head">
+                  <span class="context-tool-title">工具调用 · {{ entry.name }}</span>
+                  <span class="context-tool-status">
+                    <t-loading v-if="entry.running" size="12px" />
+                    <span v-else-if="entry.durationMs !== undefined" class="muted">{{ entry.durationMs }} ms</span>
+                  </span>
+                </div>
+                <JsonView :source="entry.arguments" />
+                <template v-if="entry.result !== undefined">
+                  <div class="context-tool-result-label">结果</div>
+                  <JsonView :source="entry.result" />
+                </template>
               </div>
-              <JsonView :source="entry.arguments" />
-              <template v-if="entry.result !== undefined">
-                <div class="context-tool-result-label">结果</div>
-                <JsonView :source="entry.result" />
-              </template>
             </div>
-          </div>
+            <!-- The sub-agent's own flow gets its own box below the call that started it; the
+                 call box above stays as recorded. -->
+            <div
+              v-for="node in subAgentsFor(entry.callId)"
+              :key="node.key"
+              class="context-bubble-row context-bubble-row--sub-agent"
+            >
+              <ContextSubAgentBox :node="node" :running="entry.running" />
+            </div>
+          </template>
         </template>
       </div>
+    </div>
+
+    <!-- Sub-agent flows whose tool call is missing from the turn still show, one level down. -->
+    <div v-if="orphanSubAgents.length" class="context-orphan-sub-agents">
+      <ContextSubAgentBox
+        v-for="node in orphanSubAgents"
+        :key="node.key"
+        :node="node"
+      />
     </div>
 
     <div class="context-bubble-row context-bubble-row--assistant">
@@ -197,6 +217,7 @@ import {
   useChatContextTurn,
 } from "./ChatContextTurn";
 import JsonView from "./JsonView.vue";
+import ContextSubAgentBox from "./ContextSubAgentBox.vue";
 
 const props = defineProps<{ turn: ContextTurnView }>();
 
@@ -217,6 +238,8 @@ const {
   stageThinkingOpen,
   toggleStageThinking,
   phases,
+  subAgentsFor,
+  orphanSubAgents,
   activePhase,
   badgeStyle,
   registerPhase,

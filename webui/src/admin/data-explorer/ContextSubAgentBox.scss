@@ -1,0 +1,153 @@
+@use "./ContextFlowShared";
+
+/* Box holding one sub-agent's own flow: prompt, assistant steps, tool calls, nested agents. */
+.context-sub-agent {
+    margin-top: 8px;
+    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--td-brand-color) 30%, transparent);
+    border-left: 3px solid color-mix(in srgb, var(--td-brand-color) 55%, transparent);
+    background: color-mix(in srgb, var(--td-brand-color) 5%, transparent);
+    overflow: hidden;
+}
+
+/* A sub-agent started by another sub-agent indents one level further. */
+.context-sub-agent--nested {
+    margin-left: 16px;
+}
+
+.context-sub-agent-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: color-mix(in srgb, var(--td-brand-color) 12%, transparent);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.5;
+    color: var(--td-text-color-secondary);
+}
+
+.context-sub-agent-badge {
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--td-brand-color) 22%, transparent);
+    color: var(--td-brand-color);
+    font-size: 11px;
+}
+
+.context-sub-agent-name {
+    overflow-wrap: anywhere;
+    color: var(--td-text-color-primary);
+}
+
+.context-sub-agent-status {
+    margin-left: auto;
+    font-weight: 400;
+}
+
+.context-sub-agent-body {
+    display: grid;
+    gap: 8px;
+    padding: 8px 10px 10px;
+}
+
+.context-sub-agent-section {
+    padding: 2px 0 0;
+}
+
+.context-sub-agent-toggle {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--td-text-color-secondary);
+    text-align: left;
+    cursor: pointer;
+}
+
+.context-sub-agent-toggle:hover {
+    color: var(--td-brand-color);
+}
+
+.context-sub-agent-hint {
+    font-weight: 400;
+    color: var(--td-text-color-placeholder);
+}
+
+.context-sub-agent-label {
+    margin: 6px 0 2px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--td-text-color-placeholder);
+}
+
+.context-sub-agent-pre {
+    margin: 0;
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--td-text-color-secondary);
+}
+
+.context-sub-agent-message {
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--td-bg-color-container);
+}
+
+.context-sub-agent-message-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--td-text-color-placeholder);
+}
+
+/* The response being streamed: the open message is the newest step, so it reads as in progress. */
+.context-sub-agent-message--live {
+    border: 1px dashed color-mix(in srgb, var(--td-brand-color) 40%, transparent);
+}
+
+.context-sub-agent-tag {
+    padding: 0 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--td-brand-color) 14%, transparent);
+    color: var(--td-brand-color);
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.context-sub-agent-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.context-sub-agent-tool {
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--td-component-border);
+    background: var(--td-bg-color-secondarycontainer);
+}
+
+.context-sub-agent-tool-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--td-text-color-secondary);
+}
