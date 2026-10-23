@@ -322,13 +322,7 @@ async fn tick() {
 }
 
 fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
-    if let Some(text) = payload.downcast_ref::<&str>() {
-        (*text).to_string()
-    } else if let Some(text) = payload.downcast_ref::<String>() {
-        text.clone()
-    } else {
-        "unknown panic".to_string()
-    }
+    crate::utils::panic_payload::panic_payload_message(payload.as_ref())
 }
 
 /// One registered job, as reported for diagnostics.
