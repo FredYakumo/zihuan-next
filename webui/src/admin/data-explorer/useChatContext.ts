@@ -87,6 +87,7 @@ export function useChatContext(serviceId: string) {
   const selectedSenderName = ref("");
 
   const loadingContext = ref(false);
+  const clearingContext = ref(false);
   const turns = ref<ContextTurnView[]>([]);
   /**
    * Partly written sub-agent messages, keyed by `turn id + call path`. A live stream keeps
@@ -98,9 +99,25 @@ export function useChatContext(serviceId: string) {
   const inputTokens = ref(0);
   const outputTokens = ref(0);
   const estimatedContextTokens = ref(0);
+  /** Context window of the service's primary model; absent when it cannot be resolved. */
+  const contextLimitTokens = ref<number | undefined>(undefined);
   const averageCacheHitRate = ref<number | undefined>(undefined);
 
   const selectedTitle = computed(() => selectedSenderName.value || selectedSenderId.value);
+  /** A turn is still generating when it was started but has no finish event yet. */
+  const hasActiveTurn = computed(() => turns.value.some((turn) => !turn.finished));
+  /** The live window starts at its oldest recorded turn; the archive is not part of it. */
+  const contextStartedAt = computed(() => turns.value[0]?.createdAt);
+  /** The reply of the newest turn is the last message; a turn still generating uses its start. */
+  const lastMessageAt = computed(() => {
+    const last = turns.value[turns.value.length - 1];
+    if (!last) return undefined;
+    const startedAt = new Date(last.createdAt);
+    if (Number.isNaN(startedAt.getTime()) || typeof last.generationMs !== "number") {
+      return last.createdAt;
+    }
+    return new Date(startedAt.getTime() + last.generationMs).toISOString();
+  });
   const averageTokensPerSecond = computed(() => {
     let sum = 0;
     let count = 0;
@@ -196,6 +213,7 @@ export function useChatContext(serviceId: string) {
     inputTokens.value = response.input_tokens;
     outputTokens.value = response.output_tokens;
     estimatedContextTokens.value = response.estimated_context_tokens;
+    contextLimitTokens.value = response.context_limit_tokens;
     averageCacheHitRate.value = response.average_cache_hit_rate;
   }
 
@@ -210,6 +228,26 @@ export function useChatContext(serviceId: string) {
       alert((error as Error).message);
     } finally {
       loadingContext.value = false;
+    }
+  }
+
+  /**
+   * Drop the live context window of the selected sender. Finished turns were already archived
+   * in the relational database, so the reload shows them under history instead of as current.
+   */
+  async function clearContext() {
+    if (!selectedSenderId.value || clearingContext.value) return;
+    const senderId = selectedSenderId.value;
+    if (!window.confirm(`确认清除 ${selectedTitle.value} 的当前上下文吗？已完成的轮次会转入历史记录。`)) return;
+    clearingContext.value = true;
+    try {
+      await explorer.clearServiceChatContext(serviceId, senderId);
+      resetFlow();
+      applySavedContext(await explorer.queryServiceChatContext(serviceId, senderId));
+    } catch (error: unknown) {
+      alert((error as Error).message);
+    } finally {
+      clearingContext.value = false;
     }
   }
 
@@ -371,6 +409,7 @@ export function useChatContext(serviceId: string) {
     loadingUsers,
     users,
     loadingContext,
+    clearingContext,
     selectedSenderId,
     selectedSenderName,
     selectedTitle,
@@ -379,11 +418,16 @@ export function useChatContext(serviceId: string) {
     inputTokens,
     outputTokens,
     estimatedContextTokens,
+    contextLimitTokens,
+    contextStartedAt,
+    lastMessageAt,
+    hasActiveTurn,
     averageCacheHitRate,
     averageTokensPerSecond,
     loadUsers,
     selectUser,
     clearSelection,
+    clearContext,
   };
 }
 

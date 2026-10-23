@@ -1093,6 +1093,8 @@ export interface ServiceChatContextResponse {
   /** Turns persisted in the relational database, oldest first. */
   archived: ServiceChatContextTurn[];
   estimated_context_tokens: number;
+  /** Context window of the service's primary model, used as the usage ceiling. */
+  context_limit_tokens?: number;
   input_tokens: number;
   output_tokens: number;
   average_cache_hit_rate?: number;
@@ -1167,6 +1169,11 @@ export const explorer = {
   queryServiceChatContext(serviceId: string, senderId: string): Promise<ServiceChatContextResponse> {
     const qs = buildQueryString({ sender_id: senderId });
     return request("GET", `/explorer/services/${encodeURIComponent(serviceId)}/chat-context?${qs}`);
+  },
+
+  clearServiceChatContext(serviceId: string, senderId: string): Promise<{ cleared: boolean }> {
+    const qs = buildQueryString({ sender_id: senderId });
+    return request("DELETE", `/explorer/services/${encodeURIComponent(serviceId)}/chat-context?${qs}`);
   },
 
   queryMysql(params: {

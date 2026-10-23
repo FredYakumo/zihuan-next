@@ -417,7 +417,8 @@ pub fn build_router(
                         )
                         .push(
                             Router::with_path("chat-context")
-                                .get(explorer::query_service_chat_context),
+                                .get(explorer::query_service_chat_context)
+                                .delete(explorer::clear_service_chat_context),
                         ),
                 )
                 .push(Router::with_path("redis").get(explorer::query_redis))

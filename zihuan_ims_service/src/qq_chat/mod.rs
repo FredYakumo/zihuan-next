@@ -50,7 +50,8 @@ pub use crate::storage::qq_chat_context_store::{
     load_turns as load_archived_context_turns, persist_turn as persist_archived_context_turn,
     ArchivedTurn,
 };
-use crate::storage::qq_chat_history_store::{clear_history, load_history};
+pub use crate::storage::qq_chat_history_store::clear_history;
+use crate::storage::qq_chat_history_store::load_history;
 use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
 use crate::tools::build_job_memory_resources;
 use chrono::Local;

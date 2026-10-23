@@ -145,12 +145,23 @@
     margin-bottom: 16px;
 }
 
+/* The usage panel floats over the top-right corner, so the flow below keeps that width free. */
+.context-detail {
+    padding-right: 260px;
+}
+
 .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .muted {
     color: var(--td-text-color-placeholder);
+}
+
+@media (max-width: 1180px) {
+    .context-detail {
+        padding-right: 0;
+    }
 }
 
 @media (max-width: 768px) {

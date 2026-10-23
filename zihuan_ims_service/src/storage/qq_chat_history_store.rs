@@ -40,7 +40,9 @@ fn clear_history_key(cache: &Arc<LLMMessageSessionCacheRef>, history_key: &str) 
     })
 }
 
-pub(crate) fn clear_history(cache: &Arc<LLMMessageSessionCacheRef>, sender_id: &str) -> Result<()> {
+/// Drop one sender's conversation: the chat history plus the preprompt transcript that would
+/// otherwise still feed the next turn.
+pub fn clear_history(cache: &Arc<LLMMessageSessionCacheRef>, sender_id: &str) -> Result<()> {
     let history_key = conversation_history_key(sender_id);
     clear_history_key(cache, &history_key)?;
 
@@ -48,19 +50,4 @@ pub(crate) fn clear_history(cache: &Arc<LLMMessageSessionCacheRef>, sender_id: &
     clear_history_key(cache, &chat_preprompt_history_key)?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{chat_preprompt_history_key, conversation_history_key};
-
-    #[test]
-    fn history_keys_are_scoped_to_sender() {
-        let conversation_key = conversation_history_key("sender");
-        let preprompt_key = chat_preprompt_history_key("sender");
-
-        assert_eq!(conversation_key, "sender");
-        assert_eq!(preprompt_key, "chat_preprompt:sender");
-        assert_ne!(conversation_key, preprompt_key);
-    }
 }

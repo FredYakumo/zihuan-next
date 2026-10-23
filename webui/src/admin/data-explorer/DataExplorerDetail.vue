@@ -64,6 +64,15 @@
             <strong>{{ selectedTitle }}</strong>
             <span class="mono muted">{{ selectedSenderId }}</span>
           </div>
+          <ContextUsagePanel
+            :used-tokens="estimatedContextTokens"
+            :limit-tokens="contextLimitTokens"
+            :started-at="contextStartedAt"
+            :last-message-at="lastMessageAt"
+            :clearing="clearingContext"
+            :busy="hasActiveTurn"
+            @clear="clearContext"
+          />
           <ChatContextFlow
             :backend="backend"
             :loading-context="loadingContext"
@@ -90,6 +99,7 @@
 <script setup lang="ts">
 import { useDataExplorerDetailPage } from "./DataExplorerDetail";
 import ChatContextFlow from "./ChatContextFlow.vue";
+import ContextUsagePanel from "./ContextUsagePanel.vue";
 
 const {
   capability,
@@ -119,15 +129,21 @@ const {
   selectedSenderId,
   selectedTitle,
   loadingContext,
+  clearingContext,
   turns,
   archivedTurns,
   estimatedContextTokens,
+  contextLimitTokens,
+  contextStartedAt,
+  lastMessageAt,
+  hasActiveTurn,
   inputTokens,
   outputTokens,
   averageTokensPerSecond,
   averageCacheHitRate,
   loadUsers,
   clearSelection,
+  clearContext,
 } = useDataExplorerDetailPage();
 </script>
 

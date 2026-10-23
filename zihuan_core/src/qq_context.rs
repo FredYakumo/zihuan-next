@@ -470,6 +470,16 @@ pub async fn qq_chat_turn_record(
         .and_then(|turns| turns.into_iter().find(|turn| turn.turn_id == turn_id))
 }
 
+/// Forget the turns recorded by this process for one sender.
+///
+/// Called when the live conversation cache is cleared: finished turns already live in the
+/// relational archive, so the context view must stop presenting them as current.
+pub fn clear_qq_chat_turn_records(agent_id: &str, sender_id: &str) {
+    if let Ok(mut guard) = QQ_CHAT_TURN_LOGS.write() {
+        guard.remove(&turn_log_key(agent_id, sender_id));
+    }
+}
+
 /// Turns written to Redis by a previous build, before durable archiving existed.
 ///
 /// Reading the value removes it, so the migration runs once: those turns then live in the
