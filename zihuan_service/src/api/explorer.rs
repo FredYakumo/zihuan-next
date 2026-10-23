@@ -1561,6 +1561,9 @@ struct ServiceChatContextResponse {
     /// Turns archived in the relational database, oldest first, excluding those still in `turns`.
     archived: Vec<ContextTurn>,
     estimated_context_tokens: usize,
+    /// Context window of the service's primary model, used by the UI as the usage ceiling.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context_limit_tokens: Option<usize>,
     input_tokens: usize,
     output_tokens: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1727,10 +1730,15 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
         Err(error) => return render_internal_error(res, error.to_string()),
     };
     // The service's own RustFS connection is what cached the images, so its id is carried on
-    // every preview URL for the media proxy to resolve.
-    let object_storage_connection_id = load_service_and_connections(&service_id)
-        .ok()
-        .and_then(|(agent, _)| zihuan_service::role::object_storage_connection_id(&agent));
+    // every preview URL for the media proxy to resolve. The same service config supplies the
+    // primary model whose context window bounds the usage bar.
+    let service_config = load_service_and_connections(&service_id).ok();
+    let object_storage_connection_id = service_config
+        .as_ref()
+        .and_then(|(agent, _)| zihuan_service::role::object_storage_connection_id(agent));
+    let context_limit_tokens = service_config
+        .as_ref()
+        .and_then(|(agent, _)| primary_context_limit_tokens(agent));
     let object_storage_connection_id = object_storage_connection_id.as_deref();
     // Object sizes are a label on the preview, so a missing or unreachable store just leaves
     // them blank instead of failing the context request.
@@ -1900,6 +1908,7 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
         sender_id,
         system_prompt,
         estimated_context_tokens: estimate_messages_tokens(&messages),
+        context_limit_tokens,
         bubbles,
         turns,
         archived,
@@ -1907,6 +1916,46 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
         output_tokens,
         average_cache_hit_rate,
     }));
+}
+
+/// Clear the live conversation context of one sender.
+///
+/// The runtime cache holds the current window only; finished turns were already archived in
+/// the relational database, so dropping the cache and the process turn log makes the view show
+/// them under history instead of as current context.
+#[handler]
+pub async fn clear_service_chat_context(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let service_id = req.param::<String>("service_id").unwrap_or_default();
+    let sender_id = req
+        .query::<String>("sender_id")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let Some(sender_id) = sender_id else {
+        return render_bad_request(res, "sender_id is required".into());
+    };
+    let Some(cache) = zihuan_core::qq_context::qq_chat_history_cache(&service_id) else {
+        return render_bad_request(
+            res,
+            "Service is not running; no live context is available".into(),
+        );
+    };
+    // Archive whatever the process turn log still holds before dropping it: the requested
+    // operation moves the current context into history, and a turn whose finish-time archive
+    // write failed would otherwise disappear from the view entirely.
+    if let Ok(connection) = resolve_agent_rdb_connection(&service_id).await {
+        for turn in zihuan_core::qq_context::qq_chat_turn_records(&service_id, &sender_id).await {
+            if turn.finished {
+                zihuan_ims_service::qq_chat::persist_archived_context_turn(&connection, &turn);
+            }
+        }
+    }
+    // Clears the conversation history and the preprompt transcript of this sender, the same
+    // reset the QQ runtime performs when the user starts a new conversation.
+    if let Err(error) = zihuan_ims_service::qq_chat::clear_history(&cache, &sender_id) {
+        return render_internal_error(res, error.to_string());
+    }
+    zihuan_core::qq_context::clear_qq_chat_turn_records(&service_id, &sender_id);
+    res.render(Json(json!({ "cleared": true })));
 }
 
 /// Split an assembled QQ user message into its leading system/instruction prefix and the
@@ -1985,6 +2034,21 @@ fn load_service_and_connections(
         .find(|item| item.id == service_id)
         .ok_or_else(|| zihuan_core::string_error!("Service '{}' not found", service_id))?;
     Ok((agent, load_connections()?))
+}
+
+/// Context window of the service's primary model, or `None` when it cannot be resolved.
+fn primary_context_limit_tokens(
+    agent: &zihuan_core::role::service_config::RoleServiceConfig,
+) -> Option<usize> {
+    let llm_ref_id = zihuan_service::role::primary_llm_ref_id(&agent.role_service_type);
+    let llm_refs = zihuan_core::config::llm_refs::load_llm_refs().ok()?;
+    zihuan_core::agent::resource_resolver::resolve_llm_service_config(
+        llm_ref_id.as_deref(),
+        &llm_refs,
+    )
+    .ok()
+    .map(|config| config.context_length)
+    .filter(|length| *length > 0)
 }
 
 /// The backend serving one retrieval connection, or `None` when it is not a

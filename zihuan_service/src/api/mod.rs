@@ -23,6 +23,7 @@ pub mod ws;
 
 use std::sync::Arc;
 
+use futures_util::FutureExt;
 use rust_embed::RustEmbed;
 use salvo::http::{HeaderMap, Method};
 use salvo::prelude::*;
@@ -417,7 +418,8 @@ pub fn build_router(
                         )
                         .push(
                             Router::with_path("chat-context")
-                                .get(explorer::query_service_chat_context),
+                                .get(explorer::query_service_chat_context)
+                                .delete(explorer::clear_service_chat_context),
                         ),
                 )
                 .push(Router::with_path("redis").get(explorer::query_redis))
@@ -434,7 +436,7 @@ pub fn build_router(
                 .push(Router::with_path("rustfs").get(explorer::query_rustfs)),
         );
 
-    let mut router = Router::new();
+    let mut router = Router::new().hoop(CatchPanic);
     router = router.push(
         Router::new()
             .push(Router::with_path("v1/models").get(model_http::list_models))
@@ -453,6 +455,38 @@ pub fn build_router(
         )
         // Serve frontend static files (fallback SPA routing handled by static_embed)
         .push(Router::with_path("<**rest>").get(static_embed::<WebAssets>().fallback("index.html")))
+}
+
+/// Turns a panic escaping a handler into a `500` JSON error.
+///
+/// Without it a panicking handler drops the connection before any response is
+/// written, so clients only see a transport error such as `Failed to fetch`.
+/// Mounted first so it wraps every route, including the static fallback.
+struct CatchPanic;
+
+#[async_trait]
+impl Handler for CatchPanic {
+    async fn handle(
+        &self,
+        req: &mut Request,
+        depot: &mut Depot,
+        res: &mut Response,
+        ctrl: &mut FlowCtrl,
+    ) {
+        let outcome = std::panic::AssertUnwindSafe(ctrl.call_next(req, depot, res))
+            .catch_unwind()
+            .await;
+        let Err(payload) = outcome else {
+            return;
+        };
+        let message = zihuan_core::utils::panic_payload::panic_payload_message(payload.as_ref());
+        // The panic hook already logged the panic with its backtrace; this record ties the
+        // message to the request that failed. The `log` crate is shadowed by the sibling
+        // `log` API module here, so use the absolute path.
+        ::log::error!("{} {} panicked: {message}", req.method(), req.uri().path());
+        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+        res.render(Json(serde_json::json!({ "error": message })));
+    }
 }
 
 struct CanonicalLocalRedirect {

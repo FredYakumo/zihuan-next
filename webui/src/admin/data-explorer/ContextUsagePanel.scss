@@ -1,0 +1,190 @@
+/*
+ * Fixed usage window in the top-right corner of the context page: it stays visible while the
+ * turn flow scrolls, so the current token load and how to reset it are always one glance away.
+ */
+
+.context-usage-panel {
+    --usage-color: var(--admin-accent);
+
+    /* Floats in the top-right corner of the viewport; `.context-detail` reserves the same
+       width on its right so the turn flow never runs underneath it. The top offset leaves
+       room for the stage badge pinned near the content's top edge (`.context-phase-badge`),
+       which otherwise sits in the same corner. */
+    position: fixed;
+    top: 64px;
+    right: 24px;
+    z-index: 30;
+    display: grid;
+    gap: 10px;
+    width: 236px;
+    padding: 14px 16px;
+    border: 1px solid var(--admin-border);
+    border-radius: 16px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--admin-bg-panel) 94%, transparent 6%), color-mix(in srgb, var(--admin-bg-panel-strong) 98%, transparent 2%));
+    box-shadow: var(--admin-card-shadow);
+    backdrop-filter: blur(16px);
+}
+
+.context-usage-panel--warning {
+    --usage-color: var(--admin-warn, #e8a317);
+}
+
+.context-usage-panel--danger {
+    --usage-color: var(--admin-bad, #e34d59);
+}
+
+.context-usage-panel--collapsed {
+    width: auto;
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+
+.context-usage-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.context-usage-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--admin-ink);
+}
+
+.context-usage-badge {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--usage-color) 16%, transparent 84%);
+    color: var(--usage-color);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.context-usage-collapse {
+    padding: 0 2px;
+    border: none;
+    background: none;
+    color: var(--admin-muted);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.context-usage-collapse:hover {
+    color: var(--admin-ink);
+}
+
+.context-usage-bar {
+    height: 6px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--admin-border) 72%, transparent 28%);
+}
+
+.context-usage-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--usage-color);
+    transition: width 0.25s ease;
+}
+
+.context-usage-tokens {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--admin-ink);
+}
+
+.context-usage-tokens strong {
+    font-size: 16px;
+    letter-spacing: 0.01em;
+}
+
+.context-usage-tokens-limit {
+    overflow: hidden;
+    font-size: 12px;
+    color: var(--admin-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.context-usage-meta {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    font-size: 12px;
+}
+
+.context-usage-meta div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.context-usage-meta dt {
+    flex-shrink: 0;
+    color: var(--admin-muted);
+}
+
+.context-usage-meta dd {
+    margin: 0;
+    overflow: hidden;
+    color: var(--admin-ink);
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.context-usage-clear {
+    width: 100%;
+}
+
+/* Collapsed form: a ring that keeps the percentage readable while the panel is out of the way. */
+.context-usage-orb {
+    --usage: 0%;
+
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    padding: 0;
+    border: 1px solid var(--admin-border);
+    border-radius: 50%;
+    background: conic-gradient(var(--usage-color) var(--usage), color-mix(in srgb, var(--admin-border) 64%, transparent 36%) 0);
+    box-shadow: var(--admin-card-shadow);
+    color: var(--admin-ink);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.context-usage-orb::before {
+    content: "";
+    position: absolute;
+    inset: 5px;
+    border-radius: 50%;
+    background: var(--admin-bg-panel);
+}
+
+.context-usage-orb-label {
+    position: relative;
+    z-index: 1;
+}
+
+/* Narrow screens have no spare column beside the flow, so the panel sits above it instead of
+   floating over it. */
+@media (max-width: 1180px) {
+    .context-usage-panel {
+        position: static;
+        width: auto;
+    }
+}

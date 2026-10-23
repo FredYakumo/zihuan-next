@@ -37,6 +37,7 @@ struct Args {
 #[tokio::main]
 async fn main() {
     log_forwarder::init(&BASE_LOG);
+    log_forwarder::install_panic_hook();
 
     if let Err(e) = init_registry::init_node_registry() {
         error!("Failed to initialize node registry: {}", e);

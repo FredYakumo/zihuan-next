@@ -50,14 +50,31 @@ impl Log for LogForwarder {
             let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
             if let Some(task_id) = current_task_id() {
                 if let Some(state) = APP_STATE.get() {
-                    let _ = state.tasks.lock().unwrap().append_task_log(
-                        &task_id,
-                        &TaskLogEntry {
-                            timestamp: timestamp.clone(),
-                            level: level.clone(),
-                            message: message.clone(),
-                        },
-                    );
+                    // Fix: use `try_lock` and skip the task log when the lock is taken instead
+                    // of blocking. The panic hook runs before unwinding, so the panicking thread
+                    // may still hold this lock; waiting with `lock()` there deadlocks against the
+                    // same thread's panic and freezes WebSocket log forwarding too, which hides
+                    // the panic instead of surfacing it.
+                    //
+                    // Previous implementation (blocking, deadlock risk on the panic path):
+                    // let _ = state.tasks.lock().unwrap().append_task_log(
+                    //     &task_id,
+                    //     &TaskLogEntry {
+                    //         timestamp: timestamp.clone(),
+                    //         level: level.clone(),
+                    //         message: message.clone(),
+                    //     },
+                    // );
+                    if let Ok(tasks) = state.tasks.try_lock() {
+                        let _ = tasks.append_task_log(
+                            &task_id,
+                            &TaskLogEntry {
+                                timestamp: timestamp.clone(),
+                                level: level.clone(),
+                                message: message.clone(),
+                            },
+                        );
+                    }
                 }
             }
             // Ignore errors: no receivers yet, channel full, etc.
@@ -95,6 +112,29 @@ pub fn set_broadcast(tx: WsBroadcast) {
 
 pub fn set_app_state(state: Arc<AppState>) {
     let _ = APP_STATE.set(state);
+}
+
+/// Route every panic through the global logger so it reaches the log file and
+/// the WebSocket log panel. The default stderr output is kept by chaining the
+/// previous hook.
+///
+/// A panic payload alone rarely explains where the failure came from (a tokio
+/// "cannot drop a runtime" message, a poisoned mutex, ...), so the location and
+/// a captured backtrace are logged with it.
+pub fn install_panic_hook() {
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let message = zihuan_core::utils::panic_payload::panic_payload_message(info.payload());
+        let location = info
+            .location()
+            .map(|location| {
+                format!("{}:{}:{}", location.file(), location.line(), location.column())
+            })
+            .unwrap_or_else(|| "<unknown location>".to_string());
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        log::error!("panic at {location}: {message}\n{backtrace}");
+        previous_hook(info);
+    }));
 }
 
 pub fn scope_task<T>(task_id: impl Into<String>, f: impl FnOnce() -> T) -> T {
