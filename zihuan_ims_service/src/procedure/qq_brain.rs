@@ -22,7 +22,7 @@ use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
 };
-use zihuan_core::steer::message_with_api_style;
+use zihuan_core::steer::{message_with_api_style, PendingSteerEvent};
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
 use crate::qq_chat::logging::{QqChatToolCallingObserver, QqChatTurnIdentity};
@@ -98,6 +98,7 @@ impl QqBrain {
         base_system_prompt: String,
         shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
         consumed_steer_messages: Arc<Mutex<Vec<LLMMessage>>>,
+        in_flight_steers: Arc<Mutex<Vec<PendingSteerEvent>>>,
         turn_session_state: Arc<Mutex<QqChatSessionState>>,
         emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
         preprompt_context: Option<String>,
@@ -124,6 +125,7 @@ impl QqBrain {
             s3_ref: ctx.s3_ref.cloned(),
             trace: trace.clone(),
             consumed_messages: Arc::clone(&consumed_steer_messages),
+            in_flight_steers: Arc::clone(&in_flight_steers),
             shared_runtime_values: Arc::clone(&shared_runtime_values),
             system_prompt: base_system_prompt.clone(),
             style_prompt: ctx

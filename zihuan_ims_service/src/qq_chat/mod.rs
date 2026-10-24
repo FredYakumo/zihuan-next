@@ -743,9 +743,27 @@ impl QqChatAgentServiceInner {
             })
         });
         let trace = QqChatTaskTrace::new(task_created_at);
-        let result = if let Some(task_handle) = task_handle.as_ref() {
-            if let Some(task_runtime) = ctx.task_runtime.as_ref() {
-                scope_task_runtime(Arc::clone(task_runtime), || {
+        // catch_unwind so a panicking turn thread cannot skip the session release below:
+        // a leaked claim would turn every later message from this sender into steers
+        // that nothing ever drains.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            if let Some(task_handle) = task_handle.as_ref() {
+                if let Some(task_runtime) = ctx.task_runtime.as_ref() {
+                    scope_task_runtime(Arc::clone(task_runtime), || {
+                        scope_task_id(task_handle.task_id.clone(), || {
+                            self.handle_claimed(
+                                &trace,
+                                event,
+                                time,
+                                &sender_id,
+                                &target_id,
+                                is_group,
+                                message_rate_limit.as_ref(),
+                                ctx,
+                            )
+                        })
+                    })
+                } else {
                     scope_task_id(task_handle.task_id.clone(), || {
                         self.handle_claimed(
                             &trace,
@@ -758,32 +776,31 @@ impl QqChatAgentServiceInner {
                             ctx,
                         )
                     })
-                })
+                }
             } else {
-                scope_task_id(task_handle.task_id.clone(), || {
-                    self.handle_claimed(
-                        &trace,
-                        event,
-                        time,
-                        &sender_id,
-                        &target_id,
-                        is_group,
-                        message_rate_limit.as_ref(),
-                        ctx,
-                    )
-                })
+                self.handle_claimed(
+                    &trace,
+                    event,
+                    time,
+                    &sender_id,
+                    &target_id,
+                    is_group,
+                    message_rate_limit.as_ref(),
+                    ctx,
+                )
             }
-        } else {
-            self.handle_claimed(
-                &trace,
-                event,
-                time,
-                &sender_id,
-                &target_id,
-                is_group,
-                message_rate_limit.as_ref(),
-                ctx,
-            )
+        }));
+        let result = match result {
+            Ok(result) => result,
+            Err(payload) => {
+                let panic_message = panic_payload_message(payload);
+                error!(
+                    "{LOG_PREFIX} turn task panicked for sender {sender_id}: {panic_message}"
+                );
+                Err(zihuan_core::string_error!(
+                    "turn task panicked: {panic_message}"
+                ))
+            }
         };
         trace.finish_with_summary();
 
@@ -830,5 +847,16 @@ impl QqChatAgentServiceInner {
             }
         }
         result.map(|_| ())
+    }
+}
+
+/// Stringify a panic payload for logging; payloads are usually `&str` or `String`.
+fn panic_payload_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(text) = payload.downcast_ref::<&str>() {
+        (*text).to_string()
+    } else if let Some(text) = payload.downcast_ref::<String>() {
+        text.clone()
+    } else {
+        "unknown panic payload".to_string()
     }
 }

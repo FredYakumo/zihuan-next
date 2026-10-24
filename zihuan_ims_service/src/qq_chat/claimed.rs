@@ -23,7 +23,7 @@ use crate::storage::message_rate_limit_store::MessageRateLimitCheckResult;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::qq_context::{collect_turn_media_refs, QqChatContextEvent};
-use zihuan_core::steer::message_with_api_style;
+use zihuan_core::steer::{message_with_api_style, PendingSteerEvent};
 
 use zihuan_core::graph::tool_spec::{
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
@@ -41,6 +41,7 @@ use crate::storage::qq_chat_history_store::{
 
 use crate::classify_intent::{classify_intent_with_trace, IntentCategory};
 use crate::qq_chat::command::{run_command_pipeline, CommandTurnEnd};
+use crate::qq_chat::steer::SteerCommitGuard;
 use crate::qq_chat::msg_send::{
     build_reply_result, send_planned_batches, take_reply_directive, QqChatServiceSendContext,
 };
@@ -554,6 +555,15 @@ impl QqChatAgentServiceInner {
         );
 
         let consumed_steer_messages = Arc::new(Mutex::new(Vec::new()));
+        // Steer events drained mid-turn but not yet covered by a sent reply. The guard
+        // rolls them back into the pending store if the turn dies before replying —
+        // including on `?` short-circuits and panics — so they are never lost silently.
+        let in_flight_steers: Arc<Mutex<Vec<PendingSteerEvent>>> = Arc::new(Mutex::new(Vec::new()));
+        let steer_commit_guard = SteerCommitGuard::new(
+            Arc::clone(ctx.pending_steer),
+            sender_id,
+            Arc::clone(&in_flight_steers),
+        );
         let brain = QqBrain::new(
             self,
             ctx,
@@ -571,6 +581,7 @@ impl QqChatAgentServiceInner {
             base_system_prompt,
             Arc::clone(&shared_runtime_values),
             Arc::clone(&consumed_steer_messages),
+            Arc::clone(&in_flight_steers),
             Arc::clone(&turn_session_state),
             emotion_dimensions.clone(),
             preprompt_context.clone(),
@@ -624,6 +635,10 @@ impl QqChatAgentServiceInner {
 
         let mut visible_assistant_history_text = None;
         let mut explicit_no_reply = false;
+        // False when the turn died before producing any reply (transport error, iteration
+        // limit, no content): the session loop then stops instead of chaining a follow-up,
+        // and the steer commit guard rolls consumed steers back into the pending store.
+        let mut turn_completed = false;
         if brain_output_payload.final_reply_text.is_none() {
             match &brain_output_payload.stop_reason {
                 ToolCallingStopReason::TransportError(ref err) => {
@@ -647,6 +662,13 @@ impl QqChatAgentServiceInner {
                     warn!("{LOG_PREFIX} ToolCallingEngine paused at tool-call limit without reply: {}", request.question);
                 }
             }
+            let stop_reason_text = match &brain_output_payload.stop_reason {
+                ToolCallingStopReason::TransportError(_) => "模型调用异常",
+                ToolCallingStopReason::MaxIterationsReached => "推理迭代次数达到上限",
+                ToolCallingStopReason::ToolCallLimitReached(_) => "工具调用次数达到上限",
+                ToolCallingStopReason::AwaitUserInput(_) => "推理暂停在等待输入",
+                ToolCallingStopReason::Done => "没有生成可发送的回复",
+            };
             zihuan_core::qq_context::emit_qq_context_stage(
                 ctx.agent_id,
                 sender_id,
@@ -656,11 +678,12 @@ impl QqChatAgentServiceInner {
                     "stop_reason": format!("{:?}", brain_output_payload.stop_reason),
                     "suppress_send": false,
                     "final_message": null,
-                    "reason": "推理结束但没有可发送的回复",
+                    "reason": format!("推理结束但没有可发送的回复（{stop_reason_text}）"),
                 }),
             );
         } else if brain_output_payload.final_reply_text.is_some() {
             if brain_output_payload.suppress_send {
+                turn_completed = true;
                 explicit_no_reply = true;
                 zihuan_core::qq_context::emit_qq_context_stage(
                     ctx.agent_id,
@@ -675,6 +698,7 @@ impl QqChatAgentServiceInner {
                     }),
                 );
             } else {
+                turn_completed = true;
                 let available_media =
                     collect_available_media_from_brain_output(&brain_output_payload.brain_output);
                 let review_result = turn_outputs
@@ -772,7 +796,12 @@ impl QqChatAgentServiceInner {
         }
 
         history.push(user_msg);
-        history.extend(consumed_steer_messages.lock().unwrap().iter().cloned());
+        // Steer messages drained mid-turn only belong in history once the turn actually
+        // answered them; on a failed turn they are rolled back into the pending store
+        // and the next turn re-injects them fresh.
+        if turn_completed {
+            history.extend(consumed_steer_messages.lock().unwrap().iter().cloned());
+        }
         // The final model call's usage, carried onto the assistant history message so the live
         // context view can report input/output tokens and cache hit rate. `usage` is not part of
         // request serialization, so this never affects inference.
@@ -853,7 +882,10 @@ impl QqChatAgentServiceInner {
         };
         trace.log_result_summary(&result_summary);
 
-        Ok(QqChatServiceTurnResult { result_summary })
+        if turn_completed {
+            steer_commit_guard.commit();
+        }
+        Ok(QqChatServiceTurnResult { result_summary, turn_completed })
     }
 
     /// Handles meta-query intents (AskToolList, AskSystemPrompt) by using a dedicated
@@ -953,6 +985,7 @@ impl QqChatAgentServiceInner {
             emit_meta_query_turn_finished(ctx, sender_id, turn_id, &meta_payload, None);
             return Ok(QqChatServiceTurnResult {
                 result_summary: format!("元查询[{sender_id}]：LLM未返回有效回复"),
+                turn_completed: true,
             });
         };
         zihuan_core::qq_context::emit_qq_context_stage(
@@ -978,6 +1011,7 @@ impl QqChatAgentServiceInner {
             emit_meta_query_turn_finished(ctx, sender_id, turn_id, &meta_payload, None);
             return Ok(QqChatServiceTurnResult {
                 result_summary: format!("已处理[{sender_id}]的元查询，显式选择不回复"),
+                turn_completed: true,
             });
         }
 
@@ -1093,7 +1127,7 @@ impl QqChatAgentServiceInner {
             visible_assistant_history_text.as_deref(),
         );
 
-        Ok(QqChatServiceTurnResult { result_summary })
+        Ok(QqChatServiceTurnResult { result_summary, turn_completed: true })
     }
 }
 

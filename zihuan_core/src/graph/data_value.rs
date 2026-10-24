@@ -78,6 +78,8 @@ pub struct SessionStateEntry {
     pub in_session: bool,
     pub state_json: Value,
     pub(crate) claim_token: Option<u64>,
+    /// When the claim was taken; backs the staleness watchdog in `try_claim_with_ttl`.
+    pub(crate) claimed_at: Option<std::time::Instant>,
 }
 
 impl SessionStateEntry {
@@ -147,6 +149,7 @@ impl SessionStateRef {
             in_session: false,
             state_json: Value::Null,
             claim_token: None,
+            claimed_at: None,
         })
     }
 
@@ -159,10 +162,33 @@ impl SessionStateRef {
         sender_id: &str,
         state_json: Option<Value>,
     ) -> (SessionStateEntry, bool) {
+        self.try_claim_with_ttl(sender_id, state_json, None).await
+    }
+
+    /// Claim with a staleness watchdog. When `stale_ttl` is set and the existing claim
+    /// is older than the TTL, the claim is treated as leaked (its owning task panicked
+    /// or hung without releasing) and is stolen. `release` is token-guarded, so a late
+    /// release from the stolen owner cannot undo the new claim.
+    pub async fn try_claim_with_ttl(
+        &self,
+        sender_id: &str,
+        state_json: Option<Value>,
+        stale_ttl: Option<std::time::Duration>,
+    ) -> (SessionStateEntry, bool) {
         let mut entries = self.entries.lock().await;
         if let Some(existing) = entries.get(sender_id) {
             if existing.in_session {
-                return (existing.clone(), false);
+                let expired = match (existing.claimed_at, stale_ttl) {
+                    (Some(claimed_at), Some(ttl)) => claimed_at.elapsed() > ttl,
+                    _ => false,
+                };
+                if !expired {
+                    return (existing.clone(), false);
+                }
+                log::warn!(
+                    "Session claim for {sender_id} on {} held past {:?}; treating it as leaked and stealing it",
+                    self.node_id, stale_ttl
+                );
             }
         }
 
@@ -171,6 +197,7 @@ impl SessionStateRef {
             in_session: true,
             state_json: state_json.unwrap_or(Value::Null),
             claim_token: Some(claim_token),
+            claimed_at: Some(std::time::Instant::now()),
         };
         entries.insert(sender_id.to_string(), entry.clone());
         (entry, true)
@@ -194,6 +221,7 @@ impl SessionStateRef {
                 in_session: false,
                 state_json: Value::Null,
                 claim_token: None,
+                claimed_at: None,
             },
         );
         true

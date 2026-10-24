@@ -46,4 +46,9 @@ pub(crate) type QqChatServiceReplyBatchBuilder = Arc<
 #[derive(Debug, Clone)]
 pub(crate) struct QqChatServiceTurnResult {
     pub(crate) result_summary: String,
+    /// True when the turn reached a definite outcome (reply sent, or an explicit
+    /// no-reply). False means the turn died before producing any reply (transport
+    /// error, iteration limit, panic, upstream failure); the session's follow-up loop
+    /// must then stop instead of chaining another turn onto a failure.
+    pub(crate) turn_completed: bool,
 }

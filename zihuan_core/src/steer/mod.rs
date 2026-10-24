@@ -76,6 +76,20 @@ impl PendingSteerStore {
         (true, session.queue.len(), session.accepted_steer_count)
     }
 
+    /// Push drained-but-unanswered events back to the front of the queue, preserving
+    /// their original order. Used when a turn consumed steers but failed before any
+    /// reply covered them, so the next turn answers them instead of losing them.
+    pub fn requeue_front(&self, sender_id: &str, events: Vec<PendingSteerEvent>) {
+        if events.is_empty() {
+            return;
+        }
+        let mut guard = self.by_sender.lock().unwrap();
+        let session = guard.entry(sender_id.to_string()).or_default();
+        for event in events.into_iter().rev() {
+            session.queue.push_front(event);
+        }
+    }
+
     /// Drain all pending events for the given sender.
     /// Returns `(drained_events, remaining_queue_len, accepted_steer_count)`.
     pub fn drain_all(&self, sender_id: &str) -> (Vec<PendingSteerEvent>, usize, usize) {
