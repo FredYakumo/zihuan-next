@@ -24,6 +24,9 @@ use self::core::{
     prepare_current_turn_user_input_from_event,
 };
 pub(crate) use self::core::{QqChatTaskTrace, LOG_PREFIX};
+pub(crate) use self::core::{
+    build_user_message, compact_turn_history, split_current_user_body, split_system_prompt_prefix,
+};
 use self::ignore_store::should_ignore_message_blocking;
 use self::inbox::QqChatAgentServiceInbox;
 use self::language_style_store::get_applicable_language_style_blocking;

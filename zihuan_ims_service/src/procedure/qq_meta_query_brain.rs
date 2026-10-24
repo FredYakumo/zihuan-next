@@ -47,6 +47,13 @@ impl Procedure for QqMetaQueryBrain<'_> {
 
     async fn run(&self, _context: &ProcedureContext) -> Result<ProcedureOutput> {
         self.trace.mark_llm_request_started();
+        // The meta-query brain never goes through the normal turn-input assembly; the user
+        // message it was sent stands in as the turn's current user message.
+        let current_user_message = self
+            .meta_messages
+            .last()
+            .cloned()
+            .unwrap_or_else(|| LLMMessage::user(String::new()));
         let response = match self.llm.inference(&InferenceParam {
             messages: &self.meta_messages,
             tools: None,
@@ -57,6 +64,7 @@ impl Procedure for QqMetaQueryBrain<'_> {
                 return Ok(ProcedureOutput::of(QqBrainOutput {
                     final_reply_text: None,
                     suppress_send: false,
+                    current_user_message,
                     brain_output: vec![],
                     stop_reason: ToolCallingStopReason::TransportError(err.to_string()),
                 }));
@@ -68,6 +76,7 @@ impl Procedure for QqMetaQueryBrain<'_> {
             return Ok(ProcedureOutput::of(QqBrainOutput {
                 final_reply_text: None,
                 suppress_send: false,
+                current_user_message,
                 brain_output: vec![response],
                 stop_reason: ToolCallingStopReason::Done,
             }));
@@ -79,6 +88,7 @@ impl Procedure for QqMetaQueryBrain<'_> {
         Ok(ProcedureOutput::of(QqBrainOutput {
             final_reply_text: Some(candidate_message.to_string()),
             suppress_send,
+            current_user_message,
             brain_output: vec![response],
             stop_reason: ToolCallingStopReason::Done,
         }))

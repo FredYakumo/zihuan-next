@@ -245,7 +245,10 @@ pub(crate) struct QqChatServiceSteerHook {
     pub(crate) style_prompt: Option<String>,
     pub(crate) session_state: Arc<Mutex<QqChatSessionState>>,
     pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
-    pub(crate) preprompt_context: Option<String>,
+    /// The turn's preprompt context block. The hook is assembled before the procedure chain
+    /// runs, so the block is written into this shared cell by the brain procedure (after the
+    /// before-brain procedure produced it) instead of being passed at construction.
+    pub(crate) preprompt_context: Arc<Mutex<Option<String>>>,
 }
 
 impl ToolCallingMiddleware for QqChatServiceSteerHook {
@@ -285,6 +288,7 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
             injected.push(inference_event);
         }
 
+        let preprompt_context = self.preprompt_context.lock().unwrap().clone();
         let steer_message = if prepared_inputs.len() == 1 {
             let mut session_state = self.session_state.lock().unwrap();
             build_steer_user_message(
@@ -297,7 +301,7 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
                 self.style_prompt.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
-                self.preprompt_context.as_deref(),
+                preprompt_context.as_deref(),
             )
         } else {
             let mut session_state = self.session_state.lock().unwrap();
@@ -311,7 +315,7 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
                 self.style_prompt.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
-                self.preprompt_context.as_deref(),
+                preprompt_context.as_deref(),
             )
         };
         consumed_guard.push(steer_message.clone());
