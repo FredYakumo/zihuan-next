@@ -139,7 +139,7 @@ impl RoleServiceManager {
         mut context: ProcedureContext,
         mut procedures: Vec<Arc<dyn Procedure>>,
     ) -> Result<Vec<ProcedureOutput>> {
-        let mut owned = if super::service_type_ext::is_workspace_agent(agent) {
+        let mut owned = if super::service_type_ext::is_workspace_role_service(agent) {
             zihuan_workspace_service::procedure::collect(agent, &context)
         } else {
             Vec::new()
@@ -177,7 +177,7 @@ impl RoleServiceManager {
 
             let runtime_instance_id = Uuid::new_v4().to_string();
 
-            let is_qq_chat = super::service_type_ext::is_qq_chat_agent(agent);
+            let is_qq_chat = super::service_type_ext::is_qq_chat_role_service(agent);
             if is_qq_chat {
                 let config = super::service_type_ext::qq_chat_of(&agent.role_service_type)?;
                 let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
@@ -394,7 +394,7 @@ pub fn build_role_tool_provider(
     agent: &RoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
-    if super::service_type_ext::is_qq_chat_agent(agent) {
+    if super::service_type_ext::is_qq_chat_role_service(agent) {
         let config = super::service_type_ext::qq_chat_of(&agent.role_service_type)?;
         zihuan_ims_service::qq_chat::load_inference_tool_provider(agent, &config, connections)
     } else {

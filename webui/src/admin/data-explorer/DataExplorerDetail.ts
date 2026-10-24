@@ -16,7 +16,7 @@ export function useDataExplorerDetailPage() {
   if (capability === "contexts") context.loadUsers();
   const { backend, loadingUsers, users, selectedSenderId, selectedTitle, loadingContext, clearingContext, turns, archivedTurns, estimatedContextTokens, contextLimitTokens, contextStartedAt, lastMessageAt, hasActiveTurn, inputTokens, outputTokens, averageTokensPerSecond, averageCacheHitRate, loadUsers, clearSelection, clearContext } = context;
 
-  const userColumns: PrimaryTableCol<ServiceChatUserItem>[] = [{ colKey: "sender", title: "用户", width: 220 }, { colKey: "group", title: "最近群组", width: 180 }, { colKey: "turn_count", title: "消息数", width: 100 }, { colKey: "last", title: "最近时间", width: 200 }];
+  const userColumns: PrimaryTableCol<ServiceChatUserItem>[] = [{ colKey: "sender", title: "用户", width: 220 }, { colKey: "group", title: "最近群组", width: 180 }, { colKey: "context_tokens", title: "上下文 Token", width: 130 }, { colKey: "last", title: "最近时间", width: 200 }];
   const messageColumns: PrimaryTableCol<MysqlRecord>[] = [{ colKey: "message_id", title: "消息 ID", width: 160 }, { colKey: "sender", title: "发送者", width: 160 }, { colKey: "send_time", title: "发送时间", width: 180 }, { colKey: "group", title: "群组", width: 150 }, { colKey: "content", title: "内容" }];
 
   const pageTitle = computed(() => capability === "messages" ? "聊天记录" : capability === "memories" ? "记忆" : capability === "contexts" ? "上下文" : "图片库");

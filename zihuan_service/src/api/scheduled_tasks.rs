@@ -15,7 +15,7 @@ async fn connection_for_service(
         .into_iter()
         .find(|agent| agent.id == service_id)
         .ok_or_else(|| "Service not found".to_string())?;
-    if !zihuan_service::role::is_qq_chat_agent(&agent) {
+    if !zihuan_service::role::is_qq_chat_role_service(&agent) {
         return Err("计划任务目前仅支持 QQ Chat Service".to_string());
     }
     let config = zihuan_service::role::qq_chat_of(&agent.role_service_type)

@@ -35,10 +35,10 @@ impl ConfigRecord for RoleServiceConfig {
 
     fn validate(&self) -> Result<()> {
         if self.canonical_config_id().trim().is_empty() {
-            return Err(crate::string_error!("agent config_id must not be empty"));
+            return Err(crate::string_error!("role service config_id must not be empty"));
         }
         if self.name.trim().is_empty() {
-            return Err(crate::string_error!("agent name must not be empty"));
+            return Err(crate::string_error!("role service name must not be empty"));
         }
         Ok(())
     }
@@ -54,23 +54,23 @@ impl ConfigRecord for RoleServiceConfig {
 }
 
 pub fn load_role_services() -> Result<Vec<RoleServiceConfig>> {
-    let agents = ConfigCenter::shared()
+    let role_services = ConfigCenter::shared()
         .list_configs(ConfigCategory::Service)?
         .into_iter()
-        .map(agent_from_record)
+        .map(role_service_from_record)
         .collect::<Result<Vec<_>>>()?;
-    for agent in &agents {
+    for role_service in &role_services {
         info!(
-            "[config_center] loaded agent config_id={} kind={:?} name='{}'",
-            agent.canonical_config_id(),
-            agent.kind(),
-            agent.name
+            "[config_center] loaded role service config_id={} kind={:?} name='{}'",
+            role_service.canonical_config_id(),
+            role_service.kind(),
+            role_service.name
         );
     }
-    Ok(agents)
+    Ok(role_services)
 }
 
-pub fn save_role_services(agents: Vec<RoleServiceConfig>) -> Result<()> {
+pub fn save_role_services(role_services: Vec<RoleServiceConfig>) -> Result<()> {
     let center = ConfigCenter::shared();
     let existing_ids = center
         .list_configs(ConfigCategory::Service)?
@@ -79,9 +79,9 @@ pub fn save_role_services(agents: Vec<RoleServiceConfig>) -> Result<()> {
         .collect::<std::collections::HashSet<_>>();
     let mut incoming_ids = std::collections::HashSet::new();
 
-    for agent in agents {
-        let agent = normalize_identity(agent, center.new_config_id());
-        let record = agent_to_record(&agent)?;
+    for role_service in role_services {
+        let role_service = normalize_identity(role_service, center.new_config_id());
+        let record = role_service_to_record(&role_service)?;
         incoming_ids.insert(record.config_id.clone());
         center.upsert_config(record)?;
     }
@@ -93,47 +93,56 @@ pub fn save_role_services(agents: Vec<RoleServiceConfig>) -> Result<()> {
     Ok(())
 }
 
-fn normalize_identity(mut agent: RoleServiceConfig, fallback_id: String) -> RoleServiceConfig {
-    let canonical = if agent.config_id.trim().is_empty() {
-        if agent.id.trim().is_empty() {
+fn normalize_identity(
+    mut role_service: RoleServiceConfig,
+    fallback_id: String,
+) -> RoleServiceConfig {
+    let canonical = if role_service.config_id.trim().is_empty() {
+        if role_service.id.trim().is_empty() {
             fallback_id
         } else {
-            agent.id.clone()
+            role_service.id.clone()
         }
     } else {
-        agent.config_id.clone()
+        role_service.config_id.clone()
     };
-    agent.id = canonical.clone();
-    agent.config_id = canonical;
-    agent
+    role_service.id = canonical.clone();
+    role_service.config_id = canonical;
+    role_service
 }
 
-fn agent_to_record(agent: &RoleServiceConfig) -> Result<StoredConfigRecord> {
-    agent.validate()?;
+fn role_service_to_record(role_service: &RoleServiceConfig) -> Result<StoredConfigRecord> {
+    role_service.validate()?;
     let mut spec = Map::new();
-    spec.insert("role_service_type".to_string(), serde_json::to_value(&agent.role_service_type)?);
-    spec.insert("auto_start".to_string(), Value::Bool(agent.auto_start));
-    spec.insert("is_default".to_string(), Value::Bool(agent.is_default));
-    spec.insert("tools".to_string(), serde_json::to_value(&agent.tools)?);
-    if let Some(avatar_url) = &agent.avatar_url {
+    spec.insert(
+        "role_service_type".to_string(),
+        serde_json::to_value(&role_service.role_service_type)?,
+    );
+    spec.insert("auto_start".to_string(), Value::Bool(role_service.auto_start));
+    spec.insert("is_default".to_string(), Value::Bool(role_service.is_default));
+    spec.insert("tools".to_string(), serde_json::to_value(&role_service.tools)?);
+    if let Some(avatar_url) = &role_service.avatar_url {
         spec.insert("avatar_url".to_string(), Value::String(avatar_url.clone()));
     }
     Ok(StoredConfigRecord {
-        config_id: agent.canonical_config_id().to_string(),
-        kind: agent.kind(),
-        name: agent.name.clone(),
-        enabled: agent.enabled,
-        updated_at: agent.updated_at.clone(),
+        config_id: role_service.canonical_config_id().to_string(),
+        kind: role_service.kind(),
+        name: role_service.name.clone(),
+        enabled: role_service.enabled,
+        updated_at: role_service.updated_at.clone(),
         spec: Value::Object(spec),
     })
 }
 
-fn agent_from_record(record: StoredConfigRecord) -> Result<RoleServiceConfig> {
+fn role_service_from_record(record: StoredConfigRecord) -> Result<RoleServiceConfig> {
     if record.kind.category() != ConfigCategory::Service {
-        return Err(crate::string_error!("config '{}' is not an agent config", record.config_id));
+        return Err(crate::string_error!(
+            "config '{}' is not a role service config",
+            record.config_id
+        ));
     }
     let spec = record.spec.as_object().ok_or_else(|| {
-        crate::string_error!("agent config '{}' spec must be an object", record.config_id)
+        crate::string_error!("role service config '{}' spec must be an object", record.config_id)
     })?;
     let role_service_type =
         serde_json::from_value(spec.get("role_service_type").cloned().unwrap_or(Value::Null))?;

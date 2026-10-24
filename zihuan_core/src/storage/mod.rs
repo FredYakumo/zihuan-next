@@ -1,5 +1,3 @@
-mod agent_avatar_rdb_store;
-pub mod agent_avatar_store;
 mod agent_memory_weaviate;
 mod connection_manager;
 mod db_schema;
@@ -13,6 +11,8 @@ pub mod rdb;
 pub mod redis;
 pub mod resource_resolver;
 mod retrieval_ops;
+mod role_avatar_rdb_store;
+pub mod role_avatar_store;
 pub mod rustfs;
 pub mod sqlite;
 pub mod weaviate;
@@ -33,8 +33,6 @@ use serde_json::{json, Value};
 pub use crate::retrieval::{
     RetrievalBackend, RetrievalSchema, RetrievalStoreConfig, RetrievalStoreRef,
 };
-pub use agent_avatar_rdb_store::{first_available_agent_avatar_store, RdbAgentAvatarStore};
-pub use agent_avatar_store::{AgentAvatarData, AgentAvatarStore};
 pub use agent_memory_weaviate::{
     create_memory_record, create_memory_record_with_vector, delete_memory_record,
     extend_expiry_for_hits, get_memory_record, is_memory_expired, list_recent_memory_keys,
@@ -74,6 +72,8 @@ pub use retrieval_ops::{
     persist_qq_message_list_to_store, search_images_in_store, search_memory_in_store,
     upsert_memory_in_store, ImagePersistenceRequest,
 };
+pub use role_avatar_rdb_store::{first_available_role_avatar_store, RdbRoleAvatarStore};
+pub use role_avatar_store::{RoleAvatarData, RoleAvatarStore};
 pub use weaviate_client::WeaviateClient;
 pub use weaviate_persistence::{
     build_image_record_properties, deterministic_media_object_id, deterministic_message_object_id,

@@ -420,7 +420,7 @@ pub async fn spawn(
     // One-time migration of the retired dream_memory table into the agent's memory store.
     // Best-effort: when the backend is unavailable the rows stay for the next start.
     if let (Some(connection), Some(memory)) = (rdb_pool.as_ref(), job_memory) {
-        match zihuan_core::scheduled_task::migrate_legacy_dream_memory(
+        match zihuan_core::database::migrate_legacy_dream_memory(
             connection,
             &agent.id,
             |sender_id, content| {

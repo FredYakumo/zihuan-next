@@ -274,7 +274,7 @@ async fn hot_reload_agents_for_saved_graph(
             "[workflow_save] hot reloading running agent '{}' after graph save: {}",
             agent.name, saved_path
         );
-        if let Err(err) = crate::api::config::role_services::start_role_service(
+        if let Err(err) = crate::api::config::role_services::start_role_service_runtime(
             state.clone(),
             broadcast_tx.clone(),
             &agent,

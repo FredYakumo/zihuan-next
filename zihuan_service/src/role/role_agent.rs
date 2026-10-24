@@ -260,7 +260,7 @@ impl RoleAgent {
             ));
         }
 
-        if super::service_type_ext::is_workspace_agent(&self.agent) {
+        if super::service_type_ext::is_workspace_role_service(&self.agent) {
             if let (Some(observer), Some(latest_user_index)) = (
                 compaction_observer,
                 conversation

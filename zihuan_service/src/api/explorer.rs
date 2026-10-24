@@ -1423,7 +1423,9 @@ struct ServiceChatUserItem {
     sender_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     group_name: Option<String>,
-    turn_count: i64,
+    /// Estimated tokens of the sender's live context window, computed by the same estimator
+    /// as the context page's usage panel; an unreadable window reports 0.
+    context_tokens: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_time: Option<String>,
 }
@@ -1459,31 +1461,31 @@ pub async fn query_service_chat_users(req: &mut Request, res: &mut Response, _de
         Err(_) => Vec::new(),
     };
 
-    let mut users: Vec<ServiceChatUserItem> = sender_ids
-        .into_iter()
-        .map(|sender_id| {
-            let profile = profiles.iter().find(|row| row.0 == sender_id);
-            ServiceChatUserItem {
-                sender_name: profile
-                    .map(|row| row.1.clone())
-                    .filter(|name| !name.trim().is_empty())
-                    .unwrap_or_else(|| sender_id.clone()),
-                group_name: profile.and_then(|row| row.2.clone()),
-                turn_count: profile.map(|row| row.3).unwrap_or(0),
-                last_time: profile.and_then(|row| row.4.clone()),
-                sender_id,
-            }
-        })
-        .collect();
+    let mut users: Vec<ServiceChatUserItem> = Vec::with_capacity(sender_ids.len());
+    for sender_id in sender_ids {
+        let profile = profiles.iter().find(|row| row.0 == sender_id);
+        let context_tokens =
+            estimate_messages_tokens(&cache.get_messages(&sender_id).await.unwrap_or_default());
+        users.push(ServiceChatUserItem {
+            sender_name: profile
+                .map(|row| row.1.clone())
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or_else(|| sender_id.clone()),
+            group_name: profile.and_then(|row| row.2.clone()),
+            context_tokens,
+            last_time: profile.and_then(|row| row.3.clone()),
+            sender_id,
+        });
+    }
     users.sort_by(|left, right| right.last_time.cmp(&left.last_time));
     res.render(Json(ServiceChatUsersResponse { backend, users }));
 }
 
-/// `(sender_id, sender_name, group_name, message_count, last_send_time)` per sender.
+/// `(sender_id, sender_name, group_name, last_send_time)` per sender.
 async fn load_message_sender_profiles(
     connection: &RelationalDbConnection,
-) -> zihuan_core::error::Result<Vec<(String, String, Option<String>, i64, Option<String>)>> {
-    const SQL: &str = "SELECT sender_id, MAX(sender_name) AS sender_name, MAX(group_name) AS group_name, COUNT(*) AS cnt, MAX(send_time) AS last_time FROM message_record GROUP BY sender_id";
+) -> zihuan_core::error::Result<Vec<(String, String, Option<String>, Option<String>)>> {
+    const SQL: &str = "SELECT sender_id, MAX(sender_name) AS sender_name, MAX(group_name) AS group_name, MAX(send_time) AS last_time FROM message_record GROUP BY sender_id";
     let mut rows = Vec::new();
     match connection {
         RelationalDbConnection::MySql(config) => {
@@ -1497,7 +1499,6 @@ async fn load_message_sender_profiles(
                     row.try_get::<String, _>("sender_id").unwrap_or_default(),
                     row.try_get::<String, _>("sender_name").unwrap_or_default(),
                     row.try_get::<Option<String>, _>("group_name").unwrap_or(None),
-                    row.try_get::<i64, _>("cnt").unwrap_or(0),
                     row.try_get::<chrono::NaiveDateTime, _>("last_time")
                         .map(|time| time.format("%Y-%m-%d %H:%M:%S").to_string())
                         .ok(),
@@ -1515,7 +1516,6 @@ async fn load_message_sender_profiles(
                     row.try_get::<String, _>("sender_id").unwrap_or_default(),
                     row.try_get::<String, _>("sender_name").unwrap_or_default(),
                     row.try_get::<Option<String>, _>("group_name").unwrap_or(None),
-                    row.try_get::<i64, _>("cnt").unwrap_or(0),
                     row.try_get::<String, _>("last_time").ok(),
                 ));
             }
