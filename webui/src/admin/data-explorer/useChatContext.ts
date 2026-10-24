@@ -271,7 +271,7 @@ export function useChatContext(serviceId: string) {
         sender_id: senderId,
         sender_name: senderName,
         group_name: groupName ?? undefined,
-        turn_count: 0,
+        context_tokens: 0,
         last_time: new Date().toISOString(),
       },
       ...users.value,

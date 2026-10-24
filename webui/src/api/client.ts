@@ -1020,7 +1020,7 @@ export interface ServiceChatUserItem {
   sender_id: string;
   sender_name: string;
   group_name?: string;
-  turn_count: number;
+  context_tokens: number;
   last_time?: string;
 }
 
