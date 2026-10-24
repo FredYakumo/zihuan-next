@@ -3,6 +3,7 @@
     <div class="context-bubble-row context-bubble-row--user">
       <div class="context-bubble context-bubble--user">
         <div class="context-bubble-head">用户输入</div>
+        <p v-if="turn.groupName" class="context-bubble-group">{{ turn.groupName }}</p>
         <div v-if="turn.quoted" class="context-quote" :class="{ collapsed: !quoteOpen }">
           <button
             type="button"

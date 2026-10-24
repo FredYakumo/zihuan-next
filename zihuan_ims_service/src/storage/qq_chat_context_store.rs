@@ -17,6 +17,8 @@ pub struct ArchivedTurn {
     pub turn_id: String,
     pub created_at: String,
     pub user_text: String,
+    pub group_name: Option<String>,
+    pub is_group: bool,
     pub quoted: Option<QqChatQuotedMessage>,
     pub media: Vec<MediaRef>,
     pub entries: Vec<QqChatTurnEntry>,
@@ -135,7 +137,7 @@ fn persist_turn_inner(
     Ok(())
 }
 
-const SELECT_SQL: &str = "SELECT turn_id, created_at, user_text, quoted_json, media_json, entries_json, assistant_text, reasoning_text, prompt_tokens, cached_prompt_tokens, prompt_cache_miss_tokens, completion_tokens, total_tokens, generation_ms, output_tokens_per_second, continues_previous, finished FROM qq_chat_context_turn WHERE agent_id = ? AND sender_id = ? ORDER BY created_at ASC LIMIT ?";
+const SELECT_SQL: &str = "SELECT turn_id, created_at, user_text, group_name, is_group, quoted_json, media_json, entries_json, assistant_text, reasoning_text, prompt_tokens, cached_prompt_tokens, prompt_cache_miss_tokens, completion_tokens, total_tokens, generation_ms, output_tokens_per_second, continues_previous, finished FROM qq_chat_context_turn WHERE agent_id = ? AND sender_id = ? ORDER BY created_at ASC LIMIT ?";
 
 /// Archived turns for one sender, oldest first.
 pub fn load_turns(
@@ -167,6 +169,8 @@ pub fn load_turns(
                         .map(|value| value.format("%Y-%m-%d %H:%M:%S").to_string())
                         .unwrap_or_default(),
                     user_text: row.try_get("user_text").unwrap_or_default(),
+                    group_name: row.try_get("group_name").unwrap_or(None),
+                    is_group: row.try_get::<i64, _>("is_group").unwrap_or(0) != 0,
                     quoted: parse_quoted(row.try_get("quoted_json").unwrap_or(None)),
                     media: parse_media(row.try_get("media_json").unwrap_or(None)),
                     entries: parse_entries(row.try_get("entries_json").unwrap_or(None)),
@@ -208,6 +212,8 @@ pub fn load_turns(
                     turn_id: row.try_get("turn_id").unwrap_or_default(),
                     created_at: row.try_get("created_at").unwrap_or_default(),
                     user_text: row.try_get("user_text").unwrap_or_default(),
+                    group_name: row.try_get("group_name").unwrap_or(None),
+                    is_group: row.try_get::<i64, _>("is_group").unwrap_or(0) != 0,
                     quoted: parse_quoted(row.try_get("quoted_json").unwrap_or(None)),
                     media: parse_media(row.try_get("media_json").unwrap_or(None)),
                     entries: parse_entries(row.try_get("entries_json").unwrap_or(None)),

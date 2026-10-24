@@ -64,6 +64,8 @@ export interface ContextTurnView {
   turnId: string;
   createdAt: string;
   userText: string;
+  /** Group the user message was sent in; only present for group chats. */
+  groupName?: string;
   /** Quoted message shown as a collapsible block inside the user bubble. */
   quoted?: ContextQuotedMessage;
   media: ServiceChatContextMedia[];
@@ -191,6 +193,7 @@ export function useChatContext(serviceId: string) {
       turnId: turn.turn_id,
       createdAt: turn.created_at,
       userText: turn.user_text,
+      groupName: turn.group_name,
       quoted: toQuotedView(turn.quoted),
       media: turn.media ?? [],
       entries,
@@ -285,6 +288,7 @@ export function useChatContext(serviceId: string) {
       turnId: event.turn_id,
       createdAt: "created_at" in event ? String(event.created_at) : new Date().toISOString(),
       userText: event.kind === "turn_started" ? event.user_text : "",
+      groupName: event.kind === "turn_started" ? event.group_name : undefined,
       quoted: event.kind === "turn_started" ? toQuotedView(event.quoted) : undefined,
       media: event.kind === "turn_started" ? event.media ?? [] : [],
       entries: [],
