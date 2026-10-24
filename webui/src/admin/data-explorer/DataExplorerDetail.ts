@@ -11,7 +11,7 @@ export function useDataExplorerDetailPage() {
   const router = useRouter();
   const serviceId = String(route.params.serviceId ?? "");
   const capability = String(route.params.capability ?? "") as ServiceCapability;
-  const { service, loadingService, unavailable, message, searchMessages, changeMessagePage, memory, searchMemories, image, searchImages, mutateMemory } = useDataExplorerDetail(serviceId, capability);
+  const { service, loadingService, unavailable, message, searchMessages, changeMessagePage, memory, memoryDialog, searchMemories, image, searchImages, mutateMemory, submitMemoryDialog } = useDataExplorerDetail(serviceId, capability);
   const context = useChatContext(serviceId);
   if (capability === "contexts") context.loadUsers();
   const { backend, loadingUsers, users, selectedSenderId, selectedTitle, loadingContext, clearingContext, turns, archivedTurns, estimatedContextTokens, contextLimitTokens, contextStartedAt, lastMessageAt, hasActiveTurn, inputTokens, outputTokens, averageTokensPerSecond, averageCacheHitRate, loadUsers, clearSelection, clearContext } = context;
@@ -44,8 +44,10 @@ export function useDataExplorerDetailPage() {
     searchMessages,
     onMessagePaginationChange,
     memory,
+    memoryDialog,
     searchMemories,
     mutateMemory,
+    submitMemoryDialog,
     image,
     searchImages,
     failedPreviews,

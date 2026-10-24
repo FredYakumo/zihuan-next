@@ -43,6 +43,32 @@
         <div class="search-form search-form--simple"><t-input v-model="memory.query" placeholder="搜索记忆标题或内容" clearable @enter="searchMemories" /><t-input-number v-model="memory.limit" :min="1" :max="50" /><t-button theme="primary" :loading="memory.loading" @click="searchMemories">搜索</t-button><t-button v-if="memory.mutable" variant="outline" @click="mutateMemory('create')">新建记忆</t-button></div>
         <div v-if="memory.items.length" class="memory-list"><article v-for="item in memory.items" :key="item.object_id" class="memory-item"><div class="memory-item-header"><strong>{{ item.title }}</strong><span><t-tag v-for="kind in item.match_kinds" :key="kind" size="small" variant="light" :theme="kind === 'keyword' ? 'primary' : 'default'">{{ matchLabel(kind) }}</t-tag></span></div><p>{{ item.value }}</p><div class="muted">更新于 {{ item.updated_at }} · {{ item.backend }}</div><div v-if="item.mutable" class="memory-actions"><t-button variant="text" size="small" @click="mutateMemory('edit', item)">编辑</t-button><t-button variant="text" theme="danger" size="small" @click="mutateMemory('delete', item)">删除</t-button></div></article></div>
         <div v-else-if="memory.searched && !memory.loading" class="empty-state">无匹配记忆。</div>
+        <t-dialog
+          v-model:visible="memoryDialog.visible"
+          :header="memoryDialog.mode === 'create' ? '新建记忆' : '编辑记忆'"
+          :confirm-btn="{ content: '保存', loading: memoryDialog.saving }"
+          cancel-btn="取消"
+          width="560px"
+          @confirm="submitMemoryDialog"
+        >
+          <t-form label-width="88px" @submit.prevent="submitMemoryDialog">
+            <t-form-item label="记忆标题" required-mark>
+              <t-input v-model="memoryDialog.form.title" :status="memoryDialog.errors.title ? 'error' : undefined" :tips="memoryDialog.errors.title" placeholder="记忆的标题" @change="memoryDialog.errors.title = ''" />
+            </t-form-item>
+            <t-form-item label="记忆内容" required-mark>
+              <t-textarea v-model="memoryDialog.form.value" :autosize="{ minRows: 4, maxRows: 10 }" :status="memoryDialog.errors.value ? 'error' : undefined" :tips="memoryDialog.errors.value" placeholder="要记住的内容" />
+            </t-form-item>
+            <t-form-item label="过期时间">
+              <t-input v-model="memoryDialog.form.expires_at" placeholder="RFC3339 格式，留空表示永久" />
+            </t-form-item>
+            <t-form-item label="发送者 ID">
+              <t-input v-model="memoryDialog.form.sender_id_list" placeholder="多个用英文逗号分隔，可留空" />
+            </t-form-item>
+            <t-form-item label="群 ID">
+              <t-input v-model="memoryDialog.form.group_id_list" placeholder="多个用英文逗号分隔，可留空" />
+            </t-form-item>
+          </t-form>
+        </t-dialog>
       </template>
 
       <template v-else-if="capability === 'contexts'">
@@ -111,8 +137,10 @@ const {
   searchMessages,
   onMessagePaginationChange,
   memory,
+  memoryDialog,
   searchMemories,
   mutateMemory,
+  submitMemoryDialog,
   image,
   searchImages,
   failedPreviews,

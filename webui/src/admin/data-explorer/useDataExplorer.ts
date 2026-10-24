@@ -71,6 +71,14 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
     filters: { message_id: "", sender_id: "", sender_name: "", group_id: "", content: "", send_time_start: "", send_time_end: "" },
   });
   const memory = ref({ loading: false, searched: false, query: "", limit: 20, mutable: false, items: [] as ServiceExplorerMemoryRecord[] });
+  const memoryDialog = ref({
+    visible: false,
+    mode: "create" as "create" | "edit",
+    saving: false,
+    objectId: "",
+    form: { title: "", value: "", expires_at: "", sender_id_list: "", group_id_list: "" },
+    errors: { title: "", value: "" },
+  });
   const image = ref({ loading: false, searched: false, nameQuery: "", descriptionQuery: "", limit: 20, items: [] as ServiceExplorerImageRecord[] });
   const messageTotalPages = computed(() => Math.max(1, Math.ceil(message.value.total / message.value.pageSize)));
 
@@ -146,24 +154,49 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
       alert("创建或编辑记忆前请先为 Service 选择 Text Embedding 模型");
       return;
     }
-    const title = window.prompt("记忆标题", item?.title ?? "");
-    if (!title?.trim()) return;
-    const value = window.prompt("记忆内容", item?.value ?? "");
-    if (!value?.trim()) return;
-    const expiresAt = window.prompt("过期时间 RFC3339，可留空表示永久", item?.expires_at ?? "");
-    const sender = window.prompt("sender_id_list，多个用逗号分隔，可留空", item?.sender_id_list.join(",") ?? "");
-    const group = window.prompt("group_id_list，多个用逗号分隔，可留空", item?.group_id_list.join(",") ?? "");
+    memoryDialog.value = {
+      visible: true,
+      mode: kind,
+      saving: false,
+      objectId: item?.object_id ?? "",
+      form: {
+        title: item?.title ?? "",
+        value: item?.value ?? "",
+        expires_at: item?.expires_at ?? "",
+        sender_id_list: item?.sender_id_list.join(",") ?? "",
+        group_id_list: item?.group_id_list.join(",") ?? "",
+      },
+      errors: { title: "", value: "" },
+    };
+  }
+
+  async function submitMemoryDialog() {
+    const dialog = memoryDialog.value;
+    const currentService = service.value;
+    const connectionId = currentService ? retrievalStoreConnectionId(currentService) : "";
+    const embeddingModelRefId = currentService ? stringConfig(currentService, "embedding_model_ref_id") : "";
+    if (!dialog.visible || dialog.saving || !connectionId || !embeddingModelRefId) return;
+    const title = dialog.form.title.trim();
+    const value = dialog.form.value.trim();
+    dialog.errors = { title: title ? "" : "请输入记忆标题", value: value ? "" : "请输入记忆内容" };
+    if (dialog.errors.title || dialog.errors.value) return;
+    dialog.saving = true;
     const payload = {
-      title: title.trim(), value: value.trim(), expires_at: expiresAt?.trim() || null,
-      sender_id_list: (sender ?? "").split(",").map((value) => value.trim()).filter(Boolean),
-      group_id_list: (group ?? "").split(",").map((value) => value.trim()).filter(Boolean),
+      title,
+      value,
+      expires_at: dialog.form.expires_at.trim() || null,
+      sender_id_list: dialog.form.sender_id_list.split(",").map((entry) => entry.trim()).filter(Boolean),
+      group_id_list: dialog.form.group_id_list.split(",").map((entry) => entry.trim()).filter(Boolean),
     };
     try {
-      if (kind === "create") await explorer.createAgentMemory(connectionId, embeddingModelRefId, payload);
-      if (kind === "edit" && item) await explorer.updateAgentMemory(connectionId, embeddingModelRefId, item.object_id, payload);
+      if (dialog.mode === "create") await explorer.createAgentMemory(connectionId, embeddingModelRefId, payload);
+      else await explorer.updateAgentMemory(connectionId, embeddingModelRefId, dialog.objectId, payload);
+      dialog.visible = false;
       await searchMemories();
     } catch (error: unknown) {
       alert((error as Error).message);
+    } finally {
+      dialog.saving = false;
     }
   }
 
@@ -182,5 +215,5 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
     }
   });
 
-  return { service, loadingService, unavailable, message, messageTotalPages, searchMessages, changeMessagePage, memory, searchMemories, image, searchImages, mutateMemory };
+  return { service, loadingService, unavailable, message, messageTotalPages, searchMessages, changeMessagePage, memory, memoryDialog, searchMemories, image, searchImages, mutateMemory, submitMemoryDialog };
 }
