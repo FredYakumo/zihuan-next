@@ -38,7 +38,7 @@ export type LlmApiStyle =
   | "open_ai_responses_image_url_object_compat";
 export type ToolImplementation = "node_graph" | "sub_agent" | "script";
 export type ToolTargetType = "workflow_set" | "file_path" | "inline_graph";
-export type ScriptLanguageForm = "typescript" | "python";
+export type ScriptLanguageForm = "type_script" | "python";
 
 export const DEFAULT_MYSQL_MAX_CONNECTIONS = 32;
 export const DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS = 30;
@@ -419,7 +419,7 @@ export function defaultToolForm(): ToolFormState {
     filePath: "",
     inlineGraphJson:
       '{\n  "nodes": [],\n  "edges": [],\n  "graph_inputs": [],\n  "graph_outputs": [],\n  "hyperparameter_groups": [],\n  "hyperparameters": [],\n  "variables": [],\n  "metadata": { "name": null, "description": null, "version": null }\n}',
-    scriptLanguage: "typescript",
+    scriptLanguage: "type_script",
     scriptSource: "",
     scriptEntry: "run_tool",
     scriptTimeoutSecs: 60,
@@ -876,7 +876,7 @@ export function toolFormFromConfig(tool: ServiceToolConfig): ToolFormState {
     form.subAgentId = String(toolType.sub_agent_id ?? "");
   } else if (toolType.type === "script") {
     form.implementation = "script";
-    form.scriptLanguage = (toolType.language === "python" ? "python" : "typescript") as ScriptLanguageForm;
+    form.scriptLanguage = (toolType.language === "python" ? "python" : "type_script") as ScriptLanguageForm;
     form.scriptSource = String(toolType.source ?? "");
     form.scriptEntry = String(toolType.entry ?? "run_tool");
     form.scriptTimeoutSecs = Number(toolType.timeout_secs ?? 60) || 60;
@@ -1299,7 +1299,7 @@ function normalizeQqChatEmotionDimensions(
   });
 
   if (normalized.length === 0) {
-    throw new Error("至少需要配置一个情绪维度");
+    return defaultQqChatEmotionDimensions();
   }
 
   const nameSet = new Set<string>();

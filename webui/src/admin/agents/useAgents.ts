@@ -247,7 +247,7 @@ const toolTypeOptions: ToolTypeOption[] = [
   },
   {
     value: "script",
-    scriptLanguage: "typescript",
+    scriptLanguage: "type_script",
     label: "TypeScript 脚本",
     desc: "用 TypeScript 编写工具逻辑",
     icon: markRaw(CodeIcon),
@@ -1196,7 +1196,7 @@ function handleToolTargetTypeChange(tool: ServiceFormState["tools"][number]) {
 
 /** Extensions the file picker accepts for one script language. */
 const SCRIPT_FILE_EXTENSIONS: Record<ScriptLanguageForm, string[]> = {
-  typescript: [".ts", ".mts", ".mjs"],
+  type_script: [".ts", ".mts", ".mjs"],
   python: [".py"],
 };
 
