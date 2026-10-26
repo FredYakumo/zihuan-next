@@ -60,7 +60,7 @@ impl Tool for SaveImageTool {
         })
     }
 
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
         let result = (|| -> Result<Value> {
             let image_url = optional_string_argument(arguments, "image_url");
             let media_id = optional_string_argument(arguments, "media_id");
@@ -168,9 +168,6 @@ impl Tool for SaveImageTool {
             }))
         })();
 
-        match result {
-            Ok(value) => value.to_string(),
-            Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
-        }
+        Ok(result?.to_string())
     }
 }

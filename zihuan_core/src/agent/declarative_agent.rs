@@ -997,8 +997,8 @@ impl Tool for DisabledTool {
             description: self.description.clone(),
         })
     }
-    fn execute(&self, _content: &str, _arguments: &Value) -> String {
-        json!({"ok": false, "error": self.reason}).to_string()
+    fn execute(&self, _content: &str, _arguments: &Value) -> Result<String> {
+        Err(Error::StringError(self.reason.clone()))
     }
 }
 
@@ -1033,19 +1033,10 @@ impl Tool for DeclarativeAgentTool {
             definition: self.agent.definition.clone(),
         })
     }
-    fn execute(&self, _content: &str, arguments: &Value) -> String {
-        let result = (|| -> Result<String> {
-            let input = agent_input_from_tool_arguments(&self.agent.definition.inputs, arguments)?;
-            let output = self.agent.run(input)?;
-            Ok(output.as_tool_result())
-        })();
-        result.unwrap_or_else(|error| {
-            log::error!(
-                "[DeclarativeAgentTool] agent '{}' failed; returning error to caller: {error}",
-                self.agent.definition.id
-            );
-            json!({"ok": false, "error": error.to_string()}).to_string()
-        })
+    fn execute(&self, _content: &str, arguments: &Value) -> Result<String> {
+        let input = agent_input_from_tool_arguments(&self.agent.definition.inputs, arguments)?;
+        let output = self.agent.run(input)?;
+        Ok(output.as_tool_result())
     }
     fn run_duration(&self) -> ToolRunDuration {
         self.agent.definition.run_duration

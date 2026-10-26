@@ -34,12 +34,14 @@ pub(crate) fn resolve_tool_path(
     Ok(base.join(target))
 }
 
-pub(crate) fn json_error(message: impl Into<String>) -> String {
-    serde_json::json!({ "error": message.into() }).to_string()
+/// Failure payload the calling model must see verbatim: workspace tools use errors as
+/// working feedback (path validation, edit conflicts), so the engine never downgrades them.
+pub(crate) fn json_error(message: impl Into<String>) -> Result<String, Error> {
+    Ok(serde_json::json!({ "error": message.into() }).to_string())
 }
 
-pub(crate) fn success_json(value: Value) -> String {
-    value.to_string()
+pub(crate) fn success_json(value: Value) -> Result<String, Error> {
+    Ok(value.to_string())
 }
 
 pub(crate) fn content_hash(bytes: &[u8]) -> String {
@@ -217,7 +219,7 @@ pub(crate) fn execute_search(
     args: SearchArgs,
     workspace_path: Option<&Path>,
     regex_mode: bool,
-) -> String {
+) -> Result<String, Error> {
     let path = match resolve_tool_path(workspace_path, &args.path) {
         Ok(path) => path,
         Err(err) => return json_error(err.to_string()),

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use super::tools::{Tool, ToolExecutionOutput, ToolExecutionResource, ToolRunDuration};
+use crate::error::Result;
 use crate::model_inference::llm::tooling::FunctionTool;
 use serde_json::Value;
 
@@ -22,8 +23,12 @@ impl Tool for SharedTool {
         self.0.spec()
     }
 
-    fn execute(&self, content: &str, arguments: &Value) -> String {
+    fn execute(&self, content: &str, arguments: &Value) -> Result<String> {
         self.0.execute(content, arguments)
+    }
+
+    fn returns_failure_details_to_agent(&self) -> bool {
+        self.0.returns_failure_details_to_agent()
     }
 
     fn execute_with_outcome(&self, content: &str, arguments: &Value) -> ToolExecutionOutput {

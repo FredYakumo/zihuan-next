@@ -62,7 +62,7 @@ impl Tool for UpdateAgentStateTool {
         })
     }
 
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
         let result = (|| -> Result<String> {
             let dimension = optional_string_argument(arguments, "dimension")
                 .ok_or_else(|| Error::ValidationError("dimension is required".to_string()))?;
@@ -107,14 +107,7 @@ impl Tool for UpdateAgentStateTool {
             .to_string())
         })();
 
-        match result {
-            Ok(message) => message,
-            Err(error) => serde_json::json!({
-                "ok": false,
-                "error": error.to_string(),
-            })
-            .to_string(),
-        }
+        Ok(result?)
     }
 }
 

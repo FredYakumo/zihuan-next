@@ -21,6 +21,12 @@ pub(crate) struct DeleteFileTool {
     pub(crate) workspace_path: Option<PathBuf>,
 }
 impl Tool for DeleteFileTool {
+    /// Command stderr, edit conflicts and path validation guide the model's
+    /// next step, so failures reach it verbatim instead of downgraded.
+    fn returns_failure_details_to_agent(&self) -> bool {
+        true
+    }
+
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: DEFAULT_TOOL_DELETE_FILE,
@@ -28,7 +34,7 @@ impl Tool for DeleteFileTool {
             parameters: serde_json::json!({"type":"object","properties":{"path":{"type":"string"},"recursive":{"type":"boolean"},"missing_ok":{"type":"boolean"}},"required":["path"]}),
         })
     }
-    fn execute(&self, _: &str, a: &Value) -> String {
+    fn execute(&self, _: &str, a: &Value) -> zihuan_core::error::Result<String> {
         let args: DeleteFileArgs = match serde_json::from_value(a.clone()) {
             Ok(v) => v,
             Err(e) => return json_error(format!("invalid delete_file arguments: {e}")),

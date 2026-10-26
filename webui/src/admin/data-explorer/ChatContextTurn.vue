@@ -129,8 +129,18 @@
                 </div>
                 <JsonView :source="entry.arguments" />
                 <template v-if="entry.result !== undefined">
-                  <div class="context-tool-result-label">结果</div>
-                  <JsonView :source="entry.result" />
+                  <div
+                    class="context-tool-result-label"
+                    :class="{ 'context-tool-result-label--failed': toolResultFailed(entry.result) }"
+                  >
+                    {{ toolResultFailed(entry.result) ? "错误" : "结果" }}
+                  </div>
+                  <div
+                    class="context-tool-result"
+                    :class="{ 'context-tool-result--failed': toolResultFailed(entry.result) }"
+                  >
+                    <JsonView :source="entry.result" />
+                  </div>
                 </template>
               </div>
             </div>
@@ -211,6 +221,7 @@
 
 <script setup lang="ts">
 import type { ContextTurnView } from "./useChatContext";
+import { toolResultFailed } from "./useChatContext";
 import {
   RATE_LIMIT_STAGE,
   rateLimitSeverity,

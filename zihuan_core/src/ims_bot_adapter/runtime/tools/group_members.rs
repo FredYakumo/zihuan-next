@@ -85,11 +85,8 @@ impl Tool for GetCurrentGroupMembersTool {
         })
     }
 
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
-        match execute_group_member_tool(&self.adapter, &self.event, arguments) {
-            Ok(result) => result,
-            Err(error) => error.to_string(),
-        }
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
+        execute_group_member_tool(&self.adapter, &self.event, arguments)
     }
 }
 

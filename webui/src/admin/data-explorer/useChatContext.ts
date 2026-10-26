@@ -52,6 +52,24 @@ export interface ContextSubAgentItem {
 /** A stage or tool call, kept in the order it happened so the flow reads chronologically. */
 export type ContextEntryItem = ContextStageItem | ContextToolItem | ContextSubAgentItem;
 
+/**
+ * Mirrors the backend tool failure envelopes: `{"ok":false,...}` or `{"error":...}`.
+ * Plain-text or other JSON results count as successes.
+ */
+export function toolResultFailed(result?: string): boolean {
+  if (!result) return false;
+  try {
+    const data: unknown = JSON.parse(result.trim());
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      const record = data as Record<string, unknown>;
+      return record.ok === false || typeof record.error === "string";
+    }
+  } catch {
+    // Not JSON — a plain-text result is a success.
+  }
+  return false;
+}
+
 /** One turn of the conversation: the user message plus everything that followed it. */
 export interface ContextQuotedMessage {
   messageId: string;

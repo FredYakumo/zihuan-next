@@ -67,7 +67,7 @@ impl Tool for SearchSimilarImagesTool {
         })
     }
 
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
         let result = (|| -> Result<Value> {
             let query = optional_string_argument(arguments, "query")
                 .ok_or_else(|| Error::ValidationError("query is required".to_string()))?;
@@ -198,10 +198,7 @@ impl Tool for SearchSimilarImagesTool {
             }))
         })();
 
-        match result {
-            Ok(value) => value.to_string(),
-            Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
-        }
+        Ok(result?.to_string())
     }
 }
 

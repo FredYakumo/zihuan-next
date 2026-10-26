@@ -40,7 +40,7 @@ impl Tool for ReplyMessageTool {
         })
     }
 
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
         let result = (|| -> Result<String> {
             let directive = match arguments.get("message_id") {
                 Some(Value::Number(number)) => {
@@ -66,13 +66,6 @@ impl Tool for ReplyMessageTool {
             Ok("已记录 reply_message 设置。".to_string())
         })();
 
-        match result {
-            Ok(message) => message,
-            Err(error) => serde_json::json!({
-                "ok": false,
-                "error": error.to_string(),
-            })
-            .to_string(),
-        }
+        Ok(result?)
     }
 }

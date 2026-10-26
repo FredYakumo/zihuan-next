@@ -32,6 +32,12 @@ pub(crate) struct GitStatusTool {
 }
 
 impl Tool for GitStatusTool {
+    /// Command stderr, edit conflicts and path validation guide the model's
+    /// next step, so failures reach it verbatim instead of downgraded.
+    fn returns_failure_details_to_agent(&self) -> bool {
+        true
+    }
+
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: DEFAULT_TOOL_GIT_STATUS,
@@ -44,7 +50,7 @@ impl Tool for GitStatusTool {
         })
     }
 
-    fn execute(&self, _: &str, arguments: &Value) -> String {
+    fn execute(&self, _: &str, arguments: &Value) -> zihuan_core::error::Result<String> {
         let args: GitStatusArgs = match serde_json::from_value(arguments.clone()) {
             Ok(value) => value,
             Err(err) => return json_error(format!("invalid git_status arguments: {err}")),
