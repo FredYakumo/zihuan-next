@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use serde_json::{json, Map, Value};
 
-use crate::agent::tools::{Tool, ToolExecutionOutput, ToolRunDuration};
+use crate::agent::tools::{Tool, ToolRunDuration};
+use crate::error::Result;
 use crate::graph::function_graph::{
     sync_function_subgraph_signature, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,
 };
@@ -157,13 +158,8 @@ impl Tool for NodeGraphTool {
     fn run_duration(&self) -> ToolRunDuration {
         self.definition.run_duration
     }
-    fn execute(&self, call_content: &str, arguments: &Value) -> String {
-        self.run_node_graph(call_content, arguments).unwrap_or_else(|error| {
-            format!("Node graph tool '{}' failed: {error}", self.definition.name)
-        })
-    }
-    fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
-        ToolExecutionOutput::text(self.execute(call_content, arguments))
+    fn execute(&self, call_content: &str, arguments: &Value) -> Result<String> {
+        self.run_node_graph(call_content, arguments)
     }
 }
 

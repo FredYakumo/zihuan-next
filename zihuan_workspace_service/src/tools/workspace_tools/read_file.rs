@@ -31,6 +31,12 @@ pub(crate) struct ReadFileTool {
     pub(crate) workspace_path: Option<PathBuf>,
 }
 impl Tool for ReadFileTool {
+    /// Command stderr, edit conflicts and path validation guide the model's
+    /// next step, so failures reach it verbatim instead of downgraded.
+    fn returns_failure_details_to_agent(&self) -> bool {
+        true
+    }
+
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: DEFAULT_TOOL_READ_FILE,
@@ -38,7 +44,7 @@ impl Tool for ReadFileTool {
             parameters: serde_json::json!({"type":"object","properties":{"path":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1},"encoding":{"type":"string","enum":["utf8","base64"]},"byte_start":{"type":"integer","minimum":0},"byte_end":{"type":"integer","minimum":0}},"required":["path"]}),
         })
     }
-    fn execute(&self, _: &str, arguments: &Value) -> String {
+    fn execute(&self, _: &str, arguments: &Value) -> zihuan_core::error::Result<String> {
         let args: ReadFileArgs = match serde_json::from_value(arguments.clone()) {
             Ok(value) => value,
             Err(err) => return json_error(format!("invalid read_file arguments: {err}")),

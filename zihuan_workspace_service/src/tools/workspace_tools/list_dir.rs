@@ -32,6 +32,12 @@ pub(crate) struct ListDirTool {
     pub(crate) workspace_path: Option<PathBuf>,
 }
 impl Tool for ListDirTool {
+    /// Command stderr, edit conflicts and path validation guide the model's
+    /// next step, so failures reach it verbatim instead of downgraded.
+    fn returns_failure_details_to_agent(&self) -> bool {
+        true
+    }
+
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: DEFAULT_TOOL_LIST_DIR,
@@ -40,7 +46,7 @@ impl Tool for ListDirTool {
             parameters: serde_json::json!({"type":"object","properties":{"path":{"type":"string"},"recursive":{"type":"boolean"},"include_hidden":{"type":"boolean"},"max_entries":{"type":"integer","minimum":1},"name_glob":{"type":"string"},"format":{"type":"string","enum":["json","tree"]}},"required":["path"]}),
         })
     }
-    fn execute(&self, _: &str, arguments: &Value) -> String {
+    fn execute(&self, _: &str, arguments: &Value) -> zihuan_core::error::Result<String> {
         let args: ListDirArgs = match serde_json::from_value(arguments.clone()) {
             Ok(value) => value,
             Err(err) => return json_error(format!("invalid list_dir arguments: {err}")),

@@ -20,6 +20,12 @@ pub(crate) struct CreateFileTool {
     pub(crate) workspace_path: Option<PathBuf>,
 }
 impl Tool for CreateFileTool {
+    /// Command stderr, edit conflicts and path validation guide the model's
+    /// next step, so failures reach it verbatim instead of downgraded.
+    fn returns_failure_details_to_agent(&self) -> bool {
+        true
+    }
+
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: DEFAULT_TOOL_CREATE_FILE,
@@ -27,7 +33,7 @@ impl Tool for CreateFileTool {
             parameters: serde_json::json!({"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"},"overwrite":{"type":"boolean"}},"required":["path","content"]}),
         })
     }
-    fn execute(&self, _: &str, arguments: &Value) -> String {
+    fn execute(&self, _: &str, arguments: &Value) -> zihuan_core::error::Result<String> {
         let args: CreateFileArgs = match serde_json::from_value(arguments.clone()) {
             Ok(v) => v,
             Err(e) => return json_error(format!("invalid create_file arguments: {e}")),

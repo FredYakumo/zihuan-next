@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use log::info;
 
@@ -9,11 +10,19 @@ use zihuan_core::runtime::block_async;
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 
+/// Last-resort watchdog for leaked claims: a panicking or hung turn that never
+/// released its session would otherwise keep every later message from this sender
+/// stuck in the steer queue forever. The `catch_unwind` guard around the turn already
+/// releases on panic; this TTL covers anything that slips past it. Must stay well
+/// above the worst legitimate turn duration (several chained slow model calls).
+const STALE_SESSION_CLAIM_TTL: Duration = Duration::from_secs(30 * 60);
+
 pub(crate) fn try_claim_session(
     session: &Arc<SessionStateRef>,
     sender_id: &str,
 ) -> (bool, Option<u64>) {
-    let (state, claimed) = block_async(session.try_claim(sender_id, None));
+    let (state, claimed) =
+        block_async(session.try_claim_with_ttl(sender_id, None, Some(STALE_SESSION_CLAIM_TTL)));
 
     if claimed {
         let claim_token = state.claim_token();

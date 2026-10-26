@@ -5,7 +5,7 @@ use crate::model_inference::message_content_utils::{
     is_transport_error, sanitize_messages_for_inference,
 };
 use async_trait::async_trait;
-use log::{info, warn};
+use log::{error, info, warn};
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -369,7 +369,8 @@ impl ToolCallingEngine {
                 call.name, call.call_id, call.arguments
             );
             ToolExecutionOutput::text(
-                serde_json::json!({"error": format!("Tool '{}' not found", call.name)}).to_string(),
+                serde_json::json!({"ok": false, "error": format!("Tool '{}' not found", call.name)})
+                    .to_string(),
             )
         };
         PreparedToolResult {
@@ -381,12 +382,21 @@ impl ToolCallingEngine {
     }
 
     fn notify_tool_finish(&self, call: &PreparedToolResult) {
-        info!(
-            "[ToolCallingEngine] tool call id={} name={} result: {}",
-            call.call_id,
-            call.name,
-            shorten_text(&call.result.result, LOG_PREVIEW_CHARS)
-        );
+        if tool_result_reports_failure(&call.result.result) {
+            error!(
+                "[ToolCallingEngine] tool call id={} name={} failed: {}",
+                call.call_id,
+                call.name,
+                shorten_text(&call.result.result, LOG_PREVIEW_CHARS)
+            );
+        } else {
+            info!(
+                "[ToolCallingEngine] tool call id={} name={} result: {}",
+                call.call_id,
+                call.name,
+                shorten_text(&call.result.result, LOG_PREVIEW_CHARS)
+            );
+        }
         if let Some(observer) = self.observer.as_ref() {
             observer.on_tool_finish(&call.name, &call.call_id, &call.result.result);
         }
@@ -400,7 +410,19 @@ impl ToolCallingEngine {
     ) -> Option<(String, AskUserRequest)> {
         results.sort_by_key(|result| result.index);
         for call in results {
-            let msg = LLMMessage::tool_result(call.call_id.clone(), call.result.result.clone());
+            // Failed calls are downgraded for the calling model at any nesting depth so
+            // internal diagnostics never leak — unless the tool declares its failure
+            // payloads to be agent guidance (command stderr, edit conflicts).
+            let payload =
+                if tool_result_reports_failure(&call.result.result)
+                    && !self.returns_failure_details_to_agent(&call.name)
+                {
+                    serde_json::json!({ "ok": false, "error": format!("{} 执行失败", call.name) })
+                        .to_string()
+                } else {
+                    call.result.result.clone()
+                };
+            let msg = LLMMessage::tool_result(call.call_id.clone(), payload);
             conversation.push(msg.clone());
             output.push(msg);
             if let Some(request) = call.result.ask_user.clone() {
@@ -408,6 +430,13 @@ impl ToolCallingEngine {
             }
         }
         None
+    }
+
+    fn returns_failure_details_to_agent(&self, tool_name: &str) -> bool {
+        self.tools
+            .iter()
+            .find(|tool| tool.spec().name() == tool_name)
+            .is_some_and(|tool| tool.returns_failure_details_to_agent())
     }
 
     fn log_llm_usage(&self, response: &LLMMessage) {

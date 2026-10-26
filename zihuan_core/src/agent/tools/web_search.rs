@@ -76,33 +76,24 @@ impl Tool for WebSearchTool {
         })
     }
 
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
         let query = arguments.get("query").and_then(Value::as_str).unwrap_or("");
         let url = arguments.get("url").and_then(Value::as_str).unwrap_or("").trim();
         let search_count = arguments.get("search_count").and_then(Value::as_i64).unwrap_or(3);
 
         if url.is_empty() && query.trim().is_empty() {
-            return serde_json::json!({"results": []}).to_string();
+            return Ok(serde_json::json!({"results": []}).to_string());
         }
 
         let engine = match &self.web_search_engine {
             Ok(engine) => engine,
-            Err(error) => {
-                warn!("{LOG_PREFIX} unavailable: {error}");
-                return serde_json::json!({"results": [], "error": error}).to_string();
-            }
+            Err(error) => return Err(crate::error::Error::StringError(error.clone())),
         };
         let result = if !url.is_empty() {
             self.extract_url_with_fallback(engine.as_ref(), url)
         } else {
             self.search_with_fallback(engine.as_ref(), query, search_count)
         };
-        match result {
-            Ok(items) => serde_json::json!({ "results": items }).to_string(),
-            Err(error) => {
-                warn!("{LOG_PREFIX} failed: {error}");
-                serde_json::json!({"results": [], "error": error.to_string()}).to_string()
-            }
-        }
+        result.map(|items| serde_json::json!({ "results": items }).to_string())
     }
 }

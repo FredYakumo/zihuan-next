@@ -12,24 +12,30 @@ use zihuan_core::agent::{
     AgentServiceContext, MemoryCapability, LLM_KIND_MAIN, LLM_KIND_MATH_PROGRAMMING,
 };
 use zihuan_core::error::Result;
+use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
 use zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_OWNER_TYPE;
 use zihuan_core::graph::DataValue;
+use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 use zihuan_core::ims_bot_adapter::tools::group_members::GetCurrentGroupMembersTool;
 use zihuan_core::ims_bot_adapter::tools::qq_profile::{GetBotProfileTool, GetQqUserProfileTool};
 use zihuan_core::model_inference::inference_function::compact_message::estimate_messages_tokens;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::LLMMessage;
+use zihuan_core::model_inference::message_content_utils::downgrade_messages_for_model;
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
 };
-use zihuan_core::steer::message_with_api_style;
+use zihuan_core::steer::{message_with_api_style, PendingSteerEvent};
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
+use super::qq_before_brain::QqBeforeBrainOutput;
+use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use crate::qq_chat::logging::{QqChatToolCallingObserver, QqChatTurnIdentity};
 use crate::qq_chat::steer::QqChatServiceSteerHook;
 use crate::qq_chat::tool_quota::wrap_brain_tool_with_quota;
 use crate::qq_chat::user_input::PreparedCurrentTurnUserInput;
 use crate::qq_chat::{
+    build_user_message, compact_turn_history, split_current_user_body, split_system_prompt_prefix,
     QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatTaskTrace, LOG_PREFIX,
 };
 use crate::tools::{
@@ -54,6 +60,8 @@ pub(crate) struct QqBrainOutput {
     pub(crate) final_reply_text: Option<String>,
     /// Whether the final reply is an explicit `[no_reply]` directive.
     pub(crate) suppress_send: bool,
+    /// The assembled current-turn user message, for the turn's history writeback.
+    pub(crate) current_user_message: LLMMessage,
     /// Full brain output messages (media collection and tracing).
     pub(crate) brain_output: Vec<LLMMessage>,
     /// Why the tool-calling loop stopped.
@@ -63,18 +71,37 @@ pub(crate) struct QqBrainOutput {
 /// The QQ turn's brain invocation as a Procedure (documents/procedure.md).
 ///
 /// **Design:** Created per turn by the transport adapter (`handle_claimed_turn`), which keeps
-/// ownership of everything that outlives the brain run (history, session state, steer
-/// buffers). The procedure assembles the [`ToolCallingEngine`] — observer, steer hook,
-/// quota-wrapped tools, long-task context — and [`QqBrain::run`] executes it: the multi-turn
-/// tool loop, the one-shot reflection re-run when no sendable text was produced, and the final
-/// reply parsing including the `[no_reply]` directive.
+/// ownership of everything that outlives the brain run (steer buffers, session state). The
+/// procedure assembles the [`ToolCallingEngine`] — observer, steer hook, quota-wrapped tools,
+/// long-task context — and [`QqBrain::run`] first assembles the turn input (user message with
+/// the before-brain procedure's context block, history compaction) and then executes the
+/// engine: the multi-turn tool loop, the one-shot reflection re-run when no sendable text was
+/// produced, and the final reply parsing including the `[no_reply]` directive.
 pub(crate) struct QqBrain {
     /// Assembled [`ToolCallingEngine`] for this turn (observer, steer hook, tools, long task).
     engine: ToolCallingEngine,
     trace: QqChatTaskTrace,
     turn_llm: Arc<dyn LLMBase>,
-    brain_conversation: Vec<LLMMessage>,
+    /// Turn identity for the Data Explorer context stages emitted while assembling the input.
+    agent_id: String,
     sender_id: String,
+    turn_id: String,
+    /// Loaded conversation history; the current-turn input is assembled inside
+    /// [`QqBrain::run`], after the before-brain procedure produced its context block.
+    history: Vec<LLMMessage>,
+    history_key: String,
+    cache: Arc<LLMMessageSessionCacheRef>,
+    prepared_input: PreparedCurrentTurnUserInput,
+    adapter: SharedBotAdapter,
+    bot_name: String,
+    base_system_prompt: String,
+    style_prompt: Option<String>,
+    message_rate_limit_warning: Option<String>,
+    turn_session_state: Arc<Mutex<QqChatSessionState>>,
+    emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
+    /// Shared with the steer hook: filled at the start of `run` with the before-brain context
+    /// block so steer messages built mid-loop embed the same block.
+    preprompt_cell: Arc<Mutex<Option<String>>>,
 }
 
 impl QqBrain {
@@ -94,13 +121,15 @@ impl QqBrain {
         is_group: bool,
         turn_id: &str,
         event_group_name: Option<String>,
-        brain_conversation: Vec<LLMMessage>,
+        history: Vec<LLMMessage>,
+        history_key: &str,
+        message_rate_limit_warning: Option<&str>,
         base_system_prompt: String,
         shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
         consumed_steer_messages: Arc<Mutex<Vec<LLMMessage>>>,
+        in_flight_steers: Arc<Mutex<Vec<PendingSteerEvent>>>,
         turn_session_state: Arc<Mutex<QqChatSessionState>>,
         emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
-        preprompt_context: Option<String>,
     ) -> Result<Self> {
         let tool_quota = ctx.tool_quota.clone();
         let mut brain = ToolCallingEngine::new(Arc::clone(turn_llm));
@@ -112,6 +141,7 @@ impl QqBrain {
                 turn_id: turn_id.to_string(),
             }),
         }));
+        let preprompt_cell = Arc::new(Mutex::new(None));
         brain.set_iteration_hook(Arc::new(QqChatServiceSteerHook {
             pending_steer: Arc::clone(ctx.pending_steer),
             sender_id: sender_id.to_string(),
@@ -124,6 +154,7 @@ impl QqBrain {
             s3_ref: ctx.s3_ref.cloned(),
             trace: trace.clone(),
             consumed_messages: Arc::clone(&consumed_steer_messages),
+            in_flight_steers: Arc::clone(&in_flight_steers),
             shared_runtime_values: Arc::clone(&shared_runtime_values),
             system_prompt: base_system_prompt.clone(),
             style_prompt: ctx
@@ -132,7 +163,7 @@ impl QqBrain {
                 .map(|item| item.style_prompt.clone()),
             session_state: Arc::clone(&turn_session_state),
             emotion_dimensions: emotion_dimensions.clone(),
-            preprompt_context: preprompt_context.clone(),
+            preprompt_context: Arc::clone(&preprompt_cell),
         }));
 
         let memory_access =
@@ -410,8 +441,24 @@ impl QqBrain {
             engine: brain,
             trace: trace.clone(),
             turn_llm: Arc::clone(turn_llm),
-            brain_conversation,
+            agent_id: ctx.agent_id.to_string(),
             sender_id: sender_id.to_string(),
+            turn_id: turn_id.to_string(),
+            history,
+            history_key: history_key.to_string(),
+            cache: Arc::clone(ctx.cache),
+            prepared_input: prepared_input.clone(),
+            adapter: ctx.adapter.clone(),
+            bot_name: ctx.bot_name.to_string(),
+            base_system_prompt,
+            style_prompt: ctx
+                .resolved_language_style
+                .as_ref()
+                .map(|item| item.style_prompt.clone()),
+            message_rate_limit_warning: message_rate_limit_warning.map(ToOwned::to_owned),
+            turn_session_state: Arc::clone(&turn_session_state),
+            emotion_dimensions,
+            preprompt_cell,
         })
     }
 }
@@ -454,9 +501,147 @@ impl Procedure for QqBrain {
         }
     }
 
-    async fn run(&self, _context: &ProcedureContext) -> Result<ProcedureOutput> {
+    async fn run(&self, context: &ProcedureContext) -> Result<ProcedureOutput> {
+        // The before-brain procedure's context block anchors this turn's reply prompt; steer
+        // messages built mid-loop read the same block through the shared cell.
+        let preprompt_context = context
+            .find_output::<QqBeforeBrainOutput>()
+            .and_then(|output| output.context_block.clone());
+        *self.preprompt_cell.lock().unwrap() = preprompt_context.clone();
+        self.trace.record_graph_phase(
+            "情绪提示词生成",
+            serde_json::json!({
+                "emotion_dimensions": self.emotion_dimensions,
+                "preprompt_context": preprompt_context,
+            }),
+        );
+
+        let user_msg = {
+            let mut session_state = self.turn_session_state.lock().unwrap();
+            message_with_api_style(
+                build_user_message(
+                    &self.prepared_input,
+                    &self.bot_name,
+                    &self.adapter,
+                    self.turn_llm.supports_multimodal_input(),
+                    &self.base_system_prompt,
+                    self.style_prompt.as_deref(),
+                    self.message_rate_limit_warning.as_deref(),
+                    &mut session_state,
+                    &self.emotion_dimensions,
+                    preprompt_context.as_deref(),
+                ),
+                self.turn_llm.api_style(),
+            )
+        };
+
+        // The state/system prefix is rebuilt every turn, so report this turn's own copy.
+        if let Some(prompt) = user_msg
+            .content_text_owned()
+            .as_deref()
+            .and_then(split_system_prompt_prefix)
+        {
+            zihuan_core::qq_context::emit_qq_context_stage(
+                &self.agent_id,
+                &self.sender_id,
+                &self.turn_id,
+                zihuan_core::qq_context::QQ_CONTEXT_STAGE_SYSTEM_PROMPT,
+                serde_json::json!({ "prompt": prompt }),
+            );
+        }
+        {
+            let session = self.turn_session_state.lock().unwrap();
+            let emotion_prompt = emotion_expression_prompt(&session, &self.emotion_dimensions);
+            let emotion_values: serde_json::Map<String, serde_json::Value> = session
+                .ordered_emotion_dimensions(&self.emotion_dimensions)
+                .into_iter()
+                .map(|(name, value)| (name, serde_json::json!(value)))
+                .collect();
+            zihuan_core::qq_context::emit_qq_context_stage(
+                &self.agent_id,
+                &self.sender_id,
+                &self.turn_id,
+                "情绪与风格提示",
+                serde_json::json!({
+                    "emotion_dimensions": emotion_values,
+                    "emotion_prompt": emotion_prompt,
+                    // A noticeable emotion expression replaces the configured language style.
+                    "style_prompt_suppressed": has_noticeable_emotion_expression(
+                        &session,
+                        &self.emotion_dimensions,
+                    ),
+                    "style_prompt": self.style_prompt,
+                }),
+            );
+        }
+
+        let compact_result = compact_turn_history(
+            &self.cache,
+            &self.history_key,
+            &self.turn_llm,
+            self.history.clone(),
+            &user_msg,
+        );
+        let history = compact_result.messages;
+        self.trace
+            .record_history_stats(history.len(), estimate_messages_tokens(&history));
+
+        let mut conversation: Vec<LLMMessage> = Vec::with_capacity(history.len() + 1);
+        conversation.extend(history.iter().cloned());
+        conversation.push(user_msg.clone());
+        let brain_conversation =
+            downgrade_messages_for_model(conversation, self.turn_llm.supports_multimodal_input());
+        let prompt_tokens_estimated = estimate_messages_tokens(&brain_conversation);
+        self.trace.log_llm_conversation(&brain_conversation, prompt_tokens_estimated);
+        // What the brain actually receives: the assembled current-turn input plus the history it
+        // is sent with. The per-turn system prefix is reported separately as its own stage.
+        let current_user_body =
+            user_msg.content_text_owned().as_deref().and_then(split_current_user_body);
+        // History user messages carry their per-turn system prefix; show only the turn's own
+        // body so the list reads as the conversation instead of repeating the same prefix.
+        let history_input: Vec<serde_json::Value> = brain_conversation
+            .iter()
+            .take(brain_conversation.len().saturating_sub(1))
+            .map(|message| {
+                let full = message.content_text_owned().unwrap_or_default();
+                let is_user =
+                    matches!(message.role, zihuan_core::model_inference::llm::MessageRole::User);
+                let text = if is_user {
+                    split_current_user_body(&full).unwrap_or(full.clone())
+                } else {
+                    full.clone()
+                };
+                serde_json::json!({
+                    "role": format!("{:?}", message.role).to_lowercase(),
+                    "chars": text.chars().count(),
+                    "preview": zihuan_core::utils::string_utils::shorten_text(&text, 160),
+                })
+            })
+            .collect();
+        zihuan_core::qq_context::emit_qq_context_stage(
+            &self.agent_id,
+            &self.sender_id,
+            &self.turn_id,
+            "Brain 输入",
+            serde_json::json!({
+                "model": self.turn_llm.get_model_name(),
+                "messages_sent": brain_conversation.len(),
+                "prompt_tokens_estimated": prompt_tokens_estimated,
+                "current_user_message": current_user_body,
+                "history": history_input,
+                "compacted": compact_result.did_compact,
+                "tokens_before_compaction": compact_result
+                    .did_compact
+                    .then_some(compact_result.estimated_tokens_before),
+                "tokens_after_compaction": compact_result
+                    .did_compact
+                    .then_some(compact_result.estimated_tokens_after),
+                "removed_tool_related_messages": compact_result.removed_tool_related_messages,
+            }),
+        );
+
         self.trace.mark_llm_request_started();
-        let mut brain_conversation = self.brain_conversation.clone();
+        let mut brain_conversation = brain_conversation;
         let (mut brain_output, mut stop_reason) = self.engine.run(brain_conversation.clone());
         self.trace.record_llm_final_result(&stop_reason, &brain_output);
         let completion_tokens_estimated = estimate_messages_tokens(&brain_output);
@@ -509,6 +694,7 @@ impl Procedure for QqBrain {
         Ok(ProcedureOutput::of(QqBrainOutput {
             final_reply_text,
             suppress_send: suppress_send.unwrap_or(false),
+            current_user_message: user_msg,
             brain_output,
             stop_reason,
         }))

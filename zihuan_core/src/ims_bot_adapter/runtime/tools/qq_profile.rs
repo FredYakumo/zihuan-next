@@ -63,17 +63,10 @@ impl Tool for GetBotProfileTool {
         })
     }
 
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
-        let result = (|| -> Result<String> {
-            let query = parse_query_fields(arguments)?;
-            let bot_id = bot_qq_id(&self.adapter)?;
-            execute_profile_query(&self.adapter, &self.event, &self.s3_ref, &bot_id, &query)
-        })();
-
-        match result {
-            Ok(json) => json,
-            Err(error) => error_tool_result(&error),
-        }
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
+        let query = parse_query_fields(arguments)?;
+        let bot_id = bot_qq_id(&self.adapter)?;
+        execute_profile_query(&self.adapter, &self.event, &self.s3_ref, &bot_id, &query)
     }
 }
 
@@ -98,17 +91,10 @@ impl Tool for GetQqUserProfileTool {
         })
     }
 
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
-        let result = (|| -> Result<String> {
-            let user_id = required_string_argument(arguments, "id", "id 是必填参数")?;
-            let query = parse_query_fields(arguments)?;
-            execute_profile_query(&self.adapter, &self.event, &self.s3_ref, &user_id, &query)
-        })();
-
-        match result {
-            Ok(json) => json,
-            Err(error) => error_tool_result(&error),
-        }
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
+        let user_id = required_string_argument(arguments, "id", "id 是必填参数")?;
+        let query = parse_query_fields(arguments)?;
+        execute_profile_query(&self.adapter, &self.event, &self.s3_ref, &user_id, &query)
     }
 }
 
@@ -209,14 +195,6 @@ fn required_string_argument(arguments: &Value, key: &str, error_msg: &str) -> Re
         .filter(|s| !s.is_empty())
         .map(ToOwned::to_owned)
         .ok_or_else(|| Error::ValidationError(error_msg.to_string()))
-}
-
-fn error_tool_result(error: &Error) -> String {
-    serde_json::json!({
-        "ok": false,
-        "error": error.to_string(),
-    })
-    .to_string()
 }
 
 fn bot_qq_id(adapter: &SharedBotAdapter) -> Result<String> {

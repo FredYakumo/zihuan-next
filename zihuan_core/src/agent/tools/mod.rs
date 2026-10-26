@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
+use crate::error::Result;
 use crate::model_inference::llm::tooling::FunctionTool;
 pub use crate::tool_runtime::ToolRunDuration;
 use crate::workspace::AskUserRequest;
@@ -30,9 +31,21 @@ pub trait Tool: Send + Sync + 'static {
     /// Returns the LLM-facing function specification (name, description, parameters).
     fn spec(&self) -> Arc<dyn FunctionTool>;
     /// Execute the tool call. `call_content` is the assistant's text for this turn.
-    fn execute(&self, call_content: &str, arguments: &Value) -> String;
+    /// Failures propagate natively: the tool loop records them and hands the calling
+    /// model only a downgraded notice, so error details never reach the conversation.
+    fn execute(&self, call_content: &str, arguments: &Value) -> Result<String>;
     fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
-        ToolExecutionOutput::text(self.execute(call_content, arguments))
+        match self.execute(call_content, arguments) {
+            Ok(text) => ToolExecutionOutput::text(text),
+            Err(error) => ToolExecutionOutput::text(tool_failure_envelope(error)),
+        }
+    }
+
+    /// Whether this tool's failure payloads are guidance the calling model must receive
+    /// verbatim — command stderr, edit conflicts, path validation. Default `false`: the
+    /// tool loop logs the failure and downgrades it to `<tool> 执行失败` for the model.
+    fn returns_failure_details_to_agent(&self) -> bool {
+        false
     }
     fn execute_with_progress(
         &self,
@@ -72,19 +85,29 @@ pub struct ToolExecutionOutput {
     pub ask_user: Option<AskUserRequest>,
 }
 
-/// Detects the shared tool failure envelope `{"ok":false,...}`.
+/// Detects the shared tool failure envelopes: `{"ok":false,...}` and the workspace
+/// tool family's `{"error":"..."}` (only when `ok` is absent, so an `ok:true` payload
+/// carrying an `error` field stays a success).
 ///
 /// Tools report failures inside a successful string return, so the engine uses this to
-/// record the task as failed and keep the payload out of chat notifications.
+/// record the task as failed and downgrade the payload for the calling model.
 pub fn tool_result_reports_failure(result: &str) -> bool {
-    matches!(
-        serde_json::from_str::<Value>(result.trim())
-            .ok()
-            .as_ref()
-            .and_then(|value| value.get("ok"))
-            .and_then(Value::as_bool),
-        Some(false)
-    )
+    let Some(value) = serde_json::from_str::<Value>(result.trim()).ok() else {
+        return false;
+    };
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    match object.get("ok").and_then(Value::as_bool) {
+        Some(ok) => !ok,
+        None => matches!(object.get("error"), Some(Value::String(_))),
+    }
+}
+
+/// Builds the shared tool failure envelope from a raw error. Used by the trait bridge
+/// that turns a tool's propagated `Err` into the string shape the engine detects.
+pub fn tool_failure_envelope(error: impl std::fmt::Display) -> String {
+    serde_json::json!({ "ok": false, "error": error.to_string() }).to_string()
 }
 
 impl ToolExecutionOutput {

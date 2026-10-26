@@ -206,8 +206,11 @@ fn validate(snapshot: &WorkspaceTaskSnapshot) -> Result<(), String> {
     Ok(())
 }
 
-fn response(snapshot: &WorkspaceTaskSnapshot, task: Option<&WorkspaceTask>) -> String {
-    serde_json::json!({ "ok": true, "task": task, "tasks": snapshot.tasks }).to_string()
+fn response(
+    snapshot: &WorkspaceTaskSnapshot,
+    task: Option<&WorkspaceTask>,
+) -> Result<String, zihuan_core::error::Error> {
+    Ok(serde_json::json!({ "ok": true, "task": task, "tasks": snapshot.tasks }).to_string())
 }
 
 #[derive(Clone)]
@@ -222,6 +225,12 @@ impl WorkspaceTaskTool {
 }
 
 impl Tool for WorkspaceTaskTool {
+    /// Command stderr, edit conflicts and path validation guide the model's
+    /// next step, so failures reach it verbatim instead of downgraded.
+    fn returns_failure_details_to_agent(&self) -> bool {
+        true
+    }
+
     fn spec(&self) -> std::sync::Arc<dyn FunctionTool> {
         let parameters = match self.name {
             DEFAULT_TOOL_TASK_CREATE => {
@@ -237,7 +246,7 @@ impl Tool for WorkspaceTaskTool {
         };
         std::sync::Arc::new(StaticFunctionToolSpec { name: self.name, description: "Track the current Workspace Chat task plan. Create a task list before non-trivial work; update one task at a time as work progresses.", parameters })
     }
-    fn execute(&self, _: &str, arguments: &Value) -> String {
+    fn execute(&self, _: &str, arguments: &Value) -> zihuan_core::error::Result<String> {
         match self.name {
             DEFAULT_TOOL_TASK_LIST => {
                 let snapshot = match load_workspace_tasks(&self.session_id) {

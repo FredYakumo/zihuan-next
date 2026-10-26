@@ -1070,6 +1070,9 @@ export interface ServiceChatContextTurn {
   turn_id: string;
   created_at: string;
   user_text: string;
+  /** Group the user message was sent in; absent for private chats. */
+  group_name?: string;
+  is_group?: boolean;
   /** The message the user quoted, rendered as a collapsible block inside the user bubble. */
   quoted?: ServiceChatContextQuoted;
   media: ServiceChatContextMedia[];

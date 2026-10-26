@@ -849,6 +849,36 @@ pub(crate) struct QqChatTurnIdentity {
     pub(crate) turn_id: String,
 }
 
+/// Close the context-view turn when a step fails, so the flow does not stay stuck at
+/// "推理中" after the turn was announced.
+pub(crate) fn emit_context_turn_failure(
+    agent_id: &str,
+    sender_id: &str,
+    turn_id: &str,
+    stage: &str,
+    error: &zihuan_core::error::Error,
+) {
+    zihuan_core::qq_context::emit_qq_context_stage(
+        agent_id,
+        sender_id,
+        turn_id,
+        "错误",
+        serde_json::json!({"stage": stage, "error": error.to_string()}),
+    );
+    zihuan_core::qq_context::emit_qq_context_event(
+        zihuan_core::qq_context::QqChatContextEvent::TurnFinished {
+            agent_id: agent_id.to_string(),
+            sender_id: sender_id.to_string(),
+            turn_id: turn_id.to_string(),
+            assistant_text: None,
+            reasoning_text: None,
+            usage: None,
+            generation_ms: None,
+            output_tokens_per_second: None,
+        },
+    );
+}
+
 pub(crate) struct QqChatToolCallingObserver {
     pub(crate) trace: QqChatTaskTrace,
     /// When set, the observer also emits live context events for the Data Explorer view.

@@ -4,14 +4,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::{info, warn};
 
-use zihuan_core::model_inference::inference_function::compact_message::{
-    compact_message_history, compaction_threshold, estimate_messages_tokens,
-};
-use zihuan_core::model_inference::message_content_utils::{
-    downgrade_messages_for_model, sanitize_messages_for_inference,
-};
-use zihuan_core::system_config::current_context_compaction_percent;
-
 use zihuan_core::agent::tools::ToolCallingStopReason;
 use zihuan_core::agent::MemoryCapability;
 
@@ -23,7 +15,7 @@ use crate::storage::message_rate_limit_store::MessageRateLimitCheckResult;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::qq_context::{collect_turn_media_refs, QqChatContextEvent};
-use zihuan_core::steer::message_with_api_style;
+use zihuan_core::steer::{message_with_api_style, PendingSteerEvent};
 
 use zihuan_core::graph::tool_spec::{
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
@@ -41,87 +33,29 @@ use crate::storage::qq_chat_history_store::{
 
 use crate::classify_intent::{classify_intent_with_trace, IntentCategory};
 use crate::qq_chat::command::{run_command_pipeline, CommandTurnEnd};
+use crate::qq_chat::steer::SteerCommitGuard;
 use crate::qq_chat::msg_send::{
     build_reply_result, send_planned_batches, take_reply_directive, QqChatServiceSendContext,
 };
 
 use super::{
     build_group_system_prompt, build_meta_query_system_prompt, build_meta_query_user_message,
-    build_private_system_prompt, build_user_message, collect_available_media_from_brain_output,
-    expand_messages_for_inference, prepare_current_turn_user_input,
-    prepare_current_turn_user_input_from_event, split_current_user_body,
-    split_system_prompt_prefix, QqChatAgentServiceContext, QqChatAgentServiceInner,
-    QqChatServiceTurnResult, QqChatTaskTrace, LOG_PREFIX,
+    build_private_system_prompt, collect_available_media_from_brain_output,
+    compact_turn_history, expand_messages_for_inference, prepare_current_turn_user_input,
+    prepare_current_turn_user_input_from_event, QqChatAgentServiceContext,
+    QqChatAgentServiceInner, QqChatServiceTurnResult, QqChatTaskTrace, LOG_PREFIX,
 };
 
 use crate::agent::before_brain_agent::PrepromptContext;
 use crate::procedure::{
-    qq_procedure_context, run_before_brain, ModelIdentityContext, QqAfterBrain,
-    QqAfterBrainContext, QqBrain, QqBrainOutput, QqMetaQueryBrain, QqReplyReviewRequest,
-    QqReplyReviewResult,
+    qq_procedure_context, ModelIdentityContext, QqAfterBrain, QqAfterBrainContext, QqBeforeBrain,
+    QqBrain, QqBrainOutput, QqMetaQueryBrain, QqReplyReviewRequest, QqReplyReviewResult,
 };
-use crate::qq_chat::logging::QqChatTurnIdentity;
+use crate::qq_chat::logging::{emit_context_turn_failure, QqChatTurnIdentity};
 use zihuan_core::role::procedure::execute_blocking_procedure_chain;
 use zihuan_core::runtime::block_async;
 
-/// Close the context-view turn when a step fails, so the flow does not stay stuck at
-/// "推理中" after the turn was announced.
-fn emit_context_turn_failure(
-    ctx: &QqChatAgentServiceContext<'_>,
-    sender_id: &str,
-    turn_id: &str,
-    stage: &str,
-    error: &Error,
-) {
-    zihuan_core::qq_context::emit_qq_context_stage(
-        ctx.agent_id,
-        sender_id,
-        turn_id,
-        "错误",
-        serde_json::json!({"stage": stage, "error": error.to_string()}),
-    );
-    zihuan_core::qq_context::emit_qq_context_event(QqChatContextEvent::TurnFinished {
-        agent_id: ctx.agent_id.to_string(),
-        sender_id: sender_id.to_string(),
-        turn_id: turn_id.to_string(),
-        assistant_text: None,
-        reasoning_text: None,
-        usage: None,
-        generation_ms: None,
-        output_tokens_per_second: None,
-    });
-}
-
 impl QqChatAgentServiceInner {
-    /// Returns the last assistant text that carries no tool calls, skipping transport
-    /// errors and awaiting-user-input stops. Empty or whitespace-only text yields `None`.
-    fn parse_final_reply_text(
-        &self,
-        stop_reason: &ToolCallingStopReason,
-        brain_output: &[LLMMessage],
-    ) -> Option<String> {
-        if matches!(
-            stop_reason,
-            ToolCallingStopReason::TransportError(_)
-                | ToolCallingStopReason::AwaitUserInput(_)
-                | ToolCallingStopReason::ToolCallLimitReached(_)
-        ) {
-            return None;
-        }
-
-        brain_output
-            .iter()
-            .rev()
-            .find(|message| {
-                matches!(message.role, zihuan_core::model_inference::llm::MessageRole::Assistant)
-                    && message.tool_calls.is_empty()
-            })
-            .and_then(|message| message.content_text())
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
-            .map(ToOwned::to_owned)
-    }
-
     fn selected_turn_llm<'a>(
         &self,
         ctx: &'a QqChatAgentServiceContext<'_>,
@@ -142,11 +76,12 @@ impl QqChatAgentServiceInner {
     /// - **Command interception** — runs the message through the QQ command pipeline
     ///   (`crate::qq_chat::command`), which either consumes the turn or leaves
     ///   remaining text to the brain loop.
-    /// - **Intent classification** — selects the appropriate LLM (general vs math/programming).
+    /// - **Intent classification** — selects the turn's chain composition and the routed LLM
+    ///   (general vs math/programming).
     /// - **Short-circuit replies** — answers meta-queries (model name, tool list, etc.) directly.
-    /// - **History compaction** — compresses conversation context when it exceeds budget.
-    /// - **ToolCallingEngine loop** — builds system prompt + conversation messages, attaches tools, and
-    ///   runs the LLM inference loop with steer support.
+    /// - **Role turn chain** — one procedure chain (documents/procedure.md): before-brain
+    ///   (preprompt context block) -> brain (assembles the turn input, compacts history, runs
+    ///   the tool-calling loop with steer support) -> after-brain (reply review/rewrite).
     /// - **Reply delivery** — parses the final assistant output and sends it back to the user
     ///   (group or private chat), persisting message history along the way.
     ///
@@ -269,76 +204,9 @@ impl QqChatAgentServiceInner {
             );
         }
 
-        let chat_preprompt_history_key = chat_preprompt_history_key(sender_id);
-        let preprompt_memory_resources = MemoryCapability::resolve(
-            ctx.local_memory_store.cloned(),
-            ctx.retrieval_store.cloned(),
-            ctx.embedding_model.cloned(),
-        )
-        .map(|memory| AgentMemoryToolResources {
-            memory_backend: memory.backend,
-            embedding_model: memory.embedding_model,
-            llm: Arc::clone(ctx.llm),
-            access: qq_memory_access_context(
-                sender_id,
-                target_id,
-                is_group,
-                prepared_input.event.group_id,
-            ),
-        });
-        let turn_identity = QqChatTurnIdentity {
-            agent_id: ctx.agent_id.to_string(),
-            sender_id: sender_id.to_string(),
-            turn_id: turn_id.clone(),
-        };
-        let preprompt_context = match run_before_brain(
-            &mut qq_procedure_context(&chat_preprompt_history_key, None),
-            PrepromptContext {
-                trace,
-                identity: Some(turn_identity),
-                // The "Preprompt 模型" setting; when unset it falls back to the main Brain model.
-                llm: ctx.intent_classification_llm,
-                cache: ctx.cache,
-                history_key: &chat_preprompt_history_key,
-                input: &prepared_input,
-                bot_name: ctx.bot_name,
-                bot_id,
-                sender_id,
-                target_id,
-                is_group,
-                session_state: Arc::clone(&turn_session_state),
-                emotion_dimensions: emotion_dimensions.clone(),
-                memory_resources: preprompt_memory_resources,
-                rdb_pool: ctx.rdb_pool.cloned(),
-                default_tools_enabled: &self.default_tools_enabled,
-            },
-        ) {
-            Ok(context) => context,
-            Err(error) => {
-                emit_context_turn_failure(ctx, sender_id, &turn_id, "Preprompt 阶段", &error);
-                return Err(error);
-            }
-        };
-        trace.record_graph_phase(
-            "Preprompt 阶段",
-            serde_json::json!({
-                "context": preprompt_context,
-            }),
-        );
-
-        let base_system_prompt = if is_group {
-            build_group_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
-        } else {
-            build_private_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
-        };
-        trace.record_graph_phase(
-            "情绪提示词生成",
-            serde_json::json!({
-                "emotion_dimensions": emotion_dimensions,
-                "preprompt_context": preprompt_context,
-            }),
-        );
-
+        // Intent classification picks the turn's chain composition (meta-query vs brain) and
+        // the routed brain model, so it runs before any procedure chain is assembled
+        // (documents/procedure.md: which procedures a turn uses is decided per event).
         let intent_trace = classify_intent_with_trace(
             ctx.intent_classification_llm,
             ctx.embedding_model,
@@ -366,91 +234,18 @@ impl QqChatAgentServiceInner {
             }),
         );
 
-        let user_msg = {
-            let mut session_state = turn_session_state.lock().unwrap();
-            message_with_api_style(
-                build_user_message(
-                    &prepared_input,
-                    ctx.bot_name,
-                    ctx.adapter,
-                    turn_llm.supports_multimodal_input(),
-                    &base_system_prompt,
-                    ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str()),
-                    message_rate_limit_warning,
-                    &mut session_state,
-                    &emotion_dimensions,
-                    preprompt_context.as_deref(),
-                ),
-                turn_llm.api_style(),
-            )
+        let base_system_prompt = if is_group {
+            build_group_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
+        } else {
+            build_private_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
         };
+
         let is_meta_query = matches!(
             intent_trace.category,
             IntentCategory::AskToolList
                 | IntentCategory::AskSystemPrompt
                 | IntentCategory::AskModelName
         );
-        // The state/system prefix is rebuilt every turn, so report this turn's own copy. The
-        // meta-query path builds a different prompt and reports that one from its own handler.
-        if !is_meta_query {
-            if let Some(prompt) =
-                user_msg.content_text_owned().as_deref().and_then(split_system_prompt_prefix)
-            {
-                zihuan_core::qq_context::emit_qq_context_stage(
-                    ctx.agent_id,
-                    sender_id,
-                    &turn_id,
-                    zihuan_core::qq_context::QQ_CONTEXT_STAGE_SYSTEM_PROMPT,
-                    serde_json::json!({ "prompt": prompt }),
-                );
-            }
-        }
-        {
-            let session = turn_session_state.lock().unwrap();
-            let emotion_prompt = emotion_expression_prompt(&session, &emotion_dimensions);
-            let emotion_values: serde_json::Map<String, serde_json::Value> = session
-                .ordered_emotion_dimensions(&emotion_dimensions)
-                .into_iter()
-                .map(|(name, value)| (name, serde_json::json!(value)))
-                .collect();
-            zihuan_core::qq_context::emit_qq_context_stage(
-                ctx.agent_id,
-                sender_id,
-                &turn_id,
-                "情绪与风格提示",
-                serde_json::json!({
-                    "emotion_dimensions": emotion_values,
-                    "emotion_prompt": emotion_prompt,
-                    // A noticeable emotion expression replaces the configured language style.
-                    "style_prompt_suppressed": has_noticeable_emotion_expression(
-                        &session,
-                        &emotion_dimensions,
-                    ),
-                    "style_prompt": ctx
-                        .resolved_language_style
-                        .as_ref()
-                        .map(|item| item.style_prompt.as_str()),
-                }),
-            );
-        }
-
-        let mut history = sanitize_messages_for_inference(history);
-        let compact_result = compact_message_history(
-            turn_llm,
-            history.clone(),
-            compaction_threshold(turn_llm.context_length(), current_context_compaction_percent()),
-            &user_msg,
-        );
-        if compact_result.did_compact {
-            info!(
-                "{LOG_PREFIX} history compacted for {history_key}: tokens {} -> {}",
-                compact_result.estimated_tokens_before, compact_result.estimated_tokens_after
-            );
-            history = compact_result.messages;
-            save_history(ctx.cache, &history_key, history.clone());
-        }
-        trace.record_history_stats(history.len(), estimate_messages_tokens(&history));
-
         if is_meta_query {
             info!(
                 "{LOG_PREFIX} meta-query short-circuit for sender={sender_id}, intent={}",
@@ -475,10 +270,55 @@ impl QqChatAgentServiceInner {
                 &turn_id,
             );
             if let Err(ref error) = meta_result {
-                emit_context_turn_failure(ctx, sender_id, &turn_id, "元查询", error);
+                emit_context_turn_failure(ctx.agent_id, sender_id, &turn_id, "元查询", error);
             }
             return meta_result;
         }
+
+        // Normal turn: one procedure chain, before-brain -> brain -> after-brain
+        // (documents/procedure.md). The before-brain context block flows to the brain
+        // through the shared procedure context instead of a turn-local variable.
+        let chat_preprompt_history_key = chat_preprompt_history_key(sender_id);
+        let preprompt_memory_resources = MemoryCapability::resolve(
+            ctx.local_memory_store.cloned(),
+            ctx.retrieval_store.cloned(),
+            ctx.embedding_model.cloned(),
+        )
+        .map(|memory| AgentMemoryToolResources {
+            memory_backend: memory.backend,
+            embedding_model: memory.embedding_model,
+            llm: Arc::clone(ctx.llm),
+            access: qq_memory_access_context(
+                sender_id,
+                target_id,
+                is_group,
+                prepared_input.event.group_id,
+            ),
+        });
+        let turn_identity = QqChatTurnIdentity {
+            agent_id: ctx.agent_id.to_string(),
+            sender_id: sender_id.to_string(),
+            turn_id: turn_id.clone(),
+        };
+        let before_brain = QqBeforeBrain::new(PrepromptContext {
+            trace,
+            identity: Some(turn_identity),
+            // The "Preprompt 模型" setting; when unset it falls back to the main Brain model.
+            llm: ctx.intent_classification_llm,
+            cache: ctx.cache,
+            history_key: &chat_preprompt_history_key,
+            input: &prepared_input,
+            bot_name: ctx.bot_name,
+            bot_id,
+            sender_id,
+            target_id,
+            is_group,
+            session_state: Arc::clone(&turn_session_state),
+            emotion_dimensions: emotion_dimensions.clone(),
+            memory_resources: preprompt_memory_resources,
+            rdb_pool: ctx.rdb_pool.cloned(),
+            default_tools_enabled: &self.default_tools_enabled,
+        });
 
         let shared_runtime_values = Arc::new(Mutex::new(ctx.shared_runtime_values.clone()));
         {
@@ -499,61 +339,16 @@ impl QqChatAgentServiceInner {
             );
         }
 
-        let mut conversation: Vec<LLMMessage> = Vec::with_capacity(history.len() + 1);
-        conversation.extend(history.iter().cloned());
-        conversation.push(user_msg.clone());
-        let brain_conversation =
-            downgrade_messages_for_model(conversation, turn_llm.supports_multimodal_input());
-        let prompt_tokens_estimated = estimate_messages_tokens(&brain_conversation);
-        trace.log_llm_conversation(&brain_conversation, prompt_tokens_estimated);
-        // What the brain actually receives: the assembled current-turn input plus the history it
-        // is sent with. The per-turn system prefix is reported separately as its own stage.
-        let current_user_body =
-            user_msg.content_text_owned().as_deref().and_then(split_current_user_body);
-        // History user messages carry their per-turn system prefix; show only the turn's own
-        // body so the list reads as the conversation instead of repeating the same prefix.
-        let history_input: Vec<serde_json::Value> = brain_conversation
-            .iter()
-            .take(brain_conversation.len().saturating_sub(1))
-            .map(|message| {
-                let full = message.content_text_owned().unwrap_or_default();
-                let is_user =
-                    matches!(message.role, zihuan_core::model_inference::llm::MessageRole::User);
-                let text = if is_user {
-                    split_current_user_body(&full).unwrap_or(full.clone())
-                } else {
-                    full.clone()
-                };
-                serde_json::json!({
-                    "role": format!("{:?}", message.role).to_lowercase(),
-                    "chars": text.chars().count(),
-                    "preview": zihuan_core::utils::string_utils::shorten_text(&text, 160),
-                })
-            })
-            .collect();
-        zihuan_core::qq_context::emit_qq_context_stage(
-            ctx.agent_id,
-            sender_id,
-            &turn_id,
-            "Brain 输入",
-            serde_json::json!({
-                "model": turn_llm.get_model_name(),
-                "messages_sent": brain_conversation.len(),
-                "prompt_tokens_estimated": prompt_tokens_estimated,
-                "current_user_message": current_user_body,
-                "history": history_input,
-                "compacted": compact_result.did_compact,
-                "tokens_before_compaction": compact_result
-                    .did_compact
-                    .then_some(compact_result.estimated_tokens_before),
-                "tokens_after_compaction": compact_result
-                    .did_compact
-                    .then_some(compact_result.estimated_tokens_after),
-                "removed_tool_related_messages": compact_result.removed_tool_related_messages,
-            }),
-        );
-
         let consumed_steer_messages = Arc::new(Mutex::new(Vec::new()));
+        // Steer events drained mid-turn but not yet covered by a sent reply. The guard
+        // rolls them back into the pending store if the turn dies before replying —
+        // including on `?` short-circuits and panics — so they are never lost silently.
+        let in_flight_steers: Arc<Mutex<Vec<PendingSteerEvent>>> = Arc::new(Mutex::new(Vec::new()));
+        let steer_commit_guard = SteerCommitGuard::new(
+            Arc::clone(ctx.pending_steer),
+            sender_id,
+            Arc::clone(&in_flight_steers),
+        );
         let brain = QqBrain::new(
             self,
             ctx,
@@ -567,27 +362,30 @@ impl QqChatAgentServiceInner {
             is_group,
             &turn_id,
             event.group_name.clone(),
-            brain_conversation,
+            history,
+            &history_key,
+            message_rate_limit_warning,
             base_system_prompt,
             Arc::clone(&shared_runtime_values),
             Arc::clone(&consumed_steer_messages),
+            Arc::clone(&in_flight_steers),
             Arc::clone(&turn_session_state),
             emotion_dimensions.clone(),
-            preprompt_context.clone(),
         );
         let brain = match brain {
             Ok(brain) => brain,
             Err(error) => {
-                emit_context_turn_failure(ctx, sender_id, &turn_id, "构建 Brain", &error);
+                emit_context_turn_failure(ctx.agent_id, sender_id, &turn_id, "构建 Brain", &error);
                 return Err(error);
             }
         };
-        // Role turn chain (documents/procedure.md): brain -> AfterBrain procedures. The
-        // before-brain procedure (preprompt) ran earlier above because its output feeds the
-        // turn's user-message construction.
+        // Role turn chain (documents/procedure.md): before-brain -> brain -> after-brain.
+        // The chain runs through one shared procedure context; the brain reads the
+        // before-brain output from it and assembles the turn input itself.
         let mut shared = qq_procedure_context(&history_key, Some(current_message.clone()));
         let turn_outputs = block_async(execute_blocking_procedure_chain(
             vec![
+                Arc::new(before_brain),
                 Arc::new(brain),
                 Arc::new(QqAfterBrain::new(QqAfterBrainContext {
                     review_llm: ctx.intent_classification_llm,
@@ -613,7 +411,13 @@ impl QqChatAgentServiceInner {
         let turn_outputs = match turn_outputs {
             Ok(outputs) => outputs,
             Err(error) => {
-                emit_context_turn_failure(ctx, sender_id, &turn_id, "Brain 推理循环", &error);
+                emit_context_turn_failure(
+                    ctx.agent_id,
+                    sender_id,
+                    &turn_id,
+                    "Brain 推理循环",
+                    &error,
+                );
                 return Err(error);
             }
         };
@@ -624,6 +428,10 @@ impl QqChatAgentServiceInner {
 
         let mut visible_assistant_history_text = None;
         let mut explicit_no_reply = false;
+        // False when the turn died before producing any reply (transport error, iteration
+        // limit, no content): the session loop then stops instead of chaining a follow-up,
+        // and the steer commit guard rolls consumed steers back into the pending store.
+        let mut turn_completed = false;
         if brain_output_payload.final_reply_text.is_none() {
             match &brain_output_payload.stop_reason {
                 ToolCallingStopReason::TransportError(ref err) => {
@@ -647,6 +455,13 @@ impl QqChatAgentServiceInner {
                     warn!("{LOG_PREFIX} ToolCallingEngine paused at tool-call limit without reply: {}", request.question);
                 }
             }
+            let stop_reason_text = match &brain_output_payload.stop_reason {
+                ToolCallingStopReason::TransportError(_) => "模型调用异常",
+                ToolCallingStopReason::MaxIterationsReached => "推理迭代次数达到上限",
+                ToolCallingStopReason::ToolCallLimitReached(_) => "工具调用次数达到上限",
+                ToolCallingStopReason::AwaitUserInput(_) => "推理暂停在等待输入",
+                ToolCallingStopReason::Done => "没有生成可发送的回复",
+            };
             zihuan_core::qq_context::emit_qq_context_stage(
                 ctx.agent_id,
                 sender_id,
@@ -656,11 +471,12 @@ impl QqChatAgentServiceInner {
                     "stop_reason": format!("{:?}", brain_output_payload.stop_reason),
                     "suppress_send": false,
                     "final_message": null,
-                    "reason": "推理结束但没有可发送的回复",
+                    "reason": format!("推理结束但没有可发送的回复（{stop_reason_text}）"),
                 }),
             );
         } else if brain_output_payload.final_reply_text.is_some() {
             if brain_output_payload.suppress_send {
+                turn_completed = true;
                 explicit_no_reply = true;
                 zihuan_core::qq_context::emit_qq_context_stage(
                     ctx.agent_id,
@@ -675,6 +491,7 @@ impl QqChatAgentServiceInner {
                     }),
                 );
             } else {
+                turn_completed = true;
                 let available_media =
                     collect_available_media_from_brain_output(&brain_output_payload.brain_output);
                 let review_result = turn_outputs
@@ -718,7 +535,13 @@ impl QqChatAgentServiceInner {
                 let reply_result = match reply_result {
                     Ok(reply_result) => reply_result,
                     Err(error) => {
-                        emit_context_turn_failure(ctx, sender_id, &turn_id, "构建回复", &error);
+                        emit_context_turn_failure(
+                            ctx.agent_id,
+                            sender_id,
+                            &turn_id,
+                            "构建回复",
+                            &error,
+                        );
                         return Err(error);
                     }
                 };
@@ -771,8 +594,16 @@ impl QqChatAgentServiceInner {
             }
         }
 
-        history.push(user_msg);
-        history.extend(consumed_steer_messages.lock().unwrap().iter().cloned());
+        // The brain procedure compacted (and persisted) the working history if needed, so
+        // reload it and append this turn's messages to what was actually kept.
+        let mut history = load_history(ctx.cache, &history_key);
+        history.push(brain_output_payload.current_user_message.clone());
+        // Steer messages drained mid-turn only belong in history once the turn actually
+        // answered them; on a failed turn they are rolled back into the pending store
+        // and the next turn re-injects them fresh.
+        if turn_completed {
+            history.extend(consumed_steer_messages.lock().unwrap().iter().cloned());
+        }
         // The final model call's usage, carried onto the assistant history message so the live
         // context view can report input/output tokens and cache hit rate. `usage` is not part of
         // request serialization, so this never affects inference.
@@ -853,7 +684,10 @@ impl QqChatAgentServiceInner {
         };
         trace.log_result_summary(&result_summary);
 
-        Ok(QqChatServiceTurnResult { result_summary })
+        if turn_completed {
+            steer_commit_guard.commit();
+        }
+        Ok(QqChatServiceTurnResult { result_summary, turn_completed })
     }
 
     /// Handles meta-query intents (AskToolList, AskSystemPrompt) by using a dedicated
@@ -875,11 +709,20 @@ impl QqChatAgentServiceInner {
         ctx: &QqChatAgentServiceContext<'_>,
         current_message: &str,
         history_key: &str,
-        mut history: Vec<LLMMessage>,
+        history: Vec<LLMMessage>,
         turn_session_state: &Arc<Mutex<QqChatSessionState>>,
         emotion_dimensions: &[QqChatEmotionDimensionConfig],
         turn_id: &str,
     ) -> Result<QqChatServiceTurnResult> {
+        // The caller passes the raw loaded history; compact it here with a plain user message
+        // as the token-estimate reference so the persisted history stays within budget too.
+        let mut history = {
+            let reference = message_with_api_style(
+                LLMMessage::user(current_message.to_string()),
+                ctx.llm.api_style(),
+            );
+            compact_turn_history(ctx.cache, history_key, ctx.llm, history, &reference).messages
+        };
         let function_list = zihuan_core::command::build_help_text()
             .unwrap_or_else(|| "暂无可用功能信息。".to_string());
         let public_info = format_public_info_message(current_message).to_string();
@@ -953,6 +796,7 @@ impl QqChatAgentServiceInner {
             emit_meta_query_turn_finished(ctx, sender_id, turn_id, &meta_payload, None);
             return Ok(QqChatServiceTurnResult {
                 result_summary: format!("元查询[{sender_id}]：LLM未返回有效回复"),
+                turn_completed: true,
             });
         };
         zihuan_core::qq_context::emit_qq_context_stage(
@@ -978,6 +822,7 @@ impl QqChatAgentServiceInner {
             emit_meta_query_turn_finished(ctx, sender_id, turn_id, &meta_payload, None);
             return Ok(QqChatServiceTurnResult {
                 result_summary: format!("已处理[{sender_id}]的元查询，显式选择不回复"),
+                turn_completed: true,
             });
         }
 
@@ -1093,7 +938,7 @@ impl QqChatAgentServiceInner {
             visible_assistant_history_text.as_deref(),
         );
 
-        Ok(QqChatServiceTurnResult { result_summary })
+        Ok(QqChatServiceTurnResult { result_summary, turn_completed: true })
     }
 }
 

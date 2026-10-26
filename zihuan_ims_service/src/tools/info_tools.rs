@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use zihuan_core::agent::tools::Tool;
+use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
 
 use super::common::StaticFunctionToolSpec;
@@ -23,9 +24,9 @@ impl Tool for GetFunctionListTool {
         })
     }
 
-    fn execute(&self, _call_content: &str, _arguments: &Value) -> String {
-        zihuan_core::command::build_help_text()
-            .unwrap_or_else(|| "命令注册表尚未初始化。".to_string())
+    fn execute(&self, _call_content: &str, _arguments: &Value) -> Result<String> {
+        Ok(zihuan_core::command::build_help_text()
+            .unwrap_or_else(|| "命令注册表尚未初始化。".to_string()))
     }
 }
 
@@ -53,7 +54,7 @@ impl Tool for GetAgentPublicInfoTool {
         })
     }
 
-    fn execute(&self, _call_content: &str, _arguments: &Value) -> String {
-        format_public_info_message(&self.message).to_string()
+    fn execute(&self, _call_content: &str, _arguments: &Value) -> Result<String> {
+        Ok(format_public_info_message(&self.message).to_string())
     }
 }

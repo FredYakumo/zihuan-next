@@ -237,12 +237,18 @@ pub(crate) struct QqChatServiceSteerHook {
     pub(crate) s3_ref: Option<Arc<S3Ref>>,
     pub(crate) trace: QqChatTaskTrace,
     pub(crate) consumed_messages: Arc<Mutex<Vec<LLMMessage>>>,
+    /// Steer events drained by this hook during the current turn but not yet covered
+    /// by a sent reply. The turn's [`SteerCommitGuard`] commits or rolls them back.
+    pub(crate) in_flight_steers: Arc<Mutex<Vec<PendingSteerEvent>>>,
     pub(crate) shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
     pub(crate) system_prompt: String,
     pub(crate) style_prompt: Option<String>,
     pub(crate) session_state: Arc<Mutex<QqChatSessionState>>,
     pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
-    pub(crate) preprompt_context: Option<String>,
+    /// The turn's preprompt context block. The hook is assembled before the procedure chain
+    /// runs, so the block is written into this shared cell by the brain procedure (after the
+    /// before-brain procedure produced it) instead of being passed at construction.
+    pub(crate) preprompt_context: Arc<Mutex<Option<String>>>,
 }
 
 impl ToolCallingMiddleware for QqChatServiceSteerHook {
@@ -257,6 +263,10 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
             return Vec::new();
         }
         let steer_count = pending.len();
+        self.in_flight_steers
+            .lock()
+            .unwrap()
+            .extend(pending.iter().cloned());
 
         let mut injected = Vec::with_capacity(pending.len());
         let mut prepared_inputs = Vec::with_capacity(pending.len());
@@ -278,6 +288,7 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
             injected.push(inference_event);
         }
 
+        let preprompt_context = self.preprompt_context.lock().unwrap().clone();
         let steer_message = if prepared_inputs.len() == 1 {
             let mut session_state = self.session_state.lock().unwrap();
             build_steer_user_message(
@@ -290,7 +301,7 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
                 self.style_prompt.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
-                self.preprompt_context.as_deref(),
+                preprompt_context.as_deref(),
             )
         } else {
             let mut session_state = self.session_state.lock().unwrap();
@@ -304,7 +315,7 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
                 self.style_prompt.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
-                self.preprompt_context.as_deref(),
+                preprompt_context.as_deref(),
             )
         };
         consumed_guard.push(steer_message.clone());
@@ -326,6 +337,59 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
             );
         }
         vec![steer_message]
+    }
+}
+
+/// Tracks steer events the hook drained mid-turn that no reply covers yet.
+///
+/// The hook must drain before inference so the model sees the steers, but the turn
+/// can still die afterwards — transport error, iteration limit, panic, any `?`
+/// short-circuit. Dropping the guard without `commit` pushes those events back to
+/// the front of the pending store, so the next turn answers them instead of losing
+/// them silently.
+pub(crate) struct SteerCommitGuard {
+    pending_steer: Arc<PendingSteerStore>,
+    sender_id: String,
+    in_flight: Arc<Mutex<Vec<PendingSteerEvent>>>,
+    committed: bool,
+}
+
+impl SteerCommitGuard {
+    pub(crate) fn new(
+        pending_steer: Arc<PendingSteerStore>,
+        sender_id: &str,
+        in_flight: Arc<Mutex<Vec<PendingSteerEvent>>>,
+    ) -> Self {
+        Self {
+            pending_steer,
+            sender_id: sender_id.to_string(),
+            in_flight,
+            committed: false,
+        }
+    }
+
+    /// Mark the drained steers as covered by a reply (or a deliberate no-reply).
+    pub(crate) fn commit(mut self) {
+        self.committed = true;
+        self.in_flight.lock().unwrap().clear();
+    }
+}
+
+impl Drop for SteerCommitGuard {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        let events = std::mem::take(&mut *self.in_flight.lock().unwrap());
+        if events.is_empty() {
+            return;
+        }
+        warn!(
+            "{LOG_PREFIX} rolling back {} consumed steer(s) for {} after a turn that sent no reply",
+            events.len(),
+            self.sender_id
+        );
+        self.pending_steer.requeue_front(&self.sender_id, events);
     }
 }
 
@@ -450,6 +514,9 @@ impl QqChatAgentServiceInner {
             // The first pass handles the user's message; every later pass replays queued steer
             // messages and is marked as a continuation in the context view.
             let mut is_steer_follow_up = false;
+            // The steer events that were merged into the current pass's message. When that
+            // pass fails they must go back to the pending store, or they would be lost.
+            let mut current_pass_steers: Vec<PendingSteerEvent> = Vec::new();
             let result_summary = loop {
                 let turn_result = self.handle_claimed_turn(
                     trace,
@@ -463,6 +530,16 @@ impl QqChatAgentServiceInner {
                     is_steer_follow_up,
                     ctx,
                 )?;
+
+                if !turn_result.turn_completed {
+                    // The turn failed before sending any reply. Steers the hook consumed
+                    // mid-turn were already rolled back by the commit guard; put this
+                    // pass's own merged steer events back too, then stop — chaining
+                    // another turn onto a persistent failure would just loop.
+                    ctx.pending_steer
+                        .requeue_front(sender_id, current_pass_steers);
+                    break turn_result.result_summary;
+                }
 
                 let (pending, remaining_queue_len, accepted_steer_count) =
                     ctx.pending_steer.drain_all(sender_id);
@@ -505,6 +582,7 @@ impl QqChatAgentServiceInner {
                     .last()
                     .map(|event| event.time.clone())
                     .unwrap_or_else(|| current_time.clone());
+                current_pass_steers = pending;
                 is_steer_follow_up = true;
             };
 

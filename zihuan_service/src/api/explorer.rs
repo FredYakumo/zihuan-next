@@ -1575,6 +1575,11 @@ struct ContextTurn {
     turn_id: String,
     created_at: String,
     user_text: String,
+    /// Group the user message was sent in; absent for private chats.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group_name: Option<String>,
+    #[serde(default)]
+    is_group: bool,
     /// The message the user quoted, rendered as a collapsible quote block inside the user bubble.
     #[serde(skip_serializing_if = "Option::is_none")]
     quoted: Option<zihuan_core::qq_context::QqChatQuotedMessage>,
@@ -1650,6 +1655,8 @@ fn archived_turn_to_context(
         turn_id: turn.turn_id,
         created_at: turn.created_at,
         user_text: turn.user_text,
+        group_name: turn.group_name,
+        is_group: turn.is_group,
         quoted: turn.quoted,
         media: turn
             .media
@@ -1832,6 +1839,8 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
                 turn_id: turn.turn_id,
                 created_at: turn.created_at,
                 user_text: turn.user_text,
+                group_name: turn.group_name,
+                is_group: turn.is_group,
                 quoted: turn.quoted,
                 media: turn
                     .media

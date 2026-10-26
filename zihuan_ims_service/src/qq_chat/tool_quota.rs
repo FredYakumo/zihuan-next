@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
-use zihuan_core::agent::tools::{Tool, ToolExecutionOutput};
+use zihuan_core::agent::tools::{Tool, ToolExecutionOutput, tool_failure_envelope};
 use zihuan_core::data_refs::RelationalDbConnection;
+use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::tool_runtime::ToolRunDuration;
 
@@ -63,10 +64,13 @@ impl<T> QuotaMaybeWrappedTool<T> {
     }
 
     fn rejection_output(message: String) -> ToolExecutionOutput {
-        ToolExecutionOutput::text(serde_json::json!({ "ok": false, "error": message }).to_string())
+        ToolExecutionOutput::text(tool_failure_envelope(message))
     }
 
-    fn try_acquire(quota: &QqChatToolQuotaContext, tool_name: &str) -> Result<(), String> {
+    fn try_acquire(
+        quota: &QqChatToolQuotaContext,
+        tool_name: &str,
+    ) -> std::result::Result<(), String> {
         if let Some(limit) = quota.limit_for(tool_name) {
             let current = quota.session_state.lock().unwrap().get(tool_name);
             if current >= limit {
@@ -115,8 +119,12 @@ where
         self.tool.spec()
     }
 
-    fn execute(&self, call_content: &str, arguments: &Value) -> String {
-        self.execute_with_outcome(call_content, arguments).result
+    fn execute(&self, call_content: &str, arguments: &Value) -> Result<String> {
+        Ok(self.execute_with_outcome(call_content, arguments).result)
+    }
+
+    fn returns_failure_details_to_agent(&self) -> bool {
+        self.tool.returns_failure_details_to_agent()
     }
 
     fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {

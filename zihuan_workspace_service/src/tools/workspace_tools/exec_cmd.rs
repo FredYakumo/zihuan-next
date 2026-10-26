@@ -214,11 +214,17 @@ fn command_family(command: &str) -> String {
     command.split_whitespace().next().unwrap_or_default().to_ascii_lowercase()
 }
 impl Tool for ExecCmdTool {
+    /// Command stderr, edit conflicts and path validation guide the model's
+    /// next step, so failures reach it verbatim instead of downgraded.
+    fn returns_failure_details_to_agent(&self) -> bool {
+        true
+    }
+
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec{name:DEFAULT_TOOL_EXEC_CMD,description:"Execute a shell command with optional environment, stdin, shell, timeout, and bounded output",parameters:serde_json::json!({"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"timeout_secs":{"type":"integer","minimum":1},"env":{"type":"object","additionalProperties":{"type":"string"}},"input":{"type":"string"},"max_output_bytes":{"type":"integer","minimum":1},"shell":{"type":"string","enum":["powershell","bash"]}},"required":["command"]})})
     }
-    fn execute(&self, call_content: &str, a: &Value) -> String {
-        self.execute_with_progress(call_content, a, Arc::new(|_, _| {})).result
+    fn execute(&self, call_content: &str, a: &Value) -> zihuan_core::error::Result<String> {
+        Ok(self.execute_with_progress(call_content, a, Arc::new(|_, _| {})).result)
     }
     fn execute_with_progress(
         &self,
@@ -231,7 +237,7 @@ impl Tool for ExecCmdTool {
             Err(e) => {
                 return ToolExecutionOutput::text(json_error(format!(
                     "invalid exec_cmd arguments: {e}"
-                )))
+                )).expect("json_error is infallible"))
             }
         };
         let shell = args.shell.clone().unwrap_or_else(|| {
@@ -242,11 +248,15 @@ impl Tool for ExecCmdTool {
             }
         });
         if shell != "powershell" && shell != "bash" {
-            return ToolExecutionOutput::text(json_error("shell must be powershell or bash"));
+            return ToolExecutionOutput::text(
+                json_error("shell must be powershell or bash").expect("json_error is infallible"),
+            );
         }
         if !is_approved(self.session_id.as_deref(), &args.command) {
             let Some(session_id) = self.session_id.as_deref() else {
-                return ToolExecutionOutput::text(json_error("exec_cmd requires a chat session"));
+                return ToolExecutionOutput::text(
+                    json_error("exec_cmd requires a chat session").expect("json_error is infallible"),
+                );
             };
             if !wait_for_command_decision(session_id, &args.command, &shell, &on_output) {
                 return ToolExecutionOutput::text(serde_json::json!({"ok":false,"rejected":true,"error":"command execution rejected by user"}).to_string());
@@ -255,7 +265,9 @@ impl Tool for ExecCmdTool {
         let cwd = if let Some(raw) = args.cwd.as_deref() {
             match resolve_tool_path(self.workspace_path.as_deref(), raw) {
                 Ok(v) => Some(v),
-                Err(e) => return ToolExecutionOutput::text(json_error(e.to_string())),
+                Err(e) => return ToolExecutionOutput::text(
+                    json_error(e.to_string()).expect("json_error is infallible"),
+                ),
             }
         } else {
             self.workspace_path.clone()
@@ -263,9 +275,10 @@ impl Tool for ExecCmdTool {
         let secs = args.timeout_secs.unwrap_or(30);
         let max_output = args.max_output_bytes.unwrap_or(32 * 1024);
         if max_output == 0 {
-            return ToolExecutionOutput::text(json_error(
-                "max_output_bytes must be greater than zero",
-            ));
+            return ToolExecutionOutput::text(
+                json_error("max_output_bytes must be greater than zero")
+                    .expect("json_error is infallible"),
+            );
         }
         let command_cwd = cwd.clone();
         let input = args.input.clone();
@@ -361,7 +374,7 @@ impl Tool for ExecCmdTool {
             Ok(Err(e)) => json_error(format!("failed to execute command: {e}")),
             Err(_) => json_error(format!("command timed out after {secs}s")),
         };
-        ToolExecutionOutput::text(result)
+        ToolExecutionOutput::text(result.expect("json_error/success_json are infallible"))
     }
     fn execution_resource(&self, _: &Value) -> ToolExecutionResource {
         ToolExecutionResource::Exclusive

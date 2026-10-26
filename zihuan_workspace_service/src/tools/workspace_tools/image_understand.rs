@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use serde_json::Value;
-use zihuan_core::agent::tools::{Tool, ToolExecutionOutput};
+use zihuan_core::agent::tools::Tool;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::models::message::{ImageMessage, PersistedMedia};
 use zihuan_core::ims_bot_adapter::runtime::multimodal_image_url::resolve_image_message_part;
@@ -81,12 +81,7 @@ impl Tool for ImageUnderstandTool {
         })
     }
 
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
         self.run(arguments)
-            .unwrap_or_else(|error| serde_json::json!({ "error": error.to_string() }).to_string())
-    }
-
-    fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
-        ToolExecutionOutput::text(self.execute(call_content, arguments))
     }
 }

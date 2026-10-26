@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use tokio::sync::mpsc;
 use zihuan_core::agent::tool_definitions::selected_sub_agent_ids;
 use zihuan_core::agent::tools::{
-    Tool, ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason, ToolExecutionOutput,
-    ToolRunDuration, MAX_TOOL_ITERATIONS,
+    Tool, ToolCallingEngine, ToolCallingObserver, ToolCallingStopReason, ToolRunDuration,
+    MAX_TOOL_ITERATIONS,
 };
 use zihuan_core::agent::{
     declarative_agent::{list_agent_ids, AgentHost},
@@ -113,16 +113,8 @@ impl Tool for ServiceSubgraphTool {
         self.runner.definition.run_duration
     }
 
-    fn execute(&self, call_content: &str, arguments: &serde_json::Value) -> String {
-        self.runner.execute_to_string(call_content, arguments)
-    }
-
-    fn execute_with_outcome(
-        &self,
-        call_content: &str,
-        arguments: &serde_json::Value,
-    ) -> ToolExecutionOutput {
-        ToolExecutionOutput::text(self.execute(call_content, arguments))
+    fn execute(&self, call_content: &str, arguments: &serde_json::Value) -> Result<String> {
+        self.runner.execute_result(call_content, arguments)
     }
 }
 

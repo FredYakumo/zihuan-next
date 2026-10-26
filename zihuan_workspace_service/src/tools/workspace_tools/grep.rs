@@ -11,6 +11,12 @@ pub(crate) struct GrepTool {
     pub(crate) workspace_path: Option<PathBuf>,
 }
 impl Tool for GrepTool {
+    /// Command stderr, edit conflicts and path validation guide the model's
+    /// next step, so failures reach it verbatim instead of downgraded.
+    fn returns_failure_details_to_agent(&self) -> bool {
+        true
+    }
+
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: DEFAULT_TOOL_GREP,
@@ -18,7 +24,7 @@ impl Tool for GrepTool {
             parameters: serde_json::json!({"type":"object","properties":{"path":{"type":"string"},"pattern":{"type":"string"},"glob":{"type":"string"},"max_results":{"type":"integer","minimum":1},"context_lines":{"type":"integer","minimum":0},"context_before":{"type":"integer","minimum":0},"context_after":{"type":"integer","minimum":0},"case_sensitive":{"type":"boolean"}},"required":["path","pattern"]}),
         })
     }
-    fn execute(&self, _: &str, arguments: &Value) -> String {
+    fn execute(&self, _: &str, arguments: &Value) -> zihuan_core::error::Result<String> {
         let args: SearchArgs = match serde_json::from_value(arguments.clone()) {
             Ok(value) => value,
             Err(err) => return json_error(format!("invalid grep arguments: {err}")),

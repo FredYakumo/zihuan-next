@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use crate::agent::utils::build_state_system_prefix_lines;
 use crate::qq_session_state::QqChatSessionState;
-use log::warn;
+use log::{info, warn};
 use serde_json::Value;
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 
@@ -21,14 +21,21 @@ use super::msg_send::{
     send_notification_text, QqChatServiceSendContext,
 };
 use crate::role_config::QqChatEmotionDimensionConfig;
+use crate::storage::qq_chat_history_store::save_history;
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use zihuan_core::agent::tools::LongTaskNotifier;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
 use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::graph::tool_spec::{ToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
+use zihuan_core::model_inference::inference_function::compact_message::{
+    compact_message_history, compaction_threshold, ContextCompactionResult,
+};
+use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
+use zihuan_core::system_config::current_context_compaction_percent;
 use zihuan_core::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode,
 };
@@ -86,6 +93,33 @@ pub(crate) fn split_current_user_body(user_text: &str) -> Option<String> {
     }
     let body = body.trim();
     (!body.is_empty()).then(|| body.to_string())
+}
+
+/// Compact persisted conversation history to fit the turn model's context budget.
+///
+/// Returns the compaction report whose `messages` replace the input history; when compaction
+/// happened, the compacted history is also persisted back to the session cache.
+pub(crate) fn compact_turn_history(
+    cache: &Arc<LLMMessageSessionCacheRef>,
+    history_key: &str,
+    llm: &Arc<dyn LLMBase>,
+    history: Vec<LLMMessage>,
+    current_user_message: &LLMMessage,
+) -> ContextCompactionResult {
+    let result = compact_message_history(
+        llm,
+        history,
+        compaction_threshold(llm.context_length(), current_context_compaction_percent()),
+        current_user_message,
+    );
+    if result.did_compact {
+        info!(
+            "{LOG_PREFIX} history compacted for {history_key}: tokens {} -> {}",
+            result.estimated_tokens_before, result.estimated_tokens_after
+        );
+        save_history(cache, history_key, result.messages.clone());
+    }
+    result
 }
 
 fn default_tools_enabled_map() -> HashMap<String, bool> {

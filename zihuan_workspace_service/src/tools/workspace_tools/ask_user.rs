@@ -20,6 +20,12 @@ struct AskUserArgs {
     options: Option<Vec<String>>,
 }
 impl Tool for AskUserTool {
+    /// Command stderr, edit conflicts and path validation guide the model's
+    /// next step, so failures reach it verbatim instead of downgraded.
+    fn returns_failure_details_to_agent(&self) -> bool {
+        true
+    }
+
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: DEFAULT_TOOL_ASK_USER,
@@ -62,12 +68,14 @@ impl Tool for AskUserTool {
             Err(e) => {
                 return ToolExecutionOutput::text(json_error(format!(
                     "invalid ask_user arguments: {e}"
-                )))
+                )).expect("json_error is infallible"))
             }
         };
         let question = args.question.trim().to_string();
         if question.is_empty() {
-            return ToolExecutionOutput::text(json_error("question must not be empty"));
+            return ToolExecutionOutput::text(
+                json_error("question must not be empty").expect("json_error is infallible"),
+            );
         }
         let options = normalize_options(args.options);
         let request = AskUserRequest {
@@ -84,7 +92,7 @@ impl Tool for AskUserTool {
             request,
         )
     }
-    fn execute(&self, _: &str, _: &Value) -> String {
+    fn execute(&self, _: &str, _: &Value) -> zihuan_core::error::Result<String> {
         unreachable!("ask_user uses execute_with_outcome")
     }
     fn execution_resource(&self, _: &Value) -> ToolExecutionResource {

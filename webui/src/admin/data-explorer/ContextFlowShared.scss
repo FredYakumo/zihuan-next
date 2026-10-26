@@ -21,6 +21,18 @@
     color: var(--td-text-color-secondary);
 }
 
+.context-tool-result-label--failed {
+    color: var(--td-error-color);
+}
+
+/* Failed tool calls show their diagnostics on a light red card. */
+.context-tool-result--failed {
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--td-error-color) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--td-error-color) 20%, transparent);
+}
+
 .context-thinking {
     margin: 0 0 8px;
     border-radius: 8px;

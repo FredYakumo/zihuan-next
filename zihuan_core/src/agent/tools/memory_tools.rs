@@ -132,7 +132,7 @@ impl Tool for ListMemoryKeysTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(MemoryFunctionToolSpec::new("list_memory_keys", "List titles of memories accessible in the current context; optionally filter by query.", json!({"type":"object","properties":{"top_n":{"type":"integer"},"query":{"type":"string"}},"additionalProperties":false})))
     }
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
         let result = (|| -> Result<Value> {
             let top_n = memory_limit(arguments.get("top_n").and_then(Value::as_i64));
             let query = optional_string_argument(arguments, "query");
@@ -177,7 +177,7 @@ impl Tool for SearchMemoryTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(MemoryFunctionToolSpec::new("search_memory", "Search memories accessible in the current context and return their titles and content.", json!({"type":"object","properties":{"query":{"type":"string"},"top_n":{"type":"integer"}},"required":["query"],"additionalProperties":false})))
     }
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
         let result = (|| -> Result<Value> {
             let query = required_string_argument(arguments, "query")?;
             let top_n = memory_limit(arguments.get("top_n").and_then(Value::as_i64));
@@ -215,7 +215,7 @@ impl Tool for RememberMemoryTool {
             json!({"type":"object","properties":{"content":{"type":"string"}},"required":["content"],"additionalProperties":false}),
         ))
     }
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
         let result = (|| -> Result<Value> {
             let content = required_string_argument(arguments, "content")?;
             let items = split_memory_items(&self.resources, &content)?;
@@ -342,10 +342,8 @@ fn required_string_argument(arguments: &Value, name: &str) -> Result<String> {
     optional_string_argument(arguments, name)
         .ok_or_else(|| Error::ValidationError(format!("{name} is required")))
 }
-fn render_value_result(result: Result<Value>) -> String {
-    result
-        .map(|value| value.to_string())
-        .unwrap_or_else(|error| json!({"ok":false,"error":error.to_string()}).to_string())
+fn render_value_result(result: Result<Value>) -> Result<String> {
+    result.map(|value| value.to_string())
 }
 
 #[derive(Debug)]

@@ -52,6 +52,24 @@ export interface ContextSubAgentItem {
 /** A stage or tool call, kept in the order it happened so the flow reads chronologically. */
 export type ContextEntryItem = ContextStageItem | ContextToolItem | ContextSubAgentItem;
 
+/**
+ * Mirrors the backend tool failure envelopes: `{"ok":false,...}` or `{"error":...}`.
+ * Plain-text or other JSON results count as successes.
+ */
+export function toolResultFailed(result?: string): boolean {
+  if (!result) return false;
+  try {
+    const data: unknown = JSON.parse(result.trim());
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      const record = data as Record<string, unknown>;
+      return record.ok === false || typeof record.error === "string";
+    }
+  } catch {
+    // Not JSON — a plain-text result is a success.
+  }
+  return false;
+}
+
 /** One turn of the conversation: the user message plus everything that followed it. */
 export interface ContextQuotedMessage {
   messageId: string;
@@ -64,6 +82,8 @@ export interface ContextTurnView {
   turnId: string;
   createdAt: string;
   userText: string;
+  /** Group the user message was sent in; only present for group chats. */
+  groupName?: string;
   /** Quoted message shown as a collapsible block inside the user bubble. */
   quoted?: ContextQuotedMessage;
   media: ServiceChatContextMedia[];
@@ -191,6 +211,7 @@ export function useChatContext(serviceId: string) {
       turnId: turn.turn_id,
       createdAt: turn.created_at,
       userText: turn.user_text,
+      groupName: turn.group_name,
       quoted: toQuotedView(turn.quoted),
       media: turn.media ?? [],
       entries,
@@ -285,6 +306,7 @@ export function useChatContext(serviceId: string) {
       turnId: event.turn_id,
       createdAt: "created_at" in event ? String(event.created_at) : new Date().toISOString(),
       userText: event.kind === "turn_started" ? event.user_text : "",
+      groupName: event.kind === "turn_started" ? event.group_name : undefined,
       quoted: event.kind === "turn_started" ? toQuotedView(event.quoted) : undefined,
       media: event.kind === "turn_started" ? event.media ?? [] : [],
       entries: [],

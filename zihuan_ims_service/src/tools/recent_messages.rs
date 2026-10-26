@@ -64,7 +64,7 @@ impl Tool for GetRecentGroupMessagesTool {
             parameters: schema,
         })
     }
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
         let result = (|| -> Result<Value> {
             let group_id = if self.notification_target.target_id().is_empty() {
                 optional_string_argument(arguments, "group_id")
@@ -97,10 +97,7 @@ impl Tool for GetRecentGroupMessagesTool {
             }))
         })();
 
-        match result {
-            Ok(value) => value.to_string(),
-            Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
-        }
+        Ok(result?.to_string())
     }
 }
 
@@ -139,7 +136,7 @@ impl Tool for GetRecentUserMessagesTool {
         })
     }
 
-    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+    fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
         let result = (|| -> Result<Value> {
             let rdb_pool = self.rdb_pool.as_ref().ok_or_else(|| {
                 Error::ValidationError("rdb_pool is required for message lookup".to_string())
@@ -164,9 +161,6 @@ impl Tool for GetRecentUserMessagesTool {
             }))
         })();
 
-        match result {
-            Ok(value) => value.to_string(),
-            Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
-        }
+        Ok(result?.to_string())
     }
 }

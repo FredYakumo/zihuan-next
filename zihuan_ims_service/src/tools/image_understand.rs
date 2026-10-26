@@ -5,7 +5,7 @@ use crate::qq_chat::resources::current_qq_chat_role_service_config;
 use crate::role_config::image_understand_llm_ref_id;
 use log::warn;
 use serde_json::Value;
-use zihuan_core::agent::tools::{Tool, ToolExecutionOutput};
+use zihuan_core::agent::tools::Tool;
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
@@ -54,23 +54,14 @@ impl Tool for ImageUnderstandTool {
         Arc::new(build_image_understand_spec())
     }
 
-    fn execute(&self, call_content: &str, arguments: &Value) -> String {
+    fn execute(&self, call_content: &str, arguments: &Value) -> Result<String> {
         self.notification_target.notify_progress(call_content);
-        let result = execute_image_understand(
+        execute_image_understand(
             arguments,
             self.current_event.as_ref(),
             self.rdb_pool.clone(),
             self.s3_ref.clone(),
-        );
-
-        match result {
-            Ok(text) => text,
-            Err(error) => serde_json::json!({"error": error.to_string()}).to_string(),
-        }
-    }
-
-    fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
-        ToolExecutionOutput::text(self.execute(call_content, arguments))
+        )
     }
 }
 

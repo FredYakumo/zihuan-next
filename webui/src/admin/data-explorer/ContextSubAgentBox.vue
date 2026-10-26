@@ -67,8 +67,18 @@
             :running="step.call.running"
           />
           <template v-if="step.call.result !== undefined">
-            <div class="context-tool-result-label">结果</div>
-            <JsonView :source="step.call.result" />
+            <div
+              class="context-tool-result-label"
+              :class="{ 'context-tool-result-label--failed': toolResultFailed(step.call.result) }"
+            >
+              {{ toolResultFailed(step.call.result) ? "错误" : "结果" }}
+            </div>
+            <div
+              class="context-tool-result"
+              :class="{ 'context-tool-result--failed': toolResultFailed(step.call.result) }"
+            >
+              <JsonView :source="step.call.result" />
+            </div>
           </template>
         </div>
       </template>
@@ -101,6 +111,7 @@ import { computed, ref } from "vue";
 
 import type { SubAgentNode } from "./ChatContextTurn";
 import { subAgentMessages } from "./ChatContextTurn";
+import { toolResultFailed } from "./useChatContext";
 import JsonView from "./JsonView.vue";
 
 const props = defineProps<{

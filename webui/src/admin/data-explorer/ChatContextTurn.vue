@@ -3,6 +3,7 @@
     <div class="context-bubble-row context-bubble-row--user">
       <div class="context-bubble context-bubble--user">
         <div class="context-bubble-head">用户输入</div>
+        <p v-if="turn.groupName" class="context-bubble-group">{{ turn.groupName }}</p>
         <div v-if="turn.quoted" class="context-quote" :class="{ collapsed: !quoteOpen }">
           <button
             type="button"
@@ -128,8 +129,18 @@
                 </div>
                 <JsonView :source="entry.arguments" />
                 <template v-if="entry.result !== undefined">
-                  <div class="context-tool-result-label">结果</div>
-                  <JsonView :source="entry.result" />
+                  <div
+                    class="context-tool-result-label"
+                    :class="{ 'context-tool-result-label--failed': toolResultFailed(entry.result) }"
+                  >
+                    {{ toolResultFailed(entry.result) ? "错误" : "结果" }}
+                  </div>
+                  <div
+                    class="context-tool-result"
+                    :class="{ 'context-tool-result--failed': toolResultFailed(entry.result) }"
+                  >
+                    <JsonView :source="entry.result" />
+                  </div>
                 </template>
               </div>
             </div>
@@ -210,6 +221,7 @@
 
 <script setup lang="ts">
 import type { ContextTurnView } from "./useChatContext";
+import { toolResultFailed } from "./useChatContext";
 import {
   RATE_LIMIT_STAGE,
   rateLimitSeverity,

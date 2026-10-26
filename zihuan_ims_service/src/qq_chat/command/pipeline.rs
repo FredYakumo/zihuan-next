@@ -81,6 +81,7 @@ pub(crate) fn run_command_pipeline(
         debug_assert!(denied, "permission-denied command must emit a reply");
         return Ok(CommandTurnEnd::Consumed(QqChatServiceTurnResult {
             result_summary: "命令权限拒绝".to_string(),
+            turn_completed: true,
         }));
     }
 
@@ -122,6 +123,7 @@ pub(crate) fn run_command_pipeline(
         )?;
         return Ok(CommandTurnEnd::Consumed(QqChatServiceTurnResult {
             result_summary: "命令已进入等待授权状态".to_string(),
+            turn_completed: true,
         }));
     }
 
@@ -146,6 +148,7 @@ pub(crate) fn run_command_pipeline(
     if delivered {
         return Ok(CommandTurnEnd::Consumed(QqChatServiceTurnResult {
             result_summary: "已处理命令".to_string(),
+            turn_completed: true,
         }));
     }
     // Effect-free command with no passthrough: fall through.
