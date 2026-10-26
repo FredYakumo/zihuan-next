@@ -461,7 +461,7 @@ export function openToolCallingToolsEditor(
         implementation: "node_graph",
         run_duration: "Short",
         script_config: {
-          language: "typescript",
+          language: "type_script",
           source: "",
           entry: "run_tool",
           timeout_secs: 60,
@@ -610,7 +610,7 @@ export function openToolCallingToolsEditor(
       tools[idx].implementation = nextImplementation;
       if (nextImplementation === "script" && !tools[idx].script_config) {
         tools[idx].script_config = {
-          language: "typescript",
+          language: "type_script",
           source: "",
           entry: "run_tool",
           timeout_secs: 60,
@@ -628,7 +628,7 @@ export function openToolCallingToolsEditor(
     card.appendChild(implementationSelect);
 
     const scriptConfig = (tool.script_config ?? {
-      language: "typescript",
+      language: "type_script",
       source: "",
       entry: "run_tool",
       timeout_secs: 60,
@@ -638,13 +638,13 @@ export function openToolCallingToolsEditor(
       languageLabel.textContent = "脚本语言";
       const languageSelect = document.createElement("select");
       [
-        { value: "typescript", label: "TypeScript (.ts)" },
+        { value: "type_script", label: "TypeScript (.ts)" },
         { value: "python", label: "Python (.py)" },
       ].forEach((option) => {
         const opt = document.createElement("option");
         opt.value = option.value;
         opt.textContent = option.label;
-        if ((scriptConfig.language ?? "typescript") === option.value) {
+        if ((scriptConfig.language ?? "type_script") === option.value) {
           opt.selected = true;
         }
         languageSelect.appendChild(opt);
