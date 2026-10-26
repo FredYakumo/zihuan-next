@@ -292,8 +292,8 @@ async fn update_snapshot_mysql(
     sqlx::query(
         "UPDATE qq_chat_agent_service_privilege_auth \
          SET snapshot_json = ?, updated_at = ? \
-         WHERE id = (SELECT MAX(id) FROM qq_chat_agent_service_privilege_auth \
-                     WHERE agent_id = ? AND sender_id = ?)",
+         WHERE agent_id = ? AND sender_id = ? \
+         ORDER BY id DESC LIMIT 1",
     )
     .bind(snapshot_json)
     .bind(now)
