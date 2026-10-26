@@ -125,14 +125,13 @@
 }
 
 .dashboard-service-card .key-value {
+  grid-template-columns: 64px 1fr;
   font-size: 12px;
 }
 
-.dashboard-service-card .key-value strong {
-  min-width: 52px;
-}
-
 .dashboard-service-card .connection-card-badges {
+  display: flex;
+  flex-wrap: wrap;
   gap: 5px;
 }
 
@@ -329,12 +328,18 @@
 }
 
 .connection-grid.dashboard-privilege-grid {
-  grid-template-columns: repeat(auto-fit, 280px);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
 }
 
 .dashboard-privilege-card {
-  border-style: dashed;
+  border: 1px dashed var(--admin-border-strong);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--admin-bg-soft) 86%, transparent 14%),
+    color-mix(in srgb, var(--admin-bg-panel) 94%, transparent 6%)
+  );
 }
 
 .dashboard-secret-dialog {
