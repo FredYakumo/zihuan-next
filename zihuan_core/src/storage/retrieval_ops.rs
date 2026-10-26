@@ -5,9 +5,8 @@ use crate::ims_bot_adapter::models::message::{Message, PersistedMedia, Persisted
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::retrieval::{RetrievalBackend, RetrievalSchema, RetrievalStoreRef};
 use crate::storage::{
-    search_elasticsearch_images, search_elasticsearch_memory, search_images,
-    search_memory_content_by_vector, upsert_elasticsearch_image, upsert_image_record,
-    AgentMemoryAccessContext, AgentMemorySearchHit,
+    search_images, AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit,
+    AgentMemoryUpsert, RetrievalDatabase,
 };
 
 /// One image-persistence request, independent of the retrieval backend.
@@ -35,18 +34,13 @@ pub fn persist_media_to_store(
     }
     match store.backend() {
         RetrievalBackend::Weaviate => {
-            let reference = store.weaviate(RetrievalSchema::ImageSemantic)?;
-            upsert_image_record(&reference, media, description_vector, name_vector)?;
+            store.weaviate(RetrievalSchema::ImageSemantic)?
+                .upsert_image(media, description_vector, name_vector)?;
             Ok(true)
         }
         RetrievalBackend::Elasticsearch => {
-            let reference = store.elasticsearch(RetrievalSchema::ImageSemantic)?;
-            upsert_elasticsearch_image(
-                &reference,
-                media,
-                description_vector.to_vec(),
-                name_vector.map(<[f32]>::to_vec),
-            )?;
+            store.elasticsearch(RetrievalSchema::ImageSemantic)?
+                .upsert_image(media, description_vector, name_vector)?;
             Ok(true)
         }
     }
@@ -100,31 +94,23 @@ pub fn persist_image_record_to_store(
         .and_then(|name| request.embedding_model.and_then(|model| model.inference(name).ok()))
         .filter(|vector| !vector.is_empty());
 
-    match store.backend() {
+    let result = match store.backend() {
         RetrievalBackend::Weaviate => {
-            let reference = store.weaviate(RetrievalSchema::ImageSemantic)?;
-            match upsert_image_record(
-                &reference,
-                &media,
-                &description_vector,
-                name_vector.as_deref(),
-            ) {
-                Ok(_) => Ok(true),
-                Err(error) => {
-                    log::error!("[retrieval] failed to persist image vector: {error}");
-                    Ok(false)
-                }
-            }
+            store
+                .weaviate(RetrievalSchema::ImageSemantic)?
+                .upsert_image(&media, &description_vector, name_vector.as_deref())
         }
         RetrievalBackend::Elasticsearch => {
-            let reference = store.elasticsearch(RetrievalSchema::ImageSemantic)?;
-            match upsert_elasticsearch_image(&reference, &media, description_vector, name_vector) {
-                Ok(_) => Ok(true),
-                Err(error) => {
-                    log::error!("[retrieval] failed to persist image vector: {error}");
-                    Ok(false)
-                }
-            }
+            store
+                .elasticsearch(RetrievalSchema::ImageSemantic)?
+                .upsert_image(&media, &description_vector, name_vector.as_deref())
+        }
+    };
+    match result {
+        Ok(_) => Ok(true),
+        Err(error) => {
+            log::error!("[retrieval] failed to persist image vector: {error}");
+            Ok(false)
         }
     }
 }
@@ -187,9 +173,10 @@ pub fn search_images_in_store(
             search_images(&reference, embedding_model, query, limit, max_distance, target_vector)?
         }
         RetrievalBackend::Elasticsearch => {
-            let reference = store.elasticsearch(RetrievalSchema::ImageSemantic)?;
             let vector = embedding_model.inference(query)?;
-            search_elasticsearch_images(&reference, None, Some(query), None, Some(&vector), limit)?
+            store
+                .database(RetrievalSchema::ImageSemantic)?
+                .search_images(None, Some(query), None, Some(&vector), limit)?
                 .into_iter()
                 .map(|hit| normalized_elasticsearch_image(hit.properties))
                 .collect()
@@ -198,7 +185,8 @@ pub fn search_images_in_store(
     Ok(json!({"images": images, "has_results": !images.is_empty()}))
 }
 
-/// Searches agent memory in the store, returning normalized hits.
+/// Searches agent memory in the store; hit scores carry the backend's
+/// normalized relevance (see [`RetrievalDatabase::normalize_score`]).
 pub fn search_memory_in_store(
     store: &RetrievalStoreRef,
     access: &AgentMemoryAccessContext,
@@ -206,16 +194,9 @@ pub fn search_memory_in_store(
     query_vector: &[f32],
     limit: usize,
 ) -> Result<Vec<AgentMemorySearchHit>> {
-    match store.backend() {
-        RetrievalBackend::Weaviate => {
-            let reference = store.weaviate(RetrievalSchema::AgentMemory)?;
-            search_memory_content_by_vector(&reference, access, query_vector, limit)
-        }
-        RetrievalBackend::Elasticsearch => {
-            let reference = store.elasticsearch(RetrievalSchema::AgentMemory)?;
-            search_elasticsearch_memory(&reference, access, query, query_vector, limit)
-        }
-    }
+    store
+        .database(RetrievalSchema::AgentMemory)?
+        .search_memory(access, query, query_vector, limit)
 }
 
 /// Lists recent agent memory records when no query is provided.
@@ -224,34 +205,16 @@ pub fn list_memory_in_store(
     access: &AgentMemoryAccessContext,
     limit: usize,
 ) -> Result<Vec<AgentMemorySearchHit>> {
-    match store.backend() {
-        RetrievalBackend::Weaviate => {
-            let reference = store.weaviate(RetrievalSchema::AgentMemory)?;
-            crate::storage::list_recent_memory_keys(&reference, access, limit, None)
-        }
-        RetrievalBackend::Elasticsearch => {
-            let reference = store.elasticsearch(RetrievalSchema::AgentMemory)?;
-            crate::storage::list_elasticsearch_memory_keys(&reference, access, limit, None)
-        }
-    }
+    store.database(RetrievalSchema::AgentMemory)?.list_memory(access, limit, None)
 }
 
 /// Creates or updates one agent memory record in the store.
 pub fn upsert_memory_in_store(
     store: &RetrievalStoreRef,
-    input: &crate::storage::AgentMemoryUpsert,
+    input: &AgentMemoryUpsert,
     vector: Vec<f32>,
-) -> Result<crate::storage::AgentMemoryRecord> {
-    match store.backend() {
-        RetrievalBackend::Weaviate => {
-            let reference = store.weaviate(RetrievalSchema::AgentMemory)?;
-            crate::storage::create_memory_record_with_vector(&reference, input, Some(vector))
-        }
-        RetrievalBackend::Elasticsearch => {
-            let reference = store.elasticsearch(RetrievalSchema::AgentMemory)?;
-            crate::storage::create_elasticsearch_memory_record(&reference, input, vector)
-        }
-    }
+) -> Result<AgentMemoryRecord> {
+    store.database(RetrievalSchema::AgentMemory)?.upsert_memory(input, vector)
 }
 
 fn normalized_elasticsearch_image(properties: Value) -> Value {

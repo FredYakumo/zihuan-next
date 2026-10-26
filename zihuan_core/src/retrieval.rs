@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::storage::RuntimeStorageConnectionManager;
-use crate::storage::{ConnectionConfig, ConnectionKind, ElasticsearchRef};
+use crate::storage::{ConnectionConfig, ConnectionKind, ElasticsearchRef, RetrievalDatabase};
 use crate::weaviate::WeaviateRef;
 
 /// A business schema served by a retrieval store.
@@ -206,6 +206,16 @@ impl RetrievalStoreRef {
             )));
         };
         Ok(Arc::new(ElasticsearchRef::new(elasticsearch.clone(), schema)?))
+    }
+
+    /// Resolves a schema-bound backend handle exposing the uniform
+    /// [`RetrievalDatabase`] operations, with the backend's score normalization
+    /// applied to every reported relevance.
+    pub fn database(&self, schema: RetrievalSchema) -> Result<Box<dyn RetrievalDatabase>> {
+        match self.backend {
+            RetrievalBackend::Weaviate => Ok(Box::new(self.weaviate(schema)?)),
+            RetrievalBackend::Elasticsearch => Ok(Box::new(self.elasticsearch(schema)?)),
+        }
     }
 }
 

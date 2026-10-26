@@ -74,6 +74,7 @@ pub trait WeaviateClient {
         class_name: &str,
         args: &str,
         property_names: &[String],
+        include_score: bool,
     ) -> Result<Value>;
 
     fn query_near_vector(
@@ -248,7 +249,7 @@ impl WeaviateClient for WeaviateRef {
         limit: usize,
         property_names: &[String],
     ) -> Result<Value> {
-        self.query_with_args(class_name, &format!("limit: {limit}"), property_names)
+        self.query_with_args(class_name, &format!("limit: {limit}"), property_names, false)
     }
 
     fn query_with_args(
@@ -256,13 +257,17 @@ impl WeaviateClient for WeaviateRef {
         class_name: &str,
         args: &str,
         property_names: &[String],
+        include_score: bool,
     ) -> Result<Value> {
         let mut requested_fields = property_names
             .iter()
             .filter(|value| !value.trim().is_empty())
             .cloned()
             .collect::<Vec<_>>();
-        requested_fields.push("_additional { id }".to_string());
+        // `score` is only populated by scored queries (bm25/hybrid); plain listings
+        // leave it out so Weaviate never has to interpret it against a sort clause.
+        let additional_fields = if include_score { "id score" } else { "id" };
+        requested_fields.push(format!("_additional {{ {additional_fields} }}"));
         let fields = requested_fields.join(" ");
         let graphql = if args.trim().is_empty() {
             format!("{{ Get {{ {class_name} {{ {fields} }} }} }}")

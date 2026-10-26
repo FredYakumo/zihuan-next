@@ -26,6 +26,9 @@ export function useDataExplorerDetailPage() {
   function matchLabel(kind: string) {
     return kind === "keyword" ? "关键词" : kind === "semantic" ? "语义" : kind === "hybrid" ? "混合" : "最近更新";
   }
+  function formatScore(score: number | null): string {
+    return score == null ? "" : String(Number(score.toFixed(4)));
+  }
   function onMessagePaginationChange(info: { current: number; pageSize: number }) { message.value.pageSize = info.pageSize; changeMessagePage(info.current); }
   function returnToList() { void router.push("/data-explorer"); }
 
@@ -57,6 +60,7 @@ export function useDataExplorerDetailPage() {
     onUserRowClick,
     serviceTypeLabel,
     matchLabel,
+    formatScore,
     returnToList,
     backend,
     loadingUsers,

@@ -41,7 +41,7 @@
 
       <template v-else-if="capability === 'memories'">
         <div class="search-form search-form--simple"><t-input v-model="memory.query" placeholder="搜索记忆标题或内容" clearable @enter="searchMemories" /><t-input-number v-model="memory.limit" :min="1" :max="50" /><t-button theme="primary" :loading="memory.loading" @click="searchMemories">搜索</t-button><t-button v-if="memory.mutable" variant="outline" @click="mutateMemory('create')">新建记忆</t-button></div>
-        <div v-if="memory.items.length" class="memory-list"><article v-for="item in memory.items" :key="item.object_id" class="memory-item"><div class="memory-item-header"><strong>{{ item.title }}</strong><span><t-tag v-for="kind in item.match_kinds" :key="kind" size="small" variant="light" :theme="kind === 'keyword' ? 'primary' : 'default'">{{ matchLabel(kind) }}</t-tag></span></div><p>{{ item.value }}</p><div class="muted">更新于 {{ item.updated_at }} · {{ item.backend }}</div><div v-if="item.mutable" class="memory-actions"><t-button variant="text" size="small" @click="mutateMemory('edit', item)">编辑</t-button><t-button variant="text" theme="danger" size="small" @click="mutateMemory('delete', item)">删除</t-button></div></article></div>
+        <div v-if="memory.items.length" class="memory-list"><article v-for="item in memory.items" :key="item.object_id" class="memory-item"><div class="memory-item-header"><strong>{{ item.title }}</strong><span><t-tag v-for="kind in item.match_kinds" :key="kind" size="small" variant="light" :theme="kind === 'keyword' ? 'primary' : 'default'">{{ matchLabel(kind) }}</t-tag><t-tag v-if="item.score != null" size="small" variant="light" theme="warning">关联度 {{ formatScore(item.score) }}</t-tag></span></div><p>{{ item.value }}</p><div class="muted">更新于 {{ item.updated_at }} · {{ item.backend }}</div><div v-if="item.mutable" class="memory-actions"><t-button variant="text" size="small" @click="mutateMemory('edit', item)">编辑</t-button><t-button variant="text" theme="danger" size="small" @click="mutateMemory('delete', item)">删除</t-button></div></article></div>
         <div v-else-if="memory.searched && !memory.loading" class="empty-state">无匹配记忆。</div>
         <t-dialog
           v-model:visible="memoryDialog.visible"
@@ -115,7 +115,7 @@
 
       <template v-else>
         <div class="search-form search-form--simple"><t-input v-model="image.nameQuery" placeholder="图片名" clearable @enter="searchImages" /><t-input v-model="image.descriptionQuery" placeholder="图片描述" clearable @enter="searchImages" /><t-input-number v-model="image.limit" :min="1" :max="50" /><t-button theme="primary" :loading="image.loading" @click="searchImages">搜索</t-button></div>
-        <div v-if="image.items.length" class="image-grid"><article v-for="item in image.items" :key="item.object_id" class="image-item"><img v-if="item.url && !failedPreviews.has(item.object_id)" :src="item.url" :alt="item.name || item.media_id || '图片'" referrerpolicy="no-referrer" loading="lazy" @error="onImageError(item.object_id)" /><div v-else class="image-placeholder">无预览</div><div class="image-info"><strong>{{ item.name || item.media_id || '未命名图片' }}</strong><p>{{ item.description || '未提供图片描述' }}</p><div><t-tag v-for="kind in item.match_kinds" :key="kind" size="small" variant="light" :theme="kind === 'keyword' ? 'primary' : 'default'">{{ matchLabel(kind) }}</t-tag></div><span class="muted">{{ item.source || item.backend }}</span></div></article></div>
+        <div v-if="image.items.length" class="image-grid"><article v-for="item in image.items" :key="item.object_id" class="image-item"><img v-if="item.url && !failedPreviews.has(item.object_id)" :src="item.url" :alt="item.name || item.media_id || '图片'" referrerpolicy="no-referrer" loading="lazy" @error="onImageError(item.object_id)" /><div v-else class="image-placeholder">无预览</div><div class="image-info"><strong>{{ item.name || item.media_id || '未命名图片' }}</strong><p>{{ item.description || '未提供图片描述' }}</p><div><t-tag v-for="kind in item.match_kinds" :key="kind" size="small" variant="light" :theme="kind === 'keyword' ? 'primary' : 'default'">{{ matchLabel(kind) }}</t-tag><t-tag v-if="item.score != null" size="small" variant="light" theme="warning">关联度 {{ formatScore(item.score) }}</t-tag></div><span class="muted">{{ item.source || item.backend }}</span></div></article></div>
         <div v-else-if="image.searched && !image.loading" class="empty-state">无匹配图片。</div>
       </template>
     </t-card>
@@ -150,6 +150,7 @@ const {
   onUserRowClick,
   serviceTypeLabel,
   matchLabel,
+  formatScore,
   returnToList,
   backend,
   loadingUsers,
