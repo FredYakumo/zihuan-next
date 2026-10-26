@@ -860,7 +860,7 @@
                         </t-form-item>
                         <t-form-item v-if="toolEditDraft.implementation === 'script'" label="脚本语言">
                             <t-select v-model="toolEditDraft.scriptLanguage" @change="handleScriptLanguageChanged">
-                                <t-option value="typescript" label="TypeScript (.ts)" />
+                                <t-option value="type_script" label="TypeScript (.ts)" />
                                 <t-option value="python" label="Python (.py)" />
                             </t-select>
                         </t-form-item>

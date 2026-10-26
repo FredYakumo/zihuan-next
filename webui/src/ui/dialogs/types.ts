@@ -1,7 +1,7 @@
 import type { NodeGraphDefinition, DataTypeMetaData } from "../../api/types";
 
 export type ToolImplementation = "node_graph" | "built_in" | "script";
-export type ScriptToolLanguage = "typescript" | "python";
+export type ScriptToolLanguage = "type_script" | "python";
 export type PythonToolMode = "uv_project" | "project_venv" | "custom_executable";
 
 export interface PythonRuntimeConfig {
