@@ -15,8 +15,8 @@ pub use history::{
 };
 pub use record_restore::{
     cache_message_snapshot, find_media_in_messages, lookup_message_sender, persist_media_to_record,
-    query_media_by_id, rebuild_message_list, rebuild_message_list_from_raw_json,
-    register_rdb_pool, register_redis_ref, restore_message_snapshot, CachedMessageSnapshotPayload,
+    query_media_by_id, rebuild_message_list, rebuild_message_list_from_raw_json, register_rdb_pool,
+    register_redis_ref, restore_message_snapshot, CachedMessageSnapshotPayload,
     MessageRestoreSource, RestoredMessageSnapshot,
 };
 pub use record_write::{persist_message_event, persist_qq_message_list};

@@ -25,7 +25,6 @@ use crate::storage::qq_chat_history_store::save_history;
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use zihuan_core::agent::tools::LongTaskNotifier;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::storage::LLMMessageSessionCacheRef;
 use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::graph::tool_spec::{ToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
@@ -35,6 +34,7 @@ use zihuan_core::model_inference::inference_function::compact_message::{
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
+use zihuan_core::storage::LLMMessageSessionCacheRef;
 use zihuan_core::system_config::current_context_compaction_percent;
 use zihuan_core::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode,

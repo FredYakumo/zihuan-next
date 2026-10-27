@@ -1,7 +1,7 @@
 use crate::error::{Error, Result};
-use crate::storage::S3Ref;
 use crate::ims_bot_adapter::models::message::{ImageMessage, Message};
 use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;
+use crate::storage::S3Ref;
 use crate::url_utils::{
     content_type_from_url, image_content_type_from_bytes, image_extension_for_content_type,
     supported_image_content_type,

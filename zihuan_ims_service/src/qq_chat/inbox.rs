@@ -9,9 +9,9 @@ use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use zihuan_core::error::Result;
-use zihuan_core::storage::RedisConfig;
 use zihuan_core::ims_bot_adapter::models::MessageEvent;
 use zihuan_core::storage::redis::{rpush_value, RedisBlockingPopConnection};
+use zihuan_core::storage::RedisConfig;
 
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 

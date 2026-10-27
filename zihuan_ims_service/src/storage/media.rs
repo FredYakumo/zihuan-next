@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::storage::message::record_restore::query_media_by_id;
 use zihuan_core::ims_bot_adapter::models::message::{Message, PersistedMedia};
+use zihuan_core::storage::message::record_restore::query_media_by_id;
 
 /// Resolves media references for all messages in the given batches.
 ///

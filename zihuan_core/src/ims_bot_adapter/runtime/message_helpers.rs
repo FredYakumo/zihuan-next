@@ -4,8 +4,6 @@
 //! or query the adapter without going through the node-graph port system.
 
 use crate::data_refs::RelationalDbConnection;
-use crate::storage::RedisConfig;
-use crate::storage::message::record_write::persist_message_event;
 use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;
 use crate::ims_bot_adapter::runtime::models::event_model::{MessageEvent, MessageType, Sender};
 use crate::ims_bot_adapter::runtime::models::message::{
@@ -16,6 +14,8 @@ use crate::ims_bot_adapter::runtime::ws_action::{
     response_message_id, response_success, ws_send_action,
 };
 use crate::nlp::{PunctuationSegmenter, TextSegmenter};
+use crate::storage::message::record_write::persist_message_event;
+use crate::storage::RedisConfig;
 use log::{info, warn};
 use std::sync::Arc;
 use tokio::task::block_in_place;

@@ -20,9 +20,9 @@ use zihuan_core::steer::{
 };
 use zihuan_core::utils::string_utils::shorten_text;
 
-use zihuan_core::storage::S3Ref;
 use zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT;
 use zihuan_core::graph::DataValue;
+use zihuan_core::storage::S3Ref;
 
 use zihuan_core::ims_bot_adapter::message_helpers::get_bot_id;
 use zihuan_core::ims_bot_adapter::IMAGE_ANALYSIS_LABEL;

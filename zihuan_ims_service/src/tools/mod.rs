@@ -5,7 +5,6 @@ use zihuan_core::agent::sub_agent_context::{AgentServiceContext, MemoryCapabilit
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::agent::LLM_KIND_MAIN;
 use zihuan_core::data_refs::RelationalDbConnection;
-use zihuan_core::storage::S3Ref;
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngine;
@@ -13,6 +12,7 @@ use zihuan_core::retrieval::RetrievalStoreRef;
 use zihuan_core::scheduler::JobMemoryResources;
 use zihuan_core::storage::AgentMemoryAccessContext;
 use zihuan_core::storage::LocalMemoryStore;
+use zihuan_core::storage::S3Ref;
 
 mod common;
 mod editable_qq_agent_tool;

@@ -1,5 +1,5 @@
-use crate::storage::S3Ref;
 use crate::model_inference::llm::MessagePart;
+use crate::storage::S3Ref;
 use base64::Engine;
 use log::{info, warn};
 use reqwest::header::CONTENT_TYPE;

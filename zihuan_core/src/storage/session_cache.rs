@@ -8,8 +8,8 @@ use tokio::task::block_in_place;
 use crate::error::Result;
 use crate::model_inference::llm::LLMMessage;
 use crate::qq_context::QqChatContextBackend;
-use crate::storage::RedisConfig;
 use crate::storage::redis;
+use crate::storage::RedisConfig;
 
 /// Run-scoped OpenAI message session cache reference, passed between nodes.
 ///

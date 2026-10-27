@@ -11,10 +11,10 @@ use uuid::Uuid;
 use super::event;
 use super::models::{MessageEvent, MessageType, Profile, RawMessageEvent};
 use crate::error::Result;
-use crate::storage::message::record_restore::restore_message_snapshot;
-use crate::storage::S3Ref;
 use crate::ims_bot_adapter::models::message::{ForwardNodeMessage, Message};
 use crate::ims_bot_adapter::runtime::ws_action::ws_send_action_async;
+use crate::storage::message::record_restore::restore_message_snapshot;
+use crate::storage::S3Ref;
 use crate::storage::{
     enrich_event_images, enrich_message_images, ImageCacheAdapter, PendingImageUpload,
 };

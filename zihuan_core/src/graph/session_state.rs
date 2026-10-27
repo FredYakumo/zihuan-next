@@ -129,7 +129,8 @@ impl SessionStateRef {
             }
         }
 
-        let claim_token = self.next_claim_token.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let claim_token =
+            self.next_claim_token.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
         let entry = SessionStateEntry {
             in_session: true,
             state_json: state_json.unwrap_or(Value::Null),
