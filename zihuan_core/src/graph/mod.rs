@@ -101,6 +101,7 @@ type OutputPool = HashMap<String, NodeOutputFlow>;
 type InputSourceMap = HashMap<String, HashMap<String, (String, String)>>;
 
 pub mod data_value;
+pub mod flow;
 pub mod function_graph;
 pub mod graph_boundary;
 pub mod graph_io;
@@ -133,138 +134,6 @@ pub use node_macros::{
 #[allow(unused_imports)]
 pub use registry::build_node_graph_from_definition;
 
-pub mod flow {
-    use std::collections::HashMap;
-    use std::ops::{Deref, DerefMut};
-
-    use crate::error::{Error, Result};
-
-    use crate::graph::DataValue;
-
-    type FlowValues = HashMap<String, DataValue>;
-
-    macro_rules! define_value_flow {
-        ($name:ident, $missing_label:literal) => {
-            #[derive(Debug, Clone, Default)]
-            pub struct $name {
-                values: FlowValues,
-            }
-
-            impl $name {
-                pub fn new() -> Self {
-                    Self::default()
-                }
-
-                pub fn get(&self, key: &str) -> Option<&DataValue> {
-                    self.values.get(key)
-                }
-
-                pub fn get_required(&self, key: &str) -> Result<&DataValue> {
-                    self.values
-                        .get(key)
-                        .ok_or_else(|| Error::ValidationError(format!($missing_label, key)))
-                }
-
-                pub fn get_optional(&self, key: &str) -> Option<&DataValue> {
-                    self.get(key)
-                }
-
-                pub fn contains(&self, key: &str) -> bool {
-                    self.values.contains_key(key)
-                }
-
-                pub fn insert(
-                    &mut self,
-                    key: impl Into<String>,
-                    value: DataValue,
-                ) -> Option<DataValue> {
-                    self.values.insert(key.into(), value)
-                }
-
-                pub fn iter(&self) -> impl Iterator<Item = (&String, &DataValue)> {
-                    self.values.iter()
-                }
-
-                pub fn into_inner(self) -> FlowValues {
-                    self.values
-                }
-
-                pub fn as_map(&self) -> &FlowValues {
-                    &self.values
-                }
-            }
-
-            impl From<FlowValues> for $name {
-                fn from(values: FlowValues) -> Self {
-                    Self { values }
-                }
-            }
-
-            impl From<$name> for FlowValues {
-                fn from(flow: $name) -> Self {
-                    flow.values
-                }
-            }
-
-            impl Deref for $name {
-                type Target = FlowValues;
-
-                fn deref(&self) -> &Self::Target {
-                    &self.values
-                }
-            }
-        };
-    }
-    define_value_flow!(NodeInputFlow, "Required input port '{}' is missing");
-    define_value_flow!(NodeOutputFlow, "Required output port '{}' is missing");
-    define_value_flow!(NodeConfigFlow, "Required config field '{}' is missing");
-    define_value_flow!(RuntimeValueFlow, "Required runtime value '{}' is missing");
-
-    impl DerefMut for NodeOutputFlow {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.values
-        }
-    }
-
-    impl IntoIterator for NodeOutputFlow {
-        type Item = (String, DataValue);
-        type IntoIter = std::collections::hash_map::IntoIter<String, DataValue>;
-
-        fn into_iter(self) -> Self::IntoIter {
-            self.values.into_iter()
-        }
-    }
-
-    impl DerefMut for NodeConfigFlow {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.values
-        }
-    }
-
-    impl DerefMut for RuntimeValueFlow {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.values
-        }
-    }
-
-    impl IntoIterator for NodeConfigFlow {
-        type Item = (String, DataValue);
-        type IntoIter = std::collections::hash_map::IntoIter<String, DataValue>;
-
-        fn into_iter(self) -> Self::IntoIter {
-            self.values.into_iter()
-        }
-    }
-
-    impl IntoIterator for RuntimeValueFlow {
-        type Item = (String, DataValue);
-        type IntoIter = std::collections::hash_map::IntoIter<String, DataValue>;
-
-        fn into_iter(self) -> Self::IntoIter {
-            self.values.into_iter()
-        }
-    }
-}
 
 /// Node input/output ports
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -456,7 +325,6 @@ pub struct NodeGraph {
     runtime_variable_store: RuntimeVariableStore,
     stop_flag: Arc<AtomicBool>,
     execution_task_id: Option<String>,
-    execution_callback: Option<Arc<dyn Fn(&str, &NodeInputFlow, &NodeOutputFlow) + Send + Sync>>,
     edges: Vec<EdgeDefinition>,
     definition: Option<NodeGraphDefinition>,
 }
@@ -469,17 +337,9 @@ impl NodeGraph {
             runtime_variable_store: Arc::new(RwLock::new(RuntimeValueFlow::new())),
             stop_flag: Arc::new(AtomicBool::new(false)),
             execution_task_id: None,
-            execution_callback: None,
             edges: Vec::new(),
             definition: None,
         }
-    }
-
-    pub fn set_execution_callback<F>(&mut self, callback: F)
-    where
-        F: Fn(&str, &NodeInputFlow, &NodeOutputFlow) + Send + Sync + 'static,
-    {
-        self.execution_callback = Some(Arc::new(callback));
     }
 
     pub fn set_execution_task_id(&mut self, task_id: Option<String>) {
@@ -624,161 +484,18 @@ impl NodeGraph {
         Ok(())
     }
     pub fn execute(&mut self) -> Result<()> {
-        self.prepare_for_execution()?;
-
-        if !self.edges.is_empty() {
-            return self.execute_with_edges();
-        }
-
-        let mut output_producers: HashMap<String, String> = HashMap::new();
-        for (node_id, node) in &self.nodes {
-            for port in node.output_ports() {
-                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone())
-                {
-                    return Err(crate::validation_error!(
-                        "Output port '{}' is produced by both '{}' and '{}'",
-                        port.name,
-                        existing,
-                        node_id
-                    ));
-                }
-            }
-        }
-
-        let mut in_degree: HashMap<String, usize> = HashMap::new();
-        let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
-        let mut dependencies: HashMap<String, Vec<String>> = HashMap::new();
-
-        for node_id in self.nodes.keys() {
-            in_degree.insert(node_id.clone(), 0);
-        }
-
-        for (node_id, node) in &self.nodes {
-            if self.is_node_disabled(node_id) {
-                continue;
-            }
-            for port in node.input_ports() {
-                if let Some(producer) = output_producers.get(&port.name) {
-                    if producer != node_id {
-                        dependencies.entry(node_id.clone()).or_default().push(producer.clone());
-                        dependents.entry(producer.clone()).or_default().push(node_id.clone());
-                        if let Some(count) = in_degree.get_mut(node_id) {
-                            *count += 1;
-                        }
-                    }
-                } else if port.required {
-                    // Check if the port has an inline value
-                    let has_inline = self
-                        .inline_values
-                        .get(node_id)
-                        .map(|values| values.contains_key(&port.name))
-                        .unwrap_or(false);
-
-                    if !has_inline {
-                        let msg = if let Some(hp_name) =
-                            self.port_binding_hp_name(node_id, &port.name)
-                        {
-                            format!(
-                                "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
-                                hp_name, port.name, node_id
-                            )
-                        } else {
-                            format!(
-                                "Required input port '{}' for node '{}' is not bound",
-                                port.name, node_id
-                            )
-                        };
-                        return Err(crate::error::Error::ValidationError(msg));
-                    }
-                }
-            }
-        }
-
-        let mut ready: Vec<String> = in_degree
-            .iter()
-            .filter_map(|(id, degree)| if *degree == 0 { Some(id.clone()) } else { None })
-            .collect();
-        ready.sort();
-
-        let mut ordered: Vec<String> = Vec::with_capacity(self.nodes.len());
-        while !ready.is_empty() {
-            let node_id = ready.remove(0);
-            ordered.push(node_id.clone());
-
-            if let Some(next_nodes) = dependents.get(&node_id) {
-                for next_id in next_nodes {
-                    if let Some(count) = in_degree.get_mut(next_id) {
-                        *count = count.saturating_sub(1);
-                        if *count == 0 {
-                            ready.push(next_id.clone());
-                        }
-                    }
-                }
-                ready.sort();
-            }
-        }
-
-        if ordered.len() != self.nodes.len() {
-            return Err(crate::error::Error::ValidationError(
-                "Cycle detected in node dependencies".to_string(),
-            ));
-        }
-
-        let mut data_pool: HashMap<String, DataValue> = HashMap::new();
-        for node_id in ordered {
-            if self.is_node_disabled(&node_id) {
-                continue;
-            }
-            let Some(inputs) = ({
-                let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    crate::validation_error!("Node '{}' not found during execution", node_id)
-                })?;
-                self.collect_inputs_if_available(
-                    node.as_ref(),
-                    &data_pool,
-                    &output_producers,
-                    &node_id,
-                    self.inline_values.get(&node_id),
-                )?
-            }) else {
-                continue;
-            };
-
-            let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                crate::validation_error!("Node '{}' not found during execution", node_id)
-            })?;
-            let outputs = node
-                .execute(inputs)
-                .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-            node.validate_outputs(&outputs).map_err(|e| {
-                Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
-            })?;
-            for (key, value) in outputs.into_inner() {
-                if data_pool.contains_key(&key) {
-                    return Err(crate::validation_error!(
-                        "Output key '{}' from node '{}' conflicts with existing data",
-                        key,
-                        node_id
-                    ));
-                }
-                data_pool.insert(key, value);
-            }
-        }
-
-        Ok(())
+        self.run_graph(None)
     }
 
-    /// Execute the graph and capture results for each node
+    /// Execute the graph and capture each node's inputs and outputs alongside its outputs.
     pub fn execute_and_capture_results(&mut self) -> ExecutionResult {
         let mut node_results: HashMap<String, NodeOutputFlow> = HashMap::new();
 
-        // Try to execute, if error occurs, return early with error info
         match crate::graph::script_node::with_dynamic_script_resources(|| {
-            self.execute_and_collect_node_results(&mut node_results)
+            self.run_graph(Some(&mut node_results))
         }) {
             Ok(()) => ExecutionResult::success(node_results),
             Err(e) => {
-                // Extract node ID from error if possible
                 let error_msg = e.to_string();
                 let error_node_id = self.extract_error_node_id(&error_msg);
                 ExecutionResult::with_error(
@@ -807,16 +524,58 @@ impl NodeGraph {
         None
     }
 
-    fn execute_and_collect_node_results(
+    /// Run every node once in dependency order.
+    ///
+    /// Two input models share this loop: graphs with edges resolve each port from the edge that
+    /// feeds it, and edge-less graphs resolve ports by globally unique name.
+    fn run_graph(
         &mut self,
-        node_results: &mut HashMap<String, NodeOutputFlow>,
+        mut node_results: Option<&mut HashMap<String, NodeOutputFlow>>,
     ) -> Result<()> {
         self.prepare_for_execution()?;
 
-        if !self.edges.is_empty() {
-            return self.execute_and_capture_results_with_edges(node_results);
+        if self.edges.is_empty() {
+            self.run_by_port_names(node_results.as_deref_mut())
+        } else {
+            self.run_with_edges(node_results.as_deref_mut())
+        }
+    }
+
+    /// Execute one node, validate its outputs, and record the result when capturing.
+    fn execute_node(
+        &mut self,
+        node_id: &str,
+        inputs: NodeInputFlow,
+        node_results: Option<&mut HashMap<String, NodeOutputFlow>>,
+    ) -> Result<NodeOutputFlow> {
+        // Capturing needs the inputs after they have been handed to the node.
+        let captured_inputs = node_results.is_some().then(|| inputs.clone());
+
+        let node = self.nodes.get_mut(node_id).ok_or_else(|| {
+            crate::validation_error!("Node '{}' not found during execution", node_id)
+        })?;
+        let outputs = node
+            .execute(inputs)
+            .map_err(|e| Self::wrap_node_error(node_id, node.as_ref(), "execute", e))?;
+        node.validate_outputs(&outputs)
+            .map_err(|e| Self::wrap_node_error(node_id, node.as_ref(), "validate_outputs", e))?;
+
+        if let (Some(results), Some(inputs)) = (node_results, captured_inputs) {
+            let mut result = NodeOutputFlow::from(inputs.into_inner());
+            for (key, value) in outputs.iter() {
+                result.insert(key.clone(), value.clone());
+            }
+            results.insert(node_id.to_string(), result);
         }
 
+        Ok(outputs)
+    }
+
+    /// Edge-less path: ports are matched by their globally unique names.
+    fn run_by_port_names(
+        &mut self,
+        mut node_results: Option<&mut HashMap<String, NodeOutputFlow>>,
+    ) -> Result<()> {
         let mut output_producers: HashMap<String, String> = HashMap::new();
         for (node_id, node) in &self.nodes {
             for port in node.output_ports() {
@@ -834,7 +593,6 @@ impl NodeGraph {
 
         let mut in_degree: HashMap<String, usize> = HashMap::new();
         let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
-        let mut dependencies: HashMap<String, Vec<String>> = HashMap::new();
 
         for node_id in self.nodes.keys() {
             in_degree.insert(node_id.clone(), 0);
@@ -847,14 +605,13 @@ impl NodeGraph {
             for port in node.input_ports() {
                 if let Some(producer) = output_producers.get(&port.name) {
                     if producer != node_id {
-                        dependencies.entry(node_id.clone()).or_default().push(producer.clone());
                         dependents.entry(producer.clone()).or_default().push(node_id.clone());
                         if let Some(count) = in_degree.get_mut(node_id) {
                             *count += 1;
                         }
                     }
                 } else if port.required {
-                    // Check if the port has an inline value
+                    // A required port may instead be satisfied by an inline value.
                     let has_inline = self
                         .inline_values
                         .get(node_id)
@@ -881,37 +638,9 @@ impl NodeGraph {
             }
         }
 
-        let mut ready: Vec<String> = in_degree
-            .iter()
-            .filter_map(|(id, degree)| if *degree == 0 { Some(id.clone()) } else { None })
-            .collect();
-        ready.sort();
-
-        let mut ordered: Vec<String> = Vec::with_capacity(self.nodes.len());
-        while !ready.is_empty() {
-            let node_id = ready.remove(0);
-            ordered.push(node_id.clone());
-
-            if let Some(next_nodes) = dependents.get(&node_id) {
-                for next_id in next_nodes {
-                    if let Some(count) = in_degree.get_mut(next_id) {
-                        *count = count.saturating_sub(1);
-                        if *count == 0 {
-                            ready.push(next_id.clone());
-                        }
-                    }
-                }
-                ready.sort();
-            }
-        }
-
-        if ordered.len() != self.nodes.len() {
-            return Err(crate::error::Error::ValidationError(
-                "Cycle detected in node dependencies".to_string(),
-            ));
-        }
-
+        let ordered = Self::topological_order(&self.nodes, &mut in_degree, &dependents)?;
         let mut data_pool: HashMap<String, DataValue> = HashMap::new();
+
         for node_id in ordered {
             if self.is_node_disabled(&node_id) {
                 continue;
@@ -931,35 +660,7 @@ impl NodeGraph {
                 continue;
             };
 
-            let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                crate::validation_error!("Node '{}' not found during execution", node_id)
-            })?;
-
-            let inputs_clone = if self.execution_callback.is_some() {
-                Some(inputs.clone())
-            } else {
-                None
-            };
-
-            let outputs = node
-                .execute(inputs.clone())
-                .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-            node.validate_outputs(&outputs).map_err(|e| {
-                Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
-            })?;
-
-            if let Some(cb) = &self.execution_callback {
-                if let Some(inp) = inputs_clone {
-                    cb(&node_id, &inp, &outputs);
-                }
-            }
-
-            let mut result = NodeOutputFlow::from(inputs.clone().into_inner());
-            for (key, value) in outputs.iter() {
-                result.insert(key.clone(), value.clone());
-            }
-            node_results.insert(node_id.clone(), result);
-
+            let outputs = self.execute_node(&node_id, inputs, node_results.as_deref_mut())?;
             for (key, value) in outputs.into_inner() {
                 if data_pool.contains_key(&key) {
                     return Err(crate::validation_error!(
@@ -975,148 +676,10 @@ impl NodeGraph {
         Ok(())
     }
 
-    fn execute_with_edges(&mut self) -> Result<()> {
-        let (connected_nodes, dependents, dependencies, input_sources) = self.build_edge_maps()?;
-
-        if connected_nodes.is_empty() {
-            return Ok(());
-        }
-
-        let mut in_degree: HashMap<String, usize> = HashMap::new();
-        for node_id in self.nodes.keys() {
-            in_degree.insert(node_id.clone(), 0);
-        }
-
-        for (node_id, deps) in &dependencies {
-            if let Some(count) = in_degree.get_mut(node_id) {
-                *count += deps.len();
-            }
-        }
-
-        let mut ready: Vec<String> = in_degree
-            .iter()
-            .filter_map(|(id, degree)| if *degree == 0 { Some(id.clone()) } else { None })
-            .collect();
-        ready.sort();
-
-        let mut ordered: Vec<String> = Vec::with_capacity(self.nodes.len());
-        while !ready.is_empty() {
-            let node_id = ready.remove(0);
-            ordered.push(node_id.clone());
-
-            if let Some(next_nodes) = dependents.get(&node_id) {
-                for next_id in next_nodes {
-                    if let Some(count) = in_degree.get_mut(next_id) {
-                        *count = count.saturating_sub(1);
-                        if *count == 0 {
-                            ready.push(next_id.clone());
-                        }
-                    }
-                }
-                ready.sort();
-            }
-        }
-
-        if ordered.len() != self.nodes.len() {
-            return Err(crate::error::Error::ValidationError(
-                "Cycle detected in node dependencies".to_string(),
-            ));
-        }
-
-        for node_id in &connected_nodes {
-            if self.is_node_disabled(node_id) {
-                continue;
-            }
-            let node = self.nodes.get(node_id).ok_or_else(|| {
-                crate::validation_error!("Node '{}' not found during execution", node_id)
-            })?;
-
-            let has_inline = self.inline_values.get(node_id);
-            let input_map = input_sources.get(node_id);
-
-            for port in node.input_ports() {
-                if !port.required {
-                    continue;
-                }
-                let has_edge = input_map.and_then(|m| m.get(&port.name)).is_some();
-                let has_inline_value =
-                    has_inline.map(|m| m.contains_key(&port.name)).unwrap_or(false);
-                if !has_edge && !has_inline_value {
-                    let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name)
-                    {
-                        format!(
-                            "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
-                            hp_name, port.name, node_id
-                        )
-                    } else {
-                        format!(
-                            "Required input port '{}' for node '{}' is not bound",
-                            port.name, node_id
-                        )
-                    };
-                    return Err(crate::error::Error::ValidationError(msg));
-                }
-            }
-        }
-
-        let mut data_pool: OutputPool = HashMap::new();
-        for node_id in ordered {
-            if !connected_nodes.contains(&node_id) {
-                continue;
-            }
-            if self.is_node_disabled(&node_id) {
-                continue;
-            }
-            let inputs = {
-                let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    crate::validation_error!("Node '{}' not found during execution", node_id)
-                })?;
-                self.collect_inputs_with_edges_if_available(
-                    node.as_ref(),
-                    &data_pool,
-                    &input_sources,
-                    &node_id,
-                    self.inline_values.get(&node_id),
-                )?
-            };
-
-            let Some(inputs) = inputs else {
-                continue;
-            };
-
-            let inputs_clone = if self.execution_callback.is_some() {
-                Some(inputs.clone())
-            } else {
-                None
-            };
-            let outputs = {
-                let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                    crate::validation_error!("Node '{}' not found during execution", node_id)
-                })?;
-                let outputs = node
-                    .execute(inputs)
-                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-                node.validate_outputs(&outputs).map_err(|e| {
-                    Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
-                })?;
-                outputs
-            };
-
-            if let Some(cb) = &self.execution_callback {
-                if let Some(inp) = inputs_clone {
-                    cb(&node_id, &inp, &outputs);
-                }
-            }
-
-            self.insert_outputs(&mut data_pool, &node_id, outputs);
-        }
-
-        Ok(())
-    }
-
-    fn execute_and_capture_results_with_edges(
+    /// Edge path: every port is resolved from the edge that feeds it.
+    fn run_with_edges(
         &mut self,
-        node_results: &mut HashMap<String, NodeOutputFlow>,
+        mut node_results: Option<&mut HashMap<String, NodeOutputFlow>>,
     ) -> Result<()> {
         let (connected_nodes, dependents, dependencies, input_sources) = self.build_edge_maps()?;
 
@@ -1128,80 +691,15 @@ impl NodeGraph {
         for node_id in self.nodes.keys() {
             in_degree.insert(node_id.clone(), 0);
         }
-
         for (node_id, deps) in &dependencies {
             if let Some(count) = in_degree.get_mut(node_id) {
                 *count += deps.len();
             }
         }
 
-        let mut ready: Vec<String> = in_degree
-            .iter()
-            .filter_map(|(id, degree)| if *degree == 0 { Some(id.clone()) } else { None })
-            .collect();
-        ready.sort();
-
-        let mut ordered: Vec<String> = Vec::with_capacity(self.nodes.len());
-        while !ready.is_empty() {
-            let node_id = ready.remove(0);
-            ordered.push(node_id.clone());
-
-            if let Some(next_nodes) = dependents.get(&node_id) {
-                for next_id in next_nodes {
-                    if let Some(count) = in_degree.get_mut(next_id) {
-                        *count = count.saturating_sub(1);
-                        if *count == 0 {
-                            ready.push(next_id.clone());
-                        }
-                    }
-                }
-                ready.sort();
-            }
-        }
-
-        if ordered.len() != self.nodes.len() {
-            return Err(crate::error::Error::ValidationError(
-                "Cycle detected in node dependencies".to_string(),
-            ));
-        }
-
-        for node_id in &connected_nodes {
-            if self.is_node_disabled(node_id) {
-                continue;
-            }
-            let node = self.nodes.get(node_id).ok_or_else(|| {
-                crate::validation_error!("Node '{}' not found during execution", node_id)
-            })?;
-
-            let has_inline = self.inline_values.get(node_id);
-            let input_map = input_sources.get(node_id);
-
-            for port in node.input_ports() {
-                if !port.required {
-                    continue;
-                }
-                let has_edge = input_map.and_then(|m| m.get(&port.name)).is_some();
-                let has_inline_value =
-                    has_inline.map(|m| m.contains_key(&port.name)).unwrap_or(false);
-                if !has_edge && !has_inline_value {
-                    let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name)
-                    {
-                        format!(
-                            "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
-                            hp_name, port.name, node_id
-                        )
-                    } else {
-                        format!(
-                            "Required input port '{}' for node '{}' is not bound",
-                            port.name, node_id
-                        )
-                    };
-                    return Err(crate::error::Error::ValidationError(msg));
-                }
-            }
-        }
-
+        let ordered = Self::topological_order(&self.nodes, &mut in_degree, &dependents)?;
         let mut data_pool: OutputPool = HashMap::new();
+
         for node_id in ordered {
             if !connected_nodes.contains(&node_id) {
                 continue;
@@ -1221,46 +719,55 @@ impl NodeGraph {
                     self.inline_values.get(&node_id),
                 )?
             };
-
             let Some(inputs) = inputs else {
                 continue;
             };
 
-            let inputs_clone = if self.execution_callback.is_some() {
-                Some(inputs.clone())
-            } else {
-                None
-            };
-            let outputs = {
-                let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                    crate::validation_error!("Node '{}' not found during execution", node_id)
-                })?;
-                let outputs = node
-                    .execute(inputs.clone())
-                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-                node.validate_outputs(&outputs).map_err(|e| {
-                    Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
-                })?;
-                outputs
-            };
-
-            if let Some(cb) = &self.execution_callback {
-                if let Some(inp) = inputs_clone {
-                    cb(&node_id, &inp, &outputs);
-                }
-            }
-
-            let mut result = NodeOutputFlow::from(inputs.clone().into_inner());
-            for (key, value) in outputs.iter() {
-                result.insert(key.clone(), value.clone());
-            }
-            node_results.insert(node_id.clone(), result);
-
+            let outputs = self.execute_node(&node_id, inputs, node_results.as_deref_mut())?;
             self.insert_outputs(&mut data_pool, &node_id, outputs);
         }
 
         Ok(())
     }
+
+    /// Kahn's algorithm over an already-built degree map.
+    fn topological_order(
+        nodes: &HashMap<String, Box<dyn Node>>,
+        in_degree: &mut HashMap<String, usize>,
+        dependents: &HashMap<String, Vec<String>>,
+    ) -> Result<Vec<String>> {
+        let mut ready: Vec<String> = in_degree
+            .iter()
+            .filter_map(|(id, degree)| if *degree == 0 { Some(id.clone()) } else { None })
+            .collect();
+        ready.sort();
+
+        let mut ordered: Vec<String> = Vec::with_capacity(nodes.len());
+        while !ready.is_empty() {
+            let node_id = ready.remove(0);
+            ordered.push(node_id.clone());
+
+            if let Some(next_nodes) = dependents.get(&node_id) {
+                for next_id in next_nodes {
+                    if let Some(count) = in_degree.get_mut(next_id) {
+                        *count = count.saturating_sub(1);
+                        if *count == 0 {
+                            ready.push(next_id.clone());
+                        }
+                    }
+                }
+                ready.sort();
+            }
+        }
+
+        if ordered.len() != nodes.len() {
+            return Err(crate::error::Error::ValidationError(
+                "Cycle detected in node dependencies".to_string(),
+            ));
+        }
+        Ok(ordered)
+    }
+
 
     fn build_edge_maps(
         &self,
