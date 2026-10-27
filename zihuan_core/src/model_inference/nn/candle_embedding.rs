@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use crate::error::{Error, Result};
 use crate::model_inference::llm::embedding_base::{EmbeddingBase, EmbeddingRuntimeInfo};
@@ -18,6 +19,7 @@ pub struct LocalCandleEmbeddingModel {
     tokenizer: Tokenizer,
     max_length: usize,
     preferred_device: Device,
+    runtime_model: Mutex<Option<(Device, Model)>>,
 }
 
 impl LocalCandleEmbeddingModel {
@@ -42,12 +44,22 @@ impl LocalCandleEmbeddingModel {
                 err
             )
         })?;
-        let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|err| {
+        let mut tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|err| {
             crate::string_error!(
                 "failed to load local embedding tokenizer '{}' for model '{}' (model_dir='{}', cwd='{}'): {}",
                 tokenizer_path.display(), model_name, model_dir.display(), current_dir_display(), err
             )
         })?;
+        tokenizer.with_padding(Some(PaddingParams {
+            strategy: PaddingStrategy::BatchLongest,
+            ..Default::default()
+        }));
+        tokenizer
+            .with_truncation(Some(TruncationParams {
+                max_length: config.max_position_embeddings.min(32768),
+                ..Default::default()
+            }))
+            .map_err(|err| crate::string_error!("failed to enable tokenizer truncation: {err}"))?;
 
         let preferred_device = select_preferred_device(model_name);
         log::info!(
@@ -63,6 +75,7 @@ impl LocalCandleEmbeddingModel {
             tokenizer,
             max_length: config.max_position_embeddings,
             preferred_device,
+            runtime_model: Mutex::new(None),
         })
     }
 
@@ -106,20 +119,9 @@ impl LocalCandleEmbeddingModel {
     }
 
     fn encode_batch(&self, texts: &[String], device: &Device) -> Result<(Tensor, Vec<usize>)> {
-        let mut tokenizer = self.tokenizer.clone();
-        tokenizer.with_padding(Some(PaddingParams {
-            strategy: PaddingStrategy::BatchLongest,
-            ..Default::default()
-        }));
-        tokenizer
-            .with_truncation(Some(TruncationParams {
-                max_length: self.max_length.min(32768),
-                ..Default::default()
-            }))
-            .map_err(|err| crate::string_error!("failed to enable tokenizer truncation: {err}"))?;
-
-        let encodings = tokenizer
-            .encode_batch(texts.to_vec(), true)
+        let encodings = self
+            .tokenizer
+            .encode_batch(texts.iter().map(String::as_str).collect::<Vec<_>>(), true)
             .map_err(|err| crate::string_error!("failed to tokenize inputs: {err}"))?;
 
         let token_rows = encodings
@@ -154,9 +156,26 @@ impl LocalCandleEmbeddingModel {
 
     fn infer_batch_on_device(&self, texts: &[String], device: &Device) -> Result<Vec<Vec<f32>>> {
         let (input_ids, lengths) = self.encode_batch(texts, device)?;
-        let mut model = self.load_runtime_model(device)?;
-        let hidden_states = model
-            .forward(&input_ids, 0)
+        let mut runtime = self.runtime_model.lock().unwrap_or_else(|err| err.into_inner());
+        if !runtime
+            .as_ref()
+            .is_some_and(|(cached_device, _)| cached_device.same_device(device))
+        {
+            *runtime = None;
+            let started = std::time::Instant::now();
+            *runtime = Some((device.clone(), self.load_runtime_model(device)?));
+            log::info!(
+                "Local embedding model '{}' initialized runtime on {} in {} ms",
+                self.model_name,
+                describe_device(device),
+                started.elapsed().as_millis()
+            );
+        }
+        let (_, model) = runtime.as_mut().expect("runtime model initialized above");
+        model.clear_kv_cache();
+        let hidden_states = model.forward(&input_ids, 0);
+        model.clear_kv_cache();
+        let hidden_states = hidden_states
             .map_err(|err| crate::string_error!("Candle embedding forward failed: {err}"))?;
 
         let mut embeddings = Vec::with_capacity(lengths.len());

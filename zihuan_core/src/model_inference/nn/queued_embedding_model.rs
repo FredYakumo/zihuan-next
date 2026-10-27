@@ -9,7 +9,7 @@ use crate::model_inference::llm::embedding_base::{EmbeddingBase, EmbeddingRuntim
 use candle_core::Device;
 use log::warn;
 
-use super::local_candle_embedding::{describe_device, LocalCandleEmbeddingModel};
+use super::candle_embedding::{describe_device, LocalCandleEmbeddingModel};
 
 const DEFAULT_EMBEDDING_QUEUE_CAPACITY: usize = 1024;
 
