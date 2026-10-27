@@ -13,7 +13,7 @@ pub(crate) fn conversation_history_key(sender_id: &str) -> String {
     sender_id.to_string()
 }
 
-pub(crate) fn chat_preprompt_history_key(sender_id: &str) -> String {
+fn chat_preprompt_history_key(sender_id: &str) -> String {
     format!("chat_preprompt:{sender_id}")
 }
 
@@ -40,8 +40,6 @@ fn clear_history_key(cache: &Arc<LLMMessageSessionCacheRef>, history_key: &str) 
     })
 }
 
-/// Drop one sender's conversation: the chat history plus the preprompt transcript that would
-/// otherwise still feed the next turn.
 pub fn clear_history(cache: &Arc<LLMMessageSessionCacheRef>, sender_id: &str) -> Result<()> {
     let history_key = conversation_history_key(sender_id);
     clear_history_key(cache, &history_key)?;

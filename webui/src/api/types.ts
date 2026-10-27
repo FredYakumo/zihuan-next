@@ -304,7 +304,7 @@ export type QqChatContextEvent =
     }
   | { kind: "tool_started"; agent_id: string; sender_id: string; turn_id: string; call_id: string; tool_name: string; arguments: JsonValue }
   | { kind: "tool_finished"; agent_id: string; sender_id: string; turn_id: string; call_id: string; tool_name: string; result: string; duration_ms: number }
-  | { kind: "stage"; agent_id: string; sender_id: string; turn_id: string; at: string; stage: string; detail: JsonValue }
+  | { kind: "stage"; agent_id: string; sender_id: string; turn_id: string; at: string; /** Stable id of a stage updated in place (embedding start → finish). */ id?: string; stage: string; detail: JsonValue }
   | {
       kind: "sub_agent";
       agent_id: string;

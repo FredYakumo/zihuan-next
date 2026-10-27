@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
-use crate::model_inference::llm::embedding_base::EmbeddingBase;
+use crate::model_inference::llm::embedding_base::{EmbeddingBase, EmbeddingRuntimeInfo};
 use candle_core::{safetensors, DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::qwen3::{Config, Model};
@@ -206,6 +206,14 @@ impl std::fmt::Debug for LocalCandleEmbeddingModel {
 impl EmbeddingBase for LocalCandleEmbeddingModel {
     fn get_model_name(&self) -> &str {
         &self.model_name
+    }
+
+    fn runtime_info(&self) -> EmbeddingRuntimeInfo {
+        EmbeddingRuntimeInfo {
+            backend: "candle",
+            device: Some(describe_device(&self.preferred_device)),
+            dimension: Some(self.config.hidden_size),
+        }
     }
 
     fn inference(&self, text: &str) -> Result<Vec<f32>> {

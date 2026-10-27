@@ -19,12 +19,13 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+pub(crate) use self::core::{
+    build_group_system_prompt, build_private_system_prompt, build_user_message,
+    compact_turn_history, split_current_user_body,
+};
 use self::core::{
     build_info_brain_tools, expand_messages_for_inference,
     prepare_current_turn_user_input_from_event,
-};
-pub(crate) use self::core::{
-    build_user_message, compact_turn_history, split_current_user_body, split_system_prompt_prefix,
 };
 pub(crate) use self::core::{QqChatTaskTrace, LOG_PREFIX};
 use self::ignore_store::should_ignore_message_blocking;

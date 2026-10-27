@@ -14,7 +14,6 @@ use zihuan_core::scheduler::JobMemoryResources;
 use zihuan_core::storage::AgentMemoryAccessContext;
 use zihuan_core::storage::LocalMemoryStore;
 
-mod agent_state;
 mod common;
 mod editable_qq_agent_tool;
 mod image_save;
@@ -26,7 +25,6 @@ mod recent_messages;
 mod reply_message;
 mod web_search;
 
-pub(crate) use agent_state::UpdateAgentStateTool;
 pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS};
 pub(crate) use editable_qq_agent_tool::EditableQqAgentTool;
 pub(crate) use image_save::SaveImageTool;

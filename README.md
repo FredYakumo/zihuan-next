@@ -65,6 +65,14 @@ If you find Zihuan is interesting, fun, you are also welcome to join our develop
 
 如果你觉得紫幻很有趣很好玩，也欢迎你加入一起开发，在[PR](https://github.com/FredYakumo/zihuan-next/pulls)里贡献代码。
 
+### Contributors
+
+Thanks to everyone who has contributed to Zihuan Next!
+
+<a href="https://github.com/FredYakumo/zihuan-next/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=FredYakumo/zihuan-next" alt="Contributors" />
+</a>
+
 ## License
 
 AGPL-3.0. See [LICENSE](LICENSE).

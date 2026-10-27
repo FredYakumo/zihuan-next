@@ -1,11 +1,11 @@
 use std::fmt;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::mpsc::{self, Receiver, SyncSender};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::error::{Error, Result};
-use crate::model_inference::llm::embedding_base::EmbeddingBase;
+use crate::model_inference::llm::embedding_base::{EmbeddingBase, EmbeddingRuntimeInfo};
 use candle_core::Device;
 use log::warn;
 
@@ -26,6 +26,8 @@ pub struct QueuedEmbeddingModel {
     model_name: String,
     queue_capacity: usize,
     worker: Mutex<Option<EmbeddingWorkerHandle>>,
+    /// Filled by the worker once the local model is loaded; the device may change on fallback.
+    runtime_info: Arc<Mutex<EmbeddingRuntimeInfo>>,
 }
 
 impl QueuedEmbeddingModel {
@@ -35,6 +37,7 @@ impl QueuedEmbeddingModel {
             model_name,
             queue_capacity: DEFAULT_EMBEDDING_QUEUE_CAPACITY,
             worker: Mutex::new(None),
+            runtime_info: Arc::new(Mutex::new(EmbeddingRuntimeInfo::default())),
         };
         model.ensure_worker()?;
         Ok(model)
@@ -62,13 +65,19 @@ impl QueuedEmbeddingModel {
     fn spawn_worker(&self) -> Result<SyncSender<EmbeddingRequest>> {
         let model_name = self.model_name.clone();
         let mut model = LocalCandleEmbeddingModel::load(&model_name)?;
+        if let Ok(mut info) = self.runtime_info.lock() {
+            *info = model.runtime_info();
+        }
+        let runtime_info = Arc::clone(&self.runtime_info);
         let (sender, receiver) = mpsc::sync_channel::<EmbeddingRequest>(self.queue_capacity);
         let worker_name = format!("embedding-worker-{}", model_name.replace('/', "_"));
         let worker_name_for_thread = worker_name.clone();
 
         thread::Builder::new()
             .name(worker_name.clone())
-            .spawn(move || run_embedding_worker(&worker_name_for_thread, &mut model, receiver))
+            .spawn(move || {
+                run_embedding_worker(&worker_name_for_thread, &mut model, receiver, &runtime_info)
+            })
             .map_err(|err| {
                 crate::string_error!("failed to spawn embedding worker '{}' : {}", worker_name, err)
             })?;
@@ -131,6 +140,7 @@ fn run_embedding_worker(
     worker_name: &str,
     model: &mut LocalCandleEmbeddingModel,
     receiver: Receiver<EmbeddingRequest>,
+    runtime_info: &Arc<Mutex<EmbeddingRuntimeInfo>>,
 ) {
     log::info!(
         "Queued embedding worker '{}' started for model '{}'",
@@ -158,6 +168,9 @@ fn run_embedding_worker(
                     describe_device(model.preferred_device())
                 );
                 model.set_preferred_device(Device::Cpu);
+                if let Ok(mut info) = runtime_info.lock() {
+                    *info = model.runtime_info();
+                }
 
                 match panic::catch_unwind(AssertUnwindSafe(|| {
                     model.batch_inference(&request.texts)
@@ -201,6 +214,10 @@ impl fmt::Debug for QueuedEmbeddingModel {
 impl EmbeddingBase for QueuedEmbeddingModel {
     fn get_model_name(&self) -> &str {
         &self.model_name
+    }
+
+    fn runtime_info(&self) -> EmbeddingRuntimeInfo {
+        self.runtime_info.lock().map(|info| info.clone()).unwrap_or_default()
     }
 
     fn inference(&self, text: &str) -> Result<Vec<f32>> {

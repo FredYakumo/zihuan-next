@@ -1577,6 +1577,9 @@ enum ContextTurnEntry {
     Stage {
         at: String,
         stage: String,
+        /// Stable id of a stage updated in place (embedding start → finish).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         detail: serde_json::Value,
     },
     ToolCall {
@@ -1636,8 +1639,8 @@ fn archived_turn_to_context(
             .entries
             .into_iter()
             .map(|entry| match entry {
-                zihuan_core::qq_context::QqChatTurnEntry::Stage { at, stage, detail } => {
-                    ContextTurnEntry::Stage { at, stage, detail }
+                zihuan_core::qq_context::QqChatTurnEntry::Stage { at, stage, detail, id } => {
+                    ContextTurnEntry::Stage { at, stage, id, detail }
                 }
                 zihuan_core::qq_context::QqChatTurnEntry::ToolCall {
                     at,
@@ -1820,9 +1823,12 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
                     .entries
                     .into_iter()
                     .map(|entry| match entry {
-                        zihuan_core::qq_context::QqChatTurnEntry::Stage { at, stage, detail } => {
-                            ContextTurnEntry::Stage { at, stage, detail }
-                        }
+                        zihuan_core::qq_context::QqChatTurnEntry::Stage {
+                            at,
+                            stage,
+                            detail,
+                            id,
+                        } => ContextTurnEntry::Stage { at, stage, id, detail },
                         zihuan_core::qq_context::QqChatTurnEntry::ToolCall {
                             at,
                             call_id,

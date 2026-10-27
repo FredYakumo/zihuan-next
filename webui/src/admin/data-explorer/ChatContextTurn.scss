@@ -279,6 +279,55 @@
     color: var(--td-text-color-placeholder);
 }
 
+/* Embedding inference: key/value facts about the run, updated live while it runs. */
+.context-embedding {
+    display: grid;
+    gap: 8px;
+}
+
+.context-embedding-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--td-text-color-secondary);
+}
+
+.context-embedding-grid {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    font-size: 13px;
+}
+
+.context-embedding-field {
+    display: flex;
+    gap: 12px;
+}
+
+.context-embedding-field dt {
+    flex-shrink: 0;
+    min-width: 76px;
+    color: var(--td-text-color-placeholder);
+}
+
+.context-embedding-field dd {
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow-wrap: anywhere;
+}
+
+.context-embedding-preview {
+    font-size: 12px;
+    color: var(--td-text-color-secondary);
+    overflow-wrap: anywhere;
+}
+
+.context-embedding--error .context-embedding-status,
+.context-embedding-error {
+    color: var(--td-error-color);
+}
+
 /* A stage's thinking reuses the assistant's "思考过程" block, so no separate style here. */
 
 /* History the brain was given alongside this turn's own input. */

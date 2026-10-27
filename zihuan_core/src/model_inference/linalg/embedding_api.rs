@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::model_inference::llm::embedding_base::EmbeddingBase;
+use crate::model_inference::llm::embedding_base::{EmbeddingBase, EmbeddingRuntimeInfo};
 use log::{error, warn};
 use reqwest::blocking::Client;
 use serde::Deserialize;
@@ -122,6 +122,14 @@ impl EmbeddingAPI {
 impl EmbeddingBase for EmbeddingAPI {
     fn get_model_name(&self) -> &str {
         &self.model_name
+    }
+
+    fn runtime_info(&self) -> EmbeddingRuntimeInfo {
+        EmbeddingRuntimeInfo {
+            backend: "http",
+            device: None,
+            dimension: None,
+        }
     }
 
     fn inference(&self, text: &str) -> Result<Vec<f32>> {
