@@ -160,6 +160,51 @@
                     {{ embeddingView(entry.id)?.error }}
                   </div>
                 </div>
+                <div
+                  v-else-if="sentBubblesView(entry)"
+                  class="context-sent-bubbles"
+                >
+                  <div
+                    v-for="bubble in sentBubblesView(entry)"
+                    :key="bubble.index"
+                    class="context-sent-bubble"
+                  >
+                    <div class="context-sent-bubble-body">
+                      <template
+                        v-for="(segment, segmentIndex) in bubble.segments"
+                        :key="segmentIndex"
+                      >
+                        <span v-if="segment.type === 'text'" class="context-sent-text">{{ segment.text }}</span>
+                        <span
+                          v-else-if="segment.type === 'at'"
+                          class="context-sent-at"
+                        >@{{ segment.target ?? "?" }}</span>
+                        <span
+                          v-else-if="segment.type === 'reply'"
+                          class="context-sent-reply"
+                        >引用消息 {{ segment.id }}</span>
+                        <span
+                          v-else-if="segment.type === 'image'"
+                          class="context-sent-image"
+                        >[图片{{ segment.source ? ` · ${segment.source}` : "" }}]</span>
+                        <ul
+                          v-else-if="segment.type === 'forward'"
+                          class="context-sent-forward"
+                        >
+                          <li
+                            v-for="(node, nodeIndex) in segment.nodes ?? []"
+                            :key="nodeIndex"
+                          >
+                            {{ node }}
+                          </li>
+                        </ul>
+                      </template>
+                    </div>
+                    <p v-if="bubble.delay_ms > 0" class="context-sent-delay">
+                      延迟: {{ bubble.delay_ms }} ms
+                    </p>
+                  </div>
+                </div>
                 <pre
                   v-else-if="stageView(entry.id)?.text"
                   class="context-system-prompt"
@@ -204,7 +249,10 @@
                     <span class="context-stage-history-chars">{{ item.chars }} 字</span>
                   </div>
                 </div>
-                <JsonView v-if="!stageView(entry.id)" :source="entry.detail" />
+                <JsonView
+                  v-if="!stageView(entry.id) && !sentBubblesView(entry)"
+                  :source="entry.detail"
+                />
               </template>
             </div>
           </div>
@@ -317,6 +365,7 @@ import {
   RATE_LIMIT_STAGE,
   rateLimitSeverity,
   rateLimitText,
+  sentBubbles,
   useChatContextTurn,
 } from "./ChatContextTurn";
 import JsonView from "./JsonView.vue";
@@ -327,6 +376,11 @@ const props = defineProps<{ turn: ContextTurnView }>();
 function rateLimitClass(stage: string, detail: unknown): string {
   const severity = rateLimitSeverity(stage, detail);
   return severity ? `context-bubble--limit-${severity}` : "";
+}
+
+/** Outgoing bubbles a stage reports, rendered as chat bubbles inside the stage card. */
+function sentBubblesView(entry: { detail: unknown }) {
+  return sentBubbles(entry.detail);
 }
 
 const {

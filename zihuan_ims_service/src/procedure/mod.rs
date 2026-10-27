@@ -3,6 +3,7 @@ mod natural_language_reply;
 mod qq_after_brain;
 mod qq_before_brain;
 mod qq_brain;
+mod qq_format_output;
 mod qq_meta_query_brain;
 
 use std::sync::Arc;
@@ -20,6 +21,7 @@ pub(crate) use natural_language_reply::{
 pub(crate) use qq_after_brain::{run_after_brain, QqAfterBrain, QqAfterBrainContext};
 pub(crate) use qq_before_brain::QqBeforeBrain;
 pub(crate) use qq_brain::{QqBrain, QqBrainOutput};
+pub(crate) use qq_format_output::{QqFormatOutput, QqFormatOutputContext, QqFormatOutputOutput};
 pub(crate) use qq_meta_query_brain::QqMetaQueryBrain;
 
 /// Build the shared procedure context for a QQ turn.

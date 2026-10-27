@@ -441,6 +441,74 @@
     color: var(--td-text-color-placeholder);
 }
 
+/* Outgoing QQ bubbles: what the format-output / send stages actually put on the wire,
+   drawn with the assistant's green tint so they read as the bot's messages. */
+.context-sent-bubbles {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.context-sent-bubble {
+    max-width: 82%;
+    padding: 8px 12px;
+    border-radius: 12px;
+    background: rgba(82, 196, 26, 0.13);
+    border: 1px solid rgba(82, 196, 26, 0.3);
+}
+
+.context-sent-bubble-body {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--td-text-color-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.context-sent-at {
+    font-weight: 600;
+    color: var(--td-brand-color);
+}
+
+.context-sent-reply {
+    display: inline-block;
+    margin-right: 4px;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--td-brand-color) 10%, transparent);
+    font-size: 11px;
+    color: var(--td-text-color-secondary);
+}
+
+.context-sent-image {
+    display: inline-block;
+    padding: 0 6px;
+    border: 1px dashed var(--td-component-border);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--td-text-color-secondary);
+}
+
+/* Forward messages (batch sends) list every node, rendered as an array. */
+.context-sent-forward {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    font-size: 12px;
+    color: var(--td-text-color-secondary);
+}
+
+.context-sent-forward li + li {
+    margin-top: 2px;
+}
+
+/* Typing delay that preceded this bubble, shown under the message text. */
+.context-sent-delay {
+    margin: 4px 0 0;
+    font-size: 11px;
+    color: var(--td-text-color-placeholder);
+}
+
 .context-pending {
     display: inline-flex;
     align-items: center;
