@@ -35,9 +35,11 @@ pub struct AgentMemoryRecord {
     pub value: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    // Always serialized (even when empty): the admin UI reads these fields to
+    // prefill the edit dialog and would crash on `undefined`.
+    #[serde(default)]
     pub sender_id_list: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub group_id_list: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -276,8 +278,12 @@ fn list_memory_records(
     limit: usize,
 ) -> Result<Vec<AgentMemorySearchHit>> {
     let args = format!("limit: {limit}, sort: [{{ path: [\"updated_at\"], order: desc }}]");
-    let response =
-        weaviate_ref.query_with_args(&weaviate_ref.class_name, &args, &memory_property_names())?;
+    let response = weaviate_ref.query_with_args(
+        &weaviate_ref.class_name,
+        &args,
+        &memory_property_names(),
+        false,
+    )?;
     parse_memory_hits(response)
 }
 

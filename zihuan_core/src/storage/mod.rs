@@ -10,6 +10,7 @@ mod qq_message_list_weaviate_persistence;
 pub mod rdb;
 pub mod redis;
 pub mod resource_resolver;
+mod retrieval_database;
 mod retrieval_ops;
 mod role_avatar_rdb_store;
 pub mod role_avatar_store;
@@ -17,10 +18,10 @@ pub mod rustfs;
 pub mod sqlite;
 pub mod weaviate;
 mod weaviate_client;
-mod weaviate_image_search_node;
+mod weaviate_image_search;
 
 pub(crate) use qq_message_list_weaviate_persistence::persist_qq_message_list;
-pub(crate) use weaviate_image_search_node::{search_images, DEFAULT_MAX_DISTANCE};
+pub(crate) use weaviate_image_search::{search_images, DEFAULT_MAX_DISTANCE};
 mod weaviate_persistence;
 mod weaviate_schema;
 
@@ -67,6 +68,7 @@ pub use resource_resolver::{
     build_s3_ref, build_weaviate_ref, build_web_search_engine_ref, find_connection,
     resolve_connection_data_value,
 };
+pub use retrieval_database::{RetrievalDatabase, RetrievalImageHit};
 pub use retrieval_ops::{
     list_memory_in_store, persist_image_record_to_store, persist_media_to_store,
     persist_qq_message_list_to_store, search_images_in_store, search_memory_in_store,

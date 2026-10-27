@@ -263,10 +263,7 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
             return Vec::new();
         }
         let steer_count = pending.len();
-        self.in_flight_steers
-            .lock()
-            .unwrap()
-            .extend(pending.iter().cloned());
+        self.in_flight_steers.lock().unwrap().extend(pending.iter().cloned());
 
         let mut injected = Vec::with_capacity(pending.len());
         let mut prepared_inputs = Vec::with_capacity(pending.len());
@@ -536,8 +533,7 @@ impl QqChatAgentServiceInner {
                     // mid-turn were already rolled back by the commit guard; put this
                     // pass's own merged steer events back too, then stop — chaining
                     // another turn onto a persistent failure would just loop.
-                    ctx.pending_steer
-                        .requeue_front(sender_id, current_pass_steers);
+                    ctx.pending_steer.requeue_front(sender_id, current_pass_steers);
                     break turn_result.result_summary;
                 }
 

@@ -40,8 +40,8 @@ fn git_status_returns_branch_and_worktree_changes_without_a_shell() {
     let tool = GitStatusTool { workspace_path: Some(directory.clone()) };
 
     assert_eq!(tool.spec().name(), DEFAULT_TOOL_GIT_STATUS);
-    let result =
-        serde_json::from_str::<serde_json::Value>(&tool.execute("", &json!({"path":"."}))).unwrap();
+    let output = tool.execute("", &json!({"path":"."})).expect("git_status executes");
+    let result = serde_json::from_str::<serde_json::Value>(&output).unwrap();
     assert_eq!(result["ok"], true);
     assert!(
         result["branch"].as_str().unwrap().contains("No commits yet")

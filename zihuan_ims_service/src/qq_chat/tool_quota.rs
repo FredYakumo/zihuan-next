@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
-use zihuan_core::agent::tools::{Tool, ToolExecutionOutput, tool_failure_envelope};
+use zihuan_core::agent::tools::{tool_failure_envelope, Tool, ToolExecutionOutput};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::tooling::FunctionTool;

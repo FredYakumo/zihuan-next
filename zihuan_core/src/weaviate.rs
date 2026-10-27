@@ -304,6 +304,12 @@ pub fn gql_escape(value: &str) -> String {
         .replace('\r', "\\r")
 }
 
+/// Maps a Weaviate cosine distance (0 = identical, 2 = opposite) onto a
+/// relevance in [0, 1] where higher means more relevant.
+pub fn cosine_distance_relevance(distance: f64) -> f64 {
+    (1.0 - distance).clamp(0.0, 1.0)
+}
+
 pub fn graphql_value(value: &Value) -> String {
     match value {
         Value::String(s) => format!("\"{}\"", gql_escape(s)),

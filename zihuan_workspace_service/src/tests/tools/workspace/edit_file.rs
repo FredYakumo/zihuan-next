@@ -21,7 +21,10 @@ fn test_edit_file_applies_context_patch() {
     let file_path = directory.join("sample.txt");
     fs::write(&file_path, "one\ntwo\nthree\n").unwrap();
     let tool = EditFileTool { workspace_path: Some(directory.clone()) };
-    let result = serde_json::from_str::<serde_json::Value>(&tool.execute("", &json!({ "patch": "*** Begin Patch\n*** Update File: sample.txt\n@@\n one\n-two\n+second\n three\n*** End Patch" }))).unwrap();
+    let output = tool
+        .execute("", &json!({ "patch": "*** Begin Patch\n*** Update File: sample.txt\n@@\n one\n-two\n+second\n three\n*** End Patch" }))
+        .expect("edit_file executes");
+    let result = serde_json::from_str::<serde_json::Value>(&output).unwrap();
     assert_eq!(result["ok"], true);
     assert_eq!(fs::read_to_string(&file_path).unwrap(), "one\nsecond\nthree\n");
     let _ = fs::remove_dir_all(directory);
@@ -33,9 +36,14 @@ fn test_edit_file_rejects_missing_context_without_writing() {
     let file_path = directory.join("sample.txt");
     fs::write(&file_path, "one\ntwo\n").unwrap();
     let reader = ReadFileTool { workspace_path: Some(directory.clone()) };
-    reader.execute("", &json!({ "path": "sample.txt" }));
+    reader
+        .execute("", &json!({ "path": "sample.txt" }))
+        .expect("read_file executes");
     let tool = EditFileTool { workspace_path: Some(directory.clone()) };
-    let result = serde_json::from_str::<serde_json::Value>(&tool.execute("", &json!({ "patch": "*** Begin Patch\n*** Update File: sample.txt\n@@\n-missing\n+changed\n*** End Patch" }))).unwrap();
+    let output = tool
+        .execute("", &json!({ "patch": "*** Begin Patch\n*** Update File: sample.txt\n@@\n-missing\n+changed\n*** End Patch" }))
+        .expect("edit_file executes");
+    let result = serde_json::from_str::<serde_json::Value>(&output).unwrap();
     assert!(result["error"].as_str().unwrap().contains("failed to find expected context"));
     assert_eq!(fs::read_to_string(&file_path).unwrap(), "one\ntwo\n");
     fs::remove_dir_all(directory).unwrap();
@@ -55,10 +63,15 @@ fn test_edit_file_rejects_stale_file_hash() {
     let file_path = directory.join("sample.txt");
     fs::write(&file_path, "one\ntwo\n").unwrap();
     let reader = ReadFileTool { workspace_path: Some(directory.clone()) };
-    reader.execute("", &json!({ "path": "sample.txt" }));
+    reader
+        .execute("", &json!({ "path": "sample.txt" }))
+        .expect("read_file executes");
     fs::write(&file_path, "one\nchanged externally\n").unwrap();
     let tool = EditFileTool { workspace_path: Some(directory.clone()) };
-    let result = serde_json::from_str::<serde_json::Value>(&tool.execute("", &json!({ "patch": "*** Begin Patch\n*** Update File: sample.txt\n@@\n one\n-changed externally\n+changed\n*** End Patch" }))).unwrap();
+    let output = tool
+        .execute("", &json!({ "patch": "*** Begin Patch\n*** Update File: sample.txt\n@@\n one\n-changed externally\n+changed\n*** End Patch" }))
+        .expect("edit_file executes");
+    let result = serde_json::from_str::<serde_json::Value>(&output).unwrap();
     assert!(result["error"].as_str().unwrap().contains("modified since it was read"));
     assert_eq!(fs::read_to_string(&file_path).unwrap(), "one\nchanged externally\n");
     fs::remove_dir_all(directory).unwrap();

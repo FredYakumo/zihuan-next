@@ -235,9 +235,10 @@ impl Tool for ExecCmdTool {
         let args: ExecCmdArgs = match serde_json::from_value(a.clone()) {
             Ok(v) => v,
             Err(e) => {
-                return ToolExecutionOutput::text(json_error(format!(
-                    "invalid exec_cmd arguments: {e}"
-                )).expect("json_error is infallible"))
+                return ToolExecutionOutput::text(
+                    json_error(format!("invalid exec_cmd arguments: {e}"))
+                        .expect("json_error is infallible"),
+                )
             }
         };
         let shell = args.shell.clone().unwrap_or_else(|| {
@@ -255,7 +256,8 @@ impl Tool for ExecCmdTool {
         if !is_approved(self.session_id.as_deref(), &args.command) {
             let Some(session_id) = self.session_id.as_deref() else {
                 return ToolExecutionOutput::text(
-                    json_error("exec_cmd requires a chat session").expect("json_error is infallible"),
+                    json_error("exec_cmd requires a chat session")
+                        .expect("json_error is infallible"),
                 );
             };
             if !wait_for_command_decision(session_id, &args.command, &shell, &on_output) {
@@ -265,9 +267,11 @@ impl Tool for ExecCmdTool {
         let cwd = if let Some(raw) = args.cwd.as_deref() {
             match resolve_tool_path(self.workspace_path.as_deref(), raw) {
                 Ok(v) => Some(v),
-                Err(e) => return ToolExecutionOutput::text(
-                    json_error(e.to_string()).expect("json_error is infallible"),
-                ),
+                Err(e) => {
+                    return ToolExecutionOutput::text(
+                        json_error(e.to_string()).expect("json_error is infallible"),
+                    )
+                }
             }
         } else {
             self.workspace_path.clone()

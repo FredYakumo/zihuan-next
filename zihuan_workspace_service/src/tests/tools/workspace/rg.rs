@@ -31,8 +31,10 @@ fn rg_finds_regular_expression_matches() {
     let tool = RgTool { workspace_path: Some(directory.clone()) };
 
     assert_eq!(tool.spec().name(), DEFAULT_TOOL_RG);
-    let result = tool.execute("", &json!({"path": ".", "pattern": "item-[0-9]+"}));
-    let result: serde_json::Value = serde_json::from_str(&result).expect("valid JSON result");
+    let output = tool
+        .execute("", &json!({"path": ".", "pattern": "item-[0-9]+"}))
+        .expect("rg executes");
+    let result: serde_json::Value = serde_json::from_str(&output).expect("valid JSON result");
     assert_eq!(result["ok"], true);
     assert_eq!(result["total_matches"], 2);
 
@@ -51,8 +53,8 @@ fn rg_returns_a_clear_error_for_invalid_regular_expressions() {
     fs::write(directory.join("sample.txt"), "text").expect("write sample");
     let tool = RgTool { workspace_path: Some(directory.clone()) };
 
-    let result = tool.execute("", &json!({"path": ".", "pattern": "["}));
-    let result: serde_json::Value = serde_json::from_str(&result).expect("valid JSON result");
+    let output = tool.execute("", &json!({"path": ".", "pattern": "["})).expect("rg executes");
+    let result: serde_json::Value = serde_json::from_str(&output).expect("valid JSON result");
     assert!(result["error"].as_str().unwrap_or_default().contains("invalid rg pattern"));
 
     fs::remove_dir_all(directory).expect("remove temporary directory");

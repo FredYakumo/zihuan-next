@@ -163,8 +163,8 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
         title: item?.title ?? "",
         value: item?.value ?? "",
         expires_at: item?.expires_at ?? "",
-        sender_id_list: item?.sender_id_list.join(",") ?? "",
-        group_id_list: item?.group_id_list.join(",") ?? "",
+        sender_id_list: item?.sender_id_list?.join(",") ?? "",
+        group_id_list: item?.group_id_list?.join(",") ?? "",
       },
       errors: { title: "", value: "" },
     };

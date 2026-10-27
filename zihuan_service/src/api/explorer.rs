@@ -16,14 +16,13 @@ use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::storage::{
     build_relational_db_connection_for_connection, create_elasticsearch_memory_record,
     create_memory_record_with_vector, delete_elasticsearch_memory_record, delete_memory_record,
-    get_elasticsearch_memory_record, get_memory_record, list_elasticsearch_memory_keys,
-    list_recent_memory_keys,
+    get_elasticsearch_memory_record, get_memory_record, list_recent_memory_keys,
     resource_resolver::{self, build_rdb_ref},
-    search_elasticsearch_images, search_elasticsearch_memory, search_memory_content_by_vector,
-    update_elasticsearch_memory_record, update_memory_record_with_vector,
+    search_memory_content_by_vector, update_elasticsearch_memory_record,
+    update_memory_record_with_vector,
     weaviate::build_weaviate_ref as build_storage_weaviate_ref,
     AgentMemoryAccessContext, AgentMemorySearchHit, AgentMemoryUpsert, ConnectionKind,
-    ObjectStorageConfig, RetrievalSchema, WeaviateClient,
+    ObjectStorageConfig, RetrievalDatabase, RetrievalSchema, WeaviateClient,
 };
 use zihuan_ims_service::qq_chat::{list_message_rate_limit_usage, reset_message_rate_limit_usage};
 
@@ -645,6 +644,9 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
                 }
                 Err(err) => return render_internal_error(res, err),
             };
+            // The raw connection explorer displays the backend's own distance,
+            // so it reads the low-level search instead of the normalized
+            // [`RetrievalDatabase`] relevance.
             match search_memory_content_by_vector(&weaviate_ref, &access, &vector, limit) {
                 Ok(items) => items,
                 Err(err) => return render_internal_error(res, err),
@@ -1202,12 +1204,12 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
                         Ok(vector) => vector,
                         Err(error) => return render_internal_error(res, error),
                     };
-                    match search_memory_content_by_vector(&reference, &access, &vector, limit) {
+                    match reference.search_memory(&access, value, &vector, limit) {
                         Ok(hits) => hits,
                         Err(error) => return render_internal_error(res, error),
                     }
                 }
-                None => match list_recent_memory_keys(&reference, &access, limit, None) {
+                None => match reference.list_memory(&access, limit, None) {
                     Ok(hits) => hits,
                     Err(error) => return render_internal_error(res, error),
                 },
@@ -1251,12 +1253,12 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
                         Ok(vector) => vector,
                         Err(error) => return render_internal_error(res, error),
                     };
-                    match search_elasticsearch_memory(&reference, &access, value, &vector, limit) {
+                    match reference.search_memory(&access, value, &vector, limit) {
                         Ok(hits) => hits,
                         Err(error) => return render_internal_error(res, error),
                     }
                 }
-                None => match list_elasticsearch_memory_keys(&reference, &access, limit, None) {
+                None => match reference.list_memory(&access, limit, None) {
                     Ok(hits) => hits,
                     Err(error) => return render_internal_error(res, error),
                 },
@@ -1323,57 +1325,29 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
             }
             Err(error) => return render_internal_error(res, error),
         };
-        let properties = image_property_names();
-        let mut items = Vec::new();
-        for (query, field) in
-            [(name_query.as_deref(), "name"), (description_query.as_deref(), "description")]
-        {
-            if let Some(query) = query {
-                let args = format!(
-                    "bm25: {{ query: \"{}\", properties: [\"{}\"] }}, limit: {}",
-                    zihuan_core::weaviate::gql_escape(query),
-                    field,
-                    limit
-                );
-                if let Ok(response) =
-                    reference.query_with_args(&reference.class_name, &args, &properties)
-                {
-                    merge_image_items(
-                        &mut items,
-                        weaviate_image_items(response, "keyword", object_storage_connection_id),
-                    );
-                }
-            }
-        }
-        for (vector, target) in [
-            (name_vector.as_deref(), "name_vector"),
-            (description_vector.as_deref(), "description_vector"),
-        ] {
-            if let Some(vector) = vector {
-                if let Ok(response) = reference.query_near_vector(
-                    &reference.class_name,
-                    vector,
-                    Some(target),
-                    limit,
-                    &properties,
-                    true,
-                    false,
-                ) {
-                    merge_image_items(
-                        &mut items,
-                        weaviate_image_items(response, "semantic", object_storage_connection_id),
-                    );
-                }
-            }
-        }
-        if name_query.is_none() && description_query.is_none() {
-            if let Ok(response) = reference.query_all(&reference.class_name, limit, &properties) {
-                merge_image_items(
-                    &mut items,
-                    weaviate_image_items(response, "recent", object_storage_connection_id),
-                );
-            }
-        }
+        let hits = match reference.search_images(
+            name_query.as_deref(),
+            description_query.as_deref(),
+            name_vector.as_deref(),
+            description_vector.as_deref(),
+            limit,
+        ) {
+            Ok(hits) => hits,
+            Err(error) => return render_internal_error(res, error),
+        };
+        let items = hits
+            .into_iter()
+            .map(|hit| {
+                image_item(
+                    hit.object_id,
+                    &hit.properties,
+                    hit.match_kinds,
+                    hit.score,
+                    "weaviate",
+                    object_storage_connection_id,
+                )
+            })
+            .collect();
         res.render(Json(ServiceImageResponse { items, backend: "weaviate" }));
         return;
     }
@@ -1386,8 +1360,7 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
         Ok(None) => return render_bad_request(res, "image connection is not configured".into()),
         Err(error) => return render_internal_error(res, error),
     };
-    let hits = match search_elasticsearch_images(
-        &reference,
+    let hits = match reference.search_images(
         name_query.as_deref(),
         description_query.as_deref(),
         name_vector.as_deref(),
@@ -1403,11 +1376,7 @@ pub async fn query_service_images(req: &mut Request, res: &mut Response, _depot:
             image_item(
                 hit.object_id,
                 &hit.properties,
-                if hit.keyword_match {
-                    "keyword"
-                } else {
-                    "semantic"
-                },
+                hit.match_kinds,
                 hit.score,
                 "elasticsearch",
                 object_storage_connection_id,
@@ -2117,52 +2086,6 @@ async fn service_memory_query_vector(
     tokio::task::block_in_place(|| model.inference(query))
 }
 
-fn image_property_names() -> Vec<String> {
-    [
-        "media_id",
-        "original_source",
-        "rustfs_path",
-        "name",
-        "description",
-        "mime_type",
-        "source",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
-}
-fn weaviate_image_items(
-    response: Value,
-    kind: &'static str,
-    object_storage_connection_id: Option<&str>,
-) -> Vec<ServiceImageItem> {
-    response
-        .get("data")
-        .and_then(|value| value.get("Get"))
-        .and_then(Value::as_object)
-        .and_then(|items| items.values().next())
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|item| {
-            let id = item
-                .get("_additional")
-                .and_then(|value| value.get("id"))
-                .and_then(Value::as_str)?;
-            Some(image_item(
-                id.to_string(),
-                item,
-                kind,
-                item.get("_additional")
-                    .and_then(|value| value.get("distance"))
-                    .and_then(Value::as_f64),
-                "weaviate",
-                object_storage_connection_id,
-            ))
-        })
-        .collect()
-}
-
 /// URL the WebUI can use to preview this image: prefer the cached object
 /// storage copy served by the media proxy, then the original remote source.
 fn image_preview_url(
@@ -2195,7 +2118,7 @@ fn image_preview_url(
 fn image_item(
     object_id: String,
     value: &Value,
-    kind: &'static str,
+    match_kinds: Vec<&'static str>,
     score: Option<f64>,
     backend: &'static str,
     object_storage_connection_id: Option<&str>,
@@ -2220,24 +2143,10 @@ fn image_item(
         rustfs_path,
         mime_type,
         source: string("source"),
-        match_kinds: vec![kind],
+        match_kinds,
         score,
         backend,
     }
-}
-fn merge_image_items(target: &mut Vec<ServiceImageItem>, incoming: Vec<ServiceImageItem>) {
-    for item in incoming {
-        if let Some(existing) =
-            target.iter_mut().find(|current| current.object_id == item.object_id)
-        {
-            if !existing.match_kinds.contains(&item.match_kinds[0]) {
-                existing.match_kinds.push(item.match_kinds[0]);
-            }
-        } else {
-            target.push(item);
-        }
-    }
-    target.sort_by_key(|item| !item.match_kinds.contains(&"keyword"));
 }
 
 async fn resolve_agent_rdb_connection(

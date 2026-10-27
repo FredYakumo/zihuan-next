@@ -33,17 +33,17 @@ use crate::storage::qq_chat_history_store::{
 
 use crate::classify_intent::{classify_intent_with_trace, IntentCategory};
 use crate::qq_chat::command::{run_command_pipeline, CommandTurnEnd};
-use crate::qq_chat::steer::SteerCommitGuard;
 use crate::qq_chat::msg_send::{
     build_reply_result, send_planned_batches, take_reply_directive, QqChatServiceSendContext,
 };
+use crate::qq_chat::steer::SteerCommitGuard;
 
 use super::{
     build_group_system_prompt, build_meta_query_system_prompt, build_meta_query_user_message,
-    build_private_system_prompt, collect_available_media_from_brain_output,
-    compact_turn_history, expand_messages_for_inference, prepare_current_turn_user_input,
-    prepare_current_turn_user_input_from_event, QqChatAgentServiceContext,
-    QqChatAgentServiceInner, QqChatServiceTurnResult, QqChatTaskTrace, LOG_PREFIX,
+    build_private_system_prompt, collect_available_media_from_brain_output, compact_turn_history,
+    expand_messages_for_inference, prepare_current_turn_user_input,
+    prepare_current_turn_user_input_from_event, QqChatAgentServiceContext, QqChatAgentServiceInner,
+    QqChatServiceTurnResult, QqChatTaskTrace, LOG_PREFIX,
 };
 
 use crate::agent::before_brain_agent::PrepromptContext;

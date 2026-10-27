@@ -66,9 +66,10 @@ impl Tool for AskUserTool {
         let args: AskUserArgs = match serde_json::from_value(a.clone()) {
             Ok(v) => v,
             Err(e) => {
-                return ToolExecutionOutput::text(json_error(format!(
-                    "invalid ask_user arguments: {e}"
-                )).expect("json_error is infallible"))
+                return ToolExecutionOutput::text(
+                    json_error(format!("invalid ask_user arguments: {e}"))
+                        .expect("json_error is infallible"),
+                )
             }
         };
         let question = args.question.trim().to_string();

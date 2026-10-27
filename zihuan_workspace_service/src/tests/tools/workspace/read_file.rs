@@ -33,8 +33,8 @@ fn read_file_returns_complete_utf8_content_by_default() {
     let tool = ReadFileTool { workspace_path: Some(directory.clone()) };
 
     assert_eq!(tool.spec().name(), DEFAULT_TOOL_READ_FILE);
-    let result = tool.execute("", &json!({"path": "sample.txt"}));
-    let result: serde_json::Value = serde_json::from_str(&result).expect("valid JSON result");
+    let output = tool.execute("", &json!({"path": "sample.txt"})).expect("read_file executes");
+    let result: serde_json::Value = serde_json::from_str(&output).expect("valid JSON result");
     assert_eq!(result["ok"], true);
     assert_eq!(result["total_lines"], 3);
     assert_eq!(result["content"], "第一行\n第二行\n第三行");
@@ -54,8 +54,10 @@ fn read_file_supports_one_based_inclusive_line_ranges() {
     fs::write(directory.join("sample.txt"), "one\ntwo\nthree\nfour").expect("write sample");
     let tool = ReadFileTool { workspace_path: Some(directory.clone()) };
 
-    let result = tool.execute("", &json!({"path": "sample.txt", "start_line": 2, "end_line": 3}));
-    let result: serde_json::Value = serde_json::from_str(&result).expect("valid JSON result");
+    let output = tool
+        .execute("", &json!({"path": "sample.txt", "start_line": 2, "end_line": 3}))
+        .expect("read_file executes");
+    let result: serde_json::Value = serde_json::from_str(&output).expect("valid JSON result");
     assert_eq!(result["start_line"], 2);
     assert_eq!(result["end_line"], 3);
     assert_eq!(result["content"], "two\nthree");
@@ -75,8 +77,10 @@ fn read_file_rejects_out_of_bounds_ranges() {
     fs::write(directory.join("sample.txt"), "one\ntwo").expect("write sample");
     let tool = ReadFileTool { workspace_path: Some(directory.clone()) };
 
-    let result = tool.execute("", &json!({"path": "sample.txt", "start_line": 3, "end_line": 3}));
-    let result: serde_json::Value = serde_json::from_str(&result).expect("valid JSON result");
+    let output = tool
+        .execute("", &json!({"path": "sample.txt", "start_line": 3, "end_line": 3}))
+        .expect("read_file executes");
+    let result: serde_json::Value = serde_json::from_str(&output).expect("valid JSON result");
     assert!(result["error"].as_str().unwrap_or_default().contains("out of bounds"));
 
     fs::remove_dir_all(directory).expect("remove temporary directory");

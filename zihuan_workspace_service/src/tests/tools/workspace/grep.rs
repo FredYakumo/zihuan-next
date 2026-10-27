@@ -36,11 +36,13 @@ fn grep_finds_literal_matches_recursively_with_context() {
     let tool = GrepTool { workspace_path: Some(directory.clone()) };
 
     assert_eq!(tool.spec().name(), DEFAULT_TOOL_GREP);
-    let result = tool.execute(
-        "",
-        &json!({"path": ".", "pattern": "needle", "context_lines": 1, "glob": "*.txt"}),
-    );
-    let result: serde_json::Value = serde_json::from_str(&result).expect("valid JSON result");
+    let output = tool
+        .execute(
+            "",
+            &json!({"path": ".", "pattern": "needle", "context_lines": 1, "glob": "*.txt"}),
+        )
+        .expect("grep executes");
+    let result: serde_json::Value = serde_json::from_str(&output).expect("valid JSON result");
     assert_eq!(result["ok"], true);
     assert_eq!(result["total_matches"], 2);
     let matches = result["matches"].as_array().expect("matches array");
@@ -70,8 +72,10 @@ fn grep_honors_max_results_and_skips_binary_files() {
     fs::write(directory.join("binary.bin"), [0_u8, 159, 146, 150]).expect("write binary file");
     let tool = GrepTool { workspace_path: Some(directory.clone()) };
 
-    let result = tool.execute("", &json!({"path": ".", "pattern": "needle", "max_results": 2}));
-    let result: serde_json::Value = serde_json::from_str(&result).expect("valid JSON result");
+    let output = tool
+        .execute("", &json!({"path": ".", "pattern": "needle", "max_results": 2}))
+        .expect("grep executes");
+    let result: serde_json::Value = serde_json::from_str(&output).expect("valid JSON result");
     assert_eq!(result["total_matches"], 3);
     assert_eq!(result["matches"].as_array().expect("matches array").len(), 2);
     assert_eq!(result["truncated"], true);
