@@ -4,8 +4,11 @@ use std::sync::Arc;
 use crate::error::Result;
 use crate::graph::object_storage::S3Ref;
 use crate::runtime::block_async;
-use crate::url_utils::{image_content_type_from_bytes, supported_image_content_type};
+use crate::url_utils::{
+    image_content_type_from_bytes, image_extension_for_content_type, supported_image_content_type,
+};
 use chrono::Datelike;
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone)]
 pub struct ObjectStorageConfig {
@@ -97,6 +100,21 @@ fn build_object_key(message_id: i64, segment_index: usize, file_name: &str) -> S
     )
 }
 
+/// Builds a content-addressed key for a saved image.
+///
+/// The key is derived from the downloaded bytes, not from the source URL, because a URL
+/// is not a stable identity for an image: many remote images (QQ multimedia
+/// `download?appid=...&fileid=...&rkey=...`, CDN and search thumbnails) share one URL path
+/// and differ only in the query string, and CDN signatures inside the query rotate over
+/// time. Hashing the path (or any part of the URL) either collapses distinct images onto
+/// one key or scatters re-saves of the same image across keys. Deriving the key from the
+/// payload guarantees that equal bytes map to one object and different bytes never collide.
+pub(crate) fn content_addressed_image_key(content_type: &str, bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let hash = hex::encode(digest);
+    format!("images/{}.{}", &hash[..32], image_extension_for_content_type(content_type))
+}
+
 pub fn upload_remote_image_to_s3(s3_ref: &S3Ref, url: &str) -> Result<String> {
     // `reqwest::blocking` creates and drops its own runtime, which must not happen while an
     // async context is entered.
@@ -117,7 +135,7 @@ pub fn upload_remote_image_to_s3(s3_ref: &S3Ref, url: &str) -> Result<String> {
         let content_type = verified_image_content_type(response_content_type.as_deref(), &bytes)?;
         Ok::<_, crate::error::Error>((bytes, content_type))
     })?;
-    let key = crate::utils::string_utils::derive_tavily_s3_key(url);
+    let key = content_addressed_image_key(content_type, &bytes);
     let s3_ref_clone = s3_ref.clone();
     block_async(async move {
         s3_ref_clone.put_object(&key, &content_type, &bytes).await?;
