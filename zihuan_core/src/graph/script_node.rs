@@ -1828,7 +1828,7 @@ pub fn dispatch_script_host_call(
         "storage.persist_qq_message_rdb" => {
             let rdb_ref = mysql_resource(params, "rdb_ref")?;
             let messages = qq_messages_param(params, "qq_message_list")?;
-            let success = crate::storage::message::qq_message_list_rdb::persist_qq_message_list(
+            let success = crate::storage::message::record_write::persist_qq_message_list(
                 &rdb_ref,
                 &messages,
                 required_string(params, "message_id")?,
