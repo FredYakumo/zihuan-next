@@ -14,7 +14,7 @@ use crate::role_config::QqChatEmotionDimensionConfig;
 use crate::storage::message_rate_limit_store::MessageRateLimitCheckResult;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::LLMMessage;
-use zihuan_core::qq_context::{collect_turn_media_refs, QqChatContextEvent};
+use zihuan_core::qq_context::{collect_turn_media_refs, EmbeddingTraceGuard, QqChatContextEvent};
 use zihuan_core::steer::{message_with_api_style, PendingSteerEvent};
 
 use zihuan_core::graph::tool_spec::{
@@ -120,6 +120,11 @@ impl QqChatAgentServiceInner {
 
         // Identity for this turn's live context events (Data Explorer view).
         let turn_id = uuid::Uuid::new_v4().to_string();
+        // Intent classification and before-brain retrieval run synchronously on this blocking
+        // turn thread, so binding the turn here lets the embedding runtime report each of their
+        // inferences as a live context stage without threading the turn identity through every
+        // retrieval call.
+        let _embedding_trace = EmbeddingTraceGuard::enter(ctx.agent_id, sender_id, &turn_id);
         let turn_media = collect_turn_media_refs(&prepared_input.event.message_list);
 
         let emotion_dimensions =

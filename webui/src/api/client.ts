@@ -1046,7 +1046,7 @@ export interface ServiceChatContextBubble {
 }
 
 export type ServiceChatContextEntry =
-  | { kind: "stage"; at: string; stage: string; detail: unknown }
+  | { kind: "stage"; at: string; stage: string; /** Stable id of a stage updated in place. */ id?: string; detail: unknown }
   | {
       kind: "tool_call";
       at: string;

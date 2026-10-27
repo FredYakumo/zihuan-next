@@ -69,15 +69,50 @@
                 {{ rateLimitText(entry.stage, entry.detail) }}
               </div>
               <template v-else>
+                <div
+                  v-if="embeddingView(entry.id)"
+                  class="context-embedding"
+                  :class="`context-embedding--${embeddingView(entry.id)?.status}`"
+                >
+                  <div class="context-embedding-status">
+                    <t-loading
+                      v-if="embeddingView(entry.id)?.status === 'running'"
+                      size="12px"
+                    />
+                    <span>{{ embeddingView(entry.id)?.statusText }}</span>
+                  </div>
+                  <dl class="context-embedding-grid">
+                    <div
+                      v-for="field in embeddingView(entry.id)?.fields"
+                      :key="field.label"
+                      class="context-embedding-field"
+                    >
+                      <dt>{{ field.label }}</dt>
+                      <dd>{{ field.value }}</dd>
+                    </div>
+                  </dl>
+                  <div
+                    v-if="embeddingView(entry.id)?.preview"
+                    class="context-embedding-preview"
+                  >
+                    输入预览：{{ embeddingView(entry.id)?.preview }}
+                  </div>
+                  <div
+                    v-if="embeddingView(entry.id)?.error"
+                    class="context-embedding-error"
+                  >
+                    {{ embeddingView(entry.id)?.error }}
+                  </div>
+                </div>
                 <pre
-                  v-if="stageViews.get(entry.id)"
+                  v-else-if="stageView(entry.id)?.text"
                   class="context-system-prompt"
-                >{{ stageViews.get(entry.id)?.text }}</pre>
-                <div v-if="stageViews.get(entry.id)?.meta" class="context-stage-meta">
-                  {{ stageViews.get(entry.id)?.meta }}
+                >{{ stageView(entry.id)?.text }}</pre>
+                <div v-if="stageView(entry.id)?.meta" class="context-stage-meta">
+                  {{ stageView(entry.id)?.meta }}
                 </div>
                 <div
-                  v-if="stageViews.get(entry.id)?.reasoning"
+                  v-if="stageView(entry.id)?.reasoning"
                   class="context-thinking"
                   :class="{ collapsed: !stageThinkingOpen(entry.id) }"
                 >
@@ -94,17 +129,17 @@
                   <pre
                     v-if="stageThinkingOpen(entry.id)"
                     class="context-thinking-content"
-                  >{{ stageViews.get(entry.id)?.reasoning }}</pre>
+                  >{{ stageView(entry.id)?.reasoning }}</pre>
                 </div>
                 <div
-                  v-if="stageViews.get(entry.id)?.history?.length"
+                  v-if="stageView(entry.id)?.history?.length"
                   class="context-stage-history"
                 >
                   <div class="context-stage-history-label">
-                    随本轮发送的历史消息（{{ stageViews.get(entry.id)?.history?.length }} 条）
+                    随本轮发送的历史消息（{{ stageView(entry.id)?.history?.length }} 条）
                   </div>
                   <div
-                    v-for="(item, historyIndex) in stageViews.get(entry.id)?.history"
+                    v-for="(item, historyIndex) in stageView(entry.id)?.history"
                     :key="historyIndex"
                     class="context-stage-history-item"
                   >
@@ -113,7 +148,7 @@
                     <span class="context-stage-history-chars">{{ item.chars }} 字</span>
                   </div>
                 </div>
-                <JsonView v-if="!stageViews.get(entry.id)" :source="entry.detail" />
+                <JsonView v-if="!stageView(entry.id)" :source="entry.detail" />
               </template>
             </div>
           </div>
@@ -265,6 +300,14 @@ const {
   openPreview,
   closePreview,
 } = useChatContextTurn(() => props.turn);
+
+function stageView(id: string) {
+  return stageViews.value.get(id);
+}
+
+function embeddingView(id: string) {
+  return stageView(id)?.embedding;
+}
 </script>
 
 <style scoped lang="scss">

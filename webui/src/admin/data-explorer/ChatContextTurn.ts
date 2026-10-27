@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 import type { ServiceChatContextMedia } from "../../api/client";
 import type { QqSubAgentEntry, TokenUsage } from "../../api/types";
@@ -22,6 +22,9 @@ export const USER_INPUT_STAGE = "User Input";
 
 /** Stage the QQ Chat runtime emits with the rate-limit decision of the turn. */
 export const RATE_LIMIT_STAGE = "限流";
+
+/** Stage the local embedding runtime emits while one embedding inference runs. */
+export const EMBEDDING_STAGE = "嵌入推理";
 
 /**
  * One stage of the turn, wrapping the individual steps it consists of.
@@ -292,19 +295,38 @@ export function rateLimitSeverity(stage: string, detail: unknown): "warning" | "
 
 /** Text a stage produced or received, rendered as readable prose instead of raw JSON. */
 export interface StageText {
-  text: string;
+  /** Prose the stage carries, when it has any. An embedding stage has none. */
+  text?: string;
   /** One-line summary of what produced the text (model, duration, token counts). */
   meta?: string;
   /** The model's thinking for this stage, when the stage recorded it. */
   reasoning?: string;
   /** History messages the stage sent along with `text`, oldest first. */
   history?: StageHistoryMessage[];
+  /** Live facts of an embedding inference, when this stage reports one. */
+  embedding?: EmbeddingStageView;
 }
 
 export interface StageHistoryMessage {
   role: string;
   chars: number;
   preview: string;
+}
+
+/** One label/value fact of an embedding inference. */
+export interface EmbeddingStageField {
+  label: string;
+  value: string;
+}
+
+/** Readable view of one embedding inference report, rendered as its own bubble. */
+export interface EmbeddingStageView {
+  status: "running" | "done" | "error";
+  /** Status line under the bubble title, with the live elapsed time while it runs. */
+  statusText: string;
+  fields: EmbeddingStageField[];
+  preview?: string;
+  error?: string;
 }
 
 function detailRecord(detail: unknown): Record<string, unknown> | undefined {
@@ -315,6 +337,80 @@ function detailText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
+  const minutes = Math.floor(ms / 60_000);
+  return `${minutes} 分 ${((ms % 60_000) / 1000).toFixed(1)} 秒`;
+}
+
+export function embeddingStatus(detail: unknown): "running" | "done" | "error" {
+  const status = detailRecord(detail)?.status;
+  return status === "done" || status === "error" ? status : "running";
+}
+
+/**
+ * Readable view of an embedding inference.
+ *
+ * The backend emits the same stage twice: a `running` report when inference starts (model,
+ * backend, device, input size) and a finished/error report with the measured duration and the
+ * output shape. While it runs, the elapsed time is derived from `started_at` so it keeps ticking
+ * between events; `now` is the shared clock of the turn view.
+ */
+export function embeddingStageView(detail: unknown, now: number): EmbeddingStageView | undefined {
+  const record = detailRecord(detail);
+  if (!record) return undefined;
+
+  const status = embeddingStatus(detail);
+  const startedAt =
+    typeof record.started_at === "string" ? Date.parse(record.started_at) : Number.NaN;
+  const elapsedMs =
+    status === "running" && !Number.isNaN(startedAt) ? Math.max(0, now - startedAt) : undefined;
+  const durationMs = typeof record.duration_ms === "number" ? record.duration_ms : undefined;
+  const statusText =
+    status === "running"
+      ? elapsedMs !== undefined
+        ? `推理中…（已等待 ${formatDuration(elapsedMs)}）`
+        : "推理中…"
+      : status === "error"
+        ? durationMs !== undefined
+          ? `推理失败（耗时 ${formatDuration(durationMs)}）`
+          : "推理失败"
+        : `推理完成（耗时 ${formatDuration(durationMs ?? 0)}）`;
+
+  const fields: EmbeddingStageField[] = [];
+  if (typeof record.model === "string") fields.push({ label: "模型", value: record.model });
+  if (typeof record.backend === "string") fields.push({ label: "后端", value: record.backend });
+  if (typeof record.device === "string") fields.push({ label: "推理设备", value: record.device });
+  if (typeof record.input_count === "number") {
+    const chars = typeof record.input_chars === "number" ? ` · ${record.input_chars} 字` : "";
+    fields.push({ label: "输入", value: `${record.input_count} 条${chars}` });
+  }
+  if (Array.isArray(record.shape)) {
+    fields.push({ label: "输出 shape", value: `[${record.shape.join(", ")}]` });
+  } else if (
+    status === "running" &&
+    typeof record.dimension === "number" &&
+    typeof record.input_count === "number"
+  ) {
+    fields.push({
+      label: "输出 shape",
+      value: `[${record.input_count}, ${record.dimension}]（进行中）`,
+    });
+  }
+  if (typeof record.instance_id === "string") {
+    fields.push({ label: "实例", value: record.instance_id });
+  }
+
+  return {
+    status,
+    statusText,
+    fields,
+    preview: detailText(record.preview),
+    error: detailText(record.error),
+  };
+}
+
 /**
  * Readable view of a stage's payload.
  *
@@ -322,8 +418,16 @@ function detailText(value: unknown): string | undefined {
  * retrieved memory titles, and the current-turn input handed to the brain. Showing them as text
  * is the point of the flow view; everything else stays JSON.
  */
-export function stageText(stage: string | undefined, detail: unknown): StageText | undefined {
+export function stageText(
+  stage: string | undefined,
+  detail: unknown,
+  now = Date.now(),
+): StageText | undefined {
   if (!stage) return undefined;
+  if (stage === EMBEDDING_STAGE) {
+    const embedding = embeddingStageView(detail, now);
+    return embedding ? { embedding } : undefined;
+  }
   if (typeof detail === "string") {
     return stage === SYSTEM_PROMPT_STAGE ? { text: detail } : undefined;
   }
@@ -476,12 +580,45 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     );
   });
 
+  /**
+   * Clock shared by embedding bubbles. It only ticks while an embedding inference is running,
+   * so settled turns do not keep timers alive.
+   */
+  const now = ref(Date.now());
+  let clockTimer: number | undefined;
+
+  function startClock() {
+    if (clockTimer !== undefined) return;
+    now.value = Date.now();
+    clockTimer = window.setInterval(() => {
+      now.value = Date.now();
+    }, 1000);
+  }
+
+  function stopClock() {
+    if (clockTimer === undefined) return;
+    window.clearInterval(clockTimer);
+    clockTimer = undefined;
+  }
+
+  const hasRunningEmbedding = computed(() =>
+    turn().entries.some(
+      (entry) =>
+        entry.kind === "stage" &&
+        entry.stage === EMBEDDING_STAGE &&
+        embeddingStatus(entry.detail) === "running",
+    ),
+  );
+  watch(hasRunningEmbedding, (running) => (running ? startClock() : stopClock()), {
+    immediate: true,
+  });
+
   /** Readable text for each stage entry, keyed by entry id. */
   const stageViews = computed(() => {
     const views = new Map<string, StageText | undefined>();
     for (const entry of turn().entries) {
       if (entry.kind !== "stage") continue;
-      views.set(entry.id, stageText(entry.stage, entry.detail));
+      views.set(entry.id, stageText(entry.stage, entry.detail, now.value));
     }
     return views;
   });
@@ -615,6 +752,7 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
   });
 
   onUnmounted(() => {
+    stopClock();
     (scrollRoot ?? window).removeEventListener("scroll", scheduleActivePhaseUpdate);
     window.removeEventListener("resize", scheduleActivePhaseUpdate);
     if (frame) cancelAnimationFrame(frame);
