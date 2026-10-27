@@ -73,9 +73,13 @@ impl LLMMessageSessionCacheRef {
 
     /// Seed the Redis URL this cache reads and writes through.
     ///
-    /// The connection itself is opened lazily by the first operation.
+    /// The connection itself is opened lazily by the first operation. Setting `cached_redis_url`
+    /// is enough: `storage::redis` treats it as the URL the current connection uses and falls
+    /// back to it when `url` was never seeded.
     pub async fn configure_redis(&self, url: Option<String>) {
         *self.redis.cached_redis_url.lock().await = url;
+        // A stale connection must not survive a re-point at a different Redis.
+        *self.redis.redis_cm.lock().await = None;
     }
 
     pub fn get_messages_blocking(&self, sender_id: &str) -> Result<Vec<LLMMessage>> {
@@ -187,16 +191,31 @@ impl LLMMessageSessionCacheRef {
             }
         }
 
-        // Enumeration is best-effort: an unreachable Redis leaves the memory-derived list.
+        // Enumeration is best-effort: an unreachable Redis leaves the memory-derived list, but
+        // the failure is logged because otherwise a broken connection looks like "no senders".
         if self.redis.cached_redis_url.lock().await.is_some() {
-            if let Ok(tracker_keys) = redis::set_members(&self.redis, &self.tracker_registry_key()).await {
-                for tracker_key in tracker_keys {
-                    for key in redis::set_members(&self.redis, &tracker_key).await.unwrap_or_default() {
-                        if let Some(sender_id) = Self::parse_sender_id(&key, &prefix) {
-                            senders.insert(sender_id);
+            match redis::set_members(&self.redis, &self.tracker_registry_key()).await {
+                Ok(tracker_keys) => {
+                    for tracker_key in tracker_keys {
+                        match redis::set_members(&self.redis, &tracker_key).await {
+                            Ok(keys) => {
+                                for key in keys {
+                                    if let Some(sender_id) = Self::parse_sender_id(&key, &prefix)
+                                    {
+                                        senders.insert(sender_id);
+                                    }
+                                }
+                            }
+                            Err(error) => log::warn!(
+                                "[session_cache] failed to read tracker set '{tracker_key}': {error}"
+                            ),
                         }
                     }
                 }
+                Err(error) => log::warn!(
+                    "[session_cache] failed to read sender registry '{}': {error}",
+                    self.tracker_registry_key()
+                ),
             }
         }
 

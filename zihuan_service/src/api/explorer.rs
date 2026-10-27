@@ -1,3 +1,4 @@
+use log::warn;
 use redis::AsyncCommands;
 use salvo::prelude::*;
 use salvo::writing::Json;
@@ -1433,8 +1434,14 @@ pub async fn query_service_chat_users(req: &mut Request, res: &mut Response, _de
     let mut users: Vec<ServiceChatUserItem> = Vec::with_capacity(sender_ids.len());
     for sender_id in sender_ids {
         let profile = profiles.iter().find(|row| row.0 == sender_id);
-        let context_tokens =
-            estimate_messages_tokens(&cache.get_messages(&sender_id).await.unwrap_or_default());
+        let context_tokens = match cache.get_messages(&sender_id).await {
+            Ok(messages) => estimate_messages_tokens(&messages),
+            Err(err) => {
+                // Report the sender anyway; a read failure must not look like an empty context.
+                warn!("[explorer] failed to read context for {sender_id}: {err}");
+                0
+            }
+        };
         users.push(ServiceChatUserItem {
             sender_name: profile
                 .map(|row| row.1.clone())
