@@ -314,13 +314,16 @@ impl Model {
         }
     }
 
-    fn causal_mask(
-        &self,
-        b: usize,
-        tgt: usize,
-        offset: usize,
-        sw: Option<usize>,
-    ) -> Result<Tensor> {
+    /// Builds the additive causal mask for a single sequence and keeps leading
+    /// singleton dimensions, so the same mask serves every batch entry and every
+    /// attention head and gets broadcast to `(batch, heads, tgt, tgt + offset)`
+    /// when added to the attention scores.
+    ///
+    /// The mask covers exactly one sequence-worth of values on purpose: declaring
+    /// it for the whole batch while only filling a single sequence leaves the
+    /// tensor storage shorter than its shape, and the broadcast add then indexes
+    /// past the end of that storage as soon as the batch has more than one entry.
+    fn causal_mask(&self, tgt: usize, offset: usize, sw: Option<usize>) -> Result<Tensor> {
         let minf = f32::NEG_INFINITY;
         let mask: Vec<_> = (0..tgt)
             .flat_map(|i| {
@@ -338,17 +341,17 @@ impl Model {
                 })
             })
             .collect();
-        Tensor::from_slice(&mask, (b, 1, tgt, tgt + offset), &self.device)?.to_dtype(self.dtype)
+        Tensor::from_slice(&mask, (1, 1, tgt, tgt + offset), &self.device)?.to_dtype(self.dtype)
     }
 
     pub fn forward(&mut self, input: &Tensor, offset: usize) -> Result<Tensor> {
-        let (b, l) = input.dims2()?;
+        let (_, l) = input.dims2()?;
         let mut h = self.embed_tokens.forward(input)?;
 
         let causal = if l == 1 {
             None
         } else {
-            Some(self.causal_mask(b, l, offset, None)?)
+            Some(self.causal_mask(l, offset, None)?)
         };
 
         for layer in &mut self.layers {
