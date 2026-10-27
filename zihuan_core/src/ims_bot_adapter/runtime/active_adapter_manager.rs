@@ -6,7 +6,7 @@ use crate::connection_manager::{
     ConnectionManager as ConnectionManagerTrait, RuntimeConnectionStatus, RuntimeInstanceInfo,
 };
 use crate::error::{Error, Result};
-use crate::graph::object_storage::S3Ref;
+use crate::storage::S3Ref;
 use crate::storage::{find_connection, load_connections, ConnectionConfig, ConnectionKind};
 use async_trait::async_trait;
 use chrono::Utc;

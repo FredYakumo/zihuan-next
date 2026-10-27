@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::graph::object_storage::S3Ref;
+use crate::storage::S3Ref;
 use crate::ims_bot_adapter::models::event_model::MessageEvent;
 use crate::ims_bot_adapter::models::message::{Message, MessageProp};
 use crate::model_inference::llm::{LLMMessage, MessagePart};

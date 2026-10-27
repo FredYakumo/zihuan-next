@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::graph::object_storage::S3Ref;
+use zihuan_core::storage::S3Ref;
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::tooling::FunctionTool;

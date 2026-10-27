@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::graph::object_storage::S3Ref;
+use crate::storage::S3Ref;
 use crate::ims_bot_adapter::models::message::{ImageMessage, Message};
 use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;
 use crate::url_utils::{

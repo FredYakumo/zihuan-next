@@ -20,7 +20,7 @@ use zihuan_core::steer::{
 };
 use zihuan_core::utils::string_utils::shorten_text;
 
-use zihuan_core::graph::object_storage::S3Ref;
+use zihuan_core::storage::S3Ref;
 use zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT;
 use zihuan_core::graph::DataValue;
 

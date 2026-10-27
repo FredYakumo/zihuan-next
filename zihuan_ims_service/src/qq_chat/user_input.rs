@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use log::{info, warn};
-use zihuan_core::graph::object_storage::S3Ref;
+use zihuan_core::storage::S3Ref;
 use zihuan_core::ims_bot_adapter::adapter::{restore_messages_for_message_id, SharedBotAdapter};
 use zihuan_core::ims_bot_adapter::message_helpers::render_current_message_body;
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
@@ -520,7 +520,7 @@ fn collect_quoted_message(messages: &[Message]) -> Option<QqChatQuotedMessage> {
             return None;
         }
         // The restored segments carry no sender, so resolve it from the persisted record.
-        let sender = zihuan_core::graph::message_restore::lookup_message_sender(reply.id)
+        let sender = zihuan_core::storage::message::record_restore::lookup_message_sender(reply.id)
             .unwrap_or_default();
         let sender_id = (!sender.0.is_empty()).then_some(sender.0);
         let sender_name = (!sender.1.is_empty()).then_some(sender.1);

@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::graph::object_storage::S3Ref;
+use crate::storage::S3Ref;
 use crate::ims_bot_adapter::logging::{LOG_DATA_URL_PREVIEW_CHARS, LOG_MESSAGE_PREVIEW_CHARS};
 use crate::ims_bot_adapter::runtime::adapter::restore_message_list_for_message_id;
 use crate::ims_bot_adapter::runtime::models::message::MessageProp;

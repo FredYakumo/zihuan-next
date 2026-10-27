@@ -5,9 +5,8 @@ use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 
 use super::state::AppState;
-use zihuan_core::graph::hyperparam_store;
+use zihuan_core::storage::hyperparams;
 
-// ─── Hyperparameters ──────────────────────────────────────────────────────────
 
 #[handler]
 pub async fn get_hyperparameters(req: &mut Request, res: &mut Response, depot: &mut Depot) {
@@ -20,7 +19,7 @@ pub async fn get_hyperparameters(req: &mut Request, res: &mut Response, depot: &
                 .file_path
                 .as_deref()
                 .map(|fp| {
-                    hyperparam_store::load_hyperparameter_values(std::path::Path::new(fp), &s.graph)
+                    hyperparams::load_hyperparameter_values(std::path::Path::new(fp), &s.graph)
                 })
                 .unwrap_or_default();
 
@@ -70,7 +69,7 @@ pub async fn update_hyperparameter_values(
     };
 
     if let Some(fp) = &session.file_path {
-        match hyperparam_store::save_hyperparameter_values(
+        match hyperparams::save_hyperparameter_values(
             std::path::Path::new(fp),
             &session.graph,
             &body.values,
@@ -89,7 +88,6 @@ pub async fn update_hyperparameter_values(
     }
 }
 
-// ─── Variables ────────────────────────────────────────────────────────────────
 
 #[handler]
 pub async fn get_variables(req: &mut Request, res: &mut Response, depot: &mut Depot) {

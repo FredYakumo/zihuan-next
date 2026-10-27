@@ -25,7 +25,7 @@ use crate::storage::qq_chat_history_store::save_history;
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use zihuan_core::agent::tools::LongTaskNotifier;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
+use zihuan_core::storage::LLMMessageSessionCacheRef;
 use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::graph::tool_spec::{ToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};

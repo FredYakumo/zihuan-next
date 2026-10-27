@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
-use crate::graph::object_storage::S3Ref;
+use crate::storage::S3Ref;
 use crate::ims_bot_adapter::models::event_model::MessageEvent;
 use crate::ims_bot_adapter::models::message::{
     ForwardNodeMessage, ImageMessage, Message, PersistedMedia,
