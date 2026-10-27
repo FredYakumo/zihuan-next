@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -31,23 +30,21 @@ use crate::storage::qq_chat_history_store::{conversation_history_key, load_histo
 
 use crate::classify_intent::{classify_intent_with_trace, IntentCategory};
 use crate::qq_chat::command::{run_command_pipeline, CommandTurnEnd};
-use crate::qq_chat::msg_send::{
-    build_reply_result, send_planned_batches, take_reply_directive, QqChatServiceSendContext,
-};
+use crate::qq_chat::msg_send::{send_planned_batches, QqChatServiceSendContext};
 use crate::qq_chat::steer::SteerCommitGuard;
 
 use super::{
-    build_meta_query_system_prompt, build_meta_query_user_message,
-    collect_available_media_from_brain_output, compact_turn_history, expand_messages_for_inference,
-    prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
-    QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatServiceTurnResult, QqChatTaskTrace,
-    LOG_PREFIX,
+    build_meta_query_system_prompt, build_meta_query_user_message, compact_turn_history,
+    expand_messages_for_inference, prepare_current_turn_user_input,
+    prepare_current_turn_user_input_from_event, QqChatAgentServiceContext, QqChatAgentServiceInner,
+    QqChatServiceTurnResult, QqChatTaskTrace, LOG_PREFIX,
 };
 
 use crate::procedure::{
     qq_procedure_context, BeforeBrainContext, ModelIdentityContext, QqAfterBrain,
-    QqAfterBrainContext, QqBeforeBrain, QqBrain, QqBrainOutput, QqMetaQueryBrain,
-    QqReplyReviewRequest, QqReplyReviewResult,
+    QqAfterBrainContext, QqBeforeBrain, QqBrain, QqBrainOutput, QqFormatOutput,
+    QqFormatOutputContext, QqFormatOutputOutput, QqMetaQueryBrain, QqReplyReviewRequest,
+    QqReplyReviewResult,
 };
 use crate::qq_chat::logging::{emit_context_turn_failure, QqChatTurnIdentity};
 use zihuan_core::role::procedure::execute_blocking_procedure_chain;
@@ -378,9 +375,9 @@ impl QqChatAgentServiceInner {
                 return Err(error);
             }
         };
-        // Role turn chain (documents/procedure.md): before-brain -> brain -> after-brain.
-        // The chain runs through one shared procedure context; the brain reads the assembled
-        // system prompt and user input from it instead of assembling them itself.
+        // Role turn chain (documents/procedure.md): before-brain -> brain -> after-brain ->
+        // format-output. The chain runs through one shared procedure context; the brain reads
+        // the assembled system prompt and user input from it instead of assembling them itself.
         let mut shared = qq_procedure_context(&history_key, Some(current_message.clone()));
         // The chain runs inside `block_async`. A guard taken inside the call arguments stays
         // alive until the end of this statement, i.e. for the whole chain, and the preprompt
@@ -408,6 +405,25 @@ impl QqChatAgentServiceInner {
                         model_identity_context: Some(build_model_identity_context(ctx)),
                     },
                     trace,
+                })),
+                Arc::new(QqFormatOutput::new(QqFormatOutputContext {
+                    trace,
+                    identity: Some(QqChatTurnIdentity {
+                        agent_id: ctx.agent_id.to_string(),
+                        sender_id: sender_id.to_string(),
+                        turn_id: turn_id.clone(),
+                    }),
+                    is_group,
+                    sender_id: sender_id.to_string(),
+                    sender_nickname: inference_event.sender.nickname.clone(),
+                    sender_card: inference_event.sender.card.clone(),
+                    bot_id: bot_id.to_string(),
+                    bot_name: ctx.bot_name.to_string(),
+                    max_message_length: ctx.max_message_length,
+                    trigger_message_id: Some(inference_event.message_id),
+                    rdb_pool: ctx.rdb_pool.cloned(),
+                    reply_batch_builder: ctx.reply_batch_builder,
+                    shared_runtime_values: Arc::clone(&shared_runtime_values),
                 })),
             ],
             &mut shared,
@@ -496,8 +512,6 @@ impl QqChatAgentServiceInner {
                 );
             } else {
                 turn_completed = true;
-                let available_media =
-                    collect_available_media_from_brain_output(&brain_output_payload.brain_output);
                 let review_result = turn_outputs
                     .iter()
                     .rev()
@@ -521,41 +535,22 @@ impl QqChatAgentServiceInner {
                     }),
                 );
 
-                let reply_result = build_reply_result(
-                    &review_result.final_message,
-                    is_group,
-                    sender_id,
-                    &inference_event.sender.nickname,
-                    inference_event.sender.card.as_str(),
-                    bot_id,
-                    ctx.bot_name,
-                    ctx.max_message_length,
-                    take_reply_directive(&shared_runtime_values),
-                    Some(inference_event.message_id),
-                    available_media,
-                    ctx.rdb_pool.cloned(),
-                    ctx.reply_batch_builder,
-                );
-                let reply_result = match reply_result {
-                    Ok(reply_result) => reply_result,
-                    Err(error) => {
-                        emit_context_turn_failure(
-                            ctx.agent_id,
-                            sender_id,
-                            &turn_id,
-                            "构建回复",
-                            &error,
-                        );
-                        return Err(error);
-                    }
-                };
+                let format_output = turn_outputs
+                    .iter()
+                    .rev()
+                    .find_map(|output| output.cloned::<QqFormatOutputOutput>())
+                    .ok_or_else(|| {
+                        Error::ValidationError(
+                            "format-output procedure produced no turn output".to_string(),
+                        )
+                    })?;
                 trace.mark_reply_send_started();
                 let mut sent_batches = 0usize;
-                if reply_result.suppress_send {
+                if format_output.suppress_send {
                     explicit_no_reply = true;
-                    trace.record_reply_send(true, false, &reply_result.batches);
-                } else if reply_result.batches.is_empty() {
-                    trace.record_reply_send(false, false, &reply_result.batches);
+                    trace.record_reply_send(true, false, &format_output.batches);
+                } else if format_output.batches.is_empty() {
+                    trace.record_reply_send(false, false, &format_output.batches);
                 } else {
                     let send_ctx = QqChatServiceSendContext {
                         adapter: ctx.adapter,
@@ -573,10 +568,10 @@ impl QqChatAgentServiceInner {
                             ),
                         max_text_chars: ctx.max_message_length,
                     };
-                    send_planned_batches(&send_ctx, &reply_result.batches);
-                    trace.record_reply_send(false, true, &reply_result.batches);
-                    sent_batches = reply_result.batches.len();
-                    visible_assistant_history_text = Some(review_result.final_message);
+                    send_planned_batches(&send_ctx, &format_output.batches);
+                    trace.record_reply_send(false, true, &format_output.batches);
+                    sent_batches = format_output.batches.len();
+                    visible_assistant_history_text = format_output.final_message;
                 }
                 zihuan_core::qq_context::emit_qq_context_stage(
                     ctx.agent_id,
@@ -584,8 +579,12 @@ impl QqChatAgentServiceInner {
                     &turn_id,
                     "发送回复",
                     serde_json::json!({
-                        "suppress_send": reply_result.suppress_send,
+                        "suppress_send": format_output.suppress_send,
                         "batches": sent_batches,
+                        "bubbles": crate::procedure::utils::reply_plan::bubble_stage_summaries(
+                            &format_output.batches,
+                            &format_output.batch_delays_ms,
+                        ),
                         "reason": if explicit_no_reply {
                             "brain 显式选择不回复"
                         } else if sent_batches == 0 {
@@ -762,10 +761,11 @@ impl QqChatAgentServiceInner {
         );
 
         // Role turn chain (documents/procedure.md): the meta-query brain (a single direct
-        // inference) -> AfterBrain review.
+        // inference) -> AfterBrain review -> FormatOutput.
         let mut shared = qq_procedure_context(history_key, None);
         // Same guard hazard as the normal turn: clone outside the `block_async` arguments.
         let after_brain_session_state = turn_session_state.lock().unwrap().clone();
+        let shared_runtime_values = Arc::new(Mutex::new(ctx.shared_runtime_values.clone()));
         let meta_outputs = block_async(execute_blocking_procedure_chain(
             vec![
                 Arc::new(QqMetaQueryBrain::new(ctx.llm, trace, meta_messages)),
@@ -786,6 +786,25 @@ impl QqChatAgentServiceInner {
                         model_identity_context: Some(build_model_identity_context(ctx)),
                     },
                     trace,
+                })),
+                Arc::new(QqFormatOutput::new(QqFormatOutputContext {
+                    trace,
+                    identity: Some(QqChatTurnIdentity {
+                        agent_id: ctx.agent_id.to_string(),
+                        sender_id: sender_id.to_string(),
+                        turn_id: turn_id.to_string(),
+                    }),
+                    is_group,
+                    sender_id: sender_id.to_string(),
+                    sender_nickname: inference_event.sender.nickname.clone(),
+                    sender_card: inference_event.sender.card.clone(),
+                    bot_id: bot_id.to_string(),
+                    bot_name: ctx.bot_name.to_string(),
+                    max_message_length: ctx.max_message_length,
+                    trigger_message_id: Some(inference_event.message_id),
+                    rdb_pool: ctx.rdb_pool.cloned(),
+                    reply_batch_builder: ctx.reply_batch_builder,
+                    shared_runtime_values,
                 })),
             ],
             &mut shared,
@@ -854,29 +873,23 @@ impl QqChatAgentServiceInner {
                 "final_message": review_result.final_message,
             }),
         );
-        let reply_result = build_reply_result(
-            &review_result.final_message,
-            is_group,
-            sender_id,
-            &inference_event.sender.nickname,
-            inference_event.sender.card.as_str(),
-            bot_id,
-            ctx.bot_name,
-            ctx.max_message_length,
-            None,
-            Some(inference_event.message_id),
-            HashMap::new(),
-            ctx.rdb_pool.cloned(),
-            ctx.reply_batch_builder,
-        )?;
+        let format_output = meta_outputs
+            .iter()
+            .rev()
+            .find_map(|output| output.cloned::<QqFormatOutputOutput>())
+            .ok_or_else(|| {
+                Error::ValidationError(
+                    "format-output procedure produced no turn output".to_string(),
+                )
+            })?;
 
         let mut visible_assistant_history_text = None;
         let mut sent_batches = 0usize;
         trace.mark_reply_send_started();
-        if reply_result.suppress_send {
-            trace.record_reply_send(true, false, &reply_result.batches);
-        } else if reply_result.batches.is_empty() {
-            trace.record_reply_send(false, false, &reply_result.batches);
+        if format_output.suppress_send {
+            trace.record_reply_send(true, false, &format_output.batches);
+        } else if format_output.batches.is_empty() {
+            trace.record_reply_send(false, false, &format_output.batches);
         } else {
             let send_ctx = QqChatServiceSendContext {
                 adapter: ctx.adapter,
@@ -893,10 +906,10 @@ impl QqChatAgentServiceInner {
                 ),
                 max_text_chars: ctx.max_message_length,
             };
-            send_planned_batches(&send_ctx, &reply_result.batches);
-            trace.record_reply_send(false, true, &reply_result.batches);
-            sent_batches = reply_result.batches.len();
-            visible_assistant_history_text = Some(review_result.final_message);
+            send_planned_batches(&send_ctx, &format_output.batches);
+            trace.record_reply_send(false, true, &format_output.batches);
+            sent_batches = format_output.batches.len();
+            visible_assistant_history_text = format_output.final_message;
         }
         zihuan_core::qq_context::emit_qq_context_stage(
             ctx.agent_id,
@@ -904,8 +917,12 @@ impl QqChatAgentServiceInner {
             turn_id,
             "发送回复",
             serde_json::json!({
-                "suppress_send": reply_result.suppress_send,
+                "suppress_send": format_output.suppress_send,
                 "batches": sent_batches,
+                "bubbles": crate::procedure::utils::reply_plan::bubble_stage_summaries(
+                    &format_output.batches,
+                    &format_output.batch_delays_ms,
+                ),
             }),
         );
 

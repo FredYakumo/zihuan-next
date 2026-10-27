@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 
 pub(crate) use self::core::{
     build_group_system_prompt, build_private_system_prompt, build_user_message,
-    compact_turn_history, split_current_user_body,
+    collect_available_media_from_brain_output, compact_turn_history, split_current_user_body,
 };
 use self::core::{
     build_info_brain_tools, expand_messages_for_inference,
@@ -36,10 +36,8 @@ use self::model::{
     QqInferenceToolProvider, QqLoadedInferenceResources,
 };
 pub(crate) use self::model::{QqChatAgentServiceContext, QqChatAgentServiceInner};
-use self::msg_send::{
-    build_reply_batch_builder as build_unified_reply_batch_builder,
-    send_direct_notification_text_reply,
-};
+use self::msg_send::send_direct_notification_text_reply;
+use crate::procedure::utils::reply_plan::build_reply_batch_builder as build_unified_reply_batch_builder;
 use crate::qq_chat::resources::current_qq_chat_role_service_config;
 use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatRoleServiceConfig;

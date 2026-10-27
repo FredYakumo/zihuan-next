@@ -247,15 +247,39 @@ pub fn send_qq_message_batches_with_delay(
     delay_millis: u64,
     log_prefix: &str,
 ) -> Vec<SendBatchResult> {
+    let delays = std::iter::once(0u64)
+        .chain(std::iter::repeat(delay_millis))
+        .take(batches.len())
+        .collect::<Vec<_>>();
+    send_qq_message_batches_with_delays(
+        adapter_ref,
+        target_type,
+        target_id,
+        batches,
+        &delays,
+        log_prefix,
+    )
+}
+
+/// Send batches with a per-batch delay: `delays_ms[index]` is slept before sending
+/// `batches[index]`, so the first entry is normally `0`. Missing entries mean no delay.
+pub fn send_qq_message_batches_with_delays(
+    adapter_ref: &SharedBotAdapter,
+    target_type: &str,
+    target_id: &str,
+    batches: &[Vec<Message>],
+    delays_ms: &[u64],
+    log_prefix: &str,
+) -> Vec<SendBatchResult> {
     let mut results = Vec::with_capacity(batches.len());
     let mut has_attempted_actual_send = false;
 
     info!(
-        "{log_prefix} Preparing to send {} batch(es) to {}:{} with delay={}ms",
+        "{log_prefix} Preparing to send {} batch(es) to {}:{} with delays={:?}",
         batches.len(),
         target_type,
         target_id,
-        delay_millis
+        delays_ms
     );
 
     for (index, batch) in batches.iter().enumerate() {
@@ -270,6 +294,7 @@ pub fn send_qq_message_batches_with_delay(
             continue;
         }
 
+        let delay_millis = delays_ms.get(index).copied().unwrap_or(0);
         if has_attempted_actual_send && delay_millis > 0 {
             info!(
                 "{log_prefix} Waiting {} ms before batch {} to {}:{}",

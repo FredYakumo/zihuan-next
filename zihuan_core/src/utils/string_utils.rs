@@ -1,5 +1,8 @@
 // String utility functions for zihuan_core
 
+use crate::agent::utils::string_utils::is_no_reply_directive;
+use crate::ims_bot_adapter::models::message::{ImageMessage, PersistedMedia, PersistedMediaSource};
+
 /// Strips leading @Bot mentions from the message text. Supports both English `@` and
 /// Chinese `＠` prefixes, matching against `bot_id` and `bot_name` patterns. After removing
 /// a mention, trailing punctuation separators (whitespace, commas, periods, colons, etc.)
@@ -138,6 +141,53 @@ pub fn parse_at_segment(chars: &[char], start: usize) -> Option<(String, usize)>
     }
 
     Some((chars[start + 1..end].iter().collect(), end))
+}
+
+/// The bracket-protocol segments a QQ reply may carry inside `[...]`.
+pub enum BracketSegment {
+    /// `[no_reply]` — the model declines to reply this turn.
+    NoReply,
+    /// `[Image media_id=...]` — an outbound image reference.
+    Image(ImageMessage),
+}
+
+/// Parses the bracket segment starting at `chars[start]` (`[`): `[no_reply]` and
+/// `[Image media_id=...]` are protocol segments; any other bracketed text is plain text
+/// and yields `None`, so the caller keeps scanning it into the text buffer.
+pub fn parse_bracket_segment(chars: &[char], start: usize) -> Option<(BracketSegment, usize)> {
+    let mut end = start + 1;
+    while end < chars.len() {
+        if chars[end] == ']' {
+            let inner: String = chars[start + 1..end].iter().collect();
+            let inner = inner.trim();
+            if is_no_reply_directive(inner) {
+                return Some((BracketSegment::NoReply, end + 1));
+            }
+            if let Some(message) = parse_bracket_message(inner) {
+                return Some((BracketSegment::Image(message), end + 1));
+            }
+            return None;
+        }
+        end += 1;
+    }
+    None
+}
+
+/// Parses `[Image media_id=...]` / `[Image: media_id=...]` into an outbound image message.
+pub fn parse_bracket_message(inner: &str) -> Option<ImageMessage> {
+    let value = inner
+        .strip_prefix("Image media_id=")
+        .or_else(|| inner.strip_prefix("Image: media_id="))?;
+    let media_id = parse_tag_value(value)?;
+    Some(ImageMessage::new(PersistedMedia {
+        media_id,
+        source: PersistedMediaSource::Upload,
+        original_source: String::new(),
+        rustfs_path: String::new(),
+        name: None,
+        description: None,
+        mime_type: None,
+    }))
 }
 
 pub fn strip_html_tags(input: &str) -> String {

@@ -62,6 +62,7 @@ const PHASE_OF_STAGE: Record<string, string> = {
   "回复决策": "Brain 推理",
   "Rethink": "回复Review",
   "回复审查与改写": "回复Review",
+  "格式化输出": "发送回复",
   "发送回复": "发送回复",
   "元查询直答": "元查询直答",
   "错误": "错误",
@@ -357,6 +358,75 @@ export interface EmbeddingStageView {
 
 function detailRecord(detail: unknown): Record<string, unknown> | undefined {
   return detail && typeof detail === "object" ? (detail as Record<string, unknown>) : undefined;
+}
+
+/** One protocol segment of a sent QQ bubble, as the backend reports it. */
+export interface SentBubbleSegment {
+  type: "text" | "at" | "reply" | "image" | "forward";
+  text?: string;
+  target?: string | null;
+  id?: number | null;
+  source?: string | null;
+  /** Forward messages only: every node's text, in send order — rendered as an array. */
+  nodes?: string[];
+}
+
+/** One outgoing QQ message (one bubble) with the typing delay that preceded it. */
+export interface SentBubble {
+  index: number;
+  delay_ms: number;
+  segments: SentBubbleSegment[];
+}
+
+function parseSentSegment(value: unknown): SentBubbleSegment | undefined {
+  const entry = detailRecord(value);
+  if (!entry) return undefined;
+  const type = entry.type;
+  if (
+    type !== "text" &&
+    type !== "at" &&
+    type !== "reply" &&
+    type !== "image" &&
+    type !== "forward"
+  ) {
+    return undefined;
+  }
+  return {
+    type,
+    text: typeof entry.text === "string" ? entry.text : undefined,
+    target: typeof entry.target === "string" ? entry.target : null,
+    id: typeof entry.id === "number" ? entry.id : null,
+    source: typeof entry.source === "string" ? entry.source : null,
+    nodes: Array.isArray(entry.nodes)
+      ? entry.nodes.filter((node): node is string => typeof node === "string")
+      : undefined,
+  };
+}
+
+/**
+ * The outgoing bubbles a stage reports under its `bubbles` key (the format-output stage that
+ * plans them and the send stage that puts them on the wire), so the flow view renders the
+ * actual chat bubbles instead of raw JSON.
+ */
+export function sentBubbles(detail: unknown): SentBubble[] | undefined {
+  const raw = detailRecord(detail)?.bubbles;
+  if (!Array.isArray(raw) || !raw.length) return undefined;
+  const bubbles = raw.flatMap((item): SentBubble[] => {
+    const entry = detailRecord(item);
+    if (!entry) return [];
+    return [
+      {
+        index: typeof entry.index === "number" ? entry.index : 0,
+        delay_ms: typeof entry.delay_ms === "number" ? entry.delay_ms : 0,
+        segments: Array.isArray(entry.segments)
+          ? entry.segments
+              .flatMap(parseSentSegment)
+              .filter((segment): segment is SentBubbleSegment => segment !== undefined)
+          : [],
+      },
+    ];
+  });
+  return bubbles.length ? bubbles : undefined;
 }
 
 function detailText(value: unknown): string | undefined {

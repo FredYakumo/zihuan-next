@@ -5,7 +5,7 @@ use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::models::message::{Message, PersistedMedia};
 
-use crate::qq_chat::msg_send::QqChatServiceReplyDirective;
+use crate::procedure::utils::reply_plan::QqChatServiceReplyDirective;
 
 /// Simple report of handling result.
 #[derive(Debug, Clone)]

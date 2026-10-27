@@ -9,7 +9,9 @@ use crate::ims_bot_adapter::runtime::models::event_model::{MessageEvent, Message
 use crate::ims_bot_adapter::runtime::models::message::{
     render_messages_readable, AtTargetMessage, Message, PlainTextMessage,
 };
-use crate::ims_bot_adapter::runtime::send_qq_message_batches::send_qq_message_batches;
+use crate::ims_bot_adapter::runtime::send_qq_message_batches::{
+    send_qq_message_batches, send_qq_message_batches_with_delays, SendBatchResult,
+};
 use crate::ims_bot_adapter::runtime::ws_action::{
     response_message_id, response_success, ws_send_action,
 };
@@ -295,18 +297,39 @@ pub fn send_friend_batches_with_persistence(
     persistence: &OutboundMessagePersistence,
 ) {
     let results = send_qq_message_batches(adapter, "friend", target_id, batches);
-    for (batch, result) in batches.iter().zip(results.iter()) {
-        if result.success && !result.skipped {
-            persist_outbound_messages(
-                adapter,
-                MessageType::Private,
-                target_id,
-                result.message_id,
-                batch,
-                persistence,
-            );
-        }
-    }
+    persist_successful_batches(
+        adapter,
+        MessageType::Private,
+        target_id,
+        batches,
+        &results,
+        persistence,
+    );
+    let all_ok = results.iter().filter(|r| !r.skipped).all(|r| r.success);
+    info!(
+        "{LOG_PREFIX} Sent friend batches to {target_id}: all_ok={all_ok}, count={}",
+        batches.len()
+    );
+}
+
+pub fn send_friend_batches_with_persistence_and_delays(
+    adapter: &SharedBotAdapter,
+    target_id: &str,
+    batches: &[Vec<Message>],
+    delays_ms: &[u64],
+    persistence: &OutboundMessagePersistence,
+) {
+    let results = send_qq_message_batches_with_delays(
+        adapter, "friend", target_id, batches, delays_ms, LOG_PREFIX,
+    );
+    persist_successful_batches(
+        adapter,
+        MessageType::Private,
+        target_id,
+        batches,
+        &results,
+        persistence,
+    );
     let all_ok = results.iter().filter(|r| !r.skipped).all(|r| r.success);
     info!(
         "{LOG_PREFIX} Sent friend batches to {target_id}: all_ok={all_ok}, count={}",
@@ -333,11 +356,59 @@ pub fn send_group_batches_with_persistence(
     persistence: &OutboundMessagePersistence,
 ) {
     let results = send_qq_message_batches(adapter, "group", target_id, batches);
+    persist_successful_batches(
+        adapter,
+        MessageType::Group,
+        target_id,
+        batches,
+        &results,
+        persistence,
+    );
+    let all_ok = results.iter().filter(|r| !r.skipped).all(|r| r.success);
+    info!(
+        "{LOG_PREFIX} Sent group batches to {target_id}: all_ok={all_ok}, count={}",
+        batches.len()
+    );
+}
+
+pub fn send_group_batches_with_persistence_and_delays(
+    adapter: &SharedBotAdapter,
+    target_id: &str,
+    batches: &[Vec<Message>],
+    delays_ms: &[u64],
+    persistence: &OutboundMessagePersistence,
+) {
+    let results = send_qq_message_batches_with_delays(
+        adapter, "group", target_id, batches, delays_ms, LOG_PREFIX,
+    );
+    persist_successful_batches(
+        adapter,
+        MessageType::Group,
+        target_id,
+        batches,
+        &results,
+        persistence,
+    );
+    let all_ok = results.iter().filter(|r| !r.skipped).all(|r| r.success);
+    info!(
+        "{LOG_PREFIX} Sent group batches to {target_id}: all_ok={all_ok}, count={}",
+        batches.len()
+    );
+}
+
+fn persist_successful_batches(
+    adapter: &SharedBotAdapter,
+    message_type: MessageType,
+    target_id: &str,
+    batches: &[Vec<Message>],
+    results: &[SendBatchResult],
+    persistence: &OutboundMessagePersistence,
+) {
     for (batch, result) in batches.iter().zip(results.iter()) {
         if result.success && !result.skipped {
             persist_outbound_messages(
                 adapter,
-                MessageType::Group,
+                message_type,
                 target_id,
                 result.message_id,
                 batch,
@@ -345,11 +416,6 @@ pub fn send_group_batches_with_persistence(
             );
         }
     }
-    let all_ok = results.iter().filter(|r| !r.skipped).all(|r| r.success);
-    info!(
-        "{LOG_PREFIX} Sent group batches to {target_id}: all_ok={all_ok}, count={}",
-        batches.len()
-    );
 }
 
 /// Send `@mention + plain_text` to a group.
