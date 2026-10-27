@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 use crate::graph::data_value::RedisConfig;
 use crate::graph::object_storage::S3Ref;
 use crate::graph::DataValue;
-use crate::rag::{BraveSearch, TavilySearch, WebSearchEngine};
+use crate::rag::{BraveSearch, DeepSeekSearch, TavilySearch, WebSearchEngine};
 use crate::retrieval::{RetrievalSchema, RetrievalStoreRef};
 use crate::weaviate::WeaviateRef;
 
@@ -176,6 +176,10 @@ pub fn build_web_search_engine_ref(
             Duration::from_secs(engine.timeout_secs),
         )) as Arc<dyn WebSearchEngine>,
         "brave" => Arc::new(BraveSearch::new(
+            api_token.to_string(),
+            Duration::from_secs(engine.timeout_secs),
+        )) as Arc<dyn WebSearchEngine>,
+        "deepseek" => Arc::new(DeepSeekSearch::new(
             api_token.to_string(),
             Duration::from_secs(engine.timeout_secs),
         )) as Arc<dyn WebSearchEngine>,

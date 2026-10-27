@@ -191,7 +191,7 @@
             </template>
 
             <template v-else-if="form.type === 'web_search_engine'">
-              <t-form-item label="Provider"><t-select v-model="form.web_search_engine_provider"><t-option value="tavily" label="Tavily" /><t-option value="brave" label="Brave" /></t-select></t-form-item>
+              <t-form-item label="Provider"><t-select v-model="form.web_search_engine_provider"><t-option value="tavily" label="Tavily" /><t-option value="brave" label="Brave" /><t-option value="deepseek" label="DeepSeek" /></t-select></t-form-item>
               <t-form-item label="Timeout（秒）"><t-input-number v-model="form.web_search_engine_timeout_secs" :min="1" /></t-form-item>
               <t-form-item class="connection-form-item--full" label="API Token（可选）"><ConnectionCredentialInput v-model="form.web_search_engine_api_token" /></t-form-item>
             </template>
