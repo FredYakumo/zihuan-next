@@ -5,6 +5,7 @@ mod qq_before_brain;
 mod qq_brain;
 mod qq_format_output;
 mod qq_meta_query_brain;
+pub(crate) mod utils;
 
 use std::sync::Arc;
 

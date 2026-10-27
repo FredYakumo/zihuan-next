@@ -581,7 +581,7 @@ impl QqChatAgentServiceInner {
                     serde_json::json!({
                         "suppress_send": format_output.suppress_send,
                         "batches": sent_batches,
-                        "bubbles": crate::qq_chat::reply_plan::bubble_stage_summaries(
+                        "bubbles": crate::procedure::utils::reply_plan::bubble_stage_summaries(
                             &format_output.batches,
                             &format_output.batch_delays_ms,
                         ),
@@ -919,7 +919,7 @@ impl QqChatAgentServiceInner {
             serde_json::json!({
                 "suppress_send": format_output.suppress_send,
                 "batches": sent_batches,
-                "bubbles": crate::qq_chat::reply_plan::bubble_stage_summaries(
+                "bubbles": crate::procedure::utils::reply_plan::bubble_stage_summaries(
                     &format_output.batches,
                     &format_output.batch_delays_ms,
                 ),

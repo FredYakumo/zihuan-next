@@ -1,5 +1,6 @@
 //! Outbound delivery orchestration for the QQ chat service: everything that happens after
-//! the reply has been formatted into message batches (see [`super::reply_plan`]) — sending
+//! the reply has been formatted into message batches (see
+//! [`crate::procedure::utils::reply_plan`]) — sending
 //! batches through the bot adapter with human-paced delays, plus the notification and
 //! forward-content shortcuts that bypass the brain.
 
@@ -19,7 +20,7 @@ use zihuan_core::nlp::{PunctuationSegmenter, TextSegmenter};
 use crate::qq_chat::logging::QqChatTaskTrace;
 
 use super::model::QqChatServiceReplyBatchBuilder;
-use super::reply_plan::{
+use crate::procedure::utils::reply_plan::{
     build_forward_message_from_chunks, build_reply_result, ensure_space_after_at, flush_batch,
     reply_batch_delays_ms, split_plain_text_for_forward, split_text_by_semantic_boundaries,
     MAX_FORWARD_NODE_CHARS,

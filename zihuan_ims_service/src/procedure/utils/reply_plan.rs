@@ -31,7 +31,7 @@ use zihuan_core::ims_bot_adapter::models::message::{
 use zihuan_core::nlp::{PunctuationSegmenter, TextSegmenter};
 use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
 
-pub(crate) use super::model::{
+pub(crate) use crate::qq_chat::model::{
     QqChatServiceReplyBatchBuilder, QqChatServiceReplyBuildRequest, QqChatServiceReplyBuildResult,
 };
 
@@ -293,6 +293,10 @@ pub(crate) fn plan_model_reply(
         build_regular_batches(expanded_segments, reply_message)
     };
 
+    // Mentions must never stay buried inside a forwarded card: pull them out and send them
+    // as single regular messages placed before the forward.
+    batches = extract_mentions_from_forwards(batches);
+
     // QQ protocol requires a space after @, otherwise the mention marker is ignored
     ensure_space_after_at(&mut batches);
 
@@ -332,10 +336,199 @@ fn parse_reply_line_units(text: &str) -> Vec<ReplySegment> {
 
 fn normalize_assistant_text(request: &QqChatServiceReplyBuildRequest) -> String {
     if request.is_group {
-        request.assistant_text.replace("@sender", &format!("@{}", request.sender_id))
+        normalize_group_mentions(request.assistant_text.clone(), request)
     } else {
-        request.assistant_text.clone()
+        normalize_private_mentions(request.assistant_text.clone(), request)
     }
+}
+
+/// The model writes mentions in freeform ways — `@sender` in any case, `@发送者`, or the
+/// sender's display name — and only `@<sender_id>` parses into a real At segment. Rewrite
+/// every variant onto the sender's id so the segment parser converts them.
+fn normalize_group_mentions(mut text: String, request: &QqChatServiceReplyBuildRequest) -> String {
+    text = replace_sender_placeholder(&text, &format!("@{}", request.sender_id));
+    text = text.replace("@发送者", &format!("@{}", request.sender_id));
+    // Card first: it is usually the longer display name, so the shorter nickname cannot
+    // chew off part of it.
+    for name in [request.sender_card.trim(), request.sender_nickname.trim()] {
+        if name.is_empty() || name == request.sender_id {
+            continue;
+        }
+        text = replace_with_boundary_space(
+            &text,
+            &format!("@{name}"),
+            &format!("@{}", request.sender_id),
+        );
+    }
+    text
+}
+
+/// Private chats carry no At protocol: drop hallucinated `@sender` placeholders and keep
+/// the sender's name as plain text when the model wrote `@<name>`.
+fn normalize_private_mentions(
+    mut text: String,
+    request: &QqChatServiceReplyBuildRequest,
+) -> String {
+    text = replace_sender_placeholder(&text, "");
+    for name in [request.sender_card.trim(), request.sender_nickname.trim()] {
+        if name.is_empty() || name == request.sender_id {
+            continue;
+        }
+        text = text.replace(&format!("@{name}"), name);
+    }
+    while text.contains("  ") {
+        text = text.replace("  ", " ");
+    }
+    text
+}
+
+/// Replace every case-insensitive `@sender` occurrence with `replacement`. A following
+/// ASCII letter (`@senders`) does not count as the placeholder; a follower that would
+/// break `parse_at_segment` (e.g. `@sender你好`) gets a separating space instead.
+fn replace_sender_placeholder(text: &str, replacement: &str) -> String {
+    const PLACEHOLDER: [char; 6] = ['s', 'e', 'n', 'd', 'e', 'r'];
+    let chars: Vec<char> = text.chars().collect();
+    let mut result = String::with_capacity(text.len());
+    let mut index = 0;
+    while index < chars.len() {
+        let at_mention_boundary = index == 0 || !chars[index - 1].is_ascii_alphanumeric();
+        let matches_placeholder = at_mention_boundary
+            && chars[index] == '@'
+            && chars.len() >= index + 1 + PLACEHOLDER.len()
+            && chars[index + 1..index + 1 + PLACEHOLDER.len()]
+                .iter()
+                .zip(PLACEHOLDER)
+                .all(|(ch, expected)| ch.to_ascii_lowercase() == expected)
+            && chars
+                .get(index + 1 + PLACEHOLDER.len())
+                .map(|next| !next.is_ascii_alphanumeric())
+                .unwrap_or(true);
+        if matches_placeholder {
+            result.push_str(replacement);
+            index += 1 + PLACEHOLDER.len();
+            // `replacement` reuses the `@<id>` form only in group chats; keep the parse
+            // boundary intact when the model glued text onto the placeholder.
+            if !replacement.is_empty() {
+                if let Some(next) = chars.get(index) {
+                    if !next.is_whitespace() && !is_at_parse_boundary(*next) {
+                        result.push(' ');
+                    }
+                }
+            }
+        } else {
+            result.push(chars[index]);
+            index += 1;
+        }
+    }
+    result
+}
+
+/// Replace `@<name>` occurrences, keeping the parse boundary intact: when the character
+/// after the name would break `parse_at_segment` (e.g. `@张三你好`), a separating space is
+/// inserted so the mention still converts into an At segment.
+fn replace_with_boundary_space(text: &str, target: &str, replacement: &str) -> String {
+    if !text.contains(target) {
+        return text.to_string();
+    }
+    let mut result = String::with_capacity(text.len());
+    let mut remaining = text;
+    while let Some(position) = remaining.find(target) {
+        result.push_str(&remaining[..position]);
+        result.push_str(replacement);
+        let after = &remaining[position + target.len()..];
+        if let Some(next) = after.chars().next() {
+            if !next.is_whitespace() && !is_at_parse_boundary(next) {
+                result.push(' ');
+            }
+        }
+        remaining = after;
+    }
+    result.push_str(remaining);
+    result
+}
+
+/// The characters after an id that `parse_at_segment` accepts as the mention's end.
+fn is_at_parse_boundary(ch: char) -> bool {
+    matches!(
+        ch,
+        ',' | '，' | '。' | ':' | '：' | '!' | '！' | '?' | '？' | ')' | '）' | ']' | '】'
+    )
+}
+
+/// Whether text carries an @-mention token: `@` at a mention boundary (ruling out
+/// `user@domain`) and followed by a non-whitespace character (`@张三`, `@12345`, `@sender`).
+fn text_contains_mention(text: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    chars.iter().enumerate().any(|(index, ch)| {
+        *ch == '@'
+            && (index == 0 || !chars[index - 1].is_ascii_alphanumeric())
+            && chars.get(index + 1).is_some_and(|next| !next.is_whitespace())
+    })
+}
+
+/// Mentions must never stay buried inside a forwarded card: At segments and
+/// mention-bearing node text are pulled out of forward messages and sent as single
+/// regular messages placed before the forward.
+fn extract_mentions_from_forwards(batches: Vec<Vec<Message>>) -> Vec<Vec<Message>> {
+    let mut result = Vec::with_capacity(batches.len());
+    for batch in batches {
+        let Some(forward_position) =
+            batch.iter().position(|message| matches!(message, Message::Forward(_)))
+        else {
+            result.push(batch);
+            continue;
+        };
+
+        let mut rewritten = batch;
+        let mut extracted: Vec<Vec<Message>> = Vec::new();
+        let Message::Forward(forward) = &mut rewritten[forward_position] else {
+            unreachable!("position() matched a Forward message");
+        };
+        let mut kept_nodes: Vec<ForwardNodeMessage> = Vec::new();
+        for mut node in std::mem::take(&mut forward.content) {
+            // At segments inside a node go out on their own as a mention message.
+            let mut ats: Vec<Message> = Vec::new();
+            let mut kept_content: Vec<Message> = Vec::with_capacity(node.content.len());
+            for message in std::mem::take(&mut node.content) {
+                if matches!(message, Message::At(_)) {
+                    ats.push(message);
+                } else {
+                    kept_content.push(message);
+                }
+            }
+            node.content = kept_content;
+            if !ats.is_empty() {
+                extracted.push(ats);
+            }
+            // A node whose text carries an @-mention moves out whole, as its own message.
+            let remaining_text = node
+                .content
+                .iter()
+                .filter_map(|message| match message {
+                    Message::PlainText(text) => Some(text.text.as_str()),
+                    _ => None,
+                })
+                .collect::<String>();
+            if text_contains_mention(&remaining_text) {
+                extracted.push(std::mem::take(&mut node.content));
+            }
+            if !node.content.is_empty() {
+                kept_nodes.push(node);
+            }
+        }
+        forward.content = kept_nodes;
+
+        for message_batch in extracted {
+            result.push(message_batch);
+        }
+        // A forward emptied by the extraction disappears; a batch holding nothing else
+        // alongside it goes with it.
+        let forward_is_empty = matches!(&rewritten[forward_position], Message::Forward(forward) if forward.content.is_empty());
+        if !forward_is_empty || rewritten.len() > 1 {
+            result.push(rewritten);
+        }
+    }
+    result
 }
 
 fn resolve_reply_message(

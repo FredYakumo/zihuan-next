@@ -13,13 +13,13 @@ use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
 };
 
-use crate::qq_chat::collect_available_media_from_brain_output;
-use crate::qq_chat::logging::{QqChatTaskTrace, QqChatTurnIdentity};
-use crate::qq_chat::model::QqChatServiceReplyBatchBuilder;
-use crate::qq_chat::reply_plan::{
+use super::utils::reply_plan::{
     bubble_stage_summaries, build_reply_result, reply_batch_delays_ms, take_reply_directive,
     REPLY_TYPING_DELAY_MS_PER_CHAR,
 };
+use crate::qq_chat::collect_available_media_from_brain_output;
+use crate::qq_chat::logging::{QqChatTaskTrace, QqChatTurnIdentity};
+use crate::qq_chat::model::QqChatServiceReplyBatchBuilder;
 
 use super::natural_language_reply::QqReplyReviewResult;
 use super::qq_brain::QqBrainOutput;

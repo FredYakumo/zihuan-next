@@ -8,7 +8,6 @@ pub(crate) mod model;
 pub(crate) mod msg_send;
 pub mod privilege_gate;
 pub mod privilege_store;
-pub(crate) mod reply_plan;
 pub mod resources;
 pub(crate) mod steer;
 pub mod style_learner;
@@ -38,7 +37,7 @@ use self::model::{
 };
 pub(crate) use self::model::{QqChatAgentServiceContext, QqChatAgentServiceInner};
 use self::msg_send::send_direct_notification_text_reply;
-use self::reply_plan::build_reply_batch_builder as build_unified_reply_batch_builder;
+use crate::procedure::utils::reply_plan::build_reply_batch_builder as build_unified_reply_batch_builder;
 use crate::qq_chat::resources::current_qq_chat_role_service_config;
 use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatRoleServiceConfig;
