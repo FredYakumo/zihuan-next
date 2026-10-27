@@ -24,7 +24,14 @@ export const USER_INPUT_STAGE = "User Input";
 export const RATE_LIMIT_STAGE = "限流";
 
 /** Stage the local embedding runtime emits while one embedding inference runs. */
-export const EMBEDDING_STAGE = "嵌入推理";
+export const EMBEDDING_STAGE = "embedding model inference";
+
+/** Names this stage has been archived under, so turns recorded before a rename still render. */
+const EMBEDDING_STAGES = new Set([EMBEDDING_STAGE, "嵌入推理"]);
+
+export function isEmbeddingStage(stage: string | undefined): boolean {
+  return stage !== undefined && EMBEDDING_STAGES.has(stage);
+}
 
 /**
  * One stage of the turn, wrapping the individual steps it consists of.
@@ -319,13 +326,32 @@ export interface EmbeddingStageField {
   value: string;
 }
 
+/** One text the embedding model was asked to encode. */
+export interface EmbeddingStageInput {
+  /** 1-based position in the batch, matching the order of the output vectors. */
+  index: number;
+  chars: number;
+  text: string;
+}
+
+/** One vector the embedding model produced, already formatted for display. */
+export interface EmbeddingStageVector {
+  index: number;
+  dimensions: number;
+  /** The components, comma separated; one vector per line in the view. */
+  values: string;
+}
+
 /** Readable view of one embedding inference report, rendered as its own bubble. */
 export interface EmbeddingStageView {
   status: "running" | "done" | "error";
   /** Status line under the bubble title, with the live elapsed time while it runs. */
   statusText: string;
   fields: EmbeddingStageField[];
-  preview?: string;
+  /** Every input text, so the bubble shows exactly what was encoded, not just a size. */
+  inputs: EmbeddingStageInput[];
+  /** Vectors of the finished inference; empty while it runs or after it failed. */
+  vectors: EmbeddingStageVector[];
   error?: string;
 }
 
@@ -349,13 +375,25 @@ export function embeddingStatus(detail: unknown): "running" | "done" | "error" {
   return status === "done" || status === "error" ? status : "running";
 }
 
+/** Character count of an input text, matching the backend's `chars().count()`. */
+function charCount(text: string): number {
+  return [...text].length;
+}
+
+/** Every component of one reported vector, one per comma-separated value. */
+function vectorText(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const parts = value.filter((item): item is number => typeof item === "number");
+  return parts.length ? parts.join(", ") : undefined;
+}
+
 /**
  * Readable view of an embedding inference.
  *
  * The backend emits the same stage twice: a `running` report when inference starts (model,
- * backend, device, input size) and a finished/error report with the measured duration and the
- * output shape. While it runs, the elapsed time is derived from `started_at` so it keeps ticking
- * between events; `now` is the shared clock of the turn view.
+ * backend, device, the exact input texts) and a finished/error report with the measured duration,
+ * the output shape and the vectors. While it runs, the elapsed time is derived from `started_at`
+ * so it keeps ticking between events; `now` is the shared clock of the turn view.
  */
 export function embeddingStageView(detail: unknown, now: number): EmbeddingStageView | undefined {
   const record = detailRecord(detail);
@@ -402,11 +440,28 @@ export function embeddingStageView(detail: unknown, now: number): EmbeddingStage
     fields.push({ label: "实例", value: record.instance_id });
   }
 
+  const inputs = Array.isArray(record.inputs)
+    ? record.inputs.flatMap((item, index): EmbeddingStageInput[] =>
+        typeof item === "string"
+          ? [{ index: index + 1, chars: charCount(item), text: item }]
+          : [],
+      )
+    : [];
+  const vectors = Array.isArray(record.vectors)
+    ? record.vectors.flatMap((item, index): EmbeddingStageVector[] => {
+        const values = vectorText(item);
+        return values
+          ? [{ index: index + 1, dimensions: Array.isArray(item) ? item.length : 0, values }]
+          : [];
+      })
+    : [];
+
   return {
     status,
     statusText,
     fields,
-    preview: detailText(record.preview),
+    inputs,
+    vectors,
     error: detailText(record.error),
   };
 }
@@ -424,7 +479,7 @@ export function stageText(
   now = Date.now(),
 ): StageText | undefined {
   if (!stage) return undefined;
-  if (stage === EMBEDDING_STAGE) {
+  if (isEmbeddingStage(stage)) {
     const embedding = embeddingStageView(detail, now);
     return embedding ? { embedding } : undefined;
   }
@@ -535,6 +590,22 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     stageThinkingClosed.value = next;
   }
 
+  // The embedding bubble's input texts and output vectors are both long, so they start folded;
+  // the summary line above each one already says how much is inside.
+  const embeddingOpen = ref(new Set<string>());
+
+  function isEmbeddingSectionOpen(id: string, section: "inputs" | "vectors"): boolean {
+    return embeddingOpen.value.has(`${id}\u0000${section}`);
+  }
+
+  function toggleEmbeddingSection(id: string, section: "inputs" | "vectors") {
+    const key = `${id}\u0000${section}`;
+    const next = new Set(embeddingOpen.value);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    embeddingOpen.value = next;
+  }
+
   /** `名字(id)` for the quoted message's sender, falling back to whichever half is known. */
   const quoteSender = computed(() => {
     const quoted = turn().quoted;
@@ -605,7 +676,7 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     turn().entries.some(
       (entry) =>
         entry.kind === "stage" &&
-        entry.stage === EMBEDDING_STAGE &&
+        isEmbeddingStage(entry.stage) &&
         embeddingStatus(entry.detail) === "running",
     ),
   );
@@ -769,6 +840,8 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     toggleQuote,
     stageThinkingOpen,
     toggleStageThinking,
+    isEmbeddingSectionOpen,
+    toggleEmbeddingSection,
     phases,
     subAgentsFor,
     orphanSubAgents,

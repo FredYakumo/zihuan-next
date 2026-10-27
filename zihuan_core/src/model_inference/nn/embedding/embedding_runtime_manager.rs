@@ -81,9 +81,8 @@ impl EmbeddingBase for LoggedEmbeddingModel {
             &self.instance_id,
             self.inner.get_model_name(),
             &self.inner.runtime_info(),
-            1,
+            &[text],
             text_char_count(text),
-            &preview_text(text),
         );
         let vector = match self.inner.inference(text) {
             Ok(vector) => vector,
@@ -98,7 +97,7 @@ impl EmbeddingBase for LoggedEmbeddingModel {
         // Report the result before persisting usage: the context view should not wait on the
         // usage database write.
         if let Some(report) = report {
-            report.finish(elapsed, vec![vector.len()]);
+            report.finish(elapsed, vec![vector.len()], std::slice::from_ref(&vector));
         }
         crate::model_inference::model_usage::record_usage(&self.config_id, None, elapsed, None);
         info!(
@@ -116,14 +115,13 @@ impl EmbeddingBase for LoggedEmbeddingModel {
     fn batch_inference(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let started = Instant::now();
         let total_chars = texts.iter().map(|text| text_char_count(text)).sum::<usize>();
-        let preview = texts.first().map(|text| preview_text(text)).unwrap_or_default();
+        let inputs = texts.iter().map(String::as_str).collect::<Vec<_>>();
         let report = EmbeddingStageRun::start(
             &self.instance_id,
             self.inner.get_model_name(),
             &self.inner.runtime_info(),
-            texts.len(),
+            &inputs,
             total_chars,
-            &preview,
         );
         let vectors = match self.inner.batch_inference(texts) {
             Ok(vectors) => vectors,
@@ -138,10 +136,15 @@ impl EmbeddingBase for LoggedEmbeddingModel {
         // Report the result before persisting usage: the context view should not wait on the
         // usage database write.
         if let Some(report) = report {
-            report.finish(elapsed, vec![vectors.len(), vectors.first().map(Vec::len).unwrap_or(0)]);
+            report.finish(
+                elapsed,
+                vec![vectors.len(), vectors.first().map(Vec::len).unwrap_or(0)],
+                &vectors,
+            );
         }
         crate::model_inference::model_usage::record_usage(&self.config_id, None, elapsed, None);
         let dim = vectors.first().map(Vec::len).unwrap_or(0);
+        let preview = texts.first().map(|text| preview_text(text)).unwrap_or_default();
         info!(
             "[embedding_runtime] instance_id={} model={} input_count={} input_chars={} preview=\"{}\" batch_inference_ms={} shape=[{}, {}]",
             self.instance_id,
@@ -160,8 +163,8 @@ impl EmbeddingBase for LoggedEmbeddingModel {
 /// One embedding inference reported to the Data Explorer context view.
 ///
 /// The bubble appears as soon as the inference starts, carrying what is already known (model,
-/// backend, device, input size); the finish event replaces its detail with the measured duration
-/// and output shape.
+/// backend, device, the exact input texts); the finish event replaces its detail with the
+/// measured duration, the output shape and the vectors themselves.
 struct EmbeddingStageRun {
     context: EmbeddingTraceContext,
     stage_id: String,
@@ -173,9 +176,8 @@ impl EmbeddingStageRun {
         instance_id: &str,
         model: &str,
         runtime: &EmbeddingRuntimeInfo,
-        input_count: usize,
+        inputs: &[&str],
         input_chars: usize,
-        preview: &str,
     ) -> Option<Self> {
         let detail = json!({
             "status": "running",
@@ -184,9 +186,9 @@ impl EmbeddingStageRun {
             "backend": runtime.backend,
             "device": runtime.device,
             "dimension": runtime.dimension,
-            "input_count": input_count,
+            "input_count": inputs.len(),
             "input_chars": input_chars,
-            "preview": preview,
+            "inputs": inputs,
             "started_at": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
         });
         let stage_id = next_stage_id();
@@ -197,10 +199,11 @@ impl EmbeddingStageRun {
         Some(Self { context, stage_id, detail })
     }
 
-    fn finish(mut self, elapsed: Duration, shape: Vec<usize>) {
+    fn finish(mut self, elapsed: Duration, shape: Vec<usize>, vectors: &[Vec<f32>]) {
         self.detail["status"] = json!("done");
         self.detail["duration_ms"] = json!(elapsed.as_millis());
         self.detail["shape"] = json!(shape);
+        self.detail["vectors"] = json!(vectors);
         emit_stage(&self.context, &self.stage_id, &self.detail);
     }
 

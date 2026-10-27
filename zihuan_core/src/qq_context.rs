@@ -76,7 +76,7 @@ pub fn collect_turn_media_refs(messages: &[Message]) -> Vec<MediaRef> {
 pub const QQ_CONTEXT_STAGE_SYSTEM_PROMPT: &str = "System Prompt";
 
 /// Stage name under which a local embedding inference reports its live progress.
-pub const QQ_CONTEXT_STAGE_EMBEDDING: &str = "嵌入推理";
+pub const QQ_CONTEXT_STAGE_EMBEDDING: &str = "embedding model inference";
 
 /// The message a turn replies to, captured for the Data Explorer's quote block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
