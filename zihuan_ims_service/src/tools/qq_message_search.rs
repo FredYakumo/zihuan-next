@@ -5,7 +5,7 @@ use serde_json::Value;
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::graph::message_rdb_history_common::{
+use zihuan_core::storage::message::history::{
     search_message_records, MessageSearchFilters,
 };
 use zihuan_core::model_inference::llm::tooling::FunctionTool;

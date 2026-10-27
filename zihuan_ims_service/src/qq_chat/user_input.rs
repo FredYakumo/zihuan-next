@@ -520,7 +520,7 @@ fn collect_quoted_message(messages: &[Message]) -> Option<QqChatQuotedMessage> {
             return None;
         }
         // The restored segments carry no sender, so resolve it from the persisted record.
-        let sender = zihuan_core::graph::message_restore::lookup_message_sender(reply.id)
+        let sender = zihuan_core::storage::message::record_restore::lookup_message_sender(reply.id)
             .unwrap_or_default();
         let sender_id = (!sender.0.is_empty()).then_some(sender.0);
         let sender_name = (!sender.1.is_empty()).then_some(sender.1);

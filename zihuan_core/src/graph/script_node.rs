@@ -480,10 +480,10 @@ fn positive_limit(params: &Value, default: Option<i64>) -> Result<u32> {
 }
 
 fn history_messages_json(rows: Vec<sqlx::mysql::MySqlRow>, limit: usize) -> Value {
-    let messages = crate::graph::message_rdb_history_common::format_history_messages(
-        crate::graph::message_rdb_history_common::aggregate_history_rows(
+    let messages = crate::storage::message::history::format_history_messages(
+        crate::storage::message::history::aggregate_history_rows(
             rows.into_iter()
-                .map(crate::graph::message_rdb_history_common::message_history_chunk_row_from_row)
+                .map(crate::storage::message::history::message_history_chunk_row_from_row)
                 .collect(),
             limit,
         ),
@@ -1718,20 +1718,20 @@ pub fn dispatch_script_host_call(
             let sender_id = required_string(params, "sender_id")?;
             let group_id = optional_string(params, "group_id");
             let limit = positive_limit(params, None)?;
-            let rows = crate::graph::message_rdb_history_common::run_mysql_query(
+            let rows = crate::storage::message::history::run_mysql_query(
                 &reference,
                 move |pool| {
                     Box::pin(async move {
                         if let Some(group_id) = group_id {
                             sqlx::query(
-                                crate::graph::message_rdb_history_common::user_history_query(Some(
+                                crate::storage::message::history::user_history_query(Some(
                                     &group_id,
                                 )),
                             )
                             .bind(sender_id)
                             .bind(group_id)
                             .bind(
-                                crate::graph::message_rdb_history_common::history_query_row_limit(
+                                crate::storage::message::history::history_query_row_limit(
                                     limit,
                                 ),
                             )
@@ -1739,11 +1739,11 @@ pub fn dispatch_script_host_call(
                             .await
                         } else {
                             sqlx::query(
-                                crate::graph::message_rdb_history_common::user_history_query(None),
+                                crate::storage::message::history::user_history_query(None),
                             )
                             .bind(sender_id)
                             .bind(
-                                crate::graph::message_rdb_history_common::history_query_row_limit(
+                                crate::storage::message::history::history_query_row_limit(
                                     limit,
                                 ),
                             )
@@ -1759,14 +1759,14 @@ pub fn dispatch_script_host_call(
             let reference = mysql_resource(params, "rdb_ref")?;
             let group_id = required_string(params, "group_id")?;
             let limit = positive_limit(params, None)?;
-            let rows = crate::graph::message_rdb_history_common::run_mysql_query(
+            let rows = crate::storage::message::history::run_mysql_query(
                 &reference,
                 move |pool| {
                     Box::pin(async move {
-                        sqlx::query(crate::graph::message_rdb_history_common::group_history_query())
+                        sqlx::query(crate::storage::message::history::group_history_query())
                             .bind(group_id)
                             .bind(
-                                crate::graph::message_rdb_history_common::history_query_row_limit(
+                                crate::storage::message::history::history_query_row_limit(
                                     limit,
                                 ),
                             )
@@ -1780,7 +1780,7 @@ pub fn dispatch_script_host_call(
         "storage.search_messages" => {
             let reference = mysql_resource(params, "rdb_ref")?;
             let limit = positive_limit(params, Some(100))?;
-            let builder = crate::graph::message_rdb_history_common::SearchMessagesQueryBuilder {
+            let builder = crate::storage::message::history::SearchMessagesQueryBuilder {
                 sender_id: optional_string(params, "sender_id"),
                 group_id: optional_string(params, "group_id"),
                 contain: optional_string(params, "query"),
@@ -1795,7 +1795,7 @@ pub fn dispatch_script_host_call(
                 limit,
             };
             let (sql, query_params) = builder.build_page_query();
-            let rows = crate::graph::message_rdb_history_common::run_mysql_query(
+            let rows = crate::storage::message::history::run_mysql_query(
                 &reference,
                 move |pool| {
                     Box::pin(async move {
@@ -1828,7 +1828,7 @@ pub fn dispatch_script_host_call(
         "storage.persist_qq_message_rdb" => {
             let rdb_ref = mysql_resource(params, "rdb_ref")?;
             let messages = qq_messages_param(params, "qq_message_list")?;
-            let success = crate::graph::qq_message_list_rdb_persistence::persist_qq_message_list(
+            let success = crate::storage::message::qq_message_list_rdb::persist_qq_message_list(
                 &rdb_ref,
                 &messages,
                 required_string(params, "message_id")?,

@@ -13,7 +13,7 @@ use zihuan_core::storage::{
     build_web_search_engine_ref, load_connections, ConnectionConfig,
 };
 
-use zihuan_core::graph::hyperparam_store;
+use zihuan_core::storage::hyperparams;
 
 pub fn apply_hyperparameter_bindings(
     graph: &mut NodeGraphDefinition,
@@ -70,7 +70,7 @@ pub async fn prepare_execution_context(
     file_path: Option<&std::path::Path>,
 ) -> Result<PreparedExecutionContext> {
     if let Some(path) = file_path {
-        let values = hyperparam_store::load_hyperparameter_values(path, &definition);
+        let values = hyperparams::load_hyperparameter_values(path, &definition);
         apply_hyperparameter_bindings(&mut definition, &values);
     }
 

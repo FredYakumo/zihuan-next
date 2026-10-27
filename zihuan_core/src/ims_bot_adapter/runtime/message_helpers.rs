@@ -5,7 +5,7 @@
 
 use crate::data_refs::RelationalDbConnection;
 use crate::storage::RedisConfig;
-use crate::graph::message_persistence::persist_message_event;
+use crate::storage::message::record_write::persist_message_event;
 use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;
 use crate::ims_bot_adapter::runtime::models::event_model::{MessageEvent, MessageType, Sender};
 use crate::ims_bot_adapter::runtime::models::message::{

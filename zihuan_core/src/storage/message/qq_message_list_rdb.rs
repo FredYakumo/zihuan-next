@@ -6,7 +6,7 @@ use tokio::task::block_in_place;
 
 use crate::data_refs::MySqlConfig;
 use crate::error::Result;
-use crate::graph::message_rdb_chunking::{
+use crate::storage::message::chunking::{
     split_content_chunks, truncate_field_if_needed, truncate_optional_field_if_needed,
     AT_TARGET_LIST_MAX_CHARS, CONTENT_MAX_CHARS, GROUP_ID_MAX_CHARS, GROUP_NAME_MAX_CHARS,
     MEDIA_JSON_MAX_CHARS, MESSAGE_ID_MAX_CHARS, SENDER_ID_MAX_CHARS, SENDER_NAME_MAX_CHARS,

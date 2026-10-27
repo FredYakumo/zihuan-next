@@ -9,7 +9,7 @@ use zihuan_core::agent::tools::Tool;
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::graph::message_restore::{find_media_in_messages, query_media_by_id};
+use zihuan_core::storage::message::record_restore::{find_media_in_messages, query_media_by_id};
 use zihuan_core::storage::S3Ref;
 use zihuan_core::graph::DataValue;
 use zihuan_core::ims_bot_adapter::models::message::{ImageMessage, PersistedMedia};
