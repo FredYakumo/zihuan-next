@@ -4,7 +4,7 @@
 //! or query the adapter without going through the node-graph port system.
 
 use crate::data_refs::RelationalDbConnection;
-use crate::graph::data_value::RedisConfig;
+use crate::storage::RedisConfig;
 use crate::graph::message_persistence::persist_message_event;
 use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;
 use crate::ims_bot_adapter::runtime::models::event_model::{MessageEvent, MessageType, Sender};

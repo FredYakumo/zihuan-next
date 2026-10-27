@@ -7,7 +7,6 @@ use crate::connection_manager::{
 };
 use crate::data_refs::{MySqlConfig, SqliteConfig};
 use crate::error::{Error, Result};
-use crate::graph::data_value::RedisConfig;
 use crate::storage::S3Ref;
 use crate::retrieval::RetrievalSchema;
 use crate::weaviate::WeaviateRef;

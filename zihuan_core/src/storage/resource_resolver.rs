@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use crate::data_refs::RelationalDbConnection;
 use crate::error::{Error, Result};
-use crate::graph::data_value::RedisConfig;
+use crate::storage::RedisConfig;
 use crate::storage::S3Ref;
 use crate::rag::{BraveSearch, TavilySearch, WebSearchEngine};
 use crate::retrieval::{RetrievalSchema, RetrievalStoreRef};

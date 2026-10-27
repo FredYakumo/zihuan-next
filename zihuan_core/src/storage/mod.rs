@@ -15,6 +15,7 @@ mod retrieval_ops;
 mod role_avatar_rdb_store;
 pub mod role_avatar_store;
 pub mod rustfs;
+mod session_cache;
 pub mod sqlite;
 pub mod weaviate;
 mod weaviate_client;
@@ -75,6 +76,8 @@ pub use retrieval_ops::{
 };
 pub use role_avatar_rdb_store::{first_available_role_avatar_store, RdbRoleAvatarStore};
 pub use role_avatar_store::{RoleAvatarData, RoleAvatarStore};
+pub use redis::RedisConfig;
+pub use session_cache::LLMMessageSessionCacheRef;
 pub use weaviate_client::WeaviateClient;
 pub use weaviate_persistence::{
     build_image_record_properties, deterministic_media_object_id, deterministic_message_object_id,

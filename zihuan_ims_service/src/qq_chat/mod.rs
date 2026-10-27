@@ -73,7 +73,8 @@ use zihuan_core::agent::tools::Tool;
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::graph::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
+use zihuan_core::graph::data_value::SessionStateRef;
+use zihuan_core::storage::LLMMessageSessionCacheRef;
 use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::graph::message_persistence::persist_message_event;
 use zihuan_core::graph::message_restore::register_rdb_pool;
@@ -378,7 +379,7 @@ pub async fn spawn(
     // Without a Redis connection the cache stays process-memory only.
     if let Some(redis_ref) = redis_ref.as_ref() {
         if let Some(url) = redis_ref.url.clone() {
-            *cache.cached_redis_url.lock().await = Some(url);
+            cache.configure_redis(Some(url)).await;
         }
     }
     zihuan_core::qq_context::register_qq_chat_history_cache(&agent.id, Arc::clone(&cache));
@@ -587,7 +588,7 @@ fn resolve_tokenizer_segmenter(
 
 fn resolve_inbox_redis_ref(
     connections: &[ConnectionConfig],
-) -> Result<Option<Arc<zihuan_core::graph::data_value::RedisConfig>>> {
+) -> Result<Option<Arc<zihuan_core::storage::RedisConfig>>> {
     let redis_connection_id = connections.iter().find_map(|connection| {
         if connection.enabled && matches!(connection.kind, ConnectionKind::Redis(_)) {
             Some(connection.id.as_str())
