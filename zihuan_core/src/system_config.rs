@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use chrono::{DateTime, Utc};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -18,6 +19,19 @@ const SYSTEM_CONFIG_FILE: &str = "system_config.json";
 const VERSION_KEY: &str = "version";
 /// Supplies the version written for newly created configuration documents.
 const DEFAULT_VERSION: u32 = 1;
+
+/// Serializes read-modify-write cycles of the shared document, which the typed section store and
+/// the config center both persist into, so neither layer can overwrite the other's changes with a
+/// snapshot taken before them.
+static DOCUMENT_LOCK: Mutex<()> = Mutex::new(());
+
+/// Runs one complete read-modify-write of the shared document while holding the document lock.
+/// Every writer must update the document inside this lock; acquiring it again from within the
+/// same cycle would deadlock.
+pub(crate) fn with_document_lock<T>(operation: impl FnOnce() -> Result<T>) -> Result<T> {
+    let _guard = DOCUMENT_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    operation()
+}
 
 /// Purpose: Defines one typed section stored within the shared versioned system-configuration JSON document.
 pub trait SystemConfigSection {
@@ -75,9 +89,11 @@ pub fn load_section<S: SystemConfigSection>() -> Result<S::Value> {
 /// Persists one typed configuration section for settings and runtime services while
 /// retaining unrelated sections in the shared document.
 pub fn save_section<S: SystemConfigSection>(value: &S::Value) -> Result<()> {
-    let mut root = load_system_config_root()?;
-    S::write_to_root(&mut root, value)?;
-    save_system_config_root(&root)
+    with_document_lock(|| {
+        let mut root = load_system_config_root()?;
+        S::write_to_root(&mut root, value)?;
+        write_system_config_root(&root)
+    })
 }
 
 /// Reads the complete versioned configuration document used by configuration import,
@@ -98,6 +114,11 @@ pub fn load_system_config_root() -> Result<Value> {
 /// Writes the complete versioned configuration document after normalizing its root and
 /// ensuring the configuration directory exists.
 pub fn save_system_config_root(root: &Value) -> Result<()> {
+    with_document_lock(|| write_system_config_root(root))
+}
+
+/// Writes the complete document; the caller must already hold the document lock.
+fn write_system_config_root(root: &Value) -> Result<()> {
     let mut normalized = root.clone();
     normalize_root(&mut normalized)?;
 
@@ -343,9 +364,11 @@ pub fn configured_memory_agent_prompts() -> Result<Option<MemoryAgentPrompts>> {
 
 /// Removes the persisted memory agent prompts so the agent runs on the built-in defaults.
 pub fn reset_memory_agent_prompts() -> Result<()> {
-    let mut root = load_system_config_root()?;
-    if let Some(object) = root.as_object_mut() {
-        object.remove(MemoryAgentPromptsSection::SECTION_KEY);
-    }
-    save_system_config_root(&root)
+    with_document_lock(|| {
+        let mut root = load_system_config_root()?;
+        if let Some(object) = root.as_object_mut() {
+            object.remove(MemoryAgentPromptsSection::SECTION_KEY);
+        }
+        write_system_config_root(&root)
+    })
 }

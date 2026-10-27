@@ -655,21 +655,18 @@ pub async fn update_node_runtime(req: &mut Request, res: &mut Response) {
         res.render(Json(serde_json::json!({ "error": error.to_string() })));
         return;
     }
-    let mut root = match ConfigCenter::shared().load_root() {
-        Ok(root) => root,
+    let runtime = match ConfigCenter::shared().update_root(|root| {
+        root.node_runtime = config;
+        Ok(root.node_runtime.clone())
+    }) {
+        Ok(runtime) => runtime,
         Err(error) => {
             res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
             res.render(Json(serde_json::json!({ "error": error.to_string() })));
             return;
         }
     };
-    root.node_runtime = config;
-    if let Err(error) = ConfigCenter::shared().save_root(&root) {
-        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-        res.render(Json(serde_json::json!({ "error": error.to_string() })));
-        return;
-    }
-    res.render(Json(node_runtime_response(root.node_runtime).await));
+    res.render(Json(node_runtime_response(runtime).await));
 }
 
 #[handler]
@@ -734,16 +731,15 @@ async fn save_python_runtime(
         .await
         .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
 
-    let mut root = ConfigCenter::shared()
-        .load_root()
-        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
-    root.python_runtime = config;
-    ConfigCenter::shared()
-        .save_root(&root)
+    let saved = ConfigCenter::shared()
+        .update_root(|root| {
+            root.python_runtime = config;
+            Ok(root.python_runtime.clone())
+        })
         .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
 
     Ok(PythonRuntimeResponse {
-        config: root.python_runtime,
+        config: saved,
         available: true,
         command: Some(command.display()),
         executable_path: Some(executable_path),
