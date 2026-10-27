@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
-use crate::graph::data_value::{SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT};
+use crate::graph::session_state::{SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT};
 use crate::storage::LLMMessageSessionCacheRef;
 use crate::validation_error;
 use dynamic_script_engine::{NodeRuntimeConfig, ScriptLanguage};

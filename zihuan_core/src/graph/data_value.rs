@@ -1,199 +1,21 @@
 pub use crate::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
-use crate::storage::{LLMMessageSessionCacheRef, RedisConfig, S3Ref};
 use crate::ims_bot_adapter::models::event_model::MessageEvent;
 use crate::ims_bot_adapter::models::message::ImageMessage;
 use crate::ims_bot_adapter::models::sender_model::Sender as GraphSender;
 use crate::model_inference::llm::tooling::FunctionTool;
 use crate::model_inference::llm::MessagePart;
 pub use crate::rag::{WebSearchEngine, WebSearchImage};
+use crate::storage::{LLMMessageSessionCacheRef, RedisConfig, S3Ref};
+
+use super::loop_control::LoopControl;
+use super::session_state::SessionStateRef;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::fmt;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
-use tokio::sync::Mutex as TokioMutex;
-
-tokio::task_local! {
-    pub static SESSION_CLAIM_CONTEXT: Arc<SessionClaimContext>;
-}
+use std::sync::Arc;
 
 tokio::task_local! {
     pub static EXECUTION_TASK_ID: String;
-}
-
-
-#[derive(Debug, Clone)]
-pub struct SessionStateEntry {
-    pub in_session: bool,
-    pub state_json: Value,
-    pub(crate) claim_token: Option<u64>,
-    /// When the claim was taken; backs the staleness watchdog in `try_claim_with_ttl`.
-    pub(crate) claimed_at: Option<std::time::Instant>,
-}
-
-impl SessionStateEntry {
-    pub fn claim_token(&self) -> Option<u64> {
-        self.claim_token
-    }
-}
-
-#[derive(Clone)]
-pub struct SessionStateRef {
-    pub node_id: String,
-    pub entries: Arc<TokioMutex<HashMap<String, SessionStateEntry>>>,
-    pub next_claim_token: Arc<AtomicU64>,
-}
-
-#[derive(Debug, Clone)]
-pub struct SessionClaim {
-    pub session_ref: Arc<SessionStateRef>,
-    pub sender_id: String,
-    pub claim_token: u64,
-}
-
-#[derive(Debug, Default)]
-pub struct SessionClaimContext {
-    claims: Mutex<HashMap<(String, String), SessionClaim>>,
-}
-
-impl SessionClaimContext {
-    pub fn register_claim(&self, claim: SessionClaim) {
-        self.claims
-            .lock()
-            .unwrap()
-            .insert((claim.session_ref.node_id.clone(), claim.sender_id.clone()), claim);
-    }
-
-    pub fn unregister_claim(&self, session_node_id: &str, sender_id: &str) -> Option<SessionClaim> {
-        self.claims
-            .lock()
-            .unwrap()
-            .remove(&(session_node_id.to_string(), sender_id.to_string()))
-    }
-
-    pub fn claim_token_for(&self, session_node_id: &str, sender_id: &str) -> Option<u64> {
-        self.claims
-            .lock()
-            .unwrap()
-            .get(&(session_node_id.to_string(), sender_id.to_string()))
-            .map(|claim| claim.claim_token)
-    }
-
-    pub fn drain_claims(&self) -> Vec<SessionClaim> {
-        self.claims.lock().unwrap().drain().map(|(_, claim)| claim).collect()
-    }
-}
-
-impl SessionStateRef {
-    pub fn new(node_id: impl Into<String>) -> Self {
-        Self {
-            node_id: node_id.into(),
-            entries: Arc::new(TokioMutex::new(HashMap::new())),
-            next_claim_token: Arc::new(AtomicU64::new(0)),
-        }
-    }
-
-    pub async fn get_state(&self, sender_id: &str) -> SessionStateEntry {
-        self.entries.lock().await.get(sender_id).cloned().unwrap_or(SessionStateEntry {
-            in_session: false,
-            state_json: Value::Null,
-            claim_token: None,
-            claimed_at: None,
-        })
-    }
-
-    pub async fn clear_state(&self, sender_id: &str) -> bool {
-        self.entries.lock().await.remove(sender_id).is_some()
-    }
-
-    pub async fn try_claim(
-        &self,
-        sender_id: &str,
-        state_json: Option<Value>,
-    ) -> (SessionStateEntry, bool) {
-        self.try_claim_with_ttl(sender_id, state_json, None).await
-    }
-
-    /// Claim with a staleness watchdog. When `stale_ttl` is set and the existing claim
-    /// is older than the TTL, the claim is treated as leaked (its owning task panicked
-    /// or hung without releasing) and is stolen. `release` is token-guarded, so a late
-    /// release from the stolen owner cannot undo the new claim.
-    pub async fn try_claim_with_ttl(
-        &self,
-        sender_id: &str,
-        state_json: Option<Value>,
-        stale_ttl: Option<std::time::Duration>,
-    ) -> (SessionStateEntry, bool) {
-        let mut entries = self.entries.lock().await;
-        if let Some(existing) = entries.get(sender_id) {
-            if existing.in_session {
-                let expired = match (existing.claimed_at, stale_ttl) {
-                    (Some(claimed_at), Some(ttl)) => claimed_at.elapsed() > ttl,
-                    _ => false,
-                };
-                if !expired {
-                    return (existing.clone(), false);
-                }
-                log::warn!(
-                    "Session claim for {sender_id} on {} held past {:?}; treating it as leaked and stealing it",
-                    self.node_id, stale_ttl
-                );
-            }
-        }
-
-        let claim_token = self.next_claim_token.fetch_add(1, Ordering::Relaxed) + 1;
-        let entry = SessionStateEntry {
-            in_session: true,
-            state_json: state_json.unwrap_or(Value::Null),
-            claim_token: Some(claim_token),
-            claimed_at: Some(std::time::Instant::now()),
-        };
-        entries.insert(sender_id.to_string(), entry.clone());
-        (entry, true)
-    }
-
-    pub async fn release(&self, sender_id: &str, claim_token: Option<u64>) -> bool {
-        let mut entries = self.entries.lock().await;
-        let Some(existing) = entries.get(sender_id) else {
-            return false;
-        };
-
-        if let Some(expected_token) = claim_token {
-            if existing.claim_token != Some(expected_token) {
-                return false;
-            }
-        }
-
-        entries.insert(
-            sender_id.to_string(),
-            SessionStateEntry {
-                in_session: false,
-                state_json: Value::Null,
-                claim_token: None,
-                claimed_at: None,
-            },
-        );
-        true
-    }
-}
-
-impl fmt::Debug for SessionStateRef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SessionStateRef")
-            .field("node_id", &self.node_id)
-            .field("entries", &"<TokioMutex<HashMap<...>>>")
-            .finish()
-    }
-}
-
-
-/// Shared loop control state, passed from LoopNode to LoopBreakNode via LoopControlRef ports.
-pub struct LoopControl {
-    break_flag: AtomicBool,
-    /// Carries the "current iteration data" so downstream nodes can write back
-    /// updated state without creating a data-edge cycle in the graph.
-    current_state: Mutex<DataValue>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -203,45 +25,6 @@ pub struct ImageData {
     pub binary: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub object_storage_path: Option<String>,
-}
-
-impl std::fmt::Debug for LoopControl {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LoopControl")
-            .field("break_flag", &self.break_flag.load(Ordering::Relaxed))
-            .field("current_state", &"<Mutex<DataValue>>")
-            .finish()
-    }
-}
-
-impl LoopControl {
-    pub fn new() -> Self {
-        Self {
-            break_flag: AtomicBool::new(false),
-            current_state: Mutex::new(DataValue::Boolean(false)),
-        }
-    }
-    pub fn request_break(&self) {
-        self.break_flag.store(true, Ordering::SeqCst);
-    }
-    pub fn should_break(&self) -> bool {
-        self.break_flag.load(Ordering::SeqCst)
-    }
-    pub fn reset(&self) {
-        self.break_flag.store(false, Ordering::SeqCst);
-    }
-    /// Called by LoopNode on_start to set the initial state.
-    pub fn init_state(&self, v: DataValue) {
-        *self.current_state.lock().unwrap() = v;
-    }
-    /// Called by LoopNode on_update to read the current state.
-    pub fn get_state(&self) -> DataValue {
-        self.current_state.lock().unwrap().clone()
-    }
-    /// Called by LoopStateUpdateNode to write the updated state for the next iteration.
-    pub fn update_state(&self, v: DataValue) {
-        *self.current_state.lock().unwrap() = v;
-    }
 }
 
 /// Dataflow datatype. Use for checking compatibility between ports.

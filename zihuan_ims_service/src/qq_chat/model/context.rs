@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatRoleServiceConfig;
 use zihuan_core::data_refs::RelationalDbConnection;
-use zihuan_core::graph::data_value::SessionStateRef;
+use zihuan_core::graph::SessionStateRef;
 use zihuan_core::storage::LLMMessageSessionCacheRef;
 use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::storage::S3Ref;

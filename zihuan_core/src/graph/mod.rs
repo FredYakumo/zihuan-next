@@ -105,6 +105,7 @@ pub mod function_graph;
 pub mod graph_boundary;
 pub mod graph_io;
 pub mod hyperparam_store;
+pub mod loop_control;
 pub mod message_persistence;
 pub mod message_rdb_chunking;
 pub mod message_rdb_history_common;
@@ -113,6 +114,7 @@ pub mod qq_message_list_rdb_persistence;
 pub mod registry;
 pub mod script_node;
 pub mod script_tool;
+pub mod session_state;
 pub mod tool_spec;
 pub mod util;
 
@@ -121,6 +123,10 @@ pub type RuntimeVariableStore = Arc<RwLock<RuntimeValueFlow>>;
 #[allow(unused_imports)]
 pub use data_value::{DataType, DataValue};
 pub use flow::{NodeConfigFlow, NodeInputFlow, NodeOutputFlow, RuntimeValueFlow};
+pub use loop_control::LoopControl;
+pub use session_state::{
+    SessionClaim, SessionClaimContext, SessionStateEntry, SessionStateRef, SESSION_CLAIM_CONTEXT,
+};
 #[allow(unused_imports)]
 pub use graph_io::{
     ensure_positions, load_graph_definition_from_json, save_graph_definition_to_json,
