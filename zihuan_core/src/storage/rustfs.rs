@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::error::Result;
-use crate::graph::object_storage::S3Ref;
+use crate::storage::S3Ref;
 
 pub async fn build_s3_ref(
     endpoint: &str,

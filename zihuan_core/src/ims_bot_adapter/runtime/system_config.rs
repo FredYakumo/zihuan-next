@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::graph::object_storage::S3Ref;
+use crate::storage::S3Ref;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 

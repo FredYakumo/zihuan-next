@@ -2,7 +2,7 @@ use std::env;
 use std::sync::Arc;
 
 use crate::error::Result;
-use crate::graph::object_storage::S3Ref;
+use crate::storage::S3Ref;
 use crate::runtime::block_async;
 use crate::url_utils::{
     image_content_type_from_bytes, image_extension_for_content_type, supported_image_content_type,

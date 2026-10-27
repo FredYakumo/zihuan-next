@@ -422,7 +422,7 @@ fn bot_adapter_resource(
 fn optional_s3_resource(
     params: &Value,
     field: &str,
-) -> Result<Option<Arc<crate::graph::object_storage::S3Ref>>> {
+) -> Result<Option<Arc<crate::storage::S3Ref>>> {
     let Some(value) = params.get(field).filter(|value| !value.is_null()) else {
         return Ok(None);
     };

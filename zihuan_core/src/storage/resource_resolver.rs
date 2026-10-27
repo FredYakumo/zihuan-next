@@ -4,8 +4,7 @@ use std::time::Duration;
 use crate::data_refs::RelationalDbConnection;
 use crate::error::{Error, Result};
 use crate::graph::data_value::RedisConfig;
-use crate::graph::object_storage::S3Ref;
-use crate::graph::DataValue;
+use crate::storage::S3Ref;
 use crate::rag::{BraveSearch, TavilySearch, WebSearchEngine};
 use crate::retrieval::{RetrievalSchema, RetrievalStoreRef};
 use crate::weaviate::WeaviateRef;
@@ -187,82 +186,4 @@ pub fn build_web_search_engine_ref(
         }
     };
     Ok(Some(engine_ref))
-}
-
-pub async fn resolve_connection_data_value(
-    data_type: &crate::graph::DataType,
-    connection_id: &str,
-    connections: &[ConnectionConfig],
-) -> Result<Option<DataValue>> {
-    match data_type {
-        crate::graph::DataType::RdbRef => {
-            let rdb_ref = build_rdb_ref(Some(connection_id), connections).await?;
-            Ok(rdb_ref.map(DataValue::RdbRef))
-        }
-        crate::graph::DataType::RedisRef => build_redis_ref(Some(connection_id), connections)
-            .map(|value| value.map(DataValue::RedisRef)),
-        crate::graph::DataType::RetrievalStoreRef => {
-            build_retrieval_store_ref(connection_id, connections)
-                .map(|value| Some(DataValue::RetrievalStoreRef(value)))
-        }
-        crate::graph::DataType::S3Ref => build_s3_ref(Some(connection_id), connections)
-            .await
-            .map(|value| value.map(DataValue::S3Ref)),
-        crate::graph::DataType::WebSearchEngineRef => {
-            build_web_search_engine_ref(Some(connection_id), connections)
-                .map(|value| value.map(DataValue::WebSearchEngineRef))
-        }
-        _ => Ok(None),
-    }
-}
-
-#[allow(dead_code)]
-fn ensure_endpoint_bypasses_proxy(endpoint: &str) {
-    let Some(host) = extract_host(endpoint) else {
-        return;
-    };
-
-    append_no_proxy_var("NO_PROXY", &host);
-    append_no_proxy_var("no_proxy", &host);
-}
-
-fn append_no_proxy_var(var_name: &str, host: &str) -> bool {
-    let current = std::env::var(var_name).unwrap_or_default();
-    let already_present =
-        current.split(',').map(str::trim).any(|entry| entry.eq_ignore_ascii_case(host));
-    if already_present {
-        return false;
-    }
-
-    let updated = if current.trim().is_empty() {
-        host.to_string()
-    } else {
-        format!("{current},{host}")
-    };
-    std::env::set_var(var_name, updated);
-    true
-}
-
-fn extract_host(endpoint: &str) -> Option<String> {
-    let endpoint = endpoint
-        .strip_prefix("http://")
-        .or_else(|| endpoint.strip_prefix("https://"))
-        .unwrap_or(endpoint);
-    let authority = endpoint.split('/').next()?.trim();
-    if authority.is_empty() {
-        return None;
-    }
-    let host = authority
-        .rsplit_once('@')
-        .map(|(_, suffix)| suffix)
-        .unwrap_or(authority)
-        .split(':')
-        .next()
-        .unwrap_or("")
-        .trim();
-    if host.is_empty() {
-        None
-    } else {
-        Some(host.to_string())
-    }
 }

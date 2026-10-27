@@ -1,5 +1,5 @@
 pub use crate::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
-use crate::graph::object_storage::S3Ref;
+use crate::storage::S3Ref;
 use crate::ims_bot_adapter::models::event_model::MessageEvent;
 use crate::ims_bot_adapter::models::message::ImageMessage;
 use crate::ims_bot_adapter::models::sender_model::Sender as GraphSender;

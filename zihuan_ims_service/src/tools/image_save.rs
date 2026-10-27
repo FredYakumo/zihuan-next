@@ -7,7 +7,7 @@ use zihuan_core::agent::tools::Tool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::graph::message_restore::{persist_media_to_record, query_media_by_id};
-use zihuan_core::graph::object_storage::S3Ref;
+use zihuan_core::storage::S3Ref;
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::tooling::FunctionTool;

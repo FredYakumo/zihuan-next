@@ -1,5 +1,6 @@
 mod client;
 mod media_cache;
+mod s3_ref;
 
 pub use client::{
     save_image_to_object_storage, upload_remote_image_to_s3, ImageObjectStorageInput,
@@ -8,3 +9,4 @@ pub use client::{
 pub use media_cache::{
     enrich_event_images, enrich_message_images, ImageCacheAdapter, PendingImageUpload,
 };
+pub use s3_ref::S3Ref;

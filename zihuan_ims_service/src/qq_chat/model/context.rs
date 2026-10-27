@@ -6,7 +6,7 @@ use crate::role_config::QqChatRoleServiceConfig;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::graph::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
 use zihuan_core::graph::function_graph::FunctionPortDef;
-use zihuan_core::graph::object_storage::S3Ref;
+use zihuan_core::storage::S3Ref;
 use zihuan_core::graph::tool_spec::ToolDefinition;
 use zihuan_core::graph::DataValue;
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;

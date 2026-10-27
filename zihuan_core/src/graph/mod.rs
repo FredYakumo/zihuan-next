@@ -109,7 +109,6 @@ pub mod message_persistence;
 pub mod message_rdb_chunking;
 pub mod message_rdb_history_common;
 pub mod message_restore;
-pub mod object_storage;
 pub mod qq_message_list_rdb_persistence;
 pub mod registry;
 pub mod script_node;

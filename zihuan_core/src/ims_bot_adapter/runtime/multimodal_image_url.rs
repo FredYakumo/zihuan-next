@@ -1,4 +1,4 @@
-use crate::graph::object_storage::S3Ref;
+use crate::storage::S3Ref;
 use crate::model_inference::llm::MessagePart;
 use base64::Engine;
 use log::{info, warn};

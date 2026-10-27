@@ -58,7 +58,7 @@ pub use message_record::MessageRecord;
 pub use object_storage::{
     enrich_event_images, enrich_message_images, save_image_to_object_storage,
     upload_remote_image_to_s3, ImageCacheAdapter, ImageObjectStorageInput, ObjectStorageConfig,
-    PendingImageUpload, SavedImageObject,
+    PendingImageUpload, SavedImageObject, S3Ref,
 };
 pub use rdb::{
     build_relational_db_connection_for_connection, build_relational_db_connection_for_kind,
@@ -66,7 +66,6 @@ pub use rdb::{
 pub use resource_resolver::{
     build_elasticsearch_ref, build_rdb_ref, build_redis_ref, build_retrieval_store_ref,
     build_s3_ref, build_weaviate_ref, build_web_search_engine_ref, find_connection,
-    resolve_connection_data_value,
 };
 pub use retrieval_database::{RetrievalDatabase, RetrievalImageHit};
 pub use retrieval_ops::{

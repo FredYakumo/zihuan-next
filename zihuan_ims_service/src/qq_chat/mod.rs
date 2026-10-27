@@ -77,7 +77,7 @@ use zihuan_core::graph::data_value::{LLMMessageSessionCacheRef, SessionStateRef}
 use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::graph::message_persistence::persist_message_event;
 use zihuan_core::graph::message_restore::register_rdb_pool;
-use zihuan_core::graph::object_storage::S3Ref;
+use zihuan_core::storage::S3Ref;
 use zihuan_core::graph::tool_spec::ToolDefinition;
 use zihuan_core::ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
 use zihuan_core::ims_bot_adapter::event::EventHandler;

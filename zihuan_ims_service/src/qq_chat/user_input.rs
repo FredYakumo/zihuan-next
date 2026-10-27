@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use log::{info, warn};
-use zihuan_core::graph::object_storage::S3Ref;
+use zihuan_core::storage::S3Ref;
 use zihuan_core::ims_bot_adapter::adapter::{restore_messages_for_message_id, SharedBotAdapter};
 use zihuan_core::ims_bot_adapter::message_helpers::render_current_message_body;
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
