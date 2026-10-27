@@ -26,21 +26,25 @@ if 指令已被处理
 - Role 读取私聊或群聊对应的历史上下文。
 - Role 读取会话状态和情绪状态。
 - Role 对输入进行意图分类并选择本轮推理模型。
+- 意图分类
 - Role 根据意图分类结果决定本轮的 Procedure 链组成。
   if 元查询（询问工具列表、系统提示词、模型名）
     then 本轮走元查询链：MetaQuery Procedure 直接作答，再交 AfterBrain Procedure
   else 本轮走普通链：BeforeBrain -> Brain -> AfterBrain
 - Role 准备记忆访问能力、本轮可用 Tool 集合、sub agent 集合与记忆读写能力，组装链上各 Procedure。
 - 链上 Procedure 按顺序执行并共享同一个 Procedure 上下文；一个过程的输出由后继过程从上下文读取，Role 不在过程之间搬运数据。
-- BeforeBrain Procedure 根据当前事件更新情绪状态。
-- BeforeBrain Procedure 从长期记忆检索与当前事件相关的信息和既有立场。
-- BeforeBrain Procedure 产出本轮前置上下文块，写入链上下文。
+- BeforeBrain Procedure 以阻塞方式执行，确定性地组装本轮输入，不执行模型推理或工具调用循环，也不维护独立的 Preprompt 对话历史。
+- BeforeBrain Procedure 根据群聊或私聊场景，将公共规则与 RoleService 配置的系统提示词组合为本轮系统提示词。
+- BeforeBrain Procedure 根据当前消息检索相关记忆标题，生成记忆提示块；具体规则见下文。
+- BeforeBrain Procedure 读取当前会话的情绪状态，生成情绪提示词；情绪表达明显时，抑制配置的语言风格提示词。此阶段不根据事件更新情绪值。
+- BeforeBrain Procedure 复用用户消息构造逻辑，组装身份、会话环境、时间、发送者、消息内容、情绪与角色指令、记忆标题提示及可选限流警告。
+- BeforeBrain Procedure 根据本轮路由模型的 API 风格与多模态能力生成用户消息。
+- BeforeBrain Procedure 将 `BeforeBrainOutput` 写入共享 Procedure 上下文，包含 `system_prompt`、完整的 `user_message` 和可选的 `memory_context`。
 
 ---
 
-- Brain Procedure 从链上下文读取前置上下文块。
-- Brain Procedure 生成 QQChat 的系统上下文。
-- Brain Procedure 生成包含身份、会话环境、时间、发送者和消息内容的用户输入，并把前置上下文块注入其中。
+- Brain Procedure 从链上下文读取 `BeforeBrainOutput`，直接使用已组装的用户消息；缺少该输出时，本轮处理失败。
+- Brain Procedure 在启动推理前，将系统提示词和记忆标题提示写入 steer 共用的轮次上下文。
 - Brain Procedure 按模型上下文预算压缩历史，组装本轮推理上下文。
 - Brain Procedure 执行模型推理与工具调用。
   for 每一次推理循环
@@ -54,6 +58,7 @@ if 指令已被处理
 - Brain Procedure 将 sub agent 结果加入当前上下文。
   continue 进入下一次推理
 - Brain Procedure 在下一次模型调用前，将暂存的 steer 输入作为新的输入消息加入当前推理上下文。
+- steer 输入复用本轮系统提示词和记忆标题提示，并读取当前会话状态构造消息；不重新执行 BeforeBrain，也不重新检索记忆标题。
 - Brain Procedure 检查是否产生最终回复文本或不回复结果。
   then break 结束推理循环
 
@@ -73,3 +78,20 @@ if 需要改写
 - QQ Transport 将文本、提及、媒体和引用关系转换为 QQ 消息。
 - QQ Transport 发送消息或确认本轮不回复。
 - Role 完成本轮处理并释放会话处理状态。
+
+## 前置记忆标题检索
+
+- 检索复用核心记忆工具中的 `relevant_memory_titles`，以当前消息的提示文本为查询，最多获取 10 条候选。
+- 检索结果仅将标题及可选相关度带入本轮提示，不注入记忆正文；预检索为只读操作，不延长命中记忆的过期时间。
+- 检索库后端使用查询文本及其向量进行检索，按后端提供的相关度从高到低排序，只保留相关度不低于 `0.5` 的标题。
+- 本地文件后端按查询过滤标题，没有相关度分数；匹配结果直接保留。
+- 有符合条件的标题时，将其放入用户消息的 `[Relevant Memory Titles]` 块，并提示 Brain 在需要正文或未列出的记忆时调用 `memory_agent`。
+- 没有符合条件的标题时，仍注入提示：若回复依赖历史对话、已保存事实或用户偏好，应调用 `memory_agent` 检索后再回答。
+- 未配置记忆后端、禁用 `memory_agent` 或检索失败时，不注入记忆提示块，主流程继续；检索失败记录警告。
+
+## 上下文阶段展示
+
+- 数据检索页将 `System Prompt`、`记忆检索`、`情绪与风格提示`、`User Input`、`Brain 输入` 和 `推理上下文` 归入「构建 Brain 输入」。旧的 `Preprompt` 和 `Preprompt 输出` 阶段不再用于本轮输入构建。
+- `System Prompt` 展示公共规则与角色配置组合后的系统提示词；`User Input` 展示实际组装的本轮用户输入。
+- 生成记忆提示时，`记忆检索` 展示查询文本、候选数量、最多条数、相关度阈值，以及过滤后的标题和相关度。
+- `情绪与风格提示` 展示当前情绪维度、情绪提示词、语言风格提示词及其是否被抑制；`Brain 输入` 和 `推理上下文` 展示组装输入与压缩历史交给 Brain 后的情况。
