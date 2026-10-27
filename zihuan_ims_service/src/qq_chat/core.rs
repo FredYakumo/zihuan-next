@@ -68,17 +68,6 @@ pub(crate) const LAST_INJECTED_GROUP_NAME_KEY: &str = "qq_chat_last_injected_gro
 pub(crate) const LAST_INJECTED_ROLE_KEY: &str = "qq_chat_last_injected_role";
 pub(crate) const LAST_INJECTED_EMOTION_KEY: &str = "qq_chat_last_injected_emotion";
 
-/// The state/system prefix that precedes `[Current User Message]` in an assembled turn input.
-///
-/// It is rebuilt on every turn (emotion, language style, preprompt block, chat environment), so
-/// the Data Explorer reports it per turn rather than once per conversation.
-pub(crate) fn split_system_prompt_prefix(user_text: &str) -> Option<String> {
-    let marker = format!("\n{CURRENT_USER_MESSAGE_LABEL}\n");
-    let index = user_text.find(&marker)?;
-    let prefix = user_text[..index].trim();
-    (!prefix.is_empty()).then(|| prefix.to_string())
-}
-
 /// The current-turn body of an assembled user message: everything after
 /// `[Current User Message]`, without the trailing processing instructions.
 ///
@@ -319,10 +308,9 @@ pub(crate) fn merge_character_and_style_prompt(
 ///
 /// # Architecture
 ///
-/// Called at the start of every agent inference turn (both the initial `handle` and
-/// steer-injection via `QqChatServiceSteerHook::on_before_inference`). The returned
-/// `LLMMessage` is pushed into the conversation cache and fed to the ToolCallingEngine tool-call
-/// loop.
+/// Called once per turn by the before-brain input assembly, and again for each mid-turn steer
+/// message via `QqChatServiceSteerHook::on_before_inference`. The returned `LLMMessage` is fed
+/// to the ToolCallingEngine tool-call loop (and persisted into the conversation history).
 ///
 /// # Parameters
 ///
@@ -339,6 +327,7 @@ pub(crate) fn merge_character_and_style_prompt(
 /// * `session_state` — runtime session state (mood, emotion values, memory) rendered as
 ///   prefix lines.
 /// * `emotion_dimensions` — configured emotion axes used to format the state prefix.
+/// * `memory_context` — memory-title hint prepared by the before-brain assembly.
 pub(crate) fn build_user_message(
     current_input: &PreparedCurrentTurnUserInput,
     bot_name: &str,
@@ -349,7 +338,7 @@ pub(crate) fn build_user_message(
     message_rate_limit_warning: Option<&str>,
     session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
-    preprompt_context: Option<&str>,
+    memory_context: Option<&str>,
 ) -> LLMMessage {
     let style_prompt = if has_noticeable_emotion_expression(session_state, emotion_dimensions) {
         None
@@ -362,7 +351,7 @@ pub(crate) fn build_user_message(
     let state_lines = build_state_system_prefix_lines(
         &emotion_prompt,
         &merged_character_instructions,
-        preprompt_context,
+        memory_context,
     );
     let sender_name = zihuan_core::ims_bot_adapter::utils::sender_display_name!(
         &current_input.event.sender.nickname,

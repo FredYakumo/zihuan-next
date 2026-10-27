@@ -55,7 +55,7 @@ fn build_steer_user_message(
     style_prompt: Option<&str>,
     session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
-    preprompt_context: Option<&str>,
+    memory_context: Option<&str>,
 ) -> LLMMessage {
     let steer_message = build_user_message(
         current_input,
@@ -67,7 +67,7 @@ fn build_steer_user_message(
         None,
         session_state,
         emotion_dimensions,
-        preprompt_context,
+        memory_context,
     );
 
     apply_steer_prefix(steer_message, api_style)
@@ -83,7 +83,7 @@ fn build_merged_steer_user_message(
     style_prompt: Option<&str>,
     session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
-    preprompt_context: Option<&str>,
+    memory_context: Option<&str>,
 ) -> LLMMessage {
     let style_prompt = if has_noticeable_emotion_expression(session_state, emotion_dimensions) {
         None
@@ -93,7 +93,7 @@ fn build_merged_steer_user_message(
     let merged_prompt = merge_character_and_style_prompt(system_prompt, style_prompt);
     let emotion_prompt = emotion_expression_prompt(session_state, emotion_dimensions);
     let prefix_lines =
-        build_state_system_prefix_lines(&emotion_prompt, &merged_prompt, preprompt_context);
+        build_state_system_prefix_lines(&emotion_prompt, &merged_prompt, memory_context);
     let prefix = prefix_lines.join("\n");
     let mut state_delta_lines = Vec::new();
     if let Some(last_input) = current_inputs.last() {
@@ -241,14 +241,23 @@ pub(crate) struct QqChatServiceSteerHook {
     /// by a sent reply. The turn's [`SteerCommitGuard`] commits or rolls them back.
     pub(crate) in_flight_steers: Arc<Mutex<Vec<PendingSteerEvent>>>,
     pub(crate) shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
-    pub(crate) system_prompt: String,
     pub(crate) style_prompt: Option<String>,
     pub(crate) session_state: Arc<Mutex<QqChatSessionState>>,
     pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
-    /// The turn's preprompt context block. The hook is assembled before the procedure chain
-    /// runs, so the block is written into this shared cell by the brain procedure (after the
-    /// before-brain procedure produced it) instead of being passed at construction.
-    pub(crate) preprompt_context: Arc<Mutex<Option<String>>>,
+    /// The turn context assembled by the before-brain procedure. The hook is built before the
+    /// procedure chain runs, so the brain procedure writes the assembled system prompt and
+    /// memory-title hint into this shared cell before starting the inference loop.
+    pub(crate) turn_context: Arc<Mutex<Option<SteerTurnContext>>>,
+}
+
+/// The assembled turn context a mid-turn steer message reuses.
+///
+/// A steer message is a new user turn inside the running loop, so it carries the same system
+/// prompt and memory-title hint as the turn it interrupts.
+#[derive(Clone)]
+pub(crate) struct SteerTurnContext {
+    pub(crate) system_prompt: String,
+    pub(crate) memory_context: Option<String>,
 }
 
 impl ToolCallingMiddleware for QqChatServiceSteerHook {
@@ -285,7 +294,11 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
             injected.push(inference_event);
         }
 
-        let preprompt_context = self.preprompt_context.lock().unwrap().clone();
+        let turn_context = self.turn_context.lock().unwrap().clone();
+        let (system_prompt, memory_context) = match turn_context {
+            Some(context) => (context.system_prompt, context.memory_context),
+            None => (String::new(), None),
+        };
         let steer_message = if prepared_inputs.len() == 1 {
             let mut session_state = self.session_state.lock().unwrap();
             build_steer_user_message(
@@ -294,11 +307,11 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
                 &self.adapter,
                 self.llm_supports_multimodal_input,
                 self.llm_api_style.as_deref(),
-                &self.system_prompt,
+                &system_prompt,
                 self.style_prompt.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
-                preprompt_context.as_deref(),
+                memory_context.as_deref(),
             )
         } else {
             let mut session_state = self.session_state.lock().unwrap();
@@ -308,11 +321,11 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
                 &self.adapter,
                 self.llm_supports_multimodal_input,
                 self.llm_api_style.as_deref(),
-                &self.system_prompt,
+                &system_prompt,
                 self.style_prompt.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
-                preprompt_context.as_deref(),
+                memory_context.as_deref(),
             )
         };
         consumed_guard.push(steer_message.clone());

@@ -1,3 +1,4 @@
+mod before_brain;
 mod natural_language_reply;
 mod qq_after_brain;
 mod qq_before_brain;
@@ -12,6 +13,7 @@ use zihuan_core::role::procedure::{
 };
 use zihuan_core::runtime::block_async;
 
+pub(crate) use before_brain::BeforeBrainContext;
 pub(crate) use natural_language_reply::{
     ModelIdentityContext, QqReplyReviewRequest, QqReplyReviewResult,
 };
@@ -43,9 +45,8 @@ pub(crate) fn qq_procedure_context(
 /// Run one blocking procedure as a one-element chain and return its output.
 ///
 /// **Design:** The QQ turn pipeline is synchronous; `block_async` bridges it to the async
-/// procedure chain executor exactly like the existing `run_preprompt` internals already do.
-/// Blocking procedures execute their synchronous bodies inline, so thread semantics stay
-/// identical to the previous direct calls.
+/// procedure chain executor. Blocking procedures execute their synchronous bodies inline, so
+/// thread semantics stay identical to the previous direct calls.
 fn run_blocking(
     procedure: Arc<dyn Procedure + '_>,
     shared: &mut ProcedureContext,

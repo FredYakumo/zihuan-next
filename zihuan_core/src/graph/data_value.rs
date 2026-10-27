@@ -469,8 +469,8 @@ impl LLMMessageSessionCacheRef {
     /// Split a storage key `llm_message_session:{node}:{bucket}:{sender}` into its sender id.
     ///
     /// The same cache also holds auxiliary histories whose key adds another segment, such as the
-    /// preprompt agent's `chat_preprompt:{sender}`. Those are not user conversations and must not
-    /// surface as senders, so only single-segment keys qualify.
+    /// legacy preprompt transcript `chat_preprompt:{sender}`. Those are not user conversations and
+    /// must not surface as senders, so only single-segment keys qualify.
     fn parse_sender_id(key: &str, prefix: &str) -> Option<String> {
         let remainder = key.strip_prefix(prefix)?;
         let (_, sender_id) = remainder.split_once(':')?;

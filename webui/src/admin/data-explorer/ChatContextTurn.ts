@@ -14,9 +14,11 @@ type Segment = { type: "text"; text: string } | { type: "image"; media: ServiceC
 /** Stage name the backend uses for the per-turn assembled system prompt. */
 export const SYSTEM_PROMPT_STAGE = "System Prompt";
 
-/** The preprompt run and the stage that reports its result. */
-export const PREPROMPT_STAGE = "Preprompt";
-export const PREPROMPT_RESULT_STAGE = "Preprompt 输出";
+/** Stage reporting the memory titles retrieved for the turn before the brain runs. */
+export const MEMORY_STAGE = "记忆检索";
+
+/** Stage reporting the assembled current-turn user input. */
+export const USER_INPUT_STAGE = "User Input";
 
 /** Stage the QQ Chat runtime emits with the rate-limit decision of the turn. */
 export const RATE_LIMIT_STAGE = "限流";
@@ -40,12 +42,11 @@ export interface ContextPhase {
  */
 const PHASE_OF_STAGE: Record<string, string> = {
   [RATE_LIMIT_STAGE]: "触发与限流",
-  [PREPROMPT_STAGE]: "BeforeBrain · Preprompt",
-  [PREPROMPT_RESULT_STAGE]: "BeforeBrain · Preprompt",
-  "Preprompt 阶段": "BeforeBrain · Preprompt",
   "意图识别": "意图识别",
   [SYSTEM_PROMPT_STAGE]: "构建 Brain 输入",
+  [MEMORY_STAGE]: "构建 Brain 输入",
   "情绪与风格提示": "构建 Brain 输入",
+  [USER_INPUT_STAGE]: "构建 Brain 输入",
   "Brain 输入": "构建 Brain 输入",
   "推理上下文": "构建 Brain 输入",
   "回复决策": "Brain 推理",
@@ -317,9 +318,9 @@ function detailText(value: unknown): string | undefined {
 /**
  * Readable view of a stage's payload.
  *
- * The prompt-building stages carry one long text each: the assembled system prefix, the
- * preprompt result, and the current-turn input handed to the brain. Showing them as text is the
- * point of the flow view; everything else stays JSON.
+ * The prompt-building stages carry one long text each: the assembled system prompt, the
+ * retrieved memory titles, and the current-turn input handed to the brain. Showing them as text
+ * is the point of the flow view; everything else stays JSON.
  */
 export function stageText(stage: string | undefined, detail: unknown): StageText | undefined {
   if (!stage) return undefined;
@@ -334,24 +335,39 @@ export function stageText(stage: string | undefined, detail: unknown): StageText
     return prompt ? { text: prompt } : undefined;
   }
 
-  // The preprompt request; its result is reported by the following step in the same stage.
-  if (stage === PREPROMPT_STAGE) {
+  // The retrieval store's answer to the current message: query plus the titles above the
+  // relevance threshold. The hint tells the brain to search missing memories with memory_agent.
+  if (stage === MEMORY_STAGE) {
+    const query = detailText(record.query);
+    const titles = Array.isArray(record.titles)
+      ? record.titles.flatMap((item): Array<{ title: string; relevance?: number }> => {
+          const entry = detailRecord(item);
+          if (!entry || typeof entry.title !== "string") return [];
+          return [{
+            title: entry.title,
+            relevance: typeof entry.relevance === "number" ? entry.relevance : undefined,
+          }];
+        })
+      : [];
     const lines: string[] = [];
-    if (typeof record.model === "string") lines.push(`模型：${record.model}`);
-    if (Array.isArray(record.tools_available)) {
-      const tools = record.tools_available.filter((item): item is string => typeof item === "string");
-      lines.push(`可用工具：${tools.length ? tools.join("、") : "无"}`);
+    if (query) lines.push(`检索内容：${query}`);
+    if (titles.length) {
+      lines.push("关联度较高的记忆标题：");
+      for (const item of titles) {
+        lines.push(
+          item.relevance != null
+            ? `- ${item.title}（${item.relevance.toFixed(2)}）`
+            : `- ${item.title}`,
+        );
+      }
+    } else {
+      lines.push("没有关联度较高的记忆标题，Agent 会改用 memory_agent 检索缺失内容。");
     }
-    return lines.length ? { text: lines.join("\n") } : undefined;
-  }
-
-  if (stage === PREPROMPT_RESULT_STAGE) {
-    const text = detailText(record.context) ?? "(preprompt 未返回上下文)";
     const meta: string[] = [];
-    if (typeof record.duration_ms === "number") meta.push(`耗时 ${record.duration_ms} ms`);
-    if (typeof record.stop_reason === "string") meta.push(record.stop_reason);
-    if (typeof record.tool_calls === "number") meta.push(`工具调用 ${record.tool_calls} 次`);
-    return { text, meta: meta.join(" · "), reasoning: detailText(record.reasoning) };
+    if (typeof record.candidates === "number") meta.push(`候选 ${record.candidates} 条`);
+    if (typeof record.min_relevance === "number") meta.push(`相关度阈值 ${record.min_relevance}`);
+    if (typeof record.top_n === "number") meta.push(`最多 ${record.top_n} 条`);
+    return { text: lines.join("\n"), meta: meta.join(" · ") };
   }
 
   if (stage === "Brain 输入") {

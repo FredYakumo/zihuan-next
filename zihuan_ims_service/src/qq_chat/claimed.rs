@@ -27,9 +27,7 @@ use super::super::super::tools::{
     QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 
-use crate::storage::qq_chat_history_store::{
-    chat_preprompt_history_key, conversation_history_key, load_history, save_history,
-};
+use crate::storage::qq_chat_history_store::{conversation_history_key, load_history, save_history};
 
 use crate::classify_intent::{classify_intent_with_trace, IntentCategory};
 use crate::qq_chat::command::{run_command_pipeline, CommandTurnEnd};
@@ -39,17 +37,17 @@ use crate::qq_chat::msg_send::{
 use crate::qq_chat::steer::SteerCommitGuard;
 
 use super::{
-    build_group_system_prompt, build_meta_query_system_prompt, build_meta_query_user_message,
-    build_private_system_prompt, collect_available_media_from_brain_output, compact_turn_history,
-    expand_messages_for_inference, prepare_current_turn_user_input,
-    prepare_current_turn_user_input_from_event, QqChatAgentServiceContext, QqChatAgentServiceInner,
-    QqChatServiceTurnResult, QqChatTaskTrace, LOG_PREFIX,
+    build_meta_query_system_prompt, build_meta_query_user_message,
+    collect_available_media_from_brain_output, compact_turn_history, expand_messages_for_inference,
+    prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
+    QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatServiceTurnResult, QqChatTaskTrace,
+    LOG_PREFIX,
 };
 
-use crate::agent::before_brain_agent::PrepromptContext;
 use crate::procedure::{
-    qq_procedure_context, ModelIdentityContext, QqAfterBrain, QqAfterBrainContext, QqBeforeBrain,
-    QqBrain, QqBrainOutput, QqMetaQueryBrain, QqReplyReviewRequest, QqReplyReviewResult,
+    qq_procedure_context, BeforeBrainContext, ModelIdentityContext, QqAfterBrain,
+    QqAfterBrainContext, QqBeforeBrain, QqBrain, QqBrainOutput, QqMetaQueryBrain,
+    QqReplyReviewRequest, QqReplyReviewResult,
 };
 use crate::qq_chat::logging::{emit_context_turn_failure, QqChatTurnIdentity};
 use zihuan_core::role::procedure::execute_blocking_procedure_chain;
@@ -80,8 +78,9 @@ impl QqChatAgentServiceInner {
     ///   (general vs math/programming).
     /// - **Short-circuit replies** — answers meta-queries (model name, tool list, etc.) directly.
     /// - **Role turn chain** — one procedure chain (documents/procedure.md): before-brain
-    ///   (preprompt context block) -> brain (assembles the turn input, compacts history, runs
-    ///   the tool-calling loop with steer support) -> after-brain (reply review/rewrite).
+    ///   (assembles the system prompt and user input, including memory titles and the emotion
+    ///   prompt) -> brain (compacts history, runs the tool-calling loop with steer support) ->
+    ///   after-brain (reply review/rewrite).
     /// - **Reply delivery** — parses the final assistant output and sends it back to the user
     ///   (group or private chat), persisting message history along the way.
     ///
@@ -206,7 +205,9 @@ impl QqChatAgentServiceInner {
 
         // Intent classification picks the turn's chain composition (meta-query vs brain) and
         // the routed brain model, so it runs before any procedure chain is assembled
-        // (documents/procedure.md: which procedures a turn uses is decided per event).
+        // (documents/procedure.md: which procedures a turn uses is decided per event). It is
+        // the preprompt phase's model call: the "Preprompt 模型" setting, falling back to the
+        // main model when unset.
         let intent_trace = classify_intent_with_trace(
             ctx.intent_classification_llm,
             ctx.embedding_model,
@@ -233,12 +234,6 @@ impl QqChatAgentServiceInner {
                 "model": turn_llm.get_model_name(),
             }),
         );
-
-        let base_system_prompt = if is_group {
-            build_group_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
-        } else {
-            build_private_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
-        };
 
         let is_meta_query = matches!(
             intent_trace.category,
@@ -276,10 +271,9 @@ impl QqChatAgentServiceInner {
         }
 
         // Normal turn: one procedure chain, before-brain -> brain -> after-brain
-        // (documents/procedure.md). The before-brain context block flows to the brain
-        // through the shared procedure context instead of a turn-local variable.
-        let chat_preprompt_history_key = chat_preprompt_history_key(sender_id);
-        let preprompt_memory_resources = MemoryCapability::resolve(
+        // (documents/procedure.md). The before-brain procedure assembles the turn's system
+        // prompt and user input; the brain reads them through the shared procedure context.
+        let memory_resources = MemoryCapability::resolve(
             ctx.local_memory_store.cloned(),
             ctx.retrieval_store.cloned(),
             ctx.embedding_model.cloned(),
@@ -300,23 +294,25 @@ impl QqChatAgentServiceInner {
             sender_id: sender_id.to_string(),
             turn_id: turn_id.clone(),
         };
-        let before_brain = QqBeforeBrain::new(PrepromptContext {
+        let before_brain = QqBeforeBrain::new(BeforeBrainContext {
             trace,
             identity: Some(turn_identity),
-            // The "Preprompt 模型" setting; when unset it falls back to the main Brain model.
-            llm: ctx.intent_classification_llm,
-            cache: ctx.cache,
-            history_key: &chat_preprompt_history_key,
+            // The turn's routed model decides the API style and multimodal shape of the
+            // assembled user input.
+            llm: turn_llm,
             input: &prepared_input,
+            adapter: ctx.adapter,
             bot_name: ctx.bot_name,
-            bot_id,
-            sender_id,
-            target_id,
             is_group,
+            agent_system_prompt: ctx.agent_system_prompt,
+            style_prompt: ctx
+                .resolved_language_style
+                .as_ref()
+                .map(|item| item.style_prompt.as_str()),
+            message_rate_limit_warning,
             session_state: Arc::clone(&turn_session_state),
             emotion_dimensions: emotion_dimensions.clone(),
-            memory_resources: preprompt_memory_resources,
-            rdb_pool: ctx.rdb_pool.cloned(),
+            memory_resources,
             default_tools_enabled: &self.default_tools_enabled,
         });
 
@@ -364,8 +360,6 @@ impl QqChatAgentServiceInner {
             event.group_name.clone(),
             history,
             &history_key,
-            message_rate_limit_warning,
-            base_system_prompt,
             Arc::clone(&shared_runtime_values),
             Arc::clone(&consumed_steer_messages),
             Arc::clone(&in_flight_steers),
@@ -380,8 +374,8 @@ impl QqChatAgentServiceInner {
             }
         };
         // Role turn chain (documents/procedure.md): before-brain -> brain -> after-brain.
-        // The chain runs through one shared procedure context; the brain reads the
-        // before-brain output from it and assembles the turn input itself.
+        // The chain runs through one shared procedure context; the brain reads the assembled
+        // system prompt and user input from it instead of assembling them itself.
         let mut shared = qq_procedure_context(&history_key, Some(current_message.clone()));
         let turn_outputs = block_async(execute_blocking_procedure_chain(
             vec![

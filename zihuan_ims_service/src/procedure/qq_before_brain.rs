@@ -1,34 +1,27 @@
 use async_trait::async_trait;
-use zihuan_core::agent::Agent;
-use zihuan_core::agent::AgentContext;
 use zihuan_core::error::Result;
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
 };
 
-use crate::agent::before_brain_agent::{BeforeBrainAgent, PrepromptContext};
-use crate::qq_chat::logging::emit_context_turn_failure;
+use super::before_brain::{assemble_before_brain, BeforeBrainContext};
 
-/// Output of the QQ before-brain procedure for one turn.
+/// QQ before-brain procedure: assembles the turn's system prompt and user input without any
+/// model inference.
 ///
-/// `context_block` is the preprompt context block that anchors the main reply prompt; the
-/// brain procedure reads it from [`ProcedureContext::procedure_outputs`].
-#[derive(Clone)]
-pub(crate) struct QqBeforeBrainOutput {
-    pub(crate) context_block: Option<String>,
-}
-
-/// QQ before-brain procedure: prepares continuity and emotion context for the reply agent.
+/// Its output (assembled system prompt, current-turn user input, and memory-title hint) is the
+/// finished turn context handed to the brain procedure through
+/// [`ProcedureContext::procedure_outputs`]. The brain appends history and runs the tool loop; it
+/// does not assemble the input itself.
 ///
-/// Wraps the `BeforeBrainAgent` implementation (an `Agent`); the produced context block is
-/// consumed by the brain procedure through the shared procedure context, so this procedure is
-/// `Blocking`.
+/// The input decides how the brain answers, so this procedure is `Blocking` and runs before the
+/// brain procedure in the turn chain.
 pub(crate) struct QqBeforeBrain<'a> {
-    context: PrepromptContext<'a>,
+    context: BeforeBrainContext<'a>,
 }
 
 impl<'a> QqBeforeBrain<'a> {
-    pub(crate) fn new(context: PrepromptContext<'a>) -> Self {
+    pub(crate) fn new(context: BeforeBrainContext<'a>) -> Self {
         Self { context }
     }
 }
@@ -38,34 +31,12 @@ impl Procedure for QqBeforeBrain<'_> {
     fn descriptor(&self) -> ProcedureDescriptor {
         ProcedureDescriptor {
             id: "qq_before_brain",
-            name: "QQ Preprompt",
+            name: "QQ Before Brain",
             execution: ProcedureExecution::Blocking,
         }
     }
 
     async fn run(&self, _context: &ProcedureContext) -> Result<ProcedureOutput> {
-        let agent = BeforeBrainAgent::new(self.context.clone());
-        let context_block = match agent.run(AgentContext::default(), ()).await {
-            Ok(output) => output,
-            Err(error) => {
-                if let Some(identity) = self.context.identity.as_ref() {
-                    emit_context_turn_failure(
-                        &identity.agent_id,
-                        &identity.sender_id,
-                        &identity.turn_id,
-                        "Preprompt 阶段",
-                        &error,
-                    );
-                }
-                return Err(error);
-            }
-        };
-        self.context.trace.record_graph_phase(
-            "Preprompt 阶段",
-            serde_json::json!({
-                "context": context_block,
-            }),
-        );
-        Ok(ProcedureOutput::of(QqBeforeBrainOutput { context_block }))
+        Ok(ProcedureOutput::of(assemble_before_brain(&self.context)))
     }
 }

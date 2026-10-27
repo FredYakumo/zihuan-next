@@ -882,7 +882,8 @@ pub(crate) fn emit_context_turn_failure(
 pub(crate) struct QqChatToolCallingObserver {
     pub(crate) trace: QqChatTaskTrace,
     /// When set, the observer also emits live context events for the Data Explorer view.
-    /// The preprompt agent reuses this observer for tracing only and leaves it `None`.
+    /// Standalone review/rewrite calls reuse this observer for tracing only and leave it
+    /// `None`.
     pub(crate) identity: Option<QqChatTurnIdentity>,
 }
 
