@@ -38,20 +38,19 @@ fn copy_move_and_file_info_support_common_file_workflow() {
     assert_eq!(copy.spec().name(), DEFAULT_TOOL_COPY_FILE);
     assert_eq!(move_tool.spec().name(), DEFAULT_TOOL_MOVE_FILE);
     assert_eq!(info.spec().name(), DEFAULT_TOOL_FILE_INFO);
-    let copied = serde_json::from_str::<serde_json::Value>(
-        &copy.execute("", &json!({"src":"source.txt","dest":"backup.txt"})),
-    )
-    .unwrap();
+    let copied_output = copy
+        .execute("", &json!({"src":"source.txt","dest":"backup.txt"}))
+        .expect("copy_file executes");
+    let copied = serde_json::from_str::<serde_json::Value>(&copied_output).unwrap();
     assert_eq!(copied["ok"], true);
-    let moved = serde_json::from_str::<serde_json::Value>(
-        &move_tool.execute("", &json!({"src":"backup.txt","dest":"renamed.txt"})),
-    )
-    .unwrap();
+    let moved_output = move_tool
+        .execute("", &json!({"src":"backup.txt","dest":"renamed.txt"}))
+        .expect("move_file executes");
+    let moved = serde_json::from_str::<serde_json::Value>(&moved_output).unwrap();
     assert_eq!(moved["ok"], true);
-    let metadata = serde_json::from_str::<serde_json::Value>(
-        &info.execute("", &json!({"path":"renamed.txt"})),
-    )
-    .unwrap();
+    let metadata_output =
+        info.execute("", &json!({"path":"renamed.txt"})).expect("file_info executes");
+    let metadata = serde_json::from_str::<serde_json::Value>(&metadata_output).unwrap();
     assert_eq!(metadata["type"], "file");
     assert_eq!(metadata["line_count"], 2);
     assert_eq!(metadata["is_binary"], false);

@@ -34,8 +34,8 @@ fn list_dir_returns_stably_sorted_entries() {
     let tool = ListDirTool { workspace_path: Some(directory.clone()) };
 
     assert_eq!(tool.spec().name(), DEFAULT_TOOL_LIST_DIR);
-    let result = tool.execute("", &json!({"path": "."}));
-    let result: serde_json::Value = serde_json::from_str(&result).expect("valid JSON result");
+    let output = tool.execute("", &json!({"path": "."})).expect("list_dir executes");
+    let result: serde_json::Value = serde_json::from_str(&output).expect("valid JSON result");
     let names: Vec<&str> = result["entries"]
         .as_array()
         .expect("entries array")
@@ -62,8 +62,10 @@ fn list_dir_can_recurse_and_skip_hidden_entries() {
     fs::write(directory.join(".hidden"), "hidden").expect("write hidden file");
     let tool = ListDirTool { workspace_path: Some(directory.clone()) };
 
-    let result = tool.execute("", &json!({"path": ".", "recursive": true}));
-    let result: serde_json::Value = serde_json::from_str(&result).expect("valid JSON result");
+    let output = tool
+        .execute("", &json!({"path": ".", "recursive": true}))
+        .expect("list_dir executes");
+    let result: serde_json::Value = serde_json::from_str(&output).expect("valid JSON result");
     let entries = result["entries"].as_array().expect("entries array");
     assert_eq!(entries.len(), 2);
     assert!(entries.iter().any(|entry| entry["name"] == "nested"));

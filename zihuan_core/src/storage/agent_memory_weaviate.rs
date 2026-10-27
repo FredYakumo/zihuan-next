@@ -278,8 +278,12 @@ fn list_memory_records(
     limit: usize,
 ) -> Result<Vec<AgentMemorySearchHit>> {
     let args = format!("limit: {limit}, sort: [{{ path: [\"updated_at\"], order: desc }}]");
-    let response =
-        weaviate_ref.query_with_args(&weaviate_ref.class_name, &args, &memory_property_names(), false)?;
+    let response = weaviate_ref.query_with_args(
+        &weaviate_ref.class_name,
+        &args,
+        &memory_property_names(),
+        false,
+    )?;
     parse_memory_hits(response)
 }
 

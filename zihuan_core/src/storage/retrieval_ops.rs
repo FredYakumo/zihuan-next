@@ -34,13 +34,19 @@ pub fn persist_media_to_store(
     }
     match store.backend() {
         RetrievalBackend::Weaviate => {
-            store.weaviate(RetrievalSchema::ImageSemantic)?
-                .upsert_image(media, description_vector, name_vector)?;
+            store.weaviate(RetrievalSchema::ImageSemantic)?.upsert_image(
+                media,
+                description_vector,
+                name_vector,
+            )?;
             Ok(true)
         }
         RetrievalBackend::Elasticsearch => {
-            store.elasticsearch(RetrievalSchema::ImageSemantic)?
-                .upsert_image(media, description_vector, name_vector)?;
+            store.elasticsearch(RetrievalSchema::ImageSemantic)?.upsert_image(
+                media,
+                description_vector,
+                name_vector,
+            )?;
             Ok(true)
         }
     }
@@ -94,18 +100,15 @@ pub fn persist_image_record_to_store(
         .and_then(|name| request.embedding_model.and_then(|model| model.inference(name).ok()))
         .filter(|vector| !vector.is_empty());
 
-    let result = match store.backend() {
-        RetrievalBackend::Weaviate => {
-            store
+    let result =
+        match store.backend() {
+            RetrievalBackend::Weaviate => store
                 .weaviate(RetrievalSchema::ImageSemantic)?
-                .upsert_image(&media, &description_vector, name_vector.as_deref())
-        }
-        RetrievalBackend::Elasticsearch => {
-            store
+                .upsert_image(&media, &description_vector, name_vector.as_deref()),
+            RetrievalBackend::Elasticsearch => store
                 .elasticsearch(RetrievalSchema::ImageSemantic)?
-                .upsert_image(&media, &description_vector, name_vector.as_deref())
-        }
-    };
+                .upsert_image(&media, &description_vector, name_vector.as_deref()),
+        };
     match result {
         Ok(_) => Ok(true),
         Err(error) => {

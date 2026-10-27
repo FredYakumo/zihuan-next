@@ -33,9 +33,10 @@ fn find_files_filters_name_type_and_excluded_directories() {
     let tool = FindFilesTool { workspace_path: Some(directory.clone()) };
 
     assert_eq!(tool.spec().name(), DEFAULT_TOOL_FIND_FILES);
-    let result =
-        tool.execute("", &json!({"path":".","name":"*.rs","type":"file","exclude":["target"]}));
-    let result: serde_json::Value = serde_json::from_str(&result).unwrap();
+    let output = tool
+        .execute("", &json!({"path":".","name":"*.rs","type":"file","exclude":["target"]}))
+        .expect("find_files executes");
+    let result: serde_json::Value = serde_json::from_str(&output).unwrap();
     assert_eq!(result["ok"], true);
     let matches = result["matches"].as_array().unwrap();
     assert_eq!(matches.len(), 1);

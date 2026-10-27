@@ -19,7 +19,8 @@ use zihuan_core::storage::{
     get_elasticsearch_memory_record, get_memory_record, list_recent_memory_keys,
     resource_resolver::{self, build_rdb_ref},
     search_memory_content_by_vector, update_elasticsearch_memory_record,
-    update_memory_record_with_vector, weaviate::build_weaviate_ref as build_storage_weaviate_ref,
+    update_memory_record_with_vector,
+    weaviate::build_weaviate_ref as build_storage_weaviate_ref,
     AgentMemoryAccessContext, AgentMemorySearchHit, AgentMemoryUpsert, ConnectionKind,
     ObjectStorageConfig, RetrievalDatabase, RetrievalSchema, WeaviateClient,
 };

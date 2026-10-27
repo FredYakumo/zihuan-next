@@ -536,10 +536,8 @@ impl Procedure for QqBrain {
         };
 
         // The state/system prefix is rebuilt every turn, so report this turn's own copy.
-        if let Some(prompt) = user_msg
-            .content_text_owned()
-            .as_deref()
-            .and_then(split_system_prompt_prefix)
+        if let Some(prompt) =
+            user_msg.content_text_owned().as_deref().and_then(split_system_prompt_prefix)
         {
             zihuan_core::qq_context::emit_qq_context_stage(
                 &self.agent_id,

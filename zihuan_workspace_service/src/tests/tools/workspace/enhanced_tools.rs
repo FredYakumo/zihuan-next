@@ -32,18 +32,18 @@ fn read_file_supports_base64_and_list_dir_name_glob() {
     let read = ReadFileTool { workspace_path: Some(directory.clone()) };
     let list = ListDirTool { workspace_path: Some(directory.clone()) };
 
+    let binary_output = read
+        .execute("", &json!({"path":"data.bin","encoding":"base64","byte_start":1,"byte_end":3}))
+        .expect("read_file executes");
     let binary =
-        serde_json::from_str::<serde_json::Value>(&read.execute(
-            "",
-            &json!({"path":"data.bin","encoding":"base64","byte_start":1,"byte_end":3}),
-        ))
-        .unwrap();
+        serde_json::from_str::<serde_json::Value>(&binary_output).expect("valid JSON result");
     assert_eq!(binary["encoding"], "base64");
     assert_eq!(binary["content"], "AQI=");
-    let listing = serde_json::from_str::<serde_json::Value>(
-        &list.execute("", &json!({"path":".","name_glob":"*.txt"})),
-    )
-    .unwrap();
+    let listing_output = list
+        .execute("", &json!({"path":".","name_glob":"*.txt"}))
+        .expect("list_dir executes");
+    let listing =
+        serde_json::from_str::<serde_json::Value>(&listing_output).expect("valid JSON result");
     assert_eq!(listing["entries"].as_array().unwrap().len(), 1);
 
     fs::remove_dir_all(directory).unwrap();
@@ -61,11 +61,13 @@ fn rg_extracts_capture_group_and_deduplicates_values() {
     let directory = temp_dir();
     fs::write(directory.join("ids.txt"), "id=one\nid=two\nid=one\n").unwrap();
     let tool = RgTool { workspace_path: Some(directory.clone()) };
-    let result = serde_json::from_str::<serde_json::Value>(&tool.execute(
-        "",
-        &json!({"path":".","pattern":"id=(?<id>[a-z]+)","output":"$id","unique":true}),
-    ))
-    .unwrap();
+    let output = tool
+        .execute(
+            "",
+            &json!({"path":".","pattern":"id=(?<id>[a-z]+)","output":"$id","unique":true}),
+        )
+        .expect("rg executes");
+    let result = serde_json::from_str::<serde_json::Value>(&output).unwrap();
     assert_eq!(result["matches"].as_array().unwrap().len(), 2);
     assert_eq!(result["matches"][0]["value"], "one");
 

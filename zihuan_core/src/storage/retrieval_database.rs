@@ -19,8 +19,8 @@ use crate::storage::{
     create_elasticsearch_memory_record, create_memory_record_with_vector,
     list_elasticsearch_memory_keys, list_recent_memory_keys, search_elasticsearch_images,
     search_elasticsearch_memory, search_memory_content_by_vector, upsert_elasticsearch_image,
-    upsert_image_record, WeaviateClient, AgentMemoryAccessContext, AgentMemoryRecord,
-    AgentMemorySearchHit, AgentMemoryUpsert, ElasticsearchRef,
+    upsert_image_record, AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit,
+    AgentMemoryUpsert, ElasticsearchRef, WeaviateClient,
 };
 
 /// One image search hit, independent of the retrieval backend.
@@ -71,7 +71,11 @@ pub trait RetrievalDatabase {
     ) -> Result<Vec<AgentMemorySearchHit>>;
 
     /// Creates a memory record, or updates the one carrying the same title.
-    fn upsert_memory(&self, input: &AgentMemoryUpsert, vector: Vec<f32>) -> Result<AgentMemoryRecord>;
+    fn upsert_memory(
+        &self,
+        input: &AgentMemoryUpsert,
+        vector: Vec<f32>,
+    ) -> Result<AgentMemoryRecord>;
 
     /// Writes one image record with its description (and optional name) vectors.
     fn upsert_image(
@@ -118,7 +122,11 @@ impl<T: RetrievalDatabase + ?Sized> RetrievalDatabase for Arc<T> {
         (**self).list_memory(access, top_n, query)
     }
 
-    fn upsert_memory(&self, input: &AgentMemoryUpsert, vector: Vec<f32>) -> Result<AgentMemoryRecord> {
+    fn upsert_memory(
+        &self,
+        input: &AgentMemoryUpsert,
+        vector: Vec<f32>,
+    ) -> Result<AgentMemoryRecord> {
         (**self).upsert_memory(input, vector)
     }
 
@@ -139,7 +147,13 @@ impl<T: RetrievalDatabase + ?Sized> RetrievalDatabase for Arc<T> {
         description_vector: Option<&[f32]>,
         limit: usize,
     ) -> Result<Vec<RetrievalImageHit>> {
-        (**self).search_images(name_query, description_query, name_vector, description_vector, limit)
+        (**self).search_images(
+            name_query,
+            description_query,
+            name_vector,
+            description_vector,
+            limit,
+        )
     }
 }
 
@@ -174,7 +188,11 @@ impl RetrievalDatabase for WeaviateRef {
         list_recent_memory_keys(self, access, top_n, query)
     }
 
-    fn upsert_memory(&self, input: &AgentMemoryUpsert, vector: Vec<f32>) -> Result<AgentMemoryRecord> {
+    fn upsert_memory(
+        &self,
+        input: &AgentMemoryUpsert,
+        vector: Vec<f32>,
+    ) -> Result<AgentMemoryRecord> {
         create_memory_record_with_vector(self, input, Some(vector))
     }
 
@@ -203,15 +221,19 @@ impl RetrievalDatabase for WeaviateRef {
                     "bm25: {{ query: \"{}\", properties: [\"{field}\"] }}, limit: {limit}",
                     gql_escape(query)
                 );
-                if let Ok(response) = self.query_with_args(&self.class_name, &args, &properties, true) {
-                    merge_image_hits(&mut hits, weaviate_image_hits(self, response, "keyword", false));
+                if let Ok(response) =
+                    self.query_with_args(&self.class_name, &args, &properties, true)
+                {
+                    merge_image_hits(
+                        &mut hits,
+                        weaviate_image_hits(self, response, "keyword", false),
+                    );
                 }
             }
         }
-        for (vector, target) in [
-            (name_vector, "name_vector"),
-            (description_vector, "description_vector"),
-        ] {
+        for (vector, target) in
+            [(name_vector, "name_vector"), (description_vector, "description_vector")]
+        {
             if let Some(vector) = vector {
                 if let Ok(response) = self.query_near_vector(
                     &self.class_name,
@@ -222,7 +244,10 @@ impl RetrievalDatabase for WeaviateRef {
                     true,
                     false,
                 ) {
-                    merge_image_hits(&mut hits, weaviate_image_hits(self, response, "semantic", true));
+                    merge_image_hits(
+                        &mut hits,
+                        weaviate_image_hits(self, response, "semantic", true),
+                    );
                 }
             }
         }
@@ -258,7 +283,11 @@ impl RetrievalDatabase for ElasticsearchRef {
         list_elasticsearch_memory_keys(self, access, top_n, query)
     }
 
-    fn upsert_memory(&self, input: &AgentMemoryUpsert, vector: Vec<f32>) -> Result<AgentMemoryRecord> {
+    fn upsert_memory(
+        &self,
+        input: &AgentMemoryUpsert,
+        vector: Vec<f32>,
+    ) -> Result<AgentMemoryRecord> {
         create_elasticsearch_memory_record(self, input, vector)
     }
 
@@ -297,7 +326,11 @@ impl RetrievalDatabase for ElasticsearchRef {
             object_id: hit.object_id,
             properties: hit.properties,
             score: hit.score.map(|score| self.normalize_score(score)),
-            match_kinds: vec![if hit.keyword_match { "keyword" } else { "semantic" }],
+            match_kinds: vec![if hit.keyword_match {
+                "keyword"
+            } else {
+                "semantic"
+            }],
         })
         .collect())
     }

@@ -23,10 +23,10 @@ use self::core::{
     build_info_brain_tools, expand_messages_for_inference,
     prepare_current_turn_user_input_from_event,
 };
-pub(crate) use self::core::{QqChatTaskTrace, LOG_PREFIX};
 pub(crate) use self::core::{
     build_user_message, compact_turn_history, split_current_user_body, split_system_prompt_prefix,
 };
+pub(crate) use self::core::{QqChatTaskTrace, LOG_PREFIX};
 use self::ignore_store::should_ignore_message_blocking;
 use self::inbox::QqChatAgentServiceInbox;
 use self::language_style_store::get_applicable_language_style_blocking;
@@ -797,12 +797,8 @@ impl QqChatAgentServiceInner {
             Ok(result) => result,
             Err(payload) => {
                 let panic_message = panic_payload_message(payload);
-                error!(
-                    "{LOG_PREFIX} turn task panicked for sender {sender_id}: {panic_message}"
-                );
-                Err(zihuan_core::string_error!(
-                    "turn task panicked: {panic_message}"
-                ))
+                error!("{LOG_PREFIX} turn task panicked for sender {sender_id}: {panic_message}");
+                Err(zihuan_core::string_error!("turn task panicked: {panic_message}"))
             }
         };
         trace.finish_with_summary();

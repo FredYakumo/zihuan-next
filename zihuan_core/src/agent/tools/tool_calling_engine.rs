@@ -413,15 +413,14 @@ impl ToolCallingEngine {
             // Failed calls are downgraded for the calling model at any nesting depth so
             // internal diagnostics never leak — unless the tool declares its failure
             // payloads to be agent guidance (command stderr, edit conflicts).
-            let payload =
-                if tool_result_reports_failure(&call.result.result)
-                    && !self.returns_failure_details_to_agent(&call.name)
-                {
-                    serde_json::json!({ "ok": false, "error": format!("{} 执行失败", call.name) })
-                        .to_string()
-                } else {
-                    call.result.result.clone()
-                };
+            let payload = if tool_result_reports_failure(&call.result.result)
+                && !self.returns_failure_details_to_agent(&call.name)
+            {
+                serde_json::json!({ "ok": false, "error": format!("{} 执行失败", call.name) })
+                    .to_string()
+            } else {
+                call.result.result.clone()
+            };
             let msg = LLMMessage::tool_result(call.call_id.clone(), payload);
             conversation.push(msg.clone());
             output.push(msg);
