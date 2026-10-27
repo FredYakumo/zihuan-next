@@ -4,7 +4,7 @@ use crate::error::{Error, Result};
 use crate::model_inference::llm::llm_base::LLMBase;
 
 use crate::model_inference::model_config::LlmServiceConfig;
-use crate::model_inference::nn::local_llm_registry::get_local_llm_model_info;
+use crate::model_inference::nn::llm_registry::get_local_llm_model_info;
 
 pub fn build_local_candle_hf_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
     let model_info = get_local_llm_model_info(&config.model_name)?;

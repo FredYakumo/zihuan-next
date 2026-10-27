@@ -5,10 +5,8 @@ use serde_json::Value;
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::storage::message::history::{
-    search_message_records, MessageSearchFilters,
-};
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
+use zihuan_core::storage::message::history::{search_message_records, MessageSearchFilters};
 
 use super::common::{
     optional_string_argument, sanitize_positive_limit, StaticFunctionToolSpec,

@@ -92,10 +92,66 @@
                     </div>
                   </dl>
                   <div
-                    v-if="embeddingView(entry.id)?.preview"
-                    class="context-embedding-preview"
+                    v-if="embeddingView(entry.id)?.inputs.length"
+                    class="context-embedding-section"
                   >
-                    输入预览：{{ embeddingView(entry.id)?.preview }}
+                    <button
+                      type="button"
+                      class="context-embedding-toggle"
+                      @click="toggleEmbeddingSection(entry.id, 'inputs')"
+                    >
+                      <span class="context-embedding-toggle-icon">
+                        {{ isEmbeddingSectionOpen(entry.id, "inputs") ? "▾" : "▸" }}
+                      </span>
+                      输入（{{ embeddingView(entry.id)?.inputs.length }}）
+                    </button>
+                    <ol
+                      v-if="isEmbeddingSectionOpen(entry.id, 'inputs')"
+                      class="context-embedding-list"
+                    >
+                      <li
+                        v-for="input in embeddingView(entry.id)?.inputs"
+                        :key="input.index"
+                        class="context-embedding-input"
+                      >
+                        <span class="context-embedding-input-head">
+                          <span class="mono">#{{ input.index }}</span>
+                          <span class="context-embedding-input-chars">{{ input.chars }} 字</span>
+                        </span>
+                        <pre class="context-embedding-input-text">{{ input.text }}</pre>
+                      </li>
+                    </ol>
+                  </div>
+                  <div
+                    v-if="embeddingView(entry.id)?.vectors.length"
+                    class="context-embedding-section"
+                  >
+                    <button
+                      type="button"
+                      class="context-embedding-toggle"
+                      @click="toggleEmbeddingSection(entry.id, 'vectors')"
+                    >
+                      <span class="context-embedding-toggle-icon">
+                        {{ isEmbeddingSectionOpen(entry.id, "vectors") ? "▾" : "▸" }}
+                      </span>
+                      输出向量（{{ embeddingView(entry.id)?.vectors.length }}）
+                    </button>
+                    <ol
+                      v-if="isEmbeddingSectionOpen(entry.id, 'vectors')"
+                      class="context-embedding-list"
+                    >
+                      <li
+                        v-for="vector in embeddingView(entry.id)?.vectors"
+                        :key="vector.index"
+                        class="context-embedding-vector"
+                      >
+                        <span class="context-embedding-vector-head">
+                          <span class="mono">#{{ vector.index }}</span>
+                          <span class="context-embedding-vector-dims">{{ vector.dimensions }} 维</span>
+                        </span>
+                        <pre class="context-embedding-vector-values">{{ vector.values }}</pre>
+                      </li>
+                    </ol>
                   </div>
                   <div
                     v-if="embeddingView(entry.id)?.error"
@@ -284,6 +340,8 @@ const {
   toggleQuote,
   stageThinkingOpen,
   toggleStageThinking,
+  isEmbeddingSectionOpen,
+  toggleEmbeddingSection,
   phases,
   subAgentsFor,
   orphanSubAgents,

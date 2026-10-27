@@ -1,6 +1,8 @@
-use crate::storage::message::record_restore::{rebuild_message_list, rebuild_message_list_from_raw_json};
 use crate::ims_bot_adapter::models::message::{
     ImageMessage, Message, MessageMediaRecord, PersistedMedia, PersistedMediaSource,
+};
+use crate::storage::message::record_restore::{
+    rebuild_message_list, rebuild_message_list_from_raw_json,
 };
 
 /// Purpose: Verify fallback restoration rebuilds image media from serialized media records.

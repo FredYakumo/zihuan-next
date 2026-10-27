@@ -13,12 +13,12 @@ use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
 
 use crate::model_inference::model_config::LlmServiceConfig;
-use crate::model_inference::nn::local_candle_embedding::describe_device;
-use crate::model_inference::nn::local_candle_llm_common::{
+use crate::model_inference::nn::candle_embedding::describe_device;
+use crate::model_inference::nn::candle_llm_common::{
     build_usage, decode_token_piece, parse_local_response, prepare_prompt,
     LocalResponseStreamRenderer, DEFAULT_MAX_NEW_TOKENS, USER_VISIBLE_REQUEST_ERROR,
 };
-use crate::model_inference::nn::local_llm_registry::{
+use crate::model_inference::nn::llm_registry::{
     get_local_llm_model_info, resolve_model_dir, LocalLlmModelLayout,
 };
 

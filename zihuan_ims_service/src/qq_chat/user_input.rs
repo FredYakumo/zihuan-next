@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use log::{info, warn};
-use zihuan_core::storage::S3Ref;
 use zihuan_core::ims_bot_adapter::adapter::{restore_messages_for_message_id, SharedBotAdapter};
 use zihuan_core::ims_bot_adapter::message_helpers::render_current_message_body;
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
@@ -20,6 +19,7 @@ use zihuan_core::ims_bot_adapter::{
 use zihuan_core::model_inference::llm::MessagePart;
 use zihuan_core::qq_context::QqChatQuotedMessage;
 use zihuan_core::runtime::block_async;
+use zihuan_core::storage::S3Ref;
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 

@@ -3,9 +3,9 @@ use std::sync::Arc;
 use log::warn;
 
 use zihuan_core::error::Result;
-use zihuan_core::storage::LLMMessageSessionCacheRef;
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::runtime::block_async;
+use zihuan_core::storage::LLMMessageSessionCacheRef;
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 
@@ -21,7 +21,15 @@ pub(crate) fn load_history(
     cache: &Arc<LLMMessageSessionCacheRef>,
     history_key: &str,
 ) -> Vec<LLMMessage> {
-    block_async(cache.get_messages(history_key)).unwrap_or_default()
+    match block_async(cache.get_messages(history_key)) {
+        Ok(messages) => messages,
+        Err(err) => {
+            // The turn still runs, but with no history. That is impossible to notice from the
+            // reply alone, so the failure must be visible in the logs.
+            warn!("{LOG_PREFIX} Failed to load history for {history_key}: {err}");
+            Vec::new()
+        }
+    }
 }
 
 pub(crate) fn save_history(

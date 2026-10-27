@@ -7,8 +7,8 @@ use crate::connection_manager::{
 };
 use crate::data_refs::{MySqlConfig, SqliteConfig};
 use crate::error::{Error, Result};
-use crate::storage::S3Ref;
 use crate::retrieval::RetrievalSchema;
+use crate::storage::S3Ref;
 use crate::weaviate::WeaviateRef;
 use async_trait::async_trait;
 use chrono::Utc;

@@ -13,9 +13,9 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::storage::LLMMessageSessionCacheRef;
 use crate::ims_bot_adapter::models::message::Message;
 use crate::model_inference::llm::TokenUsage;
+use crate::storage::LLMMessageSessionCacheRef;
 
 /// Which backend an agent's conversation context cache is actually using.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,7 +76,7 @@ pub fn collect_turn_media_refs(messages: &[Message]) -> Vec<MediaRef> {
 pub const QQ_CONTEXT_STAGE_SYSTEM_PROMPT: &str = "System Prompt";
 
 /// Stage name under which a local embedding inference reports its live progress.
-pub const QQ_CONTEXT_STAGE_EMBEDDING: &str = "嵌入推理";
+pub const QQ_CONTEXT_STAGE_EMBEDDING: &str = "embedding model inference";
 
 /// The message a turn replies to, captured for the Data Explorer's quote block.
 #[derive(Debug, Clone, Serialize, Deserialize)]

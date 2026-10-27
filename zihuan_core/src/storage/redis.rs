@@ -223,13 +223,16 @@ async fn ensure_connection<'a>(
     redis_cm: &'a mut Option<Connection>,
 ) -> Result<&'a mut Connection> {
     if redis_cm.is_none() {
-        let url = redis_ref
-            .url
-            .clone()
-            .ok_or_else(|| crate::string_error!("redis_ref missing url"))?;
+        // Two ways a reference learns its URL: a connection config seeds `url`, while a cache
+        // pointed at a running service only knows `cached_redis_url`. The cached one is the
+        // connection actually in use, so it wins when both are present.
+        let url = {
+            let cached = redis_ref.cached_redis_url.lock().await.clone();
+            cached.or_else(|| redis_ref.url.clone())
+        }
+        .ok_or_else(|| crate::string_error!("redis_ref missing url"))?;
         *redis_cm = Some(connect(&url).await?);
-        let mut cached_redis_url = redis_ref.cached_redis_url.lock().await;
-        *cached_redis_url = Some(url.to_string());
+        *redis_ref.cached_redis_url.lock().await = Some(url);
     }
     redis_cm
         .as_mut()

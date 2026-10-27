@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use super::state::AppState;
 use zihuan_core::storage::hyperparams;
 
-
 #[handler]
 pub async fn get_hyperparameters(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
@@ -87,7 +86,6 @@ pub async fn update_hyperparameter_values(
         })));
     }
 }
-
 
 #[handler]
 pub async fn get_variables(req: &mut Request, res: &mut Response, depot: &mut Depot) {

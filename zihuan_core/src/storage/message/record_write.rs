@@ -8,7 +8,6 @@ use crate::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
 use crate::error::{Error, Result};
 use crate::ims_bot_adapter::models::event_model::MessageEvent;
 use crate::ims_bot_adapter::models::message::{collect_media_records, Message};
-use crate::storage::RedisConfig;
 use crate::storage::message::chunking::{
     split_content_chunks, truncate_field_if_needed, truncate_optional_field_if_needed,
     AT_TARGET_LIST_MAX_CHARS, CONTENT_MAX_CHARS, GROUP_ID_MAX_CHARS, GROUP_NAME_MAX_CHARS,
@@ -17,6 +16,7 @@ use crate::storage::message::chunking::{
 use crate::storage::message::record_restore::{
     cache_message_snapshot, register_rdb_pool, register_redis_ref, CachedMessageSnapshotPayload,
 };
+use crate::storage::RedisConfig;
 
 const LOG_PREFIX: &str = "[message_record]";
 
@@ -112,8 +112,12 @@ fn prepare_message_record(input: &MessageRecordInput<'_>) -> Result<MessageRecor
             Some(serde_json::to_string(&records)?)
         }
     };
-    let media_json =
-        truncate_optional_field_if_needed("media_json", media_json, MEDIA_JSON_MAX_CHARS, &message_id);
+    let media_json = truncate_optional_field_if_needed(
+        "media_json",
+        media_json,
+        MEDIA_JSON_MAX_CHARS,
+        &message_id,
+    );
 
     Ok(MessageRecordRow {
         send_time: chrono::Local::now().naive_local().to_string(),
@@ -413,10 +417,7 @@ pub fn persist_message_event(
     if let Some(redis_ref) = redis_ref.cloned() {
         register_redis_ref(redis_ref.clone());
         if let Err(error) = persist_message_to_redis(&message_id, &redis_payload, &redis_ref) {
-            warn!(
-                "{LOG_PREFIX} Redis cache write failed for message {}: {}",
-                message_id, error
-            );
+            warn!("{LOG_PREFIX} Redis cache write failed for message {}: {}", message_id, error);
         }
     }
 

@@ -59,11 +59,12 @@ pub use message_record::MessageRecord;
 pub use object_storage::{
     enrich_event_images, enrich_message_images, save_image_to_object_storage,
     upload_remote_image_to_s3, ImageCacheAdapter, ImageObjectStorageInput, ObjectStorageConfig,
-    PendingImageUpload, SavedImageObject, S3Ref,
+    PendingImageUpload, S3Ref, SavedImageObject,
 };
 pub use rdb::{
     build_relational_db_connection_for_connection, build_relational_db_connection_for_kind,
 };
+pub use redis::RedisConfig;
 pub use resource_resolver::{
     build_elasticsearch_ref, build_rdb_ref, build_redis_ref, build_retrieval_store_ref,
     build_s3_ref, build_weaviate_ref, build_web_search_engine_ref, find_connection,
@@ -76,7 +77,6 @@ pub use retrieval_ops::{
 };
 pub use role_avatar_rdb_store::{first_available_role_avatar_store, RdbRoleAvatarStore};
 pub use role_avatar_store::{RoleAvatarData, RoleAvatarStore};
-pub use redis::RedisConfig;
 pub use session_cache::LLMMessageSessionCacheRef;
 pub use weaviate_client::WeaviateClient;
 pub use weaviate_persistence::{
