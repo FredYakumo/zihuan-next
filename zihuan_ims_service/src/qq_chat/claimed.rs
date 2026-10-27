@@ -383,6 +383,11 @@ impl QqChatAgentServiceInner {
         // The chain runs through one shared procedure context; the brain reads the
         // before-brain output from it and assembles the turn input itself.
         let mut shared = qq_procedure_context(&history_key, Some(current_message.clone()));
+        // The chain runs inside `block_async`. A guard taken inside the call arguments stays
+        // alive until the end of this statement, i.e. for the whole chain, and the preprompt
+        // stage locks the same non-reentrant mutex. Clone the state first so the guard is
+        // released before the chain starts.
+        let after_brain_session_state = turn_session_state.lock().unwrap().clone();
         let turn_outputs = block_async(execute_blocking_procedure_chain(
             vec![
                 Arc::new(before_brain),
@@ -399,7 +404,7 @@ impl QqChatAgentServiceInner {
                         sender_id: sender_id.to_string(),
                         sender_nickname: inference_event.sender.nickname.clone(),
                         sender_card: inference_event.sender.card.clone(),
-                        session_state: turn_session_state.lock().unwrap().clone(),
+                        session_state: after_brain_session_state.clone(),
                         emotion_dimensions: emotion_dimensions.clone(),
                         model_identity_context: Some(build_model_identity_context(ctx)),
                     },
@@ -760,6 +765,8 @@ impl QqChatAgentServiceInner {
         // Role turn chain (documents/procedure.md): the meta-query brain (a single direct
         // inference) -> AfterBrain review.
         let mut shared = qq_procedure_context(history_key, None);
+        // Same guard hazard as the normal turn: clone outside the `block_async` arguments.
+        let after_brain_session_state = turn_session_state.lock().unwrap().clone();
         let meta_outputs = block_async(execute_blocking_procedure_chain(
             vec![
                 Arc::new(QqMetaQueryBrain::new(ctx.llm, trace, meta_messages)),
@@ -775,7 +782,7 @@ impl QqChatAgentServiceInner {
                         sender_id: sender_id.to_string(),
                         sender_nickname: inference_event.sender.nickname.clone(),
                         sender_card: inference_event.sender.card.clone(),
-                        session_state: turn_session_state.lock().unwrap().clone(),
+                        session_state: after_brain_session_state.clone(),
                         emotion_dimensions: emotion_dimensions.to_vec(),
                         model_identity_context: Some(build_model_identity_context(ctx)),
                     },
