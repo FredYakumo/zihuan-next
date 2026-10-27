@@ -47,7 +47,7 @@ const options = computed(() => connections.value
   .filter((connection) => connection.kind.type === "mysql" || connection.kind.type === "sqlite")
   .map((connection) => {
     const defaultSqlite = connection.kind.type === "sqlite"
-      && ["系统配置数据库（默认 SQLite）", "sqlite3数据库"].includes(connection.name);
+      && ["系统配置数据库", "sqlite3数据库"].includes(connection.name);
     return {
       value: connection.config_id,
       label: defaultSqlite ? "sqlite3数据库" : connection.name,

@@ -3,7 +3,7 @@ use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use zihuan_core::command::{CommandPermission, PermissionRule};
-use zihuan_core::config::{ConfigKind, ConfigRepository, FsConfigRepository, StoredConfigRecord};
+use zihuan_core::config::{ConfigCenter, ConfigKind, StoredConfigRecord};
 
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
@@ -79,7 +79,7 @@ pub struct UpdateCommandPermissionRequest {
 ///
 /// Exposes REST endpoints that allow the admin UI to list, create, update, and
 /// delete command-permission records. These operate on the file-system config
-/// repository (`FsConfigRepository`).
+/// document through `ConfigCenter`.
 ///
 /// ## Design
 ///
@@ -87,16 +87,15 @@ pub struct UpdateCommandPermissionRequest {
 ///   and projects each record to `CommandPermissionDto`.
 /// - **Create** (`create_command_permission`) parses the JSON body, wraps it in a
 ///   `StoredConfigRecord` with a generated UUID, appends to the root, and persists.
-/// - Each handler follows the same pattern: load root from `FsConfigRepository`,
-///   mutate the in-memory copy, save back. Conflicts between concurrent writes are
-///   not handled (acceptable for low-frequency admin use).
+/// - Each mutating handler applies its change with `ConfigCenter::update_root`, which loads,
+///   mutates, and saves the shared document under one lock so concurrent writes to other parts
+///   of the document are not overwritten.
 /// - Error responses use the shared `render_*` helpers from the parent module for
 ///   consistent error formatting.
 
 #[handler]
 pub async fn list_command_permissions(_req: &mut Request, res: &mut Response) {
-    let repo = FsConfigRepository::default();
-    let root = match repo.load_root() {
+    let root = match ConfigCenter::shared().load_root() {
         Ok(root) => root,
         Err(err) => return render_internal_error(res, err),
     };
@@ -118,11 +117,7 @@ pub async fn create_command_permission(req: &mut Request, res: &mut Response) {
         Err(err) => return render_bad_request(res, err.to_string()),
     };
 
-    let repo = FsConfigRepository::default();
-    let mut root = match repo.load_root() {
-        Ok(root) => root,
-        Err(err) => return render_internal_error(res, err),
-    };
+    let repo = ConfigCenter::shared();
 
     let permission = CommandPermission {
         command_name: body.command_name,
@@ -143,15 +138,16 @@ pub async fn create_command_permission(req: &mut Request, res: &mut Response) {
         spec: serde_json::to_value(&permission).unwrap_or_default(),
     };
 
-    root.configs.command_permissions.push(record.clone());
-
-    match repo.save_root(&root) {
-        Ok(()) => {
-            let dto = CommandPermissionDto::from(&record);
-            res.render(Json(dto));
-        }
-        Err(err) => render_internal_error(res, err),
+    let saved = record.clone();
+    if let Err(err) = repo.update_root(|root| {
+        root.configs.command_permissions.push(record);
+        Ok(())
+    }) {
+        return render_internal_error(res, err);
     }
+
+    let dto = CommandPermissionDto::from(&saved);
+    res.render(Json(dto));
 }
 
 #[handler]
@@ -160,18 +156,6 @@ pub async fn update_command_permission(req: &mut Request, res: &mut Response) {
     let body: UpdateCommandPermissionRequest = match req.parse_json().await {
         Ok(body) => body,
         Err(err) => return render_bad_request(res, err.to_string()),
-    };
-
-    let repo = FsConfigRepository::default();
-    let mut root = match repo.load_root() {
-        Ok(root) => root,
-        Err(err) => return render_internal_error(res, err),
-    };
-
-    let idx = root.configs.command_permissions.iter().position(|r| r.config_id == id);
-
-    let Some(idx) = idx else {
-        return render_not_found(res, "command permission not found");
     };
 
     let permission = CommandPermission {
@@ -184,23 +168,27 @@ pub async fn update_command_permission(req: &mut Request, res: &mut Response) {
         enabled: body.enabled,
     };
 
-    {
-        let record = &mut root.configs.command_permissions[idx];
+    let result = ConfigCenter::shared().update_root(|root| {
+        let Some(record) = root.configs.command_permissions.iter_mut().find(|r| r.config_id == id)
+        else {
+            return Ok(None);
+        };
         record.name = permission.command_name.clone();
         record.enabled = body.enabled;
         record.updated_at = now_rfc3339();
         record.spec = serde_json::to_value(&permission).unwrap_or_default();
-    }
+        Ok(Some(CommandPermissionDto::from(&*record)))
+    });
 
-    match repo.save_root(&root) {
-        Ok(()) => {
-            let dto = CommandPermissionDto::from(&root.configs.command_permissions[idx]);
+    match result {
+        Ok(Some(dto)) => {
             // Also sync to the in-memory global registry
             if let Some(registry) = zihuan_service::command::global_command_registry() {
                 registry.set_permissions(&permission.command_name, permission.rules);
             }
             res.render(Json(dto));
         }
+        Ok(None) => render_not_found(res, "command permission not found"),
         Err(err) => render_internal_error(res, err),
     }
 }
@@ -209,23 +197,16 @@ pub async fn update_command_permission(req: &mut Request, res: &mut Response) {
 pub async fn delete_command_permission(req: &mut Request, res: &mut Response) {
     let id = req.param::<String>("id").unwrap_or_default();
 
-    let repo = FsConfigRepository::default();
-    let mut root = match repo.load_root() {
-        Ok(root) => root,
-        Err(err) => return render_internal_error(res, err),
-    };
+    let result = ConfigCenter::shared().update_root(|root| {
+        let before = root.configs.command_permissions.len();
+        root.configs.command_permissions.retain(|record| record.config_id != id);
+        Ok(before != root.configs.command_permissions.len())
+    });
 
-    let idx = root.configs.command_permissions.iter().position(|r| r.config_id == id);
-
-    match idx {
-        Some(pos) => {
-            root.configs.command_permissions.remove(pos);
-            match repo.save_root(&root) {
-                Ok(()) => res.render(Json(ok_response())),
-                Err(err) => render_internal_error(res, err),
-            }
-        }
-        None => render_not_found(res, "command permission not found"),
+    match result {
+        Ok(true) => res.render(Json(ok_response())),
+        Ok(false) => render_not_found(res, "command permission not found"),
+        Err(err) => render_internal_error(res, err),
     }
 }
 

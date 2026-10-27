@@ -135,6 +135,11 @@ pub struct ConfigRoot {
     pub python_runtime: PythonRuntimeConfig,
     #[serde(default)]
     pub node_runtime: NodeRuntimeConfig,
+    /// Carries the top-level system-configuration sections owned by [`crate::system_config`]
+    /// through a load/save cycle. The config center only models its own fields and must not drop
+    /// the rest of the shared document when it saves.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 impl Default for ConfigRoot {
@@ -144,6 +149,7 @@ impl Default for ConfigRoot {
             configs: ConfigCollections::default(),
             python_runtime: PythonRuntimeConfig::default(),
             node_runtime: NodeRuntimeConfig::default(),
+            extra: Map::new(),
         }
     }
 }
@@ -186,20 +192,29 @@ impl ConfigRoot {
         Ok(root)
     }
 
-    fn from_legacy_object(object: Map<String, Value>) -> Result<Self> {
+    fn from_legacy_object(mut object: Map<String, Value>) -> Result<Self> {
+        for key in ["version", "configs", "python_runtime", "node_runtime"] {
+            object.remove(key);
+        }
+        let connections = object.remove("connections");
+        let llm_refs = object.remove("llm_refs");
+        let agents = object.remove("agents");
         let mut root = Self::default();
         root.configs.connections = migrate_legacy_collection(
-            object.get("connections").and_then(Value::as_array),
+            connections.as_ref().and_then(Value::as_array),
             ConfigCategory::Connection,
         )?;
         root.configs.llm_refs = migrate_legacy_collection(
-            object.get("llm_refs").and_then(Value::as_array),
+            llm_refs.as_ref().and_then(Value::as_array),
             ConfigCategory::LlmRef,
         )?;
         root.configs.agents = migrate_legacy_collection(
-            object.get("agents").and_then(Value::as_array),
+            agents.as_ref().and_then(Value::as_array),
             ConfigCategory::Service,
         )?;
+        // Whatever is left belongs to another owner of the shared document (typed config
+        // sections); keep it instead of dropping it on the next save.
+        root.extra = object;
         Ok(root)
     }
 
@@ -416,7 +431,21 @@ impl<R: ConfigRepository> ConfigCenter<R> {
     }
 
     pub fn save_root(&self, root: &ConfigRoot) -> Result<()> {
-        self.repository.save_root(root)
+        crate::system_config::with_document_lock(|| self.repository.save_root(root))
+    }
+
+    /// Applies `operation` to a freshly loaded document and persists it, all under the shared
+    /// document lock, so a concurrent section write cannot be lost to a stale snapshot.
+    pub fn update_root<T>(
+        &self,
+        operation: impl FnOnce(&mut ConfigRoot) -> Result<T>,
+    ) -> Result<T> {
+        crate::system_config::with_document_lock(|| {
+            let mut root = self.repository.load_root()?;
+            let output = operation(&mut root)?;
+            self.repository.save_root(&root)?;
+            Ok(output)
+        })
     }
 
     pub fn list_configs(&self, category: ConfigCategory) -> Result<Vec<StoredConfigRecord>> {
@@ -440,26 +469,26 @@ impl<R: ConfigRepository> ConfigCenter<R> {
     }
 
     pub fn upsert_config(&self, record: StoredConfigRecord) -> Result<()> {
-        let mut root = self.load_root()?;
-        let bucket = bucket_mut(&mut root, record.kind.category());
-        if let Some(existing) = bucket.iter_mut().find(|item| item.config_id == record.config_id) {
-            *existing = record;
-        } else {
-            bucket.push(record);
-        }
-        self.save_root(&root)
+        self.update_root(|root| {
+            let bucket = bucket_mut(root, record.kind.category());
+            if let Some(existing) =
+                bucket.iter_mut().find(|item| item.config_id == record.config_id)
+            {
+                *existing = record;
+            } else {
+                bucket.push(record);
+            }
+            Ok(())
+        })
     }
 
     pub fn delete_config(&self, category: ConfigCategory, config_id: &str) -> Result<bool> {
-        let mut root = self.load_root()?;
-        let bucket = bucket_mut(&mut root, category);
-        let before = bucket.len();
-        bucket.retain(|record| record.config_id != config_id);
-        if before == bucket.len() {
-            return Ok(false);
-        }
-        self.save_root(&root)?;
-        Ok(true)
+        self.update_root(|root| {
+            let bucket = bucket_mut(root, category);
+            let before = bucket.len();
+            bucket.retain(|record| record.config_id != config_id);
+            Ok(before != bucket.len())
+        })
     }
 }
 
