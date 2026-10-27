@@ -479,18 +479,6 @@ fn positive_limit(params: &Value, default: Option<i64>) -> Result<u32> {
     Ok(limit as u32)
 }
 
-fn history_messages_json(rows: Vec<sqlx::mysql::MySqlRow>, limit: usize) -> Value {
-    let messages = crate::storage::message::history::format_history_messages(
-        crate::storage::message::history::aggregate_history_rows(
-            rows.into_iter()
-                .map(crate::storage::message::history::message_history_chunk_row_from_row)
-                .collect(),
-            limit,
-        ),
-    );
-    json!({"messages": messages})
-}
-
 fn llm_messages_from_json(
     value: &Value,
     field: &str,
@@ -1718,96 +1706,46 @@ pub fn dispatch_script_host_call(
             let sender_id = required_string(params, "sender_id")?;
             let group_id = optional_string(params, "group_id");
             let limit = positive_limit(params, None)?;
-            let rows = crate::storage::message::history::run_mysql_query(
-                &reference,
-                move |pool| {
-                    Box::pin(async move {
-                        if let Some(group_id) = group_id {
-                            sqlx::query(
-                                crate::storage::message::history::user_history_query(Some(
-                                    &group_id,
-                                )),
-                            )
-                            .bind(sender_id)
-                            .bind(group_id)
-                            .bind(
-                                crate::storage::message::history::history_query_row_limit(
-                                    limit,
-                                ),
-                            )
-                            .fetch_all(pool)
-                            .await
-                        } else {
-                            sqlx::query(
-                                crate::storage::message::history::user_history_query(None),
-                            )
-                            .bind(sender_id)
-                            .bind(
-                                crate::storage::message::history::history_query_row_limit(
-                                    limit,
-                                ),
-                            )
-                            .fetch_all(pool)
-                            .await
-                        }
-                    })
-                },
+            let messages = crate::storage::message::history::load_user_history(
+                &reference, sender_id, group_id, limit,
             )?;
-            Ok(history_messages_json(rows, limit as usize))
+            Ok(json!({ "messages": messages }))
         }
         "storage.group_history" => {
             let reference = mysql_resource(params, "rdb_ref")?;
             let group_id = required_string(params, "group_id")?;
             let limit = positive_limit(params, None)?;
-            let rows = crate::storage::message::history::run_mysql_query(
-                &reference,
-                move |pool| {
-                    Box::pin(async move {
-                        sqlx::query(crate::storage::message::history::group_history_query())
-                            .bind(group_id)
-                            .bind(
-                                crate::storage::message::history::history_query_row_limit(
-                                    limit,
-                                ),
-                            )
-                            .fetch_all(pool)
-                            .await
-                    })
-                },
-            )?;
-            Ok(history_messages_json(rows, limit as usize))
+            let messages =
+                crate::storage::message::history::load_group_history(&reference, group_id, limit)?;
+            Ok(json!({ "messages": messages }))
         }
         "storage.search_messages" => {
             let reference = mysql_resource(params, "rdb_ref")?;
             let limit = positive_limit(params, Some(100))?;
-            let builder = crate::storage::message::history::SearchMessagesQueryBuilder {
-                sender_id: optional_string(params, "sender_id"),
-                group_id: optional_string(params, "group_id"),
-                contain: optional_string(params, "query"),
-                start_time: optional_string(params, "start_time"),
-                end_time: optional_string(params, "end_time"),
-                before_time: optional_string(params, "before_time"),
-                before_id: params.get("before_id").and_then(Value::as_i64),
-                sort_by_time_desc: params
-                    .get("sort_by_time_desc")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(true),
-                limit,
-            };
-            let (sql, query_params) = builder.build_page_query();
-            let rows = crate::storage::message::history::run_mysql_query(
+            let page = crate::storage::message::history::search_message_records(
                 &reference,
-                move |pool| {
-                    Box::pin(async move {
-                        let mut query = sqlx::query(&sql);
-                        for parameter in &query_params {
-                            query = query.bind(parameter);
-                        }
-                        query.fetch_all(pool).await
-                    })
+                crate::storage::message::history::MessageSearchFilters {
+                    sender_id: optional_string(params, "sender_id"),
+                    group_id: optional_string(params, "group_id"),
+                    contain: optional_string(params, "query"),
+                    start_time: optional_string(params, "start_time"),
+                    end_time: optional_string(params, "end_time"),
+                    before_time: optional_string(params, "before_time"),
+                    before_id: params.get("before_id").and_then(Value::as_i64),
+                    sort_by_time_desc: params
+                        .get("sort_by_time_desc")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(true),
+                    limit,
                 },
             )?;
-            Ok(history_messages_json(rows, limit as usize))
+            Ok(json!({
+                "messages": page.messages,
+                "total": page.total,
+                "has_more": page.has_more,
+                "oldest_send_time": page.oldest_send_time,
+                "oldest_id": page.oldest_id,
+            }))
         }
         "storage.persist_qq_message_vectors" => {
             let store = retrieval_store_resource(params, "retrieval_store_ref")?;
