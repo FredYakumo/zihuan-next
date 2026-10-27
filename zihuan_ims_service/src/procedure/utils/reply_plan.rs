@@ -20,16 +20,17 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use zihuan_core::agent::utils::string_utils::is_no_reply_directive;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::graph::data_value::DataValue;
 use zihuan_core::ims_bot_adapter::models::message::{
     AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, PersistedMedia,
-    PersistedMediaSource, PlainTextMessage, ReplyMessage,
+    PlainTextMessage, ReplyMessage,
 };
-use zihuan_core::nlp::{PunctuationSegmenter, TextSegmenter};
-use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
+use zihuan_core::nlp::{
+    analyze_chunk_state, PunctuationSegmenter, SplitRepairState, TextSegmenter,
+};
+use zihuan_core::utils::string_utils::{parse_at_segment, parse_bracket_segment, BracketSegment};
 
 pub(crate) use crate::qq_chat::model::{
     QqChatServiceReplyBatchBuilder, QqChatServiceReplyBuildRequest, QqChatServiceReplyBuildResult,
@@ -166,13 +167,6 @@ enum PlannedSegment {
     At(AtTargetMessage),
     Text(String),
     Image(ImageMessage),
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct SplitRepairState {
-    in_code_fence: bool,
-    in_double_quote: bool,
-    in_cn_quote: bool,
 }
 
 pub(crate) fn build_reply_batch_builder(
@@ -424,7 +418,7 @@ fn replace_sender_placeholder(text: &str, replacement: &str) -> String {
 }
 
 /// Replace `@<name>` occurrences, keeping the parse boundary intact: when the character
-/// after the name would break `parse_at_segment` (e.g. `@张三你好`), a separating space is
+/// after the name would break `parse_at_segment` (e.g. `@刻晴你好`), a separating space is
 /// inserted so the mention still converts into an At segment.
 fn replace_with_boundary_space(text: &str, target: &str, replacement: &str) -> String {
     if !text.contains(target) {
@@ -447,7 +441,23 @@ fn replace_with_boundary_space(text: &str, target: &str, replacement: &str) -> S
     result
 }
 
-/// The characters after an id that `parse_at_segment` accepts as the mention's end.
+/// Whether `ch` is one of the punctuation characters that close an `@<id>` mention.
+///
+/// Purpose: `parse_at_segment` only accepts `@<digits>` as a real mention when the digit
+/// run ends at whitespace, one of these punctuation marks, or the end of the text — a CJK
+/// or ASCII letter glued to the id (`@123456你好吗`) makes the parser reject the whole
+/// segment. The mention rewrites in this module (`replace_sender_placeholder`,
+/// `replace_with_boundary_space`) use this predicate to predict that rejection: after
+/// rewriting `@sender` / `@刻晴` onto `@<sender_id>`, they check the character that
+/// followed the original name and insert a separating space when this predicate is false,
+/// so the rewritten text still parses into a real At segment instead of going out as a
+/// literal `@123456...` string.
+///
+/// Whitespace also closes a mention but is handled separately at the call sites (a
+/// follower that is already whitespace needs no inserted space).
+///
+/// Keep in sync with the inline boundary list inside `parse_at_segment` in
+/// `zihuan_core/src/utils/string_utils.rs`.
 fn is_at_parse_boundary(ch: char) -> bool {
     matches!(
         ch,
@@ -456,7 +466,7 @@ fn is_at_parse_boundary(ch: char) -> bool {
 }
 
 /// Whether text carries an @-mention token: `@` at a mention boundary (ruling out
-/// `user@domain`) and followed by a non-whitespace character (`@张三`, `@12345`, `@sender`).
+/// `user@domain`) and followed by a non-whitespace character (`@刻晴`, `@12345`, `@sender`).
 fn text_contains_mention(text: &str) -> bool {
     let chars: Vec<char> = text.chars().collect();
     chars.iter().enumerate().any(|(index, ch)| {
@@ -772,35 +782,6 @@ pub(crate) fn split_plain_text_for_forward(
     chunks
 }
 
-fn analyze_chunk_state(chunk: &str, mut state: SplitRepairState) -> SplitRepairState {
-    let mut iter = chunk.chars().peekable();
-    while let Some(ch) = iter.next() {
-        if ch == '`' {
-            let mut count = 1usize;
-            while matches!(iter.peek(), Some('`')) {
-                iter.next();
-                count += 1;
-            }
-            if count >= 3 {
-                state.in_code_fence = !state.in_code_fence;
-                continue;
-            }
-        }
-
-        if state.in_code_fence {
-            continue;
-        }
-
-        match ch {
-            '"' => state.in_double_quote = !state.in_double_quote,
-            '“' => state.in_cn_quote = true,
-            '”' => state.in_cn_quote = false,
-            _ => {}
-        }
-    }
-    state
-}
-
 fn parse_reply_segments(text: &str) -> Vec<ReplySegment> {
     let mut segments = Vec::new();
     let mut buffer = String::new();
@@ -810,7 +791,9 @@ fn parse_reply_segments(text: &str) -> Vec<ReplySegment> {
     while index < chars.len() {
         if chars[index] == '@' && is_mention_prefix_boundary(&chars, index) {
             if let Some((target, next_index)) = parse_at_segment(&chars, index) {
-                push_text_segment(&mut segments, &mut buffer);
+                if !buffer.is_empty() {
+                    segments.push(ReplySegment::Text(std::mem::take(&mut buffer)));
+                }
                 segments.push(ReplySegment::At(target));
                 index = next_index;
                 continue;
@@ -819,8 +802,13 @@ fn parse_reply_segments(text: &str) -> Vec<ReplySegment> {
 
         if chars[index] == '[' {
             if let Some((segment, next_index)) = parse_bracket_segment(&chars, index) {
-                push_text_segment(&mut segments, &mut buffer);
-                segments.push(segment);
+                if !buffer.is_empty() {
+                    segments.push(ReplySegment::Text(std::mem::take(&mut buffer)));
+                }
+                segments.push(match segment {
+                    BracketSegment::NoReply => ReplySegment::NoReply,
+                    BracketSegment::Image(message) => ReplySegment::Image(message),
+                });
                 index = next_index;
                 continue;
             }
@@ -830,14 +818,10 @@ fn parse_reply_segments(text: &str) -> Vec<ReplySegment> {
         index += 1;
     }
 
-    push_text_segment(&mut segments, &mut buffer);
-    merge_adjacent_text_segments(segments)
-}
-
-fn push_text_segment(segments: &mut Vec<ReplySegment>, buffer: &mut String) {
     if !buffer.is_empty() {
-        segments.push(ReplySegment::Text(std::mem::take(buffer)));
+        segments.push(ReplySegment::Text(std::mem::take(&mut buffer)));
     }
+    merge_adjacent_text_segments(segments)
 }
 
 fn merge_adjacent_text_segments(segments: Vec<ReplySegment>) -> Vec<ReplySegment> {
@@ -863,39 +847,4 @@ fn is_mention_prefix_boundary(chars: &[char], index: usize) -> bool {
     }
 
     !chars[index - 1].is_ascii_alphanumeric()
-}
-
-fn parse_bracket_segment(chars: &[char], start: usize) -> Option<(ReplySegment, usize)> {
-    let mut end = start + 1;
-    while end < chars.len() {
-        if chars[end] == ']' {
-            let inner: String = chars[start + 1..end].iter().collect();
-            let inner = inner.trim();
-            if is_no_reply_directive(inner) {
-                return Some((ReplySegment::NoReply, end + 1));
-            }
-            if let Some(message) = parse_bracket_message(inner) {
-                return Some((message, end + 1));
-            }
-            return None;
-        }
-        end += 1;
-    }
-    None
-}
-
-fn parse_bracket_message(inner: &str) -> Option<ReplySegment> {
-    let value = inner
-        .strip_prefix("Image media_id=")
-        .or_else(|| inner.strip_prefix("Image: media_id="))?;
-    let media_id = parse_tag_value(value)?;
-    Some(ReplySegment::Image(ImageMessage::new(PersistedMedia {
-        media_id,
-        source: PersistedMediaSource::Upload,
-        original_source: String::new(),
-        rustfs_path: String::new(),
-        name: None,
-        description: None,
-        mime_type: None,
-    })))
 }
