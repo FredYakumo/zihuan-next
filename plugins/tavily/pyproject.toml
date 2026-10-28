@@ -1,0 +1,6 @@
+[project]
+name = "zihuan-plugin-tavily"
+version = "0.1.0"
+description = "Tavily web search engine plugin for zihuan-next"
+requires-python = ">=3.11"
+dependencies = ["tavily-python>=0.8", "requests"]

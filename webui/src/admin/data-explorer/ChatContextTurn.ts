@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 import type { ServiceChatContextMedia } from "../../api/client";
 import type { QqSubAgentEntry, TokenUsage } from "../../api/types";
@@ -14,12 +14,24 @@ type Segment = { type: "text"; text: string } | { type: "image"; media: ServiceC
 /** Stage name the backend uses for the per-turn assembled system prompt. */
 export const SYSTEM_PROMPT_STAGE = "System Prompt";
 
-/** The preprompt run and the stage that reports its result. */
-export const PREPROMPT_STAGE = "Preprompt";
-export const PREPROMPT_RESULT_STAGE = "Preprompt 输出";
+/** Stage reporting the memory titles retrieved for the turn before the brain runs. */
+export const MEMORY_STAGE = "记忆检索";
+
+/** Stage reporting the assembled current-turn user input. */
+export const USER_INPUT_STAGE = "User Input";
 
 /** Stage the QQ Chat runtime emits with the rate-limit decision of the turn. */
 export const RATE_LIMIT_STAGE = "限流";
+
+/** Stage the local embedding runtime emits while one embedding inference runs. */
+export const EMBEDDING_STAGE = "embedding model inference";
+
+/** Names this stage has been archived under, so turns recorded before a rename still render. */
+const EMBEDDING_STAGES = new Set([EMBEDDING_STAGE, "嵌入推理"]);
+
+export function isEmbeddingStage(stage: string | undefined): boolean {
+  return stage !== undefined && EMBEDDING_STAGES.has(stage);
+}
 
 /**
  * One stage of the turn, wrapping the individual steps it consists of.
@@ -40,17 +52,17 @@ export interface ContextPhase {
  */
 const PHASE_OF_STAGE: Record<string, string> = {
   [RATE_LIMIT_STAGE]: "触发与限流",
-  [PREPROMPT_STAGE]: "BeforeBrain · Preprompt",
-  [PREPROMPT_RESULT_STAGE]: "BeforeBrain · Preprompt",
-  "Preprompt 阶段": "BeforeBrain · Preprompt",
   "意图识别": "意图识别",
   [SYSTEM_PROMPT_STAGE]: "构建 Brain 输入",
+  [MEMORY_STAGE]: "构建 Brain 输入",
   "情绪与风格提示": "构建 Brain 输入",
+  [USER_INPUT_STAGE]: "构建 Brain 输入",
   "Brain 输入": "构建 Brain 输入",
   "推理上下文": "构建 Brain 输入",
   "回复决策": "Brain 推理",
   "Rethink": "回复Review",
   "回复审查与改写": "回复Review",
+  "格式化输出": "发送回复",
   "发送回复": "发送回复",
   "元查询直答": "元查询直答",
   "错误": "错误",
@@ -291,13 +303,16 @@ export function rateLimitSeverity(stage: string, detail: unknown): "warning" | "
 
 /** Text a stage produced or received, rendered as readable prose instead of raw JSON. */
 export interface StageText {
-  text: string;
+  /** Prose the stage carries, when it has any. An embedding stage has none. */
+  text?: string;
   /** One-line summary of what produced the text (model, duration, token counts). */
   meta?: string;
   /** The model's thinking for this stage, when the stage recorded it. */
   reasoning?: string;
   /** History messages the stage sent along with `text`, oldest first. */
   history?: StageHistoryMessage[];
+  /** Live facts of an embedding inference, when this stage reports one. */
+  embedding?: EmbeddingStageView;
 }
 
 export interface StageHistoryMessage {
@@ -306,23 +321,238 @@ export interface StageHistoryMessage {
   preview: string;
 }
 
+/** One label/value fact of an embedding inference. */
+export interface EmbeddingStageField {
+  label: string;
+  value: string;
+}
+
+/** One text the embedding model was asked to encode. */
+export interface EmbeddingStageInput {
+  /** 1-based position in the batch, matching the order of the output vectors. */
+  index: number;
+  chars: number;
+  text: string;
+}
+
+/** One vector the embedding model produced, already formatted for display. */
+export interface EmbeddingStageVector {
+  index: number;
+  dimensions: number;
+  /** The components, comma separated; one vector per line in the view. */
+  values: string;
+}
+
+/** Readable view of one embedding inference report, rendered as its own bubble. */
+export interface EmbeddingStageView {
+  status: "running" | "done" | "error";
+  /** Status line under the bubble title, with the live elapsed time while it runs. */
+  statusText: string;
+  fields: EmbeddingStageField[];
+  /** Every input text, so the bubble shows exactly what was encoded, not just a size. */
+  inputs: EmbeddingStageInput[];
+  /** Vectors of the finished inference; empty while it runs or after it failed. */
+  vectors: EmbeddingStageVector[];
+  error?: string;
+}
+
 function detailRecord(detail: unknown): Record<string, unknown> | undefined {
   return detail && typeof detail === "object" ? (detail as Record<string, unknown>) : undefined;
+}
+
+/** One protocol segment of a sent QQ bubble, as the backend reports it. */
+export interface SentBubbleSegment {
+  type: "text" | "at" | "reply" | "image" | "forward";
+  text?: string;
+  target?: string | null;
+  id?: number | null;
+  source?: string | null;
+  /** Forward messages only: every node's text, in send order — rendered as an array. */
+  nodes?: string[];
+}
+
+/** One outgoing QQ message (one bubble) with the typing delay that preceded it. */
+export interface SentBubble {
+  index: number;
+  delay_ms: number;
+  segments: SentBubbleSegment[];
+}
+
+function parseSentSegment(value: unknown): SentBubbleSegment | undefined {
+  const entry = detailRecord(value);
+  if (!entry) return undefined;
+  const type = entry.type;
+  if (
+    type !== "text" &&
+    type !== "at" &&
+    type !== "reply" &&
+    type !== "image" &&
+    type !== "forward"
+  ) {
+    return undefined;
+  }
+  return {
+    type,
+    text: typeof entry.text === "string" ? entry.text : undefined,
+    target: typeof entry.target === "string" ? entry.target : null,
+    id: typeof entry.id === "number" ? entry.id : null,
+    source: typeof entry.source === "string" ? entry.source : null,
+    nodes: Array.isArray(entry.nodes)
+      ? entry.nodes.filter((node): node is string => typeof node === "string")
+      : undefined,
+  };
+}
+
+/**
+ * The outgoing bubbles a stage reports under its `bubbles` key (the format-output stage that
+ * plans them and the send stage that puts them on the wire), so the flow view renders the
+ * actual chat bubbles instead of raw JSON.
+ */
+export function sentBubbles(detail: unknown): SentBubble[] | undefined {
+  const raw = detailRecord(detail)?.bubbles;
+  if (!Array.isArray(raw) || !raw.length) return undefined;
+  const bubbles = raw.flatMap((item): SentBubble[] => {
+    const entry = detailRecord(item);
+    if (!entry) return [];
+    return [
+      {
+        index: typeof entry.index === "number" ? entry.index : 0,
+        delay_ms: typeof entry.delay_ms === "number" ? entry.delay_ms : 0,
+        segments: Array.isArray(entry.segments)
+          ? entry.segments
+              .flatMap(parseSentSegment)
+              .filter((segment): segment is SentBubbleSegment => segment !== undefined)
+          : [],
+      },
+    ];
+  });
+  return bubbles.length ? bubbles : undefined;
 }
 
 function detailText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
+  const minutes = Math.floor(ms / 60_000);
+  return `${minutes} 分 ${((ms % 60_000) / 1000).toFixed(1)} 秒`;
+}
+
+export function embeddingStatus(detail: unknown): "running" | "done" | "error" {
+  const status = detailRecord(detail)?.status;
+  return status === "done" || status === "error" ? status : "running";
+}
+
+/** Character count of an input text, matching the backend's `chars().count()`. */
+function charCount(text: string): number {
+  return [...text].length;
+}
+
+/** Every component of one reported vector, one per comma-separated value. */
+function vectorText(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const parts = value.filter((item): item is number => typeof item === "number");
+  return parts.length ? parts.join(", ") : undefined;
+}
+
+/**
+ * Readable view of an embedding inference.
+ *
+ * The backend emits the same stage twice: a `running` report when inference starts (model,
+ * backend, device, the exact input texts) and a finished/error report with the measured duration,
+ * the output shape and the vectors. While it runs, the elapsed time is derived from `started_at`
+ * so it keeps ticking between events; `now` is the shared clock of the turn view.
+ */
+export function embeddingStageView(detail: unknown, now: number): EmbeddingStageView | undefined {
+  const record = detailRecord(detail);
+  if (!record) return undefined;
+
+  const status = embeddingStatus(detail);
+  const startedAt =
+    typeof record.started_at === "string" ? Date.parse(record.started_at) : Number.NaN;
+  const elapsedMs =
+    status === "running" && !Number.isNaN(startedAt) ? Math.max(0, now - startedAt) : undefined;
+  const durationMs = typeof record.duration_ms === "number" ? record.duration_ms : undefined;
+  const statusText =
+    status === "running"
+      ? elapsedMs !== undefined
+        ? `推理中…（已等待 ${formatDuration(elapsedMs)}）`
+        : "推理中…"
+      : status === "error"
+        ? durationMs !== undefined
+          ? `推理失败（耗时 ${formatDuration(durationMs)}）`
+          : "推理失败"
+        : `推理完成（耗时 ${formatDuration(durationMs ?? 0)}）`;
+
+  const fields: EmbeddingStageField[] = [];
+  if (typeof record.model === "string") fields.push({ label: "模型", value: record.model });
+  if (typeof record.backend === "string") fields.push({ label: "后端", value: record.backend });
+  if (typeof record.device === "string") fields.push({ label: "推理设备", value: record.device });
+  if (typeof record.input_count === "number") {
+    const chars = typeof record.input_chars === "number" ? ` · ${record.input_chars} 字` : "";
+    fields.push({ label: "输入", value: `${record.input_count} 条${chars}` });
+  }
+  if (Array.isArray(record.shape)) {
+    fields.push({ label: "输出 shape", value: `[${record.shape.join(", ")}]` });
+  } else if (
+    status === "running" &&
+    typeof record.dimension === "number" &&
+    typeof record.input_count === "number"
+  ) {
+    fields.push({
+      label: "输出 shape",
+      value: `[${record.input_count}, ${record.dimension}]（进行中）`,
+    });
+  }
+  if (typeof record.instance_id === "string") {
+    fields.push({ label: "实例", value: record.instance_id });
+  }
+
+  const inputs = Array.isArray(record.inputs)
+    ? record.inputs.flatMap((item, index): EmbeddingStageInput[] =>
+        typeof item === "string"
+          ? [{ index: index + 1, chars: charCount(item), text: item }]
+          : [],
+      )
+    : [];
+  const vectors = Array.isArray(record.vectors)
+    ? record.vectors.flatMap((item, index): EmbeddingStageVector[] => {
+        const values = vectorText(item);
+        return values
+          ? [{ index: index + 1, dimensions: Array.isArray(item) ? item.length : 0, values }]
+          : [];
+      })
+    : [];
+
+  return {
+    status,
+    statusText,
+    fields,
+    inputs,
+    vectors,
+    error: detailText(record.error),
+  };
+}
+
 /**
  * Readable view of a stage's payload.
  *
- * The prompt-building stages carry one long text each: the assembled system prefix, the
- * preprompt result, and the current-turn input handed to the brain. Showing them as text is the
- * point of the flow view; everything else stays JSON.
+ * The prompt-building stages carry one long text each: the assembled system prompt, the
+ * retrieved memory titles, and the current-turn input handed to the brain. Showing them as text
+ * is the point of the flow view; everything else stays JSON.
  */
-export function stageText(stage: string | undefined, detail: unknown): StageText | undefined {
+export function stageText(
+  stage: string | undefined,
+  detail: unknown,
+  now = Date.now(),
+): StageText | undefined {
   if (!stage) return undefined;
+  if (isEmbeddingStage(stage)) {
+    const embedding = embeddingStageView(detail, now);
+    return embedding ? { embedding } : undefined;
+  }
   if (typeof detail === "string") {
     return stage === SYSTEM_PROMPT_STAGE ? { text: detail } : undefined;
   }
@@ -334,24 +564,39 @@ export function stageText(stage: string | undefined, detail: unknown): StageText
     return prompt ? { text: prompt } : undefined;
   }
 
-  // The preprompt request; its result is reported by the following step in the same stage.
-  if (stage === PREPROMPT_STAGE) {
+  // The retrieval store's answer to the current message: query plus the titles above the
+  // relevance threshold. The hint tells the brain to search missing memories with memory_agent.
+  if (stage === MEMORY_STAGE) {
+    const query = detailText(record.query);
+    const titles = Array.isArray(record.titles)
+      ? record.titles.flatMap((item): Array<{ title: string; relevance?: number }> => {
+          const entry = detailRecord(item);
+          if (!entry || typeof entry.title !== "string") return [];
+          return [{
+            title: entry.title,
+            relevance: typeof entry.relevance === "number" ? entry.relevance : undefined,
+          }];
+        })
+      : [];
     const lines: string[] = [];
-    if (typeof record.model === "string") lines.push(`模型：${record.model}`);
-    if (Array.isArray(record.tools_available)) {
-      const tools = record.tools_available.filter((item): item is string => typeof item === "string");
-      lines.push(`可用工具：${tools.length ? tools.join("、") : "无"}`);
+    if (query) lines.push(`检索内容：${query}`);
+    if (titles.length) {
+      lines.push("关联度较高的记忆标题：");
+      for (const item of titles) {
+        lines.push(
+          item.relevance != null
+            ? `- ${item.title}（${item.relevance.toFixed(2)}）`
+            : `- ${item.title}`,
+        );
+      }
+    } else {
+      lines.push("没有关联度较高的记忆标题，Agent 会改用 memory_agent 检索缺失内容。");
     }
-    return lines.length ? { text: lines.join("\n") } : undefined;
-  }
-
-  if (stage === PREPROMPT_RESULT_STAGE) {
-    const text = detailText(record.context) ?? "(preprompt 未返回上下文)";
     const meta: string[] = [];
-    if (typeof record.duration_ms === "number") meta.push(`耗时 ${record.duration_ms} ms`);
-    if (typeof record.stop_reason === "string") meta.push(record.stop_reason);
-    if (typeof record.tool_calls === "number") meta.push(`工具调用 ${record.tool_calls} 次`);
-    return { text, meta: meta.join(" · "), reasoning: detailText(record.reasoning) };
+    if (typeof record.candidates === "number") meta.push(`候选 ${record.candidates} 条`);
+    if (typeof record.min_relevance === "number") meta.push(`相关度阈值 ${record.min_relevance}`);
+    if (typeof record.top_n === "number") meta.push(`最多 ${record.top_n} 条`);
+    return { text: lines.join("\n"), meta: meta.join(" · ") };
   }
 
   if (stage === "Brain 输入") {
@@ -415,6 +660,22 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     stageThinkingClosed.value = next;
   }
 
+  // The embedding bubble's input texts and output vectors are both long, so they start folded;
+  // the summary line above each one already says how much is inside.
+  const embeddingOpen = ref(new Set<string>());
+
+  function isEmbeddingSectionOpen(id: string, section: "inputs" | "vectors"): boolean {
+    return embeddingOpen.value.has(`${id}\u0000${section}`);
+  }
+
+  function toggleEmbeddingSection(id: string, section: "inputs" | "vectors") {
+    const key = `${id}\u0000${section}`;
+    const next = new Set(embeddingOpen.value);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    embeddingOpen.value = next;
+  }
+
   /** `名字(id)` for the quoted message's sender, falling back to whichever half is known. */
   const quoteSender = computed(() => {
     const quoted = turn().quoted;
@@ -460,12 +721,45 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     );
   });
 
+  /**
+   * Clock shared by embedding bubbles. It only ticks while an embedding inference is running,
+   * so settled turns do not keep timers alive.
+   */
+  const now = ref(Date.now());
+  let clockTimer: number | undefined;
+
+  function startClock() {
+    if (clockTimer !== undefined) return;
+    now.value = Date.now();
+    clockTimer = window.setInterval(() => {
+      now.value = Date.now();
+    }, 1000);
+  }
+
+  function stopClock() {
+    if (clockTimer === undefined) return;
+    window.clearInterval(clockTimer);
+    clockTimer = undefined;
+  }
+
+  const hasRunningEmbedding = computed(() =>
+    turn().entries.some(
+      (entry) =>
+        entry.kind === "stage" &&
+        isEmbeddingStage(entry.stage) &&
+        embeddingStatus(entry.detail) === "running",
+    ),
+  );
+  watch(hasRunningEmbedding, (running) => (running ? startClock() : stopClock()), {
+    immediate: true,
+  });
+
   /** Readable text for each stage entry, keyed by entry id. */
   const stageViews = computed(() => {
     const views = new Map<string, StageText | undefined>();
     for (const entry of turn().entries) {
       if (entry.kind !== "stage") continue;
-      views.set(entry.id, stageText(entry.stage, entry.detail));
+      views.set(entry.id, stageText(entry.stage, entry.detail, now.value));
     }
     return views;
   });
@@ -599,6 +893,7 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
   });
 
   onUnmounted(() => {
+    stopClock();
     (scrollRoot ?? window).removeEventListener("scroll", scheduleActivePhaseUpdate);
     window.removeEventListener("resize", scheduleActivePhaseUpdate);
     if (frame) cancelAnimationFrame(frame);
@@ -615,6 +910,8 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     toggleQuote,
     stageThinkingOpen,
     toggleStageThinking,
+    isEmbeddingSectionOpen,
+    toggleEmbeddingSection,
     phases,
     subAgentsFor,
     orphanSubAgents,

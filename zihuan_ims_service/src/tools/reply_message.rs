@@ -8,7 +8,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::graph::DataValue;
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
 
-use crate::qq_chat::msg_send::{store_reply_directive, QqChatServiceReplyDirective};
+use crate::procedure::utils::reply_plan::{store_reply_directive, QqChatServiceReplyDirective};
 
 use super::common::StaticFunctionToolSpec;
 

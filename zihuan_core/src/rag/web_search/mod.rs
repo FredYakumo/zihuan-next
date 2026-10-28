@@ -1,9 +1,5 @@
-pub mod brave;
-pub mod deepseek;
-pub mod tavily;
+pub mod plugin;
 pub mod web_search_engine;
 
-pub use brave::BraveSearch;
-pub use deepseek::DeepSeekSearch;
-pub use tavily::TavilySearch;
+pub use plugin::PluginWebSearchEngine;
 pub use web_search_engine::{WebSearchEngine, WebSearchImage};

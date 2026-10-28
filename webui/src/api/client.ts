@@ -484,6 +484,26 @@ export interface ScriptToolManifest {
   outputs: Array<{ name: string; data_type: string | Record<string, unknown>; description?: string; required?: boolean }>;
 }
 
+/** One connection-level configuration field a plugin declares. */
+export interface PluginConfigField {
+  name: string;
+  label: string;
+  description: string;
+  optional: boolean;
+  secret: boolean;
+}
+
+/** One installed dynamic script plugin whose plugin_type is web_search_engine. */
+export interface WebSearchPluginEntry {
+  name: string;
+  display_name: string;
+  description: string;
+  script: string;
+  methods: string[];
+  config_fields: PluginConfigField[];
+  language: string;
+}
+
 export interface SubAgentPromptPart {
   port: string;
   equals?: string | null;
@@ -895,6 +915,12 @@ export const system = {
       return request("POST", "/system/script-tools/manifest", payload);
     },
   },
+  webSearchPlugins: {
+    /** Lists the installed web_search_engine plugins, loaded at service startup. */
+    list(): Promise<{ plugins: WebSearchPluginEntry[] }> {
+      return request("GET", "/system/web-search-plugins");
+    },
+  },
   browseWorkspaceDirectories(path?: string): Promise<WorkspaceDirectoryBrowser> {
     const suffix = path ? `?path=${encodeURIComponent(path)}` : "";
     return request("GET", `/system/workspace-directories${suffix}`);
@@ -1046,7 +1072,7 @@ export interface ServiceChatContextBubble {
 }
 
 export type ServiceChatContextEntry =
-  | { kind: "stage"; at: string; stage: string; detail: unknown }
+  | { kind: "stage"; at: string; stage: string; /** Stable id of a stage updated in place. */ id?: string; detail: unknown }
   | {
       kind: "tool_call";
       at: string;
@@ -1645,9 +1671,62 @@ export interface PluginInstallResponse {
   connections?: ConnectionConfig[];
 }
 
+/** One node in a plugin's source tree. */
+export interface ScriptPluginFileNode {
+  name: string;
+  path: string;
+  kind: "dir" | "file";
+  children: ScriptPluginFileNode[];
+}
+
+export interface ScriptPluginDetail {
+  name: string;
+  display_name: string;
+  description: string;
+  version: string;
+  plugin_type: string;
+  language: string;
+  methods: string[];
+  directory: string;
+  dependencies: string[];
+  config_fields: PluginConfigField[];
+  files: ScriptPluginFileNode[];
+}
+
+export interface ScriptPluginFile {
+  path: string;
+  content: string | null;
+  binary: boolean;
+  truncated: boolean;
+}
+
 export const pluginsApi = {
   list(): Promise<PluginRecord[]> {
     return request("GET", "/plugins");
+  },
+  /** Manifest plus declared dependencies and source tree of one dynamic script plugin. */
+  scriptDetail(name: string): Promise<ScriptPluginDetail> {
+    return request("GET", `/plugins/script/${encodeURIComponent(name)}`);
+  },
+  /** One source file of a dynamic script plugin, for the code preview. */
+  scriptFile(name: string, path: string): Promise<ScriptPluginFile> {
+    return request("GET", `/plugins/script/${encodeURIComponent(name)}/file?path=${encodeURIComponent(path)}`);
+  },
+  /** Removes the plugin directory; the catalog entry disappears on the next start. */
+  removeScript(name: string): Promise<{ ok: boolean; directory: string }> {
+    return request("DELETE", `/plugins/script/${encodeURIComponent(name)}`);
+  },
+  /** Installs a plugin directory from an uploaded zip archive. */
+  async installZip(file: File): Promise<{ ok: boolean; directory: string; plugins: string[]; warnings: string[] }> {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${BASE}/plugins/script/install-zip`, { method: "POST", body: formData });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      const details = err && typeof err === "object" ? err as Record<string, unknown> : {};
+      throw new ApiError(typeof details.error === "string" ? details.error : res.statusText, res.status, details);
+    }
+    return res.json();
   },
   create(plugin: PluginRecord): Promise<PluginRecord> {
     return request("POST", "/plugins", plugin);

@@ -21,6 +21,8 @@ export type ContextBackend = "memory" | "redis";
 export interface ContextStageItem {
   kind: "stage";
   id: string;
+  /** Backend id of a stage that updates in place (for example an embedding start → finish). */
+  stageId?: string;
   at: string;
   stage: string;
   detail: unknown;
@@ -180,6 +182,7 @@ export function useChatContext(serviceId: string) {
         entries.push({
           kind: "stage",
           id: `${turn.turn_id}:stage:${index}`,
+          stageId: entry.id,
           at: entry.at,
           stage: entry.stage,
           detail: entry.detail,
@@ -353,9 +356,22 @@ export function useChatContext(serviceId: string) {
     }
     if (event.kind === "stage") {
       const turn = ensureTurn(event);
+      // A progress stage reports its start and finish under the same backend id. Keep the
+      // existing entry and only replace its detail, so the bubble updates instead of repeating.
+      if (event.id) {
+        const existing = turn.entries.find(
+          (entry): entry is ContextStageItem =>
+            entry.kind === "stage" && entry.stageId === event.id,
+        );
+        if (existing) {
+          existing.detail = event.detail;
+          return;
+        }
+      }
       turn.entries.push({
         kind: "stage",
         id: `${event.turn_id}:stage:${turn.entries.length}`,
+        stageId: event.id,
         at: event.at,
         stage: event.stage,
         detail: event.detail,

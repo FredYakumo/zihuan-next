@@ -4,8 +4,8 @@ use crate::error::Result;
 use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm_api::LLMAPI;
 use crate::model_inference::model_config::{LlmApiStyle, LlmServiceConfig};
-use crate::model_inference::nn::local_candle_llm_gguf::build_local_candle_gguf_llm;
-use crate::model_inference::nn::local_candle_llm_hf::build_local_candle_hf_llm;
+use crate::model_inference::nn::candle_llm_gguf::build_local_candle_gguf_llm;
+use crate::model_inference::nn::candle_llm_hf::build_local_candle_hf_llm;
 
 pub fn build_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
     let config_id = config.usage_config_id.clone();

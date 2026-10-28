@@ -99,13 +99,16 @@ $packageRoot = 'package/zihuan_next'
 $archive = 'package/zihuan_next-' + $version + '-Windows-x86_64-' + $Variant + '.zip'
 if (Test-Path $packageRoot) { Remove-Item -Recurse -Force $packageRoot }
 if (Test-Path $archive) { Remove-Item -Force $archive }
-New-Item -ItemType Directory -Force -Path "$packageRoot/dag_nodes", "$packageRoot/dynamic_script_engine", "$packageRoot/sub_agents", "$packageRoot/scheduled_jobs" | Out-Null
+New-Item -ItemType Directory -Force -Path "$packageRoot/dag_nodes", "$packageRoot/dynamic_script_engine", "$packageRoot/sub_agents", "$packageRoot/scheduled_jobs", "$packageRoot/plugins" | Out-Null
 Copy-Item 'target/release/zihuan_next.exe' $packageRoot
 Copy-Item 'package.json' $packageRoot
 Copy-Item 'dag_nodes/*' "$packageRoot/dag_nodes" -Recurse
 Copy-Item 'sub_agents/*' "$packageRoot/sub_agents" -Recurse
 Copy-Item 'scheduled_jobs/*' "$packageRoot/scheduled_jobs" -Recurse
+Copy-Item 'plugins/*' "$packageRoot/plugins" -Recurse
 Get-ChildItem $packageRoot -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force
+Get-ChildItem "$packageRoot/plugins" -Recurse -Directory -Filter '.venv' | Remove-Item -Recurse -Force
+Get-ChildItem "$packageRoot/plugins" -Recurse -File -Include 'uv.lock', '.python-version' | Remove-Item -Force
 $runtimeFiles = @('engine.mjs', 'engine_runtime.py', 'zihuan_sdk.mjs', 'zihuan_sdk.py', 'package.json')
 foreach ($file in $runtimeFiles) {
     Copy-Item "dynamic_script_engine/$file" "$packageRoot/dynamic_script_engine"

@@ -1,8 +1,11 @@
+mod before_brain;
 mod natural_language_reply;
 mod qq_after_brain;
 mod qq_before_brain;
 mod qq_brain;
+mod qq_format_output;
 mod qq_meta_query_brain;
+pub(crate) mod utils;
 
 use std::sync::Arc;
 
@@ -12,12 +15,14 @@ use zihuan_core::role::procedure::{
 };
 use zihuan_core::runtime::block_async;
 
+pub(crate) use before_brain::BeforeBrainContext;
 pub(crate) use natural_language_reply::{
     ModelIdentityContext, QqReplyReviewRequest, QqReplyReviewResult,
 };
 pub(crate) use qq_after_brain::{run_after_brain, QqAfterBrain, QqAfterBrainContext};
 pub(crate) use qq_before_brain::QqBeforeBrain;
 pub(crate) use qq_brain::{QqBrain, QqBrainOutput};
+pub(crate) use qq_format_output::{QqFormatOutput, QqFormatOutputContext, QqFormatOutputOutput};
 pub(crate) use qq_meta_query_brain::QqMetaQueryBrain;
 
 /// Build the shared procedure context for a QQ turn.
@@ -43,9 +48,8 @@ pub(crate) fn qq_procedure_context(
 /// Run one blocking procedure as a one-element chain and return its output.
 ///
 /// **Design:** The QQ turn pipeline is synchronous; `block_async` bridges it to the async
-/// procedure chain executor exactly like the existing `run_preprompt` internals already do.
-/// Blocking procedures execute their synchronous bodies inline, so thread semantics stay
-/// identical to the previous direct calls.
+/// procedure chain executor. Blocking procedures execute their synchronous bodies inline, so
+/// thread semantics stay identical to the previous direct calls.
 fn run_blocking(
     procedure: Arc<dyn Procedure + '_>,
     shared: &mut ProcedureContext,

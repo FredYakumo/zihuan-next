@@ -3,9 +3,9 @@ use std::sync::Arc;
 use log::warn;
 
 use zihuan_core::error::Result;
-use zihuan_core::graph::data_value::LLMMessageSessionCacheRef;
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::runtime::block_async;
+use zihuan_core::storage::LLMMessageSessionCacheRef;
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 
@@ -13,7 +13,7 @@ pub(crate) fn conversation_history_key(sender_id: &str) -> String {
     sender_id.to_string()
 }
 
-pub(crate) fn chat_preprompt_history_key(sender_id: &str) -> String {
+fn chat_preprompt_history_key(sender_id: &str) -> String {
     format!("chat_preprompt:{sender_id}")
 }
 
@@ -21,7 +21,15 @@ pub(crate) fn load_history(
     cache: &Arc<LLMMessageSessionCacheRef>,
     history_key: &str,
 ) -> Vec<LLMMessage> {
-    block_async(cache.get_messages(history_key)).unwrap_or_default()
+    match block_async(cache.get_messages(history_key)) {
+        Ok(messages) => messages,
+        Err(err) => {
+            // The turn still runs, but with no history. That is impossible to notice from the
+            // reply alone, so the failure must be visible in the logs.
+            warn!("{LOG_PREFIX} Failed to load history for {history_key}: {err}");
+            Vec::new()
+        }
+    }
 }
 
 pub(crate) fn save_history(
@@ -40,8 +48,6 @@ fn clear_history_key(cache: &Arc<LLMMessageSessionCacheRef>, history_key: &str) 
     })
 }
 
-/// Drop one sender's conversation: the chat history plus the preprompt transcript that would
-/// otherwise still feed the next turn.
 pub fn clear_history(cache: &Arc<LLMMessageSessionCacheRef>, sender_id: &str) -> Result<()> {
     let history_key = conversation_history_key(sender_id);
     clear_history_key(cache, &history_key)?;

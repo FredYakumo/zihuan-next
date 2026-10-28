@@ -69,15 +69,151 @@
                 {{ rateLimitText(entry.stage, entry.detail) }}
               </div>
               <template v-else>
-                <pre
-                  v-if="stageViews.get(entry.id)"
-                  class="context-system-prompt"
-                >{{ stageViews.get(entry.id)?.text }}</pre>
-                <div v-if="stageViews.get(entry.id)?.meta" class="context-stage-meta">
-                  {{ stageViews.get(entry.id)?.meta }}
+                <div
+                  v-if="embeddingView(entry.id)"
+                  class="context-embedding"
+                  :class="`context-embedding--${embeddingView(entry.id)?.status}`"
+                >
+                  <div class="context-embedding-status">
+                    <t-loading
+                      v-if="embeddingView(entry.id)?.status === 'running'"
+                      size="12px"
+                    />
+                    <span>{{ embeddingView(entry.id)?.statusText }}</span>
+                  </div>
+                  <dl class="context-embedding-grid">
+                    <div
+                      v-for="field in embeddingView(entry.id)?.fields"
+                      :key="field.label"
+                      class="context-embedding-field"
+                    >
+                      <dt>{{ field.label }}</dt>
+                      <dd>{{ field.value }}</dd>
+                    </div>
+                  </dl>
+                  <div
+                    v-if="embeddingView(entry.id)?.inputs.length"
+                    class="context-embedding-section"
+                  >
+                    <button
+                      type="button"
+                      class="context-embedding-toggle"
+                      @click="toggleEmbeddingSection(entry.id, 'inputs')"
+                    >
+                      <span class="context-embedding-toggle-icon">
+                        {{ isEmbeddingSectionOpen(entry.id, "inputs") ? "▾" : "▸" }}
+                      </span>
+                      输入（{{ embeddingView(entry.id)?.inputs.length }}）
+                    </button>
+                    <ol
+                      v-if="isEmbeddingSectionOpen(entry.id, 'inputs')"
+                      class="context-embedding-list"
+                    >
+                      <li
+                        v-for="input in embeddingView(entry.id)?.inputs"
+                        :key="input.index"
+                        class="context-embedding-input"
+                      >
+                        <span class="context-embedding-input-head">
+                          <span class="mono">#{{ input.index }}</span>
+                          <span class="context-embedding-input-chars">{{ input.chars }} 字</span>
+                        </span>
+                        <pre class="context-embedding-input-text">{{ input.text }}</pre>
+                      </li>
+                    </ol>
+                  </div>
+                  <div
+                    v-if="embeddingView(entry.id)?.vectors.length"
+                    class="context-embedding-section"
+                  >
+                    <button
+                      type="button"
+                      class="context-embedding-toggle"
+                      @click="toggleEmbeddingSection(entry.id, 'vectors')"
+                    >
+                      <span class="context-embedding-toggle-icon">
+                        {{ isEmbeddingSectionOpen(entry.id, "vectors") ? "▾" : "▸" }}
+                      </span>
+                      输出向量（{{ embeddingView(entry.id)?.vectors.length }}）
+                    </button>
+                    <ol
+                      v-if="isEmbeddingSectionOpen(entry.id, 'vectors')"
+                      class="context-embedding-list"
+                    >
+                      <li
+                        v-for="vector in embeddingView(entry.id)?.vectors"
+                        :key="vector.index"
+                        class="context-embedding-vector"
+                      >
+                        <span class="context-embedding-vector-head">
+                          <span class="mono">#{{ vector.index }}</span>
+                          <span class="context-embedding-vector-dims">{{ vector.dimensions }} 维</span>
+                        </span>
+                        <pre class="context-embedding-vector-values">{{ vector.values }}</pre>
+                      </li>
+                    </ol>
+                  </div>
+                  <div
+                    v-if="embeddingView(entry.id)?.error"
+                    class="context-embedding-error"
+                  >
+                    {{ embeddingView(entry.id)?.error }}
+                  </div>
                 </div>
                 <div
-                  v-if="stageViews.get(entry.id)?.reasoning"
+                  v-else-if="sentBubblesView(entry)"
+                  class="context-sent-bubbles"
+                >
+                  <div
+                    v-for="bubble in sentBubblesView(entry)"
+                    :key="bubble.index"
+                    class="context-sent-bubble"
+                  >
+                    <div class="context-sent-bubble-body">
+                      <template
+                        v-for="(segment, segmentIndex) in bubble.segments"
+                        :key="segmentIndex"
+                      >
+                        <span v-if="segment.type === 'text'" class="context-sent-text">{{ segment.text }}</span>
+                        <span
+                          v-else-if="segment.type === 'at'"
+                          class="context-sent-at"
+                        >@{{ segment.target ?? "?" }}</span>
+                        <span
+                          v-else-if="segment.type === 'reply'"
+                          class="context-sent-reply"
+                        >引用消息 {{ segment.id }}</span>
+                        <span
+                          v-else-if="segment.type === 'image'"
+                          class="context-sent-image"
+                        >[图片{{ segment.source ? ` · ${segment.source}` : "" }}]</span>
+                        <ul
+                          v-else-if="segment.type === 'forward'"
+                          class="context-sent-forward"
+                        >
+                          <li
+                            v-for="(node, nodeIndex) in segment.nodes ?? []"
+                            :key="nodeIndex"
+                          >
+                            {{ node }}
+                          </li>
+                        </ul>
+                      </template>
+                    </div>
+                    <p v-if="bubble.delay_ms > 0" class="context-sent-delay">
+                      延迟: {{ bubble.delay_ms }} ms
+                    </p>
+                  </div>
+                </div>
+                <pre
+                  v-else-if="stageView(entry.id)?.text"
+                  class="context-system-prompt"
+                >{{ stageView(entry.id)?.text }}</pre>
+                <div v-if="stageView(entry.id)?.meta" class="context-stage-meta">
+                  {{ stageView(entry.id)?.meta }}
+                </div>
+                <div
+                  v-if="stageView(entry.id)?.reasoning"
                   class="context-thinking"
                   :class="{ collapsed: !stageThinkingOpen(entry.id) }"
                 >
@@ -94,17 +230,17 @@
                   <pre
                     v-if="stageThinkingOpen(entry.id)"
                     class="context-thinking-content"
-                  >{{ stageViews.get(entry.id)?.reasoning }}</pre>
+                  >{{ stageView(entry.id)?.reasoning }}</pre>
                 </div>
                 <div
-                  v-if="stageViews.get(entry.id)?.history?.length"
+                  v-if="stageView(entry.id)?.history?.length"
                   class="context-stage-history"
                 >
                   <div class="context-stage-history-label">
-                    随本轮发送的历史消息（{{ stageViews.get(entry.id)?.history?.length }} 条）
+                    随本轮发送的历史消息（{{ stageView(entry.id)?.history?.length }} 条）
                   </div>
                   <div
-                    v-for="(item, historyIndex) in stageViews.get(entry.id)?.history"
+                    v-for="(item, historyIndex) in stageView(entry.id)?.history"
                     :key="historyIndex"
                     class="context-stage-history-item"
                   >
@@ -113,7 +249,10 @@
                     <span class="context-stage-history-chars">{{ item.chars }} 字</span>
                   </div>
                 </div>
-                <JsonView v-if="!stageViews.get(entry.id)" :source="entry.detail" />
+                <JsonView
+                  v-if="!stageView(entry.id) && !sentBubblesView(entry)"
+                  :source="entry.detail"
+                />
               </template>
             </div>
           </div>
@@ -226,6 +365,7 @@ import {
   RATE_LIMIT_STAGE,
   rateLimitSeverity,
   rateLimitText,
+  sentBubbles,
   useChatContextTurn,
 } from "./ChatContextTurn";
 import JsonView from "./JsonView.vue";
@@ -236,6 +376,11 @@ const props = defineProps<{ turn: ContextTurnView }>();
 function rateLimitClass(stage: string, detail: unknown): string {
   const severity = rateLimitSeverity(stage, detail);
   return severity ? `context-bubble--limit-${severity}` : "";
+}
+
+/** Outgoing bubbles a stage reports, rendered as chat bubbles inside the stage card. */
+function sentBubblesView(entry: { detail: unknown }) {
+  return sentBubbles(entry.detail);
 }
 
 const {
@@ -249,6 +394,8 @@ const {
   toggleQuote,
   stageThinkingOpen,
   toggleStageThinking,
+  isEmbeddingSectionOpen,
+  toggleEmbeddingSection,
   phases,
   subAgentsFor,
   orphanSubAgents,
@@ -265,6 +412,14 @@ const {
   openPreview,
   closePreview,
 } = useChatContextTurn(() => props.turn);
+
+function stageView(id: string) {
+  return stageViews.value.get(id);
+}
+
+function embeddingView(id: string) {
+  return stageView(id)?.embedding;
+}
 </script>
 
 <style scoped lang="scss">

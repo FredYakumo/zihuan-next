@@ -5,6 +5,7 @@
 //! context the model currently holds) and carry per-turn live events from the (blocking) QQ
 //! turn thread out to the web socket broadcast.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -12,9 +13,9 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::graph::data_value::LLMMessageSessionCacheRef;
 use crate::ims_bot_adapter::models::message::Message;
 use crate::model_inference::llm::TokenUsage;
+use crate::storage::LLMMessageSessionCacheRef;
 
 /// Which backend an agent's conversation context cache is actually using.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,6 +74,9 @@ pub fn collect_turn_media_refs(messages: &[Message]) -> Vec<MediaRef> {
 /// Stage name under which a turn reports the assembled state/system prefix it sent to the
 /// model. Each turn builds its own prefix, so the Data Explorer shows it per turn.
 pub const QQ_CONTEXT_STAGE_SYSTEM_PROMPT: &str = "System Prompt";
+
+/// Stage name under which a local embedding inference reports its live progress.
+pub const QQ_CONTEXT_STAGE_EMBEDDING: &str = "embedding model inference";
 
 /// The message a turn replies to, captured for the Data Explorer's quote block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,6 +183,10 @@ pub enum QqChatContextEvent {
         turn_id: String,
         at: String,
         stage: String,
+        /// Stable id of a stage that reports progress more than once; a later event with the
+        /// same id replaces the earlier one instead of appending a second bubble.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         detail: Value,
     },
     /// One step of a sub-agent started by a tool call of this turn. `path` lists the enclosing
@@ -224,6 +232,9 @@ pub enum QqChatTurnEntry {
     Stage {
         at: String,
         stage: String,
+        /// Stable id of a stage updated in place (for example an embedding's start/finish).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         detail: Value,
     },
     ToolCall {
@@ -386,13 +397,29 @@ pub fn record_qq_chat_turn_event(event: &QqChatContextEvent) {
                 }
                 false
             }
-            QqChatContextEvent::Stage { turn_id, at, stage, detail, .. } => {
+            QqChatContextEvent::Stage { turn_id, at, stage, detail, id, .. } => {
                 if let Some(turn) = turns.iter_mut().find(|turn| turn.turn_id == *turn_id) {
-                    turn.entries.push(QqChatTurnEntry::Stage {
-                        at: at.clone(),
-                        stage: stage.clone(),
-                        detail: detail.clone(),
+                    // A progress stage (embedding start → finish) keeps one entry: the later
+                    // event replaces the earlier detail instead of appending a second bubble.
+                    let updated = id.as_ref().is_some_and(|stage_id| {
+                        turn.entries.iter_mut().rev().any(|entry| match entry {
+                            QqChatTurnEntry::Stage { id: existing, detail: slot, .. }
+                                if existing.as_deref() == Some(stage_id.as_str()) =>
+                            {
+                                *slot = detail.clone();
+                                true
+                            }
+                            _ => false,
+                        })
                     });
+                    if !updated {
+                        turn.entries.push(QqChatTurnEntry::Stage {
+                            at: at.clone(),
+                            stage: stage.clone(),
+                            id: id.clone(),
+                            detail: detail.clone(),
+                        });
+                    }
                 }
                 false
             }
@@ -535,6 +562,57 @@ pub fn emit_qq_context_event(event: QqChatContextEvent) {
     }
 }
 
+/// The turn that embedding inference running on the current thread belongs to.
+///
+/// Embedding calls are synchronous and run on the blocking turn thread, so a thread-local scope
+/// lets the core embedding layer report its progress without plumbing the turn identity through
+/// every retrieval and tool helper.
+#[derive(Debug, Clone)]
+pub struct EmbeddingTraceContext {
+    pub agent_id: String,
+    pub sender_id: String,
+    pub turn_id: String,
+}
+
+thread_local! {
+    static EMBEDDING_TRACE_CONTEXT: RefCell<Option<EmbeddingTraceContext>> =
+        const { RefCell::new(None) };
+}
+
+/// Binds embedding inference on this thread to the turn that is starting.
+///
+/// The guard restores the previous binding on drop, so nested or sequential turns never leak
+/// their identity into the next one.
+pub struct EmbeddingTraceGuard {
+    previous: Option<EmbeddingTraceContext>,
+}
+
+impl EmbeddingTraceGuard {
+    pub fn enter(agent_id: &str, sender_id: &str, turn_id: &str) -> Self {
+        let context = EmbeddingTraceContext {
+            agent_id: agent_id.to_string(),
+            sender_id: sender_id.to_string(),
+            turn_id: turn_id.to_string(),
+        };
+        let previous = EMBEDDING_TRACE_CONTEXT.with(|slot| slot.replace(Some(context)));
+        Self { previous }
+    }
+}
+
+impl Drop for EmbeddingTraceGuard {
+    fn drop(&mut self) {
+        EMBEDDING_TRACE_CONTEXT.with(|slot| {
+            *slot.borrow_mut() = self.previous.take();
+        });
+    }
+}
+
+/// Run `f` with the turn bound to the current thread, if any.
+pub fn with_embedding_trace_context<R>(f: impl FnOnce(&EmbeddingTraceContext) -> R) -> Option<R> {
+    let context = EMBEDDING_TRACE_CONTEXT.with(|slot| slot.borrow().clone());
+    context.as_ref().map(f)
+}
+
 /// Emit one named stage for a running turn. Call sites pass the stage's real output so the
 /// Data Explorer flow mirrors what actually ran instead of a fixed description.
 pub fn emit_qq_context_stage(
@@ -550,6 +628,28 @@ pub fn emit_qq_context_stage(
         turn_id: turn_id.to_string(),
         at: now_rfc3339(),
         stage: stage.to_string(),
+        id: None,
+        detail,
+    });
+}
+
+/// Emit a stage that reports progress under a stable `stage_id`; a later event with the same id
+/// replaces the earlier bubble in the context view instead of adding a second one.
+pub fn emit_qq_context_stage_with_id(
+    agent_id: &str,
+    sender_id: &str,
+    turn_id: &str,
+    stage: &str,
+    stage_id: &str,
+    detail: Value,
+) {
+    emit_qq_context_event(QqChatContextEvent::Stage {
+        agent_id: agent_id.to_string(),
+        sender_id: sender_id.to_string(),
+        turn_id: turn_id.to_string(),
+        at: now_rfc3339(),
+        stage: stage.to_string(),
+        id: Some(stage_id.to_string()),
         detail,
     });
 }

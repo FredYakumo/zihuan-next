@@ -1,4 +1,5 @@
 mod bpe_segmenter;
+mod chunk_state;
 mod punctuation_segmenter;
 
 use std::path::Path;
@@ -7,6 +8,7 @@ use std::sync::Arc;
 use log::warn;
 
 pub use bpe_segmenter::BpeSegmenter;
+pub use chunk_state::{analyze_chunk_state, SplitRepairState};
 pub use punctuation_segmenter::PunctuationSegmenter;
 
 pub trait TextSegmenter: Send + Sync {

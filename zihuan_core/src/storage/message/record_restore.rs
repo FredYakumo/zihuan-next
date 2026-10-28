@@ -1,11 +1,11 @@
 use crate::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
 use crate::error::Result;
-use crate::graph::data_value::RedisConfig;
 use crate::ims_bot_adapter::models::event_model::MessageEvent;
 use crate::ims_bot_adapter::models::message::{
     ImageMessage, Message, MessageMediaRecord, PersistedMedia, PersistedMediaSource,
     PlainTextMessage,
 };
+use crate::storage::RedisConfig;
 use log::{debug, warn};
 use once_cell::sync::Lazy;
 use redis::AsyncCommands;

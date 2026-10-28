@@ -19,12 +19,13 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+pub(crate) use self::core::{
+    build_group_system_prompt, build_private_system_prompt, build_user_message,
+    collect_available_media_from_brain_output, compact_turn_history, split_current_user_body,
+};
 use self::core::{
     build_info_brain_tools, expand_messages_for_inference,
     prepare_current_turn_user_input_from_event,
-};
-pub(crate) use self::core::{
-    build_user_message, compact_turn_history, split_current_user_body, split_system_prompt_prefix,
 };
 pub(crate) use self::core::{QqChatTaskTrace, LOG_PREFIX};
 use self::ignore_store::should_ignore_message_blocking;
@@ -35,10 +36,8 @@ use self::model::{
     QqInferenceToolProvider, QqLoadedInferenceResources,
 };
 pub(crate) use self::model::{QqChatAgentServiceContext, QqChatAgentServiceInner};
-use self::msg_send::{
-    build_reply_batch_builder as build_unified_reply_batch_builder,
-    send_direct_notification_text_reply,
-};
+use self::msg_send::send_direct_notification_text_reply;
+use crate::procedure::utils::reply_plan::build_reply_batch_builder as build_unified_reply_batch_builder;
 use crate::qq_chat::resources::current_qq_chat_role_service_config;
 use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatRoleServiceConfig;
@@ -72,12 +71,9 @@ use zihuan_core::agent::tools::Tool;
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::graph::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
 use zihuan_core::graph::function_graph::FunctionPortDef;
-use zihuan_core::graph::message_persistence::persist_message_event;
-use zihuan_core::graph::message_restore::register_rdb_pool;
-use zihuan_core::graph::object_storage::S3Ref;
 use zihuan_core::graph::tool_spec::ToolDefinition;
+use zihuan_core::graph::SessionStateRef;
 use zihuan_core::ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
 use zihuan_core::ims_bot_adapter::event::EventHandler;
 use zihuan_core::ims_bot_adapter::message_helpers::get_bot_id;
@@ -91,6 +87,10 @@ use zihuan_core::nlp::{build_segmenter, TextSegmenter};
 use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::runtime::block_async;
 use zihuan_core::steer::PendingSteerEvent;
+use zihuan_core::storage::message::record_restore::register_rdb_pool;
+use zihuan_core::storage::message::record_write::persist_message_event;
+use zihuan_core::storage::LLMMessageSessionCacheRef;
+use zihuan_core::storage::S3Ref;
 use zihuan_core::storage::{
     build_relational_db_connection_for_connection, build_retrieval_store_ref, build_s3_ref,
     build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind,
@@ -377,7 +377,7 @@ pub async fn spawn(
     // Without a Redis connection the cache stays process-memory only.
     if let Some(redis_ref) = redis_ref.as_ref() {
         if let Some(url) = redis_ref.url.clone() {
-            *cache.cached_redis_url.lock().await = Some(url);
+            cache.configure_redis(Some(url)).await;
         }
     }
     zihuan_core::qq_context::register_qq_chat_history_cache(&agent.id, Arc::clone(&cache));
@@ -586,7 +586,7 @@ fn resolve_tokenizer_segmenter(
 
 fn resolve_inbox_redis_ref(
     connections: &[ConnectionConfig],
-) -> Result<Option<Arc<zihuan_core::graph::data_value::RedisConfig>>> {
+) -> Result<Option<Arc<zihuan_core::storage::RedisConfig>>> {
     let redis_connection_id = connections.iter().find_map(|connection| {
         if connection.enabled && matches!(connection.kind, ConnectionKind::Redis(_)) {
             Some(connection.id.as_str())

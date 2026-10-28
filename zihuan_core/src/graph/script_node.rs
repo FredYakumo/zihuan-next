@@ -9,9 +9,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
-use crate::graph::data_value::{
-    LLMMessageSessionCacheRef, SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT,
-};
+use crate::graph::session_state::{SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT};
+use crate::storage::LLMMessageSessionCacheRef;
 use crate::validation_error;
 use dynamic_script_engine::{NodeRuntimeConfig, ScriptLanguage};
 
@@ -148,7 +147,26 @@ pub fn start_dynamic_script_runtime() -> Result<()> {
         )
         .map_err(|error| Error::ValidationError(error.to_string()))?;
     }
+    match crate::script_plugins::reload_script_plugin_catalog() {
+        Ok(plugins) => {
+            log::info!("Loaded dynamic script plugins: {}", plugin_names(&plugins));
+        }
+        Err(error) => {
+            log::warn!("Failed to load dynamic script plugins: {error}");
+        }
+    }
     Ok(())
+}
+
+fn plugin_names(plugins: &[dynamic_script_engine::PluginCatalogEntry]) -> String {
+    if plugins.is_empty() {
+        return "none".to_string();
+    }
+    plugins
+        .iter()
+        .map(|plugin| format!("{} ({:?}: {})", plugin.name, plugin.language, plugin.display_name))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn request_dynamic_script_runtime(
@@ -419,10 +437,7 @@ fn bot_adapter_resource(
     }
 }
 
-fn optional_s3_resource(
-    params: &Value,
-    field: &str,
-) -> Result<Option<Arc<crate::graph::object_storage::S3Ref>>> {
+fn optional_s3_resource(params: &Value, field: &str) -> Result<Option<Arc<crate::storage::S3Ref>>> {
     let Some(value) = params.get(field).filter(|value| !value.is_null()) else {
         return Ok(None);
     };
@@ -478,18 +493,6 @@ fn positive_limit(params: &Value, default: Option<i64>) -> Result<u32> {
         return Err(Error::ValidationError("limit must be greater than 0".to_string()));
     }
     Ok(limit as u32)
-}
-
-fn history_messages_json(rows: Vec<sqlx::mysql::MySqlRow>, limit: usize) -> Value {
-    let messages = crate::graph::message_rdb_history_common::format_history_messages(
-        crate::graph::message_rdb_history_common::aggregate_history_rows(
-            rows.into_iter()
-                .map(crate::graph::message_rdb_history_common::message_history_chunk_row_from_row)
-                .collect(),
-            limit,
-        ),
-    );
-    json!({"messages": messages})
 }
 
 fn llm_messages_from_json(
@@ -1719,96 +1722,46 @@ pub fn dispatch_script_host_call(
             let sender_id = required_string(params, "sender_id")?;
             let group_id = optional_string(params, "group_id");
             let limit = positive_limit(params, None)?;
-            let rows = crate::graph::message_rdb_history_common::run_mysql_query(
-                &reference,
-                move |pool| {
-                    Box::pin(async move {
-                        if let Some(group_id) = group_id {
-                            sqlx::query(
-                                crate::graph::message_rdb_history_common::user_history_query(Some(
-                                    &group_id,
-                                )),
-                            )
-                            .bind(sender_id)
-                            .bind(group_id)
-                            .bind(
-                                crate::graph::message_rdb_history_common::history_query_row_limit(
-                                    limit,
-                                ),
-                            )
-                            .fetch_all(pool)
-                            .await
-                        } else {
-                            sqlx::query(
-                                crate::graph::message_rdb_history_common::user_history_query(None),
-                            )
-                            .bind(sender_id)
-                            .bind(
-                                crate::graph::message_rdb_history_common::history_query_row_limit(
-                                    limit,
-                                ),
-                            )
-                            .fetch_all(pool)
-                            .await
-                        }
-                    })
-                },
+            let messages = crate::storage::message::history::load_user_history(
+                &reference, sender_id, group_id, limit,
             )?;
-            Ok(history_messages_json(rows, limit as usize))
+            Ok(json!({ "messages": messages }))
         }
         "storage.group_history" => {
             let reference = mysql_resource(params, "rdb_ref")?;
             let group_id = required_string(params, "group_id")?;
             let limit = positive_limit(params, None)?;
-            let rows = crate::graph::message_rdb_history_common::run_mysql_query(
-                &reference,
-                move |pool| {
-                    Box::pin(async move {
-                        sqlx::query(crate::graph::message_rdb_history_common::group_history_query())
-                            .bind(group_id)
-                            .bind(
-                                crate::graph::message_rdb_history_common::history_query_row_limit(
-                                    limit,
-                                ),
-                            )
-                            .fetch_all(pool)
-                            .await
-                    })
-                },
-            )?;
-            Ok(history_messages_json(rows, limit as usize))
+            let messages =
+                crate::storage::message::history::load_group_history(&reference, group_id, limit)?;
+            Ok(json!({ "messages": messages }))
         }
         "storage.search_messages" => {
             let reference = mysql_resource(params, "rdb_ref")?;
             let limit = positive_limit(params, Some(100))?;
-            let builder = crate::graph::message_rdb_history_common::SearchMessagesQueryBuilder {
-                sender_id: optional_string(params, "sender_id"),
-                group_id: optional_string(params, "group_id"),
-                contain: optional_string(params, "query"),
-                start_time: optional_string(params, "start_time"),
-                end_time: optional_string(params, "end_time"),
-                before_time: optional_string(params, "before_time"),
-                before_id: params.get("before_id").and_then(Value::as_i64),
-                sort_by_time_desc: params
-                    .get("sort_by_time_desc")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(true),
-                limit,
-            };
-            let (sql, query_params) = builder.build_page_query();
-            let rows = crate::graph::message_rdb_history_common::run_mysql_query(
+            let page = crate::storage::message::history::search_message_records(
                 &reference,
-                move |pool| {
-                    Box::pin(async move {
-                        let mut query = sqlx::query(&sql);
-                        for parameter in &query_params {
-                            query = query.bind(parameter);
-                        }
-                        query.fetch_all(pool).await
-                    })
+                crate::storage::message::history::MessageSearchFilters {
+                    sender_id: optional_string(params, "sender_id"),
+                    group_id: optional_string(params, "group_id"),
+                    contain: optional_string(params, "query"),
+                    start_time: optional_string(params, "start_time"),
+                    end_time: optional_string(params, "end_time"),
+                    before_time: optional_string(params, "before_time"),
+                    before_id: params.get("before_id").and_then(Value::as_i64),
+                    sort_by_time_desc: params
+                        .get("sort_by_time_desc")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(true),
+                    limit,
                 },
             )?;
-            Ok(history_messages_json(rows, limit as usize))
+            Ok(json!({
+                "messages": page.messages,
+                "total": page.total,
+                "has_more": page.has_more,
+                "oldest_send_time": page.oldest_send_time,
+                "oldest_id": page.oldest_id,
+            }))
         }
         "storage.persist_qq_message_vectors" => {
             let store = retrieval_store_resource(params, "retrieval_store_ref")?;
@@ -1829,7 +1782,7 @@ pub fn dispatch_script_host_call(
         "storage.persist_qq_message_rdb" => {
             let rdb_ref = mysql_resource(params, "rdb_ref")?;
             let messages = qq_messages_param(params, "qq_message_list")?;
-            let success = crate::graph::qq_message_list_rdb_persistence::persist_qq_message_list(
+            let success = crate::storage::message::record_write::persist_qq_message_list(
                 &rdb_ref,
                 &messages,
                 required_string(params, "message_id")?,

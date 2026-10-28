@@ -2,13 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use zihuan_core::data_refs::RelationalDbConnection;
-use zihuan_core::graph::object_storage::S3Ref;
 use zihuan_core::graph::tool_spec::ToolDefinition;
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngine;
 use zihuan_core::retrieval::RetrievalStoreRef;
 use zihuan_core::storage::LocalMemoryStore;
+use zihuan_core::storage::S3Ref;
 
 /// Loaded inference resources for the QQ chat agent.
 #[derive(Clone)]
