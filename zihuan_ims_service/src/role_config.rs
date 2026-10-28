@@ -153,6 +153,11 @@ pub struct QqChatRoleServiceConfig {
     pub scheduled_jobs: Vec<ScheduledJobConfig>,
     #[serde(default = "default_max_steer_count")]
     pub max_steer_count: usize,
+    /// Group message window size for the `group-message-window` procedure: on a group turn
+    /// with user input, the window agent picks the messages related to the input from the
+    /// most recent N group messages and those become the brain's history. `0` disables it.
+    #[serde(default = "default_group_message_window_count")]
+    pub group_message_window_count: usize,
     #[serde(default = "default_qq_chat_default_tools_enabled")]
     pub default_tools_enabled: HashMap<String, bool>,
     #[serde(default = "default_qq_chat_tool_session_call_limits")]
@@ -281,6 +286,10 @@ fn default_max_message_length() -> usize {
 
 fn default_max_steer_count() -> usize {
     4
+}
+
+fn default_group_message_window_count() -> usize {
+    10
 }
 
 fn default_message_rate_limit_window_size() -> i64 {

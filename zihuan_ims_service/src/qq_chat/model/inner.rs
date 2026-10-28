@@ -5,6 +5,7 @@ use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::graph::tool_spec::ToolDefinition;
 use zihuan_core::steer::PendingSteerStore;
 
+use crate::procedure::GroupMessageWindowMemory;
 use crate::qq_chat::model::context::QqChatAgentServiceRuntimeConfig;
 
 /// Internal mutable state for the QQ chat agent service.
@@ -14,6 +15,9 @@ pub struct QqChatAgentServiceInner {
     pub(crate) shared_inputs: Vec<FunctionPortDef>,
     pub(crate) tool_definitions: Vec<ToolDefinition>,
     pub(crate) sub_agent_ids: Vec<String>,
+    /// Group messages already delivered to the brain as window-selected related messages,
+    /// per group, so the group-message-window agent never selects them again.
+    pub(crate) group_message_window_confirmed: GroupMessageWindowMemory,
 }
 
 /// Top-level QQ chat agent service that owns the runtime config and dispatches events.

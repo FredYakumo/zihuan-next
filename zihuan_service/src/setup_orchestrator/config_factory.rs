@@ -247,6 +247,7 @@ fn build_qq_chat_agent_service() -> RoleServiceConfig {
         max_message_length: 500,
         scheduled_jobs: vec![],
         max_steer_count: 4,
+        group_message_window_count: 10,
         default_tools_enabled: default_tools,
         tool_session_call_limits: HashMap::new(),
         tool_session_limit_message: None,

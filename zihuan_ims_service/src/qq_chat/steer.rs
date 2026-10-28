@@ -68,6 +68,7 @@ fn build_steer_user_message(
         session_state,
         emotion_dimensions,
         memory_context,
+        None,
     );
 
     apply_steer_prefix(steer_message, api_style)

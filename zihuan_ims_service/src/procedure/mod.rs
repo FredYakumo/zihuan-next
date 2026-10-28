@@ -4,6 +4,7 @@ mod qq_after_brain;
 mod qq_before_brain;
 mod qq_brain;
 mod qq_format_output;
+mod qq_group_message_window;
 mod qq_meta_query_brain;
 pub(crate) mod utils;
 
@@ -23,6 +24,10 @@ pub(crate) use qq_after_brain::{run_after_brain, QqAfterBrain, QqAfterBrainConte
 pub(crate) use qq_before_brain::QqBeforeBrain;
 pub(crate) use qq_brain::{QqBrain, QqBrainOutput};
 pub(crate) use qq_format_output::{QqFormatOutput, QqFormatOutputContext, QqFormatOutputOutput};
+pub(crate) use qq_group_message_window::{
+    GroupMessageWindowContext, GroupMessageWindowMemory, GroupMessageWindowOutput,
+    QqGroupMessageWindow,
+};
 pub(crate) use qq_meta_query_brain::QqMetaQueryBrain;
 
 /// Build the shared procedure context for a QQ turn.

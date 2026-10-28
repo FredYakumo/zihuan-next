@@ -41,13 +41,13 @@ use super::{
 };
 
 use crate::procedure::{
-    qq_procedure_context, BeforeBrainContext, ModelIdentityContext, QqAfterBrain,
-    QqAfterBrainContext, QqBeforeBrain, QqBrain, QqBrainOutput, QqFormatOutput,
-    QqFormatOutputContext, QqFormatOutputOutput, QqMetaQueryBrain, QqReplyReviewRequest,
-    QqReplyReviewResult,
+    qq_procedure_context, BeforeBrainContext, GroupMessageWindowContext, ModelIdentityContext,
+    QqAfterBrain, QqAfterBrainContext, QqBeforeBrain, QqBrain, QqBrainOutput, QqFormatOutput,
+    QqFormatOutputContext, QqFormatOutputOutput, QqGroupMessageWindow, QqMetaQueryBrain,
+    QqReplyReviewRequest, QqReplyReviewResult,
 };
 use crate::qq_chat::logging::{emit_context_turn_failure, QqChatTurnIdentity};
-use zihuan_core::role::procedure::execute_blocking_procedure_chain;
+use zihuan_core::role::procedure::{execute_blocking_procedure_chain, Procedure};
 use zihuan_core::runtime::block_async;
 
 impl QqChatAgentServiceInner {
@@ -124,8 +124,8 @@ impl QqChatAgentServiceInner {
         let _embedding_trace = EmbeddingTraceGuard::enter(ctx.agent_id, sender_id, &turn_id);
         let turn_media = collect_turn_media_refs(&prepared_input.event.message_list);
 
-        let emotion_dimensions =
-            current_qq_chat_role_service_config()?.resolved_emotion_dimensions();
+        let role_config = current_qq_chat_role_service_config()?;
+        let emotion_dimensions = role_config.resolved_emotion_dimensions();
         let now_unix_seconds =
             SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
         {
@@ -296,6 +296,25 @@ impl QqChatAgentServiceInner {
             sender_id: sender_id.to_string(),
             turn_id: turn_id.clone(),
         };
+
+        let group_message_window =
+            if is_group && !continues_previous && role_config.group_message_window_count > 0 {
+                event.group_id.map(|group_id| {
+                    QqGroupMessageWindow::new(GroupMessageWindowContext {
+                        trace,
+                        identity: turn_identity.clone(),
+                        llm: ctx.intent_classification_llm,
+                        rdb_pool: ctx.rdb_pool,
+                        group_id: group_id.to_string(),
+                        current_message_id: prepared_input.event.message_id,
+                        user_input: current_message.clone(),
+                        window_count: role_config.group_message_window_count,
+                        confirmed: &self.group_message_window_confirmed,
+                    })
+                })
+            } else {
+                None
+            };
         let before_brain = QqBeforeBrain::new(BeforeBrainContext {
             trace,
             identity: Some(turn_identity),
@@ -375,59 +394,61 @@ impl QqChatAgentServiceInner {
                 return Err(error);
             }
         };
-        // Role turn chain (documents/procedure.md): before-brain -> brain -> after-brain ->
-        // format-output. The chain runs through one shared procedure context; the brain reads
-        // the assembled system prompt and user input from it instead of assembling them itself.
+        // Role turn chain (documents/procedure.md): [group-message-window] -> before-brain ->
+        // brain -> after-brain -> format-output. The chain runs through one shared procedure
+        // context; the window agent picks the turn's group history, the before-brain
+        // procedure assembles the turn's system prompt and user input, and the brain reads
+        // both from it instead of assembling them itself.
         let mut shared = qq_procedure_context(&history_key, Some(current_message.clone()));
         // The chain runs inside `block_async`. A guard taken inside the call arguments stays
         // alive until the end of this statement, i.e. for the whole chain, and the preprompt
         // stage locks the same non-reentrant mutex. Clone the state first so the guard is
         // released before the chain starts.
         let after_brain_session_state = turn_session_state.lock().unwrap().clone();
-        let turn_outputs = block_async(execute_blocking_procedure_chain(
-            vec![
-                Arc::new(before_brain),
-                Arc::new(brain),
-                Arc::new(QqAfterBrain::new(QqAfterBrainContext {
-                    review_llm: ctx.intent_classification_llm,
-                    rewrite_llm: ctx.natural_language_reply_llm,
-                    reply_system_prompt: ctx.natural_language_reply_system_prompt,
-                    request: QqReplyReviewRequest {
-                        // Filled from the brain output inside the after-brain procedure.
-                        candidate_message: String::new(),
-                        is_group,
-                        bot_name: ctx.bot_name.to_string(),
-                        sender_id: sender_id.to_string(),
-                        sender_nickname: inference_event.sender.nickname.clone(),
-                        sender_card: inference_event.sender.card.clone(),
-                        session_state: after_brain_session_state.clone(),
-                        emotion_dimensions: emotion_dimensions.clone(),
-                        model_identity_context: Some(build_model_identity_context(ctx)),
-                    },
-                    trace,
-                })),
-                Arc::new(QqFormatOutput::new(QqFormatOutputContext {
-                    trace,
-                    identity: Some(QqChatTurnIdentity {
-                        agent_id: ctx.agent_id.to_string(),
-                        sender_id: sender_id.to_string(),
-                        turn_id: turn_id.clone(),
-                    }),
-                    is_group,
-                    sender_id: sender_id.to_string(),
-                    sender_nickname: inference_event.sender.nickname.clone(),
-                    sender_card: inference_event.sender.card.clone(),
-                    bot_id: bot_id.to_string(),
-                    bot_name: ctx.bot_name.to_string(),
-                    max_message_length: ctx.max_message_length,
-                    trigger_message_id: Some(inference_event.message_id),
-                    rdb_pool: ctx.rdb_pool.cloned(),
-                    reply_batch_builder: ctx.reply_batch_builder,
-                    shared_runtime_values: Arc::clone(&shared_runtime_values),
-                })),
-            ],
-            &mut shared,
-        ));
+        let mut chain: Vec<Arc<dyn Procedure + '_>> = Vec::new();
+        if let Some(group_message_window) = group_message_window {
+            chain.push(Arc::new(group_message_window));
+        }
+        chain.push(Arc::new(before_brain));
+        chain.push(Arc::new(brain));
+        chain.push(Arc::new(QqAfterBrain::new(QqAfterBrainContext {
+            review_llm: ctx.intent_classification_llm,
+            rewrite_llm: ctx.natural_language_reply_llm,
+            reply_system_prompt: ctx.natural_language_reply_system_prompt,
+            request: QqReplyReviewRequest {
+                // Filled from the brain output inside the after-brain procedure.
+                candidate_message: String::new(),
+                is_group,
+                bot_name: ctx.bot_name.to_string(),
+                sender_id: sender_id.to_string(),
+                sender_nickname: inference_event.sender.nickname.clone(),
+                sender_card: inference_event.sender.card.clone(),
+                session_state: after_brain_session_state.clone(),
+                emotion_dimensions: emotion_dimensions.clone(),
+                model_identity_context: Some(build_model_identity_context(ctx)),
+            },
+            trace,
+        })));
+        chain.push(Arc::new(QqFormatOutput::new(QqFormatOutputContext {
+            trace,
+            identity: Some(QqChatTurnIdentity {
+                agent_id: ctx.agent_id.to_string(),
+                sender_id: sender_id.to_string(),
+                turn_id: turn_id.clone(),
+            }),
+            is_group,
+            sender_id: sender_id.to_string(),
+            sender_nickname: inference_event.sender.nickname.clone(),
+            sender_card: inference_event.sender.card.clone(),
+            bot_id: bot_id.to_string(),
+            bot_name: ctx.bot_name.to_string(),
+            max_message_length: ctx.max_message_length,
+            trigger_message_id: Some(inference_event.message_id),
+            rdb_pool: ctx.rdb_pool.cloned(),
+            reply_batch_builder: ctx.reply_batch_builder,
+            shared_runtime_values: Arc::clone(&shared_runtime_values),
+        })));
+        let turn_outputs = block_async(execute_blocking_procedure_chain(chain, &mut shared));
         let turn_outputs = match turn_outputs {
             Ok(outputs) => outputs,
             Err(error) => {
