@@ -456,3 +456,5 @@ return {
   copyServiceConfigItem,
 };
 }
+
+export type UseRoleServicePageReturn = ReturnType<typeof useRoleServicePage>;
