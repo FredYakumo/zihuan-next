@@ -7,6 +7,7 @@ import type {
   LlmConfig,
   ModelRefSpec,
   LlmServiceConfig,
+  EmbeddingServiceConfig,
 } from "../api/client";
 import type { DataTypeMetaData } from "../api/types";
 import { createUuid } from "../ui/uuid";
@@ -137,6 +138,12 @@ export interface ServiceFormState {
   natural_language_reply_llm_ref_id: string;
   natural_language_reply_system_prompt: string;
   embedding_model_ref_id: string;
+  embedding_mode: "none" | "local" | "http";
+  embedding_http_endpoint: string;
+  embedding_http_model: string;
+  embedding_http_api_key: string;
+  embedding_http_timeout_secs: number;
+  embedding_http_retry_count: number;
   tokenizer_connection_id: string;
   web_search_engine_connection_id: string;
   rdb_id: string;
@@ -447,6 +454,12 @@ export function defaultServiceForm(): ServiceFormState {
     natural_language_reply_llm_ref_id: "",
     natural_language_reply_system_prompt: "",
     embedding_model_ref_id: "",
+    embedding_mode: "none",
+    embedding_http_endpoint: "",
+    embedding_http_model: "",
+    embedding_http_api_key: "",
+    embedding_http_timeout_secs: 30,
+    embedding_http_retry_count: 2,
     tokenizer_connection_id: "",
     web_search_engine_connection_id: "",
     rdb_id: "",
@@ -946,6 +959,22 @@ export function serviceFormFromConfig(
     form.embedding_model_ref_id = String(
       agentType.embedding_model_ref_id ?? "",
     );
+    const embeddingService = agentType.embedding as
+      | EmbeddingServiceConfig
+      | null
+      | undefined;
+    if (embeddingService && String(embeddingService.api_endpoint ?? "").trim()) {
+      form.embedding_mode = "http";
+      form.embedding_http_endpoint = String(embeddingService.api_endpoint ?? "");
+      form.embedding_http_model = String(embeddingService.model_name ?? "");
+      form.embedding_http_api_key = String(embeddingService.api_key ?? "");
+      form.embedding_http_timeout_secs = Number(embeddingService.timeout_secs ?? 30);
+      form.embedding_http_retry_count = Number(embeddingService.retry_count ?? 2);
+    } else if (form.embedding_model_ref_id) {
+      form.embedding_mode = "local";
+    } else {
+      form.embedding_mode = "none";
+    }
     form.tokenizer_connection_id = String(
       agentType.tokenizer_connection_id ?? "",
     );
@@ -1149,6 +1178,20 @@ export function buildServicePayload(form: ServiceFormState): {
       ]),
     );
     defaultToolsEnabled.image_understand = form.default_tools_enabled.image_understand !== false;
+    const embeddingEndpoint = form.embedding_http_endpoint.trim();
+    const embeddingModel = form.embedding_http_model.trim();
+    const embeddingModelRefId =
+      form.embedding_mode === "local" ? form.embedding_model_ref_id || null : null;
+    const embedding =
+      form.embedding_mode === "http" && embeddingEndpoint
+        ? {
+            api_endpoint: embeddingEndpoint,
+            model_name: embeddingModel,
+            api_key: form.embedding_http_api_key.trim() || null,
+            timeout_secs: Math.max(1, Math.trunc(Number(form.embedding_http_timeout_secs) || 30)),
+            retry_count: Math.max(0, Math.trunc(Number(form.embedding_http_retry_count) || 0)),
+          }
+        : null;
     return {
       ...common,
       role_service_type: {
@@ -1166,10 +1209,10 @@ export function buildServicePayload(form: ServiceFormState): {
           form.natural_language_reply_llm_ref_id || null,
         natural_language_reply_system_prompt:
           form.natural_language_reply_system_prompt.trim() || null,
-        embedding_model_ref_id: form.embedding_model_ref_id || null,
+        embedding_model_ref_id: embeddingModelRefId,
         tokenizer_connection_id: form.tokenizer_connection_id || null,
         web_search_engine_connection_id: form.web_search_engine_connection_id,
-        embedding: null,
+        embedding,
         rdb_id: form.rdb_id || null,
         retrieval_store: form.retrieval_store_id === "__local_markdown__"
           ? { type: "local_markdown" }

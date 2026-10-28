@@ -180,12 +180,38 @@
                                             :value="item.config_id" :label="item.name" />
                                     </t-select>
                                 </t-form-item>
-                                <t-form-item label="Embedding 模型">
-                                    <t-select v-model="form.embedding_model_ref_id" placeholder="不使用" clearable>
-                                        <t-option value="" label="不使用" />
+                                <t-form-item label="Embedding 来源">
+                                    <t-select v-model="form.embedding_mode" placeholder="不使用">
+                                        <t-option value="none" label="不使用" />
+                                        <t-option value="local" label="本地向量模型" />
+                                        <t-option value="http" label="HTTP 服务" />
+                                    </t-select>
+                                </t-form-item>
+                                <t-form-item v-if="form.embedding_mode === 'local'" label="本地 Embedding 模型">
+                                    <t-select v-model="form.embedding_model_ref_id" placeholder="请选择">
                                         <t-option v-for="item in embeddingModels" :key="item.config_id"
                                             :value="item.config_id" :label="item.name" />
                                     </t-select>
+                                </t-form-item>
+                                <t-form-item v-if="form.embedding_mode === 'http'" label="Embedding API 地址"
+                                    class="agent-service-form-item-full">
+                                    <t-input v-model="form.embedding_http_endpoint"
+                                        placeholder="https://api.example.com/v1/embeddings" />
+                                    <div class="agent-service-form-hint">兼容 OpenAI /v1/embeddings 接口</div>
+                                </t-form-item>
+                                <t-form-item v-if="form.embedding_mode === 'http'" label="Embedding 模型名">
+                                    <t-input v-model="form.embedding_http_model"
+                                        placeholder="例如 qwen3-embedding:0.6b" />
+                                </t-form-item>
+                                <t-form-item v-if="form.embedding_mode === 'http'" label="API Key">
+                                    <ConnectionCredentialInput v-model="form.embedding_http_api_key"
+                                        placeholder="可选" />
+                                </t-form-item>
+                                <t-form-item v-if="form.embedding_mode === 'http'" label="超时（秒）">
+                                    <t-input-number v-model="form.embedding_http_timeout_secs" :min="1" />
+                                </t-form-item>
+                                <t-form-item v-if="form.embedding_mode === 'http'" label="重试次数">
+                                    <t-input-number v-model="form.embedding_http_retry_count" :min="0" />
                                 </t-form-item>
                             </div>
                         </t-card>
@@ -533,12 +559,38 @@
                                         :value="item.config_id" :label="item.name" />
                                 </t-select>
                             </t-form-item>
-                            <t-form-item label="Embedding 模型">
-                                <t-select v-model="form.embedding_model_ref_id" placeholder="不使用" clearable>
-                                    <t-option value="" label="不使用" />
+                            <t-form-item label="Embedding 来源">
+                                <t-select v-model="form.embedding_mode" placeholder="不使用">
+                                    <t-option value="none" label="不使用" />
+                                    <t-option value="local" label="本地向量模型" />
+                                    <t-option value="http" label="HTTP 服务" />
+                                </t-select>
+                            </t-form-item>
+                            <t-form-item v-if="form.embedding_mode === 'local'" label="本地 Embedding 模型">
+                                <t-select v-model="form.embedding_model_ref_id" placeholder="请选择">
                                     <t-option v-for="item in embeddingModels" :key="item.config_id"
                                         :value="item.config_id" :label="item.name" />
                                 </t-select>
+                            </t-form-item>
+                            <t-form-item v-if="form.embedding_mode === 'http'" label="Embedding API 地址"
+                                class="agent-service-form-item-full">
+                                <t-input v-model="form.embedding_http_endpoint"
+                                    placeholder="https://api.example.com/v1/embeddings" />
+                                <div class="agent-service-form-hint">兼容 OpenAI /v1/embeddings 接口</div>
+                            </t-form-item>
+                            <t-form-item v-if="form.embedding_mode === 'http'" label="Embedding 模型名">
+                                <t-input v-model="form.embedding_http_model"
+                                    placeholder="例如 qwen3-embedding:0.6b" />
+                            </t-form-item>
+                            <t-form-item v-if="form.embedding_mode === 'http'" label="API Key">
+                                <ConnectionCredentialInput v-model="form.embedding_http_api_key"
+                                    placeholder="可选" />
+                            </t-form-item>
+                            <t-form-item v-if="form.embedding_mode === 'http'" label="超时（秒）">
+                                <t-input-number v-model="form.embedding_http_timeout_secs" :min="1" />
+                            </t-form-item>
+                            <t-form-item v-if="form.embedding_mode === 'http'" label="重试次数">
+                                <t-input-number v-model="form.embedding_http_retry_count" :min="0" />
                             </t-form-item>
                         </div>
                     </t-card>
@@ -1231,6 +1283,7 @@ import { defineComponent } from "vue";
 import { AddIcon, ChevronLeftIcon, CloseIcon, EditIcon, InfoCircleIcon, RefreshIcon, RotateIcon } from "tdesign-icons-vue-next";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import ConfigImportDialog from "../components/ConfigImportDialog.vue";
+import ConnectionCredentialInput from "../components/ConnectionCredentialInput.vue";
 import IgnoreRulesList from "../components/IgnoreRulesList.vue";
 import RateLimitConfigDrawer from "../components/RateLimitConfigDrawer.vue";
 import RetrievalDatabaseDialog from "../components/RetrievalDatabaseDialog.vue";
@@ -1246,6 +1299,7 @@ export default defineComponent({
         ChevronLeftIcon,
         CloseIcon,
         ConfigImportDialog,
+        ConnectionCredentialInput,
         EditIcon,
         IgnoreRulesList,
         InfoCircleIcon,
