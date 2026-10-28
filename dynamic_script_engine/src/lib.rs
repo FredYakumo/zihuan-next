@@ -42,7 +42,9 @@ pub enum ScriptLanguage {
 impl ScriptLanguage {
     pub fn from_path(path: &Path) -> Option<Self> {
         match path.extension().and_then(|value| value.to_str()) {
-            Some("mjs") => Some(Self::JavaScript),
+            // Plain .js/.ts entries import through Node's module syntax detection, the same
+            // way the engine loads them.
+            Some("mjs" | "js" | "ts") => Some(Self::JavaScript),
             Some("py") => Some(Self::Python),
             _ => None,
         }
@@ -590,15 +592,15 @@ pub fn load_job_catalog(
 /// The directory dynamic script plugins are installed in, relative to the program root.
 ///
 /// Plugins live next to `dag_nodes/` and `scheduled_jobs/`. Each plugin is one directory
-/// holding its entry script (`plugin.py` or `plugin.mjs`) plus an optional dependency
-/// manifest (`pyproject.toml` or `requirements.txt`) that the host installs into that
-/// directory's own `.venv` before loading the plugin.
+/// holding its entry script (`plugin.py`, `plugin.mjs`, `plugin.ts` or `plugin.js`) plus an
+/// optional dependency manifest (`pyproject.toml` or `requirements.txt`) that the host
+/// installs into that directory's own `.venv` before loading the plugin.
 pub fn plugin_dir(workspace: &Path) -> PathBuf {
     workspace.join("plugins")
 }
 
 /// File names inside a plugin directory that serve as its entry script, in precedence order.
-const PLUGIN_ENTRY_FILES: [&str; 2] = ["plugin.py", "plugin.mjs"];
+const PLUGIN_ENTRY_FILES: [&str; 4] = ["plugin.py", "plugin.mjs", "plugin.ts", "plugin.js"];
 
 /// One installed plugin directory discovered under `plugins/`.
 #[derive(Debug, Clone)]

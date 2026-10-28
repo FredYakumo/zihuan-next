@@ -1,8 +1,9 @@
 //! Registry of installed dynamic script plugins.
 //!
-//! Plugins live in `<program dir>/plugins/<name>/` with a `plugin.py` (or `plugin.mjs`) entry
-//! declaring `PLUGIN_MANIFEST`. The catalog is built once at service startup and kept in
-//! memory; installing or editing a plugin requires a restart, the same as a node script does.
+//! Plugins live in `<program dir>/plugins/<name>/` with a `plugin.py` (or `plugin.mjs` /
+//! `plugin.ts` / `plugin.js`) entry declaring `PLUGIN_MANIFEST`. The catalog is built once
+//! at service startup and kept in memory; installing or editing a plugin requires a
+//! restart, the same as a node script does.
 //!
 //! A plugin's `plugin_type` decides which host subsystem picks it up. This module owns the
 //! catalog itself and the lookups; feature-specific adapters (for example the web search

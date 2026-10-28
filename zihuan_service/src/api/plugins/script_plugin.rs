@@ -19,7 +19,7 @@ use zihuan_core::script_plugins::find_script_plugin;
 use super::render_error;
 
 /// Entry file names a plugin directory may use, in precedence order.
-const ENTRY_FILES: [&str; 2] = ["plugin.py", "plugin.mjs"];
+const ENTRY_FILES: [&str; 4] = ["plugin.py", "plugin.mjs", "plugin.ts", "plugin.js"];
 
 /// Preview size cap. Source plugins are small; anything larger is almost certainly not code a
 /// human wants to read in a panel, and reading it whole would only waste memory.
@@ -444,7 +444,7 @@ pub async fn install_script_plugin_zip(req: &mut Request, res: &mut Response) {
         return render_error(
             res,
             StatusCode::BAD_REQUEST,
-            format!("插件包中缺少入口文件 {} 或 {}", ENTRY_FILES[0], ENTRY_FILES[1]),
+            format!("插件包中缺少入口文件 {}", ENTRY_FILES.join(" / ")),
         );
     }
     // Load the freshly installed plugin in the background thread that runs the script
