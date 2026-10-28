@@ -147,7 +147,26 @@ pub fn start_dynamic_script_runtime() -> Result<()> {
         )
         .map_err(|error| Error::ValidationError(error.to_string()))?;
     }
+    match crate::script_plugins::reload_script_plugin_catalog() {
+        Ok(plugins) => {
+            log::info!("Loaded dynamic script plugins: {}", plugin_names(&plugins));
+        }
+        Err(error) => {
+            log::warn!("Failed to load dynamic script plugins: {error}");
+        }
+    }
     Ok(())
+}
+
+fn plugin_names(plugins: &[dynamic_script_engine::PluginCatalogEntry]) -> String {
+    if plugins.is_empty() {
+        return "none".to_string();
+    }
+    plugins
+        .iter()
+        .map(|plugin| format!("{} ({:?}: {})", plugin.name, plugin.language, plugin.display_name))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn request_dynamic_script_runtime(

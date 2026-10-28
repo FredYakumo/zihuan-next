@@ -158,3 +158,162 @@ textarea {
 .plugin-command-dialog > :first-child {
     justify-self: end;
 }
+
+.plugin-name-cell {
+    display: grid;
+    gap: 2px;
+}
+
+.plugin-name-desc {
+    overflow: hidden;
+    color: var(--admin-muted);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.plugin-readonly-hint {
+    color: var(--admin-muted);
+    font-size: 12px;
+}
+
+/* The detail dialog is teleported outside this component's scope, so its own rules live
+   in the unscoped block in Plugins.vue; here the content box just stays bounded and
+   scrolls, keeping the dialog footer reachable on a short screen. */
+.plugin-detail-body {
+    /* Budget: dialog top offset, header, footer, body padding and a bottom margin. */
+    max-height: calc(100vh - 340px);
+    padding-right: 4px;
+    overflow-y: auto;
+}
+
+.plugin-detail-meta {
+    margin-bottom: 16px;
+}
+
+.plugin-detail-section {
+    margin-top: 16px;
+}
+
+.plugin-detail-section-title {
+    margin: 0 0 8px;
+    font-weight: 600;
+}
+
+.plugin-detail-empty {
+    color: var(--admin-muted);
+    font-size: 12px;
+}
+
+.plugin-dependency-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.plugin-source-toggle {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    width: 100%;
+    padding: 8px 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.plugin-source-toggle small {
+    color: var(--admin-muted);
+}
+
+.plugin-source-chevron {
+    transition: transform 0.15s ease;
+}
+
+.plugin-source-chevron.open {
+    transform: rotate(90deg);
+}
+
+/* A fixed height gives the code viewer a dependable scroll box; the dialog body scrolls
+   separately when the blocks above do not fit. */
+.plugin-source-panel {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    height: 340px;
+    border: 1px solid var(--td-component-stroke, #e7e7e7);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.plugin-source-tree {
+    margin: 0;
+    padding: 6px;
+    border-right: 1px solid var(--td-component-stroke, #e7e7e7);
+    overflow: auto;
+    list-style: none;
+}
+
+.plugin-source-file {
+    display: block;
+    width: 100%;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    word-break: break-all;
+    cursor: pointer;
+}
+
+.plugin-source-file:hover {
+    background: var(--td-bg-color-container-hover, rgb(0 0 0 / 4%));
+}
+
+.plugin-source-file.active {
+    background: var(--td-brand-color-light, rgb(0 82 217 / 10%));
+    color: var(--td-brand-color, #0052d9);
+}
+
+.plugin-source-code {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.plugin-source-code-header {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--td-component-stroke, #e7e7e7);
+    color: var(--admin-muted);
+    font-size: 12px;
+    word-break: break-all;
+}
+
+.plugin-source-code-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0 12px 12px;
+    overflow: hidden;
+}
+
+.plugin-source-code-body > .plugin-detail-empty {
+    padding: 12px 0;
+}
+
+.plugin-zip-install {
+    display: grid;
+    gap: 12px;
+}
+
+.plugin-zip-selected {
+    margin: 0;
+    font-size: 13px;
+}

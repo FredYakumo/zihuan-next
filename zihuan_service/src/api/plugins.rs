@@ -14,9 +14,13 @@ use crate::setup_orchestrator::{
 };
 use zihuan_core::storage::{self, ConnectionConfig};
 
+pub mod script_plugin;
 mod special_installers;
 
 const PLUGINS_FILE_NAME: &str = "plugins.json";
+
+/// Marks a plugin row that is owned by the `plugins/` directory instead of `plugins.json`.
+pub(crate) const DYNAMIC_SCRIPT_INSTALLATION_METHOD: &str = "dynamic_script";
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct PluginRecord {
@@ -231,17 +235,56 @@ fi"
     ))
 }
 
-fn render_error(res: &mut Response, status: StatusCode, error: String) {
+pub(crate) fn render_error(res: &mut Response, status: StatusCode, error: String) {
     res.status_code(status);
     res.render(Json(serde_json::json!({ "error": error })));
 }
 
 #[handler]
 pub async fn list_plugins(_req: &mut Request, res: &mut Response) {
-    match load_plugins() {
-        Ok(plugins) => res.render(Json(plugins)),
-        Err(error) => render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error),
-    }
+    let plugins = match load_plugins() {
+        Ok(plugins) => plugins,
+        Err(error) => return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error),
+    };
+    let mut all = plugins;
+    all.extend(script_plugin_records());
+    res.render(Json(all));
+}
+
+/// Presents the installed dynamic script plugins as rows in the plugin list.
+///
+/// They share the record shape so one table can show both, but they are owned by the
+/// `plugins/` directory rather than `plugins.json`: `installation_method` is
+/// `dynamic_script`, and their status is always `installed` because the catalog only
+/// contains plugins whose manifest loaded at startup.
+fn script_plugin_records() -> Vec<PluginRecord> {
+    zihuan_core::script_plugins::script_plugin_catalog()
+        .into_iter()
+        .map(|plugin| PluginRecord {
+            id: format!("dynamic-script:{}", plugin.name),
+            name: plugin.name.clone(),
+            version: if plugin.version.trim().is_empty() {
+                "0.0.0".to_string()
+            } else {
+                plugin.version.clone()
+            },
+            installed_at: String::new(),
+            installation_method: DYNAMIC_SCRIPT_INSTALLATION_METHOD.to_string(),
+            extra_install_metadata: serde_json::json!({
+                "plugin_type": plugin.plugin_type,
+                "display_name": plugin.display_name,
+                "description": plugin.description,
+                "script": plugin.script,
+                "directory": plugin.directory,
+                "methods": plugin.methods,
+                "language": plugin.language,
+            }),
+            component_type: plugin.plugin_type,
+            status: "installed".to_string(),
+            connection_ids: Vec::new(),
+            updated_at: String::new(),
+        })
+        .collect()
 }
 
 #[handler]

@@ -161,6 +161,10 @@ pub fn build_router(
                         .post(config::script_tools::read_script_tool_manifest),
                 )
                 .push(
+                    Router::with_path("web-search-plugins")
+                        .get(config::script_tools::list_web_search_plugins),
+                )
+                .push(
                     Router::with_path("command-permissions")
                         .get(config::commands::list_command_permissions)
                         .post(config::commands::create_command_permission)
@@ -332,6 +336,19 @@ pub fn build_router(
                 .get(plugins::list_plugins)
                 .post(plugins::create_plugin)
                 .push(Router::with_path("install").post(plugins::install_plugin))
+                .push(
+                    Router::with_path("script/install-zip")
+                        .post(plugins::script_plugin::install_script_plugin_zip),
+                )
+                .push(
+                    Router::with_path("script/<name>")
+                        .get(plugins::script_plugin::get_script_plugin_detail)
+                        .delete(plugins::script_plugin::uninstall_script_plugin)
+                        .push(
+                            Router::with_path("file")
+                                .get(plugins::script_plugin::get_script_plugin_file),
+                        ),
+                )
                 .push(Router::with_path("progress").get(setup_wizard::stream_setup_progress))
                 .push(
                     Router::with_path("<id>")

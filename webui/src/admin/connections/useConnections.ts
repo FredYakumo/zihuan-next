@@ -1,4 +1,4 @@
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import {
@@ -7,6 +7,7 @@ import {
   system,
   type ConnectionConfig,
   type RuntimeConnectionInstanceSummary,
+  type WebSearchPluginEntry,
 } from "../../api/client";
 import {
   buildConnectionPayload,
@@ -51,6 +52,24 @@ export function useConnections() {
   const connections = ref<ConnectionConfig[]>([]);
   const runtimeInstances = ref<RuntimeConnectionInstanceSummary[]>([]);
   const tokenizerModels = ref<string[]>([]);
+  const webSearchPlugins = ref<WebSearchPluginEntry[]>([]);
+  // Fallback when the plugin registry is unavailable, so existing tavily/brave
+  // connections stay editable even if the script runtime failed to start.
+  const webSearchProviderOptions = computed(() => {
+    if (webSearchPlugins.value.length > 0) {
+      return webSearchPlugins.value.map((plugin) => ({
+        value: plugin.name,
+        label: plugin.display_name || plugin.name,
+        plugin: true,
+      }));
+    }
+    // Fallback when the plugin registry is unavailable: these are not verified installs,
+    // so they carry no plugin badge.
+    return [
+      { value: "tavily", label: "Tavily", plugin: false },
+      { value: "brave", label: "Brave", plugin: false },
+    ];
+  });
   const form = reactive<ConnectionFormState>(defaultConnectionForm());
   const drawerVisible = ref(false);
   const importDialogVisible = ref(false);
@@ -170,15 +189,57 @@ export function useConnections() {
     drawerVisible.value = false;
   }
 
+  // Params belong to the selected plugin; a stale bag would feed another plugin's fields.
+  watch(
+    () => form.web_search_engine_provider,
+    () => {
+      form.web_search_engine_params = {};
+    },
+  );
+
   async function load() {
-    const [loadedConnections, runtimeResponse, tokenizerModelResponse] = await Promise.all([
-      system.connections.list(),
-      system.connections.listRuntimeInstances({ page: 1, page_size: 200 }),
-      fileIO.listTokenizerModels(),
-    ]);
+    const [loadedConnections, runtimeResponse, tokenizerModelResponse, pluginResponse] =
+      await Promise.all([
+        system.connections.list(),
+        system.connections.listRuntimeInstances({ page: 1, page_size: 200 }),
+        fileIO.listTokenizerModels(),
+        system.webSearchPlugins.list().catch(() => ({ plugins: [] as WebSearchPluginEntry[] })),
+      ]);
     connections.value = loadedConnections;
     runtimeInstances.value = runtimeResponse.items;
     tokenizerModels.value = tokenizerModelResponse.models;
+    webSearchPlugins.value = pluginResponse.plugins ?? [];
+  }
+
+  /** The config fields the selected provider plugin declares; empty for unknown providers. */
+  const selectedWebSearchConfigFields = computed(
+    () =>
+      webSearchPlugins.value.find((plugin) => plugin.name === form.web_search_engine_provider)
+        ?.config_fields ?? [],
+  );
+  function requiredWebSearchFieldEmpty(name: string): boolean {
+    if (name === "api_token") return !form.web_search_engine_api_token.trim();
+    return !(form.web_search_engine_params[name] ?? "").trim();
+  }
+  /** Reads/writes one plugin config field. api_token keeps its dedicated connection column;
+   *  every other field lives in the params bag. */
+  function webSearchFieldValue(name: string): string;
+  function webSearchFieldValue(name: string, value: string): void;
+  function webSearchFieldValue(name: string, value?: string): string | void {
+    if (value === undefined) {
+      return name === "api_token"
+        ? form.web_search_engine_api_token
+        : form.web_search_engine_params[name] ?? "";
+    }
+    if (name === "api_token") {
+      form.web_search_engine_api_token = value;
+      return;
+    }
+    form.web_search_engine_params[name] = value;
+  }
+  /** Resolves a selected provider value to its display option, for the selected-value slot. */
+  function providerDisplay(value: string) {
+    return webSearchProviderOptions.value.find((option) => option.value === value) ?? { value, label: value, plugin: false };
   }
 
   function editConnection(connection: ConnectionConfig) {
@@ -216,6 +277,14 @@ export function useConnections() {
     if (!form.name.trim()) {
       alert("请填写连接名称");
       return;
+    }
+    if (form.type === "web_search_engine") {
+      for (const field of selectedWebSearchConfigFields.value) {
+        if (!field.optional && requiredWebSearchFieldEmpty(field.name)) {
+          alert(`请填写 ${field.label}`);
+          return;
+        }
+      }
     }
     if (form.type === "mysql") {
       if (!form.mysql_host.trim()) {
@@ -496,6 +565,10 @@ export function useConnections() {
     filteredConnections,
     runtimeInstances,
     tokenizerModels,
+    webSearchProviderOptions,
+    providerDisplay,
+    selectedWebSearchConfigFields,
+    webSearchFieldValue,
     form,
     drawerVisible,
     importDialogVisible,

@@ -191,9 +191,37 @@
             </template>
 
             <template v-else-if="form.type === 'web_search_engine'">
-              <t-form-item label="Provider"><t-select v-model="form.web_search_engine_provider"><t-option value="tavily" label="Tavily" /><t-option value="brave" label="Brave" /></t-select></t-form-item>
+              <t-form-item label="Provider">
+                <t-select v-model="form.web_search_engine_provider">
+                  <template #valueDisplay>
+                    <span class="provider-option">
+                      {{ providerDisplay(form.web_search_engine_provider).label }}
+                      <span v-if="providerDisplay(form.web_search_engine_provider).plugin" class="provider-plugin-badge">Plugin</span>
+                    </span>
+                  </template>
+                  <t-option v-for="option in webSearchProviderOptions" :key="option.value" :value="option.value" :label="option.label">
+                    <span class="provider-option">{{ option.label }}<span v-if="option.plugin" class="provider-plugin-badge">Plugin</span></span>
+                  </t-option>
+                </t-select>
+              </t-form-item>
               <t-form-item label="Timeout（秒）"><t-input-number v-model="form.web_search_engine_timeout_secs" :min="1" /></t-form-item>
-              <t-form-item class="connection-form-item--full" label="API Token（可选）"><ConnectionCredentialInput v-model="form.web_search_engine_api_token" /></t-form-item>
+              <t-form-item
+                v-for="field in selectedWebSearchConfigFields"
+                :key="field.name"
+                :required="!field.optional"
+                class="connection-form-item--full"
+              >
+                <template #label>
+                  <span class="web-search-field-label">
+                    {{ field.label + (field.optional ? '（可选）' : '') }}
+                    <t-tooltip v-if="field.description" :content="field.description" trigger="click">
+                      <button type="button" class="web-search-field-help" :aria-label="`${field.label}说明`" @click.stop.prevent>?</button>
+                    </t-tooltip>
+                  </span>
+                </template>
+                <ConnectionCredentialInput v-if="field.secret || field.name === 'api_token'" :model-value="webSearchFieldValue(field.name)" @update:model-value="(v: string) => webSearchFieldValue(field.name, v)" />
+                <t-input v-else :model-value="webSearchFieldValue(field.name)" @update:model-value="(v: string) => webSearchFieldValue(field.name, v)" />
+              </t-form-item>
             </template>
 
             <template v-else-if="form.type === 'tokenizer'">
@@ -225,6 +253,10 @@ import ConnectionCredentialInput from "../components/ConnectionCredentialInput.v
 const {
   filteredConnections,
   tokenizerModels,
+  webSearchProviderOptions,
+  providerDisplay,
+  selectedWebSearchConfigFields,
+  webSearchFieldValue,
   form,
   drawerVisible,
   importDialogVisible,

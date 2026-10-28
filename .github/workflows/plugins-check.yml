@@ -1,0 +1,42 @@
+name: Build-in plugins Check
+
+permissions:
+  contents: read
+
+on:
+  # push:
+  #   branches:
+  #     - dev
+  pull_request:
+    branches:
+      - master
+      - dev
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  builtin-plugins-check:
+    name: Build-in plugins Check
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check built-in plugins
+        run: ./scripts/check_plugins.sh --full

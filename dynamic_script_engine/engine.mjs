@@ -7,6 +7,7 @@ import { createJobSdk, createZihuanSdk, hydrateResources } from "./zihuan_sdk.mj
 const engineDirectory = path.dirname(fileURLToPath(import.meta.url));
 const nodeDirectory = path.resolve(engineDirectory, "../dag_nodes");
 const scheduledJobsDirectory = path.resolve(engineDirectory, "../scheduled_jobs");
+const pluginMethods = ["search", "extract_url", "fetch_url_direct", "search_images"];
 const argument = process.argv[2];
 let requestId = 0;
 const pendingHostCalls = new Map();
@@ -113,6 +114,77 @@ async function loadJobs(paths) {
 }
 
 /**
+ * Sanitizes a plugin's declared config fields; every field defaults to required.
+ *
+ * @param {unknown} raw The manifest's config_fields declaration.
+ * @returns {Record<string, unknown>[]} Normalized field descriptors.
+ */
+function normalizeConfigFields(raw) {
+    if (!Array.isArray(raw)) return [];
+    const fields = [];
+    for (const item of raw) {
+        const entry = typeof item === "string" ? { name: item } : item;
+        if (!entry || typeof entry !== "object" || !entry.name) continue;
+        const name = String(entry.name);
+        if (name === "timeout_secs") continue; // reserved: maps to the connection column
+        fields.push({
+            name,
+            label: String(entry.label ?? name),
+            description: String(entry.description ?? ""),
+            optional: entry.optional === true,
+            secret: Boolean(entry.secret),
+        });
+    }
+    return fields;
+}
+
+/**
+ * Loads plugin manifests from the entry script paths supplied by the Rust host.
+ *
+ * Directory discovery and dependency installation live in Rust; a runner only imports the
+ * given entry files and reports the `plugin_manifest` they export together with the plugin
+ * methods they actually implement. Modules that fail to import or lack the export are
+ * reported as diagnostics instead of failing the catalog.
+ *
+ * @param {string[]} paths Plugin entry script paths.
+ * @returns {Promise<{plugins: Record<string, unknown>[], diagnostics: {language: string, message: string}[]}>}
+ */
+async function loadPlugins(paths) {
+    const plugins = [];
+    const diagnostics = [];
+    for (const raw of paths) {
+        const file = path.resolve(raw);
+        let module;
+        try {
+            module = await import(pathToFileURL(file).href);
+        } catch (error) {
+            diagnostics.push({ language: "javascript", message: `failed to load ${file}: ${error.message}` });
+            continue;
+        }
+        const manifest = module.plugin_manifest;
+        if (!manifest || typeof manifest !== "object") {
+            diagnostics.push({ language: "javascript", message: `${path.basename(file)} must export a plugin_manifest object` });
+            continue;
+        }
+        if (!manifest.plugin_type) {
+            diagnostics.push({ language: "javascript", message: `${path.basename(file)} 的 plugin_manifest 缺少 plugin_type` });
+            continue;
+        }
+        const directory = path.basename(path.dirname(file));
+        plugins.push({
+            plugin_type: manifest.plugin_type,
+            name: manifest.name ?? directory,
+            display_name: manifest.display_name ?? manifest.name ?? directory,
+            description: manifest.description ?? "",
+            version: manifest.version == null ? "" : String(manifest.version),
+            methods: pluginMethods.filter((method) => typeof module[method] === "function"),
+            config_fields: normalizeConfigFields(manifest.config_fields),
+        });
+    }
+    return { plugins, diagnostics };
+}
+
+/**
  * Sends a ZiHuan runtime API request to the Rust host and waits for its matching response.
  *
  * The `--serve` protocol writes the request to stdout. Rust replies on stdin
@@ -150,7 +222,7 @@ function executionContext(request) {
 let nodes = [];
 let diagnostics = [];
 let nodeByType = new Map();
-if (argument !== "--jobs-catalog") {
+if (argument !== "--jobs-catalog" && argument !== "--plugins-catalog") {
     ({ nodes, diagnostics } = await loadNodes());
     nodeByType = new Map(nodes.map((node) => [node.type_id, node]));
 }
@@ -218,6 +290,27 @@ async function executeScriptTool(tool) {
 }
 
 /**
+ * Executes one plugin method call: imports the entry script, calls the function named after
+ * `method` with `(args, config)`, and writes the `{ response }` envelope. Plugin errors are
+ * reported through the `{ error }` shape so the host surfaces them as failures.
+ *
+ * @param {Record<string, unknown>} plugin Plugin request carrying `script_path` and `method`.
+ */
+async function executePlugin(plugin) {
+    try {
+        const module = await importScript(plugin.script_path);
+        const method = module[plugin.method];
+        if (typeof method !== "function") {
+            throw new Error(`plugin ${plugin.script_path} does not implement method: ${plugin.method}`);
+        }
+        const result = await method(plugin.args ?? {}, plugin.config ?? {});
+        process.stdout.write(`${JSON.stringify({ response: result })}\n`);
+    } catch (error) {
+        process.stdout.write(`${JSON.stringify({ error: String(error) })}\n`);
+    }
+}
+
+/**
  * Reports the parameters and outputs a script declares through its `tool_manifest` export.
  *
  * @param {Record<string, unknown>} request Request carrying the `script_path` to inspect.
@@ -259,6 +352,12 @@ if (argument === "--catalog") {
 } else if (argument === "--jobs-catalog") {
     const { paths = [] } = JSON.parse(fs.readFileSync(0, "utf8") || "{}");
     process.stdout.write(JSON.stringify(await loadJobs(paths)));
+} else if (argument === "--plugins-catalog") {
+    const { paths = [] } = JSON.parse(fs.readFileSync(0, "utf8") || "{}");
+    process.stdout.write(JSON.stringify(await loadPlugins(paths)));
+} else if (argument === "--plugin-execute") {
+    const request = JSON.parse(fs.readFileSync(0, "utf8"));
+    await executePlugin(request);
 } else if (argument === "--ports") {
     const request = JSON.parse(fs.readFileSync(0, "utf8"));
     const node = nodeByType.get(request.type_id);
@@ -325,5 +424,5 @@ if (argument === "--catalog") {
         }
     });
 } else {
-    throw new Error("expected --catalog, --ports, --execute, --tool-manifest, --jobs-catalog, or --serve");
+    throw new Error("expected --catalog, --ports, --execute, --tool-manifest, --jobs-catalog, --plugins-catalog, --plugin-execute, or --serve");
 }
