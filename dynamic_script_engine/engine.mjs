@@ -167,7 +167,7 @@ async function loadPlugins(paths) {
             continue;
         }
         if (!manifest.plugin_type) {
-            diagnostics.push({ language: "javascript", message: `${path.basename(file)} 的 plugin_manifest 缺少 plugin_type` });
+            diagnostics.push({ language: "javascript", message: `${path.basename(file)} plugin_manifest is missing plugin_type` });
             continue;
         }
         const directory = path.basename(path.dirname(file));

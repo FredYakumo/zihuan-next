@@ -105,7 +105,7 @@ def load_plugins(paths: list[str]) -> tuple[list[dict[str, Any]], list[dict[str,
             diagnostics.append({"language": "python", "message": f"{path.name} must define a PLUGIN_MANIFEST dict"})
             continue
         if not manifest.get("plugin_type"):
-            diagnostics.append({"language": "python", "message": f"{path.name} 的 PLUGIN_MANIFEST 缺少 plugin_type"})
+            diagnostics.append({"language": "python", "message": f"{path.name} PLUGIN_MANIFEST is missing plugin_type"})
             continue
         plugins.append({
             "plugin_type": manifest.get("plugin_type"),
