@@ -51,8 +51,10 @@ pub(crate) struct MessageHistoryChunkRow {
     pub content: String,
 }
 
+/// One aggregated group/user message with its identity, time, sender, and content kept
+/// separate, so programmatic consumers can render or select individual messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct MessageHistoryRecord {
+pub struct MessageHistoryRecord {
     pub message_id: String,
     pub sender_id: String,
     pub sender_name: String,
@@ -354,6 +356,20 @@ pub fn load_group_history(
     group_id: String,
     limit: u32,
 ) -> Result<Vec<String>> {
+    Ok(format_history_messages(load_group_history_records(
+        mysql, group_id, limit,
+    )?))
+}
+
+/// Loads a group's most recent messages as structured records, ordered newest first.
+///
+/// Unlike [`load_group_history`] this keeps time, sender, and message identity separate so
+/// callers can select or filter individual messages instead of only rendering them.
+pub fn load_group_history_records(
+    mysql: &Arc<MySqlConfig>,
+    group_id: String,
+    limit: u32,
+) -> Result<Vec<MessageHistoryRecord>> {
     let rows = run_mysql_query(mysql, move |pool| {
         Box::pin(async move {
             sqlx::query(group_history_query())
@@ -363,10 +379,10 @@ pub fn load_group_history(
                 .await
         })
     })?;
-    Ok(format_history_messages(aggregate_history_rows(
+    Ok(aggregate_history_rows(
         rows.into_iter().map(message_history_chunk_row_from_row).collect(),
         limit as usize,
-    )))
+    ))
 }
 
 pub fn load_user_history(

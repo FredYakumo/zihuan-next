@@ -5,6 +5,7 @@ use zihuan_core::role::procedure::{
 };
 
 use super::before_brain::{assemble_before_brain, BeforeBrainContext};
+use super::GroupMessageWindowOutput;
 
 /// QQ before-brain procedure: assembles the turn's system prompt and user input without any
 /// model inference.
@@ -36,7 +37,16 @@ impl Procedure for QqBeforeBrain<'_> {
         }
     }
 
-    async fn run(&self, _context: &ProcedureContext) -> Result<ProcedureOutput> {
-        Ok(ProcedureOutput::of(assemble_before_brain(&self.context)))
+    async fn run(&self, context: &ProcedureContext) -> Result<ProcedureOutput> {
+        // The group-message-window procedure runs before this one in the chain. Its reply
+        // directive rides on the assembled current-turn user message instead of the history
+        // block, so it is absent on turns without a window (private chat, steer follow-ups).
+        let reply_instruction = context
+            .find_output::<GroupMessageWindowOutput>()
+            .map(|window| window.reply_instruction());
+        Ok(ProcedureOutput::of(assemble_before_brain(
+            &self.context,
+            reply_instruction.as_deref(),
+        )))
     }
 }

@@ -47,6 +47,7 @@ pub(crate) use super::user_input::{
     prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
     PreparedCurrentTurnUserInput,
 };
+use crate::procedure::GroupMessageWindowMemory;
 use crate::qq_chat::language_style_store::get_applicable_language_style_blocking;
 pub(crate) use crate::qq_chat::model::{
     QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner,
@@ -339,6 +340,7 @@ pub(crate) fn build_user_message(
     session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
     memory_context: Option<&str>,
+    reply_instruction: Option<&str>,
 ) -> LLMMessage {
     let style_prompt = if has_noticeable_emotion_expression(session_state, emotion_dimensions) {
         None
@@ -365,7 +367,7 @@ pub(crate) fn build_user_message(
         emotion_dimensions,
     );
     let now_text = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let current_turn_text = format!(
+    let mut current_turn_text = format!(
         "`The current time is {now_text}, `{sender_name}` sent you (`{bot_name}`) a message: \"{}\". You need to reply to this message, or choose not to reply.\n\
          You can also use the reply tool to quote a message_id (or omit message_id to reply to the message just received).\n\
          Your output is the message text that will be sent directly. Do not include any system information, do not use markdown, and it must be natural-language reply text plus any placeholders mentioned elsewhere in the system.\n\
@@ -377,6 +379,11 @@ pub(crate) fn build_user_message(
          - [no_reply]: you choose to decline, or not reply to this person's message",
         current_input.current_text_for_prompt(),
     );
+    // A turn's extra reply directive (e.g. the group-message-window turn's reply
+    // instruction) rides on the current message body, next to the reply rules above.
+    if let Some(instruction) = reply_instruction.map(str::trim).filter(|text| !text.is_empty()) {
+        current_turn_text.push_str(&format!("\n\n{instruction}"));
+    }
 
     let current_image_section = if current_input.current_image_reference_lines.is_empty() {
         String::new()
@@ -824,6 +831,7 @@ impl QqChatAgentServiceInner {
             shared_inputs: Vec::new(),
             tool_definitions: Vec::new(),
             sub_agent_ids: Vec::new(),
+            group_message_window_confirmed: GroupMessageWindowMemory::default(),
         }
     }
 

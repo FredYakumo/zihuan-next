@@ -105,7 +105,11 @@ impl MemoryHint {
 }
 
 /// Assemble this turn's system prompt and user input. No inference runs here.
-pub(crate) fn assemble_before_brain(ctx: &BeforeBrainContext<'_>) -> BeforeBrainOutput {
+
+pub(crate) fn assemble_before_brain(
+    ctx: &BeforeBrainContext<'_>,
+    reply_instruction: Option<&str>,
+) -> BeforeBrainOutput {
     let started_at = Instant::now();
 
     // 1. System prompt: the shared QQ chat rules plus the role service's system prompt.
@@ -168,6 +172,7 @@ pub(crate) fn assemble_before_brain(ctx: &BeforeBrainContext<'_>) -> BeforeBrain
                 &mut session_state,
                 &ctx.emotion_dimensions,
                 memory_context.as_deref(),
+                reply_instruction,
             ),
             ctx.llm.api_style(),
         );

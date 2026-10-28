@@ -54,11 +54,10 @@ pub struct LongTaskContext {
 /// the outer observer can show them under the sub-agent call that produced them.
 #[derive(Debug, Clone)]
 pub enum NestedToolCallingEvent {
-    /// The assembled prompt the nested agent received (its system prompt plus the rendered
-    /// user message).
     Input {
         system_prompt: String,
         user_prompt: String,
+        tools: Vec<Value>,
     },
     /// A delta of the nested agent's streaming response. The complete text follows in an
     /// [`Self::Assistant`] event, which settles the message the deltas built up.

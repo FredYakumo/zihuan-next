@@ -121,6 +121,11 @@ impl ToolCallingEngine {
         self.tools.push(Arc::new(tool));
     }
 
+    /// The tool schemas handed to the LLM on every request of the loop, in registration order.
+    pub fn tool_definitions(&self) -> Vec<Value> {
+        self.tools.iter().map(|tool| tool.spec().get_json()).collect()
+    }
+
     /// Attach a long-task execution context.
     pub fn set_long_task_context(&mut self, ctx: LongTaskContext) {
         self.long_task_context = Some(ctx);

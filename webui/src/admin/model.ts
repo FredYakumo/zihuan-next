@@ -152,6 +152,7 @@ export interface ServiceFormState {
   max_message_length: number;
   scheduled_jobs: QqChatScheduledJobFormItem[];
   max_steer_count: number;
+  group_message_window_count: number;
   emotion_dimensions: QqChatEmotionDimensionFormItem[];
   default_tools_enabled: Record<string, boolean>;
   tool_session_call_limits: Record<string, number>;
@@ -469,6 +470,7 @@ export function defaultServiceForm(): ServiceFormState {
     max_message_length: 500,
     scheduled_jobs: [],
     max_steer_count: 4,
+    group_message_window_count: 10,
     emotion_dimensions: defaultQqChatEmotionDimensions(),
     default_tools_enabled: defaultQqChatDefaultToolsEnabled(),
     tool_session_call_limits: {},
@@ -1008,6 +1010,7 @@ export function serviceFormFromConfig(
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.scheduled_jobs = normalizeQqChatScheduledJobs(agentType.scheduled_jobs);
     form.max_steer_count = Number(agentType.max_steer_count ?? 4);
+    form.group_message_window_count = Number(agentType.group_message_window_count ?? 10);
     form.emotion_dimensions = normalizeQqChatEmotionDimensions(
       agentType.emotion_dimensions,
     );
@@ -1236,6 +1239,7 @@ export function buildServicePayload(form: ServiceFormState): {
         max_message_length: form.max_message_length,
         scheduled_jobs: buildScheduledJobsPayload(form),
         max_steer_count: form.max_steer_count,
+        group_message_window_count: form.group_message_window_count,
         emotion_dimensions: normalizeQqChatEmotionDimensions(
           form.emotion_dimensions,
         ),

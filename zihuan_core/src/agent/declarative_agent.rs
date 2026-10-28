@@ -691,6 +691,16 @@ impl DeclarativeAgent {
 
         let mut engine = ToolCallingEngine::new(llm);
         let messages = self.build_messages(&input);
+        for tool_id in &self.definition.tool_ids {
+            engine.add_tool(SharedTool::new(Arc::clone(
+                self.tools.get(tool_id).expect("validated tool id"),
+            )));
+        }
+        if self.definition.include_graph_tools {
+            for tool in &self.graph_tools {
+                engine.add_tool(SharedTool::new(Arc::clone(tool)));
+            }
+        }
         if let Some((observer, path)) = nested.as_ref() {
             let system_prompt = messages
                 .iter()
@@ -702,22 +712,19 @@ impl DeclarativeAgent {
                 .find(|message| matches!(message.role, MessageRole::User))
                 .and_then(LLMMessage::content_text_owned)
                 .unwrap_or_default();
-            observer.on_nested_event(path, &NestedInput { system_prompt, user_prompt });
+            observer.on_nested_event(
+                path,
+                &NestedInput {
+                    system_prompt,
+                    user_prompt,
+                    tools: engine.tool_definitions(),
+                },
+            );
             engine.set_observer(Arc::new(NestedLoopObserver::new(
                 Arc::clone(observer),
                 path.clone(),
             )));
             engine.set_observer_path(path.clone());
-        }
-        for tool_id in &self.definition.tool_ids {
-            engine.add_tool(SharedTool::new(Arc::clone(
-                self.tools.get(tool_id).expect("validated tool id"),
-            )));
-        }
-        if self.definition.include_graph_tools {
-            for tool in &self.graph_tools {
-                engine.add_tool(SharedTool::new(Arc::clone(tool)));
-            }
         }
 
         let (messages, stop_reason) = engine.run(messages);

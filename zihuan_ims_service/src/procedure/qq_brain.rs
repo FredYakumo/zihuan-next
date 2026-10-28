@@ -28,6 +28,7 @@ use zihuan_core::storage::LLMMessageSessionCacheRef;
 use zihuan_core::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
 use super::before_brain::BeforeBrainOutput;
+use super::GroupMessageWindowOutput;
 use crate::qq_chat::logging::{QqChatToolCallingObserver, QqChatTurnIdentity};
 use crate::qq_chat::steer::{QqChatServiceSteerHook, SteerTurnContext};
 use crate::qq_chat::tool_quota::wrap_brain_tool_with_quota;
@@ -490,6 +491,12 @@ impl Procedure for QqBrain {
         });
         let user_msg = assembled.user_message.clone();
 
+        // The per-sender conversation history is still compacted for the session cache, but
+        // on a group turn the group-message-window procedure replaces what the brain
+        // receives as history with the group messages related to this turn's input; the
+        // window's reply directive rides on the assembled user message (before-brain), not
+        // on this history block.
+        let window_output = context.find_output::<GroupMessageWindowOutput>();
         let compact_result = compact_turn_history(
             &self.cache,
             &self.history_key,
@@ -497,7 +504,10 @@ impl Procedure for QqBrain {
             self.history.clone(),
             &user_msg,
         );
-        let history = compact_result.messages;
+        let history: Vec<LLMMessage> = match &window_output {
+            Some(window) => window.history_message().into_iter().collect(),
+            None => compact_result.messages,
+        };
         self.trace
             .record_history_stats(history.len(), estimate_messages_tokens(&history));
 
@@ -543,7 +553,12 @@ impl Procedure for QqBrain {
                 "model": self.turn_llm.get_model_name(),
                 "messages_sent": brain_conversation.len(),
                 "prompt_tokens_estimated": prompt_tokens_estimated,
+                "tools": self.engine.tool_definitions(),
                 "current_user_message": current_user_body,
+                "history_source": window_output
+                    .as_ref()
+                    .map(|_| "group-message-window")
+                    .unwrap_or("conversation_history"),
                 "history": history_input,
                 "compacted": compact_result.did_compact,
                 "tokens_before_compaction": compact_result

@@ -30,14 +30,19 @@ if 指令已被处理
 - Role 根据意图分类结果决定本轮的 Procedure 链组成。
   if 元查询（询问工具列表、系统提示词、模型名）
     then 本轮走元查询链：MetaQuery Procedure 直接作答，再交 AfterBrain Procedure
-  else 本轮走普通链：BeforeBrain -> Brain -> AfterBrain
+  else 本轮走普通链：群聊用户输入先执行 group-message-window Procedure，再 BeforeBrain -> Brain -> AfterBrain
+if 群聊消息 and not steer and 非私聊
+    then
+    - group-message-window Procedure 读取最近的群聊消息窗口（数量来自 RoleService 配置的群聊消息窗口数量，默认 10，从新到旧排序），剔除本轮触发消息与之前已确认相关的消息后，由 agent 模型找出其中与用户输入相关的消息。
+    已经确认相关的消息不会再进入候选；被判断为无关的消息仍保留在窗口内，后续轮次仍可被选中。
+    - group-message-window Procedure 将选中的相关消息记录（时间，发送者，消息内容）作为 Brain 的历史输入，取代按发送者加载的会话历史。
 - Role 准备记忆访问能力、本轮可用 Tool 集合、sub agent 集合与记忆读写能力，组装链上各 Procedure。
 - 链上 Procedure 按顺序执行并共享同一个 Procedure 上下文；一个过程的输出由后继过程从上下文读取，Role 不在过程之间搬运数据。
 - BeforeBrain Procedure 以阻塞方式执行，确定性地组装本轮输入，不执行模型推理或工具调用循环，也不维护独立的 Preprompt 对话历史。
 - BeforeBrain Procedure 根据群聊或私聊场景，将公共规则与 RoleService 配置的系统提示词组合为本轮系统提示词。
 - BeforeBrain Procedure 根据当前消息检索相关记忆标题，生成记忆提示块；具体规则见下文。
 - BeforeBrain Procedure 读取当前会话的情绪状态，生成情绪提示词；情绪表达明显时，抑制配置的语言风格提示词。此阶段不根据事件更新情绪值。
-- BeforeBrain Procedure 复用用户消息构造逻辑，组装身份、会话环境、时间、发送者、消息内容、情绪与角色指令、记忆标题提示及可选限流警告。
+- BeforeBrain Procedure 复用用户消息构造逻辑，组装身份、会话环境、时间、发送者、消息内容、情绪与角色指令、记忆标题提示及可选限流警告；窗口轮次额外拼入「回复用户发送的输入的消息」的提示。
 - BeforeBrain Procedure 根据本轮路由模型的 API 风格与多模态能力生成用户消息。
 - BeforeBrain Procedure 将 `BeforeBrainOutput` 写入共享 Procedure 上下文，包含 `system_prompt`、完整的 `user_message` 和可选的 `memory_context`。
 
@@ -45,7 +50,7 @@ if 指令已被处理
 
 - Brain Procedure 从链上下文读取 `BeforeBrainOutput`，直接使用已组装的用户消息；缺少该输出时，本轮处理失败。
 - Brain Procedure 在启动推理前，将系统提示词和记忆标题提示写入 steer 共用的轮次上下文。
-- Brain Procedure 按模型上下文预算压缩历史，组装本轮推理上下文。
+- Brain Procedure 按模型上下文预算压缩历史，组装本轮推理上下文；群聊用户输入轮次的历史来自 group-message-window Procedure 选取的相关消息，压缩只作用于按发送者保存的会话历史。
 - Brain Procedure 执行模型推理与工具调用。
   for 每一次推理循环
 - Brain Procedure 根据当前任务选择并调用 Tool。

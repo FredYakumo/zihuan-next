@@ -101,6 +101,10 @@ pub enum QqChatSubAgentEntry {
         #[serde(default)]
         system_prompt: String,
         user_prompt: String,
+        /// The tool schemas the sub-agent's loop hands to the LLM. Absent in entries recorded
+        /// before the field existed.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tools: Vec<Value>,
     },
     /// One assistant message of the sub-agent's loop. `final_response` marks the message that
     /// ended the loop.

@@ -277,7 +277,7 @@ export interface QqContextQuoted {
 
 /** One step of a sub-agent's own tool-calling loop, shown inside the sub-agent box. */
 export type QqSubAgentEntry =
-  | { kind: "input"; system_prompt?: string; user_prompt: string }
+  | { kind: "input"; system_prompt?: string; user_prompt: string; /** Tool schemas the loop hands to the LLM; absent in entries recorded before the field existed. Parsed lazily: a recursive type here blows up inference on the turn union. */ tools?: unknown[] }
   | { kind: "assistant"; iteration?: number; content: string; reasoning?: string; final_response: boolean }
   /** Live delta of the streaming response; the settled `assistant` entry follows it. */
   | { kind: "assistant_chunk"; content: string; reasoning: string }
