@@ -15,7 +15,7 @@ for candidate in python3 python; do
     fi
 done
 if [ -z "$PYTHON" ]; then
-    echo "check_plugins: 未找到可用的 python3，请先安装 Python" >&2
+    echo "check_plugins: no usable python3 found; install Python first" >&2
     exit 1
 fi
 

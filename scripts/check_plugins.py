@@ -146,23 +146,23 @@ def validate_manifest(report: Report, manifest: dict, implemented: set[str]) -> 
     """Checks one PLUGIN_MANIFEST against the host rules; returns the declared plugin_type."""
     plugin_type = manifest.get("plugin_type")
     if not isinstance(plugin_type, str) or not plugin_type:
-        report.error("PLUGIN_MANIFEST 缺少 plugin_type，Host会拒绝收录该Plugin")
+        report.error("PLUGIN_MANIFEST is missing plugin_type; the host will reject the plugin")
         plugin_type = None
     elif plugin_type not in KNOWN_PLUGIN_TYPES:
-        report.warning(f"未知 plugin_type '{plugin_type}'：Host会收录它，但没有任何System使用这个类型")
+        report.warning(f"unknown plugin_type '{plugin_type}': the host registers it, but no system uses this type")
 
     for key in ("name", "display_name", "description"):
         value = manifest.get(key)
         if value is not None and not isinstance(value, str):
-            report.error(f"PLUGIN_MANIFEST 的 {key} 必须是字符串")
+            report.error(f"PLUGIN_MANIFEST {key} must be a string")
     version = manifest.get("version")
     if version is not None and not isinstance(version, (str, int, float)):
-        report.error("PLUGIN_MANIFEST 的 version 必须是字符串或数字")
+        report.error("PLUGIN_MANIFEST version must be a string or a number")
 
     config_fields = manifest.get("config_fields")
     if config_fields is not None:
         if not isinstance(config_fields, list):
-            report.error("PLUGIN_MANIFEST 的 config_fields 必须是数组")
+            report.error("PLUGIN_MANIFEST config_fields must be a list")
         else:
             declared: set[str] = set()
             for item in config_fields:
@@ -171,20 +171,20 @@ def validate_manifest(report: Report, manifest: dict, implemented: set[str]) -> 
                 elif isinstance(item, dict) and isinstance(item.get("name"), str) and item["name"]:
                     name = item["name"]
                 else:
-                    report.warning(f"config_fields 项缺少 name，Host会忽略它: {item!r}")
+                    report.warning(f"config_fields entry is missing a name; the host ignores it: {item!r}")
                     continue
                 if name in declared:
-                    report.warning(f"config_fields 重复声明 '{name}'")
+                    report.warning(f"config_fields declares '{name}' more than once")
                 declared.add(name)
                 if name in RESERVED_CONFIG_FIELDS:
                     report.warning(
-                        f"config_fields 声明了保留字段 '{name}'：它映射到连接自身的列，Host会丢弃该声明"
+                        f"config_fields declares the reserved field '{name}': it maps to a connection column itself, and the host drops the declaration"
                     )
 
     if plugin_type in KNOWN_PLUGIN_TYPES:
         for method in REQUIRED_METHODS:
             if method not in implemented:
-                report.error(f"web_search_engine Plugin必须实现顶层函数 {method}(args, config)")
+                report.error(f"a web_search_engine plugin must implement the top-level function {method}(args, config)")
     return plugin_type
 
 
@@ -193,12 +193,12 @@ def check_python_plugin(plugin: Plugin, report: Report) -> None:
     try:
         source = entry.read_text(encoding="utf-8")
     except OSError as error:
-        report.error(f"无法读取入口文件: {error}")
+        report.error(f"failed to read the entry file: {error}")
         return
     try:
         tree = ast.parse(source, filename=str(entry))
     except SyntaxError as error:
-        report.error(f"语法错误: 第 {error.lineno} 行第 {error.offset} 列: {error.msg}")
+        report.error(f"syntax error at line {error.lineno}, column {error.offset}: {error.msg}")
         return
 
     manifest_node = None
@@ -223,26 +223,26 @@ def check_python_plugin(plugin: Plugin, report: Report) -> None:
 
     if external_imports and not has_dependency_manifest(plugin):
         report.warning(
-            "顶层导入了非标准库模块 " + ", ".join(sorted(external_imports))
-            + "，但目录没有 pyproject.toml / requirements.txt，Host会在共享解释器里运行它"
+            "top-level imports of non-stdlib modules " + ", ".join(sorted(external_imports))
+            + ", but the directory has no pyproject.toml / requirements.txt; the host runs it on the shared interpreter"
         )
 
     if manifest_node is None:
-        report.error("缺少 PLUGIN_MANIFEST 定义，Host会拒绝收录该Plugin")
+        report.error("the PLUGIN_MANIFEST definition is missing; the host will reject the plugin")
         return
     try:
         manifest = ast.literal_eval(manifest_node)
     except (ValueError, TypeError, SyntaxError):
-        report.warning("PLUGIN_MANIFEST 不是静态字面量，无法离线校验规范")
+        report.warning("PLUGIN_MANIFEST is not a static literal; it cannot be checked offline")
         return
     if not isinstance(manifest, dict):
-        report.error("PLUGIN_MANIFEST 必须是字典")
+        report.error("PLUGIN_MANIFEST must be a dict")
         return
     plugin_type = validate_manifest(report, manifest, set(functions))
     if plugin_type in KNOWN_PLUGIN_TYPES:
         for name in PLUGIN_METHODS:
             if name in functions and not callable_with(functions[name], 2):
-                report.error(f"{name} 必须能以 (args, config) 两个位置参数调用")
+                report.error(f"{name} must be callable with two positional arguments (args, config)")
 
 
 def node_type_strip_args(node: str) -> list[str]:
@@ -267,7 +267,7 @@ def node_type_strip_args(node: str) -> list[str]:
 def check_javascript_plugin(plugin: Plugin, report: Report) -> None:
     node = shutil.which("node")
     if node is None:
-        report.error("未找到 node，无法检测 JS/TS Plugin")
+        report.error("node not found; cannot check JS/TS plugins")
         return
     entry = plugin.path / plugin.entry
     # `node --check` is only trustworthy for .mjs: .js has no unambiguous module type on
@@ -279,7 +279,7 @@ def check_javascript_plugin(plugin: Plugin, report: Report) -> None:
             [node, "--check", str(entry)], capture_output=True, text=True, encoding="utf-8", errors="replace"
         )
         if syntax.returncode != 0:
-            report.error(f"语法错误: {(syntax.stderr or syntax.stdout).strip()}")
+            report.error(f"syntax error: {(syntax.stderr or syntax.stdout).strip()}")
             return
     probe = subprocess.run(
         [node, *node_type_strip_args(node), "--input-type=module"],
@@ -293,17 +293,17 @@ def check_javascript_plugin(plugin: Plugin, report: Report) -> None:
     try:
         payload = json.loads(probe.stdout)
     except ValueError:
-        report.error(f"无法加载入口模块: {(probe.stderr or probe.stdout).strip()}")
+        report.error(f"failed to load the entry module: {(probe.stderr or probe.stdout).strip()}")
         return
     if not isinstance(payload, dict):
-        report.error(f"入口模块探测输出无效: {probe.stdout.strip()[:200]}")
+        report.error(f"invalid probe output from the entry module: {probe.stdout.strip()[:200]}")
         return
     if payload.get("error"):
-        report.error(f"入口模块加载失败: {payload['error']}")
+        report.error(f"the entry module failed to load: {payload['error']}")
         return
     manifest = payload.get("manifest")
     if not isinstance(manifest, dict):
-        report.error("缺少 plugin_manifest 导出，Host会拒绝收录该Plugin")
+        report.error("the plugin_manifest export is missing; the host will reject the plugin")
         return
     validate_manifest(report, manifest, set(payload.get("methods") or []))
 
@@ -312,7 +312,7 @@ def run_step(argv: list[str], report: Report, what: str) -> bool:
     process = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if process.returncode == 0:
         return True
-    report.error(f"{what}失败: {(process.stderr or process.stdout).strip()}")
+    report.error(f"{what} failed: {(process.stderr or process.stdout).strip()}")
     return False
 
 
@@ -326,20 +326,20 @@ def full_check(plugin: Plugin, report: Report) -> None:
     if plugin.language == "python":
         uv = shutil.which("uv")
         if uv is None:
-            report.error("未找到 uv，无法按Host方式安装Plugin依赖")
+            report.error("uv not found; cannot install plugin dependencies the way the host does")
             return
         if (plugin.path / "pyproject.toml").is_file():
-            if not run_step([uv, "sync", "--project", str(plugin.path), "--quiet"], report, "依赖安装 (uv sync)"):
+            if not run_step([uv, "sync", "--project", str(plugin.path), "--quiet"], report, "dependency install (uv sync)"):
                 return
             runner = [uv, "run", "--project", str(plugin.path), "--no-sync", "python"]
         elif (plugin.path / "requirements.txt").is_file():
             python = venv_python_path(plugin.path)
-            if not python.is_file() and not run_step([uv, "venv", str(plugin.path / ".venv")], report, "环境创建 (uv venv)"):
+            if not python.is_file() and not run_step([uv, "venv", str(plugin.path / ".venv")], report, "environment creation (uv venv)"):
                 return
             if not run_step(
                 [uv, "pip", "install", "--python", str(python), "--requirement", str(plugin.path / "requirements.txt")],
                 report,
-                "依赖安装 (uv pip install)",
+                "dependency install (uv pip install)",
             ):
                 return
             runner = [str(python)]
@@ -363,27 +363,27 @@ def full_check(plugin: Plugin, report: Report) -> None:
         cwd=ENGINE_DIR,
     )
     if process.returncode != 0:
-        report.error(f"Host runner 加载失败: {(process.stderr or process.stdout).strip()}")
+        report.error(f"the host runner failed to load the plugin: {(process.stderr or process.stdout).strip()}")
         return
     try:
         payload = json.loads(process.stdout)
     except ValueError:
-        report.error(f"Host runner 输出无法解析: {(process.stdout or process.stderr).strip()[:400]}")
+        report.error(f"the host runner output could not be parsed: {(process.stdout or process.stderr).strip()[:400]}")
         return
     for diagnostic in payload.get("diagnostics") or []:
         message = diagnostic.get("message") if isinstance(diagnostic, dict) else diagnostic
-        report.error(f"Host加载诊断: {message}")
+        report.error(f"host load diagnostic: {message}")
     plugins = payload.get("plugins") or []
     if not plugins:
         if not payload.get("diagnostics"):
-            report.error("Host runner 未收录该Plugin（缺少可用的 PLUGIN_MANIFEST）")
+            report.error("the host runner did not register the plugin (no usable PLUGIN_MANIFEST)")
         return
     loaded = plugins[0]
     if loaded.get("plugin_type") in KNOWN_PLUGIN_TYPES:
         methods = set(loaded.get("methods") or [])
         missing = [method for method in REQUIRED_METHODS if method not in methods]
         if missing:
-            report.error("Host runner 报告的已实现方法缺少 " + ", ".join(missing))
+            report.error("the host runner reports missing implemented methods: " + ", ".join(missing))
     report.loaded = True
 
 
@@ -399,9 +399,9 @@ def collect_plugins(target: Path) -> tuple[list[Plugin], list[str]]:
     if target.is_file():
         if target.name in PLUGIN_ENTRY_FILES:
             return [Plugin(directory=target.parent.name, entry=target.name, path=target.parent)], []
-        raise SystemExit(f"check_plugins: {target} 不是Plugin入口文件 ({'/'.join(PLUGIN_ENTRY_FILES)})")
+        raise SystemExit(f"check_plugins: {target} is not a plugin entry file ({'/'.join(PLUGIN_ENTRY_FILES)})")
     if not target.is_dir():
-        raise SystemExit(f"check_plugins: 目标不存在: {target}")
+        raise SystemExit(f"check_plugins: target does not exist: {target}")
     entry = next((name for name in PLUGIN_ENTRY_FILES if (target / name).is_file()), None)
     if entry is not None:
         return [Plugin(directory=target.name, entry=entry, path=target)], []
@@ -413,20 +413,20 @@ def main() -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-    parser = argparse.ArgumentParser(description="检测 zihuan-next 动态脚本Plugin的语法与Plugin规范")
-    parser.add_argument("target", nargs="?", help="Plugin名、Plugin目录、入口文件或Plugin集合目录，默认检测整个 plugins/")
+    parser = argparse.ArgumentParser(description="Check zihuan-next dynamic script plugins for syntax and plugin conventions")
+    parser.add_argument("target", nargs="?", help="plugin name, plugin directory, entry file, or a directory holding several plugins; defaults to all of plugins/")
     parser.add_argument(
-        "--full", action="store_true", help="安装依赖并用Host runner (engine_runtime.py --plugins-catalog) 实际加载每个Plugin"
+        "--full", action="store_true", help="install dependencies and actually load every plugin through the host runner (engine_runtime.py --plugins-catalog)"
     )
     args = parser.parse_args()
 
     target = resolve_target(args.target) if args.target else PLUGINS_DIR
     plugins, ignored = collect_plugins(target)
     if not plugins:
-        print(f"check_plugins: {target} 下没有发现任何Plugin（需要 {' / '.join(PLUGIN_ENTRY_FILES)}）", file=sys.stderr)
+        print(f"check_plugins: no plugin found under {target} (needs one of {' / '.join(PLUGIN_ENTRY_FILES)})", file=sys.stderr)
         return 1
 
-    print(f"检测Plugin目录: {target}")
+    print(f"checking plugin directory: {target}")
     reports: list[Report] = []
     for plugin in plugins:
         report = Report(plugin=plugin)
@@ -438,21 +438,21 @@ def main() -> int:
             full_check(plugin, report)
         reports.append(report)
 
-        status = "通过" if report.ok else "失败"
-        suffix = "，并通过Host runner 加载" if args.full and report.ok else ""
+        status = "pass" if report.ok else "fail"
+        suffix = ", loaded through the host runner" if args.full and report.ok else ""
         print(f"[{status}] {report.plugin.label}{suffix}")
         for finding in report.findings:
             print(f"    {finding.level.upper()}: {finding.message}")
 
     if ignored:
         print(
-            f"[警告] 以下目录缺少 {' / '.join(PLUGIN_ENTRY_FILES)} 入口，Host不会把它们当作Plugin加载: "
+            f"[warning] the following directories lack a {' / '.join(PLUGIN_ENTRY_FILES)} entry; the host does not load them as plugins: "
             + ", ".join(ignored)
         )
     failures = [report for report in reports if not report.ok]
     error_count = sum(1 for report in reports for finding in report.findings if finding.level == "error")
     warning_count = sum(1 for report in reports for finding in report.findings if finding.level == "warning")
-    print(f"结果: {len(reports) - len(failures)} 通过, {len(failures)} 失败 (error {error_count}, warning {warning_count})")
+    print(f"result: {len(reports) - len(failures)} passed, {len(failures)} failed (error {error_count}, warning {warning_count})")
     return 1 if failures else 0
 
 
