@@ -964,9 +964,10 @@ fn sub_agent_entry(
     use zihuan_core::agent::tools::NestedToolCallingEvent as Nested;
     use zihuan_core::qq_context::QqChatSubAgentEntry;
     match event {
-        Nested::Input { system_prompt, user_prompt } => Some(QqChatSubAgentEntry::Input {
+        Nested::Input { system_prompt, user_prompt, tools } => Some(QqChatSubAgentEntry::Input {
             system_prompt: system_prompt.clone(),
             user_prompt: user_prompt.clone(),
+            tools: tools.clone(),
         }),
         Nested::AssistantChunk { content, reasoning } => {
             Some(QqChatSubAgentEntry::AssistantChunk {

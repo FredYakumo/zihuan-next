@@ -543,6 +543,7 @@ impl Procedure for QqBrain {
                 "model": self.turn_llm.get_model_name(),
                 "messages_sent": brain_conversation.len(),
                 "prompt_tokens_estimated": prompt_tokens_estimated,
+                "tools": self.engine.tool_definitions(),
                 "current_user_message": current_user_body,
                 "history": history_input,
                 "compacted": compact_result.did_compact,
