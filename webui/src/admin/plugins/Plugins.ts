@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
-import { pluginsApi, setup as setupApi, type DetailedSetupConfig, type EnvironmentInfo, type PluginRecord, type SetupProgressEvent } from "../../api/client";
+import { pluginsApi, setup as setupApi, type DetailedSetupConfig, type EnvironmentInfo, type PluginRecord, type ScriptPluginDetail, type ScriptPluginFile, type ScriptPluginFileNode, type SetupProgressEvent } from "../../api/client";
 import elasticsearchIcon from "../../assets/icons/elasticsearch.svg";
 import mysqlIcon from "../../assets/icons/mysql.svg";
 import redisIcon from "../../assets/icons/redis.svg";
@@ -19,6 +19,14 @@ export function usePluginsPage() {
   const successVisible = ref(false); const successInstallCommand = ref<string | null>(null); const successConnectionConfig = ref<unknown>(undefined);
   const uninstallCommandVisible = ref(false); const uninstallCommand = ref("");
   const exitConfirmVisible = ref(false); const error = ref(""); const progress = ref<SetupProgressEvent[]>([]); const taskId = ref("");
+  // Detail dialog: manifest, dependency list and a collapsible source viewer.
+  const detailVisible = ref(false); const detailLoading = ref(false); const detail = ref<ScriptPluginDetail | null>(null); const detailName = ref("");
+  const detailError = ref(""); const sourceOpen = ref(false);
+  const flatten = (nodes: ScriptPluginFileNode[]): ScriptPluginFileNode[] => nodes.flatMap((node) => node.kind === "file" ? [node] : flatten(node.children));
+  const activeFile = ref(""); const fileContent = ref<ScriptPluginFile | null>(null); const fileLoading = ref(false); const fileError = ref("");
+  const detailFileList = computed(() => detail.value ? flatten(detail.value.files) : []);
+  // Zip installation lives beside the component installer, not inside it.
+  const zipVisible = ref(false); const zipFile = ref<File | null>(null); const zipInstalling = ref(false); const zipError = ref(""); const zipWarnings = ref<string[]>([]);
   let cleanupProgress = (() => {}) as () => void;
   let completionTimer: ReturnType<typeof setTimeout> | null = null;
   let installAttempt = 0;
@@ -44,6 +52,19 @@ export function usePluginsPage() {
     search: { enabled: false, source: "install", type: "weaviate", deployment: { image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./data/plugin-search", container_name: "zihuan-plugin-search", restart_policy: "unless-stopped" }, base_url: "http://127.0.0.1:8080", username: null, password: null, api_key: null, auth_method: "api_key", vector_dimensions: 1024 },
     redis: { enabled: false, source: "install", deployment: { image: "redis:7", port: 6379, data_dir: "./data/plugin-redis", container_name: "zihuan-plugin-redis", restart_policy: "unless-stopped" }, url: "redis://127.0.0.1:6379", username: null, password: null } });
   const columns = [{ colKey: "name", title: "插件名称" }, { colKey: "component_type", title: "组件", width: 130 }, { colKey: "installation_method", title: "安装方式", width: 150 }, { colKey: "status", title: "状态", width: 110 }, { colKey: "connection_ids", title: "关联连接", width: 100 }, { colKey: "actions", title: "操作", width: 370 }];
+  /** Plugins under `plugins/` are directory-owned: the row is informational and cannot be
+   *  installed, toggled or uninstalled from here. */
+  function isScriptPlugin(plugin: Pick<PluginRecord, "installation_method">) { return plugin.installation_method === "dynamic_script"; }
+  function installMethodLabel(value: string) { return value === "dynamic_script" ? "动态脚本" : value; }
+  /** Dynamic script plugins use a registry key as their component; show a readable label. */
+  function componentLabel(plugin: PluginRecord) {
+    if (!isScriptPlugin(plugin)) return plugin.component_type;
+    return ({ web_search_engine: "搜索引擎" } as Record<string, string>)[plugin.component_type] ?? plugin.component_type;
+  }
+  function scriptPluginDetail(plugin: PluginRecord): string {
+    const description = plugin.extra_install_metadata?.description;
+    return typeof description === "string" ? description : "";
+  }
   function statusLabel(value: string) { return ({ installing: "安装中", installed: "已启用", disabled: "已停用", failed: "失败", command_generated: "命令已生成" } as Record<string, string>)[value] ?? value; }
   function statusTheme(value: string) { return value === "installed" ? "success" : value === "failed" ? "danger" : value === "disabled" ? "warning" : "primary"; }
   async function load() { loading.value = true; try { plugins.value = await pluginsApi.list(); } catch (e) { error.value = String(e); } finally { loading.value = false; } }
@@ -248,6 +269,73 @@ export function usePluginsPage() {
   function installCommand(plugin: PluginRecord): string | null { return metadataString(plugin, "install_command"); }
   function connectionConfigJson(plugin: PluginRecord): string | null { const value = plugin.extra_install_metadata?.connection_config; return value == null ? null : JSON.stringify(value, null, 2); }
   async function copyPluginValue(value: string, label: string) { try { await navigator.clipboard.writeText(value); } catch (e) { error.value = `复制${label}失败：${String(e)}`; } }
+  async function openDetail(plugin: PluginRecord) {
+    detailName.value = plugin.name;
+    detailVisible.value = true;
+    detailLoading.value = true;
+    detailError.value = "";
+    detail.value = null;
+    sourceOpen.value = false;
+    activeFile.value = "";
+    fileContent.value = null;
+    try {
+      const loaded = await pluginsApi.scriptDetail(plugin.name);
+      detail.value = loaded;
+      const first = flatten(loaded.files).find((node) => node.name === "plugin.py")
+        ?? flatten(loaded.files).find((node) => node.name === "plugin.mjs")
+        ?? flatten(loaded.files)[0];
+      if (first) void previewFile(first.path);
+    } catch (e) {
+      detailError.value = String(e);
+    } finally {
+      detailLoading.value = false;
+    }
+  }
+  async function previewFile(path: string) {
+    activeFile.value = path;
+    fileLoading.value = true;
+    fileError.value = "";
+    fileContent.value = null;
+    try {
+      fileContent.value = await pluginsApi.scriptFile(detailName.value, path);
+    } catch (e) {
+      fileError.value = String(e);
+    } finally {
+      fileLoading.value = false;
+    }
+  }
+  async function removeScriptPlugin(plugin: PluginRecord) {
+    try {
+      await pluginsApi.removeScript(plugin.name);
+      if (detailVisible.value && detailName.value === plugin.name) detailVisible.value = false;
+      await load();
+    } catch (e) {
+      error.value = String(e);
+    }
+  }
+  function openZipInstall() {
+    zipFile.value = null;
+    zipError.value = "";
+    zipWarnings.value = [];
+    zipVisible.value = true;
+  }
+  function selectZipFile(file: File) { zipFile.value = file; zipError.value = ""; }
+  async function installZip() {
+    if (!zipFile.value) { zipError.value = "请选择插件 zip 包"; return; }
+    zipInstalling.value = true;
+    zipError.value = "";
+    zipWarnings.value = [];
+    try {
+      const result = await pluginsApi.installZip(zipFile.value);
+      zipWarnings.value = result.warnings ?? [];
+      await load();
+      if (!result.warnings?.length) zipVisible.value = false;
+    } catch (e) {
+      zipError.value = String(e);
+    } finally {
+      zipInstalling.value = false;
+    }
+  }
   async function removePlugin(id: string) { try { const result = await pluginsApi.remove(id); await load(); if (result.uninstall_command) { uninstallCommand.value = result.uninstall_command; uninstallCommandVisible.value = true; } } catch (e) { error.value = String(e); } }
   onMounted(() => { void load(); if (route.query.install === "1") openInstall(); });
   onBeforeUnmount(() => {
@@ -283,6 +371,10 @@ export function usePluginsPage() {
     statusLabel,
     statusTheme,
     statusTitle,
+    isScriptPlugin,
+    installMethodLabel,
+    componentLabel,
+    scriptPluginDetail,
     load,
     selectComponent,
     openInstall,
@@ -297,5 +389,26 @@ export function usePluginsPage() {
     connectionConfigJson,
     copyPluginValue,
     removePlugin,
+    detailVisible,
+    detailLoading,
+    detail,
+    detailError,
+    sourceOpen,
+    activeFile,
+    fileContent,
+    fileLoading,
+    fileError,
+    detailFileList,
+    openDetail,
+    previewFile,
+    removeScriptPlugin,
+    zipVisible,
+    zipFile,
+    zipInstalling,
+    zipError,
+    zipWarnings,
+    openZipInstall,
+    selectZipFile,
+    installZip,
   };
 }

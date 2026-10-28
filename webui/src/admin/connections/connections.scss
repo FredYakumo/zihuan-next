@@ -179,3 +179,45 @@
 .create-choice { display: grid; gap: 8px; padding: 20px; text-align: left; border: 1px solid var(--admin-border); background: var(--admin-surface); border-radius: 8px; cursor: pointer; color: inherit; }
 .create-choice:hover { border-color: var(--td-brand-color); }
 .create-choice span { color: var(--admin-muted); font-size: 13px; }
+
+.provider-option {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.provider-plugin-badge {
+    padding: 0 6px;
+    border-radius: 8px;
+    background: #2f5d44;
+    color: #cdebd7;
+    font-size: 11px;
+    line-height: 16px;
+}
+
+.web-search-field-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.web-search-field-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--td-text-color-placeholder);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.web-search-field-help:hover,
+.web-search-field-help:focus-visible {
+    color: var(--td-brand-color);
+}

@@ -106,15 +106,18 @@ version="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
 
 package_root="package/zihuan_next"
 rm -rf "$package_root"
-mkdir -p "$package_root/dag_nodes" "$package_root/dynamic_script_engine" "$package_root/sub_agents" "$package_root/scheduled_jobs"
+mkdir -p "$package_root/dag_nodes" "$package_root/dynamic_script_engine" "$package_root/sub_agents" "$package_root/scheduled_jobs" "$package_root/plugins"
 cp "$binary" "$package_root/"
 cp package.json "$package_root/"
 cp -R dag_nodes/. "$package_root/dag_nodes/"
 cp -R sub_agents/. "$package_root/sub_agents/"
 cp -R scheduled_jobs/. "$package_root/scheduled_jobs/"
+cp -R plugins/. "$package_root/plugins/"
 cp dynamic_script_engine/{engine.mjs,engine_runtime.py,zihuan_sdk.mjs,zihuan_sdk.py,package.json} "$package_root/dynamic_script_engine/"
 cp build_support/release/pyproject.toml "$package_root/pyproject.toml"
 find "$package_root" -depth -type d -name "__pycache__" -exec rm -rf {} +
+find "$package_root/plugins" -depth -type d -name ".venv" -exec rm -rf {} +
+find "$package_root/plugins" \( -name "uv.lock" -o -name ".python-version" \) -delete
 
 case "$os_name" in
     Linux)

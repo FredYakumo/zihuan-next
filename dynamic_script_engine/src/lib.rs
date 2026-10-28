@@ -143,6 +143,9 @@ pub struct RuntimeCommand {
     pub args: Vec<String>,
 }
 impl RuntimeCommand {
+    pub fn new(program: impl Into<PathBuf>, args: Vec<String>) -> Self {
+        Self { program: program.into(), args }
+    }
     pub fn to_command(&self) -> Command {
         let mut command = Command::new(&self.program);
         command.args(&self.args);
@@ -167,19 +170,16 @@ pub fn resolve_node_runtime(
             if !package.is_file() {
                 return Err(message(format!("未检测到动态脚本运行时项目: {}", package.display())));
             }
-            Ok(RuntimeCommand {
-                program: PathBuf::from("node"),
-                args: Vec::new(),
-            })
+            Ok(RuntimeCommand::new("node", Vec::new()))
         }
-        NodeRuntimeKind::CustomExecutable => Ok(RuntimeCommand {
-            program: custom_executable(
+        NodeRuntimeKind::CustomExecutable => Ok(RuntimeCommand::new(
+            custom_executable(
                 workspace,
                 config.executable_path.as_deref(),
                 "动态脚本运行时的 Node.js 可执行文件",
             )?,
-            args: Vec::new(),
-        }),
+            Vec::new(),
+        )),
     }
 }
 
@@ -188,10 +188,9 @@ pub fn resolve_python_runtime(
     config: &PythonRuntimeConfig,
 ) -> Result<RuntimeCommand> {
     match config.kind {
-        PythonRuntimeKind::UvProject => Ok(RuntimeCommand {
-            program: PathBuf::from("uv"),
-            args: vec!["run".to_string(), "python".to_string()],
-        }),
+        PythonRuntimeKind::UvProject => {
+            Ok(RuntimeCommand::new("uv", vec!["run".to_string(), "python".to_string()]))
+        }
         PythonRuntimeKind::ProjectVenv => {
             let executable = project_venv_python_path(workspace);
             if !executable.is_file() {
@@ -200,16 +199,16 @@ pub fn resolve_python_runtime(
                     executable.display()
                 )));
             }
-            Ok(RuntimeCommand { program: executable, args: Vec::new() })
+            Ok(RuntimeCommand::new(executable, Vec::new()))
         }
-        PythonRuntimeKind::CustomExecutable => Ok(RuntimeCommand {
-            program: custom_executable(
+        PythonRuntimeKind::CustomExecutable => Ok(RuntimeCommand::new(
+            custom_executable(
                 workspace,
                 config.executable_path.as_deref(),
                 "自定义 Python 解释器",
             )?,
-            args: Vec::new(),
-        }),
+            Vec::new(),
+        )),
     }
 }
 
@@ -482,10 +481,10 @@ pub struct JobCatalog {
     pub diagnostics: Vec<ScriptDiagnostic>,
 }
 
-/// Recursively collects the job scripts under `directory`, pairing each script's POSIX
+/// Recursively collects the scripts under `directory`, pairing each script's POSIX
 /// display path (relative to `directory`) with the language its extension implies.
 /// Other extensions are ignored and the result is sorted into a deterministic order.
-fn job_scripts_in(directory: &Path) -> Result<Vec<(String, ScriptLanguage)>> {
+fn script_files_in(directory: &Path) -> Result<Vec<(String, ScriptLanguage)>> {
     fn visit(
         directory: &Path,
         base: &Path,
@@ -531,7 +530,7 @@ pub fn load_job_catalog(
 ) -> Result<JobCatalog> {
     let mut catalog = JobCatalog::default();
     let mut paths_by_language: BTreeMap<ScriptLanguage, Vec<String>> = BTreeMap::new();
-    for (display, language) in job_scripts_in(job_directory)? {
+    for (display, language) in script_files_in(job_directory)? {
         paths_by_language.entry(language).or_default().push(display);
     }
     for (language, paths) in paths_by_language {
@@ -583,6 +582,302 @@ pub fn load_job_catalog(
             Err(error) => catalog
                 .diagnostics
                 .push(ScriptDiagnostic { language, message: error.to_string() }),
+        }
+    }
+    Ok(catalog)
+}
+
+/// The directory dynamic script plugins are installed in, relative to the program root.
+///
+/// Plugins live next to `dag_nodes/` and `scheduled_jobs/`. Each plugin is one directory
+/// holding its entry script (`plugin.py` or `plugin.mjs`) plus an optional dependency
+/// manifest (`pyproject.toml` or `requirements.txt`) that the host installs into that
+/// directory's own `.venv` before loading the plugin.
+pub fn plugin_dir(workspace: &Path) -> PathBuf {
+    workspace.join("plugins")
+}
+
+/// File names inside a plugin directory that serve as its entry script, in precedence order.
+const PLUGIN_ENTRY_FILES: [&str; 2] = ["plugin.py", "plugin.mjs"];
+
+/// One installed plugin directory discovered under `plugins/`.
+#[derive(Debug, Clone)]
+pub struct InstalledPluginDir {
+    /// Directory name under `plugins/`, which is also the plugin's default identifier.
+    pub directory: String,
+    /// Entry script file name inside the directory.
+    pub entry_file: String,
+    pub language: ScriptLanguage,
+    pub path: PathBuf,
+}
+
+/// One connection-level configuration field a plugin declares through its manifest.
+///
+/// A field is required unless the plugin marks it `optional`; `secret` values are edited
+/// in a masked input. Field names `api_token` and `timeout_secs` are reserved: they map to
+/// the connection's own columns instead of the plugin parameter bag.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginConfigField {
+    pub name: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub optional: bool,
+    #[serde(default)]
+    pub secret: bool,
+}
+
+/// One catalogued plugin. `script` and `directory` are POSIX paths relative to `plugins/`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginCatalogEntry {
+    pub plugin_type: String,
+    pub name: String,
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub version: String,
+    pub script: String,
+    #[serde(default)]
+    pub directory: String,
+    #[serde(default)]
+    pub methods: Vec<String>,
+    #[serde(default)]
+    pub config_fields: Vec<PluginConfigField>,
+    pub language: ScriptLanguage,
+}
+
+/// Aggregated plugin manifest catalog. Dependency or script failures become diagnostics so
+/// one broken plugin cannot hide the others.
+#[derive(Debug, Clone, Default)]
+pub struct PluginCatalog {
+    pub plugins: Vec<PluginCatalogEntry>,
+    pub diagnostics: Vec<ScriptDiagnostic>,
+}
+
+/// Lists the plugin directories under `plugin_root`, sorted by name.
+///
+/// A directory is a plugin when it holds one of [`PLUGIN_ENTRY_FILES`]; directories whose
+/// name starts with `_` or `.` are skipped, so shared helpers and local environments can
+/// live next to plugins without being catalogued.
+pub fn installed_plugin_directories(plugin_root: &Path) -> Result<Vec<InstalledPluginDir>> {
+    let mut plugins = Vec::new();
+    if !plugin_root.is_dir() {
+        return Ok(plugins);
+    }
+    for entry in fs::read_dir(plugin_root)? {
+        let path = entry?.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let directory = match path.file_name().and_then(|name| name.to_str()) {
+            Some(name) if !name.starts_with('_') && !name.starts_with('.') => name.to_string(),
+            _ => continue,
+        };
+        let Some((entry_file, language)) = PLUGIN_ENTRY_FILES
+            .iter()
+            .find(|file| path.join(file).is_file())
+            .and_then(|file| Some((file.to_string(), ScriptLanguage::from_path(Path::new(file))?)))
+        else {
+            continue;
+        };
+        plugins.push(InstalledPluginDir { directory, entry_file, language, path });
+    }
+    plugins.sort_by(|left, right| left.directory.cmp(&right.directory));
+    Ok(plugins)
+}
+
+/// Installs the dependencies a plugin directory declares, then returns its runner command.
+///
+/// A Python plugin owning a `pyproject.toml` gets a uv project environment in its own
+/// directory (`uv sync`), so the plugin stays self-contained and portable. A plugin with
+/// only `requirements.txt` gets a plain venv plus `uv pip install -r`. Both are skipped when
+/// the interpreter is not uv-managed (`venv_python`/custom), because that interpreter's
+/// packages are owned by the user; a diagnostic explains the constraint instead of
+/// silently mutating it.
+fn prepare_plugin_runtime(
+    workspace: &Path,
+    plugin: &InstalledPluginDir,
+    node: &NodeRuntimeConfig,
+    python: &PythonRuntimeConfig,
+) -> Result<RuntimeCommand> {
+    let language = plugin.language;
+    if language == ScriptLanguage::JavaScript {
+        return resolve_runner_command(workspace, language, node, python);
+    }
+    let pyproject = plugin.path.join("pyproject.toml");
+    let requirements = plugin.path.join("requirements.txt");
+    let has_dependencies = pyproject.is_file() || requirements.is_file();
+    if python.kind != PythonRuntimeKind::UvProject {
+        if has_dependencies {
+            return Err(message(format!(
+                "插件 '{}' 声明了 Python 依赖，但当前 Python 运行时不是 uv 项目；请把 Python 运行时切回 uv 项目，或在该插件目录手动安装依赖",
+                plugin.directory
+            )));
+        }
+        return resolve_python_runtime(workspace, python);
+    }
+    let already_prepared = PREPARED_PLUGINS
+        .lock()
+        .map(|prepared| prepared.contains(&plugin.path))
+        .unwrap_or(false);
+    if pyproject.is_file() {
+        if !already_prepared {
+            install_plugin_dependencies(
+                "uv",
+                &["sync", "--project", &path_text(&plugin.path), "--quiet"],
+                &plugin.directory,
+            )?;
+        }
+        mark_prepared(&plugin.path);
+        return Ok(RuntimeCommand::new(
+            "uv",
+            vec![
+                "run".to_string(),
+                "--project".to_string(),
+                path_text(&plugin.path),
+                "--no-sync".to_string(),
+                "python".to_string(),
+            ],
+        ));
+    }
+    if requirements.is_file() {
+        let venv_python = project_venv_python_path(&plugin.path);
+        if !already_prepared || !venv_python.is_file() {
+            if !venv_python.is_file() {
+                install_plugin_dependencies(
+                    "uv",
+                    &["venv", &path_text(&plugin.path.join(".venv"))],
+                    &plugin.directory,
+                )?;
+            }
+            install_plugin_dependencies(
+                "uv",
+                &[
+                    "pip",
+                    "install",
+                    "--python",
+                    &path_text(&venv_python),
+                    "--requirement",
+                    &path_text(&requirements),
+                ],
+                &plugin.directory,
+            )?;
+        }
+        mark_prepared(&plugin.path);
+        return Ok(RuntimeCommand::new(venv_python, Vec::new()));
+    }
+    resolve_python_runtime(workspace, python)
+}
+
+/// Plugin directories whose environment is already built in this process.
+///
+/// Preparing a plugin spawns `uv`, which costs far more than the plugin call itself. The
+/// plugin catalog runs preparation at startup, so recording the result here keeps every
+/// later call from re-syncing an environment that cannot have changed meanwhile.
+static PREPARED_PLUGINS: Lazy<Mutex<BTreeSet<PathBuf>>> = Lazy::new(|| Mutex::new(BTreeSet::new()));
+
+fn mark_prepared(path: &Path) {
+    if let Ok(mut prepared) = PREPARED_PLUGINS.lock() {
+        prepared.insert(path.to_path_buf());
+    }
+}
+
+fn path_text(path: &Path) -> String {
+    path.display().to_string()
+}
+
+/// Runs one dependency install step, surfacing the installer's stderr on failure.
+///
+/// Installation is deliberately unbounded in time: a first install downloads packages, and
+/// interrupting it would leave a half-built environment behind. Progress is logged first so
+/// a slow install is attributable.
+fn install_plugin_dependencies(program: &str, args: &[&str], plugin: &str) -> Result<()> {
+    log::info!("安装插件 '{plugin}' 依赖: {program} {}", args.join(" "));
+    let output = Command::new(program)
+        .args(args)
+        .envs(SCRIPT_RUNTIME_ENV)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|error| message(format!("无法启动依赖安装程序 {program}: {error}")))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if stderr.is_empty() { stdout } else { stderr };
+    Err(message(format!("插件 '{plugin}' 依赖安装失败: {detail}")))
+}
+
+/// Loads each installed plugin's `PLUGIN_MANIFEST`.
+///
+/// Every plugin is catalogued in its own environment, so a plugin whose dependencies fail to
+/// install is reported as a diagnostic while the rest still load. The runner imports only
+/// the entry file it is given and reports the `PLUGIN_MANIFEST` (`plugin_manifest` export for
+/// `.mjs`) plus the entry functions it actually implements.
+pub fn load_plugin_catalog(
+    workspace: &Path,
+    plugin_root: &Path,
+    node: &NodeRuntimeConfig,
+    python: &PythonRuntimeConfig,
+) -> Result<PluginCatalog> {
+    let mut catalog = PluginCatalog::default();
+    for plugin in installed_plugin_directories(plugin_root)? {
+        let language = plugin.language;
+        let command = match prepare_plugin_runtime(workspace, &plugin, node, python) {
+            Ok(command) => command,
+            Err(error) => {
+                catalog
+                    .diagnostics
+                    .push(ScriptDiagnostic { language, message: error.to_string() });
+                continue;
+            }
+        };
+        let script = format!("{}/{}", plugin.directory, plugin.entry_file);
+        let request = json!({ "paths": [path_text(&plugin.path.join(&plugin.entry_file))] });
+        match run_once(workspace, language, &command, "--plugins-catalog", Some(&request)) {
+            Ok(Value::Object(mut response)) => {
+                let diagnostics: Vec<ScriptDiagnostic> = response
+                    .remove("diagnostics")
+                    .and_then(|value| serde_json::from_value(value).ok())
+                    .unwrap_or_default();
+                catalog.diagnostics.extend(diagnostics);
+                let plugins = response
+                    .remove("plugins")
+                    .and_then(|value| value.as_array().cloned())
+                    .unwrap_or_default();
+                for mut entry in plugins {
+                    let Some(object) = entry.as_object_mut() else {
+                        catalog.diagnostics.push(ScriptDiagnostic {
+                            language,
+                            message: format!("{script} 的插件清单无效: 必须是对象"),
+                        });
+                        continue;
+                    };
+                    // The host owns path and language: the runner only reports the manifest.
+                    object.insert("language".to_string(), serde_json::to_value(language)?);
+                    object.insert("script".to_string(), Value::String(script.clone()));
+                    object.insert("directory".to_string(), Value::String(plugin.directory.clone()));
+                    match serde_json::from_value::<PluginCatalogEntry>(entry) {
+                        Ok(entry) => catalog.plugins.push(entry),
+                        Err(error) => catalog.diagnostics.push(ScriptDiagnostic {
+                            language,
+                            message: format!("{script} 的插件清单无效: {error}"),
+                        }),
+                    }
+                }
+            }
+            Ok(_) => catalog.diagnostics.push(ScriptDiagnostic {
+                language,
+                message: format!("{script} 的插件目录响应无效"),
+            }),
+            Err(error) => catalog.diagnostics.push(ScriptDiagnostic {
+                language,
+                message: format!("{script}: {error}"),
+            }),
         }
     }
     Ok(catalog)
@@ -967,6 +1262,52 @@ pub fn load_tool_manifest(
         return Err(message(error.to_string()));
     }
     Ok(response)
+}
+
+/// Runs one plugin method call: the plugin entry script is loaded on demand, the function
+/// named after `method` receives `(args, config)`, and the returned value is the method's
+/// result payload (for example `{"results": [...]}` for a web search engine plugin).
+///
+/// Each plugin owns its dependency environment, so a call cannot ride the shared per-language
+/// worker: it runs as a one-shot runner process in `plugin_path`'s environment instead. The
+/// call is bounded by `limit`, which kills a plugin that overruns; the plugin's own HTTP
+/// timeout should sit below it so a slow remote reports a normal error first.
+#[allow(clippy::too_many_arguments)]
+pub fn execute_plugin_call(
+    workspace: &Path,
+    plugin_path: &Path,
+    language: ScriptLanguage,
+    node: &NodeRuntimeConfig,
+    python: &PythonRuntimeConfig,
+    script_path: &Path,
+    method: &str,
+    args: Value,
+    config: Value,
+    limit: Option<Duration>,
+) -> Result<Value> {
+    let plugin = installed_plugin_directories(&plugin_dir(workspace))?
+        .into_iter()
+        .find(|plugin| plugin.path == plugin_path)
+        .ok_or_else(|| {
+            message(format!("插件目录不存在或不是有效插件: {}", plugin_path.display()))
+        })?;
+    let command = prepare_plugin_runtime(workspace, &plugin, node, python)?;
+    let script_path = resolve_script_path(workspace, script_path)?;
+    let request = json!({
+        "script_path": script_path.display().to_string(),
+        "method": method,
+        "args": args,
+        "config": config,
+    });
+    let response =
+        run_once_timed(workspace, language, &command, "--plugin-execute", Some(&request), limit)?;
+    if let Some(result) = response.get("response") {
+        return Ok(result.clone());
+    }
+    if let Some(error) = response.get("error").and_then(Value::as_str) {
+        return Err(message(error.to_string()));
+    }
+    Err(message("插件响应缺少 response"))
 }
 
 #[allow(clippy::too_many_arguments)]

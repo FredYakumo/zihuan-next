@@ -86,6 +86,7 @@ export interface ConnectionFormState {
   web_search_engine_provider: string;
   web_search_engine_api_token: string;
   web_search_engine_timeout_secs: number;
+  web_search_engine_params: Record<string, string>;
   tokenizer_model_name: string;
   sqlite_path: string;
 }
@@ -389,6 +390,7 @@ export function defaultConnectionForm(): ConnectionFormState {
     web_search_engine_provider: "tavily",
     web_search_engine_api_token: "",
     web_search_engine_timeout_secs: 30,
+    web_search_engine_params: {},
     tokenizer_model_name: "",
     sqlite_path: "",
   };
@@ -684,6 +686,11 @@ export function connectionFormFromConfig(
       form.web_search_engine_timeout_secs = Number(
         connection.kind.timeout_secs ?? 30,
       );
+      form.web_search_engine_params = Object.fromEntries(
+        Object.entries((connection.kind.params as Record<string, string> | undefined) ?? {}).map(
+          ([key, value]) => [key, String(value ?? "")],
+        ),
+      );
       break;
     case "tokenizer":
       form.tokenizer_model_name = String(connection.kind.model_name ?? "");
@@ -802,14 +809,21 @@ export function buildConnectionPayload(form: ConnectionFormState): {
         qq_id: form.qq_id.trim() || null,
       };
       break;
-    case "web_search_engine":
+    case "web_search_engine": {
+      const params = Object.fromEntries(
+        Object.entries(form.web_search_engine_params ?? {})
+          .map(([key, value]) => [key, typeof value === "string" ? value.trim() : value])
+          .filter(([, value]) => value !== ""),
+      );
       payload.kind = {
         type: "web_search_engine",
         provider: form.web_search_engine_provider,
         api_token: form.web_search_engine_api_token.trim() || null,
         timeout_secs: form.web_search_engine_timeout_secs,
+        params,
       };
       break;
+    }
     case "tokenizer":
       payload.kind = {
         type: "tokenizer",

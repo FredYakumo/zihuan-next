@@ -147,13 +147,16 @@ jobs:
         run: |
           $packageRoot = "package/zihuan_next"
           $archive = "zihuan_next-${{ github.ref_name }}-${{ matrix.artifact_name }}.zip"
-          New-Item -ItemType Directory -Force -Path "$packageRoot/dag_nodes", "$packageRoot/dynamic_script_engine", "$packageRoot/sub_agents", "$packageRoot/scheduled_jobs" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$packageRoot/dag_nodes", "$packageRoot/dynamic_script_engine", "$packageRoot/sub_agents", "$packageRoot/scheduled_jobs", "$packageRoot/plugins" | Out-Null
           Copy-Item "target/release/zihuan_next${{ matrix.binary_extension }}" $packageRoot
           Copy-Item "package.json" $packageRoot
           Copy-Item "dag_nodes/*" "$packageRoot/dag_nodes" -Recurse
           Copy-Item "sub_agents/*" "$packageRoot/sub_agents" -Recurse
           Copy-Item "scheduled_jobs/*" "$packageRoot/scheduled_jobs" -Recurse
+          Copy-Item "plugins/*" "$packageRoot/plugins" -Recurse
           Get-ChildItem $packageRoot -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+          Get-ChildItem "$packageRoot/plugins" -Recurse -Directory -Filter ".venv" | Remove-Item -Recurse -Force
+          Get-ChildItem "$packageRoot/plugins" -Recurse -File -Include "uv.lock", ".python-version" | Remove-Item -Force
           $runtimeFiles = @("engine.mjs", "engine_runtime.py", "zihuan_sdk.mjs", "zihuan_sdk.py", "package.json")
           foreach ($file in $runtimeFiles) {
             Copy-Item "dynamic_script_engine/$file" "$packageRoot/dynamic_script_engine"
@@ -167,15 +170,18 @@ jobs:
         run: |
           package_root="package/zihuan_next"
           archive_base="zihuan_next-${{ github.ref_name }}-${{ matrix.artifact_name }}"
-          mkdir -p "$package_root/dag_nodes" "$package_root/dynamic_script_engine" "$package_root/sub_agents" "$package_root/scheduled_jobs"
+          mkdir -p "$package_root/dag_nodes" "$package_root/dynamic_script_engine" "$package_root/sub_agents" "$package_root/scheduled_jobs" "$package_root/plugins"
           cp "target/release/zihuan_next${{ matrix.binary_extension }}" "$package_root/"
           cp package.json "$package_root/"
           cp -R dag_nodes/. "$package_root/dag_nodes/"
           cp -R sub_agents/. "$package_root/sub_agents/"
           cp -R scheduled_jobs/. "$package_root/scheduled_jobs/"
+          cp -R plugins/. "$package_root/plugins/"
           cp dynamic_script_engine/{engine.mjs,engine_runtime.py,zihuan_sdk.mjs,zihuan_sdk.py,package.json} "$package_root/dynamic_script_engine/"
           cp build_support/release/pyproject.toml "$package_root/pyproject.toml"
           find "$package_root" -depth -type d -name "__pycache__" -exec rm -rf {} +
+          find "$package_root/plugins" -depth -type d -name ".venv" -exec rm -rf {} +
+          find "$package_root/plugins" \( -name "uv.lock" -o -name ".python-version" \) -delete
           if [[ "${{ matrix.package_extension }}" == ".tar.xz" ]]; then
             tar -cJf "${archive_base}.tar.xz" -C package zihuan_next
           else

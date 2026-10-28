@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 mod agent_memory_weaviate;
 mod connection_manager;
 mod db_schema;
@@ -236,6 +238,9 @@ pub struct WebSearchEngineConnection {
     pub api_token: Option<String>,
     #[serde(default = "default_web_search_engine_timeout_secs")]
     pub timeout_secs: u64,
+    /// Plugin-declared configuration fields, stored verbatim and passed to the plugin.
+    #[serde(default)]
+    pub params: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

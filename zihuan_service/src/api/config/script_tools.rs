@@ -71,3 +71,15 @@ pub async fn read_script_tool_manifest(req: &mut Request, res: &mut Response) {
         Err(error) => render_unprocessable_entity(res, error.to_string()),
     }
 }
+
+/// Lists the installed `web_search_engine` plugins for the connection editor.
+///
+/// The registry is loaded once at service startup, next to the DAG node catalog; installing
+/// a new plugin requires a service restart, the same as adding a node script does.
+#[handler]
+pub async fn list_web_search_plugins(res: &mut Response) {
+    let plugins = zihuan_core::script_plugins::plugins_of_type(
+        zihuan_core::script_plugins::PLUGIN_TYPE_WEB_SEARCH_ENGINE,
+    );
+    res.render(Json(serde_json::json!({ "plugins": plugins })));
+}

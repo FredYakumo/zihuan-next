@@ -81,7 +81,24 @@ fn validate_connection_basics(kind: &ConnectionKind) -> Result<(), String> {
             }
             Ok(())
         }
-        ConnectionKind::WebSearchEngine(_) => Ok(()),
+        ConnectionKind::WebSearchEngine(config) => {
+            if let Some(plugin) = zihuan_core::script_plugins::find_script_plugin(&config.provider) {
+                for field in &plugin.config_fields {
+                    if field.optional {
+                        continue;
+                    }
+                    let value = match field.name.as_str() {
+                        "api_token" => config.api_token.as_deref().unwrap_or(""),
+                        _ => config.params.get(&field.name).map(String::as_str).unwrap_or(""),
+                    };
+                    if value.trim().is_empty() {
+                        let label = if field.label.is_empty() { &field.name } else { &field.label };
+                        return Err(format!("插件 '{}' 的 {label} 为必填项", plugin.name));
+                    }
+                }
+            }
+            Ok(())
+        }
         ConnectionKind::Tokenizer(tokenizer) => {
             if tokenizer.model_name.trim().is_empty() {
                 return Err("tokenizer.model_name must not be empty".to_string());

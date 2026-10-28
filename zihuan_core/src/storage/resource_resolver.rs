@@ -1,9 +1,8 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::data_refs::RelationalDbConnection;
 use crate::error::{Error, Result};
-use crate::rag::{BraveSearch, TavilySearch, WebSearchEngine};
+use crate::rag::{PluginWebSearchEngine, WebSearchEngine};
 use crate::retrieval::{RetrievalSchema, RetrievalStoreRef};
 use crate::storage::RedisConfig;
 use crate::storage::S3Ref;
@@ -161,29 +160,29 @@ pub fn build_web_search_engine_ref(
             connection.name
         )));
     };
-    let api_token = engine
-        .api_token
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            Error::ValidationError("web_search_engine.api_token must not be empty".to_string())
-        })?;
-    let engine_ref = match engine.provider.as_str() {
-        "tavily" => Arc::new(TavilySearch::new(
-            api_token.to_string(),
-            Duration::from_secs(engine.timeout_secs),
-        )) as Arc<dyn WebSearchEngine>,
-        "brave" => Arc::new(BraveSearch::new(
-            api_token.to_string(),
-            Duration::from_secs(engine.timeout_secs),
-        )) as Arc<dyn WebSearchEngine>,
-        other => {
-            return Err(Error::ValidationError(format!(
-                "unsupported web search engine provider: {}",
-                other
-            )))
-        }
-    };
+    // Every provider is a dynamic script plugin now; credential validation lives in the
+    // plugin itself, because plugins may run without an API token.
+    let api_token = engine.api_token.as_deref().map(str::trim).unwrap_or_default().to_string();
+    let plugin = crate::script_plugins::plugins_of_type(
+        crate::script_plugins::PLUGIN_TYPE_WEB_SEARCH_ENGINE,
+    )
+    .into_iter()
+    .find(|plugin| plugin.name == engine.provider)
+    .ok_or_else(|| {
+        let installed = crate::script_plugins::installed_plugin_names(
+            crate::script_plugins::PLUGIN_TYPE_WEB_SEARCH_ENGINE,
+        );
+        Error::ValidationError(format!(
+            "unsupported web search engine provider: {}（未安装对应的 web_search_engine 插件，已安装: {}）",
+            engine.provider,
+            if installed.is_empty() { "无".to_string() } else { installed.join(", ") }
+        ))
+    })?;
+    let engine_ref: Arc<dyn WebSearchEngine> = Arc::new(PluginWebSearchEngine::new(
+        plugin,
+        api_token,
+        engine.timeout_secs,
+        engine.params.clone(),
+    ));
     Ok(Some(engine_ref))
 }

@@ -102,6 +102,7 @@ pub async fn create_qq_bot_stack(
             provider: "tavily".to_string(),
             api_token: None,
             timeout_secs: 30,
+            params: Default::default(),
         }),
     );
     save_connection(web_search)?;
