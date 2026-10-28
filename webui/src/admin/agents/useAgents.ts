@@ -1422,11 +1422,23 @@ async function submitForm() {
     if (
       form.type === "qq_chat" &&
       form.retrieval_store_id &&
-      form.retrieval_store_id !== "__local_markdown__" &&
-      !form.embedding_model_ref_id
+      form.retrieval_store_id !== "__local_markdown__"
     ) {
-      alert("QQ Chat RoleService 启用记忆库时需要绑定文本向量模型");
-      return;
+      if (form.embedding_mode === "local" && !form.embedding_model_ref_id) {
+        alert("QQ Chat RoleService 启用记忆库时需要选择本地文本向量模型");
+        return;
+      }
+      if (
+        form.embedding_mode === "http" &&
+        (!form.embedding_http_endpoint.trim() || !form.embedding_http_model.trim())
+      ) {
+        alert("HTTP Embedding 需要填写 API 地址和模型名");
+        return;
+      }
+      if (form.embedding_mode === "none") {
+        alert("QQ Chat RoleService 启用记忆库时需要配置文本向量模型");
+        return;
+      }
     }
     if (form.id) {
       await system.services.update(form.id, payload);

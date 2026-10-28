@@ -415,6 +415,14 @@ export interface LlmServiceConfig {
   retry_count: number;
 }
 
+export interface EmbeddingServiceConfig {
+  model_name: string;
+  api_endpoint: string;
+  api_key?: string | null;
+  timeout_secs?: number;
+  retry_count?: number;
+}
+
 export interface LocalLlmModelInfo {
   model_name: string;
   kind: "text" | "vision_language";
