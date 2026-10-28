@@ -209,6 +209,9 @@
                         <t-input-number v-model="form.max_steer_count" :min="0" />
                         <div class="agent-service-form-hint">默认4次</div>
                     </t-form-item>
+                    <t-form-item label="群聊消息窗口数量">
+                        <t-input-number v-model="form.group_message_window_count" :min="0" />
+                    </t-form-item>
                     <t-form-item label="计划任务" class="agent-service-form-item-full">
                         <ScheduledJobsEditor :jobs="form.scheduled_jobs" :available-jobs="schedulerJobs"
                             :rdb-configured="Boolean(form.rdb_id)" @add="addScheduledJob"
