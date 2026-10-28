@@ -249,6 +249,38 @@
                     <span class="context-stage-history-chars">{{ item.chars }} 字</span>
                   </div>
                 </div>
+                <div
+                  v-if="stageView(entry.id)?.tools?.length"
+                  class="context-stage-tools"
+                >
+                  <button
+                    type="button"
+                    class="context-stage-tools-toggle"
+                    @click="toggleStageTools(entry.id)"
+                  >
+                    <span class="context-stage-tools-icon">
+                      {{ isStageToolsOpen(entry.id) ? "▾" : "▸" }}
+                    </span>
+                    工具（{{ stageView(entry.id)?.tools?.length }}）
+                  </button>
+                  <div
+                    v-if="isStageToolsOpen(entry.id)"
+                    class="context-stage-tool-list"
+                  >
+                    <div
+                      v-for="tool in stageView(entry.id)?.tools"
+                      :key="tool.name"
+                      class="context-stage-tool"
+                    >
+                      <div class="context-stage-tool-name mono">{{ tool.name }}</div>
+                      <p
+                        v-if="tool.description"
+                        class="context-stage-tool-description"
+                      >{{ tool.description }}</p>
+                      <JsonView :source="tool.parameters" />
+                    </div>
+                  </div>
+                </div>
                 <JsonView
                   v-if="!stageView(entry.id) && !sentBubblesView(entry)"
                   :source="entry.detail"
@@ -396,6 +428,8 @@ const {
   toggleStageThinking,
   isEmbeddingSectionOpen,
   toggleEmbeddingSection,
+  isStageToolsOpen,
+  toggleStageTools,
   phases,
   subAgentsFor,
   orphanSubAgents,

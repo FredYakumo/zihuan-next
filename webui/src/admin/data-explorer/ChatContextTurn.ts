@@ -311,8 +311,38 @@ export interface StageText {
   reasoning?: string;
   /** History messages the stage sent along with `text`, oldest first. */
   history?: StageHistoryMessage[];
+  /** Tool schemas the stage's request handed to the LLM. */
+  tools?: StageToolDefinition[];
   /** Live facts of an embedding inference, when this stage reports one. */
   embedding?: EmbeddingStageView;
+}
+
+export interface StageToolDefinition {
+  name: string;
+  description?: string;
+  parameters: unknown;
+}
+
+
+export function stageTools(detail: unknown): StageToolDefinition[] {
+  return parseToolDefinitions(detailRecord(detail)?.tools);
+}
+
+export function parseToolDefinitions(raw: unknown): StageToolDefinition[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item): StageToolDefinition[] => {
+    const entry = detailRecord(item);
+    if (!entry) return [];
+    const fn = detailRecord(entry.function) ?? entry;
+    if (typeof fn.name !== "string") return [];
+    return [
+      {
+        name: fn.name,
+        description: typeof fn.description === "string" ? fn.description : undefined,
+        parameters: fn.parameters ?? null,
+      },
+    ];
+  });
 }
 
 export interface StageHistoryMessage {
@@ -622,7 +652,7 @@ export function stageText(
           ];
         })
       : [];
-    return { text, meta: meta.join(" · "), history };
+    return { text, meta: meta.join(" · "), history, tools: stageTools(detail) };
   }
 
   return undefined;
@@ -674,6 +704,20 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     if (next.has(key)) next.delete(key);
     else next.add(key);
     embeddingOpen.value = next;
+  }
+
+
+  const stageToolsOpen = ref(new Set<string>());
+
+  function isStageToolsOpen(id: string): boolean {
+    return stageToolsOpen.value.has(id);
+  }
+
+  function toggleStageTools(id: string) {
+    const next = new Set(stageToolsOpen.value);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    stageToolsOpen.value = next;
   }
 
   /** `名字(id)` for the quoted message's sender, falling back to whichever half is known. */
@@ -912,6 +956,8 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     toggleStageThinking,
     isEmbeddingSectionOpen,
     toggleEmbeddingSection,
+    isStageToolsOpen,
+    toggleStageTools,
     phases,
     subAgentsFor,
     orphanSubAgents,

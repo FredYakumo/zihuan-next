@@ -88,3 +88,31 @@
 .muted {
     color: var(--td-text-color-placeholder);
 }
+
+.context-stage-tool-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.context-stage-tool {
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--td-bg-color-secondarycontainer);
+}
+
+.context-stage-tool-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+    overflow-wrap: anywhere;
+}
+
+.context-stage-tool-description {
+    margin: 4px 0 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--td-text-color-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}

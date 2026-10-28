@@ -25,6 +25,24 @@
           </button>
           <pre v-if="systemPromptOpen" class="context-sub-agent-pre">{{ node.input.system_prompt }}</pre>
         </template>
+        <template v-if="tools.length">
+          <button
+            type="button"
+            class="context-sub-agent-toggle"
+            @click="toolsOpen = !toolsOpen"
+          >
+            <span class="context-thinking-icon">{{ toolsOpen ? "▾" : "▸" }}</span>
+            工具
+            <span class="context-sub-agent-hint">{{ tools.length }} 个</span>
+          </button>
+          <div v-if="toolsOpen" class="context-stage-tool-list">
+            <div v-for="tool in tools" :key="tool.name" class="context-stage-tool">
+              <div class="context-stage-tool-name mono">{{ tool.name }}</div>
+              <p v-if="tool.description" class="context-stage-tool-description">{{ tool.description }}</p>
+              <JsonView :source="tool.parameters" />
+            </div>
+          </div>
+        </template>
       </div>
 
       <template v-for="(step, index) in node.steps" :key="`step:${index}`">
@@ -110,7 +128,7 @@
 import { computed, ref } from "vue";
 
 import type { SubAgentNode } from "./ChatContextTurn";
-import { subAgentMessages } from "./ChatContextTurn";
+import { parseToolDefinitions, subAgentMessages } from "./ChatContextTurn";
 import { toolResultFailed } from "./useChatContext";
 import JsonView from "./JsonView.vue";
 
@@ -123,6 +141,9 @@ const props = defineProps<{
 // The sub-agent's prompt is shown as it was sent: the user message is the call's real input,
 // while the system prompt is usually long, so it starts folded and can be opened on demand.
 const systemPromptOpen = ref(false);
+// The tool schemas are reference material, so the list starts folded behind "工具显示".
+const toolsOpen = ref(false);
+const tools = computed(() => parseToolDefinitions(props.node.input?.tools));
 const closedReasoning = ref(new Set<number>());
 
 function reasoningOpen(index: number): boolean {
