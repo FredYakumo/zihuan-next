@@ -55,7 +55,7 @@ fn parts_to_text(parts: Vec<MessagePart>) -> String {
     segments.join("\n")
 }
 
-fn media_placeholder(prefix: &str, media_id: &str) -> String {
+pub fn media_placeholder(prefix: &str, media_id: &str) -> String {
     let media_id = media_id.trim();
     if media_id.is_empty() {
         prefix.to_string()

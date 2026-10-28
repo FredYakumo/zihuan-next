@@ -63,6 +63,14 @@
             >
               <div class="context-bubble-head">
                 {{ entry.stage === RATE_LIMIT_STAGE ? "限流" : `环节 · ${entry.stage}` }}
+                <button
+                  v-if="stageView(entry.id)?.rawMessages?.length"
+                  type="button"
+                  class="context-stage-view-toggle"
+                  @click="toggleStageRawView(entry.id)"
+                >
+                  {{ isStageRawView(entry.id) ? "可读视图" : "原始视图" }}
+                </button>
                 <span class="context-bubble-time">{{ formatTime(entry.at) }}</span>
               </div>
               <div v-if="rateLimitText(entry.stage, entry.detail)" class="context-rate-limit">
@@ -206,7 +214,7 @@
                   </div>
                 </div>
                 <pre
-                  v-else-if="stageView(entry.id)?.text"
+                  v-else-if="stageView(entry.id)?.text && !isStageRawView(entry.id)"
                   class="context-system-prompt"
                 >{{ stageView(entry.id)?.text }}</pre>
                 <div v-if="stageView(entry.id)?.meta" class="context-stage-meta">
@@ -233,7 +241,7 @@
                   >{{ stageView(entry.id)?.reasoning }}</pre>
                 </div>
                 <div
-                  v-if="stageView(entry.id)?.history?.length"
+                  v-if="stageView(entry.id)?.history?.length && !isStageRawView(entry.id)"
                   class="context-stage-history"
                 >
                   <div class="context-stage-history-label">
@@ -244,9 +252,32 @@
                     :key="historyIndex"
                     class="context-stage-history-item"
                   >
-                    <span class="context-stage-history-role">{{ item.role }}</span>
-                    <span class="context-stage-history-preview">{{ item.preview }}</span>
-                    <span class="context-stage-history-chars">{{ item.chars }} 字</span>
+                    <div class="context-stage-history-head">
+                      <span class="context-stage-history-role">{{ item.role }}</span>
+                      <span class="context-stage-history-chars">{{ item.chars }} 字</span>
+                    </div>
+                    <pre class="context-stage-history-text">{{ item.text }}</pre>
+                  </div>
+                </div>
+                <div v-if="isStageRawView(entry.id)" class="context-stage-raw">
+                  <div
+                    v-for="(message, messageIndex) in stageView(entry.id)?.rawMessages"
+                    :key="messageIndex"
+                    class="context-stage-raw-item"
+                  >
+                    <div class="context-stage-raw-head">
+                      <span class="context-stage-raw-role">{{ message.role }}</span>
+                      <span class="context-stage-raw-index">#{{ messageIndex + 1 }}</span>
+                    </div>
+                    <pre class="context-stage-raw-content">{{ message.content }}</pre>
+                    <template v-if="message.toolCalls?.length">
+                      <div class="context-stage-raw-tool-label">工具调用</div>
+                      <JsonView :source="message.toolCalls" />
+                    </template>
+                    <div
+                      v-if="message.toolCallId"
+                      class="context-stage-raw-tool-id mono"
+                    >tool_call_id: {{ message.toolCallId }}</div>
                   </div>
                 </div>
                 <div
@@ -430,6 +461,8 @@ const {
   toggleEmbeddingSection,
   isStageToolsOpen,
   toggleStageTools,
+  isStageRawView,
+  toggleStageRawView,
   phases,
   subAgentsFor,
   orphanSubAgents,
