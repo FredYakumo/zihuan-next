@@ -58,8 +58,7 @@ impl PluginWebSearchEngine {
             config.insert(key.clone(), Value::String(value.clone()));
         }
         config.insert("api_token".to_string(), Value::String(self.api_token.clone()));
-        config
-            .insert("timeout_secs".to_string(), Value::Number(self.timeout_secs.into()));
+        config.insert("timeout_secs".to_string(), Value::Number(self.timeout_secs.into()));
         let response = dynamic_script_engine::execute_plugin_call(
             &workspace,
             &plugin_path,
