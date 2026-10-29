@@ -24,11 +24,22 @@ pub enum AgentToolType {
     NodeGraph(NodeGraphToolConfig),
     SubAgent(SubAgentToolConfig),
     Script(ScriptAgentToolConfig),
+    Plugin(PluginToolConfig),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubAgentToolConfig {
     pub sub_agent_id: String,
+}
+
+/// A tool supplied by an installed `brain_tool` plugin.
+///
+/// The plugin owns the LLM-facing signature; this entry only selects which plugin the service
+/// exposes, so the same plugin directory can be shared by several services.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginToolConfig {
+    /// The installed plugin's `name`, not its tool name — one plugin declares one tool.
+    pub plugin: String,
 }
 
 /// An agent tool implemented by a script rather than by a graph.

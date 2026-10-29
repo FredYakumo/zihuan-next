@@ -102,6 +102,60 @@
             <t-form v-else class="agent-service-form" label-align="top">
                 <t-card class="agent-service-form-section" :bordered="false">
                     <div class="agent-service-form-grid">
+                        <t-form-item v-if="toolEditDraft.implementation === 'plugin'" label="插件" required
+                            class="agent-service-form-item-full">
+                            <div class="agent-service-plugin-picker">
+                                <t-input v-model="brainToolPluginFilter" placeholder="搜索插件名称、工具名或描述"
+                                    clearable>
+                                    <template #prefix-icon><SearchIcon /></template>
+                                </t-input>
+                                <div v-if="brainToolPluginsLoading" class="agent-service-form-hint">正在加载已安装插件...
+                                </div>
+                                <div v-else-if="filteredBrainToolPlugins.length === 0" class="agent-service-form-hint">
+                                    {{ brainToolPlugins.length === 0
+                                        ? '还没有可用的插件工具，请先在「插件」页安装 brain_tool 类型的插件。'
+                                        : '没有匹配的插件。' }}
+                                </div>
+                                <div v-else class="agent-service-plugin-list">
+                                    <button v-for="plugin in filteredBrainToolPlugins"
+                                        :key="plugin.name" type="button"
+                                        :class="['agent-service-plugin-option', { active: toolEditDraft.pluginName === plugin.name }]"
+                                        @click="selectBrainToolPlugin(plugin)">
+                                        <div class="agent-service-plugin-option-head">
+                                            <strong>{{ plugin.display_name }}</strong>
+                                            <code>{{ plugin.tool_name }}</code>
+                                            <t-tag v-if="toolEditDraft.pluginName === plugin.name"
+                                                size="small" variant="light" theme="success">已选</t-tag>
+                                        </div>
+                                        <p v-if="plugin.description" class="agent-service-plugin-option-desc">
+                                            {{ plugin.description }}</p>
+                                        <p v-else-if="plugin.tool_description"
+                                            class="agent-service-plugin-option-desc">{{ plugin.tool_description }}</p>
+                                        <div class="agent-service-plugin-option-meta">
+                                            <span>v{{ plugin.version || "0" }}</span>
+                                            <span>{{ plugin.language }}</span>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+                        </t-form-item>
+                        <template v-if="toolEditDraft.implementation === 'plugin' && selectedBrainToolPlugin">
+                            <t-form-item label="工具名称" class="agent-service-form-item-full">
+                                <t-input v-model="toolEditDraft.name" />
+                                <div class="agent-service-form-hint">
+                                    工具名由插件声明，一般不需要改；改了会影响模型看到的工具名。
+                                </div>
+                            </t-form-item>
+                            <t-form-item label="工具描述" class="agent-service-form-item-full">
+                                <t-input v-model="toolEditDraft.description" />
+                            </t-form-item>
+                            <t-form-item label="工具参数（插件声明，只读）" class="agent-service-form-item-full">
+                                <pre class="agent-service-plugin-params">{{ JSON.stringify(selectedBrainToolPlugin.parameters, null, 2) }}</pre>
+                            </t-form-item>
+                        </template>
+                        <t-form-item v-if="toolEditDraft.implementation === 'plugin'" style="align-self: end">
+                            <t-checkbox v-model="toolEditDraft.enabled">启用该工具</t-checkbox>
+                        </t-form-item>
                         <t-form-item v-if="toolEditDraft.implementation === 'sub_agent'" label="Sub-agent" required>
                             <t-select v-model="toolEditDraft.subAgentId" placeholder="请选择"
                                 @change="selectSubAgent(String($event))">
@@ -631,7 +685,7 @@
 
 <script lang="ts">
 import { defineComponent } from "vue";
-import { ChevronLeftIcon, CloseIcon, RefreshIcon, RotateIcon } from "tdesign-icons-vue-next";
+import { ChevronLeftIcon, CloseIcon, RefreshIcon, RotateIcon, SearchIcon } from "tdesign-icons-vue-next";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import AgentServiceForm from "../components/AgentServiceForm.vue";
 import ConfigImportDialog from "../components/ConfigImportDialog.vue";
@@ -651,6 +705,7 @@ export default defineComponent({
         RateLimitConfigDrawer,
         RefreshIcon,
         RotateIcon,
+        SearchIcon,
         RetrievalDatabaseDialog,
     },
     setup() {
