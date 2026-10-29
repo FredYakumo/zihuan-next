@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use dynamic_script_engine::PluginCatalogEntry;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::validation_error;
 
 use super::web_search_engine::{WebSearchEngine, WebSearchImage};
@@ -44,12 +44,6 @@ impl PluginWebSearchEngine {
     }
 
     fn call(&self, method: &str, args: Value) -> Result<Value> {
-        let workspace =
-            std::env::current_dir().map_err(|error| Error::ValidationError(error.to_string()))?;
-        let runtime = crate::config::ConfigCenter::shared().load_root()?;
-        let plugin_root = dynamic_script_engine::plugin_dir(&workspace);
-        let plugin_path = plugin_root.join(&self.plugin.directory);
-        let script_path = plugin_root.join(&self.plugin.script);
         let limit = Duration::from_secs(self.timeout_secs.saturating_add(10));
         // Plugin params flatten into the config object; the connection's own columns are
         // written last so a param named like them can never shadow the real value.
@@ -59,20 +53,13 @@ impl PluginWebSearchEngine {
         }
         config.insert("api_token".to_string(), Value::String(self.api_token.clone()));
         config.insert("timeout_secs".to_string(), Value::Number(self.timeout_secs.into()));
-        let response = dynamic_script_engine::execute_plugin_call(
-            &workspace,
-            &plugin_path,
-            self.plugin.language,
-            &runtime.node_runtime,
-            &runtime.python_runtime,
-            &script_path,
+        crate::script_plugins::call_plugin_method(
+            &self.plugin,
             method,
             args,
             Value::Object(config),
-            Some(limit),
+            limit,
         )
-        .map_err(|error| Error::ValidationError(error.to_string()))?;
-        Ok(response)
     }
 
     fn result_strings(&self, method: &str, args: Value) -> Result<Vec<String>> {

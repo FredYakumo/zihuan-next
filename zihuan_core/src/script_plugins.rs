@@ -10,13 +10,18 @@
 //! engine) live next to the subsystem they plug into.
 
 use std::sync::{LazyLock, RwLock};
+use std::time::Duration;
 
 use dynamic_script_engine::PluginCatalogEntry;
+use serde_json::Value;
 
 use crate::error::{Error, Result};
 
 /// The plugin_type that registers a dynamic script as a web search engine.
 pub const PLUGIN_TYPE_WEB_SEARCH_ENGINE: &str = "web_search_engine";
+
+/// The plugin_type that registers a dynamic script as a Brain tool.
+pub const PLUGIN_TYPE_BRAIN_TOOL: &str = "brain_tool";
 
 static SCRIPT_PLUGINS: LazyLock<RwLock<Vec<PluginCatalogEntry>>> =
     LazyLock::new(|| RwLock::new(Vec::new()));
@@ -86,4 +91,38 @@ pub fn find_script_plugin(name: &str) -> Option<PluginCatalogEntry> {
 /// The provider names installed for one plugin type, for error messages.
 pub fn installed_plugin_names(plugin_type: &str) -> Vec<String> {
     plugins_of_type(plugin_type).into_iter().map(|plugin| plugin.name).collect()
+}
+
+/// Runs one method of an installed plugin in the plugin's own dependency environment.
+///
+/// `config` is handed to the plugin as its connection/config object verbatim; callers that
+/// own credentials build it first. `limit` is the runner watchdog budget, which should
+/// exceed whatever timeout the plugin itself applies so a slow upstream surfaces as the
+/// plugin's own error instead of a killed process.
+pub fn call_plugin_method(
+    plugin: &PluginCatalogEntry,
+    method: &str,
+    args: Value,
+    config: Value,
+    limit: Duration,
+) -> Result<Value> {
+    let workspace =
+        std::env::current_dir().map_err(|error| Error::ValidationError(error.to_string()))?;
+    let runtime = crate::config::ConfigCenter::shared().load_root()?;
+    let plugin_root = dynamic_script_engine::plugin_dir(&workspace);
+    let plugin_path = plugin_root.join(&plugin.directory);
+    let script_path = plugin_root.join(&plugin.script);
+    dynamic_script_engine::execute_plugin_call(
+        &workspace,
+        &plugin_path,
+        plugin.language,
+        &runtime.node_runtime,
+        &runtime.python_runtime,
+        &script_path,
+        method,
+        args,
+        config,
+        Some(limit),
+    )
+    .map_err(|error| Error::ValidationError(error.to_string()))
 }

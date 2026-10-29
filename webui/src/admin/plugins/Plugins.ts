@@ -59,7 +59,7 @@ export function usePluginsPage() {
   /** Dynamic script plugins use a registry key as their component; show a readable label. */
   function componentLabel(plugin: PluginRecord) {
     if (!isScriptPlugin(plugin)) return plugin.component_type;
-    return ({ web_search_engine: "搜索引擎" } as Record<string, string>)[plugin.component_type] ?? plugin.component_type;
+    return ({ web_search_engine: "搜索引擎", brain_tool: "智能体工具" } as Record<string, string>)[plugin.component_type] ?? plugin.component_type;
   }
   function scriptPluginDetail(plugin: PluginRecord): string {
     const description = plugin.extra_install_metadata?.description;

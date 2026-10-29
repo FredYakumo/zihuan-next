@@ -15,7 +15,7 @@ from zihuan_sdk import Host, NodeExecutionContext, ZihuanSdk, hydrate_resources,
 ENGINE_DIR = Path(__file__).resolve().parent
 NODE_DIR = Path(os.environ.get("ZIHUAN_DAG_NODES", ENGINE_DIR.parent / "dag_nodes"))
 SCHEDULED_JOBS_DIR = Path(os.environ.get("ZIHUAN_SCHEDULED_JOBS", ENGINE_DIR.parent / "scheduled_jobs"))
-PLUGIN_METHODS = ("search", "extract_url", "fetch_url_direct", "search_images")
+PLUGIN_METHODS = ("search", "extract_url", "fetch_url_direct", "search_images", "execute")
 
 
 def _display_path(path: Path) -> str:
@@ -115,6 +115,7 @@ def load_plugins(paths: list[str]) -> tuple[list[dict[str, Any]], list[dict[str,
             "version": str(manifest.get("version") or ""),
             "methods": [method for method in PLUGIN_METHODS if callable(getattr(module, method, None))],
             "config_fields": normalize_config_fields(manifest.get("config_fields")),
+            "tool": manifest.get("tool") if isinstance(manifest.get("tool"), dict) else None,
         })
     return plugins, diagnostics
 

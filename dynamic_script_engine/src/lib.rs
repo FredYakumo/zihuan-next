@@ -631,6 +631,23 @@ pub struct PluginConfigField {
     pub secret: bool,
 }
 
+/// The LLM-facing function a `brain_tool` plugin declares in its manifest.
+///
+/// The host only acts as a transport: it hands the spec to the model verbatim and forwards
+/// the call to the plugin's `execute` method, so the whole capability stays in the plugin.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginToolSpec {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default = "default_tool_parameters")]
+    pub parameters: Value,
+}
+
+fn default_tool_parameters() -> Value {
+    json!({ "type": "object", "properties": {} })
+}
+
 /// One catalogued plugin. `script` and `directory` are POSIX paths relative to `plugins/`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginCatalogEntry {
@@ -649,6 +666,9 @@ pub struct PluginCatalogEntry {
     pub methods: Vec<String>,
     #[serde(default)]
     pub config_fields: Vec<PluginConfigField>,
+    /// The tool a `brain_tool` plugin exposes to the agent.
+    #[serde(default)]
+    pub tool: Option<PluginToolSpec>,
     pub language: ScriptLanguage,
 }
 
