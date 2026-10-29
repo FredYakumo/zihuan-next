@@ -11,7 +11,8 @@ web search engine adapter in `zihuan_core/src/rag/web_search/plugin.rs`:
   non-empty `plugin_type`. `config_fields` entries declare connection-level fields;
   `timeout_secs` is reserved and silently dropped by the host.
 - A `web_search_engine` plugin must implement the module-level functions `search` and
-  `fetch_url_direct`; `extract_url` and `search_images` are optional.
+  `fetch_url_direct`; `extract_url` and `search_images` are optional. A
+  `brain_tool` plugin must implement `execute` and declare `PLUGIN_MANIFEST["tool"]`.
 - Python dependencies come from `pyproject.toml` (uv project) or `requirements.txt`
   (dedicated uv venv); a plugin without either runs on the host's own interpreter and may
   only use the standard library. JS/TS plugins have no dependency manifest mechanism and
@@ -48,15 +49,19 @@ PLUGINS_DIR = REPO_ROOT / "plugins"
 ENGINE_DIR = REPO_ROOT / "dynamic_script_engine"
 
 PLUGIN_ENTRY_FILES = ("plugin.py", "plugin.mjs", "plugin.ts", "plugin.js")
-KNOWN_PLUGIN_TYPES = {"web_search_engine"}
-PLUGIN_METHODS = ("search", "extract_url", "fetch_url_direct", "search_images")
-REQUIRED_METHODS = ("search", "fetch_url_direct")
+PLUGIN_METHODS = ("search", "extract_url", "fetch_url_direct", "search_images", "execute")
+# The methods each plugin type's host adapter calls; a plugin of that type must implement them.
+REQUIRED_METHODS = {
+    "web_search_engine": ("search", "fetch_url_direct"),
+    "brain_tool": ("execute",),
+}
+KNOWN_PLUGIN_TYPES = set(REQUIRED_METHODS)
 RESERVED_CONFIG_FIELDS = {"timeout_secs"}
 
 # Runs inside `node --input-type=module`; imports the entry module and reports its
 # `plugin_manifest` export plus the plugin methods it actually implements.
 JS_PROBE = """
-const methods = ["search", "extract_url", "fetch_url_direct", "search_images"];
+const methods = ["search", "extract_url", "fetch_url_direct", "search_images", "execute"];
 try {
     const module = await import(process.env.ZIHUAN_PLUGIN_PROBE_URL);
     process.stdout.write(JSON.stringify({
@@ -182,9 +187,23 @@ def validate_manifest(report: Report, manifest: dict, implemented: set[str]) -> 
                     )
 
     if plugin_type in KNOWN_PLUGIN_TYPES:
-        for method in REQUIRED_METHODS:
+        for method in REQUIRED_METHODS[plugin_type]:
             if method not in implemented:
-                report.error(f"a web_search_engine plugin must implement the top-level function {method}(args, config)")
+                report.error(
+                    f"a {plugin_type} plugin must implement the top-level function {method}(args, config)"
+                )
+
+    if plugin_type == "brain_tool":
+        tool = manifest.get("tool")
+        if not isinstance(tool, dict):
+            report.error("a brain_tool plugin must declare its LLM-facing function in PLUGIN_MANIFEST['tool']")
+        else:
+            name = tool.get("name")
+            if not isinstance(name, str) or not name.strip():
+                report.error("PLUGIN_MANIFEST['tool']['name'] must be a non-empty string")
+            parameters = tool.get("parameters")
+            if parameters is not None and not isinstance(parameters, dict):
+                report.error("PLUGIN_MANIFEST['tool']['parameters'] must be a JSON-schema object")
     return plugin_type
 
 
@@ -379,9 +398,10 @@ def full_check(plugin: Plugin, report: Report) -> None:
             report.error("the host runner did not register the plugin (no usable PLUGIN_MANIFEST)")
         return
     loaded = plugins[0]
-    if loaded.get("plugin_type") in KNOWN_PLUGIN_TYPES:
+    plugin_type = loaded.get("plugin_type")
+    if plugin_type in KNOWN_PLUGIN_TYPES:
         methods = set(loaded.get("methods") or [])
-        missing = [method for method in REQUIRED_METHODS if method not in methods]
+        missing = [method for method in REQUIRED_METHODS[plugin_type] if method not in methods]
         if missing:
             report.error("the host runner reports missing implemented methods: " + ", ".join(missing))
     report.loaded = True

@@ -271,6 +271,11 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
                 tools.push(Box::new(zihuan_core::agent::SharedTool::new(tool)));
             }
         }
+        for tool in zihuan_core::agent::tools::plugin_brain_tools() {
+            if is_enabled(&self.default_tools_enabled, tool.spec().name()) {
+                tools.push(Box::new(tool));
+            }
+        }
         tools
     }
 

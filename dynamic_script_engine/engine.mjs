@@ -7,7 +7,7 @@ import { createJobSdk, createZihuanSdk, hydrateResources } from "./zihuan_sdk.mj
 const engineDirectory = path.dirname(fileURLToPath(import.meta.url));
 const nodeDirectory = path.resolve(engineDirectory, "../dag_nodes");
 const scheduledJobsDirectory = path.resolve(engineDirectory, "../scheduled_jobs");
-const pluginMethods = ["search", "extract_url", "fetch_url_direct", "search_images"];
+const pluginMethods = ["search", "extract_url", "fetch_url_direct", "search_images", "execute"];
 const argument = process.argv[2];
 let requestId = 0;
 const pendingHostCalls = new Map();
@@ -179,6 +179,7 @@ async function loadPlugins(paths) {
             version: manifest.version == null ? "" : String(manifest.version),
             methods: pluginMethods.filter((method) => typeof module[method] === "function"),
             config_fields: normalizeConfigFields(manifest.config_fields),
+            tool: manifest.tool && typeof manifest.tool === "object" ? manifest.tool : null,
         });
     }
     return { plugins, diagnostics };

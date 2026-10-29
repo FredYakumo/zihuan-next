@@ -370,7 +370,8 @@ pub(crate) fn build_user_message(
     let mut current_turn_text = format!(
         "`The current time is {now_text}, `{sender_name}` sent you (`{bot_name}`) a message: \"{}\". You need to reply to this message, or choose not to reply.\n\
          You can also use the reply tool to quote a message_id (or omit message_id to reply to the message just received).\n\
-         Your output is the message text that will be sent directly. Do not include any system information, do not use markdown, and it must be natural-language reply text plus any placeholders mentioned elsewhere in the system.\n\
+         Your output is the message text that will be sent directly. Do not include any system information, and it must be natural-language reply text plus any placeholders mentioned elsewhere in the system, not raw markdown.\n\
+         When the answer genuinely needs markdown (code blocks, tables, headings, a whole document), do not paste markdown into the message: if a tool that formats or renders content is available, use it and reply with what it returns.\n\
          In the message you send, the following placeholders will be replaced with other actions that have real effects. The list of placeholders you can use:\n\
          - @id: mention the person with this id\n\
          - @sender: mention the person who sent you the message\n\

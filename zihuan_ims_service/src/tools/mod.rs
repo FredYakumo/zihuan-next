@@ -126,6 +126,13 @@ pub fn build_info_brain_tools(
         tools.push(Box::new(ImageUnderstandTool::new(None, rdb_pool, s3_ref, dashboard_target)));
     }
 
+    for tool in zihuan_core::agent::tools::plugin_brain_tools() {
+        let name = tool.spec().name().to_string();
+        if is_enabled(default_tools_enabled, &name) {
+            tools.push(Box::new(tool));
+        }
+    }
+
     if let Some(llm) = llm {
         if let Some(memory) =
             MemoryCapability::resolve(local_memory_store, retrieval_store, embedding_model)

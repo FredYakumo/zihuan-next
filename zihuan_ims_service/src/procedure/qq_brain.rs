@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use log::{info, warn};
 use zihuan_core::agent::declarative_agent::list_agent_ids;
 use zihuan_core::agent::runtime_context::current_agent_resources;
-use zihuan_core::agent::tools::{LongTaskContext, ToolCallingEngine, ToolCallingStopReason};
+use zihuan_core::agent::tools::{LongTaskContext, Tool, ToolCallingEngine, ToolCallingStopReason};
 use zihuan_core::agent::{
     AgentServiceContext, MemoryCapability, LLM_KIND_MAIN, LLM_KIND_MATH_PROGRAMMING,
 };
@@ -361,6 +361,13 @@ impl QqBrain {
                 ),
                 tool_quota.clone(),
             ));
+        }
+
+        // Plugin-provided tools: the plugin owns the capability, the brain only exposes it.
+        for tool in zihuan_core::agent::tools::plugin_brain_tools() {
+            if service.is_default_tool_enabled(tool.spec().name()) {
+                brain.add_tool(wrap_brain_tool_with_quota(tool, tool_quota.clone()));
+            }
         }
 
         brain.add_tool(wrap_brain_tool_with_quota(
