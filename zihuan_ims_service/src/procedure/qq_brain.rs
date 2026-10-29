@@ -19,7 +19,9 @@ use zihuan_core::ims_bot_adapter::tools::qq_profile::{GetBotProfileTool, GetQqUs
 use zihuan_core::model_inference::inference_function::compact_message::estimate_messages_tokens;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
-use zihuan_core::model_inference::message_content_utils::{downgrade_messages_for_model, media_placeholder};
+use zihuan_core::model_inference::message_content_utils::{
+    downgrade_messages_for_model, media_placeholder,
+};
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
 };
@@ -477,12 +479,8 @@ fn raw_message_content(message: &LLMMessage) -> String {
         .iter()
         .filter_map(|part| match part {
             MessagePart::Text { text } => Some(text.clone()),
-            MessagePart::Image { media } => {
-                Some(media_placeholder("[image]", &media.media_id))
-            }
-            MessagePart::Video { media } => {
-                Some(media_placeholder("[video]", &media.media_id))
-            }
+            MessagePart::Image { media } => Some(media_placeholder("[image]", &media.media_id)),
+            MessagePart::Video { media } => Some(media_placeholder("[video]", &media.media_id)),
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -573,10 +571,8 @@ impl Procedure for QqBrain {
                     "role".to_string(),
                     serde_json::json!(format!("{:?}", message.role).to_lowercase()),
                 );
-                entry.insert(
-                    "content".to_string(),
-                    serde_json::json!(raw_message_content(message)),
-                );
+                entry
+                    .insert("content".to_string(), serde_json::json!(raw_message_content(message)));
                 if !message.tool_calls.is_empty() {
                     entry.insert("tool_calls".to_string(), serde_json::json!(message.tool_calls));
                 }
