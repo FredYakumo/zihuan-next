@@ -83,3 +83,37 @@ pub async fn list_web_search_plugins(res: &mut Response) {
     );
     res.render(Json(serde_json::json!({ "plugins": plugins })));
 }
+
+/// Lists the installed `brain_tool` plugins the role-service tool picker can add.
+///
+/// Only plugins that actually declare an LLM-facing tool are listed, so a picker entry always
+/// resolves to something an agent can call.
+#[handler]
+pub async fn list_brain_tool_plugins(res: &mut Response) {
+    let plugins = zihuan_core::script_plugins::plugins_of_type(
+        zihuan_core::script_plugins::PLUGIN_TYPE_BRAIN_TOOL,
+    )
+    .into_iter()
+    .filter_map(|plugin| {
+        let tool = plugin.tool.clone()?;
+        if tool.name.trim().is_empty() || !plugin.methods.iter().any(|method| method == "execute") {
+            return None;
+        }
+        Some(serde_json::json!({
+            "name": plugin.name,
+            "display_name": if plugin.display_name.trim().is_empty() {
+                plugin.name.clone()
+            } else {
+                plugin.display_name.clone()
+            },
+            "description": plugin.description,
+            "version": plugin.version,
+            "tool_name": tool.name,
+            "tool_description": tool.description,
+            "parameters": tool.parameters,
+            "language": plugin.language,
+        }))
+    })
+    .collect::<Vec<_>>();
+    res.render(Json(serde_json::json!({ "plugins": plugins })));
+}

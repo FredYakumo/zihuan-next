@@ -15,6 +15,7 @@ pub struct QqChatAgentServiceInner {
     pub(crate) shared_inputs: Vec<FunctionPortDef>,
     pub(crate) tool_definitions: Vec<ToolDefinition>,
     pub(crate) sub_agent_ids: Vec<String>,
+    pub(crate) plugin_tool_names: Vec<String>,
     /// Group messages already delivered to the brain as window-selected related messages,
     /// per group, so the group-message-window agent never selects them again.
     pub(crate) group_message_window_confirmed: GroupMessageWindowMemory,

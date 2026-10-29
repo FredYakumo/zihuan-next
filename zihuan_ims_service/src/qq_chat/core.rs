@@ -832,6 +832,7 @@ impl QqChatAgentServiceInner {
             shared_inputs: Vec::new(),
             tool_definitions: Vec::new(),
             sub_agent_ids: Vec::new(),
+            plugin_tool_names: Vec::new(),
             group_message_window_confirmed: GroupMessageWindowMemory::default(),
         }
     }
@@ -885,6 +886,7 @@ impl QqChatAgentService {
         inner.set_shared_inputs(config.shared_inputs.clone())?;
         inner.set_tool_definitions(config.tool_definitions.clone())?;
         inner.sub_agent_ids = config.sub_agent_ids.clone();
+        inner.plugin_tool_names = config.plugin_tool_names.clone();
         Ok(Self {
             inner,
             config,

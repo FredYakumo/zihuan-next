@@ -512,6 +512,20 @@ export interface WebSearchPluginEntry {
   language: string;
 }
 
+/** One installed brain_tool plugin: an agent-callable tool owned by a plugin directory. */
+export interface BrainToolPluginEntry {
+  /** The plugin directory name; a role service references the plugin by this. */
+  name: string;
+  display_name: string;
+  description: string;
+  version: string;
+  /** The tool name the model sees. */
+  tool_name: string;
+  tool_description: string;
+  parameters: Record<string, unknown>;
+  language: string;
+}
+
 export interface SubAgentPromptPart {
   port: string;
   equals?: string | null;
@@ -927,6 +941,12 @@ export const system = {
     /** Lists the installed web_search_engine plugins, loaded at service startup. */
     list(): Promise<{ plugins: WebSearchPluginEntry[] }> {
       return request("GET", "/system/web-search-plugins");
+    },
+  },
+  brainToolPlugins: {
+    /** Lists the installed brain_tool plugins a role service can add as a tool. */
+    list(): Promise<{ plugins: BrainToolPluginEntry[] }> {
+      return request("GET", "/system/brain-tool-plugins");
     },
   },
   browseWorkspaceDirectories(path?: string): Promise<WorkspaceDirectoryBrowser> {

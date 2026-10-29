@@ -1,5 +1,5 @@
 import { computed, markRaw, onMounted, reactive, ref } from "vue";
-import { CodeIcon, FlowchartIcon, RobotIcon, TerminalIcon } from "tdesign-icons-vue-next";
+import { CodeIcon, ExtensionIcon, FlowchartIcon, RobotIcon, TerminalIcon } from "tdesign-icons-vue-next";
 
 import {
   system,
@@ -11,6 +11,7 @@ import {
   type QqChatAgentServiceIgnoreRule,
   type WorkflowInfo,
   type SubAgentDefinition,
+  type BrainToolPluginEntry,
 } from "../../api/client";
 import {
   serviceFormFromConfig,
@@ -66,6 +67,10 @@ const connections = ref<ConnectionConfig[]>([]);
 const llm = ref<LlmConfig[]>([]);
 const workflows = ref<WorkflowInfo[]>([]);
 const subAgents = ref<SubAgentDefinition[]>([]);
+/** Installed brain_tool plugins the tool editor can add; loaded lazily on first open. */
+const brainToolPlugins = ref<BrainToolPluginEntry[]>([]);
+const brainToolPluginsLoading = ref(false);
+const brainToolPluginsLoaded = ref(false);
 const schedulerJobs = ref<SchedulerJobStatus[]>([]);
 const form = reactive<ServiceFormState>(defaultServiceForm());
 const editingServiceId = ref("");
@@ -234,6 +239,12 @@ type ToolTypeOption = {
 
 const toolTypeOptions: ToolTypeOption[] = [
   {
+    value: "plugin",
+    label: "插件",
+    desc: "安装好的插件提供的工具",
+    icon: markRaw(ExtensionIcon),
+  },
+  {
     value: "sub_agent",
     label: "Sub-agents",
     desc: "调用已定义的 Sub-agent",
@@ -285,6 +296,51 @@ function selectToolType(option: ToolTypeOption) {
   editingToolIndex.value = -1;
   resetScriptDraftState();
   toolCreateStep.value = "config";
+  if (option.value === "plugin") {
+    void loadBrainToolPlugins();
+  }
+}
+
+/** Loads the installed `brain_tool` plugins once; the picker reuses the cached list. */
+async function loadBrainToolPlugins(force = false) {
+  if (brainToolPluginsLoaded.value && !force) return;
+  brainToolPluginsLoading.value = true;
+  try {
+    const response = await system.brainToolPlugins.list();
+    brainToolPlugins.value = response.plugins ?? [];
+    brainToolPluginsLoaded.value = true;
+  } catch {
+    // A plugin registry failure must not block the tool editor; the selector just stays empty.
+    brainToolPlugins.value = [];
+  } finally {
+    brainToolPluginsLoading.value = false;
+  }
+}
+
+/** The installed plugin behind `toolEditDraft.pluginName`, previewed under the selector. */
+const selectedBrainToolPlugin = computed(() =>
+  brainToolPlugins.value.find((plugin) => plugin.name === toolEditDraft.pluginName),
+);
+
+/** Case-insensitive filter over the installed plugins, for the searchable selector. */
+const brainToolPluginFilter = ref("");
+const filteredBrainToolPlugins = computed(() => {
+  const keyword = brainToolPluginFilter.value.trim().toLowerCase();
+  if (!keyword) return brainToolPlugins.value;
+  return brainToolPlugins.value.filter((plugin) =>
+    [plugin.display_name, plugin.name, plugin.tool_name, plugin.description, plugin.tool_description]
+      .join(" ")
+      .toLowerCase()
+      .includes(keyword),
+  );
+});
+
+function selectBrainToolPlugin(plugin: BrainToolPluginEntry) {
+  // The plugin owns the tool's LLM-facing name; the entry reuses it so the service config and
+  // the model's tool list agree.
+  toolEditDraft.pluginName = plugin.name;
+  toolEditDraft.name = plugin.tool_name;
+  toolEditDraft.description = plugin.tool_description || plugin.description;
 }
 
 function backToToolTypePicker() {
@@ -358,6 +414,24 @@ function confirmToolEdit() {
 }
 
 function validateToolDraft(): boolean {
+  if (toolEditDraft.implementation === "plugin") {
+    if (!toolEditDraft.pluginName) {
+      alert("请选择插件");
+      return false;
+    }
+    const duplicated = form.tools.some(
+      (tool, index) =>
+        tool.implementation === "plugin" &&
+        tool.pluginName === toolEditDraft.pluginName &&
+        index !== editingToolIndex.value,
+    );
+    if (duplicated) {
+      alert(`插件 '${toolEditDraft.pluginName}' 已经添加过了`);
+      return false;
+    }
+    return true;
+  }
+
   if (toolEditDraft.implementation === "sub_agent") {
     if (!toolEditDraft.subAgentId) {
       alert("请选择 Sub-agent");
@@ -1641,6 +1715,12 @@ onMounted(() => {
     selectSubAgent,
     selectedSubAgent,
     subAgentOutputModeLabel,
+    brainToolPlugins,
+    brainToolPluginsLoading,
+    brainToolPluginFilter,
+    filteredBrainToolPlugins,
+    selectedBrainToolPlugin,
+    selectBrainToolPlugin,
     openToolEdit,
     closeToolEditModal,
     confirmToolEdit,

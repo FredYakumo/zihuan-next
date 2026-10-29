@@ -23,7 +23,7 @@ pub fn build_enabled_tool_definitions(tools: &[AgentToolConfig]) -> Result<Vec<T
             AgentToolType::Script(config) => {
                 definitions.push(build_script_tool_definition(tool, config)?);
             }
-            AgentToolType::SubAgent(_) => {}
+            AgentToolType::SubAgent(_) | AgentToolType::Plugin(_) => {}
         }
     }
     Ok(definitions)
@@ -45,6 +45,24 @@ pub fn selected_sub_agent_ids(tools: &[AgentToolConfig]) -> Vec<String> {
         }
     }
     ids
+}
+
+/// The enabled `brain_tool` plugin names a configuration's tools select.
+///
+/// Like sub-agents, a plugin tool is not a [`ToolDefinition`]: the plugin declares its own
+/// LLM-facing signature, so the runtime resolves the name against the installed catalog.
+/// Selecting one twice is collapsed for the same reason.
+pub fn selected_plugin_names(tools: &[AgentToolConfig]) -> Vec<String> {
+    let mut names = Vec::new();
+    for tool in tools.iter().filter(|tool| tool.enabled) {
+        if let AgentToolType::Plugin(config) = &tool.tool_type {
+            let plugin = config.plugin.trim();
+            if !plugin.is_empty() && !names.iter().any(|name| name == plugin) {
+                names.push(plugin.to_string());
+            }
+        }
+    }
+    names
 }
 
 fn build_node_graph_tool_definition(

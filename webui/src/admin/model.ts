@@ -37,7 +37,7 @@ export type LlmApiStyle =
   | "open_ai_responses"
   | "open_ai_responses_message_compat"
   | "open_ai_responses_image_url_object_compat";
-export type ToolImplementation = "node_graph" | "sub_agent" | "script";
+export type ToolImplementation = "node_graph" | "sub_agent" | "script" | "plugin";
 export type ToolTargetType = "workflow_set" | "file_path" | "inline_graph";
 export type ScriptLanguageForm = "type_script" | "python";
 
@@ -109,6 +109,8 @@ export interface ToolFormState {
   runDuration: ToolRunDuration;
   implementation: ToolImplementation;
   subAgentId: string;
+  /** Installed `brain_tool` plugin name this tool exposes. */
+  pluginName: string;
   targetType: ToolTargetType;
   workflowName: string;
   filePath: string;
@@ -424,6 +426,7 @@ export function defaultToolForm(): ToolFormState {
     runDuration: "Short",
     implementation: "node_graph",
     subAgentId: "",
+    pluginName: "",
     targetType: "workflow_set",
     workflowName: "",
     filePath: "",
@@ -903,6 +906,9 @@ export function toolFormFromConfig(tool: ServiceToolConfig): ToolFormState {
   if (toolType.type === "sub_agent") {
     form.implementation = "sub_agent";
     form.subAgentId = String(toolType.sub_agent_id ?? "");
+  } else if (toolType.type === "plugin") {
+    form.implementation = "plugin";
+    form.pluginName = String(toolType.plugin ?? "");
   } else if (toolType.type === "script") {
     form.implementation = "script";
     form.scriptLanguage = (toolType.language === "python" ? "python" : "type_script") as ScriptLanguageForm;
@@ -1120,6 +1126,11 @@ export function buildToolPayload(form: ToolFormState): ServiceToolConfig {
     toolType = {
       type: "sub_agent",
       sub_agent_id: form.subAgentId,
+    };
+  } else if (form.implementation === "plugin") {
+    toolType = {
+      type: "plugin",
+      plugin: form.pluginName.trim(),
     };
   } else if (form.implementation === "script") {
     toolType = {

@@ -22,6 +22,7 @@ pub(crate) struct QqLoadedInferenceResources {
     pub(crate) local_memory_store: Option<Arc<LocalMemoryStore>>,
     pub(crate) embedding_model: Option<Arc<dyn EmbeddingBase>>,
     pub(crate) memory_llm: Option<Arc<dyn LLMBase>>,
+    pub(crate) plugin_tool_names: Vec<String>,
 }
 
 /// Inference tool provider for the QQ chat agent.

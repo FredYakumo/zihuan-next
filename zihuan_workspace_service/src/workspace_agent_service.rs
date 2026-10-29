@@ -36,7 +36,7 @@ use crate::tools::{
 use zihuan_core::agent::declarative_agent::list_agent_ids;
 use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
 use zihuan_core::agent::tool_definitions::{
-    build_enabled_tool_definitions, selected_sub_agent_ids,
+    build_enabled_tool_definitions, selected_plugin_names, selected_sub_agent_ids,
 };
 use zihuan_core::agent::tools::WebSearchTool;
 use zihuan_core::error::Result;
@@ -122,8 +122,8 @@ pub struct WorkspaceInferenceToolProvider {
     memory_resources: Option<MemoryCapability>,
     web_search_engine: std::result::Result<Arc<dyn zihuan_core::rag::WebSearchEngine>, String>,
     tool_definitions: Vec<ToolDefinition>,
-    /// Enabled sub-agent ids this service calls; published per turn alongside the built-ins.
     sub_agent_ids: Vec<String>,
+    plugin_tool_names: Vec<String>,
     image_understand_llm: Option<Arc<dyn LLMBase>>,
 }
 
@@ -271,10 +271,9 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
                 tools.push(Box::new(zihuan_core::agent::SharedTool::new(tool)));
             }
         }
-        for tool in zihuan_core::agent::tools::plugin_brain_tools() {
-            if is_enabled(&self.default_tools_enabled, tool.spec().name()) {
-                tools.push(Box::new(tool));
-            }
+        for tool in zihuan_core::agent::tools::selected_plugin_brain_tools(&self.plugin_tool_names)
+        {
+            tools.push(Box::new(tool));
         }
         tools
     }
@@ -311,6 +310,7 @@ pub fn load_inference_tool_provider(
         web_search_engine: load_web_search_engine(config, connections),
         tool_definitions: build_enabled_tool_definitions(&agent.tools)?,
         sub_agent_ids: selected_sub_agent_ids(&agent.tools),
+        plugin_tool_names: selected_plugin_names(&agent.tools),
         image_understand_llm,
     }))
 }

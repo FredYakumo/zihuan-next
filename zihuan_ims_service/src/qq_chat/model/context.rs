@@ -96,8 +96,8 @@ pub struct QqChatAgentServiceRuntimeConfig {
     pub default_tools_enabled: HashMap<String, bool>,
     pub shared_inputs: Vec<FunctionPortDef>,
     pub tool_definitions: Vec<ToolDefinition>,
-    /// Enabled sub-agent ids this service calls; published per turn by the brain.
     pub sub_agent_ids: Vec<String>,
+    pub plugin_tool_names: Vec<String>,
     pub shared_runtime_values: HashMap<String, DataValue>,
     pub session_state_store: Arc<Mutex<QqChatSessionState>>,
     pub task_runtime: Option<Arc<dyn AgentTaskRuntime>>,

@@ -63,6 +63,7 @@ pub fn build_info_brain_tools(
     llm: Option<Arc<dyn LLMBase>>,
     memory_access: AgentMemoryAccessContext,
     current_message: String,
+    plugin_tool_names: &[String],
 ) -> Vec<Box<dyn Tool>> {
     fn is_enabled(map: &HashMap<String, bool>, name: &str) -> bool {
         *map.get(name).unwrap_or(&true)
@@ -126,11 +127,8 @@ pub fn build_info_brain_tools(
         tools.push(Box::new(ImageUnderstandTool::new(None, rdb_pool, s3_ref, dashboard_target)));
     }
 
-    for tool in zihuan_core::agent::tools::plugin_brain_tools() {
-        let name = tool.spec().name().to_string();
-        if is_enabled(default_tools_enabled, &name) {
-            tools.push(Box::new(tool));
-        }
+    for tool in zihuan_core::agent::tools::selected_plugin_brain_tools(plugin_tool_names) {
+        tools.push(Box::new(tool));
     }
 
     if let Some(llm) = llm {

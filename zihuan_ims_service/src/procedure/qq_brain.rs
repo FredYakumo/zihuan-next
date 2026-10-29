@@ -363,11 +363,10 @@ impl QqBrain {
             ));
         }
 
-        // Plugin-provided tools: the plugin owns the capability, the brain only exposes it.
-        for tool in zihuan_core::agent::tools::plugin_brain_tools() {
-            if service.is_default_tool_enabled(tool.spec().name()) {
-                brain.add_tool(wrap_brain_tool_with_quota(tool, tool_quota.clone()));
-            }
+
+        for tool in zihuan_core::agent::tools::selected_plugin_brain_tools(&service.plugin_tool_names)
+        {
+            brain.add_tool(wrap_brain_tool_with_quota(tool, tool_quota.clone()));
         }
 
         brain.add_tool(wrap_brain_tool_with_quota(
