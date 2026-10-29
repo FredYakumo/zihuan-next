@@ -18,8 +18,10 @@ use zihuan_core::ims_bot_adapter::tools::group_members::GetCurrentGroupMembersTo
 use zihuan_core::ims_bot_adapter::tools::qq_profile::{GetBotProfileTool, GetQqUserProfileTool};
 use zihuan_core::model_inference::inference_function::compact_message::estimate_messages_tokens;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
-use zihuan_core::model_inference::llm::LLMMessage;
-use zihuan_core::model_inference::message_content_utils::downgrade_messages_for_model;
+use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
+use zihuan_core::model_inference::message_content_utils::{
+    downgrade_messages_for_model, media_placeholder,
+};
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
 };
@@ -469,6 +471,21 @@ fn parse_final_reply_text(
         .map(ToOwned::to_owned)
 }
 
+/// Full text content of one message as the model receives it: text parts joined, and for
+/// multimodal messages one marker line per media part in its position.
+fn raw_message_content(message: &LLMMessage) -> String {
+    message
+        .parts
+        .iter()
+        .filter_map(|part| match part {
+            MessagePart::Text { text } => Some(text.clone()),
+            MessagePart::Image { media } => Some(media_placeholder("[image]", &media.media_id)),
+            MessagePart::Video { media } => Some(media_placeholder("[video]", &media.media_id)),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[async_trait]
 impl Procedure for QqBrain {
     fn descriptor(&self) -> ProcedureDescriptor {
@@ -540,8 +557,29 @@ impl Procedure for QqBrain {
                 serde_json::json!({
                     "role": format!("{:?}", message.role).to_lowercase(),
                     "chars": text.chars().count(),
-                    "preview": zihuan_core::utils::string_utils::shorten_text(&text, 160),
+                    "text": text,
                 })
+            })
+            .collect();
+        // What went over the wire: every sent message with its full content, per-turn prefixes
+        // intact — the raw view behind the readable history list.
+        let raw_messages: Vec<serde_json::Value> = brain_conversation
+            .iter()
+            .map(|message| {
+                let mut entry = serde_json::Map::new();
+                entry.insert(
+                    "role".to_string(),
+                    serde_json::json!(format!("{:?}", message.role).to_lowercase()),
+                );
+                entry
+                    .insert("content".to_string(), serde_json::json!(raw_message_content(message)));
+                if !message.tool_calls.is_empty() {
+                    entry.insert("tool_calls".to_string(), serde_json::json!(message.tool_calls));
+                }
+                if let Some(tool_call_id) = &message.tool_call_id {
+                    entry.insert("tool_call_id".to_string(), serde_json::json!(tool_call_id));
+                }
+                serde_json::Value::Object(entry)
             })
             .collect();
         zihuan_core::qq_context::emit_qq_context_stage(
@@ -560,6 +598,7 @@ impl Procedure for QqBrain {
                     .map(|_| "group-message-window")
                     .unwrap_or("conversation_history"),
                 "history": history_input,
+                "raw_messages": raw_messages,
                 "compacted": compact_result.did_compact,
                 "tokens_before_compaction": compact_result
                     .did_compact

@@ -10,6 +10,9 @@ use crate::model_inference::nn::candle_llm_hf::build_local_candle_hf_llm;
 pub fn build_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
     let config_id = config.usage_config_id.clone();
     let model = match config.api_style {
+        LlmApiStyle::Mock => {
+            Ok(Arc::new(super::mock_llm::MockLlm::new(&config)) as Arc<dyn LLMBase>)
+        }
         LlmApiStyle::OpenAiChatCompletions
         | LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat
         | LlmApiStyle::OpenAiResponses

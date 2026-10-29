@@ -413,32 +413,105 @@
 }
 
 .context-stage-history-item {
-    display: flex;
-    gap: 8px;
-    padding: 2px 0;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--td-bg-color-secondarycontainer);
     font-size: 12px;
     line-height: 1.5;
     color: var(--td-text-color-secondary);
 }
 
+.context-stage-history-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
 .context-stage-history-role {
-    flex-shrink: 0;
-    min-width: 56px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     color: var(--td-text-color-placeholder);
 }
 
-.context-stage-history-preview {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+.context-stage-history-chars {
+    margin-left: auto;
+    color: var(--td-text-color-placeholder);
 }
 
-.context-stage-history-chars {
-    flex-shrink: 0;
+.context-stage-history-text {
+    margin: 4px 0 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Raw request payload behind the readable history list. */
+.context-stage-raw {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--td-component-border);
+}
+
+.context-stage-raw-item {
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--td-bg-color-secondarycontainer);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--td-text-color-secondary);
+}
+
+.context-stage-raw-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.context-stage-raw-role {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     color: var(--td-text-color-placeholder);
+}
+
+.context-stage-raw-index {
+    margin-left: auto;
+    color: var(--td-text-color-placeholder);
+}
+
+.context-stage-raw-content {
+    margin: 4px 0 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.context-stage-raw-tool-label {
+    margin-top: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--td-text-color-placeholder);
+}
+
+.context-stage-raw-tool-id {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--td-text-color-placeholder);
+}
+
+.context-stage-view-toggle {
+    margin-left: auto;
+    padding: 0 6px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.6;
+    color: var(--td-text-color-placeholder);
+    cursor: pointer;
+}
+
+.context-stage-view-toggle:hover {
+    color: var(--td-brand-color);
+    background: color-mix(in srgb, var(--td-brand-color) 10%, transparent);
 }
 
 

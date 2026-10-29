@@ -8,7 +8,11 @@ use crate::storage::{save_connections, ConnectionConfig, ConnectionKind};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BotAdapterConnection {
+    #[serde(default)]
     pub bot_server_url: String,
+    /// Filesystem IPC backend; no QQ server or WebSocket is involved.
+    #[serde(default)]
+    pub mock: Option<super::mock::MockBotAdapterConfig>,
     #[serde(default)]
     pub adapter_server_url: Option<String>,
     #[serde(default)]
@@ -87,7 +91,7 @@ pub async fn build_ims_bot_adapter(
     connection: &BotAdapterConnection,
     object_storage: Option<Arc<S3Ref>>,
 ) -> SharedBotAdapter {
-    BotAdapter::new(
+    let adapter = BotAdapter::new(
         BotAdapterConfig::new(
             connection.bot_server_url.clone(),
             connection.bot_server_token.clone().unwrap_or_default(),
@@ -95,6 +99,11 @@ pub async fn build_ims_bot_adapter(
         )
         .with_object_storage(object_storage),
     )
-    .await
-    .into_shared()
+    .await;
+    let adapter = if let Some(mock) = &connection.mock {
+        adapter.with_backend(Arc::new(super::mock::MockBotAdapter::new(mock.clone())))
+    } else {
+        adapter
+    };
+    adapter.into_shared()
 }

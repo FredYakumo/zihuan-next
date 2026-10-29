@@ -241,6 +241,7 @@ impl LLMAPI {
 
     fn api_style_label(&self) -> &'static str {
         match self.api_style {
+            LlmApiStyle::Mock => "mock",
             LlmApiStyle::CandleGguf => "candle_gguf",
             LlmApiStyle::CandleHf => "candle_hf",
             LlmApiStyle::OpenAiChatCompletions => "open_ai_chat_completions",

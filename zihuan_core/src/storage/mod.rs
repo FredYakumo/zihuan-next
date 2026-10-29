@@ -8,6 +8,7 @@ pub mod hyperparams;
 mod local_memory;
 pub mod message;
 mod message_record;
+mod mock_rdb;
 pub mod object_storage;
 mod qq_message_list_weaviate_persistence;
 pub mod rdb;
@@ -115,6 +116,7 @@ pub enum ConnectionKind {
     WebSearchEngine(WebSearchEngineConnection),
     Tokenizer(TokenizerConnection),
     Sqlite(SqliteConnection),
+    MockRdb,
 }
 
 pub const DEFAULT_MYSQL_MAX_CONNECTIONS: u32 = 32;
@@ -313,7 +315,7 @@ impl ConfigRecord for ConnectionConfig {
             ConnectionKind::BotAdapter(_) => ConfigKind::ConnectionBotAdapter,
             ConnectionKind::WebSearchEngine(_) => ConfigKind::ConnectionWebSearchEngine,
             ConnectionKind::Tokenizer(_) => ConfigKind::ConnectionTokenizer,
-            ConnectionKind::Sqlite(_) => ConfigKind::ConnectionSqlite,
+            ConnectionKind::Sqlite(_) | ConnectionKind::MockRdb => ConfigKind::ConnectionSqlite,
         }
     }
 

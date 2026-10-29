@@ -3,6 +3,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LlmApiStyle {
+    Mock,
     #[serde(alias = "candle")]
     CandleGguf,
     CandleHf,

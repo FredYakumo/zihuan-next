@@ -356,9 +356,7 @@ pub fn load_group_history(
     group_id: String,
     limit: u32,
 ) -> Result<Vec<String>> {
-    Ok(format_history_messages(load_group_history_records(
-        mysql, group_id, limit,
-    )?))
+    Ok(format_history_messages(load_group_history_records(mysql, group_id, limit)?))
 }
 
 /// Loads a group's most recent messages as structured records, ordered newest first.
@@ -383,6 +381,46 @@ pub fn load_group_history_records(
         rows.into_iter().map(message_history_chunk_row_from_row).collect(),
         limit as usize,
     ))
+}
+
+/// Read a persisted group window through either relational backend.
+pub fn load_group_history_records_rdb(
+    connection: &crate::data_refs::RelationalDbConnection,
+    group_id: String,
+    limit: u32,
+) -> Result<Vec<MessageHistoryRecord>> {
+    match connection {
+        crate::data_refs::RelationalDbConnection::MySql(mysql) => {
+            load_group_history_records(mysql, group_id, limit)
+        }
+        crate::data_refs::RelationalDbConnection::Sqlite(sqlite) => {
+            let pool = sqlite
+                .pool
+                .as_ref()
+                .ok_or_else(|| crate::string_error!("SQLite pool unavailable"))?;
+            let rows = crate::runtime::block_async(async {
+                sqlx::query(group_history_query())
+                    .bind(group_id)
+                    .bind(history_query_row_limit(limit))
+                    .fetch_all(pool)
+                    .await
+            })?;
+            let chunks = rows
+                .into_iter()
+                .map(|row| {
+                    Ok(MessageHistoryChunkRow {
+                        id: row.try_get("id")?,
+                        message_id: row.try_get("message_id")?,
+                        sender_id: row.try_get("sender_id")?,
+                        sender_name: row.try_get("sender_name")?,
+                        send_time: row.try_get("send_time")?,
+                        content: row.try_get("content")?,
+                    })
+                })
+                .collect::<std::result::Result<Vec<_>, sqlx::Error>>()?;
+            Ok(aggregate_history_rows(chunks, limit as usize))
+        }
+    }
 }
 
 pub fn load_user_history(

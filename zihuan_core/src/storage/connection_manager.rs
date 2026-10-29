@@ -249,6 +249,10 @@ impl RuntimeStorageConnectionManager {
                 )?;
                 (StorageRuntimePayload::Weaviate(weaviate_ref), "weaviate".to_string(), None)
             }
+            ConnectionKind::MockRdb => {
+                let config = super::mock_rdb::connect().await?;
+                (StorageRuntimePayload::Sqlite(config), "mock_rdb".to_string(), None)
+            }
             ConnectionKind::Sqlite(sqlite) => {
                 info!(
                     "[storage_instance_manager] creating sqlite pool config_id={} path={}",
@@ -502,6 +506,7 @@ fn kind_name(kind: &ConnectionKind) -> &'static str {
         ConnectionKind::WebSearchEngine(_) => "web_search_engine",
         ConnectionKind::Tokenizer(_) => "tokenizer",
         ConnectionKind::Sqlite(_) => "sqlite",
+        ConnectionKind::MockRdb => "mock_rdb",
     }
 }
 

@@ -25,6 +25,11 @@ pub fn qq_avatar_url(user_id: &str) -> Option<String> {
 }
 
 pub async fn fetch_login_info(connection: &BotAdapterConnection) -> Result<BotLoginInfo> {
+    if let Some(mock) = &connection.mock {
+        return parse_login_info(&serde_json::json!({
+            "data": mock.login_info(connection.qq_id.as_deref().unwrap_or_default())
+        }));
+    }
     fetch_login_info_via_websocket(connection).await
 }
 

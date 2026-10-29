@@ -84,6 +84,7 @@ pub async fn create_qq_bot_stack(
         "QQ Bot Adapter (NapCat)",
         ConnectionKind::BotAdapter(
             serde_json::to_value(BotAdapterConnection {
+                mock: None,
                 bot_server_url: ims_config.ws_url.clone(),
                 adapter_server_url: None,
                 bot_server_token: ims_config.token.clone(),

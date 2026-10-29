@@ -3,6 +3,7 @@ pub mod linalg;
 pub mod llm;
 pub mod llm_api;
 pub mod message_content_utils;
+pub mod mock_llm;
 pub mod model_config;
 pub mod model_factory;
 pub mod model_usage;

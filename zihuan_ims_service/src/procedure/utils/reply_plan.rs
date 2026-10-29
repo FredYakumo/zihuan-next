@@ -142,10 +142,11 @@ fn message_stage_summary(message: &Message) -> Value {
 
 pub(crate) const MAX_FORWARD_NODE_CHARS: usize = 800;
 
-/// Upper bound of individually sent text messages per reply before the content is
+/// Upper bound of individually sent message batches per reply before the content is
 /// consolidated into a forward message. Above this (or above `2 * max_message_length`
-/// total text chars) the reply ships as a forward card instead of a message burst.
-const MAX_REGULAR_TEXT_MESSAGES: usize = 5;
+/// total text chars) the reply ships as a forward card instead of a message burst that
+/// floods the chat window.
+const MAX_REGULAR_BATCHES: usize = 3;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct QqOutboundPlan {
@@ -269,12 +270,11 @@ pub(crate) fn plan_model_reply(
             _ => 0,
         })
         .sum();
-    let text_unit_count = expanded_segments
-        .iter()
-        .filter(|segment| matches!(segment, PlannedSegment::Text(_)))
-        .count();
+    // Probe-build the regular plan so the cap applies to the real batch count (mentions
+    // ride along, images stand alone) instead of a text-unit approximation.
+    let regular_batches = build_regular_batches(expanded_segments.clone(), reply_message.clone());
     let forced_forward = total_text_chars > request.max_message_length.saturating_mul(2)
-        || text_unit_count > MAX_REGULAR_TEXT_MESSAGES;
+        || regular_batches.len() > MAX_REGULAR_BATCHES;
 
     let mut batches = if forced_forward {
         build_forced_forward_batches(
@@ -284,7 +284,7 @@ pub(crate) fn plan_model_reply(
             &request.bot_name,
         )
     } else {
-        build_regular_batches(expanded_segments, reply_message)
+        regular_batches
     };
 
     // Mentions must never stay buried inside a forwarded card: pull them out and send them

@@ -1,0 +1,57 @@
+name: IMS Role Behaviour Test
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches:
+      - master
+      - dev
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: 0
+
+jobs:
+  ims-role-behaviour-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: webui/pnpm-lock.yaml
+      - uses: Swatinem/rust-cache@v2
+      - name: Build webui assets embedded in the service
+        working-directory: webui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+      - name: Build production service
+        run: cargo build -p zihuan_service --bin zihuan_next
+      - name: Simulate IMS role behaviour
+        run: python tests/ims-role/run.py --output "$RUNNER_TEMP/ims-role-behaviour-artifacts"
+      - name: Upload service logs and behaviour evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ims-role-behaviour
+          path: ${{ runner.temp }}/ims-role-behaviour-artifacts
+          if-no-files-found: warn

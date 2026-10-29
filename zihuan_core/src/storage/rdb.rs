@@ -23,7 +23,7 @@ pub async fn build_relational_db_connection_for_kind(
                 .get_or_create_mysql_ref(connection_id)
                 .await?,
         )),
-        ConnectionKind::Sqlite(_) => Ok(RelationalDbConnection::Sqlite(
+        ConnectionKind::Sqlite(_) | ConnectionKind::MockRdb => Ok(RelationalDbConnection::Sqlite(
             RuntimeStorageConnectionManager::shared()
                 .get_or_create_sqlite_ref(connection_id)
                 .await?,

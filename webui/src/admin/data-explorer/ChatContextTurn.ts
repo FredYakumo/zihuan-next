@@ -311,6 +311,8 @@ export interface StageText {
   reasoning?: string;
   /** History messages the stage sent along with `text`, oldest first. */
   history?: StageHistoryMessage[];
+  /** The messages the request actually carried, for the raw view behind the history list. */
+  rawMessages?: StageRawMessage[];
   /** Tool schemas the stage's request handed to the LLM. */
   tools?: StageToolDefinition[];
   /** Live facts of an embedding inference, when this stage reports one. */
@@ -348,7 +350,16 @@ export function parseToolDefinitions(raw: unknown): StageToolDefinition[] {
 export interface StageHistoryMessage {
   role: string;
   chars: number;
-  preview: string;
+  text: string;
+}
+
+/** One message of the raw request payload, with per-turn prefixes and tool calls intact. */
+export interface StageRawMessage {
+  role: string;
+  content: string;
+  /** Tool calls the message carries, rendered as JSON in the raw view. */
+  toolCalls?: unknown[];
+  toolCallId?: string;
 }
 
 /** One label/value fact of an embedding inference. */
@@ -647,12 +658,33 @@ export function stageText(
             {
               role: entry.role,
               chars: typeof entry.chars === "number" ? entry.chars : 0,
-              preview: typeof entry.preview === "string" ? entry.preview : "",
+              // Archived turns recorded before the full text was kept only carry a preview.
+              text:
+                typeof entry.text === "string"
+                  ? entry.text
+                  : typeof entry.preview === "string"
+                    ? entry.preview
+                    : "",
             },
           ];
         })
       : [];
-    return { text, meta: meta.join(" · "), history, tools: stageTools(detail) };
+    const rawMessages = Array.isArray(record.raw_messages)
+      ? record.raw_messages.flatMap((item): StageRawMessage[] => {
+          const entry = detailRecord(item);
+          if (!entry) return [];
+          return [
+            {
+              role: typeof entry.role === "string" ? entry.role : "",
+              content: typeof entry.content === "string" ? entry.content : "",
+              toolCalls: Array.isArray(entry.tool_calls) ? entry.tool_calls : undefined,
+              toolCallId:
+                typeof entry.tool_call_id === "string" ? entry.tool_call_id : undefined,
+            },
+          ];
+        })
+      : undefined;
+    return { text, meta: meta.join(" · "), history, rawMessages, tools: stageTools(detail) };
   }
 
   return undefined;
@@ -718,6 +750,21 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     if (next.has(id)) next.delete(id);
     else next.add(id);
     stageToolsOpen.value = next;
+  }
+
+  // The Brain 输入 bubble starts on the readable flow and switches to the raw request payload
+  // on demand, the way the user bubble starts on its rich view.
+  const stageRawViewOpen = ref(new Set<string>());
+
+  function isStageRawView(id: string): boolean {
+    return stageRawViewOpen.value.has(id);
+  }
+
+  function toggleStageRawView(id: string) {
+    const next = new Set(stageRawViewOpen.value);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    stageRawViewOpen.value = next;
   }
 
   /** `名字(id)` for the quoted message's sender, falling back to whichever half is known. */
@@ -958,6 +1005,8 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     toggleEmbeddingSection,
     isStageToolsOpen,
     toggleStageTools,
+    isStageRawView,
+    toggleStageRawView,
     phases,
     subAgentsFor,
     orphanSubAgents,
