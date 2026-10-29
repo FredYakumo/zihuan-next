@@ -99,3 +99,36 @@ pub fn plugin_brain_tools() -> Vec<PluginTool> {
         .filter_map(PluginTool::from_plugin)
         .collect()
 }
+
+/// The installed `brain_tool` plugins a service selected, in catalog order.
+///
+/// A selected name with no installed plugin, or one whose manifest cannot act as a tool, is
+/// skipped with a warning: a stale selection must not stop the service from starting.
+pub fn selected_plugin_brain_tools(names: &[String]) -> Vec<PluginTool> {
+    if names.is_empty() {
+        return Vec::new();
+    }
+    let installed =
+        crate::script_plugins::plugins_of_type(crate::script_plugins::PLUGIN_TYPE_BRAIN_TOOL);
+    let mut tools = Vec::new();
+    for name in names {
+        match installed.iter().find(|plugin| &plugin.name == name) {
+            Some(plugin) => match PluginTool::from_plugin(plugin.clone()) {
+                Some(tool) => tools.push(tool),
+                None => log::warn!(
+                    "brain_tool plugin '{name}' is selected but declares no usable tool; skipped"
+                ),
+            },
+            None => log::warn!("brain_tool plugin '{name}' is selected but not installed; skipped"),
+        }
+    }
+    tools
+}
+
+/// One installed `brain_tool` plugin by name, for a configured tool entry that needs its spec.
+pub fn plugin_brain_tool(name: &str) -> Option<PluginTool> {
+    crate::script_plugins::plugins_of_type(crate::script_plugins::PLUGIN_TYPE_BRAIN_TOOL)
+        .into_iter()
+        .find(|plugin| plugin.name == name)
+        .and_then(PluginTool::from_plugin)
+}

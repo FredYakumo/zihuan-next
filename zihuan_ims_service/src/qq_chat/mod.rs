@@ -65,7 +65,7 @@ use zihuan_core::agent::resource_resolver::{
     resolve_local_embedding_model_name,
 };
 use zihuan_core::agent::tool_definitions::{
-    build_enabled_tool_definitions, selected_sub_agent_ids,
+    build_enabled_tool_definitions, selected_plugin_names, selected_sub_agent_ids,
 };
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::config::llm_refs::load_llm_refs;
@@ -153,6 +153,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
             self.resources.memory_llm.clone(),
             zihuan_core::storage::AgentMemoryAccessContext::default(),
             context.last_user_text.clone(),
+            &self.resources.plugin_tool_names,
         )
     }
 
@@ -258,6 +259,7 @@ fn load_qq_resources(
         local_memory_store,
         embedding_model,
         memory_llm,
+        plugin_tool_names: selected_plugin_names(&agent.tools),
     })
 }
 
@@ -483,6 +485,7 @@ pub async fn spawn(
         shared_inputs: Vec::<FunctionPortDef>::new(),
         tool_definitions: tool_definitions.clone(),
         sub_agent_ids: selected_sub_agent_ids(&agent.tools),
+        plugin_tool_names: selected_plugin_names(&agent.tools),
         shared_runtime_values: HashMap::new(),
         session_state_store: Arc::new(Mutex::new(QqChatSessionState::default())),
         task_runtime,

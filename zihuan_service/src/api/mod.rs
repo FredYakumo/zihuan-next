@@ -165,6 +165,10 @@ pub fn build_router(
                         .get(config::script_tools::list_web_search_plugins),
                 )
                 .push(
+                    Router::with_path("brain-tool-plugins")
+                        .get(config::script_tools::list_brain_tool_plugins),
+                )
+                .push(
                     Router::with_path("command-permissions")
                         .get(config::commands::list_command_permissions)
                         .post(config::commands::create_command_permission)

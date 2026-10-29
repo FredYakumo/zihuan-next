@@ -18,7 +18,9 @@ pub mod web_search;
 
 pub use memory_tools::{register_memory_tools, MemoryAgentResources, MemoryBackend};
 pub use node_graph_tool::NodeGraphTool;
-pub use plugin_tool::{plugin_brain_tools, PluginTool};
+pub use plugin_tool::{
+    plugin_brain_tool, plugin_brain_tools, selected_plugin_brain_tools, PluginTool,
+};
 pub use tool_calling_engine::{ToolCallingEngine, MAX_TOOL_ITERATIONS};
 pub use tool_calling_types::{
     AgentExecutor, LongTaskContext, LongTaskNotifier, NestedToolCallingEvent,
