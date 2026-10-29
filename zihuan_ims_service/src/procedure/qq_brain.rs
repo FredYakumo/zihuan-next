@@ -363,8 +363,8 @@ impl QqBrain {
             ));
         }
 
-
-        for tool in zihuan_core::agent::tools::selected_plugin_brain_tools(&service.plugin_tool_names)
+        for tool in
+            zihuan_core::agent::tools::selected_plugin_brain_tools(&service.plugin_tool_names)
         {
             brain.add_tool(wrap_brain_tool_with_quota(tool, tool_quota.clone()));
         }
