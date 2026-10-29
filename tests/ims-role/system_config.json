@@ -1,0 +1,85 @@
+{
+  "version": 2,
+  "configs": {
+    "connections": [
+      {
+        "config_id": "mock-bot",
+        "kind": "connection_bot_adapter",
+        "name": "mock-bot",
+        "enabled": true,
+        "updated_at": "2026-10-29T00:00:00Z",
+        "spec": {
+          "type": "bot_adapter",
+          "qq_id": "99999",
+          "mock": {
+            "directory": "__RUN_DIR__/bot"
+          }
+        }
+      },
+      {
+        "config_id": "mock-rdb",
+        "kind": "connection_sqlite",
+        "name": "mock-rdb",
+        "enabled": true,
+        "updated_at": "2026-10-29T00:00:00Z",
+        "spec": {
+          "type": "mock_rdb"
+        }
+      },
+      {
+        "config_id": "unused-search",
+        "kind": "connection_web_search_engine",
+        "name": "unused-search",
+        "enabled": true,
+        "updated_at": "2026-10-29T00:00:00Z",
+        "spec": {
+          "type": "web_search_engine",
+          "provider": "unused-search"
+        }
+      }
+    ],
+    "llm_refs": [
+      {
+        "config_id": "mock-llm",
+        "kind": "llm_ref",
+        "name": "mock-llm",
+        "enabled": true,
+        "updated_at": "2026-10-29T00:00:00Z",
+        "spec": {
+          "type": "chat_llm",
+          "llm": {
+            "model_name": "ims-behaviour",
+            "api_style": "mock",
+            "api_endpoint": "__RUN_DIR__/llm",
+            "context_length": 32768
+          }
+        }
+      }
+    ],
+    "agents": [
+      {
+        "config_id": "ims-role",
+        "kind": "service_qq_chat",
+        "name": "ims-role",
+        "enabled": true,
+        "updated_at": "2026-10-29T00:00:00Z",
+        "spec": {
+          "auto_start": true,
+          "tools": [],
+          "role_service_type": {
+            "type": "qq_chat",
+            "ims_bot_adapter_connection_id": "mock-bot",
+            "bot_name": "Mock Bot",
+            "llm_ref_id": "mock-llm",
+            "natural_language_reply_llm_ref_id": "mock-llm",
+            "web_search_engine_connection_id": "unused-search",
+            "rdb_id": "mock-rdb",
+            "group_message_window_count": 10,
+            "default_tools_enabled": {},
+            "event_handler_threads": 1
+          }
+        }
+      }
+    ]
+  }
+}

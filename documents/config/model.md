@@ -30,6 +30,7 @@ Supported `api_style` values:
 
 | Value | Description |
 | --- | --- |
+| `mock` | 确定性模拟模型；`api_endpoint` 为调用记录目录，适用于 IMS Role 行为模拟。 |
 | `candle_gguf` | Candle GGUF local inference. |
 | `candle_hf` | Candle HF local inference. |
 | `open_ai_chat_completions` | OpenAI Chat Completions API. |

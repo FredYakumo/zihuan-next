@@ -1398,7 +1398,10 @@ fn validate_rdb_connection(
         .iter()
         .find(|item| item.id == connection_id || item.config_id == connection_id)
         .ok_or_else(|| format!("rdb_id '{}' not found", connection_id))?;
-    if !matches!(connection.kind, ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_)) {
+    if !matches!(
+        connection.kind,
+        ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_) | ConnectionKind::MockRdb
+    ) {
         return Err(format!("rdb_id '{}' is not a MySQL or SQLite connection", connection.name));
     }
     Ok(())

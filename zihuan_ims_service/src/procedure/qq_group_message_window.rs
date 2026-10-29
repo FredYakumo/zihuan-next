@@ -25,7 +25,9 @@ use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
 };
-use zihuan_core::storage::message::history::{load_group_history_records, MessageHistoryRecord};
+use zihuan_core::storage::message::history::{
+    load_group_history_records_rdb, MessageHistoryRecord,
+};
 use zihuan_core::utils::string_utils::shorten_text;
 
 use crate::qq_chat::logging::{QqChatTaskTrace, QqChatTurnIdentity};
@@ -185,12 +187,8 @@ impl<'a> QqGroupMessageWindow<'a> {
                 );
                 break 'selection;
             };
-            let RelationalDbConnection::MySql(mysql) = rdb_pool else {
-                detail["reason"] = json!("the group message window requires MySQL message records");
-                break 'selection;
-            };
-            let window = match load_group_history_records(
-                mysql,
+            let window = match load_group_history_records_rdb(
+                rdb_pool,
                 self.context.group_id.clone(),
                 self.context.window_count as u32,
             ) {

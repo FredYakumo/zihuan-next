@@ -92,8 +92,10 @@ impl ConfigRecord for LlmRefConfig {
                         "chat_llm context_length must be greater than zero"
                     ));
                 }
-                if !matches!(llm.api_style, LlmApiStyle::CandleGguf | LlmApiStyle::CandleHf)
-                    && llm.api_endpoint.trim().is_empty()
+                if !matches!(
+                    llm.api_style,
+                    LlmApiStyle::CandleGguf | LlmApiStyle::CandleHf | LlmApiStyle::Mock
+                ) && llm.api_endpoint.trim().is_empty()
                 {
                     return Err(crate::string_error!("chat_llm api_endpoint must not be empty"));
                 }

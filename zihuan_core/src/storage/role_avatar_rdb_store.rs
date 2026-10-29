@@ -33,7 +33,10 @@ impl RdbRoleAvatarStore {
         let connection = connections
             .iter()
             .find(|connection| {
-                matches!(connection.kind, ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_))
+                matches!(
+                    connection.kind,
+                    ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_) | ConnectionKind::MockRdb
+                )
             })
             .ok_or_else(|| {
                 Error::ValidationError(

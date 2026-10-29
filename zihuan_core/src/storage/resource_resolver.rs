@@ -37,11 +37,13 @@ pub async fn build_rdb_ref(
                 .get_or_create_mysql_ref(connection_id)
                 .await?,
         ))),
-        ConnectionKind::Sqlite(_) => Ok(Some(RelationalDbConnection::Sqlite(
-            RuntimeStorageConnectionManager::shared()
-                .get_or_create_sqlite_ref(connection_id)
-                .await?,
-        ))),
+        ConnectionKind::Sqlite(_) | ConnectionKind::MockRdb => {
+            Ok(Some(RelationalDbConnection::Sqlite(
+                RuntimeStorageConnectionManager::shared()
+                    .get_or_create_sqlite_ref(connection_id)
+                    .await?,
+            )))
+        }
         _ => Err(Error::ValidationError(format!(
             "connection '{}' is not a relational database connection",
             connection.name

@@ -1,11 +1,9 @@
 use async_recursion::async_recursion;
-use futures_util::{SinkExt, StreamExt};
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 use uuid::Uuid;
 
 use super::event;
@@ -18,7 +16,6 @@ use crate::storage::S3Ref;
 use crate::storage::{
     enrich_event_images, enrich_message_images, ImageCacheAdapter, PendingImageUpload,
 };
-use crate::url_utils::extract_host;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::{mpsc, oneshot};
 
@@ -78,14 +75,21 @@ impl BotAdapterConfig {
 /// Pending action response channels keyed by echo ID.
 pub type PendingActions = Arc<TokioMutex<HashMap<String, oneshot::Sender<serde_json::Value>>>>;
 
-/// BotAdapter connects to the QQ bot server via WebSocket and processes events
+/// Backend lifecycle; each implementation supplies its own transport and action responses.
+#[async_trait::async_trait]
+pub trait BotAdapterBackend: Send + Sync {
+    async fn run(&self, adapter: SharedBotAdapter) -> Result<()>;
+}
+
+/// Shared event parsing, hydration and dispatch for all adapter backends.
 pub struct BotAdapter {
+    backend: Arc<dyn BotAdapterBackend>,
     url: String,
     token: String,
     bot_profile: Option<Profile>,
     event_handler: Option<BotEventHandlerBox>,
     event_handlers: HashMap<String, event::EventHandler>,
-    /// Sender half for outbound WebSocket actions (set once the connection is live).
+    /// Sender half for outbound OneBot actions (set once the connection is live).
     pub action_tx: Option<mpsc::UnboundedSender<String>>,
     /// Echo → oneshot channel map for correlating action responses.
     pub pending_actions: PendingActions,
@@ -146,6 +150,7 @@ impl ImageCacheAdapter for BotAdapterImageCacheHandle {
 impl BotAdapter {
     pub async fn new(config: BotAdapterConfig) -> Self {
         Self {
+            backend: Arc::new(super::napcat::NapCatBotAdapter),
             url: config.url,
             token: config.token,
             bot_profile: Some(Profile {
@@ -160,6 +165,11 @@ impl BotAdapter {
             pending_image_uploads: Arc::new(TokioMutex::new(VecDeque::new())),
             image_retry_task_running: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    pub fn with_backend(mut self, backend: Arc<dyn BotAdapterBackend>) -> Self {
+        self.backend = backend;
+        self
     }
 
     /// Convert this adapter into a shared, mutex-protected handle
@@ -208,6 +218,10 @@ impl BotAdapter {
         }
     }
 
+    pub(super) fn websocket_url(&self) -> &str {
+        &self.url
+    }
+
     pub fn get_token(&self) -> &str {
         &self.token
     }
@@ -250,93 +264,12 @@ impl BotAdapter {
 
     /// Start the WebSocket connection and begin processing events using a shared handle
     pub async fn start(adapter: SharedBotAdapter) -> Result<()> {
-        let (url, token) = {
-            let guard = adapter.lock().await;
-            (guard.url.clone(), guard.token.clone())
-        };
-
-        info!("Connecting to bot server at {}", url);
-
-        // Build the WebSocket request with authorization header
-        let request = http::Request::builder()
-            .uri(&url)
-            .header("Authorization", format!("Bearer {}", token))
-            .header("Host", extract_host(&url).unwrap_or("localhost"))
-            .header("Connection", "Upgrade")
-            .header("Upgrade", "websocket")
-            .header("Sec-WebSocket-Version", "13")
-            .header(
-                "Sec-WebSocket-Key",
-                tokio_tungstenite::tungstenite::handshake::client::generate_key(),
-            )
-            .body(())?;
-
-        let (ws_stream, _) = connect_async(request).await?;
-        info!("Connected to the qq bot server successfully.");
-
-        let (mut write, mut read) = ws_stream.split();
-
-        let (action_tx, mut action_rx) = mpsc::unbounded_channel::<String>();
-        {
-            let mut guard = adapter.lock().await;
-            guard.action_tx = Some(action_tx);
-        }
-
-        tokio::spawn(async move {
-            while let Some(msg) = action_rx.recv().await {
-                if write.send(WsMessage::Text(msg)).await.is_err() {
-                    break;
-                }
-            }
-        });
-
-        while let Some(msg_result) = read.next().await {
-            match msg_result {
-                Ok(WsMessage::Text(text)) => {
-                    let adapter_clone = adapter.clone();
-                    tokio::spawn(async move {
-                        BotAdapter::process_event(adapter_clone, text).await;
-                    });
-                }
-                Ok(WsMessage::Binary(data)) => {
-                    if let Ok(text) = String::from_utf8(data) {
-                        let adapter_clone = adapter.clone();
-                        tokio::spawn(async move {
-                            BotAdapter::process_event(adapter_clone, text).await;
-                        });
-                    } else {
-                        warn!("Received binary message that is not valid UTF-8");
-                    }
-                }
-                Ok(WsMessage::Close(frame)) => {
-                    if let Some(frame) = frame {
-                        info!(
-                            "WebSocket connection closed by server: code={} reason='{}'",
-                            frame.code, frame.reason
-                        );
-                    } else {
-                        info!("WebSocket connection closed");
-                    }
-                    break;
-                }
-                Ok(WsMessage::Ping(_)) | Ok(WsMessage::Pong(_)) => {
-                    // Heartbeat messages, ignore
-                }
-                Ok(WsMessage::Frame(_)) => {
-                    // Raw frame, ignore
-                }
-                Err(e) => {
-                    error!("WebSocket error: {}", e);
-                    break;
-                }
-            }
-        }
-
-        Ok(())
+        let backend = adapter.lock().await.backend.clone();
+        backend.run(adapter).await
     }
 
     /// Process a single event message
-    async fn process_event(adapter: SharedBotAdapter, message: String) {
+    pub(super) async fn process_event(adapter: SharedBotAdapter, message: String) {
         debug!("Received message: {}", message);
 
         // Parse the JSON message
@@ -399,10 +332,7 @@ impl BotAdapter {
         .await;
 
         // Dispatch to the unified message handler
-        let adapter_clone = adapter.clone();
-        tokio::spawn(async move {
-            event::process_message(adapter_clone, event).await;
-        });
+        event::process_message(adapter, event).await;
     }
 }
 
