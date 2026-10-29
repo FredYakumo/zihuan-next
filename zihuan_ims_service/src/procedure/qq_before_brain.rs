@@ -47,6 +47,10 @@ impl Procedure for QqBeforeBrain<'_> {
         Ok(ProcedureOutput::of(assemble_before_brain(
             &self.context,
             reply_instruction.as_deref(),
+            context
+                .find_output::<super::MemoryAgentOutput>()
+                .as_ref()
+                .map(|output| output.0.as_str()),
         )))
     }
 }

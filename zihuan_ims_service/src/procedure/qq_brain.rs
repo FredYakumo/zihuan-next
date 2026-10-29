@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use log::{info, warn};
 use zihuan_core::agent::declarative_agent::list_agent_ids;
 use zihuan_core::agent::runtime_context::current_agent_resources;
-use zihuan_core::agent::tools::{LongTaskContext, Tool, ToolCallingEngine, ToolCallingStopReason};
+use zihuan_core::agent::tools::{LongTaskContext, ToolCallingEngine, ToolCallingStopReason};
 use zihuan_core::agent::{
     AgentServiceContext, MemoryCapability, LLM_KIND_MAIN, LLM_KIND_MATH_PROGRAMMING,
 };
@@ -157,8 +157,10 @@ impl QqBrain {
             turn_context: Arc::clone(&turn_context),
         }));
 
-        let memory_access =
+        let mut memory_access =
             qq_memory_access_context(sender_id, target_id, is_group, prepared_input.event.group_id);
+        memory_access.agent_id = ctx.agent_id.to_string();
+        memory_access.permission_connection = ctx.rdb_pool.cloned();
         let service_context = AgentServiceContext::new()
             .with_memory(MemoryCapability::resolve(
                 ctx.local_memory_store.cloned(),
@@ -198,16 +200,17 @@ impl QqBrain {
         let memory_enabled = service_context.memory().is_some();
         let mut agent_host = service_context.build_host(memory_access);
 
-        // The memory agent is composed and registered by `build_host`; grab it first so the
-        // research agent can reference it.
+        // Memory tools are registered directly; recall runs in the preceding Procedure.
         let mut added_agent_ids = HashSet::new();
-        if let Some(tool) = agent_host.tool(DEFAULT_TOOL_MEMORY_AGENT) {
-            if memory_enabled && service.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
-                brain.add_tool(wrap_brain_tool_with_quota(
-                    SharedTool::new(tool),
-                    tool_quota.clone(),
-                ));
-                added_agent_ids.insert(DEFAULT_TOOL_MEMORY_AGENT.to_string());
+        if memory_enabled && service.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
+            for id in zihuan_core::agent::tools::memory_tools::MEMORY_TOOL_IDS {
+                if let Some(tool) = agent_host.tool(id) {
+                    brain.add_tool(wrap_brain_tool_with_quota(
+                        SharedTool::new(tool),
+                        tool_quota.clone(),
+                    ));
+                    added_agent_ids.insert(id.to_string());
+                }
             }
         }
 
@@ -512,7 +515,7 @@ impl Procedure for QqBrain {
             system_prompt: assembled.system_prompt.clone(),
             memory_context: assembled.memory_context.clone(),
         });
-        let user_msg = assembled.user_message.clone();
+        let mut user_msg = assembled.user_message.clone();
 
         // The per-sender conversation history is still compacted for the session cache, but
         // on a group turn the group-message-window procedure replaces what the brain
@@ -527,6 +530,29 @@ impl Procedure for QqBrain {
             self.history.clone(),
             &user_msg,
         );
+        if compact_result.did_compact {
+            if let Some(memory) = context.find_output::<super::MemoryAgentOutput>() {
+                let resources = memory.1.clone();
+                let input = memory.2.clone();
+                let recalled = tokio::task::spawn_blocking(move || {
+                    zihuan_core::agent::tools::memory_tools::recall_memory(
+                        resources,
+                        &input,
+                        String::new(),
+                    )
+                })
+                .await
+                .map_err(|error| {
+                    zihuan_core::string_error!("memory refresh after compaction failed: {error}")
+                })??;
+                user_msg.parts.push(MessagePart::text(format!(
+                    "\nMemories recalled after context compaction: {recalled}"
+                )));
+                if let Some(turn) = self.turn_context.lock().unwrap().as_mut() {
+                    turn.memory_context = Some(recalled);
+                }
+            }
+        }
         let history: Vec<LLMMessage> = match &window_output {
             Some(window) => window.history_message().into_iter().collect(),
             None => compact_result.messages,

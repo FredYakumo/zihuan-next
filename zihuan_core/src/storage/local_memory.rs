@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use chrono::{DateTime, Utc};
-use log::warn;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -14,8 +13,12 @@ use crate::system_config::application_data_dir;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct LocalMemoryMetadata {
+    #[serde(flatten)]
+    input: AgentMemoryUpsert,
     #[serde(default)]
-    expires_at: Option<String>,
+    created_at: String,
+    #[serde(default)]
+    updated_at: String,
 }
 
 #[derive(Debug)]
@@ -28,77 +31,151 @@ impl LocalMemoryStore {
     pub fn in_app_data_dir() -> Self {
         Self::new(application_data_dir().join("memory"))
     }
-
     pub fn new(directory: PathBuf) -> Self {
         Self { directory, write_lock: Mutex::new(()) }
     }
 
     pub fn create_or_update(&self, input: &AgentMemoryUpsert) -> Result<AgentMemoryRecord> {
-        let key = validate_memory_key(&input.key)?;
+        let normalized = super::memory_types::normalize_memory_input(input)?;
+        let input = &normalized;
+        validate_memory_key(&input.key)?;
         validate_expires_at(input.expires_at.as_deref())?;
         let _guard = self
             .write_lock
             .lock()
             .map_err(|_| crate::string_error!("local memory write lock poisoned"))?;
-        fs::create_dir_all(&self.directory)?;
-        let path = self.path_for_key(key);
-        let metadata_path = self.metadata_path_for_key(key);
+        let category = input.attributes.category;
+        let directory = self.directory.join(category.schema().as_str());
+        fs::create_dir_all(&directory)?;
+        let object_id = super::memory_object_id(input);
+        let path = directory.join(format!("{object_id}.md"));
+        let meta_path = path.with_extension("meta.json");
+        let existing = fs::read_to_string(&meta_path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<LocalMemoryMetadata>(&text).ok());
+        let now = Utc::now().to_rfc3339();
+        let metadata = LocalMemoryMetadata {
+            input: input.clone(),
+            created_at: existing.map(|meta| meta.created_at).unwrap_or_else(|| now.clone()),
+            updated_at: now,
+        };
         let temporary = path.with_extension("md.tmp");
-        let metadata_temporary = metadata_path.with_extension("meta.json.tmp");
+        let meta_temporary = path.with_extension("meta.json.tmp");
         fs::write(&temporary, input.value.as_bytes())?;
-        fs::write(
-            &metadata_temporary,
-            serde_json::to_vec(&LocalMemoryMetadata { expires_at: input.expires_at.clone() })?,
-        )?;
+        fs::write(&meta_temporary, serde_json::to_vec(&metadata)?)?;
         fs::rename(&temporary, &path)?;
-        fs::rename(&metadata_temporary, &metadata_path)?;
-        record_from_path(&path, key, input.value.clone())
+        fs::rename(&meta_temporary, &meta_path)?;
+        record_from_path(&path, &object_id, input.value.clone())
+    }
+
+    pub fn migrate_legacy(&self) -> Result<()> {
+        static MIGRATION_LOCK: Mutex<()> = Mutex::new(());
+        let _guard = MIGRATION_LOCK
+            .lock()
+            .map_err(|_| crate::string_error!("local memory migration lock poisoned"))?;
+        if !self.directory.exists() {
+            return Ok(());
+        }
+        for entry in fs::read_dir(&self.directory)? {
+            let path = entry?.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+                continue;
+            }
+            let Some(key) = path.file_stem().and_then(|key| key.to_str()) else {
+                continue;
+            };
+            let input = super::memory_migration::converted_legacy_record(record_from_path(
+                &path,
+                key,
+                fs::read_to_string(&path)?,
+            )?);
+            if self.get(&input)?.is_none() {
+                self.create_or_update(&input)?;
+            }
+            let archive = self.directory.join("legacy_archive");
+            fs::create_dir_all(&archive)?;
+            fs::rename(&path, archive.join(path.file_name().unwrap()))?;
+            let meta = path.with_extension("meta.json");
+            if meta.exists() {
+                fs::rename(&meta, archive.join(meta.file_name().unwrap()))?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn get(&self, input: &AgentMemoryUpsert) -> Result<Option<AgentMemoryRecord>> {
+        let id = super::memory_object_id(input);
+        let path = self
+            .directory
+            .join(input.attributes.category.schema().as_str())
+            .join(format!("{id}.md"));
+        match fs::read_to_string(&path) {
+            Ok(value) => record_from_path(&path, &id, value).map(Some),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
+        }
     }
 
     pub fn list(&self, query: Option<&str>, top_n: usize) -> Result<Vec<AgentMemorySearchHit>> {
-        if !self.directory.exists() {
-            return Ok(Vec::new());
+        let mut hits = Vec::new();
+        for category in super::MemoryCategory::ALL {
+            hits.extend(self.list_category(category, query, top_n)?);
         }
-        let query = query.map(normalize_search_query).filter(|value| !value.is_empty());
+        hits.sort_by(|a, b| b.record.updated_at.cmp(&a.record.updated_at));
+        hits.truncate(top_n);
+        Ok(hits)
+    }
+
+    pub fn list_category(
+        &self,
+        category: super::MemoryCategory,
+        query: Option<&str>,
+        top_n: usize,
+    ) -> Result<Vec<AgentMemorySearchHit>> {
+        let mut directories = vec![self.directory.join(category.schema().as_str())];
+        // Read legacy markdown in place until it has been explicitly rewritten.
+        if category == super::MemoryCategory::Concept {
+            directories.push(self.directory.clone());
+        }
+        let query = query.map(normalize_search_query).filter(|query| !query.is_empty());
         let mut records = Vec::new();
-        for entry in fs::read_dir(&self.directory)? {
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(_) => continue,
-            };
-            let path = entry.path();
-            if path.extension().and_then(|extension| extension.to_str()) != Some("md") {
+        for directory in directories {
+            if !directory.exists() {
                 continue;
             }
-            let Some(key) = path.file_stem().and_then(|stem| stem.to_str()) else {
-                continue;
-            };
-            let value = match fs::read_to_string(&path) {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-            if query.as_ref().is_some_and(|query| !matches_query(key, &value, query)) {
-                continue;
-            }
-            if let Ok(record) = record_from_path(&path, key, value) {
+            for entry in fs::read_dir(directory)? {
+                let path = entry?.path();
+                if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+                    continue;
+                }
+                let Some(key) = path.file_stem().and_then(|name| name.to_str()) else {
+                    continue;
+                };
+                let value = fs::read_to_string(&path)?;
+                let record = record_from_path(&path, key, value)?;
                 if is_memory_expired(&record) {
-                    remove_expired_memory(&path);
+                    continue;
+                }
+                let searchable = format!("{} {}", record.key, serde_json::to_string(&record)?);
+                if query
+                    .as_ref()
+                    .is_some_and(|query| !matches_query(&record.key, &searchable, query))
+                {
                     continue;
                 }
                 records.push(AgentMemorySearchHit { record, distance: None });
             }
         }
-        records.sort_by(|left, right| right.record.updated_at.cmp(&left.record.updated_at));
+        records.sort_by(|a, b| {
+            b.record
+                .attributes
+                .starts_at
+                .as_ref()
+                .unwrap_or(&b.record.updated_at)
+                .cmp(a.record.attributes.starts_at.as_ref().unwrap_or(&a.record.updated_at))
+        });
         records.truncate(top_n);
         Ok(records)
-    }
-
-    fn path_for_key(&self, key: &str) -> PathBuf {
-        self.directory.join(format!("{key}.md"))
-    }
-
-    fn metadata_path_for_key(&self, key: &str) -> PathBuf {
-        self.directory.join(format!("{key}.meta.json"))
     }
 }
 
@@ -126,46 +203,40 @@ fn validate_memory_key(key: &str) -> Result<&str> {
 }
 
 fn record_from_path(path: &Path, key: &str, value: String) -> Result<AgentMemoryRecord> {
-    let metadata = fs::metadata(path)?;
-    let updated_at =
-        system_time_to_rfc3339(metadata.modified().ok()).unwrap_or_else(|| Utc::now().to_rfc3339());
-    let created_at =
-        system_time_to_rfc3339(metadata.created().ok()).unwrap_or_else(|| updated_at.clone());
-    let expires_at = read_expires_at(path);
+    let file_metadata = fs::metadata(path)?;
+    let modified = system_time_to_rfc3339(file_metadata.modified().ok())
+        .unwrap_or_else(|| Utc::now().to_rfc3339());
+    let metadata = match fs::read_to_string(path.with_extension("meta.json")) {
+        Ok(text) => serde_json::from_str::<LocalMemoryMetadata>(&text)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            LocalMemoryMetadata::default()
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let input = metadata.input;
     Ok(AgentMemoryRecord {
+        attributes: input.attributes,
         object_id: key.to_string(),
-        key: key.to_string(),
+        key: if input.key.is_empty() {
+            key.to_string()
+        } else {
+            input.key
+        },
         value,
-        expires_at,
-        sender_id_list: Vec::new(),
-        group_id_list: Vec::new(),
-        created_at,
-        updated_at,
+        expires_at: input.expires_at,
+        sender_id_list: input.sender_id_list,
+        group_id_list: input.group_id_list,
+        created_at: if metadata.created_at.is_empty() {
+            modified.clone()
+        } else {
+            metadata.created_at
+        },
+        updated_at: if metadata.updated_at.is_empty() {
+            modified
+        } else {
+            metadata.updated_at
+        },
     })
-}
-
-fn read_expires_at(path: &Path) -> Option<String> {
-    let metadata_path = path.with_extension("meta.json");
-    let content = match fs::read_to_string(&metadata_path) {
-        Ok(content) => content,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(error) => {
-            warn!("Failed to read local memory metadata {}: {error}", metadata_path.display());
-            return None;
-        }
-    };
-    let metadata = match serde_json::from_str::<LocalMemoryMetadata>(&content) {
-        Ok(metadata) => metadata,
-        Err(error) => {
-            warn!("Failed to parse local memory metadata {}: {error}", metadata_path.display());
-            return None;
-        }
-    };
-    if let Err(error) = validate_expires_at(metadata.expires_at.as_deref()) {
-        warn!("Ignoring invalid local memory expiry in {}: {error}", metadata_path.display());
-        return None;
-    }
-    metadata.expires_at
 }
 
 fn validate_expires_at(expires_at: Option<&str>) -> Result<()> {
@@ -175,23 +246,6 @@ fn validate_expires_at(expires_at: Option<&str>) -> Result<()> {
     DateTime::parse_from_rfc3339(expires_at).map(|_| ()).map_err(|error| {
         Error::ValidationError(format!("invalid expires_at '{expires_at}': {error}"))
     })
-}
-
-fn remove_expired_memory(path: &Path) {
-    if let Err(error) = fs::remove_file(path) {
-        warn!("Failed to remove expired local memory {}: {error}", path.display());
-        return;
-    }
-
-    let metadata_path = path.with_extension("meta.json");
-    if let Err(error) = fs::remove_file(&metadata_path) {
-        if error.kind() != std::io::ErrorKind::NotFound {
-            warn!(
-                "Failed to remove expired local memory metadata {}: {error}",
-                metadata_path.display()
-            );
-        }
-    }
 }
 
 fn system_time_to_rfc3339(value: Option<std::time::SystemTime>) -> Option<String> {

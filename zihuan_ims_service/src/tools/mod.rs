@@ -138,10 +138,12 @@ pub fn build_info_brain_tools(
             let service_context = AgentServiceContext::new()
                 .with_memory(Some(memory))
                 .with_llm(LLM_KIND_MAIN, llm);
-            let mut host = service_context.build_host(memory_access);
+            let host = service_context.build_host(memory_access);
             if is_enabled(default_tools_enabled, DEFAULT_TOOL_MEMORY_AGENT) {
-                if let Some(tool) = host.tool(DEFAULT_TOOL_MEMORY_AGENT) {
-                    tools.push(Box::new(SharedTool::new(tool)));
+                for id in zihuan_core::agent::tools::memory_tools::MEMORY_TOOL_IDS {
+                    if let Some(tool) = host.tool(id) {
+                        tools.push(Box::new(SharedTool::new(tool)));
+                    }
                 }
             }
         }
@@ -159,6 +161,9 @@ pub(crate) fn qq_memory_access_context(
     event_group_id: Option<i64>,
 ) -> AgentMemoryAccessContext {
     AgentMemoryAccessContext {
+        category: Default::default(),
+        permission_connection: None,
+        agent_id: String::new(),
         sender_id: Some(sender_id.to_string()),
         group_id: if is_group {
             Some(target_id.to_string())

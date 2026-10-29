@@ -78,6 +78,36 @@ export function phaseColor(index: number): string {
   return PHASE_COLORS[index % PHASE_COLORS.length];
 }
 
+/** The same memory tool appearance is used in Brain and nested agent calls. */
+export function memoryToolAppearance(name: string, argumentsValue?: unknown): {
+  tone: "concept" | "person" | "behavioral" | "recall" | "update";
+  label: string;
+} | undefined {
+  const tool = name.toLowerCase();
+  if (tool === "fullsearchconceptmemory" || tool === "full_search_concept_memory") {
+    return { tone: "recall", label: "全类召回" };
+  }
+  if (tool === "memory_agent") return { tone: "recall", label: "旧版记忆 Agent" };
+  if (!["search_memory", "list_memory_keys", "update_memory"].includes(tool)) return undefined;
+
+  let args = argumentsValue;
+  if (typeof args === "string") {
+    try { args = JSON.parse(args); } catch { args = undefined; }
+  }
+  const category = args && typeof args === "object" && !Array.isArray(args)
+    ? (args as Record<string, unknown>).category
+    : undefined;
+  const kind = category === "concept" || category === "person" || category === "behavioral"
+    ? category
+    : undefined;
+  const categoryLabel = kind ? { concept: "事实", person: "人物", behavioral: "行为" }[kind] : "记忆";
+  if (tool === "update_memory") return { tone: "update", label: `更新${categoryLabel}` };
+  return {
+    tone: kind ?? "concept",
+    label: `${categoryLabel}${tool === "list_memory_keys" ? "目录" : "查询"}`,
+  };
+}
+
 /**
  * Group one turn's steps into consecutive stages.
  *

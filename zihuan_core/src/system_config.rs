@@ -274,6 +274,36 @@ fn default_api_key_enabled() -> bool {
     true
 }
 
+/// Compatibility surface for settings callers while credentials live in UserPermission.
+pub fn load_global_settings() -> Result<GlobalSettings> {
+    let mut settings = load_section::<GlobalSettingsSection>()?;
+    if !settings.model_http_service.api_keys.is_empty() {
+        let mut keys = crate::storage::user_permission::model_api_keys()?;
+        for legacy in &settings.model_http_service.api_keys {
+            if !keys.iter().any(|key| key.id == legacy.id) {
+                keys.push(legacy.clone());
+            }
+        }
+        crate::storage::user_permission::replace_model_api_keys(&keys)?;
+        with_document_lock(|| {
+            let mut root = load_system_config_root()?;
+            if let Some(keys) = root.pointer_mut("/global_settings/model_http_service/api_keys") {
+                *keys = serde_json::json!([]);
+            }
+            write_system_config_root(&root)
+        })?;
+    }
+    settings.model_http_service.api_keys = crate::storage::user_permission::model_api_keys()?;
+    Ok(settings)
+}
+
+pub fn save_global_settings(settings: &GlobalSettings) -> Result<()> {
+    crate::storage::user_permission::replace_model_api_keys(&settings.model_http_service.api_keys)?;
+    let mut configuration = settings.clone();
+    configuration.model_http_service.api_keys.clear();
+    save_section::<GlobalSettingsSection>(&configuration)
+}
+
 pub struct GlobalSettingsSection;
 
 impl SystemConfigSection for GlobalSettingsSection {
@@ -294,7 +324,7 @@ impl SystemConfigSection for WorkspaceDirectoryHistorySection {
     type Value = WorkspaceDirectoryHistory;
 }
 
-pub const DEFAULT_MEMORY_AGENT_SYSTEM_PROMPT: &str = "You are a memory management agent with private tools for searching, listing, and writing memories. Based on the request, decide whether to retrieve relevant memories, update facts worth retaining long term, or state that no relevant memories exist. Do not fabricate memories. Return only a concise result useful to the caller.";
+pub const DEFAULT_MEMORY_AGENT_SYSTEM_PROMPT: &str = "You are the Memory Agent Procedure phase. Recall information relevant to the current input using only FullSearchConceptMemory. Search facts, people and behavioral memory; never write memory or infer identity from names. Use force_check when the user disputes memories. Do not fabricate memories.";
 
 pub const DEFAULT_MEMORY_AGENT_SEARCH_PROMPT: &str = "[Memory Operation]\nSearch memories: you must use the memory search tool to find saved memories relevant to the content above. Return only relevant memories and explicitly state when none are found. Do not write any memories.";
 

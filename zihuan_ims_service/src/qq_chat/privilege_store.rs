@@ -167,14 +167,11 @@ pub async fn has_active_privilege(
     agent_id: &str,
     sender_id: &str,
 ) -> Result<bool> {
-    match connection {
-        RelationalDbConnection::MySql(config) => {
-            has_active_privilege_mysql(config, agent_id, sender_id).await
-        }
-        RelationalDbConnection::Sqlite(config) => {
-            has_active_privilege_sqlite(config, agent_id, sender_id).await
-        }
-    }
+    Ok(
+        zihuan_core::storage::user_permission::access_level(connection, agent_id, sender_id)
+            .await?
+            <= 1,
+    )
 }
 
 pub async fn list_recent_notifications(
@@ -494,6 +491,14 @@ async fn verify_privilege_auth_mysql(
     }
 
     let elevated_until = now + Duration::minutes(AUTH_TTL_MINUTES);
+    zihuan_core::storage::user_permission::grant_temporary(
+        &RelationalDbConnection::MySql(config.clone()),
+        agent_id,
+        sender_id,
+        1,
+        &(Local::now() + Duration::minutes(AUTH_TTL_MINUTES)).to_rfc3339(),
+    )
+    .await?;
     sqlx::query(
         "UPDATE qq_chat_agent_service_privilege_auth \
          SET consumed = 1, elevated_until = ?, updated_at = ? WHERE id = ?",
@@ -553,6 +558,14 @@ async fn verify_privilege_auth_sqlite(
         };
     }
 
+    zihuan_core::storage::user_permission::grant_temporary(
+        &RelationalDbConnection::Sqlite(config.clone()),
+        agent_id,
+        sender_id,
+        1,
+        &(Local::now() + Duration::minutes(AUTH_TTL_MINUTES)).to_rfc3339(),
+    )
+    .await?;
     let elevated_until = (now + Duration::minutes(AUTH_TTL_MINUTES))
         .format("%Y-%m-%d %H:%M:%S")
         .to_string();
@@ -568,50 +581,6 @@ async fn verify_privilege_auth_sqlite(
     .map_err(Error::Database)?;
 
     Ok(PrivilegeAuthStatus::Elevated { until: elevated_until, record })
-}
-
-async fn has_active_privilege_mysql(
-    config: &Arc<MySqlConfig>,
-    agent_id: &str,
-    sender_id: &str,
-) -> Result<bool> {
-    let row = sqlx::query(
-        "SELECT elevated_until FROM qq_chat_agent_service_privilege_auth \
-         WHERE agent_id = ? AND sender_id = ? AND elevated_until IS NOT NULL \
-         ORDER BY id DESC LIMIT 1",
-    )
-    .bind(agent_id)
-    .bind(sender_id)
-    .fetch_optional(mysql_pool(config)?)
-    .await
-    .map_err(Error::Database)?;
-    let Some(row) = row else {
-        return Ok(false);
-    };
-    let elevated_until = row.get::<NaiveDateTime, _>("elevated_until");
-    Ok(Local::now().naive_local() <= elevated_until)
-}
-
-async fn has_active_privilege_sqlite(
-    config: &Arc<SqliteConfig>,
-    agent_id: &str,
-    sender_id: &str,
-) -> Result<bool> {
-    let row = sqlx::query(
-        "SELECT elevated_until FROM qq_chat_agent_service_privilege_auth \
-         WHERE agent_id = ? AND sender_id = ? AND elevated_until IS NOT NULL \
-         ORDER BY id DESC LIMIT 1",
-    )
-    .bind(agent_id)
-    .bind(sender_id)
-    .fetch_optional(sqlite_pool(config)?)
-    .await
-    .map_err(Error::Database)?;
-    let Some(row) = row else {
-        return Ok(false);
-    };
-    let elevated_until: String = row.get("elevated_until");
-    Ok(Local::now() <= parse_sqlite_timestamp(&elevated_until)?)
 }
 
 async fn list_recent_notifications_mysql(

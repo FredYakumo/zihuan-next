@@ -1,4 +1,6 @@
 mod before_brain;
+mod qq_memory_agent;
+pub(crate) use qq_memory_agent::{MemoryAgentOutput, QqMemoryAgent};
 mod natural_language_reply;
 mod qq_after_brain;
 mod qq_before_brain;

@@ -169,6 +169,9 @@ pub fn build_router(
                         .get(config::script_tools::list_brain_tool_plugins),
                 )
                 .push(
+                    Router::with_path("user-permissions").get(config::commands::get_user_permission).put(config::commands::set_user_permission),
+                )
+                .push(
                     Router::with_path("command-permissions")
                         .get(config::commands::list_command_permissions)
                         .post(config::commands::create_command_permission)

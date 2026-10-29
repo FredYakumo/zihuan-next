@@ -15,7 +15,10 @@ pub fn collection_config_for_schema(schema: RetrievalSchema) -> WeaviateCollecti
         RetrievalSchema::ImageSemantic => {
             image_vector_collection_config(schema.weaviate_class_name().to_string())
         }
-        RetrievalSchema::AgentMemory => {
+        RetrievalSchema::AgentMemory
+        | RetrievalSchema::ConceptMemory
+        | RetrievalSchema::PersonMemory
+        | RetrievalSchema::BehavioralMemory => {
             agent_memory_collection_config(schema.weaviate_class_name().to_string())
         }
         RetrievalSchema::QqMessage => {
@@ -203,10 +206,23 @@ fn image_vector_collection_config(class_name: String) -> WeaviateCollectionConfi
 }
 
 fn agent_memory_collection_config(class_name: String) -> WeaviateCollectionConfig {
-    WeaviateCollectionConfig {
+    let mut config = WeaviateCollectionConfig {
         class_name,
         description: Some("Agent runtime memory storage".to_string()),
         properties: vec![
+            text_property("category", "Memory category"),
+            WeaviatePropertyConfig {
+                name: "access_level".to_string(),
+                data_type: vec!["int".to_string()],
+                description: None,
+            },
+            date_property("starts_at", "Fact effective time"),
+            text_property("qq_id", "Stable person identity"),
+            text_property("name", "Person name"),
+            text_property("preferred_name", "Preferred form of address"),
+            text_array_property("aliases", "Person aliases"),
+            text_property("impression", "Impression and Dream consolidation"),
+            text_property("guideline", "Rules for interaction with this person"),
             text_property("key", "Memory title / search keyword"),
             text_property("value", "Memory content"),
             date_property("expires_at", "Memory expiry time"),
@@ -217,7 +233,22 @@ fn agent_memory_collection_config(class_name: String) -> WeaviateCollectionConfi
         ],
         vectorizer: Some("none".to_string()),
         vector_config: None,
+    };
+    if config.class_name == "AgentMemory" {
+        config.properties.retain(|property| {
+            [
+                "key",
+                "value",
+                "expires_at",
+                "sender_id_list",
+                "group_id_list",
+                "created_at",
+                "updated_at",
+            ]
+            .contains(&property.name.as_str())
+        });
     }
+    config
 }
 
 fn qq_message_collection_config(class_name: String) -> WeaviateCollectionConfig {

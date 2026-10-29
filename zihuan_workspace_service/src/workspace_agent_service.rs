@@ -53,7 +53,7 @@ fn workspace_context_prompt(
 }
 
 fn memory_prompt() -> &'static str {
-    "[Memory] You can use memory_agent to recall relevant long-term information before answering. When this conversation establishes durable facts, preferences, decisions, or relationships, call memory_agent before finishing to save them. Do not save transient details, sensitive data, or information without long-term value."
+    "[Memory] You can use search_memory to recall relevant long-term information before answering. When this conversation establishes durable facts, preferences, decisions, or relationships, call update_memory before finishing to save them. Do not save transient details, sensitive data, or information without long-term value."
 }
 
 fn build_tool_capabilities(enabled: &std::collections::HashMap<String, bool>) -> String {
@@ -249,11 +249,12 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
             .with_tool(DEFAULT_TOOL_WEB_SEARCH, web_search_tool)
             .with_tool(DEFAULT_TOOL_IMAGE_UNDERSTAND, image_understand_tool);
         let mut host = service_context.build_host(AgentMemoryAccessContext::default());
-        // The memory agent is composed and registered by `build_host`; add it first so the
-        // other sub agents can reference it.
-        if let Some(tool) = host.tool(zihuan_core::agent::tools::memory_tools::MEMORY_AGENT_ID) {
-            if self.memory_resources.is_some() {
-                tools.push(Box::new(zihuan_core::agent::SharedTool::new(tool)));
+        // Brain and selected sub agents share the category-aware memory tools.
+        if self.memory_resources.is_some() {
+            for id in zihuan_core::agent::tools::memory_tools::MEMORY_TOOL_IDS {
+                if let Some(tool) = host.tool(id) {
+                    tools.push(Box::new(zihuan_core::agent::SharedTool::new(tool)));
+                }
             }
         }
         if !self.sub_agent_ids.is_empty() {

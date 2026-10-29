@@ -6,6 +6,13 @@ mod db_schema;
 mod elasticsearch;
 pub mod hyperparams;
 mod local_memory;
+mod memory_migration;
+mod memory_types;
+pub use memory_migration::migrate_retrieval_memory;
+pub mod user_permission;
+pub use memory_types::{
+    memory_object_id, MemoryAttributes, MemoryCategory, PersonMemory, MEMORY_MUTATION_LOCK,
+};
 pub mod message;
 mod message_record;
 mod mock_rdb;
@@ -74,9 +81,9 @@ pub use resource_resolver::{
 };
 pub use retrieval_database::{RetrievalDatabase, RetrievalImageHit};
 pub use retrieval_ops::{
-    list_memory_in_store, persist_image_record_to_store, persist_media_to_store,
-    persist_qq_message_list_to_store, search_images_in_store, search_memory_in_store,
-    upsert_memory_in_store, ImagePersistenceRequest,
+    get_memory_in_store, list_memory_in_store, persist_image_record_to_store,
+    persist_media_to_store, persist_qq_message_list_to_store, search_images_in_store,
+    search_memory_in_store, upsert_memory_in_store, ImagePersistenceRequest,
 };
 pub use role_avatar_rdb_store::{first_available_role_avatar_store, RdbRoleAvatarStore};
 pub use role_avatar_store::{RoleAvatarData, RoleAvatarStore};

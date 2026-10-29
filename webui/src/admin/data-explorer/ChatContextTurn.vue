@@ -302,8 +302,10 @@
                       v-for="tool in stageView(entry.id)?.tools"
                       :key="tool.name"
                       class="context-stage-tool"
+                      :data-memory-tone="memoryToolAppearance(tool.name)?.tone"
                     >
                       <div class="context-stage-tool-name mono">{{ tool.name }}</div>
+                      <span v-if="memoryToolAppearance(tool.name)" class="context-memory-tool-label">{{ memoryToolAppearance(tool.name)?.label }}</span>
                       <p
                         v-if="tool.description"
                         class="context-stage-tool-description"
@@ -321,9 +323,9 @@
           </div>
           <template v-else>
             <div class="context-bubble-row context-bubble-row--tool">
-              <div class="context-bubble context-bubble--tool">
+              <div class="context-bubble context-bubble--tool" :data-memory-tone="memoryToolAppearance(entry.name, entry.arguments)?.tone">
                 <div class="context-bubble-head">
-                  <span class="context-tool-title">工具调用 · {{ entry.name }}</span>
+                  <span class="context-tool-title">工具调用 · {{ entry.name }} <span v-if="memoryToolAppearance(entry.name, entry.arguments)" class="context-memory-tool-label">{{ memoryToolAppearance(entry.name, entry.arguments)?.label }}</span></span>
                   <span class="context-tool-status">
                     <t-loading v-if="entry.running" size="12px" />
                     <span v-else-if="entry.durationMs !== undefined" class="muted">{{ entry.durationMs }} ms</span>
@@ -426,6 +428,7 @@ import type { ContextTurnView } from "./useChatContext";
 import { toolResultFailed } from "./useChatContext";
 import {
   RATE_LIMIT_STAGE,
+  memoryToolAppearance,
   rateLimitSeverity,
   rateLimitText,
   sentBubbles,

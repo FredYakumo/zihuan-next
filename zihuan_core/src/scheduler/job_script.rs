@@ -106,6 +106,16 @@ pub fn ensure_default_jobs() -> Result<()> {
     for scheduler in builtin_schedulers() {
         let path = directory.join(scheduler.script_file);
         if path.exists() {
+            if scheduler.script_file == "dream_job.py" {
+                use sha2::{Digest, Sha256};
+                let source = fs::read_to_string(&path)?.replace("\r\n", "\n");
+                if hex::encode(Sha256::digest(source.as_bytes()))
+                    == "09ff69be1b4cb6a12dab6afde49875f2f592e586817c98fc71f3e859e717edce"
+                {
+                    fs::copy(&path, path.with_extension("py.legacy"))?;
+                    fs::write(&path, scheduler.source)?;
+                }
+            }
             continue;
         }
         fs::write(&path, scheduler.source).map_err(|error| {

@@ -44,7 +44,7 @@ use crate::tool_subgraph::data_type_to_json_schema_type;
 ///
 /// The `memory_agent` is no longer a YAML definition — it is composed in Rust from the
 /// configurable prompts in [`crate::system_config::MemoryAgentPromptsSection`] and registered
-/// by [`crate::agent::tools::memory_tools::register_memory_agent_tool`].
+/// as a recall-only Procedure by the QQ service.
 const BUILTIN_AGENT_DEFINITIONS: &[(&str, &str)] = &[
     (
         "run_research_subagent",
@@ -269,6 +269,17 @@ pub fn load_agent_definition(
     let definition: AgentDefinition = serde_yaml::from_str(&content).map_err(|error| {
         Error::ValidationError(format!("invalid agent '{}': {error}", path.display()))
     })?;
+    let mut definition = definition;
+    if definition.tool_ids.iter().any(|id| id == "memory_agent") {
+        definition.tool_ids.retain(|id| id != "memory_agent");
+        for id in crate::agent::tools::memory_tools::MEMORY_TOOL_IDS {
+            if !definition.tool_ids.iter().any(|existing| existing == id) {
+                definition.tool_ids.push(id.to_string());
+            }
+        }
+        definition.system_prompt =
+            definition.system_prompt.replace("`memory_agent`", "`search_memory`");
+    }
     definition.validate(available_tool_ids)?;
     Ok(definition)
 }
@@ -300,17 +311,11 @@ pub fn list_agent_definitions(
         .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("yaml"))
         .map(|entry| {
             let path = entry.path();
-            let content = fs::read_to_string(&path).map_err(|error| {
-                Error::ValidationError(format!(
-                    "failed to read agent '{}': {error}",
-                    path.display()
-                ))
-            })?;
-            let definition: AgentDefinition = serde_yaml::from_str(&content).map_err(|error| {
-                Error::ValidationError(format!("invalid agent '{}': {error}", path.display()))
-            })?;
-            definition.validate(available_tool_ids)?;
-            Ok(definition)
+            let id = path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| Error::ValidationError("invalid agent filename".to_string()))?;
+            load_agent_definition(id, available_tool_ids)
         })
         .collect::<Result<Vec<_>>>()?;
     definitions.sort_by(|left, right| left.id.cmp(&right.id));
