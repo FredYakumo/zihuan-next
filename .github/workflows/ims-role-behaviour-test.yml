@@ -47,11 +47,11 @@ jobs:
       - name: Build production service
         run: cargo build -p zihuan_service --bin zihuan_next
       - name: Simulate IMS role behaviour
-        run: python tests/ims-role/run.py --output target/ims-role-behaviour-artifacts
+        run: python tests/ims-role/run.py --output "$RUNNER_TEMP/ims-role-behaviour-artifacts"
       - name: Upload service logs and behaviour evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ims-role-behaviour
-          path: target/ims-role-behaviour-artifacts
+          path: ${{ runner.temp }}/ims-role-behaviour-artifacts
           if-no-files-found: warn

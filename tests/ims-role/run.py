@@ -43,7 +43,10 @@ def main():
         parser.error(f"Build the service first; binary missing: {binary}")
     if args.output:
         run = args.output.resolve()
-        run.mkdir(parents=True, exist_ok=False)
+        if run == REPO or run in REPO.parents:
+            parser.error(f"Refusing to use {run} as the artifact directory")
+        shutil.rmtree(run, ignore_errors=True)
+        run.mkdir(parents=True, exist_ok=True)
     else:
         run = Path(tempfile.mkdtemp(prefix="ims-role-behaviour-"))
     print(f"Artifacts: {run}", flush=True)
