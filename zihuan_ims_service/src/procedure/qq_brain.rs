@@ -20,7 +20,7 @@ use zihuan_core::model_inference::inference_function::compact_message::estimate_
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
 use zihuan_core::model_inference::message_content_utils::{
-    downgrade_messages_for_model, media_placeholder,
+    downgrade_messages_for_model, raw_message_content,
 };
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
@@ -478,21 +478,6 @@ fn parse_final_reply_text(
         .map(str::trim)
         .filter(|text| !text.is_empty())
         .map(ToOwned::to_owned)
-}
-
-/// Full text content of one message as the model receives it: text parts joined, and for
-/// multimodal messages one marker line per media part in its position.
-fn raw_message_content(message: &LLMMessage) -> String {
-    message
-        .parts
-        .iter()
-        .filter_map(|part| match part {
-            MessagePart::Text { text } => Some(text.clone()),
-            MessagePart::Image { media } => Some(media_placeholder("[image]", &media.media_id)),
-            MessagePart::Video { media } => Some(media_placeholder("[video]", &media.media_id)),
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 #[async_trait]

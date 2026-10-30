@@ -78,6 +78,9 @@ pub const QQ_CONTEXT_STAGE_SYSTEM_PROMPT: &str = "System Prompt";
 /// Stage name under which a local embedding inference reports its live progress.
 pub const QQ_CONTEXT_STAGE_EMBEDDING: &str = "embedding model inference";
 
+/// Stage name under which every LLM model inference of a turn reports its live progress.
+pub const QQ_CONTEXT_STAGE_LLM: &str = "llm model inference";
+
 /// The message a turn replies to, captured for the Data Explorer's quote block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QqChatQuotedMessage {
@@ -566,54 +569,65 @@ pub fn emit_qq_context_event(event: QqChatContextEvent) {
     }
 }
 
-/// The turn that embedding inference running on the current thread belongs to.
+/// The turn that model inference running on the current thread belongs to.
 ///
-/// Embedding calls are synchronous and run on the blocking turn thread, so a thread-local scope
-/// lets the core embedding layer report its progress without plumbing the turn identity through
-/// every retrieval and tool helper.
+/// Embedding calls are synchronous and run on the blocking turn thread, and LLM calls report
+/// from the usage-tracking wrapper around every model, so a thread-local scope lets those
+/// layers report their progress without plumbing the turn identity through every retrieval,
+/// tool and inference helper. Thread boundaries that run turn work elsewhere (tool execution,
+/// nested sub-agent requests) re-enter the guard with the captured context.
 #[derive(Debug, Clone)]
-pub struct EmbeddingTraceContext {
+pub struct TurnTraceContext {
     pub agent_id: String,
     pub sender_id: String,
     pub turn_id: String,
 }
 
 thread_local! {
-    static EMBEDDING_TRACE_CONTEXT: RefCell<Option<EmbeddingTraceContext>> =
+    static TURN_TRACE_CONTEXT: RefCell<Option<TurnTraceContext>> =
         const { RefCell::new(None) };
 }
 
-/// Binds embedding inference on this thread to the turn that is starting.
+/// Binds model inference on this thread to the turn that is starting.
 ///
 /// The guard restores the previous binding on drop, so nested or sequential turns never leak
 /// their identity into the next one.
-pub struct EmbeddingTraceGuard {
-    previous: Option<EmbeddingTraceContext>,
+pub struct TurnTraceGuard {
+    previous: Option<TurnTraceContext>,
 }
 
-impl EmbeddingTraceGuard {
+impl TurnTraceGuard {
     pub fn enter(agent_id: &str, sender_id: &str, turn_id: &str) -> Self {
-        let context = EmbeddingTraceContext {
+        Self::from_context(TurnTraceContext {
             agent_id: agent_id.to_string(),
             sender_id: sender_id.to_string(),
             turn_id: turn_id.to_string(),
-        };
-        let previous = EMBEDDING_TRACE_CONTEXT.with(|slot| slot.replace(Some(context)));
+        })
+    }
+
+    /// Bind an already captured context, for threads that received the turn identity by value.
+    pub fn from_context(context: TurnTraceContext) -> Self {
+        let previous = TURN_TRACE_CONTEXT.with(|slot| slot.replace(Some(context)));
         Self { previous }
     }
 }
 
-impl Drop for EmbeddingTraceGuard {
+impl Drop for TurnTraceGuard {
     fn drop(&mut self) {
-        EMBEDDING_TRACE_CONTEXT.with(|slot| {
+        TURN_TRACE_CONTEXT.with(|slot| {
             *slot.borrow_mut() = self.previous.take();
         });
     }
 }
 
+/// The turn context bound to the current thread, if any.
+pub fn current_turn_trace() -> Option<TurnTraceContext> {
+    TURN_TRACE_CONTEXT.with(|slot| slot.borrow().clone())
+}
+
 /// Run `f` with the turn bound to the current thread, if any.
-pub fn with_embedding_trace_context<R>(f: impl FnOnce(&EmbeddingTraceContext) -> R) -> Option<R> {
-    let context = EMBEDDING_TRACE_CONTEXT.with(|slot| slot.borrow().clone());
+pub fn with_turn_trace_context<R>(f: impl FnOnce(&TurnTraceContext) -> R) -> Option<R> {
+    let context = TURN_TRACE_CONTEXT.with(|slot| slot.borrow().clone());
     context.as_ref().map(f)
 }
 

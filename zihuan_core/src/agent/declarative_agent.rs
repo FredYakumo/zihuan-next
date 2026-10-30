@@ -566,9 +566,13 @@ impl LLMBase for NestedStreamingLlm {
         let (tx, mut rx) =
             tokio::sync::mpsc::unbounded_channel::<crate::model_inference::llm::StreamToken>();
         // The request runs on its own thread with its own runtime: the caller is a blocking tool
-        // thread that may already sit inside a runtime where blocking is not allowed.
+        // thread that may already sit inside a runtime where blocking is not allowed. The turn's
+        // trace context is rebound on the request thread so the LLM call still reports to the
+        // context view of the turn this sub-agent belongs to.
+        let turn_trace = crate::qq_context::current_turn_trace();
         std::thread::scope(|scope| {
             let request = scope.spawn(move || {
+                let _turn_trace = turn_trace.map(crate::qq_context::TurnTraceGuard::from_context);
                 let runtime = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()

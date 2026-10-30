@@ -169,6 +169,96 @@
                   </div>
                 </div>
                 <div
+                  v-else-if="llmView(entry.id)"
+                  class="context-llm"
+                  :class="`context-llm--${llmView(entry.id)?.status}`"
+                >
+                  <div class="context-llm-status">
+                    <t-loading
+                      v-if="llmView(entry.id)?.status === 'running'"
+                      size="12px"
+                    />
+                    <span>{{ llmView(entry.id)?.statusText }}</span>
+                  </div>
+                  <dl class="context-llm-grid">
+                    <div
+                      v-for="field in llmView(entry.id)?.fields"
+                      :key="field.label"
+                      class="context-llm-field"
+                    >
+                      <dt>{{ field.label }}</dt>
+                      <dd>{{ field.value }}</dd>
+                    </div>
+                  </dl>
+                  <template
+                    v-if="llmView(entry.id)?.streamContent || llmView(entry.id)?.streamReasoning"
+                  >
+                    <div
+                      v-if="llmView(entry.id)?.streamReasoning"
+                      class="context-thinking"
+                      :class="{ collapsed: !stageThinkingOpen(entry.id) }"
+                    >
+                      <button
+                        type="button"
+                        class="context-thinking-toggle"
+                        @click="toggleStageThinking(entry.id)"
+                      >
+                        <span class="context-thinking-icon">
+                          {{ stageThinkingOpen(entry.id) ? "▾" : "▸" }}
+                        </span>
+                        思考过程
+                      </button>
+                      <pre
+                        v-if="stageThinkingOpen(entry.id)"
+                        class="context-thinking-content"
+                      >{{ llmView(entry.id)?.streamReasoning }}</pre>
+                    </div>
+                    <pre
+                      v-if="llmView(entry.id)?.streamContent"
+                      class="context-llm-stream"
+                    >{{ llmView(entry.id)?.streamContent }}</pre>
+                  </template>
+                  <div
+                    v-if="llmView(entry.id)?.messages.length"
+                    class="context-llm-section"
+                  >
+                    <button
+                      type="button"
+                      class="context-llm-toggle"
+                      @click="toggleLlmMessages(entry.id)"
+                    >
+                      <span class="context-llm-toggle-icon">
+                        {{ isLlmMessagesOpen(entry.id) ? "▾" : "▸" }}
+                      </span>
+                      输入消息（{{ llmView(entry.id)?.messages.length }} 条）
+                    </button>
+                    <div v-if="isLlmMessagesOpen(entry.id)" class="context-stage-raw">
+                      <div
+                        v-for="(message, messageIndex) in llmView(entry.id)?.messages"
+                        :key="messageIndex"
+                        class="context-stage-raw-item"
+                      >
+                        <div class="context-stage-raw-head">
+                          <span class="context-stage-raw-role">{{ message.role }}</span>
+                          <span class="context-stage-raw-index">#{{ messageIndex + 1 }}</span>
+                        </div>
+                        <pre class="context-stage-raw-content">{{ message.content }}</pre>
+                        <template v-if="message.toolCalls?.length">
+                          <div class="context-stage-raw-tool-label">工具调用</div>
+                          <JsonView :source="message.toolCalls" />
+                        </template>
+                        <div
+                          v-if="message.toolCallId"
+                          class="context-stage-raw-tool-id mono"
+                        >tool_call_id: {{ message.toolCallId }}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="llmView(entry.id)?.error" class="context-llm-error">
+                    {{ llmView(entry.id)?.error }}
+                  </div>
+                </div>
+                <div
                   v-else-if="sentBubblesView(entry)"
                   class="context-sent-bubbles"
                 >
@@ -462,6 +552,8 @@ const {
   toggleStageThinking,
   isEmbeddingSectionOpen,
   toggleEmbeddingSection,
+  isLlmMessagesOpen,
+  toggleLlmMessages,
   isStageToolsOpen,
   toggleStageTools,
   isStageRawView,
@@ -489,6 +581,10 @@ function stageView(id: string) {
 
 function embeddingView(id: string) {
   return stageView(id)?.embedding;
+}
+
+function llmView(id: string) {
+  return stageView(id)?.llm;
 }
 </script>
 

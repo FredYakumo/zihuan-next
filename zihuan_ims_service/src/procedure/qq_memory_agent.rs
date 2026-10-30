@@ -6,8 +6,12 @@ use zihuan_core::role::procedure::{
 };
 
 use super::GroupMessageWindowOutput;
+use crate::qq_chat::logging::QqChatTurnIdentity;
 
 pub(crate) struct QqMemoryAgent {
+    /// The turn this recall phase belongs to, rebound on the blocking thread so its model
+    /// inferences report to the turn's context view.
+    pub identity: QqChatTurnIdentity,
     pub resources: MemoryAgentResources,
     pub input: String,
     pub previous_context: String,
@@ -43,7 +47,13 @@ impl Procedure for QqMemoryAgent {
         let input = self.input.clone();
         let recall_resources = resources.clone();
         let recall_input = input.clone();
+        let identity = self.identity.clone();
         let recalled = tokio::task::spawn_blocking(move || {
+            let _turn_trace = zihuan_core::qq_context::TurnTraceGuard::enter(
+                &identity.agent_id,
+                &identity.sender_id,
+                &identity.turn_id,
+            );
             recall_memory(recall_resources, &recall_input, previous)
         })
         .await

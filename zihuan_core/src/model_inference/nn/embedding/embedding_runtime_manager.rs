@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use crate::connection_manager::{RuntimeConnectionStatus, RuntimeInstanceInfo};
 use crate::error::{Error, Result};
 use crate::model_inference::llm::embedding_base::{EmbeddingBase, EmbeddingRuntimeInfo};
-use crate::qq_context::{EmbeddingTraceContext, QQ_CONTEXT_STAGE_EMBEDDING};
+use crate::qq_context::{TurnTraceContext, QQ_CONTEXT_STAGE_EMBEDDING};
 use chrono::Utc;
 use log::info;
 use serde_json::{json, Value};
@@ -166,7 +166,7 @@ impl EmbeddingBase for LoggedEmbeddingModel {
 /// backend, device, the exact input texts); the finish event replaces its detail with the
 /// measured duration, the output shape and the vectors themselves.
 struct EmbeddingStageRun {
-    context: EmbeddingTraceContext,
+    context: TurnTraceContext,
     stage_id: String,
     detail: Value,
 }
@@ -192,7 +192,7 @@ impl EmbeddingStageRun {
             "started_at": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
         });
         let stage_id = next_stage_id();
-        let context = crate::qq_context::with_embedding_trace_context(|context| {
+        let context = crate::qq_context::with_turn_trace_context(|context| {
             emit_stage(context, &stage_id, &detail);
             context.clone()
         })?;
@@ -215,7 +215,7 @@ impl EmbeddingStageRun {
     }
 }
 
-fn emit_stage(context: &EmbeddingTraceContext, stage_id: &str, detail: &Value) {
+fn emit_stage(context: &TurnTraceContext, stage_id: &str, detail: &Value) {
     crate::qq_context::emit_qq_context_stage_with_id(
         &context.agent_id,
         &context.sender_id,

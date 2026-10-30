@@ -3,12 +3,20 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use sqlx::Row;
 use tokio::sync::mpsc;
 
 use super::llm::llm_base::{LLMBase, StreamingLLMBase};
 use super::llm::{InferenceParam, LLMMessage, StreamToken, TokenUsage};
 use crate::error::Result;
+use crate::model_inference::inference_function::compact_message::estimate_messages_tokens;
+use crate::model_inference::message_content_utils::raw_message_content;
+use crate::qq_context::{with_turn_trace_context, QQ_CONTEXT_STAGE_LLM};
+
+/// Minimum gap between two live stream updates of one inference bubble. Each update carries
+/// the full accumulated text, so emitting per token would scale quadratically with the reply.
+const LLM_STREAM_UPDATE_INTERVAL: Duration = Duration::from_millis(300);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ModelUsageRecord {
@@ -138,6 +146,147 @@ pub fn load_usage_summaries(
     })
 }
 
+/// One LLM inference reported to the Data Explorer context view.
+///
+/// The bubble appears as soon as the inference starts, carrying what is already known (model,
+/// the exact request messages, estimated input tokens); streamed responses update it live with
+/// the accumulated text and the time to first token, and the finish event replaces its detail
+/// with the measured duration and the token usage. Like the embedding stage, the whole run
+/// reports under one stable stage id, so start, stream updates and finish fold into one bubble.
+///
+/// The run only exists when the calling thread is inside a turn's [`crate::qq_context::TurnTraceGuard`]
+/// scope; otherwise every constructor returns `None` and inference proceeds untraced.
+struct LlmStageRun {
+    context: crate::qq_context::TurnTraceContext,
+    stage_id: String,
+    detail: Value,
+    last_stream_emit: Option<Instant>,
+}
+
+impl LlmStageRun {
+    fn start(
+        config_id: &str,
+        model: &str,
+        param: &InferenceParam,
+        streaming: bool,
+    ) -> Option<Self> {
+        let stage_id = next_llm_stage_id();
+        // The payload is only built when a turn is actually being traced, so untracked callers
+        // (background jobs, other services) pay nothing for the report.
+        with_turn_trace_context(|context| {
+            let messages: Vec<Value> = param
+                .messages
+                .iter()
+                .map(|message| {
+                    let mut entry = serde_json::Map::new();
+                    entry.insert(
+                        "role".to_string(),
+                        json!(format!("{:?}", message.role).to_lowercase()),
+                    );
+                    entry.insert("content".to_string(), json!(raw_message_content(message)));
+                    if !message.tool_calls.is_empty() {
+                        entry.insert("tool_calls".to_string(), json!(message.tool_calls));
+                    }
+                    if let Some(tool_call_id) = &message.tool_call_id {
+                        entry.insert("tool_call_id".to_string(), json!(tool_call_id));
+                    }
+                    Value::Object(entry)
+                })
+                .collect();
+            let detail = json!({
+                "status": "running",
+                "model": model,
+                "config_id": config_id,
+                "streaming": streaming,
+                "started_at": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                "message_count": messages.len(),
+                "prompt_tokens_estimated": estimate_messages_tokens(param.messages),
+                "messages": messages,
+                "tools_count": param.tools.as_ref().map(|tools| tools.len()).unwrap_or(0),
+            });
+            emit_llm_stage(context, &stage_id, &detail);
+            Self {
+                context: context.clone(),
+                stage_id,
+                detail,
+                last_stream_emit: None,
+            }
+        })
+    }
+
+    /// Push the streamed text accumulated so far into the bubble, throttled so long replies do
+    /// not flood the context feed. The first token reports immediately (time to first token).
+    fn stream_update(&mut self, content: &str, reasoning: &str, first: Option<Duration>) {
+        if let Some(first) = first {
+            self.detail["first_token_ms"] = json!(first.as_secs_f64() * 1000.0);
+        }
+        if !content.is_empty() {
+            self.detail["stream_content"] = json!(content);
+        }
+        if !reasoning.is_empty() {
+            self.detail["stream_reasoning"] = json!(reasoning);
+        }
+        let now = Instant::now();
+        let due = self
+            .last_stream_emit
+            .is_none_or(|last| now.duration_since(last) >= LLM_STREAM_UPDATE_INTERVAL);
+        if !due {
+            return;
+        }
+        self.last_stream_emit = Some(now);
+        emit_llm_stage(&self.context, &self.stage_id, &self.detail);
+    }
+
+    fn finish(mut self, elapsed: Duration, usage: Option<&TokenUsage>, first: Option<Duration>) {
+        self.detail["status"] = json!("done");
+        self.detail["duration_ms"] = json!(elapsed.as_millis());
+        if let Some(first) = first {
+            self.detail["first_token_ms"] = json!(first.as_secs_f64() * 1000.0);
+        }
+        if let Some(usage) = usage {
+            self.detail["usage"] = json!(usage);
+            let generation = first.and_then(|first| elapsed.checked_sub(first)).unwrap_or(elapsed);
+            if let Some(tokens) = usage.completion_tokens {
+                if !generation.is_zero() {
+                    self.detail["output_tokens_per_second"] =
+                        json!(tokens as f64 / generation.as_secs_f64());
+                }
+            }
+            if let (Some(cached), Some(prompt)) = (usage.cached_prompt_tokens, usage.prompt_tokens)
+            {
+                if prompt > 0 {
+                    self.detail["cache_hit_rate"] = json!(cached as f64 / prompt as f64);
+                }
+            }
+        }
+        emit_llm_stage(&self.context, &self.stage_id, &self.detail);
+    }
+
+    fn fail(mut self, elapsed: Duration, error: &crate::error::Error) {
+        self.detail["status"] = json!("error");
+        self.detail["duration_ms"] = json!(elapsed.as_millis());
+        self.detail["error"] = json!(error.to_string());
+        emit_llm_stage(&self.context, &self.stage_id, &self.detail);
+    }
+}
+
+fn next_llm_stage_id() -> String {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("llm-stage-{seq}")
+}
+
+fn emit_llm_stage(context: &crate::qq_context::TurnTraceContext, stage_id: &str, detail: &Value) {
+    crate::qq_context::emit_qq_context_stage_with_id(
+        &context.agent_id,
+        &context.sender_id,
+        &context.turn_id,
+        QQ_CONTEXT_STAGE_LLM,
+        stage_id,
+        detail.clone(),
+    );
+}
+
 #[derive(Debug)]
 pub struct TrackedLlm {
     pub config_id: String,
@@ -159,10 +308,25 @@ impl LLMBase for TrackedLlm {
     }
     fn inference(&self, param: &InferenceParam) -> Result<LLMMessage> {
         let started = Instant::now();
-        let message = self.inner.inference(param)?;
+        let stage = LlmStageRun::start(&self.config_id, self.get_model_name(), param, false);
+        let message = match self.inner.inference(param) {
+            Ok(message) => message,
+            Err(error) => {
+                if let Some(stage) = stage {
+                    stage.fail(started.elapsed(), &error);
+                }
+                return Err(error);
+            }
+        };
+        // Report the result before persisting usage: the context view should not wait on the
+        // usage database write.
+        if let Some(stage) = stage {
+            stage.finish(started.elapsed(), message.usage.as_ref(), None);
+        }
         record_usage(&self.config_id, message.usage.clone(), started.elapsed(), None);
         Ok(message)
     }
+
     fn as_streaming(&self) -> Option<&dyn StreamingLLMBase> {
         self.inner.as_streaming().map(|_| self as &dyn StreamingLLMBase)
     }
@@ -176,23 +340,40 @@ impl StreamingLLMBase for TrackedLlm {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = LLMMessage> + Send + 'a>> {
         Box::pin(async move {
             let started = Instant::now();
+            let mut stage = LlmStageRun::start(&self.config_id, self.get_model_name(), param, true);
             let (relay_tx, mut relay_rx) = mpsc::unbounded_channel::<StreamToken>();
             let inference = self
                 .inner
                 .as_streaming()
                 .expect("streaming model")
                 .inference_streaming(param, relay_tx);
+            // The relay watches every token before it reaches the caller: it accumulates the
+            // streamed text into the context bubble and notes when the first token arrived.
             let relay = async move {
                 let mut first = None;
+                let mut content = String::new();
+                let mut reasoning = String::new();
                 while let Some(token) = relay_rx.recv().await {
                     if first.is_none() && !token.as_str().is_empty() {
                         first = Some(started.elapsed());
                     }
+                    match &token {
+                        StreamToken::Content(delta) => content.push_str(delta),
+                        StreamToken::Thinking(delta) => reasoning.push_str(delta),
+                    }
+                    if let Some(stage) = stage.as_mut() {
+                        stage.stream_update(&content, &reasoning, first);
+                    }
                     let _ = token_tx.send(token);
                 }
-                first
+                (first, stage)
             };
-            let (message, first) = tokio::join!(inference, relay);
+            let (message, (first, stage)) = tokio::join!(inference, relay);
+            // Report the result before persisting usage: the context view should not wait on
+            // the usage database write.
+            if let Some(stage) = stage {
+                stage.finish(started.elapsed(), message.usage.as_ref(), first);
+            }
             if message.usage.is_some() || first.is_some() {
                 record_usage(&self.config_id, message.usage.clone(), started.elapsed(), first);
             }
