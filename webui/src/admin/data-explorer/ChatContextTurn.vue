@@ -491,13 +491,25 @@
     </div>
 
     <Teleport to="body">
-      <div
-        v-if="activePhase"
-        class="context-phase-badge"
-        :style="{ ...badgeStyle, '--phase-color': activePhase.color }"
-      >
-        <!-- 正在浏览 · {{ activePhase.name }} -->
-        {{ activePhase.name }}
+      <!-- Floating flag row for the turn being read: its input and time, the record deletion
+           control, and the phase badge at the same top-right spot. -->
+      <div v-if="isFocusedTurn" class="context-turn-flag" :style="badgeStyle">
+        <span class="context-turn-flag-text" :title="turn.userText">{{ turn.userText || "（无文本输入）" }}</span>
+        <span class="context-turn-flag-time">{{ formatTime(turn.createdAt) }}</span>
+        <button
+          type="button"
+          class="context-turn-flag-delete"
+          :disabled="!turn.finished || deleting"
+          :title="!turn.finished ? '回复生成中，结束后才能删除' : '删除本次对话记录'"
+          @click="emit('delete-turn')"
+        >{{ deleting ? "删除中…" : "删除记录" }}</button>
+        <div
+          v-if="activePhase"
+          class="context-phase-badge"
+          :style="{ '--phase-color': activePhase.color }"
+        >
+          {{ activePhase.name }}
+        </div>
       </div>
       <div v-if="previewMedia?.url" class="context-preview-overlay">
         <figure class="context-preview-frame">
@@ -527,7 +539,9 @@ import {
 import JsonView from "./JsonView.vue";
 import ContextSubAgentBox from "./ContextSubAgentBox.vue";
 
-const props = defineProps<{ turn: ContextTurnView }>();
+const props = defineProps<{ turn: ContextTurnView; deleting?: boolean }>();
+
+const emit = defineEmits<{ "delete-turn": [] }>();
 
 function rateLimitClass(stage: string, detail: unknown): string {
   const severity = rateLimitSeverity(stage, detail);
@@ -563,6 +577,7 @@ const {
   orphanSubAgents,
   activePhase,
   badgeStyle,
+  isFocusedTurn,
   registerPhase,
   stageViews,
   segments,

@@ -514,6 +514,16 @@ pub fn clear_qq_chat_turn_records(agent_id: &str, sender_id: &str) {
     }
 }
 
+/// Forget one recorded turn of one sender, e.g. when its record is deleted from the data
+/// explorer. The relational archive is cleaned separately by the caller.
+pub fn remove_qq_chat_turn_record(agent_id: &str, sender_id: &str, turn_id: &str) {
+    if let Ok(mut guard) = QQ_CHAT_TURN_LOGS.write() {
+        if let Some(turns) = guard.get_mut(&turn_log_key(agent_id, sender_id)) {
+            turns.retain(|turn| turn.turn_id != turn_id);
+        }
+    }
+}
+
 /// Turns written to Redis by a previous build, before durable archiving existed.
 ///
 /// Reading the value removes it, so the migration runs once: those turns then live in the

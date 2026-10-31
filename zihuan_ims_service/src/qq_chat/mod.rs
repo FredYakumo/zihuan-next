@@ -49,8 +49,9 @@ pub use crate::storage::message_rate_limit_store::{
     list_message_rate_limit_usage, reset_message_rate_limit_usage,
 };
 pub use crate::storage::qq_chat_context_store::{
-    load_turns as load_archived_context_turns, persist_turn as persist_archived_context_turn,
-    ArchivedTurn,
+    delete_turn as delete_archived_context_turn, load_turns as load_archived_context_turns,
+    persist_turn as persist_archived_context_turn, query_turns as query_archived_context_turns,
+    ArchivedTurn, TurnSummary,
 };
 pub use crate::storage::qq_chat_history_store::clear_history;
 use crate::storage::qq_chat_history_store::load_history;

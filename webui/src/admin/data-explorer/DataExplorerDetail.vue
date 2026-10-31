@@ -131,6 +131,7 @@
             <t-button variant="outline" @click="clearSelection">返回用户列表</t-button>
             <strong>{{ selectedTitle }}</strong>
             <span class="mono muted">{{ selectedSenderId }}</span>
+            <t-button variant="outline" @click="turnFinderVisible = true">查找对话</t-button>
           </div>
           <ContextUsagePanel
             :used-tokens="estimatedContextTokens"
@@ -151,7 +152,11 @@
             :output-tokens="outputTokens"
             :average-tokens-per-second="averageTokensPerSecond"
             :average-cache-hit-rate="averageCacheHitRate"
+            :selected-sender-id="selectedSenderId"
+            :deleting-turn-id="deletingTurnId"
+            @delete-turn="deleteTurn"
           />
+          <ChatTurnFinder v-model:visible="turnFinderVisible" :service-id="serviceId" :sender-id="selectedSenderId" />
         </div>
       </template>
 
@@ -173,6 +178,7 @@ const memoryCategoryOptions = [
 
 import { useDataExplorerDetailPage } from "./DataExplorerDetail";
 import ChatContextFlow from "./ChatContextFlow.vue";
+import ChatTurnFinder from "./ChatTurnFinder.vue";
 import ContextUsagePanel from "./ContextUsagePanel.vue";
 
 const {
@@ -200,6 +206,7 @@ const {
   matchLabel,
   formatScore,
   returnToList,
+  serviceId,
   backend,
   loadingUsers,
   users,
@@ -207,6 +214,7 @@ const {
   selectedTitle,
   loadingContext,
   clearingContext,
+  deletingTurnId,
   turns,
   archivedTurns,
   estimatedContextTokens,
@@ -221,6 +229,8 @@ const {
   loadUsers,
   clearSelection,
   clearContext,
+  deleteTurn,
+  turnFinderVisible,
 } = useDataExplorerDetailPage();
 </script>
 

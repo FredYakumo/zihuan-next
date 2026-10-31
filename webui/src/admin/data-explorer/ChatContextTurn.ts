@@ -1100,6 +1100,8 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
   // visible at a time.
   const activePhase = ref<{ name: string; color: string } | null>(null);
   const badgeStyle = ref<Record<string, string>>({});
+  /** Whether this turn holds the middle of the viewport; it then owns the floating flag row. */
+  const isFocusedTurn = ref(false);
   const phaseElements = new Map<string, HTMLElement>();
   let scrollRoot: HTMLElement | null = null;
   let frame = 0;
@@ -1111,21 +1113,28 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
 
   function updateActivePhase() {
     frame = 0;
-    if (!phaseElements.size) return;
     const rootRect = scrollRoot?.getBoundingClientRect();
     const turnRect = rootEl.value?.getBoundingClientRect();
     if (!rootRect || !turnRect) {
+      isFocusedTurn.value = false;
       activePhase.value = null;
       return;
     }
-    // Every turn renders its own badge at the same fixed spot, so only the turn holding the
+    // Every turn renders its own flag row at the same fixed spot, so only the turn holding the
     // middle of the viewport may show one; otherwise several badges stack and the wrong turn's
     // name wins.
     const focus = rootRect.top + rootRect.height / 2;
-    if (focus < turnRect.top || focus > turnRect.bottom) {
+    const focused = focus >= turnRect.top && focus <= turnRect.bottom;
+    isFocusedTurn.value = focused;
+    if (!focused) {
       activePhase.value = null;
       return;
     }
+    badgeStyle.value = {
+      top: `${rootRect.top + 10}px`,
+      right: `${window.innerWidth - rootRect.right + 20}px`,
+    };
+    if (!phaseElements.size) return;
     // Within that turn, the phase occupying the most visible height is the one being read; a
     // phase peeking in at an edge should not win over the one filling the viewport.
     let best: { phase: { name: string; color: string }; area: number } | null = null;
@@ -1138,12 +1147,6 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
       }
     }
     activePhase.value = best?.phase ?? null;
-    if (best) {
-      badgeStyle.value = {
-        top: `${rootRect.top + 10}px`,
-        right: `${window.innerWidth - rootRect.right + 20}px`,
-      };
-    }
   }
 
   function scheduleActivePhaseUpdate() {
@@ -1189,6 +1192,7 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     orphanSubAgents,
     activePhase,
     badgeStyle,
+    isFocusedTurn,
     registerPhase,
     stageViews,
     segments,

@@ -14,7 +14,10 @@ export function useDataExplorerDetailPage() {
   const { service, loadingService, unavailable, message, searchMessages, changeMessagePage, memory, memoryDialog, searchMemories, image, searchImages, mutateMemory, submitMemoryDialog } = useDataExplorerDetail(serviceId, capability);
   const context = useChatContext(serviceId);
   if (capability === "contexts") context.loadUsers();
-  const { backend, loadingUsers, users, selectedSenderId, selectedTitle, loadingContext, clearingContext, turns, archivedTurns, estimatedContextTokens, contextLimitTokens, contextStartedAt, lastMessageAt, hasActiveTurn, inputTokens, outputTokens, averageTokensPerSecond, averageCacheHitRate, loadUsers, clearSelection, clearContext } = context;
+  const { backend, loadingUsers, users, selectedSenderId, selectedTitle, loadingContext, clearingContext, deletingTurnId, turns, archivedTurns, estimatedContextTokens, contextLimitTokens, contextStartedAt, lastMessageAt, hasActiveTurn, inputTokens, outputTokens, averageTokensPerSecond, averageCacheHitRate, loadUsers, clearSelection, clearContext, deleteTurn } = context;
+
+  /** Visibility of the conversation finder dialog over the selected user's turns. */
+  const turnFinderVisible = ref(false);
 
   const userColumns: PrimaryTableCol<ServiceChatUserItem>[] = [{ colKey: "sender", title: "用户", width: 220 }, { colKey: "group", title: "最近群组", width: 180 }, { colKey: "context_tokens", title: "上下文 Token", width: 130 }, { colKey: "last", title: "最近时间", width: 200 }];
   const messageColumns: PrimaryTableCol<MysqlRecord>[] = [{ colKey: "message_id", title: "消息 ID", width: 160 }, { colKey: "sender", title: "发送者", width: 160 }, { colKey: "send_time", title: "发送时间", width: 180 }, { colKey: "group", title: "群组", width: 150 }, { colKey: "content", title: "内容" }];
@@ -83,5 +86,8 @@ export function useDataExplorerDetailPage() {
     loadUsers,
     clearSelection,
     clearContext,
+    deletingTurnId,
+    deleteTurn,
+    turnFinderVisible,
   };
 }

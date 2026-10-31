@@ -25,7 +25,9 @@ use zihuan_core::storage::{
     AgentMemoryAccessContext, AgentMemorySearchHit, AgentMemoryUpsert, ConnectionKind,
     ObjectStorageConfig, RetrievalDatabase, RetrievalSchema, WeaviateClient,
 };
-use zihuan_ims_service::qq_chat::{list_message_rate_limit_usage, reset_message_rate_limit_usage};
+use zihuan_ims_service::qq_chat::{
+    list_message_rate_limit_usage, reset_message_rate_limit_usage, TurnSummary,
+};
 
 use super::config::{render_bad_request, render_internal_error, render_not_found};
 
@@ -1933,6 +1935,122 @@ pub async fn clear_service_chat_context(req: &mut Request, res: &mut Response, _
     }
     zihuan_core::qq_context::clear_qq_chat_turn_records(&service_id, &sender_id);
     res.render(Json(json!({ "cleared": true })));
+}
+
+#[derive(Serialize)]
+struct ServiceChatTurnListResponse {
+    total: i64,
+    page: u64,
+    page_size: u64,
+    items: Vec<TurnSummary>,
+}
+
+/// What the conversation finder's search box holds: either fuzzy text over the turn contents or
+/// a time point to jump to.
+enum TurnQueryKind {
+    Text(String),
+    Time(String),
+}
+
+/// Classify the finder query: a leading full date (`2026-10-17 …`), a bare year or a clock time
+/// (`23:49`) reads as a time point; anything else is fuzzy text.
+fn classify_turn_query(raw: &str) -> TurnQueryKind {
+    let trimmed = raw.trim();
+    let normalized = trimmed.replace('/', "-").replace('.', "-").replace('T', " ");
+    let bytes = normalized.as_bytes();
+    let date_shaped = (bytes.len() == 4 && bytes.iter().all(u8::is_ascii_digit))
+        || (bytes.len() >= 5 && bytes[..4].iter().all(u8::is_ascii_digit) && bytes[4] == b'-');
+    let clock_shaped = !normalized.is_empty()
+        && normalized.contains(':')
+        && normalized.chars().all(|c| c.is_ascii_digit() || c == ':' || c == ' ');
+    if date_shaped || clock_shaped {
+        TurnQueryKind::Time(normalized)
+    } else {
+        TurnQueryKind::Text(trimmed.to_string())
+    }
+}
+
+/// Paged, searched listing of one sender's archived conversation turns, newest first. Powers the
+/// data explorer's conversation finder: the query is either fuzzy text over the user input and
+/// the bot reply, or a time point to jump to. Without a relational database nothing is archived,
+/// which surfaces as an empty list rather than an error.
+#[handler]
+pub async fn query_service_chat_turns(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let service_id = req.param::<String>("service_id").unwrap_or_default();
+    let sender_id = req
+        .query::<String>("sender_id")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let Some(sender_id) = sender_id else {
+        return render_bad_request(res, "sender_id is required".into());
+    };
+    let raw_query = req
+        .query::<String>("query")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let page = req.query::<u64>("page").unwrap_or(1).max(1);
+    let page_size = req.query::<u64>("page_size").unwrap_or(20).clamp(1, 100);
+    let (text_query, time_query) = match raw_query.as_deref().map(classify_turn_query) {
+        Some(TurnQueryKind::Text(text)) => (Some(text), None),
+        Some(TurnQueryKind::Time(time)) => (None, Some(time)),
+        None => (None, None),
+    };
+    let Ok(connection) = resolve_agent_rdb_connection(&service_id).await else {
+        return res.render(Json(ServiceChatTurnListResponse {
+            total: 0,
+            page,
+            page_size,
+            items: Vec::new(),
+        }));
+    };
+    let offset = ((page - 1) * page_size) as i64;
+    match zihuan_ims_service::qq_chat::query_archived_context_turns(
+        &connection,
+        &service_id,
+        &sender_id,
+        text_query.as_deref(),
+        time_query.as_deref(),
+        offset,
+        page_size as i64,
+    ) {
+        Ok((items, total)) => res.render(Json(ServiceChatTurnListResponse {
+            total,
+            page,
+            page_size,
+            items,
+        })),
+        Err(error) => render_internal_error(res, error.to_string()),
+    }
+}
+
+/// Delete one conversation turn record: the process turn log entry and the archived row. The
+/// live model context window is not touched — dropping that is what "清除上下文" is for.
+#[handler]
+pub async fn delete_service_chat_turn(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let service_id = req.param::<String>("service_id").unwrap_or_default();
+    let sender_id = req
+        .query::<String>("sender_id")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let turn_id = req
+        .query::<String>("turn_id")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let (Some(sender_id), Some(turn_id)) = (sender_id, turn_id) else {
+        return render_bad_request(res, "sender_id and turn_id are required".into());
+    };
+    zihuan_core::qq_context::remove_qq_chat_turn_record(&service_id, &sender_id, &turn_id);
+    if let Ok(connection) = resolve_agent_rdb_connection(&service_id).await {
+        if let Err(error) = zihuan_ims_service::qq_chat::delete_archived_context_turn(
+            &connection,
+            &service_id,
+            &sender_id,
+            &turn_id,
+        ) {
+            return render_internal_error(res, error.to_string());
+        }
+    }
+    res.render(Json(json!({ "deleted": true })));
 }
 
 /// Split an assembled QQ user message into its leading system/instruction prefix and the

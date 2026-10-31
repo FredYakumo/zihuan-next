@@ -110,6 +110,8 @@ export function useChatContext(serviceId: string) {
 
   const loadingContext = ref(false);
   const clearingContext = ref(false);
+  /** Turn whose record is currently being deleted, so its delete control can show progress. */
+  const deletingTurnId = ref("");
   const turns = ref<ContextTurnView[]>([]);
   /**
    * Partly written sub-agent messages, keyed by `turn id + call path`. A live stream keeps
@@ -272,6 +274,27 @@ export function useChatContext(serviceId: string) {
       alert((error as Error).message);
     } finally {
       clearingContext.value = false;
+    }
+  }
+
+  /**
+   * Delete one conversation turn's record: the backend drops the process turn log entry and the
+   * archived row, then the flow re-reads the context so the turn disappears from the view.
+   */
+  async function deleteTurn(turn: ContextTurnView) {
+    if (!selectedSenderId.value || deletingTurnId.value) return;
+    const title = turn.userText.length > 24 ? `${turn.userText.slice(0, 24)}…` : turn.userText;
+    if (!window.confirm(`确认删除这条对话记录吗？\n「${title || turn.createdAt}」`)) return;
+    deletingTurnId.value = turn.turnId;
+    try {
+      const senderId = selectedSenderId.value;
+      await explorer.deleteServiceChatTurn(serviceId, senderId, turn.turnId);
+      // Replace the view in place; resetting to an empty flow first would flash the empty state.
+      applySavedContext(await explorer.queryServiceChatContext(serviceId, senderId));
+    } catch (error: unknown) {
+      alert((error as Error).message);
+    } finally {
+      deletingTurnId.value = "";
     }
   }
 
@@ -448,6 +471,7 @@ export function useChatContext(serviceId: string) {
     users,
     loadingContext,
     clearingContext,
+    deletingTurnId,
     selectedSenderId,
     selectedSenderName,
     selectedTitle,
@@ -466,6 +490,7 @@ export function useChatContext(serviceId: string) {
     selectUser,
     clearSelection,
     clearContext,
+    deleteTurn,
   };
 }
 

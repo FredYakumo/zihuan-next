@@ -444,6 +444,10 @@ pub fn build_router(
                             Router::with_path("chat-context")
                                 .get(explorer::query_service_chat_context)
                                 .delete(explorer::clear_service_chat_context),
+                        )
+                        .push(Router::with_path("chat-turns").get(explorer::query_service_chat_turns))
+                        .push(
+                            Router::with_path("chat-turn").delete(explorer::delete_service_chat_turn),
                         ),
                 )
                 .push(Router::with_path("redis").get(explorer::query_redis))
