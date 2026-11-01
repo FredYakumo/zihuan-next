@@ -430,7 +430,17 @@ fn parse_quoted(raw: Option<String>) -> Option<QqChatQuotedMessage> {
 }
 
 fn parse_entries(raw: Option<String>) -> Vec<QqChatTurnEntry> {
-    raw.and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default()
+    raw.and_then(|raw| {
+        serde_json::from_str(&raw)
+            .map_err(|error| {
+                // An unreadable payload must not silently blank the turn's flow in the data
+                // explorer; surface the schema mismatch instead.
+                log::warn!("{LOG_PREFIX} failed to parse archived turn entries: {error}");
+                error
+            })
+            .ok()
+    })
+    .unwrap_or_default()
 }
 
 fn parse_media(raw: Option<String>) -> Vec<MediaRef> {

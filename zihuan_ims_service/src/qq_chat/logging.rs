@@ -330,7 +330,7 @@ impl QqChatTaskTrace {
         *inner.tool_call_counts.entry(name.to_string()).or_insert(0) += 1;
     }
 
-    pub(crate) fn record_tool_finish(&self, name: &str, result: &str) -> u128 {
+    pub(crate) fn record_tool_finish(&self, name: &str, result: &str) -> u64 {
         let finished_at = TracePoint::now();
         let (duration_ms, graph_node_id) = {
             let mut inner = self.inner.lock().unwrap();
@@ -342,7 +342,8 @@ impl QqChatTaskTrace {
                 .map(|call| {
                     call.finished_at = Some(finished_at.clone());
                     (
-                        finished_at.instant.duration_since(call.started_at.instant).as_millis(),
+                        finished_at.instant.duration_since(call.started_at.instant).as_millis()
+                            as u64,
                         call.graph_node_id.clone(),
                     )
                 })
@@ -358,7 +359,7 @@ impl QqChatTaskTrace {
 
         self.log_key_event(
             &format!("工具调用结果 {name}"),
-            duration_ms,
+            duration_ms as u128,
             format!("result={}", truncate_for_log(result, LOG_TOOL_PREVIEW_CHARS)),
         );
 
@@ -1000,7 +1001,9 @@ fn sub_agent_entry(
                 call_id: call_id.clone(),
                 name: name.clone(),
                 result: result.clone(),
-                duration_ms: *duration_ms,
+                // The nested event stays u128; the recorded entry narrows to u64 so archived
+                // JSON round-trips (serde's tagged enums reject u128).
+                duration_ms: *duration_ms as u64,
             })
         }
     }

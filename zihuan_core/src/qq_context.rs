@@ -132,7 +132,9 @@ pub enum QqChatSubAgentEntry {
         call_id: String,
         name: String,
         result: String,
-        duration_ms: u128,
+        // u64, not u128: serde's internally-tagged enums buffer fields through a content
+        // deserializer that rejects u128, which would make archived entries fail to load.
+        duration_ms: u64,
     },
 }
 
@@ -181,7 +183,9 @@ pub enum QqChatContextEvent {
         call_id: String,
         tool_name: String,
         result: String,
-        duration_ms: u128,
+        // u64, not u128: serde's internally-tagged enums buffer fields through a content
+        // deserializer that rejects u128, which would make archived entries fail to load.
+        duration_ms: u64,
     },
     /// A named execution stage progressed (intent classification, reply review, …).
     Stage {
@@ -251,8 +255,10 @@ pub enum QqChatTurnEntry {
         arguments: Value,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         result: Option<String>,
+        // u64, not u128: this enum's fields are buffered through serde's content deserializer
+        // when the archived JSON is read back, and that deserializer rejects u128.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        duration_ms: Option<u128>,
+        duration_ms: Option<u64>,
     },
     /// One step of a sub-agent's own flow, nested under the tool call named by `path`.
     SubAgent {

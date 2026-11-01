@@ -1585,7 +1585,7 @@ enum ContextTurnEntry {
         #[serde(skip_serializing_if = "Option::is_none")]
         result: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        duration_ms: Option<u128>,
+        duration_ms: Option<u64>,
     },
     /// One step of a sub-agent's own flow, nested under the tool call named by `path`.
     SubAgent {
