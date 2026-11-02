@@ -64,6 +64,21 @@ pub fn media_placeholder(prefix: &str, media_id: &str) -> String {
     }
 }
 
+/// Full text content of one message as the model receives it: text parts joined, and for
+/// multimodal messages one marker line per media part in its position.
+pub fn raw_message_content(message: &LLMMessage) -> String {
+    message
+        .parts
+        .iter()
+        .filter_map(|part| match part {
+            MessagePart::Text { text } => Some(text.clone()),
+            MessagePart::Image { media } => Some(media_placeholder("[image]", &media.media_id)),
+            MessagePart::Video { media } => Some(media_placeholder("[video]", &media.media_id)),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Remove dangling / unresolved tool-call sequences from a message history so
 /// that the sequence passed to the LLM is always well-formed.
 pub fn sanitize_messages_for_inference(messages: Vec<LLMMessage>) -> Vec<LLMMessage> {

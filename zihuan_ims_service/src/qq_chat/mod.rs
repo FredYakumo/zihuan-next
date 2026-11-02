@@ -49,8 +49,9 @@ pub use crate::storage::message_rate_limit_store::{
     list_message_rate_limit_usage, reset_message_rate_limit_usage,
 };
 pub use crate::storage::qq_chat_context_store::{
-    load_turns as load_archived_context_turns, persist_turn as persist_archived_context_turn,
-    ArchivedTurn,
+    delete_turn as delete_archived_context_turn, load_turns as load_archived_context_turns,
+    persist_turn as persist_archived_context_turn, query_turns as query_archived_context_turns,
+    ArchivedTurn, TurnSummary,
 };
 pub use crate::storage::qq_chat_history_store::clear_history;
 use crate::storage::qq_chat_history_store::load_history;
@@ -432,10 +433,19 @@ pub async fn spawn(
                 zihuan_core::scheduler::store_agent_memory(
                     &memory,
                     &zihuan_core::storage::AgentMemoryUpsert {
-                        key: format!("dream:{sender_id}"),
+                        attributes: zihuan_core::storage::MemoryAttributes {
+                            category: zihuan_core::storage::MemoryCategory::Person,
+                            person: zihuan_core::storage::PersonMemory {
+                                qq_id: sender_id.to_string(),
+                                impression: content.to_string(),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        key: format!("person-{sender_id}"),
                         value: content.to_string(),
                         expires_at: None,
-                        sender_id_list: vec![sender_id.to_string()],
+                        sender_id_list: Vec::new(),
                         group_id_list: Vec::new(),
                     },
                 )

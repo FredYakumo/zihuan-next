@@ -15,7 +15,7 @@ use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::config::ConfigCenter;
 use zihuan_core::model_inference::model_config::ModelRefSpec;
 use zihuan_core::system_config::{
-    GlobalSettingsSection, MemoryAgentPromptsSection, ModelHttpApiKey, ModelHttpServiceSettings,
+    MemoryAgentPromptsSection, ModelHttpApiKey, ModelHttpServiceSettings,
     DEFAULT_MEMORY_AGENT_SEARCH_PROMPT, DEFAULT_MEMORY_AGENT_SYSTEM_PROMPT,
     DEFAULT_MEMORY_AGENT_UPDATE_PROMPT, MAX_CONTEXT_COMPACTION_PERCENT,
     MIN_CONTEXT_COMPACTION_PERCENT,
@@ -236,7 +236,7 @@ fn model_http_settings_response(
 #[handler]
 pub async fn get_model_http_settings(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let endpoint = depot.obtain::<String>().cloned().unwrap_or_default();
-    match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+    match zihuan_core::system_config::load_global_settings() {
         Ok(settings) => {
             res.render(Json(model_http_settings_response(settings.model_http_service, endpoint)))
         }
@@ -286,7 +286,7 @@ pub async fn update_model_http_settings(req: &mut Request, res: &mut Response, d
             );
         }
     }
-    let mut settings = match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+    let mut settings = match zihuan_core::system_config::load_global_settings() {
         Ok(settings) => settings,
         Err(error) => {
             return render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
@@ -294,7 +294,7 @@ pub async fn update_model_http_settings(req: &mut Request, res: &mut Response, d
     };
     settings.model_http_service.enabled = body.enabled;
     settings.model_http_service.public_model_config_ids = body.public_model_config_ids;
-    match zihuan_core::system_config::save_section::<GlobalSettingsSection>(&settings) {
+    match zihuan_core::system_config::save_global_settings(&settings) {
         Ok(()) => {
             res.render(Json(model_http_settings_response(settings.model_http_service, endpoint)))
         }
@@ -306,7 +306,7 @@ pub async fn update_model_http_settings(req: &mut Request, res: &mut Response, d
 
 #[handler]
 pub async fn get_context_compaction_settings(_req: &mut Request, res: &mut Response) {
-    match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+    match zihuan_core::system_config::load_global_settings() {
         Ok(settings) => res.render(Json(ContextCompactionSettingsResponse {
             percent: settings.context_compaction_percent(),
         })),
@@ -333,14 +333,14 @@ pub async fn update_context_compaction_settings(req: &mut Request, res: &mut Res
             ),
         );
     }
-    let mut settings = match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+    let mut settings = match zihuan_core::system_config::load_global_settings() {
         Ok(settings) => settings,
         Err(error) => {
             return render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
         }
     };
     settings.context_compaction_percent = body.percent;
-    match zihuan_core::system_config::save_section::<GlobalSettingsSection>(&settings) {
+    match zihuan_core::system_config::save_global_settings(&settings) {
         Ok(()) => res.render(Json(ContextCompactionSettingsResponse { percent: body.percent })),
         Err(error) => {
             render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
@@ -449,7 +449,7 @@ pub async fn create_model_http_api_key(req: &mut Request, res: &mut Response) {
             "API Key name must not be empty".to_string(),
         );
     }
-    let mut settings = match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+    let mut settings = match zihuan_core::system_config::load_global_settings() {
         Ok(settings) => settings,
         Err(error) => {
             return render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
@@ -468,7 +468,7 @@ pub async fn create_model_http_api_key(req: &mut Request, res: &mut Response) {
         enabled: true,
     };
     settings.model_http_service.api_keys.push(key.clone());
-    match zihuan_core::system_config::save_section::<GlobalSettingsSection>(&settings) {
+    match zihuan_core::system_config::save_global_settings(&settings) {
         Ok(()) => res.render(Json(CreateModelHttpApiKeyResponse {
             key: model_http_key_response(&key),
             secret,
@@ -488,7 +488,7 @@ pub async fn update_model_http_api_key(req: &mut Request, res: &mut Response) {
             return render_settings_error(res, StatusCode::BAD_REQUEST, error.to_string())
         }
     };
-    let mut settings = match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+    let mut settings = match zihuan_core::system_config::load_global_settings() {
         Ok(settings) => settings,
         Err(error) => {
             return render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
@@ -502,7 +502,7 @@ pub async fn update_model_http_api_key(req: &mut Request, res: &mut Response) {
     key.group = body.group.filter(|value| !value.trim().is_empty());
     key.enabled = body.enabled;
     let response = model_http_key_response(key);
-    match zihuan_core::system_config::save_section::<GlobalSettingsSection>(&settings) {
+    match zihuan_core::system_config::save_global_settings(&settings) {
         Ok(()) => res.render(Json(response)),
         Err(error) => {
             render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
@@ -513,7 +513,7 @@ pub async fn update_model_http_api_key(req: &mut Request, res: &mut Response) {
 #[handler]
 pub async fn delete_model_http_api_key(req: &mut Request, res: &mut Response) {
     let id = req.param::<String>("id").unwrap_or_default();
-    let mut settings = match zihuan_core::system_config::load_section::<GlobalSettingsSection>() {
+    let mut settings = match zihuan_core::system_config::load_global_settings() {
         Ok(settings) => settings,
         Err(error) => {
             return render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
@@ -524,7 +524,7 @@ pub async fn delete_model_http_api_key(req: &mut Request, res: &mut Response) {
     if before == settings.model_http_service.api_keys.len() {
         return render_settings_error(res, StatusCode::NOT_FOUND, "API Key not found".to_string());
     }
-    match zihuan_core::system_config::save_section::<GlobalSettingsSection>(&settings) {
+    match zihuan_core::system_config::save_global_settings(&settings) {
         Ok(()) => res.render(Json(serde_json::json!({ "ok": true }))),
         Err(error) => {
             render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())

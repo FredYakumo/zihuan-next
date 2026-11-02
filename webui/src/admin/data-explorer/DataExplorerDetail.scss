@@ -138,11 +138,20 @@
     cursor: pointer;
 }
 
+/* Sticks the user toolbar to the top while the conversation scrolls. Sticky pins inside the
+   scroll container's top padding, so cancel that padding to land flush at the visible edge;
+   the variable is published by .admin-content. */
 .context-detail-head {
+    position: sticky;
+    top: calc(-1 * var(--admin-content-pad-top, 0px));
+    z-index: 10;
     display: flex;
     align-items: center;
     gap: 12px;
     margin-bottom: 16px;
+    padding: 8px 0;
+    background: var(--td-bg-color-container);
+    border-bottom: 1px solid var(--td-component-border);
 }
 
 /* The usage panel floats over the top-right corner, so the flow below keeps that width free. */

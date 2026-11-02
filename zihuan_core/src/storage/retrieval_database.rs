@@ -169,8 +169,29 @@ impl RetrievalDatabase for WeaviateRef {
         query_vector: &[f32],
         top_n: usize,
     ) -> Result<Vec<AgentMemorySearchHit>> {
-        let _ = query; // Weaviate memory search ranks by vector only.
         let mut hits = search_memory_content_by_vector(self, access, query_vector, top_n)?;
+        let readonly = AgentMemoryAccessContext {
+            skip_expiry_extend: true,
+            ..access.clone()
+        };
+        let lexical = crate::storage::search_memory_content(self, &readonly, query, top_n)?;
+        let semantic = std::mem::replace(&mut hits, lexical);
+        for hit in semantic {
+            if !hits.iter().any(|old| old.record.object_id == hit.record.object_id) {
+                hits.push(hit);
+            }
+        }
+        if access.category == crate::storage::MemoryCategory::Concept {
+            hits.sort_by(|a, b| {
+                b.record
+                    .attributes
+                    .starts_at
+                    .as_ref()
+                    .unwrap_or(&b.record.updated_at)
+                    .cmp(a.record.attributes.starts_at.as_ref().unwrap_or(&a.record.updated_at))
+            });
+        }
+        hits.truncate(top_n);
         for hit in &mut hits {
             if let Some(distance) = hit.distance.take() {
                 hit.distance = Some(self.normalize_score(distance));

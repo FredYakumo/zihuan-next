@@ -6,6 +6,7 @@ import {
   type MysqlRecord,
   type ServiceExplorerImageRecord,
   type ServiceExplorerMemoryRecord,
+  type MemoryCategory,
   type ServiceWithRuntime,
 } from "../../api/client";
 
@@ -76,8 +77,8 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
     mode: "create" as "create" | "edit",
     saving: false,
     objectId: "",
-    form: { title: "", value: "", expires_at: "", sender_id_list: "", group_id_list: "" },
-    errors: { title: "", value: "" },
+    form: { category: "concept" as MemoryCategory, access_level: 2, starts_at: "", qq_id: "", name: "", preferred_name: "", aliases: "", impression: "", guideline: "", title: "", value: "", expires_at: "", sender_id_list: "", group_id_list: "" },
+    errors: { title: "", value: "", qq_id: "" },
   });
   const image = ref({ loading: false, searched: false, nameQuery: "", descriptionQuery: "", limit: 20, items: [] as ServiceExplorerImageRecord[] });
   const messageTotalPages = computed(() => Math.max(1, Math.ceil(message.value.total / message.value.pageSize)));
@@ -142,7 +143,7 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
     if (kind === "delete") {
       if (!item || !window.confirm("确认删除这条记忆吗？")) return;
       try {
-        await explorer.deleteAgentMemory(connectionId, item.object_id);
+        await explorer.deleteAgentMemory(connectionId, item.object_id, item.category);
         await searchMemories();
       } catch (error: unknown) {
         alert((error as Error).message);
@@ -160,13 +161,22 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
       saving: false,
       objectId: item?.object_id ?? "",
       form: {
+        category: item?.category ?? "concept",
+        access_level: item?.access_level ?? 2,
+        starts_at: item?.starts_at ?? "",
+        qq_id: item?.qq_id ?? "",
+        name: item?.name ?? "",
+        preferred_name: item?.preferred_name ?? "",
+        aliases: item?.aliases?.join(",") ?? "",
+        impression: item?.impression ?? "",
+        guideline: item?.guideline ?? "",
         title: item?.title ?? "",
         value: item?.value ?? "",
         expires_at: item?.expires_at ?? "",
         sender_id_list: item?.sender_id_list?.join(",") ?? "",
         group_id_list: item?.group_id_list?.join(",") ?? "",
       },
-      errors: { title: "", value: "" },
+      errors: { title: "", value: "", qq_id: "" },
     };
   }
 
@@ -176,17 +186,36 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
     const connectionId = currentService ? retrievalStoreConnectionId(currentService) : "";
     const embeddingModelRefId = currentService ? stringConfig(currentService, "embedding_model_ref_id") : "";
     if (!dialog.visible || dialog.saving || !connectionId || !embeddingModelRefId) return;
-    const title = dialog.form.title.trim();
-    const value = dialog.form.value.trim();
-    dialog.errors = { title: title ? "" : "请输入记忆标题", value: value ? "" : "请输入记忆内容" };
-    if (dialog.errors.title || dialog.errors.value) return;
+    const category = dialog.form.category;
+    const person = {
+      qq_id: dialog.form.qq_id.trim(),
+      name: dialog.form.name.trim(),
+      preferred_name: dialog.form.preferred_name.trim(),
+      aliases: dialog.form.aliases.split(/[,，]/).map(alias => alias.trim()).filter(Boolean),
+      impression: dialog.form.impression.trim(),
+      guideline: dialog.form.guideline.trim(),
+    };
+    const title = category === "person" ? `person-${person.qq_id}` : category === "concept" || dialog.mode === "edit" ? dialog.form.title.trim() : "";
+    const value = category === "person" ? JSON.stringify(person) : dialog.form.value.trim();
+    dialog.errors = {
+      title: category !== "concept" || title ? "" : "请输入记忆标题",
+      value: value ? "" : "请输入记忆内容",
+      qq_id: category !== "person" || /^\d+$/.test(person.qq_id) ? "" : "请输入有效的 QQ ID",
+    };
+    if (Object.values(dialog.errors).some(Boolean)) return;
     dialog.saving = true;
+    const scoped = {
+      sender_id_list: dialog.form.sender_id_list.split(",").map(entry => entry.trim()).filter(Boolean),
+      group_id_list: dialog.form.group_id_list.split(",").map(entry => entry.trim()).filter(Boolean),
+    };
     const payload = {
+      category,
+      access_level: dialog.form.access_level,
       title,
       value,
-      expires_at: dialog.form.expires_at.trim() || null,
-      sender_id_list: dialog.form.sender_id_list.split(",").map((entry) => entry.trim()).filter(Boolean),
-      group_id_list: dialog.form.group_id_list.split(",").map((entry) => entry.trim()).filter(Boolean),
+      ...(category === "person" ? person : scoped),
+      ...(category === "concept" ? { starts_at: dialog.form.starts_at.trim() || new Date().toISOString() } : {}),
+      ...(category === "behavioral" ? { expires_at: dialog.form.expires_at.trim() || new Date(Date.now() + 2 * 86400000).toISOString() } : {}),
     };
     try {
       if (dialog.mode === "create") await explorer.createAgentMemory(connectionId, embeddingModelRefId, payload);

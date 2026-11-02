@@ -13,7 +13,7 @@ use crate::role_config::QqChatEmotionDimensionConfig;
 use crate::storage::message_rate_limit_store::MessageRateLimitCheckResult;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::LLMMessage;
-use zihuan_core::qq_context::{collect_turn_media_refs, EmbeddingTraceGuard, QqChatContextEvent};
+use zihuan_core::qq_context::{collect_turn_media_refs, QqChatContextEvent, TurnTraceGuard};
 use zihuan_core::steer::{message_with_api_style, PendingSteerEvent};
 
 use zihuan_core::graph::tool_spec::{
@@ -118,10 +118,10 @@ impl QqChatAgentServiceInner {
         // Identity for this turn's live context events (Data Explorer view).
         let turn_id = uuid::Uuid::new_v4().to_string();
         // Intent classification and before-brain retrieval run synchronously on this blocking
-        // turn thread, so binding the turn here lets the embedding runtime report each of their
-        // inferences as a live context stage without threading the turn identity through every
-        // retrieval call.
-        let _embedding_trace = EmbeddingTraceGuard::enter(ctx.agent_id, sender_id, &turn_id);
+        // turn thread, so binding the turn here lets the embedding runtime and the usage-tracked
+        // LLM wrapper report each inference as a live context stage without threading the turn
+        // identity through every call.
+        let _turn_trace = TurnTraceGuard::enter(ctx.agent_id, sender_id, &turn_id);
         let turn_media = collect_turn_media_refs(&prepared_input.event.message_list);
 
         let role_config = current_qq_chat_role_service_config()?;
@@ -284,12 +284,17 @@ impl QqChatAgentServiceInner {
             memory_backend: memory.backend,
             embedding_model: memory.embedding_model,
             llm: Arc::clone(ctx.llm),
-            access: qq_memory_access_context(
-                sender_id,
-                target_id,
-                is_group,
-                prepared_input.event.group_id,
-            ),
+            access: {
+                let mut access = qq_memory_access_context(
+                    sender_id,
+                    target_id,
+                    is_group,
+                    prepared_input.event.group_id,
+                );
+                access.agent_id = ctx.agent_id.to_string();
+                access.permission_connection = ctx.rdb_pool.cloned();
+                access
+            },
         });
         let turn_identity = QqChatTurnIdentity {
             agent_id: ctx.agent_id.to_string(),
@@ -315,6 +320,32 @@ impl QqChatAgentServiceInner {
             } else {
                 None
             };
+        let memory_phase = if self.is_default_tool_enabled(crate::tools::DEFAULT_TOOL_MEMORY_AGENT)
+        {
+            memory_resources
+                .map(|resources| {
+                    let level = zihuan_core::storage::user_permission::memory_source_level(
+                        &resources.access,
+                        sender_id,
+                    )?;
+                    Ok::<_, Error>(crate::procedure::QqMemoryAgent {
+                        identity: turn_identity.clone(),
+                        resources,
+                        input: format!(
+                            "Authenticated sender QQ ID: {sender_id}; AccessLevel: {level}\n{}",
+                            current_message
+                        ),
+                        previous_context: history
+                            .iter()
+                            .filter_map(LLMMessage::content_text_owned)
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                    })
+                })
+                .transpose()?
+        } else {
+            None
+        };
         let before_brain = QqBeforeBrain::new(BeforeBrainContext {
             trace,
             identity: Some(turn_identity),
@@ -333,8 +364,6 @@ impl QqChatAgentServiceInner {
             message_rate_limit_warning,
             session_state: Arc::clone(&turn_session_state),
             emotion_dimensions: emotion_dimensions.clone(),
-            memory_resources,
-            default_tools_enabled: &self.default_tools_enabled,
         });
 
         let shared_runtime_values = Arc::new(Mutex::new(ctx.shared_runtime_values.clone()));
@@ -408,6 +437,9 @@ impl QqChatAgentServiceInner {
         let mut chain: Vec<Arc<dyn Procedure + '_>> = Vec::new();
         if let Some(group_message_window) = group_message_window {
             chain.push(Arc::new(group_message_window));
+        }
+        if let Some(memory_phase) = memory_phase {
+            chain.push(Arc::new(memory_phase));
         }
         chain.push(Arc::new(before_brain));
         chain.push(Arc::new(brain));

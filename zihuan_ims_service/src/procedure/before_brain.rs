@@ -7,14 +7,11 @@
 //! The brain therefore never assembles the turn itself; it only appends history and runs the
 //! tool-calling loop.
 
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use log::warn;
 use serde_json::json;
 
-use zihuan_core::agent::tools::memory_tools::{relevant_memory_titles, MemoryTitleHit};
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::LLMMessage;
@@ -27,17 +24,6 @@ use crate::qq_chat::user_input::PreparedCurrentTurnUserInput;
 use crate::qq_chat::{build_group_system_prompt, build_private_system_prompt, build_user_message};
 use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatEmotionDimensionConfig;
-use crate::tools::{AgentMemoryToolResources, DEFAULT_TOOL_MEMORY_AGENT};
-
-const LOG_PREFIX: &str = "[QqBeforeBrain]";
-
-/// How many memory titles the retrieval store may return for the turn's hint.
-const MEMORY_HINT_TOP_N: usize = 10;
-
-/// Retrieval relevance a memory title must reach to be listed. Backends normalize relevance as
-/// "higher is better"; backends that do not rank (local-file memory) report `None` and are
-/// listed whenever the query matches.
-const MEMORY_HINT_MIN_RELEVANCE: f64 = 0.5;
 
 /// Everything a turn's input assembly needs, borrowed from the turn context.
 ///
@@ -62,8 +48,6 @@ pub(crate) struct BeforeBrainContext<'a> {
     pub(crate) message_rate_limit_warning: Option<&'a str>,
     pub(crate) session_state: Arc<Mutex<QqChatSessionState>>,
     pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
-    pub(crate) memory_resources: Option<AgentMemoryToolResources>,
-    pub(crate) default_tools_enabled: &'a HashMap<String, bool>,
 }
 
 /// The assembled turn context handed from the before-brain procedure to the brain procedure.
@@ -78,37 +62,12 @@ pub(crate) struct BeforeBrainOutput {
     pub(crate) memory_context: Option<String>,
 }
 
-/// A memory-title hint prepared for the turn.
-struct MemoryHint {
-    /// Block injected into the state/system prefix of the user input.
-    context: String,
-    query: String,
-    candidates: usize,
-    titles: Vec<MemoryTitleHit>,
-}
-
-impl MemoryHint {
-    /// Context-view payload describing what the retrieval store returned for this turn.
-    fn stage_detail(&self) -> serde_json::Value {
-        json!({
-            "query": self.query,
-            "top_n": MEMORY_HINT_TOP_N,
-            "min_relevance": MEMORY_HINT_MIN_RELEVANCE,
-            "candidates": self.candidates,
-            "titles": self
-                .titles
-                .iter()
-                .map(|hit| json!({ "title": hit.title, "relevance": hit.relevance }))
-                .collect::<Vec<_>>(),
-        })
-    }
-}
-
 /// Assemble this turn's system prompt and user input. No inference runs here.
 
 pub(crate) fn assemble_before_brain(
     ctx: &BeforeBrainContext<'_>,
     reply_instruction: Option<&str>,
+    recalled_memory: Option<&str>,
 ) -> BeforeBrainOutput {
     let started_at = Instant::now();
 
@@ -130,26 +89,7 @@ pub(crate) fn assemble_before_brain(
         );
     }
 
-    // 2. Memory titles: list what the retrieval store already relates to this message so the
-    //    brain knows which memories exist and can search the missing ones with `memory_agent`.
-    let memory_hint = build_memory_hint(ctx);
-    if let Some(hint) = memory_hint.as_ref() {
-        let detail = hint.stage_detail();
-        ctx.trace.record_graph_phase("记忆检索", detail.clone());
-        if let Some(identity) = ctx.identity.as_ref() {
-            emit_qq_context_stage(
-                &identity.agent_id,
-                &identity.sender_id,
-                &identity.turn_id,
-                "记忆检索",
-                detail,
-            );
-        }
-    }
-
-    // 3. User input: emotion prompt + state prefix + memory hint + the current event, in the
-    //    shape the routed model accepts.
-    let memory_context = memory_hint.as_ref().map(|hint| hint.context.clone());
+    let memory_context = recalled_memory.map(str::to_string);
     let (user_message, emotion_prompt, style_prompt_suppressed, emotion_values) = {
         let mut session_state = ctx.session_state.lock().unwrap();
         let emotion_prompt = emotion_expression_prompt(&session_state, &ctx.emotion_dimensions);
@@ -231,65 +171,4 @@ pub(crate) fn assemble_before_brain(
         user_message,
         memory_context,
     }
-}
-
-/// Retrieves the memory titles related to the current message and renders the hint block.
-///
-/// Returns `None` when the turn has no memory backend, when the memory agent tool is disabled,
-/// or when the retrieval fails; the turn then proceeds without a memory hint instead of
-/// failing.
-fn build_memory_hint(ctx: &BeforeBrainContext<'_>) -> Option<MemoryHint> {
-    let resources = ctx.memory_resources.as_ref()?;
-    if !ctx
-        .default_tools_enabled
-        .get(DEFAULT_TOOL_MEMORY_AGENT)
-        .copied()
-        .unwrap_or(true)
-    {
-        return None;
-    }
-    let query = ctx.input.current_text_for_prompt().to_string();
-    let hits = match relevant_memory_titles(resources, &query, MEMORY_HINT_TOP_N) {
-        Ok(hits) => hits,
-        Err(error) => {
-            warn!("{LOG_PREFIX} memory title retrieval failed: {error}");
-            return None;
-        }
-    };
-    let candidates = hits.len();
-    let titles = hits
-        .into_iter()
-        .filter(|hit| {
-            hit.relevance.map_or(true, |relevance| relevance >= MEMORY_HINT_MIN_RELEVANCE)
-        })
-        .collect::<Vec<_>>();
-
-    let context = if titles.is_empty() {
-        "No memory title in the retrieval store looks related to the current message. \
-         If the current message depends on past conversations, saved facts, or user preferences, \
-         call `memory_agent` to search the missing memory before answering."
-            .to_string()
-    } else {
-        let mut lines = vec![
-            "These memory titles from the retrieval store are the most relevant to the current \
-             message:"
-                .to_string(),
-        ];
-        for hit in &titles {
-            match hit.relevance {
-                Some(relevance) => {
-                    lines.push(format!("- {} (relevance {relevance:.2})", hit.title));
-                }
-                None => lines.push(format!("- {}", hit.title)),
-            }
-        }
-        lines.push(
-            "When you need the details of a listed title, or when the memory you need is not \
-             listed here, call `memory_agent` to search it instead of guessing."
-                .to_string(),
-        );
-        lines.join("\n")
-    };
-
-    Some(MemoryHint { context, query, candidates, titles })
 }

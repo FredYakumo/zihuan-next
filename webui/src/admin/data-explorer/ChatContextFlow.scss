@@ -1,6 +1,21 @@
 .context-flow {
     display: grid;
     gap: 16px;
+    overflow-anchor: none;
+}
+
+.context-turn--flash {
+    animation: context-turn-flash 1.6s ease-out;
+}
+
+@keyframes context-turn-flash {
+    0%, 35% {
+        background-color: var(--td-brand-color-light);
+    }
+
+    100% {
+        background-color: transparent;
+    }
 }
 
 .context-stats {
@@ -71,10 +86,31 @@
     gap: 8px;
 }
 
-/* Separates consecutive conversation rounds; steer follow-ups continue the same round. */
-.context-turn-divider {
-    height: 1px;
-    background: var(--td-component-border);
+/* Separates consecutive conversation rounds; steer follow-ups continue the same round. Each
+   split opens with the user's input as the round's title, next to its time. */
+.context-turn-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--td-component-border);
+}
+
+.context-turn-header-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+}
+
+.context-turn-header-time {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--td-text-color-placeholder);
 }
 
 .context-archive-label {

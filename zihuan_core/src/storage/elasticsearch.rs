@@ -6,7 +6,6 @@ use chrono::Utc;
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 use serde_json::{json, Value};
-use uuid::Uuid;
 
 use crate::algorithm::rrf::{reciprocal_rank_fusion, DEFAULT_RRF_RANK_CONSTANT};
 use crate::error::{Error, Result};
@@ -145,7 +144,12 @@ impl ElasticsearchRef {
         })
     }
 
-    fn request(&self, method: reqwest::Method, path: &str, body: Option<Value>) -> Result<Value> {
+    pub(crate) fn request(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> Result<Value> {
         // `reqwest::blocking` creates and drops its own runtime, which must not happen while an
         // async context is entered.
         crate::runtime::run_outside_async_runtime(|| {
@@ -160,6 +164,9 @@ impl ElasticsearchRef {
                 .send()
                 .map_err(|error| crate::string_error!("elasticsearch request failed: {error}"))?;
             let status = response.status();
+            if status.as_u16() == 404 {
+                return Err(Error::NotFound);
+            }
             let value = response.json::<Value>().unwrap_or(Value::Null);
             if !status.is_success() {
                 return Err(Error::ValidationError(format!(
@@ -175,68 +182,80 @@ pub fn ensure_elasticsearch_index(
     reference: &ElasticsearchRef,
     create_missing: bool,
 ) -> Result<bool> {
-    let index_url = format!("{}/{}", reference.base_url, reference.index_name);
-    // A container that is still starting accepts the socket before its HTTP API
-    // answers, so timeouts are retried. A refused connection means nothing is
-    // listening at all, which is a configuration error: report it immediately
-    // instead of stalling the request.
-    let deadline = std::time::Instant::now() + INDEX_STARTUP_RETRY_TIMEOUT;
-    let exists = loop {
-        match reference.client.head(&index_url).send() {
-            Ok(response) => {
-                let status = response.status();
-                // A cluster that is still forming reports itself as unavailable
-                // with 503; that is a startup state, not a missing index.
-                if status.is_server_error() && std::time::Instant::now() < deadline {
+    // HEAD, retry sleeps and response teardown must all run outside Tokio's async
+    // context, just like the other blocking requests made by ElasticsearchRef.
+    crate::runtime::run_outside_async_runtime(|| {
+        let index_url = format!("{}/{}", reference.base_url, reference.index_name);
+        // A container that is still starting accepts the socket before its HTTP API
+        // answers, so timeouts are retried. A refused connection means nothing is
+        // listening at all, which is a configuration error: report it immediately
+        // instead of stalling the request.
+        let deadline = std::time::Instant::now() + INDEX_STARTUP_RETRY_TIMEOUT;
+        let exists = loop {
+            match reference.client.head(&index_url).send() {
+                Ok(response) => {
+                    let status = response.status();
+                    if status.as_u16() == 404 {
+                        break false;
+                    }
+                    // A cluster that is still forming reports itself as unavailable
+                    // with 503; that is a startup state, not a missing index.
+                    if status.is_server_error() && std::time::Instant::now() < deadline {
+                        std::thread::sleep(INDEX_CHECK_RETRY_DELAY);
+                        continue;
+                    }
+                    if !status.is_success() {
+                        return Err(Error::ValidationError(format!(
+                            "elasticsearch index check failed for {index_url} ({status})"
+                        )));
+                    }
+                    break true;
+                }
+                Err(error) => {
+                    let retryable = error.is_timeout() || !error.is_connect();
+                    if !retryable || std::time::Instant::now() >= deadline {
+                        return Err(crate::string_error!(
+                            "elasticsearch index check failed for {index_url}: {error}"
+                        ));
+                    }
                     std::thread::sleep(INDEX_CHECK_RETRY_DELAY);
-                    continue;
                 }
-                break status.is_success();
             }
-            Err(error) => {
-                let retryable = error.is_timeout() || !error.is_connect();
-                if !retryable || std::time::Instant::now() >= deadline {
-                    return Err(crate::string_error!(
-                        "elasticsearch index check failed for {index_url}: {error}"
-                    ));
-                }
-                std::thread::sleep(INDEX_CHECK_RETRY_DELAY);
+        };
+        if !exists {
+            if !create_missing {
+                return Err(Error::ValidationError(format!(
+                    "elasticsearch index '{}' does not exist",
+                    reference.index_name
+                )));
             }
+            reference.request(
+                reqwest::Method::PUT,
+                &format!("/{}", reference.index_name),
+                Some(index_definition(reference)?),
+            )?;
+            return Ok(true);
         }
-    };
-    if !exists {
-        if !create_missing {
+        let mapping = reference.request(
+            reqwest::Method::GET,
+            &format!("/{}/_mapping", reference.index_name),
+            None,
+        )?;
+        let dims = mapping
+            .pointer(&format!(
+                "/{}/mappings/properties/{}/dims",
+                reference.index_name,
+                reference.schema.vector_field()
+            ))
+            .and_then(Value::as_u64);
+        if dims != Some(reference.vector_dimensions as u64) {
             return Err(Error::ValidationError(format!(
-                "elasticsearch index '{}' does not exist",
-                reference.index_name
+                "elasticsearch index '{}' embedding dimensions do not match configured value {}",
+                reference.index_name, reference.vector_dimensions
             )));
         }
-        reference.request(
-            reqwest::Method::PUT,
-            &format!("/{}", reference.index_name),
-            Some(index_definition(reference)?),
-        )?;
-        return Ok(true);
-    }
-    let mapping = reference.request(
-        reqwest::Method::GET,
-        &format!("/{}/_mapping", reference.index_name),
-        None,
-    )?;
-    let dims = mapping
-        .pointer(&format!(
-            "/{}/mappings/properties/{}/dims",
-            reference.index_name,
-            reference.schema.vector_field()
-        ))
-        .and_then(Value::as_u64);
-    if dims != Some(reference.vector_dimensions as u64) {
-        return Err(Error::ValidationError(format!(
-            "elasticsearch index '{}' embedding dimensions do not match configured value {}",
-            reference.index_name, reference.vector_dimensions
-        )));
-    }
-    Ok(false)
+        Ok(false)
+    })
 }
 
 pub fn create_elasticsearch_memory_record(
@@ -244,6 +263,8 @@ pub fn create_elasticsearch_memory_record(
     input: &AgentMemoryUpsert,
     vector: Vec<f32>,
 ) -> Result<AgentMemoryRecord> {
+    let normalized = super::memory_types::normalize_memory_input(input)?;
+    let input = &normalized;
     validate_vector(reference, &vector)?;
     let key = input.key.trim();
     let value = input.value.trim();
@@ -251,8 +272,17 @@ pub fn create_elasticsearch_memory_record(
         return Err(Error::ValidationError("memory title and value must not be empty".to_string()));
     }
     let now = Utc::now().to_rfc3339();
-    let object_id = Uuid::new_v4().to_string();
-    let document = json!({"key": key, "value": value, "embedding": vector, "expires_at": input.expires_at, "sender_id_list": input.sender_id_list, "group_id_list": input.group_id_list, "created_at": now, "updated_at": now});
+    let object_id = super::memory_object_id(input);
+    match get_elasticsearch_memory_record(reference, &object_id) {
+        Ok(_) => return update_elasticsearch_memory_record(reference, &object_id, input, vector),
+        Err(Error::NotFound) => {}
+        Err(error) => return Err(error),
+    }
+    let mut document = json!({"key": key, "value": value, "embedding": vector, "expires_at": input.expires_at, "sender_id_list": input.sender_id_list, "group_id_list": input.group_id_list, "created_at": now, "updated_at": now});
+    document
+        .as_object_mut()
+        .unwrap()
+        .extend(serde_json::to_value(&input.attributes)?.as_object().unwrap().clone());
     reference.request(
         reqwest::Method::PUT,
         &format!("/{}/_doc/{}?refresh=wait_for", reference.index_name, object_id),
@@ -267,6 +297,8 @@ pub fn update_elasticsearch_memory_record(
     input: &AgentMemoryUpsert,
     vector: Vec<f32>,
 ) -> Result<AgentMemoryRecord> {
+    let normalized = super::memory_types::normalize_memory_input(input)?;
+    let input = &normalized;
     validate_vector(reference, &vector)?;
     let key = input.key.trim();
     let value = input.value.trim();
@@ -274,8 +306,28 @@ pub fn update_elasticsearch_memory_record(
         return Err(Error::ValidationError("memory title and value must not be empty".to_string()));
     }
     let existing = get_elasticsearch_memory_record(reference, object_id)?;
+    if input.key != existing.key
+        || input.sender_id_list != existing.sender_id_list
+        || input.group_id_list != existing.group_id_list
+        || input.attributes.category != existing.attributes.category
+    {
+        return Err(Error::ValidationError(
+            "memory identity is immutable; create a new record to change title or scope"
+                .to_string(),
+        ));
+    }
+    if input.attributes.category == super::MemoryCategory::Person
+        && input.attributes.person.qq_id != existing.attributes.person.qq_id
+    {
+        return Err(Error::ValidationError("person QQ ID is immutable".to_string()));
+    }
+
     let now = Utc::now().to_rfc3339();
-    let document = json!({"key": key, "value": value, "embedding": vector, "expires_at": input.expires_at, "sender_id_list": input.sender_id_list, "group_id_list": input.group_id_list, "created_at": existing.created_at, "updated_at": now});
+    let mut document = json!({"key": key, "value": value, "embedding": vector, "expires_at": input.expires_at, "sender_id_list": input.sender_id_list, "group_id_list": input.group_id_list, "created_at": existing.created_at, "updated_at": now});
+    document
+        .as_object_mut()
+        .unwrap()
+        .extend(serde_json::to_value(&input.attributes)?.as_object().unwrap().clone());
     reference.request(
         reqwest::Method::PUT,
         &format!("/{}/_doc/{}?refresh=wait_for", reference.index_name, object_id),
@@ -448,7 +500,19 @@ pub fn search_elasticsearch_memory(
         )?,
         access,
     )?;
-    Ok(fuse_memory_hits(&[lexical, semantic], size))
+    let mut hits = fuse_memory_hits(&[lexical, semantic], window);
+    if access.category == super::MemoryCategory::Concept {
+        hits.sort_by(|a, b| {
+            b.record
+                .attributes
+                .starts_at
+                .as_ref()
+                .unwrap_or(&b.record.updated_at)
+                .cmp(a.record.attributes.starts_at.as_ref().unwrap_or(&a.record.updated_at))
+        });
+    }
+    hits.truncate(size);
+    Ok(hits)
 }
 
 fn memory_result_size(top_n: usize) -> usize {
@@ -461,8 +525,8 @@ fn memory_lexical_body(access: &AgentMemoryAccessContext, query: &str, size: usi
 
 fn memory_lexical_query(access: &AgentMemoryAccessContext, query: &str) -> Value {
     json!({"bool":{"filter":[access_filter(access)],"should":[
-        {"multi_match":{"query":query,"fields":["key^5","value^2"],"type":"best_fields","operator":"and"}},
-        {"multi_match":{"query":query,"fields":["key.pinyin^4","value.pinyin"],"type":"best_fields"}}
+        {"multi_match":{"query":query,"fields":["key^5","value^2","qq_id^10","name^5","preferred_name^5","aliases^5","impression^2"],"type":"best_fields","operator":"and"}},
+        {"multi_match":{"query":query,"fields":["key.pinyin^4","value.pinyin","name.pinyin^4","preferred_name.pinyin^4","aliases.pinyin^4","impression.pinyin"],"type":"best_fields"}}
     ],"minimum_should_match":1}})
 }
 
@@ -498,23 +562,23 @@ fn fuse_memory_hits(
 }
 
 fn access_filter(access: &AgentMemoryAccessContext) -> Value {
-    if access.admin {
-        return json!({"bool":{"must_not":[{"range":{"expires_at":{"lte":"now"}}}]}});
+    let mut filters = Vec::new();
+    if access.category == super::MemoryCategory::Behavioral {
+        filters.push(json!({"bool":{"must_not":[{"range":{"expires_at":{"lte":"now"}}}]}}));
     }
-    let mut should = vec![
-        json!({"bool":{"must_not":[{"exists":{"field":"group_id_list"}},{"exists":{"field":"sender_id_list"}}]}}),
-    ];
-    if let Some(group_id) =
-        access.group_id.as_deref().map(str::trim).filter(|value| !value.is_empty())
-    {
-        should.push(json!({"terms":{"group_id_list":[group_id]}}));
+    if !access.admin {
+        for (field, id) in [
+            ("group_id_list", access.group_id.as_ref()),
+            ("sender_id_list", access.sender_id.as_ref()),
+        ] {
+            let mut alternatives = vec![json!({"bool":{"must_not":[{"exists":{"field":field}}]}})];
+            if let Some(id) = id {
+                alternatives.push(json!({"term":{field:id}}));
+            }
+            filters.push(json!({"bool":{"should":alternatives,"minimum_should_match":1}}));
+        }
     }
-    if let Some(sender_id) =
-        access.sender_id.as_deref().map(str::trim).filter(|value| !value.is_empty())
-    {
-        should.push(json!({"bool":{"must_not":[{"exists":{"field":"group_id_list"}}],"filter":[{"terms":{"sender_id_list":[sender_id]}}]}}));
-    }
-    json!({"bool":{"must_not":[{"range":{"expires_at":{"lte":"now"}}}],"should":should,"minimum_should_match":1}})
+    json!({"bool":{"filter":filters}})
 }
 
 fn parse_memory_hits(
@@ -530,6 +594,7 @@ fn parse_memory_hits(
         .filter_map(|hit| {
             let source = hit.get("_source")?;
             let record = AgentMemoryRecord {
+                attributes: serde_json::from_value(source.clone()).unwrap_or_default(),
                 object_id: hit.get("_id")?.as_str()?.to_string(),
                 key: source.get("key")?.as_str()?.to_string(),
                 value: source.get("value")?.as_str()?.to_string(),
@@ -561,6 +626,7 @@ pub fn get_elasticsearch_memory_record(
         Error::ValidationError("elasticsearch memory document is missing _source".to_string())
     })?;
     Ok(AgentMemoryRecord {
+        attributes: serde_json::from_value(source.clone()).unwrap_or_default(),
         object_id: object_id.to_string(),
         key: source.get("key").and_then(Value::as_str).unwrap_or_default().to_string(),
         value: source.get("value").and_then(Value::as_str).unwrap_or_default().to_string(),
@@ -604,8 +670,11 @@ fn validate_vector(reference: &ElasticsearchRef, vector: &[f32]) -> Result<()> {
 fn index_definition(reference: &ElasticsearchRef) -> Result<Value> {
     let text = json!({"type":"text","analyzer":"icu_analyzer","fields":{"pinyin":{"type":"text","analyzer":"pinyin_analyzer","search_analyzer":"pinyin_analyzer"}}});
     let properties = match reference.schema {
-        RetrievalSchema::AgentMemory => {
-            json!({"key":text,"value":text,"embedding":{"type":"dense_vector","dims":reference.vector_dimensions,"index":true,"similarity":"cosine"},"expires_at":{"type":"date"},"sender_id_list":{"type":"keyword"},"group_id_list":{"type":"keyword"},"created_at":{"type":"date"},"updated_at":{"type":"date"}})
+        RetrievalSchema::AgentMemory
+        | RetrievalSchema::ConceptMemory
+        | RetrievalSchema::PersonMemory
+        | RetrievalSchema::BehavioralMemory => {
+            json!({"category":{"type":"keyword"},"access_level":{"type":"integer"},"starts_at":{"type":"date"},"qq_id":{"type":"keyword"},"name":text,"preferred_name":text,"aliases":text,"impression":text,"guideline":text,"key":text,"value":text,"embedding":{"type":"dense_vector","dims":reference.vector_dimensions,"index":true,"similarity":"cosine"},"expires_at":{"type":"date"},"sender_id_list":{"type":"keyword"},"group_id_list":{"type":"keyword"},"created_at":{"type":"date"},"updated_at":{"type":"date"}})
         }
         RetrievalSchema::ImageSemantic => {
             json!({"media_id":{"type":"keyword"},"original_source":{"type":"keyword","index":false},"rustfs_path":{"type":"keyword"},"name":text,"description":text,"description_vector":{"type":"dense_vector","dims":reference.vector_dimensions,"index":true,"similarity":"cosine"},"name_vector":{"type":"dense_vector","dims":reference.vector_dimensions,"index":true,"similarity":"cosine"},"mime_type":{"type":"keyword"},"source":{"type":"keyword"}})

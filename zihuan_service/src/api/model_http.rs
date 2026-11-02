@@ -11,7 +11,7 @@ use zihuan_core::config::llm_refs::{load_llm_refs, LlmRefConfig};
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage, MessageRole};
 use zihuan_core::model_inference::model_config::ModelRefSpec;
-use zihuan_core::system_config::{GlobalSettingsSection, ModelHttpApiKey};
+use zihuan_core::system_config::ModelHttpApiKey;
 
 #[derive(serde::Deserialize)]
 struct ChatCompletionsRequest {
@@ -66,7 +66,7 @@ pub async fn list_models(req: &mut Request, res: &mut Response) {
     if !authorize(req) {
         return render_error(res, StatusCode::UNAUTHORIZED, "invalid_api_key", "Invalid API key");
     }
-    let Ok(settings) = zihuan_core::system_config::load_section::<GlobalSettingsSection>() else {
+    let Ok(settings) = zihuan_core::system_config::load_global_settings() else {
         return render_error(
             res,
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -113,7 +113,7 @@ pub async fn chat_completions(req: &mut Request, res: &mut Response) {
             "messages must not be empty",
         );
     }
-    let Ok(settings) = zihuan_core::system_config::load_section::<GlobalSettingsSection>() else {
+    let Ok(settings) = zihuan_core::system_config::load_global_settings() else {
         return render_error(
             res,
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -274,7 +274,7 @@ fn authorize(req: &Request) -> bool {
     else {
         return false;
     };
-    let Ok(settings) = zihuan_core::system_config::load_section::<GlobalSettingsSection>() else {
+    let Ok(settings) = zihuan_core::system_config::load_global_settings() else {
         return false;
     };
     if !settings.model_http_service.enabled {

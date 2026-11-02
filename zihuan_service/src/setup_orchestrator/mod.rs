@@ -1501,6 +1501,9 @@ async fn save_search_connection(config: &DetailedSetupConfig) -> Result<Connecti
         let schemas = [
             RetrievalSchema::ImageSemantic,
             RetrievalSchema::AgentMemory,
+            RetrievalSchema::ConceptMemory,
+            RetrievalSchema::PersonMemory,
+            RetrievalSchema::BehavioralMemory,
             RetrievalSchema::QqMessage,
         ];
         match initialization_kind {

@@ -174,17 +174,19 @@ class JobSdk:
         sender_id_list: list[str] | None = None,
         group_id_list: list[str] | None = None,
         expires_at: str | None = None,
+        category: str = "concept",
+        **fields: Any,
     ) -> dict:
         """Purpose: create or update one memory record in the agent's memory store."""
-        return self._host.call("memory.upsert", {"key": key, "value": value, "sender_id_list": sender_id_list or [], "group_id_list": group_id_list or [], "expires_at": expires_at})
+        return self._host.call("memory.upsert", {"key": key, "value": value, "sender_id_list": sender_id_list or [], "group_id_list": group_id_list or [], "expires_at": expires_at, "category": category, **fields})
 
-    def search_memory(self, query: str, top_n: int = 5, sender_id: str | None = None) -> dict:
+    def search_memory(self, query: str, top_n: int = 5, sender_id: str | None = None, category: str = "concept") -> dict:
         """Purpose: search the agent's memory store and return matching records with values."""
-        return self._host.call("memory.search", {"query": query, "top_n": top_n, "sender_id": sender_id})
+        return self._host.call("memory.search", {"query": query, "top_n": top_n, "sender_id": sender_id, "category": category})
 
-    def list_memory(self, limit: int = 20, sender_id: str | None = None) -> dict:
+    def list_memory(self, limit: int = 20, sender_id: str | None = None, category: str = "concept") -> dict:
         """Purpose: list recent memory records (key + value) from the agent's memory store."""
-        return self._host.call("memory.list", {"limit": limit, "sender_id": sender_id})
+        return self._host.call("memory.list", {"limit": limit, "sender_id": sender_id, "category": category})
 
     def run_subagent(self, definition: str, **inputs: str) -> str:
         """Purpose: run one inline sub-agent definition with string inputs and return its text result."""

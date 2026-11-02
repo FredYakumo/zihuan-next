@@ -6,10 +6,12 @@ mod scheduled_task;
 mod task_entry;
 mod task_log;
 mod task_progress;
+pub(crate) mod user_permission;
 
 /// MySQL tables in dependency order: `task_entry` before `task_log` and `task_progress`.
 /// Each entry is `(create_table_ddl, create_index_ddls)`.
 pub const MYSQL_TABLES: &[(&str, &[&str])] = &[
+    (user_permission::MYSQL_DDL, &[]),
     (role_avatar::MYSQL_DDL, role_avatar::MYSQL_INDEXES),
     (media_record::MYSQL_DDL, media_record::MYSQL_INDEXES),
     (message_record::MYSQL_DDL, message_record::MYSQL_INDEXES),
@@ -30,6 +32,7 @@ pub const MYSQL_TABLES: &[(&str, &[&str])] = &[
 
 /// SQLite tables in dependency order.
 pub const SQLITE_TABLES: &[(&str, &[&str])] = &[
+    (user_permission::SQLITE_DDL, &[]),
     (role_avatar::SQLITE_DDL, role_avatar::SQLITE_INDEXES),
     (media_record::SQLITE_DDL, media_record::SQLITE_INDEXES),
     (message_record::SQLITE_DDL, message_record::SQLITE_INDEXES),

@@ -169,6 +169,96 @@
                   </div>
                 </div>
                 <div
+                  v-else-if="llmView(entry.id)"
+                  class="context-llm"
+                  :class="`context-llm--${llmView(entry.id)?.status}`"
+                >
+                  <div class="context-llm-status">
+                    <t-loading
+                      v-if="llmView(entry.id)?.status === 'running'"
+                      size="12px"
+                    />
+                    <span>{{ llmView(entry.id)?.statusText }}</span>
+                  </div>
+                  <dl class="context-llm-grid">
+                    <div
+                      v-for="field in llmView(entry.id)?.fields"
+                      :key="field.label"
+                      class="context-llm-field"
+                    >
+                      <dt>{{ field.label }}</dt>
+                      <dd>{{ field.value }}</dd>
+                    </div>
+                  </dl>
+                  <template
+                    v-if="llmView(entry.id)?.streamContent || llmView(entry.id)?.streamReasoning"
+                  >
+                    <div
+                      v-if="llmView(entry.id)?.streamReasoning"
+                      class="context-thinking"
+                      :class="{ collapsed: !stageThinkingOpen(entry.id) }"
+                    >
+                      <button
+                        type="button"
+                        class="context-thinking-toggle"
+                        @click="toggleStageThinking(entry.id)"
+                      >
+                        <span class="context-thinking-icon">
+                          {{ stageThinkingOpen(entry.id) ? "▾" : "▸" }}
+                        </span>
+                        思考过程
+                      </button>
+                      <pre
+                        v-if="stageThinkingOpen(entry.id)"
+                        class="context-thinking-content"
+                      >{{ llmView(entry.id)?.streamReasoning }}</pre>
+                    </div>
+                    <pre
+                      v-if="llmView(entry.id)?.streamContent"
+                      class="context-llm-stream"
+                    >{{ llmView(entry.id)?.streamContent }}</pre>
+                  </template>
+                  <div
+                    v-if="llmView(entry.id)?.messages.length"
+                    class="context-llm-section"
+                  >
+                    <button
+                      type="button"
+                      class="context-llm-toggle"
+                      @click="toggleLlmMessages(entry.id)"
+                    >
+                      <span class="context-llm-toggle-icon">
+                        {{ isLlmMessagesOpen(entry.id) ? "▾" : "▸" }}
+                      </span>
+                      输入消息（{{ llmView(entry.id)?.messages.length }} 条）
+                    </button>
+                    <div v-if="isLlmMessagesOpen(entry.id)" class="context-stage-raw">
+                      <div
+                        v-for="(message, messageIndex) in llmView(entry.id)?.messages"
+                        :key="messageIndex"
+                        class="context-stage-raw-item"
+                      >
+                        <div class="context-stage-raw-head">
+                          <span class="context-stage-raw-role">{{ message.role }}</span>
+                          <span class="context-stage-raw-index">#{{ messageIndex + 1 }}</span>
+                        </div>
+                        <pre class="context-stage-raw-content">{{ message.content }}</pre>
+                        <template v-if="message.toolCalls?.length">
+                          <div class="context-stage-raw-tool-label">工具调用</div>
+                          <JsonView :source="message.toolCalls" />
+                        </template>
+                        <div
+                          v-if="message.toolCallId"
+                          class="context-stage-raw-tool-id mono"
+                        >tool_call_id: {{ message.toolCallId }}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="llmView(entry.id)?.error" class="context-llm-error">
+                    {{ llmView(entry.id)?.error }}
+                  </div>
+                </div>
+                <div
                   v-else-if="sentBubblesView(entry)"
                   class="context-sent-bubbles"
                 >
@@ -302,8 +392,10 @@
                       v-for="tool in stageView(entry.id)?.tools"
                       :key="tool.name"
                       class="context-stage-tool"
+                      :data-memory-tone="memoryToolAppearance(tool.name)?.tone"
                     >
                       <div class="context-stage-tool-name mono">{{ tool.name }}</div>
+                      <span v-if="memoryToolAppearance(tool.name)" class="context-memory-tool-label">{{ memoryToolAppearance(tool.name)?.label }}</span>
                       <p
                         v-if="tool.description"
                         class="context-stage-tool-description"
@@ -321,9 +413,9 @@
           </div>
           <template v-else>
             <div class="context-bubble-row context-bubble-row--tool">
-              <div class="context-bubble context-bubble--tool">
+              <div class="context-bubble context-bubble--tool" :data-memory-tone="memoryToolAppearance(entry.name, entry.arguments)?.tone">
                 <div class="context-bubble-head">
-                  <span class="context-tool-title">工具调用 · {{ entry.name }}</span>
+                  <span class="context-tool-title">工具调用 · {{ entry.name }} <span v-if="memoryToolAppearance(entry.name, entry.arguments)" class="context-memory-tool-label">{{ memoryToolAppearance(entry.name, entry.arguments)?.label }}</span></span>
                   <span class="context-tool-status">
                     <t-loading v-if="entry.running" size="12px" />
                     <span v-else-if="entry.durationMs !== undefined" class="muted">{{ entry.durationMs }} ms</span>
@@ -399,13 +491,25 @@
     </div>
 
     <Teleport to="body">
-      <div
-        v-if="activePhase"
-        class="context-phase-badge"
-        :style="{ ...badgeStyle, '--phase-color': activePhase.color }"
-      >
-        <!-- 正在浏览 · {{ activePhase.name }} -->
-        {{ activePhase.name }}
+      <!-- Floating flag row for the turn being read: its input and time, the record deletion
+           control, and the phase badge at the same top-right spot. -->
+      <div v-if="isFocusedTurn" class="context-turn-flag" :style="badgeStyle">
+        <span class="context-turn-flag-text" :title="turn.userText">{{ turn.userText || "（无文本输入）" }}</span>
+        <span class="context-turn-flag-time">{{ formatTime(turn.createdAt) }}</span>
+        <button
+          type="button"
+          class="context-turn-flag-delete"
+          :disabled="!turn.finished || deleting"
+          :title="!turn.finished ? '回复生成中，结束后才能删除' : '删除本次对话记录'"
+          @click="emit('delete-turn')"
+        >{{ deleting ? "删除中…" : "删除记录" }}</button>
+        <div
+          v-if="activePhase"
+          class="context-phase-badge"
+          :style="{ '--phase-color': activePhase.color }"
+        >
+          {{ activePhase.name }}
+        </div>
       </div>
       <div v-if="previewMedia?.url" class="context-preview-overlay">
         <figure class="context-preview-frame">
@@ -426,6 +530,7 @@ import type { ContextTurnView } from "./useChatContext";
 import { toolResultFailed } from "./useChatContext";
 import {
   RATE_LIMIT_STAGE,
+  memoryToolAppearance,
   rateLimitSeverity,
   rateLimitText,
   sentBubbles,
@@ -434,7 +539,9 @@ import {
 import JsonView from "./JsonView.vue";
 import ContextSubAgentBox from "./ContextSubAgentBox.vue";
 
-const props = defineProps<{ turn: ContextTurnView }>();
+const props = defineProps<{ turn: ContextTurnView; deleting?: boolean }>();
+
+const emit = defineEmits<{ "delete-turn": [] }>();
 
 function rateLimitClass(stage: string, detail: unknown): string {
   const severity = rateLimitSeverity(stage, detail);
@@ -459,6 +566,8 @@ const {
   toggleStageThinking,
   isEmbeddingSectionOpen,
   toggleEmbeddingSection,
+  isLlmMessagesOpen,
+  toggleLlmMessages,
   isStageToolsOpen,
   toggleStageTools,
   isStageRawView,
@@ -468,6 +577,7 @@ const {
   orphanSubAgents,
   activePhase,
   badgeStyle,
+  isFocusedTurn,
   registerPhase,
   stageViews,
   segments,
@@ -486,6 +596,10 @@ function stageView(id: string) {
 
 function embeddingView(id: string) {
   return stageView(id)?.embedding;
+}
+
+function llmView(id: string) {
+  return stageView(id)?.llm;
 }
 </script>
 

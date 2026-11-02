@@ -3,7 +3,7 @@ use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use zihuan_core::command::{CommandPermission, PermissionRule};
-use zihuan_core::config::{ConfigCenter, ConfigKind, StoredConfigRecord};
+use zihuan_core::config::{ConfigKind, StoredConfigRecord};
 
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
@@ -73,39 +73,16 @@ pub struct UpdateCommandPermissionRequest {
     pub rules: Vec<PermissionRule>,
 }
 
-/// Handlers — Salvo endpoint handlers for command-permission CRUD.
-///
-/// ## Purpose
-///
-/// Exposes REST endpoints that allow the admin UI to list, create, update, and
-/// delete command-permission records. These operate on the file-system config
-/// document through `ConfigCenter`.
-///
-/// ## Design
-///
-/// - **List** (`list_command_permissions`) reads `ConfigRoot.command_permissions`
-///   and projects each record to `CommandPermissionDto`.
-/// - **Create** (`create_command_permission`) parses the JSON body, wraps it in a
-///   `StoredConfigRecord` with a generated UUID, appends to the root, and persists.
-/// - Each mutating handler applies its change with `ConfigCenter::update_root`, which loads,
-///   mutates, and saves the shared document under one lock so concurrent writes to other parts
-///   of the document are not overwritten.
-/// - Error responses use the shared `render_*` helpers from the parent module for
-///   consistent error formatting.
-
+/// Command policies are persisted in UserPermission. Mutations also update the
+/// running registry, so changes apply immediately without a service restart.
 #[handler]
 pub async fn list_command_permissions(_req: &mut Request, res: &mut Response) {
-    let root = match ConfigCenter::shared().load_root() {
-        Ok(root) => root,
-        Err(err) => return render_internal_error(res, err),
+    let records = match zihuan_core::storage::user_permission::command_records() {
+        Ok(records) => records,
+        Err(error) => return render_internal_error(res, error),
     };
-
-    let permissions: Vec<CommandPermissionDto> = root
-        .configs
-        .command_permissions
-        .iter()
-        .map(CommandPermissionDto::from)
-        .collect();
+    let permissions: Vec<CommandPermissionDto> =
+        records.iter().map(CommandPermissionDto::from).collect();
 
     res.render(Json(permissions));
 }
@@ -116,8 +93,6 @@ pub async fn create_command_permission(req: &mut Request, res: &mut Response) {
         Ok(body) => body,
         Err(err) => return render_bad_request(res, err.to_string()),
     };
-
-    let repo = ConfigCenter::shared();
 
     let permission = CommandPermission {
         command_name: body.command_name,
@@ -139,11 +114,18 @@ pub async fn create_command_permission(req: &mut Request, res: &mut Response) {
     };
 
     let saved = record.clone();
-    if let Err(err) = repo.update_root(|root| {
-        root.configs.command_permissions.push(record);
-        Ok(())
-    }) {
-        return render_internal_error(res, err);
+    if let Err(error) = zihuan_core::storage::user_permission::save_command_record(&record) {
+        return render_internal_error(res, error);
+    }
+    if let Some(registry) = zihuan_service::command::global_command_registry() {
+        registry.set_permissions(
+            &permission.command_name,
+            if permission.enabled {
+                permission.rules
+            } else {
+                vec![PermissionRule::Everyone]
+            },
+        );
     }
 
     let dto = CommandPermissionDto::from(&saved);
@@ -168,45 +150,58 @@ pub async fn update_command_permission(req: &mut Request, res: &mut Response) {
         enabled: body.enabled,
     };
 
-    let result = ConfigCenter::shared().update_root(|root| {
-        let Some(record) = root.configs.command_permissions.iter_mut().find(|r| r.config_id == id)
-        else {
-            return Ok(None);
-        };
-        record.name = permission.command_name.clone();
-        record.enabled = body.enabled;
-        record.updated_at = now_rfc3339();
-        record.spec = serde_json::to_value(&permission).unwrap_or_default();
-        Ok(Some(CommandPermissionDto::from(&*record)))
-    });
-
-    match result {
-        Ok(Some(dto)) => {
-            // Also sync to the in-memory global registry
-            if let Some(registry) = zihuan_service::command::global_command_registry() {
-                registry.set_permissions(&permission.command_name, permission.rules);
-            }
-            res.render(Json(dto));
-        }
-        Ok(None) => render_not_found(res, "command permission not found"),
-        Err(err) => render_internal_error(res, err),
+    let mut records = match zihuan_core::storage::user_permission::command_records() {
+        Ok(records) => records,
+        Err(error) => return render_internal_error(res, error),
+    };
+    let Some(record) = records.iter_mut().find(|record| record.config_id == id) else {
+        return render_not_found(res, "command permission not found");
+    };
+    let old_name = record.name.clone();
+    record.name = permission.command_name.clone();
+    record.enabled = body.enabled;
+    record.updated_at = now_rfc3339();
+    record.spec = serde_json::to_value(&permission).unwrap_or_default();
+    if let Err(error) = zihuan_core::storage::user_permission::save_command_record(record) {
+        return render_internal_error(res, error);
     }
+    if let Some(registry) = zihuan_service::command::global_command_registry() {
+        registry.set_permissions(&old_name, vec![PermissionRule::Everyone]);
+        registry.set_permissions(
+            &permission.command_name,
+            if permission.enabled {
+                permission.rules
+            } else {
+                vec![PermissionRule::Everyone]
+            },
+        );
+    }
+    res.render(Json(CommandPermissionDto::from(&*record)));
 }
 
 #[handler]
 pub async fn delete_command_permission(req: &mut Request, res: &mut Response) {
     let id = req.param::<String>("id").unwrap_or_default();
 
-    let result = ConfigCenter::shared().update_root(|root| {
-        let before = root.configs.command_permissions.len();
-        root.configs.command_permissions.retain(|record| record.config_id != id);
-        Ok(before != root.configs.command_permissions.len())
-    });
-
-    match result {
-        Ok(true) => res.render(Json(ok_response())),
+    let records = match zihuan_core::storage::user_permission::command_records() {
+        Ok(records) => records,
+        Err(error) => return render_internal_error(res, error),
+    };
+    let name = records
+        .iter()
+        .find(|record| record.config_id == id)
+        .map(|record| record.name.clone());
+    match zihuan_core::storage::user_permission::delete_command_record(&id) {
+        Ok(true) => {
+            if let (Some(registry), Some(name)) =
+                (zihuan_service::command::global_command_registry(), name)
+            {
+                registry.set_permissions(&name, vec![PermissionRule::Everyone]);
+            }
+            res.render(Json(ok_response()));
+        }
         Ok(false) => render_not_found(res, "command permission not found"),
-        Err(err) => render_internal_error(res, err),
+        Err(error) => render_internal_error(res, error),
     }
 }
 
@@ -232,4 +227,75 @@ pub async fn get_registered_commands(_req: &mut Request, res: &mut Response) {
         .collect();
 
     res.render(Json(commands));
+}
+
+#[derive(Deserialize)]
+pub struct UserPermissionRequest {
+    connection_id: String,
+    agent_id: String,
+    user_id: String,
+    access_level: u32,
+}
+
+#[handler]
+pub async fn get_user_permission(req: &mut Request, res: &mut Response) {
+    let connection_id = req.query::<String>("connection_id").unwrap_or_default();
+    let agent_id = req.query::<String>("agent_id").unwrap_or_default();
+    let user_id = req.query::<String>("user_id").unwrap_or_default();
+    if agent_id.is_empty() || user_id.is_empty() || connection_id.is_empty() {
+        return render_bad_request(
+            res,
+            "connection_id, agent_id and user_id are required".to_string(),
+        );
+    }
+    let result = async {
+        let connections = zihuan_core::storage::load_connections()?;
+        let connection = zihuan_core::storage::build_relational_db_connection_for_connection(
+            &connection_id,
+            &connections,
+        )
+        .await?;
+        zihuan_core::storage::user_permission::access_level(&connection, &agent_id, &user_id).await
+    }
+    .await;
+    match result {
+        Ok(level) => res.render(Json(
+            serde_json::json!({"agent_id":agent_id,"user_id":user_id,"access_level":level}),
+        )),
+        Err(error) => render_internal_error(res, error),
+    }
+}
+
+#[handler]
+pub async fn set_user_permission(req: &mut Request, res: &mut Response) {
+    let body: UserPermissionRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(error) => return render_bad_request(res, error.to_string()),
+    };
+    if body.agent_id.is_empty() || body.user_id.is_empty() || body.connection_id.is_empty() {
+        return render_bad_request(
+            res,
+            "connection_id, agent_id and user_id are required".to_string(),
+        );
+    }
+    let result = async {
+        let connections = zihuan_core::storage::load_connections()?;
+        let connection = zihuan_core::storage::build_relational_db_connection_for_connection(
+            &body.connection_id,
+            &connections,
+        )
+        .await?;
+        zihuan_core::storage::user_permission::set_access_level(
+            &connection,
+            &body.agent_id,
+            &body.user_id,
+            body.access_level,
+        )
+        .await
+    }
+    .await;
+    match result {
+        Ok(()) => res.render(Json(ok_response())),
+        Err(error) => render_internal_error(res, error),
+    }
 }

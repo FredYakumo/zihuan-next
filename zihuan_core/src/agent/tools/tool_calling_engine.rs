@@ -607,10 +607,16 @@ impl ToolCallingEngine {
 
             let mut results: Vec<PreparedToolResult> =
                 if Self::can_execute_in_parallel(&prepared_calls) {
+                    // Tools run on pool threads; rebind the turn's trace context inside each one
+                    // so model inference a tool performs still reports to the context view.
+                    let turn_trace = crate::qq_context::current_turn_trace();
                     std::thread::scope(|scope| {
                         let handles = prepared_calls.into_iter().map(|call| {
                             let call_content = tool_call_content.clone();
+                            let turn_trace = turn_trace.clone();
                             scope.spawn(move || {
+                                let _turn_trace =
+                                    turn_trace.map(crate::qq_context::TurnTraceGuard::from_context);
                                 let result = self.execute_prepared_call(&call_content, call);
                                 self.notify_tool_finish(&result);
                                 result
@@ -621,12 +627,19 @@ impl ToolCallingEngine {
                             .collect::<Vec<PreparedToolResult>>()
                     })
                 } else {
+                    let turn_trace = crate::qq_context::current_turn_trace();
                     prepared_calls
                         .into_iter()
                         .map(|call| {
+                            let turn_trace = turn_trace.clone();
                             let result = std::thread::scope(|scope| {
+                                let call_content = &tool_call_content;
                                 scope
-                                    .spawn(|| self.execute_prepared_call(&tool_call_content, call))
+                                    .spawn(move || {
+                                        let _turn_trace = turn_trace
+                                            .map(crate::qq_context::TurnTraceGuard::from_context);
+                                        self.execute_prepared_call(call_content, call)
+                                    })
                                     .join()
                                     .expect("serial tool execution panicked")
                             });
@@ -851,6 +864,9 @@ impl ToolCallingEngine {
                     let confirmation_gate = Arc::clone(&self.confirmation_gate);
                     let cancellation = self.cancellation.clone();
                     let agent_runtime_context = self.agent_runtime_context.clone();
+                    // Tools run on blocking-pool threads; rebind the turn's trace context inside
+                    // each one so model inference a tool performs reports to the context view.
+                    let turn_trace = crate::qq_context::current_turn_trace();
                     let mut tasks = JoinSet::new();
                     for call in prepared_calls {
                         // Stop dispatching further parallel tool calls as soon as a
@@ -872,7 +888,11 @@ impl ToolCallingEngine {
                         let gate = Arc::clone(&confirmation_gate);
                         let cancellation_guard = cancellation.clone();
                         let agent_runtime_context = agent_runtime_context.clone();
+                        let turn_trace = turn_trace.clone();
                         tasks.spawn_blocking(move || {
+                            // Rebind the turn's trace context inside the worker thread.
+                            let _turn_trace =
+                                turn_trace.map(crate::qq_context::TurnTraceGuard::from_context);
                             // Re-check inside the worker: a call that has not yet started
                             // its real work short-circuits instead of running.
                             if cancellation_guard
@@ -919,12 +939,19 @@ impl ToolCallingEngine {
                     }
                     results
                 } else {
+                    let turn_trace = crate::qq_context::current_turn_trace();
                     prepared_calls
                         .into_iter()
                         .map(|call| {
+                            let turn_trace = turn_trace.clone();
                             let result = std::thread::scope(|scope| {
+                                let call_content = &tool_call_content;
                                 scope
-                                    .spawn(|| self.execute_prepared_call(&tool_call_content, call))
+                                    .spawn(move || {
+                                        let _turn_trace = turn_trace
+                                            .map(crate::qq_context::TurnTraceGuard::from_context);
+                                        self.execute_prepared_call(call_content, call)
+                                    })
                                     .join()
                                     .expect("serial tool execution panicked")
                             });

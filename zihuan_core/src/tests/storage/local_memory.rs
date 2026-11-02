@@ -25,6 +25,7 @@ impl Drop for TempDir {
 
 fn memory(key: &str, value: &str) -> AgentMemoryUpsert {
     AgentMemoryUpsert {
+        attributes: Default::default(),
         key: key.to_string(),
         value: value.to_string(),
         expires_at: None,

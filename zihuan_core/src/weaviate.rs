@@ -178,6 +178,9 @@ impl WeaviateRef {
             return Ok(false);
         }
         let status = response.status();
+        if status.as_u16() == 404 {
+            return Err(Error::NotFound);
+        }
         let body = response.text().await.unwrap_or_default();
         Err(crate::string_error!(
             "Weaviate readiness probe failed with status {}: {}",
@@ -204,6 +207,9 @@ impl WeaviateRef {
             return Ok(());
         }
         let status = response.status();
+        if status.as_u16() == 404 {
+            return Err(Error::NotFound);
+        }
         let body = response.text().await.unwrap_or_default();
         Err(crate::string_error!("Weaviate request failed with status {}: {}", status, body))
     }
@@ -237,6 +243,9 @@ impl WeaviateRef {
     pub async fn send_json_async(builder: RequestBuilder) -> Result<Value> {
         let response = builder.send().await?;
         let status = response.status();
+        if status.as_u16() == 404 {
+            return Err(Error::NotFound);
+        }
         let body = response.text().await?;
         if !status.is_success() {
             return Err(crate::string_error!(

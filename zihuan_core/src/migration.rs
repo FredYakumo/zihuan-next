@@ -46,6 +46,14 @@ pub async fn prepare(database: &SystemDatabase) -> Result<()> {
     )
     .execute(&database.pool)
     .await?;
+    let permission_ddl = if database.mysql {
+        crate::database::ddl::user_permission::MYSQL_DDL
+    } else {
+        crate::database::ddl::user_permission::SQLITE_DDL
+    };
+    sqlx::query(&permission_ddl.replace("user_permission", "zihuan_settings.user_permission"))
+        .execute(&database.pool)
+        .await?;
     for migration in MIGRATIONS {
         if !applied(database, migration.name).await? {
             sqlx::query(if database.mysql {
@@ -191,6 +199,14 @@ pub async fn migrate(source: &SystemDatabase, target: &SystemDatabase) -> Result
                 migrate_model_usages(source, target, &mut transaction).await?
             }
         }
+    }
+    for row in sqlx::query(if source.mysql { "SELECT agent_id,user_id,permission_key,payload,CAST(access_level AS SIGNED) AS access_level,CAST(elevated_level AS SIGNED) AS elevated_level,elevated_until FROM zihuan_settings.user_permission" } else { "SELECT agent_id,user_id,permission_key,payload,access_level,elevated_level,elevated_until FROM zihuan_settings.user_permission" }).fetch_all(&source.pool).await? {
+        let statement = if target.mysql {
+            "INSERT INTO zihuan_settings.user_permission (agent_id,user_id,permission_key,payload,access_level,elevated_level,elevated_until) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE payload=VALUES(payload),access_level=VALUES(access_level),elevated_level=VALUES(elevated_level),elevated_until=VALUES(elevated_until)"
+        } else {
+            "INSERT INTO zihuan_settings.user_permission (agent_id,user_id,permission_key,payload,access_level,elevated_level,elevated_until) VALUES (?,?,?,?,?,?,?) ON CONFLICT(agent_id,user_id,permission_key) DO UPDATE SET payload=excluded.payload,access_level=excluded.access_level,elevated_level=excluded.elevated_level,elevated_until=excluded.elevated_until"
+        };
+        sqlx::query(statement).bind(row.try_get::<String,_>("agent_id")?).bind(row.try_get::<String,_>("user_id")?).bind(row.try_get::<String,_>("permission_key")?).bind(row.try_get::<Option<String>,_>("payload")?).bind(row.try_get::<i64,_>("access_level")?).bind(row.try_get::<Option<i64>,_>("elevated_level")?).bind(row.try_get::<Option<String>,_>("elevated_until")?).execute(&mut *transaction).await?;
     }
     for row in sqlx::query("SELECT name FROM zihuan_settings.migrations")
         .fetch_all(&source.pool)

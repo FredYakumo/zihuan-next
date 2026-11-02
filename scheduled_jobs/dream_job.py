@@ -37,7 +37,7 @@ outputs:
 system_prompt: |-
   You are the Dream memory consolidation agent. Produce concise long-term memories in English. Do not address the user. Use the available node graph tools synchronously when they are relevant to consolidating the memory.
 user_prompt: |-
-  Combine the previous Dream memory with this conversation. Record durable facts, preferences, relationships, emotions, and emotional continuity. Do not invent information.
+  Combine the previous Dream memory with this conversation. Record durable facts, preferences, relationships, emotions, and emotional continuity. Do not invent information. Consolidate impressions only about the target QQ ID stated in the transcript. Other participants remain distinct people; never merge accounts based on names or aliases.
 
   Previous Dream memory:
   {previous_memory}
@@ -52,7 +52,7 @@ include_graph_tools: true
 def run_job(request):
     sdk = JobSdk(Host())
     sender_id = request["sender_id"]
-    memory_key = f"dream:{sender_id}"
+    memory_key = f"person-{sender_id}"
 
     messages = sdk.load_history(sender_id)
     lines = []
@@ -62,22 +62,22 @@ def run_job(request):
             continue
         text = message.get("text") or ""
         lines.append(f"{'用户' if role == 'user' else 'Bot'}: {text}")
-    transcript = "\n".join(lines)
+    transcript = f"Target QQ ID: {sender_id}\n" + "\n".join(lines)
 
     previous = ""
-    for record in sdk.list_memory(limit=100, sender_id=sender_id).get("items", []):
+    for record in sdk.search_memory(query=sender_id, top_n=20, sender_id=sender_id, category="person").get("items", []):
         if record.get("key") == memory_key:
-            previous = record.get("value") or ""
+            previous = record.get("impression") or ""
             break
 
-    if not transcript.strip() and not previous.strip():
+    if not lines and not previous.strip():
         # Nothing to consolidate: never fabricate a memory from an empty transcript
         # (e.g. a pending task whose conversation cache was wiped by a restart).
         return {"ok": True, "result": "无对话内容，跳过 Dream 记忆生成"}
 
     result = sdk.run_subagent(DREAM_AGENT_YAML, previous_memory=previous, transcript=transcript)
 
-    sdk.upsert_memory(key=memory_key, value=result, sender_id_list=[sender_id])
+    sdk.upsert_memory(key=memory_key, value=result, category="person", qq_id=sender_id, impression=result)
     sdk.clear_history(sender_id)
 
     return {"ok": True, "result": "Dream 记忆已生成"}

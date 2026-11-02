@@ -129,7 +129,13 @@ fn validate_connection(
         if let ConnectionKind::Elasticsearch(elasticsearch) = kind {
             // A retrieval connection serves several schemas; ensure each index it
             // can host so later tool calls never hit a missing index.
-            for schema in [RetrievalSchema::ImageSemantic, RetrievalSchema::AgentMemory] {
+            for schema in [
+                RetrievalSchema::ImageSemantic,
+                RetrievalSchema::AgentMemory,
+                RetrievalSchema::ConceptMemory,
+                RetrievalSchema::PersonMemory,
+                RetrievalSchema::BehavioralMemory,
+            ] {
                 let reference =
                     zihuan_core::storage::ElasticsearchRef::new(elasticsearch.clone(), schema)
                         .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
@@ -164,6 +170,9 @@ fn validate_connection(
     for schema in [
         RetrievalSchema::ImageSemantic,
         RetrievalSchema::AgentMemory,
+        RetrievalSchema::ConceptMemory,
+        RetrievalSchema::PersonMemory,
+        RetrievalSchema::BehavioralMemory,
         RetrievalSchema::QqMessage,
     ] {
         let weaviate_ref = WeaviateRef::new(

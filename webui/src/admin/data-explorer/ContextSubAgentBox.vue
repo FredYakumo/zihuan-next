@@ -36,8 +36,9 @@
             <span class="context-sub-agent-hint">{{ tools.length }} 个</span>
           </button>
           <div v-if="toolsOpen" class="context-stage-tool-list">
-            <div v-for="tool in tools" :key="tool.name" class="context-stage-tool">
+            <div v-for="tool in tools" :key="tool.name" class="context-stage-tool" :data-memory-tone="memoryToolAppearance(tool.name)?.tone">
               <div class="context-stage-tool-name mono">{{ tool.name }}</div>
+              <span v-if="memoryToolAppearance(tool.name)" class="context-memory-tool-label">{{ memoryToolAppearance(tool.name)?.label }}</span>
               <p v-if="tool.description" class="context-stage-tool-description">{{ tool.description }}</p>
               <JsonView :source="tool.parameters" />
             </div>
@@ -68,9 +69,9 @@
           <div v-if="step.message.content" class="context-sub-agent-text">{{ step.message.content }}</div>
         </div>
 
-        <div v-else class="context-sub-agent-tool">
+        <div v-else class="context-sub-agent-tool" :data-memory-tone="memoryToolAppearance(step.call.name, step.call.arguments)?.tone">
           <div class="context-sub-agent-tool-head">
-            <span class="context-tool-title">工具调用 · {{ step.call.name }}</span>
+            <span class="context-tool-title">工具调用 · {{ step.call.name }} <span v-if="memoryToolAppearance(step.call.name, step.call.arguments)" class="context-memory-tool-label">{{ memoryToolAppearance(step.call.name, step.call.arguments)?.label }}</span></span>
             <span class="context-tool-status">
               <t-loading v-if="step.call.running" size="12px" />
               <span v-else-if="step.call.durationMs !== undefined" class="muted">{{ step.call.durationMs }} ms</span>
@@ -128,7 +129,7 @@
 import { computed, ref } from "vue";
 
 import type { SubAgentNode } from "./ChatContextTurn";
-import { parseToolDefinitions, subAgentMessages } from "./ChatContextTurn";
+import { memoryToolAppearance, parseToolDefinitions, subAgentMessages } from "./ChatContextTurn";
 import { toolResultFailed } from "./useChatContext";
 import JsonView from "./JsonView.vue";
 

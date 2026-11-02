@@ -33,6 +33,15 @@ export function isEmbeddingStage(stage: string | undefined): boolean {
   return stage !== undefined && EMBEDDING_STAGES.has(stage);
 }
 
+/** Stage every LLM model inference of a turn reports under, one bubble per inference call. */
+export const LLM_STAGE = "llm model inference";
+
+const LLM_STAGES = new Set([LLM_STAGE]);
+
+export function isLlmStage(stage: string | undefined): boolean {
+  return stage !== undefined && LLM_STAGES.has(stage);
+}
+
 /**
  * One stage of the turn, wrapping the individual steps it consists of.
  *
@@ -76,6 +85,36 @@ export const PHASE_COLORS = ["#4d8dff", "#34c759", "#ff9f0a", "#a06bff", "#ff5d5
 
 export function phaseColor(index: number): string {
   return PHASE_COLORS[index % PHASE_COLORS.length];
+}
+
+/** The same memory tool appearance is used in Brain and nested agent calls. */
+export function memoryToolAppearance(name: string, argumentsValue?: unknown): {
+  tone: "concept" | "person" | "behavioral" | "recall" | "update";
+  label: string;
+} | undefined {
+  const tool = name.toLowerCase();
+  if (tool === "fullsearchconceptmemory" || tool === "full_search_concept_memory") {
+    return { tone: "recall", label: "全类召回" };
+  }
+  if (tool === "memory_agent") return { tone: "recall", label: "旧版记忆 Agent" };
+  if (!["search_memory", "list_memory_keys", "update_memory"].includes(tool)) return undefined;
+
+  let args = argumentsValue;
+  if (typeof args === "string") {
+    try { args = JSON.parse(args); } catch { args = undefined; }
+  }
+  const category = args && typeof args === "object" && !Array.isArray(args)
+    ? (args as Record<string, unknown>).category
+    : undefined;
+  const kind = category === "concept" || category === "person" || category === "behavioral"
+    ? category
+    : undefined;
+  const categoryLabel = kind ? { concept: "事实", person: "人物", behavioral: "行为" }[kind] : "记忆";
+  if (tool === "update_memory") return { tone: "update", label: `更新${categoryLabel}` };
+  return {
+    tone: kind ?? "concept",
+    label: `${categoryLabel}${tool === "list_memory_keys" ? "目录" : "查询"}`,
+  };
 }
 
 /**
@@ -317,6 +356,8 @@ export interface StageText {
   tools?: StageToolDefinition[];
   /** Live facts of an embedding inference, when this stage reports one. */
   embedding?: EmbeddingStageView;
+  /** Live facts of one LLM model inference, when this stage reports one. */
+  llm?: LlmStageView;
 }
 
 export interface StageToolDefinition {
@@ -577,6 +618,121 @@ export function embeddingStageView(detail: unknown, now: number): EmbeddingStage
   };
 }
 
+/** Readable view of one LLM inference, rendered as its own bubble. */
+export interface LlmStageView {
+  status: "running" | "done" | "error";
+  /** Status line under the bubble title, with the live elapsed time while it runs. */
+  statusText: string;
+  fields: EmbeddingStageField[];
+  /** Whether the inference is streamed; streamed responses fill `streamContent`. */
+  streaming: boolean;
+  /** The request messages exactly as the model received them, oldest first. */
+  messages: StageRawMessage[];
+  /** Assistant text streamed so far; present once the response started. */
+  streamContent?: string;
+  /** Thinking text streamed so far, when the model emits any. */
+  streamReasoning?: string;
+  error?: string;
+}
+
+/**
+ * Readable view of one LLM inference report.
+ *
+ * The backend emits the same stage repeatedly under one id: a `running` report when the
+ * inference starts (model, the request messages, estimated input tokens), streamed updates with
+ * the accumulated text and the time to first token, and a finished/error report with the
+ * measured duration and the token usage. While it runs, the elapsed time is derived from
+ * `started_at` so it keeps ticking between events; `now` is the shared clock of the turn view.
+ */
+export function llmStageView(detail: unknown, now: number): LlmStageView | undefined {
+  const record = detailRecord(detail);
+  if (!record) return undefined;
+
+  const status = embeddingStatus(detail);
+  const startedAt =
+    typeof record.started_at === "string" ? Date.parse(record.started_at) : Number.NaN;
+  const elapsedMs =
+    status === "running" && !Number.isNaN(startedAt) ? Math.max(0, now - startedAt) : undefined;
+  const durationMs = typeof record.duration_ms === "number" ? record.duration_ms : undefined;
+  const statusText =
+    status === "running"
+      ? elapsedMs !== undefined
+        ? `推理中…（已等待 ${formatDuration(elapsedMs)}）`
+        : "推理中…"
+      : status === "error"
+        ? durationMs !== undefined
+          ? `推理失败（耗时 ${formatDuration(durationMs)}）`
+          : "推理失败"
+        : `推理完成（耗时 ${formatDuration(durationMs ?? 0)}）`;
+
+  const usage = detailRecord(record.usage);
+  const promptTokens = typeof usage?.prompt_tokens === "number" ? usage.prompt_tokens : undefined;
+  const completionTokens =
+    typeof usage?.completion_tokens === "number" ? usage.completion_tokens : undefined;
+  const cachedTokens =
+    typeof usage?.cached_prompt_tokens === "number" ? usage.cached_prompt_tokens : undefined;
+  const estimatedTokens =
+    typeof record.prompt_tokens_estimated === "number" ? record.prompt_tokens_estimated : undefined;
+
+  const fields: EmbeddingStageField[] = [];
+  if (typeof record.model === "string") fields.push({ label: "模型", value: record.model });
+  const messageCount = typeof record.message_count === "number" ? record.message_count : undefined;
+  if (promptTokens !== undefined) {
+    const messages = messageCount !== undefined ? `${messageCount} 条消息 · ` : "";
+    fields.push({ label: "输入", value: `${messages}${promptTokens} tokens` });
+  } else if (messageCount !== undefined) {
+    const estimate = estimatedTokens !== undefined ? ` · 预估 ${estimatedTokens} tokens` : "";
+    fields.push({ label: "输入", value: `${messageCount} 条消息${estimate}` });
+  }
+  if (completionTokens !== undefined) {
+    fields.push({ label: "输出", value: `${completionTokens} tokens` });
+  }
+  if (typeof record.first_token_ms === "number") {
+    fields.push({ label: "首 token", value: formatDuration(record.first_token_ms) });
+  }
+  if (typeof record.output_tokens_per_second === "number") {
+    fields.push({
+      label: "速度",
+      value: `${record.output_tokens_per_second.toFixed(1)} tokens/s`,
+    });
+  }
+  if (cachedTokens !== undefined && promptTokens) {
+    fields.push({
+      label: "缓存命中",
+      value: `${((cachedTokens / promptTokens) * 100).toFixed(1)}%`,
+    });
+  }
+  if (typeof record.tools_count === "number" && record.tools_count > 0) {
+    fields.push({ label: "工具", value: `${record.tools_count} 个` });
+  }
+
+  const messages = Array.isArray(record.messages)
+    ? record.messages.flatMap((item): StageRawMessage[] => {
+        const entry = detailRecord(item);
+        if (!entry) return [];
+        return [
+          {
+            role: typeof entry.role === "string" ? entry.role : "",
+            content: typeof entry.content === "string" ? entry.content : "",
+            toolCalls: Array.isArray(entry.tool_calls) ? entry.tool_calls : undefined,
+            toolCallId: typeof entry.tool_call_id === "string" ? entry.tool_call_id : undefined,
+          },
+        ];
+      })
+    : [];
+
+  return {
+    status,
+    statusText,
+    fields,
+    streaming: record.streaming === true,
+    messages,
+    streamContent: detailText(record.stream_content),
+    streamReasoning: detailText(record.stream_reasoning),
+    error: detailText(record.error),
+  };
+}
+
 /**
  * Readable view of a stage's payload.
  *
@@ -593,6 +749,10 @@ export function stageText(
   if (isEmbeddingStage(stage)) {
     const embedding = embeddingStageView(detail, now);
     return embedding ? { embedding } : undefined;
+  }
+  if (isLlmStage(stage)) {
+    const llm = llmStageView(detail, now);
+    return llm ? { llm } : undefined;
   }
   if (typeof detail === "string") {
     return stage === SYSTEM_PROMPT_STAGE ? { text: detail } : undefined;
@@ -738,6 +898,21 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     embeddingOpen.value = next;
   }
 
+  // The LLM bubble's request messages can be as long as the whole conversation, so they start
+  // folded too; the streamed response itself stays visible while the inference runs.
+  const llmMessagesOpen = ref(new Set<string>());
+
+  function isLlmMessagesOpen(id: string): boolean {
+    return llmMessagesOpen.value.has(id);
+  }
+
+  function toggleLlmMessages(id: string) {
+    const next = new Set(llmMessagesOpen.value);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    llmMessagesOpen.value = next;
+  }
+
 
   const stageToolsOpen = ref(new Set<string>());
 
@@ -813,8 +988,8 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
   });
 
   /**
-   * Clock shared by embedding bubbles. It only ticks while an embedding inference is running,
-   * so settled turns do not keep timers alive.
+   * Clock shared by the inference bubbles (embedding and LLM). It only ticks while one of them
+   * is running, so settled turns do not keep timers alive.
    */
   const now = ref(Date.now());
   let clockTimer: number | undefined;
@@ -833,15 +1008,15 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     clockTimer = undefined;
   }
 
-  const hasRunningEmbedding = computed(() =>
+  const hasRunningInference = computed(() =>
     turn().entries.some(
       (entry) =>
         entry.kind === "stage" &&
-        isEmbeddingStage(entry.stage) &&
-        embeddingStatus(entry.detail) === "running",
+        ((isEmbeddingStage(entry.stage) && embeddingStatus(entry.detail) === "running") ||
+          (isLlmStage(entry.stage) && embeddingStatus(entry.detail) === "running")),
     ),
   );
-  watch(hasRunningEmbedding, (running) => (running ? startClock() : stopClock()), {
+  watch(hasRunningInference, (running) => (running ? startClock() : stopClock()), {
     immediate: true,
   });
 
@@ -925,6 +1100,8 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
   // visible at a time.
   const activePhase = ref<{ name: string; color: string } | null>(null);
   const badgeStyle = ref<Record<string, string>>({});
+  /** Whether this turn holds the middle of the viewport; it then owns the floating flag row. */
+  const isFocusedTurn = ref(false);
   const phaseElements = new Map<string, HTMLElement>();
   let scrollRoot: HTMLElement | null = null;
   let frame = 0;
@@ -936,21 +1113,28 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
 
   function updateActivePhase() {
     frame = 0;
-    if (!phaseElements.size) return;
     const rootRect = scrollRoot?.getBoundingClientRect();
     const turnRect = rootEl.value?.getBoundingClientRect();
     if (!rootRect || !turnRect) {
+      isFocusedTurn.value = false;
       activePhase.value = null;
       return;
     }
-    // Every turn renders its own badge at the same fixed spot, so only the turn holding the
+    // Every turn renders its own flag row at the same fixed spot, so only the turn holding the
     // middle of the viewport may show one; otherwise several badges stack and the wrong turn's
     // name wins.
     const focus = rootRect.top + rootRect.height / 2;
-    if (focus < turnRect.top || focus > turnRect.bottom) {
+    const focused = focus >= turnRect.top && focus <= turnRect.bottom;
+    isFocusedTurn.value = focused;
+    if (!focused) {
       activePhase.value = null;
       return;
     }
+    badgeStyle.value = {
+      top: `${rootRect.top + 10}px`,
+      right: `${window.innerWidth - rootRect.right + 20}px`,
+    };
+    if (!phaseElements.size) return;
     // Within that turn, the phase occupying the most visible height is the one being read; a
     // phase peeking in at an edge should not win over the one filling the viewport.
     let best: { phase: { name: string; color: string }; area: number } | null = null;
@@ -963,12 +1147,6 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
       }
     }
     activePhase.value = best?.phase ?? null;
-    if (best) {
-      badgeStyle.value = {
-        top: `${rootRect.top + 10}px`,
-        right: `${window.innerWidth - rootRect.right + 20}px`,
-      };
-    }
   }
 
   function scheduleActivePhaseUpdate() {
@@ -1003,6 +1181,8 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     toggleStageThinking,
     isEmbeddingSectionOpen,
     toggleEmbeddingSection,
+    isLlmMessagesOpen,
+    toggleLlmMessages,
     isStageToolsOpen,
     toggleStageTools,
     isStageRawView,
@@ -1012,6 +1192,7 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     orphanSubAgents,
     activePhase,
     badgeStyle,
+    isFocusedTurn,
     registerPhase,
     stageViews,
     segments,

@@ -8,6 +8,34 @@
     overflow-wrap: anywhere;
 }
 
+/* Color the enclosing call without changing JSON syntax or red failure diagnostics. */
+[data-memory-tone="concept"] { --memory-tool-color: #3b82f6; }
+[data-memory-tone="person"] { --memory-tool-color: #14b8a6; }
+[data-memory-tone="behavioral"] { --memory-tool-color: #22c55e; }
+[data-memory-tone="recall"] { --memory-tool-color: #a78bfa; }
+[data-memory-tone="update"] { --memory-tool-color: #f59e0b; }
+
+.context-bubble--tool[data-memory-tone],
+.context-sub-agent-tool[data-memory-tone],
+.context-stage-tool[data-memory-tone] {
+    border: 1px solid color-mix(in srgb, var(--memory-tool-color) 35%, var(--td-component-border));
+    border-left: 3px solid var(--memory-tool-color);
+    background: color-mix(in srgb, var(--memory-tool-color) 9%, var(--td-bg-color-container));
+}
+
+.context-memory-tool-label {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--memory-tool-color) 16%, var(--td-bg-color-container));
+    color: color-mix(in srgb, var(--memory-tool-color) 65%, var(--td-text-color-primary));
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.6;
+    vertical-align: baseline;
+}
+
 .context-tool-status {
     display: inline-flex;
     align-items: center;

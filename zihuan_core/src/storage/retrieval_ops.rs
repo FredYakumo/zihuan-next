@@ -198,7 +198,7 @@ pub fn search_memory_in_store(
     limit: usize,
 ) -> Result<Vec<AgentMemorySearchHit>> {
     store
-        .database(RetrievalSchema::AgentMemory)?
+        .database(access.category.schema())?
         .search_memory(access, query, query_vector, limit)
 }
 
@@ -208,7 +208,7 @@ pub fn list_memory_in_store(
     access: &AgentMemoryAccessContext,
     limit: usize,
 ) -> Result<Vec<AgentMemorySearchHit>> {
-    store.database(RetrievalSchema::AgentMemory)?.list_memory(access, limit, None)
+    store.database(access.category.schema())?.list_memory(access, limit, None)
 }
 
 /// Creates or updates one agent memory record in the store.
@@ -217,7 +217,7 @@ pub fn upsert_memory_in_store(
     input: &AgentMemoryUpsert,
     vector: Vec<f32>,
 ) -> Result<AgentMemoryRecord> {
-    store.database(RetrievalSchema::AgentMemory)?.upsert_memory(input, vector)
+    store.database(input.attributes.category.schema())?.upsert_memory(input, vector)
 }
 
 fn normalized_elasticsearch_image(properties: Value) -> Value {
@@ -252,5 +252,27 @@ fn parse_media_source(value: Option<&str>) -> PersistedMediaSource {
         "qq_chat" | "qq" => PersistedMediaSource::QqChat,
         "tavily" | "web_search" => PersistedMediaSource::WebSearch,
         _ => PersistedMediaSource::Upload,
+    }
+}
+
+pub fn get_memory_in_store(
+    store: &RetrievalStoreRef,
+    input: &AgentMemoryUpsert,
+) -> Result<Option<AgentMemoryRecord>> {
+    let id = super::memory_object_id(input);
+    let record = match store.backend() {
+        RetrievalBackend::Weaviate => super::get_memory_record(
+            store.weaviate(input.attributes.category.schema())?.as_ref(),
+            &id,
+        ),
+        RetrievalBackend::Elasticsearch => super::get_elasticsearch_memory_record(
+            store.elasticsearch(input.attributes.category.schema())?.as_ref(),
+            &id,
+        ),
+    };
+    match record {
+        Ok(record) => Ok(Some(record)),
+        Err(Error::NotFound) => Ok(None),
+        Err(error) => Err(error),
     }
 }

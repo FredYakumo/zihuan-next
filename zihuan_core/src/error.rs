@@ -4,6 +4,8 @@ use std::num::ParseFloatError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    #[error("Record not found")]
+    NotFound,
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 

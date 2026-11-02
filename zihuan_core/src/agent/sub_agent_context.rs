@@ -10,8 +10,7 @@ use std::sync::Arc;
 
 use crate::agent::declarative_agent::AgentHost;
 use crate::agent::tools::memory_tools::{
-    register_memory_agent_tool, register_memory_tools, MemoryAgentResources, MemoryBackend,
-    MEMORY_AGENT_ID, MEMORY_TOOL_IDS,
+    register_memory_tools, MemoryAgentResources, MemoryBackend, MEMORY_TOOL_IDS,
 };
 use crate::agent::tools::Tool;
 use crate::agent::LLM_KIND_MAIN;
@@ -39,6 +38,9 @@ impl MemoryCapability {
         embedding_model: Option<Arc<dyn EmbeddingBase>>,
     ) -> Option<Self> {
         let backend = if let Some(store) = local_memory_store {
+            if let Err(error) = store.migrate_legacy() {
+                log::warn!("legacy local memory migration deferred: {error}");
+            }
             MemoryBackend::LocalFile(store)
         } else if let Some(store) = retrieval_store {
             if embedding_model.is_none() {
@@ -46,6 +48,11 @@ impl MemoryCapability {
                     "memory capability disabled because the external retrieval store has no embedding model"
                 );
                 return None;
+            }
+            if let Some(model) = embedding_model.as_deref() {
+                if let Err(error) = crate::storage::migrate_retrieval_memory(&store, model) {
+                    log::warn!("legacy retrieval memory migration deferred: {error}");
+                }
             }
             MemoryBackend::RetrievalStore(store)
         } else {
@@ -102,7 +109,7 @@ impl AgentServiceContext {
     /// constructed tools, every registered LLM kind, and the composed memory agent tool.
     pub fn build_host(&self, memory_access: AgentMemoryAccessContext) -> AgentHost {
         let mut host = AgentHost::new();
-        let memory_ready = match self.memory.as_ref().zip(self.llm(LLM_KIND_MAIN)) {
+        match self.memory.as_ref().zip(self.llm(LLM_KIND_MAIN)) {
             Some((memory, llm)) => {
                 register_memory_tools(
                     &mut host,
@@ -113,7 +120,6 @@ impl AgentServiceContext {
                         access: memory_access,
                     },
                 );
-                true
             }
             None => {
                 host.register_disabled_tools(
@@ -124,7 +130,6 @@ impl AgentServiceContext {
                         MEMORY_BACKEND_UNAVAILABLE_REASON
                     },
                 );
-                false
             }
         };
         for (id, tool) in &self.tools {
@@ -132,22 +137,6 @@ impl AgentServiceContext {
         }
         for (kind, llm) in &self.llms {
             host.register_llm(kind.clone(), Arc::clone(llm));
-        }
-        // Compose the memory agent last: its definition resolves the memory tools and the
-        // `main` LLM registered above.
-        let memory_agent_registered = memory_ready
-            && register_memory_agent_tool(&mut host)
-                .map_err(|error| log::warn!("memory agent could not be composed: {error}"))
-                .is_ok();
-        if !memory_agent_registered {
-            host.register_disabled_tool(
-                MEMORY_AGENT_ID,
-                if self.memory.is_some() {
-                    MEMORY_LLM_UNAVAILABLE_REASON
-                } else {
-                    MEMORY_BACKEND_UNAVAILABLE_REASON
-                },
-            );
         }
         host
     }

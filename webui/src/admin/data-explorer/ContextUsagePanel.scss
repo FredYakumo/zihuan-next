@@ -1,6 +1,8 @@
 /*
  * Fixed usage window in the top-right corner of the context page: it stays visible while the
  * turn flow scrolls, so the current token load and how to reset it are always one glance away.
+ * The window is draggable: grabbing anywhere except its buttons moves it, and the picked spot
+ * survives collapsing to the orb and back.
  */
 
 .context-usage-panel {
@@ -23,6 +25,14 @@
     background: linear-gradient(180deg, color-mix(in srgb, var(--admin-bg-panel) 94%, transparent 6%), color-mix(in srgb, var(--admin-bg-panel-strong) 98%, transparent 2%));
     box-shadow: var(--admin-card-shadow);
     backdrop-filter: blur(16px);
+    cursor: grab;
+    /* The window itself is a drag surface; a touch on it moves the window instead of scrolling. */
+    touch-action: none;
+}
+
+.context-usage-panel--dragging {
+    cursor: grabbing;
+    user-select: none;
 }
 
 .context-usage-panel--warning {
@@ -181,10 +191,12 @@
 }
 
 /* Narrow screens have no spare column beside the flow, so the panel sits above it instead of
-   floating over it. */
+   floating over it — and stops acting as a drag surface so touches scroll the page again. */
 @media (max-width: 1180px) {
     .context-usage-panel {
         position: static;
         width: auto;
+        cursor: default;
+        touch-action: auto;
     }
 }

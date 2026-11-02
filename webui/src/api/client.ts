@@ -1035,7 +1035,19 @@ export interface WeaviateExploreResponse {
   schema: "image_semantic" | "agent_memory" | "qq_message";
 }
 
-export interface AgentMemoryRecord {
+export type MemoryCategory = "concept" | "person" | "behavioral";
+export interface MemoryAttributes {
+  category: MemoryCategory;
+  access_level: number;
+  starts_at?: string | null;
+  qq_id?: string;
+  name?: string;
+  preferred_name?: string;
+  aliases?: string[];
+  impression?: string;
+  guideline?: string;
+}
+export interface AgentMemoryRecord extends MemoryAttributes {
   object_id: string;
   title: string;
   value: string;
@@ -1157,6 +1169,20 @@ export interface ServiceChatContextResponse {
   average_cache_hit_rate?: number;
 }
 
+export interface ServiceChatTurnListItem {
+  turn_id: string;
+  created_at: string;
+  user_text: string;
+  assistant_text?: string;
+}
+
+export interface ServiceChatTurnListResponse {
+  total: number;
+  page: number;
+  page_size: number;
+  items: ServiceChatTurnListItem[];
+}
+
 export interface QqChatMessageRateLimitUsageRow {
   sender_id: string;
   sender_name: string | null;
@@ -1233,6 +1259,17 @@ export const explorer = {
     return request("DELETE", `/explorer/services/${encodeURIComponent(serviceId)}/chat-context?${qs}`);
   },
 
+  /** One page of one sender's archived turns, newest first; `query` is fuzzy text or a time point. */
+  queryServiceChatTurns(serviceId: string, senderId: string, query: string, page: number, pageSize: number): Promise<ServiceChatTurnListResponse> {
+    const qs = buildQueryString({ sender_id: senderId, query, page, page_size: pageSize });
+    return request("GET", `/explorer/services/${encodeURIComponent(serviceId)}/chat-turns?${qs}`);
+  },
+
+  deleteServiceChatTurn(serviceId: string, senderId: string, turnId: string): Promise<{ deleted: boolean }> {
+    const qs = buildQueryString({ sender_id: senderId, turn_id: turnId });
+    return request("DELETE", `/explorer/services/${encodeURIComponent(serviceId)}/chat-turn?${qs}`);
+  },
+
   queryMysql(params: {
     connection_id: string;
     message_id?: string;
@@ -1285,7 +1322,7 @@ export const explorer = {
   createAgentMemory(
     connectionId: string,
     embeddingModelRefId: string,
-    payload: {
+    payload: Partial<MemoryAttributes> & {
       title: string;
       value: string;
       expires_at?: string | null;
@@ -1304,7 +1341,7 @@ export const explorer = {
     connectionId: string,
     embeddingModelRefId: string,
     objectId: string,
-    payload: {
+    payload: Partial<MemoryAttributes> & {
       title: string;
       value: string;
       expires_at?: string | null;
@@ -1319,13 +1356,13 @@ export const explorer = {
     return request("PUT", `/explorer/agent-memory/${encodeURIComponent(objectId)}?${qs}`, payload);
   },
 
-  getAgentMemory(connectionId: string, objectId: string): Promise<AgentMemoryRecord> {
-    const qs = buildQueryString({ connection_id: connectionId });
+  getAgentMemory(connectionId: string, objectId: string, category: MemoryCategory = "concept"): Promise<AgentMemoryRecord> {
+    const qs = buildQueryString({ connection_id: connectionId, category });
     return request("GET", `/explorer/agent-memory/${encodeURIComponent(objectId)}?${qs}`);
   },
 
-  deleteAgentMemory(connectionId: string, objectId: string): Promise<{ ok: boolean }> {
-    const qs = buildQueryString({ connection_id: connectionId });
+  deleteAgentMemory(connectionId: string, objectId: string, category: MemoryCategory = "concept"): Promise<{ ok: boolean }> {
+    const qs = buildQueryString({ connection_id: connectionId, category });
     return request("DELETE", `/explorer/agent-memory/${encodeURIComponent(objectId)}?${qs}`);
   },
 

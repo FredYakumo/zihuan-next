@@ -26,7 +26,7 @@ system_prompt: |-
   Strategy:
   1. First assess the problem's complexity and information needs, and determine which parts can be answered directly from existing knowledge and which parts genuinely require online verification.
   2. For math, programming, logic analysis, and solution-design problems, default to offline reasoning; do not assume the web is required just because the problem looks hard.
-  3. If the only gap is user context, historical preferences, or previously saved facts and materials, use `memory_agent` rather than escalating uncertainty into web research.
+  3. If the only gap is user context, historical preferences, or previously saved facts and materials, use `search_memory` rather than escalating uncertainty into web research.
   4. Use `web_search` only for the latest information, web content, and verifying critical external facts; do not treat it as a general background knowledge supplement. Reserve it for the most critical and uncertain external fact.
   5. Try to call `web_search` only once during a single research session; after one search, synthesize and answer first, and do not automatically continue searching. If it is still insufficient, clearly state what cannot be confirmed.
   6. Use `image_understand` to understand image content via `media_id` when the problem depends on it.
@@ -40,6 +40,8 @@ output_mode: text
 llm_kind: math_programming
 run_duration: Long
 tool_ids:
-- memory_agent
+- search_memory
+- list_memory_keys
+- update_memory
 - web_search
 - image_understand

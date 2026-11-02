@@ -25,7 +25,9 @@ use zihuan_core::storage::{
     AgentMemoryAccessContext, AgentMemorySearchHit, AgentMemoryUpsert, ConnectionKind,
     ObjectStorageConfig, RetrievalDatabase, RetrievalSchema, WeaviateClient,
 };
-use zihuan_ims_service::qq_chat::{list_message_rate_limit_usage, reset_message_rate_limit_usage};
+use zihuan_ims_service::qq_chat::{
+    list_message_rate_limit_usage, reset_message_rate_limit_usage, TurnSummary,
+};
 
 use super::config::{render_bad_request, render_internal_error, render_not_found};
 
@@ -549,6 +551,8 @@ struct WeaviateSearchResult {
 
 #[derive(Deserialize)]
 struct AgentMemoryMutationRequest {
+    #[serde(flatten)]
+    attributes: zihuan_core::storage::MemoryAttributes,
     #[serde(alias = "key")]
     title: String,
     value: String,
@@ -614,7 +618,13 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         Err(err) => return render_internal_error(res, err),
     };
 
-    if schema == RetrievalSchema::AgentMemory {
+    if matches!(
+        schema,
+        RetrievalSchema::AgentMemory
+            | RetrievalSchema::ConceptMemory
+            | RetrievalSchema::PersonMemory
+            | RetrievalSchema::BehavioralMemory
+    ) {
         let access = AgentMemoryAccessContext {
             admin: true,
             skip_expiry_extend: true,
@@ -701,7 +711,11 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
 
         let target_vector = match schema {
             RetrievalSchema::ImageSemantic => Some("description_vector".to_string()),
-            RetrievalSchema::AgentMemory | RetrievalSchema::QqMessage => None,
+            RetrievalSchema::AgentMemory
+            | RetrievalSchema::ConceptMemory
+            | RetrievalSchema::PersonMemory
+            | RetrievalSchema::BehavioralMemory
+            | RetrievalSchema::QqMessage => None,
         };
 
         match weaviate_ref.query_near_vector(
@@ -757,7 +771,7 @@ pub async fn create_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Ok(body) => body,
         Err(err) => return render_bad_request(res, err.to_string()),
     };
-    let backend = match resolve_agent_memory_backend(&connection_id) {
+    let backend = match resolve_agent_memory_backend(&connection_id, body.attributes.category) {
         Ok(backend) => backend,
         Err(err) => return render_internal_error(res, err),
     };
@@ -775,11 +789,16 @@ pub async fn create_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Err(err) => return render_internal_error(res, err),
     };
     let input = AgentMemoryUpsert {
+        attributes: body.attributes,
         key: body.title,
         value: body.value,
         expires_at: body.expires_at,
         sender_id_list: body.sender_id_list,
         group_id_list: body.group_id_list,
+    };
+    let _write_guard = match zihuan_core::storage::MEMORY_MUTATION_LOCK.lock() {
+        Ok(guard) => guard,
+        Err(_) => return render_internal_error(res, "memory mutation lock poisoned"),
     };
     let result = match &backend {
         AgentMemoryBackendRef::Weaviate(reference) => {
@@ -813,7 +832,7 @@ pub async fn update_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Ok(body) => body,
         Err(err) => return render_bad_request(res, err.to_string()),
     };
-    let backend = match resolve_agent_memory_backend(&connection_id) {
+    let backend = match resolve_agent_memory_backend(&connection_id, body.attributes.category) {
         Ok(backend) => backend,
         Err(err) => return render_internal_error(res, err),
     };
@@ -831,11 +850,16 @@ pub async fn update_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Err(err) => return render_internal_error(res, err),
     };
     let input = AgentMemoryUpsert {
+        attributes: body.attributes,
         key: body.title,
         value: body.value,
         expires_at: body.expires_at,
         sender_id_list: body.sender_id_list,
         group_id_list: body.group_id_list,
+    };
+    let _write_guard = match zihuan_core::storage::MEMORY_MUTATION_LOCK.lock() {
+        Ok(guard) => guard,
+        Err(_) => return render_internal_error(res, "memory mutation lock poisoned"),
     };
     let result = match &backend {
         AgentMemoryBackendRef::Weaviate(reference) => {
@@ -861,9 +885,18 @@ pub async fn delete_agent_memory(req: &mut Request, res: &mut Response, _depot: 
     if object_id.trim().is_empty() {
         return render_bad_request(res, "object_id is required".into());
     }
-    let backend = match resolve_agent_memory_backend(&connection_id) {
+    let backend = match resolve_agent_memory_backend(
+        &connection_id,
+        req.query::<String>("category")
+            .and_then(|category| serde_json::from_value(json!(category)).ok())
+            .unwrap_or_default(),
+    ) {
         Ok(backend) => backend,
         Err(err) => return render_internal_error(res, err),
+    };
+    let _write_guard = match zihuan_core::storage::MEMORY_MUTATION_LOCK.lock() {
+        Ok(guard) => guard,
+        Err(_) => return render_internal_error(res, "memory mutation lock poisoned"),
     };
     let result = match &backend {
         AgentMemoryBackendRef::Weaviate(reference) => delete_memory_record(reference, &object_id),
@@ -887,7 +920,12 @@ pub async fn get_agent_memory(req: &mut Request, res: &mut Response, _depot: &mu
     if object_id.trim().is_empty() {
         return render_bad_request(res, "object_id is required".into());
     }
-    let backend = match resolve_agent_memory_backend(&connection_id) {
+    let backend = match resolve_agent_memory_backend(
+        &connection_id,
+        req.query::<String>("category")
+            .and_then(|category| serde_json::from_value(json!(category)).ok())
+            .unwrap_or_default(),
+    ) {
         Ok(backend) => backend,
         Err(err) => return render_internal_error(res, err),
     };
@@ -967,6 +1005,7 @@ enum AgentMemoryBackendRef {
 /// store, so admin mutations work on both Weaviate and Elasticsearch.
 fn resolve_agent_memory_backend(
     connection_id: &str,
+    category: zihuan_core::storage::MemoryCategory,
 ) -> zihuan_core::error::Result<AgentMemoryBackendRef> {
     let connections = load_connections()?;
     let connection = resource_resolver::find_connection(&connections, connection_id)?;
@@ -974,7 +1013,7 @@ fn resolve_agent_memory_backend(
         ConnectionKind::Weaviate(weaviate) => {
             Ok(AgentMemoryBackendRef::Weaviate(build_storage_weaviate_ref(
                 &weaviate.base_url,
-                RetrievalSchema::AgentMemory,
+                category.schema(),
                 weaviate.username.clone(),
                 weaviate.password.clone(),
                 weaviate.api_key.clone(),
@@ -985,7 +1024,7 @@ fn resolve_agent_memory_backend(
             let reference = resource_resolver::build_elasticsearch_ref(
                 Some(connection_id),
                 &connections,
-                RetrievalSchema::AgentMemory,
+                category.schema(),
             )?
             .ok_or_else(|| {
                 zihuan_core::error::Error::ValidationError(
@@ -1169,114 +1208,63 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
         Err(error) => return render_bad_request(res, error.to_string()),
     };
     let (retrieval_store_id, embedding_id) = zihuan_service::role::retrieval_store_config(&agent);
-    let access = AgentMemoryAccessContext {
-        admin: true,
-        skip_expiry_extend: true,
-        ..Default::default()
-    };
     let Some(connection_id) = retrieval_store_id else {
         return render_bad_request(res, "Service has no memory store configured".into());
     };
-    let Some(kind) = retrieval_backend_for_connection(&connections, &connection_id) else {
-        return render_bad_request(res, "memory connection is not configured".into());
+    let store =
+        match zihuan_core::retrieval::RetrievalStoreRef::resolve(&connection_id, &connections) {
+            Ok(store) => store,
+            Err(error) => return render_bad_request(res, error.to_string()),
+        };
+    let backend_name = store.backend().as_str();
+    let model = if query.is_some() {
+        let Some(model_id) = embedding_id.as_deref() else {
+            return render_bad_request(
+                res,
+                "Service has no memory embedding model configured".into(),
+            );
+        };
+        match RuntimeEmbeddingModelManager::shared()
+            .get_or_create_embedding_model(model_id)
+            .await
+        {
+            Ok(model) => Some(model),
+            Err(error) => return render_internal_error(res, error),
+        }
+    } else {
+        None
     };
-    match kind {
-        ConnectionKind::Weaviate(_) => {
-            let reference = match resource_resolver::build_weaviate_ref(
-                Some(&connection_id),
-                &connections,
-                RetrievalSchema::AgentMemory,
-            ) {
-                Ok(Some(reference)) => reference,
-                Ok(None) => {
-                    return render_bad_request(res, "memory connection is not configured".into())
-                }
-                Err(error) => return render_internal_error(res, error),
-            };
-            let hits = match query.as_deref() {
-                Some(value) => {
-                    let Some(model_id) = embedding_id.as_deref() else {
-                        return render_bad_request(
-                            res,
-                            "Service has no memory embedding model configured".into(),
-                        );
-                    };
-                    let vector = match service_memory_query_vector(model_id, value).await {
-                        Ok(vector) => vector,
-                        Err(error) => return render_internal_error(res, error),
-                    };
-                    match reference.search_memory(&access, value, &vector, limit) {
-                        Ok(hits) => hits,
-                        Err(error) => return render_internal_error(res, error),
-                    }
-                }
-                None => match reference.list_memory(&access, limit, None) {
-                    Ok(hits) => hits,
-                    Err(error) => return render_internal_error(res, error),
-                },
-            };
-            res.render(Json(ServiceMemoryResponse {
-                items: memory_items(
-                    hits,
-                    if query.is_some() {
-                        "semantic"
-                    } else {
-                        "recent"
-                    },
-                    "weaviate",
-                    true,
-                ),
-                backend: "weaviate",
-                mutable: true,
-            }));
-        }
-        ConnectionKind::Elasticsearch(_) => {
-            let reference = match resource_resolver::build_elasticsearch_ref(
-                Some(&connection_id),
-                &connections,
-                RetrievalSchema::AgentMemory,
-            ) {
-                Ok(Some(reference)) => reference,
-                Ok(None) => {
-                    return render_bad_request(res, "memory connection is not configured".into())
-                }
-                Err(error) => return render_internal_error(res, error),
-            };
-            let hits = match query.as_deref() {
-                Some(value) => {
-                    let Some(model_id) = embedding_id.as_deref() else {
-                        return render_bad_request(
-                            res,
-                            "Service has no memory embedding model configured".into(),
-                        );
-                    };
-                    let vector = match service_memory_query_vector(model_id, value).await {
-                        Ok(vector) => vector,
-                        Err(error) => return render_internal_error(res, error),
-                    };
-                    match reference.search_memory(&access, value, &vector, limit) {
-                        Ok(hits) => hits,
-                        Err(error) => return render_internal_error(res, error),
-                    }
-                }
-                None => match reference.list_memory(&access, limit, None) {
-                    Ok(hits) => hits,
-                    Err(error) => return render_internal_error(res, error),
-                },
-            };
-            res.render(Json(ServiceMemoryResponse {
-                items: memory_items(
-                    hits,
-                    if query.is_some() { "hybrid" } else { "recent" },
-                    "elasticsearch",
-                    true,
-                ),
-                backend: "elasticsearch",
-                mutable: true,
-            }));
-        }
-        _ => return render_bad_request(res, "memory connection is not a retrieval store".into()),
-    }
+    let queried = query.is_some();
+    let results = tokio::task::spawn_blocking(move || {
+        let backend = zihuan_core::agent::tools::memory_tools::MemoryBackend::RetrievalStore(
+            std::sync::Arc::new(store),
+        );
+        // Explorer requests always inspect fresh records and never renew behavioral expiry.
+        let access = AgentMemoryAccessContext {
+            admin: true,
+            skip_expiry_extend: true,
+            ..Default::default()
+        };
+        zihuan_core::agent::tools::memory_tools::full_search_memory(
+            &backend,
+            model.as_deref(),
+            &access,
+            query.as_deref(),
+            limit,
+        )
+    })
+    .await;
+    let batches = match results {
+        Ok(Ok(batches)) => batches,
+        Ok(Err(error)) => return render_internal_error(res, error),
+        Err(error) => return render_internal_error(res, error),
+    };
+    let hits = batches.into_iter().flat_map(|(_, hits)| hits.into_iter().take(limit)).collect();
+    res.render(Json(ServiceMemoryResponse {
+        items: memory_items(hits, if queried { "hybrid" } else { "recent" }, backend_name, true),
+        backend: backend_name,
+        mutable: true,
+    }));
 }
 
 #[handler]
@@ -1597,7 +1585,7 @@ enum ContextTurnEntry {
         #[serde(skip_serializing_if = "Option::is_none")]
         result: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        duration_ms: Option<u128>,
+        duration_ms: Option<u64>,
     },
     /// One step of a sub-agent's own flow, nested under the tool call named by `path`.
     SubAgent {
@@ -1949,6 +1937,122 @@ pub async fn clear_service_chat_context(req: &mut Request, res: &mut Response, _
     res.render(Json(json!({ "cleared": true })));
 }
 
+#[derive(Serialize)]
+struct ServiceChatTurnListResponse {
+    total: i64,
+    page: u64,
+    page_size: u64,
+    items: Vec<TurnSummary>,
+}
+
+/// What the conversation finder's search box holds: either fuzzy text over the turn contents or
+/// a time point to jump to.
+enum TurnQueryKind {
+    Text(String),
+    Time(String),
+}
+
+/// Classify the finder query: a leading full date (`2026-10-17 …`), a bare year or a clock time
+/// (`23:49`) reads as a time point; anything else is fuzzy text.
+fn classify_turn_query(raw: &str) -> TurnQueryKind {
+    let trimmed = raw.trim();
+    let normalized = trimmed.replace('/', "-").replace('.', "-").replace('T', " ");
+    let bytes = normalized.as_bytes();
+    let date_shaped = (bytes.len() == 4 && bytes.iter().all(u8::is_ascii_digit))
+        || (bytes.len() >= 5 && bytes[..4].iter().all(u8::is_ascii_digit) && bytes[4] == b'-');
+    let clock_shaped = !normalized.is_empty()
+        && normalized.contains(':')
+        && normalized.chars().all(|c| c.is_ascii_digit() || c == ':' || c == ' ');
+    if date_shaped || clock_shaped {
+        TurnQueryKind::Time(normalized)
+    } else {
+        TurnQueryKind::Text(trimmed.to_string())
+    }
+}
+
+/// Paged, searched listing of one sender's archived conversation turns, newest first. Powers the
+/// data explorer's conversation finder: the query is either fuzzy text over the user input and
+/// the bot reply, or a time point to jump to. Without a relational database nothing is archived,
+/// which surfaces as an empty list rather than an error.
+#[handler]
+pub async fn query_service_chat_turns(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let service_id = req.param::<String>("service_id").unwrap_or_default();
+    let sender_id = req
+        .query::<String>("sender_id")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let Some(sender_id) = sender_id else {
+        return render_bad_request(res, "sender_id is required".into());
+    };
+    let raw_query = req
+        .query::<String>("query")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let page = req.query::<u64>("page").unwrap_or(1).max(1);
+    let page_size = req.query::<u64>("page_size").unwrap_or(20).clamp(1, 100);
+    let (text_query, time_query) = match raw_query.as_deref().map(classify_turn_query) {
+        Some(TurnQueryKind::Text(text)) => (Some(text), None),
+        Some(TurnQueryKind::Time(time)) => (None, Some(time)),
+        None => (None, None),
+    };
+    let Ok(connection) = resolve_agent_rdb_connection(&service_id).await else {
+        return res.render(Json(ServiceChatTurnListResponse {
+            total: 0,
+            page,
+            page_size,
+            items: Vec::new(),
+        }));
+    };
+    let offset = ((page - 1) * page_size) as i64;
+    match zihuan_ims_service::qq_chat::query_archived_context_turns(
+        &connection,
+        &service_id,
+        &sender_id,
+        text_query.as_deref(),
+        time_query.as_deref(),
+        offset,
+        page_size as i64,
+    ) {
+        Ok((items, total)) => res.render(Json(ServiceChatTurnListResponse {
+            total,
+            page,
+            page_size,
+            items,
+        })),
+        Err(error) => render_internal_error(res, error.to_string()),
+    }
+}
+
+/// Delete one conversation turn record: the process turn log entry and the archived row. The
+/// live model context window is not touched — dropping that is what "清除上下文" is for.
+#[handler]
+pub async fn delete_service_chat_turn(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let service_id = req.param::<String>("service_id").unwrap_or_default();
+    let sender_id = req
+        .query::<String>("sender_id")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let turn_id = req
+        .query::<String>("turn_id")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let (Some(sender_id), Some(turn_id)) = (sender_id, turn_id) else {
+        return render_bad_request(res, "sender_id and turn_id are required".into());
+    };
+    zihuan_core::qq_context::remove_qq_chat_turn_record(&service_id, &sender_id, &turn_id);
+    if let Ok(connection) = resolve_agent_rdb_connection(&service_id).await {
+        if let Err(error) = zihuan_ims_service::qq_chat::delete_archived_context_turn(
+            &connection,
+            &service_id,
+            &sender_id,
+            &turn_id,
+        ) {
+            return render_internal_error(res, error.to_string());
+        }
+    }
+    res.render(Json(json!({ "deleted": true })));
+}
+
 /// Split an assembled QQ user message into its leading system/instruction prefix and the
 /// remaining body. The body still carries the per-turn template; both halves are best-effort.
 fn split_user_context(text: &str) -> (Option<String>, Option<String>) {
@@ -2087,16 +2191,6 @@ fn memory_items(
             mutable,
         })
         .collect()
-}
-
-async fn service_memory_query_vector(
-    embedding_model_id: &str,
-    query: &str,
-) -> zihuan_core::error::Result<Vec<f32>> {
-    let model = RuntimeEmbeddingModelManager::shared()
-        .get_or_create_embedding_model(embedding_model_id)
-        .await?;
-    tokio::task::block_in_place(|| model.inference(query))
 }
 
 /// URL the WebUI can use to preview this image: prefer the cached object

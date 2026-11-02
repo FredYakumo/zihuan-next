@@ -75,8 +75,9 @@
 }
 
 .admin-content {
+  --admin-content-pad-top: 20px;
   height: 100vh;
-  padding: 20px 24px;
+  padding: var(--admin-content-pad-top) 24px;
   overflow-y: auto;
 }
 
@@ -90,7 +91,8 @@
 
 @media (max-width: 1180px) {
   .admin-content {
-    padding: 18px;
+    --admin-content-pad-top: 18px;
+    padding: var(--admin-content-pad-top) 18px;
   }
 }
 
@@ -127,9 +129,10 @@
   }
 
   .admin-content {
+    --admin-content-pad-top: 16px;
     height: auto;
     min-height: 0;
-    padding: 16px;
+    padding: var(--admin-content-pad-top);
   }
 }
 

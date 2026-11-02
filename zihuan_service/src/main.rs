@@ -14,7 +14,6 @@ use lazy_static::lazy_static;
 use log::{error, info};
 use log_util::log_util::LogUtil;
 use salvo::Listener;
-use zihuan_core::config::ConfigRepository;
 
 lazy_static! {
     static ref BASE_LOG: LogUtil = LogUtil::new_with_path("zihuan_next", "logs");
@@ -55,14 +54,22 @@ async fn main() {
         let registry = zihuan_service::command::init_global_command_registry();
         info!("Command registry initialized with {} commands", registry.list_commands().len());
 
-        // Load persisted permissions from config.yaml and apply to registry
-        let repo = zihuan_core::config::FsConfigRepository::default();
-        if let Ok(root) = repo.load_root() {
-            for record in &root.configs.command_permissions {
+        // Migrate legacy command policies and load the authoritative UserPermission rows.
+        let records = match zihuan_core::storage::user_permission::command_records() {
+            Ok(records) => records,
+            Err(error) => {
+                error!("Failed to load UserPermission command policies: {error}");
+                std::process::exit(1);
+            }
+        };
+        {
+            for record in &records {
                 if let Ok(cmd) = serde_json::from_value::<zihuan_core::command::CommandPermission>(
                     record.spec.clone(),
                 ) {
-                    registry.set_permissions(&cmd.command_name, cmd.rules);
+                    if record.enabled && cmd.enabled {
+                        registry.set_permissions(&cmd.command_name, cmd.rules);
+                    }
                 }
             }
         }

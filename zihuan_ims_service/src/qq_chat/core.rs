@@ -140,7 +140,7 @@ fn build_tool_instruction_rules(default_tools_enabled: &HashMap<String, bool>) -
     if has_search_memory || has_web_search {
         let mut priority_parts = vec!["`已有知识直接回答`".to_string()];
         if has_search_memory {
-            priority_parts.push("`memory_agent` 补足已记录信息或上下文".to_string());
+            priority_parts.push("`search_memory` 补足已记录信息或上下文".to_string());
         }
         if has_web_search {
             priority_parts.push("`web_search` 联网核验最新或外部事实".to_string());
@@ -157,10 +157,10 @@ fn build_tool_instruction_rules(default_tools_enabled: &HashMap<String, bool>) -
 
     if has_search_memory {
         lines.push(
-            "- 如果问题涉及用户过往偏好、之前聊过的内容、已经保存过的事实、长期记忆中的资料，优先调用 `memory_agent`，不要跳过".to_string(),
+            "- 如果问题涉及用户过往偏好、之前聊过的内容、已经保存过的事实、长期记忆中的资料，优先调用 `search_memory`，不要跳过".to_string(),
         );
         lines.push(
-            "- `memory_agent` 用于查找或更新已经保存、已经聊过、已经记住的内容；只有当前记忆中没有足够信息时，才考虑是否需要 `web_search`".to_string(),
+            "- `search_memory` 和 `update_memory` 用于查找或更新已经保存、已经聊过、已经记住的内容；只有当前记忆中没有足够信息时，才考虑是否需要 `web_search`".to_string(),
         );
     }
 
@@ -175,13 +175,13 @@ fn build_tool_instruction_rules(default_tools_enabled: &HashMap<String, bool>) -
 
     if has_web_search && is_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
         lines.push(
-            "- `web_search` 之后，如果结果确实有用且值得长期保留，再调用 `memory_agent` 记下来，避免机械地每次都记忆".to_string(),
+            "- `web_search` 之后，如果结果确实有用且值得长期保留，再调用 `update_memory` 记下来，避免机械地每次都记忆".to_string(),
         );
     }
 
     if is_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
         lines.push(
-            "- 当你在本轮回复中描述自己对某个具体事物、人物、话题或行为的态度、喜好、厌恶、偏好或长期观点时，必须在发送最终回复前调用 `memory_agent` 写入该记忆；记忆应明确记录对象和对应态度，不要只写模糊结论".to_string(),
+            "- 当你在本轮回复中描述自己对某个具体事物、人物、话题或行为的态度、喜好、厌恶、偏好或长期观点时，必须在发送最终回复前调用 `update_memory` 写入该记忆；记忆应明确记录对象和对应态度，不要只写模糊结论".to_string(),
         );
     }
 
@@ -227,7 +227,7 @@ fn build_common_system_rules(
          You need to process events. For example, when a user sends a message, you need to generate a reply or choose not to respond to it.\n\
          During event processing, you may call relevant tools when necessary to help produce the final result.\n\
          When dealing with knowledge, objects, or impressions of a person, event, or thing, you must search the memories first.\n\
-         When necessary, you need to manage memory updates, especially when retrieved memories do not match facts from the current event or external data.\n\
+         People are identified only by QQ ID. Names, nicknames and aliases never prove two accounts are the same person. Respect recalled person guidelines and applicable behavioral instructions. Memory writes require category and source; user-requested corrections must use user source with the authenticated sender ID and access level. When necessary, you need to manage memory updates, especially when retrieved memories do not match facts from the current event or external data.\n\
          You will often need to update outdated memories.\n",
     );
 
