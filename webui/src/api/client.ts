@@ -978,6 +978,13 @@ export interface MysqlRecordMedia {
   name: string | null;
 }
 
+export interface MysqlRecordQuote {
+  message_id: string;
+  sender_name: string | null;
+  send_time: string;
+  content: string;
+}
+
 export interface MysqlRecord {
   message_id: string;
   sender_id: string;
@@ -990,6 +997,7 @@ export interface MysqlRecord {
   at_target_list: string | null;
   media_json: string | null;
   media?: MysqlRecordMedia[];
+  quote?: MysqlRecordQuote;
 }
 
 export interface MysqlExploreResponse {

@@ -39,7 +39,7 @@
                 <template v-for="(segment, index) in contentSegments(row, String(rowIndex))" :key="index">
                   <span v-if="segment.type === 'text'">{{ segment.text }}</span>
                   <button
-                    v-else
+                    v-else-if="segment.type === 'image'"
                     type="button"
                     class="content-media"
                     :title="segment.media.name || segment.media.media_id"
@@ -53,6 +53,23 @@
                       @error="onMessageMediaError(segment.media.media_id)"
                     />
                   </button>
+                  <template v-else>
+                    <button
+                      v-if="rowQuote(row, segment.quoteId)"
+                      type="button"
+                      class="content-quote-chip"
+                      :title="quoteTitle(row.quote!)"
+                      @click="toggleMessageQuote(String(rowIndex))"
+                    >引用消息 {{ isMessageQuoteOpen(String(rowIndex)) ? "▴" : "▾" }}</button>
+                    <span v-else>{{ segment.placeholder }}</span>
+                    <span
+                      v-if="row.quote && row.quote.message_id === segment.quoteId && isMessageQuoteOpen(String(rowIndex))"
+                      class="content-quote"
+                    >
+                      <span class="content-quote-meta">{{ quoteMeta(row.quote) }}</span>
+                      <span class="content-quote-body">{{ row.quote.content }}</span>
+                    </span>
+                  </template>
                 </template>
               </div>
             </div>
@@ -257,6 +274,11 @@ const {
   toggleMessageDetail,
   hasMessageDetail,
   isMessageDetailOpen,
+  toggleMessageQuote,
+  isMessageQuoteOpen,
+  rowQuote,
+  quoteTitle,
+  quoteMeta,
   previewMessageMedia,
   previewBaseWidth,
   previewScale,

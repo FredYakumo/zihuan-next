@@ -75,6 +75,49 @@
             border-radius: 4px;
         }
     }
+
+    .content-quote-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        margin: 2px 4px 2px 0;
+        padding: 1px 8px;
+        border: 1px solid var(--td-component-border);
+        border-radius: 999px;
+        background: none;
+        color: var(--td-text-color-secondary);
+        font-size: 12px;
+        line-height: 1.6;
+        cursor: pointer;
+
+        &:hover {
+            border-color: var(--td-brand-color);
+            color: var(--td-brand-color);
+        }
+    }
+
+    .content-quote {
+        display: block;
+        margin: 4px 0;
+        padding: 6px 10px;
+        border-left: 3px solid var(--td-brand-color);
+        border-radius: 4px;
+        background: var(--td-bg-color-container);
+
+        .content-quote-meta {
+            display: block;
+            font-size: 12px;
+            color: var(--td-text-color-secondary);
+        }
+
+        .content-quote-body {
+            display: block;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 12px;
+            color: var(--td-text-color-primary);
+        }
+    }
 }
 
 /* Full-screen image preview: starts small, wheel zooms, close button sits top-right. */

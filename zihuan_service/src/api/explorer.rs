@@ -5,6 +5,7 @@ use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sqlx::Row as SqlxRow;
+use std::collections::HashMap;
 use zihuan_core::config::role_services::load_role_services;
 use zihuan_core::ims_bot_adapter::models::message::MessageMediaRecord;
 use zihuan_core::model_inference::inference_function::compact_message::estimate_messages_tokens;
@@ -65,6 +66,9 @@ struct MessageRecordResponse {
     media_json: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     media: Vec<MessageRecordMedia>,
+    /// Preview of the message this row replies to, when the content carries a reply marker.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quote: Option<MessageRecordQuote>,
 }
 
 #[derive(Serialize)]
@@ -103,6 +107,117 @@ fn message_record_media(
             })
         })
         .collect()
+}
+
+/// The message a `[Reply of message ID ...]` marker points at, enough for a preview.
+#[derive(Debug, Clone, Serialize)]
+struct MessageRecordQuote {
+    message_id: String,
+    sender_name: Option<String>,
+    send_time: String,
+    content: String,
+}
+
+/// Characters of the quoted message kept in the preview.
+const QUOTE_PREVIEW_MAX_CHARS: usize = 300;
+
+/// Pulls the quoted message id out of a `[Reply of message ID ...]` marker.
+fn extract_reply_message_id(content: &str) -> Option<&str> {
+    const MARKER: &str = "[Reply of message ID ";
+    let rest = content.split_once(MARKER)?.1;
+    let id = rest.split(']').next()?.trim();
+    (!id.is_empty()).then_some(id)
+}
+
+/// Attaches each record's quoted-message preview, leaving records without one untouched.
+async fn attach_message_quotes(
+    connection: &RelationalDbConnection,
+    records: &mut [MessageRecordResponse],
+) -> zihuan_core::error::Result<()> {
+    let mut seen = std::collections::HashSet::new();
+    let quoted_ids: Vec<String> = records
+        .iter()
+        .filter_map(|record| extract_reply_message_id(&record.content))
+        .filter(|id| seen.insert(id.to_string()))
+        .map(ToOwned::to_owned)
+        .collect();
+    if quoted_ids.is_empty() {
+        return Ok(());
+    }
+    let quotes = load_message_quotes(connection, &quoted_ids).await?;
+    for record in records.iter_mut() {
+        let Some(id) = extract_reply_message_id(&record.content) else {
+            continue;
+        };
+        record.quote = quotes.get(id).cloned();
+    }
+    Ok(())
+}
+
+/// Loads the quoted messages' previews, concatenating chunked rows like the restore path does.
+async fn load_message_quotes(
+    connection: &RelationalDbConnection,
+    quoted_ids: &[String],
+) -> zihuan_core::error::Result<HashMap<String, MessageRecordQuote>> {
+    if quoted_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let placeholders = std::iter::repeat("?")
+        .take(quoted_ids.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT message_id, sender_name, send_time, content FROM message_record WHERE message_id IN ({placeholders}) ORDER BY id ASC"
+    );
+    macro_rules! fetch_quotes {
+        ($pool:expr, $time:expr) => {{
+            let mut query = sqlx::query(&sql);
+            for id in quoted_ids {
+                query = query.bind(id);
+            }
+            let rows = query.fetch_all($pool).await?;
+            let mut quotes: HashMap<String, MessageRecordQuote> = HashMap::new();
+            for row in rows {
+                let message_id: String = row.try_get("message_id")?;
+                let entry =
+                    quotes.entry(message_id.clone()).or_insert_with(|| MessageRecordQuote {
+                        message_id,
+                        sender_name: row.try_get("sender_name").unwrap_or(None),
+                        send_time: $time(&row),
+                        content: String::new(),
+                    });
+                let content: String = row.try_get("content").unwrap_or_default();
+                entry.content.push_str(&content);
+            }
+            for quote in quotes.values_mut() {
+                if quote.content.chars().count() > QUOTE_PREVIEW_MAX_CHARS {
+                    quote.content = truncate_preview(&quote.content, QUOTE_PREVIEW_MAX_CHARS);
+                }
+            }
+            Ok(quotes)
+        }};
+    }
+    match connection {
+        RelationalDbConnection::MySql(config) => {
+            let pool = config
+                .pool
+                .as_ref()
+                .ok_or_else(|| zihuan_core::string_error!("mysql pool not available"))?;
+            fetch_quotes!(pool, |row: &sqlx::mysql::MySqlRow| row
+                .try_get::<chrono::NaiveDateTime, _>("send_time")
+                .map(|time| time.format("%Y-%m-%d %H:%M:%S").to_string())
+                .unwrap_or_default())
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            let pool = config
+                .pool
+                .as_ref()
+                .ok_or_else(|| zihuan_core::string_error!("sqlite pool not available"))?;
+            fetch_quotes!(pool, |row: &sqlx::sqlite::SqliteRow| row
+                .try_get::<String, _>("send_time")
+                .unwrap_or_default())
+        }
+    }
 }
 
 #[handler]
@@ -291,6 +406,7 @@ pub async fn query_mysql(req: &mut Request, res: &mut Response, _depot: &mut Dep
                     at_target_list: row.try_get("at_target_list").unwrap_or(None),
                     media_json: row.try_get("media_json").unwrap_or(None),
                     media: Vec::new(),
+                    quote: None,
                 });
             }
             Ok::<Vec<MessageRecordResponse>, sqlx::Error>(result)
@@ -1230,12 +1346,13 @@ async fn query_service_message_rows(
                     at_target_list: row.try_get("at_target_list").unwrap_or(None),
                     media_json,
                     media,
+                    quote: None,
                 });
             }
             Ok((records, total))
         }};
     }
-    match connection {
+    let fetched: zihuan_core::error::Result<(Vec<MessageRecordResponse>, i64)> = match &connection {
         RelationalDbConnection::MySql(config) => {
             let pool = config
                 .pool
@@ -1255,7 +1372,10 @@ async fn query_service_message_rows(
                 .try_get::<String, _>("send_time")
                 .unwrap_or_default())
         }
-    }
+    };
+    let (mut records, total) = fetched?;
+    attach_message_quotes(&connection, &mut records).await?;
+    Ok((records, total))
 }
 
 #[handler]

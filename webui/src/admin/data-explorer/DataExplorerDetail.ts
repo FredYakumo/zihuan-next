@@ -2,7 +2,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { PrimaryTableCol } from "tdesign-vue-next";
 
-import type { MysqlRecord, MysqlRecordMedia, ServiceChatUserItem } from "../../api/client";
+import type { MysqlRecord, MysqlRecordMedia, MysqlRecordQuote, ServiceChatUserItem } from "../../api/client";
 import { type ChatContextFlowExposed } from "./ChatContextFlow";
 import { type ServiceCapability, useDataExplorerDetail } from "./useDataExplorer";
 import { useChatContext } from "./useChatContext";
@@ -43,9 +43,13 @@ export function useDataExplorerDetailPage() {
   function onImageError(objectId: string) { failedPreviews.value.add(objectId); }
   watch(() => image.value.items, () => { failedPreviews.value = new Set<string>(); });
 
-  const mediaIdPattern = /\[Image:?\s+media_id=([^\s\]]+)\]/g;
+  /** Matches the image placeholders and reply markers the message renderer writes into content. */
+  const segmentPattern = /\[Image:?\s+media_id=([^\s\]]+)\]|\[Reply of message ID (\d+)\]/g;
 
-  type MessageContentSegment = { type: "text"; text: string } | { type: "image"; media: MysqlRecordMedia };
+  type MessageContentSegment =
+    | { type: "text"; text: string }
+    | { type: "image"; media: MysqlRecordMedia }
+    | { type: "quote"; quoteId: string; placeholder: string };
 
   const PREVIEW_TEXT_LIMIT = 150;
 
@@ -53,9 +57,12 @@ export function useDataExplorerDetailPage() {
   function onMessageMediaError(mediaId: string) { failedMessageMedia.value.add(mediaId); }
   /** Record keys (`message_id:row`) whose full content is expanded in the messages table. */
   const expandedMessages = ref(new Set<string>());
+  /** Record keys whose inline quoted message is expanded below the quote chip. */
+  const expandedQuotes = ref(new Set<string>());
   watch(() => message.value.records, () => {
     failedMessageMedia.value = new Set<string>();
     expandedMessages.value = new Set<string>();
+    expandedQuotes.value = new Set<string>();
   });
 
   function toggleMessageDetail(key: string) {
@@ -66,37 +73,61 @@ export function useDataExplorerDetailPage() {
   function isMessageDetailOpen(key: string): boolean {
     return expandedMessages.value.has(key);
   }
+  function toggleMessageQuote(key: string) {
+    const next = expandedQuotes.value;
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+  }
+  function isMessageQuoteOpen(key: string): boolean {
+    return expandedQuotes.value.has(key);
+  }
+  /** The record's quote when it matches the marker's id, so stale markers fall back to text. */
+  function rowQuote(row: MysqlRecord, quoteId: string): MysqlRecordQuote | null {
+    return row.quote && row.quote.message_id === quoteId ? row.quote : null;
+  }
+  /** Hover preview for the quote chip: sender, time and content in a native tooltip. */
+  function quoteTitle(quote: MysqlRecordQuote): string {
+    const meta = [quote.sender_name, quote.send_time].filter(Boolean).join(" · ");
+    return meta ? `${meta}\n${quote.content}` : quote.content;
+  }
+  function quoteMeta(quote: MysqlRecordQuote): string {
+    return [quote.sender_name, quote.send_time].filter(Boolean).join(" · ") || quote.message_id;
+  }
   /** The preview keeps only the first characters of text, so longer records offer the detail view. */
   function hasMessageDetail(row: MysqlRecord): boolean {
     return (row.content_full ?? row.content).length > PREVIEW_TEXT_LIMIT;
   }
 
-  /** Interleave a record's full content with the images its `[Image: media_id=...]` placeholders reference. */
+  /** Interleave a record's full content with the images and reply markers it contains. */
   function fullContentSegments(row: MysqlRecord): MessageContentSegment[] {
     const text = row.content_full ?? row.content;
+    if (!text) return [];
     const available = (row.media ?? []).filter((entry) => entry.url && !failedMessageMedia.value.has(entry.media_id));
-    if (!available.length) return text ? [{ type: "text", text }] : [];
     const byId = new Map(available.map((entry) => [entry.media_id, entry]));
     const segments: MessageContentSegment[] = [];
     let cursor = 0;
-    for (const match of text.matchAll(mediaIdPattern)) {
+    for (const match of text.matchAll(segmentPattern)) {
       const start = match.index ?? 0;
       if (start > cursor) segments.push({ type: "text", text: text.slice(cursor, start) });
-      const entry = byId.get(match[1]);
-      if (entry) segments.push({ type: "image", media: entry });
-      else segments.push({ type: "text", text: match[0] });
+      if (match[1]) {
+        const entry = byId.get(match[1]);
+        if (entry) segments.push({ type: "image", media: entry });
+        else segments.push({ type: "text", text: match[0] });
+      } else {
+        segments.push({ type: "quote", quoteId: match[2] ?? "", placeholder: match[0] });
+      }
       cursor = start + match[0].length;
     }
     if (cursor < text.length) segments.push({ type: "text", text: text.slice(cursor) });
     return segments;
   }
 
-  /** Cut a segment list down to `limit` characters of text, keeping the images it passes. */
+  /** Cut a segment list down to `limit` characters of text, keeping the images and quotes it passes. */
   function limitSegments(segments: MessageContentSegment[], limit: number): MessageContentSegment[] {
     const result: MessageContentSegment[] = [];
     let remaining = limit;
     for (const segment of segments) {
-      if (segment.type === "image") {
+      if (segment.type !== "text") {
         result.push(segment);
         continue;
       }
@@ -169,6 +200,11 @@ export function useDataExplorerDetailPage() {
     toggleMessageDetail,
     hasMessageDetail,
     isMessageDetailOpen,
+    toggleMessageQuote,
+    isMessageQuoteOpen,
+    rowQuote,
+    quoteTitle,
+    quoteMeta,
     previewMessageMedia,
     previewBaseWidth,
     previewScale,
