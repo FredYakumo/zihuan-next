@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sqlx::Row as SqlxRow;
 use zihuan_core::config::role_services::load_role_services;
+use zihuan_core::ims_bot_adapter::models::message::MessageMediaRecord;
 use zihuan_core::model_inference::inference_function::compact_message::estimate_messages_tokens;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::url_utils::{
@@ -59,8 +60,49 @@ struct MessageRecordResponse {
     group_id: Option<String>,
     group_name: Option<String>,
     content: String,
+    content_full: String,
     at_target_list: Option<String>,
     media_json: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    media: Vec<MessageRecordMedia>,
+}
+
+#[derive(Serialize)]
+struct MessageRecordMedia {
+    media_id: String,
+    url: String,
+    mime_type: Option<String>,
+    name: Option<String>,
+}
+
+/// Parses a record row's `media_json` and resolves a preview URL for each image it
+/// describes, preferring the cached RustFS copy over the original remote source.
+fn message_record_media(
+    media_json: Option<&str>,
+    object_storage_connection_id: Option<&str>,
+) -> Vec<MessageRecordMedia> {
+    let Some(media_json) = media_json.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<MessageMediaRecord>>(media_json)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|record| {
+            let rustfs_path = Some(record.rustfs_path.clone()).filter(|value| !value.trim().is_empty());
+            let url = image_preview_url(
+                rustfs_path.as_deref(),
+                Some(record.original_source.as_str()),
+                record.mime_type.as_deref(),
+                object_storage_connection_id,
+            )?;
+            Some(MessageRecordMedia {
+                media_id: record.media_id,
+                url,
+                mime_type: record.mime_type,
+                name: record.name,
+            })
+        })
+        .collect()
 }
 
 #[handler]
@@ -245,8 +287,10 @@ pub async fn query_mysql(req: &mut Request, res: &mut Response, _depot: &mut Dep
                     group_id: row.try_get("group_id").unwrap_or(None),
                     group_name: row.try_get("group_name").unwrap_or(None),
                     content: content_display,
+                    content_full: content_raw,
                     at_target_list: row.try_get("at_target_list").unwrap_or(None),
                     media_json: row.try_get("media_json").unwrap_or(None),
+                    media: Vec::new(),
                 });
             }
             Ok::<Vec<MessageRecordResponse>, sqlx::Error>(result)
@@ -1100,7 +1144,21 @@ pub async fn query_service_messages(req: &mut Request, res: &mut Response, _depo
     .map(|key| (key, req.query::<String>(key).unwrap_or_default()))
     .filter(|(_, value)| !value.trim().is_empty())
     .collect::<Vec<_>>();
-    match query_service_message_rows(connection, &filters, page, page_size).await {
+    // The service's own RustFS connection is what cached the images, so its id rides on every
+    // preview URL for the media proxy to resolve.
+    let object_storage_connection_id = load_role_services()
+        .ok()
+        .and_then(|agents| agents.into_iter().find(|agent| agent.id == service_id))
+        .and_then(|agent| zihuan_service::role::object_storage_connection_id(&agent));
+    match query_service_message_rows(
+        connection,
+        &filters,
+        page,
+        page_size,
+        object_storage_connection_id.as_deref(),
+    )
+    .await
+    {
         Ok((records, total)) => {
             res.render(Json(MysqlExploreResponse { records, total, page, page_size }))
         }
@@ -1113,6 +1171,7 @@ async fn query_service_message_rows(
     filters: &[(&str, String)],
     page: u32,
     page_size: u32,
+    object_storage_connection_id: Option<&str>,
 ) -> zihuan_core::error::Result<(Vec<MessageRecordResponse>, i64)> {
     let mut where_clauses = Vec::new();
     let mut values = Vec::new();
@@ -1154,6 +1213,11 @@ async fn query_service_message_rows(
                 data_query.bind(page_size).bind((page - 1) * page_size).fetch_all($pool).await?;
             let mut records = Vec::with_capacity(rows.len());
             for row in rows {
+                let media_json: Option<String> = row.try_get("media_json").unwrap_or(None);
+                let media =
+                    message_record_media(media_json.as_deref(), object_storage_connection_id);
+                let content_full: String = row.try_get("content").unwrap_or_default();
+                let content = truncate_preview(&content_full, 500);
                 records.push(MessageRecordResponse {
                     message_id: row.try_get("message_id").unwrap_or_default(),
                     sender_id: row.try_get("sender_id").unwrap_or_default(),
@@ -1161,12 +1225,11 @@ async fn query_service_message_rows(
                     send_time: $time(&row),
                     group_id: row.try_get("group_id").unwrap_or(None),
                     group_name: row.try_get("group_name").unwrap_or(None),
-                    content: truncate_preview(
-                        &row.try_get::<String, _>("content").unwrap_or_default(),
-                        500,
-                    ),
+                    content,
+                    content_full,
                     at_target_list: row.try_get("at_target_list").unwrap_or(None),
-                    media_json: row.try_get("media_json").unwrap_or(None),
+                    media_json,
+                    media,
                 });
             }
             Ok((records, total))

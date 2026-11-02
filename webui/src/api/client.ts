@@ -971,7 +971,13 @@ export interface WorkspaceDirectoryBrowser {
   recent_directories: string[];
 }
 
-// Data Explorer
+export interface MysqlRecordMedia {
+  media_id: string;
+  url: string;
+  mime_type: string | null;
+  name: string | null;
+}
+
 export interface MysqlRecord {
   message_id: string;
   sender_id: string;
@@ -980,8 +986,10 @@ export interface MysqlRecord {
   group_id: string | null;
   group_name: string | null;
   content: string;
+  content_full?: string;
   at_target_list: string | null;
   media_json: string | null;
+  media?: MysqlRecordMedia[];
 }
 
 export interface MysqlExploreResponse {

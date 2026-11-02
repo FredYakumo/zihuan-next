@@ -33,7 +33,40 @@
         <t-table v-if="message.records.length" row-key="message_id" :data="message.records" :columns="messageColumns">
           <template #sender="{ row }"><div>{{ row.sender_name }}</div><div class="mono muted">{{ row.sender_id }}</div></template>
           <template #group="{ row }">{{ row.group_name || row.group_id || '-' }}</template>
-          <template #content="{ row }"><span class="content-cell">{{ row.content }}</span></template>
+          <template #content="{ row, rowIndex }">
+            <div class="content-cell">
+              <div class="content-body" :class="{ 'content-body--expanded': isMessageDetailOpen(String(rowIndex)) }">
+                <template v-for="(segment, index) in contentSegments(row, String(rowIndex))" :key="index">
+                  <span v-if="segment.type === 'text'">{{ segment.text }}</span>
+                  <a
+                    v-else
+                    class="content-media"
+                    :href="segment.media.url"
+                    target="_blank"
+                    rel="noopener"
+                    :title="segment.media.name || segment.media.media_id"
+                  >
+                    <img
+                      :src="segment.media.url"
+                      :alt="segment.media.name || segment.media.media_id"
+                      referrerpolicy="no-referrer"
+                      loading="lazy"
+                      @error="onMessageMediaError(segment.media.media_id)"
+                    />
+                  </a>
+                </template>
+              </div>
+            </div>
+          </template>
+          <template #detail="{ row, rowIndex }">
+            <t-button
+              v-if="hasMessageDetail(row)"
+              variant="text"
+              theme="primary"
+              size="small"
+              @click="toggleMessageDetail(String(rowIndex))"
+            >{{ isMessageDetailOpen(String(rowIndex)) ? "收起" : "详情" }}</t-button>
+          </template>
         </t-table>
         <div v-else-if="message.searched && !message.loading" class="empty-state">无匹配聊天记录。</div>
         <t-pagination v-if="message.total" class="pagination" :total="message.total" :current="message.page" :page-size="message.pageSize" :page-size-options="[20, 50, 100]" show-jumper @change="onMessagePaginationChange" />
@@ -200,6 +233,11 @@ const {
   searchImages,
   failedPreviews,
   onImageError,
+  contentSegments,
+  onMessageMediaError,
+  toggleMessageDetail,
+  hasMessageDetail,
+  isMessageDetailOpen,
   pageTitle,
   userColumns,
   onUserRowClick,
