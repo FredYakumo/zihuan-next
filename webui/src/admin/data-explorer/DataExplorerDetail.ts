@@ -3,6 +3,7 @@ import { useRoute, useRouter } from "vue-router";
 import type { PrimaryTableCol } from "tdesign-vue-next";
 
 import type { MysqlRecord, ServiceChatUserItem } from "../../api/client";
+import { type ChatContextFlowExposed } from "./ChatContextFlow";
 import { type ServiceCapability, useDataExplorerDetail } from "./useDataExplorer";
 import { useChatContext } from "./useChatContext";
 
@@ -18,6 +19,9 @@ export function useDataExplorerDetailPage() {
 
   /** Visibility of the conversation finder dialog over the selected user's turns. */
   const turnFinderVisible = ref(false);
+  /** The rendered context flow, so a finder pick can scroll it to that turn. */
+  const contextFlowRef = ref<ChatContextFlowExposed | null>(null);
+  function focusTurn(turnId: string) { contextFlowRef.value?.scrollToTurn(turnId); }
 
   const userColumns: PrimaryTableCol<ServiceChatUserItem>[] = [{ colKey: "sender", title: "用户", width: 220 }, { colKey: "group", title: "最近群组", width: 180 }, { colKey: "context_tokens", title: "上下文 Token", width: 130 }, { colKey: "last", title: "最近时间", width: 200 }];
   const messageColumns: PrimaryTableCol<MysqlRecord>[] = [{ colKey: "message_id", title: "消息 ID", width: 160 }, { colKey: "sender", title: "发送者", width: 160 }, { colKey: "send_time", title: "发送时间", width: 180 }, { colKey: "group", title: "群组", width: 150 }, { colKey: "content", title: "内容" }];
@@ -89,5 +93,7 @@ export function useDataExplorerDetailPage() {
     deletingTurnId,
     deleteTurn,
     turnFinderVisible,
+    contextFlowRef,
+    focusTurn,
   };
 }

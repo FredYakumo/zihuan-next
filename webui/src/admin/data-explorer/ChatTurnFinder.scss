@@ -13,6 +13,10 @@
     flex: 1;
 }
 
+.chat-turn-finder :deep(.t-table tbody tr) {
+    cursor: pointer;
+}
+
 .finder-reply {
     color: var(--td-text-color-secondary);
 }

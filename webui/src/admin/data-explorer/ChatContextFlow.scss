@@ -4,6 +4,20 @@
     overflow-anchor: none;
 }
 
+.context-turn--flash {
+    animation: context-turn-flash 1.6s ease-out;
+}
+
+@keyframes context-turn-flash {
+    0%, 35% {
+        background-color: var(--td-brand-color-light);
+    }
+
+    100% {
+        background-color: transparent;
+    }
+}
+
 .context-stats {
     display: flex;
     flex-wrap: wrap;

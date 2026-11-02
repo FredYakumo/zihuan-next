@@ -1,5 +1,6 @@
 <template>
-  <t-dialog v-model:visible="visibleModel" header="查找对话" width="720px" :footer="false">
+  <!-- top overrides the default 20vh placement so the tall list starts near the page top. -->
+  <t-dialog v-model:visible="visibleModel" header="查找对话" width="720px" top="48px" :footer="false">
     <div class="chat-turn-finder">
       <div class="finder-search">
         <t-input
@@ -10,7 +11,7 @@
         />
         <t-button theme="primary" :loading="loading" @click="search(1)">搜索</t-button>
       </div>
-      <t-table v-if="items.length" row-key="turn_id" :data="items" :columns="columns" :loading="loading" :hover="true">
+      <t-table v-if="items.length" row-key="turn_id" :data="items" :columns="columns" :loading="loading" :hover="true" @row-click="onRowClick">
         <template #user="{ row }"><span :title="row.user_text">{{ row.user_text || "（无文本输入）" }}</span></template>
         <template #reply="{ row }"><span class="finder-reply" :title="row.assistant_text || ''">{{ replyPreview(row.assistant_text) }}</span></template>
         <template #date="{ row }">{{ formatTime(row.created_at) }}</template>
@@ -34,7 +35,7 @@ const props = defineProps<{
   visible: boolean;
 }>();
 
-const emit = defineEmits<{ "update:visible": [value: boolean] }>();
+const emit = defineEmits<{ "update:visible": [value: boolean]; select: [turnId: string] }>();
 
 const visibleModel = computed({
   get: () => props.visible,
@@ -83,6 +84,11 @@ async function search(targetPage: number) {
 
 function onPageChange(info: { current: number; pageSize: number }) {
   void search(info.current);
+}
+
+function onRowClick(context: { row: ServiceChatTurnListItem }) {
+  emit("select", context.row.turn_id);
+  visibleModel.value = false;
 }
 
 // Opening the finder lists all conversations of the selected user, newest first.

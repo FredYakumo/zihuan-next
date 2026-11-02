@@ -9,12 +9,14 @@
           <span>-----旧的历史-----</span>
         </div>
         
-        <div v-if="item.showHeader" class="context-turn-header" role="separator">
+        <div v-if="item.showHeader" class="context-turn-header" role="separator" :data-turn-id="item.turn.turnId">
           <span class="context-turn-header-title" :title="item.turn.userText">{{ item.turn.userText || "（无文本输入）" }}</span>
           <span class="context-turn-header-time">{{ formatTime(item.turn.createdAt) }}</span>
         </div>
         <ChatContextTurn
           :turn="item.turn"
+          :class="{ 'context-turn--flash': item.turn.turnId === flashTurnId }"
+          :data-turn-id="item.turn.turnId"
           :deleting="deletingTurnId === item.turn.turnId"
           @delete-turn="emit('delete-turn', item.turn)"
         />
@@ -40,6 +42,7 @@ import {
   formatPercent,
   formatRate,
   type ChatContextFlowEmits,
+  type ChatContextFlowExposed,
   type ChatContextFlowProps,
   useChatContextFlow,
 } from "./ChatContextFlow";
@@ -49,7 +52,9 @@ const props = defineProps<ChatContextFlowProps>();
 
 const emit = defineEmits<ChatContextFlowEmits>();
 
-const { rootEl, allTurns, visibleItems } = useChatContextFlow(props);
+const { rootEl, allTurns, visibleItems, flashTurnId, scrollToTurn } = useChatContextFlow(props);
+
+defineExpose({ scrollToTurn } satisfies ChatContextFlowExposed);
 </script>
 
 <style scoped lang="scss">

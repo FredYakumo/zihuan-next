@@ -143,6 +143,7 @@
             @clear="clearContext"
           />
           <ChatContextFlow
+            ref="contextFlowRef"
             :backend="backend"
             :loading-context="loadingContext"
             :turns="turns"
@@ -156,7 +157,7 @@
             :deleting-turn-id="deletingTurnId"
             @delete-turn="deleteTurn"
           />
-          <ChatTurnFinder v-model:visible="turnFinderVisible" :service-id="serviceId" :sender-id="selectedSenderId" />
+          <ChatTurnFinder v-model:visible="turnFinderVisible" :service-id="serviceId" :sender-id="selectedSenderId" @select="focusTurn" />
         </div>
       </template>
 
@@ -231,6 +232,8 @@ const {
   clearContext,
   deleteTurn,
   turnFinderVisible,
+  contextFlowRef,
+  focusTurn,
 } = useDataExplorerDetailPage();
 </script>
 
