@@ -38,13 +38,12 @@
               <div class="content-body" :class="{ 'content-body--expanded': isMessageDetailOpen(String(rowIndex)) }">
                 <template v-for="(segment, index) in contentSegments(row, String(rowIndex))" :key="index">
                   <span v-if="segment.type === 'text'">{{ segment.text }}</span>
-                  <a
+                  <button
                     v-else
+                    type="button"
                     class="content-media"
-                    :href="segment.media.url"
-                    target="_blank"
-                    rel="noopener"
                     :title="segment.media.name || segment.media.media_id"
+                    @click="openMessageMedia(segment.media)"
                   >
                     <img
                       :src="segment.media.url"
@@ -53,7 +52,7 @@
                       loading="lazy"
                       @error="onMessageMediaError(segment.media.media_id)"
                     />
-                  </a>
+                  </button>
                 </template>
               </div>
             </div>
@@ -70,6 +69,25 @@
         </t-table>
         <div v-else-if="message.searched && !message.loading" class="empty-state">无匹配聊天记录。</div>
         <t-pagination v-if="message.total" class="pagination" :total="message.total" :current="message.page" :page-size="message.pageSize" :page-size-options="[20, 50, 100]" show-jumper @change="onMessagePaginationChange" />
+        <Teleport to="body">
+          <div
+            v-if="previewMessageMedia"
+            class="content-media-preview"
+            @wheel="onPreviewWheel"
+            @click.self="closeMessageMedia"
+          >
+            <button type="button" class="content-media-preview-close" title="关闭" @click="closeMessageMedia">
+              <CloseIcon />
+            </button>
+            <img
+              :src="previewMessageMedia.url"
+              :alt="previewMessageMedia.name || previewMessageMedia.media_id"
+              referrerpolicy="no-referrer"
+              :style="previewBaseWidth ? { width: `${previewBaseWidth * previewScale}px` } : { maxWidth: '50vw', maxHeight: '65vh' }"
+              @load="onPreviewLoad"
+            />
+          </div>
+        </Teleport>
       </template>
 
       <template v-else-if="capability === 'memories'">
@@ -214,6 +232,7 @@ import { useDataExplorerDetailPage } from "./DataExplorerDetail";
 import ChatContextFlow from "./ChatContextFlow.vue";
 import ChatTurnFinder from "./ChatTurnFinder.vue";
 import ContextUsagePanel from "./ContextUsagePanel.vue";
+import { CloseIcon } from "tdesign-icons-vue-next";
 
 const {
   capability,
@@ -238,6 +257,13 @@ const {
   toggleMessageDetail,
   hasMessageDetail,
   isMessageDetailOpen,
+  previewMessageMedia,
+  previewBaseWidth,
+  previewScale,
+  openMessageMedia,
+  closeMessageMedia,
+  onPreviewLoad,
+  onPreviewWheel,
   pageTitle,
   userColumns,
   onUserRowClick,

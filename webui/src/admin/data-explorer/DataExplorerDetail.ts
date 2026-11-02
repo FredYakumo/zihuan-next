@@ -119,6 +119,32 @@ export function useDataExplorerDetailPage() {
     return isMessageDetailOpen(key) ? all : limitSegments(all, PREVIEW_TEXT_LIMIT);
   }
 
+  /** Message image opened in the preview overlay, with its fitted base width and wheel zoom. */
+  const previewMessageMedia = ref<MysqlRecordMedia | null>(null);
+  const previewBaseWidth = ref(0);
+  const previewScale = ref(1);
+  function openMessageMedia(media: MysqlRecordMedia) {
+    previewMessageMedia.value = media;
+    previewBaseWidth.value = 0;
+    previewScale.value = 1;
+  }
+  function closeMessageMedia() { previewMessageMedia.value = null; }
+  /** Fit the opened image into half the viewport so the preview starts small. */
+  function onPreviewLoad(event: Event) {
+    const image = event.target as HTMLImageElement;
+    const fit = Math.min(
+      1,
+      (window.innerWidth * 0.5) / image.naturalWidth,
+      (window.innerHeight * 0.65) / image.naturalHeight,
+    );
+    previewBaseWidth.value = image.naturalWidth * fit;
+  }
+  function onPreviewWheel(event: WheelEvent) {
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+    previewScale.value = Math.min(8, Math.max(0.2, previewScale.value * factor));
+  }
+
   return {
     serviceId,
     capability,
@@ -143,6 +169,13 @@ export function useDataExplorerDetailPage() {
     toggleMessageDetail,
     hasMessageDetail,
     isMessageDetailOpen,
+    previewMessageMedia,
+    previewBaseWidth,
+    previewScale,
+    openMessageMedia,
+    closeMessageMedia,
+    onPreviewLoad,
+    onPreviewWheel,
     pageTitle,
     userColumns,
     onUserRowClick,
