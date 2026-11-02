@@ -71,7 +71,7 @@ struct MessageRecordResponse {
     quote: Option<MessageRecordQuote>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct MessageRecordMedia {
     media_id: String,
     url: String,
@@ -116,6 +116,8 @@ struct MessageRecordQuote {
     sender_name: Option<String>,
     send_time: String,
     content: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    media: Vec<MessageRecordMedia>,
 }
 
 /// Characters of the quoted message kept in the preview.
@@ -133,6 +135,7 @@ fn extract_reply_message_id(content: &str) -> Option<&str> {
 async fn attach_message_quotes(
     connection: &RelationalDbConnection,
     records: &mut [MessageRecordResponse],
+    object_storage_connection_id: Option<&str>,
 ) -> zihuan_core::error::Result<()> {
     let mut seen = std::collections::HashSet::new();
     let quoted_ids: Vec<String> = records
@@ -144,7 +147,7 @@ async fn attach_message_quotes(
     if quoted_ids.is_empty() {
         return Ok(());
     }
-    let quotes = load_message_quotes(connection, &quoted_ids).await?;
+    let quotes = load_message_quotes(connection, &quoted_ids, object_storage_connection_id).await?;
     for record in records.iter_mut() {
         let Some(id) = extract_reply_message_id(&record.content) else {
             continue;
@@ -158,6 +161,7 @@ async fn attach_message_quotes(
 async fn load_message_quotes(
     connection: &RelationalDbConnection,
     quoted_ids: &[String],
+    object_storage_connection_id: Option<&str>,
 ) -> zihuan_core::error::Result<HashMap<String, MessageRecordQuote>> {
     if quoted_ids.is_empty() {
         return Ok(HashMap::new());
@@ -167,7 +171,7 @@ async fn load_message_quotes(
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
-        "SELECT message_id, sender_name, send_time, content FROM message_record WHERE message_id IN ({placeholders}) ORDER BY id ASC"
+        "SELECT message_id, sender_name, send_time, content, media_json FROM message_record WHERE message_id IN ({placeholders}) ORDER BY id ASC"
     );
     macro_rules! fetch_quotes {
         ($pool:expr, $time:expr) => {{
@@ -179,12 +183,15 @@ async fn load_message_quotes(
             let mut quotes: HashMap<String, MessageRecordQuote> = HashMap::new();
             for row in rows {
                 let message_id: String = row.try_get("message_id")?;
+                let media_json: Option<String> = row.try_get("media_json").unwrap_or(None);
                 let entry =
                     quotes.entry(message_id.clone()).or_insert_with(|| MessageRecordQuote {
                         message_id,
                         sender_name: row.try_get("sender_name").unwrap_or(None),
                         send_time: $time(&row),
                         content: String::new(),
+                        // Only the first chunk carries the row's media_json.
+                        media: message_record_media(media_json.as_deref(), object_storage_connection_id),
                     });
                 let content: String = row.try_get("content").unwrap_or_default();
                 entry.content.push_str(&content);
@@ -1374,7 +1381,7 @@ async fn query_service_message_rows(
         }
     };
     let (mut records, total) = fetched?;
-    attach_message_quotes(&connection, &mut records).await?;
+    attach_message_quotes(&connection, &mut records, object_storage_connection_id.as_deref()).await?;
     Ok((records, total))
 }
 

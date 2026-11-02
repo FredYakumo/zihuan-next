@@ -150,6 +150,31 @@ export function useDataExplorerDetailPage() {
     return isMessageDetailOpen(key) ? all : limitSegments(all, PREVIEW_TEXT_LIMIT);
   }
 
+  /** Interleave a quoted message's preview text with the images it references. */
+  function quoteSegments(quote: MysqlRecordQuote): MessageContentSegment[] {
+    const byId = new Map(
+      (quote.media ?? [])
+        .filter((entry) => entry.url && !failedMessageMedia.value.has(entry.media_id))
+        .map((entry) => [entry.media_id, entry]),
+    );
+    const segments: MessageContentSegment[] = [];
+    let cursor = 0;
+    for (const match of quote.content.matchAll(segmentPattern)) {
+      const start = match.index ?? 0;
+      if (start > cursor) segments.push({ type: "text", text: quote.content.slice(cursor, start) });
+      if (match[1]) {
+        const entry = byId.get(match[1]);
+        if (entry) segments.push({ type: "image", media: entry });
+        else segments.push({ type: "text", text: match[0] });
+      } else {
+        segments.push({ type: "text", text: match[0] });
+      }
+      cursor = start + match[0].length;
+    }
+    if (cursor < quote.content.length) segments.push({ type: "text", text: quote.content.slice(cursor) });
+    return segments;
+  }
+
   /** Message image opened in the preview overlay, with its fitted base width and wheel zoom. */
   const previewMessageMedia = ref<MysqlRecordMedia | null>(null);
   const previewBaseWidth = ref(0);
@@ -205,6 +230,7 @@ export function useDataExplorerDetailPage() {
     rowQuote,
     quoteTitle,
     quoteMeta,
+    quoteSegments,
     previewMessageMedia,
     previewBaseWidth,
     previewScale,

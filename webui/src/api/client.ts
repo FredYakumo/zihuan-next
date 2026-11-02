@@ -983,6 +983,7 @@ export interface MysqlRecordQuote {
   sender_name: string | null;
   send_time: string;
   content: string;
+  media?: MysqlRecordMedia[];
 }
 
 export interface MysqlRecord {

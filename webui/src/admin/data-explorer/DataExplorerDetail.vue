@@ -67,7 +67,26 @@
                       class="content-quote"
                     >
                       <span class="content-quote-meta">{{ quoteMeta(row.quote) }}</span>
-                      <span class="content-quote-body">{{ row.quote.content }}</span>
+                      <span class="content-quote-body">
+                        <template v-for="(qSegment, qIndex) in quoteSegments(row.quote)" :key="qIndex">
+                          <span v-if="qSegment.type === 'text'">{{ qSegment.text }}</span>
+                          <button
+                            v-else
+                            type="button"
+                            class="content-media"
+                            :title="qSegment.media.name || qSegment.media.media_id"
+                            @click="openMessageMedia(qSegment.media)"
+                          >
+                            <img
+                              :src="qSegment.media.url"
+                              :alt="qSegment.media.name || qSegment.media.media_id"
+                              referrerpolicy="no-referrer"
+                              loading="lazy"
+                              @error="onMessageMediaError(qSegment.media.media_id)"
+                            />
+                          </button>
+                        </template>
+                      </span>
                     </span>
                   </template>
                 </template>
@@ -279,6 +298,7 @@ const {
   rowQuote,
   quoteTitle,
   quoteMeta,
+  quoteSegments,
   previewMessageMedia,
   previewBaseWidth,
   previewScale,
