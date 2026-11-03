@@ -81,7 +81,7 @@ impl<'a> QqFormatOutput<'a> {
             "typing_delay_ms_per_char": REPLY_TYPING_DELAY_MS_PER_CHAR,
             "bubbles": bubble_stage_summaries(&output.batches, &output.batch_delays_ms),
         });
-        self.context.trace.record_graph_phase("格式化输出", detail.clone());
+        self.context.trace.record_graph_stage("格式化输出", detail.clone());
         if let Some(identity) = self.context.identity.as_ref() {
             emit_qq_context_stage(
                 &identity.agent_id,

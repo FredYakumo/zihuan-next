@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 
-use crate::agent::tools::memory_tools::MemoryBackend;
+use crate::agent::tools::memory::MemoryBackend;
 use crate::data_refs::RelationalDbConnection;
 use crate::error::Result;
 use crate::graph::tool_spec::ToolDefinition;

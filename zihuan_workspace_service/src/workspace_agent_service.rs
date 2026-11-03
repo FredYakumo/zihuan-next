@@ -251,7 +251,7 @@ impl InferenceToolProvider for WorkspaceInferenceToolProvider {
         let mut host = service_context.build_host(AgentMemoryAccessContext::default());
         // Brain and selected sub agents share the category-aware memory tools.
         if self.memory_resources.is_some() {
-            for id in zihuan_core::agent::tools::memory_tools::MEMORY_TOOL_IDS {
+            for id in zihuan_core::agent::tools::memory::MEMORY_TOOL_IDS {
                 if let Some(tool) = host.tool(id) {
                     tools.push(Box::new(zihuan_core::agent::SharedTool::new(tool)));
                 }

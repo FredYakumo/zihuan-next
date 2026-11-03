@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use zihuan_core::agent::tools::memory_tools::{recall_memory, MemoryAgentResources};
+use zihuan_core::agent::tools::memory::MemoryRecall;
+use zihuan_core::agent::tools::memory::{recall_memory, MemoryAgentResources};
 use zihuan_core::error::Result;
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
@@ -17,7 +18,16 @@ pub(crate) struct QqMemoryAgent {
     pub previous_context: String,
 }
 
-pub(crate) struct MemoryAgentOutput(pub String, pub MemoryAgentResources, pub String);
+/// The recall phase's output.
+///
+/// The recalled memories travel typed by category; the turn assembly renders them, so no
+/// downstream stage parses recall JSON. `resources` and `input` are kept so the brain can run the
+/// recall again when it compacts the turn's history.
+pub(crate) struct MemoryAgentOutput {
+    pub(crate) memories: MemoryRecall,
+    pub(crate) resources: MemoryAgentResources,
+    pub(crate) input: String,
+}
 
 #[async_trait]
 impl Procedure for QqMemoryAgent {
@@ -58,6 +68,10 @@ impl Procedure for QqMemoryAgent {
         })
         .await
         .map_err(|error| zihuan_core::string_error!("memory recall failed: {error}"))??;
-        Ok(ProcedureOutput::of(MemoryAgentOutput(format!("Authenticated memory request source: {source}\nRecalled memories by category: {recalled}"), resources, input)))
+        Ok(ProcedureOutput::of(MemoryAgentOutput {
+            memories: recalled.with_source(source.to_string()),
+            resources,
+            input,
+        }))
     }
 }

@@ -1426,7 +1426,7 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
     };
     let queried = query.is_some();
     let results = tokio::task::spawn_blocking(move || {
-        let backend = zihuan_core::agent::tools::memory_tools::MemoryBackend::RetrievalStore(
+        let backend = zihuan_core::agent::tools::memory::MemoryBackend::RetrievalStore(
             std::sync::Arc::new(store),
         );
         // Explorer requests always inspect fresh records and never renew behavioral expiry.
@@ -1435,7 +1435,7 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
             skip_expiry_extend: true,
             ..Default::default()
         };
-        zihuan_core::agent::tools::memory_tools::full_search_memory(
+        zihuan_core::agent::tools::memory::full_search_memory(
             &backend,
             model.as_deref(),
             &access,

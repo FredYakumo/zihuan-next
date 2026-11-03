@@ -272,7 +272,7 @@ pub fn load_agent_definition(
     let mut definition = definition;
     if definition.tool_ids.iter().any(|id| id == "memory_agent") {
         definition.tool_ids.retain(|id| id != "memory_agent");
-        for id in crate::agent::tools::memory_tools::MEMORY_TOOL_IDS {
+        for id in crate::agent::tools::memory::MEMORY_TOOL_IDS {
             if !definition.tool_ids.iter().any(|existing| existing == id) {
                 definition.tool_ids.push(id.to_string());
             }

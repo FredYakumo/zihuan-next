@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
-use crate::agent::utils::build_state_system_prefix_lines;
+use crate::agent::emotion::utils::emotion_expression_prompt;
+use crate::agent::utils::build_turn_state_prefix_lines;
 use crate::qq_session_state::QqChatSessionState;
 use log::{info, warn};
 use serde_json::Value;
+use zihuan_core::agent::tools::memory::MemoryRecall;
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 
 pub(crate) use super::super::tools::build_info_brain_tools;
@@ -73,16 +74,37 @@ pub(crate) const LAST_INJECTED_EMOTION_KEY: &str = "qq_chat_last_injected_emotio
 /// `[Current User Message]`, without the trailing processing instructions.
 ///
 /// This is what the brain receives as this turn's own input, so the Data Explorer shows it
-/// separately from the per-turn system prefix.
+/// separately from the per-turn state prefix.
 pub(crate) fn split_current_user_body(user_text: &str) -> Option<String> {
-    let marker = format!("\n{CURRENT_USER_MESSAGE_LABEL}\n");
-    let index = user_text.find(&marker)?;
-    let mut body = user_text[index + marker.len()..].to_string();
+    let index = user_text.find(CURRENT_USER_MESSAGE_LABEL)?;
+    let mut body = user_text[index + CURRENT_USER_MESSAGE_LABEL.len()..].to_string();
     if let Some(cut) = body.find(&format!("\n\n{PROCESSING_INSTRUCTION}")) {
         body.truncate(cut);
     }
     let body = body.trim();
     (!body.is_empty()).then(|| body.to_string())
+}
+
+/// The history copy of an assembled user message.
+///
+/// Persisted history is the conversation, not the turn's transient scaffolding: the state prefix
+/// (emotion prompt, recalled memory titles, state delta) and the trailing processing instructions
+/// are per-turn and would otherwise repeat once per turn for the rest of the session. The
+/// `[Current User Message]` block and any media parts are kept as-is.
+pub(crate) fn history_user_message(mut message: LLMMessage) -> LLMMessage {
+    if let Some(MessagePart::Text { text }) = message.parts.first_mut() {
+        if let Some(index) = text.find(CURRENT_USER_MESSAGE_LABEL) {
+            let stripped = text[index..].to_string();
+            *text = stripped;
+        }
+    }
+    if matches!(
+        message.parts.last(),
+        Some(MessagePart::Text { text }) if text == PROCESSING_INSTRUCTION
+    ) {
+        message.parts.pop();
+    }
+    message
 }
 
 /// Compact persisted conversation history to fit the turn model's context budget.
@@ -217,9 +239,30 @@ fn build_tool_instruction_rules(default_tools_enabled: &HashMap<String, bool>) -
     lines
 }
 
+/// The fixed reply contract carried by the turn's system prompt.
+///
+/// The brain's final assistant text is sent to the user verbatim (minus placeholder expansion),
+/// so this contract belongs with the stable rules instead of riding on every user turn.
+const REPLY_OUTPUT_CONTRACT: &str = "\
+You can also use the reply tool to quote a message_id (or omit message_id to reply to the message just received).
+Your output is the message text that will be sent directly. Do not include any system information, and it must be natural-language reply text plus any placeholders mentioned below, not raw markdown.
+When the answer genuinely needs markdown (code blocks, tables, headings, a whole document), do not paste markdown into the message: if a tool that formats or renders content is available, use it and reply with what it returns.
+In the message you send, the following placeholders will be replaced with other actions that have real effects. The list of placeholders you can use:
+- @id: mention the person with this id
+- @sender: mention the person who sent you the message
+- [Image media_id=media_id]: send an image; this will be replaced with the image for the given media_id in the message you send
+- [Image: media_id=media_id]: same syntax as [Image media_id=media_id]
+- [no_reply]: you choose to decline, or not reply to this person's message";
+
+/// Group-turn addition to the system prompt.
+const GROUP_REPLY_TARGET_RULE: &str =
+    "- When you need to quote a QQ message in a group chat, call `reply_message` to set the reply target.";
+
 fn build_common_system_rules(
     identity_example: &str,
     agent_system_prompt: Option<&str>,
+    scene_rules: Option<&str>,
+    style_prompt: Option<&str>,
     default_tools_enabled: &HashMap<String, bool>,
 ) -> String {
     let mut rules = format!(
@@ -238,71 +281,85 @@ fn build_common_system_rules(
     }
 
     if let Some(system_prompt) = agent_system_prompt.map(str::trim).filter(|s| !s.is_empty()) {
-        rules.push_str("\n");
+        rules.push('\n');
         rules.push_str(system_prompt);
+        rules.push('\n');
+    }
+
+    rules.push('\n');
+    rules.push_str(REPLY_OUTPUT_CONTRACT);
+
+    if let Some(scene_rules) = scene_rules {
+        rules.push('\n');
+        rules.push_str(scene_rules);
+    }
+
+    if let Some(style_prompt) = style_prompt.map(str::trim).filter(|value| !value.is_empty()) {
+        rules.push_str("\n\n[Language Style]\nThe following language style guidance must also be reflected in your reply to the user in this turn:\n");
+        rules.push_str(style_prompt);
     }
     rules
 }
 
-/// System prompt template (shared, private variant).
+/// System prompt for a private turn: the shared QQ chat rules, the role service's own prompt,
+/// the reply output contract and the turn's language style.
 pub(crate) fn build_private_system_prompt(
     bot_name: &str,
     agent_system_prompt: Option<&str>,
+    style_prompt: Option<&str>,
 ) -> String {
-    build_common_system_rules(bot_name, agent_system_prompt, &default_tools_enabled_map())
+    build_common_system_rules(
+        bot_name,
+        agent_system_prompt,
+        None,
+        style_prompt,
+        &default_tools_enabled_map(),
+    )
 }
 
-/// System prompt template (group variant).
+/// System prompt for a group turn: the private variant plus the group reply-target rule.
 pub(crate) fn build_group_system_prompt(
     bot_name: &str,
     agent_system_prompt: Option<&str>,
-) -> String {
-    let mut rules =
-        build_common_system_rules(bot_name, agent_system_prompt, &default_tools_enabled_map());
-    rules.push_str("\n- When you need to quote a QQ message in a group chat, call `reply_message` to set the reply target.");
-    rules
-}
-
-pub(crate) fn merge_character_and_style_prompt(
-    character_instructions: &str,
     style_prompt: Option<&str>,
 ) -> String {
-    let style_prompt = style_prompt.map(str::trim).filter(|value| !value.is_empty());
-    if let Some(style_prompt) = style_prompt {
-        format!(
-            "{character_instructions}\n\n[Language Style]\nThe following language style guidance must also be reflected in your reply to the user in this turn:\n{style_prompt}"
-        )
-    } else {
-        character_instructions.to_string()
-    }
+    build_common_system_rules(
+        bot_name,
+        agent_system_prompt,
+        Some(GROUP_REPLY_TARGET_RULE),
+        style_prompt,
+        &default_tools_enabled_map(),
+    )
 }
 
-/// Build a structured user-role message from pre-processed QQ input for LLM inference.
+/// Build the current turn's user message from pre-processed QQ input.
 ///
 /// # Purpose
 ///
-/// Constructs the user message that represents the current conversation turn. The message
-/// carries explicit metadata (sender identity, bot identity, whether the bot was @-mentioned,
-/// and @-target list) so the model never needs to infer who is speaking or who is being
-/// addressed from message text alone.
-///
-/// Session state (mood, emotion, memory, etc.) and character instructions are injected as
-/// a system-like prefix at the top of the user text.
+/// Constructs the user-role message that represents the current conversation turn. The message
+/// carries explicit metadata (sender identity, bot identity, time, and the message body) so the
+/// model never needs to infer who is speaking or who is being addressed from message text alone.
 ///
 /// # Design
+///
+/// Only *turn-specific* material is built here: the state prefix (emotion prompt, recalled
+/// memory titles), the state delta, and the current message. The stable rules — identity, tool
+/// rules, the role service's own prompt, the reply output contract and the language style —
+/// travel as the conversation's system message, built by [`build_private_system_prompt`] /
+/// [`build_group_system_prompt`]. Keeping them out of the user turn keeps those rules at system
+/// authority and stops every persisted history entry from carrying another copy.
 ///
 /// The function follows a two-path strategy depending on whether the target LLM supports
 /// multimodal (image) input:
 ///
 /// * **Text-only path** (`llm_supports_multimodal_input == false`): builds the message as a
-///   single plain-text payload containing state prefix lines, environment context, metadata
+///   single plain-text payload containing the state prefix, environment context, metadata
 ///   block, the user message body, image reference hints (`media_id` strings the model can
 ///   pass to image-analysis tools later), and processing instructions.
 /// * **Multimodal path** (`llm_supports_multimodal_input == true`): assembles a
-///   `Vec<MessagePart>` where the state prefix is the first text part, followed by a text
-///   block carrying environment and metadata, then the pre-resolved multimodal `parts`
-///   (already hydrated with S3 image URLs, reply quotes, forwarded content, etc.), and
-///   finally a trailing processing-instruction text part.
+///   `Vec<MessagePart>` where the text header is the first text part, followed by the
+///   pre-resolved multimodal `parts` (already hydrated with S3 image URLs, reply quotes,
+///   forwarded content, etc.), and finally a trailing processing-instruction text part.
 ///
 /// The sender name visible to the LLM is resolved via `sender_display_name`, which prefers
 /// the group card name over the raw nickname.
@@ -323,38 +380,24 @@ pub(crate) fn merge_character_and_style_prompt(
 /// * `llm_supports_multimodal_input` — when true, the multimodal `parts` in
 ///   `current_input` are embedded as separate `MessagePart` entries; when false, only
 ///   textual `media_id` references are emitted.
-/// * `character_instructions` — character-specific prompt lines injected into the state
-///   prefix.
-/// * `session_state` — runtime session state (mood, emotion values, memory) rendered as
-///   prefix lines.
+/// * `message_rate_limit_warning` — transport rate-limit notice for this turn, when present.
+/// * `session_state` — runtime session state (mood, emotion values) rendered as prefix lines.
 /// * `emotion_dimensions` — configured emotion axes used to format the state prefix.
-/// * `memory_context` — memory-title hint prepared by the before-brain assembly.
+/// * `memory_recall` — typed memory recall prepared by the recall phase.
+/// * `reply_instruction` — this turn's extra reply directive (e.g. the group-message window).
 pub(crate) fn build_user_message(
     current_input: &PreparedCurrentTurnUserInput,
     bot_name: &str,
     adapter: &SharedBotAdapter,
     llm_supports_multimodal_input: bool,
-    character_instructions: &str,
-    style_prompt: Option<&str>,
     message_rate_limit_warning: Option<&str>,
     session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
-    memory_context: Option<&str>,
+    memory_recall: Option<&MemoryRecall>,
     reply_instruction: Option<&str>,
 ) -> LLMMessage {
-    let style_prompt = if has_noticeable_emotion_expression(session_state, emotion_dimensions) {
-        None
-    } else {
-        style_prompt
-    };
-    let merged_character_instructions =
-        merge_character_and_style_prompt(character_instructions, style_prompt);
     let emotion_prompt = emotion_expression_prompt(session_state, emotion_dimensions);
-    let state_lines = build_state_system_prefix_lines(
-        &emotion_prompt,
-        &merged_character_instructions,
-        memory_context,
-    );
+    let state_lines = build_turn_state_prefix_lines(&emotion_prompt, memory_recall);
     let sender_name = zihuan_core::ims_bot_adapter::utils::sender_display_name!(
         &current_input.event.sender.nickname,
         &current_input.event.sender.card
@@ -368,16 +411,7 @@ pub(crate) fn build_user_message(
     );
     let now_text = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let mut current_turn_text = format!(
-        "`The current time is {now_text}, `{sender_name}` sent you (`{bot_name}`) a message: \"{}\". You need to reply to this message, or choose not to reply.\n\
-         You can also use the reply tool to quote a message_id (or omit message_id to reply to the message just received).\n\
-         Your output is the message text that will be sent directly. Do not include any system information, and it must be natural-language reply text plus any placeholders mentioned elsewhere in the system, not raw markdown.\n\
-         When the answer genuinely needs markdown (code blocks, tables, headings, a whole document), do not paste markdown into the message: if a tool that formats or renders content is available, use it and reply with what it returns.\n\
-         In the message you send, the following placeholders will be replaced with other actions that have real effects. The list of placeholders you can use:\n\
-         - @id: mention the person with this id\n\
-         - @sender: mention the person who sent you the message\n\
-         - [Image media_id=media_id]: send an image; this will be replaced with the image for the given media_id in the message you send\n\
-         - [Image: media_id=media_id]: same syntax as [Image media_id=media_id]\n\
-         - [no_reply]: you choose to decline, or not reply to this person's message",
+        "`The current time is {now_text}, `{sender_name}` sent you (`{bot_name}`) a message: \"{}\". You need to reply to this message, or choose not to reply.",
         current_input.current_text_for_prompt(),
     );
     // A turn's extra reply directive (e.g. the group-message-window turn's reply
@@ -410,30 +444,35 @@ pub(crate) fn build_user_message(
         String::new()
     };
 
+    // The state prefix only exists on turns that carry an emotion prompt or recalled memories;
+    // without it the message starts at the current user message block.
+    let state_block = if state_lines.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n\n", state_lines.join("\n"))
+    };
     let state_delta_block = if state_delta_lines.is_empty() {
         String::new()
     } else {
-        format!("\n\n{}", state_delta_lines.join("\n"))
+        format!("{}\n\n", state_delta_lines.join("\n"))
     };
     let message_rate_limit_block = message_rate_limit_warning
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| format!("\n\n{value}"))
+        .map(|value| format!("{value}\n\n"))
         .unwrap_or_default();
-    let user_text = format!(
-        "{}{state_delta_block}{message_rate_limit_block}\n\n{CURRENT_USER_MESSAGE_LABEL}\n{current_turn_text}{current_image_section}{referenced_context_section}\n\n{PROCESSING_INSTRUCTION}",
-        state_lines.join("\n"),
-    );
+    let preamble = format!("{state_block}{state_delta_block}{message_rate_limit_block}");
+    let current_message_block =
+        format!("{CURRENT_USER_MESSAGE_LABEL}\n{current_turn_text}{current_image_section}{referenced_context_section}");
+    let user_text =
+        format!("{preamble}{current_message_block}\n\n{PROCESSING_INSTRUCTION}");
 
     if !llm_supports_multimodal_input || !current_input.has_media {
         return LLMMessage::user(user_text);
     }
 
-    let state_text = format!("{}\n", state_lines.join("\n"));
-    let mut parts = vec![MessagePart::text(state_text)];
-    let metadata_text =
-        format!("{state_delta_block}{message_rate_limit_block}\n\n{CURRENT_USER_MESSAGE_LABEL}\n{current_turn_text}");
-    let mut text_buffer = metadata_text;
+    let mut parts: Vec<MessagePart> = Vec::new();
+    let mut text_buffer = format!("{preamble}{current_message_block}");
     append_prepared_parts(&mut parts, &mut text_buffer, "\n", &current_input.current_parts);
     if !current_input.current_image_reference_lines.is_empty() {
         text_buffer.push_str(&build_image_prompt_section(
