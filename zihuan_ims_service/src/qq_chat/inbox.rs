@@ -15,8 +15,6 @@ use zihuan_core::storage::RedisConfig;
 
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 
-use crate::qq_chat::model::inner;
-
 use super::model::QqChatAgentService;
 
 const DEFAULT_CONSUMER_COUNT: usize = 8;

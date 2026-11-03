@@ -36,8 +36,8 @@ use crate::qq_chat::steer::{QqChatServiceSteerHook, SteerTurnContext};
 use crate::qq_chat::tool_quota::wrap_brain_tool_with_quota;
 use crate::qq_chat::user_input::PreparedCurrentTurnUserInput;
 use crate::qq_chat::{
-    compact_turn_history, split_current_user_body, QqChatAgentServiceContext,
-    QqChatAgentServiceInner, QqChatTaskTrace, LOG_PREFIX,
+    compact_turn_history, split_current_user_body, QqChatAgentService, QqChatAgentServiceContext,
+    QqChatTaskTrace, LOG_PREFIX,
 };
 use crate::tools::{
     qq_memory_access_context, EditableQqAgentTool, GetAgentPublicInfoTool, GetFunctionListTool,
@@ -71,7 +71,7 @@ pub(crate) struct QqBrainOutput {
 
 /// The QQ turn's brain invocation as a Procedure (documents/procedure.md).
 ///
-/// **Design:** Created per turn by the transport adapter (`handle_claimed_turn`), which keeps
+/// **Design:** Created per turn by the turn workflow (`qq_chat/turn_workflow`), which keeps
 /// ownership of everything that outlives the brain run (steer buffers, session state). The
 /// procedure assembles the [`ToolCallingEngine`] — observer, steer hook, quota-wrapped tools,
 /// long-task context. [`QqBrain::run`] reads the turn input the before-brain procedure already
@@ -103,7 +103,7 @@ impl QqBrain {
     /// long-task context. Only the execution-time dependencies are kept on the procedure.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        service: &QqChatAgentServiceInner,
+        service: &QqChatAgentService,
         ctx: &QqChatAgentServiceContext<'_>,
         trace: &QqChatTaskTrace,
         turn_llm: &Arc<dyn LLMBase>,

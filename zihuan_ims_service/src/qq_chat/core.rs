@@ -26,8 +26,7 @@ use crate::storage::qq_chat_history_store::save_history;
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use zihuan_core::agent::tools::LongTaskNotifier;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::graph::function_graph::FunctionPortDef;
-use zihuan_core::graph::tool_spec::{ToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
+use zihuan_core::graph::tool_spec::QQ_AGENT_TOOL_OWNER_TYPE;
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use zihuan_core::model_inference::inference_function::compact_message::{
     compact_message_history, compaction_threshold, ContextCompactionResult,
@@ -51,9 +50,8 @@ pub(crate) use super::user_input::{
 use crate::procedure::GroupMessageWindowMemory;
 use crate::qq_chat::language_style_store::get_applicable_language_style_blocking;
 pub(crate) use crate::qq_chat::model::{
-    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceInner,
-    QqChatAgentServiceRuntimeConfig, QqChatServiceHandleReport, QqChatServiceTurnResult,
-    QqLongTaskNotifier,
+    QqChatAgentService, QqChatAgentServiceContext, QqChatAgentServiceRuntimeConfig,
+    QqChatServiceHandleReport, QqChatServiceTurnResult, QqLongTaskNotifier,
 };
 
 pub(crate) const LOG_PREFIX: &str = "[QqChatAgentService]";
@@ -862,27 +860,34 @@ impl LongTaskNotifier for QqLongTaskNotifier {
     }
 }
 
-impl QqChatAgentServiceInner {
-    pub fn new(id: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            default_tools_enabled: default_tools_enabled_map(),
-            shared_inputs: Vec::new(),
-            tool_definitions: Vec::new(),
-            sub_agent_ids: Vec::new(),
-            plugin_tool_names: Vec::new(),
-            group_message_window_confirmed: GroupMessageWindowMemory::default(),
-        }
-    }
-
-    fn set_default_tools_enabled(&mut self, overrides: HashMap<String, bool>) {
-        let mut enabled_map = default_tools_enabled_map();
-        for (tool_name, enabled) in overrides {
-            if enabled_map.contains_key(&tool_name) {
-                enabled_map.insert(tool_name, enabled);
+impl QqChatAgentService {
+    pub fn new(config: QqChatAgentServiceRuntimeConfig) -> Result<Self> {
+        // Only keys present in the default map can be toggled; unknown tool names are ignored.
+        let mut default_tools_enabled = default_tools_enabled_map();
+        for (tool_name, enabled) in config.default_tools_enabled.clone() {
+            if default_tools_enabled.contains_key(&tool_name) {
+                default_tools_enabled.insert(tool_name, enabled);
             }
         }
-        self.default_tools_enabled = enabled_map;
+        let shared_inputs = validate_shared_inputs(&config.shared_inputs, "QQ Chat Agent Service")?;
+        let tool_definitions = validate_tool_definitions(
+            &config.tool_definitions,
+            &shared_inputs,
+            ToolResultMode::SingleString,
+            QQ_AGENT_TOOL_OWNER_TYPE,
+            "QQ Chat Agent Service",
+        )?;
+        Ok(Self {
+            id: config.node_id.clone(),
+            default_tools_enabled,
+            shared_inputs,
+            tool_definitions,
+            sub_agent_ids: config.sub_agent_ids.clone(),
+            plugin_tool_names: config.plugin_tool_names.clone(),
+            group_message_window_confirmed: GroupMessageWindowMemory::default(),
+            config,
+            pending_steer: Arc::new(PendingSteerStore::default()),
+        })
     }
 
     pub(crate) fn is_default_tool_enabled(&self, tool_name: &str) -> bool {
@@ -891,45 +896,6 @@ impl QqChatAgentServiceInner {
 
     pub(crate) fn wrap_err(&self, msg: impl Into<String>) -> Error {
         Error::ValidationError(format!("[NODE_ERROR:{}] {}", self.id, msg.into()))
-    }
-
-    fn set_shared_inputs(&mut self, shared_inputs: Vec<FunctionPortDef>) -> Result<()> {
-        self.shared_inputs = validate_shared_inputs(&shared_inputs, "QQ Chat Agent Service")?;
-        self.tool_definitions = validate_tool_definitions(
-            &self.tool_definitions,
-            &self.shared_inputs,
-            ToolResultMode::SingleString,
-            QQ_AGENT_TOOL_OWNER_TYPE,
-            "QQ Chat Agent Service",
-        )?;
-        Ok(())
-    }
-
-    fn set_tool_definitions(&mut self, tool_definitions: Vec<ToolDefinition>) -> Result<()> {
-        self.tool_definitions = validate_tool_definitions(
-            &tool_definitions,
-            &self.shared_inputs,
-            ToolResultMode::SingleString,
-            QQ_AGENT_TOOL_OWNER_TYPE,
-            "QQ Chat Agent Service",
-        )?;
-        Ok(())
-    }
-}
-
-impl QqChatAgentService {
-    pub fn new(config: QqChatAgentServiceRuntimeConfig) -> Result<Self> {
-        let mut inner = QqChatAgentServiceInner::new(config.node_id.clone());
-        inner.set_default_tools_enabled(config.default_tools_enabled.clone());
-        inner.set_shared_inputs(config.shared_inputs.clone())?;
-        inner.set_tool_definitions(config.tool_definitions.clone())?;
-        inner.sub_agent_ids = config.sub_agent_ids.clone();
-        inner.plugin_tool_names = config.plugin_tool_names.clone();
-        Ok(Self {
-            inner,
-            config,
-            pending_steer: Arc::new(PendingSteerStore::default()),
-        })
     }
 
     pub fn handle_event(
@@ -1001,19 +967,7 @@ impl QqChatAgentService {
                 )
                 .into_shared(),
             },
-            || {
-                self.inner.handle(
-                    event,
-                    time,
-                    &self.config.agent_id,
-                    &self.config.session,
-                    None,
-                    &ctx,
-                )
-            },
+            || super::event_processor::process_event(self, event, time, None, &ctx),
         )
     }
 }
-
-#[path = "claimed.rs"]
-mod claimed;
