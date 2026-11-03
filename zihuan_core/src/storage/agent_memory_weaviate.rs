@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
+use crate::utils::json_utils::optional_string_argument;
 use crate::weaviate::WeaviateRef;
 
 use crate::storage::WeaviateClient;
@@ -418,7 +419,7 @@ pub(crate) fn parse_memory_record_with_fallback(
         object_id,
         key: required_string(&properties, "key")?,
         value: required_string(&properties, "value")?,
-        expires_at: optional_string(&properties, "expires_at"),
+        expires_at: optional_string_argument(&properties, "expires_at"),
         sender_id_list: string_list(&properties, "sender_id_list"),
         group_id_list: string_list(&properties, "group_id_list"),
         created_at: required_string(&properties, "created_at")?,
@@ -502,17 +503,8 @@ fn candidate_limit(top_n: usize) -> usize {
 }
 
 fn required_string(value: &Value, key: &str) -> Result<String> {
-    optional_string(value, key)
+    optional_string_argument(value, key)
         .ok_or_else(|| Error::ValidationError(format!("memory record missing '{}'", key)))
-}
-
-fn optional_string(value: &Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .map(ToOwned::to_owned)
 }
 
 fn string_list(value: &Value, key: &str) -> Vec<String> {

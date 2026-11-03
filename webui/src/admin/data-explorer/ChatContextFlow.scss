@@ -86,8 +86,8 @@
     gap: 8px;
 }
 
-/* Separates consecutive conversation rounds; steer follow-ups continue the same round. Each
-   split opens with the user's input as the round's title, next to its time. */
+/* Separates consecutive turn groups; steer follow-ups continue the same group. Each split
+   opens with the user's input as the group's title, next to its time. */
 .context-turn-header {
     display: flex;
     align-items: baseline;

@@ -71,8 +71,13 @@ pub fn collect_turn_media_refs(messages: &[Message]) -> Vec<MediaRef> {
         .collect()
 }
 
-/// Stage name under which a turn reports the assembled state/system prefix it sent to the
-/// model. Each turn builds its own prefix, so the Data Explorer shows it per turn.
+// ┌────────────────────────────────────────────────────────────────────────────────────────┐
+// │ Stage name constants                                                                   │
+// │                                                                                        │
+// │ Every live-progress update of a turn is tagged with one of these names;                │
+// │ the Data Explorer groups its trace entries by them.                                    │
+// ├────────────────────────────────────────────────────────────────────────────────────────┤
+/// Stage name under which a turn reports its system prompt.
 pub const QQ_CONTEXT_STAGE_SYSTEM_PROMPT: &str = "System Prompt";
 
 /// Stage name under which a local embedding inference reports its live progress.
@@ -80,7 +85,9 @@ pub const QQ_CONTEXT_STAGE_EMBEDDING: &str = "embedding model inference";
 
 /// Stage name under which every LLM model inference of a turn reports its live progress.
 pub const QQ_CONTEXT_STAGE_LLM: &str = "llm model inference";
+// └────────────────────────────────────────────────────────────────────────────────────────┘
 
+/// The message a turn replies to, captured for the Data Explorer's quote block.
 /// The message a turn replies to, captured for the Data Explorer's quote block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QqChatQuotedMessage {
@@ -140,6 +147,9 @@ pub enum QqChatSubAgentEntry {
 
 /// One turn-scoped context event, emitted while a QQ turn runs and pushed to the WebUI over
 /// the existing global web socket broadcast.
+///
+/// A turn is one user message's full processing; its tool-calling loop runs several LLM calls
+/// (`iteration`s) but stays one turn. Terminology: `documents/glossary.md`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum QqChatContextEvent {
@@ -269,6 +279,8 @@ pub enum QqChatTurnEntry {
 }
 
 /// The recorded flow of one QQ turn, including everything the model was given and produced.
+///
+/// Terminology: `documents/glossary.md`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QqChatTurnRecord {
     pub turn_id: String,

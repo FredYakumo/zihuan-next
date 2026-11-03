@@ -35,7 +35,7 @@ use crate::qq_chat::steer::SteerCommitGuard;
 
 use super::{
     build_meta_query_system_prompt, build_meta_query_user_message, compact_turn_history,
-    expand_messages_for_inference, prepare_current_turn_user_input,
+    expand_messages_for_inference, history_user_message, prepare_current_turn_user_input,
     prepare_current_turn_user_input_from_event, QqChatAgentServiceContext, QqChatAgentServiceInner,
     QqChatServiceTurnResult, QqChatTaskTrace, LOG_PREFIX,
 };
@@ -651,14 +651,22 @@ impl QqChatAgentServiceInner {
         }
 
         // The brain procedure compacted (and persisted) the working history if needed, so
-        // reload it and append this turn's messages to what was actually kept.
+        // reload it and append this turn's messages to what was actually kept. The stored copy
+        // drops the per-turn state prefix and processing instructions; keeping the conversation
+        // itself keeps the history readable and stops it growing a prefix per turn.
         let mut history = load_history(ctx.cache, &history_key);
-        history.push(brain_output_payload.current_user_message.clone());
+        history.push(history_user_message(brain_output_payload.current_user_message.clone()));
         // Steer messages drained mid-turn only belong in history once the turn actually
         // answered them; on a failed turn they are rolled back into the pending store
         // and the next turn re-injects them fresh.
         if turn_completed {
-            history.extend(consumed_steer_messages.lock().unwrap().iter().cloned());
+            history.extend(
+                consumed_steer_messages
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|message| history_user_message(message.clone())),
+            );
         }
         // The final model call's usage, carried onto the assistant history message so the live
         // context view can report input/output tokens and cache hit rate. `usage` is not part of

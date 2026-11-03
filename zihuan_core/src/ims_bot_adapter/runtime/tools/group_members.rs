@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::agent::tools::Tool;
 use crate::error::{Error, Result};
 use crate::model_inference::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
-use crate::utils::bm25::rank_bm25_matches;
+use crate::utils::{bm25::rank_bm25_matches, json_utils::optional_string_argument};
 
 use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;
 use crate::ims_bot_adapter::runtime::models::MessageEvent;
@@ -129,23 +129,14 @@ impl SearchCriteria {
         };
 
         Ok(Self {
-            name_keyword: optional_trimmed_string(arguments, "name"),
-            id_keyword: optional_trimmed_string(arguments, "id"),
-            filter: optional_trimmed_string(arguments, "filter")
+            name_keyword: optional_string_argument(arguments, "name"),
+            id_keyword: optional_string_argument(arguments, "id"),
+            filter: optional_string_argument(arguments, "filter")
                 .map(|value| parse_role_filter(&value))
                 .transpose()?,
             limit,
         })
     }
-}
-
-fn optional_trimmed_string(arguments: &Value, key: &str) -> Option<String> {
-    arguments
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
 }
 
 fn parse_role_filter(raw: &str) -> Result<GroupMemberRole> {
@@ -187,23 +178,13 @@ fn fetch_group_member_list(
 
         members.push(GroupMemberEntry {
             user_id,
-            nickname: string_field_or(item, "nickname"),
-            card: string_field_or(item, "card"),
+            nickname: optional_string_argument(item, "nickname").unwrap_or_default(),
+            card: optional_string_argument(item, "card").unwrap_or_default(),
             role: parse_member_role(item.get("role").and_then(Value::as_str)),
             original_index: index,
         });
     }
     Ok(members)
-}
-
-fn string_field_or(value: &Value, key: &str) -> String {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(ToOwned::to_owned)
-        .unwrap_or_default()
 }
 
 fn parse_member_role(raw: Option<&str>) -> GroupMemberRole {
