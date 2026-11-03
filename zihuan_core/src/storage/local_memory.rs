@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use chrono::{DateTime, Utc};
+use log::warn;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -206,8 +207,12 @@ fn record_from_path(path: &Path, key: &str, value: String) -> Result<AgentMemory
     let file_metadata = fs::metadata(path)?;
     let modified = system_time_to_rfc3339(file_metadata.modified().ok())
         .unwrap_or_else(|| Utc::now().to_rfc3339());
-    let metadata = match fs::read_to_string(path.with_extension("meta.json")) {
-        Ok(text) => serde_json::from_str::<LocalMemoryMetadata>(&text)?,
+    let metadata_path = path.with_extension("meta.json");
+    let metadata = match fs::read_to_string(&metadata_path) {
+        Ok(text) => serde_json::from_str::<LocalMemoryMetadata>(&text).unwrap_or_else(|error| {
+            warn!("Failed to parse local memory metadata {}: {error}", metadata_path.display());
+            LocalMemoryMetadata::default()
+        }),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             LocalMemoryMetadata::default()
         }
