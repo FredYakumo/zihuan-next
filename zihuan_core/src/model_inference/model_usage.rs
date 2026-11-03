@@ -237,11 +237,26 @@ impl LlmStageRun {
         emit_llm_stage(&self.context, &self.stage_id, &self.detail);
     }
 
-    fn finish(mut self, elapsed: Duration, usage: Option<&TokenUsage>, first: Option<Duration>) {
+    fn finish(
+        mut self,
+        elapsed: Duration,
+        usage: Option<&TokenUsage>,
+        first: Option<Duration>,
+        response: &LLMMessage,
+    ) {
         self.detail["status"] = json!("done");
         self.detail["duration_ms"] = json!(elapsed.as_millis());
         if let Some(first) = first {
             self.detail["first_token_ms"] = json!(first.as_secs_f64() * 1000.0);
+        }
+        // The settled response of this call. Non-streaming calls never produce stream_content,
+        // and a tool-call iteration's assistant text would otherwise never show anywhere in the
+        // flow, so the finished bubble carries the final text and thinking explicitly.
+        if let Some(content) = response.content_text() {
+            self.detail["content"] = json!(content);
+        }
+        if let Some(reasoning) = &response.reasoning_content {
+            self.detail["reasoning"] = json!(reasoning);
         }
         if let Some(usage) = usage {
             self.detail["usage"] = json!(usage);
@@ -321,7 +336,7 @@ impl LLMBase for TrackedLlm {
         // Report the result before persisting usage: the context view should not wait on the
         // usage database write.
         if let Some(stage) = stage {
-            stage.finish(started.elapsed(), message.usage.as_ref(), None);
+            stage.finish(started.elapsed(), message.usage.as_ref(), None, &message);
         }
         record_usage(&self.config_id, message.usage.clone(), started.elapsed(), None);
         Ok(message)
@@ -372,7 +387,7 @@ impl StreamingLLMBase for TrackedLlm {
             // Report the result before persisting usage: the context view should not wait on
             // the usage database write.
             if let Some(stage) = stage {
-                stage.finish(started.elapsed(), message.usage.as_ref(), first);
+                stage.finish(started.elapsed(), message.usage.as_ref(), first, &message);
             }
             if message.usage.is_some() || first.is_some() {
                 record_usage(&self.config_id, message.usage.clone(), started.elapsed(), first);

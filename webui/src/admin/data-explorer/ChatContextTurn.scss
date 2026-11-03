@@ -526,6 +526,54 @@
     color: var(--td-error-color);
 }
 
+/* Tool calls the inference's output requested, integrated below its response text. */
+.context-llm-tools-label {
+    margin-bottom: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--td-text-color-secondary);
+}
+
+/* One integrated tool call: the recorded payload plus the rich display its tool type gets
+   (memory tone card, nested sub-agent box); the corner toggle switches to the plain payload. */
+.context-llm-tool {
+    position: relative;
+    display: grid;
+    gap: 6px;
+    padding: 6px 8px 24px;
+    border-radius: 8px;
+    background: var(--td-bg-color-secondarycontainer);
+    font-size: 12px;
+}
+
+.context-llm-tool[data-memory-tone] {
+    background: color-mix(in srgb, var(--memory-tool-color) 7%, var(--td-bg-color-secondarycontainer));
+    border: 1px solid color-mix(in srgb, var(--memory-tool-color) 30%, transparent);
+}
+
+.context-llm-tool-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+
+.context-stage-raw-role[data-role="user"],
+.context-stage-history-role[data-role="user"] {
+    color: var(--td-brand-color);
+}
+
+.context-stage-raw-role[data-role="assistant"],
+.context-stage-history-role[data-role="assistant"] {
+    color: #52c41a;
+}
+
+.context-stage-raw-role[data-role="tool"],
+.context-stage-history-role[data-role="tool"] {
+    color: var(--td-warning-color);
+}
+
 /* A stage's thinking reuses the assistant's "思考过程" block, so no separate style here. */
 
 /* History the brain was given alongside this turn's own input. */

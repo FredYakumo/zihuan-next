@@ -624,14 +624,14 @@ export interface LlmStageView {
   /** Status line under the bubble title, with the live elapsed time while it runs. */
   statusText: string;
   fields: EmbeddingStageField[];
-  /** Whether the inference is streamed; streamed responses fill `streamContent`. */
+  /** Whether the inference is streamed; streamed responses fill `content` incrementally. */
   streaming: boolean;
   /** The request messages exactly as the model received them, oldest first. */
   messages: StageRawMessage[];
-  /** Assistant text streamed so far; present once the response started. */
-  streamContent?: string;
-  /** Thinking text streamed so far, when the model emits any. */
-  streamReasoning?: string;
+  /** Assistant text of this call: streamed so far while running, settled once finished. */
+  content?: string;
+  /** Thinking text of this call, when the model emits any. */
+  reasoning?: string;
   error?: string;
 }
 
@@ -727,8 +727,11 @@ export function llmStageView(detail: unknown, now: number): LlmStageView | undef
     fields,
     streaming: record.streaming === true,
     messages,
-    streamContent: detailText(record.stream_content),
-    streamReasoning: detailText(record.stream_reasoning),
+    // Live reports carry the streamed accumulation (stream_content); the finish report of a
+    // non-streamed call carries only the settled text (content). Archived turns recorded
+    // before the finish report grew these fields still fall back to the streamed text.
+    content: detailText(record.content) ?? detailText(record.stream_content),
+    reasoning: detailText(record.reasoning) ?? detailText(record.stream_reasoning),
     error: detailText(record.error),
   };
 }
@@ -942,6 +945,22 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     stageRawViewOpen.value = next;
   }
 
+  // A special tool call (memory tools, sub-agent calls) keeps its rich display — the tone card
+  // or the nested agent box — and the raw view behind the corner toggle shows the recorded
+  // call payload plain.
+  const toolRawViewOpen = ref(new Set<string>());
+
+  function isToolRawView(id: string): boolean {
+    return toolRawViewOpen.value.has(id);
+  }
+
+  function toggleToolRawView(id: string) {
+    const next = new Set(toolRawViewOpen.value);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    toolRawViewOpen.value = next;
+  }
+
   /** `名字(id)` for the quoted message's sender, falling back to whichever half is known. */
   const quoteSender = computed(() => {
     const quoted = turn().quoted;
@@ -955,13 +974,47 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
   // `[Image: media_id=2026-...]`; the whole placeholder is replaced by the image itself.
   const mediaIdPattern = /\[Image:?\s+media_id=([^\s\]]+)\]/g;
 
+  /**
+   * Tool calls of the turn grouped under the LLM inference whose output requested them.
+   *
+   * A tool call always starts right after its requesting inference reported, so in the
+   * chronological entry list every tool call belongs to the latest preceding
+   * `llm model inference` stage; the inference bubble then shows the loop as it really ran
+   * (request → tool calls → results). Tool calls with no preceding inference stage — a
+   * truncated archive — keep rendering as their own bubble.
+   */
+  const llmToolCalls = computed(() => {
+    const calls = new Map<string, ContextToolItem[]>();
+    let stageId: string | undefined;
+    for (const entry of turn().entries) {
+      if (entry.kind === "stage") {
+        if (isLlmStage(entry.stage)) stageId = entry.id;
+      } else if (entry.kind === "tool" && stageId) {
+        const list = calls.get(stageId);
+        if (list) list.push(entry);
+        else calls.set(stageId, [entry]);
+      }
+    }
+    return calls;
+  });
+
+  /** Tool calls one inference triggered, in the order the model requested them. */
+  function llmToolsFor(id: string): ContextToolItem[] {
+    return llmToolCalls.value.get(id) ?? [];
+  }
+
   /** Steps of this turn grouped into stages, each with its own palette color. */
-  const phases = computed(() =>
-    groupEntriesByPhase(turn().entries).map((phase, index) => ({
+  const phases = computed(() => {
+    const attached = new Set(
+      [...llmToolCalls.value.values()].flat().map((tool) => tool.id),
+    );
+    return groupEntriesByPhase(
+      turn().entries.filter((entry) => !(entry.kind === "tool" && attached.has(entry.id))),
+    ).map((phase, index) => ({
       ...phase,
       color: phaseColor(index),
-    })),
-  );
+    }));
+  });
 
   /** Sub-agent call trees, keyed by the joined call path of each sub-agent invocation. */
   const subAgentTrees = computed(() => buildSubAgentTrees(turn().entries));
@@ -1187,6 +1240,9 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     toggleStageTools,
     isStageRawView,
     toggleStageRawView,
+    isToolRawView,
+    toggleToolRawView,
+    llmToolsFor,
     phases,
     subAgentsFor,
     orphanSubAgents,

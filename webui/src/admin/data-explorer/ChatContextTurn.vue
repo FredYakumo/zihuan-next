@@ -190,11 +190,9 @@
                       <dd>{{ field.value }}</dd>
                     </div>
                   </dl>
-                  <template
-                    v-if="llmView(entry.id)?.streamContent || llmView(entry.id)?.streamReasoning"
-                  >
+                  <template v-if="llmView(entry.id)?.content || llmView(entry.id)?.reasoning">
                     <div
-                      v-if="llmView(entry.id)?.streamReasoning"
+                      v-if="llmView(entry.id)?.reasoning"
                       class="context-thinking"
                       :class="{ collapsed: !stageThinkingOpen(entry.id) }"
                     >
@@ -211,13 +209,73 @@
                       <pre
                         v-if="stageThinkingOpen(entry.id)"
                         class="context-thinking-content"
-                      >{{ llmView(entry.id)?.streamReasoning }}</pre>
+                      >{{ llmView(entry.id)?.reasoning }}</pre>
                     </div>
                     <pre
-                      v-if="llmView(entry.id)?.streamContent"
+                      v-if="llmView(entry.id)?.content"
                       class="context-llm-stream"
-                    >{{ llmView(entry.id)?.streamContent }}</pre>
+                    >{{ llmView(entry.id)?.content }}</pre>
                   </template>
+                  <!-- The tool calls this inference's output requested, in request order: the
+                       loop reads as request → tools → results, the next bubble carries them as
+                       its input messages. -->
+                  <div
+                    v-if="llmToolsFor(entry.id).length"
+                    class="context-llm-section"
+                  >
+                    <div class="context-llm-tools-label">
+                      工具调用（{{ llmToolsFor(entry.id).length }}）
+                    </div>
+                    <div
+                      v-for="tool in llmToolsFor(entry.id)"
+                      :key="tool.id"
+                      class="context-llm-tool"
+                      :data-memory-tone="isToolRawView(tool.id) ? undefined : memoryToolAppearance(tool.name, tool.arguments)?.tone"
+                    >
+                      <div class="context-llm-tool-head">
+                        <span class="context-tool-title">工具调用 · {{ tool.name }}
+                          <span
+                            v-if="!isToolRawView(tool.id) && memoryToolAppearance(tool.name, tool.arguments)"
+                            class="context-memory-tool-label"
+                          >{{ memoryToolAppearance(tool.name, tool.arguments)?.label }}</span>
+                        </span>
+                        <span class="context-tool-status">
+                          <t-loading v-if="tool.running" size="12px" />
+                          <span v-else-if="tool.durationMs !== undefined" class="muted">{{ tool.durationMs }} ms</span>
+                        </span>
+                      </div>
+                      <JsonView :source="tool.arguments" />
+                      <!-- A sub-agent this call started renders in place, below the call. -->
+                      <ContextSubAgentBox
+                        v-for="node in isToolRawView(tool.id) ? [] : subAgentsFor(tool.callId)"
+                        :key="node.key"
+                        :node="node"
+                        :running="tool.running"
+                      />
+                      <template v-if="tool.result !== undefined">
+                        <div
+                          class="context-tool-result-label"
+                          :class="{ 'context-tool-result-label--failed': toolResultFailed(tool.result) }"
+                        >
+                          {{ toolResultFailed(tool.result) ? "错误" : "结果" }}
+                        </div>
+                        <div
+                          class="context-tool-result"
+                          :class="{ 'context-tool-result--failed': toolResultFailed(tool.result) }"
+                        >
+                          <JsonView :source="tool.result" />
+                        </div>
+                      </template>
+                      <button
+                        v-if="isSpecialToolCall(tool)"
+                        type="button"
+                        class="context-view-toggle"
+                        @click="toggleToolRawView(tool.id)"
+                      >
+                        {{ isToolRawView(tool.id) ? "rich视图" : "原始视图" }}
+                      </button>
+                    </div>
+                  </div>
                   <div
                     v-if="llmView(entry.id)?.messages.length"
                     class="context-llm-section"
@@ -239,7 +297,7 @@
                         class="context-stage-raw-item"
                       >
                         <div class="context-stage-raw-head">
-                          <span class="context-stage-raw-role">{{ message.role }}</span>
+                          <span class="context-stage-raw-role" :data-role="message.role || undefined">{{ message.role }}</span>
                           <span class="context-stage-raw-index">#{{ messageIndex + 1 }}</span>
                         </div>
                         <pre class="context-stage-raw-content">{{ message.content }}</pre>
@@ -343,7 +401,7 @@
                     class="context-stage-history-item"
                   >
                     <div class="context-stage-history-head">
-                      <span class="context-stage-history-role">{{ item.role }}</span>
+                      <span class="context-stage-history-role" :data-role="item.role || undefined">{{ item.role }}</span>
                       <span class="context-stage-history-chars">{{ item.chars }} 字</span>
                     </div>
                     <pre class="context-stage-history-text">{{ item.text }}</pre>
@@ -356,7 +414,7 @@
                     class="context-stage-raw-item"
                   >
                     <div class="context-stage-raw-head">
-                      <span class="context-stage-raw-role">{{ message.role }}</span>
+                      <span class="context-stage-raw-role" :data-role="message.role || undefined">{{ message.role }}</span>
                       <span class="context-stage-raw-index">#{{ messageIndex + 1 }}</span>
                     </div>
                     <pre class="context-stage-raw-content">{{ message.content }}</pre>
@@ -526,7 +584,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ContextTurnView } from "./useChatContext";
+import type { ContextToolItem, ContextTurnView } from "./useChatContext";
 import { toolResultFailed } from "./useChatContext";
 import {
   RATE_LIMIT_STAGE,
@@ -572,6 +630,9 @@ const {
   toggleStageTools,
   isStageRawView,
   toggleStageRawView,
+  isToolRawView,
+  toggleToolRawView,
+  llmToolsFor,
   phases,
   subAgentsFor,
   orphanSubAgents,
@@ -600,6 +661,14 @@ function embeddingView(id: string) {
 
 function llmView(id: string) {
   return stageView(id)?.llm;
+}
+
+/** A call whose rich display replaces the plain payload: memory tools and sub-agent calls. */
+function isSpecialToolCall(tool: ContextToolItem): boolean {
+  return (
+    Boolean(memoryToolAppearance(tool.name, tool.arguments)) ||
+    subAgentsFor(tool.callId).length > 0
+  );
 }
 </script>
 
