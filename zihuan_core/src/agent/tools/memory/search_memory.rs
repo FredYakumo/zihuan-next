@@ -7,12 +7,12 @@ use crate::error::{Error, Result};
 use crate::model_inference::llm::tooling::FunctionTool;
 use crate::storage::MemoryCategory;
 
-use super::{category_argument, memory_limit};
-use crate::utils::json_utils::optional_string_argument;
-use crate::utils::memory_fingerprint::memory_fingerprint;
 use super::function_spec::MemoryFunctionToolSpec;
 use super::resources::MemoryAgentResources;
 use super::store::search_category;
+use super::{category_argument, memory_limit};
+use crate::utils::json_utils::optional_string_argument;
+use crate::utils::memory_fingerprint::memory_fingerprint;
 
 /// Searches one category and returns the full records, each with its content fingerprint.
 pub struct SearchMemoryTool {

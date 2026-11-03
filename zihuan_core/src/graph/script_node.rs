@@ -1381,8 +1381,8 @@ pub fn dispatch_script_host_call(
         }
         "bot.filter_event_type" => {
             let event = message_event(params)?;
-            let filter_type =
-                optional_string_argument(params, "filter_type").unwrap_or_else(|| "private".to_string());
+            let filter_type = optional_string_argument(params, "filter_type")
+                .unwrap_or_else(|| "private".to_string());
             let matches = match filter_type.as_str() {
                 "group" => {
                     event.message_type

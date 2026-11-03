@@ -7,10 +7,10 @@ use crate::error::Result;
 use crate::model_inference::llm::tooling::FunctionTool;
 use crate::utils::json_utils::optional_string_argument;
 
-use super::{category_argument, memory_limit};
 use super::function_spec::MemoryFunctionToolSpec;
 use super::resources::MemoryAgentResources;
 use super::store::search_category;
+use super::{category_argument, memory_limit};
 
 /// Lists memory titles of one category without loading their content.
 pub struct ListMemoryKeysTool {

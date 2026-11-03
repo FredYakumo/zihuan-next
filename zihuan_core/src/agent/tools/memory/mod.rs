@@ -12,8 +12,8 @@ use crate::agent::declarative_agent::AgentHost;
 use crate::error::{Error, Result};
 use crate::storage::MemoryCategory;
 
-mod function_spec;
 mod full_search_concept_memory;
+mod function_spec;
 mod list_memory_keys;
 mod memory_agent;
 mod recall;

@@ -92,7 +92,8 @@ fn message_record_media(
         .unwrap_or_default()
         .into_iter()
         .filter_map(|record| {
-            let rustfs_path = Some(record.rustfs_path.clone()).filter(|value| !value.trim().is_empty());
+            let rustfs_path =
+                Some(record.rustfs_path.clone()).filter(|value| !value.trim().is_empty());
             let url = image_preview_url(
                 rustfs_path.as_deref(),
                 Some(record.original_source.as_str()),
@@ -166,10 +167,7 @@ async fn load_message_quotes(
     if quoted_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let placeholders = std::iter::repeat("?")
-        .take(quoted_ids.len())
-        .collect::<Vec<_>>()
-        .join(", ");
+    let placeholders = std::iter::repeat("?").take(quoted_ids.len()).collect::<Vec<_>>().join(", ");
     let sql = format!(
         "SELECT message_id, sender_name, send_time, content, media_json FROM message_record WHERE message_id IN ({placeholders}) ORDER BY id ASC"
     );
@@ -191,7 +189,10 @@ async fn load_message_quotes(
                         send_time: $time(&row),
                         content: String::new(),
                         // Only the first chunk carries the row's media_json.
-                        media: message_record_media(media_json.as_deref(), object_storage_connection_id),
+                        media: message_record_media(
+                            media_json.as_deref(),
+                            object_storage_connection_id,
+                        ),
                     });
                 let content: String = row.try_get("content").unwrap_or_default();
                 entry.content.push_str(&content);
@@ -1381,7 +1382,8 @@ async fn query_service_message_rows(
         }
     };
     let (mut records, total) = fetched?;
-    attach_message_quotes(&connection, &mut records, object_storage_connection_id.as_deref()).await?;
+    attach_message_quotes(&connection, &mut records, object_storage_connection_id.as_deref())
+        .await?;
     Ok((records, total))
 }
 
@@ -2203,12 +2205,9 @@ pub async fn query_service_chat_turns(req: &mut Request, res: &mut Response, _de
         offset,
         page_size as i64,
     ) {
-        Ok((items, total)) => res.render(Json(ServiceChatTurnListResponse {
-            total,
-            page,
-            page_size,
-            items,
-        })),
+        Ok((items, total)) => {
+            res.render(Json(ServiceChatTurnListResponse { total, page, page_size, items }))
+        }
         Err(error) => render_internal_error(res, error.to_string()),
     }
 }

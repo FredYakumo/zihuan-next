@@ -464,8 +464,7 @@ pub(crate) fn build_user_message(
     let preamble = format!("{state_block}{state_delta_block}{message_rate_limit_block}");
     let current_message_block =
         format!("{CURRENT_USER_MESSAGE_LABEL}\n{current_turn_text}{current_image_section}{referenced_context_section}");
-    let user_text =
-        format!("{preamble}{current_message_block}\n\n{PROCESSING_INSTRUCTION}");
+    let user_text = format!("{preamble}{current_message_block}\n\n{PROCESSING_INSTRUCTION}");
 
     if !llm_supports_multimodal_input || !current_input.has_media {
         return LLMMessage::user(user_text);

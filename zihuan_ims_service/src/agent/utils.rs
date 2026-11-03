@@ -49,12 +49,7 @@ pub fn build_turn_state_prefix_lines(
 /// `search_memory`.
 pub fn memory_hint_lines(recall: &MemoryRecall) -> Vec<String> {
     let mut lines = Vec::new();
-    lines.extend(
-        recall
-            .concepts()
-            .iter()
-            .map(|memory| format!("- [concept] {}", memory.title())),
-    );
+    lines.extend(recall.concepts().iter().map(|memory| format!("- [concept] {}", memory.title())));
     lines.extend(
         recall
             .people()

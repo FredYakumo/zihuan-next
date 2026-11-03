@@ -3,9 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 
-use crate::agent::declarative_agent::{
-    AgentDefinition, AgentHost, AgentOutputMode,
-};
+use crate::agent::declarative_agent::{AgentDefinition, AgentHost, AgentOutputMode};
 use crate::error::Result;
 use crate::graph::function_graph::FunctionPortDef;
 use crate::graph::DataType;

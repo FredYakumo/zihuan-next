@@ -87,18 +87,18 @@ impl RecalledMemory {
     /// one, and a legacy record must not silently become a concept because of a missing field.
     pub(crate) fn from_record(category: MemoryCategory, record: &AgentMemoryRecord) -> Self {
         match category {
-            MemoryCategory::Concept => Self::Concept(ConceptMemory {
-                title: record.key.trim().to_string(),
-            }),
+            MemoryCategory::Concept => {
+                Self::Concept(ConceptMemory { title: record.key.trim().to_string() })
+            }
             MemoryCategory::Person => Self::Person(PersonMemory {
                 key: record.key.clone(),
                 qq_id: record.attributes.person.qq_id.clone(),
                 name: record.attributes.person.name.clone(),
                 preferred_name: record.attributes.person.preferred_name.clone(),
             }),
-            MemoryCategory::Behavioral => Self::Behavioral(BehavioralMemory {
-                rule: record.value.trim().to_string(),
-            }),
+            MemoryCategory::Behavioral => {
+                Self::Behavioral(BehavioralMemory { rule: record.value.trim().to_string() })
+            }
         }
     }
 }

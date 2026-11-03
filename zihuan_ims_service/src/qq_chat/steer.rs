@@ -207,9 +207,7 @@ fn build_merged_steer_user_message(
     }
 
     flush_text_part(&mut parts, &mut text_buffer);
-    let has_media_part = parts
-        .iter()
-        .any(|part| !matches!(part, MessagePart::Text { .. }));
+    let has_media_part = parts.iter().any(|part| !matches!(part, MessagePart::Text { .. }));
 
     let message = if has_media_part {
         parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
@@ -221,9 +219,7 @@ fn build_merged_steer_user_message(
             .map(|(index, input)| build_entry_text(index, input))
             .collect::<Vec<_>>()
             .join("\n\n");
-        LLMMessage::user(format!(
-            "{state_text}{merged_text}\n\n{PROCESSING_INSTRUCTION}"
-        ))
+        LLMMessage::user(format!("{state_text}{merged_text}\n\n{PROCESSING_INSTRUCTION}"))
     };
 
     apply_steer_prefix(message, api_style)
