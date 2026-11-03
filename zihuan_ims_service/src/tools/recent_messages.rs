@@ -7,11 +7,9 @@ use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::storage::message::history::{load_group_history, load_user_history};
+use zihuan_core::utils::json_utils::optional_string_argument;
 
-use super::common::{
-    optional_string_argument, sanitize_positive_limit, StaticFunctionToolSpec,
-    ToolNotificationTarget,
-};
+use super::common::{sanitize_positive_limit, StaticFunctionToolSpec, ToolNotificationTarget};
 
 const DEFAULT_HISTORY_TOOL_LIMIT: i64 = 10;
 const MAX_HISTORY_TOOL_LIMIT: i64 = 50;

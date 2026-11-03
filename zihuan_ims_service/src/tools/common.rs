@@ -189,16 +189,6 @@ pub(crate) fn sanitize_positive_limit(
     limit.clamp(1, max_limit) as usize
 }
 
-/// Extracts a trimmed, non-empty string from a JSON object field if present.
-pub(crate) fn optional_string_argument(arguments: &Value, key: &str) -> Option<String> {
-    arguments
-        .get(key)
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-}
-
 pub(crate) fn optional_bool_argument(arguments: &Value, key: &str) -> Option<bool> {
     arguments.get(key).and_then(Value::as_bool)
 }

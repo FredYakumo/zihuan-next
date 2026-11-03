@@ -712,8 +712,13 @@ impl QqChatTaskTrace {
         info!("{LOG_PREFIX}\n{}", lines.join("\n"));
     }
 
-    pub(crate) fn record_graph_phase(&self, name: &str, output: Value) {
-        self.record_graph_step(name, "qq_chat_phase", output);
+    /// Record one turn stage in the task-trace graph.
+    ///
+    /// A stage is one reportable step of a turn's processing (system prompt assembly, memory
+    /// recall, input assembly, one LLM inference, …). The context view calls the same concept a
+    /// stage; see `documents/glossary.md`.
+    pub(crate) fn record_graph_stage(&self, name: &str, output: Value) {
+        self.record_graph_step(name, "qq_chat_stage", output);
     }
 
     pub(crate) fn graph_definition(&self, task_id: &str) -> NodeGraphDefinition {

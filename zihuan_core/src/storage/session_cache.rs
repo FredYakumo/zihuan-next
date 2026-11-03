@@ -11,11 +11,11 @@ use crate::qq_context::QqChatContextBackend;
 use crate::storage::redis;
 use crate::storage::RedisConfig;
 
-/// Run-scoped OpenAI message session cache reference, passed between nodes.
+/// Transcript storage for one agent, keyed by a caller-chosen key (`sender_id` for QQ Chat).
 ///
-/// This reference points at the live storage owned by the service-layer agent or provider node.
-/// The storage persists for the duration of a single graph execution and is reset
-/// by the node on the next graph start.
+/// Despite the name, this holds the persisted conversation `history` — not the `session` state
+/// container, which is a separate store. A key addresses one conversation that spans many
+/// turns; the service layer loads it before a turn and saves it after.
 #[derive(Clone)]
 pub struct LLMMessageSessionCacheRef {
     pub node_id: String,

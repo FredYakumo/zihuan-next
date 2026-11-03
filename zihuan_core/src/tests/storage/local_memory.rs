@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use chrono::{Duration, Utc};
 
-use crate::storage::{AgentMemoryUpsert, LocalMemoryStore};
+use crate::storage::{AgentMemoryUpsert, LocalMemoryStore, MemoryCategory};
 
 struct TempDir {
     path: PathBuf,
@@ -44,10 +44,16 @@ fn test_local_memory_overwrites_matching_markdown_key() {
     store.create_or_update(&memory("旅行者原神喜爱角色", "刻晴")).unwrap();
     store.create_or_update(&memory("旅行者原神喜爱角色", "甘雨")).unwrap();
 
-    assert_eq!(
-        fs::read_to_string(directory.path.join("旅行者原神喜爱角色.md")).unwrap(),
-        "甘雨"
-    );
+    let category_dir = directory.path.join(MemoryCategory::Concept.schema().as_str());
+    let mut markdown = Vec::new();
+    for entry in fs::read_dir(&category_dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
+            markdown.push(path);
+        }
+    }
+    assert_eq!(markdown.len(), 1);
+    assert_eq!(fs::read_to_string(&markdown[0]).unwrap(), "甘雨");
     assert_eq!(store.list(Some("甘雨"), 5).unwrap().len(), 1);
 }
 
@@ -62,8 +68,8 @@ fn test_local_memory_rejects_path_traversal_key() {
     assert!(!directory.path.join("../尘歌壶.md").exists());
 }
 
-/// Purpose: Verify local memory persists expiry metadata, filters expired records, and removes expired files.
-/// TestData: One memory about纳西妲 expiring in one hour and one memory about雷电将军 expired one hour ago.
+/// Purpose: Verify behavioral local memory persists expiry metadata and filters expired records.
+/// TestData: One behavioral memory about纳西妲 expiring in one hour and one about雷电将军 expired one hour ago.
 #[test]
 fn test_local_memory_persists_expiry_metadata_and_filters_expired_records() {
     let directory = TempDir::new();
@@ -71,19 +77,20 @@ fn test_local_memory_persists_expiry_metadata_and_filters_expired_records() {
     let expires_at = (Utc::now() + Duration::hours(1)).to_rfc3339();
 
     let mut future_memory = memory("纳西妲的元素爆发", "所闻遍计");
+    future_memory.attributes.category = MemoryCategory::Behavioral;
     future_memory.expires_at = Some(expires_at.clone());
     store.create_or_update(&future_memory).unwrap();
 
     let mut expired_memory = memory("雷电将军的元素爆发", "梦想一心");
+    expired_memory.attributes.category = MemoryCategory::Behavioral;
     expired_memory.expires_at = Some((Utc::now() - Duration::hours(1)).to_rfc3339());
     store.create_or_update(&expired_memory).unwrap();
 
-    let future_record = &store.list(None, 5).unwrap()[0].record;
-    assert_eq!(future_record.key, "纳西妲的元素爆发");
-    assert_eq!(future_record.expires_at.as_deref(), Some(expires_at.as_str()));
+    let hits = store.list(None, 5).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].record.key, "纳西妲的元素爆发");
+    assert_eq!(hits[0].record.expires_at.as_deref(), Some(expires_at.as_str()));
     assert_eq!(store.list(Some("梦想一心"), 5).unwrap().len(), 0);
-    assert!(!directory.path.join("雷电将军的元素爆发.md").exists());
-    assert!(!directory.path.join("雷电将军的元素爆发.meta.json").exists());
 }
 
 /// Purpose: Verify missing or corrupt metadata keeps local memory readable as a permanent memory.
@@ -103,13 +110,14 @@ fn test_local_memory_treats_missing_or_corrupt_metadata_as_permanent() {
     assert!(records.iter().all(|hit| hit.record.expires_at.is_none()));
 }
 
-/// Purpose: Verify invalid expiry values are rejected before any local memory files are written.
-/// TestData: A memory about枫原万叶 with `expires_at` set to the invalid value `稻妻明天`.
+/// Purpose: Verify invalid behavioral expiry values are rejected before any local memory files are written.
+/// TestData: A behavioral memory about枫原万叶 with `expires_at` set to the invalid value `稻妻明天`.
 #[test]
 fn test_local_memory_rejects_invalid_expiry_without_writing_files() {
     let directory = TempDir::new();
     let store = LocalMemoryStore::new(directory.path.clone());
     let mut invalid_memory = memory("枫原万叶的诗", "风带来的故事");
+    invalid_memory.attributes.category = MemoryCategory::Behavioral;
     invalid_memory.expires_at = Some("稻妻明天".to_string());
 
     assert!(store.create_or_update(&invalid_memory).is_err());

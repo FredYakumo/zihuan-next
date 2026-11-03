@@ -327,7 +327,7 @@ impl Procedure for QqGroupMessageWindow<'_> {
 
     async fn run(&self, _context: &ProcedureContext) -> Result<ProcedureOutput> {
         let (output, detail) = self.select();
-        self.context.trace.record_graph_phase("group-message-window", detail.clone());
+        self.context.trace.record_graph_stage("group-message-window", detail.clone());
         let identity = &self.context.identity;
         zihuan_core::qq_context::emit_qq_context_stage(
             &identity.agent_id,

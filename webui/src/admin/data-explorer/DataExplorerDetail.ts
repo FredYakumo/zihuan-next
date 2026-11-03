@@ -2,7 +2,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { PrimaryTableCol } from "tdesign-vue-next";
 
-import type { MysqlRecord, ServiceChatUserItem } from "../../api/client";
+import type { MysqlRecord, MysqlRecordMedia, MysqlRecordQuote, ServiceChatUserItem } from "../../api/client";
 import { type ChatContextFlowExposed } from "./ChatContextFlow";
 import { type ServiceCapability, useDataExplorerDetail } from "./useDataExplorer";
 import { useChatContext } from "./useChatContext";
@@ -24,7 +24,7 @@ export function useDataExplorerDetailPage() {
   function focusTurn(turnId: string) { contextFlowRef.value?.scrollToTurn(turnId); }
 
   const userColumns: PrimaryTableCol<ServiceChatUserItem>[] = [{ colKey: "sender", title: "用户", width: 220 }, { colKey: "group", title: "最近群组", width: 180 }, { colKey: "context_tokens", title: "上下文 Token", width: 130 }, { colKey: "last", title: "最近时间", width: 200 }];
-  const messageColumns: PrimaryTableCol<MysqlRecord>[] = [{ colKey: "message_id", title: "消息 ID", width: 160 }, { colKey: "sender", title: "发送者", width: 160 }, { colKey: "send_time", title: "发送时间", width: 180 }, { colKey: "group", title: "群组", width: 150 }, { colKey: "content", title: "内容" }];
+  const messageColumns: PrimaryTableCol<MysqlRecord>[] = [{ colKey: "message_id", title: "消息 ID", width: 160 }, { colKey: "sender", title: "发送者", width: 160 }, { colKey: "send_time", title: "发送时间", width: 180 }, { colKey: "group", title: "群组", width: 150 }, { colKey: "content", title: "内容" }, { colKey: "detail", title: "详情", width: 80 }];
 
   const pageTitle = computed(() => capability === "messages" ? "聊天记录" : capability === "memories" ? "记忆" : capability === "contexts" ? "上下文" : "图片库");
 
@@ -42,6 +42,164 @@ export function useDataExplorerDetailPage() {
   const failedPreviews = ref(new Set<string>());
   function onImageError(objectId: string) { failedPreviews.value.add(objectId); }
   watch(() => image.value.items, () => { failedPreviews.value = new Set<string>(); });
+
+  /** Matches the image placeholders and reply markers the message renderer writes into content. */
+  const segmentPattern = /\[Image:?\s+media_id=([^\s\]]+)\]|\[Reply of message ID (\d+)\]/g;
+
+  type MessageContentSegment =
+    | { type: "text"; text: string }
+    | { type: "image"; media: MysqlRecordMedia }
+    | { type: "quote"; quoteId: string; placeholder: string };
+
+  const PREVIEW_TEXT_LIMIT = 150;
+
+  const failedMessageMedia = ref(new Set<string>());
+  function onMessageMediaError(mediaId: string) { failedMessageMedia.value.add(mediaId); }
+  /** Record keys (`message_id:row`) whose full content is expanded in the messages table. */
+  const expandedMessages = ref(new Set<string>());
+  /** Record keys whose inline quoted message is expanded below the quote chip. */
+  const expandedQuotes = ref(new Set<string>());
+  watch(() => message.value.records, () => {
+    failedMessageMedia.value = new Set<string>();
+    expandedMessages.value = new Set<string>();
+    expandedQuotes.value = new Set<string>();
+  });
+
+  function toggleMessageDetail(key: string) {
+    const next = expandedMessages.value;
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+  }
+  function isMessageDetailOpen(key: string): boolean {
+    return expandedMessages.value.has(key);
+  }
+  function toggleMessageQuote(key: string) {
+    const next = expandedQuotes.value;
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+  }
+  function isMessageQuoteOpen(key: string): boolean {
+    return expandedQuotes.value.has(key);
+  }
+  /** The record's quote when it matches the marker's id, so stale markers fall back to text. */
+  function rowQuote(row: MysqlRecord, quoteId: string): MysqlRecordQuote | null {
+    return row.quote && row.quote.message_id === quoteId ? row.quote : null;
+  }
+  /** Hover preview for the quote chip: sender, time and content in a native tooltip. */
+  function quoteTitle(quote: MysqlRecordQuote): string {
+    const meta = [quote.sender_name, quote.send_time].filter(Boolean).join(" · ");
+    return meta ? `${meta}\n${quote.content}` : quote.content;
+  }
+  function quoteMeta(quote: MysqlRecordQuote): string {
+    return [quote.sender_name, quote.send_time].filter(Boolean).join(" · ") || quote.message_id;
+  }
+  /** The preview keeps only the first characters of text, so longer records offer the detail view. */
+  function hasMessageDetail(row: MysqlRecord): boolean {
+    return (row.content_full ?? row.content).length > PREVIEW_TEXT_LIMIT;
+  }
+
+  /** Interleave a record's full content with the images and reply markers it contains. */
+  function fullContentSegments(row: MysqlRecord): MessageContentSegment[] {
+    const text = row.content_full ?? row.content;
+    if (!text) return [];
+    const available = (row.media ?? []).filter((entry) => entry.url && !failedMessageMedia.value.has(entry.media_id));
+    const byId = new Map(available.map((entry) => [entry.media_id, entry]));
+    const segments: MessageContentSegment[] = [];
+    let cursor = 0;
+    for (const match of text.matchAll(segmentPattern)) {
+      const start = match.index ?? 0;
+      if (start > cursor) segments.push({ type: "text", text: text.slice(cursor, start) });
+      if (match[1]) {
+        const entry = byId.get(match[1]);
+        if (entry) segments.push({ type: "image", media: entry });
+        else segments.push({ type: "text", text: match[0] });
+      } else {
+        segments.push({ type: "quote", quoteId: match[2] ?? "", placeholder: match[0] });
+      }
+      cursor = start + match[0].length;
+    }
+    if (cursor < text.length) segments.push({ type: "text", text: text.slice(cursor) });
+    return segments;
+  }
+
+  /** Cut a segment list down to `limit` characters of text, keeping the images and quotes it passes. */
+  function limitSegments(segments: MessageContentSegment[], limit: number): MessageContentSegment[] {
+    const result: MessageContentSegment[] = [];
+    let remaining = limit;
+    for (const segment of segments) {
+      if (segment.type !== "text") {
+        result.push(segment);
+        continue;
+      }
+      if (!segment.text) continue;
+      if (remaining <= 0) break;
+      if (segment.text.length > remaining) {
+        result.push({ type: "text", text: `${segment.text.slice(0, remaining)}…` });
+        remaining = 0;
+      } else {
+        result.push(segment);
+        remaining -= segment.text.length;
+      }
+    }
+    return result;
+  }
+
+  /** Collapsed rows show a text-truncated preview; expanded rows show the full content. */
+  function contentSegments(row: MysqlRecord, key: string): MessageContentSegment[] {
+    const all = fullContentSegments(row);
+    return isMessageDetailOpen(key) ? all : limitSegments(all, PREVIEW_TEXT_LIMIT);
+  }
+
+  /** Interleave a quoted message's preview text with the images it references. */
+  function quoteSegments(quote: MysqlRecordQuote): MessageContentSegment[] {
+    const byId = new Map(
+      (quote.media ?? [])
+        .filter((entry) => entry.url && !failedMessageMedia.value.has(entry.media_id))
+        .map((entry) => [entry.media_id, entry]),
+    );
+    const segments: MessageContentSegment[] = [];
+    let cursor = 0;
+    for (const match of quote.content.matchAll(segmentPattern)) {
+      const start = match.index ?? 0;
+      if (start > cursor) segments.push({ type: "text", text: quote.content.slice(cursor, start) });
+      if (match[1]) {
+        const entry = byId.get(match[1]);
+        if (entry) segments.push({ type: "image", media: entry });
+        else segments.push({ type: "text", text: match[0] });
+      } else {
+        segments.push({ type: "text", text: match[0] });
+      }
+      cursor = start + match[0].length;
+    }
+    if (cursor < quote.content.length) segments.push({ type: "text", text: quote.content.slice(cursor) });
+    return segments;
+  }
+
+  /** Message image opened in the preview overlay, with its fitted base width and wheel zoom. */
+  const previewMessageMedia = ref<MysqlRecordMedia | null>(null);
+  const previewBaseWidth = ref(0);
+  const previewScale = ref(1);
+  function openMessageMedia(media: MysqlRecordMedia) {
+    previewMessageMedia.value = media;
+    previewBaseWidth.value = 0;
+    previewScale.value = 1;
+  }
+  function closeMessageMedia() { previewMessageMedia.value = null; }
+  /** Fit the opened image into half the viewport so the preview starts small. */
+  function onPreviewLoad(event: Event) {
+    const image = event.target as HTMLImageElement;
+    const fit = Math.min(
+      1,
+      (window.innerWidth * 0.5) / image.naturalWidth,
+      (window.innerHeight * 0.65) / image.naturalHeight,
+    );
+    previewBaseWidth.value = image.naturalWidth * fit;
+  }
+  function onPreviewWheel(event: WheelEvent) {
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+    previewScale.value = Math.min(8, Math.max(0.2, previewScale.value * factor));
+  }
 
   return {
     serviceId,
@@ -62,6 +220,24 @@ export function useDataExplorerDetailPage() {
     searchImages,
     failedPreviews,
     onImageError,
+    contentSegments,
+    onMessageMediaError,
+    toggleMessageDetail,
+    hasMessageDetail,
+    isMessageDetailOpen,
+    toggleMessageQuote,
+    isMessageQuoteOpen,
+    rowQuote,
+    quoteTitle,
+    quoteMeta,
+    quoteSegments,
+    previewMessageMedia,
+    previewBaseWidth,
+    previewScale,
+    openMessageMedia,
+    closeMessageMedia,
+    onPreviewLoad,
+    onPreviewWheel,
     pageTitle,
     userColumns,
     onUserRowClick,

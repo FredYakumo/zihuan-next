@@ -12,6 +12,7 @@ use std::time::Instant;
 
 use serde_json::json;
 
+use zihuan_core::agent::tools::memory::MemoryRecall;
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::LLMMessage;
@@ -57,9 +58,9 @@ pub(crate) struct BeforeBrainOutput {
     pub(crate) system_prompt: String,
     /// The current turn's user input, including the memory-title hint and emotion prompt.
     pub(crate) user_message: LLMMessage,
-    /// The memory-title hint block injected into the user input. Mid-turn steer messages embed
-    /// the same block so they stay consistent with the turn they interrupt.
-    pub(crate) memory_context: Option<String>,
+    /// The typed memory recall injected into the user input. Mid-turn steer messages render the
+    /// same recall so they stay consistent with the turn they interrupt.
+    pub(crate) memory_recall: Option<MemoryRecall>,
 }
 
 /// Assemble this turn's system prompt and user input. No inference runs here.
@@ -67,18 +68,32 @@ pub(crate) struct BeforeBrainOutput {
 pub(crate) fn assemble_before_brain(
     ctx: &BeforeBrainContext<'_>,
     reply_instruction: Option<&str>,
-    recalled_memory: Option<&str>,
+    memory_recall: Option<MemoryRecall>,
 ) -> BeforeBrainOutput {
     let started_at = Instant::now();
 
-    // 1. System prompt: the shared QQ chat rules plus the role service's system prompt.
-    let system_prompt = if ctx.is_group {
-        build_group_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
+    // The language style is suppressed while the turn already expresses a noticeable emotion;
+    // the decision is made before the prompt so it lands in the system message.
+    let style_prompt_suppressed = {
+        let session_state = ctx.session_state.lock().unwrap();
+        has_noticeable_emotion_expression(&session_state, &ctx.emotion_dimensions)
+    };
+    let effective_style_prompt = if style_prompt_suppressed {
+        None
     } else {
-        build_private_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
+        ctx.style_prompt
+    };
+
+    // System prompt: the shared QQ chat rules, the role service's prompt, the reply output
+    //    contract and the turn's language style. It leads the conversation as its system
+    //    message, so the user turns stay free of it.
+    let system_prompt = if ctx.is_group {
+        build_group_system_prompt(ctx.bot_name, ctx.agent_system_prompt, effective_style_prompt)
+    } else {
+        build_private_system_prompt(ctx.bot_name, ctx.agent_system_prompt, effective_style_prompt)
     };
     ctx.trace
-        .record_graph_phase("system prompt", json!({ "prompt": system_prompt }));
+        .record_graph_stage("system prompt", json!({ "prompt": system_prompt }));
     if let Some(identity) = ctx.identity.as_ref() {
         emit_qq_context_stage(
             &identity.agent_id,
@@ -89,8 +104,7 @@ pub(crate) fn assemble_before_brain(
         );
     }
 
-    let memory_context = recalled_memory.map(str::to_string);
-    let (user_message, emotion_prompt, style_prompt_suppressed, emotion_values) = {
+    let (user_message, emotion_prompt, emotion_values) = {
         let mut session_state = ctx.session_state.lock().unwrap();
         let emotion_prompt = emotion_expression_prompt(&session_state, &ctx.emotion_dimensions);
         let emotion_values = session_state
@@ -98,30 +112,26 @@ pub(crate) fn assemble_before_brain(
             .into_iter()
             .map(|(name, value)| (name, json!(value)))
             .collect::<serde_json::Map<String, serde_json::Value>>();
-        let style_prompt_suppressed =
-            has_noticeable_emotion_expression(&session_state, &ctx.emotion_dimensions);
         let user_message = message_with_api_style(
             build_user_message(
                 ctx.input,
                 ctx.bot_name,
                 ctx.adapter,
                 ctx.llm.supports_multimodal_input(),
-                &system_prompt,
-                ctx.style_prompt,
                 ctx.message_rate_limit_warning,
                 &mut session_state,
                 &ctx.emotion_dimensions,
-                memory_context.as_deref(),
+                memory_recall.as_ref(),
                 reply_instruction,
             ),
             ctx.llm.api_style(),
         );
-        (user_message, emotion_prompt, style_prompt_suppressed, emotion_values)
+        (user_message, emotion_prompt, emotion_values)
     };
 
     // Report the emotion prompt the input actually carries; a noticeable emotion expression
     // replaces the configured language style.
-    ctx.trace.record_graph_phase(
+    ctx.trace.record_graph_stage(
         "情绪提示词",
         json!({
             "emotion_prompt": emotion_prompt,
@@ -145,11 +155,12 @@ pub(crate) fn assemble_before_brain(
     }
 
     let user_input_text = user_message.content_text_owned().unwrap_or_default();
-    ctx.trace.record_graph_phase(
+    let memory_trace = memory_recall.as_ref().map(crate::agent::utils::memory_recall_trace);
+    ctx.trace.record_graph_stage(
         "User Input 组装",
         json!({
             "user_input": user_input_text,
-            "memory_context": memory_context,
+            "memory_recall": memory_trace,
             "duration_ms": started_at.elapsed().as_millis() as u64,
         }),
     );
@@ -161,7 +172,7 @@ pub(crate) fn assemble_before_brain(
             "User Input",
             json!({
                 "user_input": user_input_text,
-                "has_memory_hint": memory_context.is_some(),
+                "memory_recall": memory_trace,
             }),
         );
     }
@@ -169,6 +180,6 @@ pub(crate) fn assemble_before_brain(
     BeforeBrainOutput {
         system_prompt,
         user_message,
-        memory_context,
+        memory_recall,
     }
 }

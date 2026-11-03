@@ -14,10 +14,11 @@ use zihuan_core::storage::S3Ref;
 use zihuan_core::storage::{
     persist_media_to_store, search_images_in_store, upload_remote_image_to_s3,
 };
+use zihuan_core::utils::json_utils::optional_string_argument;
 
 use super::common::{
-    extract_string_field, optional_bool_argument, optional_string_argument,
-    sanitize_positive_limit, StaticFunctionToolSpec, ToolNotificationTarget,
+    extract_string_field, optional_bool_argument, sanitize_positive_limit, StaticFunctionToolSpec,
+    ToolNotificationTarget,
 };
 use zihuan_core::url_utils::content_type_from_url;
 

@@ -8,6 +8,7 @@ use crate::error::{Error, Result};
 use crate::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use crate::model_inference::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
 use crate::storage::S3Ref;
+use crate::utils::json_utils::optional_string_argument;
 
 use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;
 use crate::ims_bot_adapter::runtime::login_info::{parse_login_info, qq_avatar_url};
@@ -92,7 +93,8 @@ impl Tool for GetQqUserProfileTool {
     }
 
     fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
-        let user_id = required_string_argument(arguments, "id", "id 是必填参数")?;
+        let user_id = optional_string_argument(arguments, "id")
+            .ok_or_else(|| Error::ValidationError("id 是必填参数".to_string()))?;
         let query = parse_query_fields(arguments)?;
         execute_profile_query(&self.adapter, &self.event, &self.s3_ref, &user_id, &query)
     }
@@ -187,16 +189,6 @@ fn normalize_field_name(raw: &str) -> String {
     }
 }
 
-fn required_string_argument(arguments: &Value, key: &str, error_msg: &str) -> Result<String> {
-    arguments
-        .get(key)
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| Error::ValidationError(error_msg.to_string()))
-}
-
 fn bot_qq_id(adapter: &SharedBotAdapter) -> Result<String> {
     Ok(get_bot_id(adapter))
 }
@@ -252,8 +244,8 @@ fn fetch_stranger_info(
 
     let result = StrangerInfo {
         user_id: user_id.to_string(),
-        nickname: string_field_or(data, "nickname", ""),
-        sex: string_field_or(data, "sex", "unknown"),
+        nickname: optional_string_argument(data, "nickname").unwrap_or_default(),
+        sex: optional_string_argument(data, "sex").unwrap_or_else(|| "unknown".to_string()),
         age: data.get("age").and_then(|v| v.as_i64()).unwrap_or(0),
     };
 
@@ -308,7 +300,7 @@ fn fetch_group_member_info(
     })?;
 
     Ok(MemberInfo {
-        role: string_field_or(data, "role", "member"),
+        role: optional_string_argument(data, "role").unwrap_or_else(|| "member".to_string()),
     })
 }
 
@@ -436,14 +428,4 @@ fn is_group_event(event: &MessageEvent) -> bool {
         event.message_type,
         crate::ims_bot_adapter::runtime::models::event_model::MessageType::Group
     )
-}
-
-fn string_field_or(value: &Value, key: &str, default: &str) -> String {
-    value
-        .get(key)
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| default.to_string())
 }

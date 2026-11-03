@@ -14,8 +14,9 @@ use zihuan_core::storage::message::record_restore::{persist_media_to_record, que
 use zihuan_core::storage::S3Ref;
 use zihuan_core::storage::{persist_media_to_store, upload_remote_image_to_s3};
 use zihuan_core::url_utils::content_type_from_url;
+use zihuan_core::utils::json_utils::optional_string_argument;
 
-use super::common::{optional_string_argument, StaticFunctionToolSpec};
+use super::common::StaticFunctionToolSpec;
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 

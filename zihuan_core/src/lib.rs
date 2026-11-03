@@ -2,6 +2,8 @@ pub mod utils {
     pub mod bm25;
     pub mod hash_string;
     pub mod json_file;
+    pub mod json_utils;
+    pub mod memory_fingerprint;
     pub mod panic_payload;
     pub mod string_utils;
     pub mod time_unit;

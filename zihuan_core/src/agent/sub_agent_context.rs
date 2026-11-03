@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use crate::agent::declarative_agent::AgentHost;
-use crate::agent::tools::memory_tools::{
+use crate::agent::tools::memory::{
     register_memory_tools, MemoryAgentResources, MemoryBackend, MEMORY_TOOL_IDS,
 };
 use crate::agent::tools::Tool;

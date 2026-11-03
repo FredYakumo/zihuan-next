@@ -35,7 +35,7 @@ pub(crate) use qq_message_search::SearchQqMessagesTool;
 pub(crate) use recent_messages::{GetRecentGroupMessagesTool, GetRecentUserMessagesTool};
 pub(crate) use reply_message::ReplyMessageTool;
 pub(crate) use web_search::WebSearchTool;
-pub(crate) use zihuan_core::agent::tools::memory_tools::MemoryAgentResources as AgentMemoryToolResources;
+pub(crate) use zihuan_core::agent::tools::memory::MemoryAgentResources as AgentMemoryToolResources;
 pub(crate) use zihuan_core::agent::SharedTool;
 
 pub(crate) const DEFAULT_TOOL_WEB_SEARCH: &str = "web_search";
@@ -140,7 +140,7 @@ pub fn build_info_brain_tools(
                 .with_llm(LLM_KIND_MAIN, llm);
             let host = service_context.build_host(memory_access);
             if is_enabled(default_tools_enabled, DEFAULT_TOOL_MEMORY_AGENT) {
-                for id in zihuan_core::agent::tools::memory_tools::MEMORY_TOOL_IDS {
+                for id in zihuan_core::agent::tools::memory::MEMORY_TOOL_IDS {
                     if let Some(tool) = host.tool(id) {
                         tools.push(Box::new(SharedTool::new(tool)));
                     }

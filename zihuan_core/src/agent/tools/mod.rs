@@ -8,7 +8,7 @@ use crate::model_inference::llm::tooling::FunctionTool;
 pub use crate::tool_runtime::ToolRunDuration;
 use crate::workspace::AskUserRequest;
 
-pub mod memory_tools;
+pub mod memory;
 pub mod node_graph_tool;
 pub mod plugin_tool;
 pub mod tool_calling_engine;
@@ -16,7 +16,9 @@ pub mod tool_calling_types;
 pub(crate) mod tool_progress;
 pub mod web_search;
 
-pub use memory_tools::{register_memory_tools, MemoryAgentResources, MemoryBackend};
+pub use memory::{
+    register_memory_tools, MemoryAgentResources, MemoryBackend, MemoryRecall, RecalledMemory,
+};
 pub use node_graph_tool::NodeGraphTool;
 pub use plugin_tool::{
     plugin_brain_tool, plugin_brain_tools, selected_plugin_brain_tools, PluginTool,

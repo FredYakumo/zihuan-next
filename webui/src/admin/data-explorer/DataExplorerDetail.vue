@@ -33,10 +33,97 @@
         <t-table v-if="message.records.length" row-key="message_id" :data="message.records" :columns="messageColumns">
           <template #sender="{ row }"><div>{{ row.sender_name }}</div><div class="mono muted">{{ row.sender_id }}</div></template>
           <template #group="{ row }">{{ row.group_name || row.group_id || '-' }}</template>
-          <template #content="{ row }"><span class="content-cell">{{ row.content }}</span></template>
+          <template #content="{ row, rowIndex }">
+            <div class="content-cell">
+              <div class="content-body" :class="{ 'content-body--expanded': isMessageDetailOpen(String(rowIndex)) }">
+                <template v-for="(segment, index) in contentSegments(row, String(rowIndex))" :key="index">
+                  <span v-if="segment.type === 'text'">{{ segment.text }}</span>
+                  <button
+                    v-else-if="segment.type === 'image'"
+                    type="button"
+                    class="content-media"
+                    :title="segment.media.name || segment.media.media_id"
+                    @click="openMessageMedia(segment.media)"
+                  >
+                    <img
+                      :src="segment.media.url"
+                      :alt="segment.media.name || segment.media.media_id"
+                      referrerpolicy="no-referrer"
+                      loading="lazy"
+                      @error="onMessageMediaError(segment.media.media_id)"
+                    />
+                  </button>
+                  <template v-else>
+                    <button
+                      v-if="rowQuote(row, segment.quoteId)"
+                      type="button"
+                      class="content-quote-chip"
+                      :title="quoteTitle(row.quote!)"
+                      @click="toggleMessageQuote(String(rowIndex))"
+                    >引用消息 {{ isMessageQuoteOpen(String(rowIndex)) ? "▴" : "▾" }}</button>
+                    <span v-else>{{ segment.placeholder }}</span>
+                    <span
+                      v-if="row.quote && row.quote.message_id === segment.quoteId && isMessageQuoteOpen(String(rowIndex))"
+                      class="content-quote"
+                    >
+                      <span class="content-quote-meta">{{ quoteMeta(row.quote) }}</span>
+                      <span class="content-quote-body">
+                        <template v-for="(qSegment, qIndex) in quoteSegments(row.quote)" :key="qIndex">
+                          <span v-if="qSegment.type === 'text'">{{ qSegment.text }}</span>
+                          <button
+                            v-else
+                            type="button"
+                            class="content-media"
+                            :title="qSegment.media.name || qSegment.media.media_id"
+                            @click="openMessageMedia(qSegment.media)"
+                          >
+                            <img
+                              :src="qSegment.media.url"
+                              :alt="qSegment.media.name || qSegment.media.media_id"
+                              referrerpolicy="no-referrer"
+                              loading="lazy"
+                              @error="onMessageMediaError(qSegment.media.media_id)"
+                            />
+                          </button>
+                        </template>
+                      </span>
+                    </span>
+                  </template>
+                </template>
+              </div>
+            </div>
+          </template>
+          <template #detail="{ row, rowIndex }">
+            <t-button
+              v-if="hasMessageDetail(row)"
+              variant="text"
+              theme="primary"
+              size="small"
+              @click="toggleMessageDetail(String(rowIndex))"
+            >{{ isMessageDetailOpen(String(rowIndex)) ? "收起" : "详情" }}</t-button>
+          </template>
         </t-table>
         <div v-else-if="message.searched && !message.loading" class="empty-state">无匹配聊天记录。</div>
         <t-pagination v-if="message.total" class="pagination" :total="message.total" :current="message.page" :page-size="message.pageSize" :page-size-options="[20, 50, 100]" show-jumper @change="onMessagePaginationChange" />
+        <Teleport to="body">
+          <div
+            v-if="previewMessageMedia"
+            class="content-media-preview"
+            @wheel="onPreviewWheel"
+            @click.self="closeMessageMedia"
+          >
+            <button type="button" class="content-media-preview-close" title="关闭" @click="closeMessageMedia">
+              <CloseIcon />
+            </button>
+            <img
+              :src="previewMessageMedia.url"
+              :alt="previewMessageMedia.name || previewMessageMedia.media_id"
+              referrerpolicy="no-referrer"
+              :style="previewBaseWidth ? { width: `${previewBaseWidth * previewScale}px` } : { maxWidth: '50vw', maxHeight: '65vh' }"
+              @load="onPreviewLoad"
+            />
+          </div>
+        </Teleport>
       </template>
 
       <template v-else-if="capability === 'memories'">
@@ -181,6 +268,7 @@ import { useDataExplorerDetailPage } from "./DataExplorerDetail";
 import ChatContextFlow from "./ChatContextFlow.vue";
 import ChatTurnFinder from "./ChatTurnFinder.vue";
 import ContextUsagePanel from "./ContextUsagePanel.vue";
+import { CloseIcon } from "tdesign-icons-vue-next";
 
 const {
   capability,
@@ -200,6 +288,24 @@ const {
   searchImages,
   failedPreviews,
   onImageError,
+  contentSegments,
+  onMessageMediaError,
+  toggleMessageDetail,
+  hasMessageDetail,
+  isMessageDetailOpen,
+  toggleMessageQuote,
+  isMessageQuoteOpen,
+  rowQuote,
+  quoteTitle,
+  quoteMeta,
+  quoteSegments,
+  previewMessageMedia,
+  previewBaseWidth,
+  previewScale,
+  openMessageMedia,
+  closeMessageMedia,
+  onPreviewLoad,
+  onPreviewWheel,
   pageTitle,
   userColumns,
   onUserRowClick,

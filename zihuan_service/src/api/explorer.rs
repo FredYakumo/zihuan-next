@@ -5,7 +5,9 @@ use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sqlx::Row as SqlxRow;
+use std::collections::HashMap;
 use zihuan_core::config::role_services::load_role_services;
+use zihuan_core::ims_bot_adapter::models::message::MessageMediaRecord;
 use zihuan_core::model_inference::inference_function::compact_message::estimate_messages_tokens;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::url_utils::{
@@ -59,8 +61,171 @@ struct MessageRecordResponse {
     group_id: Option<String>,
     group_name: Option<String>,
     content: String,
+    content_full: String,
     at_target_list: Option<String>,
     media_json: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    media: Vec<MessageRecordMedia>,
+    /// Preview of the message this row replies to, when the content carries a reply marker.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quote: Option<MessageRecordQuote>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct MessageRecordMedia {
+    media_id: String,
+    url: String,
+    mime_type: Option<String>,
+    name: Option<String>,
+}
+
+/// Parses a record row's `media_json` and resolves a preview URL for each image it
+/// describes, preferring the cached RustFS copy over the original remote source.
+fn message_record_media(
+    media_json: Option<&str>,
+    object_storage_connection_id: Option<&str>,
+) -> Vec<MessageRecordMedia> {
+    let Some(media_json) = media_json.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<MessageMediaRecord>>(media_json)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|record| {
+            let rustfs_path =
+                Some(record.rustfs_path.clone()).filter(|value| !value.trim().is_empty());
+            let url = image_preview_url(
+                rustfs_path.as_deref(),
+                Some(record.original_source.as_str()),
+                record.mime_type.as_deref(),
+                object_storage_connection_id,
+            )?;
+            Some(MessageRecordMedia {
+                media_id: record.media_id,
+                url,
+                mime_type: record.mime_type,
+                name: record.name,
+            })
+        })
+        .collect()
+}
+
+/// The message a `[Reply of message ID ...]` marker points at, enough for a preview.
+#[derive(Debug, Clone, Serialize)]
+struct MessageRecordQuote {
+    message_id: String,
+    sender_name: Option<String>,
+    send_time: String,
+    content: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    media: Vec<MessageRecordMedia>,
+}
+
+/// Characters of the quoted message kept in the preview.
+const QUOTE_PREVIEW_MAX_CHARS: usize = 300;
+
+/// Pulls the quoted message id out of a `[Reply of message ID ...]` marker.
+fn extract_reply_message_id(content: &str) -> Option<&str> {
+    const MARKER: &str = "[Reply of message ID ";
+    let rest = content.split_once(MARKER)?.1;
+    let id = rest.split(']').next()?.trim();
+    (!id.is_empty()).then_some(id)
+}
+
+/// Attaches each record's quoted-message preview, leaving records without one untouched.
+async fn attach_message_quotes(
+    connection: &RelationalDbConnection,
+    records: &mut [MessageRecordResponse],
+    object_storage_connection_id: Option<&str>,
+) -> zihuan_core::error::Result<()> {
+    let mut seen = std::collections::HashSet::new();
+    let quoted_ids: Vec<String> = records
+        .iter()
+        .filter_map(|record| extract_reply_message_id(&record.content))
+        .filter(|id| seen.insert(id.to_string()))
+        .map(ToOwned::to_owned)
+        .collect();
+    if quoted_ids.is_empty() {
+        return Ok(());
+    }
+    let quotes = load_message_quotes(connection, &quoted_ids, object_storage_connection_id).await?;
+    for record in records.iter_mut() {
+        let Some(id) = extract_reply_message_id(&record.content) else {
+            continue;
+        };
+        record.quote = quotes.get(id).cloned();
+    }
+    Ok(())
+}
+
+/// Loads the quoted messages' previews, concatenating chunked rows like the restore path does.
+async fn load_message_quotes(
+    connection: &RelationalDbConnection,
+    quoted_ids: &[String],
+    object_storage_connection_id: Option<&str>,
+) -> zihuan_core::error::Result<HashMap<String, MessageRecordQuote>> {
+    if quoted_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let placeholders = std::iter::repeat("?").take(quoted_ids.len()).collect::<Vec<_>>().join(", ");
+    let sql = format!(
+        "SELECT message_id, sender_name, send_time, content, media_json FROM message_record WHERE message_id IN ({placeholders}) ORDER BY id ASC"
+    );
+    macro_rules! fetch_quotes {
+        ($pool:expr, $time:expr) => {{
+            let mut query = sqlx::query(&sql);
+            for id in quoted_ids {
+                query = query.bind(id);
+            }
+            let rows = query.fetch_all($pool).await?;
+            let mut quotes: HashMap<String, MessageRecordQuote> = HashMap::new();
+            for row in rows {
+                let message_id: String = row.try_get("message_id")?;
+                let media_json: Option<String> = row.try_get("media_json").unwrap_or(None);
+                let entry =
+                    quotes.entry(message_id.clone()).or_insert_with(|| MessageRecordQuote {
+                        message_id,
+                        sender_name: row.try_get("sender_name").unwrap_or(None),
+                        send_time: $time(&row),
+                        content: String::new(),
+                        // Only the first chunk carries the row's media_json.
+                        media: message_record_media(
+                            media_json.as_deref(),
+                            object_storage_connection_id,
+                        ),
+                    });
+                let content: String = row.try_get("content").unwrap_or_default();
+                entry.content.push_str(&content);
+            }
+            for quote in quotes.values_mut() {
+                if quote.content.chars().count() > QUOTE_PREVIEW_MAX_CHARS {
+                    quote.content = truncate_preview(&quote.content, QUOTE_PREVIEW_MAX_CHARS);
+                }
+            }
+            Ok(quotes)
+        }};
+    }
+    match connection {
+        RelationalDbConnection::MySql(config) => {
+            let pool = config
+                .pool
+                .as_ref()
+                .ok_or_else(|| zihuan_core::string_error!("mysql pool not available"))?;
+            fetch_quotes!(pool, |row: &sqlx::mysql::MySqlRow| row
+                .try_get::<chrono::NaiveDateTime, _>("send_time")
+                .map(|time| time.format("%Y-%m-%d %H:%M:%S").to_string())
+                .unwrap_or_default())
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            let pool = config
+                .pool
+                .as_ref()
+                .ok_or_else(|| zihuan_core::string_error!("sqlite pool not available"))?;
+            fetch_quotes!(pool, |row: &sqlx::sqlite::SqliteRow| row
+                .try_get::<String, _>("send_time")
+                .unwrap_or_default())
+        }
+    }
 }
 
 #[handler]
@@ -245,8 +410,11 @@ pub async fn query_mysql(req: &mut Request, res: &mut Response, _depot: &mut Dep
                     group_id: row.try_get("group_id").unwrap_or(None),
                     group_name: row.try_get("group_name").unwrap_or(None),
                     content: content_display,
+                    content_full: content_raw,
                     at_target_list: row.try_get("at_target_list").unwrap_or(None),
                     media_json: row.try_get("media_json").unwrap_or(None),
+                    media: Vec::new(),
+                    quote: None,
                 });
             }
             Ok::<Vec<MessageRecordResponse>, sqlx::Error>(result)
@@ -1100,7 +1268,21 @@ pub async fn query_service_messages(req: &mut Request, res: &mut Response, _depo
     .map(|key| (key, req.query::<String>(key).unwrap_or_default()))
     .filter(|(_, value)| !value.trim().is_empty())
     .collect::<Vec<_>>();
-    match query_service_message_rows(connection, &filters, page, page_size).await {
+    // The service's own RustFS connection is what cached the images, so its id rides on every
+    // preview URL for the media proxy to resolve.
+    let object_storage_connection_id = load_role_services()
+        .ok()
+        .and_then(|agents| agents.into_iter().find(|agent| agent.id == service_id))
+        .and_then(|agent| zihuan_service::role::object_storage_connection_id(&agent));
+    match query_service_message_rows(
+        connection,
+        &filters,
+        page,
+        page_size,
+        object_storage_connection_id.as_deref(),
+    )
+    .await
+    {
         Ok((records, total)) => {
             res.render(Json(MysqlExploreResponse { records, total, page, page_size }))
         }
@@ -1113,6 +1295,7 @@ async fn query_service_message_rows(
     filters: &[(&str, String)],
     page: u32,
     page_size: u32,
+    object_storage_connection_id: Option<&str>,
 ) -> zihuan_core::error::Result<(Vec<MessageRecordResponse>, i64)> {
     let mut where_clauses = Vec::new();
     let mut values = Vec::new();
@@ -1154,6 +1337,11 @@ async fn query_service_message_rows(
                 data_query.bind(page_size).bind((page - 1) * page_size).fetch_all($pool).await?;
             let mut records = Vec::with_capacity(rows.len());
             for row in rows {
+                let media_json: Option<String> = row.try_get("media_json").unwrap_or(None);
+                let media =
+                    message_record_media(media_json.as_deref(), object_storage_connection_id);
+                let content_full: String = row.try_get("content").unwrap_or_default();
+                let content = truncate_preview(&content_full, 500);
                 records.push(MessageRecordResponse {
                     message_id: row.try_get("message_id").unwrap_or_default(),
                     sender_id: row.try_get("sender_id").unwrap_or_default(),
@@ -1161,18 +1349,18 @@ async fn query_service_message_rows(
                     send_time: $time(&row),
                     group_id: row.try_get("group_id").unwrap_or(None),
                     group_name: row.try_get("group_name").unwrap_or(None),
-                    content: truncate_preview(
-                        &row.try_get::<String, _>("content").unwrap_or_default(),
-                        500,
-                    ),
+                    content,
+                    content_full,
                     at_target_list: row.try_get("at_target_list").unwrap_or(None),
-                    media_json: row.try_get("media_json").unwrap_or(None),
+                    media_json,
+                    media,
+                    quote: None,
                 });
             }
             Ok((records, total))
         }};
     }
-    match connection {
+    let fetched: zihuan_core::error::Result<(Vec<MessageRecordResponse>, i64)> = match &connection {
         RelationalDbConnection::MySql(config) => {
             let pool = config
                 .pool
@@ -1192,7 +1380,11 @@ async fn query_service_message_rows(
                 .try_get::<String, _>("send_time")
                 .unwrap_or_default())
         }
-    }
+    };
+    let (mut records, total) = fetched?;
+    attach_message_quotes(&connection, &mut records, object_storage_connection_id.as_deref())
+        .await?;
+    Ok((records, total))
 }
 
 #[handler]
@@ -1236,7 +1428,7 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
     };
     let queried = query.is_some();
     let results = tokio::task::spawn_blocking(move || {
-        let backend = zihuan_core::agent::tools::memory_tools::MemoryBackend::RetrievalStore(
+        let backend = zihuan_core::agent::tools::memory::MemoryBackend::RetrievalStore(
             std::sync::Arc::new(store),
         );
         // Explorer requests always inspect fresh records and never renew behavioral expiry.
@@ -1245,7 +1437,7 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
             skip_expiry_extend: true,
             ..Default::default()
         };
-        zihuan_core::agent::tools::memory_tools::full_search_memory(
+        zihuan_core::agent::tools::memory::full_search_memory(
             &backend,
             model.as_deref(),
             &access,
@@ -2013,12 +2205,9 @@ pub async fn query_service_chat_turns(req: &mut Request, res: &mut Response, _de
         offset,
         page_size as i64,
     ) {
-        Ok((items, total)) => res.render(Json(ServiceChatTurnListResponse {
-            total,
-            page,
-            page_size,
-            items,
-        })),
+        Ok((items, total)) => {
+            res.render(Json(ServiceChatTurnListResponse { total, page, page_size, items }))
+        }
         Err(error) => render_internal_error(res, error.to_string()),
     }
 }

@@ -43,7 +43,9 @@ pub fn converted_legacy_record(record: AgentMemoryRecord) -> AgentMemoryUpsert {
     input
 }
 
-/// Idempotent: keep the original collection and never overwrite an existing target.
+/// Idempotent: migration runs only when the legacy `AgentMemory` store still exists,
+/// never overwrites an already-migrated target, and the legacy store is deleted once
+/// every record has been migrated.
 pub fn migrate_retrieval_memory(
     store: &RetrievalStoreRef,
     embedding: &dyn EmbeddingBase,
@@ -54,6 +56,30 @@ pub fn migrate_retrieval_memory(
         .lock()
         .map_err(|_| crate::string_error!("memory migration lock poisoned"))?;
     if completed.contains(store.connection_id()) {
+        return Ok(());
+    }
+    // Probe the legacy store first: without it there is nothing to migrate, and the new
+    // category stores must not be created as a side effect of a failed probe.
+    let legacy_exists = match store.backend() {
+        RetrievalBackend::Weaviate => {
+            let reference = store.weaviate(RetrievalSchema::AgentMemory)?;
+            reference.collection_exists(&reference.class_name)?
+        }
+        RetrievalBackend::Elasticsearch => {
+            let reference = store.elasticsearch(RetrievalSchema::AgentMemory)?;
+            match reference.request(
+                reqwest::Method::HEAD,
+                &format!("/{}", reference.index_name),
+                None,
+            ) {
+                Ok(_) => true,
+                Err(Error::NotFound) => false,
+                Err(error) => return Err(error),
+            }
+        }
+    };
+    if !legacy_exists {
+        completed.insert(store.connection_id().to_string());
         return Ok(());
     }
     for category in MemoryCategory::ALL {
@@ -139,6 +165,28 @@ pub fn migrate_retrieval_memory(
             break;
         }
         offset += count;
+    }
+    // Every record migrated: drop the legacy store so later startups skip the migration.
+    // A missing store counts as deleted because another run may have removed it already.
+    match store.backend() {
+        RetrievalBackend::Weaviate => {
+            let reference = store.weaviate(RetrievalSchema::AgentMemory)?;
+            match reference.delete_collection(&reference.class_name) {
+                Ok(()) | Err(Error::NotFound) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        RetrievalBackend::Elasticsearch => {
+            let reference = store.elasticsearch(RetrievalSchema::AgentMemory)?;
+            match reference.request(
+                reqwest::Method::DELETE,
+                &format!("/{}", reference.index_name),
+                None,
+            ) {
+                Ok(_) | Err(Error::NotFound) => {}
+                Err(error) => return Err(error),
+            }
+        }
     }
     completed.insert(store.connection_id().to_string());
     Ok(())

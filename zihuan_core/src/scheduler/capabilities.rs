@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use super::{JobMemoryResources, JobResources};
 use crate::agent::declarative_agent::AgentDefinition;
 use crate::agent::sub_agent_context::{AgentServiceContext, MemoryCapability};
-use crate::agent::tools::memory_tools::MemoryBackend;
+use crate::agent::tools::memory::MemoryBackend;
 use crate::agent::tools::NodeGraphTool;
 use crate::agent::LLM_KIND_MAIN;
 use crate::error::{Error, Result};
@@ -220,7 +220,7 @@ fn memory_search(resources: &JobResources, params: &Value) -> Result<Value> {
     let query = required_str(params, "query")?;
     let limit = optional_limit(params, "top_n", 5)?;
     let access = job_memory_access(params);
-    let hits = crate::agent::tools::memory_tools::search_category(
+    let hits = crate::agent::tools::memory::search_category(
         &memory.memory_backend,
         memory.embedding_model.as_deref(),
         &access,

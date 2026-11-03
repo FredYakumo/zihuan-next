@@ -12,7 +12,7 @@
 //!   message is a command, running it through the engine, and classifying the
 //!   turn end (consumed / passthrough to the brain / not a command).
 //!
-//! `claimed.rs` (the brain loop) calls [`pipeline::run_command_pipeline`] and
+//! `qq_chat/turn_workflow` (the turn workflow) calls [`pipeline::run_command_pipeline`] and
 //! never touches the engine or runtime directly.
 
 mod pipeline;

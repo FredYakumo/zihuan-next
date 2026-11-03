@@ -54,8 +54,12 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
 
   const visibleCount = ref(0);
 
-  /** The newest round is the last turn plus the steer follow-ups continuing it. */
-  function latestRoundCount(turns: FlowTurn[]): number {
+  /**
+   * A turn group is one turn plus the steer follow-ups that continue it: one user question as
+   * the reader perceives it. A steer turn is a separate turn in the backend (its own `turn_id`),
+   * but the flow keeps the group visually together. See `documents/glossary.md`.
+   */
+  function latestTurnGroupCount(turns: FlowTurn[]): number {
     if (!turns.length) return 0;
     let count = 1;
     for (let index = turns.length - 1; index > 0 && turns[index].turn.continuesPrevious; index -= 1) {
@@ -64,7 +68,7 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
     return count;
   }
 
-  const resolvedVisibleCount = computed(() => Math.max(visibleCount.value, latestRoundCount(allTurns.value)));
+  const resolvedVisibleCount = computed(() => Math.max(visibleCount.value, latestTurnGroupCount(allTurns.value)));
   const visibleTurns = computed(() => allTurns.value.slice(-resolvedVisibleCount.value));
   const hiddenCount = computed(() => Math.max(allTurns.value.length - resolvedVisibleCount.value, 0));
   const hasMoreHistory = computed(() => resolvedVisibleCount.value < allTurns.value.length);
@@ -83,8 +87,8 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
 
   function loadMoreHistory() {
     if (!hasMoreHistory.value) return;
-    // Older rounds are prepended, so keep the viewport on the turns being read: the same visual
-    // position is a larger scrollTop once the new content is in. The flow opts out of the
+    // Older turn groups are prepended, so keep the viewport on the turns being read: the same
+    // visual position is a larger scrollTop once the new content is in. The flow opts out of the
     // browser's scroll anchoring to apply this adjustment itself.
     const previousHeight = scrollRoot?.scrollHeight ?? 0;
     const previousTop = scrollRoot?.scrollTop ?? 0;
@@ -96,7 +100,7 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
     }
   }
 
-  // Selecting another user restarts the flow at its newest round.
+  // Selecting another user restarts the flow at its newest turn group.
   watch(
     () => props.selectedSenderId,
     () => {
@@ -145,7 +149,8 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
 
   /**
    * Bring a turn picked in the finder into view: reveal enough history, glide the page
-   * container so the turn (with its round header) starts the viewport, then flash it briefly.
+   * container so the turn (with its turn-group header) starts the viewport, then flash it
+   * briefly.
    */
   async function scrollToTurn(turnId: string) {
     const index = allTurns.value.findIndex((item) => item.turn.turnId === turnId);
@@ -157,7 +162,7 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
     window.clearTimeout(flashTimer);
     flashTurnId.value = turnId;
     await nextTick();
-    // The round header renders before its turns, so the first match is the anchor to scroll to.
+    // The turn-group header renders before its turns, so the first match is the anchor.
     const target = Array.from(rootEl.value?.querySelectorAll<HTMLElement>("[data-turn-id]") ?? []).find(
       (el) => el.dataset.turnId === turnId,
     );

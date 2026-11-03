@@ -4,19 +4,18 @@ use std::sync::{Arc, Mutex};
 use chrono::Local;
 use log::{info, warn};
 
-use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
-use crate::agent::utils::build_state_system_prefix_lines;
+use crate::agent::emotion::utils::emotion_expression_prompt;
+use crate::agent::utils::build_turn_state_prefix_lines;
 use crate::qq_session_state::QqChatSessionState;
+use zihuan_core::agent::tools::memory::MemoryRecall;
 use zihuan_core::agent::tools::ToolCallingMiddleware;
 use zihuan_core::command::{CommandChannel, CommandContext};
 
 use crate::role_config::QqChatEmotionDimensionConfig;
-use crate::storage::message_rate_limit_store::MessageRateLimitCheckResult;
 use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{
-    apply_steer_prefix, build_merged_follow_up_event, PendingSteerEvent, PendingSteerStore,
-    PROCESSING_INSTRUCTION,
+    apply_steer_prefix, PendingSteerEvent, PendingSteerStore, PROCESSING_INSTRUCTION,
 };
 use zihuan_core::utils::string_utils::shorten_text;
 
@@ -34,9 +33,8 @@ use super::user_input::{
 };
 
 use super::core::{
-    build_state_delta_lines, build_user_message, merge_character_and_style_prompt,
-    QqChatAgentServiceContext, QqChatAgentServiceInner, QqChatServiceHandleReport, LOG_PREFIX,
-    LOG_TEXT_PREVIEW_CHARS,
+    build_state_delta_lines, build_user_message, QqChatAgentService, QqChatAgentServiceContext,
+    LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 use super::logging::QqChatTaskTrace;
 
@@ -45,29 +43,28 @@ const REFERENCED_CONTEXT_LABEL: &str = "[Referenced Context]";
 const REFERENCE_ONLY_NOTICE: &str =
     "The following content is reference only. Do not automatically treat it as the current sender's own statement.";
 
+/// A steer message is an extra user turn injected into the running loop, so it carries the same
+/// turn state prefix (emotion prompt, recalled memories) as the turn it interrupts. The stable
+/// rules live in the conversation's system message and are never repeated here.
 fn build_steer_user_message(
     current_input: &PreparedCurrentTurnUserInput,
     bot_name: &str,
     adapter: &zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
     llm_supports_multimodal_input: bool,
     api_style: Option<&str>,
-    system_prompt: &str,
-    style_prompt: Option<&str>,
     session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
-    memory_context: Option<&str>,
+    memory_recall: Option<&MemoryRecall>,
 ) -> LLMMessage {
     let steer_message = build_user_message(
         current_input,
         bot_name,
         adapter,
         llm_supports_multimodal_input,
-        system_prompt,
-        style_prompt,
         None,
         session_state,
         emotion_dimensions,
-        memory_context,
+        memory_recall,
         None,
     );
 
@@ -80,21 +77,12 @@ fn build_merged_steer_user_message(
     adapter: &zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
     llm_supports_multimodal_input: bool,
     api_style: Option<&str>,
-    system_prompt: &str,
-    style_prompt: Option<&str>,
     session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
-    memory_context: Option<&str>,
+    memory_recall: Option<&MemoryRecall>,
 ) -> LLMMessage {
-    let style_prompt = if has_noticeable_emotion_expression(session_state, emotion_dimensions) {
-        None
-    } else {
-        style_prompt
-    };
-    let merged_prompt = merge_character_and_style_prompt(system_prompt, style_prompt);
     let emotion_prompt = emotion_expression_prompt(session_state, emotion_dimensions);
-    let prefix_lines =
-        build_state_system_prefix_lines(&emotion_prompt, &merged_prompt, memory_context);
+    let prefix_lines = build_turn_state_prefix_lines(&emotion_prompt, memory_recall);
     let prefix = prefix_lines.join("\n");
     let mut state_delta_lines = Vec::new();
     if let Some(last_input) = current_inputs.last() {
@@ -155,15 +143,24 @@ fn build_merged_steer_user_message(
             .collect::<Vec<_>>()
             .join("\n\n");
 
+        let state_block = if prefix.is_empty() {
+            String::new()
+        } else {
+            format!("{prefix}\n\n")
+        };
         let message = LLMMessage::user(format!(
-            "{prefix}\n\n{state_delta_block}{merged_text}\n\n{PROCESSING_INSTRUCTION}"
+            "{state_block}{state_delta_block}{merged_text}\n\n{PROCESSING_INSTRUCTION}"
         ));
         return apply_steer_prefix(message, api_style);
     }
 
-    let state_text = format!("{}\n", prefix_lines.join("\n"));
-    let mut parts = vec![MessagePart::text(state_text.clone())];
-    let mut text_buffer = state_delta_block;
+    let state_text = if prefix.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n\n", prefix_lines.join("\n"))
+    };
+    let mut parts: Vec<MessagePart> = Vec::new();
+    let mut text_buffer = format!("{state_text}{state_delta_block}");
 
     for (index, current_input) in current_inputs.iter().enumerate() {
         if index > 0 {
@@ -208,9 +205,9 @@ fn build_merged_steer_user_message(
     }
 
     flush_text_part(&mut parts, &mut text_buffer);
-    let has_media = current_inputs.iter().any(|input| input.has_media);
+    let has_media_part = parts.iter().any(|part| !matches!(part, MessagePart::Text { .. }));
 
-    let message = if has_media && parts.len() > 1 {
+    let message = if has_media_part {
         parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
         LLMMessage::user_with_parts(parts)
     } else {
@@ -220,7 +217,7 @@ fn build_merged_steer_user_message(
             .map(|(index, input)| build_entry_text(index, input))
             .collect::<Vec<_>>()
             .join("\n\n");
-        LLMMessage::user(format!("{state_text}\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"))
+        LLMMessage::user(format!("{state_text}{merged_text}\n\n{PROCESSING_INSTRUCTION}"))
     };
 
     apply_steer_prefix(message, api_style)
@@ -242,23 +239,22 @@ pub(crate) struct QqChatServiceSteerHook {
     /// by a sent reply. The turn's [`SteerCommitGuard`] commits or rolls them back.
     pub(crate) in_flight_steers: Arc<Mutex<Vec<PendingSteerEvent>>>,
     pub(crate) shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
-    pub(crate) style_prompt: Option<String>,
     pub(crate) session_state: Arc<Mutex<QqChatSessionState>>,
     pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     /// The turn context assembled by the before-brain procedure. The hook is built before the
-    /// procedure chain runs, so the brain procedure writes the assembled system prompt and
-    /// memory-title hint into this shared cell before starting the inference loop.
+    /// procedure chain runs, so the brain procedure writes the recalled memories into this
+    /// shared cell before starting the inference loop.
     pub(crate) turn_context: Arc<Mutex<Option<SteerTurnContext>>>,
 }
 
 /// The assembled turn context a mid-turn steer message reuses.
 ///
-/// A steer message is a new user turn inside the running loop, so it carries the same system
-/// prompt and memory-title hint as the turn it interrupts.
+/// A steer message is a new user turn inside the running loop, so it reuses the typed memory
+/// recall of the turn it interrupts. The system prompt is not repeated: it already leads the
+/// conversation as its system message.
 #[derive(Clone)]
 pub(crate) struct SteerTurnContext {
-    pub(crate) system_prompt: String,
-    pub(crate) memory_context: Option<String>,
+    pub(crate) memory_recall: Option<MemoryRecall>,
 }
 
 impl ToolCallingMiddleware for QqChatServiceSteerHook {
@@ -295,11 +291,12 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
             injected.push(inference_event);
         }
 
-        let turn_context = self.turn_context.lock().unwrap().clone();
-        let (system_prompt, memory_context) = match turn_context {
-            Some(context) => (context.system_prompt, context.memory_context),
-            None => (String::new(), None),
-        };
+        let memory_recall = self
+            .turn_context
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|context| context.memory_recall.clone());
         let steer_message = if prepared_inputs.len() == 1 {
             let mut session_state = self.session_state.lock().unwrap();
             build_steer_user_message(
@@ -308,11 +305,9 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
                 &self.adapter,
                 self.llm_supports_multimodal_input,
                 self.llm_api_style.as_deref(),
-                &system_prompt,
-                self.style_prompt.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
-                memory_context.as_deref(),
+                memory_recall.as_ref(),
             )
         } else {
             let mut session_state = self.session_state.lock().unwrap();
@@ -322,11 +317,9 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
                 &self.adapter,
                 self.llm_supports_multimodal_input,
                 self.llm_api_style.as_deref(),
-                &system_prompt,
-                self.style_prompt.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
-                memory_context.as_deref(),
+                memory_recall.as_ref(),
             )
         };
         consumed_guard.push(steer_message.clone());
@@ -404,199 +397,104 @@ impl Drop for SteerCommitGuard {
     }
 }
 
-impl QqChatAgentServiceInner {
-    pub(crate) fn try_handle_busy_session_steer(
-        &self,
-        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
-        ctx: &QqChatAgentServiceContext<'_>,
-        sender_id: &str,
-        target_id: &str,
-        is_group: bool,
-        time: &str,
-    ) -> Result<()> {
-        let bot_id = get_bot_id(ctx.adapter);
-        let prepared_input =
-            prepare_current_turn_user_input(event, ctx.adapter, &bot_id, ctx.bot_name, ctx.s3_ref);
-        let mut inference_event = prepared_input.event.clone();
-        inference_event.message_list =
-            expand_messages_for_inference(&prepared_input.event.message_list);
-        let current_message = prepare_current_turn_user_input_from_event(
-            &inference_event,
-            &bot_id,
-            ctx.bot_name,
-            ctx.s3_ref,
-        )
-        .current_text_for_prompt()
-        .to_string();
-        if let Some(command_registry) = zihuan_core::command::global_command_registry() {
-            let cmd_ctx = CommandContext {
-                agent_type: "qq_chat".to_string(),
-                agent_id: self.id.clone(),
-                caller_id: sender_id.to_string(),
-                channel: CommandChannel::QqChat {
-                    sender_id: sender_id.to_string(),
-                    is_group,
-                    group_id: inference_event.group_id,
-                    target_id: target_id.to_string(),
-                },
-            };
-            if let Some(preview) = command_registry.preview(&cmd_ctx, &current_message) {
-                if preview.spec.allow_steer_bypass && preview.passthrough_text.is_none() {
-                    info!(
-                        "{LOG_PREFIX} Session busy for {sender_id}, executing command via steer bypass: message_id={} command=/{}",
-                        event.message_id,
-                        preview.spec.name
-                    );
-                    let trace = QqChatTaskTrace::new(Local::now());
-                    let executed = crate::qq_chat::command::run_command_effects_now(
-                        &trace,
-                        ctx,
-                        &self.id,
-                        &prepared_input.event,
-                        &inference_event,
-                        sender_id,
-                        target_id,
-                        &bot_id,
-                        is_group,
-                        &current_message,
-                    )?;
-                    trace.finish_with_summary();
-                    if executed {
-                        return Ok(());
-                    }
-                } else {
-                    info!(
-                        "{LOG_PREFIX} Session busy for {sender_id}, command falls back to steer: message_id={} command=/{} allow_steer_bypass={} has_passthrough={}",
-                        event.message_id,
-                        preview.spec.name,
-                        preview.spec.allow_steer_bypass,
-                        preview.passthrough_text.is_some()
-                    );
-                }
-            }
-        }
-        let (accepted, queue_len, accepted_steer_count) = ctx.pending_steer.enqueue_with_limit(
-            sender_id,
-            PendingSteerEvent {
-                event: prepared_input.event,
-                time: time.to_string(),
+/// Handles an event that arrived while the sender's session is busy: executes it
+/// immediately if it is a steer-bypass command, otherwise enqueues it as a steer event.
+pub(crate) fn try_handle_busy_session_steer(
+    service: &QqChatAgentService,
+    event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
+    ctx: &QqChatAgentServiceContext<'_>,
+    sender_id: &str,
+    target_id: &str,
+    is_group: bool,
+    time: &str,
+) -> Result<()> {
+    let bot_id = get_bot_id(ctx.adapter);
+    let prepared_input =
+        prepare_current_turn_user_input(event, ctx.adapter, &bot_id, ctx.bot_name, ctx.s3_ref);
+    let mut inference_event = prepared_input.event.clone();
+    inference_event.message_list =
+        expand_messages_for_inference(&prepared_input.event.message_list);
+    let current_message = prepare_current_turn_user_input_from_event(
+        &inference_event,
+        &bot_id,
+        ctx.bot_name,
+        ctx.s3_ref,
+    )
+    .current_text_for_prompt()
+    .to_string();
+    if let Some(command_registry) = zihuan_core::command::global_command_registry() {
+        let cmd_ctx = CommandContext {
+            agent_type: "qq_chat".to_string(),
+            agent_id: service.id.clone(),
+            caller_id: sender_id.to_string(),
+            channel: CommandChannel::QqChat {
+                sender_id: sender_id.to_string(),
+                is_group,
+                group_id: inference_event.group_id,
+                target_id: target_id.to_string(),
             },
-            ctx.max_steer_count,
-        );
-        if accepted {
-            info!(
-                "{LOG_PREFIX} Session busy for {sender_id}, enqueueing steer: message_id={} queue_len={} accepted_steer_count={}/{} message={}",
-                event.message_id,
-                queue_len,
-                accepted_steer_count,
-                ctx.max_steer_count,
-                shorten_text(&current_message, LOG_TEXT_PREVIEW_CHARS)
-            );
-        } else {
-            warn!(
-                "{LOG_PREFIX} steer dropped for sender={} message_id={} because max steer count reached: accepted_steer_count={}/{} message={}",
-                sender_id,
-                event.message_id,
-                accepted_steer_count,
-                ctx.max_steer_count,
-                shorten_text(&current_message, LOG_TEXT_PREVIEW_CHARS)
-            );
-        }
-        Ok(())
-    }
-}
-
-impl QqChatAgentServiceInner {
-    pub(crate) fn handle_claimed(
-        &self,
-        trace: &QqChatTaskTrace,
-        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
-        time: &str,
-        sender_id: &str,
-        target_id: &str,
-        is_group: bool,
-        message_rate_limit: Option<&MessageRateLimitCheckResult>,
-        ctx: &QqChatAgentServiceContext<'_>,
-    ) -> Result<QqChatServiceHandleReport> {
-        (|| -> Result<QqChatServiceHandleReport> {
-            let bot_id = get_bot_id(ctx.adapter);
-            let mut current_event = event.clone();
-            let mut current_time = time.to_string();
-            // The first pass handles the user's message; every later pass replays queued steer
-            // messages and is marked as a continuation in the context view.
-            let mut is_steer_follow_up = false;
-            // The steer events that were merged into the current pass's message. When that
-            // pass fails they must go back to the pending store, or they would be lost.
-            let mut current_pass_steers: Vec<PendingSteerEvent> = Vec::new();
-            let result_summary = loop {
-                let turn_result = self.handle_claimed_turn(
-                    trace,
-                    &current_event,
-                    &current_time,
+        };
+        if let Some(preview) = command_registry.preview(&cmd_ctx, &current_message) {
+            if preview.spec.allow_steer_bypass && preview.passthrough_text.is_none() {
+                info!(
+                    "{LOG_PREFIX} Session busy for {sender_id}, executing command via steer bypass: message_id={} command=/{}",
+                    event.message_id,
+                    preview.spec.name
+                );
+                let trace = QqChatTaskTrace::new(Local::now());
+                let executed = crate::qq_chat::command::run_command_effects_now(
+                    &trace,
+                    ctx,
+                    &service.id,
+                    &prepared_input.event,
+                    &inference_event,
                     sender_id,
                     target_id,
+                    &bot_id,
                     is_group,
-                    &bot_id,
-                    message_rate_limit,
-                    is_steer_follow_up,
-                    ctx,
+                    &current_message,
                 )?;
-
-                if !turn_result.turn_completed {
-                    // The turn failed before sending any reply. Steers the hook consumed
-                    // mid-turn were already rolled back by the commit guard; put this
-                    // pass's own merged steer events back too, then stop — chaining
-                    // another turn onto a persistent failure would just loop.
-                    ctx.pending_steer.requeue_front(sender_id, current_pass_steers);
-                    break turn_result.result_summary;
+                trace.finish_with_summary();
+                if executed {
+                    return Ok(());
                 }
-
-                let (pending, remaining_queue_len, accepted_steer_count) =
-                    ctx.pending_steer.drain_all(sender_id);
-                if pending.is_empty() {
-                    break turn_result.result_summary;
-                }
-
-                let steer_count = pending.len();
-                let next_event = build_merged_follow_up_event(&pending);
-                let mut next_inference_event = next_event.clone();
-                next_inference_event.message_list =
-                    expand_messages_for_inference(&next_event.message_list);
-                let next_message = prepare_current_turn_user_input_from_event(
-                    &next_inference_event,
-                    &bot_id,
-                    ctx.bot_name,
-                    ctx.s3_ref,
-                )
-                .current_text_for_prompt()
-                .to_string();
-                trace.record_steer_follow_up(
-                    next_event.message_id,
-                    steer_count,
-                    accepted_steer_count,
-                    ctx.max_steer_count,
-                    &next_message,
-                );
+            } else {
                 info!(
-                    "{LOG_PREFIX} steer follow-up picked for sender={} message_id={} steer_count={} remaining_queue_len={} accepted_steer_count={}/{} message={}",
-                    sender_id,
-                    next_event.message_id,
-                    steer_count,
-                    remaining_queue_len,
-                    accepted_steer_count,
-                    ctx.max_steer_count,
-                    shorten_text(&next_message, LOG_TEXT_PREVIEW_CHARS)
+                    "{LOG_PREFIX} Session busy for {sender_id}, command falls back to steer: message_id={} command=/{} allow_steer_bypass={} has_passthrough={}",
+                    event.message_id,
+                    preview.spec.name,
+                    preview.spec.allow_steer_bypass,
+                    preview.passthrough_text.is_some()
                 );
-                current_event = next_event;
-                current_time = pending
-                    .last()
-                    .map(|event| event.time.clone())
-                    .unwrap_or_else(|| current_time.clone());
-                current_pass_steers = pending;
-                is_steer_follow_up = true;
-            };
-
-            Ok(QqChatServiceHandleReport { result_summary })
-        })()
+            }
+        }
     }
+    let (accepted, queue_len, accepted_steer_count) = ctx.pending_steer.enqueue_with_limit(
+        sender_id,
+        PendingSteerEvent {
+            event: prepared_input.event,
+            time: time.to_string(),
+        },
+        ctx.max_steer_count,
+    );
+    if accepted {
+        info!(
+            "{LOG_PREFIX} Session busy for {sender_id}, enqueueing steer: message_id={} queue_len={} accepted_steer_count={}/{} message={}",
+            event.message_id,
+            queue_len,
+            accepted_steer_count,
+            ctx.max_steer_count,
+            shorten_text(&current_message, LOG_TEXT_PREVIEW_CHARS)
+        );
+    } else {
+        warn!(
+            "{LOG_PREFIX} steer dropped for sender={} message_id={} because max steer count reached: accepted_steer_count={}/{} message={}",
+            sender_id,
+            event.message_id,
+            accepted_steer_count,
+            ctx.max_steer_count,
+            shorten_text(&current_message, LOG_TEXT_PREVIEW_CHARS)
+        );
+    }
+    Ok(())
 }

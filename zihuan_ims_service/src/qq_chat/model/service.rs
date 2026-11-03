@@ -8,8 +8,8 @@ use zihuan_core::steer::PendingSteerStore;
 use crate::procedure::GroupMessageWindowMemory;
 use crate::qq_chat::model::context::QqChatAgentServiceRuntimeConfig;
 
-/// Internal mutable state for the QQ chat agent service.
-pub struct QqChatAgentServiceInner {
+/// Top-level QQ chat agent service that owns the runtime config and dispatches events.
+pub struct QqChatAgentService {
     pub(crate) id: String,
     pub(crate) default_tools_enabled: HashMap<String, bool>,
     pub(crate) shared_inputs: Vec<FunctionPortDef>,
@@ -19,11 +19,6 @@ pub struct QqChatAgentServiceInner {
     /// Group messages already delivered to the brain as window-selected related messages,
     /// per group, so the group-message-window agent never selects them again.
     pub(crate) group_message_window_confirmed: GroupMessageWindowMemory,
-}
-
-/// Top-level QQ chat agent service that owns the runtime config and dispatches events.
-pub struct QqChatAgentService {
-    pub(crate) inner: QqChatAgentServiceInner,
     pub(crate) config: QqChatAgentServiceRuntimeConfig,
     pub(crate) pending_steer: Arc<PendingSteerStore>,
 }

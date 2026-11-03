@@ -1,5 +1,6 @@
 pub(crate) mod command;
 mod core;
+mod event_processor;
 pub mod ignore_store;
 mod inbox;
 pub mod language_style_store;
@@ -13,6 +14,7 @@ pub(crate) mod steer;
 pub mod style_learner;
 pub(crate) mod tool_quota;
 pub mod tool_quota_store;
+mod turn_workflow;
 pub(crate) mod user_input;
 
 use std::collections::HashMap;
@@ -28,23 +30,15 @@ use self::core::{
     prepare_current_turn_user_input_from_event,
 };
 pub(crate) use self::core::{QqChatTaskTrace, LOG_PREFIX};
-use self::ignore_store::should_ignore_message_blocking;
 use self::inbox::QqChatAgentServiceInbox;
-use self::language_style_store::get_applicable_language_style_blocking;
+pub(crate) use self::model::{QqChatAgentService, QqChatAgentServiceContext};
 use self::model::{
-    QqChatAgentService, QqChatAgentServiceRuntimeConfig, QqChatServiceReplyBatchBuilder,
-    QqInferenceToolProvider, QqLoadedInferenceResources,
+    QqChatAgentServiceRuntimeConfig, QqChatServiceReplyBatchBuilder, QqInferenceToolProvider,
+    QqLoadedInferenceResources,
 };
-pub(crate) use self::model::{QqChatAgentServiceContext, QqChatAgentServiceInner};
-use self::msg_send::send_direct_notification_text_reply;
 use crate::procedure::utils::reply_plan::build_reply_batch_builder as build_unified_reply_batch_builder;
-use crate::qq_chat::resources::current_qq_chat_role_service_config;
 use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatRoleServiceConfig;
-use crate::storage::message_rate_limit_store::{
-    consume_message_rate_limit_blocking, MessageRateLimitBlockAction,
-    MESSAGE_RATE_LIMIT_BLOCKED_REPLY,
-};
 pub use crate::storage::message_rate_limit_store::{
     list_message_rate_limit_usage, reset_message_rate_limit_usage,
 };
@@ -55,7 +49,6 @@ pub use crate::storage::qq_chat_context_store::{
 };
 pub use crate::storage::qq_chat_history_store::clear_history;
 use crate::storage::qq_chat_history_store::load_history;
-use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
 use crate::tools::build_job_memory_resources;
 use chrono::Local;
 use log::{error, info, warn};
@@ -70,38 +63,25 @@ use zihuan_core::agent::tool_definitions::{
 };
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::config::llm_refs::load_llm_refs;
-use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::graph::function_graph::FunctionPortDef;
 use zihuan_core::graph::tool_spec::ToolDefinition;
 use zihuan_core::graph::SessionStateRef;
 use zihuan_core::ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
 use zihuan_core::ims_bot_adapter::event::EventHandler;
-use zihuan_core::ims_bot_adapter::message_helpers::get_bot_id;
-use zihuan_core::ims_bot_adapter::models::event_model::MessageType;
-use zihuan_core::ims_bot_adapter::models::message::MessageProp;
-use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
-use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::nlp::{build_segmenter, TextSegmenter};
 use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::runtime::block_async;
-use zihuan_core::steer::PendingSteerEvent;
 use zihuan_core::storage::message::record_restore::register_rdb_pool;
-use zihuan_core::storage::message::record_write::persist_message_event;
 use zihuan_core::storage::LLMMessageSessionCacheRef;
-use zihuan_core::storage::S3Ref;
 use zihuan_core::storage::{
     build_relational_db_connection_for_connection, build_retrieval_store_ref, build_s3_ref,
     build_web_search_engine_ref, find_connection, ConnectionConfig, ConnectionKind,
     LocalMemoryStore, RetrievalStoreRef,
 };
-use zihuan_core::task_context::{
-    scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
-    AgentTaskStatus,
-};
-use zihuan_core::utils::string_utils::shorten_text;
+use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::validation_error;
 
 use self::tool_quota::SessionToolQuotaState;
@@ -608,267 +588,4 @@ fn resolve_inbox_redis_ref(
         }
     });
     zihuan_core::storage::build_redis_ref(redis_connection_id, connections)
-}
-
-impl QqChatAgentServiceInner {
-    /// Entry point for handling a single inbound QQ message event.
-    ///
-    /// The flow is:
-    /// - **Validation** — persists the message and checks ignore rules.
-    /// - **Group mention filter** — silently drops group messages that do not `@` the bot.
-    /// - **Session claim** — tries to acquire a per-sender session lock. If the session is busy,
-    ///   the message is enqueued as a steer event instead.
-    /// - **Task tracking** — starts a runtime task (if available) and builds a [`QqChatTaskTrace`].
-    /// - **Delegation** — forwards to [`handle_claimed`] for the actual brain loop and reply.
-    /// - **Cleanup** — releases the session lock, finalizes steer state, and marks the task
-    ///   as completed or failed.
-    pub(crate) fn handle(
-        &self,
-        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
-        time: &str,
-        agent_id: &str,
-        session: &Arc<SessionStateRef>,
-        user_ip: Option<String>,
-        ctx: &QqChatAgentServiceContext<'_>,
-    ) -> Result<()> {
-        let is_group = event.message_type == MessageType::Group;
-        let sender_id = event.sender.user_id.to_string();
-        let target_id = if is_group {
-            event
-                .group_id
-                .ok_or_else(|| self.wrap_err("group_id missing on group message"))?
-                .to_string()
-        } else {
-            sender_id.clone()
-        };
-
-        info!(
-            "{LOG_PREFIX} Handling {} message: message_id={} sender={} target={}",
-            if is_group { "group" } else { "private" },
-            event.message_id,
-            sender_id,
-            target_id
-        );
-
-        if let Err(err) = persist_message_event(event, ctx.rdb_pool, None) {
-            warn!("{LOG_PREFIX} Message persistence failed: {err}");
-        }
-
-        if let Some(rdb_pool) = ctx.rdb_pool {
-            let group_id_text = event.group_id.map(|value| value.to_string());
-            if should_ignore_message_blocking(
-                rdb_pool,
-                agent_id,
-                &sender_id,
-                group_id_text.as_deref(),
-            )? {
-                info!(
-                    "{LOG_PREFIX} Ignored inbound message: message_id={} sender={} group={:?}",
-                    event.message_id, sender_id, event.group_id
-                );
-                return Ok(());
-            }
-        }
-
-        if is_group {
-            let bot_id = get_bot_id(ctx.adapter);
-            let msg_prop = MessageProp::from_messages_with_bot_name(
-                &event.message_list,
-                Some(&bot_id),
-                Some(ctx.bot_name),
-            );
-            if !msg_prop.is_at_me {
-                return Ok(());
-            }
-        }
-
-        let mut message_rate_limit = None;
-        if let Some(rdb_pool) = ctx.rdb_pool {
-            let group_id_text = event.group_id.map(|value| value.to_string());
-            let config = current_qq_chat_role_service_config()?;
-            let rate_limit_result = consume_message_rate_limit_blocking(
-                rdb_pool,
-                agent_id,
-                &sender_id,
-                group_id_text.as_deref(),
-                &config,
-            )?;
-            if !rate_limit_result.allowed {
-                match rate_limit_result.block_action {
-                    MessageRateLimitBlockAction::ReplyOnce => {
-                        let bot_id = get_bot_id(ctx.adapter);
-                        let blocked_reply = rate_limit_result
-                            .blocked_reply
-                            .unwrap_or_else(|| MESSAGE_RATE_LIMIT_BLOCKED_REPLY.to_string());
-                        let mention_target_id = (is_group
-                            && rate_limit_result.mention_sender_on_block)
-                            .then_some(sender_id.as_str());
-                        send_direct_notification_text_reply(
-                            &QqChatTaskTrace::new(Local::now()),
-                            ctx.adapter,
-                            &target_id,
-                            ctx.rdb_pool,
-                            event.group_name.as_deref(),
-                            ctx.bot_name,
-                            &bot_id,
-                            &blocked_reply,
-                            is_group,
-                            mention_target_id,
-                            ctx.max_message_length,
-                        )?;
-                        info!(
-                            "{LOG_PREFIX} Message rate-limited with reply: message_id={} sender={} group={:?}",
-                            event.message_id, sender_id, event.group_id
-                        );
-                    }
-                    MessageRateLimitBlockAction::Silent => {
-                        info!(
-                            "{LOG_PREFIX} Message rate-limited silently: message_id={} sender={} group={:?}",
-                            event.message_id, sender_id, event.group_id
-                        );
-                    }
-                    MessageRateLimitBlockAction::None => {
-                        info!(
-                            "{LOG_PREFIX} Message rate-limited without block action: message_id={} sender={} group={:?}",
-                            event.message_id, sender_id, event.group_id
-                        );
-                    }
-                }
-                return Ok(());
-            }
-            message_rate_limit = Some(rate_limit_result);
-        }
-
-        let (claimed, claim_token) = try_claim_session(session, &sender_id);
-        if !claimed {
-            return self
-                .try_handle_busy_session_steer(event, ctx, &sender_id, &target_id, is_group, time);
-        }
-
-        ctx.pending_steer.ensure_session_entry(&sender_id);
-
-        let task_created_at = Local::now();
-        let task_handle = ctx.task_runtime.as_ref().map(|runtime| {
-            runtime.start_task(AgentTaskRequest {
-                task_name: format!("回复[{sender_id}]的消息"),
-                agent_id: agent_id.to_string(),
-                agent_name: ctx.bot_name.to_string(),
-                user_ip,
-                owner_id: Some(sender_id.to_string()),
-                task_db_connection_id: ctx.task_db_connection_id.clone(),
-            })
-        });
-        let trace = QqChatTaskTrace::new(task_created_at);
-        // catch_unwind so a panicking turn thread cannot skip the session release below:
-        // a leaked claim would turn every later message from this sender into steers
-        // that nothing ever drains.
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            if let Some(task_handle) = task_handle.as_ref() {
-                if let Some(task_runtime) = ctx.task_runtime.as_ref() {
-                    scope_task_runtime(Arc::clone(task_runtime), || {
-                        scope_task_id(task_handle.task_id.clone(), || {
-                            self.handle_claimed(
-                                &trace,
-                                event,
-                                time,
-                                &sender_id,
-                                &target_id,
-                                is_group,
-                                message_rate_limit.as_ref(),
-                                ctx,
-                            )
-                        })
-                    })
-                } else {
-                    scope_task_id(task_handle.task_id.clone(), || {
-                        self.handle_claimed(
-                            &trace,
-                            event,
-                            time,
-                            &sender_id,
-                            &target_id,
-                            is_group,
-                            message_rate_limit.as_ref(),
-                            ctx,
-                        )
-                    })
-                }
-            } else {
-                self.handle_claimed(
-                    &trace,
-                    event,
-                    time,
-                    &sender_id,
-                    &target_id,
-                    is_group,
-                    message_rate_limit.as_ref(),
-                    ctx,
-                )
-            }
-        }));
-        let result = match result {
-            Ok(result) => result,
-            Err(payload) => {
-                let panic_message = panic_payload_message(payload);
-                error!("{LOG_PREFIX} turn task panicked for sender {sender_id}: {panic_message}");
-                Err(zihuan_core::string_error!("turn task panicked: {panic_message}"))
-            }
-        };
-        trace.finish_with_summary();
-
-        if let Some(task_handle) = task_handle.as_ref() {
-            let graph = trace.graph_definition(&task_handle.task_id);
-            let graph_value = serde_json::to_value(&graph).unwrap_or(serde_json::Value::Null);
-            let object_path = ctx.s3_ref.as_ref().and_then(|s3_ref| {
-                let key = format!(
-                    "qq-chat-task-graphs/{}/{}.json",
-                    Local::now().format("%Y/%m/%d"),
-                    task_handle.task_id
-                );
-                let bytes = serde_json::to_vec(&graph).ok()?;
-                match block_async(s3_ref.put_object(&key, "application/json", &bytes)) {
-                    Ok(_) => Some(format!("rustfs://{key}")),
-                    Err(err) => {
-                        warn!(
-                            "[QqChatAgentService] failed to persist task graph {}: {err}",
-                            task_handle.task_id
-                        );
-                        None
-                    }
-                }
-            });
-            if let Some(runtime) = ctx.task_runtime.as_ref() {
-                runtime.set_task_graph(&task_handle.task_id, graph_value, object_path);
-            }
-        }
-
-        release_session(session, &sender_id, claim_token);
-        ctx.pending_steer.finish_session(&sender_id);
-        if let Some(task_handle) = task_handle {
-            match &result {
-                Ok(report) => task_handle.finish(AgentTaskResult {
-                    status: Some(AgentTaskStatus::Success),
-                    result_summary: Some(report.result_summary.clone()),
-                    error_message: None,
-                }),
-                Err(err) => task_handle.finish(AgentTaskResult {
-                    status: Some(AgentTaskStatus::Failed),
-                    result_summary: Some(format!("回复[{sender_id}]失败: {err}")),
-                    error_message: Some(err.to_string()),
-                }),
-            }
-        }
-        result.map(|_| ())
-    }
-}
-
-/// Stringify a panic payload for logging; payloads are usually `&str` or `String`.
-fn panic_payload_message(payload: Box<dyn std::any::Any + Send>) -> String {
-    if let Some(text) = payload.downcast_ref::<&str>() {
-        (*text).to_string()
-    } else if let Some(text) = payload.downcast_ref::<String>() {
-        text.clone()
-    } else {
-        "unknown panic payload".to_string()
-    }
 }

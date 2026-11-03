@@ -10,8 +10,8 @@ use super::GroupMessageWindowOutput;
 /// QQ before-brain procedure: assembles the turn's system prompt and user input without any
 /// model inference.
 ///
-/// Its output (assembled system prompt, current-turn user input, and memory-title hint) is the
-/// finished turn context handed to the brain procedure through
+/// Its output (assembled system prompt, current-turn user input, and the typed memory recall) is
+/// the finished turn context handed to the brain procedure through
 /// [`ProcedureContext::procedure_outputs`]. The brain appends history and runs the tool loop; it
 /// does not assemble the input itself.
 ///
@@ -49,8 +49,7 @@ impl Procedure for QqBeforeBrain<'_> {
             reply_instruction.as_deref(),
             context
                 .find_output::<super::MemoryAgentOutput>()
-                .as_ref()
-                .map(|output| output.0.as_str()),
+                .map(|output| output.memories.clone()),
         )))
     }
 }

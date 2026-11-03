@@ -36,8 +36,8 @@ use crate::qq_chat::steer::{QqChatServiceSteerHook, SteerTurnContext};
 use crate::qq_chat::tool_quota::wrap_brain_tool_with_quota;
 use crate::qq_chat::user_input::PreparedCurrentTurnUserInput;
 use crate::qq_chat::{
-    compact_turn_history, split_current_user_body, QqChatAgentServiceContext,
-    QqChatAgentServiceInner, QqChatTaskTrace, LOG_PREFIX,
+    compact_turn_history, split_current_user_body, QqChatAgentService, QqChatAgentServiceContext,
+    QqChatTaskTrace, LOG_PREFIX,
 };
 use crate::tools::{
     qq_memory_access_context, EditableQqAgentTool, GetAgentPublicInfoTool, GetFunctionListTool,
@@ -71,7 +71,7 @@ pub(crate) struct QqBrainOutput {
 
 /// The QQ turn's brain invocation as a Procedure (documents/procedure.md).
 ///
-/// **Design:** Created per turn by the transport adapter (`handle_claimed_turn`), which keeps
+/// **Design:** Created per turn by the turn workflow (`qq_chat/turn_workflow`), which keeps
 /// ownership of everything that outlives the brain run (steer buffers, session state). The
 /// procedure assembles the [`ToolCallingEngine`] — observer, steer hook, quota-wrapped tools,
 /// long-task context. [`QqBrain::run`] reads the turn input the before-brain procedure already
@@ -103,7 +103,7 @@ impl QqBrain {
     /// long-task context. Only the execution-time dependencies are kept on the procedure.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        service: &QqChatAgentServiceInner,
+        service: &QqChatAgentService,
         ctx: &QqChatAgentServiceContext<'_>,
         trace: &QqChatTaskTrace,
         turn_llm: &Arc<dyn LLMBase>,
@@ -148,10 +148,6 @@ impl QqBrain {
             consumed_messages: Arc::clone(&consumed_steer_messages),
             in_flight_steers: Arc::clone(&in_flight_steers),
             shared_runtime_values: Arc::clone(&shared_runtime_values),
-            style_prompt: ctx
-                .resolved_language_style
-                .as_ref()
-                .map(|item| item.style_prompt.clone()),
             session_state: Arc::clone(&turn_session_state),
             emotion_dimensions: emotion_dimensions.clone(),
             turn_context: Arc::clone(&turn_context),
@@ -203,7 +199,7 @@ impl QqBrain {
         // Memory tools are registered directly; recall runs in the preceding Procedure.
         let mut added_agent_ids = HashSet::new();
         if memory_enabled && service.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
-            for id in zihuan_core::agent::tools::memory_tools::MEMORY_TOOL_IDS {
+            for id in zihuan_core::agent::tools::memory::MEMORY_TOOL_IDS {
                 if let Some(tool) = agent_host.tool(id) {
                     brain.add_tool(wrap_brain_tool_with_quota(
                         SharedTool::new(tool),
@@ -497,8 +493,7 @@ impl Procedure for QqBrain {
             Error::ValidationError("before-brain procedure produced no turn input".to_string())
         })?;
         *self.turn_context.lock().unwrap() = Some(SteerTurnContext {
-            system_prompt: assembled.system_prompt.clone(),
-            memory_context: assembled.memory_context.clone(),
+            memory_recall: assembled.memory_recall.clone(),
         });
         let mut user_msg = assembled.user_message.clone();
 
@@ -517,10 +512,11 @@ impl Procedure for QqBrain {
         );
         if compact_result.did_compact {
             if let Some(memory) = context.find_output::<super::MemoryAgentOutput>() {
-                let resources = memory.1.clone();
-                let input = memory.2.clone();
+                let resources = memory.resources.clone();
+                let input = memory.input.clone();
+                let source = memory.memories.source().map(str::to_string);
                 let recalled = tokio::task::spawn_blocking(move || {
-                    zihuan_core::agent::tools::memory_tools::recall_memory(
+                    zihuan_core::agent::tools::memory::recall_memory(
                         resources,
                         &input,
                         String::new(),
@@ -530,11 +526,19 @@ impl Procedure for QqBrain {
                 .map_err(|error| {
                     zihuan_core::string_error!("memory refresh after compaction failed: {error}")
                 })??;
-                user_msg.parts.push(MessagePart::text(format!(
-                    "\nMemories recalled after context compaction: {recalled}"
-                )));
+                let recalled = match source {
+                    Some(source) => recalled.with_source(source),
+                    None => recalled,
+                };
+                let lines = crate::agent::utils::memory_hint_lines(&recalled);
+                if !lines.is_empty() {
+                    user_msg.parts.push(MessagePart::text(format!(
+                        "\nMemories recalled after context compaction:\n{}",
+                        lines.join("\n")
+                    )));
+                }
                 if let Some(turn) = self.turn_context.lock().unwrap().as_mut() {
-                    turn.memory_context = Some(recalled);
+                    turn.memory_recall = Some(recalled);
                 }
             }
         }
@@ -545,23 +549,28 @@ impl Procedure for QqBrain {
         self.trace
             .record_history_stats(history.len(), estimate_messages_tokens(&history));
 
-        let mut conversation: Vec<LLMMessage> = Vec::with_capacity(history.len() + 1);
+        // The turn's stable rules lead the request as a real system message: identity, tool
+        // rules, the role service's prompt, the reply output contract and the language style.
+        // The per-sender history and the current user turn carry only conversation content.
+        let mut conversation: Vec<LLMMessage> = Vec::with_capacity(history.len() + 2);
+        conversation.push(LLMMessage::system(assembled.system_prompt.clone()));
         conversation.extend(history.iter().cloned());
         conversation.push(user_msg.clone());
         let brain_conversation =
             downgrade_messages_for_model(conversation, self.turn_llm.supports_multimodal_input());
         let prompt_tokens_estimated = estimate_messages_tokens(&brain_conversation);
         self.trace.log_llm_conversation(&brain_conversation, prompt_tokens_estimated);
-        // What the brain actually receives: the assembled current-turn input plus the history it
-        // is sent with. The assembled system prompt and memory titles are reported by the
-        // before-brain stages.
+        // What the brain actually receives: the current-turn input plus the history it is sent
+        // with. The system message is reported by the before-brain stages.
         let current_user_body =
             user_msg.content_text_owned().as_deref().and_then(split_current_user_body);
-        // History user messages carry their per-turn system prefix; show only the turn's own
-        // body so the list reads as the conversation instead of repeating the same prefix.
+        // History user messages are stored without their per-turn state prefix, but an entry
+        // written before that change still carries one; strip it when present so the list reads
+        // as the conversation either way.
         let history_input: Vec<serde_json::Value> = brain_conversation
             .iter()
-            .take(brain_conversation.len().saturating_sub(1))
+            .skip(1)
+            .take(brain_conversation.len().saturating_sub(2))
             .map(|message| {
                 let full = message.content_text_owned().unwrap_or_default();
                 let is_user =

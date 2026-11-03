@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 use crate::error::{Error, Result};
 use crate::graph::session_state::{SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT};
 use crate::storage::LLMMessageSessionCacheRef;
+use crate::utils::json_utils::{optional_string_argument, required_string_argument};
 use crate::validation_error;
 use dynamic_script_engine::{NodeRuntimeConfig, ScriptLanguage};
 
@@ -374,7 +375,7 @@ pub(crate) fn image_search_options(
     params: &Value,
     default_limit: Option<i64>,
 ) -> Result<ImageSearchOptions> {
-    let query = required_string(params, "query")?;
+    let query = required_string_argument(params, "query")?;
     let limit = params
         .get("limit")
         .and_then(Value::as_i64)
@@ -393,7 +394,7 @@ pub(crate) fn image_search_options(
         query,
         limit: limit as usize,
         max_distance,
-        target_vector: optional_string(params, "target_vector"),
+        target_vector: optional_string_argument(params, "target_vector"),
     })
 }
 
@@ -462,15 +463,6 @@ fn mysql_resource(params: &Value, field: &str) -> Result<Arc<crate::data_refs::M
     }
 }
 
-fn optional_string(params: &Value, field: &str) -> Option<String> {
-    params
-        .get(field)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-}
-
 fn message_event(
     params: &Value,
 ) -> Result<crate::ims_bot_adapter::runtime::models::event_model::MessageEvent> {
@@ -512,15 +504,6 @@ fn llm_messages_from_json(
             .collect(),
         _ => Err(Error::ValidationError(format!("{field} must be Vec<LLMMessage>"))),
     }
-}
-
-fn required_string(params: &Value, name: &str) -> Result<String> {
-    params
-        .get(name)
-        .and_then(Value::as_str)
-        .filter(|value| !value.trim().is_empty())
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| Error::ValidationError(format!("{name} is required")))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1121,8 +1104,8 @@ pub fn dispatch_script_host_call(
             Ok(Value::Bool(true))
         }
         "task.append" => {
-            let task_id = optional_string(params, "task_id").unwrap_or_default();
-            let message = optional_string(params, "message").unwrap_or_default();
+            let task_id = optional_string_argument(params, "task_id").unwrap_or_default();
+            let message = optional_string_argument(params, "message").unwrap_or_default();
             let ok = if task_id.is_empty() || message.is_empty() {
                 false
             } else if let Some(runtime) = crate::command::global_task_runtime() {
@@ -1232,7 +1215,7 @@ pub fn dispatch_script_host_call(
             Ok(serde_json::to_value(sender)?)
         }
         "bot.adapter" => {
-            let config_id = required_string(params, "config_id")?;
+            let config_id = required_string_argument(params, "config_id")?;
             let handle = crate::runtime::block_async(
                             crate::ims_bot_adapter::runtime::active_adapter_manager::ActiveAdapterManager::shared()
                                 .get_active_bot_adapter_handle(&config_id),
@@ -1299,8 +1282,8 @@ pub fn dispatch_script_host_call(
         }
         "bot.send_batches" => {
             let adapter = bot_adapter_resource(params, "ims_bot_adapter")?;
-            let target_id = required_string(params, "target_id")?;
-            let target_type = match optional_string(params, "target_type").as_deref() {
+            let target_id = required_string_argument(params, "target_id")?;
+            let target_type = match optional_string_argument(params, "target_type").as_deref() {
                 Some(value) if value.eq_ignore_ascii_case("group") => "group",
                 _ => "friend",
             };
@@ -1398,8 +1381,8 @@ pub fn dispatch_script_host_call(
         }
         "bot.filter_event_type" => {
             let event = message_event(params)?;
-            let filter_type =
-                optional_string(params, "filter_type").unwrap_or_else(|| "private".to_string());
+            let filter_type = optional_string_argument(params, "filter_type")
+                .unwrap_or_else(|| "private".to_string());
             let matches = match filter_type.as_str() {
                 "group" => {
                     event.message_type
@@ -1417,7 +1400,7 @@ pub fn dispatch_script_host_call(
         }
         "session.get" => {
             let session_ref = session_resource(params)?;
-            let sender_id = required_string(params, "sender_id")?;
+            let sender_id = required_string_argument(params, "sender_id")?;
             let state = if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 block_in_place(|| handle.block_on(session_ref.get_state(&sender_id)))
             } else {
@@ -1427,7 +1410,7 @@ pub fn dispatch_script_host_call(
         }
         "session.clear" => {
             let session_ref = session_resource(params)?;
-            let sender_id = required_string(params, "sender_id")?;
+            let sender_id = required_string_argument(params, "sender_id")?;
             let cleared = if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 block_in_place(|| handle.block_on(session_ref.clear_state(&sender_id)))
             } else {
@@ -1437,7 +1420,7 @@ pub fn dispatch_script_host_call(
         }
         "session.try_claim" => {
             let session_ref = session_resource(params)?;
-            let sender_id = required_string(params, "sender_id")?;
+            let sender_id = required_string_argument(params, "sender_id")?;
             let desired_state = params.get("state_json").cloned();
             let state_ref = session_ref.clone();
             let sender_for_claim = sender_id.clone();
@@ -1462,7 +1445,7 @@ pub fn dispatch_script_host_call(
         }
         "session.release" => {
             let session_ref = session_resource(params)?;
-            let sender_id = required_string(params, "sender_id")?;
+            let sender_id = required_string_argument(params, "sender_id")?;
             let claim_token = SESSION_CLAIM_CONTEXT
                 .try_with(|context| {
                     let token = context.claim_token_for(&session_ref.node_id, &sender_id);
@@ -1481,7 +1464,7 @@ pub fn dispatch_script_host_call(
         }
         "message_cache.append" => {
             let cache_ref = cache_resource(params)?;
-            let sender_id = required_string(params, "sender_id")?;
+            let sender_id = required_string_argument(params, "sender_id")?;
             let messages = llm_messages_from_json(
                 params
                     .get("messages")
@@ -1493,7 +1476,7 @@ pub fn dispatch_script_host_call(
         }
         "message_cache.get" => {
             let cache_ref = cache_resource(params)?;
-            let sender_id = required_string(params, "sender_id")?;
+            let sender_id = required_string_argument(params, "sender_id")?;
             let messages = cache_ref.get_messages_blocking(&sender_id)?;
             if messages.is_empty() {
                 Ok(params.get("fallback").cloned().unwrap_or_else(|| Value::Array(Vec::new())))
@@ -1508,7 +1491,7 @@ pub fn dispatch_script_host_call(
         }
         "message_cache.set" => {
             let cache_ref = cache_resource(params)?;
-            let sender_id = required_string(params, "sender_id")?;
+            let sender_id = required_string_argument(params, "sender_id")?;
             let messages = llm_messages_from_json(
                 params
                     .get("messages")
@@ -1520,7 +1503,7 @@ pub fn dispatch_script_host_call(
         }
         "message_cache.clear" => {
             let cache_ref = cache_resource(params)?;
-            let sender_id = required_string(params, "sender_id")?;
+            let sender_id = required_string_argument(params, "sender_id")?;
             let cleared = if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 block_in_place(|| handle.block_on(cache_ref.clear_messages(&sender_id)))?
             } else {
@@ -1572,7 +1555,7 @@ pub fn dispatch_script_host_call(
             Ok(json!({"response": [response]}))
         }
         "model.create_llm_from_ref" => {
-            let llm_ref_id = required_string(params, "llm_ref_id")?;
+            let llm_ref_id = required_string_argument(params, "llm_ref_id")?;
             let llm_ref = crate::config::llm_refs::load_llm_refs()?
                 .into_iter()
                 .find(|item| item.id == llm_ref_id || item.config_id == llm_ref_id)
@@ -1603,7 +1586,7 @@ pub fn dispatch_script_host_call(
         }
         "embedding.infer" => {
             let model = embedding_model_resource(params)?;
-            let text = required_string(params, "text")?;
+            let text = required_string_argument(params, "text")?;
             let embedding = model.inference(text.trim())?;
             let dimension = embedding.len();
             Ok(json!({"embedding": embedding, "dimension": dimension}))
@@ -1637,8 +1620,8 @@ pub fn dispatch_script_host_call(
             Ok(json!({"embeddings": embeddings, "count": count, "dimension": dimension}))
         }
         "embedding.create_remote" => {
-            let model_name = required_string(params, "model_name")?;
-            let api_endpoint = required_string(params, "api_endpoint")?;
+            let model_name = required_string_argument(params, "model_name")?;
+            let api_endpoint = required_string_argument(params, "api_endpoint")?;
             let api_key = params
                 .get("api_key")
                 .and_then(Value::as_str)
@@ -1667,7 +1650,7 @@ pub fn dispatch_script_host_call(
             Ok(store_script_resource(DataValue::EmbeddingModel(model)))
         }
         "embedding.create_local" => {
-            let model_name = required_string(params, "model_name")?;
+            let model_name = required_string_argument(params, "model_name")?;
             let model: Arc<dyn crate::model_inference::llm::embedding_base::EmbeddingBase> =
                 Arc::new(
                     crate::model_inference::nn::queued_embedding_model::QueuedEmbeddingModel::new(
@@ -1677,7 +1660,7 @@ pub fn dispatch_script_host_call(
             Ok(store_script_resource(DataValue::EmbeddingModel(model)))
         }
         "storage.create_mysql" => {
-            let config_id = required_string(params, "config_id")?;
+            let config_id = required_string_argument(params, "config_id")?;
             let reference = crate::runtime::block_async(
                 crate::storage::RuntimeStorageConnectionManager::shared()
                     .get_or_create_mysql_ref(&config_id),
@@ -1687,12 +1670,12 @@ pub fn dispatch_script_host_call(
             )))
         }
         "storage.create_redis" => {
-            let config_id = required_string(params, "config_id")?;
+            let config_id = required_string_argument(params, "config_id")?;
             let reference = crate::storage::redis::build_redis_ref_for_connection(&config_id)?;
             Ok(store_script_resource(DataValue::RedisRef(reference)))
         }
         "storage.create_sqlite" => {
-            let config_id = required_string(params, "config_id")?;
+            let config_id = required_string_argument(params, "config_id")?;
             let reference = crate::runtime::block_async(
                 crate::storage::RuntimeStorageConnectionManager::shared()
                     .get_or_create_sqlite_ref(&config_id),
@@ -1702,7 +1685,7 @@ pub fn dispatch_script_host_call(
             )))
         }
         "storage.create_s3" => {
-            let config_id = required_string(params, "config_id")?;
+            let config_id = required_string_argument(params, "config_id")?;
             let reference = crate::runtime::block_async(
                 crate::storage::RuntimeStorageConnectionManager::shared()
                     .get_or_create_s3_ref(&config_id),
@@ -1710,7 +1693,7 @@ pub fn dispatch_script_host_call(
             Ok(store_script_resource(DataValue::S3Ref(reference)))
         }
         "storage.create_retrieval_store" => {
-            let config_id = required_string(params, "config_id")?;
+            let config_id = required_string_argument(params, "config_id")?;
             let store = crate::storage::resource_resolver::build_retrieval_store_ref(
                 &config_id,
                 &crate::storage::load_connections()?,
@@ -1719,8 +1702,8 @@ pub fn dispatch_script_host_call(
         }
         "storage.user_history" => {
             let reference = mysql_resource(params, "rdb_ref")?;
-            let sender_id = required_string(params, "sender_id")?;
-            let group_id = optional_string(params, "group_id");
+            let sender_id = required_string_argument(params, "sender_id")?;
+            let group_id = optional_string_argument(params, "group_id");
             let limit = positive_limit(params, None)?;
             let messages = crate::storage::message::history::load_user_history(
                 &reference, sender_id, group_id, limit,
@@ -1729,7 +1712,7 @@ pub fn dispatch_script_host_call(
         }
         "storage.group_history" => {
             let reference = mysql_resource(params, "rdb_ref")?;
-            let group_id = required_string(params, "group_id")?;
+            let group_id = required_string_argument(params, "group_id")?;
             let limit = positive_limit(params, None)?;
             let messages =
                 crate::storage::message::history::load_group_history(&reference, group_id, limit)?;
@@ -1741,12 +1724,12 @@ pub fn dispatch_script_host_call(
             let page = crate::storage::message::history::search_message_records(
                 &reference,
                 crate::storage::message::history::MessageSearchFilters {
-                    sender_id: optional_string(params, "sender_id"),
-                    group_id: optional_string(params, "group_id"),
-                    contain: optional_string(params, "query"),
-                    start_time: optional_string(params, "start_time"),
-                    end_time: optional_string(params, "end_time"),
-                    before_time: optional_string(params, "before_time"),
+                    sender_id: optional_string_argument(params, "sender_id"),
+                    group_id: optional_string_argument(params, "group_id"),
+                    contain: optional_string_argument(params, "query"),
+                    start_time: optional_string_argument(params, "start_time"),
+                    end_time: optional_string_argument(params, "end_time"),
+                    before_time: optional_string_argument(params, "before_time"),
                     before_id: params.get("before_id").and_then(Value::as_i64),
                     sort_by_time_desc: params
                         .get("sort_by_time_desc")
@@ -1770,11 +1753,11 @@ pub fn dispatch_script_host_call(
             let success = crate::storage::persist_qq_message_list_to_store(
                 &store,
                 &messages,
-                &required_string(params, "message_id")?,
-                &required_string(params, "sender_id")?,
-                &required_string(params, "sender_name")?,
-                optional_string(params, "group_id").as_deref(),
-                optional_string(params, "group_name").as_deref(),
+                &required_string_argument(params, "message_id")?,
+                &required_string_argument(params, "sender_id")?,
+                &required_string_argument(params, "sender_name")?,
+                optional_string_argument(params, "group_id").as_deref(),
+                optional_string_argument(params, "group_name").as_deref(),
                 embedding_model.as_ref(),
             )?;
             Ok(Value::Bool(success))
@@ -1785,11 +1768,11 @@ pub fn dispatch_script_host_call(
             let success = crate::storage::message::record_write::persist_qq_message_list(
                 &rdb_ref,
                 &messages,
-                required_string(params, "message_id")?,
-                required_string(params, "sender_id")?,
-                required_string(params, "sender_name")?,
-                optional_string(params, "group_id"),
-                optional_string(params, "group_name"),
+                required_string_argument(params, "message_id")?,
+                required_string_argument(params, "sender_id")?,
+                required_string_argument(params, "sender_name")?,
+                optional_string_argument(params, "group_id"),
+                optional_string_argument(params, "group_name"),
             )?;
             Ok(Value::Bool(success))
         }
@@ -1816,15 +1799,15 @@ pub fn dispatch_script_host_call(
             let success = crate::storage::persist_image_record_to_store(
                 &store,
                 crate::storage::ImagePersistenceRequest {
-                    object_storage_path: &required_string(params, "object_storage_path")?,
-                    description: &required_string(params, "description")?,
+                    object_storage_path: &required_string_argument(params, "object_storage_path")?,
+                    description: &required_string_argument(params, "description")?,
                     embedding_model: embedding_model.as_deref(),
                     vector: vector.as_deref(),
-                    source: optional_string(params, "source").as_deref(),
-                    media_id: optional_string(params, "media_id").as_deref(),
-                    original_source: optional_string(params, "original_source").as_deref(),
-                    name: optional_string(params, "name").as_deref(),
-                    mime_type: optional_string(params, "mime_type").as_deref(),
+                    source: optional_string_argument(params, "source").as_deref(),
+                    media_id: optional_string_argument(params, "media_id").as_deref(),
+                    original_source: optional_string_argument(params, "original_source").as_deref(),
+                    name: optional_string_argument(params, "name").as_deref(),
+                    mime_type: optional_string_argument(params, "mime_type").as_deref(),
                 },
             )?;
             Ok(Value::Bool(success))
@@ -1843,7 +1826,7 @@ pub fn dispatch_script_host_call(
             )
         }
         "search.create_provider" => {
-            let config_id = required_string(params, "config_id")?;
+            let config_id = required_string_argument(params, "config_id")?;
             let engine = crate::storage::resource_resolver::build_web_search_engine_ref(
                 Some(&config_id),
                 &crate::storage::load_connections()?,
@@ -1853,7 +1836,7 @@ pub fn dispatch_script_host_call(
         }
         "search.query" => {
             let engine = web_search_resource(params)?;
-            let query = required_string(params, "query")?;
+            let query = required_string_argument(params, "query")?;
             let search_count = params
                 .get("search_count")
                 .and_then(Value::as_i64)
@@ -1872,8 +1855,8 @@ pub fn dispatch_script_host_call(
                 Error::ValidationError("web_search_engine_ref is required".to_string())
             })?;
             let engine = web_search_resource(&json!({"tavily_ref": engine}))?;
-            let query = optional_string(params, "query").unwrap_or_default();
-            let url = optional_string(params, "url").unwrap_or_default();
+            let query = optional_string_argument(params, "query").unwrap_or_default();
+            let url = optional_string_argument(params, "url").unwrap_or_default();
             let count = params.get("search_count").and_then(Value::as_i64).unwrap_or(3);
             if url.is_empty() && query.is_empty() {
                 return Err(Error::ValidationError("query 和 url 不能同时为空".to_string()));

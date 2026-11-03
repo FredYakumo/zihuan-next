@@ -17,11 +17,12 @@ use zihuan_core::runtime::block_async;
 use zihuan_core::storage::message::record_restore::{find_media_in_messages, query_media_by_id};
 use zihuan_core::storage::RuntimeStorageConnectionManager;
 use zihuan_core::storage::S3Ref;
+use zihuan_core::utils::json_utils::optional_string_argument;
 
 use zihuan_core::agent::resource_resolver::{build_llm_model, resolve_llm_service_config};
 use zihuan_core::validation_error;
 
-use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
+use super::common::{StaticFunctionToolSpec, ToolNotificationTarget};
 
 const LOG_PREFIX: &str = "[QqChatAgentService]";
 pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";

@@ -53,6 +53,108 @@
 .content-cell {
     white-space: pre-wrap;
     word-break: break-word;
+
+    .content-body--expanded {
+        max-height: 320px;
+        overflow-y: auto;
+    }
+
+    .content-media {
+        display: inline-block;
+        vertical-align: middle;
+        margin: 2px 4px 2px 0;
+        padding: 0;
+        border: none;
+        background: none;
+        cursor: zoom-in;
+
+        img {
+            display: block;
+            max-width: 160px;
+            max-height: 96px;
+            border-radius: 4px;
+        }
+    }
+
+    .content-quote-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        margin: 2px 4px 2px 0;
+        padding: 1px 8px;
+        border: 1px solid var(--td-component-border);
+        border-radius: 999px;
+        background: none;
+        color: var(--td-text-color-secondary);
+        font-size: 12px;
+        line-height: 1.6;
+        cursor: pointer;
+
+        &:hover {
+            border-color: var(--td-brand-color);
+            color: var(--td-brand-color);
+        }
+    }
+
+    .content-quote {
+        display: block;
+        margin: 4px 0;
+        padding: 6px 10px;
+        border-left: 3px solid var(--td-brand-color);
+        border-radius: 4px;
+        background: var(--td-bg-color-container);
+
+        .content-quote-meta {
+            display: block;
+            font-size: 12px;
+            color: var(--td-text-color-secondary);
+        }
+
+        .content-quote-body {
+            display: block;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 12px;
+            color: var(--td-text-color-primary);
+        }
+    }
+}
+
+/* Full-screen image preview: starts small, wheel zooms, close button sits top-right. */
+.content-media-preview {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    display: flex;
+    overflow: auto;
+    background: rgba(0, 0, 0, 0.75);
+
+    img {
+        margin: auto;
+        border-radius: 8px;
+        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+    }
+
+    .content-media-preview-close {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border: 1px solid rgba(255, 255, 255, 0.55);
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.45);
+        color: #fff;
+        font-size: 18px;
+        cursor: pointer;
+
+        &:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+    }
 }
 
 .pagination {
