@@ -276,10 +276,7 @@ impl LlmStageRun {
 /// the tool calls it carries, and the call it answers.
 fn message_detail(message: &LLMMessage) -> Value {
     let mut entry = serde_json::Map::new();
-    entry.insert(
-        "role".to_string(),
-        json!(format!("{:?}", message.role).to_lowercase()),
-    );
+    entry.insert("role".to_string(), json!(format!("{:?}", message.role).to_lowercase()));
     entry.insert("content".to_string(), json!(raw_message_content(message)));
     if !message.tool_calls.is_empty() {
         entry.insert("tool_calls".to_string(), json!(message.tool_calls));
