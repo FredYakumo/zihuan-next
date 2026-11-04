@@ -1,5 +1,7 @@
 use async_trait::async_trait;
 use zihuan_core::error::Result;
+use zihuan_core::ims_bot_adapter::models::event_model::SenderGender;
+use zihuan_core::ims_bot_adapter::models::sender_model::Sender;
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
 };
@@ -27,6 +29,21 @@ impl<'a> QqBeforeBrain<'a> {
     }
 }
 
+/// The reply directive the before-brain procedure appends to the current turn's user
+/// message, telling the brain which input to answer.
+pub(crate) fn reply_instruction(sender: &Sender, message: &str) -> String {
+    let pronoun = match sender.gender() {
+        SenderGender::Male => "his",
+        SenderGender::Female => "her",
+        SenderGender::Unknown => "his/her",
+    };
+    format!(
+        "Please reply to the {}'s message: {message}, {pronoun} id is {}",
+        sender.display_name(),
+        sender.user_id()
+    )
+}
+
 #[async_trait]
 impl Procedure for QqBeforeBrain<'_> {
     fn descriptor(&self) -> ProcedureDescriptor {
@@ -41,9 +58,13 @@ impl Procedure for QqBeforeBrain<'_> {
         // The group-message-window procedure runs before this one in the chain. Its reply
         // directive rides on the assembled current-turn user message instead of the history
         // block, so it is absent on turns without a window (private chat, steer follow-ups).
-        let reply_instruction = context
-            .find_output::<GroupMessageWindowOutput>()
-            .map(|window| window.reply_instruction());
+        let reply_instruction =
+            context.find_output::<GroupMessageWindowOutput>().and_then(|window| {
+                context
+                    .sender
+                    .as_deref()
+                    .map(|sender| reply_instruction(sender, window.user_input.as_str()))
+            });
         Ok(ProcedureOutput::of(assemble_before_brain(
             &self.context,
             reply_instruction.as_deref(),

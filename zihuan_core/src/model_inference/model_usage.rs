@@ -174,25 +174,7 @@ impl LlmStageRun {
         // The payload is only built when a turn is actually being traced, so untracked callers
         // (background jobs, other services) pay nothing for the report.
         with_turn_trace_context(|context| {
-            let messages: Vec<Value> = param
-                .messages
-                .iter()
-                .map(|message| {
-                    let mut entry = serde_json::Map::new();
-                    entry.insert(
-                        "role".to_string(),
-                        json!(format!("{:?}", message.role).to_lowercase()),
-                    );
-                    entry.insert("content".to_string(), json!(raw_message_content(message)));
-                    if !message.tool_calls.is_empty() {
-                        entry.insert("tool_calls".to_string(), json!(message.tool_calls));
-                    }
-                    if let Some(tool_call_id) = &message.tool_call_id {
-                        entry.insert("tool_call_id".to_string(), json!(tool_call_id));
-                    }
-                    Value::Object(entry)
-                })
-                .collect();
+            let messages: Vec<Value> = param.messages.iter().map(message_detail).collect();
             let detail = json!({
                 "status": "running",
                 "model": model,
@@ -252,12 +234,17 @@ impl LlmStageRun {
         // The settled response of this call. Non-streaming calls never produce stream_content,
         // and a tool-call iteration's assistant text would otherwise never show anywhere in the
         // flow, so the finished entry carries the final text and thinking explicitly.
-        if let Some(content) = response.content_text() {
+        if let Some(content) = response.content_text_owned() {
             self.detail["content"] = json!(content);
         }
         if let Some(reasoning) = &response.reasoning_content {
             self.detail["reasoning"] = json!(reasoning);
         }
+        // The response as a message of its own, in the same shape as the request messages: the
+        // flow view lists it after the request, so every inference reads as one complete call.
+        // Without it the last iteration of a tool loop — the one that produces the reply — would
+        // be the only assistant message missing from every message list in the turn.
+        self.detail["response"] = message_detail(response);
         if let Some(usage) = usage {
             self.detail["usage"] = json!(usage);
             let generation = first.and_then(|first| elapsed.checked_sub(first)).unwrap_or(elapsed);
@@ -283,6 +270,24 @@ impl LlmStageRun {
         self.detail["error"] = json!(error.to_string());
         emit_llm_stage(&self.context, &self.stage_id, &self.detail);
     }
+}
+
+/// One request or response message, in the shape the Data Explorer renders it: role, text,
+/// the tool calls it carries, and the call it answers.
+fn message_detail(message: &LLMMessage) -> Value {
+    let mut entry = serde_json::Map::new();
+    entry.insert("role".to_string(), json!(format!("{:?}", message.role).to_lowercase()));
+    entry.insert("content".to_string(), json!(raw_message_content(message)));
+    if !message.tool_calls.is_empty() {
+        entry.insert("tool_calls".to_string(), json!(message.tool_calls));
+    }
+    if let Some(tool_call_id) = &message.tool_call_id {
+        entry.insert("tool_call_id".to_string(), json!(tool_call_id));
+    }
+    if let Some(reasoning) = &message.reasoning_content {
+        entry.insert("reasoning_content".to_string(), json!(reasoning));
+    }
+    Value::Object(entry)
 }
 
 fn next_llm_stage_id() -> String {

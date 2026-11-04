@@ -5,7 +5,9 @@
 
 use crate::data_refs::RelationalDbConnection;
 use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;
-use crate::ims_bot_adapter::runtime::models::event_model::{MessageEvent, MessageType, Sender};
+use crate::ims_bot_adapter::runtime::models::event_model::{
+    MessageEvent, MessageType, Sender, SenderGender,
+};
 use crate::ims_bot_adapter::runtime::models::message::{
     render_messages_readable, AtTargetMessage, Message, PlainTextMessage,
 };
@@ -101,6 +103,7 @@ fn build_outbound_event(
             nickname: sender_name.clone(),
             card: sender_name,
             role: None,
+            gender: SenderGender::Unknown,
         },
         message_list: messages.to_vec(),
         group_id,

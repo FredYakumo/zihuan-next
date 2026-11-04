@@ -294,6 +294,7 @@ pub(crate) fn execute_style_learning_task(
                     &mut qq_procedure_context(
                         &format!("style-learning:{}", input.sender_id),
                         Some(feedback_base.clone()),
+                        Some(&input.inference_event),
                     ),
                     QqAfterBrainContext {
                         review_llm: &owned.intent_classification_llm,

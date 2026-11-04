@@ -5,6 +5,7 @@ use async_trait::async_trait;
 
 use super::transport::TransportSink;
 use crate::error::Result;
+use crate::ims_bot_adapter::models::sender_model::Sender;
 
 /// How the chain executor runs a procedure.
 ///
@@ -48,6 +49,12 @@ pub struct ProcedureContext {
     /// predecessors (e.g. the QQ reply review reads the brain output).
     pub procedure_outputs: Vec<ProcedureOutput>,
     pub role_context: Option<Arc<dyn Any + Send + Sync>>,
+    /// The IMS sender of this turn's triggering message: [`Sender::Friend`] for a private
+    /// chat, [`Sender::Group`] for a group chat. It is the resolved form of the transport's
+    /// `MessageEvent.sender`, so procedures read the sender's identity (id, display name,
+    /// gender) without re-deriving it from the event. `None` for non-IMS turns (e.g. the
+    /// Workspace chat) and for group events that carry no `group_id`.
+    pub sender: Option<Arc<Sender>>,
 }
 
 impl ProcedureContext {

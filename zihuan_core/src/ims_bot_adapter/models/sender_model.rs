@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ims_bot_adapter::models::event_model::{MessageEvent, Sender as EventSender};
+use crate::ims_bot_adapter::models::event_model::{
+    MessageEvent, Sender as EventSender, SenderGender,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FriendSender {
@@ -9,6 +11,9 @@ pub struct FriendSender {
     #[serde(default)]
     pub card: String,
     pub role: Option<String>,
+    /// The sender's gender as reported by the adapter.
+    #[serde(default, rename = "sex")]
+    pub gender: SenderGender,
 }
 
 impl From<&EventSender> for FriendSender {
@@ -18,6 +23,7 @@ impl From<&EventSender> for FriendSender {
             nickname: value.nickname.clone(),
             card: value.card.clone(),
             role: value.role.clone(),
+            gender: value.gender,
         }
     }
 }
@@ -32,6 +38,9 @@ pub struct GroupSender {
     pub group_id: i64,
     #[serde(default)]
     pub group_name: Option<String>,
+    /// The sender's gender as reported by the adapter.
+    #[serde(default, rename = "sex")]
+    pub gender: SenderGender,
 }
 
 impl GroupSender {
@@ -47,6 +56,7 @@ impl GroupSender {
             role: sender.role.clone(),
             group_id,
             group_name,
+            gender: sender.gender,
         }
     }
 }
@@ -80,5 +90,36 @@ impl Sender {
 
     pub fn is_group(&self) -> bool {
         matches!(self, Sender::Group(_))
+    }
+
+    /// The sender's own user id, in both conversation kinds.
+    pub fn user_id(&self) -> i64 {
+        match self {
+            Sender::Friend(sender) => sender.user_id,
+            Sender::Group(sender) => sender.user_id,
+        }
+    }
+
+    /// How the sender should be addressed in a prompt: the group card when the group sets
+    /// one, otherwise the nickname.
+    pub fn display_name(&self) -> &str {
+        let (nickname, card) = match self {
+            Sender::Friend(sender) => (&sender.nickname, &sender.card),
+            Sender::Group(sender) => (&sender.nickname, &sender.card),
+        };
+        let card = card.trim();
+        if card.is_empty() {
+            nickname
+        } else {
+            card
+        }
+    }
+
+    /// The sender's gender as the adapter reported it.
+    pub fn gender(&self) -> SenderGender {
+        match self {
+            Sender::Friend(sender) => sender.gender,
+            Sender::Group(sender) => sender.gender,
+        }
     }
 }

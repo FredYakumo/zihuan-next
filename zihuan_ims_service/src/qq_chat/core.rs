@@ -645,7 +645,9 @@ mod build_user_message_tests {
 
     use tokio::runtime::Runtime;
     use zihuan_core::ims_bot_adapter::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
-    use zihuan_core::ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
+    use zihuan_core::ims_bot_adapter::models::event_model::{
+        MessageEvent, MessageType, Sender, SenderGender,
+    };
     use zihuan_core::ims_bot_adapter::models::message::{Message, PlainTextMessage};
 
     fn build_test_adapter() -> SharedBotAdapter {
@@ -665,6 +667,7 @@ mod build_user_message_tests {
                     nickname: "sender".to_string(),
                     card: String::new(),
                     role: None,
+                    gender: SenderGender::Unknown,
                 },
                 message_list: vec![Message::PlainText(PlainTextMessage {
                     text: "你好".to_string(),
