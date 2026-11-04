@@ -32,6 +32,66 @@ impl MessageType {
     }
 }
 
+/// The sender's gender, as the adapter reports it on the wire (`male` / `female` / `unknown`).
+///
+/// Deserialization never fails: a missing, non-string, or unrecognized value becomes
+/// [`SenderGender::Unknown`], because a sender parse error would drop the whole message event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SenderGender {
+    Male,
+    Female,
+    #[default]
+    Unknown,
+}
+
+impl SenderGender {
+    pub fn from_wire(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "male" | "m" | "男" => Self::Male,
+            "female" | "f" | "女" => Self::Female,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SenderGender::Male => "male",
+            SenderGender::Female => "female",
+            SenderGender::Unknown => "unknown",
+        }
+    }
+
+    /// `None` when the gender is unknown, so prompts can omit the clause instead of
+    /// telling the model "gender: unknown".
+    pub fn known(self) -> Option<Self> {
+        match self {
+            SenderGender::Unknown => None,
+            known => Some(known),
+        }
+    }
+}
+
+impl fmt::Display for SenderGender {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for SenderGender {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = Option::<serde_json::Value>::deserialize(deserializer)?;
+        Ok(raw
+            .as_ref()
+            .and_then(serde_json::Value::as_str)
+            .map(Self::from_wire)
+            .unwrap_or_default())
+    }
+}
+
 /// Sender information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sender {
@@ -40,6 +100,10 @@ pub struct Sender {
     #[serde(default)]
     pub card: String,
     pub role: Option<String>,
+    /// The wire field is `sex`; adapters that omit it, and outbound (bot) senders, leave the
+    /// default [`SenderGender::Unknown`].
+    #[serde(default, rename = "sex")]
+    pub gender: SenderGender,
 }
 
 /// Message event containing the full message information

@@ -63,6 +63,7 @@ fn context_with_sink(alive: &Arc<AtomicBool>) -> ProcedureContext {
         transport_out: Some(sink),
         procedure_outputs: Vec::new(),
         role_context: None,
+        sender: None,
     }
 }
 

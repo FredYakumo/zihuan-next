@@ -13,6 +13,8 @@ pub(crate) mod utils;
 use std::sync::Arc;
 
 use zihuan_core::error::{Error, Result};
+use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
+use zihuan_core::ims_bot_adapter::models::sender_model::Sender;
 use zihuan_core::role::procedure::{
     execute_blocking_procedure_chain, Procedure, ProcedureContext, ProcedureOutput,
 };
@@ -34,10 +36,11 @@ pub(crate) use qq_meta_query_brain::QqMetaQueryBrain;
 ///
 /// QQ turns have no dashboard session: the chat history key stands in as the session identity.
 /// QQ procedure payloads are bundled into their procedures directly, so the shared context only
-/// carries informational facts.
+/// carries informational facts — including the turn's IMS sender, resolved from `sender_event`.
 pub(crate) fn qq_procedure_context(
     session_key: &str,
     latest_user_text: Option<String>,
+    sender_event: Option<&MessageEvent>,
 ) -> ProcedureContext {
     ProcedureContext {
         session_id: session_key.to_string(),
@@ -47,6 +50,7 @@ pub(crate) fn qq_procedure_context(
         transport_out: None,
         procedure_outputs: Vec::new(),
         role_context: None,
+        sender: sender_event.and_then(Sender::from_message_event).map(Arc::new),
     }
 }
 

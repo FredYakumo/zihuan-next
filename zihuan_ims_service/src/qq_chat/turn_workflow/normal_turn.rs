@@ -198,7 +198,11 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
     // context; the window agent picks the turn's group history, the before-brain
     // procedure assembles the turn's system prompt and user input, and the brain reads
     // both from it instead of assembling them itself.
-    let mut shared = qq_procedure_context(&turn.history_key, Some(turn.current_message.clone()));
+    let mut shared = qq_procedure_context(
+        &turn.history_key,
+        Some(turn.current_message.clone()),
+        Some(&turn.inference_event),
+    );
     // The chain runs inside `block_async`. A guard taken inside the call arguments stays
     // alive until the end of this statement, i.e. for the whole chain, and the preprompt
     // stage locks the same non-reentrant mutex. Clone the state first so the guard is

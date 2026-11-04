@@ -1306,6 +1306,8 @@ async fn execute_chat_streaming(
         transport_out: Some(transport_sink),
         procedure_outputs: Vec::new(),
         role_context: None,
+        // Dashboard chat turns have no IMS sender.
+        sender: None,
     };
     if !should_run_inference {
         // Command-only turns skip the brain, so the role's side-effect procedures (e.g. /new

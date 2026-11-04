@@ -111,8 +111,8 @@ pub(crate) struct GroupMessageWindowOutput {
 impl GroupMessageWindowOutput {
     /// The history replacement handed to the brain: the selected messages as a
     /// time/sender/content record. `None` when the agent found no related messages,
-    /// leaving the turn without history. The reply directive is not part of this block;
-    /// it rides on the current turn's user message (see [`Self::reply_instruction`]).
+    /// leaving the turn without history. The reply directive is not part of this block; the
+    /// before-brain procedure appends it to the current turn's user message.
     pub(crate) fn history_message(&self) -> Option<LLMMessage> {
         if self.related.is_empty() {
             return None;
@@ -128,12 +128,6 @@ impl GroupMessageWindowOutput {
             ));
         }
         Some(LLMMessage::user(lines.join("\n")))
-    }
-
-    /// The reply directive the before-brain procedure appends to the current turn's user
-    /// message, telling the brain which input to answer.
-    pub(crate) fn reply_instruction(&self) -> String {
-        format!("Please reply to the user's input message: {}", self.user_input)
     }
 }
 

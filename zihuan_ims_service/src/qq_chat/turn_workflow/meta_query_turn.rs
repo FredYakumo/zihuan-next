@@ -81,7 +81,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
 
     // Role turn chain (documents/procedure.md): the meta-query brain (a single direct
     // inference) -> AfterBrain review -> FormatOutput.
-    let mut shared = qq_procedure_context(&turn.history_key, None);
+    let mut shared = qq_procedure_context(&turn.history_key, None, Some(&turn.inference_event));
     // Same guard hazard as the normal turn: clone outside the `block_async` arguments.
     let after_brain_session_state = turn.turn_session_state.lock().unwrap().clone();
     let shared_runtime_values = Arc::new(Mutex::new(ctx.shared_runtime_values.clone()));
