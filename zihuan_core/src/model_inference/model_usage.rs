@@ -287,6 +287,9 @@ fn message_detail(message: &LLMMessage) -> Value {
     if let Some(tool_call_id) = &message.tool_call_id {
         entry.insert("tool_call_id".to_string(), json!(tool_call_id));
     }
+    if let Some(reasoning) = &message.reasoning_content {
+        entry.insert("reasoning_content".to_string(), json!(reasoning));
+    }
     Value::Object(entry)
 }
 

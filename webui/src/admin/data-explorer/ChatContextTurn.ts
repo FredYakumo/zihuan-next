@@ -69,6 +69,7 @@ const PHASE_OF_STAGE: Record<string, string> = {
   "Brain 输入": "构建 Brain 输入",
   "推理上下文": "构建 Brain 输入",
   "回复决策": "Brain 推理",
+  [LLM_STAGE]: "LLM 推理",
   "Rethink": "回复Review",
   "回复审查与改写": "回复Review",
   "格式化输出": "发送回复",
@@ -401,6 +402,8 @@ export interface StageRawMessage {
   /** Tool calls the message carries, rendered as JSON in the raw view. */
   toolCalls?: unknown[];
   toolCallId?: string;
+  /** Reasoning the message carries (思考过程), rendered collapsed in the raw view. */
+  reasoning?: string;
 }
 
 /** One label/value fact of an embedding inference. */
@@ -447,6 +450,7 @@ export function parseRawMessage(raw: unknown): StageRawMessage | undefined {
     content: typeof entry.content === "string" ? entry.content : "",
     toolCalls: Array.isArray(entry.tool_calls) ? entry.tool_calls : undefined,
     toolCallId: typeof entry.tool_call_id === "string" ? entry.tool_call_id : undefined,
+    reasoning: typeof entry.reasoning_content === "string" ? entry.reasoning_content : undefined,
   };
 }
 
@@ -970,6 +974,21 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     toolRawViewOpen.value = next;
   }
 
+  /** Expanded 思考过程 sections of raw message items, keyed by `entryId:messageIndex`. */
+  const itemThinkingOpen = ref(new Set<string>());
+
+  function isItemThinkingOpen(id: string, index: number): boolean {
+    return itemThinkingOpen.value.has(`${id}:${index}`);
+  }
+
+  function toggleItemThinking(id: string, index: number) {
+    const key = `${id}:${index}`;
+    const next = new Set(itemThinkingOpen.value);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    itemThinkingOpen.value = next;
+  }
+
   /** `名字(id)` for the quoted message's sender, falling back to whichever half is known. */
   const quoteSender = computed(() => {
     const quoted = turn().quoted;
@@ -1024,6 +1043,25 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
       color: phaseColor(index),
     }));
   });
+
+  /** 1-based position of each LLM inference within its phase container, for the entry title. */
+  const llmIndexes = computed(() => {
+    const indexes = new Map<string, number>();
+    for (const phase of phases.value) {
+      let count = 0;
+      for (const entry of phase.entries) {
+        if (entry.kind === "stage" && isLlmStage(entry.stage)) {
+          indexes.set(entry.id, ++count);
+        }
+      }
+    }
+    return indexes;
+  });
+
+  /** Title index of one LLM inference entry, e.g. the second call of the brain loop. */
+  function llmIndexFor(id: string): number {
+    return llmIndexes.value.get(id) ?? 1;
+  }
 
   /** Sub-agent call trees, keyed by the joined call path of each sub-agent invocation. */
   const subAgentTrees = computed(() => buildSubAgentTrees(turn().entries));
@@ -1245,6 +1283,8 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     toggleEmbeddingSection,
     isLlmMessagesOpen,
     toggleLlmMessages,
+    isItemThinkingOpen,
+    toggleItemThinking,
     isStageToolsOpen,
     toggleStageTools,
     isStageRawView,
@@ -1252,6 +1292,7 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     isToolRawView,
     toggleToolRawView,
     llmToolsFor,
+    llmIndexFor,
     phases,
     subAgentsFor,
     orphanSubAgents,
