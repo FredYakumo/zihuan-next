@@ -86,7 +86,7 @@ export interface ContextTurnView {
   userText: string;
   /** Group the user message was sent in; only present for group chats. */
   groupName?: string;
-  /** Quoted message shown as a collapsible block inside the user bubble. */
+  /** Quoted message shown as a collapsible block inside the user entry. */
   quoted?: ContextQuotedMessage;
   media: ServiceChatContextMedia[];
   entries: ContextEntryItem[];
@@ -380,7 +380,7 @@ export function useChatContext(serviceId: string) {
     if (event.kind === "stage") {
       const turn = ensureTurn(event);
       // A progress stage reports its start and finish under the same backend id. Keep the
-      // existing entry and only replace its detail, so the bubble updates instead of repeating.
+      // existing entry and only replace its detail, so the entry updates instead of repeating.
       if (event.id) {
         const existing = turn.entries.find(
           (entry): entry is ContextStageItem =>

@@ -98,7 +98,7 @@ pub(crate) fn deliver_reply(
         serde_json::json!({
             "suppress_send": format_output.suppress_send,
             "batches": sent_batches,
-            "bubbles": crate::procedure::utils::reply_plan::bubble_stage_summaries(
+            "messages": crate::procedure::utils::reply_plan::message_stage_summaries(
                 &format_output.batches,
                 &format_output.batch_delays_ms,
             ),

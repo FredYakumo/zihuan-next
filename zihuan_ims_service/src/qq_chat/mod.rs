@@ -38,7 +38,7 @@ use self::model::{
 };
 use crate::procedure::utils::reply_plan::build_reply_batch_builder as build_unified_reply_batch_builder;
 use crate::qq_session_state::QqChatSessionState;
-use crate::role_config::QqChatRoleServiceConfig;
+use crate::role_config::{public_model_display_names, QqChatRoleServiceConfig};
 pub use crate::storage::message_rate_limit_store::{
     list_message_rate_limit_usage, reset_message_rate_limit_usage,
 };
@@ -122,7 +122,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
         );
     }
 
-    fn build_default_tools(&self, context: &InferenceToolContext) -> Vec<Box<dyn Tool>> {
+    fn build_default_tools(&self, _context: &InferenceToolContext) -> Vec<Box<dyn Tool>> {
         build_info_brain_tools(
             &self.resources.default_tools_enabled,
             self.resources.web_search_engine_ref.clone(),
@@ -133,7 +133,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
             self.resources.embedding_model.clone(),
             self.resources.memory_llm.clone(),
             zihuan_core::storage::AgentMemoryAccessContext::default(),
-            context.last_user_text.clone(),
+            self.resources.model_names.clone(),
             &self.resources.plugin_tool_names,
         )
     }
@@ -190,10 +190,10 @@ fn load_qq_resources(
         .retrieval_store_is_local()
         .then(|| Arc::new(LocalMemoryStore::in_app_data_dir()));
 
+    let llm_refs = load_llm_refs().unwrap_or_default();
     let embedding_model = if local_memory_store.is_some() {
         None
     } else if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
-        let llm_refs = load_llm_refs().unwrap_or_default();
         match resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name) {
             Ok(Some(_)) => block_async(
                 RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id),
@@ -213,10 +213,9 @@ fn load_qq_resources(
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .map(|llm_ref_id| {
-            resolve_llm_service_config(Some(llm_ref_id), &load_llm_refs().unwrap_or_default())
-                .map_err(|err| {
-                    validation_error!("[{}] Failed to load llm config: {err}", &agent.name)
-                })
+            resolve_llm_service_config(Some(llm_ref_id), &llm_refs).map_err(|err| {
+                validation_error!("[{}] Failed to load llm config: {err}", &agent.name)
+            })
         })
         .transpose()?
         .map(|llm_config| build_llm_model(&llm_config))
@@ -240,6 +239,7 @@ fn load_qq_resources(
         local_memory_store,
         embedding_model,
         memory_llm,
+        model_names: public_model_display_names(config, &llm_refs),
         plugin_tool_names: selected_plugin_names(&agent.tools),
     })
 }
@@ -285,6 +285,7 @@ pub async fn spawn(
     task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
 ) -> Result<JoinHandle<()>> {
     let llm_refs = load_llm_refs()?;
+    let public_model_names = public_model_display_names(&config, &llm_refs);
     let bot_connection = find_connection(&connections, &config.ims_bot_adapter_connection_id)?;
     let ConnectionKind::BotAdapter(_) = &bot_connection.kind else {
         return Err(Error::ValidationError(format!(
@@ -480,6 +481,7 @@ pub async fn spawn(
         session_state_store: Arc::new(Mutex::new(QqChatSessionState::default())),
         task_runtime,
         tool_quota_session_state: Arc::new(Mutex::new(SessionToolQuotaState::default())),
+        public_model_names,
     })?);
 
     let adapter = ActiveAdapterManager::shared()

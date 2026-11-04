@@ -308,7 +308,7 @@ pub(crate) fn execute_style_learning_task(
                             sender_card: input.inference_event.sender.card.clone(),
                             session_state: crate::qq_session_state::QqChatSessionState::default(),
                             emotion_dimensions: Vec::new(),
-                            model_identity_context: None,
+                            model_names: Vec::new(),
                         },
                         trace: &trace,
                     },

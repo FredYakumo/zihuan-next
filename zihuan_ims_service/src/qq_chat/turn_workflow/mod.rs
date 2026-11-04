@@ -27,8 +27,7 @@ use super::logging::{QqChatTaskTrace, QqChatTurnIdentity};
 use super::user_input::PreparedCurrentTurnUserInput;
 use crate::classify_intent::IntentCategory;
 use crate::procedure::{
-    ModelIdentityContext, QqAfterBrain, QqAfterBrainContext, QqFormatOutput, QqFormatOutputContext,
-    QqReplyReviewRequest,
+    QqAfterBrain, QqAfterBrainContext, QqFormatOutput, QqFormatOutputContext, QqReplyReviewRequest,
 };
 use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::{QqChatEmotionDimensionConfig, QqChatRoleServiceConfig};
@@ -103,7 +102,7 @@ pub(crate) fn build_after_brain<'a>(
             sender_card: inference_event.sender.card.clone(),
             session_state,
             emotion_dimensions,
-            model_identity_context: Some(build_model_identity_context(ctx)),
+            model_names: ctx.model_names.clone(),
         },
         trace,
     })
@@ -141,20 +140,6 @@ pub(crate) fn build_format_output<'a>(
         reply_batch_builder: ctx.reply_batch_builder,
         shared_runtime_values,
     })
-}
-
-fn build_service_model_list(ctx: &QqChatAgentServiceContext<'_>) -> Vec<(String, String)> {
-    ctx.llm_roles()
-        .into_iter()
-        .map(|(role, llm)| (role.to_string(), llm.get_model_name().to_string()))
-        .collect()
-}
-
-fn build_model_identity_context(ctx: &QqChatAgentServiceContext<'_>) -> ModelIdentityContext {
-    ModelIdentityContext {
-        framework_name: "紫幻next".to_string(),
-        model_list: build_service_model_list(ctx),
-    }
 }
 
 /// Picks the turn's routed LLM: math/programming for complex problems and code, main otherwise.

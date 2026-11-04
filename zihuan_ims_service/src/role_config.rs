@@ -6,6 +6,7 @@ use zihuan_core::agent::{
     EmbeddingServiceConfig, LLM_KIND_INTENT_CLASSIFICATION, LLM_KIND_MAIN,
     LLM_KIND_MATH_PROGRAMMING, LLM_KIND_NATURAL_LANGUAGE_REPLY,
 };
+use zihuan_core::config::llm_refs::LlmRefConfig;
 use zihuan_core::retrieval::RetrievalStoreConfig;
 use zihuan_core::scheduler::ScheduledJobConfig;
 use zihuan_core::utils::time_unit::TimeUnit;
@@ -30,6 +31,37 @@ pub fn llm_ref_id_for_kind<'a>(
 
 pub fn image_understand_llm_ref_id<'a>(config: &'a QqChatRoleServiceConfig) -> Option<&'a str> {
     config.image_understand_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref())
+}
+
+/// Deduplicated display names (`llm_ref.name`) of the LLM refs this service routes work to,
+/// in role order. These are the user-facing model names for the agent's public info, not the
+/// provider model ids.
+pub fn public_model_display_names(
+    config: &QqChatRoleServiceConfig,
+    llm_refs: &[LlmRefConfig],
+) -> Vec<String> {
+    const PUBLIC_LLM_KINDS: [&str; 4] = [
+        LLM_KIND_MAIN,
+        LLM_KIND_INTENT_CLASSIFICATION,
+        LLM_KIND_MATH_PROGRAMMING,
+        LLM_KIND_NATURAL_LANGUAGE_REPLY,
+    ];
+    let mut names = Vec::new();
+    for llm_kind in PUBLIC_LLM_KINDS {
+        let Some(ref_id) = llm_ref_id_for_kind(config, llm_kind) else {
+            continue;
+        };
+        let Some(llm_ref) =
+            llm_refs.iter().find(|item| item.id == ref_id || item.config_id == ref_id)
+        else {
+            continue;
+        };
+        let name = llm_ref.name.trim();
+        if llm_ref.enabled && !name.is_empty() && !names.iter().any(|item| item == name) {
+            names.push(name.to_string());
+        }
+    }
+    names
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

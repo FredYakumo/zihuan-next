@@ -172,7 +172,6 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
         trace,
         turn.turn_llm,
         &turn.prepared_input,
-        &turn.current_message,
         sender_id,
         turn.target_id,
         turn.bot_id,

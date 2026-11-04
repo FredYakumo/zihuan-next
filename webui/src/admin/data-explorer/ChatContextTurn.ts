@@ -33,7 +33,7 @@ export function isEmbeddingStage(stage: string | undefined): boolean {
   return stage !== undefined && EMBEDDING_STAGES.has(stage);
 }
 
-/** Stage every LLM model inference of a turn reports under, one bubble per inference call. */
+/** Stage every LLM model inference of a turn reports under, one entry per inference call. */
 export const LLM_STAGE = "llm model inference";
 
 const LLM_STAGES = new Set([LLM_STAGE]);
@@ -331,7 +331,7 @@ export function rateLimitText(stage: string, detail: unknown): string | undefine
   return parts.length ? parts.join(" · ") : "无限制";
 }
 
-/** Tone for the rate-limit bubble: the runtime warns as the quota runs out. */
+/** Tone for the rate-limit entry: the runtime warns as the quota runs out. */
 export function rateLimitSeverity(stage: string, detail: unknown): "warning" | "danger" | undefined {
   const parsed = rateLimitDetail(stage, detail);
   if (!parsed) return undefined;
@@ -425,13 +425,13 @@ export interface EmbeddingStageVector {
   values: string;
 }
 
-/** Readable view of one embedding inference report, rendered as its own bubble. */
+/** Readable view of one embedding inference report, rendered as its own entry. */
 export interface EmbeddingStageView {
   status: "running" | "done" | "error";
-  /** Status line under the bubble title, with the live elapsed time while it runs. */
+  /** Status line under the entry title, with the live elapsed time while it runs. */
   statusText: string;
   fields: EmbeddingStageField[];
-  /** Every input text, so the bubble shows exactly what was encoded, not just a size. */
+  /** Every input text, so the entry shows exactly what was encoded, not just a size. */
   inputs: EmbeddingStageInput[];
   /** Vectors of the finished inference; empty while it runs or after it failed. */
   vectors: EmbeddingStageVector[];
@@ -442,8 +442,8 @@ function detailRecord(detail: unknown): Record<string, unknown> | undefined {
   return detail && typeof detail === "object" ? (detail as Record<string, unknown>) : undefined;
 }
 
-/** One protocol segment of a sent QQ bubble, as the backend reports it. */
-export interface SentBubbleSegment {
+/** One protocol segment of a sent QQ message, as the backend reports it. */
+export interface SentMessageBubbleSegment {
   type: "text" | "at" | "reply" | "image" | "forward";
   text?: string;
   target?: string | null;
@@ -453,14 +453,14 @@ export interface SentBubbleSegment {
   nodes?: string[];
 }
 
-/** One outgoing QQ message (one bubble) with the typing delay that preceded it. */
-export interface SentBubble {
+/** One outgoing QQ message bubble with the typing delay that preceded it. */
+export interface SentMessageBubble {
   index: number;
   delay_ms: number;
-  segments: SentBubbleSegment[];
+  segments: SentMessageBubbleSegment[];
 }
 
-function parseSentSegment(value: unknown): SentBubbleSegment | undefined {
+function parseSentSegment(value: unknown): SentMessageBubbleSegment | undefined {
   const entry = detailRecord(value);
   if (!entry) return undefined;
   const type = entry.type;
@@ -486,14 +486,16 @@ function parseSentSegment(value: unknown): SentBubbleSegment | undefined {
 }
 
 /**
- * The outgoing bubbles a stage reports under its `bubbles` key (the format-output stage that
- * plans them and the send stage that puts them on the wire), so the flow view renders the
- * actual chat bubbles instead of raw JSON.
+ * The outgoing messages a stage reports under its `messages` key (the format-output stage
+ * that plans them and the send stage that puts them on the wire), so the flow view renders
+ * the message bubbles instead of raw JSON. Turns recorded before the key was renamed from
+ * `bubbles` still render through the fallback.
  */
-export function sentBubbles(detail: unknown): SentBubble[] | undefined {
-  const raw = detailRecord(detail)?.bubbles;
+export function sentMessageBubbles(detail: unknown): SentMessageBubble[] | undefined {
+  const record = detailRecord(detail);
+  const raw = record?.messages ?? record?.bubbles;
   if (!Array.isArray(raw) || !raw.length) return undefined;
-  const bubbles = raw.flatMap((item): SentBubble[] => {
+  const messageBubbles = raw.flatMap((item): SentMessageBubble[] => {
     const entry = detailRecord(item);
     if (!entry) return [];
     return [
@@ -503,12 +505,12 @@ export function sentBubbles(detail: unknown): SentBubble[] | undefined {
         segments: Array.isArray(entry.segments)
           ? entry.segments
               .flatMap(parseSentSegment)
-              .filter((segment): segment is SentBubbleSegment => segment !== undefined)
+              .filter((segment): segment is SentMessageBubbleSegment => segment !== undefined)
           : [],
       },
     ];
   });
-  return bubbles.length ? bubbles : undefined;
+  return messageBubbles.length ? messageBubbles : undefined;
 }
 
 function detailText(value: unknown): string | undefined {
@@ -618,10 +620,10 @@ export function embeddingStageView(detail: unknown, now: number): EmbeddingStage
   };
 }
 
-/** Readable view of one LLM inference, rendered as its own bubble. */
+/** Readable view of one LLM inference, rendered as its own entry. */
 export interface LlmStageView {
   status: "running" | "done" | "error";
-  /** Status line under the bubble title, with the live elapsed time while it runs. */
+  /** Status line under the entry title, with the live elapsed time while it runs. */
   statusText: string;
   fields: EmbeddingStageField[];
   /** Whether the inference is streamed; streamed responses fill `content` incrementally. */
@@ -885,7 +887,7 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     stageThinkingClosed.value = next;
   }
 
-  // The embedding bubble's input texts and output vectors are both long, so they start folded;
+  // The embedding entry's input texts and output vectors are both long, so they start folded;
   // the summary line above each one already says how much is inside.
   const embeddingOpen = ref(new Set<string>());
 
@@ -901,7 +903,7 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     embeddingOpen.value = next;
   }
 
-  // The LLM bubble's request messages can be as long as the whole conversation, so they start
+  // The LLM entry's request messages can be as long as the whole conversation, so they start
   // folded too; the streamed response itself stays visible while the inference runs.
   const llmMessagesOpen = ref(new Set<string>());
 
@@ -930,8 +932,8 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
     stageToolsOpen.value = next;
   }
 
-  // The Brain 输入 bubble starts on the readable flow and switches to the raw request payload
-  // on demand, the way the user bubble starts on its rich view.
+  // The Brain 输入 entry starts on the readable flow and switches to the raw request payload
+  // on demand, the way the user entry starts on its rich view.
   const stageRawViewOpen = ref(new Set<string>());
 
   function isStageRawView(id: string): boolean {
@@ -979,9 +981,9 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
    *
    * A tool call always starts right after its requesting inference reported, so in the
    * chronological entry list every tool call belongs to the latest preceding
-   * `llm model inference` stage; the inference bubble then shows the loop as it really ran
+   * `llm model inference` stage; the inference entry then shows the loop as it really ran
    * (request → tool calls → results). Tool calls with no preceding inference stage — a
-   * truncated archive — keep rendering as their own bubble.
+   * truncated archive — keep rendering as their own entry.
    */
   const llmToolCalls = computed(() => {
     const calls = new Map<string, ContextToolItem[]>();
@@ -1041,7 +1043,7 @@ export function useChatContextTurn(turn: () => ContextTurnView) {
   });
 
   /**
-   * Clock shared by the inference bubbles (embedding and LLM). It only ticks while one of them
+   * Clock shared by the inference entries (embedding and LLM). It only ticks while one of them
    * is running, so settled turns do not keep timers alive.
    */
   const now = ref(Date.now());

@@ -50,24 +50,7 @@ pub(crate) struct QqChatAgentServiceContext<'a> {
     pub(crate) task_db_connection_id: Option<String>,
     pub(crate) tool_quota: Option<QqChatToolQuotaContext>,
     pub(crate) resolved_language_style: Option<QqChatAgentServiceLanguageStyle>,
-}
-
-impl<'a> QqChatAgentServiceContext<'a> {
-    /// Returns `(role_label, llm_ref)` pairs for all LLM roles configured on this service.
-    /// QQ Chat agent service's logical pipeline:
-    /// - main conversation,
-    /// - intent classification,
-    /// - math/programming,
-    /// - natural-language reply
-    ///
-    pub(crate) fn llm_roles(&'a self) -> [(&'static str, &'a Arc<dyn LLMBase>); 4] {
-        [
-            ("对话", self.llm),
-            ("意图分类", self.intent_classification_llm),
-            ("数学编程", self.math_programming_llm),
-            ("自然语言回复", self.natural_language_reply_llm),
-        ]
-    }
+    pub(crate) model_names: Vec<String>,
 }
 
 /// Persistent runtime configuration for a QQ chat agent service instance.
@@ -102,4 +85,5 @@ pub struct QqChatAgentServiceRuntimeConfig {
     pub session_state_store: Arc<Mutex<QqChatSessionState>>,
     pub task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     pub tool_quota_session_state: Arc<Mutex<SessionToolQuotaState>>,
+    pub public_model_names: Vec<String>,
 }

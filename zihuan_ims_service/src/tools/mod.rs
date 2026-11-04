@@ -4,6 +4,7 @@ use std::sync::Arc;
 use zihuan_core::agent::sub_agent_context::{AgentServiceContext, MemoryCapability};
 use zihuan_core::agent::tools::Tool;
 use zihuan_core::agent::LLM_KIND_MAIN;
+use zihuan_core::constants::AGENT_FRAMEWORK_NAME;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
@@ -48,9 +49,6 @@ pub(crate) const DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES: &str = "search_similar_imag
 pub(crate) const DEFAULT_TOOL_SAVE_IMAGE: &str = "save_image";
 pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
 pub(crate) const DEFAULT_TOOL_MEMORY_AGENT: &str = "memory_agent";
-const AGENT_PUBLIC_NAME: &str = "紫幻zihuan-next";
-const AGENT_GITHUB_REPOSITORY: &str = "https://github.com/FredYakumo/zihuan-next";
-const AGENT_GIT_COMMIT_ID: &str = "unknown";
 
 pub fn build_info_brain_tools(
     default_tools_enabled: &HashMap<String, bool>,
@@ -62,7 +60,7 @@ pub fn build_info_brain_tools(
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     llm: Option<Arc<dyn LLMBase>>,
     memory_access: AgentMemoryAccessContext,
-    current_message: String,
+    public_model_names: Vec<String>,
     plugin_tool_names: &[String],
 ) -> Vec<Box<dyn Tool>> {
     fn is_enabled(map: &HashMap<String, bool>, name: &str) -> bool {
@@ -79,7 +77,7 @@ pub fn build_info_brain_tools(
     }
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
-        tools.push(Box::new(GetAgentPublicInfoTool::new(current_message)));
+        tools.push(Box::new(GetAgentPublicInfoTool::new(public_model_names)));
     }
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_FUNCTION_LIST) {
@@ -191,11 +189,14 @@ pub(crate) fn build_job_memory_resources(
         }
     })
 }
-pub(crate) fn format_public_info_message(message: &str) -> serde_json::Value {
-    serde_json::json!({
-        "agent_name": AGENT_PUBLIC_NAME,
-        "github_repository": AGENT_GITHUB_REPOSITORY,
-        "git_commit_id": AGENT_GIT_COMMIT_ID,
-        "message": message,
-    })
+
+/// The public-info line the agent answers model/identity questions from: the model names
+/// and the framework it runs under.
+pub(crate) fn format_public_info_message(model_names: &[String]) -> String {
+    let models = if model_names.is_empty() {
+        "暂未配置".to_string()
+    } else {
+        model_names.join("、")
+    };
+    format!("我的模型有: {models}，在{AGENT_FRAMEWORK_NAME}框架下工作")
 }

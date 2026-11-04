@@ -108,7 +108,6 @@ impl QqBrain {
         trace: &QqChatTaskTrace,
         turn_llm: &Arc<dyn LLMBase>,
         prepared_input: &PreparedCurrentTurnUserInput,
-        current_message: &str,
         sender_id: &str,
         target_id: &str,
         bot_id: &str,
@@ -247,7 +246,7 @@ impl QqBrain {
 
         if service.is_default_tool_enabled(DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
             brain.add_tool(wrap_brain_tool_with_quota(
-                GetAgentPublicInfoTool::new(current_message.to_string()),
+                GetAgentPublicInfoTool::new(ctx.model_names.clone()),
                 tool_quota.clone(),
             ));
         }

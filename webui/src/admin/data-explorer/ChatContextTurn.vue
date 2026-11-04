@@ -217,7 +217,7 @@
                     >{{ llmView(entry.id)?.content }}</pre>
                   </template>
                   <!-- The tool calls this inference's output requested, in request order: the
-                       loop reads as request → tools → results, the next bubble carries them as
+                       loop reads as request → tools → results, the next entry carries them as
                        its input messages. -->
                   <div
                     v-if="llmToolsFor(entry.id).length"
@@ -317,15 +317,15 @@
                   </div>
                 </div>
                 <div
-                  v-else-if="sentBubblesView(entry)"
-                  class="context-sent-bubbles"
+                  v-else-if="sentMessageBubblesView(entry)"
+                  class="context-sent-messages"
                 >
                   <div
-                    v-for="bubble in sentBubblesView(entry)"
+                    v-for="bubble in sentMessageBubblesView(entry)"
                     :key="bubble.index"
-                    class="context-sent-bubble"
+                    class="context-sent-message"
                   >
-                    <div class="context-sent-bubble-body">
+                    <div class="context-sent-message-body">
                       <template
                         v-for="(segment, segmentIndex) in bubble.segments"
                         :key="segmentIndex"
@@ -463,7 +463,7 @@
                   </div>
                 </div>
                 <JsonView
-                  v-if="!stageView(entry.id) && !sentBubblesView(entry)"
+                  v-if="!stageView(entry.id) && !sentMessageBubblesView(entry)"
                   :source="entry.detail"
                 />
               </template>
@@ -591,7 +591,7 @@ import {
   memoryToolAppearance,
   rateLimitSeverity,
   rateLimitText,
-  sentBubbles,
+  sentMessageBubbles,
   useChatContextTurn,
 } from "./ChatContextTurn";
 import JsonView from "./JsonView.vue";
@@ -606,9 +606,9 @@ function rateLimitClass(stage: string, detail: unknown): string {
   return severity ? `context-bubble--limit-${severity}` : "";
 }
 
-/** Outgoing bubbles a stage reports, rendered as chat bubbles inside the stage card. */
-function sentBubblesView(entry: { detail: unknown }) {
-  return sentBubbles(entry.detail);
+/** Outgoing messages a stage reports, rendered as message bubbles inside the stage card. */
+function sentMessageBubblesView(entry: { detail: unknown }) {
+  return sentMessageBubbles(entry.detail);
 }
 
 const {

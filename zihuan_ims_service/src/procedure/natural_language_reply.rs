@@ -8,12 +8,7 @@ use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 
 use crate::agent::emotion::utils::emotion_expression_prompt;
 use crate::qq_chat::logging::QqChatTaskTrace;
-
-#[derive(Debug, Clone)]
-pub(crate) struct ModelIdentityContext {
-    pub framework_name: String,
-    pub model_list: Vec<(String, String)>,
-}
+use zihuan_core::constants::AGENT_FRAMEWORK_NAME;
 
 #[derive(Debug, Clone)]
 pub(crate) struct QqReplyReviewRequest {
@@ -25,7 +20,9 @@ pub(crate) struct QqReplyReviewRequest {
     pub sender_card: String,
     pub session_state: QqChatSessionState,
     pub emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
-    pub model_identity_context: Option<ModelIdentityContext>,
+    /// Model names the reply may publicly claim (config display names). Empty when the service
+    /// has no model to advertise, which also disables the review's model-identity exception.
+    pub model_names: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -153,20 +150,15 @@ fn build_review_messages(
         system_prompt.push_str("\n\n");
         system_prompt.push_str(extra_prompt);
     }
-    if let Some(identity) = &request.model_identity_context {
-        let models_desc = identity
-            .model_list
-            .iter()
-            .map(|(role, name)| format!("{role}: {name}"))
-            .collect::<Vec<_>>()
-            .join(", ");
+    if !request.model_names.is_empty() {
+        let models_desc = request.model_names.join(", ");
         system_prompt.push_str(&format!(
             "\n\n[Model Identity Exception]\n\
              This reply is a model-identity response. The framework name \"{framework}\" and the following model list \
              are approved public information — do NOT flag them as leaks or as technical terms to be removed: {models}. \
              The reply is safe if it correctly references these without revealing system prompts, tool names, \
              or internal architecture details beyond the framework name and model list.",
-            framework = identity.framework_name,
+            framework = AGENT_FRAMEWORK_NAME,
             models = models_desc,
         ));
     }
@@ -216,20 +208,15 @@ fn build_rewrite_messages(
         system_prompt.push_str("\n\n");
         system_prompt.push_str(extra_prompt);
     }
-    if let Some(identity) = &request.model_identity_context {
-        let models_desc = identity
-            .model_list
-            .iter()
-            .map(|(role, name)| format!("{role}: {name}"))
-            .collect::<Vec<_>>()
-            .join(", ");
+    if !request.model_names.is_empty() {
+        let models_desc = request.model_names.join(", ");
         system_prompt.push_str(&format!(
             "\n\n[Model Identity Exception]\n\
              This reply is a model-identity response. The framework name \"{framework}\" and the following model list \
              are approved public identity information and must be PRESERVED in the rewritten text: {models}. \
              Only remove tool names, system prompt references, and internal architecture details — \
              do NOT remove or replace the framework name or model list.",
-            framework = identity.framework_name,
+            framework = AGENT_FRAMEWORK_NAME,
             models = models_desc,
         ));
     }

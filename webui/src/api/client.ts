@@ -1120,7 +1120,7 @@ export interface ServiceChatContextMedia {
   size_bytes?: number;
 }
 
-export interface ServiceChatContextBubble {
+export interface ServiceChatContextMessage {
   role: "user" | "assistant" | "tool";
   text: string;
   media: ServiceChatContextMedia[];
@@ -1156,7 +1156,7 @@ export interface ServiceChatContextTurn {
   /** Group the user message was sent in; absent for private chats. */
   group_name?: string;
   is_group?: boolean;
-  /** The message the user quoted, rendered as a collapsible block inside the user bubble. */
+  /** The message the user quoted, rendered as a collapsible block inside the user entry. */
   quoted?: ServiceChatContextQuoted;
   media: ServiceChatContextMedia[];
   entries: ServiceChatContextEntry[];
@@ -1174,7 +1174,7 @@ export interface ServiceChatContextResponse {
   backend: "memory" | "redis";
   sender_id: string;
   system_prompt?: string;
-  bubbles: ServiceChatContextBubble[];
+  entries: ServiceChatContextMessage[];
   turns: ServiceChatContextTurn[];
   /** Turns persisted in the relational database, oldest first. */
   archived: ServiceChatContextTurn[];

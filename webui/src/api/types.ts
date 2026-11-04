@@ -296,7 +296,7 @@ export type QqChatContextEvent =
       turn_id: string;
       created_at: string;
       user_text: string;
-      /** The message the user quoted, rendered as a collapsible block inside the user bubble. */
+      /** The message the user quoted, rendered as a collapsible block inside the user entry. */
       quoted?: QqContextQuoted;
       media: QqContextMediaRef[];
       /** Steer follow-up of the previous turn: shown in the same block, without a divider. */

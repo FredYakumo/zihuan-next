@@ -14,7 +14,7 @@ use zihuan_core::role::procedure::{
 };
 
 use super::utils::reply_plan::{
-    bubble_stage_summaries, build_reply_result, reply_batch_delays_ms, take_reply_directive,
+    build_reply_result, message_stage_summaries, reply_batch_delays_ms, take_reply_directive,
     REPLY_TYPING_DELAY_MS_PER_CHAR,
 };
 use crate::qq_chat::collect_available_media_from_brain_output;
@@ -32,7 +32,7 @@ use super::qq_brain::QqBrainOutput;
 /// multi-message dispatch, and the reply-quote directive all happen here.
 pub(crate) struct QqFormatOutputContext<'a> {
     pub(crate) trace: &'a QqChatTaskTrace,
-    /// Live context-view identity. When set, the formatted bubbles are listed as their own
+    /// Live context-view identity. When set, the formatted messages are listed as their own
     /// stage in the turn flow (Data Explorer / 数据检索上下文).
     pub(crate) identity: Option<QqChatTurnIdentity>,
     pub(crate) is_group: bool,
@@ -77,9 +77,9 @@ impl<'a> QqFormatOutput<'a> {
         let detail = json!({
             "suppress_send": output.suppress_send,
             "final_message": candidate,
-            "bubble_count": output.batches.len(),
+            "message_count": output.batches.len(),
             "typing_delay_ms_per_char": REPLY_TYPING_DELAY_MS_PER_CHAR,
-            "bubbles": bubble_stage_summaries(&output.batches, &output.batch_delays_ms),
+            "messages": message_stage_summaries(&output.batches, &output.batch_delays_ms),
         });
         self.context.trace.record_graph_stage("格式化输出", detail.clone());
         if let Some(identity) = self.context.identity.as_ref() {
