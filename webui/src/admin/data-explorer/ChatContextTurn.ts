@@ -438,6 +438,18 @@ export interface EmbeddingStageView {
   error?: string;
 }
 
+/** One request or response message of an inference, as the backend recorded it. */
+export function parseRawMessage(raw: unknown): StageRawMessage | undefined {
+  const entry = detailRecord(raw);
+  if (!entry) return undefined;
+  return {
+    role: typeof entry.role === "string" ? entry.role : "",
+    content: typeof entry.content === "string" ? entry.content : "",
+    toolCalls: Array.isArray(entry.tool_calls) ? entry.tool_calls : undefined,
+    toolCallId: typeof entry.tool_call_id === "string" ? entry.tool_call_id : undefined,
+  };
+}
+
 function detailRecord(detail: unknown): Record<string, unknown> | undefined {
   return detail && typeof detail === "object" ? (detail as Record<string, unknown>) : undefined;
 }
@@ -630,6 +642,8 @@ export interface LlmStageView {
   streaming: boolean;
   /** The request messages exactly as the model received them, oldest first. */
   messages: StageRawMessage[];
+  /** The assistant message this call returned; absent for records that predate it. */
+  output?: StageRawMessage;
   /** Assistant text of this call: streamed so far while running, settled once finished. */
   content?: string;
   /** Thinking text of this call, when the model emits any. */
@@ -710,18 +724,22 @@ export function llmStageView(detail: unknown, now: number): LlmStageView | undef
 
   const messages = Array.isArray(record.messages)
     ? record.messages.flatMap((item): StageRawMessage[] => {
-        const entry = detailRecord(item);
-        if (!entry) return [];
-        return [
-          {
-            role: typeof entry.role === "string" ? entry.role : "",
-            content: typeof entry.content === "string" ? entry.content : "",
-            toolCalls: Array.isArray(entry.tool_calls) ? entry.tool_calls : undefined,
-            toolCallId: typeof entry.tool_call_id === "string" ? entry.tool_call_id : undefined,
-          },
-        ];
+        const message = parseRawMessage(item);
+        return message ? [message] : [];
       })
     : [];
+
+  // Live reports carry the streamed accumulation (stream_content); the finish report of a
+  // non-streamed call carries only the settled text (content). Archived turns recorded
+  // before the finish report grew these fields still fall back to the streamed text.
+  const settled = detailText(record.content);
+  const content = settled ?? detailText(record.stream_content);
+  // Turns recorded before the response message was kept only carry its settled text, so the
+  // output entry is rebuilt from it; the tool calls of that response live on the entry's tool
+  // list. A running inference has no settled text yet, so it grows no output entry.
+  const output =
+    parseRawMessage(record.response) ??
+    (settled === undefined ? undefined : { role: "assistant", content: settled });
 
   return {
     status,
@@ -729,10 +747,8 @@ export function llmStageView(detail: unknown, now: number): LlmStageView | undef
     fields,
     streaming: record.streaming === true,
     messages,
-    // Live reports carry the streamed accumulation (stream_content); the finish report of a
-    // non-streamed call carries only the settled text (content). Archived turns recorded
-    // before the finish report grew these fields still fall back to the streamed text.
-    content: detailText(record.content) ?? detailText(record.stream_content),
+    output,
+    content,
     reasoning: detailText(record.reasoning) ?? detailText(record.stream_reasoning),
     error: detailText(record.error),
   };
@@ -836,17 +852,8 @@ export function stageText(
       : [];
     const rawMessages = Array.isArray(record.raw_messages)
       ? record.raw_messages.flatMap((item): StageRawMessage[] => {
-          const entry = detailRecord(item);
-          if (!entry) return [];
-          return [
-            {
-              role: typeof entry.role === "string" ? entry.role : "",
-              content: typeof entry.content === "string" ? entry.content : "",
-              toolCalls: Array.isArray(entry.tool_calls) ? entry.tool_calls : undefined,
-              toolCallId:
-                typeof entry.tool_call_id === "string" ? entry.tool_call_id : undefined,
-            },
-          ];
+          const message = parseRawMessage(item);
+          return message ? [message] : [];
         })
       : undefined;
     return { text, meta: meta.join(" · "), history, rawMessages, tools: stageTools(detail) };

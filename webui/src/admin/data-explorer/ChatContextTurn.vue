@@ -277,7 +277,7 @@
                     </div>
                   </div>
                   <div
-                    v-if="llmView(entry.id)?.messages.length"
+                    v-if="llmMessageList(entry.id).length"
                     class="context-llm-section"
                   >
                     <button
@@ -288,27 +288,29 @@
                       <span class="context-llm-toggle-icon">
                         {{ isLlmMessagesOpen(entry.id) ? "▾" : "▸" }}
                       </span>
-                      输入消息（{{ llmView(entry.id)?.messages.length }} 条）
+                      LLMMessage List（{{ llmMessageList(entry.id).length }} 条）
                     </button>
                     <div v-if="isLlmMessagesOpen(entry.id)" class="context-stage-raw">
                       <div
-                        v-for="(message, messageIndex) in llmView(entry.id)?.messages"
+                        v-for="(item, messageIndex) in llmMessageList(entry.id)"
                         :key="messageIndex"
                         class="context-stage-raw-item"
+                        :class="{ 'context-stage-raw-item--output': item.output }"
                       >
                         <div class="context-stage-raw-head">
-                          <span class="context-stage-raw-role" :data-role="message.role || undefined">{{ message.role }}</span>
+                          <span class="context-stage-raw-role" :data-role="item.message.role || undefined">{{ item.message.role }}</span>
+                          <span v-if="item.output" class="context-stage-raw-output-label">输出</span>
                           <span class="context-stage-raw-index">#{{ messageIndex + 1 }}</span>
                         </div>
-                        <pre class="context-stage-raw-content">{{ message.content }}</pre>
-                        <template v-if="message.toolCalls?.length">
+                        <pre class="context-stage-raw-content">{{ item.message.content }}</pre>
+                        <template v-if="item.message.toolCalls?.length">
                           <div class="context-stage-raw-tool-label">工具调用</div>
-                          <JsonView :source="message.toolCalls" />
+                          <JsonView :source="item.message.toolCalls" />
                         </template>
                         <div
-                          v-if="message.toolCallId"
+                          v-if="item.message.toolCallId"
                           class="context-stage-raw-tool-id mono"
-                        >tool_call_id: {{ message.toolCallId }}</div>
+                        >tool_call_id: {{ item.message.toolCallId }}</div>
                       </div>
                     </div>
                   </div>
@@ -593,6 +595,7 @@ import {
   rateLimitText,
   sentMessageBubbles,
   useChatContextTurn,
+  type StageRawMessage,
 } from "./ChatContextTurn";
 import JsonView from "./JsonView.vue";
 import ContextSubAgentBox from "./ContextSubAgentBox.vue";
@@ -661,6 +664,25 @@ function embeddingView(id: string) {
 
 function llmView(id: string) {
   return stageView(id)?.llm;
+}
+
+/**
+ * The messages of one inference in order: everything the model was sent, then the message it
+ * returned. The response carries the tool calls of a loop iteration and the settled reply of
+ * the last one, which no later request would otherwise show. A response with neither text nor
+ * tool calls only carried thinking, which the entry already shows as 思考过程.
+ */
+function llmMessageList(id: string) {
+  const view = llmView(id);
+  if (!view) return [];
+  const messages: Array<{ message: StageRawMessage; output: boolean }> = view.messages.map(
+    (message) => ({ message, output: false }),
+  );
+  const output = view.output;
+  if (output && (output.content.trim() || output.toolCalls?.length)) {
+    messages.push({ message: output, output: true });
+  }
+  return messages;
 }
 
 /** A call whose rich display replaces the plain payload: memory tools and sub-agent calls. */
