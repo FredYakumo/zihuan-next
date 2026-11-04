@@ -166,7 +166,7 @@ pub enum QqChatContextEvent {
         turn_id: String,
         created_at: String,
         user_text: String,
-        /// The message the user quoted, shown inside the user bubble in the Data Explorer flow.
+        /// The message the user quoted, shown inside the user entry in the Data Explorer flow.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         quoted: Option<QqChatQuotedMessage>,
         #[serde(default)]
@@ -205,7 +205,7 @@ pub enum QqChatContextEvent {
         at: String,
         stage: String,
         /// Stable id of a stage that reports progress more than once; a later event with the
-        /// same id replaces the earlier one instead of appending a second bubble.
+        /// same id replaces the earlier one instead of appending a second entry.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,
         detail: Value,
@@ -425,7 +425,7 @@ pub fn record_qq_chat_turn_event(event: &QqChatContextEvent) {
             QqChatContextEvent::Stage { turn_id, at, stage, detail, id, .. } => {
                 if let Some(turn) = turns.iter_mut().find(|turn| turn.turn_id == *turn_id) {
                     // A progress stage (embedding start → finish) keeps one entry: the later
-                    // event replaces the earlier detail instead of appending a second bubble.
+                    // event replaces the earlier detail instead of appending a second entry.
                     let updated = id.as_ref().is_some_and(|stage_id| {
                         turn.entries.iter_mut().rev().any(|entry| match entry {
                             QqChatTurnEntry::Stage { id: existing, detail: slot, .. }
@@ -680,7 +680,7 @@ pub fn emit_qq_context_stage(
 }
 
 /// Emit a stage that reports progress under a stable `stage_id`; a later event with the same id
-/// replaces the earlier bubble in the context view instead of adding a second one.
+/// replaces the earlier entry in the context view instead of adding a second one.
 pub fn emit_qq_context_stage_with_id(
     agent_id: &str,
     sender_id: &str,

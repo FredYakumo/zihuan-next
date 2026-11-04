@@ -1,12 +1,3 @@
-//! The meta-query path of one turn: intents like asking for the tool list, the system
-//! prompt, or the model name are answered directly with a dedicated LLM context
-//! (pre-fetched function list and public info) without exposing any tool specs.
-//!
-//! The LLM receives only safe, pre-fetched data as text context and is instructed to
-//! rephrase it into natural language. The result still goes through the after-brain
-//! review as a safety net. Chain (documents/procedure.md): meta-query brain (a single
-//! direct inference) -> after-brain -> format-output.
-
 use std::sync::{Arc, Mutex};
 
 use zihuan_core::error::{Error, Result};
@@ -57,7 +48,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
     };
     let function_list =
         zihuan_core::command::build_help_text().unwrap_or_else(|| "暂无可用功能信息。".to_string());
-    let public_info = format_public_info_message(&turn.current_message).to_string();
+    let public_info = format_public_info_message(&ctx.model_names);
 
     let style_prompt = ctx.resolved_language_style.as_ref().map(|item| item.style_prompt.as_str());
     let (emotion_prompt, suppress_language_style) = {

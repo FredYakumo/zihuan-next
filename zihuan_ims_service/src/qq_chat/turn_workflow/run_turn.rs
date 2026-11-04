@@ -196,11 +196,14 @@ pub(crate) fn run_turn(
         }),
     );
 
+    // Only adversarial leak probes (tool list, system prompt) short-circuit to the meta-query
+    // chain: it answers directly with pre-fetched safe data and has no history or memory access.
+    // Model/identity questions are legitimate conversation, so they run the normal chain where
+    // the brain agent can answer from `get_agent_public_info` with context and memory, and the
+    // after-brain polishes the reply.
     let is_meta_query = matches!(
         intent_trace.category,
-        IntentCategory::AskToolList
-            | IntentCategory::AskSystemPrompt
-            | IntentCategory::AskModelName
+        IntentCategory::AskToolList | IntentCategory::AskSystemPrompt
     );
 
     let turn_context = TurnContext {

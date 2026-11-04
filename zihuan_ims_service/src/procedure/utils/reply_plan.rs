@@ -9,7 +9,7 @@
 //!   images, control directives) so each carries its own protocol-level representation.
 //! - **Line dispatch** — every newline boundary in the model output becomes a separate
 //!   outgoing message (blank lines are dropped), so a reply written as several lines is
-//!   delivered as several human-paced messages instead of one bubble with embedded gaps.
+//!   delivered as several human-paced messages instead of one message with embedded gaps.
 //! - **Adaptive dispatch** — voluminous content is consolidated into forward-messages to
 //!   avoid chat flooding; concise replies stay as individual sequential messages.
 //! - **Protocol normalization** — applies QQ-specific invariants (e.g. mandatory spacing
@@ -39,7 +39,7 @@ pub(crate) use crate::qq_chat::model::{
 pub(crate) const QQ_CHAT_REPLY_DIRECTIVE_RUNTIME_KEY: &str = "qq_chat_reply_directive";
 
 /// Simulated typing delay inserted before each follow-up message: the receiving side
-/// sees the bot "type" for `chars * 15ms` instead of dumping all bubbles at once.
+/// sees the bot "type" for `chars * 15ms` instead of dumping all messages at once.
 pub(crate) const REPLY_TYPING_DELAY_MS_PER_CHAR: u64 = 15;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -95,10 +95,10 @@ pub(crate) fn reply_batch_delays_ms(batches: &[Vec<Message>]) -> Vec<u64> {
         .collect()
 }
 
-/// Render-friendly description of one outbound bubble for the context view: text segments
+/// Render-friendly description of one outbound message for the context view: text segments
 /// carry their full text and forward nodes are listed as an array, so the view can draw the
-/// actual chat bubbles instead of a wire-protocol dump.
-pub(crate) fn bubble_stage_summaries(batches: &[Vec<Message>], delays_ms: &[u64]) -> Vec<Value> {
+/// message bubbles instead of a wire-protocol dump.
+pub(crate) fn message_stage_summaries(batches: &[Vec<Message>], delays_ms: &[u64]) -> Vec<Value> {
     batches
         .iter()
         .enumerate()

@@ -64,7 +64,7 @@
     background: color-mix(in srgb, var(--td-brand-color) 10%, transparent);
 }
 
-/* Quoted message nested inside the user bubble, between the title and the user's own text. */
+/* Quoted message nested inside the user entry, between the title and the user's own text. */
 .context-quote {
     position: relative;
     margin-bottom: 8px;
@@ -285,7 +285,7 @@
     color: var(--td-text-color-secondary);
 }
 
-/* Group name under the user bubble title; only group messages carry one. */
+/* Group name under the user entry title; only group messages carry one. */
 .context-bubble-group {
     margin: -2px 0 6px;
     font-size: 11px;
@@ -361,7 +361,7 @@
     overflow-wrap: anywhere;
 }
 
-/* A folded section of the embedding bubble: the summary line is the toggle. */
+/* A folded section of the embedding entry: the summary line is the toggle. */
 .context-embedding-section {
     display: grid;
     gap: 6px;
@@ -440,7 +440,7 @@
     color: var(--td-error-color);
 }
 
-/* LLM model inference: one bubble per model call, the same live-facts layout as embedding. */
+/* LLM model inference: one entry per model call, the same live-facts layout as embedding. */
 .context-llm {
     display: grid;
     gap: 8px;
@@ -492,7 +492,7 @@
     overflow: auto;
 }
 
-/* A folded section of the LLM bubble: the summary line is the toggle. */
+/* A folded section of the LLM entry: the summary line is the toggle. */
 .context-llm-section {
     display: grid;
     gap: 6px;
@@ -524,6 +524,54 @@
 .context-llm--error .context-llm-status,
 .context-llm-error {
     color: var(--td-error-color);
+}
+
+/* Tool calls the inference's output requested, integrated below its response text. */
+.context-llm-tools-label {
+    margin-bottom: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--td-text-color-secondary);
+}
+
+/* One integrated tool call: the recorded payload plus the rich display its tool type gets
+   (memory tone card, nested sub-agent box); the corner toggle switches to the plain payload. */
+.context-llm-tool {
+    position: relative;
+    display: grid;
+    gap: 6px;
+    padding: 6px 8px 24px;
+    border-radius: 8px;
+    background: var(--td-bg-color-secondarycontainer);
+    font-size: 12px;
+}
+
+.context-llm-tool[data-memory-tone] {
+    background: color-mix(in srgb, var(--memory-tool-color) 7%, var(--td-bg-color-secondarycontainer));
+    border: 1px solid color-mix(in srgb, var(--memory-tool-color) 30%, transparent);
+}
+
+.context-llm-tool-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+
+.context-stage-raw-role[data-role="user"],
+.context-stage-history-role[data-role="user"] {
+    color: var(--td-brand-color);
+}
+
+.context-stage-raw-role[data-role="assistant"],
+.context-stage-history-role[data-role="assistant"] {
+    color: #52c41a;
+}
+
+.context-stage-raw-role[data-role="tool"],
+.context-stage-history-role[data-role="tool"] {
+    color: var(--td-warning-color);
 }
 
 /* A stage's thinking reuses the assistant's "思考过程" block, so no separate style here. */
@@ -677,14 +725,14 @@
 }
 
 
-.context-sent-bubbles {
+.context-sent-messages {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
 }
 
-.context-sent-bubble {
+.context-sent-message {
     max-width: 82%;
     padding: 8px 12px;
     border-radius: 12px;
@@ -692,7 +740,7 @@
     border: 1px solid rgba(82, 196, 26, 0.3);
 }
 
-.context-sent-bubble-body {
+.context-sent-message-body {
     font-size: 13px;
     line-height: 1.6;
     color: var(--td-text-color-primary);
@@ -736,7 +784,7 @@
     margin-top: 2px;
 }
 
-/* Typing delay that preceded this bubble, shown under the message text. */
+/* Typing delay that preceded this message bubble, shown under the message text. */
 .context-sent-delay {
     margin: 4px 0 0;
     font-size: 11px;

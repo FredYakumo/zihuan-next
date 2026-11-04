@@ -14,7 +14,7 @@ use crate::model_inference::inference_function::compact_message::estimate_messag
 use crate::model_inference::message_content_utils::raw_message_content;
 use crate::qq_context::{with_turn_trace_context, QQ_CONTEXT_STAGE_LLM};
 
-/// Minimum gap between two live stream updates of one inference bubble. Each update carries
+/// Minimum gap between two live stream updates of one inference entry. Each update carries
 /// the full accumulated text, so emitting per token would scale quadratically with the reply.
 const LLM_STREAM_UPDATE_INTERVAL: Duration = Duration::from_millis(300);
 
@@ -148,11 +148,11 @@ pub fn load_usage_summaries(
 
 /// One LLM inference reported to the Data Explorer context view.
 ///
-/// The bubble appears as soon as the inference starts, carrying what is already known (model,
+/// The entry appears as soon as the inference starts, carrying what is already known (model,
 /// the exact request messages, estimated input tokens); streamed responses update it live with
 /// the accumulated text and the time to first token, and the finish event replaces its detail
 /// with the measured duration and the token usage. Like the embedding stage, the whole run
-/// reports under one stable stage id, so start, stream updates and finish fold into one bubble.
+/// reports under one stable stage id, so start, stream updates and finish fold into one entry.
 ///
 /// The run only exists when the calling thread is inside a turn's [`crate::qq_context::TurnTraceGuard`]
 /// scope; otherwise every constructor returns `None` and inference proceeds untraced.
@@ -214,7 +214,7 @@ impl LlmStageRun {
         })
     }
 
-    /// Push the streamed text accumulated so far into the bubble, throttled so long replies do
+    /// Push the streamed text accumulated so far into the entry, throttled so long replies do
     /// not flood the context feed. The first token reports immediately (time to first token).
     fn stream_update(&mut self, content: &str, reasoning: &str, first: Option<Duration>) {
         if let Some(first) = first {
@@ -237,11 +237,26 @@ impl LlmStageRun {
         emit_llm_stage(&self.context, &self.stage_id, &self.detail);
     }
 
-    fn finish(mut self, elapsed: Duration, usage: Option<&TokenUsage>, first: Option<Duration>) {
+    fn finish(
+        mut self,
+        elapsed: Duration,
+        usage: Option<&TokenUsage>,
+        first: Option<Duration>,
+        response: &LLMMessage,
+    ) {
         self.detail["status"] = json!("done");
         self.detail["duration_ms"] = json!(elapsed.as_millis());
         if let Some(first) = first {
             self.detail["first_token_ms"] = json!(first.as_secs_f64() * 1000.0);
+        }
+        // The settled response of this call. Non-streaming calls never produce stream_content,
+        // and a tool-call iteration's assistant text would otherwise never show anywhere in the
+        // flow, so the finished entry carries the final text and thinking explicitly.
+        if let Some(content) = response.content_text() {
+            self.detail["content"] = json!(content);
+        }
+        if let Some(reasoning) = &response.reasoning_content {
+            self.detail["reasoning"] = json!(reasoning);
         }
         if let Some(usage) = usage {
             self.detail["usage"] = json!(usage);
@@ -321,7 +336,7 @@ impl LLMBase for TrackedLlm {
         // Report the result before persisting usage: the context view should not wait on the
         // usage database write.
         if let Some(stage) = stage {
-            stage.finish(started.elapsed(), message.usage.as_ref(), None);
+            stage.finish(started.elapsed(), message.usage.as_ref(), None, &message);
         }
         record_usage(&self.config_id, message.usage.clone(), started.elapsed(), None);
         Ok(message)
@@ -348,7 +363,7 @@ impl StreamingLLMBase for TrackedLlm {
                 .expect("streaming model")
                 .inference_streaming(param, relay_tx);
             // The relay watches every token before it reaches the caller: it accumulates the
-            // streamed text into the context bubble and notes when the first token arrived.
+            // streamed text into the context entry and notes when the first token arrived.
             let relay = async move {
                 let mut first = None;
                 let mut content = String::new();
@@ -372,7 +387,7 @@ impl StreamingLLMBase for TrackedLlm {
             // Report the result before persisting usage: the context view should not wait on
             // the usage database write.
             if let Some(stage) = stage {
-                stage.finish(started.elapsed(), message.usage.as_ref(), first);
+                stage.finish(started.elapsed(), message.usage.as_ref(), first, &message);
             }
             if message.usage.is_some() || first.is_some() {
                 record_usage(&self.config_id, message.usage.clone(), started.elapsed(), first);

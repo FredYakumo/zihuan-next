@@ -1681,7 +1681,7 @@ async fn load_message_sender_profiles(
 }
 
 #[derive(Serialize)]
-struct ContextBubble {
+struct ContextEntry {
     role: &'static str,
     text: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -1710,9 +1710,9 @@ struct ServiceChatContextResponse {
     sender_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     system_prompt: Option<String>,
-    bubbles: Vec<ContextBubble>,
+    entries: Vec<ContextEntry>,
     /// Complete recorded turns, including tool calls, stages and per-turn usage. The UI renders
-    /// this flow; `bubbles` mirrors the conversation cache for context totals.
+    /// this flow; `entries` mirrors the conversation cache for context totals.
     turns: Vec<ContextTurn>,
     /// Turns archived in the relational database, oldest first, excluding those still in `turns`.
     archived: Vec<ContextTurn>,
@@ -1736,7 +1736,7 @@ struct ContextTurn {
     group_name: Option<String>,
     #[serde(default)]
     is_group: bool,
-    /// The message the user quoted, rendered as a collapsible quote block inside the user bubble.
+    /// The message the user quoted, rendered as a collapsible quote block inside the user entry.
     #[serde(skip_serializing_if = "Option::is_none")]
     quoted: Option<zihuan_core::qq_context::QqChatQuotedMessage>,
     media: Vec<ContextMedia>,
@@ -1913,7 +1913,7 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
         None => None,
     };
 
-    let mut bubbles = Vec::with_capacity(messages.len());
+    let mut entries = Vec::with_capacity(messages.len());
     let mut system_prompt: Option<String> = None;
     let mut input_tokens = 0usize;
     let mut output_tokens = 0usize;
@@ -1976,7 +1976,7 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
                 }
             }
         }
-        bubbles.push(ContextBubble {
+        entries.push(ContextEntry {
             role,
             estimated_tokens: estimate_messages_tokens(std::slice::from_ref(message)),
             text,
@@ -2080,7 +2080,7 @@ pub async fn query_service_chat_context(req: &mut Request, res: &mut Response, _
         system_prompt,
         estimated_context_tokens: estimate_messages_tokens(&messages),
         context_limit_tokens,
-        bubbles,
+        entries,
         turns,
         archived,
         input_tokens,

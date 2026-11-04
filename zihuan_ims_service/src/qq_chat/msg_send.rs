@@ -42,7 +42,7 @@ pub(crate) struct QqChatServiceSendContext<'a> {
 }
 
 pub(crate) fn send_planned_batches(ctx: &QqChatServiceSendContext<'_>, batches: &[Vec<Message>]) {
-    // Human-paced dispatch: every follow-up bubble waits for the typing time of its own
+    // Human-paced dispatch: every follow-up message waits for the typing time of its own
     // text, so a multi-message reply does not land as one instant burst.
     let delays_ms = reply_batch_delays_ms(batches);
     if ctx.is_group {

@@ -162,7 +162,7 @@ impl EmbeddingBase for LoggedEmbeddingModel {
 
 /// One embedding inference reported to the Data Explorer context view.
 ///
-/// The bubble appears as soon as the inference starts, carrying what is already known (model,
+/// The entry appears as soon as the inference starts, carrying what is already known (model,
 /// backend, device, the exact input texts); the finish event replaces its detail with the
 /// measured duration, the output shape and the vectors themselves.
 struct EmbeddingStageRun {
