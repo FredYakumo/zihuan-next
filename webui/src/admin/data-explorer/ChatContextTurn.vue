@@ -78,6 +78,25 @@
               </div>
               <template v-else>
                 <div
+                  v-if="stageView(entry.id)?.history?.length && !isStageRawView(entry.id)"
+                  class="context-stage-history"
+                >
+                  <div class="context-stage-history-label">
+                    随本轮发送的历史消息（{{ stageView(entry.id)?.history?.length }} 条）
+                  </div>
+                  <div
+                    v-for="(item, historyIndex) in stageView(entry.id)?.history"
+                    :key="historyIndex"
+                    class="context-stage-history-item"
+                  >
+                    <div class="context-stage-history-head">
+                      <span class="context-stage-history-role" :data-role="item.role || undefined">{{ item.role }}</span>
+                      <span class="context-stage-history-chars">{{ item.chars }} 字</span>
+                    </div>
+                    <pre class="context-stage-history-text">{{ item.text }}</pre>
+                  </div>
+                </div>
+                <div
                   v-if="embeddingView(entry.id)"
                   class="context-embedding"
                   :class="`context-embedding--${embeddingView(entry.id)?.status}`"
@@ -411,25 +430,6 @@
                     v-if="stageThinkingOpen(entry.id)"
                     class="context-thinking-content"
                   >{{ stageView(entry.id)?.reasoning }}</pre>
-                </div>
-                <div
-                  v-if="stageView(entry.id)?.history?.length && !isStageRawView(entry.id)"
-                  class="context-stage-history"
-                >
-                  <div class="context-stage-history-label">
-                    随本轮发送的历史消息（{{ stageView(entry.id)?.history?.length }} 条）
-                  </div>
-                  <div
-                    v-for="(item, historyIndex) in stageView(entry.id)?.history"
-                    :key="historyIndex"
-                    class="context-stage-history-item"
-                  >
-                    <div class="context-stage-history-head">
-                      <span class="context-stage-history-role" :data-role="item.role || undefined">{{ item.role }}</span>
-                      <span class="context-stage-history-chars">{{ item.chars }} 字</span>
-                    </div>
-                    <pre class="context-stage-history-text">{{ item.text }}</pre>
-                  </div>
                 </div>
                 <div v-if="isStageRawView(entry.id)" class="context-stage-raw">
                   <div
