@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex};
 pub(crate) use self::core::{
     build_group_system_prompt, build_private_system_prompt, build_user_message,
     collect_available_media_from_brain_output, compact_turn_history, split_current_user_body,
+    DEFAULT_REPLY_REQUEST,
 };
 use self::core::{
     build_info_brain_tools, expand_messages_for_inference,

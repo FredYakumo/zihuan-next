@@ -270,7 +270,8 @@ pub(crate) fn process_event(
 ///
 /// The first pass handles the user's message; every later pass replays queued steer
 /// messages and is marked as a continuation in the context view. Each pass is one turn
-/// executed by [`super::turn_workflow::run_turn`].
+/// executed by [`super::turn_workflow::run_turn`]. Steers are aggregated per sender, so
+/// a pass may replay messages from either conversation of that sender.
 fn run_turn_group(
     service: &QqChatAgentService,
     trace: &QqChatTaskTrace,

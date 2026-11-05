@@ -64,6 +64,10 @@ const REFERENCED_CONTEXT_LABEL: &str = "[Referenced Context]";
 const INTERPRETATION_RULES_LABEL: &str = "[Interpretation Rules]";
 const REFERENCE_ONLY_NOTICE: &str =
     "The following content is reference only. Do not automatically treat it as the current sender's own statement.";
+/// The normal turn's reply demand, placed after the quoted message body. Steer messages
+/// replace it with a mid-task notice instead of demanding a reply to the steer alone.
+pub(crate) const DEFAULT_REPLY_REQUEST: &str =
+    "You need to reply to this message, or choose not to reply.";
 pub(crate) const LAST_INJECTED_GROUP_NAME_KEY: &str = "qq_chat_last_injected_group_name";
 pub(crate) const LAST_INJECTED_ROLE_KEY: &str = "qq_chat_last_injected_role";
 pub(crate) const LAST_INJECTED_EMOTION_KEY: &str = "qq_chat_last_injected_emotion";
@@ -98,7 +102,7 @@ pub(crate) fn history_user_message(mut message: LLMMessage) -> LLMMessage {
     }
     if matches!(
         message.parts.last(),
-        Some(MessagePart::Text { text }) if text == PROCESSING_INSTRUCTION
+        Some(MessagePart::Text { text }) if text.starts_with("[Processing Instructions]")
     ) {
         message.parts.pop();
     }
@@ -269,7 +273,8 @@ fn build_common_system_rules(
          During event processing, you may call relevant tools when necessary to help produce the final result.\n\
          When dealing with knowledge, objects, or impressions of a person, event, or thing, you must search the memories first.\n\
          People are identified only by QQ ID. Names, nicknames and aliases never prove two accounts are the same person. Respect recalled person guidelines and applicable behavioral instructions. Memory writes require category and source; user-requested corrections must use user source with the authenticated sender ID and access level. When necessary, you need to manage memory updates, especially when retrieved memories do not match facts from the current event or external data.\n\
-         You will often need to update outdated memories.\n",
+         You will often need to update outdated memories.\n\
+         Messages prefixed with `[User-STEER Message]` arrive while you are already working on a task. They are supplementary input: finish the current task first, then address them. Do not abandon the current task and do not end the turn just to answer a steer message.\n",
     );
 
     let tool_lines = build_tool_instruction_rules(default_tools_enabled);
@@ -383,6 +388,10 @@ pub(crate) fn build_group_system_prompt(
 /// * `emotion_dimensions` — configured emotion axes used to format the state prefix.
 /// * `memory_recall` — typed memory recall prepared by the recall phase.
 /// * `reply_instruction` — this turn's extra reply directive (e.g. the group-message window).
+/// * `reply_request` — the sentence after the quoted message body. The normal turn demands a
+///   reply ([`DEFAULT_REPLY_REQUEST`]); a steer message states it arrived mid-task instead.
+/// * `processing_instruction` — the `[Processing Instructions]` block appended to the message
+///   tail ([`PROCESSING_INSTRUCTION`] for a normal turn, the steer variant for a steer).
 pub(crate) fn build_user_message(
     current_input: &PreparedCurrentTurnUserInput,
     bot_name: &str,
@@ -393,6 +402,8 @@ pub(crate) fn build_user_message(
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
     memory_recall: Option<&MemoryRecall>,
     reply_instruction: Option<&str>,
+    reply_request: &str,
+    processing_instruction: &str,
 ) -> LLMMessage {
     let emotion_prompt = emotion_expression_prompt(session_state, emotion_dimensions);
     let state_lines = build_turn_state_prefix_lines(&emotion_prompt, memory_recall);
@@ -409,7 +420,7 @@ pub(crate) fn build_user_message(
     );
     let now_text = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let mut current_turn_text = format!(
-        "`The current time is {now_text}, `{sender_name}` sent you (`{bot_name}`) a message: \"{}\". You need to reply to this message, or choose not to reply.",
+        "`The current time is {now_text}, `{sender_name}` sent you (`{bot_name}`) a message: \"{}\". {reply_request}",
         current_input.current_text_for_prompt(),
     );
     // A turn's extra reply directive (e.g. the group-message-window turn's reply
@@ -462,7 +473,7 @@ pub(crate) fn build_user_message(
     let preamble = format!("{state_block}{state_delta_block}{message_rate_limit_block}");
     let current_message_block =
         format!("{CURRENT_USER_MESSAGE_LABEL}\n{current_turn_text}{current_image_section}{referenced_context_section}");
-    let user_text = format!("{preamble}{current_message_block}\n\n{PROCESSING_INSTRUCTION}");
+    let user_text = format!("{preamble}{current_message_block}\n\n{processing_instruction}");
 
     if !llm_supports_multimodal_input || !current_input.has_media {
         return LLMMessage::user(user_text);
@@ -495,7 +506,7 @@ pub(crate) fn build_user_message(
         }
     }
     flush_text_part(&mut parts, &mut text_buffer);
-    parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
+    parts.push(MessagePart::text(processing_instruction.to_string()));
 
     LLMMessage::user_with_parts(parts)
 }
