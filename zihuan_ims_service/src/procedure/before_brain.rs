@@ -18,6 +18,7 @@ use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::qq_context::emit_qq_context_stage;
 use zihuan_core::steer::message_with_api_style;
+use zihuan_core::steer::PROCESSING_INSTRUCTION;
 
 use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
 use crate::qq_chat::logging::{QqChatTaskTrace, QqChatTurnIdentity};
@@ -123,6 +124,8 @@ pub(crate) fn assemble_before_brain(
                 &ctx.emotion_dimensions,
                 memory_recall.as_ref(),
                 reply_instruction,
+                crate::qq_chat::DEFAULT_REPLY_REQUEST,
+                PROCESSING_INSTRUCTION,
             ),
             ctx.llm.api_style(),
         );
