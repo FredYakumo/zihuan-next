@@ -21,6 +21,8 @@ use zihuan_core::ims_bot_adapter::BotAdapterConnection;
 use zihuan_core::storage::{self, ConnectionConfig, ConnectionKind};
 
 const IMAGE: &str = "wechatpadpro/wechatpadpro:latest";
+
+const HOOK_JS: &str = include_str!("wechat_hook.mjs");
 const DEFAULT_API_PORT: u16 = 8849;
 const PROBE_ATTEMPTS: usize = 45;
 const PROBE_INTERVAL: Duration = Duration::from_secs(2);
@@ -54,13 +56,25 @@ impl SpecialPluginInstaller for WeChatPadProSpecialPluginInstaller {
 
             let api_port = pick_free_port(DEFAULT_API_PORT);
             let web_port = pick_free_port(api_port + 1);
+            let hook_port = pick_free_port(web_port + 1);
             let admin_key = uuid::Uuid::new_v4().simple().to_string();
             // MySQL password shares the admin-key alphabet: hex only, safe inside the DSN.
             let mysql_password = uuid::Uuid::new_v4().simple().to_string();
             let project = format!("zihuan-wechatpadpro-{}", short_id(&plugin.id));
 
-            write_env(&install_dir, api_port, web_port, &project, &admin_key, &mysql_password)
-                .await?;
+            write_env(
+                &install_dir,
+                api_port,
+                web_port,
+                hook_port,
+                &project,
+                &admin_key,
+                &mysql_password,
+            )
+            .await?;
+            tokio::fs::write(install_dir.join("wechat_hook.mjs"), HOOK_JS)
+                .await
+                .map_err(|error| format!("写入 webhook 中继脚本失败: {error}"))?;
             let compose_path = install_dir.join("docker-compose.yaml");
             tokio::fs::write(&compose_path, compose_yaml())
                 .await
@@ -73,7 +87,7 @@ impl SpecialPluginInstaller for WeChatPadProSpecialPluginInstaller {
             let reachable = wait_for_api(&[api_port, web_port]).await;
             let pad_port = reachable.unwrap_or(api_port);
 
-            let connection = bot_adapter_connection(&plugin, pad_port, &admin_key);
+            let connection = bot_adapter_connection(&plugin, pad_port, hook_port, &admin_key);
             storage::upsert_connection(connection.clone()).map_err(|error| error.to_string())?;
 
             plugin.connection_ids = vec![connection.config_id.clone()];
@@ -87,6 +101,9 @@ impl SpecialPluginInstaller for WeChatPadProSpecialPluginInstaller {
                 Value::String(install_dir.to_string_lossy().to_string());
             plugin.extra_install_metadata["api_port"] = Value::from(pad_port);
             plugin.extra_install_metadata["web_port"] = Value::from(web_port);
+            plugin.extra_install_metadata["hook_port"] = Value::from(hook_port);
+            plugin.extra_install_metadata["relay_url"] =
+                Value::String(format!("http://127.0.0.1:{hook_port}"));
             plugin.extra_install_metadata["pad_url"] =
                 Value::String(format!("http://127.0.0.1:{pad_port}"));
             plugin.extra_install_metadata["api_reachable"] = Value::Bool(reachable.is_some());
@@ -142,13 +159,19 @@ impl SpecialPluginInstaller for WeChatPadProSpecialPluginInstaller {
     }
 }
 
-fn bot_adapter_connection(plugin: &PluginRecord, port: u16, admin_key: &str) -> ConnectionConfig {
+fn bot_adapter_connection(
+    plugin: &PluginRecord,
+    port: u16,
+    hook_port: u16,
+    admin_key: &str,
+) -> ConnectionConfig {
     let wechat = WeChatPadConfig {
         pad_url: format!("http://127.0.0.1:{port}"),
         pad_token: admin_key.to_string(),
         self_wxid: String::new(),
-        webhook_token: uuid::Uuid::new_v4().simple().to_string(),
+        webhook_token: String::new(),
         webhook_url: None,
+        relay_url: Some(format!("http://127.0.0.1:{hook_port}")),
         bot_names: Vec::new(),
         nickname: Some(plugin.name.clone()),
     };
@@ -200,6 +223,7 @@ async fn write_env(
     dir: &Path,
     api_port: u16,
     web_port: u16,
+    hook_port: u16,
     project: &str,
     admin_key: &str,
     mysql_password: &str,
@@ -210,6 +234,9 @@ CONTAINER_PREFIX={project}\n\
 ADMIN_KEY={admin_key}\n\
 API_PORT={api_port}\n\
 WEB_PORT={web_port}\n\
+HOOK_PORT={hook_port}\n\
+HOOK_SELF_URL=http://hook:8080/hook\n\
+PAD_URLS=http://wechatpadpro:8080,http://wechatpadpro:1238\n\
 TZ=Asia/Shanghai\n\
 MYSQL_ROOT_PASSWORD={mysql_password}\n\
 MYSQL_DATABASE=weixin\n\
@@ -246,6 +273,22 @@ fn compose_yaml() -> String {
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - wechatpadpro
+
+  hook:
+    image: node:22-alpine
+    container_name: ${{CONTAINER_PREFIX}}-hook
+    restart: unless-stopped
+    command: ["node", "/app/wechat_hook.mjs"]
+    environment:
+      - HOOK_SELF_URL=${{HOOK_SELF_URL}}
+      - PAD_URLS=${{PAD_URLS}}
+      - PAD_TOKEN=${{ADMIN_KEY}}
+    volumes:
+      - ./wechat_hook.mjs:/app/wechat_hook.mjs:ro
+    ports:
+      - "127.0.0.1:${{HOOK_PORT}}:8080"
     networks:
       - wechatpadpro
 

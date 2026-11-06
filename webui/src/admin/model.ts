@@ -90,6 +90,7 @@ export interface ConnectionFormState {
   wechat_self_wxid: string;
   wechat_webhook_token: string;
   wechat_webhook_url: string;
+  wechat_relay_url: string;
   wechat_nickname: string;
   web_search_engine_provider: string;
   web_search_engine_api_token: string;
@@ -410,6 +411,7 @@ export function defaultConnectionForm(): ConnectionFormState {
     wechat_self_wxid: "",
     wechat_webhook_token: "",
     wechat_webhook_url: "",
+    wechat_relay_url: "",
     wechat_nickname: "",
     web_search_engine_provider: "tavily",
     web_search_engine_api_token: "",
@@ -715,6 +717,7 @@ export function connectionFormFromConfig(
         form.wechat_self_wxid = String(wechat?.self_wxid ?? "");
         form.wechat_webhook_token = String(wechat?.webhook_token ?? "");
         form.wechat_webhook_url = String(wechat?.webhook_url ?? "");
+        form.wechat_relay_url = String(wechat?.relay_url ?? "");
         form.wechat_nickname = String(wechat?.nickname ?? "");
       }
       break;
@@ -857,6 +860,7 @@ export function buildConnectionPayload(form: ConnectionFormState): {
               self_wxid: form.wechat_self_wxid.trim(),
               webhook_token: form.wechat_webhook_token.trim(),
               webhook_url: form.wechat_webhook_url.trim() || null,
+              relay_url: form.wechat_relay_url.trim() || null,
               nickname: form.wechat_nickname.trim() || null,
             }
           : null,

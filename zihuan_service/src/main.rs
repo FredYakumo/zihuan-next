@@ -77,6 +77,8 @@ async fn main() {
 
     let args = Args::parse();
 
+    zihuan_core::ims_bot_adapter::runtime::wechat_pad::set_service_port(args.port);
+
     match tokio::task::spawn_blocking(zihuan_core::system_database::initialize).await {
         Ok(Ok(())) => info!("System configuration database initialized"),
         result => {

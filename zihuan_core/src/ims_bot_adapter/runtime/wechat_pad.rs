@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use log::{debug, info, warn};
@@ -33,6 +34,14 @@ const SEND_TEXT_PATHS: &[&str] = &[
 
 static MESSAGE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Port this server listens on, registered at startup so the bridge callback URL can be derived
+/// without asking the operator to type it into the connection form.
+static SERVICE_PORT: OnceLock<u16> = OnceLock::new();
+
+pub fn set_service_port(port: u16) {
+    let _ = SERVICE_PORT.set(port);
+}
+
 /// Connection settings for one WeChat account backed by a WeChatPadPro bridge.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WeChatPadConfig {
@@ -48,9 +57,14 @@ pub struct WeChatPadConfig {
     /// Secret path segment: the bridge POSTs to `/api/ims/wechat_pad/{webhook_token}`.
     #[serde(default)]
     pub webhook_token: String,
-    /// Public URL handed to the bridge on startup; left unset, configure it in the bridge.
+    /// Public URL handed to the bridge on startup; left unset, the hook relay or the derived
+    /// callback URL is used instead.
     #[serde(default)]
     pub webhook_url: Option<String>,
+    /// Base URL of the in-container hook relay. When set, inbound messages are pulled from the
+    /// relay instead of being received on this server's webhook route.
+    #[serde(default)]
+    pub relay_url: Option<String>,
     /// Aliases such as `小助手` recognised in group text.
     #[serde(default)]
     pub bot_names: Vec<String>,
@@ -99,11 +113,14 @@ impl WeChatPadBotAdapter {
     }
 
     async fn register_webhook(&self, client: &reqwest::Client) {
-        let Some(webhook_url) =
-            self.config.webhook_url.as_deref().map(str::trim).filter(|url| !url.is_empty())
-        else {
-            debug!("{LOG_PREFIX} no webhook_url configured; expecting the bridge to be set up manually");
-            return;
+        let explicit =
+            self.config.webhook_url.as_deref().map(str::trim).filter(|url| !url.is_empty());
+        let webhook_url = match explicit {
+            Some(url) => url.to_string(),
+            None => match derived_webhook_url(&self.config) {
+                Some(url) => url,
+                None => return,
+            },
         };
         if self.config.base_url().is_empty() {
             warn!("{LOG_PREFIX} pad_url is empty; skipping webhook registration");
@@ -128,24 +145,72 @@ impl WeChatPadBotAdapter {
     }
 }
 
+/// Callback URL for a bridge running on this machine.
+///
+/// The bridge lives in a container, so it reaches us through the host gateway rather than
+/// `127.0.0.1`. A bridge on another machine needs an address only the operator knows, so it
+/// still has to set `webhook_url` explicitly.
+fn derived_webhook_url(config: &WeChatPadConfig) -> Option<String> {
+    let token = config.webhook_token.trim();
+    if token.is_empty() {
+        return None;
+    }
+    if !pad_is_local(config.base_url()) {
+        warn!(
+            "{LOG_PREFIX} pad_url is not local and webhook_url is empty; skipping automatic \
+             webhook registration"
+        );
+        return None;
+    }
+    let Some(port) = SERVICE_PORT.get() else {
+        warn!("{LOG_PREFIX} service port is not registered yet; skipping webhook registration");
+        return None;
+    };
+    Some(format!("http://host.docker.internal:{port}/api/ims/wechat_pad/{token}"))
+}
+
+fn pad_is_local(base_url: &str) -> bool {
+    let authority = base_url.split("//").nth(1).unwrap_or(base_url);
+    let authority = authority.split('/').next().unwrap_or(authority);
+    let authority = authority.rsplit('@').next().unwrap_or(authority);
+    let host = if let Some(rest) = authority.strip_prefix('[') {
+        rest.split(']').next().unwrap_or(rest)
+    } else {
+        authority.split(':').next().unwrap_or(authority)
+    };
+    matches!(host, "127.0.0.1" | "localhost" | "0.0.0.0" | "::1")
+}
+
 #[async_trait]
 impl BotAdapterBackend for WeChatPadBotAdapter {
     async fn run(&self, adapter: SharedBotAdapter) -> Result<()> {
+        let relay_url = self
+            .config
+            .relay_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+            .map(str::to_string);
         let token = self.config.webhook_token.trim().to_string();
         let (payload_tx, mut payload_rx) = mpsc::unbounded_channel::<Value>();
 
         let cleanup_tx = payload_tx.clone();
-        if token.is_empty() {
+        // In relay mode nothing is posted to this server, so hold the inbound sender to keep the
+        // loop below alive; the relay loop feeds events through the adapter directly.
+        let _inbound_keepalive: Option<mpsc::UnboundedSender<Value>> = if relay_url.is_some() {
+            Some(payload_tx)
+        } else if token.is_empty() {
             warn!("{LOG_PREFIX} webhook_token is empty; inbound messages cannot be routed");
+            Some(payload_tx)
         } else {
             lock_senders().insert(token.clone(), payload_tx);
-        }
+            None
+        };
 
         let (action_tx, mut action_rx) = mpsc::unbounded_channel::<String>();
         adapter.lock().await.action_tx = Some(action_tx);
 
         let client = reqwest::Client::new();
-        self.register_webhook(&client).await;
 
         let pump_adapter = adapter.clone();
         let pump_client = client.clone();
@@ -156,11 +221,22 @@ impl BotAdapterBackend for WeChatPadBotAdapter {
             }
         });
 
-        info!(
-            "{LOG_PREFIX} listening for bridge webhooks (token set: {}, pad_url: {})",
-            !token.is_empty(),
-            self.config.base_url()
-        );
+        if let Some(relay_url) = relay_url {
+            // The relay owns the bridge webhook; it registers itself, so do not overwrite it.
+            info!("{LOG_PREFIX} pulling inbound messages from hook relay {relay_url}");
+            let relay_adapter = adapter.clone();
+            let relay_config = self.config.clone();
+            tokio::spawn(async move {
+                run_relay_loop(relay_adapter, relay_config, relay_url).await;
+            });
+        } else {
+            self.register_webhook(&client).await;
+            info!(
+                "{LOG_PREFIX} listening for bridge webhooks (token set: {}, pad_url: {})",
+                !token.is_empty(),
+                self.config.base_url()
+            );
+        }
 
         while let Some(payload) = payload_rx.recv().await {
             for event in normalize_webhook(&payload, &self.config) {
@@ -179,6 +255,49 @@ impl BotAdapterBackend for WeChatPadBotAdapter {
             }
         }
         Ok(())
+    }
+}
+
+/// Long-poll the in-container hook relay and feed what it buffered into the adapter.
+async fn run_relay_loop(adapter: SharedBotAdapter, config: WeChatPadConfig, relay_url: String) {
+    let client = reqwest::Client::new();
+    let base = relay_url.trim_end_matches('/').to_string();
+    // -1 asks the relay to start at its current head: messages queued while this process was
+    // down are dropped rather than answered out of context on startup.
+    let mut cursor: i64 = -1;
+    loop {
+        let url = format!("{base}/events?after={cursor}&wait=25000");
+        let response = match client.get(&url).timeout(Duration::from_secs(35)).send().await {
+            Ok(response) => response,
+            Err(error) => {
+                debug!("{LOG_PREFIX} hook relay unreachable: {error}");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+        if !response.status().is_success() {
+            warn!("{LOG_PREFIX} hook relay returned HTTP {}", response.status());
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            continue;
+        }
+        let body: Value = match response.json().await {
+            Ok(body) => body,
+            Err(error) => {
+                warn!("{LOG_PREFIX} hook relay returned invalid JSON: {error}");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+        if let Some(next) = body.get("cursor").and_then(Value::as_i64) {
+            cursor = next;
+        }
+        let entries = body.get("events").and_then(Value::as_array).cloned().unwrap_or_default();
+        for entry in entries {
+            let payload = entry.get("payload").cloned().unwrap_or(Value::Null);
+            for event in normalize_webhook(&payload, &config) {
+                BotAdapter::process_event(adapter.clone(), event.to_string()).await;
+            }
+        }
     }
 }
 

@@ -98,7 +98,7 @@
         <t-alert
           v-if="form.component_type === 'wechat_pad'"
           theme="info"
-          message="将用 Docker 启动 WeChatPadPro（含 MySQL 与 Redis），并自动创建一条个人微信连接。首次安装需要拉取镜像、启动较慢；完成后在「连接配置」里填写本机 wxid 与 webhook 地址即可收消息。"
+          message="aaa"
         />
         <t-alert v-if="error" theme="error" :message="error" />
         </template>
