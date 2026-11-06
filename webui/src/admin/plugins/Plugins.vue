@@ -45,7 +45,7 @@
       <t-form label-align="top">
         <div class="form-grid">
           <t-form-item label="插件名称" required><t-input v-model="form.name" /></t-form-item>
-          <t-form-item v-if="form.component_type !== 'sqlite'" label="安装方式" required class="install-method-item">
+          <t-form-item v-if="!isSpecialComponent(form.component_type)" label="安装方式" required class="install-method-item">
             <div class="install-method">
               <span v-if="environmentLoading" class="install-method-status">正在检测本机安装能力...</span>
               <template v-else>
@@ -58,7 +58,7 @@
           </t-form-item>
         </div>
         <template v-if="!environmentLoading">
-        <div v-if="form.component_type !== 'sqlite'" class="global-config">
+        <div v-if="!isSpecialComponent(form.component_type)" class="global-config">
           <label><input v-model="config.expose_public_access" type="checkbox" /> 暴露公网访问</label>
           <label v-if="config.expose_public_access"><input v-model="config.use_target_machine_address" type="checkbox" /> 使用目标机器地址</label>
           <SetupField v-if="config.expose_public_access && config.use_target_machine_address" label="目标机器地址（可选）"><input v-model="config.target_machine_address" placeholder="例如 203.0.113.10" /></SetupField>
@@ -95,6 +95,11 @@
           <SetupField :label="form.component_type === 'elasticsearch' ? '密码' : 'API Key'"><SetupCredentialInput v-if="form.component_type === 'elasticsearch'" v-model="config.search.password" /><SetupCredentialInput v-else v-model="config.search.api_key" /></SetupField>
           <SetupField label="向量维度"><input v-model.number="config.search.vector_dimensions" type="number" min="1" /></SetupField>
         </div>
+        <t-alert
+          v-if="form.component_type === 'wechat_pad'"
+          theme="info"
+          message="将用 Docker 启动 WeChatPadPro（含 MySQL 与 Redis），并自动创建一条个人微信连接。首次安装需要拉取镜像、启动较慢；完成后在「连接配置」里填写本机 wxid 与 webhook 地址即可收消息。"
+        />
         <t-alert v-if="error" theme="error" :message="error" />
         </template>
       </t-form>
@@ -113,7 +118,7 @@
       <template v-if="installStep !== 'progress'" #footer>
         <div class="dialog-footer">
           <t-button variant="outline" @click="requestCloseInstall">取消</t-button>
-          <t-button theme="primary" :loading="saving" :disabled="installStep !== 'config' || (form.component_type !== 'sqlite' && environmentLoading)" @click="install">开始安装</t-button>
+          <t-button theme="primary" :loading="saving" :disabled="installStep !== 'config' || (!isSpecialComponent(form.component_type) && environmentLoading)" @click="install">开始安装</t-button>
         </div>
       </template>
     </t-dialog>
@@ -245,6 +250,7 @@ const {
   progress,
   taskId,
   componentOptions,
+  isSpecialComponent,
   form,
   selectedComponent,
   environmentLoading,

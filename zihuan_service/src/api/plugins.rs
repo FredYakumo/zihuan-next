@@ -353,7 +353,12 @@ pub async fn install_plugin(req: &mut Request, res: &mut Response, depot: &mut D
     }
     if let Some(installer) = special_installers::installer_for(&request.component_type) {
         return match installer.install(&request).await {
-            Ok(plugin) => res.render(Json(serde_json::json!({ "plugin": plugin }))),
+            Ok(plugin) => {
+                let connections = plugin_connections(&plugin).unwrap_or_default();
+                res.render(Json(
+                    serde_json::json!({ "plugin": plugin, "connections": connections }),
+                ))
+            }
             Err(error) => render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error),
         };
     }

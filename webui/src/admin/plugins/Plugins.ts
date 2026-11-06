@@ -8,6 +8,7 @@ import redisIcon from "../../assets/icons/redis.svg";
 import rustfsIcon from "../../assets/icons/rustfs.svg";
 import sqliteIcon from "../../assets/icons/sqlite.svg";
 import weaviateIcon from "../../assets/icons/weaviate.svg";
+import wechatIcon from "../../assets/icons/wechat.svg";
 
 type InstallStep = "picker" | "config" | "progress";
 type PluginInstallMethod = "docker" | "binary" | "command_docker" | "command_binary";
@@ -37,7 +38,10 @@ export function usePluginsPage() {
     { value: "weaviate", label: "Weaviate", desc: "检索数据库", icon: weaviateIcon },
     { value: "elasticsearch", label: "Elasticsearch", desc: "检索数据库", icon: elasticsearchIcon },
     { value: "rustfs", label: "RustFS", desc: "对象存储", icon: rustfsIcon },
+    { value: "wechat_pad", label: "WeChatPadPro", desc: "微信", icon: wechatIcon },
   ] as const;
+  /** Installed by a dedicated backend installer instead of the compose/binary pipeline. */
+  function isSpecialComponent(type: string) { return type === "sqlite" || type === "wechat_pad"; }
   const form = reactive({ name: "", version: "latest", component_type: "mysql", install_method: "docker" as PluginInstallMethod });
   const selectedComponent = computed(() => componentOptions.find((item) => item.value === form.component_type) ?? componentOptions[0]);
   const environmentLoading = ref(false);
@@ -58,7 +62,9 @@ export function usePluginsPage() {
   function installMethodLabel(value: string) { return value === "dynamic_script" ? "动态脚本" : value; }
   /** Dynamic script plugins use a registry key as their component; show a readable label. */
   function componentLabel(plugin: PluginRecord) {
-    if (!isScriptPlugin(plugin)) return plugin.component_type;
+    if (!isScriptPlugin(plugin)) {
+      return ({ wechat_pad: "WeChatPadPro" } as Record<string, string>)[plugin.component_type] ?? plugin.component_type;
+    }
     return ({ web_search_engine: "搜索引擎", brain_tool: "智能体工具" } as Record<string, string>)[plugin.component_type] ?? plugin.component_type;
   }
   function scriptPluginDetail(plugin: PluginRecord): string {
@@ -189,7 +195,7 @@ export function usePluginsPage() {
         // Fall through and let the install request report the real problem.
       }
     }
-    const showProgress = form.component_type !== "sqlite" && (form.install_method === "docker" || form.install_method === "binary");
+    const showProgress = !isSpecialComponent(form.component_type) && (form.install_method === "docker" || form.install_method === "binary");
     const attempt = ++installAttempt;
     clearInstallationSideEffects();
     if (showProgress) installStep.value = "progress";
@@ -201,7 +207,7 @@ export function usePluginsPage() {
     let waitingForTask = false;
     try {
       const { install_method, ...plugin } = form;
-      const result = await pluginsApi.install({ ...plugin, ...(form.component_type === "sqlite" ? {} : { install_method, detailed_config: config }) });
+      const result = await pluginsApi.install({ ...plugin, ...(isSpecialComponent(form.component_type) ? {} : { install_method, detailed_config: config }) });
       if (attempt !== installAttempt) {
         void load();
         return;
@@ -359,6 +365,7 @@ export function usePluginsPage() {
     progress,
     taskId,
     componentOptions,
+    isSpecialComponent,
     form,
     selectedComponent,
     environmentLoading,

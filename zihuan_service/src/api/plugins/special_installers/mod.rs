@@ -4,6 +4,7 @@ use std::pin::Pin;
 use super::{InstallPluginRequest, PluginRecord};
 
 pub mod sqlite;
+pub mod wechat_pad;
 
 pub trait SpecialPluginInstaller: Sync {
     fn component_type(&self) -> &'static str;
@@ -21,8 +22,14 @@ pub trait SpecialPluginInstaller: Sync {
 
 static SQLITE_INSTALLER: sqlite::SqliteSpecialPluginInstaller =
     sqlite::SqliteSpecialPluginInstaller;
+static WECHAT_PAD_INSTALLER: wechat_pad::WeChatPadProSpecialPluginInstaller =
+    wechat_pad::WeChatPadProSpecialPluginInstaller;
+
+static INSTALLERS: [&dyn SpecialPluginInstaller; 2] = [&SQLITE_INSTALLER, &WECHAT_PAD_INSTALLER];
 
 pub fn installer_for(component_type: &str) -> Option<&'static dyn SpecialPluginInstaller> {
-    let installer: &'static dyn SpecialPluginInstaller = &SQLITE_INSTALLER;
-    (installer.component_type() == component_type).then_some(installer)
+    INSTALLERS
+        .iter()
+        .copied()
+        .find(|installer| installer.component_type() == component_type)
 }
