@@ -6,6 +6,7 @@ pub mod file_io;
 pub mod graph;
 pub mod graph_exec_helpers;
 pub mod hyperparams;
+pub mod ims;
 pub mod log;
 pub mod model_http;
 pub mod model_usage;

@@ -23,6 +23,9 @@ pub struct BotAdapterConnection {
     /// path to the install directory containing napcat.bat / NapCatWinBootMain.exe.
     #[serde(default)]
     pub napcat_install_path: Option<String>,
+    /// Personal WeChat via a self-hosted WeChatPadPro bridge; replaces the NapCat backend.
+    #[serde(default)]
+    pub wechat: Option<super::wechat_pad::WeChatPadConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,17 +94,34 @@ pub async fn build_ims_bot_adapter(
     connection: &BotAdapterConnection,
     object_storage: Option<Arc<S3Ref>>,
 ) -> SharedBotAdapter {
+    // A WeChat connection has no QQ id; the bot's own wxid is its identity on that channel.
+    let bot_id = connection
+        .qq_id
+        .clone()
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+        .or_else(|| {
+            connection
+                .wechat
+                .as_ref()
+                .map(|wechat| wechat.self_wxid.trim().to_string())
+                .filter(|id| !id.is_empty())
+        })
+        .unwrap_or_default();
+
     let adapter = BotAdapter::new(
         BotAdapterConfig::new(
             connection.bot_server_url.clone(),
             connection.bot_server_token.clone().unwrap_or_default(),
-            connection.qq_id.clone().unwrap_or_default(),
+            bot_id,
         )
         .with_object_storage(object_storage),
     )
     .await;
     let adapter = if let Some(mock) = &connection.mock {
         adapter.with_backend(Arc::new(super::mock::MockBotAdapter::new(mock.clone())))
+    } else if let Some(wechat) = &connection.wechat {
+        adapter.with_backend(Arc::new(super::wechat_pad::WeChatPadBotAdapter::new(wechat.clone())))
     } else {
         adapter
     };

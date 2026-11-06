@@ -184,10 +184,23 @@
             </template>
 
             <template v-else-if="isBotAdapterConnectionType(form.type)">
-              <t-form-item label="Bot WS URL"><t-input v-model="form.bot_server_url" placeholder="ws://192.168.71.2:3008" /></t-form-item>
-              <t-form-item label="Adapter HTTP URL"><t-input v-model="form.adapter_server_url" placeholder="http://192.168.71.2:3001" /></t-form-item>
-              <t-form-item label="QQ 号"><t-input v-model="form.qq_id" /></t-form-item>
-              <t-form-item label="Token"><ConnectionCredentialInput v-model="form.bot_server_token" /></t-form-item>
+              <t-form-item class="connection-form-item--full">
+                <t-checkbox v-model="form.wechat_enabled">使用 WeChatPadPro 接入个人微信</t-checkbox>
+              </t-form-item>
+              <template v-if="form.wechat_enabled">
+                <t-form-item label="Pad URL"><t-input v-model="form.wechat_pad_url" placeholder="http://127.0.0.1:8849" /></t-form-item>
+                <t-form-item label="Pad adminKey"><ConnectionCredentialInput v-model="form.wechat_pad_token" /></t-form-item>
+                <t-form-item label="本机 wxid"><t-input v-model="form.wechat_self_wxid" placeholder="wxid_xxx，用于识别@和登录信息" /></t-form-item>
+                <t-form-item label="Webhook Token"><t-input v-model="form.wechat_webhook_token" placeholder="回调路径里的随机串" /></t-form-item>
+                <t-form-item label="Webhook URL"><t-input v-model="form.wechat_webhook_url" placeholder="http://<公网地址>/api/ims/wechat_pad/<token>" /></t-form-item>
+                <t-form-item label="昵称"><t-input v-model="form.wechat_nickname" /></t-form-item>
+              </template>
+              <template v-else>
+                <t-form-item label="Bot WS URL"><t-input v-model="form.bot_server_url" placeholder="ws://192.168.71.2:3008" /></t-form-item>
+                <t-form-item label="Adapter HTTP URL"><t-input v-model="form.adapter_server_url" placeholder="http://192.168.71.2:3001" /></t-form-item>
+                <t-form-item label="QQ 号"><t-input v-model="form.qq_id" /></t-form-item>
+                <t-form-item label="Token"><ConnectionCredentialInput v-model="form.bot_server_token" /></t-form-item>
+              </template>
             </template>
 
             <template v-else-if="form.type === 'web_search_engine'">

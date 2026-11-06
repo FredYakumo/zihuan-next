@@ -90,6 +90,7 @@ pub async fn create_qq_bot_stack(
                 bot_server_token: ims_config.token.clone(),
                 qq_id: ims_config.qq_id.clone(),
                 napcat_install_path: napcat_native_path.map(|s| s.to_string()),
+                wechat: None,
             })
             .unwrap_or(serde_json::Value::Null),
         ),

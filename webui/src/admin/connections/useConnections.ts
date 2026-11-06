@@ -454,13 +454,23 @@ export function useConnections() {
           { label: "Bucket", value: String(kind.bucket ?? "") },
         ];
       case "bot_adapter":
-      case "ims_bot_adapter":
+      case "ims_bot_adapter": {
+        const wechat = kind.wechat as Record<string, unknown> | null | undefined;
+        if (wechat) {
+          return [
+            ...base,
+            { label: "渠道", value: "WeChatPadPro" },
+            { label: "Pad", value: String(wechat.pad_url ?? "") || "未设置" },
+            { label: "wxid", value: String(wechat.self_wxid ?? "") || "未设置" },
+          ];
+        }
         return [
           ...base,
           { label: "WS", value: String(kind.bot_server_url ?? "") },
           { label: "HTTP", value: String(kind.adapter_server_url ?? "") || "未设置（默认由 WS 推导）" },
           { label: "QQ", value: String(kind.qq_id ?? "") || "未设置" },
         ];
+      }
       case "web_search_engine":
         return [
           ...base,
