@@ -22,7 +22,7 @@ pub struct QqChatAgentServicePrivilegeAuthRecord {
     pub purpose: String,
     pub pending_task_id: Option<String>,
     pub pending_target_id: Option<String>,
-    pub pending_group_id: Option<i64>,
+    pub pending_group_id: Option<String>,
     pub pending_is_group: bool,
     pub pending_args: Vec<String>,
     /// Serialized [`ExecutionSnapshot`] when this auth row backs a paused
@@ -69,7 +69,7 @@ pub async fn create_privilege_auth(
     purpose: &str,
     pending_task_id: Option<&str>,
     pending_target_id: Option<&str>,
-    pending_group_id: Option<i64>,
+    pending_group_id: Option<String>,
     pending_is_group: bool,
     pending_args: &[String],
 ) -> Result<QqChatAgentServicePrivilegeAuthRecord> {
@@ -129,7 +129,7 @@ pub fn create_privilege_auth_blocking(
     purpose: &str,
     pending_task_id: Option<&str>,
     pending_target_id: Option<&str>,
-    pending_group_id: Option<i64>,
+    pending_group_id: Option<String>,
     pending_is_group: bool,
     pending_args: &[String],
 ) -> Result<()> {
@@ -375,7 +375,7 @@ async fn create_privilege_auth_mysql(
     purpose: &str,
     pending_task_id: Option<&str>,
     pending_target_id: Option<&str>,
-    pending_group_id: Option<i64>,
+    pending_group_id: Option<String>,
     pending_is_group: bool,
     pending_args: &[String],
 ) -> Result<QqChatAgentServicePrivilegeAuthRecord> {
@@ -414,7 +414,7 @@ async fn create_privilege_auth_sqlite(
     purpose: &str,
     pending_task_id: Option<&str>,
     pending_target_id: Option<&str>,
-    pending_group_id: Option<i64>,
+    pending_group_id: Option<String>,
     pending_is_group: bool,
     pending_args: &[String],
 ) -> Result<QqChatAgentServicePrivilegeAuthRecord> {
@@ -639,7 +639,7 @@ async fn latest_auth_optional_mysql(
     sender_id: &str,
 ) -> Result<Option<QqChatAgentServicePrivilegeAuthRecord>> {
     let row = sqlx::query(
-        "SELECT id, agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, pending_args_json, snapshot_json, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
+        "SELECT id, agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, CAST(pending_group_id AS CHAR) AS pending_group_id, pending_is_group, pending_args_json, snapshot_json, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
          FROM qq_chat_agent_service_privilege_auth WHERE agent_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 1",
     )
     .bind(agent_id)
@@ -656,7 +656,7 @@ async fn latest_auth_optional_sqlite(
     sender_id: &str,
 ) -> Result<Option<QqChatAgentServicePrivilegeAuthRecord>> {
     let row = sqlx::query(
-        "SELECT id, agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, pending_group_id, pending_is_group, pending_args_json, snapshot_json, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
+        "SELECT id, agent_id, sender_id, auth_key, purpose, pending_task_id, pending_target_id, CAST(pending_group_id AS CHAR) AS pending_group_id, pending_is_group, pending_args_json, snapshot_json, failed_attempts, expires_at, elevated_until, consumed, created_at, updated_at \
          FROM qq_chat_agent_service_privilege_auth WHERE agent_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 1",
     )
     .bind(agent_id)

@@ -162,9 +162,9 @@ impl<'a> CommandRuntime for QqChatCommandRuntime<'a> {
         let state_task_id = snapshot.state.get_str("style_waiting_task_id").map(str::to_string);
         let (target_id, group_id, is_group) = match &snapshot.invocation.ctx.channel {
             CommandChannel::QqChat { target_id, group_id, is_group, .. } => {
-                (target_id.clone(), *group_id, *is_group)
+                (target_id.clone(), group_id.clone(), *is_group)
             }
-            _ => (self.target_id.to_string(), self.event.group_id, self.is_group),
+            _ => (self.target_id.to_string(), self.event.group_id.clone(), self.is_group),
         };
         privilege_store::create_privilege_auth_blocking(
             connection,
@@ -403,7 +403,7 @@ pub(crate) fn run_command_effects_now(
         channel: CommandChannel::QqChat {
             sender_id: sender_id.to_string(),
             is_group,
-            group_id: inference_event.group_id,
+            group_id: inference_event.group_id.clone(),
             target_id: target_id.to_string(),
         },
     };

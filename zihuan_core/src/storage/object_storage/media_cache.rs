@@ -20,7 +20,7 @@ const LOG_PREFIX: &str = "[media_cache]";
 
 #[derive(Debug, Clone)]
 pub struct PendingImageUpload {
-    pub message_id: i64,
+    pub message_id: String,
     pub segment_index: usize,
     pub image: ImageMessage,
 }
@@ -48,12 +48,12 @@ struct NapCatImageDetailData {
 }
 
 pub async fn enrich_event_images<A: ImageCacheAdapter>(adapter: &A, event: &mut MessageEvent) {
-    enrich_message_images(adapter, event.message_id, &mut event.message_list).await;
+    enrich_message_images(adapter, &event.message_id, &mut event.message_list).await;
 }
 
 pub async fn enrich_message_images<A: ImageCacheAdapter>(
     adapter: &A,
-    message_id: i64,
+    message_id: &str,
     messages: &mut [Message],
 ) {
     let Some(object_storage) = adapter.object_storage().await else {
@@ -68,7 +68,7 @@ pub async fn enrich_message_images<A: ImageCacheAdapter>(
 async fn enrich_message_images_with_storage<A: ImageCacheAdapter>(
     adapter: &A,
     object_storage: &S3Ref,
-    message_id: i64,
+    message_id: &str,
     messages: &mut [Message],
 ) {
     for (segment_index, message) in messages.iter_mut().enumerate() {
@@ -100,7 +100,7 @@ async fn enrich_message_images_with_storage<A: ImageCacheAdapter>(
                         );
                         let should_spawn = adapter
                             .enqueue_pending_image(PendingImageUpload {
-                                message_id,
+                                message_id: message_id.to_string(),
                                 segment_index,
                                 image: image.clone(),
                             })
@@ -132,7 +132,7 @@ async fn enrich_message_images_with_storage<A: ImageCacheAdapter>(
 async fn enrich_forward_node_images<A: ImageCacheAdapter>(
     adapter: &A,
     object_storage: &S3Ref,
-    message_id: i64,
+    message_id: &str,
     nodes: &mut [ForwardNodeMessage],
 ) {
     for node in nodes {
@@ -156,7 +156,7 @@ async fn run_retry_loop<A: ImageCacheAdapter>(adapter: A) {
         match cache_one_image(
             &adapter,
             &object_storage,
-            pending.message_id,
+            &pending.message_id,
             pending.segment_index,
             &mut pending.image,
         )
@@ -185,7 +185,7 @@ async fn run_retry_loop<A: ImageCacheAdapter>(adapter: A) {
 async fn cache_one_image<A: ImageCacheAdapter>(
     adapter: &A,
     object_storage: &S3Ref,
-    message_id: i64,
+    message_id: &str,
     segment_index: usize,
     image: &mut ImageMessage,
 ) -> Result<Option<String>> {
@@ -196,7 +196,7 @@ async fn cache_one_image<A: ImageCacheAdapter>(
     let saved = save_image_to_object_storage(
         object_storage,
         &ImageObjectStorageInput {
-            message_id,
+            message_id: message_id.to_string(),
             segment_index,
             file_name: resolved.file_name.clone(),
             content_type: resolved.content_type.clone(),

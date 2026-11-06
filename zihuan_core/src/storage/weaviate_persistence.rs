@@ -24,12 +24,12 @@ pub fn upsert_message_event(
     } else {
         event.sender.card.as_str()
     };
-    let group_id = event.group_id.map(|value| value.to_string());
+    let group_id = event.group_id.clone();
     upsert_qq_message_list(
         weaviate_ref,
         &event.message_list,
-        &event.message_id.to_string(),
-        &event.sender.user_id.to_string(),
+        &event.message_id,
+        &event.sender.user_id,
         sender_name,
         group_id.as_deref(),
         event.group_name.as_deref(),

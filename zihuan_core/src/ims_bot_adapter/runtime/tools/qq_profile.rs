@@ -206,7 +206,7 @@ fn execute_profile_query(
     let stranger = fetch_stranger_info(adapter, user_id, s3_ref)?;
 
     let identity = if is_group_event(event) {
-        match event.group_id {
+        match event.group_id.as_deref() {
             Some(group_id) => match fetch_group_member_info(adapter, group_id, user_id) {
                 Ok(member) => member.role,
                 Err(_) => "unknown".to_string(),
@@ -283,7 +283,7 @@ fn fallback_get_login_info(
 
 fn fetch_group_member_info(
     adapter: &SharedBotAdapter,
-    group_id: i64,
+    group_id: &str,
     user_id: &str,
 ) -> Result<MemberInfo> {
     let response = ws_send_action(
@@ -306,7 +306,7 @@ fn fetch_group_member_info(
 
 pub fn fetch_group_member_role(
     adapter: &SharedBotAdapter,
-    group_id: i64,
+    group_id: &str,
     user_id: &str,
 ) -> Result<String> {
     fetch_group_member_info(adapter, group_id, user_id).map(|info| info.role)

@@ -5,23 +5,15 @@ use std::fmt;
 
 use crate::utils::hash_string::build_persisted_media_id;
 
-fn deserialize_i64_from_string_or_number<'de, D>(deserializer: D) -> Result<i64, D::Error>
+/// Adapter ids are opaque strings; backends that still send numbers (NapCat) are coerced.
+pub fn deserialize_string_from_string_or_number<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let v = serde_json::Value::deserialize(deserializer)?;
-    match v {
-        serde_json::Value::Number(n) => {
-            n.as_i64().ok_or_else(|| de::Error::custom("numeric value is not an i64"))
-        }
-        serde_json::Value::String(s) => s
-            .parse::<i64>()
-            .map_err(|e| de::Error::custom(format!("failed to parse i64 from string: {e}"))),
-        other => Err(de::Error::custom(format!("expected string or number for i64, got {other}"))),
-    }
+    Ok(deserialize_option_string_from_string_or_number(deserializer)?.unwrap_or_default())
 }
 
-fn deserialize_option_string_from_string_or_number<'de, D>(
+pub fn deserialize_option_string_from_string_or_number<'de, D>(
     deserializer: D,
 ) -> Result<Option<String>, D::Error>
 where
@@ -129,8 +121,8 @@ impl MessageBase for AtTargetMessage {
 /// Reply message (references another message)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplyMessage {
-    #[serde(deserialize_with = "deserialize_i64_from_string_or_number")]
-    pub id: i64,
+    #[serde(default, deserialize_with = "deserialize_string_from_string_or_number")]
+    pub id: String,
     #[serde(skip)]
     pub message_source: Option<Vec<Message>>,
 }

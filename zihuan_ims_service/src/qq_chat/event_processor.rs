@@ -66,8 +66,8 @@ pub(crate) fn process_event(
     let target_id = if is_group {
         event
             .group_id
+            .clone()
             .ok_or_else(|| service.wrap_err("group_id missing on group message"))?
-            .to_string()
     } else {
         sender_id.clone()
     };
@@ -85,7 +85,7 @@ pub(crate) fn process_event(
     }
 
     if let Some(rdb_pool) = ctx.rdb_pool {
-        let group_id_text = event.group_id.map(|value| value.to_string());
+        let group_id_text = event.group_id.clone();
         if should_ignore_message_blocking(rdb_pool, agent_id, &sender_id, group_id_text.as_deref())?
         {
             info!(
@@ -110,7 +110,7 @@ pub(crate) fn process_event(
 
     let mut message_rate_limit = None;
     if let Some(rdb_pool) = ctx.rdb_pool {
-        let group_id_text = event.group_id.map(|value| value.to_string());
+        let group_id_text = event.group_id.clone();
         let config = current_qq_chat_role_service_config()?;
         let rate_limit_result = consume_message_rate_limit_blocking(
             rdb_pool,
@@ -334,7 +334,7 @@ fn run_turn_group(
             .current_text_for_prompt()
             .to_string();
             trace.record_steer_follow_up(
-                next_event.message_id,
+                &next_event.message_id,
                 steer_count,
                 accepted_steer_count,
                 ctx.max_steer_count,
@@ -343,7 +343,7 @@ fn run_turn_group(
             info!(
                 "{LOG_PREFIX} steer follow-up picked for sender={} message_id={} steer_count={} remaining_queue_len={} accepted_steer_count={}/{} message={}",
                 sender_id,
-                next_event.message_id,
+                &next_event.message_id,
                 steer_count,
                 remaining_queue_len,
                 accepted_steer_count,

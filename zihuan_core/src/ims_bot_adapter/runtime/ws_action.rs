@@ -53,8 +53,17 @@ pub fn response_success(response: &Value) -> bool {
         .unwrap_or(false)
 }
 
-pub fn response_message_id(response: &Value) -> Option<i64> {
-    response.get("data").and_then(|data| json_i64(data.get("message_id")))
+/// Adapter ids are opaque strings; numeric ids from older bridges are coerced.
+pub fn json_id(value: Option<&Value>) -> Option<String> {
+    match value? {
+        Value::String(text) if !text.is_empty() => Some(text.clone()),
+        Value::Number(number) => Some(number.to_string()),
+        _ => None,
+    }
+}
+
+pub fn response_message_id(response: &Value) -> Option<String> {
+    response.get("data").and_then(|data| json_id(data.get("message_id")))
 }
 
 pub fn qq_message_list_to_json(

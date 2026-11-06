@@ -6,7 +6,7 @@ use std::time::Duration;
 use crate::ims_bot_adapter::runtime::active_adapter_manager::ActiveAdapterManager;
 use crate::ims_bot_adapter::runtime::system_config::BotAdapterConnection;
 use crate::ims_bot_adapter::runtime::ws_action::{
-    json_i64, next_echo, response_success, ws_send_action_with_timeout_async,
+    json_id, next_echo, response_success, ws_send_action_with_timeout_async,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -145,18 +145,11 @@ pub fn parse_login_info(payload: &serde_json::Value) -> Result<BotLoginInfo> {
         Error::ValidationError("NapCat /get_login_info response missing data object".to_string())
     })?;
 
-    let user_id = data
-        .get("user_id")
-        .and_then(|value| {
-            json_i64(Some(value))
-                .map(|id| id.to_string())
-                .or_else(|| value.as_str().map(str::to_string))
-        })
-        .ok_or_else(|| {
-            Error::ValidationError(
-                "NapCat /get_login_info response missing valid data.user_id".to_string(),
-            )
-        })?;
+    let user_id = data.get("user_id").and_then(|value| json_id(Some(value))).ok_or_else(|| {
+        Error::ValidationError(
+            "NapCat /get_login_info response missing valid data.user_id".to_string(),
+        )
+    })?;
 
     let nickname = data
         .get("nickname")

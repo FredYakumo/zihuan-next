@@ -154,8 +154,8 @@ impl QqChatAgentServiceInbox {
             adapter: Arc::clone(&self.inner.adapter),
             time,
         };
-        let message_id = item.event.message_id;
-        let sender_id = item.event.sender.user_id;
+        let message_id = item.event.message_id.clone();
+        let sender_id = item.event.sender.user_id.clone();
 
         if self.inner.redis_ref.is_some() {
             match self.enqueue_to_redis(&item).await {
@@ -298,8 +298,8 @@ impl QqChatAgentServiceInbox {
         let event = item.event;
         let adapter = item.adapter;
         let time = item.time;
-        let message_id = event.message_id;
-        let sender_id = event.sender.user_id;
+        let message_id = event.message_id.clone();
+        let sender_id = event.sender.user_id.clone();
 
         let result =
             tokio::task::spawn_blocking(move || service.handle_event(&event, &adapter, &time))

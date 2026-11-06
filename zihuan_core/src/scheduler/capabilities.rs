@@ -150,8 +150,9 @@ fn memory_upsert(resources: &JobResources, params: &Value) -> Result<Value> {
     let mut input = input;
     if input.attributes.category == crate::storage::MemoryCategory::Person {
         let qq_id = &input.attributes.person.qq_id;
-        if qq_id.is_empty() || !qq_id.chars().all(|c| c.is_ascii_digit()) {
-            return Err(Error::ValidationError("person memory requires qq_id".to_string()));
+        // IM ids are opaque: QQ uses digits, WeChat uses wxid / `xxx@chatroom`.
+        if qq_id.is_empty() || !qq_id.chars().all(crate::utils::string_utils::is_im_id_char) {
+            return Err(Error::ValidationError("person memory requires a person id".to_string()));
         }
         input.key = format!("person-{qq_id}");
         input.sender_id_list.clear();

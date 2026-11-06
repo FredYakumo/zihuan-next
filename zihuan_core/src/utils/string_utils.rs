@@ -3,6 +3,13 @@
 use crate::agent::utils::string_utils::is_no_reply_directive;
 use crate::ims_bot_adapter::models::message::{ImageMessage, PersistedMedia, PersistedMediaSource};
 
+/// Whether `c` may appear in an opaque IM id.
+///
+/// QQ ids are digits; WeChat uses `wxid_*` senders and `*@chatroom` groups.
+pub fn is_im_id_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '@')
+}
+
 /// Strips leading @Bot mentions from the message text. Supports both English `@` and
 /// Chinese `＠` prefixes, matching against `bot_id` and `bot_name` patterns. After removing
 /// a mention, trailing punctuation separators (whitespace, commas, periods, colons, etc.)

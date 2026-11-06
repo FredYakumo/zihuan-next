@@ -141,7 +141,7 @@ pub(crate) struct GroupMessageWindowContext<'a> {
     pub(crate) group_id: String,
     /// The triggering message itself. It is persisted into `message_record` before the turn
     /// runs, so it must be kept out of the window candidates.
-    pub(crate) current_message_id: i64,
+    pub(crate) current_message_id: String,
     pub(crate) user_input: String,
     pub(crate) window_count: usize,
     pub(crate) confirmed: &'a GroupMessageWindowMemory,
@@ -197,7 +197,7 @@ impl<'a> QqGroupMessageWindow<'a> {
 
             // The triggering message is persisted before the turn runs, and messages
             // confirmed related in an earlier turn never re-enter the candidates.
-            let current_message_id = self.context.current_message_id.to_string();
+            let current_message_id = self.context.current_message_id.clone();
             let candidates: Vec<&MessageHistoryRecord> = self
                 .context
                 .confirmed

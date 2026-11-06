@@ -431,8 +431,8 @@ pub fn persist_message_event(
     } else {
         event.sender.card.clone()
     };
-    let sender_id = event.sender.user_id.to_string();
-    let group_id = event.group_id.map(|id| id.to_string());
+    let sender_id = event.sender.user_id.clone();
+    let group_id = event.group_id.clone();
     let input = MessageRecordInput {
         message_id: &message_id,
         sender_id: &sender_id,

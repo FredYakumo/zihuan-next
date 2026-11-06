@@ -27,7 +27,7 @@ pub struct PendingAuthorizedCommand {
     pub command: QqPrivilegedCommand,
     pub pending_task_id: Option<String>,
     pub pending_target_id: Option<String>,
-    pub pending_group_id: Option<i64>,
+    pub pending_group_id: Option<String>,
     pub pending_is_group: bool,
     pub pending_args: Vec<String>,
 }

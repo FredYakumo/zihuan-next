@@ -1276,7 +1276,7 @@ pub fn dispatch_script_host_call(
             let success = crate::ims_bot_adapter::runtime::ws_action::response_success(&response);
             let message_id =
                 crate::ims_bot_adapter::runtime::ws_action::response_message_id(&response)
-                    .unwrap_or(-1);
+                    .unwrap_or_default();
             log::info!("[ScriptNode] sent {target_label} message to {target_id} success={success} message_id={message_id}");
             Ok(json!({"success": success, "message_id": message_id}))
         }
@@ -1317,8 +1317,10 @@ pub fn dispatch_script_host_call(
         "bot.extract_messages" => {
             let event = message_event(params)?;
             let adapter = bot_adapter_resource(params, "ims_bot_adapter")?;
-            let target_message_id =
-                params.get("message_id").and_then(Value::as_i64).filter(|value| *value > 0);
+            let target_message_id = params
+                .get("message_id")
+                .and_then(|value| crate::ims_bot_adapter::runtime::ws_action::json_id(Some(value)))
+                .filter(|value| !value.is_empty());
             let extracted = crate::ims_bot_adapter::runtime::extract_message_from_event::extract_message_outputs(
                             &event,
                             &adapter,

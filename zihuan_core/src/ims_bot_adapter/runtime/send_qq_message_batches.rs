@@ -22,7 +22,7 @@ pub struct SendBatchResult {
     pub batch_index: usize,
     pub success: bool,
     pub skipped: bool,
-    pub message_id: i64,
+    pub message_id: String,
     pub retcode: Option<i64>,
     pub status: Option<String>,
     pub wording: Option<String>,
@@ -210,7 +210,7 @@ fn send_one_batch(
         batch_index,
         success: response_success(&response),
         skipped: false,
-        message_id: response_message_id(&response).unwrap_or(-1),
+        message_id: response_message_id(&response).unwrap_or_default(),
         retcode: json_i64(response.get("retcode")),
         status: response
             .get("status")
@@ -230,7 +230,7 @@ fn skipped_batch_result(batch_index: usize) -> SendBatchResult {
         batch_index,
         success: true,
         skipped: true,
-        message_id: -1,
+        message_id: String::new(),
         retcode: None,
         status: None,
         wording: Some("empty batch skipped".to_string()),
@@ -357,7 +357,7 @@ pub fn send_qq_message_batches_with_delays(
                     batch_index: index,
                     success: false,
                     skipped: false,
-                    message_id: -1,
+                    message_id: String::new(),
                     retcode: None,
                     status: None,
                     wording: Some(err.to_string()),
@@ -387,8 +387,8 @@ pub fn send_qq_message_batches(
     )
 }
 
-pub fn message_ids_from_results(results: &[SendBatchResult]) -> Vec<i64> {
-    results.iter().map(|result| result.message_id).collect()
+pub fn message_ids_from_results(results: &[SendBatchResult]) -> Vec<String> {
+    results.iter().map(|result| result.message_id.clone()).collect()
 }
 
 pub fn actual_sends_all_successful(results: &[SendBatchResult]) -> bool {

@@ -330,7 +330,7 @@ impl MessageEventExtractor {
 pub(crate) fn extract_message_outputs(
     event: &crate::ims_bot_adapter::runtime::models::event_model::MessageEvent,
     ims_bot_adapter_ref: &crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter,
-    target_message_id: Option<i64>,
+    target_message_id: Option<String>,
     explicit_s3_ref: Option<Arc<S3Ref>>,
 ) -> Result<ExtractedMessageOutputs> {
     let (bot_id, adapter_object_storage) = if tokio::runtime::Handle::try_current().is_ok() {
@@ -352,12 +352,16 @@ pub(crate) fn extract_message_outputs(
     let message_list = if let Some(message_id) = target_message_id {
         let resolved = if tokio::runtime::Handle::try_current().is_ok() {
             block_in_place(|| {
-                tokio::runtime::Handle::current()
-                    .block_on(restore_message_list_for_message_id(ims_bot_adapter_ref, message_id))
+                tokio::runtime::Handle::current().block_on(restore_message_list_for_message_id(
+                    ims_bot_adapter_ref,
+                    message_id.clone(),
+                ))
             })
         } else {
-            tokio::runtime::Runtime::new()?
-                .block_on(restore_message_list_for_message_id(ims_bot_adapter_ref, message_id))
+            tokio::runtime::Runtime::new()?.block_on(restore_message_list_for_message_id(
+                ims_bot_adapter_ref,
+                message_id.clone(),
+            ))
         }?;
 
         match resolved {

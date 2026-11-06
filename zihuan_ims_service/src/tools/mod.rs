@@ -156,7 +156,7 @@ pub(crate) fn qq_memory_access_context(
     sender_id: &str,
     target_id: &str,
     is_group: bool,
-    event_group_id: Option<i64>,
+    event_group_id: Option<String>,
 ) -> AgentMemoryAccessContext {
     AgentMemoryAccessContext {
         category: Default::default(),
@@ -166,7 +166,7 @@ pub(crate) fn qq_memory_access_context(
         group_id: if is_group {
             Some(target_id.to_string())
         } else {
-            event_group_id.map(|value| value.to_string())
+            event_group_id
         },
         is_group,
         admin: false,
