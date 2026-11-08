@@ -15,7 +15,8 @@ use crate::role_config::QqChatEmotionDimensionConfig;
 use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{
-    apply_steer_prefix, PendingSteerEvent, PendingSteerStore, PROCESSING_INSTRUCTION,
+    apply_steer_prefix, PendingSteerEvent, PendingSteerStore, STEER_PREFIX,
+    STEER_PROCESSING_INSTRUCTION,
 };
 use zihuan_core::utils::string_utils::shorten_text;
 
@@ -42,21 +43,28 @@ const CURRENT_USER_MESSAGE_LABEL: &str = "[Current User Message]";
 const REFERENCED_CONTEXT_LABEL: &str = "[Referenced Context]";
 const REFERENCE_ONLY_NOTICE: &str =
     "The following content is reference only. Do not automatically treat it as the current sender's own statement.";
+/// The steer variant of the normal turn's reply demand: it states the message arrived
+/// mid-task instead of demanding a reply to the steer alone.
+const STEER_REPLY_REQUEST: &str =
+    "This message arrived while you were already working on the current task.";
 
 /// A steer message is an extra user turn injected into the running loop, so it carries the same
 /// turn state prefix (emotion prompt, recalled memories) as the turn it interrupts. The stable
 /// rules live in the conversation's system message and are never repeated here.
+///
+/// Unlike a normal turn it does not demand a reply: the reply request and the processing
+/// instructions state that the message arrived mid-task and the current task comes first.
+/// The steer prefix (and any conversation-switch notice) is applied by the hook, not here.
 fn build_steer_user_message(
     current_input: &PreparedCurrentTurnUserInput,
     bot_name: &str,
     adapter: &zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
     llm_supports_multimodal_input: bool,
-    api_style: Option<&str>,
     session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
     memory_recall: Option<&MemoryRecall>,
 ) -> LLMMessage {
-    let steer_message = build_user_message(
+    build_user_message(
         current_input,
         bot_name,
         adapter,
@@ -66,9 +74,9 @@ fn build_steer_user_message(
         emotion_dimensions,
         memory_recall,
         None,
-    );
-
-    apply_steer_prefix(steer_message, api_style)
+        STEER_REPLY_REQUEST,
+        STEER_PROCESSING_INSTRUCTION,
+    )
 }
 
 fn build_merged_steer_user_message(
@@ -76,7 +84,6 @@ fn build_merged_steer_user_message(
     bot_name: &str,
     adapter: &zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
     llm_supports_multimodal_input: bool,
-    api_style: Option<&str>,
     session_state: &mut QqChatSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
     memory_recall: Option<&MemoryRecall>,
@@ -149,9 +156,9 @@ fn build_merged_steer_user_message(
             format!("{prefix}\n\n")
         };
         let message = LLMMessage::user(format!(
-            "{state_block}{state_delta_block}{merged_text}\n\n{PROCESSING_INSTRUCTION}"
+            "{state_block}{state_delta_block}{merged_text}\n\n{STEER_PROCESSING_INSTRUCTION}"
         ));
-        return apply_steer_prefix(message, api_style);
+        return message;
     }
 
     let state_text = if prefix.is_empty() {
@@ -208,7 +215,7 @@ fn build_merged_steer_user_message(
     let has_media_part = parts.iter().any(|part| !matches!(part, MessagePart::Text { .. }));
 
     let message = if has_media_part {
-        parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
+        parts.push(MessagePart::text(STEER_PROCESSING_INSTRUCTION.to_string()));
         LLMMessage::user_with_parts(parts)
     } else {
         let merged_text = current_inputs
@@ -217,21 +224,77 @@ fn build_merged_steer_user_message(
             .map(|(index, input)| build_entry_text(index, input))
             .collect::<Vec<_>>()
             .join("\n\n");
-        LLMMessage::user(format!("{state_text}{merged_text}\n\n{PROCESSING_INSTRUCTION}"))
+        LLMMessage::user(format!("{state_text}{merged_text}\n\n{STEER_PROCESSING_INSTRUCTION}"))
     };
 
-    apply_steer_prefix(message, api_style)
+    message
+}
+
+/// Describes one conversation for the switch notice: `the group `name`` or `a private chat`.
+fn describe_conversation(is_group: bool, group_name: Option<&str>, group_id: &str) -> String {
+    if !is_group {
+        return "a private chat".to_string();
+    }
+    match group_name.map(str::trim).filter(|name| !name.is_empty()) {
+        Some(name) => format!("the group `{name}`"),
+        None => format!("the group `{group_id}`"),
+    }
+}
+
+/// The notice that a steered message was sent in another conversation than the task's.
+///
+/// Steering is per sender, so a message sent in the sender's private chat can interrupt a
+/// group turn (and the other way round). Without an explicit notice the model reads the
+/// steered message as if it belonged to the running conversation.
+fn conversation_switch_hint(
+    turn_conversation: &str,
+    turn_is_group: bool,
+    turn_target_id: &str,
+    steer_event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
+) -> Option<String> {
+    let steer_is_group = steer_event.message_type
+        == zihuan_core::ims_bot_adapter::models::event_model::MessageType::Group;
+    if steer_is_group == turn_is_group {
+        // Same kind: only a switch between different groups counts.
+        if !steer_is_group {
+            return None;
+        }
+        let steer_group_id = steer_event.group_id.map(|id| id.to_string()).unwrap_or_default();
+        if steer_group_id == turn_target_id {
+            return None;
+        }
+    }
+    let steer_conversation = describe_conversation(
+        steer_is_group,
+        steer_event.group_name.as_deref(),
+        &steer_event.group_id.map(|id| id.to_string()).unwrap_or_default(),
+    );
+    if steer_conversation == turn_conversation {
+        return None;
+    }
+    Some(format!(
+        "[Conversation Switch] The conversation has switched from {turn_conversation} to {steer_conversation}: \
+         this steered message was sent in {steer_conversation}, while the current task and its reply belong to \
+         {turn_conversation}. Keep the two conversations apart."
+    ))
 }
 
 pub(crate) struct QqChatServiceSteerHook {
     pub(crate) pending_steer: Arc<PendingSteerStore>,
     pub(crate) sender_id: String,
+    /// The conversation this turn runs in (group id, or the sender for private chat).
+    /// Steers are aggregated per sender, so a message from another conversation of the
+    /// same sender can interrupt this turn; these two fields detect that switch so the
+    /// injected steer message can carry a conversation-switch notice.
+    pub(crate) target_id: String,
+    pub(crate) is_group: bool,
+    /// The turn conversation's group name, for the switch notice's wording.
+    pub(crate) turn_group_name: Option<String>,
     pub(crate) bot_id: String,
     pub(crate) bot_name: String,
     pub(crate) adapter: zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
     pub(crate) max_steer_count: usize,
     pub(crate) llm_supports_multimodal_input: bool,
-    pub(crate) llm_api_style: Option<String>,
     pub(crate) s3_ref: Option<Arc<S3Ref>>,
     pub(crate) trace: QqChatTaskTrace,
     pub(crate) consumed_messages: Arc<Mutex<Vec<LLMMessage>>>,
@@ -275,6 +338,28 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
         let mut prepared_inputs = Vec::with_capacity(pending.len());
         let mut consumed_guard = self.consumed_messages.lock().unwrap();
 
+        // The steer prefix leads the injected message, extended with a conversation-switch
+        // notice for every steered conversation that differs from this turn's own: steering
+        // is per sender, so a private message can interrupt a group turn and the other way
+        // round, and without the notice the model reads the message as if it belonged to
+        // the running conversation.
+        let turn_conversation =
+            describe_conversation(self.is_group, self.turn_group_name.as_deref(), &self.target_id);
+        let mut prefix = STEER_PREFIX.to_string();
+        for pending_event in &pending {
+            if let Some(hint) = conversation_switch_hint(
+                &turn_conversation,
+                self.is_group,
+                &self.target_id,
+                &pending_event.event,
+            ) {
+                if !prefix.contains(&hint) {
+                    prefix.push_str("\n\n");
+                    prefix.push_str(&hint);
+                }
+            }
+        }
+
         for pending_event in pending {
             let mut inference_event = pending_event.event.clone();
             inference_event.message_list =
@@ -304,7 +389,6 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
                 &self.bot_name,
                 &self.adapter,
                 self.llm_supports_multimodal_input,
-                self.llm_api_style.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
                 memory_recall.as_ref(),
@@ -316,12 +400,12 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
                 &self.bot_name,
                 &self.adapter,
                 self.llm_supports_multimodal_input,
-                self.llm_api_style.as_deref(),
                 &mut session_state,
                 &self.emotion_dimensions,
                 memory_recall.as_ref(),
             )
         };
+        let steer_message = apply_steer_prefix(steer_message, &prefix);
         consumed_guard.push(steer_message.clone());
         drop(consumed_guard);
         self.trace.record_steer_injected(

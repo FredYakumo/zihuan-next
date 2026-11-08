@@ -4,7 +4,8 @@ use std::sync::Mutex;
 use crate::ims_bot_adapter::models::MessageEvent;
 use crate::model_inference::llm::{LLMMessage, MessagePart};
 
-pub const STEER_PREFIX: &str = "[User-STEER Message] User steer a new message:";
+pub const STEER_PREFIX: &str =
+    "[User-STEER Message] The user sent an additional message while you are working:";
 
 /// Processing instruction appended to user messages, telling the model how to
 /// respond to the current turn.
@@ -12,21 +13,31 @@ pub const PROCESSING_INSTRUCTION: &str = "[Processing Instructions]\n\
      - This is the user's message the assistant needs to process.\n\
      - Ensure your reply addresses the user's request directly and naturally.";
 
-/// Apply the steer prefix to an already-built `LLMMessage`.
+/// Processing instruction appended to steer messages instead of [`PROCESSING_INSTRUCTION`].
 ///
-/// Prepends `STEER_PREFIX` to the message parts.
-pub fn apply_steer_prefix(mut message: LLMMessage, _api_style: Option<&str>) -> LLMMessage {
+/// A steer is supplementary input for the running turn, not a replacement task: the model
+/// must finish the current task first and must not end the turn to answer the steer alone.
+pub const STEER_PROCESSING_INSTRUCTION: &str = "[Processing Instructions]\n\
+     - This message arrived while you were working on the current task. Treat it as supplementary input, not a replacement task.\n\
+     - Finish the current task first, then address this message as well.\n\
+     - Do not end the turn to answer only this message while the current task is unfinished.";
+
+/// Apply a steer prefix to an already-built `LLMMessage`.
+///
+/// Prepends `prefix` to the message parts. Callers usually compose it from
+/// [`STEER_PREFIX`] plus optional extra blocks (e.g. a conversation-switch notice).
+pub fn apply_steer_prefix(mut message: LLMMessage, prefix: &str) -> LLMMessage {
     if message.parts.is_empty() {
-        message.parts.push(MessagePart::text(STEER_PREFIX));
+        message.parts.push(MessagePart::text(prefix.to_string()));
         return message;
     }
 
     match message.parts.first_mut() {
         Some(MessagePart::Text { text }) => {
-            *text = format!("{STEER_PREFIX}\n\n{text}");
+            *text = format!("{prefix}\n\n{text}");
         }
         _ => {
-            message.parts.insert(0, MessagePart::text(format!("{STEER_PREFIX}\n\n")));
+            message.parts.insert(0, MessagePart::text(format!("{prefix}\n\n")));
         }
     }
 
