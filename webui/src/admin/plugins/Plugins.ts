@@ -42,6 +42,10 @@ export function usePluginsPage() {
   ] as const;
   /** Installed by a dedicated backend installer instead of the compose/binary pipeline. */
   function isSpecialComponent(type: string) { return type === "sqlite" || type === "wechat_pad"; }
+  /** Embedded components install silently: no method choice, no configuration. */
+  function isEmbeddedComponent(type: string) { return type === "sqlite"; }
+  /** WeChatPadPro only ships as a Docker image, so the native install methods do not apply. */
+  function isDockerOnlyComponent(type: string) { return type === "wechat_pad"; }
   const form = reactive({ name: "", version: "latest", component_type: "mysql", install_method: "docker" as PluginInstallMethod });
   const selectedComponent = computed(() => componentOptions.find((item) => item.value === form.component_type) ?? componentOptions[0]);
   const environmentLoading = ref(false);
@@ -89,7 +93,7 @@ export function usePluginsPage() {
   watch(() => form.component_type, applyComponentDefaults);
   function getPreferredInstallMethod(): PluginInstallMethod {
     if (environment.value.docker_compose_available) return "docker";
-    if (environment.value.binary_install_available) return "binary";
+    if (!isDockerOnlyComponent(form.component_type) && environment.value.binary_install_available) return "binary";
     return "command_docker";
   }
   async function detectEnvironment() {
@@ -207,7 +211,9 @@ export function usePluginsPage() {
     let waitingForTask = false;
     try {
       const { install_method, ...plugin } = form;
-      const result = await pluginsApi.install({ ...plugin, ...(isSpecialComponent(form.component_type) ? {} : { install_method, detailed_config: config }) });
+      // Embedded components carry no install options; everything else — including the
+      // docker-only special installer — uses the standard method and config fields.
+      const result = await pluginsApi.install({ ...plugin, ...(isEmbeddedComponent(form.component_type) ? {} : { install_method, detailed_config: config }) });
       if (attempt !== installAttempt) {
         void load();
         return;
@@ -365,7 +371,8 @@ export function usePluginsPage() {
     progress,
     taskId,
     componentOptions,
-    isSpecialComponent,
+    isEmbeddedComponent,
+    isDockerOnlyComponent,
     form,
     selectedComponent,
     environmentLoading,

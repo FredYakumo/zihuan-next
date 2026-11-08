@@ -355,8 +355,19 @@ pub async fn install_plugin(req: &mut Request, res: &mut Response, depot: &mut D
         return match installer.install(&request).await {
             Ok(plugin) => {
                 let connections = plugin_connections(&plugin).unwrap_or_default();
+                // Command-mode installers record the copyable script; the success dialog
+                // shows it next to the saved connections.
+                let install_command = plugin
+                    .extra_install_metadata
+                    .get("install_command")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned);
                 res.render(Json(
-                    serde_json::json!({ "plugin": plugin, "connections": connections }),
+                    serde_json::json!({
+                        "plugin": plugin,
+                        "install_command": install_command,
+                        "connections": connections
+                    }),
                 ))
             }
             Err(error) => render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error),

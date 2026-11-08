@@ -15,6 +15,7 @@
     <t-dialog
       :visible="installVisible"
       width="720px"
+      placement="center"
       :close-on-overlay-click="false"
       @close="requestCloseInstall"
     >
@@ -45,20 +46,20 @@
       <t-form label-align="top">
         <div class="form-grid">
           <t-form-item label="插件名称" required><t-input v-model="form.name" /></t-form-item>
-          <t-form-item v-if="!isSpecialComponent(form.component_type)" label="安装方式" required class="install-method-item">
+          <t-form-item v-if="!isEmbeddedComponent(form.component_type)" label="安装方式" required class="install-method-item">
             <div class="install-method">
               <span v-if="environmentLoading" class="install-method-status">正在检测本机安装能力...</span>
               <template v-else>
                 <label :class="{ unavailable: !dockerSupported }" :title="dockerUnsupportedReason"><input v-model="form.install_method" type="radio" value="docker" :disabled="!dockerSupported" /> 本机 Docker <small v-if="!dockerSupported">（不可用）</small></label>
-                <label :class="{ unavailable: !binarySupported }" :title="binaryUnsupportedReason"><input v-model="form.install_method" type="radio" value="binary" :disabled="!binarySupported" /> 本机 native 程序 <small v-if="!binarySupported">（不可用）</small></label>
+                <label v-if="!isDockerOnlyComponent(form.component_type)" :class="{ unavailable: !binarySupported }" :title="binaryUnsupportedReason"><input v-model="form.install_method" type="radio" value="binary" :disabled="!binarySupported" /> 本机 native 程序 <small v-if="!binarySupported">（不可用）</small></label>
                 <label><input v-model="form.install_method" type="radio" value="command_docker" /> Docker 安装命令</label>
-                <label><input v-model="form.install_method" type="radio" value="command_binary" /> native 程序安装命令</label>
+                <label v-if="!isDockerOnlyComponent(form.component_type)"><input v-model="form.install_method" type="radio" value="command_binary" /> native 程序安装命令</label>
               </template>
             </div>
           </t-form-item>
         </div>
         <template v-if="!environmentLoading">
-        <div v-if="!isSpecialComponent(form.component_type)" class="global-config">
+        <div v-if="!isEmbeddedComponent(form.component_type)" class="global-config">
           <label><input v-model="config.expose_public_access" type="checkbox" /> 暴露公网访问</label>
           <label v-if="config.expose_public_access"><input v-model="config.use_target_machine_address" type="checkbox" /> 使用目标机器地址</label>
           <SetupField v-if="config.expose_public_access && config.use_target_machine_address" label="目标机器地址（可选）"><input v-model="config.target_machine_address" placeholder="例如 203.0.113.10" /></SetupField>
@@ -98,7 +99,7 @@
         <t-alert
           v-if="form.component_type === 'wechat_pad'"
           theme="info"
-          message="aaa"
+          message="WeChatPadPro 通过 Docker 运行，会一并启动 MySQL、Redis 与 webhook 中继；安装完成后请在连接配置中补全机器人 wxid。"
         />
         <t-alert v-if="error" theme="error" :message="error" />
         </template>
@@ -118,7 +119,7 @@
       <template v-if="installStep !== 'progress'" #footer>
         <div class="dialog-footer">
           <t-button variant="outline" @click="requestCloseInstall">取消</t-button>
-          <t-button theme="primary" :loading="saving" :disabled="installStep !== 'config' || (!isSpecialComponent(form.component_type) && environmentLoading)" @click="install">开始安装</t-button>
+          <t-button theme="primary" :loading="saving" :disabled="installStep !== 'config' || (!isEmbeddedComponent(form.component_type) && environmentLoading)" @click="install">开始安装</t-button>
         </div>
       </template>
     </t-dialog>
@@ -250,7 +251,8 @@ const {
   progress,
   taskId,
   componentOptions,
-  isSpecialComponent,
+  isEmbeddedComponent,
+  isDockerOnlyComponent,
   form,
   selectedComponent,
   environmentLoading,
