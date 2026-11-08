@@ -701,7 +701,7 @@ fn with_auth(
 /// The 861 build reports rejections as HTTP 200 with a JSON `Code` other than 200, so the HTTP
 /// status alone is not enough; a body carrying an integer `Code` is treated as authoritative.
 /// Returns the response body on success so callers can pick fields out of it.
-async fn check_bridge_response(response: reqwest::Response) -> std::result::Result<String, String> {
+pub async fn check_bridge_response(response: reqwest::Response) -> std::result::Result<String, String> {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
     if !status.is_success() {

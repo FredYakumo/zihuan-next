@@ -2,6 +2,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRoute } from "vue-router";
 
 import { pluginsApi, setup as setupApi, type DetailedSetupConfig, type EnvironmentInfo, type PluginRecord, type ScriptPluginDetail, type ScriptPluginFile, type ScriptPluginFileNode, type SetupProgressEvent } from "../../api/client";
+import type { WechatLoginStatusResult } from "../../api/client";
 import elasticsearchIcon from "../../assets/icons/elasticsearch.svg";
 import mysqlIcon from "../../assets/icons/mysql.svg";
 import redisIcon from "../../assets/icons/redis.svg";
@@ -59,7 +60,7 @@ export function usePluginsPage() {
     rustfs: { enabled: false, source: "install", deployment: { image: "rustfs/rustfs:latest", port: 9000, data_dir: "./data/plugin-rustfs", container_name: "zihuan-plugin-rustfs", restart_policy: "unless-stopped" }, endpoint: "http://127.0.0.1:9000", bucket: "zihuan", region: "us-east-1", access_key: "", secret_key: "", public_base_url: null, path_style: true },
     search: { enabled: false, source: "install", type: "weaviate", deployment: { image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./data/plugin-search", container_name: "zihuan-plugin-search", restart_policy: "unless-stopped" }, base_url: "http://127.0.0.1:8080", username: null, password: null, api_key: null, auth_method: "api_key", vector_dimensions: 1024 },
     redis: { enabled: false, source: "install", deployment: { image: "redis:7", port: 6379, data_dir: "./data/plugin-redis", container_name: "zihuan-plugin-redis", restart_policy: "unless-stopped" }, url: "redis://127.0.0.1:6379", username: null, password: null } });
-  const columns = [{ colKey: "name", title: "插件名称" }, { colKey: "component_type", title: "组件", width: 130 }, { colKey: "installation_method", title: "安装方式", width: 150 }, { colKey: "status", title: "状态", width: 110 }, { colKey: "connection_ids", title: "关联连接", width: 100 }, { colKey: "actions", title: "操作", width: 370 }];
+  const columns = [{ colKey: "name", title: "插件名称" }, { colKey: "component_type", title: "组件", width: 130 }, { colKey: "installation_method", title: "安装方式", width: 150 }, { colKey: "status", title: "状态", width: 110 }, { colKey: "connection_ids", title: "关联连接", width: 100 }, { colKey: "actions", title: "操作", width: 430 }];
   /** Plugins under `plugins/` are directory-owned: the row is informational and cannot be
    *  installed, toggled or uninstalled from here. */
   function isScriptPlugin(plugin: Pick<PluginRecord, "installation_method">) { return plugin.installation_method === "dynamic_script"; }
@@ -349,10 +350,139 @@ export function usePluginsPage() {
     }
   }
   async function removePlugin(id: string) { try { const result = await pluginsApi.remove(id); await load(); if (result.uninstall_command) { uninstallCommand.value = result.uninstall_command; uninstallCommandVisible.value = true; } } catch (e) { error.value = String(e); } }
+
+  // WeChat QR login dialog: fetch a bridge QR code, poll the scan result and stop at either a
+  // confirmed login (persisted server-side) or an expired code the user can refresh.
+  type WechatLoginPhase = "idle" | "waiting" | "scanned" | "logged_in" | "expired" | "error";
+  const wechatLoginVisible = ref(false);
+  const wechatLoginPlugin = ref<PluginRecord | null>(null);
+  const wechatLoginLoading = ref(false);
+  const wechatLoginPhase = ref<WechatLoginPhase>("idle");
+  const wechatLoginError = ref("");
+  const wechatLoginQrBase64 = ref("");
+  const wechatLoginQrLink = ref("");
+  const wechatLoginAccount = ref<{ wxid: string; nickname: string } | null>(null);
+  const wechatLoginCountdown = ref(0);
+  let wechatLoginAuthKey = "";
+  let wechatLoginExpiresAt = 0;
+  let wechatLoginAttempt = 0;
+  let wechatLoginTimer: ReturnType<typeof setTimeout> | null = null;
+  let wechatLoginCountdownTimer: ReturnType<typeof setInterval> | null = null;
+  function stopWechatLoginLoop() {
+    wechatLoginAttempt += 1;
+    if (wechatLoginTimer !== null) { clearTimeout(wechatLoginTimer); wechatLoginTimer = null; }
+    if (wechatLoginCountdownTimer !== null) { clearInterval(wechatLoginCountdownTimer); wechatLoginCountdownTimer = null; }
+  }
+  function openWechatLogin(plugin: PluginRecord) {
+    stopWechatLoginLoop();
+    wechatLoginPlugin.value = plugin;
+    wechatLoginError.value = "";
+    wechatLoginQrBase64.value = "";
+    wechatLoginQrLink.value = "";
+    wechatLoginAccount.value = null;
+    wechatLoginPhase.value = "idle";
+    wechatLoginVisible.value = true;
+    void requestWechatQr();
+  }
+  function closeWechatLogin() {
+    stopWechatLoginLoop();
+    wechatLoginVisible.value = false;
+    wechatLoginPlugin.value = null;
+  }
+  function startWechatLoginCountdown() {
+    wechatLoginCountdown.value = Math.max(0, Math.round((wechatLoginExpiresAt - Date.now()) / 1000));
+    wechatLoginCountdownTimer = setInterval(() => {
+      wechatLoginCountdown.value = Math.max(0, Math.round((wechatLoginExpiresAt - Date.now()) / 1000));
+      if (wechatLoginCountdown.value === 0 && wechatLoginPhase.value !== "logged_in") {
+        wechatLoginPhase.value = "expired";
+        stopWechatLoginLoop();
+      }
+    }, 1000);
+  }
+  async function requestWechatQr() {
+    const plugin = wechatLoginPlugin.value;
+    if (!plugin) return;
+    stopWechatLoginLoop();
+    const attempt = wechatLoginAttempt;
+    wechatLoginLoading.value = true;
+    wechatLoginError.value = "";
+    wechatLoginPhase.value = "idle";
+    try {
+      const result = await pluginsApi.wechatLoginQr(plugin.id);
+      if (attempt !== wechatLoginAttempt) return;
+      wechatLoginAuthKey = result.auth_key;
+      if (result.status === "logged_in") {
+        wechatLoginPhase.value = "logged_in";
+        wechatLoginAccount.value = { wxid: result.wxid ?? "", nickname: result.nickname ?? "" };
+        return;
+      }
+      wechatLoginQrBase64.value = result.qr_base64 ?? "";
+      wechatLoginQrLink.value = result.qr_link ?? "";
+      wechatLoginExpiresAt = Date.now() + (result.expires_in_secs ?? 290) * 1000;
+      wechatLoginPhase.value = "waiting";
+      startWechatLoginCountdown();
+      pollWechatLoginStatus(attempt);
+    } catch (e) {
+      if (attempt !== wechatLoginAttempt) return;
+      wechatLoginPhase.value = "error";
+      wechatLoginError.value = String(e);
+    } finally {
+      if (attempt === wechatLoginAttempt) wechatLoginLoading.value = false;
+    }
+  }
+  function pollWechatLoginStatus(attempt: number) {
+    wechatLoginTimer = setTimeout(async () => {
+      if (attempt !== wechatLoginAttempt || !wechatLoginPlugin.value) return;
+      let result: WechatLoginStatusResult | null = null;
+      try {
+        result = await pluginsApi.wechatLoginStatus(wechatLoginPlugin.value.id, wechatLoginAuthKey);
+        if (attempt !== wechatLoginAttempt) return;
+        if (result.status === "logged_in") {
+          wechatLoginPhase.value = "logged_in";
+          wechatLoginAccount.value = { wxid: result.wxid ?? "", nickname: result.nickname ?? "" };
+          stopWechatLoginLoop();
+          await load();
+          return;
+        }
+        if (result.status === "scanned") wechatLoginPhase.value = "scanned";
+        if (result.status === "expired") {
+          wechatLoginPhase.value = "expired";
+          stopWechatLoginLoop();
+          return;
+        }
+        if (result.status === "error" && result.message) wechatLoginError.value = result.message;
+      } catch (e) {
+        if (attempt !== wechatLoginAttempt) return;
+        wechatLoginError.value = String(e);
+      }
+      if (Date.now() >= wechatLoginExpiresAt) {
+        wechatLoginPhase.value = "expired";
+        stopWechatLoginLoop();
+        return;
+      }
+      pollWechatLoginStatus(attempt);
+    }, 3000);
+  }
+  function wechatLoginStatusLabel(): string {
+    switch (wechatLoginPhase.value) {
+      case "idle": return "正在获取二维码...";
+      case "waiting": return `请用微信扫描二维码（${wechatLoginCountdown.value} 秒后过期）`;
+      case "scanned": return "已扫码，请在手机上确认登录";
+      case "expired": return "二维码已过期，请刷新后重扫";
+      case "error": return wechatLoginError.value || "登录流程出错";
+      case "logged_in": {
+        const account = wechatLoginAccount.value;
+        if (!account) return "登录成功";
+        const name = account.nickname || account.wxid;
+        return account.wxid && account.nickname ? `登录成功：${account.nickname}（${account.wxid}）` : `登录成功：${name}`;
+      }
+    }
+  }
   onMounted(() => { void load(); if (route.query.install === "1") openInstall(); });
   onBeforeUnmount(() => {
     installAttempt += 1;
     clearInstallationSideEffects();
+    stopWechatLoginLoop();
   });
 
   return {
@@ -421,8 +551,19 @@ export function usePluginsPage() {
     zipInstalling,
     zipError,
     zipWarnings,
-    openZipInstall,
-    selectZipFile,
-    installZip,
+  openZipInstall,
+  selectZipFile,
+  installZip,
+  wechatLoginVisible,
+  wechatLoginLoading,
+  wechatLoginPhase,
+  wechatLoginError,
+  wechatLoginQrBase64,
+  wechatLoginQrLink,
+  wechatLoginAccount,
+  openWechatLogin,
+  closeWechatLogin,
+  requestWechatQr,
+  wechatLoginStatusLabel,
   };
 }

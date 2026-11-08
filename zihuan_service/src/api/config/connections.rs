@@ -73,7 +73,12 @@ fn validate_connection_basics(kind: &ConnectionKind) -> Result<(), String> {
         }
         ConnectionKind::BotAdapter(bot) => {
             let bot = parse_ims_bot_adapter_connection(bot).map_err(|err| err.to_string())?;
-            if bot.bot_server_url.trim().is_empty() {
+
+            if let Some(wechat) = &bot.wechat {
+                if wechat.pad_url.trim().is_empty() {
+                    return Err("ims_bot_adapter.wechat.pad_url must not be empty".to_string());
+                }
+            } else if bot.bot_server_url.trim().is_empty() {
                 return Err("ims_bot_adapter.bot_server_url must not be empty".to_string());
             }
             if matches!(bot.adapter_server_url.as_deref().map(str::trim), Some("")) {

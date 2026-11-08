@@ -9,7 +9,7 @@
         <template #installation_method="{ row }"><span>{{ installMethodLabel(row.installation_method) }}</span></template>
         <template #status="{ row }"><t-tag :theme="statusTheme(row.status)" variant="light" :title="statusTitle(row)">{{ statusLabel(row.status) }}</t-tag></template>
         <template #connection_ids="{ row }"><span v-if="isScriptPlugin(row)">—</span><span v-else>{{ row.connection_ids?.length ?? 0 }} 个连接</span></template>
-        <template #actions="{ row }"><t-space size="small"><template v-if="isScriptPlugin(row)"><t-button variant="text" @click="openDetail(row)">详情</t-button><t-popconfirm content="确认卸载插件并删除其目录吗？" @confirm="removeScriptPlugin(row)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></template><template v-else><t-button v-if="installCommand(row)" variant="text" @click="copyPluginValue(installCommand(row)!, '安装命令')"><template #icon><CopyIcon /></template>复制安装命令</t-button><t-button v-if="connectionConfigJson(row)" variant="text" @click="copyPluginValue(connectionConfigJson(row)!, '连接 JSON')"><template #icon><CopyIcon /></template>复制连接 JSON</t-button><t-button v-if="row.status === 'installed'" variant="text" @click="toggle(row)">停用</t-button><t-button v-else-if="row.status === 'disabled'" variant="text" @click="toggle(row)">启用</t-button><t-popconfirm content="确认卸载插件并删除关联连接吗？" @confirm="removePlugin(row.id)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></template></t-space></template>
+        <template #actions="{ row }"><t-space size="small"><template v-if="isScriptPlugin(row)"><t-button variant="text" @click="openDetail(row)">详情</t-button><t-popconfirm content="确认卸载插件并删除其目录吗？" @confirm="removeScriptPlugin(row)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></template><template v-else><t-button v-if="row.component_type === 'wechat_pad' && ['installed', 'command_generated', 'disabled'].includes(row.status)" variant="text" @click="openWechatLogin(row)">扫码登录</t-button><t-button v-if="installCommand(row)" variant="text" @click="copyPluginValue(installCommand(row)!, '安装命令')"><template #icon><CopyIcon /></template>复制安装命令</t-button><t-button v-if="connectionConfigJson(row)" variant="text" @click="copyPluginValue(connectionConfigJson(row)!, '连接 JSON')"><template #icon><CopyIcon /></template>复制连接 JSON</t-button><t-button v-if="row.status === 'installed'" variant="text" @click="toggle(row)">停用</t-button><t-button v-else-if="row.status === 'disabled'" variant="text" @click="toggle(row)">启用</t-button><t-popconfirm content="确认卸载插件并删除关联连接吗？" @confirm="removePlugin(row.id)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></template></t-space></template>
       </t-table>
     </t-card>
     <t-dialog
@@ -215,6 +215,34 @@
         <t-button theme="primary" :loading="zipInstalling" :disabled="!zipFile" @click="installZip">开始安装</t-button>
       </template>
     </t-dialog>
+    <t-dialog
+      v-model:visible="wechatLoginVisible"
+      header="微信扫码登录"
+      width="420px"
+      :close-on-overlay-click="false"
+      :confirm-btn="null"
+      cancel-btn="关闭"
+      @close="closeWechatLogin"
+    >
+      <div class="wechat-login-body">
+        <t-loading :loading="wechatLoginLoading" show-overlay>
+          <div v-if="wechatLoginQrBase64 || wechatLoginQrLink" class="wechat-login-qr">
+            <img v-if="wechatLoginQrBase64" :src="wechatLoginQrBase64" alt="微信登录二维码" />
+            <a v-else :href="wechatLoginQrLink" target="_blank">打开登录链接</a>
+          </div>
+          <div v-else-if="wechatLoginPhase === 'logged_in'" class="wechat-login-success">
+            <p>✅ 登录成功</p>
+            <p v-if="wechatLoginAccount?.nickname || wechatLoginAccount?.wxid" class="wechat-login-account">
+              {{ wechatLoginAccount?.nickname || wechatLoginAccount?.wxid }}<span v-if="wechatLoginAccount?.wxid">（{{ wechatLoginAccount.wxid }}）</span>
+            </p>
+            <p class="wechat-login-hint">授权码与账号 wxid 已写回连接配置。</p>
+          </div>
+          <div v-else class="wechat-login-empty">正在获取二维码…</div>
+        </t-loading>
+        <p :class="['wechat-login-status', { error: wechatLoginPhase === 'error' }]">{{ wechatLoginStatusLabel() }}</p>
+        <t-button v-if="wechatLoginPhase === 'expired' || wechatLoginPhase === 'error'" variant="outline" @click="requestWechatQr">刷新二维码</t-button>
+      </div>
+    </t-dialog>
     <t-dialog v-model:visible="uninstallCommandVisible" header="卸载命令" :confirm-btn="null" cancel-btn="关闭">
       <div class="plugin-command-dialog">
         <t-button variant="text" shape="square" @click="copyPluginValue(uninstallCommand, '卸载命令')"><template #icon><CopyIcon /></template></t-button>
@@ -303,6 +331,17 @@ const {
   openZipInstall,
   selectZipFile,
   installZip,
+  wechatLoginVisible,
+  wechatLoginLoading,
+  wechatLoginPhase,
+  wechatLoginError,
+  wechatLoginQrBase64,
+  wechatLoginQrLink,
+  wechatLoginAccount,
+  openWechatLogin,
+  closeWechatLogin,
+  requestWechatQr,
+  wechatLoginStatusLabel,
 } = usePluginsPage();
 </script>
 

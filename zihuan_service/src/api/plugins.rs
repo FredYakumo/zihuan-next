@@ -16,6 +16,7 @@ use zihuan_core::storage::{self, ConnectionConfig};
 
 pub mod script_plugin;
 mod special_installers;
+pub mod wechat_login;
 
 const PLUGINS_FILE_NAME: &str = "plugins.json";
 

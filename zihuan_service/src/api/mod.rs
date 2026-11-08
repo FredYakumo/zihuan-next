@@ -345,6 +345,14 @@ pub fn build_router(
                 .post(plugins::create_plugin)
                 .push(Router::with_path("install").post(plugins::install_plugin))
                 .push(
+                    Router::with_path("wechat_pad/login_qr")
+                        .post(plugins::wechat_login::wechat_login_qr),
+                )
+                .push(
+                    Router::with_path("wechat_pad/login_status")
+                        .post(plugins::wechat_login::wechat_login_status),
+                )
+                .push(
                     Router::with_path("script/install-zip")
                         .post(plugins::script_plugin::install_script_plugin_zip),
                 )

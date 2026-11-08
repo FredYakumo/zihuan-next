@@ -1782,6 +1782,23 @@ export interface ScriptPluginFile {
   truncated: boolean;
 }
 
+export interface WechatLoginQrResult {
+  status: "qr" | "logged_in";
+  auth_key: string;
+  qr_base64?: string;
+  qr_link?: string;
+  expires_in_secs?: number;
+  wxid?: string;
+  nickname?: string;
+}
+
+export interface WechatLoginStatusResult {
+  status: "waiting" | "scanned" | "logged_in" | "expired" | "error";
+  message?: string;
+  wxid?: string;
+  nickname?: string;
+}
+
 export const pluginsApi = {
   list(): Promise<PluginRecord[]> {
     return request("GET", "/plugins");
@@ -1834,5 +1851,16 @@ export const pluginsApi = {
   },
   disable(id: string): Promise<{ plugin: PluginRecord; command?: string | null }> {
     return request("POST", `/plugins/${encodeURIComponent(id)}/disable`);
+  },
+  /** Starts (or reuses) a WeChat QR login for an installed WeChatPadPro plugin. */
+  wechatLoginQr(pluginId: string): Promise<WechatLoginQrResult> {
+    return request("POST", "/plugins/wechat_pad/login_qr", { plugin_id: pluginId });
+  },
+  /** Polls the bridge scan result; a confirmed login is persisted server-side. */
+  wechatLoginStatus(pluginId: string, authKey: string): Promise<WechatLoginStatusResult> {
+    return request("POST", "/plugins/wechat_pad/login_status", {
+      plugin_id: pluginId,
+      auth_key: authKey,
+    });
   },
 };

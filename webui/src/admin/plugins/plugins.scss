@@ -317,3 +317,51 @@ textarea {
     margin: 0;
     font-size: 13px;
 }
+
+.wechat-login-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.wechat-login-qr {
+    display: flex;
+    justify-content: center;
+
+    img {
+        width: 220px;
+        height: 220px;
+        object-fit: contain;
+        border: 1px solid var(--td-component-stroke, #e7e7e7);
+        border-radius: 8px;
+    }
+}
+
+.wechat-login-success,
+.wechat-login-empty {
+    margin: 0;
+    padding: 24px 0;
+    text-align: center;
+}
+
+.wechat-login-account {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.wechat-login-hint {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--admin-muted);
+}
+
+.wechat-login-status {
+    margin: 0;
+    font-size: 13px;
+    text-align: center;
+
+    &.error {
+        color: var(--td-error-color, #d54941);
+    }
+}
