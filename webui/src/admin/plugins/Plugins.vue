@@ -62,7 +62,7 @@
         <div v-if="!isEmbeddedComponent(form.component_type)" class="global-config">
           <label><input v-model="config.expose_public_access" type="checkbox" /> 暴露公网访问</label>
           <label v-if="config.expose_public_access"><input v-model="config.use_target_machine_address" type="checkbox" /> 使用目标机器地址</label>
-          <SetupField v-if="config.expose_public_access && config.use_target_machine_address" label="目标机器地址（可选）"><input v-model="config.target_machine_address" placeholder="例如 203.0.113.10" /></SetupField>
+          <SetupField v-if="config.expose_public_access && config.use_target_machine_address"><input v-model="config.target_machine_address" placeholder="例如 203.0.113.10" /></SetupField>
         </div>
         <div v-if="form.component_type === 'mysql'" class="form-grid">
           <SetupDeploymentFields v-model="config.relational.deployment" />
@@ -99,7 +99,7 @@
         <t-alert
           v-if="form.component_type === 'wechat_pad'"
           theme="info"
-          message="WeChatPadPro 通过 Docker 运行，会一并启动 MySQL、Redis 与 webhook 中继；安装完成后请在连接配置中补全机器人 wxid。"
+          message="安装 WeChatPadPro本体、配套MySQL、Redis和WebHook Docker容器"
         />
         <t-alert v-if="error" theme="error" :message="error" />
         </template>

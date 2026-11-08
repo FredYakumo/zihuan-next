@@ -118,26 +118,57 @@ const server = http.createServer((req, res) => {
 });
 
 // The bridge keeps its webhook config in its own database, so re-registering on every start is
-// both cheap and enough to recover from a bridge that was not ready yet.
+// both cheap and enough to recover from a bridge that was not ready yet. Builds differ in the
+// registration endpoint and body shape, so both candidates are tried until one is accepted.
+// The 861 build can answer HTTP 200 with a JSON `Code` other than 200 when the key is not
+// bound to a logged-in account yet — that still counts as "not registered" and keeps retrying,
+// so registration heals on its own once a valid account key is configured.
+const WEBHOOK_CONFIG_CANDIDATES = [
+  {
+    path: "/webhook/Config",
+    body: () => ({
+      URL: SELF_URL,
+      MessageTypes: ["1", "3", "49"],
+      Enabled: true,
+      IncludeSelfMessage: false,
+    }),
+  },
+  {
+    path: "/v1/webhook/Config",
+    body: () => ({ webhookUrl: SELF_URL, types: [1, 3, 49], includeSelf: false }),
+  },
+];
+
 async function registerWebhook() {
   for (;;) {
     for (const pad of PAD_URLS) {
-      try {
-        const response = await fetch(`${pad}/v1/webhook/Config`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            ...(PAD_TOKEN ? { authorization: `Bearer ${PAD_TOKEN}` } : {}),
-          },
-          body: JSON.stringify({ webhookUrl: SELF_URL, types: [1, 3, 49], includeSelf: false }),
-        });
-        if (response.ok) {
-          console.log(`[hook] webhook registered: ${pad} -> ${SELF_URL}`);
-          return;
+      for (const candidate of WEBHOOK_CONFIG_CANDIDATES) {
+        const target = `${pad}${candidate.path}`;
+        try {
+          const url = new URL(target);
+          if (PAD_TOKEN) url.searchParams.set("key", PAD_TOKEN);
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              ...(PAD_TOKEN ? { authorization: `Bearer ${PAD_TOKEN}` } : {}),
+            },
+            body: JSON.stringify(candidate.body()),
+          });
+          if (!response.ok) {
+            console.log(`[hook] ${target} answered HTTP ${response.status}`);
+            continue;
+          }
+          const result = await response.json().catch(() => null);
+          const code = Number.isInteger(result?.Code) ? result.Code : 200;
+          if (code === 200 || code === 0) {
+            console.log(`[hook] webhook registered: ${target} -> ${SELF_URL}`);
+            return;
+          }
+          console.log(`[hook] ${target} Code ${code}: ${result?.Text ?? ""}`);
+        } catch (error) {
+          console.log(`[hook] ${target} unreachable: ${error?.message ?? error}`);
         }
-        console.log(`[hook] ${pad} answered HTTP ${response.status}`);
-      } catch (error) {
-        console.log(`[hook] ${pad} unreachable: ${error?.message ?? error}`);
       }
     }
     await new Promise((resolve) => setTimeout(resolve, 5000));

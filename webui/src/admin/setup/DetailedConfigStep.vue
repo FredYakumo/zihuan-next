@@ -30,7 +30,7 @@
           <input v-model="model.use_target_machine_address" type="checkbox" />
           <span>使用目标机器地址</span>
         </label>
-        <Field v-if="model.use_target_machine_address" label="目标机器地址（可选）">
+        <Field v-if="model.use_target_machine_address">
           <input v-model="model.target_machine_address" placeholder="例如 203.0.113.10 或 server.example.com" />
         </Field>
         <p class="public-access-hint">

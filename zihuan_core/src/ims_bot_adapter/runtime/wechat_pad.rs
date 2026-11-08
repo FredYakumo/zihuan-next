@@ -24,8 +24,14 @@ use crate::error::Result;
 
 const LOG_PREFIX: &str = "[wechat_pad]";
 
-/// Candidate send endpoints, tried in order: bridge builds differ in their route casing.
+/// Candidate webhook-config endpoints, tried in order: the 861 build serves `/webhook/Config`
+/// with a `WebhookConfig` body, other builds answer `/v1/webhook/Config` with flat fields.
+const WEBHOOK_CONFIG_PATHS: &[&str] = &["/webhook/Config", "/v1/webhook/Config"];
+
+/// Candidate send endpoints, tried in order: the 861 build answers `/message/SendTextMessage`
+/// with a `MsgItem` body, older builds expose `/api/v1/message/SendText` style routes.
 const SEND_TEXT_PATHS: &[&str] = &[
+    "/message/SendTextMessage",
     "/api/v1/message/SendText",
     "/api/v1/message/SendTextMsg",
     "/api/v1/message/sendText",
@@ -127,21 +133,30 @@ impl WeChatPadBotAdapter {
             return;
         }
 
-        let endpoint = format!("{}/v1/webhook/Config", self.config.base_url());
-        let body = json!({
-            "webhookUrl": webhook_url,
-            "types": [1, 3, 49],
-            "includeSelf": false,
-        });
-        match with_auth(client.post(&endpoint), &self.config).json(&body).send().await {
-            Ok(response) if response.status().is_success() => {
-                info!("{LOG_PREFIX} registered webhook {webhook_url} with the bridge")
+        // The first candidate the bridge accepts wins; a merely reachable endpoint can still
+        // reject the credential, so `check_bridge_response` gates success.
+        let mut app_error: Option<String> = None;
+        let mut last_error = String::new();
+        for path in WEBHOOK_CONFIG_PATHS {
+            let endpoint = format!("{}{}", self.config.base_url(), path);
+            let request = with_auth(client.post(&endpoint), &self.config)
+                .json(&webhook_config_body(path, &webhook_url));
+            match request.send().await {
+                Ok(response) => match check_bridge_response(response).await {
+                    Ok(_) => {
+                        info!("{LOG_PREFIX} registered webhook {webhook_url} with the bridge via {path}");
+                        return;
+                    }
+                    Err(error) => {
+                        let error = format!("{path}: {error}");
+                        app_error = app_error.or(Some(error.clone()));
+                        last_error = error;
+                    }
+                },
+                Err(error) => last_error = format!("{path}: {error}"),
             }
-            Ok(response) => {
-                warn!("{LOG_PREFIX} webhook registration returned HTTP {}", response.status())
-            }
-            Err(error) => warn!("{LOG_PREFIX} webhook registration failed: {error}"),
         }
+        warn!("{LOG_PREFIX} webhook registration failed: {}", app_error.unwrap_or(last_error));
     }
 }
 
@@ -555,11 +570,11 @@ async fn handle_action(
                 .or_else(|| params.get("user_id"))
                 .and_then(|value| json_id(Some(value)))
                 .unwrap_or_default();
-            let text = render_outbound(&params);
-            if target.is_empty() || text.trim().is_empty() {
+            let outbound = render_outbound(&params);
+            if target.is_empty() || outbound.text.trim().is_empty() {
                 failed_echo(&echo, "missing target or text")
             } else {
-                match send_text(client, config, &target, &text).await {
+                match send_text(client, config, &target, &outbound).await {
                     Ok(message_id) => json!({
                         "status": "ok",
                         "retcode": 0,
@@ -609,37 +624,66 @@ fn failed_echo(echo: &str, message: &str) -> Value {
     })
 }
 
-/// Flatten OneBot message segments into the plain text WeChatPadPro's `SendText` accepts.
-fn render_outbound(params: &Value) -> String {
-    let mut text = String::new();
+/// Flattened OneBot message segments for the send endpoints.
+struct OutboundText {
+    /// Plain text without mention markers, sent as the 861 build's `TextContent`.
+    text: String,
+    /// Mentioned wxids, sent as the 861 build's `AtWxIDList`.
+    at_wxids: Vec<String>,
+    /// Text with inline `@wxid ` markers for legacy bodies without structured mentions.
+    legacy: String,
+}
+
+/// Flatten OneBot message segments into the forms the send endpoints accept.
+fn render_outbound(params: &Value) -> OutboundText {
     let segments = match params.get("message") {
         Some(Value::Array(segments)) => segments.clone(),
-        Some(Value::String(raw)) => return raw.clone(),
+        Some(Value::String(raw)) => {
+            return OutboundText { text: raw.clone(), at_wxids: Vec::new(), legacy: raw.clone() }
+        }
         _ => Vec::new(),
     };
 
+    let mut text = String::new();
+    let mut at_wxids: Vec<String> = Vec::new();
+    let mut legacy = String::new();
     for segment in segments {
         let kind = segment.get("type").and_then(Value::as_str).unwrap_or_default();
         let data = segment.get("data").cloned().unwrap_or(Value::Null);
         match kind {
-            "text" => text.push_str(&unbox_text(data.get("text").unwrap_or(&Value::Null))),
-            // WeChatPad has no structured @ payload on SendText, so mentions degrade to text.
+            "text" => {
+                let part = unbox_text(data.get("text").unwrap_or(&Value::Null));
+                text.push_str(&part);
+                legacy.push_str(&part);
+            }
+            // The 861 build takes structured mentions via `AtWxIDList`; legacy bodies degrade
+            // them to inline text.
             "at" => {
                 let target = json_id(data.get("qq").or_else(|| data.get("target")));
                 if let Some(target) = target.filter(|value| !value.is_empty()) {
-                    text.push('@');
-                    text.push_str(&target);
-                    text.push(' ');
+                    if !at_wxids.contains(&target) {
+                        at_wxids.push(target.clone());
+                    }
+                    legacy.push('@');
+                    legacy.push_str(&target);
+                    legacy.push(' ');
                 }
             }
             other => warn!("{LOG_PREFIX} outbound segment '{other}' is not supported by WeChatPad and was skipped"),
         }
     }
 
-    text.trim().to_string()
+    OutboundText {
+        text: text.trim().to_string(),
+        at_wxids,
+        legacy: legacy.trim().to_string(),
+    }
 }
 
 /// Attach the bridge credential unless the deployment left it empty.
+///
+/// The 861 build reads the credential from the `key` query parameter, older builds from the
+/// Bearer header; sending both lets one credential work against every build.
 fn with_auth(
     request: reqwest::RequestBuilder,
     config: &WeChatPadConfig,
@@ -648,32 +692,107 @@ fn with_auth(
     if token.is_empty() {
         request
     } else {
-        request.bearer_auth(token)
+        request.bearer_auth(token).query(&[("key", token)])
     }
+}
+
+/// Read a bridge reply and decide whether the call actually succeeded.
+///
+/// The 861 build reports rejections as HTTP 200 with a JSON `Code` other than 200, so the HTTP
+/// status alone is not enough; a body carrying an integer `Code` is treated as authoritative.
+/// Returns the response body on success so callers can pick fields out of it.
+async fn check_bridge_response(response: reqwest::Response) -> std::result::Result<String, String> {
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!("HTTP {status}"));
+    }
+    if let Ok(value) = serde_json::from_str::<Value>(&body) {
+        if let Some(code) = value.get("Code").and_then(Value::as_i64) {
+            if code != 200 && code != 0 {
+                let text = value.get("Text").and_then(Value::as_str).unwrap_or_default();
+                let detail = if text.is_empty() { String::new() } else { format!(": {text}") };
+                return Err(format!("bridge returned Code {code}{detail}"));
+            }
+        }
+    }
+    Ok(body)
 }
 
 async fn send_text(
     client: &reqwest::Client,
     config: &WeChatPadConfig,
     target: &str,
-    text: &str,
+    outbound: &OutboundText,
 ) -> std::result::Result<String, String> {
     if config.base_url().is_empty() {
         return Err("pad_url is not configured".to_string());
     }
 
+    // An app-level `Code` rejection means the endpoint itself is right and the credential is
+    // the problem; that beats a trailing 404 as the reported error.
+    let mut app_error: Option<String> = None;
     let mut last_error = String::new();
     for path in SEND_TEXT_PATHS {
         let endpoint = format!("{}{}", config.base_url(), path);
-        let body = json!({ "toUserName": target, "content": text });
-        match with_auth(client.post(&endpoint), config).json(&body).send().await {
-            Ok(response) if response.status().is_success() => {
-                return Ok(format!("wp{}", MESSAGE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)))
-            }
-            Ok(response) => last_error = format!("{path} returned HTTP {}", response.status()),
+        let request =
+            with_auth(client.post(&endpoint), config).json(&send_text_body(path, target, outbound));
+        match request.send().await {
+            Ok(response) => match check_bridge_response(response).await {
+                Ok(body) => {
+                    let fallback =
+                        || format!("wp{}", MESSAGE_ID_COUNTER.fetch_add(1, Ordering::Relaxed));
+                    return Ok(bridge_message_id(&body).unwrap_or_else(fallback));
+                }
+                Err(error) => {
+                    let error = format!("{path}: {error}");
+                    app_error = app_error.or(Some(error.clone()));
+                    last_error = error;
+                }
+            },
             Err(error) => last_error = format!("{path}: {error}"),
         }
     }
+    Err(app_error.unwrap_or(last_error))
+}
 
-    Err(last_error)
+/// Send request body for one bridge build: the 861 `MsgItem` shape carries structured
+/// mentions, the legacy shape takes a flat `toUserName`/`content` pair.
+fn send_text_body(path: &str, target: &str, outbound: &OutboundText) -> Value {
+    if path == "/message/SendTextMessage" {
+        let mut item = json!({ "ToUserName": target, "MsgType": 1, "TextContent": outbound.text });
+        if !outbound.at_wxids.is_empty() {
+            item["AtWxIDList"] = json!(outbound.at_wxids);
+        }
+        json!({ "MsgItem": [item] })
+    } else {
+        json!({ "toUserName": target, "content": outbound.legacy })
+    }
+}
+
+/// Webhook-config request body for one bridge build: field names differ alongside the routes.
+fn webhook_config_body(path: &str, webhook_url: &str) -> Value {
+    if path == "/webhook/Config" {
+        json!({
+            "URL": webhook_url,
+            "MessageTypes": ["1", "3", "49"],
+            "Enabled": true,
+            "IncludeSelfMessage": false,
+        })
+    } else {
+        json!({
+            "webhookUrl": webhook_url,
+            "types": [1, 3, 49],
+            "includeSelf": false,
+        })
+    }
+}
+
+/// Pull the delivered message id out of a send reply, tolerating builds that return none.
+fn bridge_message_id(body: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(body).ok()?;
+    let data = value.get("Data").unwrap_or(&value);
+    ["NewMsgId", "newMsgId", "MsgId", "MsgSvrId"]
+        .iter()
+        .find_map(|key| json_id(data.get(*key)).filter(|id| !id.is_empty()))
 }
