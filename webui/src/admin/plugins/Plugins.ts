@@ -60,7 +60,7 @@ export function usePluginsPage() {
     rustfs: { enabled: false, source: "install", deployment: { image: "rustfs/rustfs:latest", port: 9000, data_dir: "./data/plugin-rustfs", container_name: "zihuan-plugin-rustfs", restart_policy: "unless-stopped" }, endpoint: "http://127.0.0.1:9000", bucket: "zihuan", region: "us-east-1", access_key: "", secret_key: "", public_base_url: null, path_style: true },
     search: { enabled: false, source: "install", type: "weaviate", deployment: { image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./data/plugin-search", container_name: "zihuan-plugin-search", restart_policy: "unless-stopped" }, base_url: "http://127.0.0.1:8080", username: null, password: null, api_key: null, auth_method: "api_key", vector_dimensions: 1024 },
     redis: { enabled: false, source: "install", deployment: { image: "redis:7", port: 6379, data_dir: "./data/plugin-redis", container_name: "zihuan-plugin-redis", restart_policy: "unless-stopped" }, url: "redis://127.0.0.1:6379", username: null, password: null } });
-  const columns = [{ colKey: "name", title: "插件名称" }, { colKey: "component_type", title: "组件", width: 130 }, { colKey: "installation_method", title: "安装方式", width: 150 }, { colKey: "status", title: "状态", width: 110 }, { colKey: "connection_ids", title: "关联连接", width: 100 }, { colKey: "actions", title: "操作", width: 430 }];
+  const columns = [{ colKey: "name", title: "插件名称" }, { colKey: "component_type", title: "组件", width: 130 }, { colKey: "installation_method", title: "安装方式", width: 150 }, { colKey: "status", title: "状态", width: 110 }, { colKey: "connection_ids", title: "关联连接", width: 100 }, { colKey: "actions", title: "操作", width: 500 }];
   /** Plugins under `plugins/` are directory-owned: the row is informational and cannot be
    *  installed, toggled or uninstalled from here. */
   function isScriptPlugin(plugin: Pick<PluginRecord, "installation_method">) { return plugin.installation_method === "dynamic_script"; }
@@ -75,6 +75,14 @@ export function usePluginsPage() {
   function scriptPluginDetail(plugin: PluginRecord): string {
     const description = plugin.extra_install_metadata?.description;
     return typeof description === "string" ? description : "";
+  }
+  /** The bot wxid bound by QR login, recorded in the plugin's connection-config snapshot. */
+  function wechatWxid(plugin: PluginRecord): string {
+    const config = plugin.extra_install_metadata?.connection_config as
+      | { kind?: { wechat?: { self_wxid?: unknown } } }
+      | undefined;
+    const wxid = config?.kind?.wechat?.self_wxid;
+    return typeof wxid === "string" && wxid.trim() ? wxid.trim() : "";
   }
   function statusLabel(value: string) { return ({ installing: "安装中", installed: "已启用", disabled: "已停用", failed: "失败", command_generated: "命令已生成" } as Record<string, string>)[value] ?? value; }
   function statusTheme(value: string) { return value === "installed" ? "success" : value === "failed" ? "danger" : value === "disabled" ? "warning" : "primary"; }
@@ -517,9 +525,10 @@ export function usePluginsPage() {
     statusTitle,
     isScriptPlugin,
     installMethodLabel,
-    componentLabel,
-    scriptPluginDetail,
-    load,
+  componentLabel,
+  scriptPluginDetail,
+  wechatWxid,
+  load,
     selectComponent,
     openInstall,
     requestCloseInstall,

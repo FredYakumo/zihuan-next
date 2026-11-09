@@ -10,6 +10,7 @@
 use salvo::http::StatusCode;
 use salvo::prelude::*;
 use salvo::writing::Json;
+use log::{debug, info, warn};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -23,6 +24,18 @@ const LOGIN_QR_PATH: &str = "/login/GetLoginQrCodePad";
 const LOGIN_STATUS_PATH: &str = "/login/CheckLoginStatus";
 const LOGIN_ACCOUNT_PATH: &str = "/login/GetLoginStatus";
 const GEN_AUTH_KEY_PATH: &str = "/admin/GenAuthKey1";
+
+const LOG_PREFIX: &str = "[wechat_login]";
+
+/// Short display form of a bridge credential, enough to correlate logs without leaking it.
+fn mask_key(key: &str) -> String {
+    let prefix: String = key.chars().take(8).collect();
+    if key.chars().count() > 8 {
+        format!("{prefix}…")
+    } else {
+        prefix
+    }
+}
 
 #[derive(Deserialize)]
 pub struct WechatLoginQrRequest {
@@ -94,7 +107,7 @@ fn pick_text(value: &Value, keys: &[&str]) -> String {
 /// The (wxid, nickname) carried by a login reply; empty strings when the bridge sent none.
 fn login_account(data: &Value) -> (String, String) {
     let wxid = pick_text(data, &["wxid", "Wxid", "WXID", "UserName", "userName"]);
-    let nickname = pick_text(data, &["NickName", "nickName", "nickname"]);
+    let nickname = pick_text(data, &["NickName", "nickName", "nick_name", "nickname"]);
     (wxid, nickname)
 }
 
@@ -163,21 +176,37 @@ pub async fn wechat_login_qr(req: &mut Request, res: &mut Response) {
     };
     let plugin = match find_plugin(&body.plugin_id) {
         Ok(plugin) => plugin,
-        Err(error) => return render_error(res, StatusCode::NOT_FOUND, error),
+        Err(error) => {
+            warn!("{LOG_PREFIX} QR login for unknown plugin '{}': {error}", body.plugin_id);
+            return render_error(res, StatusCode::NOT_FOUND, error);
+        }
     };
     let (base_url, token) = match wechat_endpoint(&plugin) {
         Ok(endpoint) => endpoint,
-        Err(error) => return render_error(res, StatusCode::BAD_REQUEST, error),
+        Err(error) => {
+            warn!("{LOG_PREFIX} QR login for plugin '{}' has no usable endpoint: {error}", plugin.id);
+            return render_error(res, StatusCode::BAD_REQUEST, error);
+        }
     };
+    info!(
+        "{LOG_PREFIX} QR login started for plugin '{}' via {base_url} (credential {})",
+        plugin.id,
+        mask_key(&token)
+    );
     let client = reqwest::Client::new();
 
     // A credential that already reports a confirmed login needs no new QR code.
-    if let Ok(body) = bridge_get(&client, &base_url, LOGIN_STATUS_PATH, &token).await {
-        if let Ok(value) = serde_json::from_str::<Value>(&body) {
+    match bridge_get(&client, &base_url, LOGIN_STATUS_PATH, &token).await {
+        Ok(body) => {
+            let value: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
             let data = value.get("Data").cloned().unwrap_or(Value::Null);
             let (wxid, nickname) = login_account(&data);
             let state = data.get("state").and_then(Value::as_i64).unwrap_or(0);
             if state >= 2 || !wxid.is_empty() {
+                info!(
+                    "{LOG_PREFIX} credential {} already logged in as {wxid}; skipping QR",
+                    mask_key(&token)
+                );
                 return res.render(Json(json!({
                     "status": "logged_in",
                     "auth_key": token,
@@ -185,6 +214,14 @@ pub async fn wechat_login_qr(req: &mut Request, res: &mut Response) {
                     "nickname": nickname,
                 })));
             }
+            debug!(
+                "{LOG_PREFIX} pre-check with {}: bridge Code {} state {state}, not logged in yet",
+                mask_key(&token),
+                value.get("Code").and_then(Value::as_i64).unwrap_or_default()
+            );
+        }
+        Err(error) => {
+            debug!("{LOG_PREFIX} pre-check with {} failed: {error}", mask_key(&token));
         }
     }
 
@@ -194,9 +231,17 @@ pub async fn wechat_login_qr(req: &mut Request, res: &mut Response) {
     let qr_body = match qr_login(&client, &base_url, &auth_key).await {
         Ok(body) => body,
         Err(login_error) => {
+            warn!("{LOG_PREFIX} QR request with {} failed: {login_error}", mask_key(&auth_key));
             auth_key = match mint_auth_key(&client, &base_url, &auth_key).await {
-                Ok(key) => key,
+                Ok(key) => {
+                    info!(
+                        "{LOG_PREFIX} minted a fresh auth key {} via {GEN_AUTH_KEY_PATH}",
+                        mask_key(&key)
+                    );
+                    key
+                }
                 Err(mint_error) => {
+                    warn!("{LOG_PREFIX} minting an auth key failed: {mint_error}");
                     return render_error(
                         res,
                         StatusCode::BAD_GATEWAY,
@@ -207,7 +252,8 @@ pub async fn wechat_login_qr(req: &mut Request, res: &mut Response) {
             match qr_login(&client, &base_url, &auth_key).await {
                 Ok(body) => body,
                 Err(error) => {
-                    return render_error(res, StatusCode::BAD_GATEWAY, format!("获取登录二维码失败: {error}"))
+                    warn!("{LOG_PREFIX} QR request with the fresh key failed: {error}");
+                    return render_error(res, StatusCode::BAD_GATEWAY, format!("获取登录二维码失败: {error}"));
                 }
             }
         }
@@ -215,15 +261,23 @@ pub async fn wechat_login_qr(req: &mut Request, res: &mut Response) {
 
     let parsed: Value = match serde_json::from_str(&qr_body) {
         Ok(value) => value,
-        Err(_) => return render_error(res, StatusCode::BAD_GATEWAY, format!("桥返回了无效的二维码响应: {qr_body}")),
+        Err(_) => {
+            warn!("{LOG_PREFIX} bridge returned an unparseable QR response: {qr_body}");
+            return render_error(res, StatusCode::BAD_GATEWAY, format!("桥返回了无效的二维码响应: {qr_body}"));
+        }
     };
     let data = parsed.get("Data").cloned().unwrap_or(Value::Null);
     let qr_base64 = data.get("qrCodeBase64").and_then(Value::as_str).unwrap_or_default();
     let qr_link = pick_text(&data, &["QrLink", "QrCodeUrl"]);
     let expires_in_secs = data.get("expiredTime").and_then(Value::as_i64).unwrap_or(290).max(30);
     if qr_base64.is_empty() && qr_link.is_empty() {
+        warn!("{LOG_PREFIX} bridge returned no QR payload: {qr_body}");
         return render_error(res, StatusCode::BAD_GATEWAY, format!("桥未返回二维码: {qr_body}"));
     }
+    info!(
+        "{LOG_PREFIX} QR code ready for key {}, expires in {expires_in_secs}s; waiting for the scan",
+        mask_key(&auth_key)
+    );
     res.render(Json(json!({
         "status": "qr",
         "auth_key": auth_key,
@@ -255,15 +309,28 @@ pub async fn wechat_login_status(req: &mut Request, res: &mut Response) {
     let client = reqwest::Client::new();
     let body_text = match bridge_get(&client, &base_url, LOGIN_STATUS_PATH, &auth_key).await {
         Ok(body) => body,
-        Err(error) => return res.render(Json(json!({ "status": "error", "message": error }))),
+        Err(error) => {
+            warn!("{LOG_PREFIX} status poll with {} failed: {error}", mask_key(&auth_key));
+            return res.render(Json(json!({ "status": "error", "message": error })));
+        }
     };
     let value: Value = match serde_json::from_str(&body_text) {
         Ok(value) => value,
-        Err(_) => return res.render(Json(json!({ "status": "error", "message": body_text }))),
+        Err(_) => {
+            warn!("{LOG_PREFIX} status poll returned an unparseable body: {body_text}");
+            return res.render(Json(json!({ "status": "error", "message": body_text })));
+        }
     };
     let data = value.get("Data").cloned().unwrap_or(Value::Null);
     let state = data.get("state").and_then(Value::as_i64).unwrap_or(0);
     let (mut wxid, mut nickname) = login_account(&data);
+    debug!(
+        "{LOG_PREFIX} status poll with {}: bridge Code {} state {state} wxid '{}' Text '{}'",
+        mask_key(&auth_key),
+        value.get("Code").and_then(Value::as_i64).unwrap_or_default(),
+        wxid,
+        value.get("Text").and_then(Value::as_str).unwrap_or_default()
+    );
 
     if state >= 2 || !wxid.is_empty() {
         // Confirmed: fill in account info from the login status route when the scan reply lacks it.
@@ -281,9 +348,14 @@ pub async fn wechat_login_status(req: &mut Request, res: &mut Response) {
                 }
             }
         }
+        info!(
+            "{LOG_PREFIX} login confirmed for {wxid} ({}); persisting the auth key",
+            if nickname.is_empty() { "no nickname" } else { &nickname }
+        );
         let connection = match persist_login(&plugin, &auth_key, &wxid).await {
             Ok(connection) => connection,
             Err(error) => {
+                warn!("{LOG_PREFIX} persisting the login failed: {error}");
                 return render_error(
                     res,
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -291,20 +363,35 @@ pub async fn wechat_login_status(req: &mut Request, res: &mut Response) {
                 );
             }
         };
+        info!(
+            "{LOG_PREFIX} auth key {} and wxid {wxid} written to connection '{}'",
+            mask_key(&auth_key),
+            connection.config_id
+        );
         // Best effort: the live connection is saved already; the metadata copy is display-only.
         let mut plugin = plugin;
         plugin.extra_install_metadata["connection_config"] =
             serde_json::to_value(&connection).unwrap_or(Value::Null);
         plugin.updated_at = chrono::Utc::now().to_rfc3339();
-        let _ = super::save_plugin_record(&plugin);
+        if let Err(error) = super::save_plugin_record(&plugin) {
+            warn!("{LOG_PREFIX} updating the plugin metadata copy failed: {error}");
+        }
         return res.render(Json(json!({ "status": "logged_in", "wxid": wxid, "nickname": nickname })));
     }
 
     if state < 0 {
+        warn!(
+            "{LOG_PREFIX} QR for key {} expired or rejected: state {state} Text '{}'",
+            mask_key(&auth_key),
+            value.get("Text").and_then(Value::as_str).unwrap_or_default()
+        );
         return res.render(Json(json!({
             "status": "expired",
             "message": value.get("Text").and_then(Value::as_str).unwrap_or("二维码已过期"),
         })));
+    }
+    if state == 1 {
+        info!("{LOG_PREFIX} QR scanned for key {}, waiting for in-app confirmation", mask_key(&auth_key));
     }
     res.render(Json(json!({
         "status": if state == 1 { "scanned" } else { "waiting" },

@@ -172,6 +172,35 @@ textarea {
     white-space: nowrap;
 }
 
+.plugin-wxid-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--admin-muted);
+    font-size: 12px;
+}
+
+.plugin-wxid-copy {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--admin-muted);
+    cursor: pointer;
+
+    &:hover {
+        color: var(--td-brand-color, #0052d9);
+        background: var(--td-brand-color-light, #f2f3f5);
+    }
+
+    svg {
+        width: 12px;
+        height: 12px;
+    }
+}
+
 .plugin-readonly-hint {
     color: var(--admin-muted);
     font-size: 12px;

@@ -742,7 +742,9 @@ async fn send_text(
                 Ok(body) => {
                     let fallback =
                         || format!("wp{}", MESSAGE_ID_COUNTER.fetch_add(1, Ordering::Relaxed));
-                    return Ok(bridge_message_id(&body).unwrap_or_else(fallback));
+                    let message_id = bridge_message_id(&body).unwrap_or_else(fallback);
+                    info!("{LOG_PREFIX} sent text to {target} via {path} (id {message_id})");
+                    return Ok(message_id);
                 }
                 Err(error) => {
                     let error = format!("{path}: {error}");
