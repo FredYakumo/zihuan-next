@@ -51,26 +51,30 @@ impl BotAdapterBackend for MockBotAdapter {
         for name in ["inbox", "received", "outbox", "actions"] {
             std::fs::create_dir_all(root.join(name))?;
         }
-        let bot_id = adapter.lock().await.get_bot_id().parse::<i64>().map_err(|error| {
-            crate::string_error!("mock adapter requires a numeric qq_id: {error}")
-        })?;
+        let bot_id = adapter.lock().await.get_bot_id().to_string();
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
-        adapter.lock().await.action_tx = Some(tx);
+        {
+            let mut guard = adapter.lock().await;
+            guard.action_tx = Some(tx);
+            guard.connected.store(true, std::sync::atomic::Ordering::Release);
+        }
         write_json_atomic(&root.join("ready.json"), &json!({"user_id": bot_id}))?;
         let mut ticker = tokio::time::interval(std::time::Duration::from_millis(20));
-        let mut next_id = 1_000_000_i64;
-        let mut messages = HashMap::<i64, Value>::new();
-        let mut profiles: HashMap<i64, Value> = self
+        let mut next_id = 1_000_000_u64;
+        let mut messages = HashMap::<String, Value>::new();
+        let mut profiles: HashMap<String, Value> = self
             .config
             .profiles
             .iter()
             .filter_map(|profile| {
-                Some((super::ws_action::json_i64(profile.get("user_id"))?, profile.clone()))
+                Some((super::ws_action::json_id(profile.get("user_id"))?, profile.clone()))
             })
             .collect();
-        profiles
-            .insert(bot_id, json!({"user_id": bot_id, "nickname": "Mock Bot", "role": "member"}));
-        let mut members = HashMap::<i64, HashMap<i64, Value>>::new();
+        profiles.insert(
+            bot_id.clone(),
+            json!({"user_id": bot_id, "nickname": "Mock Bot", "role": "member"}),
+        );
+        let mut members = HashMap::<String, HashMap<String, Value>>::new();
         let mut forwards = self.config.forwards.clone();
         loop {
             tokio::select! {
@@ -80,23 +84,34 @@ impl BotAdapterBackend for MockBotAdapter {
                     let params = &request["params"];
                     let echo = request["echo"].as_str().unwrap_or_default();
                     write_json_atomic(&root.join("actions").join(format!("{echo}.json")), &request)?;
-                    let user_id = super::ws_action::json_i64(params.get("user_id"));
-                    let group_id = super::ws_action::json_i64(params.get("group_id"));
+                    let user_id = super::ws_action::json_id(params.get("user_id"));
+                    let group_id = super::ws_action::json_id(params.get("group_id"));
                     let data = if let Some(data) = self.config.responses.get(action) {
                         Some(data.clone())
                     } else { match action {
-                        "get_login_info" => Some(self.config.login_info(&bot_id.to_string())),
-                        "get_stranger_info" => user_id.and_then(|id| profiles.get(&id).cloned()),
-                        "get_group_member_info" => group_id.and_then(|group| members.get(&group))
-                            .and_then(|group| user_id.and_then(|user| group.get(&user).cloned())),
-                        "get_group_member_list" => group_id.and_then(|group| members.get(&group))
+                        "get_login_info" => Some(self.config.login_info(&bot_id)),
+                        "get_stranger_info" => {
+                            user_id.as_deref().and_then(|id| profiles.get(id).cloned())
+                        }
+                        "get_group_member_info" => group_id.as_deref().and_then(|group| {
+                            members.get(group).and_then(|group| {
+                                user_id.as_deref().and_then(|user| group.get(user).cloned())
+                            })
+                        }),
+                        "get_group_member_list" => group_id
+                            .as_deref()
+                            .and_then(|group| members.get(group))
                             .map(|group| {
                                 let mut entries: Vec<_> = group.values().cloned().collect();
-                                entries.sort_by_key(|entry| super::ws_action::json_i64(entry.get("user_id")));
+                                entries.sort_by_key(|entry| {
+                                    super::ws_action::json_id(entry.get("user_id"))
+                                });
                                 json!(entries)
                             }),
-                        "get_forward_msg" => params["message_id"].as_str().and_then(|id| forwards.get(id).cloned()),
-                        "get_msg" => super::ws_action::json_i64(params.get("message_id"))
+                        "get_forward_msg" => params["message_id"]
+                            .as_str()
+                            .and_then(|id| forwards.get(id).cloned()),
+                        "get_msg" => super::ws_action::json_id(params.get("message_id"))
                             .and_then(|id| messages.get(&id).cloned()),
                         "send_private_msg" | "send_group_msg" | "send_private_forward_msg" | "send_group_forward_msg" => {
                             next_id += 1;
@@ -104,7 +119,7 @@ impl BotAdapterBackend for MockBotAdapter {
                                 let nodes: Vec<Value> = params["messages"].as_array().into_iter().flatten()
                                     .filter_map(|node| {
                                         let data = &node["data"];
-                                        if let Some(id) = super::ws_action::json_i64(data.get("id")) {
+                                        if let Some(id) = super::ws_action::json_id(data.get("id")) {
                                             messages.get(&id).cloned()
                                         } else {
                                             Some(json!({"sender": {"user_id": data["uin"], "nickname": data["name"]}, "content": data["content"]}))
@@ -114,16 +129,16 @@ impl BotAdapterBackend for MockBotAdapter {
                                 json!([{"type": "forward", "data": {"id": next_id.to_string()}}])
                             } else { params["message"].clone() };
                             let message = json!({
-                                "message_id": next_id, "real_id": next_id,
+                                "message_id": next_id.to_string(), "real_id": next_id.to_string(),
                                 "message_type": if group_id.is_some() { "group" } else { "private" },
                                 "time": chrono::Utc::now().timestamp(), "message": content,
                                 "sender": {"user_id": bot_id, "nickname": "Mock Bot"},
                                 "group_id": params["group_id"], "user_id": params["user_id"],
                             });
-                            messages.insert(next_id, message);
+                            messages.insert(next_id.to_string(), message);
                             write_json_atomic(&root.join("outbox").join(format!("{next_id}.json")),
-                                &json!({"message_id": next_id, "action": action, "params": params}))?;
-                            Some(json!({"message_id": next_id, "res_id": next_id.to_string()}))
+                                &json!({"message_id": next_id.to_string(), "action": action, "params": params}))?;
+                            Some(json!({"message_id": next_id.to_string(), "res_id": next_id.to_string()}))
                         }
                         _ => None,
                     }};
@@ -145,14 +160,15 @@ impl BotAdapterBackend for MockBotAdapter {
                         let event: Value = serde_json::from_str(&text)?;
                         // Reject invalid fixtures before acknowledging ingestion.
                         let raw: super::models::RawMessageEvent = serde_json::from_value(event.clone())?;
-                        profiles.insert(raw.sender.user_id, serde_json::to_value(&raw.sender)?);
-                        if let Some(group_id) = raw.group_id {
-                            let group = members.entry(group_id).or_default();
-                            group.insert(bot_id, profiles[&bot_id].clone());
+                        profiles
+                            .insert(raw.sender.user_id.clone(), serde_json::to_value(&raw.sender)?);
+                        if let Some(group_id) = raw.group_id.clone() {
+                            let group = members.entry(group_id.clone()).or_default();
+                            group.insert(bot_id.clone(), profiles[&bot_id].clone());
                             let mut profile = profiles[&raw.sender.user_id].clone();
                             profile["group_id"] = json!(group_id);
                             if profile["role"].is_null() { profile["role"] = json!("member"); }
-                            group.insert(raw.sender.user_id, profile);
+                            group.insert(raw.sender.user_id.clone(), profile);
                         }
                         messages.insert(raw.message_id, event.clone());
                         let receipt = root.join("received").join(entry.file_name());

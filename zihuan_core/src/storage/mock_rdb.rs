@@ -1,4 +1,5 @@
 //! Isolated relational mock using the production SQLite schema and SQL stores.
+use crate::connection::Connection;
 use crate::data_refs::SqliteConfig;
 use crate::error::Result;
 use std::sync::Arc;
@@ -11,9 +12,11 @@ pub(super) async fn connect() -> Result<Arc<SqliteConfig>> {
         .connect("sqlite::memory:")
         .await?;
     crate::database::ensure_tables_sqlite(&mut *pool.acquire().await?).await?;
-    Ok(Arc::new(SqliteConfig {
+    let mut connection = SqliteConfig {
         path: ":memory:".to_string(),
         pool: Some(pool),
         runtime_handle: Some(tokio::runtime::Handle::current()),
-    }))
+    };
+    connection.connect().await?;
+    Ok(Arc::new(connection))
 }

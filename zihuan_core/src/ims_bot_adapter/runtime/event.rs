@@ -24,7 +24,7 @@ pub async fn process_message(ims_bot_adapter: SharedBotAdapter, event: MessageEv
                 "[Group Message] [message_id: {}] [Group: {}({})] [Sender: {}({})] Message: {:?}",
                 event.message_id,
                 event.group_name.as_deref().unwrap_or_default(),
-                event.group_id.unwrap_or_default(),
+                event.group_id.as_deref().unwrap_or_default(),
                 event.sender.nickname,
                 event.sender.user_id,
                 messages

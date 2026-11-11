@@ -8,8 +8,6 @@ use crate::weaviate::{
     WeaviatePropertyConfig, WeaviateRef, WeaviateVectorConfigEntry,
 };
 
-use crate::storage::WeaviateClient;
-
 pub fn collection_config_for_schema(schema: RetrievalSchema) -> WeaviateCollectionConfig {
     match schema {
         RetrievalSchema::ImageSemantic => {

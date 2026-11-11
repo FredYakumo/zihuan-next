@@ -25,7 +25,7 @@ pub(crate) struct QqChatServiceReplyBuildRequest {
     pub bot_name: String,
     pub max_message_length: usize,
     pub reply_directive: Option<QqChatServiceReplyDirective>,
-    pub trigger_message_id: Option<i64>,
+    pub trigger_message_id: Option<String>,
     pub available_media: HashMap<String, PersistedMedia>,
     pub rdb_pool: Option<RelationalDbConnection>,
 }

@@ -140,7 +140,7 @@ pub(crate) fn run_turn(
             &input.event.sender.nickname,
             &input.event.sender.card
         ),
-        group_id: input.event.group_id.map(|value| value.to_string()),
+        group_id: input.event.group_id.clone(),
         group_name: input.event.group_name.clone(),
         is_group: input.is_group,
         turn_id: turn_id.clone(),

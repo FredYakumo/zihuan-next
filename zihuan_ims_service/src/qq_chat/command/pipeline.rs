@@ -55,7 +55,7 @@ pub(crate) fn run_command_pipeline(
         channel: CommandChannel::QqChat {
             sender_id: sender_id.to_string(),
             is_group,
-            group_id: inference_event.group_id,
+            group_id: inference_event.group_id.clone(),
             target_id: target_id.to_string(),
         },
     };

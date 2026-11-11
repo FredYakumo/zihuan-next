@@ -1,3 +1,4 @@
+use crate::connection_manager::ConnectionManager;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
@@ -1145,9 +1146,9 @@ pub fn dispatch_script_host_call(
                     Error::ValidationError("rdb_connection_id is required".to_string())
                 })?;
             let reference = crate::runtime::block_async(
-                crate::storage::RuntimeStorageConnectionManager::shared()
-                    .get_or_create_mysql_ref(&connection_id),
-            )?;
+                crate::storage::RuntimeConnectionManager::shared().get_or_create(&connection_id),
+            )?
+            .try_into()?;
             Ok(store_script_resource(DataValue::RdbRef(
                 crate::data_refs::RelationalDbConnection::MySql(reference),
             )))
@@ -1162,9 +1163,9 @@ pub fn dispatch_script_host_call(
                     Error::ValidationError("rustfs_connection_id is required".to_string())
                 })?;
             let reference = crate::runtime::block_async(
-                crate::storage::RuntimeStorageConnectionManager::shared()
-                    .get_or_create_s3_ref(&connection_id),
-            )?;
+                crate::storage::RuntimeConnectionManager::shared().get_or_create(&connection_id),
+            )?
+            .try_into()?;
             Ok(store_script_resource(DataValue::S3Ref(reference)))
         }
         "agent.retrieval_store" => {
@@ -1276,7 +1277,7 @@ pub fn dispatch_script_host_call(
             let success = crate::ims_bot_adapter::runtime::ws_action::response_success(&response);
             let message_id =
                 crate::ims_bot_adapter::runtime::ws_action::response_message_id(&response)
-                    .unwrap_or(-1);
+                    .unwrap_or_default();
             log::info!("[ScriptNode] sent {target_label} message to {target_id} success={success} message_id={message_id}");
             Ok(json!({"success": success, "message_id": message_id}))
         }
@@ -1317,8 +1318,10 @@ pub fn dispatch_script_host_call(
         "bot.extract_messages" => {
             let event = message_event(params)?;
             let adapter = bot_adapter_resource(params, "ims_bot_adapter")?;
-            let target_message_id =
-                params.get("message_id").and_then(Value::as_i64).filter(|value| *value > 0);
+            let target_message_id = params
+                .get("message_id")
+                .and_then(|value| crate::ims_bot_adapter::runtime::ws_action::json_id(Some(value)))
+                .filter(|value| !value.is_empty());
             let extracted = crate::ims_bot_adapter::runtime::extract_message_from_event::extract_message_outputs(
                             &event,
                             &adapter,
@@ -1662,9 +1665,9 @@ pub fn dispatch_script_host_call(
         "storage.create_mysql" => {
             let config_id = required_string_argument(params, "config_id")?;
             let reference = crate::runtime::block_async(
-                crate::storage::RuntimeStorageConnectionManager::shared()
-                    .get_or_create_mysql_ref(&config_id),
-            )?;
+                crate::storage::RuntimeConnectionManager::shared().get_or_create(&config_id),
+            )?
+            .try_into()?;
             Ok(store_script_resource(DataValue::RdbRef(
                 crate::data_refs::RelationalDbConnection::MySql(reference),
             )))
@@ -1677,9 +1680,9 @@ pub fn dispatch_script_host_call(
         "storage.create_sqlite" => {
             let config_id = required_string_argument(params, "config_id")?;
             let reference = crate::runtime::block_async(
-                crate::storage::RuntimeStorageConnectionManager::shared()
-                    .get_or_create_sqlite_ref(&config_id),
-            )?;
+                crate::storage::RuntimeConnectionManager::shared().get_or_create(&config_id),
+            )?
+            .try_into()?;
             Ok(store_script_resource(DataValue::RdbRef(
                 crate::data_refs::RelationalDbConnection::Sqlite(reference),
             )))
@@ -1687,9 +1690,9 @@ pub fn dispatch_script_host_call(
         "storage.create_s3" => {
             let config_id = required_string_argument(params, "config_id")?;
             let reference = crate::runtime::block_async(
-                crate::storage::RuntimeStorageConnectionManager::shared()
-                    .get_or_create_s3_ref(&config_id),
-            )?;
+                crate::storage::RuntimeConnectionManager::shared().get_or_create(&config_id),
+            )?
+            .try_into()?;
             Ok(store_script_resource(DataValue::S3Ref(reference)))
         }
         "storage.create_retrieval_store" => {

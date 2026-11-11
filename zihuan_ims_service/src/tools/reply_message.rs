@@ -44,20 +44,16 @@ impl Tool for ReplyMessageTool {
         let result = (|| -> Result<String> {
             let directive = match arguments.get("message_id") {
                 Some(Value::Number(number)) => {
-                    let message_id = number.as_i64().ok_or_else(|| {
-                        Error::ValidationError("message_id must be an integer".to_string())
-                    })?;
-                    if message_id <= 0 {
-                        return Err(Error::ValidationError(
-                            "message_id must be a positive integer".to_string(),
-                        ));
-                    }
+                    let message_id = number.to_string();
                     QqChatServiceReplyDirective::Explicit { message_id }
+                }
+                Some(Value::String(message_id)) if !message_id.is_empty() => {
+                    QqChatServiceReplyDirective::Explicit { message_id: message_id.clone() }
                 }
                 Some(Value::Null) | None => QqChatServiceReplyDirective::TriggerMessage,
                 Some(_) => {
                     return Err(Error::ValidationError(
-                        "message_id must be an integer when provided".to_string(),
+                        "message_id must be a message id string when provided".to_string(),
                     ))
                 }
             };

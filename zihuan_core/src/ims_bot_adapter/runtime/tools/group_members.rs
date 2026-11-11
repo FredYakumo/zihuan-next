@@ -10,7 +10,7 @@ use crate::utils::{bm25::rank_bm25_matches, json_utils::optional_string_argument
 
 use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;
 use crate::ims_bot_adapter::runtime::models::MessageEvent;
-use crate::ims_bot_adapter::runtime::ws_action::{json_i64, ws_send_action};
+use crate::ims_bot_adapter::runtime::ws_action::{json_id, ws_send_action};
 
 const NOT_IN_GROUP_MESSAGE: &str = "当前不在群聊中，无法获取成员列表";
 
@@ -95,12 +95,12 @@ fn execute_group_member_tool(
     event: &MessageEvent,
     arguments: &Value,
 ) -> Result<String> {
-    let Some(group_id) = event.group_id.filter(|_| is_group_event(event)) else {
+    let Some(group_id) = event.group_id.clone().filter(|_| is_group_event(event)) else {
         return Ok(NOT_IN_GROUP_MESSAGE.to_string());
     };
 
     let criteria = SearchCriteria::from_arguments(arguments)?;
-    let members = fetch_group_member_list(adapter, group_id)?;
+    let members = fetch_group_member_list(adapter, &group_id)?;
     let filtered = filter_members(members, &criteria);
 
     if filtered.is_empty() {
@@ -152,7 +152,7 @@ fn parse_role_filter(raw: &str) -> Result<GroupMemberRole> {
 
 fn fetch_group_member_list(
     adapter: &SharedBotAdapter,
-    group_id: i64,
+    group_id: &str,
 ) -> Result<Vec<GroupMemberEntry>> {
     let response = ws_send_action(
         adapter,
@@ -168,10 +168,7 @@ fn fetch_group_member_list(
 
     let mut members = Vec::with_capacity(data.len());
     for (index, item) in data.iter().enumerate() {
-        let user_id = json_i64(item.get("user_id"))
-            .map(|value| value.to_string())
-            .or_else(|| item.get("user_id").and_then(Value::as_str).map(ToOwned::to_owned))
-            .unwrap_or_default();
+        let user_id = json_id(item.get("user_id")).unwrap_or_default();
         if user_id.is_empty() {
             continue;
         }

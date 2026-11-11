@@ -45,7 +45,7 @@ pub(crate) const REPLY_TYPING_DELAY_MS_PER_CHAR: u64 = 15;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum QqChatServiceReplyDirective {
-    Explicit { message_id: i64 },
+    Explicit { message_id: String },
     TriggerMessage,
 }
 
@@ -194,7 +194,7 @@ pub(crate) fn build_reply_result(
     bot_name: &str,
     max_message_length: usize,
     reply_directive: Option<QqChatServiceReplyDirective>,
-    trigger_message_id: Option<i64>,
+    trigger_message_id: Option<String>,
     available_media: HashMap<String, PersistedMedia>,
     rdb_pool: Option<RelationalDbConnection>,
     reply_batch_builder: Option<&QqChatServiceReplyBatchBuilder>,
@@ -259,7 +259,7 @@ pub(crate) fn plan_model_reply(
     }
 
     let reply_message =
-        resolve_reply_message(request.reply_directive.as_ref(), request.trigger_message_id);
+        resolve_reply_message(request.reply_directive.as_ref(), request.trigger_message_id.clone());
 
     // Use forward messages only for voluminous content because QQ clients may not render
     // images in forward nodes. Line-split short replies stay as individual messages.
@@ -543,10 +543,10 @@ fn extract_mentions_from_forwards(batches: Vec<Vec<Message>>) -> Vec<Vec<Message
 
 fn resolve_reply_message(
     directive: Option<&QqChatServiceReplyDirective>,
-    trigger_message_id: Option<i64>,
+    trigger_message_id: Option<String>,
 ) -> Option<ReplyMessage> {
     let message_id = match directive {
-        Some(QqChatServiceReplyDirective::Explicit { message_id }) => Some(*message_id),
+        Some(QqChatServiceReplyDirective::Explicit { message_id }) => Some(message_id.clone()),
         Some(QqChatServiceReplyDirective::TriggerMessage) => trigger_message_id,
         None => None,
     }?;
@@ -639,7 +639,7 @@ fn build_forced_forward_batches(
         }
 
         if carrier.is_empty() {
-            carrier.push(Message::Reply(ReplyMessage { id: 0, message_source: None }));
+            carrier.push(Message::Reply(ReplyMessage { id: String::new(), message_source: None }));
         }
 
         normalize_reply_only_carrier(&mut carrier);

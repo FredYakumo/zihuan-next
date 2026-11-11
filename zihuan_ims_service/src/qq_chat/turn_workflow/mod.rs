@@ -135,7 +135,7 @@ pub(crate) fn build_format_output<'a>(
         bot_id: bot_id.to_string(),
         bot_name: ctx.bot_name.to_string(),
         max_message_length: ctx.max_message_length,
-        trigger_message_id: Some(inference_event.message_id),
+        trigger_message_id: Some(inference_event.message_id.clone()),
         rdb_pool: ctx.rdb_pool.cloned(),
         reply_batch_builder: ctx.reply_batch_builder,
         shared_runtime_values,

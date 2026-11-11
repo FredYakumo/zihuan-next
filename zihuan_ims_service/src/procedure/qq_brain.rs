@@ -154,8 +154,12 @@ impl QqBrain {
             turn_context: Arc::clone(&turn_context),
         }));
 
-        let mut memory_access =
-            qq_memory_access_context(sender_id, target_id, is_group, prepared_input.event.group_id);
+        let mut memory_access = qq_memory_access_context(
+            sender_id,
+            target_id,
+            is_group,
+            prepared_input.event.group_id.clone(),
+        );
         memory_access.agent_id = ctx.agent_id.to_string();
         memory_access.permission_connection = ctx.rdb_pool.cloned();
         let service_context = AgentServiceContext::new()

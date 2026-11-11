@@ -1,4 +1,3 @@
-use crate::connection_manager::ConnectionManager;
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -6,7 +5,7 @@ use std::time::Duration;
 use crate::ims_bot_adapter::runtime::active_adapter_manager::ActiveAdapterManager;
 use crate::ims_bot_adapter::runtime::system_config::BotAdapterConnection;
 use crate::ims_bot_adapter::runtime::ws_action::{
-    json_i64, next_echo, response_success, ws_send_action_with_timeout_async,
+    json_id, next_echo, response_success, ws_send_action_with_timeout_async,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,7 +36,10 @@ pub async fn fetch_login_info(connection: &BotAdapterConnection) -> Result<BotLo
 /// This is preferred over `fetch_login_info` when the adapter is already running, because
 /// it reuses the existing WebSocket connection rather than creating a new one.
 pub async fn fetch_login_info_via_adapter_connection(connection_id: &str) -> Result<BotLoginInfo> {
-    let adapter = ActiveAdapterManager::shared().get_or_create(connection_id).await?;
+    let adapter = ActiveAdapterManager::shared()
+        .find_existing(connection_id)
+        .await
+        .ok_or_else(|| crate::string_error!("Bot adapter is not running"))?;
 
     let max_retries = 2u32;
     let retry_delay = Duration::from_millis(100);
@@ -145,18 +147,11 @@ pub fn parse_login_info(payload: &serde_json::Value) -> Result<BotLoginInfo> {
         Error::ValidationError("NapCat /get_login_info response missing data object".to_string())
     })?;
 
-    let user_id = data
-        .get("user_id")
-        .and_then(|value| {
-            json_i64(Some(value))
-                .map(|id| id.to_string())
-                .or_else(|| value.as_str().map(str::to_string))
-        })
-        .ok_or_else(|| {
-            Error::ValidationError(
-                "NapCat /get_login_info response missing valid data.user_id".to_string(),
-            )
-        })?;
+    let user_id = data.get("user_id").and_then(|value| json_id(Some(value))).ok_or_else(|| {
+        Error::ValidationError(
+            "NapCat /get_login_info response missing valid data.user_id".to_string(),
+        )
+    })?;
 
     let nickname = data
         .get("nickname")

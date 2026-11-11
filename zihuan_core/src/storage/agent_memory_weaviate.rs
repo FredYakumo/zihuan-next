@@ -6,8 +6,6 @@ use crate::error::{Error, Result};
 use crate::utils::json_utils::optional_string_argument;
 use crate::weaviate::WeaviateRef;
 
-use crate::storage::WeaviateClient;
-
 const DEFAULT_QUERY_CANDIDATE_MULTIPLIER: usize = 5;
 const MAX_QUERY_CANDIDATES: usize = 100;
 

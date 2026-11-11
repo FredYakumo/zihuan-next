@@ -1,14 +1,19 @@
 use std::path::{Path, PathBuf};
 
+use crate::connection::Connection;
 use crate::error::Result;
-use once_cell::sync::OnceCell;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, RwLock,
+};
 use tokenizers::Tokenizer;
 
 use crate::nlp::punctuation_segmenter::split_text_by_punctuation;
 
 pub struct BpeSegmenter {
     tokenizer_path: PathBuf,
-    tokenizer: OnceCell<Tokenizer>,
+    tokenizer: RwLock<Option<Arc<Tokenizer>>>,
+    closed: AtomicBool,
 }
 
 impl BpeSegmenter {
@@ -21,27 +26,37 @@ impl BpeSegmenter {
         }
         Ok(Self {
             tokenizer_path: tokenizer_path.to_path_buf(),
-            tokenizer: OnceCell::new(),
+            tokenizer: RwLock::new(None),
+            closed: AtomicBool::new(false),
         })
     }
 
-    fn tokenizer(&self) -> Result<&Tokenizer> {
-        self.tokenizer.get_or_try_init(|| {
-            Tokenizer::from_file(&self.tokenizer_path)
-                .map_err(|err| {
-                    crate::string_error!(
-                        "failed to load tokenizer from '{}': {}",
-                        self.tokenizer_path.display(),
-                        err
-                    )
-                })
-                .map_err(Into::into)
-        })
+    fn tokenizer(&self) -> Result<Arc<Tokenizer>> {
+        if self.is_closed() {
+            return Err(crate::string_error!("Tokenizer connection is closed"));
+        }
+        let mut current = self.tokenizer.write().unwrap_or_else(|e| e.into_inner());
+        if self.is_closed() {
+            return Err(crate::string_error!("Tokenizer connection is closed"));
+        }
+        if current.is_none() {
+            let tokenizer = Tokenizer::from_file(&self.tokenizer_path).map_err(|error| {
+                crate::string_error!(
+                    "failed to load tokenizer '{}': {error}",
+                    self.tokenizer_path.display()
+                )
+            })?;
+            *current = Some(Arc::new(tokenizer));
+        }
+        Ok(current.as_ref().unwrap().clone())
     }
 }
 
 impl crate::nlp::TextSegmenter for BpeSegmenter {
     fn segment(&self, text: &str, max_chars: usize) -> Vec<String> {
+        if self.is_closed() {
+            return split_text_by_punctuation(text, max_chars.max(1));
+        }
         let max_chars = max_chars.max(1);
         if text.is_empty() {
             return Vec::new();
@@ -119,5 +134,42 @@ impl crate::nlp::TextSegmenter for BpeSegmenter {
         } else {
             chunks
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl Connection for BpeSegmenter {
+    async fn connect(&mut self) -> Result<()> {
+        self.closed.store(false, Ordering::Release);
+        if let Err(error) = self.health_check().await {
+            self.close().await?;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    async fn health_check(&self) -> Result<()> {
+        self.tokenizer().map(|_| ())
+    }
+
+    async fn close(&self) -> Result<()> {
+        self.closed.store(true, Ordering::Release);
+        self.tokenizer.write().unwrap_or_else(|e| e.into_inner()).take();
+        Ok(())
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
+}
+
+impl BpeSegmenter {
+    pub async fn from_config(config: &crate::storage::TokenizerConnection) -> Result<Self> {
+        let path = Path::new("models/tokenizer")
+            .join(config.model_name.trim())
+            .join("tokenizer.json");
+        let mut connection = Self::try_new(&path)?;
+        connection.connect().await?;
+        Ok(connection)
     }
 }

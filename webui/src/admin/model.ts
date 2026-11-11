@@ -84,6 +84,14 @@ export interface ConnectionFormState {
   adapter_server_url: string;
   bot_server_token: string;
   qq_id: string;
+  wechat_enabled: boolean;
+  wechat_pad_url: string;
+  wechat_pad_token: string;
+  wechat_self_wxid: string;
+  wechat_webhook_token: string;
+  wechat_webhook_url: string;
+  wechat_relay_url: string;
+  wechat_nickname: string;
   web_search_engine_provider: string;
   web_search_engine_api_token: string;
   web_search_engine_timeout_secs: number;
@@ -397,6 +405,14 @@ export function defaultConnectionForm(): ConnectionFormState {
     adapter_server_url: "",
     bot_server_token: "",
     qq_id: "",
+    wechat_enabled: false,
+    wechat_pad_url: "",
+    wechat_pad_token: "",
+    wechat_self_wxid: "",
+    wechat_webhook_token: "",
+    wechat_webhook_url: "",
+    wechat_relay_url: "",
+    wechat_nickname: "",
     web_search_engine_provider: "tavily",
     web_search_engine_api_token: "",
     web_search_engine_timeout_secs: 30,
@@ -693,6 +709,17 @@ export function connectionFormFromConfig(
       );
       form.bot_server_token = String(connection.kind.bot_server_token ?? "");
       form.qq_id = String(connection.kind.qq_id ?? "");
+      {
+        const wechat = (connection.kind.wechat ?? null) as Record<string, unknown> | null;
+        form.wechat_enabled = Boolean(wechat);
+        form.wechat_pad_url = String(wechat?.pad_url ?? "");
+        form.wechat_pad_token = String(wechat?.pad_token ?? "");
+        form.wechat_self_wxid = String(wechat?.self_wxid ?? "");
+        form.wechat_webhook_token = String(wechat?.webhook_token ?? "");
+        form.wechat_webhook_url = String(wechat?.webhook_url ?? "");
+        form.wechat_relay_url = String(wechat?.relay_url ?? "");
+        form.wechat_nickname = String(wechat?.nickname ?? "");
+      }
       break;
     case "web_search_engine":
       form.web_search_engine_provider = String(
@@ -825,6 +852,18 @@ export function buildConnectionPayload(form: ConnectionFormState): {
         adapter_server_url: form.adapter_server_url.trim() || null,
         bot_server_token: form.bot_server_token.trim() || null,
         qq_id: form.qq_id.trim() || null,
+        // Empty strings instead of null: the backend fields are plain `String`s.
+        wechat: form.wechat_enabled
+          ? {
+              pad_url: form.wechat_pad_url.trim(),
+              pad_token: form.wechat_pad_token.trim(),
+              self_wxid: form.wechat_self_wxid.trim(),
+              webhook_token: form.wechat_webhook_token.trim(),
+              webhook_url: form.wechat_webhook_url.trim() || null,
+              relay_url: form.wechat_relay_url.trim() || null,
+              nickname: form.wechat_nickname.trim() || null,
+            }
+          : null,
       };
       break;
     case "web_search_engine": {

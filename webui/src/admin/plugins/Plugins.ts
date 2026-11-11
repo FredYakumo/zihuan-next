@@ -1,23 +1,47 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
-import { pluginsApi, setup as setupApi, type DetailedSetupConfig, type EnvironmentInfo, type PluginRecord, type ScriptPluginDetail, type ScriptPluginFile, type ScriptPluginFileNode, type SetupProgressEvent } from "../../api/client";
+import { pluginsApi, setup as setupApi, type DetailedSetupConfig, type EnvironmentInfo, type PluginInstallResponse, type PluginRecord, type ScriptPluginDetail, type ScriptPluginFile, type ScriptPluginFileNode, type SetupProgressEvent } from "../../api/client";
+import type { WechatLoginStatusResult } from "../../api/client";
 import elasticsearchIcon from "../../assets/icons/elasticsearch.svg";
 import mysqlIcon from "../../assets/icons/mysql.svg";
+import qqIcon from "../../assets/icons/qq.svg";
 import redisIcon from "../../assets/icons/redis.svg";
 import rustfsIcon from "../../assets/icons/rustfs.svg";
 import sqliteIcon from "../../assets/icons/sqlite.svg";
 import weaviateIcon from "../../assets/icons/weaviate.svg";
+import wechatIcon from "../../assets/icons/wechat.svg";
 
 type InstallStep = "picker" | "config" | "progress";
-type PluginInstallMethod = "docker" | "binary" | "command_docker" | "command_binary";
+type PluginInstallMethod = "docker" | "native" | "binary" | "command_docker" | "command_native" | "command_binary";
 
 export function usePluginsPage() {
   const route = useRoute();
 
   const plugins = ref<PluginRecord[]>([]); const loading = ref(false); const saving = ref(false); const installVisible = ref(false); const installStep = ref<InstallStep>("picker");
   const successVisible = ref(false); const successInstallCommand = ref<string | null>(null); const successConnectionConfig = ref<unknown>(undefined);
-  const uninstallCommandVisible = ref(false); const uninstallCommand = ref("");
+  // Uninstall runs as a background task: the dialog streams the commands live and stays
+  // open after it settles — the operator dismisses it with an explicit 确定.
+  const uninstallProgressVisible = ref(false);
+  const uninstallProgressEvents = ref<SetupProgressEvent[]>([]);
+  const uninstallFailed = ref(false);
+  const uninstallDone = ref(false);
+  const uninstallError = ref("");
+  const uninstallTarget = ref<PluginRecord | null>(null);
+  let uninstallCleanup = (() => {}) as () => void;
+  /** Manual-cleanup command: the recorded hint, or synthesized for standard-pipeline records. */
+  function uninstallCommandFor(plugin: PluginRecord | null): string {
+    if (!plugin) return "";
+    const recorded = metadataString(plugin, "uninstall_command");
+    if (recorded) return recorded;
+    const composePath = metadataString(plugin, "compose_path");
+    return composePath ? `docker compose -f ${composePath} down --volumes --remove-orphans` : "";
+  }
+  const uninstallCommandText = computed(() => uninstallCommandFor(uninstallTarget.value));
+  function clearUninstallStream() {
+    uninstallCleanup();
+    uninstallCleanup = () => {};
+  }
   const exitConfirmVisible = ref(false); const error = ref(""); const progress = ref<SetupProgressEvent[]>([]); const taskId = ref("");
   // Detail dialog: manifest, dependency list and a collapsible source viewer.
   const detailVisible = ref(false); const detailLoading = ref(false); const detail = ref<ScriptPluginDetail | null>(null); const detailName = ref("");
@@ -29,6 +53,10 @@ export function usePluginsPage() {
   const zipVisible = ref(false); const zipFile = ref<File | null>(null); const zipInstalling = ref(false); const zipError = ref(""); const zipWarnings = ref<string[]>([]);
   let cleanupProgress = (() => {}) as () => void;
   let completionTimer: ReturnType<typeof setTimeout> | null = null;
+  // The install-progress dialog stays open once the task settles; 确认 then advances to
+  // the success dialog. installResult keeps the response payload for that handoff.
+  const installDone = ref(false);
+  const installResult = ref<PluginInstallResponse | null>(null);
   let installAttempt = 0;
   const componentOptions = [
     { value: "mysql", label: "MySQL", desc: "关系数据库", icon: mysqlIcon },
@@ -37,33 +65,57 @@ export function usePluginsPage() {
     { value: "weaviate", label: "Weaviate", desc: "检索数据库", icon: weaviateIcon },
     { value: "elasticsearch", label: "Elasticsearch", desc: "检索数据库", icon: elasticsearchIcon },
     { value: "rustfs", label: "RustFS", desc: "对象存储", icon: rustfsIcon },
+    { value: "wechat_pad", label: "WeChatPadPro", desc: "微信", icon: wechatIcon },
+    { value: "napcat", label: "NapCat", desc: "QQ", icon: qqIcon },
   ] as const;
+  /** Installed by a dedicated backend installer instead of the compose/binary pipeline. */
+  function isSpecialComponent(type: string) { return type === "sqlite" || type === "wechat_pad" || type === "napcat"; }
+  /** Embedded components install silently: no method choice, no configuration. */
+  function isEmbeddedComponent(type: string) { return type === "sqlite"; }
+  /** WeChatPadPro only ships as a Docker image, so the native install methods do not apply. */
+  function isDockerOnlyComponent(type: string) { return type === "wechat_pad"; }
+  /** NapCat is the only component with a real native installer: the Windows OneKey package. */
+  function supportsNativeInstall(type: string) { return type === "napcat"; }
   const form = reactive({ name: "", version: "latest", component_type: "mysql", install_method: "docker" as PluginInstallMethod });
   const selectedComponent = computed(() => componentOptions.find((item) => item.value === form.component_type) ?? componentOptions[0]);
   const environmentLoading = ref(false);
-  const environment = ref<EnvironmentInfo>({ os: "", os_detail: "", docker_available: false, docker_compose_available: false, binary_install_available: false, binary_install_reason: null, wsl_available: null, wsl_docker_available: null, cuda_version: null, compiler_version: null, proxy: null, services: [] });
+  const environment = ref<EnvironmentInfo>({ os: "", os_detail: "", docker_available: false, docker_compose_available: false, binary_install_available: false, binary_install_reason: null, wsl_available: null, wsl_docker_available: null, napcat_native_available: true, napcat_native_reason: null, cuda_version: null, compiler_version: null, proxy: null, services: [] });
   const dockerSupported = computed(() => environment.value.docker_compose_available);
   const binarySupported = computed(() => environment.value.binary_install_available);
   const dockerUnsupportedReason = "Docker Compose 不可用，请安装并启动 Docker Desktop 或 Docker Compose";
   const binaryUnsupportedReason = computed(() => environment.value.binary_install_reason ?? "当前系统不支持本机 native 程序安装");
+  /** NapCat native install: the official OneKey/script/installer per platform, gated by
+   *  backend detection (Windows always, Linux needs apt/dnf, macOS needs QQ.app). */
+  const nativeSupported = computed(() => environment.value.napcat_native_available);
+  const nativeUnsupportedReason = computed(() => environment.value.napcat_native_reason ?? "当前系统不支持 NapCat native 安装");
   const config = reactive<DetailedSetupConfig>({ install_method: "docker", target_machine_address: "", expose_public_access: false, use_target_machine_address: false,
     relational: { enabled: true, source: "install", type: "mysql", deployment: { image: "mysql:8.4", port: 3306, data_dir: "./data/plugin-mysql", container_name: "zihuan-plugin-mysql", restart_policy: "unless-stopped" }, host: "127.0.0.1", username: "root", password: "", database: "zihuan", sqlite_path: "", max_connections: 32, acquire_timeout_secs: 30 },
     rustfs: { enabled: false, source: "install", deployment: { image: "rustfs/rustfs:latest", port: 9000, data_dir: "./data/plugin-rustfs", container_name: "zihuan-plugin-rustfs", restart_policy: "unless-stopped" }, endpoint: "http://127.0.0.1:9000", bucket: "zihuan", region: "us-east-1", access_key: "", secret_key: "", public_base_url: null, path_style: true },
     search: { enabled: false, source: "install", type: "weaviate", deployment: { image: "cr.weaviate.io/semitechnologies/weaviate:1.30.5", port: 8080, data_dir: "./data/plugin-search", container_name: "zihuan-plugin-search", restart_policy: "unless-stopped" }, base_url: "http://127.0.0.1:8080", username: null, password: null, api_key: null, auth_method: "api_key", vector_dimensions: 1024 },
     redis: { enabled: false, source: "install", deployment: { image: "redis:7", port: 6379, data_dir: "./data/plugin-redis", container_name: "zihuan-plugin-redis", restart_policy: "unless-stopped" }, url: "redis://127.0.0.1:6379", username: null, password: null } });
-  const columns = [{ colKey: "name", title: "插件名称" }, { colKey: "component_type", title: "组件", width: 130 }, { colKey: "installation_method", title: "安装方式", width: 150 }, { colKey: "status", title: "状态", width: 110 }, { colKey: "connection_ids", title: "关联连接", width: 100 }, { colKey: "actions", title: "操作", width: 370 }];
+  const columns = [{ colKey: "name", title: "插件名称" }, { colKey: "component_type", title: "组件", width: 130 }, { colKey: "installation_method", title: "安装方式", width: 150 }, { colKey: "status", title: "状态", width: 110 }, { colKey: "connection_ids", title: "关联连接", width: 100 }, { colKey: "actions", title: "操作", width: 500 }];
   /** Plugins under `plugins/` are directory-owned: the row is informational and cannot be
    *  installed, toggled or uninstalled from here. */
   function isScriptPlugin(plugin: Pick<PluginRecord, "installation_method">) { return plugin.installation_method === "dynamic_script"; }
   function installMethodLabel(value: string) { return value === "dynamic_script" ? "动态脚本" : value; }
   /** Dynamic script plugins use a registry key as their component; show a readable label. */
   function componentLabel(plugin: PluginRecord) {
-    if (!isScriptPlugin(plugin)) return plugin.component_type;
+    if (!isScriptPlugin(plugin)) {
+      return ({ wechat_pad: "WeChatPadPro", napcat: "NapCat" } as Record<string, string>)[plugin.component_type] ?? plugin.component_type;
+    }
     return ({ web_search_engine: "搜索引擎", brain_tool: "智能体工具" } as Record<string, string>)[plugin.component_type] ?? plugin.component_type;
   }
   function scriptPluginDetail(plugin: PluginRecord): string {
     const description = plugin.extra_install_metadata?.description;
     return typeof description === "string" ? description : "";
+  }
+  /** The bot wxid bound by QR login, recorded in the plugin's connection-config snapshot. */
+  function wechatWxid(plugin: PluginRecord): string {
+    const config = plugin.extra_install_metadata?.connection_config as
+      | { kind?: { wechat?: { self_wxid?: unknown } } }
+      | undefined;
+    const wxid = config?.kind?.wechat?.self_wxid;
+    return typeof wxid === "string" && wxid.trim() ? wxid.trim() : "";
   }
   function statusLabel(value: string) { return ({ installing: "安装中", installed: "已启用", disabled: "已停用", failed: "失败", command_generated: "命令已生成" } as Record<string, string>)[value] ?? value; }
   function statusTheme(value: string) { return value === "installed" ? "success" : value === "failed" ? "danger" : value === "disabled" ? "warning" : "primary"; }
@@ -83,7 +135,8 @@ export function usePluginsPage() {
   watch(() => form.component_type, applyComponentDefaults);
   function getPreferredInstallMethod(): PluginInstallMethod {
     if (environment.value.docker_compose_available) return "docker";
-    if (environment.value.binary_install_available) return "binary";
+    if (supportsNativeInstall(form.component_type) && nativeSupported.value) return "native";
+    if (!isDockerOnlyComponent(form.component_type) && environment.value.binary_install_available) return "binary";
     return "command_docker";
   }
   async function detectEnvironment() {
@@ -165,6 +218,11 @@ export function usePluginsPage() {
     successConnectionConfig.value = connectionConfig;
     successVisible.value = true;
   }
+  /** 确定 on the settled install-progress dialog: advance to the success dialog. */
+  function confirmInstallResult() {
+    const result = installResult.value;
+    void showInstallationSuccess(installAttempt, result?.install_command, result?.connections);
+  }
   function confirmInstallationSuccess() {
     successVisible.value = false;
     successInstallCommand.value = null;
@@ -189,19 +247,26 @@ export function usePluginsPage() {
         // Fall through and let the install request report the real problem.
       }
     }
-    const showProgress = form.component_type !== "sqlite" && (form.install_method === "docker" || form.install_method === "binary");
+    // NapCat Docker/Native installs run as background tasks with SSE progress, like the
+    // standard pipeline; its command mode and the other special installers stay inline.
+    const napcatWithProgress = form.component_type === "napcat" && ["docker", "native"].includes(form.install_method);
+    const showProgress = napcatWithProgress || (!isSpecialComponent(form.component_type) && (form.install_method === "docker" || form.install_method === "binary"));
     const attempt = ++installAttempt;
     clearInstallationSideEffects();
     if (showProgress) installStep.value = "progress";
     progress.value = [];
     taskId.value = "";
+    installDone.value = false;
+    installResult.value = null;
     saving.value = true;
     error.value = "";
     resetConfig();
     let waitingForTask = false;
     try {
       const { install_method, ...plugin } = form;
-      const result = await pluginsApi.install({ ...plugin, ...(form.component_type === "sqlite" ? {} : { install_method, detailed_config: config }) });
+      // Embedded components carry no install options; everything else — including the
+      // docker-only special installer — uses the standard method and config fields.
+      const result = await pluginsApi.install({ ...plugin, ...(isEmbeddedComponent(form.component_type) ? {} : { install_method, detailed_config: config }) });
       if (attempt !== installAttempt) {
         void load();
         return;
@@ -209,6 +274,7 @@ export function usePluginsPage() {
       if (result.task_id) {
         waitingForTask = true;
         taskId.value = result.task_id;
+        installResult.value = result;
         cleanupProgress = setupApi.streamProgress(result.task_id, (event) => {
           if (attempt !== installAttempt) return;
           progress.value.push(event);
@@ -219,15 +285,15 @@ export function usePluginsPage() {
             return;
           }
           if (event.step === "finished") {
+            // The dialog stays open with the full command log; 确认 moves on to the
+            // success dialog instead of the log vanishing after half a second.
             clearInstallationSideEffects();
             saving.value = false;
-            completionTimer = setTimeout(() => {
-              completionTimer = null;
-              void showInstallationSuccess(attempt, result.install_command, result.connections);
-            }, 500);
+            installDone.value = true;
+            void load();
           }
         }, async () => {
-          if (attempt !== installAttempt || !saving.value) return;
+          if (attempt !== installAttempt || (!saving.value && !installDone.value)) return;
           clearInstallationSideEffects();
           saving.value = false;
           // The task may have finished right before the stream closed; read the
@@ -268,6 +334,22 @@ export function usePluginsPage() {
   function statusTitle(plugin: PluginRecord): string | undefined { return plugin.status === "failed" ? metadataString(plugin, "last_error") ?? undefined : undefined; }
   function installCommand(plugin: PluginRecord): string | null { return metadataString(plugin, "install_command"); }
   function connectionConfigJson(plugin: PluginRecord): string | null { const value = plugin.extra_install_metadata?.connection_config; return value == null ? null : JSON.stringify(value, null, 2); }
+  /** NapCat's QQ login happens in its own WebUI, whose address the installers record. */
+  function webuiUrl(plugin: PluginRecord): string | null { return metadataString(plugin, "webui_url"); }
+  function webuiToken(plugin: PluginRecord): string | null { return metadataString(plugin, "webui_token"); }
+  function wsUrl(plugin: PluginRecord): string | null { return metadataString(plugin, "ws_url"); }
+  function openWebui(plugin: PluginRecord) { const url = webuiUrl(plugin); if (url) window.open(url, "_blank"); }
+  // "打开配置" dialog: shows the NapCat WebUI/WS addresses and the login token so the
+  // operator can copy them without digging through the plugin JSON. The token renders
+  // through the readonly credential input (masked until revealed).
+  const napcatConfigVisible = ref(false);
+  const napcatConfigPlugin = ref<PluginRecord | null>(null);
+  const napcatConfigToken = ref("");
+  function openNapcatConfig(plugin: PluginRecord) {
+    napcatConfigPlugin.value = plugin;
+    napcatConfigToken.value = metadataString(plugin, "webui_token") ?? "";
+    napcatConfigVisible.value = true;
+  }
   async function copyPluginValue(value: string, label: string) { try { await navigator.clipboard.writeText(value); } catch (e) { error.value = `复制${label}失败：${String(e)}`; } }
   async function openDetail(plugin: PluginRecord) {
     detailName.value = plugin.name;
@@ -336,11 +418,189 @@ export function usePluginsPage() {
       zipInstalling.value = false;
     }
   }
-  async function removePlugin(id: string) { try { const result = await pluginsApi.remove(id); await load(); if (result.uninstall_command) { uninstallCommand.value = result.uninstall_command; uninstallCommandVisible.value = true; } } catch (e) { error.value = String(e); } }
+  async function removePlugin(plugin: PluginRecord) {
+    uninstallTarget.value = plugin;
+    uninstallProgressEvents.value = [];
+    uninstallFailed.value = false;
+    uninstallDone.value = false;
+    uninstallError.value = "";
+    uninstallProgressVisible.value = true;
+    clearUninstallStream();
+    try {
+      const result = await pluginsApi.remove(plugin.id);
+      uninstallCleanup = setupApi.streamProgress(result.task_id, (event) => {
+        uninstallProgressEvents.value.push(event);
+        if (event.status === "error") {
+          uninstallFailed.value = true;
+          uninstallError.value = event.error ?? event.message;
+        }
+        if (event.step === "finished") {
+          // The dialog stays open with a 确定 button instead of vanishing on its own.
+          clearUninstallStream();
+          uninstallDone.value = true;
+          void load();
+        }
+      }, async () => {
+        // The stream dropped before a final event: settle the dialog by checking the
+        // list — a gone record means the teardown completed, a kept one failed.
+        clearUninstallStream();
+        await load();
+        const kept = plugins.value.some((item) => item.id === uninstallTarget.value?.id);
+        if (kept) {
+          uninstallFailed.value = true;
+        } else {
+          uninstallDone.value = true;
+        }
+      });
+    } catch (e) {
+      uninstallProgressVisible.value = false;
+      error.value = String(e);
+    }
+  }
+  /** Closing mid-run keeps the background task going; the list reflects the outcome. */
+  function closeUninstallProgress() {
+    clearUninstallStream();
+    uninstallProgressVisible.value = false;
+    void load();
+  }
+  /** The dialog never auto-closes; 确定 is the explicit acknowledgment of the result. */
+  function confirmUninstallResult() {
+    closeUninstallProgress();
+  }
+
+  // WeChat QR login dialog: fetch a bridge QR code, poll the scan result and stop at either a
+  // confirmed login (persisted server-side) or an expired code the user can refresh.
+  type WechatLoginPhase = "idle" | "waiting" | "scanned" | "logged_in" | "expired" | "error";
+  const wechatLoginVisible = ref(false);
+  const wechatLoginPlugin = ref<PluginRecord | null>(null);
+  const wechatLoginLoading = ref(false);
+  const wechatLoginPhase = ref<WechatLoginPhase>("idle");
+  const wechatLoginError = ref("");
+  const wechatLoginQrBase64 = ref("");
+  const wechatLoginQrLink = ref("");
+  const wechatLoginAccount = ref<{ wxid: string; nickname: string } | null>(null);
+  const wechatLoginCountdown = ref(0);
+  let wechatLoginAuthKey = "";
+  let wechatLoginExpiresAt = 0;
+  let wechatLoginAttempt = 0;
+  let wechatLoginTimer: ReturnType<typeof setTimeout> | null = null;
+  let wechatLoginCountdownTimer: ReturnType<typeof setInterval> | null = null;
+  function stopWechatLoginLoop() {
+    wechatLoginAttempt += 1;
+    if (wechatLoginTimer !== null) { clearTimeout(wechatLoginTimer); wechatLoginTimer = null; }
+    if (wechatLoginCountdownTimer !== null) { clearInterval(wechatLoginCountdownTimer); wechatLoginCountdownTimer = null; }
+  }
+  function openWechatLogin(plugin: PluginRecord) {
+    stopWechatLoginLoop();
+    wechatLoginPlugin.value = plugin;
+    wechatLoginError.value = "";
+    wechatLoginQrBase64.value = "";
+    wechatLoginQrLink.value = "";
+    wechatLoginAccount.value = null;
+    wechatLoginPhase.value = "idle";
+    wechatLoginVisible.value = true;
+    void requestWechatQr();
+  }
+  function closeWechatLogin() {
+    stopWechatLoginLoop();
+    wechatLoginVisible.value = false;
+    wechatLoginPlugin.value = null;
+  }
+  function startWechatLoginCountdown() {
+    wechatLoginCountdown.value = Math.max(0, Math.round((wechatLoginExpiresAt - Date.now()) / 1000));
+    wechatLoginCountdownTimer = setInterval(() => {
+      wechatLoginCountdown.value = Math.max(0, Math.round((wechatLoginExpiresAt - Date.now()) / 1000));
+      if (wechatLoginCountdown.value === 0 && wechatLoginPhase.value !== "logged_in") {
+        wechatLoginPhase.value = "expired";
+        stopWechatLoginLoop();
+      }
+    }, 1000);
+  }
+  async function requestWechatQr() {
+    const plugin = wechatLoginPlugin.value;
+    if (!plugin) return;
+    stopWechatLoginLoop();
+    const attempt = wechatLoginAttempt;
+    wechatLoginLoading.value = true;
+    wechatLoginError.value = "";
+    wechatLoginPhase.value = "idle";
+    try {
+      const result = await pluginsApi.wechatLoginQr(plugin.id);
+      if (attempt !== wechatLoginAttempt) return;
+      wechatLoginAuthKey = result.auth_key;
+      if (result.status === "logged_in") {
+        wechatLoginPhase.value = "logged_in";
+        wechatLoginAccount.value = { wxid: result.wxid ?? "", nickname: result.nickname ?? "" };
+        return;
+      }
+      wechatLoginQrBase64.value = result.qr_base64 ?? "";
+      wechatLoginQrLink.value = result.qr_link ?? "";
+      wechatLoginExpiresAt = Date.now() + (result.expires_in_secs ?? 290) * 1000;
+      wechatLoginPhase.value = "waiting";
+      startWechatLoginCountdown();
+      pollWechatLoginStatus(attempt);
+    } catch (e) {
+      if (attempt !== wechatLoginAttempt) return;
+      wechatLoginPhase.value = "error";
+      wechatLoginError.value = String(e);
+    } finally {
+      if (attempt === wechatLoginAttempt) wechatLoginLoading.value = false;
+    }
+  }
+  function pollWechatLoginStatus(attempt: number) {
+    wechatLoginTimer = setTimeout(async () => {
+      if (attempt !== wechatLoginAttempt || !wechatLoginPlugin.value) return;
+      let result: WechatLoginStatusResult | null = null;
+      try {
+        result = await pluginsApi.wechatLoginStatus(wechatLoginPlugin.value.id, wechatLoginAuthKey);
+        if (attempt !== wechatLoginAttempt) return;
+        if (result.status === "logged_in") {
+          wechatLoginPhase.value = "logged_in";
+          wechatLoginAccount.value = { wxid: result.wxid ?? "", nickname: result.nickname ?? "" };
+          stopWechatLoginLoop();
+          await load();
+          return;
+        }
+        if (result.status === "scanned") wechatLoginPhase.value = "scanned";
+        if (result.status === "expired") {
+          wechatLoginPhase.value = "expired";
+          stopWechatLoginLoop();
+          return;
+        }
+        if (result.status === "error" && result.message) wechatLoginError.value = result.message;
+      } catch (e) {
+        if (attempt !== wechatLoginAttempt) return;
+        wechatLoginError.value = String(e);
+      }
+      if (Date.now() >= wechatLoginExpiresAt) {
+        wechatLoginPhase.value = "expired";
+        stopWechatLoginLoop();
+        return;
+      }
+      pollWechatLoginStatus(attempt);
+    }, 3000);
+  }
+  function wechatLoginStatusLabel(): string {
+    switch (wechatLoginPhase.value) {
+      case "idle": return "正在获取二维码...";
+      case "waiting": return `请用微信扫描二维码（${wechatLoginCountdown.value} 秒后过期）`;
+      case "scanned": return "已扫码，请在手机上确认登录";
+      case "expired": return "二维码已过期，请刷新后重扫";
+      case "error": return wechatLoginError.value || "登录流程出错";
+      case "logged_in": {
+        const account = wechatLoginAccount.value;
+        if (!account) return "登录成功";
+        const name = account.nickname || account.wxid;
+        return account.wxid && account.nickname ? `登录成功：${account.nickname}（${account.wxid}）` : `登录成功：${name}`;
+      }
+    }
+  }
   onMounted(() => { void load(); if (route.query.install === "1") openInstall(); });
   onBeforeUnmount(() => {
     installAttempt += 1;
     clearInstallationSideEffects();
+    clearUninstallStream();
+    stopWechatLoginLoop();
   });
 
   return {
@@ -352,20 +612,31 @@ export function usePluginsPage() {
     successVisible,
     successInstallCommand,
     successConnectionConfig,
-    uninstallCommandVisible,
-    uninstallCommand,
+    uninstallProgressVisible,
+    uninstallProgressEvents,
+    uninstallFailed,
+    uninstallDone,
+    uninstallError,
+    uninstallCommandText,
+    closeUninstallProgress,
+    confirmUninstallResult,
     exitConfirmVisible,
     error,
     progress,
     taskId,
     componentOptions,
+    isEmbeddedComponent,
+    isDockerOnlyComponent,
+    supportsNativeInstall,
     form,
     selectedComponent,
     environmentLoading,
     dockerSupported,
     binarySupported,
+    nativeSupported,
     dockerUnsupportedReason,
     binaryUnsupportedReason,
+    nativeUnsupportedReason,
     config,
     columns,
     statusLabel,
@@ -373,9 +644,10 @@ export function usePluginsPage() {
     statusTitle,
     isScriptPlugin,
     installMethodLabel,
-    componentLabel,
-    scriptPluginDetail,
-    load,
+  componentLabel,
+  scriptPluginDetail,
+  wechatWxid,
+  load,
     selectComponent,
     openInstall,
     requestCloseInstall,
@@ -384,10 +656,21 @@ export function usePluginsPage() {
     backFromProgress,
     confirmInstallationSuccess,
     install,
+    installDone,
+    installResult,
+    confirmInstallResult,
     toggle,
-    installCommand,
-    connectionConfigJson,
-    copyPluginValue,
+  installCommand,
+  connectionConfigJson,
+  webuiUrl,
+  webuiToken,
+  wsUrl,
+  openWebui,
+  napcatConfigVisible,
+  napcatConfigPlugin,
+  napcatConfigToken,
+  openNapcatConfig,
+  copyPluginValue,
     removePlugin,
     detailVisible,
     detailLoading,
@@ -407,8 +690,19 @@ export function usePluginsPage() {
     zipInstalling,
     zipError,
     zipWarnings,
-    openZipInstall,
-    selectZipFile,
-    installZip,
+  openZipInstall,
+  selectZipFile,
+  installZip,
+  wechatLoginVisible,
+  wechatLoginLoading,
+  wechatLoginPhase,
+  wechatLoginError,
+  wechatLoginQrBase64,
+  wechatLoginQrLink,
+  wechatLoginAccount,
+  openWechatLogin,
+  closeWechatLogin,
+  requestWechatQr,
+  wechatLoginStatusLabel,
   };
 }

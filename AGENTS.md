@@ -10,4 +10,3 @@
 ## Documentation
 
 - **Read the project documentation** in `documents/` before making changes.
-- Check `documents/version_logs/` for release history and planned changes. Treat a version log as current planning context if its version is newer than the latest Git tag, or if no newer Git tag exists.

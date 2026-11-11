@@ -1,9 +1,9 @@
+use crate::connection_manager::ConnectionManager;
 use crate::data_refs::RelationalDbConnection;
 use crate::error::{Error, Result};
+use crate::storage::ConnectionHandle;
 
-use crate::storage::{
-    find_connection, ConnectionConfig, ConnectionKind, RuntimeStorageConnectionManager,
-};
+use crate::storage::{find_connection, ConnectionConfig, ConnectionKind, RuntimeConnectionManager};
 
 pub async fn build_relational_db_connection_for_connection(
     connection_id: &str,
@@ -17,20 +17,21 @@ pub async fn build_relational_db_connection_for_kind(
     connection_id: &str,
     kind: &ConnectionKind,
 ) -> Result<RelationalDbConnection> {
-    match kind {
-        ConnectionKind::Mysql(_) => Ok(RelationalDbConnection::MySql(
-            RuntimeStorageConnectionManager::shared()
-                .get_or_create_mysql_ref(connection_id)
-                .await?,
-        )),
-        ConnectionKind::Sqlite(_) | ConnectionKind::MockRdb => Ok(RelationalDbConnection::Sqlite(
-            RuntimeStorageConnectionManager::shared()
-                .get_or_create_sqlite_ref(connection_id)
-                .await?,
-        )),
-        _ => Err(Error::ValidationError(format!(
+    if !matches!(
+        kind,
+        ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_) | ConnectionKind::MockRdb
+    ) {
+        return Err(Error::ValidationError(format!(
             "connection '{}' is not a relational database connection",
             connection_id
-        ))),
+        )));
+    }
+    match RuntimeConnectionManager::shared().get_or_create(connection_id).await? {
+        ConnectionHandle::MySql(value) => Ok(RelationalDbConnection::MySql(value)),
+        ConnectionHandle::Sqlite(value) => Ok(RelationalDbConnection::Sqlite(value)),
+        _ => Err(crate::string_error!(
+            "connection '{}' is not a relational database connection",
+            connection_id
+        )),
     }
 }

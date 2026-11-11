@@ -16,9 +16,9 @@ use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::{
 };
 use zihuan_core::retrieval::RetrievalSchema;
 use zihuan_core::storage::{
-    close_runtime_storage_instance, close_runtime_storage_instances_for_config, connection_exists,
-    delete_connection as delete_stored_connection, list_runtime_storage_instances,
-    upsert_connection, validate_connection_authentication, ConnectionConfig, ConnectionKind,
+    close_runtime_connection, close_runtime_connections_for_config, connection_exists,
+    delete_connection as delete_stored_connection, list_runtime_connections, upsert_connection,
+    validate_connection_authentication, ConnectionConfig, ConnectionKind,
 };
 use zihuan_core::weaviate::{WeaviateEnsureCollectionResult, WeaviateRef};
 
@@ -73,7 +73,12 @@ fn validate_connection_basics(kind: &ConnectionKind) -> Result<(), String> {
         }
         ConnectionKind::BotAdapter(bot) => {
             let bot = parse_ims_bot_adapter_connection(bot).map_err(|err| err.to_string())?;
-            if bot.bot_server_url.trim().is_empty() {
+
+            if let Some(wechat) = &bot.wechat {
+                if wechat.pad_url.trim().is_empty() {
+                    return Err("ims_bot_adapter.wechat.pad_url must not be empty".to_string());
+                }
+            } else if bot.bot_server_url.trim().is_empty() {
                 return Err("ims_bot_adapter.bot_server_url must not be empty".to_string());
             }
             if matches!(bot.adapter_server_url.as_deref().map(str::trim), Some("")) {
@@ -284,7 +289,7 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
 
     match upsert_connection(connection) {
         Ok(connection) => {
-            let _ = close_runtime_storage_instances_for_config(&connection.id);
+            let _ = close_runtime_connections_for_config(&connection.id);
 
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
@@ -340,7 +345,7 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
 
     match upsert_connection(response.clone()) {
         Ok(_) => {
-            let _ = close_runtime_storage_instances_for_config(&response.id);
+            let _ = close_runtime_connections_for_config(&response.id);
 
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
@@ -385,7 +390,7 @@ pub async fn list_runtime_instances(req: &mut Request, res: &mut Response, _depo
     let page_size = req.query::<usize>("page_size").unwrap_or(20).clamp(1, 200);
 
     match (
-        list_runtime_storage_instances(),
+        list_runtime_connections(),
         list_runtime_embedding_instances(),
         list_runtime_bot_adapter_instances().await,
     ) {
@@ -409,7 +414,7 @@ pub async fn close_runtime_instance(req: &mut Request, res: &mut Response, _depo
         return render_bad_request(res, "instance_id is required".to_string());
     }
 
-    match close_runtime_storage_instance(&instance_id) {
+    match close_runtime_connection(&instance_id) {
         Ok(true) => {
             res.render(Json(ok_response()));
             return;

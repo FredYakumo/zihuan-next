@@ -255,7 +255,10 @@ fn hydrate_reply_sources(event: &MessageEvent, adapter: &SharedBotAdapter) -> Me
             match message {
                 Message::Reply(reply) => {
                     if valid_reply_source_messages(reply).is_none() {
-                        match block_async(restore_messages_for_message_id(adapter, reply.id)) {
+                        match block_async(restore_messages_for_message_id(
+                            adapter,
+                            reply.id.clone(),
+                        )) {
                             Ok(Some(messages)) => {
                                 reply.message_source = Some(messages);
                             }
@@ -520,8 +523,9 @@ fn collect_quoted_message(messages: &[Message]) -> Option<QqChatQuotedMessage> {
             return None;
         }
         // The restored segments carry no sender, so resolve it from the persisted record.
-        let sender = zihuan_core::storage::message::record_restore::lookup_message_sender(reply.id)
-            .unwrap_or_default();
+        let sender =
+            zihuan_core::storage::message::record_restore::lookup_message_sender(&reply.id)
+                .unwrap_or_default();
         let sender_id = (!sender.0.is_empty()).then_some(sender.0);
         let sender_name = (!sender.1.is_empty()).then_some(sender.1);
         return Some(QqChatQuotedMessage {

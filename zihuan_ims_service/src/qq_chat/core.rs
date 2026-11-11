@@ -609,13 +609,13 @@ fn resolve_group_role_label(
     adapter: &SharedBotAdapter,
     event: &zihuan_core::ims_bot_adapter::models::event_model::MessageEvent,
 ) -> String {
-    let Some(group_id) = event.group_id else {
+    let Some(group_id) = event.group_id.clone() else {
         return "成员".to_string();
     };
 
     let bot_id = zihuan_core::ims_bot_adapter::message_helpers::get_bot_id(adapter);
     match zihuan_core::ims_bot_adapter::tools::qq_profile::fetch_group_member_role(
-        adapter, group_id, &bot_id,
+        adapter, &group_id, &bot_id,
     ) {
         Ok(role) => match role.trim().to_lowercase().as_str() {
             "owner" => "群主".to_string(),
@@ -671,10 +671,10 @@ mod build_user_message_tests {
     fn build_prepared_input() -> PreparedCurrentTurnUserInput {
         PreparedCurrentTurnUserInput {
             event: MessageEvent {
-                message_id: 1,
+                message_id: "1".to_string(),
                 message_type: MessageType::Group,
                 sender: Sender {
-                    user_id: 100,
+                    user_id: "100".to_string(),
                     nickname: "sender".to_string(),
                     card: String::new(),
                     role: None,
@@ -683,7 +683,7 @@ mod build_user_message_tests {
                 message_list: vec![Message::PlainText(PlainTextMessage {
                     text: "你好".to_string(),
                 })],
-                group_id: Some(200),
+                group_id: Some("200".to_string()),
                 group_name: Some("测试群".to_string()),
                 is_group_message: true,
             },
@@ -957,7 +957,7 @@ impl QqChatAgentService {
                 let group_id = if event.message_type
                     == zihuan_core::ims_bot_adapter::models::event_model::MessageType::Group
                 {
-                    event.group_id.map(|value| value.to_string())
+                    event.group_id.clone()
                 } else {
                     None
                 };

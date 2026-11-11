@@ -17,7 +17,7 @@ pub struct ObjectStorageConfig {
 
 #[derive(Debug, Clone)]
 pub struct ImageObjectStorageInput {
-    pub message_id: i64,
+    pub message_id: String,
     pub segment_index: usize,
     pub file_name: String,
     pub content_type: String,
@@ -39,6 +39,7 @@ impl ObjectStorageConfig {
 
         Some(Self {
             inner: Arc::new(S3Ref {
+                closed: Default::default(),
                 endpoint,
                 bucket,
                 access_key,
@@ -80,13 +81,13 @@ pub async fn save_image_to_object_storage(
     object_storage: &S3Ref,
     input: &ImageObjectStorageInput,
 ) -> Result<SavedImageObject> {
-    let key = build_object_key(input.message_id, input.segment_index, &input.file_name);
+    let key = build_object_key(&input.message_id, input.segment_index, &input.file_name);
     let object_url = object_storage.put_object(&key, &input.content_type, &input.bytes).await?;
 
     Ok(SavedImageObject { object_key: key, object_url })
 }
 
-fn build_object_key(message_id: i64, segment_index: usize, file_name: &str) -> String {
+fn build_object_key(message_id: &str, segment_index: usize, file_name: &str) -> String {
     let now = chrono::Utc::now();
     let safe_file_name = sanitize_filename(file_name);
     format!(

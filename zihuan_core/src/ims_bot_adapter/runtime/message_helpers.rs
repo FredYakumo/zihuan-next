@@ -37,7 +37,7 @@ pub struct OutboundMessagePersistence {
 
 fn build_outbound_event(
     adapter: &SharedBotAdapter,
-    message_id: i64,
+    message_id: String,
     message_type: MessageType,
     target_id: &str,
     group_name: Option<&str>,
@@ -64,15 +64,6 @@ fn build_outbound_event(
         (bot_id, profile_name)
     };
 
-    let sender_user_id = match bot_id.parse::<i64>() {
-        Ok(value) => value,
-        Err(error) => {
-            warn!(
-                "{LOG_PREFIX} Failed to parse bot_id '{bot_id}' into i64 for persistence: {error}"
-            );
-            return None;
-        }
-    };
     let sender_name = sender_name_override
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -83,23 +74,13 @@ fn build_outbound_event(
         })
         .unwrap_or_else(|| bot_id.clone());
 
-    let group_id = if message_type == MessageType::Group {
-        match target_id.parse::<i64>() {
-            Ok(value) => Some(value),
-            Err(error) => {
-                warn!("{LOG_PREFIX} Failed to parse group_id '{target_id}' into i64 for persistence: {error}");
-                None
-            }
-        }
-    } else {
-        None
-    };
+    let group_id = (message_type == MessageType::Group).then(|| target_id.to_string());
 
     Some(MessageEvent {
         message_id,
         message_type,
         sender: Sender {
-            user_id: sender_user_id,
+            user_id: bot_id.clone(),
             nickname: sender_name.clone(),
             card: sender_name,
             role: None,
@@ -116,17 +97,17 @@ fn persist_outbound_messages(
     adapter: &SharedBotAdapter,
     message_type: MessageType,
     target_id: &str,
-    message_id: i64,
+    message_id: String,
     messages: &[Message],
     persistence: &OutboundMessagePersistence,
 ) {
-    if message_id <= 0 {
+    if message_id.is_empty() {
         return;
     }
 
     let Some(event) = build_outbound_event(
         adapter,
-        message_id,
+        message_id.clone(),
         message_type,
         target_id,
         persistence.group_name.as_deref(),
@@ -227,7 +208,7 @@ pub fn send_friend_text_with_persistence(
                     adapter,
                     MessageType::Private,
                     target_id,
-                    response_message_id(&response).unwrap_or(-1),
+                    response_message_id(&response).unwrap_or_default(),
                     &messages,
                     persistence,
                 );
@@ -269,7 +250,7 @@ pub fn send_group_text_with_persistence(
                     adapter,
                     MessageType::Group,
                     target_id,
-                    response_message_id(&response).unwrap_or(-1),
+                    response_message_id(&response).unwrap_or_default(),
                     &messages,
                     persistence,
                 );
@@ -413,7 +394,7 @@ fn persist_successful_batches(
                 adapter,
                 message_type,
                 target_id,
-                result.message_id,
+                result.message_id.clone(),
                 batch,
                 persistence,
             );
@@ -458,7 +439,7 @@ pub fn send_group_progress_notification_with_persistence(
                 adapter,
                 MessageType::Group,
                 group_id,
-                result.message_id,
+                result.message_id.clone(),
                 batch,
                 persistence,
             );
@@ -504,7 +485,7 @@ pub fn send_friend_progress_notification_with_persistence(
                 adapter,
                 MessageType::Private,
                 target_id,
-                result.message_id,
+                result.message_id.clone(),
                 batch,
                 persistence,
             );

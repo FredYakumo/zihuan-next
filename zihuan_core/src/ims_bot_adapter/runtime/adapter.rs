@@ -84,6 +84,7 @@ pub trait BotAdapterBackend: Send + Sync {
 /// Shared event parsing, hydration and dispatch for all adapter backends.
 pub struct BotAdapter {
     backend: Arc<dyn BotAdapterBackend>,
+    pub(crate) connected: Arc<AtomicBool>,
     url: String,
     token: String,
     bot_profile: Option<Profile>,
@@ -151,6 +152,7 @@ impl BotAdapter {
     pub async fn new(config: BotAdapterConfig) -> Self {
         Self {
             backend: Arc::new(super::napcat::NapCatBotAdapter),
+            connected: Arc::new(AtomicBool::new(false)),
             url: config.url,
             token: config.token,
             bot_profile: Some(Profile {
@@ -326,7 +328,7 @@ impl BotAdapter {
         hydrate_message_segments(
             &adapter,
             &image_cache_handle,
-            event.message_id,
+            event.message_id.clone(),
             &mut event.message_list,
         )
         .await;
@@ -434,7 +436,7 @@ fn parse_cq_string_to_messages(content: &str) -> Vec<Message> {
                 ));
             }
             "reply" => {
-                if let Some(id) = params.get("id").and_then(|value| value.parse::<i64>().ok()) {
+                if let Some(id) = params.get("id").cloned() {
                     messages.push(Message::Reply(
                         crate::ims_bot_adapter::models::message::ReplyMessage {
                             id,
@@ -511,7 +513,7 @@ pub fn parse_reply_source_messages_from_get_msg_response(
 
 async fn fetch_reply_source_messages(
     adapter: &SharedBotAdapter,
-    message_id: i64,
+    message_id: String,
 ) -> Result<Vec<Message>> {
     let response =
         ws_send_action_async(adapter, "get_msg", serde_json::json!({ "message_id": message_id }))
@@ -522,29 +524,39 @@ async fn fetch_reply_source_messages(
 
 pub(crate) async fn restore_message_list_for_message_id(
     adapter: &SharedBotAdapter,
-    message_id: i64,
+    message_id: String,
 ) -> Result<Option<ResolvedMessageList>> {
     let image_cache_handle = BotAdapterImageCacheHandle(adapter.clone());
 
-    if let Some(snapshot) = restore_message_snapshot(message_id)? {
+    if let Some(snapshot) = restore_message_snapshot(&message_id)? {
         let mut restored_messages = snapshot.messages;
-        hydrate_message_segments(adapter, &image_cache_handle, message_id, &mut restored_messages)
-            .await;
-        enrich_message_images(&image_cache_handle, message_id, &mut restored_messages).await;
+        hydrate_message_segments(
+            adapter,
+            &image_cache_handle,
+            message_id.clone(),
+            &mut restored_messages,
+        )
+        .await;
+        enrich_message_images(&image_cache_handle, &message_id, &mut restored_messages).await;
         return Ok(Some(ResolvedMessageList {
             messages: restored_messages,
             source_label: snapshot.source.as_str().to_string(),
         }));
     }
 
-    let mut restored_messages = fetch_reply_source_messages(adapter, message_id).await?;
+    let mut restored_messages = fetch_reply_source_messages(adapter, message_id.clone()).await?;
     if restored_messages.is_empty() {
         return Ok(None);
     }
 
-    hydrate_message_segments(adapter, &image_cache_handle, message_id, &mut restored_messages)
-        .await;
-    enrich_message_images(&image_cache_handle, message_id, &mut restored_messages).await;
+    hydrate_message_segments(
+        adapter,
+        &image_cache_handle,
+        message_id.clone(),
+        &mut restored_messages,
+    )
+    .await;
+    enrich_message_images(&image_cache_handle, &message_id, &mut restored_messages).await;
     Ok(Some(ResolvedMessageList {
         messages: restored_messages,
         source_label: "get_msg".to_string(),
@@ -553,7 +565,7 @@ pub(crate) async fn restore_message_list_for_message_id(
 
 pub async fn restore_messages_for_message_id(
     adapter: &SharedBotAdapter,
-    message_id: i64,
+    message_id: String,
 ) -> Result<Option<Vec<Message>>> {
     Ok(restore_message_list_for_message_id(adapter, message_id)
         .await?
@@ -590,13 +602,13 @@ fn parse_forward_node_value(value: &serde_json::Value) -> Option<ForwardNodeMess
 async fn hydrate_message_segments(
     adapter: &SharedBotAdapter,
     image_cache_handle: &BotAdapterImageCacheHandle,
-    root_message_id: i64,
+    root_message_id: String,
     messages: &mut [Message],
 ) {
     for message in messages {
         match message {
             Message::Reply(reply) => {
-                match restore_message_list_for_message_id(adapter, reply.id).await {
+                match restore_message_list_for_message_id(adapter, reply.id.clone()).await {
                     Ok(Some(resolved)) => {
                         let image_count = resolved
                             .messages
@@ -652,11 +664,11 @@ async fn hydrate_message_segments(
                     hydrate_message_segments(
                         adapter,
                         image_cache_handle,
-                        root_message_id,
+                        root_message_id.clone(),
                         &mut node.content,
                     )
                     .await;
-                    enrich_message_images(image_cache_handle, root_message_id, &mut node.content)
+                    enrich_message_images(image_cache_handle, &root_message_id, &mut node.content)
                         .await;
                 }
             }

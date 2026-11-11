@@ -43,9 +43,11 @@ impl BotAdapterBackend for NapCatBotAdapter {
         {
             let mut guard = adapter.lock().await;
             guard.action_tx = Some(action_tx);
+            guard.connected.store(true, std::sync::atomic::Ordering::Release);
         }
 
-        tokio::spawn(async move {
+        let mut tasks = tokio::task::JoinSet::new();
+        tasks.spawn(async move {
             while let Some(msg) = action_rx.recv().await {
                 if write.send(WsMessage::Text(msg)).await.is_err() {
                     break;

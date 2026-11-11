@@ -18,7 +18,7 @@ pub(super) async fn ensure_columns_mysql(conn: &mut MySqlConnection) -> Result<(
         ),
         (
             "pending_group_id",
-            "ALTER TABLE qq_chat_agent_service_privilege_auth ADD COLUMN pending_group_id BIGINT NULL",
+            "ALTER TABLE qq_chat_agent_service_privilege_auth ADD COLUMN pending_group_id VARCHAR(64) NULL",
         ),
         (
             "pending_is_group",
@@ -51,6 +51,19 @@ pub(super) async fn ensure_columns_mysql(conn: &mut MySqlConnection) -> Result<(
             })?;
         }
     }
+
+    // Older installs declared `pending_group_id` as BIGINT; IM ids are opaque strings
+    // (WeChat uses wxid / `xxx@chatroom`), so widen the column to text on MySQL.
+    sqlx::query(
+        "ALTER TABLE qq_chat_agent_service_privilege_auth MODIFY COLUMN pending_group_id VARCHAR(64) NULL",
+    )
+    .execute(&mut *conn)
+    .await
+    .map_err(|e| {
+        Error::Database(sqlx::Error::Protocol(format!(
+            "MySQL ALTER TABLE failed for pending_group_id column type: {e}"
+        )))
+    })?;
 
     Ok(())
 }

@@ -62,7 +62,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
                 sender_id,
                 turn.target_id,
                 is_group,
-                turn.prepared_input.event.group_id,
+                turn.prepared_input.event.group_id.clone(),
             );
             access.agent_id = ctx.agent_id.to_string();
             access.permission_connection = ctx.rdb_pool.cloned();
@@ -79,14 +79,14 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
         && !turn.continues_previous
         && turn.role_config.group_message_window_count > 0
     {
-        turn.event.group_id.map(|group_id| {
+        turn.event.group_id.clone().map(|group_id| {
             QqGroupMessageWindow::new(GroupMessageWindowContext {
                 trace,
                 identity: turn_identity.clone(),
                 llm: ctx.intent_classification_llm,
                 rdb_pool: ctx.rdb_pool,
                 group_id: group_id.to_string(),
-                current_message_id: turn.prepared_input.event.message_id,
+                current_message_id: turn.prepared_input.event.message_id.clone(),
                 user_input: turn.current_message.clone(),
                 window_count: turn.role_config.group_message_window_count,
                 confirmed: &turn.service.group_message_window_confirmed,

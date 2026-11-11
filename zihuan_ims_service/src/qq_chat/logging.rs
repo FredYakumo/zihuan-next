@@ -229,7 +229,7 @@ impl QqChatTaskTrace {
 
     pub(crate) fn record_steer_follow_up(
         &self,
-        message_id: i64,
+        message_id: &str,
         steer_count: usize,
         accepted_steer_count: usize,
         max_steer_count: usize,

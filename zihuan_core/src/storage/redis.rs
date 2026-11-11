@@ -1,4 +1,6 @@
+use crate::connection::Connection as ConnectionLifecycle;
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
@@ -14,6 +16,7 @@ use crate::storage::{find_connection, load_connections, ConnectionKind};
 /// Redis connection configuration, passed between nodes as a reference
 #[derive(Clone)]
 pub struct RedisConfig {
+    closed: Arc<AtomicBool>,
     pub url: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>,
@@ -34,6 +37,7 @@ impl RedisConfig {
         reconnect_interval_secs: Option<u64>,
     ) -> Self {
         Self {
+            closed: Arc::new(AtomicBool::new(false)),
             url,
             username,
             password,
@@ -60,14 +64,9 @@ impl fmt::Debug for RedisConfig {
 }
 
 pub async fn build_redis_ref(url: &str) -> Result<Arc<RedisConfig>> {
-    let redis_ref = Arc::new(RedisConfig::new(Some(url.to_string()), None, None, None, None));
-    {
-        let mut redis_cm = redis_ref.redis_cm.lock().await;
-        *redis_cm = Some(connect(url).await?);
-        let mut cached_redis_url = redis_ref.cached_redis_url.lock().await;
-        *cached_redis_url = Some(url.to_string());
-    }
-    Ok(redis_ref)
+    let mut redis_ref = RedisConfig::new(Some(url.to_string()), None, None, None, None);
+    redis_ref.connect().await?;
+    Ok(Arc::new(redis_ref))
 }
 
 /// Run one Redis command on the shared connection, reconnecting once when it fails.
@@ -195,6 +194,10 @@ impl RedisBlockingPopConnection {
     }
 
     async fn ensure_connection(&mut self) -> Result<&mut Connection> {
+        if self.redis_ref.is_closed() {
+            self.conn = None;
+            return Err(crate::string_error!("Redis connection is closed"));
+        }
         if self.conn.is_none() {
             let url = self
                 .redis_ref
@@ -222,6 +225,9 @@ async fn ensure_connection<'a>(
     redis_ref: &Arc<RedisConfig>,
     redis_cm: &'a mut Option<Connection>,
 ) -> Result<&'a mut Connection> {
+    if redis_ref.closed.load(Ordering::Acquire) {
+        return Err(crate::string_error!("Redis connection is closed"));
+    }
     if redis_cm.is_none() {
         // Two ways a reference learns its URL: a connection config seeds `url`, while a cache
         // pointed at a running service only knows `cached_redis_url`. The cached one is the
@@ -247,7 +253,7 @@ async fn invalidate_connection(redis_ref: &Arc<RedisConfig>) {
 pub fn build_redis_ref_for_connection(config_id: &str) -> Result<Arc<RedisConfig>> {
     let connections = load_connections()?;
     let connection = find_connection(&connections, config_id)?;
-    let ConnectionKind::Redis(redis) = &connection.kind else {
+    let ConnectionKind::Redis(_) = &connection.kind else {
         return Err(Error::ValidationError(format!(
             "connection '{}' is not a redis connection",
             connection.name
@@ -259,11 +265,8 @@ pub fn build_redis_ref_for_connection(config_id: &str) -> Result<Arc<RedisConfig
             connection.name
         )));
     }
-    crate::runtime::block_async(build_redis_ref(&build_redis_connection_url(
-        &redis.url,
-        redis.username.as_deref(),
-        redis.password.as_deref(),
-    )?))
+    super::resource_resolver::build_redis_ref(Some(config_id), &connections)?
+        .ok_or_else(|| crate::string_error!("Redis connection is missing"))
 }
 
 pub fn build_redis_connection_url(
@@ -288,4 +291,75 @@ pub fn build_redis_connection_url(
         Error::ValidationError(format!("failed to apply password to redis url '{}'", base_url))
     })?;
     Ok(parsed.to_string())
+}
+
+#[async_trait::async_trait]
+impl ConnectionLifecycle for RedisConfig {
+    async fn connect(&mut self) -> Result<()> {
+        let url = self
+            .cached_redis_url
+            .lock()
+            .await
+            .clone()
+            .or_else(|| self.url.clone())
+            .ok_or_else(|| crate::string_error!("Redis URL is missing"))?;
+        let mut current = self.redis_cm.lock().await;
+        if current.is_none() {
+            *current = Some(connect(&url).await?);
+        }
+        *self.cached_redis_url.lock().await = Some(url);
+        self.closed.store(false, Ordering::Release);
+        drop(current);
+        if let Err(error) = self.health_check().await {
+            self.close().await?;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    async fn health_check(&self) -> Result<()> {
+        if self.is_closed() {
+            return Err(crate::string_error!("Redis connection is closed"));
+        }
+        let mut current = self.redis_cm.lock().await;
+        let connection =
+            current.as_mut().ok_or_else(|| crate::string_error!("Redis is not connected"))?;
+        redis::cmd("PING").query_async::<_, String>(connection).await?;
+        Ok(())
+    }
+
+    async fn close(&self) -> Result<()> {
+        self.closed.store(true, Ordering::Release);
+        self.redis_cm.lock().await.take();
+        Ok(())
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
+
+    fn status(&self) -> crate::connection_manager::RuntimeConnectionStatus {
+        use crate::connection_manager::RuntimeConnectionStatus;
+        if self.is_closed() {
+            RuntimeConnectionStatus::Closed
+        } else if self.redis_cm.try_lock().map(|connection| connection.is_none()).unwrap_or(false) {
+            RuntimeConnectionStatus::Idle
+        } else {
+            RuntimeConnectionStatus::Running
+        }
+    }
+}
+
+impl RedisConfig {
+    pub async fn from_config(config: &crate::storage::RedisConnection) -> Result<Self> {
+        let url = build_redis_connection_url(
+            &config.url,
+            config.username.as_deref(),
+            config.password.as_deref(),
+        )?;
+        let mut connection =
+            Self::new(Some(url), config.username.clone(), config.password.clone(), None, None);
+        connection.connect().await?;
+        Ok(connection)
+    }
 }

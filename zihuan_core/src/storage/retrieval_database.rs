@@ -20,7 +20,7 @@ use crate::storage::{
     list_elasticsearch_memory_keys, list_recent_memory_keys, search_elasticsearch_images,
     search_elasticsearch_memory, search_memory_content_by_vector, upsert_elasticsearch_image,
     upsert_image_record, AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit,
-    AgentMemoryUpsert, ElasticsearchRef, WeaviateClient,
+    AgentMemoryUpsert, ElasticsearchRef,
 };
 
 /// One image search hit, independent of the retrieval backend.

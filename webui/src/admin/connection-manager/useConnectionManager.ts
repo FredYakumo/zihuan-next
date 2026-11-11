@@ -84,6 +84,10 @@ export function useConnectionManager() {
 
   function statusLabel(status: RuntimeConnectionInstanceSummary["status"]): string {
     switch (status) {
+      case "connecting":
+        return "连接中";
+      case "closed":
+        return "已关闭";
       case "running":
         return "运行中";
       case "idle":

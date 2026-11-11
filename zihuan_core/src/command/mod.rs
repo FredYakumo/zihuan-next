@@ -140,7 +140,7 @@ pub enum CommandChannel {
     QqChat {
         sender_id: String,
         is_group: bool,
-        group_id: Option<i64>,
+        group_id: Option<String>,
         target_id: String,
     },
     HttpStream {

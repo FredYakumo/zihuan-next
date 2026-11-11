@@ -55,7 +55,7 @@ fn send_brain_tool_progress_notification(
     };
 
     if event.message_type == MessageType::Group {
-        if let Some(group_id) = event.group_id {
+        if let Some(group_id) = event.group_id.clone() {
             let group_id = group_id.to_string();
             let sender_id = event.sender.user_id.to_string();
             let send_context = QqChatServiceSendContext {

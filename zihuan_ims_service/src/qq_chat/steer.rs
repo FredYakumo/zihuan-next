@@ -259,7 +259,7 @@ fn conversation_switch_hint(
         if !steer_is_group {
             return None;
         }
-        let steer_group_id = steer_event.group_id.map(|id| id.to_string()).unwrap_or_default();
+        let steer_group_id = steer_event.group_id.clone().unwrap_or_default();
         if steer_group_id == turn_target_id {
             return None;
         }
@@ -267,7 +267,7 @@ fn conversation_switch_hint(
     let steer_conversation = describe_conversation(
         steer_is_group,
         steer_event.group_name.as_deref(),
-        &steer_event.group_id.map(|id| id.to_string()).unwrap_or_default(),
+        &steer_event.group_id.clone().unwrap_or_default(),
     );
     if steer_conversation == turn_conversation {
         return None;
@@ -514,7 +514,7 @@ pub(crate) fn try_handle_busy_session_steer(
             channel: CommandChannel::QqChat {
                 sender_id: sender_id.to_string(),
                 is_group,
-                group_id: inference_event.group_id,
+                group_id: inference_event.group_id.clone(),
                 target_id: target_id.to_string(),
             },
         };

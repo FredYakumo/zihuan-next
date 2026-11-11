@@ -1,3 +1,4 @@
+pub use crate::storage::{ConnectionHandle, RuntimeConnectionManager};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -7,6 +8,8 @@ use crate::error::Result;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeConnectionStatus {
+    Connecting,
+    Closed,
     Running,
     Idle,
     Closing,

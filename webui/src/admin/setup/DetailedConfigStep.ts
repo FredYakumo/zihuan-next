@@ -9,6 +9,7 @@ export function useDetailedConfigStep(model: Ref<DetailedSetupConfig>) {
   const environment = ref<EnvironmentInfo>({
     os: "", os_detail: "", docker_available: false, docker_compose_available: false,
     binary_install_available: false, binary_install_reason: null, wsl_available: null, wsl_docker_available: null,
+    napcat_native_available: true, napcat_native_reason: null,
     cuda_version: null, compiler_version: null, proxy: null, services: [],
   });
   const dockerSupported = computed(() => environment.value.docker_compose_available);

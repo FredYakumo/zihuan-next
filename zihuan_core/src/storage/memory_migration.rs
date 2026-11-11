@@ -3,10 +3,7 @@ use std::sync::{Mutex, OnceLock};
 
 use serde_json::{json, Value};
 
-use super::{
-    AgentMemoryRecord, AgentMemoryUpsert, MemoryAttributes, MemoryCategory, PersonMemory,
-    WeaviateClient,
-};
+use super::{AgentMemoryRecord, AgentMemoryUpsert, MemoryAttributes, MemoryCategory, PersonMemory};
 use crate::error::{Error, Result};
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::retrieval::{RetrievalBackend, RetrievalSchema, RetrievalStoreRef};

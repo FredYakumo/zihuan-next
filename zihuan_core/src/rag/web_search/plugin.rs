@@ -1,15 +1,16 @@
+use crate::connection::Connection;
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use super::web_search_engine::{WebSearchEngine, WebSearchImage};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 use dynamic_script_engine::PluginCatalogEntry;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::validation_error;
-
-use super::web_search_engine::{WebSearchEngine, WebSearchImage};
 
 const METHOD_SEARCH: &str = "search";
 const METHOD_EXTRACT_URL: &str = "extract_url";
@@ -18,11 +19,12 @@ const METHOD_SEARCH_IMAGES: &str = "search_images";
 
 /// A web search engine backed by one plugin directory under `plugins/`.
 ///
-/// Each trait call runs the plugin entry in its own dependency environment with `(args,
+/// Each operation runs the plugin entry in its own dependency environment with `(args,
 /// config)`, where `config` carries the connection's credentials and timeout. The plugin's
 /// own HTTP timeout uses the configured `timeout_secs`, while the runner watchdog adds grace
 /// so a plugin can report its timeout as a normal error instead of being killed mid-request.
 pub struct PluginWebSearchEngine {
+    closed: AtomicBool,
     plugin: PluginCatalogEntry,
     api_token: String,
     timeout_secs: u64,
@@ -36,7 +38,13 @@ impl PluginWebSearchEngine {
         timeout_secs: u64,
         params: BTreeMap<String, String>,
     ) -> Self {
-        Self { plugin, api_token, timeout_secs, params }
+        Self {
+            plugin,
+            api_token,
+            timeout_secs,
+            params,
+            closed: AtomicBool::new(false),
+        }
     }
 
     fn implements(&self, method: &str) -> bool {
@@ -44,6 +52,9 @@ impl PluginWebSearchEngine {
     }
 
     fn call(&self, method: &str, args: Value) -> Result<Value> {
+        if self.is_closed() {
+            return Err(crate::string_error!("Web search connection is closed"));
+        }
         let limit = Duration::from_secs(self.timeout_secs.saturating_add(10));
         // Plugin params flatten into the config object; the connection's own columns are
         // written last so a param named like them can never shadow the real value.
@@ -122,5 +133,66 @@ impl std::fmt::Debug for PluginWebSearchEngine {
             .field("api_token", &"<redacted>")
             .field("timeout_secs", &self.timeout_secs)
             .finish()
+    }
+}
+
+#[async_trait::async_trait]
+impl Connection for PluginWebSearchEngine {
+    async fn connect(&mut self) -> Result<()> {
+        self.closed.store(false, Ordering::Release);
+        if let Err(error) = self.health_check().await {
+            self.close().await?;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    async fn health_check(&self) -> Result<()> {
+        if self.is_closed() {
+            return Err(crate::string_error!("Web search connection is closed"));
+        }
+        if !dynamic_script_engine::plugin_dir(&std::env::current_dir()?)
+            .join(&self.plugin.script)
+            .is_file()
+        {
+            return Err(crate::string_error!("Web search plugin entry is missing"));
+        }
+        Ok(())
+    }
+
+    async fn close(&self) -> Result<()> {
+        self.closed.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
+}
+
+impl PluginWebSearchEngine {
+    pub async fn from_config(engine: &crate::storage::WebSearchEngineConnection) -> Result<Self> {
+        // Every provider is a dynamic script plugin now; credential validation lives in the
+        // plugin itself, because plugins may run without an API token.
+        let api_token = engine.api_token.as_deref().map(str::trim).unwrap_or_default().to_string();
+        let plugin = crate::script_plugins::plugins_of_type(
+        crate::script_plugins::PLUGIN_TYPE_WEB_SEARCH_ENGINE,
+    )
+    .into_iter()
+    .find(|plugin| plugin.name == engine.provider)
+    .ok_or_else(|| {
+        let installed = crate::script_plugins::installed_plugin_names(
+            crate::script_plugins::PLUGIN_TYPE_WEB_SEARCH_ENGINE,
+        );
+        Error::ValidationError(format!(
+            "unsupported web search engine provider: {}（未安装对应的 web_search_engine 插件，已安装: {}）",
+            engine.provider,
+            if installed.is_empty() { "无".to_string() } else { installed.join(", ") }
+        ))
+    })?;
+        let mut connection =
+            Self::new(plugin, api_token, engine.timeout_secs, engine.params.clone());
+        connection.connect().await?;
+        Ok(connection)
     }
 }

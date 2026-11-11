@@ -8,3 +8,5 @@ RoleService action -> Transport -> QQ / Workspace output
 - 接收 QQ 消息事件或 Workspace 请求。
 - 处理渠道专属协议、媒体格式、身份信息和消息发送。
 - 将渠道输入整理为 RoleService 请求，并将回复渲染为渠道输出。
+
+渠道实现：QQ 走 NapCat（OneBot 11 over WebSocket），个人微信走 WeChatPadPro（webhook + REST），见 [wechat_pad.md](wechat_pad.md)。

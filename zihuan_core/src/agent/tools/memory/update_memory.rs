@@ -76,8 +76,13 @@ impl Tool for RememberMemoryTool {
         let mut person: PersonMemory =
             serde_json::from_value(person_patch.cloned().unwrap_or_else(|| json!({})))?;
         let key = if category == MemoryCategory::Person {
-            if person.qq_id.is_empty() || !person.qq_id.chars().all(|c| c.is_ascii_digit()) {
-                return Err(Error::ValidationError("person.qq_id must be a QQ ID".to_string()));
+            // IM ids are opaque: QQ uses digits, WeChat uses wxid / `xxx@chatroom`.
+            if person.qq_id.is_empty()
+                || !person.qq_id.chars().all(crate::utils::string_utils::is_im_id_char)
+            {
+                return Err(Error::ValidationError(
+                    "person.qq_id must be a non-empty person id".to_string(),
+                ));
             }
             format!("person-{}", person.qq_id)
         } else if category == MemoryCategory::Behavioral {

@@ -155,8 +155,14 @@ textarea {
     gap: 8px;
 }
 
-.plugin-command-dialog > :first-child {
+.plugin-command-dialog > .plugin-command-copy {
     justify-self: end;
+}
+
+.uninstall-command-hint {
+    margin: 0;
+    color: var(--admin-muted);
+    font-size: 13px;
 }
 
 .plugin-name-cell {
@@ -170,6 +176,35 @@ textarea {
     font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.plugin-wxid-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--admin-muted);
+    font-size: 12px;
+}
+
+.plugin-wxid-copy {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--admin-muted);
+    cursor: pointer;
+
+    &:hover {
+        color: var(--td-brand-color, #0052d9);
+        background: var(--td-brand-color-light, #f2f3f5);
+    }
+
+    svg {
+        width: 12px;
+        height: 12px;
+    }
 }
 
 .plugin-readonly-hint {
@@ -316,4 +351,129 @@ textarea {
 .plugin-zip-selected {
     margin: 0;
     font-size: 13px;
+}
+
+.wechat-login-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.wechat-login-qr {
+    display: flex;
+    justify-content: center;
+
+    img {
+        width: 220px;
+        height: 220px;
+        object-fit: contain;
+        border: 1px solid var(--td-component-stroke, #e7e7e7);
+        border-radius: 8px;
+    }
+}
+
+.wechat-login-success,
+.wechat-login-empty {
+    margin: 0;
+    padding: 24px 0;
+    text-align: center;
+}
+
+.wechat-login-account {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.wechat-login-hint {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--admin-muted);
+}
+
+.wechat-login-status {
+    margin: 0;
+    font-size: 13px;
+    text-align: center;
+
+    &.error {
+        color: var(--td-error-color, #d54941);
+    }
+}
+
+.napcat-config-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.napcat-config-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--td-component-border, rgba(255, 255, 255, 0.08));
+    border-radius: 8px;
+
+    .napcat-config-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+        flex: 1;
+
+        small {
+            color: var(--admin-muted);
+            font-size: 12px;
+        }
+
+        code {
+            font-size: 13px;
+            word-break: break-all;
+        }
+    }
+}
+
+.napcat-config-info .credential-input {
+    width: 100%;
+
+    :deep(input) {
+        width: 100%;
+    }
+}
+
+.uninstall-console {
+    text-align: left;
+    background: #0d1117;
+    border: 1px solid var(--admin-border);
+    border-radius: 8px;
+    padding: 16px;
+    max-height: 280px;
+    min-height: 120px;
+    margin-bottom: 12px;
+    overflow-y: auto;
+    box-sizing: border-box;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.uninstall-line {
+    display: flex;
+    gap: 8px;
+    color: #c9d1d9;
+
+    &.success { color: #3fb950; }
+    &.error { color: #f85149; }
+    &.running { color: #58a6ff; }
+}
+
+.uninstall-step {
+    color: #8b949e;
+    flex-shrink: 0;
+}
+
+.uninstall-failure {
+    display: grid;
+    gap: 8px;
 }

@@ -13,6 +13,7 @@ pub mod algorithm;
 pub mod chat_history;
 pub mod command;
 pub mod config;
+pub mod connection;
 pub mod connection_manager;
 pub mod constants;
 pub mod data_refs;
@@ -49,6 +50,7 @@ pub mod workspace;
 mod tests;
 
 pub use agent::*;
+pub use connection::Connection;
 pub use dynamic_script_engine::{
     NodeRuntimeConfig, NodeRuntimeKind, PythonRuntimeConfig, PythonRuntimeKind,
 };

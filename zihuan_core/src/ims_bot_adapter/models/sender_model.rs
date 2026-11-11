@@ -6,7 +6,7 @@ use crate::ims_bot_adapter::models::event_model::{
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FriendSender {
-    pub user_id: i64,
+    pub user_id: String,
     pub nickname: String,
     #[serde(default)]
     pub card: String,
@@ -19,7 +19,7 @@ pub struct FriendSender {
 impl From<&EventSender> for FriendSender {
     fn from(value: &EventSender) -> Self {
         Self {
-            user_id: value.user_id,
+            user_id: value.user_id.clone(),
             nickname: value.nickname.clone(),
             card: value.card.clone(),
             role: value.role.clone(),
@@ -30,12 +30,12 @@ impl From<&EventSender> for FriendSender {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GroupSender {
-    pub user_id: i64,
+    pub user_id: String,
     pub nickname: String,
     #[serde(default)]
     pub card: String,
     pub role: Option<String>,
-    pub group_id: i64,
+    pub group_id: String,
     #[serde(default)]
     pub group_name: Option<String>,
     /// The sender's gender as reported by the adapter.
@@ -46,11 +46,11 @@ pub struct GroupSender {
 impl GroupSender {
     pub fn from_event_sender(
         sender: &EventSender,
-        group_id: i64,
+        group_id: String,
         group_name: Option<String>,
     ) -> Self {
         Self {
-            user_id: sender.user_id,
+            user_id: sender.user_id.clone(),
             nickname: sender.nickname.clone(),
             card: sender.card.clone(),
             role: sender.role.clone(),
@@ -73,7 +73,7 @@ impl Sender {
         if event.is_group_message {
             Some(Sender::Group(GroupSender::from_event_sender(
                 &event.sender,
-                event.group_id?,
+                event.group_id.clone()?,
                 event.group_name.clone(),
             )))
         } else {
@@ -83,8 +83,8 @@ impl Sender {
 
     pub fn target_id(&self) -> String {
         match self {
-            Sender::Friend(sender) => sender.user_id.to_string(),
-            Sender::Group(sender) => sender.group_id.to_string(),
+            Sender::Friend(sender) => sender.user_id.clone(),
+            Sender::Group(sender) => sender.group_id.clone(),
         }
     }
 
@@ -93,10 +93,10 @@ impl Sender {
     }
 
     /// The sender's own user id, in both conversation kinds.
-    pub fn user_id(&self) -> i64 {
+    pub fn user_id(&self) -> &str {
         match self {
-            Sender::Friend(sender) => sender.user_id,
-            Sender::Group(sender) => sender.user_id,
+            Sender::Friend(sender) => &sender.user_id,
+            Sender::Group(sender) => &sender.user_id,
         }
     }
 

@@ -4,7 +4,10 @@ use std::fmt;
 use log::warn;
 use serde::de::Deserializer;
 
-use crate::ims_bot_adapter::models::message::Message;
+use crate::ims_bot_adapter::models::message::{
+    deserialize_option_string_from_string_or_number, deserialize_string_from_string_or_number,
+    Message,
+};
 
 /// Message type enum (private or group chat)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -95,7 +98,8 @@ impl<'de> Deserialize<'de> for SenderGender {
 /// Sender information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sender {
-    pub user_id: i64,
+    #[serde(default, deserialize_with = "deserialize_string_from_string_or_number")]
+    pub user_id: String,
     pub nickname: String,
     #[serde(default)]
     pub card: String,
@@ -109,11 +113,13 @@ pub struct Sender {
 /// Message event containing the full message information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageEvent {
-    pub message_id: i64,
+    #[serde(default, deserialize_with = "deserialize_string_from_string_or_number")]
+    pub message_id: String,
     pub message_type: MessageType,
     pub sender: Sender,
     pub message_list: Vec<Message>,
-    pub group_id: Option<i64>,
+    #[serde(default, deserialize_with = "deserialize_option_string_from_string_or_number")]
+    pub group_id: Option<String>,
     pub group_name: Option<String>,
     #[serde(default)]
     pub is_group_message: bool,
@@ -122,14 +128,15 @@ pub struct MessageEvent {
 /// Raw message event structure for deserialization and serialization
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawMessageEvent {
-    pub message_id: i64,
+    #[serde(default, deserialize_with = "deserialize_string_from_string_or_number")]
+    pub message_id: String,
     pub message_type: MessageType,
     pub sender: Sender,
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_message_vec_lenient")]
     pub message: Vec<Message>,
-    #[serde(default)]
-    pub group_id: Option<i64>,
+    #[serde(default, deserialize_with = "deserialize_option_string_from_string_or_number")]
+    pub group_id: Option<String>,
     #[serde(default)]
     pub group_name: Option<String>,
 }

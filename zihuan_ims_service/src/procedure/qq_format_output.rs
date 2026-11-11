@@ -42,7 +42,7 @@ pub(crate) struct QqFormatOutputContext<'a> {
     pub(crate) bot_id: String,
     pub(crate) bot_name: String,
     pub(crate) max_message_length: usize,
-    pub(crate) trigger_message_id: Option<i64>,
+    pub(crate) trigger_message_id: Option<String>,
     pub(crate) rdb_pool: Option<RelationalDbConnection>,
     pub(crate) reply_batch_builder: Option<&'a QqChatServiceReplyBatchBuilder>,
     /// Shared runtime values carrying the reply-quote directive written by brain tools.
@@ -150,7 +150,7 @@ impl Procedure for QqFormatOutput<'_> {
             &self.context.bot_name,
             self.context.max_message_length,
             reply_directive,
-            self.context.trigger_message_id,
+            self.context.trigger_message_id.clone(),
             available_media,
             self.context.rdb_pool.clone(),
             self.context.reply_batch_builder,

@@ -109,7 +109,7 @@ pub fn register_redis_ref(config: Arc<RedisConfig>) {
     }
 }
 
-pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessageSnapshot>> {
+pub fn restore_message_snapshot(message_id: &str) -> Result<Option<RestoredMessageSnapshot>> {
     let message_id_str = message_id.to_string();
 
     if let Ok(guard) = RUNTIME_MESSAGE_INDEX.read() {
@@ -238,7 +238,7 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
 ///
 /// The restored message list only carries the message segments, so the quote block in the
 /// Data Explorer resolves the quoted message's sender from the persisted record instead.
-pub fn lookup_message_sender(message_id: i64) -> Option<(String, String)> {
+pub fn lookup_message_sender(message_id: &str) -> Option<(String, String)> {
     let rdb_pool = match LATEST_RDB_POOL.read() {
         Ok(guard) => guard.clone()?,
         Err(_) => return None,

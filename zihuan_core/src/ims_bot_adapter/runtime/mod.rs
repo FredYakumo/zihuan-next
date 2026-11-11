@@ -1,5 +1,6 @@
 pub mod active_adapter_manager;
 pub mod adapter;
+pub mod connection;
 pub mod event;
 pub mod extract_message_from_event;
 pub mod login_info;
@@ -13,6 +14,7 @@ pub mod send_qq_message_batches;
 pub mod system_config;
 pub mod tools;
 pub mod utils;
+pub mod wechat_pad;
 pub mod ws_action;
 
 use crate::error::Result;

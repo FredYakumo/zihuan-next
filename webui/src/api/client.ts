@@ -390,7 +390,7 @@ export interface RuntimeConnectionInstanceSummary {
   heartbeat_interval_secs: number | null;
   started_at: string;
   last_used_at: string;
-  status: "running" | "idle" | "closing" | "error";
+  status: "running" | "idle" | "closing" | "error" | "connecting" | "closed";
 }
 
 export interface LlmServiceConfig {
@@ -1558,6 +1558,8 @@ export interface EnvironmentInfo {
   binary_install_reason?: string | null;
   wsl_available?: boolean | null;
   wsl_docker_available?: boolean | null;
+  napcat_native_available: boolean;
+  napcat_native_reason?: string | null;
   cuda_version: string | null;
   compiler_version: string | null;
   proxy: string | null;
@@ -1782,6 +1784,23 @@ export interface ScriptPluginFile {
   truncated: boolean;
 }
 
+export interface WechatLoginQrResult {
+  status: "qr" | "logged_in";
+  auth_key: string;
+  qr_base64?: string;
+  qr_link?: string;
+  expires_in_secs?: number;
+  wxid?: string;
+  nickname?: string;
+}
+
+export interface WechatLoginStatusResult {
+  status: "waiting" | "scanned" | "logged_in" | "expired" | "error";
+  message?: string;
+  wxid?: string;
+  nickname?: string;
+}
+
 export const pluginsApi = {
   list(): Promise<PluginRecord[]> {
     return request("GET", "/plugins");
@@ -1816,14 +1835,15 @@ export const pluginsApi = {
   update(name: string, plugin: PluginRecord): Promise<PluginRecord> {
     return request("PUT", `/plugins/${encodeURIComponent(name)}`, plugin);
   },
-  remove(name: string): Promise<{ ok: boolean; uninstall_command?: string | null }> {
+  /** Starts the uninstall as a background task; stream its progress via setup.streamProgress. */
+  remove(name: string): Promise<{ accepted: boolean; task_id: string }> {
     return request("DELETE", `/plugins/${encodeURIComponent(name)}`);
   },
   install(payload: {
     name: string;
     version: string;
     component_type: string;
-    install_method?: "docker" | "binary" | "command_docker" | "command_binary";
+    install_method?: "docker" | "native" | "binary" | "command_docker" | "command_native" | "command_binary";
     detailed_config?: DetailedSetupConfig;
     extra_install_metadata?: unknown;
   }): Promise<PluginInstallResponse> {
@@ -1834,5 +1854,16 @@ export const pluginsApi = {
   },
   disable(id: string): Promise<{ plugin: PluginRecord; command?: string | null }> {
     return request("POST", `/plugins/${encodeURIComponent(id)}/disable`);
+  },
+  /** Starts (or reuses) a WeChat QR login for an installed WeChatPadPro plugin. */
+  wechatLoginQr(pluginId: string): Promise<WechatLoginQrResult> {
+    return request("POST", "/plugins/wechat_pad/login_qr", { plugin_id: pluginId });
+  },
+  /** Polls the bridge scan result; a confirmed login is persisted server-side. */
+  wechatLoginStatus(pluginId: string, authKey: string): Promise<WechatLoginStatusResult> {
+    return request("POST", "/plugins/wechat_pad/login_status", {
+      plugin_id: pluginId,
+      auth_key: authKey,
+    });
   },
 };

@@ -184,10 +184,43 @@
             </template>
 
             <template v-else-if="isBotAdapterConnectionType(form.type)">
-              <t-form-item label="Bot WS URL"><t-input v-model="form.bot_server_url" placeholder="ws://192.168.71.2:3008" /></t-form-item>
-              <t-form-item label="Adapter HTTP URL"><t-input v-model="form.adapter_server_url" placeholder="http://192.168.71.2:3001" /></t-form-item>
-              <t-form-item label="QQ 号"><t-input v-model="form.qq_id" /></t-form-item>
-              <t-form-item label="Token"><ConnectionCredentialInput v-model="form.bot_server_token" /></t-form-item>
+              <t-form-item class="connection-form-item--full" label="渠道">
+                <div class="channel-picker" role="radiogroup" aria-label="Bot 渠道">
+                  <button
+                    type="button"
+                    role="radio"
+                    :aria-checked="!form.wechat_enabled"
+                    :class="['channel-card', { 'channel-card--active': !form.wechat_enabled }]"
+                    @click="form.wechat_enabled = false"
+                  >
+                    <img class="channel-card-icon" :src="qqIcon" alt="" />
+                    <span class="channel-card-text"><strong>QQ</strong><small>OneBot</small></span>
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    :aria-checked="form.wechat_enabled"
+                    :class="['channel-card', { 'channel-card--active': form.wechat_enabled }]"
+                    @click="selectWechatChannel"
+                  >
+                    <img class="channel-card-icon" :src="wechatIcon" alt="" />
+                    <span class="channel-card-text"><strong>微信</strong><small>WeChatPadPro</small></span>
+                  </button>
+                </div>
+              </t-form-item>
+              <template v-if="form.wechat_enabled">
+                <t-form-item label="Pad URL"><t-input v-model="form.wechat_pad_url" placeholder="http://127.0.0.1:8849" /></t-form-item>
+                <t-form-item label="Pad adminKey"><ConnectionCredentialInput v-model="form.wechat_pad_token" /></t-form-item>
+                <t-form-item label="wxid"><t-input v-model="form.wechat_self_wxid" placeholder="" /></t-form-item>
+                <t-form-item v-if="!form.wechat_relay_url" label="Webhook Token"><t-input v-model="form.wechat_webhook_token" placeholder="回调路径里的随机串" /></t-form-item>
+                <t-form-item label="昵称"><t-input v-model="form.wechat_nickname" /></t-form-item>
+              </template>
+              <template v-else>
+                <t-form-item label="Bot WS URL"><t-input v-model="form.bot_server_url" placeholder="ws://192.168.71.2:3008" /></t-form-item>
+                <t-form-item label="Adapter HTTP URL"><t-input v-model="form.adapter_server_url" placeholder="http://192.168.71.2:3001" /></t-form-item>
+                <t-form-item label="QQ 号"><t-input v-model="form.qq_id" /></t-form-item>
+                <t-form-item label="Token"><ConnectionCredentialInput v-model="form.bot_server_token" /></t-form-item>
+              </template>
             </template>
 
             <template v-else-if="form.type === 'web_search_engine'">
@@ -249,6 +282,22 @@
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useConnections } from "./useConnections";
 import ConnectionCredentialInput from "../components/ConnectionCredentialInput.vue";
+import qqIcon from "../../assets/icons/qq.svg";
+import wechatIcon from "../../assets/icons/wechat.svg";
+
+/** The callback token only has to be unguessable; the URL itself is derived by the backend. */
+function randomWebhookToken() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function selectWechatChannel() {
+  form.wechat_enabled = true;
+  if (!form.wechat_webhook_token.trim()) {
+    form.wechat_webhook_token = randomWebhookToken();
+  }
+}
 
 const {
   filteredConnections,
