@@ -1,3 +1,4 @@
+use crate::connection::Connection;
 use std::sync::Arc;
 
 use crate::error::Result;
@@ -12,7 +13,7 @@ pub async fn build_s3_ref(
     public_base_url: Option<String>,
     path_style: bool,
 ) -> Result<Arc<S3Ref>> {
-    let s3_ref = Arc::new(S3Ref {
+    S3Ref::from_config(&crate::storage::RustfsConnection {
         endpoint: endpoint.to_string(),
         bucket: bucket.to_string(),
         access_key: access_key.to_string(),
@@ -20,11 +21,28 @@ pub async fn build_s3_ref(
         region: region.to_string(),
         public_base_url,
         path_style,
-    });
+    })
+    .await
+    .map(Arc::new)
+}
 
-    ensure_endpoint_bypasses_proxy(endpoint);
-    s3_ref.ensure_bucket_exists().await?;
-    Ok(s3_ref)
+impl S3Ref {
+    pub async fn from_config(config: &crate::storage::RustfsConnection) -> Result<Self> {
+        let mut connection = Self {
+            closed: Default::default(),
+            endpoint: config.endpoint.clone(),
+            bucket: config.bucket.clone(),
+            access_key: config.access_key.clone(),
+            secret_key: config.secret_key.clone(),
+            region: config.region.clone(),
+            public_base_url: config.public_base_url.clone(),
+            path_style: config.path_style,
+        };
+        ensure_endpoint_bypasses_proxy(&config.endpoint);
+        connection.ensure_bucket_exists().await?;
+        connection.connect().await?;
+        Ok(connection)
+    }
 }
 
 fn ensure_endpoint_bypasses_proxy(endpoint: &str) {

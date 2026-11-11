@@ -4,7 +4,7 @@ use tokio::task::block_in_place;
 ///
 /// If the current thread is already inside a Tokio runtime, the future is
 /// executed with `block_in_place` to avoid nesting another runtime.
-/// Otherwise, a lightweight runtime is created on demand.
+/// Otherwise, a shared runtime is used so connection drivers survive the call.
 pub fn block_async<F, T>(future: F) -> T
 where
     F: std::future::Future<Output = T>,
@@ -12,7 +12,10 @@ where
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         block_in_place(|| handle.block_on(future))
     } else {
-        tokio::runtime::Runtime::new().expect("tokio runtime").block_on(future)
+        static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+        RUNTIME
+            .get_or_init(|| tokio::runtime::Runtime::new().expect("tokio runtime"))
+            .block_on(future)
     }
 }
 

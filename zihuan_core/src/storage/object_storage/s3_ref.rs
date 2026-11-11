@@ -1,3 +1,4 @@
+use crate::connection::Connection;
 use crate::error::{Error, Result};
 use aws_config::BehaviorVersion;
 use aws_credential_types::Credentials;
@@ -9,10 +10,15 @@ use aws_sdk_s3::Client as S3Client;
 use aws_types::region::Region;
 use reqwest::Url;
 use std::fmt;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 
 #[derive(Clone)]
 pub struct S3Ref {
+    pub(crate) closed: Arc<AtomicBool>,
     pub endpoint: String,
     pub bucket: String,
     pub access_key: String,
@@ -26,6 +32,9 @@ impl S3Ref {
     /// Generate URL for accessing the object. If public_base_url is configured, use it (assuming it's publicly accessible).
     /// Otherwise, generate a presigned URL for private buckets.
     pub async fn object_url_for_key(&self, key: &str) -> Result<String> {
+        if self.is_closed() {
+            return Err(crate::string_error!("S3 connection is closed"));
+        }
         if self.public_base_url.is_some() {
             return self.build_public_url(key);
         }
@@ -168,6 +177,9 @@ impl S3Ref {
     }
 
     async fn s3_client(&self) -> Result<S3Client> {
+        if self.is_closed() {
+            return Err(crate::string_error!("S3 connection is closed"));
+        }
         let credentials = Credentials::new(
             self.access_key.clone(),
             self.secret_key.clone(),
@@ -207,5 +219,38 @@ impl fmt::Debug for S3Ref {
             .field("public_base_url", &self.public_base_url)
             .field("path_style", &self.path_style)
             .finish()
+    }
+}
+
+#[async_trait::async_trait]
+impl Connection for S3Ref {
+    async fn connect(&mut self) -> Result<()> {
+        self.closed.store(false, Ordering::Release);
+        if let Err(error) = self.health_check().await {
+            self.close().await?;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    async fn health_check(&self) -> Result<()> {
+        self.s3_client()
+            .await?
+            .head_bucket()
+            .bucket(&self.bucket)
+            .send()
+            .await
+            .map_err(|error| crate::string_error!("S3 bucket probe failed: {error}"))?;
+        Ok(())
+    }
+
+    async fn close(&self) -> Result<()> {
+        // S3 clients are request-scoped; there is no background connection task.
+        self.closed.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
     }
 }

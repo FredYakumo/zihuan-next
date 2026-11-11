@@ -12,8 +12,6 @@ use crate::ims_bot_adapter::models::message::{collect_media_records, Message, Pe
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::weaviate::WeaviateRef;
 
-use crate::storage::WeaviateClient;
-
 pub fn upsert_message_event(
     weaviate_ref: &WeaviateRef,
     event: &MessageEvent,

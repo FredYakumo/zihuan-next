@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use zihuan_core::connection_manager::ConnectionManager;
 
 use crate::qq_chat::resources::current_qq_chat_role_service_config;
 use crate::role_config::image_understand_llm_ref_id;
@@ -15,7 +16,7 @@ use zihuan_core::model_inference::llm::tooling::FunctionTool;
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage, MessagePart};
 use zihuan_core::runtime::block_async;
 use zihuan_core::storage::message::record_restore::{find_media_in_messages, query_media_by_id};
-use zihuan_core::storage::RuntimeStorageConnectionManager;
+use zihuan_core::storage::RuntimeConnectionManager;
 use zihuan_core::storage::S3Ref;
 use zihuan_core::utils::json_utils::optional_string_argument;
 
@@ -153,7 +154,8 @@ fn load_agent_s3_ref() -> Result<Option<Arc<S3Ref>>> {
     else {
         return Ok(None);
     };
-    block_async(RuntimeStorageConnectionManager::shared().get_or_create_s3_ref(connection_id))
+    block_async(RuntimeConnectionManager::shared().get_or_create(connection_id))?
+        .try_into()
         .map(Some)
 }
 

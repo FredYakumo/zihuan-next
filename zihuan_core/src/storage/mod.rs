@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 mod agent_memory_weaviate;
+mod connection_handle;
 mod connection_manager;
 mod db_schema;
 mod elasticsearch;
@@ -28,7 +29,6 @@ pub mod role_avatar_store;
 pub mod rustfs;
 mod session_cache;
 pub mod weaviate;
-mod weaviate_client;
 mod weaviate_image_search;
 
 pub(crate) use qq_message_list_weaviate_persistence::persist_qq_message_list;
@@ -52,10 +52,10 @@ pub use agent_memory_weaviate::{
     search_memory_content_by_vector, update_memory_record, update_memory_record_with_vector,
     AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit, AgentMemoryUpsert,
 };
+pub use connection_handle::ConnectionHandle;
 pub use connection_manager::{
-    cleanup_runtime_storage_instances, close_runtime_storage_instance,
-    close_runtime_storage_instances_for_config, list_runtime_storage_instances,
-    RuntimeStorageConnectionManager, StorageRuntimeHandle,
+    cleanup_runtime_connections, close_runtime_connection, close_runtime_connections_for_config,
+    list_runtime_connections, RuntimeConnectionManager,
 };
 pub use db_schema::ensure_tables_for_connection;
 pub use elasticsearch::{
@@ -77,7 +77,8 @@ pub use rdb::{
 pub use redis::RedisConfig;
 pub use resource_resolver::{
     build_elasticsearch_ref, build_rdb_ref, build_redis_ref, build_retrieval_store_ref,
-    build_s3_ref, build_weaviate_ref, build_web_search_engine_ref, find_connection,
+    build_s3_ref, build_tokenizer_ref, build_weaviate_ref, build_web_search_engine_ref,
+    find_connection,
 };
 pub use retrieval_database::{RetrievalDatabase, RetrievalImageHit};
 pub use retrieval_ops::{
@@ -88,7 +89,6 @@ pub use retrieval_ops::{
 pub use role_avatar_rdb_store::{first_available_role_avatar_store, RdbRoleAvatarStore};
 pub use role_avatar_store::{RoleAvatarData, RoleAvatarStore};
 pub use session_cache::LLMMessageSessionCacheRef;
-pub use weaviate_client::WeaviateClient;
 pub use weaviate_persistence::{
     build_image_record_properties, deterministic_media_object_id, deterministic_message_object_id,
     upsert_image_record, upsert_message_event, upsert_qq_message_list,
@@ -124,6 +124,23 @@ pub enum ConnectionKind {
     Tokenizer(TokenizerConnection),
     Sqlite(SqliteConnection),
     MockRdb,
+}
+
+impl ConnectionKind {
+    pub(crate) fn type_name(&self) -> &'static str {
+        match self {
+            Self::Mysql(_) => "mysql",
+            Self::Sqlite(_) => "sqlite",
+            Self::MockRdb => "mock_rdb",
+            Self::Redis(_) => "redis",
+            Self::Weaviate(_) => "weaviate",
+            Self::Elasticsearch(_) => "elasticsearch",
+            Self::Rustfs(_) => "rustfs",
+            Self::BotAdapter(_) => "bot_adapter",
+            Self::WebSearchEngine(_) => "web_search_engine",
+            Self::Tokenizer(_) => "tokenizer",
+        }
+    }
 }
 
 pub const DEFAULT_MYSQL_MAX_CONNECTIONS: u32 = 32;

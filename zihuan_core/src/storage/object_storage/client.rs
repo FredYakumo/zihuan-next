@@ -39,6 +39,7 @@ impl ObjectStorageConfig {
 
         Some(Self {
             inner: Arc::new(S3Ref {
+                closed: Default::default(),
                 endpoint,
                 bucket,
                 access_key,

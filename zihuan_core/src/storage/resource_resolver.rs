@@ -1,16 +1,16 @@
+use crate::connection_manager::ConnectionManager;
 use std::sync::Arc;
 
 use crate::data_refs::RelationalDbConnection;
 use crate::error::{Error, Result};
-use crate::rag::{PluginWebSearchEngine, WebSearchEngine};
+use crate::rag::WebSearchEngine;
 use crate::retrieval::{RetrievalSchema, RetrievalStoreRef};
 use crate::storage::RedisConfig;
 use crate::storage::S3Ref;
 use crate::weaviate::WeaviateRef;
 
 use crate::storage::{
-    redis::build_redis_connection_url, ConnectionConfig, ConnectionKind, ElasticsearchRef,
-    RuntimeStorageConnectionManager,
+    ConnectionConfig, ConnectionKind, ElasticsearchRef, RuntimeConnectionManager,
 };
 
 pub fn find_connection<'a>(
@@ -30,25 +30,9 @@ pub async fn build_rdb_ref(
     let Some(connection_id) = connection_id else {
         return Ok(None);
     };
-    let connection = find_connection(connections, connection_id)?;
-    match &connection.kind {
-        ConnectionKind::Mysql(_) => Ok(Some(RelationalDbConnection::MySql(
-            RuntimeStorageConnectionManager::shared()
-                .get_or_create_mysql_ref(connection_id)
-                .await?,
-        ))),
-        ConnectionKind::Sqlite(_) | ConnectionKind::MockRdb => {
-            Ok(Some(RelationalDbConnection::Sqlite(
-                RuntimeStorageConnectionManager::shared()
-                    .get_or_create_sqlite_ref(connection_id)
-                    .await?,
-            )))
-        }
-        _ => Err(Error::ValidationError(format!(
-            "connection '{}' is not a relational database connection",
-            connection.name
-        ))),
-    }
+    super::rdb::build_relational_db_connection_for_connection(connection_id, connections)
+        .await
+        .map(Some)
 }
 
 pub fn build_redis_ref(
@@ -59,24 +43,15 @@ pub fn build_redis_ref(
         return Ok(None);
     };
     let connection = find_connection(connections, connection_id)?;
-    let ConnectionKind::Redis(redis) = &connection.kind else {
-        return Err(Error::ValidationError(format!(
-            "connection '{}' is not a redis connection",
-            connection.name
-        )));
-    };
-    let url = build_redis_connection_url(
-        &redis.url,
-        redis.username.as_deref(),
-        redis.password.as_deref(),
-    )?;
-    Ok(Some(Arc::new(RedisConfig::new(
-        Some(url),
-        redis.username.clone(),
-        redis.password.clone(),
-        None,
-        None,
-    ))))
+    if !matches!(connection.kind, ConnectionKind::Redis(_)) {
+        return Err(crate::string_error!("connection '{}' is not Redis", connection_id));
+    }
+    Ok(Some(
+        crate::runtime::block_async(
+            RuntimeConnectionManager::shared().get_or_create(connection_id),
+        )?
+        .try_into()?,
+    ))
 }
 
 /// Builds a Weaviate reference bound to one retrieval schema's class, reusing the
@@ -96,10 +71,10 @@ pub fn build_weaviate_ref(
             connection.name
         )));
     };
-    Ok(Some(crate::runtime::block_async(
-        RuntimeStorageConnectionManager::shared()
-            .get_or_create_weaviate_ref_for_schema(connection_id, schema),
-    )?))
+    let handle = crate::runtime::block_async(
+        RuntimeConnectionManager::shared().get_or_create_variant(connection_id, schema.as_str()),
+    )?;
+    Ok(Some(handle.try_into()?))
 }
 
 /// Builds an Elasticsearch reference bound to one retrieval schema's index.
@@ -112,13 +87,16 @@ pub fn build_elasticsearch_ref(
         return Ok(None);
     };
     let connection = find_connection(connections, connection_id)?;
-    let ConnectionKind::Elasticsearch(elasticsearch) = &connection.kind else {
-        return Err(Error::ValidationError(format!(
-            "connection '{}' is not an elasticsearch connection",
-            connection.name
-        )));
-    };
-    Ok(Some(Arc::new(ElasticsearchRef::new(elasticsearch.clone(), schema)?)))
+    if !matches!(connection.kind, ConnectionKind::Elasticsearch(_)) {
+        return Err(crate::string_error!("connection '{}' is not Elasticsearch", connection_id));
+    }
+    Ok(Some(
+        crate::runtime::block_async(
+            RuntimeConnectionManager::shared()
+                .get_or_create_variant(connection_id, schema.as_str()),
+        )?
+        .try_into()?,
+    ))
 }
 
 /// Resolves one retrieval-store connection into a schema-agnostic store reference.
@@ -140,11 +118,15 @@ pub async fn build_s3_ref(
     let Some(connection_id) = connection_id else {
         return Ok(None);
     };
-    let _ = connections;
+    let connection = find_connection(connections, connection_id)?;
+    if !matches!(connection.kind, ConnectionKind::Rustfs(_)) {
+        return Err(crate::string_error!("connection '{}' is not RustFS", connection_id));
+    }
     Ok(Some(
-        RuntimeStorageConnectionManager::shared()
-            .get_or_create_s3_ref(connection_id)
-            .await?,
+        RuntimeConnectionManager::shared()
+            .get_or_create(connection_id)
+            .await?
+            .try_into()?,
     ))
 }
 
@@ -156,35 +138,26 @@ pub fn build_web_search_engine_ref(
         return Ok(None);
     };
     let connection = find_connection(connections, connection_id)?;
-    let ConnectionKind::WebSearchEngine(engine) = &connection.kind else {
-        return Err(Error::ValidationError(format!(
-            "connection '{}' is not a web search engine connection",
-            connection.name
-        )));
-    };
-    // Every provider is a dynamic script plugin now; credential validation lives in the
-    // plugin itself, because plugins may run without an API token.
-    let api_token = engine.api_token.as_deref().map(str::trim).unwrap_or_default().to_string();
-    let plugin = crate::script_plugins::plugins_of_type(
-        crate::script_plugins::PLUGIN_TYPE_WEB_SEARCH_ENGINE,
-    )
-    .into_iter()
-    .find(|plugin| plugin.name == engine.provider)
-    .ok_or_else(|| {
-        let installed = crate::script_plugins::installed_plugin_names(
-            crate::script_plugins::PLUGIN_TYPE_WEB_SEARCH_ENGINE,
-        );
-        Error::ValidationError(format!(
-            "unsupported web search engine provider: {}（未安装对应的 web_search_engine 插件，已安装: {}）",
-            engine.provider,
-            if installed.is_empty() { "无".to_string() } else { installed.join(", ") }
-        ))
-    })?;
-    let engine_ref: Arc<dyn WebSearchEngine> = Arc::new(PluginWebSearchEngine::new(
-        plugin,
-        api_token,
-        engine.timeout_secs,
-        engine.params.clone(),
-    ));
-    Ok(Some(engine_ref))
+    if !matches!(connection.kind, ConnectionKind::WebSearchEngine(_)) {
+        return Err(crate::string_error!("connection '{}' is not WebSearchEngine", connection_id));
+    }
+    Ok(Some(
+        crate::runtime::block_async(
+            RuntimeConnectionManager::shared().get_or_create(connection_id),
+        )?
+        .try_into()?,
+    ))
+}
+
+/// Resolves a configured tokenizer through the same lifecycle/cache as network connections.
+pub fn build_tokenizer_ref(
+    connection_id: &str,
+    connections: &[ConnectionConfig],
+) -> Result<Arc<crate::nlp::BpeSegmenter>> {
+    let connection = find_connection(connections, connection_id)?;
+    if !matches!(connection.kind, ConnectionKind::Tokenizer(_)) {
+        return Err(crate::string_error!("connection '{}' is not a tokenizer", connection_id));
+    }
+    crate::runtime::block_async(RuntimeConnectionManager::shared().get_or_create(connection_id))?
+        .try_into()
 }

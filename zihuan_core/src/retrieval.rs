@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::storage::RuntimeStorageConnectionManager;
+use crate::storage::RuntimeConnectionManager;
 use crate::storage::{ConnectionConfig, ConnectionKind, ElasticsearchRef, RetrievalDatabase};
 use crate::weaviate::WeaviateRef;
 
@@ -196,9 +196,10 @@ impl RetrievalStoreRef {
             )));
         }
         crate::runtime::block_async(
-            RuntimeStorageConnectionManager::shared()
-                .get_or_create_weaviate_ref_for_schema(&self.connection_id, schema),
-        )
+            RuntimeConnectionManager::shared()
+                .get_or_create_variant(&self.connection_id, schema.as_str()),
+        )?
+        .try_into()
     }
 
     /// Resolves the schema-bound Elasticsearch reference for this store.
@@ -209,21 +210,11 @@ impl RetrievalStoreRef {
                 self.connection_id
             )));
         }
-        let connections = crate::storage::load_connections()?;
-        let connection =
-            connections.iter().find(|item| item.id == self.connection_id).ok_or_else(|| {
-                Error::ValidationError(format!(
-                    "retrieval connection '{}' not found",
-                    self.connection_id
-                ))
-            })?;
-        let ConnectionKind::Elasticsearch(elasticsearch) = &connection.kind else {
-            return Err(Error::ValidationError(format!(
-                "retrieval connection '{}' is not an elasticsearch store",
-                self.connection_id
-            )));
-        };
-        Ok(Arc::new(ElasticsearchRef::new(elasticsearch.clone(), schema)?))
+        crate::runtime::block_async(
+            RuntimeConnectionManager::shared()
+                .get_or_create_variant(&self.connection_id, schema.as_str()),
+        )?
+        .try_into()
     }
 
     /// Resolves a schema-bound backend handle exposing the uniform

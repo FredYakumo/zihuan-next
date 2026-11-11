@@ -1,4 +1,3 @@
-use crate::connection_manager::ConnectionManager;
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -37,7 +36,10 @@ pub async fn fetch_login_info(connection: &BotAdapterConnection) -> Result<BotLo
 /// This is preferred over `fetch_login_info` when the adapter is already running, because
 /// it reuses the existing WebSocket connection rather than creating a new one.
 pub async fn fetch_login_info_via_adapter_connection(connection_id: &str) -> Result<BotLoginInfo> {
-    let adapter = ActiveAdapterManager::shared().get_or_create(connection_id).await?;
+    let adapter = ActiveAdapterManager::shared()
+        .find_existing(connection_id)
+        .await
+        .ok_or_else(|| crate::string_error!("Bot adapter is not running"))?;
 
     let max_retries = 2u32;
     let retry_delay = Duration::from_millis(100);

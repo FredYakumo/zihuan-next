@@ -1,5 +1,6 @@
 pub mod active_adapter_manager;
 pub mod adapter;
+pub mod connection;
 pub mod event;
 pub mod extract_message_from_event;
 pub mod login_info;

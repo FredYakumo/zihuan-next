@@ -53,7 +53,11 @@ impl BotAdapterBackend for MockBotAdapter {
         }
         let bot_id = adapter.lock().await.get_bot_id().to_string();
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
-        adapter.lock().await.action_tx = Some(tx);
+        {
+            let mut guard = adapter.lock().await;
+            guard.action_tx = Some(tx);
+            guard.connected.store(true, std::sync::atomic::Ordering::Release);
+        }
         write_json_atomic(&root.join("ready.json"), &json!({"user_id": bot_id}))?;
         let mut ticker = tokio::time::interval(std::time::Duration::from_millis(20));
         let mut next_id = 1_000_000_u64;

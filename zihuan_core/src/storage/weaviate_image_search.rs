@@ -5,7 +5,6 @@ use serde_json::{Map, Value};
 
 use crate::error::{Error, Result};
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
-use crate::storage::WeaviateClient;
 use crate::weaviate::WeaviateRef;
 
 pub const DEFAULT_MAX_DISTANCE: f64 = 0.55;

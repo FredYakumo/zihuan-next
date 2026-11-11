@@ -209,7 +209,11 @@ impl BotAdapterBackend for WeChatPadBotAdapter {
         let token = self.config.webhook_token.trim().to_string();
         let (payload_tx, mut payload_rx) = mpsc::unbounded_channel::<Value>();
 
-        let cleanup_tx = payload_tx.clone();
+        let _registration = WebhookRegistration {
+            token: token.clone(),
+            sender: payload_tx.clone(),
+        };
+        let mut tasks = tokio::task::JoinSet::new();
         // In relay mode nothing is posted to this server, so hold the inbound sender to keep the
         // loop below alive; the relay loop feeds events through the adapter directly.
         let _inbound_keepalive: Option<mpsc::UnboundedSender<Value>> = if relay_url.is_some() {
@@ -223,14 +227,18 @@ impl BotAdapterBackend for WeChatPadBotAdapter {
         };
 
         let (action_tx, mut action_rx) = mpsc::unbounded_channel::<String>();
-        adapter.lock().await.action_tx = Some(action_tx);
+        {
+            let mut guard = adapter.lock().await;
+            guard.action_tx = Some(action_tx);
+            guard.connected.store(true, Ordering::Release);
+        }
 
         let client = reqwest::Client::new();
 
         let pump_adapter = adapter.clone();
         let pump_client = client.clone();
         let pump_config = self.config.clone();
-        tokio::spawn(async move {
+        tasks.spawn(async move {
             while let Some(raw) = action_rx.recv().await {
                 handle_action(&pump_adapter, &pump_client, &pump_config, &raw).await;
             }
@@ -241,7 +249,7 @@ impl BotAdapterBackend for WeChatPadBotAdapter {
             info!("{LOG_PREFIX} pulling inbound messages from hook relay {relay_url}");
             let relay_adapter = adapter.clone();
             let relay_config = self.config.clone();
-            tokio::spawn(async move {
+            tasks.spawn(async move {
                 run_relay_loop(relay_adapter, relay_config, relay_url).await;
             });
         } else {
@@ -259,16 +267,6 @@ impl BotAdapterBackend for WeChatPadBotAdapter {
             }
         }
 
-        if !token.is_empty() {
-            let mut senders = lock_senders();
-            let still_ours = senders
-                .get(&token)
-                .map(|sender| sender.same_channel(&cleanup_tx))
-                .unwrap_or(false);
-            if still_ours {
-                senders.remove(&token);
-            }
-        }
         Ok(())
     }
 }
@@ -639,7 +637,11 @@ fn render_outbound(params: &Value) -> OutboundText {
     let segments = match params.get("message") {
         Some(Value::Array(segments)) => segments.clone(),
         Some(Value::String(raw)) => {
-            return OutboundText { text: raw.clone(), at_wxids: Vec::new(), legacy: raw.clone() }
+            return OutboundText {
+                text: raw.clone(),
+                at_wxids: Vec::new(),
+                legacy: raw.clone(),
+            }
         }
         _ => Vec::new(),
     };
@@ -701,7 +703,9 @@ fn with_auth(
 /// The 861 build reports rejections as HTTP 200 with a JSON `Code` other than 200, so the HTTP
 /// status alone is not enough; a body carrying an integer `Code` is treated as authoritative.
 /// Returns the response body on success so callers can pick fields out of it.
-pub async fn check_bridge_response(response: reqwest::Response) -> std::result::Result<String, String> {
+pub async fn check_bridge_response(
+    response: reqwest::Response,
+) -> std::result::Result<String, String> {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
     if !status.is_success() {
@@ -711,7 +715,11 @@ pub async fn check_bridge_response(response: reqwest::Response) -> std::result::
         if let Some(code) = value.get("Code").and_then(Value::as_i64) {
             if code != 200 && code != 0 {
                 let text = value.get("Text").and_then(Value::as_str).unwrap_or_default();
-                let detail = if text.is_empty() { String::new() } else { format!(": {text}") };
+                let detail = if text.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {text}")
+                };
                 return Err(format!("bridge returned Code {code}{detail}"));
             }
         }
@@ -797,4 +805,23 @@ fn bridge_message_id(body: &str) -> Option<String> {
     ["NewMsgId", "newMsgId", "MsgId", "MsgSvrId"]
         .iter()
         .find_map(|key| json_id(data.get(*key)).filter(|id| !id.is_empty()))
+}
+
+/// Removes the webhook registration on normal return and task cancellation alike.
+struct WebhookRegistration {
+    token: String,
+    sender: mpsc::UnboundedSender<Value>,
+}
+
+impl Drop for WebhookRegistration {
+    fn drop(&mut self) {
+        let mut senders = lock_senders();
+        if senders
+            .get(&self.token)
+            .map(|sender| sender.same_channel(&self.sender))
+            .unwrap_or(false)
+        {
+            senders.remove(&self.token);
+        }
+    }
 }

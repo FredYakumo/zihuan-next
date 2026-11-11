@@ -390,7 +390,7 @@ export interface RuntimeConnectionInstanceSummary {
   heartbeat_interval_secs: number | null;
   started_at: string;
   last_used_at: string;
-  status: "running" | "idle" | "closing" | "error";
+  status: "running" | "idle" | "closing" | "error" | "connecting" | "closed";
 }
 
 export interface LlmServiceConfig {

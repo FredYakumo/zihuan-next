@@ -18,7 +18,6 @@ mod turn_workflow;
 pub(crate) mod user_input;
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 pub(crate) use self::core::{
@@ -72,7 +71,7 @@ use zihuan_core::ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
 use zihuan_core::ims_bot_adapter::event::EventHandler;
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_core::nlp::{build_segmenter, TextSegmenter};
+use zihuan_core::nlp::TextSegmenter;
 use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::runtime::block_async;
 use zihuan_core::storage::message::record_restore::register_rdb_pool;
@@ -486,7 +485,7 @@ pub async fn spawn(
     })?);
 
     let adapter = ActiveAdapterManager::shared()
-        .get_or_create_with_object_storage(&config.ims_bot_adapter_connection_id, object_storage)
+        .get_or_create_for_service(&config.ims_bot_adapter_connection_id, &agent.id, object_storage)
         .await?;
 
     let inbox = QqChatAgentServiceInbox::new(
@@ -512,12 +511,21 @@ pub async fn spawn(
         adapter.lock().await.register_event_handler_with_id(handler_id.clone(), handler);
     }
 
+    struct InboxShutdown(QqChatAgentServiceInbox);
+    impl Drop for InboxShutdown {
+        fn drop(&mut self) {
+            self.0.request_shutdown();
+        }
+    }
+    let shutdown = InboxShutdown(inbox.clone());
+
     let agent_name = agent.name.clone();
     let adapter_for_cleanup = adapter.clone();
     let handler_id_for_cleanup = handler_id.clone();
 
     Ok(tokio::spawn(async move {
         let _scheduler_guard = scheduler_guard;
+        let _shutdown = shutdown;
         info!("[service] starting QQ Chat Agent Service '{}'", agent_name);
         let mut tasks = tokio::task::JoinSet::new();
         inbox.spawn_consumers(&mut tasks);
@@ -547,37 +555,18 @@ fn resolve_tokenizer_segmenter(
     config: &QqChatRoleServiceConfig,
     connections: &[ConnectionConfig],
 ) -> Arc<dyn TextSegmenter> {
-    let tokenizer_path = config
+    if let Some(connection_id) = config
         .tokenizer_connection_id
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .and_then(|connection_id| match find_connection(connections, connection_id) {
-            Ok(connection) => match &connection.kind {
-                ConnectionKind::Tokenizer(tokenizer) => Some(Path::new("models/tokenizer").join(
-                    tokenizer.model_name.trim(),
-                )),
-                _ => {
-                    warn!(
-                        "[service][qq_agent] tokenizer_connection_id='{}' points to non-tokenizer connection '{}', fallback to punctuation segmenter",
-                        connection_id,
-                        connection.name
-                    );
-                    None
-                }
-            },
-            Err(err) => {
-                warn!(
-                    "[service][qq_agent] tokenizer connection not found for id='{}': {}, fallback to punctuation segmenter",
-                    connection_id,
-                    err
-                );
-                None
-            }
-        })
-        .map(|model_dir| model_dir.join("tokenizer.json"));
-
-    build_segmenter(tokenizer_path.as_deref())
+        .filter(|id| !id.is_empty())
+    {
+        match zihuan_core::storage::build_tokenizer_ref(connection_id, connections) {
+            Ok(segmenter) => return segmenter,
+            Err(error) => warn!("[service][qq_agent] tokenizer connection '{}': {}; fallback to punctuation segmenter", connection_id, error),
+        }
+    }
+    Arc::new(zihuan_core::nlp::PunctuationSegmenter::default())
 }
 
 fn resolve_inbox_redis_ref(

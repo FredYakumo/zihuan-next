@@ -25,7 +25,7 @@ use zihuan_core::storage::{
     update_memory_record_with_vector,
     weaviate::build_weaviate_ref as build_storage_weaviate_ref,
     AgentMemoryAccessContext, AgentMemorySearchHit, AgentMemoryUpsert, ConnectionKind,
-    ObjectStorageConfig, RetrievalDatabase, RetrievalSchema, WeaviateClient,
+    ObjectStorageConfig, RetrievalDatabase, RetrievalSchema,
 };
 use zihuan_ims_service::qq_chat::{
     list_message_rate_limit_usage, reset_message_rate_limit_usage, TurnSummary,

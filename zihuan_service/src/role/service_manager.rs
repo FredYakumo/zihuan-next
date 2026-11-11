@@ -271,7 +271,11 @@ impl RoleServiceManager {
         }
         if let Some(task) = task {
             task.abort();
+            let _ = task.await;
         }
+        zihuan_core::ims_bot_adapter::active_adapter_manager::ActiveAdapterManager::shared()
+            .release_for_service(role_service_id)
+            .await?;
         self.update_state(
             role_service_id,
             RoleServiceRuntimeState {

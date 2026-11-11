@@ -1,4 +1,6 @@
+use crate::connection::Connection;
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use base64::Engine;
@@ -26,13 +28,25 @@ const INDEX_STARTUP_RETRY_TIMEOUT: Duration = Duration::from_secs(60);
 const INDEX_CHECK_RETRY_DELAY: Duration = Duration::from_secs(1);
 const MAX_QUERY_CANDIDATES: usize = 100;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ElasticsearchRef {
-    client: Client,
+    client: Arc<RwLock<Option<Client>>>,
+    headers: HeaderMap,
     base_url: String,
     pub index_name: String,
     pub schema: RetrievalSchema,
     pub vector_dimensions: usize,
+}
+
+impl std::fmt::Debug for ElasticsearchRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ElasticsearchRef")
+            .field("base_url", &self.base_url)
+            .field("index_name", &self.index_name)
+            .field("schema", &self.schema)
+            .field("vector_dimensions", &self.vector_dimensions)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -117,7 +131,7 @@ impl ElasticsearchRef {
         // let builder = Client::builder()
         //     .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
         //     .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
-        //     .default_headers(headers);
+        //     .default_headers(headers.clone());
         // Ok(Self {
         //     client: builder.build().map_err(|error| {
         //         crate::string_error!("build elasticsearch client failed: {error}")
@@ -131,17 +145,26 @@ impl ElasticsearchRef {
             Client::builder()
                 .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
                 .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
-                .default_headers(headers)
+                .default_headers(headers.clone())
                 .build()
                 .map_err(|error| crate::string_error!("build elasticsearch client failed: {error}"))
         })?;
         Ok(Self {
-            client,
+            client: Arc::new(RwLock::new(Some(client))),
+            headers,
             base_url,
             index_name: schema.elasticsearch_index_name().to_string(),
             schema,
             vector_dimensions: config.vector_dimensions,
         })
+    }
+
+    fn client(&self) -> Result<Client> {
+        self.client
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .ok_or_else(|| crate::string_error!("Elasticsearch connection is closed"))
     }
 
     pub(crate) fn request(
@@ -154,7 +177,7 @@ impl ElasticsearchRef {
         // async context is entered.
         crate::runtime::run_outside_async_runtime(|| {
             let url = format!("{}{}", self.base_url, path);
-            let request = self.client.request(method, url);
+            let request = self.client()?.request(method, url);
             let request = if let Some(body) = body {
                 request.json(&body)
             } else {
@@ -192,7 +215,7 @@ pub fn ensure_elasticsearch_index(
         // instead of stalling the request.
         let deadline = std::time::Instant::now() + INDEX_STARTUP_RETRY_TIMEOUT;
         let exists = loop {
-            match reference.client.head(&index_url).send() {
+            match reference.client()?.head(&index_url).send() {
                 Ok(response) => {
                     let status = response.status();
                     if status.as_u16() == 404 {
@@ -689,4 +712,60 @@ fn index_definition(reference: &ElasticsearchRef) -> Result<Value> {
     Ok(
         json!({"settings":{"analysis":{"analyzer":{"pinyin_analyzer":{"tokenizer":"standard","filter":["lowercase","pinyin"]}}}},"mappings":{"properties":properties}}),
     )
+}
+
+#[async_trait::async_trait]
+impl Connection for ElasticsearchRef {
+    async fn connect(&mut self) -> Result<()> {
+        if self.is_closed() {
+            let client = crate::runtime::run_outside_async_runtime(|| {
+                Client::builder()
+                    .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+                    .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
+                    .default_headers(self.headers.clone())
+                    .build()
+                    .map_err(|error| {
+                        crate::string_error!("build elasticsearch client failed: {error}")
+                    })
+            })?;
+            *self.client.write().unwrap_or_else(|e| e.into_inner()) = Some(client);
+        }
+        if let Err(error) = self.health_check().await {
+            self.close().await?;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    async fn health_check(&self) -> Result<()> {
+        let reference = self.clone();
+        tokio::task::spawn_blocking(move || {
+            reference.request(reqwest::Method::GET, "/_cluster/health", None).map(|_| ())
+        })
+        .await
+        .map_err(|error| crate::string_error!("Elasticsearch probe failed: {error}"))?
+    }
+
+    async fn close(&self) -> Result<()> {
+        let client = self.client.write().unwrap_or_else(|e| e.into_inner()).take();
+        crate::runtime::run_outside_async_runtime(|| {
+            drop(client);
+            Ok(())
+        })
+    }
+
+    fn is_closed(&self) -> bool {
+        self.client.read().unwrap_or_else(|e| e.into_inner()).is_none()
+    }
+}
+
+impl ElasticsearchRef {
+    pub async fn from_config(
+        config: &ElasticsearchConnection,
+        schema: RetrievalSchema,
+    ) -> Result<Self> {
+        let mut connection = Self::new(config.clone(), schema)?;
+        connection.connect().await?;
+        Ok(connection)
+    }
 }

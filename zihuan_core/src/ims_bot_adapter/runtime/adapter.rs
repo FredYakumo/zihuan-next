@@ -84,6 +84,7 @@ pub trait BotAdapterBackend: Send + Sync {
 /// Shared event parsing, hydration and dispatch for all adapter backends.
 pub struct BotAdapter {
     backend: Arc<dyn BotAdapterBackend>,
+    pub(crate) connected: Arc<AtomicBool>,
     url: String,
     token: String,
     bot_profile: Option<Profile>,
@@ -151,6 +152,7 @@ impl BotAdapter {
     pub async fn new(config: BotAdapterConfig) -> Self {
         Self {
             backend: Arc::new(super::napcat::NapCatBotAdapter),
+            connected: Arc::new(AtomicBool::new(false)),
             url: config.url,
             token: config.token,
             bot_profile: Some(Profile {

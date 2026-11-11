@@ -1,107 +1,52 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::Duration;
 
-use crate::connection_manager::{
-    ConnectionManager as ConnectionManagerTrait, RuntimeConnectionStatus, RuntimeInstanceInfo,
-};
+use super::connection::BotConnection;
+use crate::connection::Connection;
+use crate::connection_manager::{ConnectionManager as ConnectionManagerTrait, RuntimeInstanceInfo};
 use crate::error::{Error, Result};
 use crate::storage::S3Ref;
 use crate::storage::{find_connection, load_connections, ConnectionConfig, ConnectionKind};
 use async_trait::async_trait;
 use chrono::Utc;
-use log::{error, info, warn};
+use log::info;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
-use crate::ims_bot_adapter::runtime::adapter::{BotAdapter, SharedBotAdapter};
-use crate::ims_bot_adapter::runtime::ws_action::ws_send_action_async;
+use crate::ims_bot_adapter::runtime::adapter::SharedBotAdapter;
 use crate::ims_bot_adapter::runtime::{build_ims_bot_adapter, parse_ims_bot_adapter_connection};
 
 const BOT_ADAPTER_INSTANCE_IDLE_TIMEOUT_SECS: i64 = 15 * 60;
-const BOT_ADAPTER_HEARTBEAT_INTERVAL_SECS: u64 = 30;
 
 #[derive(Clone)]
 struct ActiveBotAdapterInstance {
     summary: RuntimeInstanceInfo,
     config_updated_at: String,
     adapter: SharedBotAdapter,
-    task: Arc<JoinHandle<()>>,
-    heartbeat_task: Arc<JoinHandle<()>>,
+    connection: Arc<BotConnection>,
+    role_service_ids: HashSet<String>,
+    externally_used: bool,
 }
 
 pub struct ActiveAdapterManager {
     instances: RwLock<HashMap<String, Vec<ActiveBotAdapterInstance>>>,
+    creation: tokio::sync::Mutex<()>,
 }
 
 static ACTIVE_ADAPTER_MANAGER: Lazy<ActiveAdapterManager> = Lazy::new(ActiveAdapterManager::new);
 
 impl ActiveAdapterManager {
     pub fn new() -> Self {
-        Self { instances: RwLock::new(HashMap::new()) }
+        Self {
+            instances: RwLock::new(HashMap::new()),
+            creation: tokio::sync::Mutex::new(()),
+        }
     }
 
     pub fn shared() -> &'static Self {
         &ACTIVE_ADAPTER_MANAGER
-    }
-
-    fn spawn_keepalive_loop(
-        connection_id: String,
-        connection_name: String,
-        adapter: SharedBotAdapter,
-    ) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            loop {
-                let adapter_for_run = Arc::clone(&adapter);
-                match BotAdapter::start(adapter_for_run).await {
-                    Ok(()) => {
-                        warn!(
-                            "[active_adapter_manager] bot adapter '{}' (config_id={}) disconnected, retrying in 2s",
-                            connection_name, connection_id
-                        );
-                    }
-                    Err(err) => {
-                        error!(
-                            "[active_adapter_manager] bot adapter '{}' (config_id={}) exited with error: {}. retrying in 2s",
-                            connection_name, connection_id, err
-                        );
-                    }
-                }
-                tokio::time::sleep(Duration::from_secs(2)).await;
-            }
-        })
-    }
-
-    fn spawn_heartbeat_loop(
-        instance_id: String,
-        connection_name: String,
-        adapter: SharedBotAdapter,
-    ) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            let mut ticker =
-                tokio::time::interval(Duration::from_secs(BOT_ADAPTER_HEARTBEAT_INTERVAL_SECS));
-            loop {
-                ticker.tick().await;
-                match ws_send_action_async(&adapter, "get_login_info", serde_json::json!({})).await
-                {
-                    Ok(_) => {
-                        log::debug!(
-                            "[active_adapter_manager] heartbeat ok for '{}' (instance_id={})",
-                            connection_name,
-                            instance_id
-                        );
-                    }
-                    Err(err) => {
-                        warn!(
-                            "[active_adapter_manager] heartbeat failed for '{}' (instance_id={}): {}",
-                            connection_name, instance_id, err
-                        );
-                    }
-                }
-            }
-        })
     }
 
     async fn create_instance(
@@ -128,16 +73,10 @@ impl ActiveAdapterManager {
         let adapter_connection = parse_ims_bot_adapter_connection(raw)?;
         let adapter = build_ims_bot_adapter(&adapter_connection, object_storage).await;
         let instance_id = Uuid::new_v4().to_string();
-        let task = Arc::new(Self::spawn_keepalive_loop(
-            connection.id.clone(),
-            connection.name.clone(),
-            Arc::clone(&adapter),
-        ));
-        let heartbeat_task = Arc::new(Self::spawn_heartbeat_loop(
-            instance_id.clone(),
-            connection.name.clone(),
-            Arc::clone(&adapter),
-        ));
+        let mut runtime_connection =
+            BotConnection::new(connection.id.clone(), connection.name.clone(), adapter.clone())
+                .await;
+        runtime_connection.connect().await?;
 
         let now = Utc::now();
         let instance = ActiveBotAdapterInstance {
@@ -146,22 +85,35 @@ impl ActiveAdapterManager {
                 config_id: connection.id.clone(),
                 name: connection.name.clone(),
                 kind: "bot_adapter".to_string(),
-                keep_alive: true,
-                heartbeat_interval_secs: Some(BOT_ADAPTER_HEARTBEAT_INTERVAL_SECS),
+                keep_alive: runtime_connection.keep_alive(),
+                heartbeat_interval_secs: runtime_connection
+                    .heartbeat_interval()
+                    .map(|interval| interval.as_secs()),
                 started_at: now,
                 last_used_at: now,
-                status: RuntimeConnectionStatus::Running,
+                status: runtime_connection.status(),
             },
             config_updated_at: connection.updated_at.clone(),
             adapter,
-            task,
-            heartbeat_task,
+            connection: Arc::new(runtime_connection),
+            role_service_ids: HashSet::new(),
+            externally_used: false,
         };
         info!(
             "[active_adapter_manager] instantiated bot adapter instance_id={} config_id={} name='{}'",
             instance.summary.instance_id, instance.summary.config_id, instance.summary.name
         );
         Ok(instance)
+    }
+
+    pub async fn find_existing(&self, config_id: &str) -> Option<SharedBotAdapter> {
+        let mut instances = self.instances.write().await;
+        let instance = instances.get_mut(config_id)?.first_mut()?;
+        if instance.connection.is_closed() {
+            return None;
+        }
+        instance.summary.last_used_at = Utc::now();
+        Some(instance.adapter.clone())
     }
 
     pub async fn get_active_bot_adapter_handle(
@@ -173,17 +125,33 @@ impl ActiveAdapterManager {
         Ok(handle)
     }
 
-    pub async fn get_or_create_with_object_storage(
+    pub async fn get_or_create_for_service(
         &self,
         config_id: &str,
+        role_service_id: &str,
         object_storage: Option<Arc<S3Ref>>,
     ) -> Result<SharedBotAdapter> {
+        self.acquire(config_id, Some(role_service_id), object_storage).await
+    }
+
+    async fn acquire(
+        &self,
+        config_id: &str,
+        role_service_id: Option<&str>,
+        object_storage: Option<Arc<S3Ref>>,
+    ) -> Result<SharedBotAdapter> {
+        let _creation = self.creation.lock().await;
         self.cleanup_stale_instances().await?;
         {
             let mut instances = self.instances.write().await;
             if let Some(bucket) = instances.get_mut(config_id) {
                 if let Some(instance) = bucket.first_mut() {
                     instance.summary.last_used_at = Utc::now();
+                    if let Some(role_service_id) = role_service_id {
+                        instance.role_service_ids.insert(role_service_id.to_string());
+                    } else {
+                        instance.externally_used = true;
+                    }
                     if object_storage.is_some() {
                         instance.adapter.lock().await.set_object_storage(object_storage);
                     }
@@ -192,11 +160,46 @@ impl ActiveAdapterManager {
             }
         }
 
-        let instance = self.create_instance(config_id, object_storage).await?;
+        let mut instance = self.create_instance(config_id, object_storage).await?;
+        if let Some(role_service_id) = role_service_id {
+            instance.role_service_ids.insert(role_service_id.to_string());
+        } else {
+            instance.externally_used = true;
+        }
         let handle = instance.adapter.clone();
         let mut instances = self.instances.write().await;
         instances.entry(config_id.to_string()).or_default().push(instance);
         Ok(handle)
+    }
+    /// Release only this role's subscription; shared and explicitly acquired graph connections survive.
+    pub async fn release_for_service(&self, role_service_id: &str) -> Result<()> {
+        let _creation = self.creation.lock().await;
+        let mut instances = self.instances.write().await;
+        let mut removed = Vec::new();
+        for bucket in instances.values_mut() {
+            let mut retained = Vec::new();
+            for mut instance in bucket.drain(..) {
+                if instance.role_service_ids.remove(role_service_id) {
+                    instance
+                        .adapter
+                        .lock()
+                        .await
+                        .unregister_event_handler(&format!("qq_chat_service:{role_service_id}"));
+                    if instance.role_service_ids.is_empty() && !instance.externally_used {
+                        removed.push(instance);
+                        continue;
+                    }
+                }
+                retained.push(instance);
+            }
+            *bucket = retained;
+        }
+        instances.retain(|_, bucket| !bucket.is_empty());
+        drop(instances);
+        for instance in removed {
+            instance.connection.close().await?;
+        }
+        Ok(())
     }
 }
 
@@ -205,22 +208,7 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
     type Handle = SharedBotAdapter;
 
     async fn get_or_create(&self, config_id: &str) -> Result<Self::Handle> {
-        self.cleanup_stale_instances().await?;
-        {
-            let mut instances = self.instances.write().await;
-            if let Some(bucket) = instances.get_mut(config_id) {
-                if let Some(instance) = bucket.first_mut() {
-                    instance.summary.last_used_at = Utc::now();
-                    return Ok(instance.adapter.clone());
-                }
-            }
-        }
-
-        let instance = self.create_instance(config_id, None).await?;
-        let handle = instance.adapter.clone();
-        let mut instances = self.instances.write().await;
-        instances.entry(config_id.to_string()).or_default().push(instance);
-        Ok(handle)
+        self.acquire(config_id, None, None).await
     }
 
     async fn list_instances(&self) -> Result<Vec<RuntimeInstanceInfo>> {
@@ -228,13 +216,20 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
         let instances = self.instances.read().await;
         let mut items = instances
             .values()
-            .flat_map(|bucket| bucket.iter().map(|item| item.summary.clone()))
+            .flat_map(|bucket| {
+                bucket.iter().map(|item| {
+                    let mut summary = item.summary.clone();
+                    summary.status = item.connection.status();
+                    summary
+                })
+            })
             .collect::<Vec<_>>();
         items.sort_by(|a, b| b.started_at.cmp(&a.started_at));
         Ok(items)
     }
 
     async fn close_instance(&self, instance_id: &str) -> Result<bool> {
+        let _creation = self.creation.lock().await;
         let mut instances = self.instances.write().await;
         for bucket in instances.values_mut() {
             if let Some(index) =
@@ -245,8 +240,8 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
                     "[active_adapter_manager] force closed bot adapter instance_id={} config_id={} name='{}'",
                     removed.summary.instance_id, removed.summary.config_id, removed.summary.name
                 );
-                removed.task.abort();
-                removed.heartbeat_task.abort();
+                drop(instances);
+                removed.connection.close().await?;
                 return Ok(true);
             }
         }
@@ -254,11 +249,12 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
     }
 
     async fn close_instances_for_config(&self, config_id: &str) -> Result<usize> {
+        let _creation = self.creation.lock().await;
         let mut instances = self.instances.write().await;
         let removed = instances.remove(config_id).unwrap_or_default();
+        drop(instances);
         for item in &removed {
-            item.task.abort();
-            item.heartbeat_task.abort();
+            item.connection.close().await?;
         }
         Ok(removed.len())
     }
@@ -271,7 +267,7 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
             .collect::<HashMap<_, _>>();
         let now = Utc::now();
         let mut instances = self.instances.write().await;
-        let mut removed = 0usize;
+        let mut removed = Vec::new();
 
         for (config_id, bucket) in instances.iter_mut() {
             let (enabled, current_updated_at) =
@@ -279,13 +275,17 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
             let mut retained = Vec::new();
             for item in bucket.drain(..) {
                 let config_changed = item.config_updated_at != current_updated_at;
-                if item.summary.keep_alive && enabled && !config_changed {
+                if !item.connection.is_closed()
+                    && item.connection.keep_alive()
+                    && enabled
+                    && !config_changed
+                {
                     retained.push(item);
                     continue;
                 }
                 let stale = (now - item.summary.last_used_at).num_seconds()
                     >= BOT_ADAPTER_INSTANCE_IDLE_TIMEOUT_SECS;
-                if enabled && !stale && !config_changed {
+                if !item.connection.is_closed() && enabled && !stale && !config_changed {
                     retained.push(item);
                 } else {
                     info!(
@@ -297,15 +297,17 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
                         stale,
                         config_changed
                     );
-                    item.task.abort();
-                    item.heartbeat_task.abort();
-                    removed += 1;
+                    removed.push(item);
                 }
             }
             *bucket = retained;
         }
         instances.retain(|_, bucket| !bucket.is_empty());
-        Ok(removed)
+        drop(instances);
+        for item in &removed {
+            item.connection.close().await?;
+        }
+        Ok(removed.len())
     }
 }
 
@@ -318,6 +320,7 @@ pub async fn sync_enabled_bot_adapters(connections: &[ConnectionConfig]) {
         .map(|item| (item.id.clone(), item.updated_at.clone()))
         .collect::<HashMap<_, _>>();
     let manager = ActiveAdapterManager::shared();
+    let _creation = manager.creation.lock().await;
 
     let mut removed = Vec::new();
     {
@@ -349,8 +352,7 @@ pub async fn sync_enabled_bot_adapters(connections: &[ConnectionConfig]) {
             "[active_adapter_manager] closing bot adapter instance_id={} config_id={} name='{}' due to config sync",
             item.summary.instance_id, item.summary.config_id, item.summary.name
         );
-        item.task.abort();
-        item.heartbeat_task.abort();
+        let _ = item.connection.close().await;
     }
 }
 
