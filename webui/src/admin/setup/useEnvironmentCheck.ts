@@ -12,6 +12,8 @@ export function useEnvironmentCheck() {
     binary_install_reason: null,
     wsl_available: null,
     wsl_docker_available: null,
+    napcat_native_available: true,
+    napcat_native_reason: null,
     cuda_version: null,
     compiler_version: null,
     proxy: null,

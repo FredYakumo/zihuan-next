@@ -10,7 +10,8 @@ use serde_json::Value;
 
 use crate::api::state::AppState;
 use crate::setup_orchestrator::{
-    generate_detailed_install_command, DetailedSetupConfig, SetupOrchestrator,
+    emit_progress, generate_detailed_install_command, DetailedSetupConfig, SetupOrchestrator,
+    SetupProgressEvent,
 };
 use zihuan_core::storage::{self, ConnectionConfig};
 
@@ -92,7 +93,7 @@ fn validate_plugin(plugin: &PluginRecord) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct InstallPluginRequest {
     pub name: String,
     pub version: String,
@@ -353,6 +354,9 @@ pub async fn install_plugin(req: &mut Request, res: &mut Response, depot: &mut D
         Err(error) => return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error),
     }
     if let Some(installer) = special_installers::installer_for(&request.component_type) {
+        if special_installers::uses_background_install(&request) {
+            return install_special_in_background(depot, res, request).await;
+        }
         return match installer.install(&request).await {
             Ok(plugin) => {
                 let connections = plugin_connections(&plugin).unwrap_or_default();
@@ -517,6 +521,77 @@ pub async fn install_plugin(req: &mut Request, res: &mut Response, depot: &mut D
     ))
 }
 
+/// Runs a long-running special install (NapCat Docker/Native) in a background task and
+/// streams its progress over the shared SSE endpoint, mirroring the standard pipeline.
+/// The installer owns the success record; this wrapper only persists the failed record
+/// and reports the error event when the installer gives up.
+async fn install_special_in_background(
+    depot: &Depot,
+    res: &mut Response,
+    request: InstallPluginRequest,
+) {
+    let state = match depot.obtain::<Arc<AppState>>() {
+        Ok(state) => state.clone(),
+        Err(_) => {
+            return render_error(
+                res,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to obtain app state".to_string(),
+            )
+        }
+    };
+    let installer = match special_installers::installer_for(&request.component_type) {
+        Some(installer) => installer,
+        None => {
+            return render_error(
+                res,
+                StatusCode::BAD_REQUEST,
+                "unknown special installer".to_string(),
+            )
+        }
+    };
+    let task_id = uuid::Uuid::new_v4().to_string();
+    let (progress_tx, _rx) = tokio::sync::broadcast::channel(256);
+    state.setup_tasks.lock().unwrap().insert(task_id.clone(), progress_tx.clone());
+
+    // Placeholder record: duplicate submissions are rejected while it is `installing`
+    // with a live task, and a retry reuses its id via the name lookup.
+    let mut plugin = plugin_from_request(&request, "installing");
+    plugin.extra_install_metadata["install_task_id"] = Value::String(task_id.clone());
+    if let Err(error) = save_plugin_record(&plugin) {
+        state.setup_tasks.lock().unwrap().remove(&task_id);
+        return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error);
+    }
+
+    let task_id_for_task = task_id.clone();
+    let request_for_task = request.clone();
+    let progress_for_task = progress_tx.clone();
+    tokio::spawn(async move {
+        // Give the SSE subscriber a moment to attach so the first steps (including the
+        // command lines) are not missed; the broadcast channel has no replay.
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let result =
+            installer.install_with_progress(&request_for_task, &progress_for_task).await;
+        if let Err(error) = result {
+            let mut failed = plugin_from_request(&request_for_task, "installing");
+            failed.status = "failed".to_string();
+            failed.extra_install_metadata["install_task_id"] =
+                Value::String(task_id_for_task.clone());
+            failed.extra_install_metadata["last_error"] = Value::String(error.clone());
+            failed.updated_at = chrono::Utc::now().to_rfc3339();
+            let _ = save_plugin_record(&failed);
+            emit_progress(Some(&progress_for_task), "failed", "error", error.clone());
+        }
+        // Keep the sender registered briefly so late SSE subscribers can still attach.
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        state.setup_tasks.lock().unwrap().remove(&task_id_for_task);
+    });
+
+    res.render(Json(
+        serde_json::json!({ "accepted": true, "task_id": task_id, "plugin": plugin }),
+    ))
+}
+
 #[handler]
 pub async fn enable_plugin(req: &mut Request, res: &mut Response) {
     lifecycle_plugin(req, res, true).await;
@@ -621,52 +696,133 @@ pub async fn update_plugin(req: &mut Request, res: &mut Response) {
 }
 
 #[handler]
-pub async fn delete_plugin(req: &mut Request, res: &mut Response) {
+pub async fn delete_plugin(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     let id = req
         .param::<String>("id")
         .or_else(|| req.param::<String>("name"))
         .unwrap_or_default();
-    let mut plugins = match load_plugins() {
+    let plugins = match load_plugins() {
         Ok(plugins) => plugins,
         Err(error) => return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error),
     };
-    let previous_count = plugins.len();
     let target = plugins.iter().find(|item| item.id == id || item.name == id).cloned();
     let Some(target) = target else {
         return render_error(res, StatusCode::NOT_FOUND, format!("Plugin '{id}' was not found"));
     };
-    if let Some(installer) = special_installers::installer_for(&target.component_type) {
-        if let Err(error) = installer.uninstall(&target).await {
-            return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error);
+    let state = match depot.obtain::<Arc<AppState>>() {
+        Ok(state) => state.clone(),
+        Err(_) => {
+            return render_error(
+                res,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to obtain app state".to_string(),
+            )
         }
-    }
-    if let Some(config) = target.extra_install_metadata.get("detailed_config") {
-        if target.installation_method == "docker" {
-            if let Some(path) =
-                target.extra_install_metadata.get("compose_path").and_then(Value::as_str)
+    };
+    // The teardown streams its commands over SSE like an install; the task reports the
+    // final event and keeps the sender around briefly for late subscribers.
+    let task_id = uuid::Uuid::new_v4().to_string();
+    let (progress_tx, _rx) = tokio::sync::broadcast::channel(256);
+    state.setup_tasks.lock().unwrap().insert(task_id.clone(), progress_tx.clone());
+    let target_for_task = target.clone();
+    let task_id_for_task = task_id.clone();
+    let progress_for_task = progress_tx.clone();
+    tokio::spawn(async move {
+        // Give the SSE subscriber a moment to attach so the first steps are not missed.
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let mut failure: Option<String> = None;
+        if let Some(installer) = special_installers::installer_for(&target_for_task.component_type)
+        {
+            if let Err(error) =
+                installer.uninstall_with_progress(&target_for_task, &progress_for_task).await
             {
-                let _ = tokio::process::Command::new("docker")
-                    .args(["compose", "-f", path, "down", "--volumes", "--remove-orphans"])
-                    .output()
-                    .await;
+                failure = Some(error);
             }
         }
-        let _ = config;
-    }
-    for connection_id in &target.connection_ids {
-        let _ = storage::delete_connection(connection_id);
-    }
-    plugins.retain(|item| item.id != target.id && item.name != target.name);
-    if plugins.len() == previous_count {
-        return render_error(res, StatusCode::NOT_FOUND, format!("Plugin '{id}' was not found"));
-    }
-    if let Err(error) = save_plugins(&plugins) {
-        return render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error);
-    }
-    let uninstall_command = target
-        .extra_install_metadata
-        .get("uninstall_command")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
-    res.render(Json(serde_json::json!({ "ok": true, "uninstall_command": uninstall_command })));
+        if failure.is_none() {
+            if let Some(config) = target_for_task.extra_install_metadata.get("detailed_config") {
+                if target_for_task.installation_method == "docker" {
+                    if let Some(path) = target_for_task
+                        .extra_install_metadata
+                        .get("compose_path")
+                        .and_then(Value::as_str)
+                    {
+                        emit_progress(
+                            Some(&progress_for_task),
+                            "uninstall",
+                            "running",
+                            format!("执行: docker compose -f {path} down --volumes --remove-orphans"),
+                        );
+                        match tokio::process::Command::new("docker")
+                            .args(["compose", "-f", path, "down", "--volumes", "--remove-orphans"])
+                            .output()
+                            .await
+                        {
+                            Ok(output) if output.status.success() => {
+                                emit_progress(
+                                    Some(&progress_for_task),
+                                    "uninstall",
+                                    "success",
+                                    "容器已停止并移除".to_string(),
+                                );
+                            }
+                            Ok(output) => {
+                                failure = Some(format!(
+                                    "docker compose down 失败: {}",
+                                    String::from_utf8_lossy(&output.stderr).trim()
+                                ))
+                            }
+                            Err(error) => {
+                                failure = Some(format!("执行 docker compose 失败: {error}"))
+                            }
+                        }
+                    }
+                }
+                let _ = config;
+            }
+        }
+        match failure {
+            None => {
+                for connection_id in &target_for_task.connection_ids {
+                    let _ = storage::delete_connection(connection_id);
+                }
+                let mut plugins = match load_plugins() {
+                    Ok(plugins) => plugins,
+                    Err(error) => {
+                        emit_progress(
+                            Some(&progress_for_task),
+                            "uninstall_failed",
+                            "error",
+                            error.clone(),
+                        );
+                        return;
+                    }
+                };
+                plugins.retain(|item| item.id != target_for_task.id && item.name != target_for_task.name);
+                if let Err(error) = save_plugins(&plugins) {
+                    emit_progress(
+                        Some(&progress_for_task),
+                        "uninstall_failed",
+                        "error",
+                        error.clone(),
+                    );
+                    return;
+                }
+                emit_progress(
+                    Some(&progress_for_task),
+                    "finished",
+                    "success",
+                    format!("卸载完成: {}", target_for_task.name),
+                );
+            }
+            Some(error) => {
+                // The record and its connections survive so the operator can run the
+                // command manually (the frontend shows the copy box) and retry.
+                emit_progress(Some(&progress_for_task), "uninstall_failed", "error", error);
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        state.setup_tasks.lock().unwrap().remove(&task_id_for_task);
+    });
+    res.render(Json(serde_json::json!({ "accepted": true, "task_id": task_id })));
 }

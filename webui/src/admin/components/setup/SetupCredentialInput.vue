@@ -1,6 +1,6 @@
 <template>
   <div ref="container" class="credential-input" :class="{ 'has-visibility-control': inputType === 'password' }">
-    <input v-model="value" :type="isVisible ? 'text' : inputType" @blur="isVisible = false" />
+    <input v-model="value" :type="isVisible ? 'text' : inputType" :readonly="readonly" @blur="isVisible = false" />
     <button
       v-if="inputType === 'password'"
       class="credential-visibility-button"
@@ -14,6 +14,7 @@
       <BrowseIcon v-else />
     </button>
     <button
+      v-if="!readonly"
       class="credential-help-button"
       type="button"
       aria-label="生成高强度凭据建议"
@@ -34,7 +35,7 @@ import { BrowseIcon, BrowseOffIcon, ErrorCircleIcon } from "tdesign-icons-vue-ne
 
 import { useSetupCredentialInput } from "./SetupCredentialInput";
 
-const props = withDefaults(defineProps<{ inputType?: "password" | "text" }>(), { inputType: "password" });
+const props = withDefaults(defineProps<{ inputType?: "password" | "text"; readonly?: boolean }>(), { inputType: "password", readonly: false });
 
 const value = defineModel<string | null>({ required: true });
 

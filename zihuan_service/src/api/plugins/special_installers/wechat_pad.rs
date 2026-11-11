@@ -16,7 +16,6 @@
 //! knows the wxid, and the relay pulls inbound messages so no inbound route is required.
 
 use std::future::Future;
-use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::time::Duration;
@@ -27,8 +26,11 @@ use super::super::{
     command_uninstall_command, plugin_from_request, save_plugin_record, InstallPluginRequest,
     PluginRecord,
 };
-use super::SpecialPluginInstaller;
-use crate::setup_orchestrator::base64_encode;
+use super::{
+    docker_compose_available, pick_free_port, run_compose, short_id, strip_unrelated_metadata,
+    SpecialPluginInstaller,
+};
+use crate::setup_orchestrator::{base64_encode, emit_progress, SetupProgressTx};
 use zihuan_core::ims_bot_adapter::runtime::wechat_pad::WeChatPadConfig;
 use zihuan_core::ims_bot_adapter::BotAdapterConnection;
 use zihuan_core::storage::{self, ConnectionConfig, ConnectionKind};
@@ -86,26 +88,62 @@ impl SpecialPluginInstaller for WeChatPadProSpecialPluginInstaller {
         &'a self,
         plugin: &'a PluginRecord,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move { Self::uninstall_impl(plugin, None).await })
+    }
+
+    fn uninstall_with_progress<'a>(
+        &'a self,
+        plugin: &'a PluginRecord,
+        progress: &'a SetupProgressTx,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move { Self::uninstall_impl(plugin, Some(progress)).await })
+    }
+}
+
+impl WeChatPadProSpecialPluginInstaller {
+    fn uninstall_impl<'a>(
+        plugin: &'a PluginRecord,
+        progress: Option<&'a SetupProgressTx>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             let Some(compose_path) =
                 plugin.extra_install_metadata.get("compose_path").and_then(Value::as_str)
             else {
-                // Command-mode installs run elsewhere: delete_plugin already hands the
-                // recorded uninstall command back to the operator.
+                // Command-mode installs run elsewhere: nothing to tear down locally.
+                emit_progress(
+                    progress,
+                    "uninstall",
+                    "running",
+                    "本机无运行中的组件，直接移除插件记录...".to_string(),
+                );
                 return Ok(());
             };
             let project = format!("zihuan-wechatpadpro-{}", short_id(&plugin.id));
-            // Best effort: a stopped daemon must not block removing the plugin record.
-            if let Err(error) = run_compose(
+            emit_progress(
+                progress,
+                "uninstall",
+                "running",
+                format!(
+                    "执行: docker compose -f {compose_path} -p {project} down --volumes --remove-orphans"
+                ),
+            );
+            // The stack may still be running when compose fails (daemon down, etc.);
+            // fail the uninstall so the record and its data survive for a manual
+            // cleanup and retry instead of leaking the container.
+            run_compose(
                 Path::new(compose_path),
                 &project,
                 &["down", "--volumes", "--remove-orphans"],
             )
-            .await
-            {
-                log::warn!("[wechat_pad installer] docker compose down failed: {error}");
-            }
+            .await?;
+            emit_progress(progress, "uninstall", "success", "容器已停止并移除".to_string());
             if let Some(dir) = Path::new(compose_path).parent() {
+                emit_progress(
+                    progress,
+                    "uninstall",
+                    "running",
+                    format!("删除数据目录: {}", dir.display()),
+                );
                 if let Err(error) = tokio::fs::remove_dir_all(dir).await {
                     if error.kind() != std::io::ErrorKind::NotFound {
                         return Err(format!(
@@ -114,6 +152,7 @@ impl SpecialPluginInstaller for WeChatPadProSpecialPluginInstaller {
                         ));
                     }
                 }
+                emit_progress(progress, "uninstall", "success", "数据目录已删除".to_string());
             }
             Ok(())
         })
@@ -251,14 +290,6 @@ async fn install_command_mode(request: &InstallPluginRequest) -> Result<PluginRe
     Ok(plugin)
 }
 
-/// The standard detailed config only feeds the expose/target flags to this installer; its
-/// component sections are unrelated defaults that would only pollute the record.
-fn strip_unrelated_metadata(plugin: &mut PluginRecord) {
-    if let Some(metadata) = plugin.extra_install_metadata.as_object_mut() {
-        metadata.remove("detailed_config");
-    }
-}
-
 fn plan_deployment(request: &InstallPluginRequest, plugin_id: &str) -> BridgeDeployment {
     let (expose_public_access, connection_host) = request
         .detailed_config
@@ -339,23 +370,6 @@ fn install_dir(plugin_id: &str) -> PathBuf {
     zihuan_core::system_config::application_data_dir()
         .join("plugins")
         .join(format!("wechat_pad-{}", short_id(plugin_id)))
-}
-
-fn short_id(value: &str) -> String {
-    value.chars().filter(|c| c.is_ascii_alphanumeric()).take(8).collect()
-}
-
-fn pick_free_port(start: u16) -> u16 {
-    (start..start.saturating_add(50))
-        .find(|port| TcpListener::bind(("127.0.0.1", *port)).is_ok())
-        .unwrap_or(start)
-}
-
-async fn docker_compose_available() -> bool {
-    matches!(
-        tokio::process::Command::new("docker").args(["compose", "version"]).output().await,
-        Ok(output) if output.status.success()
-    )
 }
 
 async fn write_env(dir: &Path, deployment: &BridgeDeployment) -> Result<(), String> {
@@ -479,27 +493,6 @@ volumes:
   redis_data:
 "#
     )
-}
-
-async fn run_compose(compose_path: &Path, project: &str, args: &[&str]) -> Result<(), String> {
-    let output = tokio::process::Command::new("docker")
-        .arg("compose")
-        .arg("-f")
-        .arg(compose_path)
-        .arg("-p")
-        .arg(project)
-        .args(args)
-        .output()
-        .await
-        .map_err(|error| format!("执行 docker compose 失败: {error}"))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    Err(format!(
-        "docker compose {} 失败: {}",
-        args.join(" "),
-        String::from_utf8_lossy(&output.stderr).trim()
-    ))
 }
 
 /// Wait until one of the published ports answers the bridge's REST API.

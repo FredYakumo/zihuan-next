@@ -9,7 +9,7 @@
         <template #installation_method="{ row }"><span>{{ installMethodLabel(row.installation_method) }}</span></template>
         <template #status="{ row }"><t-tag :theme="statusTheme(row.status)" variant="light" :title="statusTitle(row)">{{ statusLabel(row.status) }}</t-tag></template>
         <template #connection_ids="{ row }"><span v-if="isScriptPlugin(row)">—</span><span v-else>{{ row.connection_ids?.length ?? 0 }} 个连接</span></template>
-        <template #actions="{ row }"><t-space size="small"><template v-if="isScriptPlugin(row)"><t-button variant="text" @click="openDetail(row)">详情</t-button><t-popconfirm content="确认卸载插件并删除其目录吗？" @confirm="removeScriptPlugin(row)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></template><template v-else><t-button v-if="wechatWxid(row)" variant="text" theme="success" :title="'已登录 ' + wechatWxid(row) + '，点击复制 wxid'" @click="copyPluginValue(wechatWxid(row), 'wxid')"><template #icon><CopyIcon /></template>复制 wxid</t-button><t-button v-if="row.component_type === 'wechat_pad' && ['installed', 'command_generated', 'disabled'].includes(row.status)" variant="text" @click="openWechatLogin(row)">扫码登录</t-button><t-button v-if="installCommand(row)" variant="text" @click="copyPluginValue(installCommand(row)!, '安装命令')"><template #icon><CopyIcon /></template>复制安装命令</t-button><t-button v-if="connectionConfigJson(row)" variant="text" @click="copyPluginValue(connectionConfigJson(row)!, '连接 JSON')"><template #icon><CopyIcon /></template>复制连接 JSON</t-button><t-button v-if="row.status === 'installed'" variant="text" @click="toggle(row)">停用</t-button><t-button v-else-if="row.status === 'disabled'" variant="text" @click="toggle(row)">启用</t-button><t-popconfirm content="确认卸载插件并删除关联连接吗？" @confirm="removePlugin(row.id)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></template></t-space></template>
+        <template #actions="{ row }"><t-space size="small"><template v-if="isScriptPlugin(row)"><t-button variant="text" @click="openDetail(row)">详情</t-button><t-popconfirm content="确认卸载插件并删除其目录吗？" @confirm="removeScriptPlugin(row)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></template><template v-else><t-button v-if="wechatWxid(row)" variant="text" theme="success" :title="'已登录 ' + wechatWxid(row) + '，点击复制 wxid'" @click="copyPluginValue(wechatWxid(row), 'wxid')"><template #icon><CopyIcon /></template>复制 wxid</t-button><t-button v-if="row.component_type === 'wechat_pad' && ['installed', 'command_generated', 'disabled'].includes(row.status)" variant="text" @click="openWechatLogin(row)">扫码登录</t-button><t-button v-if="webuiUrl(row)" variant="text" title="打开 NapCat WebUI 登录 QQ" @click="openWebui(row)">打开 WebUI</t-button><t-button v-if="row.component_type === 'napcat' && webuiUrl(row)" variant="text" title="查看 WebUI 地址与登录 Token" @click="openNapcatConfig(row)">打开配置</t-button><t-button v-if="installCommand(row)" variant="text" @click="copyPluginValue(installCommand(row)!, '安装命令')"><template #icon><CopyIcon /></template>复制安装命令</t-button><t-button v-if="connectionConfigJson(row)" variant="text" @click="copyPluginValue(connectionConfigJson(row)!, '连接 JSON')"><template #icon><CopyIcon /></template>复制连接 JSON</t-button><t-button v-if="row.status === 'installed'" variant="text" @click="toggle(row)">停用</t-button><t-button v-else-if="row.status === 'disabled'" variant="text" @click="toggle(row)">启用</t-button><t-popconfirm content="确认卸载插件并删除关联连接吗？" @confirm="removePlugin(row)"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm></template></t-space></template>
       </t-table>
     </t-card>
     <t-dialog
@@ -22,7 +22,7 @@
       <template #header>
         <div class="dialog-header">
           <t-button v-if="installStep === 'config'" variant="text" size="small" class="dialog-back" @click="backFromConfig"><ChevronLeftIcon /></t-button>
-          <span class="dialog-title">{{ installStep === "progress" ? "安装进度" : "安装插件" }}</span>
+          <span class="dialog-title">{{ installStep === "progress" ? (installDone ? "安装完成" : "安装进度") : "安装插件" }}</span>
         </div>
       </template>
       <div v-if="installStep === 'picker'" class="component-picker">
@@ -51,9 +51,11 @@
               <span v-if="environmentLoading" class="install-method-status">正在检测本机安装能力...</span>
               <template v-else>
                 <label :class="{ unavailable: !dockerSupported }" :title="dockerUnsupportedReason"><input v-model="form.install_method" type="radio" value="docker" :disabled="!dockerSupported" /> 本机 Docker <small v-if="!dockerSupported">（不可用）</small></label>
-                <label v-if="!isDockerOnlyComponent(form.component_type)" :class="{ unavailable: !binarySupported }" :title="binaryUnsupportedReason"><input v-model="form.install_method" type="radio" value="binary" :disabled="!binarySupported" /> 本机 native 程序 <small v-if="!binarySupported">（不可用）</small></label>
+                <label v-if="supportsNativeInstall(form.component_type)" :class="{ unavailable: !nativeSupported }" :title="nativeSupported ? '' : nativeUnsupportedReason"><input v-model="form.install_method" type="radio" value="native" :disabled="!nativeSupported" /> 本机 native 安装 <small v-if="!nativeSupported">（不可用）</small></label>
+                <label v-else-if="!isDockerOnlyComponent(form.component_type)" :class="{ unavailable: !binarySupported }" :title="binaryUnsupportedReason"><input v-model="form.install_method" type="radio" value="binary" :disabled="!binarySupported" /> 本机 native 程序 <small v-if="!binarySupported">（不可用）</small></label>
                 <label><input v-model="form.install_method" type="radio" value="command_docker" /> Docker 安装命令</label>
-                <label v-if="!isDockerOnlyComponent(form.component_type)"><input v-model="form.install_method" type="radio" value="command_binary" /> native 程序安装命令</label>
+                <label v-if="supportsNativeInstall(form.component_type)"><input v-model="form.install_method" type="radio" value="command_native" /> native 安装命令</label>
+                <label v-if="!isDockerOnlyComponent(form.component_type) && !supportsNativeInstall(form.component_type)"><input v-model="form.install_method" type="radio" value="command_binary" /> native 程序安装命令</label>
               </template>
             </div>
           </t-form-item>
@@ -101,6 +103,11 @@
           theme="info"
           message="安装 WeChatPadPro本体、配套MySQL、Redis和WebHook Docker容器"
         />
+        <t-alert
+          v-if="form.component_type === 'napcat'"
+          theme="info"
+          message="安装 NapCat QQ Bot adapter"
+        />
         <t-alert v-if="error" theme="error" :message="error" />
         </template>
       </t-form>
@@ -110,8 +117,8 @@
         :task-id="taskId"
         :logs="progress"
         :error="error || null"
-        title="正在安装插件..."
-        subtitle="请稍候，系统正在执行安装和连接配置"
+        :title="installDone ? '安装完成' : '正在安装插件...'"
+        :subtitle="installDone ? '插件已就绪，点击确认查看连接信息' : '请稍候，系统正在执行安装和连接配置'"
         back-label="返回配置"
         @retry="install"
         @back="backFromProgress"
@@ -120,6 +127,12 @@
         <div class="dialog-footer">
           <t-button variant="outline" @click="requestCloseInstall">取消</t-button>
           <t-button theme="primary" :loading="saving" :disabled="installStep !== 'config' || (!isEmbeddedComponent(form.component_type) && environmentLoading)" @click="install">开始安装</t-button>
+        </div>
+      </template>
+      <template v-else #footer>
+        <div class="dialog-footer">
+          <t-button variant="outline" :disabled="installDone" @click="requestCloseInstall">取消</t-button>
+          <t-button v-if="installDone" theme="primary" @click="confirmInstallResult">确认</t-button>
         </div>
       </template>
     </t-dialog>
@@ -243,10 +256,72 @@
         <t-button v-if="wechatLoginPhase === 'expired' || wechatLoginPhase === 'error'" variant="outline" @click="requestWechatQr">刷新二维码</t-button>
       </div>
     </t-dialog>
-    <t-dialog v-model:visible="uninstallCommandVisible" header="卸载命令" :confirm-btn="null" cancel-btn="关闭">
-      <div class="plugin-command-dialog">
-        <t-button variant="text" shape="square" @click="copyPluginValue(uninstallCommand, '卸载命令')"><template #icon><CopyIcon /></template></t-button>
-        <t-textarea :value="uninstallCommand" readonly autosize />
+    <t-dialog
+      v-model:visible="napcatConfigVisible"
+      header="NapCat 配置"
+      width="600px"
+      :close-on-overlay-click="true"
+      :confirm-btn="null"
+      cancel-btn="关闭"
+    >
+      <div v-if="napcatConfigPlugin" class="napcat-config-list">
+        <div class="napcat-config-item">
+          <div class="napcat-config-info">
+            <small>WebUI 地址</small>
+            <code>{{ webuiUrl(napcatConfigPlugin) }}</code>
+          </div>
+          <t-button v-if="webuiUrl(napcatConfigPlugin)" variant="text" size="small" title="复制 WebUI 地址" @click="copyPluginValue(webuiUrl(napcatConfigPlugin)!, 'WebUI 地址')"><template #icon><CopyIcon /></template></t-button>
+        </div>
+        <div v-if="webuiToken(napcatConfigPlugin)" class="napcat-config-item">
+          <div class="napcat-config-info">
+            <small>WebUI 登录 Token</small>
+            <SetupCredentialInput v-model="napcatConfigToken" readonly />
+          </div>
+          <t-button variant="text" size="small" title="复制 WebUI 登录 Token" @click="copyPluginValue(webuiToken(napcatConfigPlugin)!, 'WebUI 登录 Token')"><template #icon><CopyIcon /></template></t-button>
+        </div>
+        <div v-if="wsUrl(napcatConfigPlugin)" class="napcat-config-item">
+          <div class="napcat-config-info">
+            <small>OneBot WebSocket 地址</small>
+            <code>{{ wsUrl(napcatConfigPlugin) }}</code>
+          </div>
+          <t-button v-if="wsUrl(napcatConfigPlugin)" variant="text" size="small" title="复制 WebSocket 地址" @click="copyPluginValue(wsUrl(napcatConfigPlugin)!, 'OneBot WebSocket 地址')"><template #icon><CopyIcon /></template></t-button>
+        </div>
+        <t-alert
+          v-if="webuiToken(napcatConfigPlugin)"
+          theme="info"
+          message="Token 在容器首次初始化时写入；若重装容器后不匹配，请清除 NapCat 配置目录后重新安装。"
+        />
+        <t-alert
+          v-else
+          theme="info"
+          message="native 方式安装的 NapCat Token 由本体生成，请在其控制台或 WebUI 登录页查看。"
+        />
+      </div>
+    </t-dialog>
+    <t-dialog
+      v-model:visible="uninstallProgressVisible"
+      :header="uninstallFailed ? '卸载失败' : uninstallDone ? '卸载完成' : '正在卸载插件...'"
+      width="640px"
+      :close-on-overlay-click="false"
+      :confirm-btn="uninstallFailed || uninstallDone ? '确定' : null"
+      :cancel-btn="uninstallFailed || uninstallDone ? null : '关闭'"
+      @close="closeUninstallProgress"
+      @confirm="confirmUninstallResult"
+    >
+      <div class="uninstall-console">
+        <div v-for="(event, i) in uninstallProgressEvents" :key="i" class="uninstall-line" :class="event.status">
+          <span class="uninstall-step">[{{ event.step }}]</span>
+          <span class="uninstall-message">{{ event.message }}</span>
+        </div>
+        <div v-if="uninstallProgressEvents.length === 0" class="uninstall-line running"><span class="uninstall-message">等待任务启动...</span></div>
+      </div>
+      <div v-if="uninstallFailed" class="uninstall-failure">
+        <p class="uninstall-command-hint">自动卸载未完成。请复制以下命令手动执行清理，然后重试卸载：</p>
+        <t-alert v-if="uninstallError" theme="error" :message="uninstallError" />
+        <div class="plugin-command-dialog">
+          <t-button class="plugin-command-copy" variant="text" shape="square" @click="copyPluginValue(uninstallCommandText, '卸载命令')"><template #icon><CopyIcon /></template></t-button>
+          <t-textarea :value="uninstallCommandText" readonly autosize />
+        </div>
       </div>
     </t-dialog>
   </section>
@@ -272,8 +347,14 @@ const {
   successVisible,
   successInstallCommand,
   successConnectionConfig,
-  uninstallCommandVisible,
-  uninstallCommand,
+  uninstallProgressVisible,
+  uninstallProgressEvents,
+  uninstallFailed,
+  uninstallDone,
+  uninstallError,
+  uninstallCommandText,
+  closeUninstallProgress,
+  confirmUninstallResult,
   exitConfirmVisible,
   error,
   progress,
@@ -281,13 +362,16 @@ const {
   componentOptions,
   isEmbeddedComponent,
   isDockerOnlyComponent,
+  supportsNativeInstall,
   form,
   selectedComponent,
   environmentLoading,
   dockerSupported,
   binarySupported,
+  nativeSupported,
   dockerUnsupportedReason,
   binaryUnsupportedReason,
+  nativeUnsupportedReason,
   config,
   columns,
   statusLabel,
@@ -297,6 +381,7 @@ const {
   installMethodLabel,
   componentLabel,
   scriptPluginDetail,
+  wechatWxid,
   selectComponent,
   openInstall,
   requestCloseInstall,
@@ -305,14 +390,25 @@ const {
   backFromProgress,
   confirmInstallationSuccess,
   install,
+  installDone,
+  confirmInstallResult,
   toggle,
   installCommand,
   connectionConfigJson,
+  webuiUrl,
+  webuiToken,
+  wsUrl,
+  openWebui,
+  napcatConfigVisible,
+  napcatConfigPlugin,
+  napcatConfigToken,
+  openNapcatConfig,
   copyPluginValue,
   removePlugin,
   detailVisible,
   detailLoading,
   detail,
+  detailName,
   detailError,
   sourceOpen,
   activeFile,

@@ -1558,6 +1558,8 @@ export interface EnvironmentInfo {
   binary_install_reason?: string | null;
   wsl_available?: boolean | null;
   wsl_docker_available?: boolean | null;
+  napcat_native_available: boolean;
+  napcat_native_reason?: string | null;
   cuda_version: string | null;
   compiler_version: string | null;
   proxy: string | null;
@@ -1833,14 +1835,15 @@ export const pluginsApi = {
   update(name: string, plugin: PluginRecord): Promise<PluginRecord> {
     return request("PUT", `/plugins/${encodeURIComponent(name)}`, plugin);
   },
-  remove(name: string): Promise<{ ok: boolean; uninstall_command?: string | null }> {
+  /** Starts the uninstall as a background task; stream its progress via setup.streamProgress. */
+  remove(name: string): Promise<{ accepted: boolean; task_id: string }> {
     return request("DELETE", `/plugins/${encodeURIComponent(name)}`);
   },
   install(payload: {
     name: string;
     version: string;
     component_type: string;
-    install_method?: "docker" | "binary" | "command_docker" | "command_binary";
+    install_method?: "docker" | "native" | "binary" | "command_docker" | "command_native" | "command_binary";
     detailed_config?: DetailedSetupConfig;
     extra_install_metadata?: unknown;
   }): Promise<PluginInstallResponse> {
