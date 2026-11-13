@@ -1,6 +1,11 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
-import { getContextCompactionSettings, request } from "../../api/client";
+import {
+  getContextCompactionSettings,
+  getModelDownloadSettings,
+  request,
+  updateModelDownloadSettings,
+} from "../../api/client";
 import {
   clearTheme,
   getCurrentThemeName,
@@ -19,23 +24,9 @@ interface StorageEntry {
   exists: boolean;
 }
 
-interface ModelEntry {
-  name: string;
-  path: string;
-  valid: boolean;
-  size_bytes: number | null;
-}
-
-interface ModelGroup {
-  label: string;
-  dir: string;
-  models: ModelEntry[];
-}
-
 interface StorageInfoResponse {
   data_dir: string;
   storage_entries: StorageEntry[];
-  model_groups: ModelGroup[];
 }
 
 type PythonRuntimeKind = "uv_project" | "project_venv" | "custom_executable";
@@ -188,7 +179,6 @@ export function useSettings() {
   const storageInfo = ref<StorageInfoResponse | null>(null);
   const storageLoading = ref(false);
   const storageError = ref<string | null>(null);
-  const modelGroups = ref<ModelGroup[]>([]);
 
   async function reloadStorageInfo() {
     storageLoading.value = true;
@@ -199,7 +189,6 @@ export function useSettings() {
         "/settings/storage-info"
       );
       storageInfo.value = data;
-      modelGroups.value = data.model_groups;
     } catch (e) {
       storageError.value = String(e);
     } finally {
@@ -208,6 +197,39 @@ export function useSettings() {
   }
 
   onMounted(reloadStorageInfo);
+
+  const modelDownloadSite = ref("https://huggingface.co");
+  const modelDownloadSaving = ref(false);
+  const modelDownloadError = ref<string | null>(null);
+  const MODEL_DOWNLOAD_SITE_PRESETS = [
+    { label: "HuggingFace 官方", value: "https://huggingface.co" },
+    { label: "hf-mirror 镜像", value: "https://hf-mirror.com" },
+  ];
+
+  async function loadModelDownloadSettings() {
+    modelDownloadError.value = null;
+    try {
+      const data = await getModelDownloadSettings();
+      modelDownloadSite.value = data.endpoint;
+    } catch (error) {
+      modelDownloadError.value = String(error);
+    }
+  }
+
+  async function saveModelDownloadSettings() {
+    modelDownloadSaving.value = true;
+    modelDownloadError.value = null;
+    try {
+      const data = await updateModelDownloadSettings(modelDownloadSite.value.trim());
+      modelDownloadSite.value = data.endpoint;
+    } catch (error) {
+      modelDownloadError.value = String(error);
+    } finally {
+      modelDownloadSaving.value = false;
+    }
+  }
+
+  onMounted(loadModelDownloadSettings);
 
   const pythonRuntime = ref<PythonRuntimeResponse | null>(null);
   const pythonRuntimeLoading = ref(false);
@@ -412,14 +434,6 @@ export function useSettings() {
     }
   }
 
-  function formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024)
-      return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-  }
-
   const restoreFileInput = ref<HTMLInputElement | null>(null);
   const restoreLoading = ref(false);
   const restoreError = ref<string | null>(null);
@@ -494,9 +508,12 @@ export function useSettings() {
     storageInfo,
     storageLoading,
     storageError,
-    modelGroups,
     reloadStorageInfo,
-    formatBytes,
+    modelDownloadSite,
+    modelDownloadSaving,
+    modelDownloadError,
+    MODEL_DOWNLOAD_SITE_PRESETS,
+    saveModelDownloadSettings,
     pythonRuntime,
     pythonRuntimeLoading,
     pythonRuntimeChanging,

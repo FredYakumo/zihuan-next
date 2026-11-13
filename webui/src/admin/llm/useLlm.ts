@@ -30,6 +30,7 @@ export function useLlm() {
   });
   const localEmbeddingModels = ref<string[]>([]);
   const localLlmModels = ref<LocalLlmModelInfo[]>([]);
+  const downloadDialogVisible = ref(false);
   const updatingEnabledIds = ref(new Set<string>());
   const isCreating = computed(() => form.id === null);
   const filteredItems = computed(() => {
@@ -175,6 +176,19 @@ export function useLlm() {
     localLlmModels.value = localLlmModelList.models;
   }
 
+  async function reloadLocalEmbeddingModels(): Promise<string[]> {
+    const localModels = await fileIO.listTextEmbeddingModels();
+    localEmbeddingModels.value = localModels.models;
+    return localModels.models;
+  }
+
+  async function onEmbeddingDownloadCompleted(modelName: string) {
+    const models = await reloadLocalEmbeddingModels();
+    if (form.model_type === "text_embedding_local" && models.includes(modelName)) {
+      form.local_model_name = modelName;
+    }
+  }
+
   function editItem(item: LlmConfig) {
     Object.assign(form, llmFormFromConfig(item));
     drawerVisible.value = true;
@@ -301,6 +315,8 @@ export function useLlm() {
     filters,
     localEmbeddingModels,
     localLlmModels,
+    downloadDialogVisible,
+    onEmbeddingDownloadCompleted,
     isCandleMode,
     selectedLocalLlm,
     filteredLocalLlmModels,

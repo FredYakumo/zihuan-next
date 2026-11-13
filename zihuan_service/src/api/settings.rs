@@ -27,7 +27,6 @@ use zip::ZipArchive;
 
 const CHAT_HISTORY_DIR: &str = "chat_history";
 const UPLOADED_IMAGES_DIR: &str = "uploaded_images";
-const TEXT_EMBEDDING_MODEL_DIR: &str = "models/text_embedding";
 
 #[derive(Deserialize)]
 pub struct UpdateSystemDatabaseRequest {
@@ -77,25 +76,9 @@ pub struct StorageEntry {
 }
 
 #[derive(Serialize)]
-pub struct ModelEntry {
-    pub name: String,
-    pub path: String,
-    pub valid: bool,
-    pub size_bytes: Option<u64>,
-}
-
-#[derive(Serialize)]
-pub struct ModelGroup {
-    pub label: String,
-    pub dir: String,
-    pub models: Vec<ModelEntry>,
-}
-
-#[derive(Serialize)]
 pub struct StorageInfoResponse {
     pub data_dir: String,
     pub storage_entries: Vec<StorageEntry>,
-    pub model_groups: Vec<ModelGroup>,
 }
 
 #[derive(Serialize)]
@@ -748,25 +731,6 @@ async fn save_python_runtime(
     })
 }
 
-fn dir_size(path: &Path) -> u64 {
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return 0;
-    };
-    entries
-        .filter_map(|e| e.ok())
-        .map(|e| {
-            let p = e.path();
-            if p.is_file() {
-                p.metadata().map(|m| m.len()).unwrap_or(0)
-            } else if p.is_dir() {
-                dir_size(&p)
-            } else {
-                0
-            }
-        })
-        .sum()
-}
-
 fn abs_path_str(path: &Path) -> String {
     let s = path
         .canonicalize()
@@ -796,44 +760,79 @@ pub async fn get_storage_info(_req: &mut Request, res: &mut Response) {
         },
     ];
 
-    let te_dir = Path::new(TEXT_EMBEDDING_MODEL_DIR);
-    let te_abs = abs_path_str(te_dir);
-
-    let te_models = match std::fs::read_dir(te_dir) {
-        Ok(entries) => {
-            let mut models: Vec<ModelEntry> = entries
-                .filter_map(|e| e.ok())
-                .filter_map(|entry| {
-                    let path = entry.path();
-                    if !path.is_dir() {
-                        return None;
-                    }
-                    let name = path.file_name()?.to_str()?.to_string();
-                    let valid = ["config.json", "tokenizer.json", "model.safetensors"]
-                        .iter()
-                        .all(|f| path.join(f).is_file());
-                    let size_bytes = if valid { Some(dir_size(&path)) } else { None };
-                    let abs = abs_path_str(&path);
-                    Some(ModelEntry { name, path: abs, valid, size_bytes })
-                })
-                .collect();
-            models.sort_by(|a, b| a.name.cmp(&b.name));
-            models
-        }
-        Err(_) => Vec::new(),
-    };
-
-    let model_groups = vec![ModelGroup {
-        label: "文本嵌入模型".to_string(),
-        dir: te_abs,
-        models: te_models,
-    }];
-
     res.render(Json(StorageInfoResponse {
         data_dir: data_dir.display().to_string(),
         storage_entries,
-        model_groups,
     }));
+}
+
+// ─── Model download endpoint ───────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct ModelDownloadSettingsResponse {
+    pub endpoint: String,
+    pub is_default: bool,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateModelDownloadSettingsRequest {
+    pub endpoint: String,
+}
+
+#[handler]
+pub async fn get_model_download_settings(_req: &mut Request, res: &mut Response) {
+    let settings = zihuan_core::system_config::load_section::<
+        zihuan_core::system_config::ModelDownloadSettingsSection,
+    >();
+    let is_default = settings
+        .map(|s| s.endpoint.is_none())
+        .unwrap_or(true);
+    res.render(Json(ModelDownloadSettingsResponse {
+        endpoint: zihuan_core::system_config::model_download_endpoint(),
+        is_default,
+    }));
+}
+
+#[handler]
+pub async fn update_model_download_settings(req: &mut Request, res: &mut Response) {
+    let body: UpdateModelDownloadSettingsRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(error) => {
+            return render_settings_error(res, StatusCode::BAD_REQUEST, error.to_string())
+        }
+    };
+    let endpoint = body.endpoint.trim().trim_end_matches('/').to_string();
+    if !(endpoint.starts_with("http://") || endpoint.starts_with("https://"))
+        || endpoint.len() <= "https://".len()
+    {
+        return render_settings_error(
+            res,
+            StatusCode::BAD_REQUEST,
+            "下载站点需为 http(s) URL，例如 https://huggingface.co".to_string(),
+        );
+    }
+    // Persisting the built-in default is equivalent to unconfigured, keeping the
+    // section in its default state.
+    let settings = if endpoint == zihuan_core::system_config::DEFAULT_MODEL_DOWNLOAD_ENDPOINT {
+        zihuan_core::system_config::ModelDownloadSettings::default()
+    } else {
+        zihuan_core::system_config::ModelDownloadSettings {
+            endpoint: Some(endpoint),
+        }
+    };
+    match zihuan_core::system_config::save_section::<zihuan_core::system_config::ModelDownloadSettingsSection>(&settings)
+    {
+        Ok(()) => {
+            let is_default = settings.endpoint.is_none();
+            res.render(Json(ModelDownloadSettingsResponse {
+                endpoint: zihuan_core::system_config::model_download_endpoint(),
+                is_default,
+            }))
+        }
+        Err(error) => {
+            render_settings_error(res, StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+        }
+    }
 }
 
 // ─── Config export / restore ──────────────────────────────────────────────────

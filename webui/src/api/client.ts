@@ -262,6 +262,79 @@ export const fileIO = {
   },
 };
 
+// Model weight files (models/text_embedding, models/llm)
+export interface ModelWeightEntry {
+  name: string;
+  path: string;
+  valid: boolean;
+  size_bytes: number;
+  detail?: string | null;
+}
+
+export interface ModelWeightGroup {
+  kind: string;
+  label: string;
+  dir: string;
+  models: ModelWeightEntry[];
+}
+
+export interface ModelWeightDownloadJob {
+  id: string;
+  repo_id: string;
+  dest_dir: string;
+  status: "queued" | "downloading" | "completed" | "failed" | "cancelled";
+  current_file?: string | null;
+  downloaded_bytes: number;
+  total_bytes: number;
+  error?: string | null;
+}
+
+export const modelWeights = {
+  list(): Promise<{ groups: ModelWeightGroup[] }> {
+    return request("GET", "/models/weights");
+  },
+  remove(kind: string, name: string): Promise<{ ok: boolean }> {
+    return request("DELETE", `/models/weights/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`);
+  },
+  rename(kind: string, name: string, newName: string): Promise<{ ok: boolean; name: string }> {
+    return request("POST", `/models/weights/${encodeURIComponent(kind)}/${encodeURIComponent(name)}/rename`, {
+      new_name: newName,
+    });
+  },
+  import(kind: string): Promise<{ cancelled: boolean; name?: string }> {
+    return request("POST", "/models/weights/import", { kind });
+  },
+  openDir(kind: string): Promise<{ ok: boolean }> {
+    return request("POST", "/models/weights/open-dir", { kind });
+  },
+  download(
+    repoId: string,
+    kind = "text_embedding",
+    opts?: { file?: string; tokenizer_repo?: string },
+  ): Promise<{ ok: boolean; model_name: string }> {
+    return request("POST", "/models/weights/download", {
+      repo_id: repoId,
+      kind,
+      file: opts?.file,
+      tokenizer_repo: opts?.tokenizer_repo,
+    });
+  },
+  listDownloadJobs(): Promise<{ jobs: ModelWeightDownloadJob[] }> {
+    return request("GET", "/models/weights/download/jobs");
+  },
+  cancelDownloadJob(id: string): Promise<{ ok: boolean; status: string }> {
+    return request("POST", `/models/weights/download/${encodeURIComponent(id)}/cancel`);
+  },
+};
+
+export function getModelDownloadSettings(): Promise<{ endpoint: string; is_default: boolean }> {
+  return request("GET", "/settings/model-download");
+}
+
+export function updateModelDownloadSettings(endpoint: string): Promise<{ endpoint: string; is_default: boolean }> {
+  return request("PUT", "/settings/model-download", { endpoint });
+}
+
 // Tasks
 export const tasks = {
   list(): Promise<TaskEntry[]> {

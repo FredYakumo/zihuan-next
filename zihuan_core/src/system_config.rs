@@ -324,6 +324,39 @@ impl SystemConfigSection for WorkspaceDirectoryHistorySection {
     type Value = WorkspaceDirectoryHistory;
 }
 
+/// Base URL used when downloading model weight files (e.g. HuggingFace embedding models).
+/// `None` falls back to [`DEFAULT_MODEL_DOWNLOAD_ENDPOINT`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelDownloadSettings {
+    #[serde(default)]
+    pub endpoint: Option<String>,
+}
+
+impl Default for ModelDownloadSettings {
+    fn default() -> Self {
+        Self { endpoint: None }
+    }
+}
+
+pub const DEFAULT_MODEL_DOWNLOAD_ENDPOINT: &str = "https://huggingface.co";
+
+pub struct ModelDownloadSettingsSection;
+
+impl SystemConfigSection for ModelDownloadSettingsSection {
+    const SECTION_KEY: &'static str = "model_download_settings";
+    type Value = ModelDownloadSettings;
+}
+
+/// Loads the configured model download endpoint, falling back to the default when unconfigured.
+pub fn model_download_endpoint() -> String {
+    load_section::<ModelDownloadSettingsSection>()
+        .ok()
+        .and_then(|settings| settings.endpoint)
+        .map(|endpoint| endpoint.trim().trim_end_matches('/').to_string())
+        .filter(|endpoint| !endpoint.is_empty())
+        .unwrap_or_else(|| DEFAULT_MODEL_DOWNLOAD_ENDPOINT.to_string())
+}
+
 pub const DEFAULT_MEMORY_AGENT_SYSTEM_PROMPT: &str = "You are the Memory Agent Procedure phase. Recall information relevant to the current input using only FullSearchConceptMemory. Search facts, people and behavioral memory; never write memory or infer identity from names. Use force_check when the user disputes memories. Do not fabricate memories.";
 
 pub const DEFAULT_MEMORY_AGENT_SEARCH_PROMPT: &str = "[Memory Operation]\nSearch memories: you must use the memory search tool to find saved memories relevant to the content above. Return only relevant memories and explicitly state when none are found. Do not write any memories.";

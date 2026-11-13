@@ -111,19 +111,23 @@
         <div v-else class="llm-form-section">
           <h3>本地向量模型</h3>
           <t-form-item label="本地模型目录" required><t-select v-model="form.local_model_name" placeholder="请选择"><t-option v-for="item in localEmbeddingModels" :key="item" :value="item" :label="item" /></t-select></t-form-item>
+          <t-button variant="outline" @click="downloadDialogVisible = true">下载模型…</t-button>
         </div>
       </t-form>
       <template #footer><div class="llm-drawer-footer"><t-button variant="outline" @click="closeDrawer">取消</t-button><t-button theme="primary" @click="submitForm">{{ isCreating ? "创建模型" : "保存修改" }}</t-button></div></template>
     </t-drawer>
+
+    <ModelDownloadDialog v-model:visible="downloadDialogVisible" @completed="onEmbeddingDownloadCompleted" />
   </section>
 </template>
 
 <script setup lang="ts">
 import AdminPageHeader from "../components/AdminPageHeader.vue";
+import ModelDownloadDialog from "../components/ModelDownloadDialog.vue";
 import { useLlm } from "./useLlm";
 import ConnectionCredentialInput from "../components/ConnectionCredentialInput.vue";
 
-const { filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, isCandleMode, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, updateEnabled, updatingEnabledIds, localLlmOptionLabel, compactId, formatTime, copiedId, handleFileChange, router, importFileInput, columns, contextLengthPresets, triggerImportFile, modelTypeLabel, modelName, isCandleStyle, apiStyleLabel, copyLlmConfig } = useLlm();
+const { filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, downloadDialogVisible, onEmbeddingDownloadCompleted, isCandleMode, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, updateEnabled, updatingEnabledIds, localLlmOptionLabel, compactId, formatTime, copiedId, handleFileChange, router, importFileInput, columns, contextLengthPresets, triggerImportFile, modelTypeLabel, modelName, isCandleStyle, apiStyleLabel, copyLlmConfig } = useLlm();
 </script>
 
 <style scoped lang="scss">

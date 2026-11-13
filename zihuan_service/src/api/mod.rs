@@ -10,6 +10,7 @@ pub mod ims;
 pub mod log;
 pub mod model_http;
 pub mod model_usage;
+pub mod model_weights;
 pub mod plugins;
 pub mod registry;
 pub mod scheduled_tasks;
@@ -292,6 +293,23 @@ pub fn build_router(
         .push(Router::with_path("models/llm").get(file_io::list_local_llm_models))
         .push(Router::with_path("models/text-embedding").get(file_io::list_text_embedding_models))
         .push(Router::with_path("models/tokenizer").get(file_io::list_tokenizer_models))
+        .push(
+            Router::with_path("models/weights")
+                .get(model_weights::list_model_weights)
+                .push(Router::with_path("download/jobs").get(model_weights::list_download_jobs))
+                .push(
+                    Router::with_path("download/<id>/cancel")
+                        .post(model_weights::cancel_download_job),
+                )
+                .push(Router::with_path("download").post(model_weights::download_model_weights))
+                .push(Router::with_path("import").post(model_weights::import_model_weight))
+                .push(Router::with_path("open-dir").post(model_weights::open_model_weight_dir))
+                .push(
+                    Router::with_path("<kind>/<name>")
+                        .delete(model_weights::delete_model_weight)
+                        .push(Router::with_path("rename").post(model_weights::rename_model_weight)),
+                ),
+        )
         .push(Router::with_path("uploaded-images/<**rest>").get(file_io::serve_uploaded_image))
         // Frontend log forwarding
         .push(Router::with_path("log").post(log::frontend_log))
@@ -414,6 +432,11 @@ pub fn build_router(
             Router::with_path("settings/node-runtime")
                 .get(settings::get_node_runtime)
                 .put(settings::update_node_runtime),
+        )
+        .push(
+            Router::with_path("settings/model-download")
+                .get(settings::get_model_download_settings)
+                .put(settings::update_model_download_settings),
         )
         .push(Router::with_path("settings/config-export").get(settings::export_config))
         .push(Router::with_path("settings/config-restore").post(settings::restore_config))
