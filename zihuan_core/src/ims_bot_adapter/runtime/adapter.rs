@@ -598,6 +598,11 @@ fn parse_forward_node_value(value: &serde_json::Value) -> Option<ForwardNodeMess
     Some(ForwardNodeMessage { user_id, nickname, id, content })
 }
 
+/// Fills reply and forward segments with the content they reference.
+///
+/// Used while dispatching live events and when restoring a message, resolving
+/// replies through the cache/snapshot/`get_msg` chain and recursively expanding
+/// forward nodes. Best-effort: failures are logged and skipped.
 #[async_recursion]
 async fn hydrate_message_segments(
     adapter: &SharedBotAdapter,
