@@ -9,7 +9,7 @@ use crate::model_inference::nn::llm_registry::get_local_llm_model_info;
 pub fn build_local_candle_hf_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
     let model_info = get_local_llm_model_info(&config.model_name)?;
     Err(Error::ValidationError(model_info.reason.unwrap_or_else(|| {
-        "standard HF local Candle runtime is not implemented yet; choose api_style=candle_hf only after the HF runtime is added"
+        "standard HF local runtime is not implemented yet; choose weight_style=hf only after the HF runtime is added"
             .to_string()
     })))
 }

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   getContextCompactionSettings,
   getModelDownloadSettings,
+  isChatModelRef,
   request,
   updateModelDownloadSettings,
 } from "../../api/client";
@@ -16,7 +17,7 @@ import {
   setTheme,
 } from "../../ui/theme";
 import { logErrorBadgeEnabled, setLogErrorBadgeEnabled } from "../logs/logStream";
-import type { LlmConfig } from "../../api/client";
+import type { ChatModelRef, LlmConfig } from "../../api/client";
 
 interface StorageEntry {
   label: string;
@@ -310,8 +311,8 @@ export function useSettings() {
     modelHttpApiKeys.value = settings.api_keys;
     const chatModels = llmConfigs
       .filter(
-        (item): item is LlmConfig & { model: Extract<LlmConfig["model"], { type: "chat_llm" }> } =>
-          item.enabled && item.model.type === "chat_llm",
+        (item): item is LlmConfig & { model: ChatModelRef } =>
+          item.enabled && isChatModelRef(item.model),
       )
       .map((item) => ({ config_id: item.config_id, name: item.name, model_name: item.model.llm.model_name }));
     const modelNameCounts = new Map<string, number>();

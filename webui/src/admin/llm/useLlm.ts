@@ -1,7 +1,13 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import { fileIO, system, type LlmConfig, type LocalLlmModelInfo } from "../../api/client";
+import {
+  fileIO,
+  system,
+  isChatModelRef,
+  type LlmConfig,
+  type LocalLlmModelInfo,
+} from "../../api/client";
 import {
   assertLlmConfig,
   buildModelRefPayload,
@@ -15,9 +21,13 @@ import { useAdminClipboard } from "../components/useAdminClipboard";
 
 type LlmFilters = {
   keyword: string;
-  modelType: LlmFormState["model_type"] | "all";
+  modelType: "chat_llm" | "text_embedding" | "all";
   enabled: "all" | "enabled" | "disabled";
 };
+
+function isEmbeddingType(type: string): boolean {
+  return type === "text_embedding_local" || type === "text_embedding_api";
+}
 
 export function useLlm() {
   const items = ref<LlmConfig[]>([]);
@@ -36,7 +46,10 @@ export function useLlm() {
   const filteredItems = computed(() => {
     const keyword = filters.keyword.trim().toLowerCase();
     return items.value.filter((item) => {
-      if (filters.modelType !== "all" && item.model.type !== filters.modelType) {
+      if (filters.modelType === "chat_llm" && !isChatModelRef(item.model)) {
+        return false;
+      }
+      if (filters.modelType === "text_embedding" && !isEmbeddingType(item.model.type)) {
         return false;
       }
       if (filters.enabled === "enabled" && !item.enabled) {
@@ -48,7 +61,7 @@ export function useLlm() {
       if (!keyword) {
         return true;
       }
-      const modelName = item.model.type === "chat_llm" ? item.model.llm.model_name : item.model.model_name;
+      const modelName = isChatModelRef(item.model) ? item.model.llm.model_name : item.model.model_name;
       return [item.name, item.config_id, modelName].join(" ").toLowerCase().includes(keyword);
     });
   });
@@ -64,25 +77,66 @@ export function useLlm() {
     isEnabled: () => !drawerVisible.value,
   });
 
-  const isCandleMode = computed(
-    () =>
-      form.model_type === "chat_llm" &&
-      (form.llm.api_style === "candle_gguf" || form.llm.api_style === "candle_hf"),
+  const isChatMode = computed(
+    () => form.model_type === "chat_llm_local" || form.model_type === "chat_llm_api",
   );
+  /** 本地 GGUF/HF 权重推理（Mock 是录制回放，不走本地权重目录）。 */
+  const isWeightMode = computed(
+    () => form.model_type === "chat_llm_local" && form.llm.weight_style !== "mock",
+  );
+  /** 本地模型 / API 接入方式：聊天模型映射到 model_type，向量模型也映射到 model_type。 */
+  const accessMode = computed<"local" | "api">({
+    get: () => {
+      if (isChatMode.value) {
+        return form.model_type === "chat_llm_local" ? "local" : "api";
+      }
+      return form.model_type === "text_embedding_api" ? "api" : "local";
+    },
+    set: (mode) => {
+      if (isChatMode.value) {
+        if (mode === "local") {
+          form.model_type = "chat_llm_local";
+          if (!form.llm.weight_style) {
+            form.llm.weight_style = "gguf";
+          }
+        } else {
+          form.model_type = "chat_llm_api";
+        }
+        return;
+      }
+      form.model_type = mode === "api" ? "text_embedding_api" : "text_embedding_local";
+    },
+  });
+  /** 模型类型下拉：两种聊天模型 / 两种向量模型各合并为一项。 */
+  const modelTypeSelect = computed<"chat_llm" | "text_embedding">({
+    get: () => (isChatMode.value ? "chat_llm" : "text_embedding"),
+    set: (value) => {
+      if (value === "chat_llm") {
+        if (!isChatMode.value) {
+          form.model_type = "chat_llm_api";
+        }
+      } else if (isChatMode.value) {
+        form.model_type = "text_embedding_local";
+      }
+    },
+  });
   const selectedLocalLlm = computed(
     () =>
       localLlmModels.value.find((item) => item.model_name === form.llm.model_name) ?? null,
   );
   const filteredLocalLlmModels = computed(() => {
-    if (!isCandleMode.value) {
+    if (!isWeightMode.value) {
       return localLlmModels.value;
     }
-    const expectedLayout = form.llm.api_style === "candle_gguf" ? "gguf" : "hf";
+    const expectedLayout = form.llm.weight_style === "hf" ? "hf" : "gguf";
     return localLlmModels.value.filter((item) => item.layout === expectedLayout);
   });
   const selectedLocalLlmHint = computed(() => {
-    if (!isCandleMode.value) {
-      return "Candle 模式会从 models/llm 自动扫描可选目录。";
+    if (form.model_type !== "chat_llm_local") {
+      return "";
+    }
+    if (form.llm.weight_style === "mock") {
+      return "本地模拟模式会回放 api_endpoint 指向目录中的调用记录。";
     }
     if (!selectedLocalLlm.value) {
       return "请选择一个本地模型目录。";
@@ -121,21 +175,15 @@ export function useLlm() {
   }
 
   function modelTypeLabel(type: string) {
-    return type === "chat_llm" ? "聊天模型" : "文本向量模型";
+    return type === "chat_llm_local" || type === "chat_llm_api" ? "聊天模型" : "文本向量模型";
   }
 
   function modelName(item: LlmConfig) {
-    return item.model.type === "chat_llm" ? item.model.llm.model_name : item.model.model_name;
-  }
-
-  function isCandleStyle(apiStyle: string) {
-    return apiStyle === "candle_gguf" || apiStyle === "candle_hf";
+    return isChatModelRef(item.model) ? item.model.llm.model_name : item.model.model_name;
   }
 
   function apiStyleLabel(apiStyle: string) {
     const labels: Record<string, string> = {
-      candle_gguf: "Candle GGUF",
-      candle_hf: "Candle HF",
       open_ai_chat_completions: "OpenAI Chat Completions",
       open_ai_chat_completions_tencent_multimodal_compat: "腾讯多模态兼容",
       open_ai_responses: "OpenAI Responses",
@@ -143,6 +191,15 @@ export function useLlm() {
       open_ai_responses_image_url_object_compat: "Responses image_url 兼容",
     };
     return labels[apiStyle] ?? apiStyle;
+  }
+
+  function weightStyleLabel(weightStyle: string | null | undefined) {
+    const labels: Record<string, string> = {
+      mock: "本地模拟",
+      gguf: "GGUF",
+      hf: "HF",
+    };
+    return weightStyle ? labels[weightStyle] ?? weightStyle : "本地模型";
   }
 
   function copyLlmConfig(item: LlmConfig) {
@@ -199,22 +256,38 @@ export function useLlm() {
       alert("请至少填写名称");
       return;
     }
-    if (form.model_type === "chat_llm") {
+    if (isChatMode.value) {
       if (!Number.isInteger(form.llm.context_length) || form.llm.context_length <= 0) {
         alert("上下文长度必须为大于 0 的整数");
         return;
       }
-      if (isCandleMode.value) {
-        if (!form.llm.model_name.trim()) {
-          alert("请选择本地 Candle 模型目录");
+      if (form.model_type === "chat_llm_local") {
+        if (!form.llm.weight_style) {
+          alert("请选择本地运行方式");
           return;
         }
-        if (!selectedLocalLlm.value?.available) {
-          alert(selectedLocalLlm.value?.reason ?? "所选本地模型当前不可用");
-          return;
+        if (form.llm.weight_style === "mock") {
+          if (!form.llm.model_name.trim() || !form.llm.api_endpoint.trim()) {
+            alert("请填写模型名和录制目录");
+            return;
+          }
+        } else {
+          if (!form.llm.model_name.trim()) {
+            alert("请选择本地模型目录");
+            return;
+          }
+          if (!selectedLocalLlm.value?.available) {
+            alert(selectedLocalLlm.value?.reason ?? "所选本地模型当前不可用");
+            return;
+          }
         }
       } else if (!form.llm.model_name.trim() || !form.llm.api_endpoint.trim()) {
         alert("请至少填写名称、模型名和 API Endpoint");
+        return;
+      }
+    } else if (form.model_type === "text_embedding_api") {
+      if (!form.embedding.model_name.trim() || !form.embedding.api_endpoint.trim()) {
+        alert("请填写模型名和 API Endpoint");
         return;
       }
     } else if (!form.local_model_name.trim()) {
@@ -273,9 +346,9 @@ export function useLlm() {
   });
 
   watch(
-    () => [form.model_type, form.llm.api_style, form.llm.model_name],
+    () => [form.model_type, form.llm.weight_style, form.llm.model_name],
     () => {
-      if (!isCandleMode.value) {
+      if (form.model_type !== "chat_llm_local" || form.llm.weight_style === "mock") {
         return;
       }
       form.llm.api_endpoint = "";
@@ -294,12 +367,12 @@ export function useLlm() {
   }
 
   watch(
-    () => form.llm.api_style,
-    (apiStyle) => {
-      if (!isCandleMode.value) {
+    () => form.llm.weight_style,
+    (weightStyle) => {
+      if (form.model_type !== "chat_llm_local" || !weightStyle || weightStyle === "mock") {
         return;
       }
-      const expectedLayout = apiStyle === "candle_gguf" ? "gguf" : "hf";
+      const expectedLayout = weightStyle === "hf" ? "hf" : "gguf";
       if (selectedLocalLlm.value?.layout !== expectedLayout) {
         form.llm.model_name = "";
       }
@@ -317,7 +390,10 @@ export function useLlm() {
     localLlmModels,
     downloadDialogVisible,
     onEmbeddingDownloadCompleted,
-    isCandleMode,
+    isChatMode,
+    isWeightMode,
+    accessMode,
+    modelTypeSelect,
     selectedLocalLlm,
     filteredLocalLlmModels,
     selectedLocalLlmHint,
@@ -345,7 +421,7 @@ export function useLlm() {
     triggerImportFile,
     modelTypeLabel,
     modelName,
-    isCandleStyle,
+    weightStyleLabel,
     apiStyleLabel,
     copyLlmConfig,
   };

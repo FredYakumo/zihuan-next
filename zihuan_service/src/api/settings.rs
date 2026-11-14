@@ -254,7 +254,8 @@ pub async fn update_model_http_settings(req: &mut Request, res: &mut Response, d
                 format!("public model '{config_id}' is not an enabled chat model"),
             );
         };
-        let ModelRefSpec::ChatLlm { llm } = &llm_ref.model else {
+        let (ModelRefSpec::ChatLlmLocal { llm } | ModelRefSpec::ChatLlmApi { llm }) = &llm_ref.model
+        else {
             return render_settings_error(
                 res,
                 StatusCode::BAD_REQUEST,

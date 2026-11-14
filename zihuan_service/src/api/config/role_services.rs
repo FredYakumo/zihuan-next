@@ -1223,7 +1223,8 @@ fn validate_qq_chat_role_service_llms(
             ));
         }
         match &llm_ref.model {
-            zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlm { llm } => {
+            zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlmLocal { llm }
+            | zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlmApi { llm } => {
                 if llm.supports_multimodal_input {
                     Ok(())
                 } else if config
@@ -1246,10 +1247,13 @@ fn validate_qq_chat_role_service_llms(
             }
             zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal {
                 ..
-            } => Err(format!(
-                "role service '{}' references non-chat model_ref '{}' as image_understand_llm_ref_id",
-                role_service_name, llm_ref.name
-            )),
+            }
+            | zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingApi { .. } => {
+                Err(format!(
+                    "role service '{}' references non-chat model_ref '{}' as image_understand_llm_ref_id",
+                    role_service_name, llm_ref.name
+                ))
+            }
         }?;
 
         // Both are optional: an empty value falls back to the main Brain model at runtime.
@@ -1340,8 +1344,10 @@ fn validate_chat_llm_ref(
         ));
     }
     match llm_ref.model {
-        zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlm { .. } => Ok(()),
-        zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal { .. } => {
+        zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlmLocal { .. }
+        | zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlmApi { .. } => Ok(()),
+        zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal { .. }
+        | zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingApi { .. } => {
             Err(format!(
                 "role service '{}' references non-chat model_ref '{}' as {}",
                 role_service_name, llm_ref.name, field_name
@@ -1377,13 +1383,17 @@ fn validate_embedding_model_ref(
         ));
     }
     match llm_ref.model {
-        zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal { .. } => {
+        zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal { .. }
+        | zihuan_core::model_inference::model_config::ModelRefSpec::TextEmbeddingApi { .. } => {
             Ok(())
         }
-        zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlm { .. } => Err(format!(
-            "role service '{}' references chat model_ref '{}' as embedding_model_ref_id",
-            role_service_name, llm_ref.name
-        )),
+        zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlmLocal { .. }
+        | zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlmApi { .. } => Err(
+            format!(
+                "role service '{}' references chat model_ref '{}' as embedding_model_ref_id",
+                role_service_name, llm_ref.name
+            ),
+        ),
     }
 }
 

@@ -5,7 +5,9 @@ use crate::setup_orchestrator::{ImsBotAdapterSetupConfig, LlmSetupConfig};
 use crate::system_config;
 use zihuan_core::config::llm_refs::LlmRefConfig;
 use zihuan_core::ims_bot_adapter::BotAdapterConnection;
-use zihuan_core::model_inference::model_config::{LlmApiStyle, LlmServiceConfig, ModelRefSpec};
+use zihuan_core::model_inference::model_config::{
+    LlmApiStyle, LlmServiceConfig, ModelRefSpec, ModelWeightStyle,
+};
 use zihuan_core::retrieval::RetrievalStoreConfig;
 use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::storage::{
@@ -154,15 +156,33 @@ pub async fn create_workspace_agent_service_stack(
 
 fn build_llm_ref(config: &LlmSetupConfig, id: &str, name: &str) -> LlmRefConfig {
     let model = if config.mode == "local" {
-        ModelRefSpec::TextEmbeddingLocal { model_name: config.model_name.clone() }
+        ModelRefSpec::ChatLlmLocal {
+            llm: LlmServiceConfig {
+                usage_config_id: None,
+                model_name: config.model_name.clone(),
+                api_endpoint: String::new(),
+                api_key: None,
+                api_style: default_api_style(),
+                weight_style: Some(parse_weight_style(&config.api_style)),
+                stream: true,
+                supports_multimodal_input: false,
+                include_reasoning_content: false,
+                thinking_type: None,
+                reasoning_effort: None,
+                context_length: 32 * 1024,
+                timeout_secs: 120,
+                retry_count: 2,
+            },
+        }
     } else {
-        ModelRefSpec::ChatLlm {
+        ModelRefSpec::ChatLlmApi {
             llm: LlmServiceConfig {
                 usage_config_id: None,
                 model_name: config.model_id.clone().unwrap_or_else(|| config.model_name.clone()),
                 api_endpoint: config.api_endpoint.clone(),
                 api_key: config.api_key.clone(),
                 api_style: parse_api_style(&config.api_style),
+                weight_style: None,
                 stream: true,
                 supports_multimodal_input: false,
                 include_reasoning_content: false,
@@ -307,8 +327,6 @@ fn build_workspace_agent_service(
 
 fn parse_api_style(value: &str) -> LlmApiStyle {
     match value {
-        "candle" | "candle_gguf" => LlmApiStyle::CandleGguf,
-        "candle_hf" => LlmApiStyle::CandleHf,
         "open_ai_responses" => LlmApiStyle::OpenAiResponses,
         "open_ai_responses_message_compat" => LlmApiStyle::OpenAiResponsesMessageCompat,
         "open_ai_responses_image_url_object_compat" => {
@@ -318,6 +336,20 @@ fn parse_api_style(value: &str) -> LlmApiStyle {
             LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat
         }
         _ => LlmApiStyle::OpenAiChatCompletions,
+    }
+}
+
+fn default_api_style() -> LlmApiStyle {
+    LlmApiStyle::OpenAiChatCompletions
+}
+
+/// Parses the local weight/execution style from a setup wizard value; legacy
+/// candle values map to the equivalent Candle weight style.
+fn parse_weight_style(value: &str) -> ModelWeightStyle {
+    match value {
+        "candle_hf" | "hf" => ModelWeightStyle::Hf,
+        "mock" => ModelWeightStyle::Mock,
+        _ => ModelWeightStyle::Gguf,
     }
 }
 

@@ -1,10 +1,11 @@
-use log::{debug, info};
+use log::debug;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::agent::EmbeddingServiceConfig;
 use crate::config::{ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord};
 use crate::error::Result;
-use crate::model_inference::model_config::{LlmApiStyle, LlmServiceConfig, ModelRefSpec};
+use crate::model_inference::model_config::{LlmServiceConfig, ModelRefSpec};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmRefConfig {
@@ -31,8 +32,8 @@ impl LlmRefConfig {
 
     pub fn chat_llm(&self) -> Option<&LlmServiceConfig> {
         match &self.model {
-            ModelRefSpec::ChatLlm { llm } => Some(llm),
-            ModelRefSpec::TextEmbeddingLocal { .. } => None,
+            ModelRefSpec::ChatLlmLocal { llm } | ModelRefSpec::ChatLlmApi { llm } => Some(llm),
+            ModelRefSpec::TextEmbeddingLocal { .. } | ModelRefSpec::TextEmbeddingApi { .. } => None,
         }
     }
 
@@ -46,8 +47,41 @@ impl LlmRefConfig {
                 "embedding model_ref '{}' has empty model_name",
                 self.name
             )),
-            ModelRefSpec::ChatLlm { .. } => Err(crate::string_error!(
+            ModelRefSpec::ChatLlmLocal { .. }
+            | ModelRefSpec::ChatLlmApi { .. }
+            | ModelRefSpec::TextEmbeddingApi { .. } => Err(crate::string_error!(
                 "model_ref '{}' is not a text_embedding_local config",
+                self.name
+            )),
+        }
+    }
+
+    /// The API embedding settings when this ref is a `text_embedding_api` model.
+    pub fn embedding_api_service_config(&self) -> Result<EmbeddingServiceConfig> {
+        match &self.model {
+            ModelRefSpec::TextEmbeddingApi {
+                model_name,
+                api_endpoint,
+                api_key,
+                timeout_secs,
+                retry_count,
+            } if !model_name.trim().is_empty() && !api_endpoint.trim().is_empty() => {
+                Ok(EmbeddingServiceConfig {
+                    model_name: model_name.trim().to_string(),
+                    api_endpoint: api_endpoint.trim().to_string(),
+                    api_key: api_key.clone(),
+                    timeout_secs: *timeout_secs,
+                    retry_count: *retry_count,
+                })
+            }
+            ModelRefSpec::TextEmbeddingApi { .. } => Err(crate::string_error!(
+                "embedding model_ref '{}' has empty model_name or api_endpoint",
+                self.name
+            )),
+            ModelRefSpec::ChatLlmLocal { .. }
+            | ModelRefSpec::ChatLlmApi { .. }
+            | ModelRefSpec::TextEmbeddingLocal { .. } => Err(crate::string_error!(
+                "model_ref '{}' is not a text_embedding_api config",
                 self.name
             )),
         }
@@ -83,21 +117,32 @@ impl ConfigRecord for LlmRefConfig {
             return Err(crate::string_error!("llm_ref name must not be empty"));
         }
         match &self.model {
-            ModelRefSpec::ChatLlm { llm } => {
+            ModelRefSpec::ChatLlmLocal { llm } => {
                 if llm.model_name.trim().is_empty() {
-                    return Err(crate::string_error!("chat_llm model_name must not be empty"));
+                    return Err(crate::string_error!(
+                        "chat_llm_local model_name must not be empty"
+                    ));
                 }
                 if llm.context_length == 0 {
                     return Err(crate::string_error!(
-                        "chat_llm context_length must be greater than zero"
+                        "chat_llm_local context_length must be greater than zero"
                     ));
                 }
-                if !matches!(
-                    llm.api_style,
-                    LlmApiStyle::CandleGguf | LlmApiStyle::CandleHf | LlmApiStyle::Mock
-                ) && llm.api_endpoint.trim().is_empty()
-                {
-                    return Err(crate::string_error!("chat_llm api_endpoint must not be empty"));
+                if llm.weight_style.is_none() {
+                    return Err(crate::string_error!("chat_llm_local weight_style must be set"));
+                }
+            }
+            ModelRefSpec::ChatLlmApi { llm } => {
+                if llm.model_name.trim().is_empty() {
+                    return Err(crate::string_error!("chat_llm_api model_name must not be empty"));
+                }
+                if llm.context_length == 0 {
+                    return Err(crate::string_error!(
+                        "chat_llm_api context_length must be greater than zero"
+                    ));
+                }
+                if llm.api_endpoint.trim().is_empty() {
+                    return Err(crate::string_error!("chat_llm_api api_endpoint must not be empty"));
                 }
             }
             ModelRefSpec::TextEmbeddingLocal { model_name } if model_name.trim().is_empty() => {
@@ -106,14 +151,39 @@ impl ConfigRecord for LlmRefConfig {
                 ));
             }
             ModelRefSpec::TextEmbeddingLocal { .. } => {}
+            ModelRefSpec::TextEmbeddingApi {
+                model_name,
+                api_endpoint,
+                ..
+            } => {
+                if model_name.trim().is_empty() {
+                    return Err(crate::string_error!(
+                        "text_embedding_api model_name must not be empty"
+                    ));
+                }
+                if api_endpoint.trim().is_empty() {
+                    return Err(crate::string_error!(
+                        "text_embedding_api api_endpoint must not be empty"
+                    ));
+                }
+            }
         }
         Ok(())
     }
 
     fn redacted_summary(&self) -> Value {
         let model = match &self.model {
-            ModelRefSpec::ChatLlm { llm } => json!({
-                "type": "chat_llm",
+            ModelRefSpec::ChatLlmLocal { llm } => json!({
+                "type": "chat_llm_local",
+                "llm": {
+                    "model_name": llm.model_name,
+                    "api_endpoint": llm.api_endpoint,
+                    "api_style": llm.api_style,
+                    "weight_style": llm.weight_style,
+                }
+            }),
+            ModelRefSpec::ChatLlmApi { llm } => json!({
+                "type": "chat_llm_api",
                 "llm": {
                     "model_name": llm.model_name,
                     "api_endpoint": llm.api_endpoint,
@@ -123,6 +193,15 @@ impl ConfigRecord for LlmRefConfig {
             ModelRefSpec::TextEmbeddingLocal { model_name } => json!({
                 "type": "text_embedding_local",
                 "model_name": model_name,
+            }),
+            ModelRefSpec::TextEmbeddingApi {
+                model_name,
+                api_endpoint,
+                ..
+            } => json!({
+                "type": "text_embedding_api",
+                "model_name": model_name,
+                "api_endpoint": api_endpoint,
             }),
         };
         json!({
@@ -216,13 +295,5 @@ fn llm_ref_from_record(record: StoredConfigRecord) -> Result<LlmRefConfig> {
 }
 
 fn model_ref_spec_from_value(value: Value) -> Result<ModelRefSpec> {
-    if value
-        .as_object()
-        .and_then(|object| object.get("type"))
-        .and_then(Value::as_str)
-        .is_some()
-    {
-        return Ok(serde_json::from_value(value)?);
-    }
-    Ok(ModelRefSpec::ChatLlm { llm: serde_json::from_value(value)? })
+    Ok(ModelRefSpec::from_json(value)?)
 }

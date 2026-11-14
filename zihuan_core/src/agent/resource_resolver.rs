@@ -35,15 +35,17 @@ pub fn resolve_llm_service_config(
         )));
     }
     match &llm_ref.model {
-        ModelRefSpec::ChatLlm { llm } => {
+        ModelRefSpec::ChatLlmLocal { llm } | ModelRefSpec::ChatLlmApi { llm } => {
             let mut config = llm.clone();
             config.usage_config_id = Some(llm_ref.canonical_config_id().to_string());
             Ok(config)
         }
-        ModelRefSpec::TextEmbeddingLocal { .. } => Err(Error::ValidationError(format!(
-            "references non-chat model_ref '{}' as llm_ref",
-            llm_ref.name
-        ))),
+        ModelRefSpec::TextEmbeddingLocal { .. } | ModelRefSpec::TextEmbeddingApi { .. } => Err(
+            Error::ValidationError(format!(
+                "references non-chat model_ref '{}' as llm_ref",
+                llm_ref.name
+            )),
+        ),
     }
 }
 

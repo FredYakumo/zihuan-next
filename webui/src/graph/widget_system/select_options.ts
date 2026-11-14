@@ -1,6 +1,7 @@
 import {
   fileIO,
   system,
+  isChatModelRef,
   type ConnectionConfig,
   type LlmConfig,
 } from "../../api/client";
@@ -58,7 +59,7 @@ export async function getConnections(): Promise<ConnectionConfig[]> {
 
 export async function getChatLlmRefs(): Promise<LlmConfig[]> {
   const llmRefs = await system.llm.list();
-  return llmRefs.filter((item) => item.enabled && item.model.type === "chat_llm");
+  return llmRefs.filter((item) => item.enabled && isChatModelRef(item.model));
 }
 
 const BOT_ADAPTER_KINDS = new Set(["bot_adapter", "ims_bot_adapter"]);

@@ -466,18 +466,22 @@ export interface RuntimeConnectionInstanceSummary {
   status: "running" | "idle" | "closing" | "error" | "connecting" | "closed";
 }
 
+export type LlmApiStyle =
+  | "open_ai_chat_completions"
+  | "open_ai_chat_completions_tencent_multimodal_compat"
+  | "open_ai_responses"
+  | "open_ai_responses_message_compat"
+  | "open_ai_responses_image_url_object_compat";
+
+/** How a locally executed chat model produces outputs. */
+export type LlmWeightStyle = "mock" | "gguf" | "hf";
+
 export interface LlmServiceConfig {
   model_name: string;
   api_endpoint: string;
   api_key?: string | null;
-  api_style:
-    | "candle_gguf"
-    | "candle_hf"
-    | "open_ai_chat_completions"
-    | "open_ai_chat_completions_tencent_multimodal_compat"
-    | "open_ai_responses"
-    | "open_ai_responses_message_compat"
-    | "open_ai_responses_image_url_object_compat";
+  api_style: LlmApiStyle;
+  weight_style?: LlmWeightStyle | null;
   stream: boolean;
   supports_multimodal_input: boolean;
   include_reasoning_content: boolean;
@@ -508,13 +512,36 @@ export interface LocalLlmModelInfo {
 
 export type ModelRefSpec =
   | {
-      type: "chat_llm";
+      type: "chat_llm_local";
+      llm: LlmServiceConfig;
+    }
+  | {
+      type: "chat_llm_api";
       llm: LlmServiceConfig;
     }
   | {
       type: "text_embedding_local";
       model_name: string;
+    }
+  | {
+      type: "text_embedding_api";
+      model_name: string;
+      api_endpoint: string;
+      api_key?: string | null;
+      timeout_secs?: number;
+      retry_count?: number;
     };
+
+/** A chat model ref, local or API. */
+export type ChatModelRef = Extract<ModelRefSpec, { llm: LlmServiceConfig }>;
+
+export function isChatModelRef(model: ModelRefSpec): model is ChatModelRef {
+  return model.type === "chat_llm_local" || model.type === "chat_llm_api";
+}
+
+export function isEmbeddingModelRef(model: ModelRefSpec): boolean {
+  return model.type === "text_embedding_local" || model.type === "text_embedding_api";
+}
 
 export interface LlmConfig {
   config_id: string;

@@ -141,7 +141,8 @@ pub async fn chat_completions(req: &mut Request, res: &mut Response) {
             "The requested model is not available",
         );
     };
-    let ModelRefSpec::ChatLlm { llm } = &config.model else {
+    let (ModelRefSpec::ChatLlmLocal { llm } | ModelRefSpec::ChatLlmApi { llm }) = &config.model
+    else {
         unreachable!()
     };
     let mut llm = llm.clone();
@@ -305,8 +306,12 @@ fn public_models<'a>(
                 return None;
             }
             match &item.model {
-                ModelRefSpec::ChatLlm { .. } => Some((item, item.name.clone())),
-                ModelRefSpec::TextEmbeddingLocal { .. } => None,
+                ModelRefSpec::ChatLlmLocal { .. } | ModelRefSpec::ChatLlmApi { .. } => {
+                    Some((item, item.name.clone()))
+                }
+                ModelRefSpec::TextEmbeddingLocal { .. } | ModelRefSpec::TextEmbeddingApi { .. } => {
+                    None
+                }
             }
         })
         .collect()
