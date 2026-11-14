@@ -600,6 +600,17 @@ pub fn validate_detailed_config(config: &DetailedSetupConfig) -> Result<(), Stri
     if config.redis.enabled && config.redis.url.trim().is_empty() {
         return Err("Redis URL is required".to_string());
     }
+    if config.redis.enabled {
+        let username = config.redis.username.as_deref().unwrap_or_default().trim();
+        let password = config.redis.password.as_deref().unwrap_or_default();
+        if !username.is_empty() && username != "default" && password.trim().is_empty() {
+            return Err("A Redis password is required when a Redis username is set".to_string());
+        }
+        // The password becomes a single ACL rule token, so whitespace would break auth.
+        if password.split_whitespace().count() > 1 {
+            return Err("A Redis password must not contain whitespace".to_string());
+        }
+    }
     if config.expose_public_access {
         if config.relational.enabled
             && config.relational.database_type == "mysql"
@@ -1379,13 +1390,26 @@ fn detailed_compose(config: &DetailedSetupConfig) -> String {
     }
     if config.redis.enabled && config.redis.source == DetailedComponentSource::Install {
         let d = &config.redis.deployment;
-        let command = if config.expose_public_access {
+        // The Redis connection created for this setup always carries the stored
+        // username/password, so the container must be deployed with matching auth
+        // even when it is only reachable on localhost. redis-server consumes every
+        // following non-`--` token as one ACL rule, so the `user` pieces are
+        // separate compose command elements.
+        let password = config.redis.password.as_deref().unwrap_or_default().trim().to_string();
+        let username = config.redis.username.as_deref().unwrap_or_default().trim().to_string();
+        let command = if password.is_empty() {
+            String::new()
+        } else if username.is_empty() || username == "default" {
             format!(
                 "    command: [\"redis-server\", \"--requirepass\", {}]\n",
-                yaml_quote(config.redis.password.as_deref().unwrap_or_default())
+                yaml_quote(&password)
             )
         } else {
-            String::new()
+            format!(
+                "    command: [\"redis-server\", \"--user\", {}, \"on\", {}, \"~*\", \"&*\", \"+@all\", \"--user\", \"default\", \"off\", \"nopass\"]\n",
+                yaml_quote(&username),
+                yaml_quote(&format!(">{password}"))
+            )
         };
         services.push_str(&format!("  redis:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:6379\"]\n    volumes: [{}]\n{}", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/data"), command));
     }
