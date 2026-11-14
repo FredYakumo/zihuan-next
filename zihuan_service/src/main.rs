@@ -21,6 +21,7 @@ lazy_static! {
 
 #[derive(Parser, Debug)]
 #[command(
+    name = "zihuan_next",
     author,
     version = env!("ZIHUAN_BUILD_VERSION"),
     about = "Zihuan Next — node-graph workflow engine (web UI)"
@@ -35,6 +36,11 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
+    // Parse before anything else so `--version` / `--help` answer immediately and
+    // without side effects: the release scripts read the version from this flag, and
+    // `build.rs` is the single place that decides what the version string is.
+    let args = Args::parse();
+
     log_forwarder::init(&BASE_LOG);
     log_forwarder::install_panic_hook();
 
@@ -74,8 +80,6 @@ async fn main() {
             }
         }
     }
-
-    let args = Args::parse();
 
     zihuan_core::ims_bot_adapter::runtime::wechat_pad::set_service_port(args.port);
 

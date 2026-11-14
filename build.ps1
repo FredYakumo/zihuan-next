@@ -87,11 +87,14 @@ else {
     if ($LASTEXITCODE -ne 0) { throw 'zihuan-next: cargo build failed' }
 }
 
+# The version string is decided once in zihuan_service/build.rs and stamped into the
+# binary, so ask the binary instead of re-deriving it from git here.
 $version = 'dev'
-if (Get-Command git -ErrorAction SilentlyContinue) {
-    $gitDescribe = & git describe --tags --always --dirty 2>$null
-    if ($LASTEXITCODE -eq 0 -and $gitDescribe) {
-        $version = ([string]$gitDescribe).Trim()
+$builtBinary = 'target/release/zihuan_next.exe'
+if (Test-Path $builtBinary) {
+    $reportedVersion = & $builtBinary --version 2>$null | Select-Object -Last 1
+    if ($LASTEXITCODE -eq 0 -and $reportedVersion) {
+        $version = ([string]$reportedVersion).Trim() -split '\s+' | Select-Object -Last 1
     }
 }
 

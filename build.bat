@@ -82,7 +82,9 @@ if "%SKIP_BUILD%"=="1" (
 )
 
 set "VERSION=dev"
-for /f "usebackq tokens=*" %%v in (`git describe --tags --always --dirty 2^>nul`) do set "VERSION=%%v"
+rem The version string is decided once in zihuan_service/build.rs and stamped into the
+rem binary, so ask the binary instead of re-deriving it from git here.
+for /f "usebackq tokens=2" %%v in (`target\release\zihuan_next.exe --version 2^>nul`) do set "VERSION=%%v"
 
 set "PACKAGE_ROOT=package\zihuan_next"
 set "ARCHIVE_NAME=zihuan_next-%VERSION%-Windows-x86_64-%VARIANT%.zip"
