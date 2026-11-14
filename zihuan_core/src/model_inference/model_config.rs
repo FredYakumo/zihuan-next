@@ -139,6 +139,19 @@ impl ModelRefSpec {
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
+        // Legacy candle/mock api_style values are no longer `LlmApiStyle`
+        // variants; drop them so deserialization falls back to the default
+        // api_style and the matching `ModelWeightStyle` is applied below.
+        let llm_value = match api_style.as_str() {
+            "candle" | "candle_gguf" | "candle_hf" | "mock" => {
+                let mut llm_value = llm_value;
+                if let Some(llm_object) = llm_value.as_object_mut() {
+                    llm_object.remove("api_style");
+                }
+                llm_value
+            }
+            _ => llm_value,
+        };
         let mut llm: LlmServiceConfig = serde_json::from_value(llm_value)?;
         match api_style.as_str() {
             "candle" | "candle_gguf" => {
