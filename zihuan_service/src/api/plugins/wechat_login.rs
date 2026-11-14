@@ -7,10 +7,10 @@
 //! bridge's QR and poll until the scan is confirmed. The confirmed auth key then replaces
 //! `pad_token` in the connection record and the running adapters are refreshed.
 
+use log::{debug, info, warn};
 use salvo::http::StatusCode;
 use salvo::prelude::*;
 use salvo::writing::Json;
-use log::{debug, info, warn};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -51,8 +51,7 @@ pub struct WechatLoginStatusRequest {
 
 /// The bridge base URL and credential stored on the plugin's WeChat connection.
 fn wechat_endpoint(plugin: &PluginRecord) -> Result<(String, String), String> {
-    let connection =
-        plugin_connections(plugin)?.into_iter().next().ok_or("插件还没有关联连接")?;
+    let connection = plugin_connections(plugin)?.into_iter().next().ok_or("插件还没有关联连接")?;
     let ConnectionKind::BotAdapter(raw) = &connection.kind else {
         return Err("关联连接不是 bot_adapter 类型".to_string());
     };
@@ -74,9 +73,15 @@ async fn bridge_get(
 ) -> std::result::Result<String, String> {
     let endpoint = format!("{base_url}{path}");
     let request = client.get(&endpoint);
-    let request = if token.is_empty() { request } else { request.bearer_auth(token).query(&[("key", token)]) };
+    let request = if token.is_empty() {
+        request
+    } else {
+        request.bearer_auth(token).query(&[("key", token)])
+    };
     let response = request.send().await.map_err(|error| format!("{path}: {error}"))?;
-    check_bridge_response(response).await.map_err(|error| format!("{path}: {error}"))
+    check_bridge_response(response)
+        .await
+        .map_err(|error| format!("{path}: {error}"))
 }
 
 /// POST JSON with the same credential handling as [`bridge_get`].
@@ -89,9 +94,15 @@ async fn bridge_post_json(
 ) -> std::result::Result<String, String> {
     let endpoint = format!("{base_url}{path}");
     let request = client.post(&endpoint).json(body);
-    let request = if token.is_empty() { request } else { request.bearer_auth(token).query(&[("key", token)]) };
+    let request = if token.is_empty() {
+        request
+    } else {
+        request.bearer_auth(token).query(&[("key", token)])
+    };
     let response = request.send().await.map_err(|error| format!("{path}: {error}"))?;
-    check_bridge_response(response).await.map_err(|error| format!("{path}: {error}"))
+    check_bridge_response(response)
+        .await
+        .map_err(|error| format!("{path}: {error}"))
 }
 
 fn pick_text(value: &Value, keys: &[&str]) -> String {
@@ -184,7 +195,10 @@ pub async fn wechat_login_qr(req: &mut Request, res: &mut Response) {
     let (base_url, token) = match wechat_endpoint(&plugin) {
         Ok(endpoint) => endpoint,
         Err(error) => {
-            warn!("{LOG_PREFIX} QR login for plugin '{}' has no usable endpoint: {error}", plugin.id);
+            warn!(
+                "{LOG_PREFIX} QR login for plugin '{}' has no usable endpoint: {error}",
+                plugin.id
+            );
             return render_error(res, StatusCode::BAD_REQUEST, error);
         }
     };
@@ -253,7 +267,11 @@ pub async fn wechat_login_qr(req: &mut Request, res: &mut Response) {
                 Ok(body) => body,
                 Err(error) => {
                     warn!("{LOG_PREFIX} QR request with the fresh key failed: {error}");
-                    return render_error(res, StatusCode::BAD_GATEWAY, format!("获取登录二维码失败: {error}"));
+                    return render_error(
+                        res,
+                        StatusCode::BAD_GATEWAY,
+                        format!("获取登录二维码失败: {error}"),
+                    );
                 }
             }
         }
@@ -263,7 +281,11 @@ pub async fn wechat_login_qr(req: &mut Request, res: &mut Response) {
         Ok(value) => value,
         Err(_) => {
             warn!("{LOG_PREFIX} bridge returned an unparseable QR response: {qr_body}");
-            return render_error(res, StatusCode::BAD_GATEWAY, format!("桥返回了无效的二维码响应: {qr_body}"));
+            return render_error(
+                res,
+                StatusCode::BAD_GATEWAY,
+                format!("桥返回了无效的二维码响应: {qr_body}"),
+            );
         }
     };
     let data = parsed.get("Data").cloned().unwrap_or(Value::Null);
@@ -335,7 +357,9 @@ pub async fn wechat_login_status(req: &mut Request, res: &mut Response) {
     if state >= 2 || !wxid.is_empty() {
         // Confirmed: fill in account info from the login status route when the scan reply lacks it.
         if wxid.is_empty() {
-            if let Ok(account_body) = bridge_get(&client, &base_url, LOGIN_ACCOUNT_PATH, &auth_key).await {
+            if let Ok(account_body) =
+                bridge_get(&client, &base_url, LOGIN_ACCOUNT_PATH, &auth_key).await
+            {
                 if let Ok(account_value) = serde_json::from_str::<Value>(&account_body) {
                     let account = account_value.get("Data").cloned().unwrap_or(Value::Null);
                     let found = login_account(&account);
@@ -350,7 +374,11 @@ pub async fn wechat_login_status(req: &mut Request, res: &mut Response) {
         }
         info!(
             "{LOG_PREFIX} login confirmed for {wxid} ({}); persisting the auth key",
-            if nickname.is_empty() { "no nickname" } else { &nickname }
+            if nickname.is_empty() {
+                "no nickname"
+            } else {
+                &nickname
+            }
         );
         let connection = match persist_login(&plugin, &auth_key, &wxid).await {
             Ok(connection) => connection,
@@ -376,7 +404,8 @@ pub async fn wechat_login_status(req: &mut Request, res: &mut Response) {
         if let Err(error) = super::save_plugin_record(&plugin) {
             warn!("{LOG_PREFIX} updating the plugin metadata copy failed: {error}");
         }
-        return res.render(Json(json!({ "status": "logged_in", "wxid": wxid, "nickname": nickname })));
+        return res
+            .render(Json(json!({ "status": "logged_in", "wxid": wxid, "nickname": nickname })));
     }
 
     if state < 0 {
@@ -391,7 +420,10 @@ pub async fn wechat_login_status(req: &mut Request, res: &mut Response) {
         })));
     }
     if state == 1 {
-        info!("{LOG_PREFIX} QR scanned for key {}, waiting for in-app confirmation", mask_key(&auth_key));
+        info!(
+            "{LOG_PREFIX} QR scanned for key {}, waiting for in-app confirmation",
+            mask_key(&auth_key)
+        );
     }
     res.render(Json(json!({
         "status": if state == 1 { "scanned" } else { "waiting" },

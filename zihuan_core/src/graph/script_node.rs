@@ -1573,10 +1573,12 @@ pub fn dispatch_script_host_call(
             }
             let config_id = llm_ref.canonical_config_id().to_string();
             let mut config = match llm_ref.model {
-                crate::model_inference::model_config::ModelRefSpec::ChatLlm { llm } => llm,
+                crate::model_inference::model_config::ModelRefSpec::ChatLlmLocal { llm }
+                | crate::model_inference::model_config::ModelRefSpec::ChatLlmApi { llm } => llm,
                 crate::model_inference::model_config::ModelRefSpec::TextEmbeddingLocal {
                     ..
-                } => {
+                }
+                | crate::model_inference::model_config::ModelRefSpec::TextEmbeddingApi { .. } => {
                     return Err(Error::ValidationError(format!(
                         "llm_ref '{}' is not a chat LLM config",
                         llm_ref.name

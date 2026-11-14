@@ -7,9 +7,10 @@ use std::time::Duration;
 use crate::api::config::render_bad_request;
 use crate::api::setup_wizard::ExecuteSetupResponse;
 use crate::api::state::AppState;
-use crate::setup_orchestrator::{
+use crate::setup_orchestrator::SetupOrchestrator;
+use crate::setup_wizard::{
     build_search_only_config, generate_retrieval_install_command, validate_detailed_config,
-    DetailedInstallMethod, DetailedSearchSetupConfig, SetupOrchestrator,
+    DetailedInstallMethod, DetailedSearchSetupConfig,
 };
 
 #[derive(Deserialize)]

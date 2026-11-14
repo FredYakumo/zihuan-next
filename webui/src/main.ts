@@ -26,6 +26,7 @@ import Settings from "./admin/settings/Settings.vue";
 import ApiKeys from "./admin/settings/ApiKeys.vue";
 import SetupWizard from "./admin/setup/SetupWizard.vue";
 import Plugins from "./admin/plugins/Plugins.vue";
+import ModelWeights from "./admin/model-weights/ModelWeights.vue";
 import "./admin/admin.scss";
 import "./ui/theme.css";
 import { initTheme, loadThemes } from "./ui/theme";
@@ -73,6 +74,7 @@ async function main() {
       { path: "/data-explorer/:serviceId/:capability(messages|memories|images|contexts)", component: DataExplorerDetail },
       { path: "/settings", component: Settings },
       { path: "/api-keys", component: ApiKeys },
+      { path: "/model-weights", component: ModelWeights },
       { path: "/plugins", component: Plugins },
       { path: "/setup", component: SetupWizard, meta: { public: true } },
       { path: "/setup", component: SetupWizard, meta: { public: true } },

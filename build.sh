@@ -102,7 +102,10 @@ else
     esac
 fi
 
-version="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+# The version string is decided once in zihuan_service/build.rs and stamped into the
+# binary, so ask the binary instead of re-deriving it from git here.
+version="$("$binary" --version 2>/dev/null | awk '{print $2}' || true)"
+version="${version:-dev}"
 
 package_root="package/zihuan_next"
 rm -rf "$package_root"

@@ -5,6 +5,7 @@ import {
   system,
   scheduledTasks,
   workflows as workflowApi,
+  isChatModelRef,
   type ServiceWithRuntime,
   type ConnectionConfig,
   type LlmConfig,
@@ -555,18 +556,21 @@ function isJsonObject(raw: string): boolean {
 }
 
 const chatModels = computed(() =>
-  llm.value.filter((item) => item.model.type === "chat_llm"),
+  llm.value.filter((item) => isChatModelRef(item.model)),
 );
 const multimodalChatModels = computed(() =>
   llm.value.filter(
     (item) =>
-      item.model.type === "chat_llm" &&
+      isChatModelRef(item.model) &&
       Boolean(item.model.llm.supports_multimodal_input),
   ),
 );
 const embeddingModels = computed(() =>
   llm.value.filter(
-    (item) => item.model.type === "text_embedding_local" && item.enabled,
+    (item) =>
+      (item.model.type === "text_embedding_local" ||
+        item.model.type === "text_embedding_api") &&
+      item.enabled,
   ),
 );
 const mainChatModel = computed(() =>
@@ -575,7 +579,7 @@ const mainChatModel = computed(() =>
 const mainChatModelSupportsMultimodal = computed(() => {
   const selected = mainChatModel.value;
   return Boolean(
-    selected?.model.type === "chat_llm" &&
+    selected && isChatModelRef(selected.model) &&
     selected.model.llm.supports_multimodal_input,
   );
 });
@@ -1224,7 +1228,7 @@ function validateImageUnderstandModelSelection(): string | null {
     );
     if (
       !selected ||
-      selected.model.type !== "chat_llm" ||
+      !isChatModelRef(selected.model) ||
       !selected.model.llm.supports_multimodal_input
     ) {
       return "image_understand 需要选择一个支持多模态的模型";

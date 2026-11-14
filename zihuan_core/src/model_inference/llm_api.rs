@@ -241,9 +241,6 @@ impl LLMAPI {
 
     fn api_style_label(&self) -> &'static str {
         match self.api_style {
-            LlmApiStyle::Mock => "mock",
-            LlmApiStyle::CandleGguf => "candle_gguf",
-            LlmApiStyle::CandleHf => "candle_hf",
             LlmApiStyle::OpenAiChatCompletions => "open_ai_chat_completions",
             LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat => {
                 "open_ai_chat_completions_tencent_multimodal_compat"
@@ -423,12 +420,6 @@ impl LLMBase for LLMAPI {
     }
 
     fn inference(&self, param: &InferenceParam) -> crate::error::Result<LLMMessage> {
-        if matches!(self.api_style, LlmApiStyle::CandleGguf | LlmApiStyle::CandleHf) {
-            error!("Local Candle styles should be routed through the local runtime, not LLMAPI");
-            return Err(crate::string_error!(
-                "Local Candle styles should be routed through the local runtime, not LLMAPI"
-            ));
-        }
         // `reqwest::blocking` internally creates and drops a Tokio runtime; that must not happen
         // while an async context is entered (QQ turns call this from inside `block_async`).
         crate::runtime::run_outside_async_runtime(|| self.inference_inner(param))
@@ -569,11 +560,6 @@ impl LLMAPI {
         param: &InferenceParam<'_>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
     ) -> LLMMessage {
-        if matches!(self.api_style, LlmApiStyle::CandleGguf | LlmApiStyle::CandleHf) {
-            error!("Local Candle styles should be routed through the local runtime, not LLMAPI");
-            return LLMMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
-        }
-
         let messages =
             downgrade_messages_for_model(param.messages.clone(), self.supports_multimodal_input);
         let param = InferenceParam { messages: &messages, tools: param.tools };

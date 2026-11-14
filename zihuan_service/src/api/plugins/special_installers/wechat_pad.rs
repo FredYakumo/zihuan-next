@@ -30,7 +30,8 @@ use super::{
     docker_compose_available, pick_free_port, run_compose, short_id, strip_unrelated_metadata,
     SpecialPluginInstaller,
 };
-use crate::setup_orchestrator::{base64_encode, emit_progress, SetupProgressTx};
+use crate::setup_orchestrator::{emit_progress, SetupProgressTx};
+use crate::setup_wizard::base64_encode;
 use zihuan_core::ims_bot_adapter::runtime::wechat_pad::WeChatPadConfig;
 use zihuan_core::ims_bot_adapter::BotAdapterConnection;
 use zihuan_core::storage::{self, ConnectionConfig, ConnectionKind};
@@ -70,9 +71,7 @@ impl SpecialPluginInstaller for WeChatPadProSpecialPluginInstaller {
     ) -> Pin<Box<dyn Future<Output = Result<PluginRecord, String>> + Send + 'a>> {
         Box::pin(async move {
             if matches!(request.install_method.as_str(), "binary" | "command_binary") {
-                return Err(
-                    "WeChatPadPro 通过 Docker 运行，不支持 native 程序安装方式".to_string(),
-                );
+                return Err("WeChatPadPro 通过 Docker 运行，不支持 native 程序安装方式".to_string());
             }
             // Requests without a method come from clients predating the command mode and
             // always meant the local Docker install.
@@ -161,10 +160,8 @@ impl WeChatPadProSpecialPluginInstaller {
 
 async fn install_local_mode(request: &InstallPluginRequest) -> Result<PluginRecord, String> {
     if !docker_compose_available().await {
-        return Err(
-            "Docker Compose 不可用：WeChatPadPro 通过 Docker 运行，请先安装并启动 Docker"
-                .to_string(),
-        );
+        return Err("Docker Compose 不可用：WeChatPadPro 通过 Docker 运行，请先安装并启动 Docker"
+            .to_string());
     }
 
     let mut plugin = plugin_from_request(request, "installing");
@@ -212,14 +209,10 @@ async fn install_local_mode(request: &InstallPluginRequest) -> Result<PluginReco
     metadata["api_port"] = Value::from(pad_port);
     metadata["web_port"] = Value::from(deployment.web_port);
     metadata["hook_port"] = Value::from(deployment.hook_port);
-    metadata["relay_url"] = Value::String(format!(
-        "http://{}:{}",
-        deployment.connection_host, deployment.hook_port
-    ));
-    metadata["pad_url"] = Value::String(format!(
-        "http://{}:{}",
-        deployment.connection_host, pad_port
-    ));
+    metadata["relay_url"] =
+        Value::String(format!("http://{}:{}", deployment.connection_host, deployment.hook_port));
+    metadata["pad_url"] =
+        Value::String(format!("http://{}:{}", deployment.connection_host, pad_port));
     metadata["api_reachable"] = Value::Bool(reachable.is_some());
     metadata["uninstall_command"] = Value::String(format!(
         "docker compose -f {} -p {} down --volumes --remove-orphans",
@@ -408,7 +401,11 @@ MYSQL_CONNECT_STR=weixin:{mysql_password}@tcp(mysql:3306)/weixin?charset=utf8mb4
 }
 
 fn compose_yaml(expose_public_access: bool) -> String {
-    let bind = if expose_public_access { "" } else { "127.0.0.1:" };
+    let bind = if expose_public_access {
+        ""
+    } else {
+        "127.0.0.1:"
+    };
     format!(
         r#"services:
   wechatpadpro:

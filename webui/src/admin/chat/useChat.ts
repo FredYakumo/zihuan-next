@@ -7,6 +7,7 @@ import {
     fileIO,
     system,
     agentsMd,
+    isChatModelRef,
     getContextCompactionSettings,
     type AgentsMdFile,
     type ServiceWithRuntime,
@@ -548,18 +549,18 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         result.sort((a, b) => b.sessions[0].updated_at.localeCompare(a.sessions[0].updated_at));
         return result;
     });
-    const chatModels = computed(() => llmModels.value.filter((item) => item.model.type === "chat_llm"));
+    const chatModels = computed(() => llmModels.value.filter((item) => isChatModelRef(item.model)));
     const selectedModelLlmConfig = computed(() => {
         const modelId = selectedModelId.value || defaultAgentModelId.value;
         const model = chatModels.value.find((m) => m.config_id === modelId);
-        if (model?.model.type === "chat_llm") {
+        if (model && isChatModelRef(model.model)) {
             return model.model.llm;
         }
         return null;
     });
     const imageUnderstandingModelId = ref("");
     const imageUnderstandingModels = computed(() =>
-        chatModels.value.filter((item) => item.model.type === "chat_llm" && item.model.llm.supports_multimodal_input),
+        chatModels.value.filter((item) => isChatModelRef(item.model) && item.model.llm.supports_multimodal_input),
     );
     const effectiveImageUnderstandingModelId = computed(() => {
         if (imageUnderstandingModelId.value) {
@@ -570,7 +571,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     const effectiveImageUnderstandingModelConfig = computed(() => {
         const modelId = effectiveImageUnderstandingModelId.value;
         const model = chatModels.value.find((m) => m.config_id === modelId);
-        if (model?.model.type === "chat_llm") {
+        if (model && isChatModelRef(model.model)) {
             return model.model.llm;
         }
         return null;

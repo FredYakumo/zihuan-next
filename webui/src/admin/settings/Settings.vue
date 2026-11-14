@@ -185,6 +185,22 @@
       <div v-else-if="storageError" class="empty-state">{{ storageError }}</div>
     </t-card>
 
+    <t-card title="模型权重下载站点" bordered header-bordered>
+      <p class="muted">下载模型权重的站点</p>
+      <div class="settings-backup-actions">
+        <t-select v-model="modelDownloadSite" :disabled="modelDownloadSaving" clearable filterable style="width: 320px">
+          <t-option
+            v-for="preset in MODEL_DOWNLOAD_SITE_PRESETS"
+            :key="preset.value"
+            :value="preset.value"
+            :label="`${preset.label}（${preset.value}）`"
+          />
+        </t-select>
+        <t-button theme="primary" :loading="modelDownloadSaving" @click="saveModelDownloadSettings">保存</t-button>
+      </div>
+      <p v-if="modelDownloadError" role="alert" class="settings-backup-feedback settings-backup-feedback--err">{{ modelDownloadError }}</p>
+    </t-card>
+
     <t-card title="配置备份" bordered header-bordered>
       <template #actions>
         <div class="settings-backup-actions">
@@ -209,32 +225,6 @@
         {{ restoreError }}
       </div>
       <p v-if="!restoreSuccess && !restoreError" class="muted">导出当前配置为压缩包，或从备份文件恢复。</p>
-    </t-card>
-
-    <t-card
-      v-for="group in modelGroups"
-      :key="group.label"
-      :title="`本地模型 — ${group.label}`"
-      bordered
-      header-bordered
-    >
-      <p class="muted">{{ group.dir }}</p>
-
-      <div v-if="group.models.length === 0" class="empty-state">该目录下暂无可用模型。</div>
-      <div v-else class="settings-model-list">
-        <article v-for="model in group.models" :key="model.name" class="settings-model-card">
-          <div class="settings-model-header">
-            <strong>{{ model.name }}</strong>
-            <t-tag variant="light" :theme="model.valid ? 'success' : 'warning'">
-              {{ model.valid ? "就绪" : "不完整" }}
-            </t-tag>
-          </div>
-          <code class="settings-path-value">{{ model.path }}</code>
-          <div v-if="model.size_bytes != null" class="settings-model-meta">
-            <span class="muted">大小：{{ formatBytes(model.size_bytes) }}</span>
-          </div>
-        </article>
-      </div>
     </t-card>
   </section>
 </template>
@@ -264,9 +254,12 @@ const {
   storageInfo,
   storageLoading,
   storageError,
-  modelGroups,
   reloadStorageInfo,
-  formatBytes,
+  modelDownloadSite,
+  modelDownloadSaving,
+  modelDownloadError,
+  MODEL_DOWNLOAD_SITE_PRESETS,
+  saveModelDownloadSettings,
   restoreFileInput,
   restoreLoading,
   restoreError,

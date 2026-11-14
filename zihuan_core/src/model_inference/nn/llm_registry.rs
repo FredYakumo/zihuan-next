@@ -169,7 +169,7 @@ fn inspect_model_dir(model_dir: &Path) -> Result<LocalLlmModelInfo> {
     let (available, reason) = match kind {
         LocalLlmModelKind::Text => (
             false,
-            Some("HF text runtime is not implemented yet; use api_style=candle_gguf with a GGUF model".to_string()),
+            Some("HF text runtime is not implemented yet; use a GGUF model (weight_style=gguf)".to_string()),
         ),
         LocalLlmModelKind::VisionLanguage => (
             false,

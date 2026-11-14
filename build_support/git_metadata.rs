@@ -6,9 +6,13 @@ pub fn find_repo_root(crate_dir: &Path) -> Option<&Path> {
     crate_dir.ancestors().find(|ancestor| ancestor.join(".git").exists())
 }
 
-pub fn git_commit_id(repo_root: &Path) -> Option<String> {
+/// Runs `git <args>` inside `repo_root` and returns its trimmed stdout.
+///
+/// Build metadata is best-effort: a missing `git`, a non-zero exit (no tags, no
+/// repository) or empty output all collapse to `None` so the caller can fall back.
+fn git_stdout(repo_root: &Path, args: &[&str]) -> Option<String> {
     let output = Command::new("git")
-        .args(["rev-parse", "HEAD"])
+        .args(args)
         .current_dir(repo_root)
         .output()
         .ok()?;
@@ -17,13 +21,24 @@ pub fn git_commit_id(repo_root: &Path) -> Option<String> {
         return None;
     }
 
-    let commit_id = String::from_utf8(output.stdout).ok()?;
-    let trimmed = commit_id.trim();
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let trimmed = stdout.trim();
     if trimmed.is_empty() {
         None
     } else {
         Some(trimmed.to_string())
     }
+}
+
+pub fn git_commit_id(repo_root: &Path) -> Option<String> {
+    git_stdout(repo_root, &["rev-parse", "HEAD"])
+}
+
+/// Returns `git describe --tags --always --dirty`, the string the release
+/// archives are named after, so a locally built binary reports a meaningful
+/// version instead of the placeholder crate version.
+pub fn git_describe(repo_root: &Path) -> Option<String> {
+    git_stdout(repo_root, &["describe", "--tags", "--always", "--dirty"])
 }
 
 fn resolve_git_dir(repo_root: &Path) -> Option<PathBuf> {
