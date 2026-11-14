@@ -254,7 +254,8 @@ pub async fn update_model_http_settings(req: &mut Request, res: &mut Response, d
                 format!("public model '{config_id}' is not an enabled chat model"),
             );
         };
-        let (ModelRefSpec::ChatLlmLocal { llm } | ModelRefSpec::ChatLlmApi { llm }) = &llm_ref.model
+        let (ModelRefSpec::ChatLlmLocal { llm } | ModelRefSpec::ChatLlmApi { llm }) =
+            &llm_ref.model
         else {
             return render_settings_error(
                 res,
@@ -785,9 +786,7 @@ pub async fn get_model_download_settings(_req: &mut Request, res: &mut Response)
     let settings = zihuan_core::system_config::load_section::<
         zihuan_core::system_config::ModelDownloadSettingsSection,
     >();
-    let is_default = settings
-        .map(|s| s.endpoint.is_none())
-        .unwrap_or(true);
+    let is_default = settings.map(|s| s.endpoint.is_none()).unwrap_or(true);
     res.render(Json(ModelDownloadSettingsResponse {
         endpoint: zihuan_core::system_config::model_download_endpoint(),
         is_default,
@@ -817,11 +816,11 @@ pub async fn update_model_download_settings(req: &mut Request, res: &mut Respons
     let settings = if endpoint == zihuan_core::system_config::DEFAULT_MODEL_DOWNLOAD_ENDPOINT {
         zihuan_core::system_config::ModelDownloadSettings::default()
     } else {
-        zihuan_core::system_config::ModelDownloadSettings {
-            endpoint: Some(endpoint),
-        }
+        zihuan_core::system_config::ModelDownloadSettings { endpoint: Some(endpoint) }
     };
-    match zihuan_core::system_config::save_section::<zihuan_core::system_config::ModelDownloadSettingsSection>(&settings)
+    match zihuan_core::system_config::save_section::<
+        zihuan_core::system_config::ModelDownloadSettingsSection,
+    >(&settings)
     {
         Ok(()) => {
             let is_default = settings.endpoint.is_none();

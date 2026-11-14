@@ -142,7 +142,9 @@ impl ConfigRecord for LlmRefConfig {
                     ));
                 }
                 if llm.api_endpoint.trim().is_empty() {
-                    return Err(crate::string_error!("chat_llm_api api_endpoint must not be empty"));
+                    return Err(crate::string_error!(
+                        "chat_llm_api api_endpoint must not be empty"
+                    ));
                 }
             }
             ModelRefSpec::TextEmbeddingLocal { model_name } if model_name.trim().is_empty() => {
@@ -151,11 +153,7 @@ impl ConfigRecord for LlmRefConfig {
                 ));
             }
             ModelRefSpec::TextEmbeddingLocal { .. } => {}
-            ModelRefSpec::TextEmbeddingApi {
-                model_name,
-                api_endpoint,
-                ..
-            } => {
+            ModelRefSpec::TextEmbeddingApi { model_name, api_endpoint, .. } => {
                 if model_name.trim().is_empty() {
                     return Err(crate::string_error!(
                         "text_embedding_api model_name must not be empty"
@@ -194,11 +192,7 @@ impl ConfigRecord for LlmRefConfig {
                 "type": "text_embedding_local",
                 "model_name": model_name,
             }),
-            ModelRefSpec::TextEmbeddingApi {
-                model_name,
-                api_endpoint,
-                ..
-            } => json!({
+            ModelRefSpec::TextEmbeddingApi { model_name, api_endpoint, .. } => json!({
                 "type": "text_embedding_api",
                 "model_name": model_name,
                 "api_endpoint": api_endpoint,

@@ -130,9 +130,7 @@ fn scan_text_embedding_group() -> ModelWeightGroup {
                         .collect();
                     let valid = missing.is_empty();
                     let size_bytes = if valid { dir_size(&path) } else { 0 };
-                    let detail = (!valid).then(|| {
-                        format!("缺少文件: {}", missing.join(", "))
-                    });
+                    let detail = (!valid).then(|| format!("缺少文件: {}", missing.join(", ")));
                     Some(ModelWeightEntry {
                         name,
                         path: abs_path_str(&path),
@@ -170,7 +168,8 @@ fn scan_llm_group() -> ModelWeightGroup {
         .map(|info| {
             let path = dir.join(&info.model_name);
             let size_bytes = if path.is_dir() { dir_size(&path) } else { 0 };
-            let mut detail = format!("{}/{}", serde_enum_str(&info.kind), serde_enum_str(&info.layout));
+            let mut detail =
+                format!("{}/{}", serde_enum_str(&info.kind), serde_enum_str(&info.layout));
             if let Some(reason) = &info.reason {
                 detail.push_str(&format!(" - {reason}"));
             }
@@ -290,14 +289,17 @@ pub async fn import_model_weight(req: &mut Request, res: &mut Response) {
         Err(error) => return render_error(res, StatusCode::BAD_REQUEST, error.to_string()),
     };
     let Some(kind) = WeightKind::parse(&body.kind) else {
-        return render_error(res, StatusCode::BAD_REQUEST, format!("未知的模型目录类型: {}", body.kind));
+        return render_error(
+            res,
+            StatusCode::BAD_REQUEST,
+            format!("未知的模型目录类型: {}", body.kind),
+        );
     };
 
-    let picked = task::spawn_blocking(|| {
-        tinyfiledialogs::select_folder_dialog("选择模型权重目录", "")
-    })
-    .await
-    .unwrap_or(None);
+    let picked =
+        task::spawn_blocking(|| tinyfiledialogs::select_folder_dialog("选择模型权重目录", ""))
+            .await
+            .unwrap_or(None);
     let Some(source) = picked else {
         res.render(Json(serde_json::json!({ "cancelled": true })));
         return;
@@ -330,7 +332,9 @@ pub async fn import_model_weight(req: &mut Request, res: &mut Response) {
             "name": folder_name,
         }))),
         Err(error) => {
-            let _ = tokio::fs::remove_dir_all(resolve_model_dir(kind, folder_name).unwrap_or_default()).await;
+            let _ =
+                tokio::fs::remove_dir_all(resolve_model_dir(kind, folder_name).unwrap_or_default())
+                    .await;
             render_error(
                 res,
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -353,7 +357,11 @@ pub async fn open_model_weight_dir(req: &mut Request, res: &mut Response) {
         Err(error) => return render_error(res, StatusCode::BAD_REQUEST, error.to_string()),
     };
     let Some(kind) = WeightKind::parse(&body.kind) else {
-        return render_error(res, StatusCode::BAD_REQUEST, format!("未知的模型目录类型: {}", body.kind));
+        return render_error(
+            res,
+            StatusCode::BAD_REQUEST,
+            format!("未知的模型目录类型: {}", body.kind),
+        );
     };
     let dir = PathBuf::from(kind.dir());
     if let Err(error) = tokio::fs::create_dir_all(&dir).await {
@@ -434,9 +442,8 @@ pub struct DownloadModelWeightRequest {
 /// file when unambiguous.
 async fn resolve_single_gguf_file(endpoint: &str, repo_id: &str) -> Result<String, String> {
     let url = format!("{endpoint}/api/models/{repo_id}");
-    let response = reqwest::get(&url)
-        .await
-        .map_err(|error| format!("查询仓库文件失败: {error}"))?;
+    let response =
+        reqwest::get(&url).await.map_err(|error| format!("查询仓库文件失败: {error}"))?;
     if !response.status().is_success() {
         return Err(format!("查询仓库文件失败: HTTP {}", response.status()));
     }
@@ -459,10 +466,7 @@ async fn resolve_single_gguf_file(endpoint: &str, repo_id: &str) -> Result<Strin
     match files.len() {
         1 => Ok(files[0].clone()),
         0 => Err("仓库内未找到 .gguf 权重文件".to_string()),
-        _ => Err(format!(
-            "仓库内存在多个 .gguf 文件，请指定要下载的文件: {}",
-            files.join(", ")
-        )),
+        _ => Err(format!("仓库内存在多个 .gguf 文件，请指定要下载的文件: {}", files.join(", "))),
     }
 }
 
@@ -472,13 +476,10 @@ pub async fn download_model_weights(req: &mut Request, res: &mut Response) {
         Ok(body) => body,
         Err(error) => return render_error(res, StatusCode::BAD_REQUEST, error.to_string()),
     };
-    let Some(kind) = body.kind.as_deref().or(Some("text_embedding")).and_then(WeightKind::parse) else {
+    let Some(kind) = body.kind.as_deref().or(Some("text_embedding")).and_then(WeightKind::parse)
+    else {
         let kind = body.kind.as_deref().unwrap_or("text_embedding");
-        return render_error(
-            res,
-            StatusCode::BAD_REQUEST,
-            format!("未知的模型目录类型: {kind}"),
-        );
+        return render_error(res, StatusCode::BAD_REQUEST, format!("未知的模型目录类型: {kind}"));
     };
 
     let repo_id = body.repo_id.trim().trim_end_matches('/').to_string();
@@ -497,10 +498,8 @@ pub async fn download_model_weights(req: &mut Request, res: &mut Response) {
     let (model_name, files) = match kind {
         WeightKind::TextEmbedding => {
             let model_name = segments[1].to_string();
-            let files = EMBEDDING_MODEL_FILES
-                .iter()
-                .map(|f| (f.to_string(), repo_id.clone()))
-                .collect();
+            let files =
+                EMBEDDING_MODEL_FILES.iter().map(|f| (f.to_string(), repo_id.clone())).collect();
             (model_name, files)
         }
         WeightKind::Llm => {
@@ -632,10 +631,7 @@ async fn run_download(job_id: String, files: Vec<(String, String)>, dest_dir: Pa
             }
         };
         if !response.status().is_success() {
-            finish(
-                "failed",
-                Some(format!("下载 {file} 失败: HTTP {}", response.status())),
-            );
+            finish("failed", Some(format!("下载 {file} 失败: HTTP {}", response.status())));
             let _ = tokio::fs::remove_dir_all(&dest_dir).await;
             return;
         }

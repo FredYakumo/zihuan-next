@@ -25,7 +25,7 @@ pub(crate) fn validate(config: &DetailedSetupConfig) -> Result<(), String> {
         && (config.rustfs.access_key.is_empty() || config.rustfs.secret_key.is_empty())
     {
         return Err(
-            "RustFS access and secret keys are required when exposing public access".to_string(),
+            "RustFS access and secret keys are required when exposing public access".to_string()
         );
     }
     Ok(())
@@ -55,12 +55,8 @@ pub(crate) fn remote_connection(config: &DetailedSetupConfig) -> Option<Connecti
     if !config.rustfs.enabled {
         return None;
     }
-    let endpoint = access_endpoint(
-        config,
-        &config.rustfs.endpoint,
-        "http",
-        config.rustfs.deployment.port,
-    );
+    let endpoint =
+        access_endpoint(config, &config.rustfs.endpoint, "http", config.rustfs.deployment.port);
     Some(config_factory::build_connection(
         "setup-detailed-rustfs",
         "RustFS",

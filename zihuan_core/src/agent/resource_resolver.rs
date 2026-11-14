@@ -40,12 +40,12 @@ pub fn resolve_llm_service_config(
             config.usage_config_id = Some(llm_ref.canonical_config_id().to_string());
             Ok(config)
         }
-        ModelRefSpec::TextEmbeddingLocal { .. } | ModelRefSpec::TextEmbeddingApi { .. } => Err(
-            Error::ValidationError(format!(
+        ModelRefSpec::TextEmbeddingLocal { .. } | ModelRefSpec::TextEmbeddingApi { .. } => {
+            Err(Error::ValidationError(format!(
                 "references non-chat model_ref '{}' as llm_ref",
                 llm_ref.name
-            )),
-        ),
+            )))
+        }
     }
 }
 

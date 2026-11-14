@@ -10,7 +10,7 @@ use crate::setup_wizard::{
     build_search_only_config, check_command, detailed_install_services, run_detailed_binary,
     run_detailed_docker, save_detailed_connections, save_search_connection,
     validate_detailed_config, verify_detailed_connections, DetailedInstallMethod,
-    DetailedSetupConfig, DetailedSearchSetupConfig,
+    DetailedSearchSetupConfig, DetailedSetupConfig,
 };
 
 pub mod config_factory;
@@ -490,8 +490,7 @@ pub async fn detect_environment() -> EnvironmentInfo {
     let docker_compose_available = check_command("docker", &["compose", "version"]).await;
     let (binary_install_available, binary_install_reason) =
         detect_binary_installation_support().await;
-    let (napcat_native_available, napcat_native_reason) =
-        detect_napcat_native_support().await;
+    let (napcat_native_available, napcat_native_reason) = detect_napcat_native_support().await;
     let (wsl_available, wsl_docker_available) = detect_windows_wsl().await;
     let cuda_version = detect_cuda_version().await;
     let compiler_version = detect_compiler_version().await;

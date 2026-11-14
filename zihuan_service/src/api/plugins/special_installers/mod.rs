@@ -60,7 +60,8 @@ static SQLITE_INSTALLER: sqlite::SqliteSpecialPluginInstaller =
     sqlite::SqliteSpecialPluginInstaller;
 static WECHAT_PAD_INSTALLER: wechat_pad::WeChatPadProSpecialPluginInstaller =
     wechat_pad::WeChatPadProSpecialPluginInstaller;
-static NAPCAT_INSTALLER: napcat::NapCatSpecialPluginInstaller = napcat::NapCatSpecialPluginInstaller;
+static NAPCAT_INSTALLER: napcat::NapCatSpecialPluginInstaller =
+    napcat::NapCatSpecialPluginInstaller;
 
 static INSTALLERS: [&dyn SpecialPluginInstaller; 3] =
     [&SQLITE_INSTALLER, &WECHAT_PAD_INSTALLER, &NAPCAT_INSTALLER];

@@ -186,11 +186,9 @@ async fn install_local_mode(
 ) -> Result<PluginRecord, String> {
     emit_progress(progress, "prepare", "running", "检查 Docker Compose 可用性...".into());
     if !docker_compose_available().await {
-        return Err(
-            "Docker Compose 不可用：NapCat 通过 Docker 运行，请先安装并启动 Docker，\
+        return Err("Docker Compose 不可用：NapCat 通过 Docker 运行，请先安装并启动 Docker，\
              或改用 native / 安装命令方式"
-                .to_string(),
-        );
+            .to_string());
     }
 
     let mut plugin = plugin_from_request(request, "installing");
@@ -205,9 +203,9 @@ async fn install_local_mode(
         "running",
         format!("创建安装目录: {}", install_dir.display()),
     );
-    tokio::fs::create_dir_all(&install_dir).await.map_err(|error| {
-        format!("创建 NapCat 数据目录 {} 失败: {error}", install_dir.display())
-    })?;
+    tokio::fs::create_dir_all(&install_dir)
+        .await
+        .map_err(|error| format!("创建 NapCat 数据目录 {} 失败: {error}", install_dir.display()))?;
 
     emit_progress(progress, "compose", "running", "写入 docker-compose.yaml 与 .env...".into());
     write_env(&install_dir, &deployment).await?;
@@ -240,28 +238,14 @@ async fn install_local_mode(
     if webui_reachable {
         emit_progress(progress, "probe", "success", "WebUI 已就绪".into());
     } else {
-        emit_progress(
-            progress,
-            "probe",
-            "running",
-            "WebUI 暂未响应，容器仍在启动中".into(),
-        );
+        emit_progress(progress, "probe", "running", "WebUI 暂未响应，容器仍在启动中".into());
     }
 
     emit_progress(progress, "connection", "running", "保存 BotAdapter 连接...".into());
-    let connection = bot_adapter_connection(
-        &plugin,
-        &deployment.connection_host,
-        deployment.ws_port,
-        None,
-    );
+    let connection =
+        bot_adapter_connection(&plugin, &deployment.connection_host, deployment.ws_port, None);
     storage::upsert_connection(connection.clone()).map_err(|error| error.to_string())?;
-    emit_progress(
-        progress,
-        "connection",
-        "success",
-        format!("连接 {} 已创建", connection.name),
-    );
+    emit_progress(progress, "connection", "success", format!("连接 {} 已创建", connection.name));
 
     plugin.connection_ids = vec![connection.config_id.clone()];
     plugin.status = "installed".to_string();
@@ -273,14 +257,10 @@ async fn install_local_mode(
     metadata["webui_port"] = Value::from(deployment.webui_port);
     metadata["ws_port"] = Value::from(deployment.ws_port);
     metadata["webui_token"] = Value::String(deployment.webui_token.clone());
-    metadata["webui_url"] = Value::String(format!(
-        "http://{}:{}",
-        deployment.connection_host, deployment.webui_port
-    ));
-    metadata["ws_url"] = Value::String(format!(
-        "ws://{}:{}",
-        deployment.connection_host, deployment.ws_port
-    ));
+    metadata["webui_url"] =
+        Value::String(format!("http://{}:{}", deployment.connection_host, deployment.webui_port));
+    metadata["ws_url"] =
+        Value::String(format!("ws://{}:{}", deployment.connection_host, deployment.ws_port));
     metadata["uninstall_command"] = Value::String(format!(
         "docker compose -f {} -p {} down --volumes --remove-orphans",
         compose_path.display(),
@@ -293,12 +273,7 @@ async fn install_local_mode(
                 .to_string(),
         );
     }
-    emit_progress(
-        progress,
-        "finished",
-        "success",
-        format!("安装完成: {}", plugin.name),
-    );
+    emit_progress(progress, "finished", "success", format!("安装完成: {}", plugin.name));
     save_plugin_record(&plugin)?;
     Ok(plugin)
 }
@@ -326,12 +301,8 @@ async fn install_command_mode(
         base64_encode(env.as_bytes()),
     );
 
-    let connection = bot_adapter_connection(
-        &plugin,
-        &deployment.connection_host,
-        deployment.ws_port,
-        None,
-    );
+    let connection =
+        bot_adapter_connection(&plugin, &deployment.connection_host, deployment.ws_port, None);
     storage::upsert_connection(connection.clone()).map_err(|error| error.to_string())?;
 
     plugin.connection_ids = vec![connection.config_id.clone()];
@@ -348,21 +319,12 @@ async fn install_command_mode(
     metadata["webui_port"] = Value::from(deployment.webui_port);
     metadata["ws_port"] = Value::from(deployment.ws_port);
     metadata["webui_token"] = Value::String(deployment.webui_token.clone());
-    metadata["webui_url"] = Value::String(format!(
-        "http://{}:{}",
-        deployment.connection_host, deployment.webui_port
-    ));
-    metadata["ws_url"] = Value::String(format!(
-        "ws://{}:{}",
-        deployment.connection_host, deployment.ws_port
-    ));
+    metadata["webui_url"] =
+        Value::String(format!("http://{}:{}", deployment.connection_host, deployment.webui_port));
+    metadata["ws_url"] =
+        Value::String(format!("ws://{}:{}", deployment.connection_host, deployment.ws_port));
     metadata["project"] = Value::String(deployment.project.clone());
-    emit_progress(
-        progress,
-        "finished",
-        "success",
-        "安装命令已生成，请在目标机器上执行".into(),
-    );
+    emit_progress(progress, "finished", "success", "安装命令已生成，请在目标机器上执行".into());
     save_plugin_record(&plugin)?;
     Ok(plugin)
 }
@@ -410,8 +372,7 @@ async fn install_native_command_mode(
     metadata["connection_config"] = serde_json::to_value(&connection).unwrap_or(Value::Null);
     metadata["webui_port"] = Value::from(DEFAULT_WEBUI_PORT);
     metadata["ws_port"] = Value::from(DEFAULT_WS_PORT);
-    metadata["webui_url"] =
-        Value::String(format!("http://{connection_host}:{DEFAULT_WEBUI_PORT}"));
+    metadata["webui_url"] = Value::String(format!("http://{connection_host}:{DEFAULT_WEBUI_PORT}"));
     metadata["ws_url"] = Value::String(format!("ws://{connection_host}:{DEFAULT_WS_PORT}"));
     emit_progress(
         progress,
@@ -468,12 +429,8 @@ async fn install_native_mode(
     let proxy = detect_proxy().await;
     let install_path = install_napcat_native(proxy.as_deref(), None, progress).await?;
 
-    let connection = bot_adapter_connection(
-        &plugin,
-        "127.0.0.1",
-        DEFAULT_WS_PORT,
-        Some(install_path.clone()),
-    );
+    let connection =
+        bot_adapter_connection(&plugin, "127.0.0.1", DEFAULT_WS_PORT, Some(install_path.clone()));
     storage::upsert_connection(connection.clone()).map_err(|error| error.to_string())?;
 
     plugin.connection_ids = vec![connection.config_id.clone()];
@@ -611,7 +568,11 @@ TZ=Asia/Shanghai\n",
 /// initializes a OneBot WebSocket server on 3001, and the fixed MAC address keeps QQ's
 /// device fingerprint stable across restarts.
 fn compose_yaml(expose_public_access: bool) -> String {
-    let bind = if expose_public_access { "" } else { "127.0.0.1:" };
+    let bind = if expose_public_access {
+        ""
+    } else {
+        "127.0.0.1:"
+    };
     format!(
         r#"services:
   napcat:

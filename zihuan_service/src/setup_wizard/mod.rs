@@ -167,7 +167,10 @@ fn validate_search(config: &DetailedSetupConfig) -> Result<(), String> {
                 return Err("A search database password is required".to_string());
             }
             if !api_key.is_empty() {
-                return Err("Configure either a password or an API key for the search database, not both".to_string());
+                return Err(
+                    "Configure either a password or an API key for the search database, not both"
+                        .to_string(),
+                );
             }
             if config.search.source == DetailedComponentSource::Existing && username.is_empty() {
                 return Err(
@@ -181,7 +184,10 @@ fn validate_search(config: &DetailedSetupConfig) -> Result<(), String> {
                 return Err("A search database API key is required".to_string());
             }
             if !username.is_empty() || !password.is_empty() {
-                return Err("Configure either a password or an API key for the search database, not both".to_string());
+                return Err(
+                    "Configure either a password or an API key for the search database, not both"
+                        .to_string(),
+                );
             }
         }
     }
@@ -190,7 +196,9 @@ fn validate_search(config: &DetailedSetupConfig) -> Result<(), String> {
         ("elasticsearch", DetailedComponentSource::Install)
             if config.search.auth_method != DetailedSearchAuthMethod::Password =>
         {
-            return Err("Wizard-installed Elasticsearch requires password authentication".to_string());
+            return Err(
+                "Wizard-installed Elasticsearch requires password authentication".to_string()
+            );
         }
         ("weaviate", DetailedComponentSource::Install)
             if config.search.auth_method != DetailedSearchAuthMethod::ApiKey =>
@@ -632,7 +640,9 @@ pub(crate) async fn save_search_connection(
     Ok(connection)
 }
 
-pub(crate) async fn verify_detailed_connections(config: &DetailedSetupConfig) -> Result<(), String> {
+pub(crate) async fn verify_detailed_connections(
+    config: &DetailedSetupConfig,
+) -> Result<(), String> {
     mysql::verify(config).await?;
     rustfs::verify(config).await?;
     weaviate::verify(config).await?;

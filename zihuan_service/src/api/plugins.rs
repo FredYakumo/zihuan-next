@@ -365,13 +365,11 @@ pub async fn install_plugin(req: &mut Request, res: &mut Response, depot: &mut D
                     .get("install_command")
                     .and_then(Value::as_str)
                     .map(ToOwned::to_owned);
-                res.render(Json(
-                    serde_json::json!({
-                        "plugin": plugin,
-                        "install_command": install_command,
-                        "connections": connections
-                    }),
-                ))
+                res.render(Json(serde_json::json!({
+                    "plugin": plugin,
+                    "install_command": install_command,
+                    "connections": connections
+                })))
             }
             Err(error) => render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error),
         };
@@ -568,8 +566,7 @@ async fn install_special_in_background(
         // Give the SSE subscriber a moment to attach so the first steps (including the
         // command lines) are not missed; the broadcast channel has no replay.
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        let result =
-            installer.install_with_progress(&request_for_task, &progress_for_task).await;
+        let result = installer.install_with_progress(&request_for_task, &progress_for_task).await;
         if let Err(error) = result {
             let mut failed = plugin_from_request(&request_for_task, "installing");
             failed.status = "failed".to_string();
@@ -749,7 +746,9 @@ pub async fn delete_plugin(req: &mut Request, depot: &mut Depot, res: &mut Respo
                             Some(&progress_for_task),
                             "uninstall",
                             "running",
-                            format!("执行: docker compose -f {path} down --volumes --remove-orphans"),
+                            format!(
+                                "执行: docker compose -f {path} down --volumes --remove-orphans"
+                            ),
                         );
                         match tokio::process::Command::new("docker")
                             .args(["compose", "-f", path, "down", "--volumes", "--remove-orphans"])
@@ -796,7 +795,9 @@ pub async fn delete_plugin(req: &mut Request, depot: &mut Depot, res: &mut Respo
                         return;
                     }
                 };
-                plugins.retain(|item| item.id != target_for_task.id && item.name != target_for_task.name);
+                plugins.retain(|item| {
+                    item.id != target_for_task.id && item.name != target_for_task.name
+                });
                 if let Err(error) = save_plugins(&plugins) {
                     emit_progress(
                         Some(&progress_for_task),

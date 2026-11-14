@@ -80,9 +80,15 @@ pub struct LlmServiceConfig {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ModelRefSpec {
-    ChatLlmLocal { llm: LlmServiceConfig },
-    ChatLlmApi { llm: LlmServiceConfig },
-    TextEmbeddingLocal { model_name: String },
+    ChatLlmLocal {
+        llm: LlmServiceConfig,
+    },
+    ChatLlmApi {
+        llm: LlmServiceConfig,
+    },
+    TextEmbeddingLocal {
+        model_name: String,
+    },
     TextEmbeddingApi {
         model_name: String,
         api_endpoint: String,
@@ -108,9 +114,7 @@ impl ModelRefSpec {
         let object = match value.as_object() {
             Some(object) => object.clone(),
             None => {
-                return Ok(ModelRefSpec::ChatLlmApi {
-                    llm: serde_json::from_value(value)?,
-                });
+                return Ok(ModelRefSpec::ChatLlmApi { llm: serde_json::from_value(value)? });
             }
         };
 
@@ -123,22 +127,14 @@ impl ModelRefSpec {
             }
             Some("chat_llm") | None => {}
             Some(other) => {
-                return Err(serde::de::Error::custom(format!(
-                    "unknown model ref type '{other}'"
-                )));
+                return Err(serde::de::Error::custom(format!("unknown model ref type '{other}'")));
             }
         }
 
         // Legacy chat spec: decide local vs api by the recorded api_style.
-        let llm_value = object
-            .get("llm")
-            .cloned()
-            .unwrap_or_else(|| Value::Object(object));
-        let api_style = llm_value
-            .get("api_style")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
+        let llm_value = object.get("llm").cloned().unwrap_or_else(|| Value::Object(object));
+        let api_style =
+            llm_value.get("api_style").and_then(Value::as_str).unwrap_or("").to_string();
         // Legacy candle/mock api_style values are no longer `LlmApiStyle`
         // variants; drop them so deserialization falls back to the default
         // api_style and the matching `ModelWeightStyle` is applied below.

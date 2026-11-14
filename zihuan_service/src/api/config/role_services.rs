@@ -1388,12 +1388,12 @@ fn validate_embedding_model_ref(
             Ok(())
         }
         zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlmLocal { .. }
-        | zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlmApi { .. } => Err(
-            format!(
+        | zihuan_core::model_inference::model_config::ModelRefSpec::ChatLlmApi { .. } => {
+            Err(format!(
                 "role service '{}' references chat model_ref '{}' as embedding_model_ref_id",
                 role_service_name, llm_ref.name
-            ),
-        ),
+            ))
+        }
     }
 }
 

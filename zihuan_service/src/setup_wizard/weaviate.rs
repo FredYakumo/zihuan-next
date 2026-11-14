@@ -26,14 +26,14 @@ pub(crate) fn install_service(config: &DetailedSetupConfig) -> Option<&'static s
     (config.search.enabled
         && config.search.source == DetailedComponentSource::Install
         && config.search.search_type == "weaviate")
-    .then_some("weaviate")
+        .then_some("weaviate")
 }
 
 pub(crate) fn data_dir(config: &DetailedSetupConfig) -> Option<String> {
     (config.search.enabled
         && config.search.source == DetailedComponentSource::Install
         && config.search.search_type == "weaviate")
-    .then(|| config.search.deployment.data_dir.clone())
+        .then(|| config.search.deployment.data_dir.clone())
 }
 
 pub(crate) fn compose_service(config: &DetailedSetupConfig) -> String {
@@ -82,12 +82,8 @@ pub(crate) fn remote_connection(config: &DetailedSetupConfig) -> Option<Connecti
     if !(config.search.enabled && config.search.search_type == "weaviate") {
         return None;
     }
-    let base_url = access_endpoint(
-        config,
-        &config.search.base_url,
-        "http",
-        config.search.deployment.port,
-    );
+    let base_url =
+        access_endpoint(config, &config.search.base_url, "http", config.search.deployment.port);
     Some(config_factory::build_connection(
         "setup-detailed-weaviate",
         "weaviate",
@@ -143,7 +139,9 @@ sudo sh -c 'BIN=$(find . -type f -name weaviate | head -n 1); chmod +x \"$BIN\";
 /// Installs Weaviate from its official GitHub release binary. Weaviate does
 /// not publish Windows binaries, so this path only exists for Linux and macOS
 /// hosts.
-pub(crate) async fn install_weaviate_binary(search: &DetailedSearchSetupConfig) -> Result<(), String> {
+pub(crate) async fn install_weaviate_binary(
+    search: &DetailedSearchSetupConfig,
+) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let _ = search;

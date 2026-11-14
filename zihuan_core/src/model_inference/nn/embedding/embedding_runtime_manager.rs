@@ -378,7 +378,8 @@ impl RuntimeEmbeddingModelManager {
                     item.enabled
                         && matches!(
                             item.model,
-                            ModelRefSpec::TextEmbeddingLocal { .. } | ModelRefSpec::TextEmbeddingApi { .. }
+                            ModelRefSpec::TextEmbeddingLocal { .. }
+                                | ModelRefSpec::TextEmbeddingApi { .. }
                         )
                 })
                 .unwrap_or(false);

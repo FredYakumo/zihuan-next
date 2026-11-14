@@ -258,7 +258,9 @@ async fn install_napcat_native_linux(
              script manually in a terminal"
                 .to_string()
         })
-        .and_then(|result| result.map_err(|e| format!("Failed to run NapCat installer script: {e}")))?;
+        .and_then(|result| {
+            result.map_err(|e| format!("Failed to run NapCat installer script: {e}"))
+        })?;
 
     if !output.status.success() {
         let combined = format!(
@@ -276,12 +278,7 @@ async fn install_napcat_native_linux(
 
     // Rootless layout per the installer documentation.
     let home = std::env::var("HOME").unwrap_or_default();
-    emit_progress(
-        progress,
-        "install",
-        "success",
-        format!("NapCat 安装完成: {home}/Napcat"),
-    );
+    emit_progress(progress, "install", "success", format!("NapCat 安装完成: {home}/Napcat"));
     log::info!("NapCat installed via installer script at {home}/Napcat");
     Ok(format!("{home}/Napcat"))
 }
@@ -296,11 +293,9 @@ async fn install_napcat_native_macos(
     progress: Option<&SetupProgressTx>,
 ) -> Result<String, String> {
     if !std::path::PathBuf::from("/Applications/QQ.app").exists() {
-        return Err(
-            "macOS 上的 NapCat native 安装需要先安装 QQ 桌面版（/Applications/QQ.app），\
+        return Err("macOS 上的 NapCat native 安装需要先安装 QQ 桌面版（/Applications/QQ.app），\
              请从 https://im.qq.com/macqq/ 下载安装后重试"
-                .to_string(),
-        );
+            .to_string());
     }
 
     let install_root = zihuan_core::system_config::application_data_dir().join("napcat_install");
@@ -309,12 +304,7 @@ async fn install_napcat_native_macos(
         .map_err(|e| format!("Failed to create install directory: {e}"))?;
 
     let client = build_napcat_http_client(http_proxy)?;
-    emit_progress(
-        progress,
-        "download",
-        "running",
-        "解析最新 NapCat Mac 安装器版本...".to_string(),
-    );
+    emit_progress(progress, "download", "running", "解析最新 NapCat Mac 安装器版本...".to_string());
     // Resolve the latest universal asset via the release API: the asset name carries
     // the version, so the `latest/download/<name>` shortcut breaks on every release.
     let release_response = client
@@ -348,12 +338,7 @@ async fn install_napcat_native_macos(
         .to_string();
 
     let zip_path = install_root.join("NapCat.Mac.Installer.zip");
-    emit_progress(
-        progress,
-        "download",
-        "running",
-        format!("下载 NapCat Mac 安装器: {asset_url}"),
-    );
+    emit_progress(progress, "download", "running", format!("下载 NapCat Mac 安装器: {asset_url}"));
     let response = client
         .get(&asset_url)
         .send()
@@ -375,8 +360,7 @@ async fn install_napcat_native_macos(
         .map_err(|e| format!("Failed to save NapCat Mac installer: {e}"))?;
 
     let extract_dir = install_root.join("MacInstaller");
-    let file =
-        std::fs::File::open(&zip_path).map_err(|e| format!("Failed to open zip: {e}"))?;
+    let file = std::fs::File::open(&zip_path).map_err(|e| format!("Failed to open zip: {e}"))?;
     let mut archive =
         zip::ZipArchive::new(file).map_err(|e| format!("Failed to read zip archive: {e}"))?;
     archive
@@ -397,12 +381,7 @@ async fn install_napcat_native_macos(
         .arg(&app_path)
         .output()
         .await;
-    emit_progress(
-        progress,
-        "install",
-        "running",
-        format!("执行: open {}", app_path.display()),
-    );
+    emit_progress(progress, "install", "running", format!("执行: open {}", app_path.display()));
     let opened = tokio::process::Command::new("open")
         .arg(&app_path)
         .output()

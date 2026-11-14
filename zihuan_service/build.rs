@@ -51,12 +51,6 @@ fn main() {
         git_metadata::emit_git_rerun_hints(repo_root);
     }
 
-    println!(
-        "cargo:rustc-env=ZIHUAN_BUILD_VERSION={}",
-        resolve_version(repo_root.as_deref())
-    );
-    println!(
-        "cargo:rustc-env=ZIHUAN_BUILD_TYPE={}",
-        resolve_build_type()
-    );
+    println!("cargo:rustc-env=ZIHUAN_BUILD_VERSION={}", resolve_version(repo_root.as_deref()));
+    println!("cargo:rustc-env=ZIHUAN_BUILD_TYPE={}", resolve_build_type());
 }

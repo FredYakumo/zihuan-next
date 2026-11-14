@@ -9,8 +9,8 @@ use sqlx::Connection;
 
 use crate::setup_orchestrator::config_factory;
 use crate::setup_wizard::{
-    compose_bind_mount, detailed_connection_host, wait_for_tcp, yaml_quote, DetailedComponentSource,
-    DetailedSetupConfig,
+    compose_bind_mount, detailed_connection_host, wait_for_tcp, yaml_quote,
+    DetailedComponentSource, DetailedSetupConfig,
 };
 use zihuan_core::storage::{ConnectionConfig, ConnectionKind, MysqlConnection, SqliteConnection};
 
@@ -51,14 +51,14 @@ pub(crate) fn install_service(config: &DetailedSetupConfig) -> Option<&'static s
     (config.relational.enabled
         && config.relational.source == DetailedComponentSource::Install
         && config.relational.database_type == "mysql")
-    .then_some("mysql")
+        .then_some("mysql")
 }
 
 pub(crate) fn data_dir(config: &DetailedSetupConfig) -> Option<String> {
     (config.relational.enabled
         && config.relational.source == DetailedComponentSource::Install
         && config.relational.database_type == "mysql")
-    .then(|| config.relational.deployment.data_dir.clone())
+        .then(|| config.relational.deployment.data_dir.clone())
 }
 
 pub(crate) fn compose_service(config: &DetailedSetupConfig) -> String {

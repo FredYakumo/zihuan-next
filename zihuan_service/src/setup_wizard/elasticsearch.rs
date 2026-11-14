@@ -32,14 +32,14 @@ pub(crate) fn install_service(config: &DetailedSetupConfig) -> Option<&'static s
     (config.search.enabled
         && config.search.source == DetailedComponentSource::Install
         && config.search.search_type == "elasticsearch")
-    .then_some("elasticsearch")
+        .then_some("elasticsearch")
 }
 
 pub(crate) fn data_dir(config: &DetailedSetupConfig) -> Option<String> {
     (config.search.enabled
         && config.search.source == DetailedComponentSource::Install
         && config.search.search_type == "elasticsearch")
-    .then(|| config.search.deployment.data_dir.clone())
+        .then(|| config.search.deployment.data_dir.clone())
 }
 
 pub(crate) fn compose_service(config: &DetailedSetupConfig) -> String {
@@ -92,12 +92,8 @@ pub(crate) fn remote_connection(config: &DetailedSetupConfig) -> Option<Connecti
     if !(config.search.enabled && config.search.search_type == "elasticsearch") {
         return None;
     }
-    let base_url = access_endpoint(
-        config,
-        &config.search.base_url,
-        "http",
-        config.search.deployment.port,
-    );
+    let base_url =
+        access_endpoint(config, &config.search.base_url, "http", config.search.deployment.port);
     Some(config_factory::build_connection(
         "setup-detailed-elasticsearch",
         "elasticsearch",
@@ -112,8 +108,8 @@ pub(crate) fn ensure_indices(elasticsearch: ElasticsearchConnection) -> Result<(
         if !supports_schema(schema) {
             continue;
         }
-        let reference = ElasticsearchRef::new(elasticsearch.clone(), schema)
-            .map_err(|err| err.to_string())?;
+        let reference =
+            ElasticsearchRef::new(elasticsearch.clone(), schema).map_err(|err| err.to_string())?;
         ensure_elasticsearch_index(&reference, true).map_err(|err| err.to_string())?;
     }
     Ok(())
