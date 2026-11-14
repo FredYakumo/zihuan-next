@@ -871,7 +871,15 @@ export interface ChatMessageBranch {
   versions: ChatBranchVersion[];
 }
 
+export interface BuildInfo {
+  version: string;
+  build_type: string;
+}
+
 export const system = {
+  getBuildInfo(): Promise<BuildInfo> {
+    return request("GET", "/system/build-info");
+  },
   connections: {
     list(): Promise<ConnectionConfig[]> {
       return request("GET", "/system/connections");

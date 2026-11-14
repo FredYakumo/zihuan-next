@@ -31,6 +31,27 @@
         <t-menu-item value="/plugins" to="/plugins" @click="closeSidebar"><template #icon><ExtensionIcon /></template>插件</t-menu-item>
         <t-menu-item value="/settings" to="/settings" @click="closeSidebar"><template #icon><SettingIcon /></template>设置</t-menu-item>
       </t-menu>
+      <div class="admin-aside-footer">
+        <t-button
+          theme="default"
+          variant="outline"
+          size="small"
+          :block="!sidebarCollapsed"
+          :shape="sidebarCollapsed ? 'square' : 'round'"
+          title="运行安装向导"
+          @click="openSetupWizard"
+        >
+          <template #icon><InstallIcon /></template>
+          <span v-if="!sidebarCollapsed">运行安装向导</span>
+        </t-button>
+        <p
+          v-if="!sidebarCollapsed && buildInfo"
+          class="admin-build-info"
+          :title="`zihuan_next ${buildInfo.version} ${buildInfo.build_type}`"
+        >
+          zihuan_next {{ buildInfo.version }} {{ buildInfo.build_type }}
+        </p>
+      </div>
     </t-aside>
     <div v-if="showOverlay" class="admin-sidebar-overlay" @click="sidebarOpen = false"></div>
     <t-layout>
@@ -47,7 +68,7 @@
 <script setup lang="ts">
 import { RouterView } from "vue-router";
 import {
-  ArticleIcon, ChatIcon, ControlPlatformIcon, DashboardIcon, ExtensionIcon, HardDriveIcon, KeyIcon, LinkIcon,
+  ArticleIcon, ChatIcon, ControlPlatformIcon, DashboardIcon, ExtensionIcon, HardDriveIcon, InstallIcon, KeyIcon, LinkIcon,
   MenuFoldIcon, MenuUnfoldIcon, MindMapIcon, SearchIcon, ServerIcon, SettingIcon, SitemapIcon,
   TaskIcon, TerminalIcon,
 } from "tdesign-icons-vue-next";
@@ -65,6 +86,8 @@ const {
   toggleSidebar,
   activeMenuValue,
   menuTheme,
+  buildInfo,
+  openSetupWizard,
 } = useAdminApp();
 </script>
 

@@ -18,6 +18,7 @@ pub mod scheduler;
 pub mod settings;
 pub mod setup_wizard;
 pub mod state;
+pub mod system_info;
 pub mod task_store;
 pub mod themes;
 pub mod workspace_directories;
@@ -57,6 +58,7 @@ pub fn build_router(
         )
         .push(
             Router::with_path("system")
+                .push(Router::with_path("build-info").get(system_info::get_build_info))
                 .push(Router::with_path("model-usage").get(model_usage::get_model_usage))
                 .push(
                     Router::with_path("connections")

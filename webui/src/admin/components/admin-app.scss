@@ -60,6 +60,28 @@
   margin-left: auto;
 }
 
+.admin-aside-footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--admin-border);
+}
+
+.admin-build-info {
+  width: 100%;
+  margin: 0;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--admin-muted);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
 .admin-sidebar-overlay {
   display: none;
 }

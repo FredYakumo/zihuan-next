@@ -1,6 +1,6 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { setup as setupApi } from "../../api/client";
+import { setup as setupApi, system as systemApi, type BuildInfo } from "../../api/client";
 import { onThemeChange } from "../../ui/theme";
 
 const SIDEBAR_COLLAPSED_KEY = "zihuan-admin-sidebar-collapsed";
@@ -55,6 +55,22 @@ export function useAdminApp() {
     }
   });
 
+  const buildInfo = ref<BuildInfo | null>(null);
+
+  onMounted(async () => {
+    try {
+      buildInfo.value = await systemApi.getBuildInfo();
+    } catch {
+      // The build label is informational only; an older backend without the
+      // endpoint must not break the shell.
+    }
+  });
+
+  function openSetupWizard() {
+    closeSidebar();
+    router.push("/setup");
+  }
+
   return {
     isSetupRoute,
     sidebarOpen,
@@ -64,6 +80,8 @@ export function useAdminApp() {
     toggleSidebar,
     activeMenuValue,
     menuTheme,
+    buildInfo,
+    openSetupWizard,
   };
 }
 
