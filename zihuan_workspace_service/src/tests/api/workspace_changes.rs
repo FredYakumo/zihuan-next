@@ -1,14 +1,13 @@
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::api::workspace_changes::{
     accept, cancel, pending, WorkspaceChangeOperation, WorkspaceChangeRecorder,
 };
+use crate::tests::unique_temp_dir;
 
 fn temp_workspace() -> PathBuf {
-    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    std::env::temp_dir().join(format!("zihuan-workspace-change-{suffix}"))
+    unique_temp_dir("zihuan-workspace-change")
 }
 
 /// Purpose: Verify consecutive edits share one logical change and Reject restores the original file.

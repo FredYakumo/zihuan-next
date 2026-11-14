@@ -1,18 +1,14 @@
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
 use zihuan_core::agent::tools::Tool;
 
+use crate::tests::unique_temp_dir;
 use crate::tools::workspace_tools::{FindFilesTool, DEFAULT_TOOL_FIND_FILES};
 
 fn temp_dir() -> PathBuf {
-    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let path =
-        std::env::temp_dir().join(format!("zihuan-find-files-{}-{suffix}", std::process::id()));
-    fs::create_dir_all(&path).unwrap();
-    path
+    unique_temp_dir("zihuan-find-files")
 }
 
 /// Purpose: Verify that find_files filters results by name glob and type
