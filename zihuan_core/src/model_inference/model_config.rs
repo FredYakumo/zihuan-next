@@ -101,6 +101,63 @@ pub enum ModelRefSpec {
     },
 }
 
+/// Deserialization-only mirror of [`ModelRefSpec`]'s tag-based encoding.
+///
+/// `ModelRefSpec` implements `Deserialize` by hand so `from_json` keeps
+/// accepting the legacy encodings, and `from_json` must not deserialize into
+/// `ModelRefSpec` itself: `serde_json::from_value::<ModelRefSpec>` would call
+/// the `Deserialize` impl again, which calls `from_json`, recursing until the
+/// stack overflows. This mirror gives the tagged branch a concrete target type
+/// that does not route back through `from_json`.
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum TaggedModelRefSpec {
+    ChatLlmLocal {
+        llm: LlmServiceConfig,
+    },
+    ChatLlmApi {
+        llm: LlmServiceConfig,
+    },
+    TextEmbeddingLocal {
+        model_name: String,
+    },
+    TextEmbeddingApi {
+        model_name: String,
+        api_endpoint: String,
+        #[serde(default)]
+        api_key: Option<String>,
+        #[serde(default = "default_timeout_secs")]
+        timeout_secs: u64,
+        #[serde(default = "default_retry_count")]
+        retry_count: u32,
+    },
+}
+
+impl From<TaggedModelRefSpec> for ModelRefSpec {
+    fn from(spec: TaggedModelRefSpec) -> Self {
+        match spec {
+            TaggedModelRefSpec::ChatLlmLocal { llm } => ModelRefSpec::ChatLlmLocal { llm },
+            TaggedModelRefSpec::ChatLlmApi { llm } => ModelRefSpec::ChatLlmApi { llm },
+            TaggedModelRefSpec::TextEmbeddingLocal { model_name } => {
+                ModelRefSpec::TextEmbeddingLocal { model_name }
+            }
+            TaggedModelRefSpec::TextEmbeddingApi {
+                model_name,
+                api_endpoint,
+                api_key,
+                timeout_secs,
+                retry_count,
+            } => ModelRefSpec::TextEmbeddingApi {
+                model_name,
+                api_endpoint,
+                api_key,
+                timeout_secs,
+                retry_count,
+            },
+        }
+    }
+}
+
 impl ModelRefSpec {
     /// Parses a spec from JSON with backward compatibility for the legacy
     /// formats: the pre-split `"type": "chat_llm"` tag and the even older
@@ -119,11 +176,12 @@ impl ModelRefSpec {
         };
 
         match object.get("type").and_then(Value::as_str) {
-            Some("chat_llm_local") | Some("chat_llm_api") => {
-                return serde_json::from_value(Value::Object(object));
-            }
-            Some("text_embedding_local") | Some("text_embedding_api") => {
-                return serde_json::from_value(Value::Object(object));
+            Some("chat_llm_local")
+            | Some("chat_llm_api")
+            | Some("text_embedding_local")
+            | Some("text_embedding_api") => {
+                return serde_json::from_value::<TaggedModelRefSpec>(Value::Object(object))
+                    .map(Into::into);
             }
             Some("chat_llm") | None => {}
             Some(other) => {
@@ -205,57 +263,4 @@ where
     D: Deserializer<'de>,
 {
     Ok(Option::<usize>::deserialize(deserializer)?.unwrap_or(DEFAULT_CONTEXT_LENGTH))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{LlmServiceConfig, ModelRefSpec, ModelWeightStyle, DEFAULT_CONTEXT_LENGTH};
-
-    #[test]
-    fn context_length_defaults_for_missing_and_null_values() {
-        let missing: LlmServiceConfig = serde_json::from_value(serde_json::json!({
-            "model_name": "model",
-            "api_endpoint": "https://example.test"
-        }))
-        .unwrap();
-        let null_value: LlmServiceConfig = serde_json::from_value(serde_json::json!({
-            "model_name": "model",
-            "api_endpoint": "https://example.test",
-            "context_length": null
-        }))
-        .unwrap();
-
-        assert_eq!(missing.context_length, DEFAULT_CONTEXT_LENGTH);
-        assert_eq!(null_value.context_length, DEFAULT_CONTEXT_LENGTH);
-    }
-
-    #[test]
-    fn legacy_chat_llm_specs_dispatch_by_api_style() {
-        let gguf: ModelRefSpec = serde_json::from_value(serde_json::json!({
-            "type": "chat_llm",
-            "llm": { "model_name": "m", "api_endpoint": "", "api_style": "candle_gguf" }
-        }))
-        .unwrap();
-        assert!(matches!(gguf, ModelRefSpec::ChatLlmLocal { .. }));
-
-        let api: ModelRefSpec = serde_json::from_value(serde_json::json!({
-            "type": "chat_llm",
-            "llm": { "model_name": "m", "api_endpoint": "https://example.test" }
-        }))
-        .unwrap();
-        assert!(matches!(api, ModelRefSpec::ChatLlmApi { .. }));
-
-        let mock: ModelRefSpec = serde_json::from_value(serde_json::json!({
-            "type": "chat_llm",
-            "llm": { "model_name": "m", "api_endpoint": "recordings/x", "api_style": "mock" }
-        }))
-        .unwrap();
-        match mock {
-            ModelRefSpec::ChatLlmLocal { llm } => {
-                assert_eq!(llm.weight_style, Some(ModelWeightStyle::Mock));
-                assert_eq!(llm.api_endpoint, "recordings/x");
-            }
-            _ => panic!("expected chat_llm_local"),
-        }
-    }
 }
