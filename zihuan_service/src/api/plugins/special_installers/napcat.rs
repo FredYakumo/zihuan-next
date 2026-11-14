@@ -31,9 +31,8 @@ use super::{
     docker_compose_available, pick_free_port, run_compose, short_id, strip_unrelated_metadata,
     SpecialPluginInstaller,
 };
-use crate::setup_orchestrator::{
-    base64_encode, detect_proxy, emit_progress, install_napcat_native, SetupProgressTx,
-};
+use crate::setup_orchestrator::{detect_proxy, emit_progress, SetupProgressTx};
+use crate::setup_wizard::{base64_encode, napcat::install_napcat_native};
 use zihuan_core::ims_bot_adapter::BotAdapterConnection;
 use zihuan_core::storage::{self, ConnectionConfig, ConnectionKind};
 

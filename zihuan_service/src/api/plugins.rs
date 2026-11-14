@@ -9,10 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::api::state::AppState;
-use crate::setup_orchestrator::{
-    emit_progress, generate_detailed_install_command, DetailedSetupConfig, SetupOrchestrator,
-    SetupProgressEvent,
-};
+use crate::setup_orchestrator::{emit_progress, SetupOrchestrator};
+use crate::setup_wizard::{generate_detailed_install_command, DetailedSetupConfig};
 use zihuan_core::storage::{self, ConnectionConfig};
 
 pub mod script_plugin;
@@ -418,9 +416,9 @@ pub async fn install_plugin(req: &mut Request, res: &mut Response, depot: &mut D
     if request.install_method.starts_with("command_") {
         let mut config = detailed_config;
         config.install_method = if request.install_method.ends_with("docker") {
-            crate::setup_orchestrator::DetailedInstallMethod::Docker
+            crate::setup_wizard::DetailedInstallMethod::Docker
         } else {
-            crate::setup_orchestrator::DetailedInstallMethod::Binary
+            crate::setup_wizard::DetailedInstallMethod::Binary
         };
         match generate_detailed_install_command(&config) {
             Ok(result) => {

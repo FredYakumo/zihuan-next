@@ -3,6 +3,7 @@ mod error;
 mod init_registry;
 mod log_forwarder;
 mod setup_orchestrator;
+mod setup_wizard;
 mod system_config;
 mod util;
 

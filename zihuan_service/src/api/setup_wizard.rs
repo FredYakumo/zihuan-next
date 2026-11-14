@@ -5,10 +5,8 @@ use std::sync::Arc;
 
 use crate::api::config::{now_rfc3339, ok_response, render_internal_error};
 use crate::api::state::AppState;
-use crate::setup_orchestrator::{
-    generate_detailed_install_command, DetailedSetupConfig, ImsBotAdapterSetupConfig,
-    LlmSetupConfig, SetupOptions, SetupOrchestrator, SetupRole,
-};
+use crate::setup_orchestrator::{ImsBotAdapterSetupConfig, LlmSetupConfig, SetupOptions, SetupOrchestrator, SetupRole};
+use crate::setup_wizard::{generate_detailed_install_command, DetailedSetupConfig};
 use zihuan_core::setup_wizard::{
     clear_setup_wizard_state, load_setup_wizard_state, save_setup_wizard_state,
 };

@@ -30,7 +30,8 @@ use super::{
     docker_compose_available, pick_free_port, run_compose, short_id, strip_unrelated_metadata,
     SpecialPluginInstaller,
 };
-use crate::setup_orchestrator::{base64_encode, emit_progress, SetupProgressTx};
+use crate::setup_orchestrator::{emit_progress, SetupProgressTx};
+use crate::setup_wizard::base64_encode;
 use zihuan_core::ims_bot_adapter::runtime::wechat_pad::WeChatPadConfig;
 use zihuan_core::ims_bot_adapter::BotAdapterConnection;
 use zihuan_core::storage::{self, ConnectionConfig, ConnectionKind};
