@@ -194,3 +194,6 @@ fn agent_uses_llm_ref(agent: &RoleServiceConfig, llm_ref_id: &str) -> bool {
     }
     false
 }
+
+#[cfg(test)]
+mod tests;

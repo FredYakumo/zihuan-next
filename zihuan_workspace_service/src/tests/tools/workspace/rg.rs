@@ -1,20 +1,14 @@
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
 use zihuan_core::agent::tools::Tool;
 
+use crate::tests::unique_temp_dir;
 use crate::tools::workspace_tools::{RgTool, DEFAULT_TOOL_RG};
 
 fn temp_dir() -> PathBuf {
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock must be after unix epoch")
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!("zihuan-rg-{}-{suffix}", std::process::id()));
-    fs::create_dir_all(&path).expect("create temporary directory");
-    path
+    unique_temp_dir("zihuan-rg")
 }
 
 /// Purpose: Verify that the rg tool finds matches using a regular expression
