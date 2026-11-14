@@ -263,8 +263,25 @@ impl RuntimeEmbeddingModelManager {
             )));
         }
 
-        let model_name = llm_ref.local_embedding_model_name()?;
-        let inner_model: Arc<dyn EmbeddingBase> = Arc::new(QueuedEmbeddingModel::new(model_name)?);
+        let kind = match &llm_ref.model {
+            ModelRefSpec::TextEmbeddingLocal { .. } => "text_embedding_local",
+            ModelRefSpec::TextEmbeddingApi { .. } => "text_embedding_api",
+            ModelRefSpec::ChatLlmLocal { .. } | ModelRefSpec::ChatLlmApi { .. } => {
+                return Err(Error::ValidationError(format!(
+                    "model_ref '{}' is not a text embedding config",
+                    llm_ref.name
+                )));
+            }
+        };
+        let inner_model: Arc<dyn EmbeddingBase> = match kind {
+            "text_embedding_local" => {
+                let model_name = llm_ref.local_embedding_model_name()?;
+                Arc::new(QueuedEmbeddingModel::new(model_name)?)
+            }
+            _ => crate::agent::resource_resolver::build_embedding_model(
+                &llm_ref.embedding_api_service_config()?,
+            ),
+        };
         let started_at = Utc::now();
         let instance_id = next_instance_id();
         let model: Arc<dyn EmbeddingBase> = Arc::new(LoggedEmbeddingModel::new(
@@ -276,7 +293,7 @@ impl RuntimeEmbeddingModelManager {
             instance_id,
             config_id: llm_ref.id.clone(),
             name: llm_ref.name.clone(),
-            kind: "text_embedding_local".to_string(),
+            kind: kind.to_string(),
             keep_alive: false,
             heartbeat_interval_secs: None,
             started_at,
@@ -358,7 +375,11 @@ impl RuntimeEmbeddingModelManager {
                 .iter()
                 .find(|item| item.id == *config_id)
                 .map(|item| {
-                    item.enabled && matches!(item.model, ModelRefSpec::TextEmbeddingLocal { .. })
+                    item.enabled
+                        && matches!(
+                            item.model,
+                            ModelRefSpec::TextEmbeddingLocal { .. } | ModelRefSpec::TextEmbeddingApi { .. }
+                        )
                 })
                 .unwrap_or(false);
 

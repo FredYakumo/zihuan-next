@@ -12,7 +12,7 @@
         <t-select v-model="filters.modelType">
           <t-option value="all" label="全部模型类型" />
           <t-option value="chat_llm" label="聊天模型" />
-          <t-option value="text_embedding_local" label="文本向量模型" />
+          <t-option value="text_embedding" label="文本向量模型" />
         </t-select>
         <t-select v-model="filters.enabled">
           <t-option value="all" label="全部状态" />
@@ -31,10 +31,11 @@
         </template>
         <template #model_type="{ row }"><t-tag variant="light">{{ modelTypeLabel(row.model.type) }}</t-tag></template>
         <template #model="{ row }">
-          <div class="llm-model-cell"><span :title="modelName(row)">{{ modelName(row) || "—" }}</span><small v-if="row.model.type === 'chat_llm'">{{ apiStyleLabel(row.model.llm.api_style) }}</small></div>
+          <div class="llm-model-cell"><span :title="modelName(row)">{{ modelName(row) || "—" }}</span><small v-if="row.model.type === 'chat_llm_api'">{{ apiStyleLabel(row.model.llm.api_style) }}</small><small v-else-if="row.model.type === 'chat_llm_local'">{{ weightStyleLabel(row.model.llm.weight_style) }}</small></div>
         </template>
         <template #endpoint="{ row }">
-          <span v-if="row.model.type === 'chat_llm' && !isCandleStyle(row.model.llm.api_style)" class="llm-endpoint" :title="row.model.llm.api_endpoint">{{ row.model.llm.api_endpoint || "—" }}</span>
+          <span v-if="row.model.type === 'chat_llm_api'" class="llm-endpoint" :title="row.model.llm.api_endpoint">{{ row.model.llm.api_endpoint || "—" }}</span>
+          <span v-else-if="row.model.type === 'text_embedding_api'" class="llm-endpoint" :title="row.model.api_endpoint">{{ row.model.api_endpoint || "—" }}</span>
           <span v-else>本地模型</span>
         </template>
         <template #updated_at="{ row }">{{ formatTime(row.updated_at) }}</template>
@@ -63,20 +64,33 @@
           <h3>基本信息</h3>
           <div class="llm-form-grid">
             <t-form-item label="名称" required><t-input v-model="form.name" placeholder="例如：OpenAI 主模型" /></t-form-item>
-            <t-form-item label="模型类型" required><t-select v-model="form.model_type" :disabled="!isCreating"><t-option value="chat_llm" label="聊天模型" /><t-option value="text_embedding_local" label="文本向量模型" /></t-select></t-form-item>
+            <t-form-item label="模型类型" required><t-select v-model="modelTypeSelect" :disabled="!isCreating"><t-option value="chat_llm" label="聊天模型" /><t-option value="text_embedding" label="文本向量模型" /></t-select></t-form-item>
           </div>
           <t-checkbox v-model="form.enabled">启用该模型配置</t-checkbox>
         </div>
 
-        <template v-if="form.model_type === 'chat_llm'">
+        <template v-if="isChatMode">
           <div class="llm-form-section">
             <h3>模型与接口</h3>
             <div class="llm-form-grid">
-              <t-form-item class="llm-form-item--full" label="后端格式"><t-select v-model="form.llm.api_style"><t-option value="candle_gguf" label="Candle GGUF 本地推理" /><t-option value="candle_hf" label="Candle HF 本地推理" /><t-option value="open_ai_chat_completions" label="OpenAI Chat Completions API" /><t-option value="open_ai_chat_completions_tencent_multimodal_compat" label="OpenAI Chat Completions API（腾讯多模态兼容）" /><t-option value="open_ai_responses" label="OpenAI Responses API" /><t-option value="open_ai_responses_message_compat" label="OpenAI Responses API（message 兼容）" /><t-option value="open_ai_responses_image_url_object_compat" label="OpenAI Responses API（image_url 对象兼容）" /></t-select></t-form-item>
-              <template v-if="isCandleMode">
-                <t-form-item class="llm-form-item--full" label="本地 LLM 目录" required><t-select v-model="form.llm.model_name" placeholder="请选择"><t-option v-for="item in filteredLocalLlmModels" :key="item.model_name" :value="item.model_name" :label="localLlmOptionLabel(item)" :disabled="!item.available" /></t-select><small class="llm-form-hint">{{ selectedLocalLlmHint }}</small></t-form-item>
+              <t-form-item class="llm-form-item--full" label="接入方式">
+                <t-radio-group v-model="accessMode" variant="default-filled">
+                  <t-radio-button value="local">本地模型</t-radio-button>
+                  <t-radio-button value="api">API</t-radio-button>
+                </t-radio-group>
+              </t-form-item>
+              <template v-if="form.model_type === 'chat_llm_local'">
+                <t-form-item label="运行方式" required><t-select v-model="form.llm.weight_style"><t-option value="gguf" label="GGUF 本地推理" /><t-option value="hf" label="HF safetensors 本地推理" /><t-option value="mock" label="本地模拟（录制回放）" /></t-select></t-form-item>
+                <template v-if="form.llm.weight_style === 'mock'">
+                  <t-form-item label="Model Name" required><t-input v-model="form.llm.model_name" /></t-form-item>
+                  <t-form-item class="llm-form-item--full" label="录制目录" required><t-input v-model="form.llm.api_endpoint" placeholder="调用记录所在目录" /></t-form-item>
+                </template>
+                <template v-else>
+                  <t-form-item class="llm-form-item--full" label="本地 LLM 目录" required><t-select v-model="form.llm.model_name" placeholder="请选择"><t-option v-for="item in filteredLocalLlmModels" :key="item.model_name" :value="item.model_name" :label="localLlmOptionLabel(item)" :disabled="!item.available" /></t-select><small class="llm-form-hint">{{ selectedLocalLlmHint }}</small></t-form-item>
+                </template>
               </template>
               <template v-else>
+                <t-form-item class="llm-form-item--full" label="后端格式"><t-select v-model="form.llm.api_style"><t-option value="open_ai_chat_completions" label="OpenAI Chat Completions API" /><t-option value="open_ai_chat_completions_tencent_multimodal_compat" label="OpenAI Chat Completions API（腾讯多模态兼容）" /><t-option value="open_ai_responses" label="OpenAI Responses API" /><t-option value="open_ai_responses_message_compat" label="OpenAI Responses API（message 兼容）" /><t-option value="open_ai_responses_image_url_object_compat" label="OpenAI Responses API（image_url 对象兼容）" /></t-select></t-form-item>
                 <t-form-item label="Model Name" required><t-input v-model="form.llm.model_name" /></t-form-item>
                 <t-form-item label="API Endpoint" required><t-input v-model="form.llm.api_endpoint" /></t-form-item>
                 <t-form-item class="llm-form-item--full" label="API Key"><ConnectionCredentialInput v-model="form.llm.api_key" /></t-form-item>
@@ -101,7 +115,7 @@
               <t-form-item label="思考强度"><t-select v-model="form.llm.reasoning_effort"><t-option :value="null" label="未配置" /><t-option value="low" label="低" /><t-option value="medium" label="中" /><t-option value="high" label="高" /><t-option value="max" label="最高" /></t-select></t-form-item>
             </div>
             <div class="llm-switches">
-              <t-checkbox v-model="form.llm.supports_multimodal_input" :disabled="isCandleMode">多模态模型（允许传入图片）</t-checkbox>
+              <t-checkbox v-model="form.llm.supports_multimodal_input" :disabled="form.model_type === 'chat_llm_local'">多模态模型（允许传入图片）</t-checkbox>
               <t-checkbox v-model="form.llm.stream">默认启用 stream 请求参数</t-checkbox>
               <t-checkbox v-model="form.llm.include_reasoning_content">推理时回灌 reasoning_content</t-checkbox>
             </div>
@@ -109,21 +123,42 @@
         </template>
 
         <div v-else class="llm-form-section">
-          <h3>本地向量模型</h3>
-          <t-form-item label="本地模型目录" required><t-select v-model="form.local_model_name" placeholder="请选择"><t-option v-for="item in localEmbeddingModels" :key="item" :value="item" :label="item" /></t-select></t-form-item>
+          <h3>向量模型与接口</h3>
+          <div class="llm-form-grid">
+            <t-form-item class="llm-form-item--full" label="接入方式">
+              <t-radio-group v-model="accessMode" variant="default-filled">
+                <t-radio-button value="local">本地模型</t-radio-button>
+                <t-radio-button value="api">API</t-radio-button>
+              </t-radio-group>
+            </t-form-item>
+            <template v-if="form.model_type === 'text_embedding_api'">
+              <t-form-item label="Model Name" required><t-input v-model="form.embedding.model_name" /></t-form-item>
+              <t-form-item label="API Endpoint" required><t-input v-model="form.embedding.api_endpoint" placeholder="例如：https://api.openai.com/v1/embeddings" /></t-form-item>
+              <t-form-item class="llm-form-item--full" label="API Key"><ConnectionCredentialInput v-model="form.embedding.api_key" /></t-form-item>
+              <t-form-item label="Timeout Secs"><t-input-number v-model="form.embedding.timeout_secs" :min="1" /></t-form-item>
+              <t-form-item label="Retry Count"><t-input-number v-model="form.embedding.retry_count" :min="0" /></t-form-item>
+            </template>
+            <template v-else>
+              <t-form-item class="llm-form-item--full" label="本地模型目录" required><t-select v-model="form.local_model_name" placeholder="请选择"><t-option v-for="item in localEmbeddingModels" :key="item" :value="item" :label="item" /></t-select></t-form-item>
+            </template>
+          </div>
+          <t-button v-if="form.model_type === 'text_embedding_local'" variant="outline" @click="downloadDialogVisible = true">下载模型…</t-button>
         </div>
       </t-form>
       <template #footer><div class="llm-drawer-footer"><t-button variant="outline" @click="closeDrawer">取消</t-button><t-button theme="primary" @click="submitForm">{{ isCreating ? "创建模型" : "保存修改" }}</t-button></div></template>
     </t-drawer>
+
+    <ModelDownloadDialog v-model:visible="downloadDialogVisible" @completed="onEmbeddingDownloadCompleted" />
   </section>
 </template>
 
 <script setup lang="ts">
 import AdminPageHeader from "../components/AdminPageHeader.vue";
+import ModelDownloadDialog from "../components/ModelDownloadDialog.vue";
 import { useLlm } from "./useLlm";
 import ConnectionCredentialInput from "../components/ConnectionCredentialInput.vue";
 
-const { filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, isCandleMode, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, updateEnabled, updatingEnabledIds, localLlmOptionLabel, compactId, formatTime, copiedId, handleFileChange, router, importFileInput, columns, contextLengthPresets, triggerImportFile, modelTypeLabel, modelName, isCandleStyle, apiStyleLabel, copyLlmConfig } = useLlm();
+const { filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, downloadDialogVisible, onEmbeddingDownloadCompleted, isChatMode, accessMode, modelTypeSelect, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, updateEnabled, updatingEnabledIds, localLlmOptionLabel, compactId, formatTime, copiedId, handleFileChange, router, importFileInput, columns, contextLengthPresets, triggerImportFile, modelTypeLabel, modelName, weightStyleLabel, apiStyleLabel, copyLlmConfig } = useLlm();
 </script>
 
 <style scoped lang="scss">

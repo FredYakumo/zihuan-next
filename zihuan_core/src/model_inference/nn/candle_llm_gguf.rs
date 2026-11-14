@@ -46,7 +46,7 @@ impl LocalCandleGgufLlm {
         let model_info = get_local_llm_model_info(&config.model_name)?;
         if !matches!(model_info.layout, LocalLlmModelLayout::Gguf) {
             return Err(Error::ValidationError(model_info.reason.unwrap_or_else(|| {
-                "api_style=candle_gguf requires a GGUF local text model".to_string()
+                "weight_style=gguf requires a GGUF local text model".to_string()
             })));
         }
         if model_info.supports_multimodal_input || config.supports_multimodal_input {

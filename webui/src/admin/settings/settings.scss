@@ -95,33 +95,6 @@
   opacity: 0.85;
 }
 
-.settings-model-list {
-  display: grid;
-  gap: 12px;
-}
-
-.settings-model-card {
-  padding: 14px 16px;
-  border: 1px solid var(--admin-border);
-  background: var(--admin-bg-soft);
-  display: grid;
-  gap: 8px;
-}
-
-.settings-model-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.settings-model-header strong {
-  font-size: 14px;
-}
-
-.settings-model-meta {
-  font-size: 12px;
-}
-
 .settings-backup-actions {
   display: flex;
   gap: 8px;

@@ -6,6 +6,7 @@ import type {
   ConnectionAuthMethod,
   LlmConfig,
   ModelRefSpec,
+  LlmApiStyle,
   LlmServiceConfig,
   EmbeddingServiceConfig,
 } from "../api/client";
@@ -27,16 +28,9 @@ export type ServiceTypeName = "qq_chat" | "workspace";
 
 /** Service types that support the Dashboard embedded Chat component. */
 export const CHAT_ELIGIBLE_SERVICE_TYPES: ReadonlySet<string> = new Set(["workspace"]);
-export type ModelRefType = "chat_llm" | "text_embedding_local";
+export type ModelRefType = "chat_llm_local" | "chat_llm_api" | "text_embedding_local" | "text_embedding_api";
 export type ToolRunDuration = "Short" | "Long";
-export type LlmApiStyle =
-  | "candle_gguf"
-  | "candle_hf"
-  | "open_ai_chat_completions"
-  | "open_ai_chat_completions_tencent_multimodal_compat"
-  | "open_ai_responses"
-  | "open_ai_responses_message_compat"
-  | "open_ai_responses_image_url_object_compat";
+export type LlmWeightStyle = "mock" | "gguf" | "hf";
 export type ToolImplementation = "node_graph" | "sub_agent" | "script" | "plugin";
 export type ToolTargetType = "workflow_set" | "file_path" | "inline_graph";
 export type ScriptLanguageForm = "type_script" | "python";
@@ -100,6 +94,14 @@ export interface ConnectionFormState {
   sqlite_path: string;
 }
 
+export interface EmbeddingApiFormState {
+  model_name: string;
+  api_endpoint: string;
+  api_key: string;
+  timeout_secs: number;
+  retry_count: number;
+}
+
 export interface LlmFormState {
   id: string | null;
   name: string;
@@ -107,6 +109,7 @@ export interface LlmFormState {
   model_type: ModelRefType;
   llm: LlmServiceConfig;
   local_model_name: string;
+  embedding: EmbeddingApiFormState;
 }
 
 export interface ToolFormState {
@@ -353,6 +356,7 @@ export function defaultLlmConfig(): LlmServiceConfig {
     api_endpoint: "",
     api_key: "",
     api_style: "open_ai_chat_completions",
+    weight_style: null,
     stream: false,
     supports_multimodal_input: false,
     include_reasoning_content: false,
@@ -422,14 +426,25 @@ export function defaultConnectionForm(): ConnectionFormState {
   };
 }
 
+export function defaultEmbeddingApiForm(): EmbeddingApiFormState {
+  return {
+    model_name: "",
+    api_endpoint: "",
+    api_key: "",
+    timeout_secs: 30,
+    retry_count: 2,
+  };
+}
+
 export function defaultLlmForm(): LlmFormState {
   return {
     id: null,
     name: "",
     enabled: true,
-    model_type: "chat_llm",
+    model_type: "chat_llm_api",
     llm: defaultLlmConfig(),
     local_model_name: "",
+    embedding: defaultEmbeddingApiForm(),
   };
 }
 
@@ -907,15 +922,27 @@ export function llmFormFromConfig(config: LlmConfig): LlmFormState {
     form.local_model_name = config.model.model_name;
     return form;
   }
+  if (config.model.type === "text_embedding_api") {
+    form.model_type = "text_embedding_api";
+    form.embedding = {
+      model_name: config.model.model_name,
+      api_endpoint: config.model.api_endpoint,
+      api_key: config.model.api_key ?? "",
+      timeout_secs: Number(config.model.timeout_secs ?? 30),
+      retry_count: Number(config.model.retry_count ?? 2),
+    };
+    return form;
+  }
   return {
     ...form,
-    model_type: "chat_llm",
+    model_type: config.model.type,
     llm: {
       model_name: config.model.llm.model_name,
       api_endpoint: config.model.llm.api_endpoint,
       api_key: config.model.llm.api_key ?? "",
       api_style: (config.model.llm.api_style ??
         "open_ai_chat_completions") as LlmApiStyle,
+      weight_style: config.model.llm.weight_style ?? null,
       stream: Boolean(config.model.llm.stream ?? false),
       supports_multimodal_input: Boolean(
         config.model.llm.supports_multimodal_input ?? false,
@@ -1432,18 +1459,36 @@ export function buildModelRefPayload(form: LlmFormState): ModelRefSpec {
     };
   }
 
+  if (form.model_type === "text_embedding_api") {
+    return {
+      type: "text_embedding_api",
+      model_name: form.embedding.model_name.trim(),
+      api_endpoint: form.embedding.api_endpoint.trim(),
+      api_key: form.embedding.api_key.trim() || null,
+      timeout_secs: form.embedding.timeout_secs,
+      retry_count: form.embedding.retry_count,
+    };
+  }
+
+  if (form.model_type === "chat_llm_local") {
+    return {
+      type: "chat_llm_local",
+      llm: {
+        ...form.llm,
+        // Mock 的 api_endpoint 是录制目录，需要保留；GGUF/HF 本地推理不需要。
+        api_endpoint: form.llm.weight_style === "mock" ? form.llm.api_endpoint.trim() : "",
+        api_key: null,
+      },
+    };
+  }
+
   return {
-    type: "chat_llm",
+    type: "chat_llm_api",
     llm: {
       ...form.llm,
-      api_endpoint:
-        form.llm.api_style === "candle_gguf" || form.llm.api_style === "candle_hf"
-          ? ""
-          : form.llm.api_endpoint.trim(),
-      api_key:
-        form.llm.api_style === "candle_gguf" || form.llm.api_style === "candle_hf"
-          ? null
-          : form.llm.api_key?.trim() || null,
+      api_endpoint: form.llm.api_endpoint.trim(),
+      api_key: form.llm.api_key?.trim() || null,
+      weight_style: null,
     },
   };
 }
@@ -1512,7 +1557,7 @@ export function assertLlmConfig(json: unknown): LlmConfig {
   }
   const modelObj = model as Record<string, unknown>;
   const modelType = String(modelObj.type ?? "");
-  if (modelType === "chat_llm") {
+  if (modelType === "chat_llm" || modelType === "chat_llm_local" || modelType === "chat_llm_api") {
     const llm = modelObj.llm;
     if (!llm || typeof llm !== "object") {
       throw new Error("聊天模型配置缺少 llm 字段");
@@ -1529,6 +1574,15 @@ export function assertLlmConfig(json: unknown): LlmConfig {
     const modelName = String(modelObj.model_name ?? "").trim();
     if (!modelName) {
       throw new Error("本地向量模型配置缺少 model_name");
+    }
+  } else if (modelType === "text_embedding_api") {
+    const modelName = String(modelObj.model_name ?? "").trim();
+    if (!modelName) {
+      throw new Error("API 向量模型配置缺少 model_name");
+    }
+    const apiEndpoint = String(modelObj.api_endpoint ?? "").trim();
+    if (!apiEndpoint) {
+      throw new Error("API 向量模型配置缺少 api_endpoint");
     }
   } else {
     throw new Error(`不支持的模型类型: ${modelType || "(空)"}`);

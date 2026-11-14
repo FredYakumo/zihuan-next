@@ -27,6 +27,7 @@
         <t-menu-item value="/connection-manager" to="/connection-manager" @click="closeSidebar"><template #icon><ControlPlatformIcon /></template>连接管理器</t-menu-item>
         <t-menu-item value="/data-explorer" to="/data-explorer" @click="closeSidebar"><template #icon><SearchIcon /></template>数据检索</t-menu-item>
         <t-menu-item value="/api-keys" to="/api-keys" @click="closeSidebar"><template #icon><KeyIcon /></template>API Key</t-menu-item>
+        <t-menu-item value="/model-weights" to="/model-weights" @click="closeSidebar"><template #icon><HardDriveIcon /></template>模型权重文件</t-menu-item>
         <t-menu-item value="/plugins" to="/plugins" @click="closeSidebar"><template #icon><ExtensionIcon /></template>插件</t-menu-item>
         <t-menu-item value="/settings" to="/settings" @click="closeSidebar"><template #icon><SettingIcon /></template>设置</t-menu-item>
       </t-menu>
@@ -46,7 +47,7 @@
 <script setup lang="ts">
 import { RouterView } from "vue-router";
 import {
-  ArticleIcon, ChatIcon, ControlPlatformIcon, DashboardIcon, ExtensionIcon, KeyIcon, LinkIcon,
+  ArticleIcon, ChatIcon, ControlPlatformIcon, DashboardIcon, ExtensionIcon, HardDriveIcon, KeyIcon, LinkIcon,
   MenuFoldIcon, MenuUnfoldIcon, MindMapIcon, SearchIcon, ServerIcon, SettingIcon, SitemapIcon,
   TaskIcon, TerminalIcon,
 } from "tdesign-icons-vue-next";
