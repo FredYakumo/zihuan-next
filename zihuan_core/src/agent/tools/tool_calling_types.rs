@@ -172,6 +172,14 @@ pub trait ToolCallingObserver: Send + Sync + 'static {
 }
 
 pub trait ToolCallingMiddleware: Send + Sync + 'static {
+    /// Restore context owned by the caller after a tool-loop compaction.
+    fn on_context_compacted(
+        &self,
+        _conversation: &mut Vec<LLMMessage>,
+    ) -> crate::error::Result<()> {
+        Ok(())
+    }
+
     fn on_before_inference(
         &self,
         _iteration: usize,

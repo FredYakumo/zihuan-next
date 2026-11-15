@@ -1,5 +1,8 @@
 mod before_brain;
 mod qq_memory_agent;
+pub(crate) use qq_memory_agent::{
+    identity_memory_context, saved_identity_context, IDENTITY_MEMORY_LABEL,
+};
 pub(crate) use qq_memory_agent::{MemoryAgentOutput, QqMemoryAgent};
 mod natural_language_reply;
 mod qq_after_brain;

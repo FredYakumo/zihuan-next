@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use serde_json::json;
-
 use crate::agent::declarative_agent::{AgentDefinition, AgentHost, AgentOutputMode};
 use crate::error::Result;
 use crate::graph::function_graph::FunctionPortDef;
@@ -37,7 +35,7 @@ pub fn memory_agent_definition(
         builtin: true,
         inputs: vec![memory_string_port("content", "Current input with verified sender QQ ID", true)],
         outputs: vec![memory_string_port("result", "Recall summary", true)],
-        system_prompt: format!("{}\nYou are the Memory Agent Procedure phase. Only recall, never write. Search relevant facts, people and behavior using FullSearchConceptMemory. QQ IDs identify people; never infer shared identity from aliases. When the user challenges a recollection use force_check=true. Always specify category. For the sender use category=person and query={{\"id\":QQ_ID}}; for topics use query={{\"query\":text}} with an explicit category. Do not invent memories.", prompts.system_prompt),
+        system_prompt: format!("{}\nYou are the Memory Agent Procedure phase. Only recall, never write. Search relevant facts, people and behavior using FullSearchConceptMemory. QQ IDs identify people; never infer shared identity from aliases. When the user challenges a recollection use force_check=true. Always specify category. Sender and bot identity profiles may already be supplied in [QQ Identity Memories]; reuse them and do not re-query those identities unless explicitly asked to refresh or correct them. For other people use category=person and query={{\"id\":QQ_ID}}; for topics use query={{\"query\":text}} with an explicit category. Do not invent memories.", prompts.system_prompt),
         user_prompt: Some("{content}".to_string()),
         prompt_parts: vec![],
         output_mode: AgentOutputMode::Text,
@@ -71,11 +69,6 @@ pub fn recall_memory(
     let agent = host.build_definition(definition)?;
     let mut ports = HashMap::new();
     ports.insert("content".to_string(), crate::graph::DataValue::String(input.to_string()));
-    // Recall the verified sender and applicable instructions even when the phase model skips tools.
-    let full = host.tool("FullSearchConceptMemory").unwrap();
-    if let Some(sender) = &resources.access.sender_id {
-        full.execute("", &json!({"category":"person","query":{"id":sender}}))?;
-    }
     let _ = agent.run_text(ports)?;
     let recalled = (*results.lock().unwrap()).clone();
     Ok(recalled)
