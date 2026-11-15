@@ -1097,13 +1097,112 @@ pub async fn stop_role_service(req: &mut Request, res: &mut Response, depot: &mu
 }
 
 #[handler]
+pub async fn restart_role_service(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<Arc<AppState>>().unwrap().clone();
+    let broadcast_tx = depot.obtain::<WsBroadcast>().unwrap().clone();
+    let id = req.param::<String>("id").unwrap_or_default();
+
+    let role_services = match system_config::load_role_services() {
+        Ok(role_services) => role_services,
+        Err(err) => return render_internal_error(res, err),
+    };
+    let Some(role_service) = role_services.into_iter().find(|item| item.id == id) else {
+        return render_not_found(res, "Role service not found");
+    };
+    let connections = match system_config::load_connections() {
+        Ok(connections) => connections,
+        Err(err) => return render_internal_error(res, err),
+    };
+    if let Err(message) =
+        validate_role_service_connection_schemas(&role_service.role_service_type, &connections)
+    {
+        return render_unprocessable_entity(res, message);
+    }
+    let llm_refs = match load_llm_refs() {
+        Ok(llm_refs) => llm_refs,
+        Err(err) => return render_internal_error(res, err),
+    };
+    if let Err(message) = validate_qq_chat_role_service_llms(
+        &role_service.role_service_type,
+        &llm_refs,
+        &role_service.name,
+    ) {
+        return render_unprocessable_entity(res, message);
+    }
+
+    info!("[role_services] restarting role service '{}' (id={})", role_service.name, id);
+    // Tag every log record emitted during the restart (including the manager's
+    // own stop/start logs) so the save-and-restart dialog can stream them.
+    let restart_result = zihuan_service::role::service_log_scope::scope(id.clone(), async {
+        let log_restart_step = |message: String| {
+            let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+            let _ = broadcast_tx.send(ServerMessage::ServiceRuntimeLog {
+                service_id: id.clone(),
+                level: "INFO".to_string(),
+                message,
+                timestamp,
+            });
+        };
+
+        log_restart_step(format!("正在重启 Role Service '{}'...", role_service.name));
+        if let Err(err) = state.role_service_manager.stop_role_service(&id).await {
+            log::error!(
+                "[role_services] failed to stop role service '{}' (id={}) during restart: {}",
+                role_service.name,
+                id,
+                err
+            );
+            return Err(err);
+        }
+        log_restart_step("服务已停止，正在按最新配置启动...".to_string());
+        if let Err(err) = start_role_service_runtime(
+            state.clone(),
+            broadcast_tx.clone(),
+            &role_service,
+            connections,
+        )
+        .await
+        {
+            log::error!(
+                "[role_services] failed to start role service '{}' (id={}) during restart: {}",
+                role_service.name,
+                id,
+                err
+            );
+            return Err(err);
+        }
+        log_restart_step("服务已启动".to_string());
+        Ok(())
+    })
+    .await;
+
+    match restart_result {
+        Ok(()) => {
+            info!("[role_services] restarted role service '{}' (id={})", role_service.name, id);
+            res.render(Json(serde_json::json!({
+                "ok": true,
+                "runtime": state.role_service_manager.runtime_info(&id),
+            })));
+        }
+        Err(err) => render_internal_error(res, err),
+    }
+}
+
+#[handler]
 pub async fn delete_role_service(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let _state = depot.obtain::<Arc<AppState>>().unwrap().clone();
+    let state = depot.obtain::<Arc<AppState>>().unwrap().clone();
     let id = req.param::<String>("id").unwrap_or_default();
     let mut role_services = match system_config::load_role_services() {
         Ok(role_services) => role_services,
         Err(err) => return render_internal_error(res, err),
     };
+    // Analyze before removing: a running service is reported as affected so the
+    // frontend can offer to stop it right after the delete succeeds.
+    let affected_running_services = super::dependency_check::affected_running_services(
+        &state,
+        ConfigDependencyKind::RoleService,
+        &id,
+    );
     let before = role_services.len();
     role_services.retain(|item| item.id != id);
 
