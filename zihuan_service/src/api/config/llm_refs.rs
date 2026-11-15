@@ -6,14 +6,11 @@ use uuid::Uuid;
 use crate::system_config;
 use log::{info, warn};
 use zihuan_core::config::llm_refs::LlmRefConfig;
+use zihuan_core::connection::utils::utilsdep_analyze::ConfigDependencyKind;
 use zihuan_core::model_inference::model_config::ModelRefSpec;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::close_runtime_embedding_instances_for_config;
-use zihuan_core::role::service_config::RoleServiceConfig;
-use zihuan_service::RoleServiceRuntimeStatus;
 
-use super::{
-    now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
-};
+use super::{now_rfc3339, render_bad_request, render_internal_error, render_not_found};
 
 #[derive(Deserialize)]
 pub struct CreateLlmRefRequest {
@@ -74,7 +71,7 @@ pub async fn create_llm_ref(req: &mut Request, res: &mut Response, _depot: &mut 
 
 #[handler]
 pub async fn update_llm_ref(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap();
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
     let id = req.param::<String>("id").unwrap_or_default();
     let body: UpdateLlmRefRequest = match req.parse_json().await {
         Ok(body) => body,
@@ -96,12 +93,27 @@ pub async fn update_llm_ref(req: &mut Request, res: &mut Response, depot: &mut D
     llm_ref.updated_at = now_rfc3339();
     let response = llm_ref.clone();
 
+    // A running role service keeps the old LLM config until restarted; report
+    // the affected services so the frontend can offer to restart them.
+    let affected_running_services = super::dependency_check::affected_running_services(
+        &state,
+        ConfigDependencyKind::LlmRef,
+        &id,
+    );
+
     match system_config::save_llm_refs(llm_refs) {
         Ok(()) => {
-            info!("[llm_refs] updated LLM config '{}' (id={})", response.name, response.id);
+            info!(
+                "[llm_refs] updated LLM config '{}' (id={}), {} running role service(s) affected",
+                response.name,
+                response.id,
+                affected_running_services.len()
+            );
             let _ = close_runtime_embedding_instances_for_config(&id);
-            hot_reload_agents_for_llm_ref(state.as_ref(), &id).await;
-            res.render(Json(response));
+            res.render(Json(serde_json::json!({
+                "llm_ref": response,
+                "affected_running_services": affected_running_services,
+            })));
         }
         Err(err) => render_internal_error(res, err),
     }
@@ -109,7 +121,7 @@ pub async fn update_llm_ref(req: &mut Request, res: &mut Response, depot: &mut D
 
 #[handler]
 pub async fn delete_llm_ref(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap();
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
     let id = req.param::<String>("id").unwrap_or_default();
     let mut llm_refs = match system_config::load_llm_refs() {
         Ok(llm_refs) => llm_refs,
@@ -122,77 +134,41 @@ pub async fn delete_llm_ref(req: &mut Request, res: &mut Response, depot: &mut D
         return render_not_found(res, "LLM ref not found");
     }
 
+    // Analyze before deleting: a deleted LLM config cannot be restarted onto
+    // the services referencing it, so they are stopped after the delete.
+    let affected_running_services = super::dependency_check::affected_running_services(
+        &state,
+        ConfigDependencyKind::LlmRef,
+        &id,
+    );
+
     match system_config::save_llm_refs(llm_refs) {
         Ok(()) => {
             let _ = close_runtime_embedding_instances_for_config(&id);
-            hot_reload_agents_for_llm_ref(state.as_ref(), &id).await;
-            info!("[llm_refs] deleted LLM config (id={})", id);
-            res.render(Json(ok_response()));
+            for service in &affected_running_services {
+                info!(
+                    "[llm_refs] stopping running role service '{}' (id={}) after deleting LLM config '{}'",
+                    service.name, service.id, id
+                );
+                if let Err(err) = state.role_service_manager.stop_role_service(&service.id).await {
+                    warn!(
+                        "[llm_refs] failed to stop role service '{}' after deleting LLM config '{}': {}",
+                        service.name, id, err
+                    );
+                }
+            }
+            info!(
+                "[llm_refs] deleted LLM config (id={}), {} running role service(s) affected",
+                id,
+                affected_running_services.len()
+            );
+            res.render(Json(serde_json::json!({
+                "ok": true,
+                "affected_running_services": affected_running_services,
+            })));
         }
         Err(err) => render_internal_error(res, err),
     }
-}
-
-async fn hot_reload_agents_for_llm_ref(state: &crate::api::state::AppState, llm_ref_id: &str) {
-    let agents = match system_config::load_role_services() {
-        Ok(agents) => agents,
-        Err(err) => {
-            warn!(
-                "[llm_refs] updated llm_ref={} but failed to load agents for hot reload: {}",
-                llm_ref_id, err
-            );
-            return;
-        }
-    };
-
-    let connections = match system_config::load_connections() {
-        Ok(connections) => connections,
-        Err(err) => {
-            warn!(
-                "[llm_refs] updated llm_ref={} but failed to load connections for hot reload: {}",
-                llm_ref_id, err
-            );
-            return;
-        }
-    };
-
-    for agent in agents.into_iter().filter(|agent| agent_uses_llm_ref(agent, llm_ref_id)) {
-        let runtime = state.role_service_manager.runtime_info(&agent.id);
-        if runtime.status != RoleServiceRuntimeStatus::Running {
-            continue;
-        }
-
-        info!(
-            "[llm_refs] hot reloading running agent '{}' after llm_ref update: {}",
-            agent.name, llm_ref_id
-        );
-
-        if let Err(err) = state
-            .role_service_manager
-            .start_role_service(&agent, connections.clone(), None, None)
-            .await
-        {
-            warn!(
-                "[llm_refs] failed to hot reload agent '{}' for llm_ref={}: {}",
-                agent.name, llm_ref_id, err
-            );
-        }
-    }
-}
-
-fn agent_uses_llm_ref(agent: &RoleServiceConfig, llm_ref_id: &str) -> bool {
-    if let Some(config) = zihuan_service::role::optional_qq_chat(&agent.role_service_type) {
-        return config.llm_ref_id.as_deref() == Some(llm_ref_id)
-            || config.image_understand_llm_ref_id.as_deref() == Some(llm_ref_id)
-            || config.intent_classification_llm_ref_id.as_deref() == Some(llm_ref_id)
-            || config.math_programming_llm_ref_id.as_deref() == Some(llm_ref_id)
-            || config.natural_language_reply_llm_ref_id.as_deref() == Some(llm_ref_id)
-            || config.embedding_model_ref_id.as_deref() == Some(llm_ref_id);
-    }
-    if let Some(config) = zihuan_service::role::optional_workspace(&agent.role_service_type) {
-        return config.llm_ref_id.as_deref() == Some(llm_ref_id);
-    }
-    false
 }
 
 #[cfg(test)]

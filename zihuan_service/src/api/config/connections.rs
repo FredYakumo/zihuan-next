@@ -5,7 +5,10 @@ use std::time::Duration;
 use uuid::Uuid;
 
 use crate::system_config;
-use log::info;
+use log::{info, warn};
+use zihuan_core::connection::utils::utilsdep_analyze::{
+    ConfigDependencyKind, DependentRoleService,
+};
 use zihuan_core::ims_bot_adapter::{
     close_runtime_bot_adapter_instance, list_active_bot_adapter_connection_ids,
     list_runtime_bot_adapter_instances, parse_ims_bot_adapter_connection,
@@ -21,6 +24,8 @@ use zihuan_core::storage::{
     validate_connection_authentication, ConnectionConfig, ConnectionKind,
 };
 use zihuan_core::weaviate::{WeaviateEnsureCollectionResult, WeaviateRef};
+
+use super::dependency_check::affected_running_services;
 
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
@@ -51,6 +56,9 @@ struct ConnectionMutationResponse {
     #[serde(flatten)]
     connection: ConnectionConfig,
     collection_created: bool,
+    /// Running role services referencing this connection; the frontend offers
+    /// to restart them after the save (see ServiceRestartConfirmDialog).
+    affected_running_services: Vec<DependentRoleService>,
 }
 
 enum ConnectionValidationError {
@@ -294,14 +302,19 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
             info!("[connections] created connection '{}' (id={})", connection.name, connection.id);
-            res.render(Json(ConnectionMutationResponse { connection, collection_created }));
+            res.render(Json(ConnectionMutationResponse {
+                connection,
+                collection_created,
+                // A brand-new connection cannot be referenced by anything yet.
+                affected_running_services: Vec::new(),
+            }));
         }
         Err(err) => render_internal_error(res, err),
     }
 }
 
 #[handler]
-pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn update_connection(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
     let body: UpdateConnectionRequest = match req.parse_json().await {
         Ok(body) => body,
@@ -334,6 +347,10 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
         return render_not_found(res, "Connection not found");
     }
 
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
+    let affected_running_services =
+        affected_running_services(&state, ConfigDependencyKind::Connection, &id);
+
     let response = ConnectionConfig {
         id: id.clone(),
         config_id: id,
@@ -349,10 +366,16 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
 
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
-            info!("[connections] updated connection '{}' (id={})", response.name, response.id);
+            info!(
+                "[connections] updated connection '{}' (id={}), {} running role service(s) affected",
+                response.name,
+                response.id,
+                affected_running_services.len()
+            );
             res.render(Json(ConnectionMutationResponse {
                 connection: response,
                 collection_created,
+                affected_running_services,
             }));
         }
         Err(err) => render_internal_error(res, err),
@@ -363,13 +386,38 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
 pub async fn delete_connection(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
     let id = req.param::<String>("id").unwrap_or_default();
+    // Analyze before deleting: the references are resolved against the configs,
+    // so the affected set must be captured while everything still exists.
+    let affected_running_services =
+        affected_running_services(&state, ConfigDependencyKind::Connection, &id);
     match delete_stored_connection(&id) {
         Ok(true) => {
             state.tasks.lock().unwrap().unregister_db_pool(&id);
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
-            info!("[connections] deleted connection (id={})", id);
-            res.render(Json(ok_response()));
+            // A deleted connection cannot be restarted onto; stop the services
+            // that still reference it so they do not run against missing config.
+            for service in &affected_running_services {
+                info!(
+                    "[connections] stopping running role service '{}' (id={}) after deleting connection '{}'",
+                    service.name, service.id, id
+                );
+                if let Err(err) = state.role_service_manager.stop_role_service(&service.id).await {
+                    warn!(
+                        "[connections] failed to stop role service '{}' after deleting connection '{}': {}",
+                        service.name, id, err
+                    );
+                }
+            }
+            info!(
+                "[connections] deleted connection (id={}), {} running role service(s) affected",
+                id,
+                affected_running_services.len()
+            );
+            res.render(Json(serde_json::json!({
+                "ok": true,
+                "affected_running_services": affected_running_services,
+            })));
         }
         Ok(false) => render_not_found(res, "Connection not found"),
         Err(err) => render_internal_error(res, err),
