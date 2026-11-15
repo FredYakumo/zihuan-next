@@ -18,6 +18,7 @@ import {
   type LlmFormState,
 } from "../model";
 import { useAdminClipboard } from "../components/useAdminClipboard";
+import { useServiceRestart } from "../components/useServiceRestart";
 
 type LlmFilters = {
   keyword: string;
@@ -30,6 +31,17 @@ function isEmbeddingType(type: string): boolean {
 }
 
 export function useLlm() {
+  const restartDialog = useServiceRestart({
+    // The editor stays open behind the dialog; these settle it when the flow ends.
+    onCompleted: () => {
+      closeDrawer();
+      void load();
+    },
+    onSaveOnly: () => {
+      closeDrawer();
+      void load();
+    },
+  });
   const items = ref<LlmConfig[]>([]);
   const form = reactive<LlmFormState>(defaultLlmForm());
   const drawerVisible = ref(false);
@@ -300,21 +312,30 @@ export function useLlm() {
       model: buildModelRefPayload(form),
     };
     if (form.id) {
-      await system.llm.update(form.id, payload);
+      const result = await system.llm.update(form.id, payload);
+      // With affected services the dialog opens over the still-open drawer, so
+      // 取消 returns to the edit page; without them, finish as before.
+      if (!restartDialog.openAfterSave(result.affected_running_services)) {
+        resetCreateForm();
+        drawerVisible.value = false;
+        await load();
+      }
     } else {
       await system.llm.create(payload);
+      resetCreateForm();
+      drawerVisible.value = false;
+      await load();
     }
-    resetCreateForm();
-    drawerVisible.value = false;
-    await load();
   }
 
   async function removeItem(id: string) {
-    await system.llm.delete(id);
+    const result = await system.llm.delete(id);
     if (form.id === id) {
       closeDrawer();
     }
     await load();
+    // The backend stops running services referencing the deleted LLM config.
+    restartDialog.openAfterDelete(result.affected_running_services);
   }
 
   async function updateEnabled(item: LlmConfig, enabled: boolean) {
@@ -329,7 +350,7 @@ export function useLlm() {
         enabled,
         model: item.model,
       });
-      Object.assign(item, updatedItem);
+      Object.assign(item, updatedItem.llm_ref);
     } catch (error) {
       console.error(error);
       alert(`更新模型启用状态失败: ${(error as Error).message}`);
@@ -380,6 +401,7 @@ export function useLlm() {
   );
 
   return {
+    restartDialog,
     items,
     filteredItems,
     form,

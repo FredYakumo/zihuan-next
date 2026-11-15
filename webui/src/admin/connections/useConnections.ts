@@ -23,6 +23,7 @@ import {
   type ConnectionFormState,
 } from "../model";
 import { useAdminClipboard } from "../components/useAdminClipboard";
+import { useServiceRestart } from "../components/useServiceRestart";
 
 type ConnectionTypeOption = {
   value: ConnectionFormState["type"];
@@ -37,6 +38,17 @@ type ConnectionFilters = {
 };
 
 export function useConnections() {
+  const restartDialog = useServiceRestart({
+    // The drawer stays open behind the dialog; these settle it when the flow ends.
+    onCompleted: () => {
+      closeDrawer();
+      void load();
+    },
+    onSaveOnly: () => {
+      closeDrawer();
+      void load();
+    },
+  });
   const connectionTypes: ConnectionTypeOption[] = [
     { value: "mysql", label: "MySQL", hint: "数据库连接" },
     { value: "redis", label: "Redis", hint: "缓存与会话" },
@@ -357,8 +369,12 @@ export function useConnections() {
       if (result.collection_created) {
         alert("已自动创建检索数据库所需的集合/索引。");
       }
-      closeDrawer();
-      await load();
+      // With affected services the dialog opens over the still-open drawer, so
+      // 取消 returns to the edit page; without them, finish as before.
+      if (!restartDialog.openAfterSave(result.affected_running_services)) {
+        closeDrawer();
+        await load();
+      }
     } catch (error) {
       console.error("连接保存失败", error);
       alert(`连接保存失败：${formatSaveErrorMessage(error)}`);
@@ -412,11 +428,13 @@ export function useConnections() {
   }
 
   async function removeConnection(id: string) {
-    await system.connections.delete(id);
+    const result = await system.connections.delete(id);
     if (form.id === id) {
       closeDrawer();
     }
     await load();
+    // The backend stops running services referencing the deleted connection.
+    restartDialog.openAfterDelete(result.affected_running_services);
   }
 
   function summarizeConnection(connection: ConnectionConfig): Array<{ label: string; value: string }> {
@@ -571,6 +589,7 @@ export function useConnections() {
   });
 
   return {
+    restartDialog,
     connections,
     filteredConnections,
     runtimeInstances,

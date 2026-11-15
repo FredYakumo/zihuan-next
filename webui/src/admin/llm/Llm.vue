@@ -149,16 +149,19 @@
     </t-drawer>
 
     <ModelDownloadDialog v-model:visible="downloadDialogVisible" @completed="onEmbeddingDownloadCompleted" />
+
+    <ServiceRestartConfirmDialog :state="restartDialog.state" @close="restartDialog.close()" @save-only="restartDialog.saveOnly()" @restart="restartDialog.restartAll()" />
   </section>
 </template>
 
 <script setup lang="ts">
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import ModelDownloadDialog from "../components/ModelDownloadDialog.vue";
+import ServiceRestartConfirmDialog from "../components/ServiceRestartConfirmDialog.vue";
 import { useLlm } from "./useLlm";
 import ConnectionCredentialInput from "../components/ConnectionCredentialInput.vue";
 
-const { filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, downloadDialogVisible, onEmbeddingDownloadCompleted, isChatMode, accessMode, modelTypeSelect, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, updateEnabled, updatingEnabledIds, localLlmOptionLabel, compactId, formatTime, copiedId, handleFileChange, router, importFileInput, columns, contextLengthPresets, triggerImportFile, modelTypeLabel, modelName, weightStyleLabel, apiStyleLabel, copyLlmConfig } = useLlm();
+const { restartDialog, filteredItems, form, drawerVisible, isCreating, filters, localEmbeddingModels, downloadDialogVisible, onEmbeddingDownloadCompleted, isChatMode, accessMode, modelTypeSelect, filteredLocalLlmModels, selectedLocalLlmHint, startCreate, closeDrawer, load, editItem, submitForm, removeItem, updateEnabled, updatingEnabledIds, localLlmOptionLabel, compactId, formatTime, copiedId, handleFileChange, router, importFileInput, columns, contextLengthPresets, triggerImportFile, modelTypeLabel, modelName, weightStyleLabel, apiStyleLabel, copyLlmConfig } = useLlm();
 </script>
 
 <style scoped lang="scss">
