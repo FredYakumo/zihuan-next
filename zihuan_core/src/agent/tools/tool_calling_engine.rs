@@ -511,7 +511,9 @@ impl ToolCallingEngine {
             if iteration > 0 {
                 self.append_iteration_messages(iteration + 1, &mut conversation);
             }
-            self.compact_conversation_if_over_threshold(&mut conversation);
+            if let Err(error) = self.compact_conversation_if_over_threshold(&mut conversation) {
+                return (output, ToolCallingStopReason::TransportError(error.to_string()));
+            }
             let inference_started = std::time::Instant::now();
             let response = match self.llm.inference(&InferenceParam {
                 messages: &conversation,
@@ -681,11 +683,14 @@ impl ToolCallingEngine {
     /// share of the model context window. The leading system/setup messages and the most
     /// recent tool exchange are preserved verbatim; older exchanges are replaced by an
     /// LLM digest, so long pagination loops cannot overflow the context.
-    fn compact_conversation_if_over_threshold(&self, conversation: &mut Vec<LLMMessage>) {
+    fn compact_conversation_if_over_threshold(
+        &self,
+        conversation: &mut Vec<LLMMessage>,
+    ) -> crate::error::Result<()> {
         let threshold =
             compaction_threshold(self.llm.context_length(), current_context_compaction_percent());
         if threshold == 0 || estimate_messages_tokens(conversation) <= threshold {
-            return;
+            return Ok(());
         }
 
         let taken = std::mem::take(conversation);
@@ -697,6 +702,12 @@ impl ToolCallingEngine {
             );
         }
         *conversation = result.messages;
+        if result.did_compact {
+            if let Some(hook) = &self.iteration_hook {
+                hook.on_context_compacted(conversation)?;
+            }
+        }
+        Ok(())
     }
 
     pub async fn run_streaming(
@@ -722,7 +733,9 @@ impl ToolCallingEngine {
             if iteration > 0 {
                 self.append_iteration_messages(iteration + 1, &mut conversation);
             }
-            self.compact_conversation_if_over_threshold(&mut conversation);
+            if let Err(error) = self.compact_conversation_if_over_threshold(&mut conversation) {
+                return (output, ToolCallingStopReason::TransportError(error.to_string()));
+            }
             let tools_param: Option<&Vec<Arc<dyn FunctionTool>>> = if tool_specs.is_empty() {
                 None
             } else {

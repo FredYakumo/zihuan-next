@@ -7,8 +7,13 @@ mod db_schema;
 mod elasticsearch;
 pub mod hyperparams;
 mod local_memory;
+pub mod memory;
 mod memory_migration;
 mod memory_types;
+pub use memory::{
+    BehavioralMemoryRecord, BehavioralMemoryWrite, ConceptMemoryRecord, ConceptMemoryWrite,
+    MemoryBackend, MemoryQuery, PersonMemoryRecord, PersonMemoryWrite,
+};
 pub use memory_migration::migrate_retrieval_memory;
 pub mod user_permission;
 pub use memory_types::{
@@ -82,7 +87,7 @@ pub use resource_resolver::{
 };
 pub use retrieval_database::{RetrievalDatabase, RetrievalImageHit};
 pub use retrieval_ops::{
-    get_memory_in_store, list_memory_in_store, persist_image_record_to_store,
+    get_memory_in_store, get_person_in_store, list_memory_in_store, persist_image_record_to_store,
     persist_media_to_store, persist_qq_message_list_to_store, search_images_in_store,
     search_memory_in_store, upsert_memory_in_store, ImagePersistenceRequest,
 };

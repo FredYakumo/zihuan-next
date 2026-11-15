@@ -423,7 +423,7 @@ pub async fn spawn(
                             },
                             ..Default::default()
                         },
-                        key: format!("person-{sender_id}"),
+                        key: String::new(),
                         value: content.to_string(),
                         expires_at: None,
                         sender_id_list: Vec::new(),

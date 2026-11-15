@@ -291,11 +291,19 @@ pub fn create_elasticsearch_memory_record(
     validate_vector(reference, &vector)?;
     let key = input.key.trim();
     let value = input.value.trim();
-    if key.is_empty() || value.is_empty() {
+    if (key.is_empty() && input.attributes.category != super::MemoryCategory::Person)
+        || value.is_empty()
+    {
         return Err(Error::ValidationError("memory title and value must not be empty".to_string()));
     }
     let now = Utc::now().to_rfc3339();
-    let object_id = super::memory_object_id(input);
+    let object_id = if input.attributes.category == super::MemoryCategory::Person {
+        get_person_by_qq_id(reference, &input.attributes.person.qq_id)?
+            .map(|record| record.object_id)
+            .unwrap_or_else(|| super::memory_object_id(input))
+    } else {
+        super::memory_object_id(input)
+    };
     match get_elasticsearch_memory_record(reference, &object_id) {
         Ok(_) => return update_elasticsearch_memory_record(reference, &object_id, input, vector),
         Err(Error::NotFound) => {}
@@ -306,6 +314,9 @@ pub fn create_elasticsearch_memory_record(
         .as_object_mut()
         .unwrap()
         .extend(serde_json::to_value(&input.attributes)?.as_object().unwrap().clone());
+    if input.attributes.category == super::MemoryCategory::Person {
+        document.as_object_mut().unwrap().remove("key");
+    }
     reference.request(
         reqwest::Method::PUT,
         &format!("/{}/_doc/{}?refresh=wait_for", reference.index_name, object_id),
@@ -325,11 +336,13 @@ pub fn update_elasticsearch_memory_record(
     validate_vector(reference, &vector)?;
     let key = input.key.trim();
     let value = input.value.trim();
-    if key.is_empty() || value.is_empty() {
+    if (key.is_empty() && input.attributes.category != super::MemoryCategory::Person)
+        || value.is_empty()
+    {
         return Err(Error::ValidationError("memory title and value must not be empty".to_string()));
     }
     let existing = get_elasticsearch_memory_record(reference, object_id)?;
-    if input.key != existing.key
+    if (input.attributes.category != super::MemoryCategory::Person && input.key != existing.key)
         || input.sender_id_list != existing.sender_id_list
         || input.group_id_list != existing.group_id_list
         || input.attributes.category != existing.attributes.category
@@ -351,6 +364,9 @@ pub fn update_elasticsearch_memory_record(
         .as_object_mut()
         .unwrap()
         .extend(serde_json::to_value(&input.attributes)?.as_object().unwrap().clone());
+    if input.attributes.category == super::MemoryCategory::Person {
+        document.as_object_mut().unwrap().remove("key");
+    }
     reference.request(
         reqwest::Method::PUT,
         &format!("/{}/_doc/{}?refresh=wait_for", reference.index_name, object_id),
@@ -547,10 +563,36 @@ fn memory_lexical_body(access: &AgentMemoryAccessContext, query: &str, size: usi
 }
 
 fn memory_lexical_query(access: &AgentMemoryAccessContext, query: &str) -> Value {
+    if access.category == super::MemoryCategory::Person {
+        return json!({"bool":{"filter":[access_filter(access)],"should":[
+            {"term":{"qq_id":{"value":query,"boost":10}}},
+            {"wildcard":{"qq_id":{"value":format!("*{}*",query.replace('\\',"\\\\").replace('*',"\\*").replace('?',"\\?"))}}},
+            {"multi_match":{"query":query,"fields":["name^5","preferred_name^5","aliases^5","impression^2"],"fuzziness":"AUTO"}},
+            {"multi_match":{"query":query,"fields":["name.pinyin^4","preferred_name.pinyin^4","aliases.pinyin^4","impression.pinyin"]}}
+        ],"minimum_should_match":1}});
+    }
     json!({"bool":{"filter":[access_filter(access)],"should":[
         {"multi_match":{"query":query,"fields":["key^5","value^2","qq_id^10","name^5","preferred_name^5","aliases^5","impression^2"],"type":"best_fields","operator":"and"}},
         {"multi_match":{"query":query,"fields":["key.pinyin^4","value.pinyin","name.pinyin^4","preferred_name.pinyin^4","aliases.pinyin^4","impression.pinyin"],"type":"best_fields"}}
     ],"minimum_should_match":1}})
+}
+
+pub(crate) fn get_person_by_qq_id(
+    reference: &ElasticsearchRef,
+    qq_id: &str,
+) -> Result<Option<AgentMemoryRecord>> {
+    let access = AgentMemoryAccessContext {
+        category: super::MemoryCategory::Person,
+        admin: true,
+        skip_expiry_extend: true,
+        ..Default::default()
+    };
+    let response = reference.request(
+        reqwest::Method::POST,
+        &format!("/{}/_search", reference.index_name),
+        Some(json!({"size":1,"query":{"term":{"qq_id":qq_id}},"sort":[{"updated_at":"desc"}]})),
+    )?;
+    Ok(parse_memory_hits(response, &access)?.into_iter().next().map(|hit| hit.record))
 }
 
 fn memory_vector_body(access: &AgentMemoryAccessContext, vector: &[f32], size: usize) -> Value {
@@ -619,7 +661,11 @@ fn parse_memory_hits(
             let record = AgentMemoryRecord {
                 attributes: serde_json::from_value(source.clone()).unwrap_or_default(),
                 object_id: hit.get("_id")?.as_str()?.to_string(),
-                key: source.get("key")?.as_str()?.to_string(),
+                key: if source.get("category").and_then(Value::as_str) == Some("person") {
+                    String::new()
+                } else {
+                    source.get("key")?.as_str()?.to_string()
+                },
                 value: source.get("value")?.as_str()?.to_string(),
                 expires_at: source.get("expires_at").and_then(Value::as_str).map(ToOwned::to_owned),
                 sender_id_list: string_list(source, "sender_id_list"),
@@ -651,7 +697,11 @@ pub fn get_elasticsearch_memory_record(
     Ok(AgentMemoryRecord {
         attributes: serde_json::from_value(source.clone()).unwrap_or_default(),
         object_id: object_id.to_string(),
-        key: source.get("key").and_then(Value::as_str).unwrap_or_default().to_string(),
+        key: if source.get("category").and_then(Value::as_str) == Some("person") {
+            String::new()
+        } else {
+            source.get("key").and_then(Value::as_str).unwrap_or_default().to_string()
+        },
         value: source.get("value").and_then(Value::as_str).unwrap_or_default().to_string(),
         expires_at: source.get("expires_at").and_then(Value::as_str).map(ToOwned::to_owned),
         sender_id_list: string_list(source, "sender_id_list"),

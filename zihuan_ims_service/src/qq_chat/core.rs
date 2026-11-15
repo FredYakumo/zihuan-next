@@ -100,12 +100,7 @@ pub(crate) fn history_user_message(mut message: LLMMessage) -> LLMMessage {
             *text = stripped;
         }
     }
-    if matches!(
-        message.parts.last(),
-        Some(MessagePart::Text { text }) if text.starts_with("[Processing Instructions]")
-    ) {
-        message.parts.pop();
-    }
+    message.parts.retain(|part| !matches!(part, MessagePart::Text { text } if text.starts_with("[Processing Instructions]")));
     message
 }
 
@@ -120,13 +115,17 @@ pub(crate) fn compact_turn_history(
     history: Vec<LLMMessage>,
     current_user_message: &LLMMessage,
 ) -> ContextCompactionResult {
-    let result = compact_message_history(
+    let mut result = compact_message_history(
         llm,
         history,
         compaction_threshold(llm.context_length(), current_context_compaction_percent()),
         current_user_message,
     );
     if result.did_compact {
+        for message in &mut result.messages {
+            message.parts.retain(|part| !matches!(part, MessagePart::Text { text } if text.starts_with(crate::procedure::IDENTITY_MEMORY_LABEL)));
+        }
+        result.messages.retain(|message| !message.parts.is_empty());
         info!(
             "{LOG_PREFIX} history compacted for {history_key}: tokens {} -> {}",
             result.estimated_tokens_before, result.estimated_tokens_after

@@ -195,7 +195,7 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
       impression: dialog.form.impression.trim(),
       guideline: dialog.form.guideline.trim(),
     };
-    const title = category === "person" ? `person-${person.qq_id}` : category === "concept" || dialog.mode === "edit" ? dialog.form.title.trim() : "";
+    const title = category === "person" ? "" : category === "concept" || dialog.mode === "edit" ? dialog.form.title.trim() : "";
     const value = category === "person" ? JSON.stringify(person) : dialog.form.value.trim();
     dialog.errors = {
       title: category !== "concept" || title ? "" : "请输入记忆标题",

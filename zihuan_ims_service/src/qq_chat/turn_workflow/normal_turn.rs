@@ -103,6 +103,8 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
                     sender_id,
                 )?;
                 Ok::<_, Error>(crate::procedure::QqMemoryAgent {
+                    bot_id: turn.bot_id.to_string(),
+                    identity_context: crate::procedure::saved_identity_context(&turn.history),
                     identity: turn_identity.clone(),
                     resources,
                     input: format!(

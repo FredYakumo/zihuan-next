@@ -3,12 +3,13 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 
+use super::category_argument;
 use crate::agent::tools::Tool;
 use crate::error::Result;
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::model_inference::llm::tooling::FunctionTool;
+use crate::storage::MemoryQuery;
 use crate::storage::{AgentMemoryAccessContext, AgentMemorySearchHit, MemoryCategory};
-use crate::utils::json_utils::required_string_argument;
 
 use super::function_spec::MemoryFunctionToolSpec;
 use super::recall::{MemoryRecall, RecalledMemory};
@@ -25,10 +26,12 @@ pub fn full_search_memory(
     query: Option<&str>,
     limit: usize,
 ) -> Result<Vec<(MemoryCategory, Vec<AgentMemorySearchHit>)>> {
+    let typed_query = MemoryQuery::Query(query.unwrap_or_default().to_string());
     std::thread::scope(|scope| {
         let tasks = MemoryCategory::ALL
             .into_iter()
             .map(|category| {
+                let typed_query = &typed_query;
                 scope.spawn(move || {
                     search_category(
                         backend,
@@ -38,7 +41,7 @@ pub fn full_search_memory(
                         if category == MemoryCategory::Behavioral {
                             None
                         } else {
-                            query
+                            query.map(|_| typed_query)
                         },
                         if category == MemoryCategory::Behavioral {
                             100
@@ -87,19 +90,29 @@ impl FullSearchConceptMemory {
 
 impl Tool for FullSearchConceptMemory {
     fn spec(&self) -> Arc<dyn FunctionTool> {
-        Arc::new(MemoryFunctionToolSpec::new("FullSearchConceptMemory", "Search all memory categories in parallel. Use force_check when the user disputes recalled information.",
-         json!({"type":"object","properties":{"query":{"type":"string"},"force_check":{"type":"boolean"}},"required":["query"],"additionalProperties":false})))
+        Arc::new(MemoryFunctionToolSpec::new("FullSearchConceptMemory", "Search an explicitly selected memory category. query is {id: QQ_ID} for exact person identity or {query: text} for fuzzy retrieval. Use force_check when disputing recalled information.",
+         json!({"type":"object","properties":{"category":{"type":"string","enum":["concept","person","behavioral"]},"query":crate::storage::memory::memory_query_schema(),"force_check":{"type":"boolean"}},"required":["category","query"],"additionalProperties":false})))
     }
     fn execute(&self, _: &str, arguments: &Value) -> Result<String> {
-        let query = required_string_argument(arguments, "query")?;
-        let force = arguments.get("force_check").and_then(Value::as_bool).unwrap_or(false);
-        let batches = full_search_memory(
-            &self.resources.memory_backend,
-            self.resources.embedding_model.as_deref(),
-            &self.resources.access,
-            Some(&query),
-            10,
+        let category = category_argument(arguments)?;
+        let query: MemoryQuery = serde_json::from_value(
+            arguments
+                .get("query")
+                .cloned()
+                .ok_or_else(|| crate::string_error!("query required"))?,
         )?;
+        let force = arguments.get("force_check").and_then(Value::as_bool).unwrap_or(false);
+        let batches = vec![(
+            category,
+            search_category(
+                &self.resources.memory_backend,
+                self.resources.embedding_model.as_deref(),
+                &self.resources.access,
+                category,
+                Some(&query),
+                10,
+            )?,
+        )];
         let mut grouped = serde_json::Map::new();
         let mut seen = self.seen.lock().unwrap();
         let mut recall = self.results.lock().unwrap();

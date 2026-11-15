@@ -499,8 +499,16 @@ impl Procedure for QqBrain {
         })?;
         *self.turn_context.lock().unwrap() = Some(SteerTurnContext {
             memory_recall: assembled.memory_recall.clone(),
+            memory_resources: context
+                .find_output::<super::MemoryAgentOutput>()
+                .map(|memory| memory.resources.clone()),
         });
         let mut user_msg = assembled.user_message.clone();
+        let memory_output = context.find_output::<super::MemoryAgentOutput>();
+        let mut identity_context =
+            memory_output.as_ref().map(|memory| memory.identity_context.clone());
+        let mut inject_identities =
+            memory_output.as_ref().is_some_and(|memory| memory.identity_context_is_new);
 
         // The per-sender conversation history is still compacted for the session cache, but
         // on a group turn the group-message-window procedure replaces what the brain
@@ -517,20 +525,26 @@ impl Procedure for QqBrain {
         );
         if compact_result.did_compact {
             if let Some(memory) = context.find_output::<super::MemoryAgentOutput>() {
+                inject_identities = true;
                 let resources = memory.resources.clone();
                 let input = memory.input.clone();
+                let bot_id = memory.bot_id.clone();
                 let source = memory.memories.source().map(str::to_string);
-                let recalled = tokio::task::spawn_blocking(move || {
-                    zihuan_core::agent::tools::memory::recall_memory(
+                let (recalled, profiles) = tokio::task::spawn_blocking(move || {
+                    let profiles = super::identity_memory_context(&resources, &bot_id)?;
+                    let input = format!("{input}\n\n{profiles}");
+                    let recalled = zihuan_core::agent::tools::memory::recall_memory(
                         resources,
                         &input,
                         String::new(),
-                    )
+                    )?;
+                    Ok::<_, Error>((recalled, profiles))
                 })
                 .await
                 .map_err(|error| {
                     zihuan_core::string_error!("memory refresh after compaction failed: {error}")
                 })??;
+                identity_context = Some(profiles);
                 let recalled = match source {
                     Some(source) => recalled.with_source(source),
                     None => recalled,
@@ -547,10 +561,21 @@ impl Procedure for QqBrain {
                 }
             }
         }
-        let history: Vec<LLMMessage> = match &window_output {
+        let mut history: Vec<LLMMessage> = match &window_output {
             Some(window) => window.history_message().into_iter().collect(),
             None => compact_result.messages,
         };
+        if compact_result.did_compact {
+            for message in &mut history {
+                message.parts.retain(|part| !matches!(part, MessagePart::Text { text } if text.starts_with(super::IDENTITY_MEMORY_LABEL)));
+            }
+            history.retain(|message| !message.parts.is_empty());
+        }
+        if inject_identities {
+            if let Some(identity) = &identity_context {
+                user_msg.parts.push(MessagePart::text(identity.clone()));
+            }
+        }
         self.trace
             .record_history_stats(history.len(), estimate_messages_tokens(&history));
 
@@ -560,6 +585,11 @@ impl Procedure for QqBrain {
         let mut conversation: Vec<LLMMessage> = Vec::with_capacity(history.len() + 2);
         conversation.push(LLMMessage::system(assembled.system_prompt.clone()));
         conversation.extend(history.iter().cloned());
+        if !inject_identities && window_output.is_some() {
+            if let Some(identity) = &identity_context {
+                conversation.push(LLMMessage::user(identity.clone()));
+            }
+        }
         conversation.push(user_msg.clone());
         let brain_conversation =
             downgrade_messages_for_model(conversation, self.turn_llm.supports_multimodal_input());

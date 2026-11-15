@@ -318,9 +318,30 @@ pub(crate) struct QqChatServiceSteerHook {
 #[derive(Clone)]
 pub(crate) struct SteerTurnContext {
     pub(crate) memory_recall: Option<MemoryRecall>,
+    pub(crate) memory_resources: Option<zihuan_core::agent::tools::memory::MemoryAgentResources>,
 }
 
 impl ToolCallingMiddleware for QqChatServiceSteerHook {
+    fn on_context_compacted(&self, conversation: &mut Vec<LLMMessage>) -> Result<()> {
+        let resources = self
+            .turn_context
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|turn| turn.memory_resources.clone());
+        if let Some(resources) = resources {
+            let profiles = crate::procedure::identity_memory_context(&resources, &self.bot_id)?;
+            for message in conversation.iter_mut() {
+                message.parts.retain(|part| !matches!(part, MessagePart::Text { text } if text.starts_with(crate::procedure::IDENTITY_MEMORY_LABEL)));
+            }
+            conversation.retain(|message| !message.parts.is_empty());
+            let message = LLMMessage::user(profiles);
+            conversation.push(message.clone());
+            self.consumed_messages.lock().unwrap().push(message);
+        }
+        Ok(())
+    }
+
     fn on_before_inference(
         &self,
         _iteration: usize,

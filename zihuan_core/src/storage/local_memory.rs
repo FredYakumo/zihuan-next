@@ -39,7 +39,9 @@ impl LocalMemoryStore {
     pub fn create_or_update(&self, input: &AgentMemoryUpsert) -> Result<AgentMemoryRecord> {
         let normalized = super::memory_types::normalize_memory_input(input)?;
         let input = &normalized;
-        validate_memory_key(&input.key)?;
+        if input.attributes.category != super::MemoryCategory::Person {
+            validate_memory_key(&input.key)?;
+        }
         validate_expires_at(input.expires_at.as_deref())?;
         let _guard = self
             .write_lock
@@ -48,7 +50,13 @@ impl LocalMemoryStore {
         let category = input.attributes.category;
         let directory = self.directory.join(category.schema().as_str());
         fs::create_dir_all(&directory)?;
-        let object_id = super::memory_object_id(input);
+        let object_id = if category == super::MemoryCategory::Person {
+            self.get_person_record(&input.attributes.person.qq_id)?
+                .map(|record| record.object_id)
+                .unwrap_or_else(|| super::memory_object_id(input))
+        } else {
+            super::memory_object_id(input)
+        };
         let path = directory.join(format!("{object_id}.md"));
         let meta_path = path.with_extension("meta.json");
         let existing = fs::read_to_string(&meta_path)
@@ -105,6 +113,9 @@ impl LocalMemoryStore {
     }
 
     pub fn get(&self, input: &AgentMemoryUpsert) -> Result<Option<AgentMemoryRecord>> {
+        if input.attributes.category == super::MemoryCategory::Person {
+            return self.get_person_record(&input.attributes.person.qq_id);
+        }
         let id = super::memory_object_id(input);
         let path = self
             .directory
@@ -115,6 +126,14 @@ impl LocalMemoryStore {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(error.into()),
         }
+    }
+
+    pub fn get_person_record(&self, qq_id: &str) -> Result<Option<AgentMemoryRecord>> {
+        Ok(self
+            .list_category(super::MemoryCategory::Person, None, usize::MAX)?
+            .into_iter()
+            .find(|hit| hit.record.attributes.person.qq_id == qq_id)
+            .map(|hit| hit.record))
     }
 
     pub fn list(&self, query: Option<&str>, top_n: usize) -> Result<Vec<AgentMemorySearchHit>> {
@@ -157,11 +176,30 @@ impl LocalMemoryStore {
                 if is_memory_expired(&record) {
                     continue;
                 }
-                let searchable = format!("{} {}", record.key, serde_json::to_string(&record)?);
-                if query
-                    .as_ref()
-                    .is_some_and(|query| !matches_query(&record.key, &searchable, query))
-                {
+                let searchable = if category == super::MemoryCategory::Person {
+                    let person = &record.attributes.person;
+                    format!(
+                        "{} {} {} {} {}",
+                        person.qq_id,
+                        person.name,
+                        person.preferred_name,
+                        person.aliases.join(" "),
+                        person.impression
+                    )
+                } else {
+                    format!("{} {}", record.key, serde_json::to_string(&record)?)
+                };
+                if query.as_ref().is_some_and(|query| {
+                    !matches_query(
+                        if category == super::MemoryCategory::Person {
+                            ""
+                        } else {
+                            &record.key
+                        },
+                        &searchable,
+                        query,
+                    )
+                }) {
                     continue;
                 }
                 records.push(AgentMemorySearchHit { record, distance: None });
@@ -219,10 +257,13 @@ fn record_from_path(path: &Path, key: &str, value: String) -> Result<AgentMemory
         Err(error) => return Err(error.into()),
     };
     let input = metadata.input;
+    let is_person = input.attributes.category == super::MemoryCategory::Person;
     Ok(AgentMemoryRecord {
         attributes: input.attributes,
         object_id: key.to_string(),
-        key: if input.key.is_empty() {
+        key: if is_person {
+            String::new()
+        } else if input.key.is_empty() {
             key.to_string()
         } else {
             input.key

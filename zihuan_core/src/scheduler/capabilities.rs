@@ -9,16 +9,12 @@ use serde_json::{json, Value};
 use super::{JobMemoryResources, JobResources};
 use crate::agent::declarative_agent::AgentDefinition;
 use crate::agent::sub_agent_context::{AgentServiceContext, MemoryCapability};
-use crate::agent::tools::memory::MemoryBackend;
 use crate::agent::tools::NodeGraphTool;
 use crate::agent::LLM_KIND_MAIN;
 use crate::error::{Error, Result};
 use crate::graph::DataValue;
 use crate::model_inference::llm::MessageRole;
-use crate::storage::{
-    list_memory_in_store, upsert_memory_in_store, AgentMemoryAccessContext, AgentMemoryRecord,
-    AgentMemoryUpsert,
-};
+use crate::storage::{AgentMemoryAccessContext, AgentMemoryRecord, AgentMemoryUpsert};
 
 pub fn dispatch(
     resources: &JobResources,
@@ -129,48 +125,24 @@ fn job_memory_access(params: &Value) -> AgentMemoryAccessContext {
     }
 }
 
-fn memory_embedding_vector(memory: &JobMemoryResources, text: &str) -> Result<Vec<f32>> {
-    memory
-        .embedding_model
-        .as_ref()
-        .ok_or_else(|| Error::ValidationError("memory 后端需要配置 embedding 模型".to_string()))?
-        .inference(text)
-}
-
 fn memory_upsert(resources: &JobResources, params: &Value) -> Result<Value> {
     let memory = resources.memory.as_ref().ok_or_else(memory_unavailable)?;
     let input = AgentMemoryUpsert {
         attributes: serde_json::from_value(params.clone())?,
-        key: required_str(params, "key")?.to_string(),
-        value: required_str(params, "value")?.to_string(),
+        key: if params.get("category").and_then(Value::as_str) == Some("person") {
+            String::new()
+        } else {
+            required_str(params, "key")?.to_string()
+        },
+        value: if params.get("category").and_then(Value::as_str) == Some("person") {
+            String::new()
+        } else {
+            required_str(params, "value")?.to_string()
+        },
         expires_at: params.get("expires_at").and_then(Value::as_str).map(str::to_string),
         sender_id_list: optional_string_list(params, "sender_id_list"),
         group_id_list: optional_string_list(params, "group_id_list"),
     };
-    let mut input = input;
-    if input.attributes.category == crate::storage::MemoryCategory::Person {
-        let qq_id = &input.attributes.person.qq_id;
-        // IM ids are opaque: QQ uses digits, WeChat uses wxid / `xxx@chatroom`.
-        if qq_id.is_empty() || !qq_id.chars().all(crate::utils::string_utils::is_im_id_char) {
-            return Err(Error::ValidationError("person memory requires a person id".to_string()));
-        }
-        input.key = format!("person-{qq_id}");
-        input.sender_id_list.clear();
-        input.group_id_list.clear();
-        input.expires_at = None;
-        let existing = match &memory.memory_backend {
-            MemoryBackend::LocalFile(store) => store.get(&input)?,
-            MemoryBackend::RetrievalStore(store) => {
-                crate::storage::get_memory_in_store(store, &input)?
-            }
-        };
-        if let Some(existing) = existing {
-            let impression = input.attributes.person.impression.clone();
-            input.attributes = existing.attributes;
-            input.attributes.person.impression = impression;
-        }
-        input.value = serde_json::to_string(&input.attributes.person)?;
-    }
     let record = store_agent_memory(memory, &input)?;
     Ok(json!({
         "object_id": record.object_id,
@@ -190,43 +162,56 @@ pub fn store_agent_memory(
     let _write_guard = crate::storage::MEMORY_MUTATION_LOCK
         .lock()
         .map_err(|_| crate::string_error!("memory mutation lock poisoned"))?;
-    let mut input = input.clone();
     if input.attributes.category == crate::storage::MemoryCategory::Person {
-        let existing = match &memory.memory_backend {
-            MemoryBackend::LocalFile(store) => store.get(&input)?,
-            MemoryBackend::RetrievalStore(store) => {
-                crate::storage::get_memory_in_store(store, &input)?
-            }
-        };
+        let mut profile = input.attributes.person.clone();
+        let existing = memory.memory_backend.get_person(&profile.qq_id)?;
+        let access_level = existing
+            .as_ref()
+            .map(|record| record.access_level)
+            .unwrap_or(input.attributes.access_level);
         if let Some(existing) = existing {
-            let impression = input.attributes.person.impression.clone();
-            input.attributes = existing.attributes;
-            input.attributes.person.impression = impression;
-            input.value = serde_json::to_string(&input.attributes.person)?;
+            let impression = profile.impression;
+            profile = existing.profile;
+            profile.impression = impression;
         }
+        return memory
+            .memory_backend
+            .save_person(
+                memory.embedding_model.as_deref(),
+                &crate::storage::PersonMemoryWrite { profile, access_level },
+            )
+            .map(|record| record.into_record());
     }
-    let input = &input;
-    match &memory.memory_backend {
-        MemoryBackend::LocalFile(store) => store.create_or_update(input),
-        MemoryBackend::RetrievalStore(store) => upsert_memory_in_store(
-            store,
-            input,
-            memory_embedding_vector(memory, &format!("{}\n{}", input.key, input.value))?,
-        ),
-    }
+    crate::agent::tools::memory::write_memory(
+        &memory.memory_backend,
+        memory.embedding_model.as_deref(),
+        input,
+    )
 }
 
 fn memory_search(resources: &JobResources, params: &Value) -> Result<Value> {
     let memory = resources.memory.as_ref().ok_or_else(memory_unavailable)?;
-    let query = required_str(params, "query")?;
+    let query: crate::storage::MemoryQuery = serde_json::from_value(
+        params
+            .get("query")
+            .cloned()
+            .ok_or_else(|| crate::string_error!("query required"))?,
+    )?;
     let limit = optional_limit(params, "top_n", 5)?;
-    let access = job_memory_access(params);
+    let category = params
+        .get("category")
+        .cloned()
+        .ok_or_else(|| crate::string_error!("category required"))?;
+    let access = AgentMemoryAccessContext {
+        category: serde_json::from_value(category)?,
+        ..job_memory_access(params)
+    };
     let hits = crate::agent::tools::memory::search_category(
         &memory.memory_backend,
         memory.embedding_model.as_deref(),
         &access,
         access.category,
-        Some(query),
+        Some(&query),
         limit,
     )?;
     Ok(json!({"items": hits.into_iter().map(memory_hit_json).collect::<Vec<_>>()}))
@@ -236,15 +221,15 @@ fn memory_list(resources: &JobResources, params: &Value) -> Result<Value> {
     let memory = resources.memory.as_ref().ok_or_else(memory_unavailable)?;
     let limit = optional_limit(params, "limit", 20)?;
     let access = job_memory_access(params);
-    let hits = match &memory.memory_backend {
-        MemoryBackend::LocalFile(store) => store
-            .list_category(access.category, None, 100)?
-            .into_iter()
-            .filter(|hit| crate::storage::memory_is_accessible(&hit.record, &access))
-            .take(limit)
-            .collect(),
-        MemoryBackend::RetrievalStore(store) => list_memory_in_store(store, &access, limit)?,
-    };
+    let access = AgentMemoryAccessContext { skip_expiry_extend: true, ..access };
+    let hits = crate::agent::tools::memory::search_category(
+        &memory.memory_backend,
+        memory.embedding_model.as_deref(),
+        &access,
+        access.category,
+        None,
+        limit,
+    )?;
     Ok(json!({"items": hits.into_iter().map(memory_hit_json).collect::<Vec<_>>()}))
 }
 

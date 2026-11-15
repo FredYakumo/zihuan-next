@@ -37,7 +37,12 @@ pub struct AgentMemoryRecord {
     #[serde(flatten)]
     pub attributes: super::MemoryAttributes,
     pub object_id: String,
-    #[serde(rename = "title", alias = "key")]
+    #[serde(
+        rename = "title",
+        alias = "key",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub key: String,
     pub value: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -57,6 +62,7 @@ pub struct AgentMemoryRecord {
 pub struct AgentMemoryUpsert {
     #[serde(flatten)]
     pub attributes: super::MemoryAttributes,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub key: String,
     pub value: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -89,7 +95,13 @@ pub fn create_memory_record_with_vector(
 ) -> Result<AgentMemoryRecord> {
     let normalized = super::memory_types::normalize_memory_input(input)?;
     let input = &normalized;
-    let object_id = super::memory_object_id(input);
+    let object_id = if input.attributes.category == super::MemoryCategory::Person {
+        get_person_by_qq_id(weaviate_ref, &input.attributes.person.qq_id)?
+            .map(|record| record.object_id)
+            .unwrap_or_else(|| super::memory_object_id(input))
+    } else {
+        super::memory_object_id(input)
+    };
     match get_memory_record(weaviate_ref, &object_id) {
         Ok(_) => return update_memory_record_with_vector(weaviate_ref, &object_id, input, vector),
         Err(Error::NotFound) => {}
@@ -123,7 +135,7 @@ pub fn update_memory_record_with_vector(
     let normalized = super::memory_types::normalize_memory_input(input)?;
     let input = &normalized;
     let existing = get_memory_record(weaviate_ref, object_id)?;
-    if input.key != existing.key
+    if (input.attributes.category != super::MemoryCategory::Person && input.key != existing.key)
         || input.sender_id_list != existing.sender_id_list
         || input.group_id_list != existing.group_id_list
         || input.attributes.category != existing.attributes.category
@@ -340,8 +352,17 @@ fn query_memory_records(
     query: &str,
     limit: usize,
 ) -> Result<Vec<AgentMemorySearchHit>> {
-    let args =
-        format!("bm25: {{ query: \"{}\" }}, limit: {limit}", crate::weaviate::gql_escape(query));
+    let properties = if weaviate_ref.class_name
+        == crate::retrieval::RetrievalSchema::PersonMemory.weaviate_class_name()
+    {
+        ", properties: [\"qq_id\",\"name\",\"preferred_name\",\"aliases\",\"impression\"]"
+    } else {
+        ""
+    };
+    let args = format!(
+        "bm25: {{ query: \"{}\"{properties} }}, limit: {limit}",
+        crate::weaviate::gql_escape(query)
+    );
     let response = weaviate_ref.query_with_args(
         &weaviate_ref.class_name,
         &args,
@@ -415,7 +436,11 @@ pub(crate) fn parse_memory_record_with_fallback(
     Ok(AgentMemoryRecord {
         attributes: serde_json::from_value(properties.clone())?,
         object_id,
-        key: required_string(&properties, "key")?,
+        key: if properties.get("category").and_then(Value::as_str) == Some("person") {
+            String::new()
+        } else {
+            required_string(&properties, "key")?
+        },
         value: required_string(&properties, "value")?,
         expires_at: optional_string_argument(&properties, "expires_at"),
         sender_id_list: string_list(&properties, "sender_id_list"),
@@ -431,7 +456,7 @@ fn build_memory_properties(
     updated_at: Option<&str>,
 ) -> Result<Value> {
     let key = input.key.trim();
-    if key.is_empty() {
+    if key.is_empty() && input.attributes.category != super::MemoryCategory::Person {
         return Err(Error::ValidationError("memory title must not be empty".to_string()));
     }
     let value = input.value.trim();
@@ -456,7 +481,27 @@ fn build_memory_properties(
         "updated_at": updated_at.unwrap_or(created_at),
     });
     properties.as_object_mut().unwrap().extend(base.as_object().unwrap().clone());
+    if input.attributes.category == super::MemoryCategory::Person {
+        properties.as_object_mut().unwrap().remove("key");
+    }
     Ok(properties)
+}
+
+pub(crate) fn get_person_by_qq_id(
+    reference: &WeaviateRef,
+    qq_id: &str,
+) -> Result<Option<AgentMemoryRecord>> {
+    let args = format!(
+        "where: {{path: [\"qq_id\"], operator: Equal, valueText: \"{}\"}}, limit: 1",
+        crate::weaviate::gql_escape(qq_id)
+    );
+    let response = reference.query_with_args(
+        &reference.class_name,
+        &args,
+        &memory_property_names(reference),
+        false,
+    )?;
+    Ok(parse_memory_hits(response)?.into_iter().next().map(|hit| hit.record))
 }
 
 fn memory_property_names(weaviate_ref: &WeaviateRef) -> Vec<String> {
