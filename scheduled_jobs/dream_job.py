@@ -52,7 +52,6 @@ include_graph_tools: true
 def run_job(request):
     sdk = JobSdk(Host())
     sender_id = request["sender_id"]
-    memory_key = f"person-{sender_id}"
 
     messages = sdk.load_history(sender_id)
     lines = []
@@ -65,8 +64,8 @@ def run_job(request):
     transcript = f"Target QQ ID: {sender_id}\n" + "\n".join(lines)
 
     previous = ""
-    for record in sdk.search_memory(query=sender_id, top_n=20, sender_id=sender_id, category="person").get("items", []):
-        if record.get("key") == memory_key:
+    for record in sdk.search_memory(query={"id": sender_id}, top_n=20, sender_id=sender_id, category="person").get("items", []):
+        if record.get("qq_id") == sender_id:
             previous = record.get("impression") or ""
             break
 
@@ -77,7 +76,7 @@ def run_job(request):
 
     result = sdk.run_subagent(DREAM_AGENT_YAML, previous_memory=previous, transcript=transcript)
 
-    sdk.upsert_memory(key=memory_key, value=result, category="person", qq_id=sender_id, impression=result)
+    sdk.upsert_memory(category="person", qq_id=sender_id, impression=result)
     sdk.clear_history(sender_id)
 
     return {"ok": True, "result": "Dream 记忆已生成"}

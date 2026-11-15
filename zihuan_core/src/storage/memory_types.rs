@@ -77,7 +77,12 @@ pub fn memory_object_id(input: &super::AgentMemoryUpsert) -> String {
     let mut groups = input.group_id_list.clone();
     groups.sort();
     groups.dedup();
-    let bytes = serde_json::to_vec(&(input.attributes.category, input.key.trim(), senders, groups))
+    let identity = if input.attributes.category == MemoryCategory::Person {
+        input.attributes.person.qq_id.as_str()
+    } else {
+        input.key.trim()
+    };
+    let bytes = serde_json::to_vec(&(input.attributes.category, identity, senders, groups))
         .expect("memory identity serializes");
     let digest = Sha256::digest(bytes);
     uuid::Uuid::from_slice(&digest[..16]).expect("16 bytes").to_string()
@@ -109,7 +114,7 @@ pub fn normalize_memory_input(
             if person.qq_id.is_empty() || !person.qq_id.chars().all(|c| c.is_ascii_digit()) {
                 return Err(Error::ValidationError("person memory requires a QQ ID".to_string()));
             }
-            input.key = format!("person-{}", person.qq_id);
+            input.key.clear();
             input.value = serde_json::to_string(person)?;
             input.expires_at = None;
             input.attributes.starts_at = None;

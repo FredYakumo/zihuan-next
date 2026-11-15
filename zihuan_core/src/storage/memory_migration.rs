@@ -32,7 +32,7 @@ pub fn converted_legacy_record(record: AgentMemoryRecord) -> AgentMemoryUpsert {
             impression: input.value.clone(),
             ..Default::default()
         };
-        input.key = format!("person-{qq_id}");
+        input.key.clear();
         input.sender_id_list.clear();
         input.group_id_list.clear();
         input.value = serde_json::to_string(&input.attributes.person).expect("person serializes");
@@ -154,7 +154,13 @@ pub fn migrate_retrieval_memory(
                 super::agent_memory_weaviate::parse_memory_record_with_fallback(value, None)?;
             let input = converted_legacy_record(record);
             if super::get_memory_in_store(store, &input)?.is_none() {
-                let vector = embedding.inference(&format!("{}\n{}", input.key, input.value))?;
+                let vector = embedding.inference(&if input.attributes.category
+                    == MemoryCategory::Person
+                {
+                    super::memory::person_search_text(&input.attributes.person)
+                } else {
+                    format!("{}\n{}", input.key, input.value)
+                })?;
                 super::upsert_memory_in_store(store, &input, vector)?;
             }
         }

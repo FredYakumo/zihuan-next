@@ -5,13 +5,12 @@ use serde_json::{json, Value};
 use crate::agent::tools::Tool;
 use crate::error::{Error, Result};
 use crate::model_inference::llm::tooling::FunctionTool;
-use crate::storage::MemoryCategory;
+use crate::storage::MemoryQuery;
 
 use super::function_spec::MemoryFunctionToolSpec;
 use super::resources::MemoryAgentResources;
 use super::store::search_category;
 use super::{category_argument, memory_limit};
-use crate::utils::json_utils::optional_string_argument;
 use crate::utils::memory_fingerprint::memory_fingerprint;
 
 /// Searches one category and returns the full records, each with its content fingerprint.
@@ -27,19 +26,22 @@ impl SearchMemoryTool {
 
 impl Tool for SearchMemoryTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
-        Arc::new(MemoryFunctionToolSpec::new("search_memory", "Search concept, person or behavioral memory. Use qq_id for an exact person identity lookup; aliases never prove identity.", json!({"type":"object","properties":{"category":{"type":"string","enum":["concept","person","behavioral"]},"query":{"type":"string"},"qq_id":{"type":"string"},"top_n":{"type":"integer"}},"required":["category"],"additionalProperties":false})))
+        Arc::new(MemoryFunctionToolSpec::new("search_memory", "Search an explicitly selected category. query is either {id: QQ_ID} for exact person identity, or {query: text} for fuzzy search across qq_id, name, preferred_name, aliases and impression. Never infer identity from aliases.", json!({"type":"object","properties":{"category":{"type":"string","enum":["concept","person","behavioral"]},"query":crate::storage::memory::memory_query_schema(),"top_n":{"type":"integer"}},"required":["category","query"],"additionalProperties":false})))
     }
     fn execute(&self, _: &str, arguments: &Value) -> Result<String> {
         let category = category_argument(arguments)?;
-        let qq_id = optional_string_argument(arguments, "qq_id");
-        if qq_id.is_some() && category != MemoryCategory::Person {
-            return Err(Error::ValidationError("qq_id requires person category".to_string()));
+        if arguments.get("qq_id").is_some() {
+            return Err(Error::ValidationError(
+                "use query: {id: ...} instead of qq_id".to_string(),
+            ));
         }
-        let query = qq_id
-            .clone()
-            .or_else(|| optional_string_argument(arguments, "query"))
-            .ok_or_else(|| Error::ValidationError("query or qq_id required".to_string()))?;
-        let mut hits = search_category(
+        let query: MemoryQuery = serde_json::from_value(
+            arguments
+                .get("query")
+                .cloned()
+                .ok_or_else(|| Error::ValidationError("query is required".to_string()))?,
+        )?;
+        let hits = search_category(
             &self.resources.memory_backend,
             self.resources.embedding_model.as_deref(),
             &self.resources.access,
@@ -47,9 +49,6 @@ impl Tool for SearchMemoryTool {
             Some(&query),
             memory_limit(arguments.get("top_n").and_then(Value::as_i64)) as usize,
         )?;
-        if let Some(qq_id) = qq_id {
-            hits.retain(|hit| hit.record.attributes.person.qq_id == qq_id);
-        }
         let items = hits
             .into_iter()
             .map(|hit| {

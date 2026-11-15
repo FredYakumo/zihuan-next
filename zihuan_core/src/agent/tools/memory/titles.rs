@@ -1,10 +1,10 @@
 use std::cmp::Ordering;
 
 use crate::error::Result;
-use crate::storage::{search_memory_in_store, AgentMemoryAccessContext};
+use crate::storage::AgentMemoryAccessContext;
 
 use super::resources::{MemoryAgentResources, MemoryBackend};
-use super::store::embedding_vector;
+use super::store::search_category;
 
 /// One memory title returned by [`relevant_memory_titles`].
 #[derive(Debug, Clone)]
@@ -36,20 +36,41 @@ pub fn relevant_memory_titles(
         skip_expiry_extend: true,
         ..resources.access.clone()
     };
-    let hits = match &resources.memory_backend {
-        MemoryBackend::LocalFile(store) => store.list(Some(query), limit)?,
-        MemoryBackend::RetrievalStore(store) => search_memory_in_store(
-            store,
-            &access,
-            query,
-            &embedding_vector(resources.embedding_model.as_deref(), query)?,
-            limit,
-        )?,
+    let categories = match &resources.memory_backend {
+        MemoryBackend::LocalFile(_) => crate::storage::MemoryCategory::ALL.to_vec(),
+        MemoryBackend::RetrievalStore(_) => vec![access.category],
     };
+    let mut hits = Vec::new();
+    for category in categories {
+        hits.extend(search_category(
+            &resources.memory_backend,
+            resources.embedding_model.as_deref(),
+            &access,
+            category,
+            Some(&crate::storage::MemoryQuery::Query(query.to_string())),
+            limit,
+        )?);
+    }
+    if matches!(&resources.memory_backend, MemoryBackend::LocalFile(_)) {
+        hits.sort_by(|a, b| b.record.updated_at.cmp(&a.record.updated_at));
+    }
     let mut titles = hits
         .into_iter()
         .map(|hit| MemoryTitleHit {
-            title: hit.record.key,
+            title: if hit.record.attributes.category == crate::storage::MemoryCategory::Person {
+                let person = &hit.record.attributes.person;
+                format!(
+                    "{} (QQ {})",
+                    if person.name.is_empty() {
+                        &person.preferred_name
+                    } else {
+                        &person.name
+                    },
+                    person.qq_id
+                )
+            } else {
+                hit.record.key
+            },
             relevance: hit.distance,
         })
         .collect::<Vec<_>>();
@@ -60,5 +81,6 @@ pub fn relevant_memory_titles(
             .partial_cmp(&left.relevance.unwrap_or_default())
             .unwrap_or(Ordering::Equal)
     });
+    titles.truncate(limit);
     Ok(titles)
 }

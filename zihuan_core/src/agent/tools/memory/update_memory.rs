@@ -6,13 +6,12 @@ use serde_json::{json, Value};
 use crate::agent::tools::Tool;
 use crate::error::{Error, Result};
 use crate::model_inference::llm::tooling::FunctionTool;
-use crate::storage::{AgentMemoryUpsert, MemoryAttributes, MemoryCategory, PersonMemory};
+use crate::storage::{MemoryCategory, PersonMemory};
 use crate::utils::json_utils::{optional_string_argument, required_string_argument};
 
 use super::category_argument;
 use super::function_spec::MemoryFunctionToolSpec;
-use super::resources::{MemoryAgentResources, MemoryBackend};
-use super::store::write_memory;
+use super::resources::MemoryAgentResources;
 
 /// Creates or corrects one memory (`update_memory`).
 pub struct RememberMemoryTool {
@@ -33,7 +32,7 @@ impl Tool for RememberMemoryTool {
         true
     }
     fn spec(&self) -> Arc<dyn FunctionTool> {
-        Arc::new(MemoryFunctionToolSpec::new("update_memory", "Create or correct a memory using its existing key. Person requires immutable qq_id and structured profile; never merge different QQ IDs. Behavioral content must be short. Source is bot for independent reflection, or user with the verified triggering sender_id and access_level. User corrections must use user source. Existing scope and access level are preserved.", json!({"type":"object","properties":{
+        Arc::new(MemoryFunctionToolSpec::new("update_memory", "Create or correct a memory in an explicit category. Concept and behavioral use a key. Person has no key and requires immutable qq_id and structured profile; never merge different QQ IDs. Behavioral content must be short. Source is bot for independent reflection, or user with the verified triggering sender_id and access_level. User corrections must use user source. Existing scope and access level are preserved.", json!({"type":"object","properties":{
             "category":{"type":"string","enum":["concept","person","behavioral"]},"key":{"type":"string"},"content":{"type":"string"},
             "source":{"type":"object","properties":{"kind":{"type":"string","enum":["bot","user"]},"sender_id":{"type":"string"},"access_level":{"type":"integer","minimum":0}},"required":["kind"],"additionalProperties":false},
             "person":{"type":"object","properties":{"qq_id":{"type":"string"},"name":{"type":"string"},"preferred_name":{"type":"string"},"aliases":{"type":"array","items":{"type":"string"}},"impression":{"type":"string"},"guideline":{"type":"string"}},"additionalProperties":false},
@@ -84,7 +83,7 @@ impl Tool for RememberMemoryTool {
                     "person.qq_id must be a non-empty person id".to_string(),
                 ));
             }
-            format!("person-{}", person.qq_id)
+            String::new()
         } else if category == MemoryCategory::Behavioral {
             optional_string_argument(arguments, "key").unwrap_or_default()
         } else {
@@ -106,27 +105,22 @@ impl Tool for RememberMemoryTool {
         if !matches!(scope, "current" | "sender" | "group" | "global") {
             return Err(Error::ValidationError("invalid scope".to_string()));
         }
-        let identity = AgentMemoryUpsert {
-            attributes: MemoryAttributes { category, ..Default::default() },
-            key: key.clone(),
-            value: content.clone(),
-            sender_id_list: sender_id_list.clone(),
-            group_id_list: group_id_list.clone(),
-            ..Default::default()
+        let key = if category == MemoryCategory::Behavioral && key.is_empty() {
+            crate::storage::memory::behavioral_key(&content, &sender_id_list, &group_id_list)
+        } else {
+            key
         };
-        let mut identity = identity;
-        if category == MemoryCategory::Behavioral && identity.key.is_empty() {
-            let mut content_identity = identity.clone();
-            content_identity.key = content.clone();
-            identity.key =
-                format!("behavior-{}", crate::storage::memory_object_id(&content_identity));
-        }
-        let key = identity.key.clone();
-        let existing = match &self.resources.memory_backend {
-            MemoryBackend::LocalFile(store) => store.get(&identity)?,
-            MemoryBackend::RetrievalStore(store) => {
-                crate::storage::get_memory_in_store(store, &identity)?
+        let backend = &self.resources.memory_backend;
+        let existing = match category {
+            MemoryCategory::Person => {
+                backend.get_person(&person.qq_id)?.map(|record| record.into_record())
             }
+            MemoryCategory::Concept => backend
+                .get_concept(&key, &sender_id_list, &group_id_list)?
+                .map(|record| record.into_record()),
+            MemoryCategory::Behavioral => backend
+                .get_behavioral(&key, &sender_id_list, &group_id_list)?
+                .map(|record| record.into_record()),
         };
         if let Some(existing) = &existing {
             if source_kind == "user" && level > existing.attributes.access_level {
@@ -154,28 +148,43 @@ impl Tool for RememberMemoryTool {
         } else {
             content
         };
-        let input = AgentMemoryUpsert {
-            attributes: MemoryAttributes {
-                category,
-                access_level: existing
-                    .as_ref()
-                    .map(|record| record.attributes.access_level)
-                    .unwrap_or(level),
-                starts_at: (category == MemoryCategory::Concept).then_some(starts_at),
-                person,
-            },
-            key,
-            value,
-            expires_at: (category == MemoryCategory::Behavioral)
-                .then(|| (Utc::now() + Duration::days(2)).to_rfc3339()),
-            sender_id_list,
-            group_id_list,
+        let access_level =
+            existing.as_ref().map(|record| record.attributes.access_level).unwrap_or(level);
+        let model = self.resources.embedding_model.as_deref();
+        let record = match category {
+            MemoryCategory::Person => backend
+                .save_person(
+                    model,
+                    &crate::storage::PersonMemoryWrite { profile: person, access_level },
+                )?
+                .into_record(),
+            MemoryCategory::Concept => backend
+                .save_concept(
+                    model,
+                    &crate::storage::ConceptMemoryWrite {
+                        key,
+                        content: value,
+                        access_level,
+                        starts_at: Some(starts_at),
+                        sender_id_list,
+                        group_id_list,
+                    },
+                )?
+                .into_record(),
+            MemoryCategory::Behavioral => backend
+                .save_behavioral(
+                    model,
+                    &crate::storage::BehavioralMemoryWrite {
+                        key,
+                        content: value,
+                        access_level,
+                        expires_at: Some((Utc::now() + Duration::days(2)).to_rfc3339()),
+                        sender_id_list,
+                        group_id_list,
+                    },
+                )?
+                .into_record(),
         };
-        let record = write_memory(
-            &self.resources.memory_backend,
-            self.resources.embedding_model.as_deref(),
-            &input,
-        )?;
         Ok(json!({"ok":true,"item":record}).to_string())
     }
 }

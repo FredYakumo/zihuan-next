@@ -169,8 +169,8 @@ class JobSdk:
 
     def upsert_memory(
         self,
-        key: str,
-        value: str,
+        key: str = "",
+        value: str = "",
         sender_id_list: list[str] | None = None,
         group_id_list: list[str] | None = None,
         expires_at: str | None = None,
@@ -180,7 +180,7 @@ class JobSdk:
         """Purpose: create or update one memory record in the agent's memory store."""
         return self._host.call("memory.upsert", {"key": key, "value": value, "sender_id_list": sender_id_list or [], "group_id_list": group_id_list or [], "expires_at": expires_at, "category": category, **fields})
 
-    def search_memory(self, query: str, top_n: int = 5, sender_id: str | None = None, category: str = "concept") -> dict:
+    def search_memory(self, query: dict[str, str], top_n: int = 5, sender_id: str | None = None, *, category: str) -> dict:
         """Purpose: search the agent's memory store and return matching records with values."""
         return self._host.call("memory.search", {"query": query, "top_n": top_n, "sender_id": sender_id, "category": category})
 

@@ -951,7 +951,13 @@ pub async fn create_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Err(err) => return render_internal_error(res, err),
     };
     let vector = match tokio::task::block_in_place(|| {
-        embedding_model.inference(&format!("{}\n{}", body.title.trim(), body.value.trim()))
+        embedding_model.inference(&if body.attributes.category
+            == zihuan_core::storage::MemoryCategory::Person
+        {
+            zihuan_core::storage::memory::person_search_text(&body.attributes.person)
+        } else {
+            format!("{}\n{}", body.title.trim(), body.value.trim())
+        })
     }) {
         Ok(vector) => vector,
         Err(err) => return render_internal_error(res, err),
@@ -1012,7 +1018,13 @@ pub async fn update_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Err(err) => return render_internal_error(res, err),
     };
     let vector = match tokio::task::block_in_place(|| {
-        embedding_model.inference(&format!("{}\n{}", body.title.trim(), body.value.trim()))
+        embedding_model.inference(&if body.attributes.category
+            == zihuan_core::storage::MemoryCategory::Person
+        {
+            zihuan_core::storage::memory::person_search_text(&body.attributes.person)
+        } else {
+            format!("{}\n{}", body.title.trim(), body.value.trim())
+        })
     }) {
         Ok(vector) => vector,
         Err(err) => return render_internal_error(res, err),

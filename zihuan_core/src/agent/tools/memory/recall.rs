@@ -27,12 +27,11 @@ impl ConceptMemory {
 /// A person memory recalled for this turn.
 ///
 /// Distinct from the stored profile (`storage::PersonMemory`): this is the recall-level entry the
-/// turn's hint needs. The QQ ID is the identity and the stored key is its `person-<qq_id>` form;
+/// turn's hint needs. The QQ ID is the identity;
 /// `name` and `preferred_name` are retrieval/display hints only and never prove two accounts are
 /// the same person.
 #[derive(Debug, Clone)]
 pub struct PersonMemory {
-    key: String,
     qq_id: String,
     name: String,
     preferred_name: String,
@@ -43,18 +42,17 @@ impl PersonMemory {
         &self.qq_id
     }
 
-    /// How the hint names this person: the name, with the stored key in parentheses so the
-    /// model can tell people with colliding display names apart. Falls back to the key, then to
-    /// the preferred name, so a sparse record never renders as an empty entry.
+    /// Display the nickname with its explicit QQ identity.
     pub fn display_title(&self) -> String {
-        let key = self.key.trim();
-        let name = self.name.trim();
-        let name = (!name.is_empty() && name != key).then_some(name);
-        match (name, key.is_empty()) {
-            (Some(name), false) => format!("{name} ({key})"),
-            (Some(name), true) => name.to_string(),
-            (None, false) => key.to_string(),
-            (None, true) => self.preferred_name.trim().to_string(),
+        let name = if self.name.trim().is_empty() {
+            self.preferred_name.trim()
+        } else {
+            self.name.trim()
+        };
+        if name.is_empty() {
+            format!("QQ {}", self.qq_id)
+        } else {
+            format!("{name} (QQ {})", self.qq_id)
         }
     }
 }
@@ -91,7 +89,6 @@ impl RecalledMemory {
                 Self::Concept(ConceptMemory { title: record.key.trim().to_string() })
             }
             MemoryCategory::Person => Self::Person(PersonMemory {
-                key: record.key.clone(),
                 qq_id: record.attributes.person.qq_id.clone(),
                 name: record.attributes.person.name.clone(),
                 preferred_name: record.attributes.person.preferred_name.clone(),

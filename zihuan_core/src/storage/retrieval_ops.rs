@@ -259,6 +259,9 @@ pub fn get_memory_in_store(
     store: &RetrievalStoreRef,
     input: &AgentMemoryUpsert,
 ) -> Result<Option<AgentMemoryRecord>> {
+    if input.attributes.category == super::MemoryCategory::Person {
+        return get_person_in_store(store, &input.attributes.person.qq_id);
+    }
     let id = super::memory_object_id(input);
     let record = match store.backend() {
         RetrievalBackend::Weaviate => super::get_memory_record(
@@ -274,5 +277,21 @@ pub fn get_memory_in_store(
         Ok(record) => Ok(Some(record)),
         Err(Error::NotFound) => Ok(None),
         Err(error) => Err(error),
+    }
+}
+
+pub fn get_person_in_store(
+    store: &RetrievalStoreRef,
+    qq_id: &str,
+) -> Result<Option<AgentMemoryRecord>> {
+    match store.backend() {
+        RetrievalBackend::Elasticsearch => super::elasticsearch::get_person_by_qq_id(
+            store.elasticsearch(RetrievalSchema::PersonMemory)?.as_ref(),
+            qq_id,
+        ),
+        RetrievalBackend::Weaviate => super::agent_memory_weaviate::get_person_by_qq_id(
+            store.weaviate(RetrievalSchema::PersonMemory)?.as_ref(),
+            qq_id,
+        ),
     }
 }

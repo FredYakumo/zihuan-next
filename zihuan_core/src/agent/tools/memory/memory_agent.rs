@@ -37,7 +37,7 @@ pub fn memory_agent_definition(
         builtin: true,
         inputs: vec![memory_string_port("content", "Current input with verified sender QQ ID", true)],
         outputs: vec![memory_string_port("result", "Recall summary", true)],
-        system_prompt: format!("{}\nYou are the Memory Agent Procedure phase. Only recall, never write. Search relevant facts, people and behavior using FullSearchConceptMemory. QQ IDs identify people; never infer shared identity from aliases. When the user challenges a recollection use force_check=true. Query the current sender's QQ ID as well as topics. Do not invent memories.", prompts.system_prompt),
+        system_prompt: format!("{}\nYou are the Memory Agent Procedure phase. Only recall, never write. Search relevant facts, people and behavior using FullSearchConceptMemory. QQ IDs identify people; never infer shared identity from aliases. When the user challenges a recollection use force_check=true. Always specify category. For the sender use category=person and query={{\"id\":QQ_ID}}; for topics use query={{\"query\":text}} with an explicit category. Do not invent memories.", prompts.system_prompt),
         user_prompt: Some("{content}".to_string()),
         prompt_parts: vec![],
         output_mode: AgentOutputMode::Text,
@@ -74,7 +74,7 @@ pub fn recall_memory(
     // Recall the verified sender and applicable instructions even when the phase model skips tools.
     let full = host.tool("FullSearchConceptMemory").unwrap();
     if let Some(sender) = &resources.access.sender_id {
-        full.execute("", &json!({"query":sender}))?;
+        full.execute("", &json!({"category":"person","query":{"id":sender}}))?;
     }
     let _ = agent.run_text(ports)?;
     let recalled = (*results.lock().unwrap()).clone();
