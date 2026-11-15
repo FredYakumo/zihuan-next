@@ -32,6 +32,14 @@ pub enum ServerMessage {
         message: String,
         timestamp: String,
     },
+    /// One log record emitted while a role service is being restarted. Clients
+    /// stream these into the save-and-restart dialog by filtering `service_id`.
+    ServiceRuntimeLog {
+        service_id: String,
+        level: String,
+        message: String,
+        timestamp: String,
+    },
     GraphValidationResult {
         graph_id: String,
         issues: Vec<serde_json::Value>,

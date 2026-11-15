@@ -19,7 +19,10 @@ import type {
   DataTypeMetaData,
   TokenUsage,
   QqSubAgentEntry,
+  DependentRoleService,
 } from "./types";
+
+export type { DependentRoleService } from "./types";
 
 export type { GraphTabInfo, TaskEntry, TaskLogEntry } from "./types";
 
@@ -443,6 +446,22 @@ export interface ConnectionConfig {
 
 export interface ConnectionMutationResponse extends ConnectionConfig {
   collection_created: boolean;
+  affected_running_services: DependentRoleService[];
+}
+
+export interface ServiceMutationResponse {
+  role_service: ServiceConfig;
+  affected_running_services: DependentRoleService[];
+}
+
+export interface SubAgentMutationResponse {
+  definition: SubAgentDefinition;
+  affected_running_services: DependentRoleService[];
+}
+
+export interface LlmRefMutationResponse {
+  llm_ref: LlmConfig;
+  affected_running_services: DependentRoleService[];
 }
 
 export type ConnectionAuthMethod = "password" | "api_key";
@@ -921,7 +940,7 @@ export const system = {
     }): Promise<ConnectionMutationResponse> {
       return request("PUT", `/system/connections/${configId}`, payload);
     },
-    delete(configId: string): Promise<{ ok: boolean }> {
+    delete(configId: string): Promise<{ ok: boolean; affected_running_services: DependentRoleService[] }> {
       return request("DELETE", `/system/connections/${configId}`);
     },
   },
@@ -948,10 +967,10 @@ export const system = {
       name: string;
       enabled: boolean;
       model: ModelRefSpec;
-    }): Promise<LlmConfig> {
+    }): Promise<LlmRefMutationResponse> {
       return request("PUT", `/system/llm-refs/${configId}`, payload);
     },
-    delete(configId: string): Promise<{ ok: boolean }> {
+    delete(configId: string): Promise<{ ok: boolean; affected_running_services: DependentRoleService[] }> {
       return request("DELETE", `/system/llm-refs/${configId}`);
     },
   },
@@ -982,10 +1001,10 @@ export const system = {
       is_default: boolean;
       role_service_type: Record<string, unknown>;
       tools: ServiceToolConfig[];
-    }): Promise<ServiceConfig> {
+    }): Promise<ServiceMutationResponse> {
       return request("PUT", `/system/services/${configId}`, payload);
     },
-    delete(configId: string): Promise<{ ok: boolean }> {
+    delete(configId: string): Promise<{ ok: boolean; affected_running_services: DependentRoleService[] }> {
       return request("DELETE", `/system/services/${configId}`);
     },
     listIgnoreRules(configId: string): Promise<QqChatAgentServiceIgnoreRule[]> {
@@ -1019,6 +1038,9 @@ export const system = {
     stop(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo }> {
       return request("POST", `/system/services/${configId}/stop`);
     },
+    restart(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo }> {
+      return request("POST", `/system/services/${configId}/restart`);
+    },
     syncAvatar(configId: string): Promise<{ avatar_url: string }> {
       return request("POST", `/system/services/${configId}/avatar/sync`);
     },
@@ -1032,10 +1054,10 @@ export const system = {
       const query = availableToolIds.length ? `?available_tool_ids=${encodeURIComponent(availableToolIds.join(","))}` : "";
       return request("GET", `/system/subagents/${encodeURIComponent(id)}${query}`);
     },
-    save(id: string, definition: SubAgentDefinition, availableToolIds: string[] = []): Promise<SubAgentDefinition> {
+    save(id: string, definition: SubAgentDefinition, availableToolIds: string[] = []): Promise<SubAgentMutationResponse> {
       return request("PUT", `/system/subagents/${encodeURIComponent(id)}`, { definition, available_tool_ids: availableToolIds });
     },
-    remove(id: string): Promise<{ ok: boolean }> {
+    remove(id: string): Promise<{ ok: boolean; affected_running_services: DependentRoleService[] }> {
       return request("DELETE", `/system/subagents/${encodeURIComponent(id)}`);
     },
   },

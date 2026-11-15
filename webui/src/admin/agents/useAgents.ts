@@ -14,6 +14,7 @@ import {
   type SubAgentDefinition,
   type BrainToolPluginEntry,
 } from "../../api/client";
+import { useServiceRestart } from "../components/useServiceRestart";
 import {
   serviceFormFromConfig,
   buildServicePayload,
@@ -43,6 +44,17 @@ import type { SchedulerJobStatus } from "../../api/types";
 import { useAdminClipboard } from "../components/useAdminClipboard";
 
 export function useAgents() {
+  const restartDialog = useServiceRestart({
+    // The editor stays open behind the dialog; these settle it when the flow ends.
+    onCompleted: () => {
+      closeEditor();
+      void load();
+    },
+    onSaveOnly: () => {
+      closeEditor();
+      void load();
+    },
+  });
 type ServiceTypeOption = {
   value: ServiceTypeName;
   label: string;
@@ -1519,12 +1531,18 @@ async function submitForm() {
       }
     }
     if (form.id) {
-      await system.services.update(form.id, payload);
+      const result = await system.services.update(form.id, payload);
+      // With affected services the dialog opens over the still-open editor, so
+      // 取消 returns to the edit page; without them, finish as before.
+      if (!restartDialog.openAfterSave(result.affected_running_services)) {
+        closeEditor();
+        await load();
+      }
     } else {
       await system.services.create(payload);
+      closeEditor();
+      await load();
     }
-    closeEditor();
-    await load();
   } catch (error) {
     alert(`保存 Agent 失败: ${(error as Error).message}`);
   }
@@ -1534,11 +1552,13 @@ async function removeService(id: string) {
   if (!window.confirm("确认删除这个 Agent 吗？")) {
     return;
   }
-  await system.services.delete(id);
+  const result = await system.services.delete(id);
   if (form.id === id) {
     closeEditor();
   }
   await load();
+  // The backend stops the deleted service when it was still running.
+  restartDialog.openAfterDelete(result.affected_running_services);
 }
 
 async function startAgent(id: string) {
@@ -1604,6 +1624,7 @@ onMounted(() => {
 });
 
   return {
+    restartDialog,
     serviceTypes,
     services,
     servicesLoading,

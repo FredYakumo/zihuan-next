@@ -343,6 +343,26 @@ pub fn list_agent_ids() -> Vec<String> {
     ids
 }
 
+/// Lists agent definitions present on disk without validating them, skipping files
+/// that cannot be read or parsed.
+///
+/// Dependency analysis only needs `id` / `tool_ids` to trace agent → agent
+/// references, so a currently-invalid definition must not abort the scan.
+pub fn load_agent_definitions_lenient() -> Vec<AgentDefinition> {
+    let directory = agent_dir();
+    let Ok(entries) = fs::read_dir(&directory) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("yaml"))
+        .filter_map(|entry| {
+            let content = fs::read_to_string(entry.path()).ok()?;
+            serde_yaml::from_str(&content).ok()
+        })
+        .collect()
+}
+
 pub fn delete_agent_definition(id: &str) -> Result<()> {
     validate_agent_id(id)?;
     let path = agent_dir().join(format!("{id}.yaml"));

@@ -20,6 +20,7 @@ use zihuan_core::agent::declarative_agent::{
     save_agent_definition, AgentDefinition,
 };
 use zihuan_core::config::ConfigRecord;
+use zihuan_core::connection::utils::utilsdep_analyze::ConfigDependencyKind;
 use zihuan_core::ims_bot_adapter::{
     resolve_active_or_fallback_bot_profile, resolve_fallback_bot_profile,
 };
@@ -540,7 +541,7 @@ pub async fn get_subagent(req: &mut Request, res: &mut Response, _depot: &mut De
 }
 
 #[handler]
-pub async fn save_subagent(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn save_subagent(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
     let body: SubAgentMutationRequest = match req.parse_json().await {
         Ok(body) => body,
@@ -552,18 +553,67 @@ pub async fn save_subagent(req: &mut Request, res: &mut Response, _depot: &mut D
             "SubAgent ID in the URL must match the definition ID".to_string(),
         );
     }
+    // A running role service keeps the old definition until restarted.
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
+    let affected_running_services = super::dependency_check::affected_running_services(
+        &state,
+        ConfigDependencyKind::SubAgent,
+        &id,
+    );
     let available_tool_ids = subagent_available_tool_ids(body.available_tool_ids);
     match save_agent_definition(&body.definition, &available_tool_ids) {
-        Ok(()) => res.render(Json(body.definition)),
+        Ok(()) => {
+            info!(
+                "[subagents] saved sub-agent '{}' (id={}), {} running role service(s) affected",
+                body.definition.name,
+                body.definition.id,
+                affected_running_services.len()
+            );
+            res.render(Json(serde_json::json!({
+                "definition": body.definition,
+                "affected_running_services": affected_running_services,
+            })));
+        }
         Err(error) => render_unprocessable_entity(res, error.to_string()),
     }
 }
 
 #[handler]
-pub async fn delete_subagent(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn delete_subagent(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
+    // Analyze before deleting so references from other agents still resolve.
+    let affected_running_services = super::dependency_check::affected_running_services(
+        &state,
+        ConfigDependencyKind::SubAgent,
+        &id,
+    );
     match delete_agent_definition(&id) {
-        Ok(()) => res.render(Json(ok_response())),
+        Ok(()) => {
+            // A deleted sub-agent cannot be restarted; stop the services that
+            // still reference it so they do not run against missing config.
+            for service in &affected_running_services {
+                info!(
+                    "[subagents] stopping running role service '{}' (id={}) after deleting sub-agent '{}'",
+                    service.name, service.id, id
+                );
+                if let Err(err) = state.role_service_manager.stop_role_service(&service.id).await {
+                    warn!(
+                        "[subagents] failed to stop role service '{}' after deleting sub-agent '{}': {}",
+                        service.name, id, err
+                    );
+                }
+            }
+            info!(
+                "[subagents] deleted sub-agent (id={}), {} running role service(s) affected",
+                id,
+                affected_running_services.len()
+            );
+            res.render(Json(serde_json::json!({
+                "ok": true,
+                "affected_running_services": affected_running_services,
+            })));
+        }
         Err(error) if error.to_string().contains("not found") => {
             render_not_found(res, &error.to_string())
         }
@@ -972,7 +1022,7 @@ pub async fn create_role_service(req: &mut Request, res: &mut Response, _depot: 
 }
 
 #[handler]
-pub async fn update_role_service(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn update_role_service(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
     let body: UpdateRoleServiceRequest = match req.parse_json().await {
         Ok(body) => body,
@@ -983,6 +1033,15 @@ pub async fn update_role_service(req: &mut Request, res: &mut Response, _depot: 
         Ok(role_services) => role_services,
         Err(err) => return render_internal_error(res, err),
     };
+
+    // An updated service config only takes effect in running instances after a
+    // restart, so report the service itself when it is currently running.
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
+    let affected_running_services = super::dependency_check::affected_running_services(
+        &state,
+        ConfigDependencyKind::RoleService,
+        &id,
+    );
 
     if let Err(message) =
         validate_default_role_service_flag(&role_services, Some(id.as_str()), body.is_default)
@@ -1024,8 +1083,16 @@ pub async fn update_role_service(req: &mut Request, res: &mut Response, _depot: 
 
     match system_config::save_role_services(role_services) {
         Ok(()) => {
-            info!("[role_services] updated role service '{}' (id={})", response.name, response.id);
-            res.render(Json(response));
+            info!(
+                "[role_services] updated role service '{}' (id={}), {} running role service(s) affected",
+                response.name,
+                response.id,
+                affected_running_services.len()
+            );
+            res.render(Json(serde_json::json!({
+                "role_service": response,
+                "affected_running_services": affected_running_services,
+            })));
         }
         Err(err) => render_internal_error(res, err),
     }
@@ -1097,13 +1164,112 @@ pub async fn stop_role_service(req: &mut Request, res: &mut Response, depot: &mu
 }
 
 #[handler]
+pub async fn restart_role_service(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<Arc<AppState>>().unwrap().clone();
+    let broadcast_tx = depot.obtain::<WsBroadcast>().unwrap().clone();
+    let id = req.param::<String>("id").unwrap_or_default();
+
+    let role_services = match system_config::load_role_services() {
+        Ok(role_services) => role_services,
+        Err(err) => return render_internal_error(res, err),
+    };
+    let Some(role_service) = role_services.into_iter().find(|item| item.id == id) else {
+        return render_not_found(res, "Role service not found");
+    };
+    let connections = match system_config::load_connections() {
+        Ok(connections) => connections,
+        Err(err) => return render_internal_error(res, err),
+    };
+    if let Err(message) =
+        validate_role_service_connection_schemas(&role_service.role_service_type, &connections)
+    {
+        return render_unprocessable_entity(res, message);
+    }
+    let llm_refs = match load_llm_refs() {
+        Ok(llm_refs) => llm_refs,
+        Err(err) => return render_internal_error(res, err),
+    };
+    if let Err(message) = validate_qq_chat_role_service_llms(
+        &role_service.role_service_type,
+        &llm_refs,
+        &role_service.name,
+    ) {
+        return render_unprocessable_entity(res, message);
+    }
+
+    info!("[role_services] restarting role service '{}' (id={})", role_service.name, id);
+    // Tag every log record emitted during the restart (including the manager's
+    // own stop/start logs) so the save-and-restart dialog can stream them.
+    let restart_result = zihuan_service::role::service_log_scope::scope(id.clone(), async {
+        let log_restart_step = |message: String| {
+            let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+            let _ = broadcast_tx.send(ServerMessage::ServiceRuntimeLog {
+                service_id: id.clone(),
+                level: "INFO".to_string(),
+                message,
+                timestamp,
+            });
+        };
+
+        log_restart_step(format!("正在重启 Role Service '{}'...", role_service.name));
+        if let Err(err) = state.role_service_manager.stop_role_service(&id).await {
+            log::error!(
+                "[role_services] failed to stop role service '{}' (id={}) during restart: {}",
+                role_service.name,
+                id,
+                err
+            );
+            return Err(err);
+        }
+        log_restart_step("服务已停止，正在按最新配置启动...".to_string());
+        if let Err(err) = start_role_service_runtime(
+            state.clone(),
+            broadcast_tx.clone(),
+            &role_service,
+            connections,
+        )
+        .await
+        {
+            log::error!(
+                "[role_services] failed to start role service '{}' (id={}) during restart: {}",
+                role_service.name,
+                id,
+                err
+            );
+            return Err(err);
+        }
+        log_restart_step("服务已启动".to_string());
+        Ok(())
+    })
+    .await;
+
+    match restart_result {
+        Ok(()) => {
+            info!("[role_services] restarted role service '{}' (id={})", role_service.name, id);
+            res.render(Json(serde_json::json!({
+                "ok": true,
+                "runtime": state.role_service_manager.runtime_info(&id),
+            })));
+        }
+        Err(err) => render_internal_error(res, err),
+    }
+}
+
+#[handler]
 pub async fn delete_role_service(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let _state = depot.obtain::<Arc<AppState>>().unwrap().clone();
+    let state = depot.obtain::<Arc<AppState>>().unwrap().clone();
     let id = req.param::<String>("id").unwrap_or_default();
     let mut role_services = match system_config::load_role_services() {
         Ok(role_services) => role_services,
         Err(err) => return render_internal_error(res, err),
     };
+    // Analyze before removing: a running service is reported as affected so the
+    // frontend can offer to stop it right after the delete succeeds.
+    let affected_running_services = super::dependency_check::affected_running_services(
+        &state,
+        ConfigDependencyKind::RoleService,
+        &id,
+    );
     let before = role_services.len();
     role_services.retain(|item| item.id != id);
 
@@ -1116,8 +1282,23 @@ pub async fn delete_role_service(req: &mut Request, res: &mut Response, depot: &
             if let Err(err) = delete_avatar_by_role_service_id(&id).await {
                 warn!("[role_services] failed to delete avatar for role service '{}': {}", id, err);
             }
+            if affected_running_services.iter().any(|service| service.id == id) {
+                info!(
+                    "[role_services] deleted role service (id={}) while it was running; stopping it",
+                    id
+                );
+                if let Err(err) = state.role_service_manager.stop_role_service(&id).await {
+                    warn!(
+                        "[role_services] failed to stop deleted role service (id={}): {}",
+                        id, err
+                    );
+                }
+            }
             info!("[role_services] deleted role service (id={})", id);
-            res.render(Json(ok_response()));
+            res.render(Json(serde_json::json!({
+                "ok": true,
+                "affected_running_services": affected_running_services,
+            })));
         }
         Err(err) => render_internal_error(res, err),
     }

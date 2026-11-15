@@ -275,11 +275,14 @@
         </div>
       </template>
     </t-drawer>
+
+    <ServiceRestartConfirmDialog :state="restartDialog.state" @close="restartDialog.close()" @save-only="restartDialog.saveOnly()" @restart="restartDialog.restartAll()" />
   </section>
 </template>
 
 <script setup lang="ts">
 import AdminPageHeader from "../components/AdminPageHeader.vue";
+import ServiceRestartConfirmDialog from "../components/ServiceRestartConfirmDialog.vue";
 import { useConnections } from "./useConnections";
 import ConnectionCredentialInput from "../components/ConnectionCredentialInput.vue";
 import qqIcon from "../../assets/icons/qq.svg";
@@ -342,6 +345,7 @@ const {
   connectionTypeLabel,
   copyConnectionConfig,
   compactId,
+  restartDialog,
 } = useConnections();
 </script>
 

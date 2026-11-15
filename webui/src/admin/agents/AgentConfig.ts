@@ -3,6 +3,7 @@ import { computed, reactive, ref } from "vue";
 import { registry, system, type SubAgentDefinition } from "../../api/client";
 import type { NodeToolInfo } from "../../api/types";
 import { QQ_CHAT_DEFAULT_TOOLS, WORKSPACE_DEFAULT_TOOLS } from "../model";
+import { useServiceRestart } from "../components/useServiceRestart";
 
 const portTypes = ["String", "Integer", "Float", "Boolean", "Json"];
 // Callable tools that the role-service default tool lists do not cover because they are configured
@@ -10,6 +11,17 @@ const portTypes = ["String", "Integer", "Float", "Boolean", "Json"];
 const SWITCH_CONFIGURED_TOOLS = [{ id: "image_understand", name: "image_understand" }];
 
 export function useAgentConfig() {
+  const restartDialog = useServiceRestart({
+    // The editor stays open behind the dialog; these settle it when the flow ends.
+    onCompleted: () => {
+      editorVisible.value = false;
+      void load();
+    },
+    onSaveOnly: () => {
+      editorVisible.value = false;
+      void load();
+    },
+  });
   const subagents = ref<SubAgentDefinition[]>([]);
   const nodeTools = ref<NodeToolInfo[]>([]);
   const loading = ref(false);
@@ -133,13 +145,17 @@ export function useAgentConfig() {
         user_prompt: form.user_prompt?.trim() ? form.user_prompt : null,
         progress_message: form.progress_message?.trim() ? form.progress_message : null,
       };
-      await system.subagents.save(
+      const result = await system.subagents.save(
         form.id,
         payload,
         availableTools.value.map((tool) => tool.id),
       );
-      editorVisible.value = false;
-      await load();
+      // With affected services the dialog opens over the still-open editor, so
+      // 取消 returns to the edit page; without them, finish as before.
+      if (!restartDialog.openAfterSave(result.affected_running_services)) {
+        editorVisible.value = false;
+        await load();
+      }
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : String(cause);
     } finally {
@@ -150,8 +166,10 @@ export function useAgentConfig() {
   async function remove(id: string) {
     listError.value = "";
     try {
-      await system.subagents.remove(id);
+      const result = await system.subagents.remove(id);
       await load();
+      // The backend stops running services referencing the deleted sub-agent.
+      restartDialog.openAfterDelete(result.affected_running_services);
     } catch (cause) {
       listError.value = cause instanceof Error ? cause.message : String(cause);
     }
@@ -160,6 +178,7 @@ export function useAgentConfig() {
   void load();
 
   return {
+    restartDialog,
     portTypes,
     availableTools,
     subagents,

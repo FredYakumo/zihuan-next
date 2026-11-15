@@ -78,7 +78,21 @@ impl Log for LogForwarder {
                 }
             }
             // Ignore errors: no receivers yet, channel full, etc.
-            let _ = tx.send(ServerMessage::LogMessage { level, message, timestamp });
+            let _ = tx.send(ServerMessage::LogMessage {
+                level: level.clone(),
+                message: message.clone(),
+                timestamp: timestamp.clone(),
+            });
+            // Inside a restart scope, mirror the record as a service-scoped event
+            // so the save-and-restart dialog can stream this service's logs only.
+            if let Some(service_id) = zihuan_service::role::service_log_scope::current() {
+                let _ = tx.send(ServerMessage::ServiceRuntimeLog {
+                    service_id,
+                    level,
+                    message,
+                    timestamp,
+                });
+            }
         }
     }
 

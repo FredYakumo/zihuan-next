@@ -680,6 +680,8 @@
         <ConfigImportDialog v-model:visible="showWebSearchDialog" title="新增 Web Search" create-label="新增 Web Search"
             :loading="webSearchImporting" @create="openWebSearchCreatePage"
             @clipboard-import="importWebSearchFromClipboard" @file-change="handleWebSearchFileChange" />
+        <ServiceRestartConfirmDialog :state="restartDialog.state" @close="restartDialog.close()"
+            @save-only="restartDialog.saveOnly()" @restart="restartDialog.restartAll()" />
     </section>
 </template>
 
@@ -692,6 +694,7 @@ import ConfigImportDialog from "../components/ConfigImportDialog.vue";
 import IgnoreRulesList from "../components/IgnoreRulesList.vue";
 import RateLimitConfigDrawer from "../components/RateLimitConfigDrawer.vue";
 import RetrievalDatabaseDialog from "../components/RetrievalDatabaseDialog.vue";
+import ServiceRestartConfirmDialog from "../components/ServiceRestartConfirmDialog.vue";
 import { useRoleServicePage } from "./roleServicePage";
 
 export default defineComponent({
@@ -707,6 +710,7 @@ export default defineComponent({
         RotateIcon,
         SearchIcon,
         RetrievalDatabaseDialog,
+        ServiceRestartConfirmDialog,
     },
     setup() {
         const page = useRoleServicePage();

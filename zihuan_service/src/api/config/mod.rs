@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod connections;
+pub mod dependency_check;
 pub mod llm_refs;
 pub mod retrieval_databases;
 pub mod role_services;

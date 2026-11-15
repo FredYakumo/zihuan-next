@@ -24,14 +24,18 @@
         <t-form-item label="输出"><div class="port-list"><div v-for="(port, index) in form.outputs" :key="`output-${index}`" class="port-row"><t-input v-model="port.name" placeholder="字段名" /><t-select v-model="port.data_type"><t-option v-for="type in portTypes" :key="type" :value="type" :label="type" /></t-select><t-input v-model="port.description" placeholder="描述" /><t-checkbox v-model="port.required">必填</t-checkbox><t-button variant="text" theme="danger" @click="removePort('outputs', index)">删除</t-button></div><t-button variant="dashed" size="small" @click="addPort('outputs')">新增输出</t-button></div></t-form-item>
         <t-form-item label="工具列表"><t-checkbox-group v-model="form.tool_ids"><t-checkbox v-for="tool in availableTools" :key="tool.id" :value="tool.id">{{ tool.name }}</t-checkbox></t-checkbox-group></t-form-item><t-form-item label="节点图工具"><t-checkbox v-model="form.include_graph_tools">合并角色定义的节点图工具</t-checkbox></t-form-item><div v-if="error" class="agent-error">{{ error }}</div></t-form>
     </t-dialog>
+
+    <ServiceRestartConfirmDialog :state="restartDialog.state" @close="restartDialog.close()" @save-only="restartDialog.saveOnly()" @restart="restartDialog.restartAll()" />
   </section>
 </template>
 
 <script setup lang="ts">
 import AdminPageHeader from "../components/AdminPageHeader.vue";
+import ServiceRestartConfirmDialog from "../components/ServiceRestartConfirmDialog.vue";
 import { useAgentConfig } from "./AgentConfig";
 
 const {
+  restartDialog,
   portTypes,
   availableTools,
   subagents,

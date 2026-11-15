@@ -128,6 +128,10 @@ pub fn build_router(
                                         .post(config::role_services::stop_role_service),
                                 )
                                 .push(
+                                    Router::with_path("restart")
+                                        .post(config::role_services::restart_role_service),
+                                )
+                                .push(
                                     Router::with_path("avatar/sync")
                                         .post(config::role_services::sync_role_avatar),
                                 )
