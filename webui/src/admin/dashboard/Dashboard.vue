@@ -104,7 +104,7 @@
             </span>
             <span v-else class="dashboard-service-spec">
               <span class="dashboard-service-spec-label">工作模式</span>
-              <span>Dashboard Session Workspace</span>
+              <span>{{ service.role_service_type.type === "planer" ? `${service.role_service_type.member_count} 个 Role` : "Dashboard Session Workspace" }}</span>
             </span>
           </div>
 
@@ -187,45 +187,8 @@
       </div>
     </section>
 
-    <Teleport to="body">
-      <div
-        v-if="chatModalAgentId"
-        class="chat-modal-backdrop"
-        @click.self="closeChatModal"
-      >
-        <div class="chat-modal-dialog">
-          <div class="chat-modal-header">
-            <div class="chat-modal-title">
-              <img
-                v-if="chatModalService && agentAvatarUrl(chatModalService)"
-                :src="agentAvatarUrl(chatModalService)"
-                alt="service avatar"
-                class="chat-modal-avatar"
-              />
-              <div
-                v-else-if="chatModalService"
-                class="chat-modal-avatar chat-modal-avatar--fallback"
-              >
-                {{ agentInitial(chatModalService.name) }}
-              </div>
-              <h3>{{ chatModalService?.name || "Chat" }}</h3>
-            </div>
-            <div class="chat-modal-actions">
-              <button class="btn ghost" @click="openChatInNewWindow">在新窗口打开</button>
-              <button class="chat-modal-close" aria-label="关闭" @click="closeChatModal"><CloseIcon /></button>
-            </div>
-          </div>
-          <div class="chat-modal-body">
-            <Chat
-              :agent-id="chatModalAgentId"
-              :session-id="chatModalSessionId"
-              embedded
-              @update:session-id="chatModalSessionId = $event"
-            />
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <AgentChatDialog :agent="chatModalService" @close="closeChatModal" />
+
 
     <Teleport to="body">
       <div
@@ -262,6 +225,7 @@
 <script setup lang="ts">
 import { CloseIcon } from "tdesign-icons-vue-next";
 
+import AgentChatDialog from "../components/AgentChatDialog.vue";
 import { useDashboard } from "./useDashboard";
 import Chat from "../chat/Chat.vue";
 

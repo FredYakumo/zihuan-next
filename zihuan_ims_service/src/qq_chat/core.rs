@@ -910,6 +910,23 @@ impl QqChatAgentService {
         adapter: &zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
         time: &str,
     ) -> Result<()> {
+        let ctx = self.turn_context(adapter, event);
+
+        zihuan_core::agent::runtime_context::with_current_agent_runtime_context(
+            zihuan_core::agent::runtime_context::AgentRuntimeContext {
+                resources: crate::qq_chat::resources::QqChatRoleServiceResources::new(
+                    self.config.qq_chat_config.clone(),
+                )
+                .into_shared(),
+            },
+            || super::event_processor::process_event(self, event, time, None, &ctx),
+        )
+    }
+    pub(crate) fn turn_context<'a>(
+        &'a self,
+        adapter: &'a zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
+        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
+    ) -> QqChatAgentServiceContext<'a> {
         let task_db_connection_id =
             self.config.qq_chat_config.resolved_rdb_id().map(ToOwned::to_owned);
         let sender_id = event.sender.user_id.to_string();
@@ -922,7 +939,8 @@ impl QqChatAgentService {
             session_state: Arc::clone(&self.config.tool_quota_session_state),
         });
 
-        let ctx = QqChatAgentServiceContext {
+        QqChatAgentServiceContext {
+            planer: None,
             agent_id: &self.config.agent_id,
             adapter,
             bot_name: &self.config.bot_name,
@@ -965,16 +983,6 @@ impl QqChatAgentService {
                     .flatten()
             }),
             model_names: self.config.public_model_names.clone(),
-        };
-
-        zihuan_core::agent::runtime_context::with_current_agent_runtime_context(
-            zihuan_core::agent::runtime_context::AgentRuntimeContext {
-                resources: crate::qq_chat::resources::QqChatRoleServiceResources::new(
-                    self.config.qq_chat_config.clone(),
-                )
-                .into_shared(),
-            },
-            || super::event_processor::process_event(self, event, time, None, &ctx),
-        )
+        }
     }
 }

@@ -186,6 +186,14 @@
                 {{ workspacePathDisplay || '未选择工作目录' }}
               </span>
             </div>
+            <aside v-if="selectedServiceType === 'planer' && planerTaskCards.length" class="planer-task-panel" aria-label="委托任务">
+              <div v-for="task in planerTaskCards" :key="task.task_id" class="planer-task-row">
+                <span>{{ ({queued:'排队中',running:'执行中',waiting_downstream:'等待协助',waiting_auth:'等待人工审批',waiting_input:'等待补充信息',success:'已完成',failed:'失败',cancelled:'已取消',interrupted:'已中断'} as Record<string,string>)[task.status] || task.status }}</span>
+                <code>{{ task.task_id.slice(0, 8) }}</code>
+                <a v-if="task.status === 'waiting_auth' && task.approval_url" :href="task.approval_url" target="_blank" rel="noopener">打开 Workspace 审批</a>
+                <span v-if="task.error">{{ task.error }}</span>
+              </div>
+            </aside>
             <aside v-if="showWorkspaceTaskPanel" class="workspace-task-panel" aria-label="当前任务">
               <WorkspaceTaskList :tasks="workspaceTasks" />
             </aside>
@@ -900,7 +908,7 @@
                         <ImageAddIcon />
                       </label>
                     </template>
-                    <div v-if="isChatEligible" class="chat-model-bar">
+                    <div v-if="isChatEligible && selectedServiceType !== 'planer'" class="chat-model-bar">
                       <div class="model-picker" :class="{ open: openPicker === 'model' }">
                         <button
                           class="model-chip"
@@ -1752,6 +1760,7 @@ const {
   autoCollapseThinking,
   selectedService,
   selectedServiceType,
+  planerTaskCards,
   isChatEligible,
   isWorkspaceService,
   groupedSessions,
@@ -1915,3 +1924,5 @@ const {
 <style scoped lang="scss">
 @use "./chat" as *;
 </style>
+
+<style scoped>.planer-task-panel { padding: 8px 16px; max-height: 160px; overflow: auto; }.planer-task-row { display: flex; gap: 12px; align-items: center; padding: 4px 0; font-size: 12px; }</style>

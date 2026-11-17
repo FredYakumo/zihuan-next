@@ -952,26 +952,51 @@ impl ToolCallingEngine {
                     }
                     results
                 } else {
-                    let turn_trace = crate::qq_context::current_turn_trace();
-                    prepared_calls
-                        .into_iter()
-                        .map(|call| {
-                            let turn_trace = turn_trace.clone();
-                            let result = std::thread::scope(|scope| {
-                                let call_content = &tool_call_content;
-                                scope
-                                    .spawn(move || {
-                                        let _turn_trace = turn_trace
-                                            .map(crate::qq_context::TurnTraceGuard::from_context);
-                                        self.execute_prepared_call(call_content, call)
-                                    })
-                                    .join()
-                                    .expect("serial tool execution panicked")
-                            });
-                            self.notify_tool_finish(&result);
-                            result
-                        })
-                        .collect::<Vec<PreparedToolResult>>()
+                    let mut results = Vec::new();
+                    for call in prepared_calls {
+                        if self.is_cancelled() {
+                            break;
+                        }
+                        let deferred = call.tool.as_ref().and_then(|tool| {
+                            tool.execute_async(&tool_call_content, &call.arguments)
+                        });
+                        let result = if let Some(future) = deferred {
+                            // No worker thread or confirmation mutex is held while waiting.
+                            let result = future.await;
+                            PreparedToolResult {
+                                index: call.index,
+                                call_id: call.call_id,
+                                name: call.name,
+                                result,
+                            }
+                        } else {
+                            let turn_trace = crate::qq_context::current_turn_trace();
+                            let content = tool_call_content.clone();
+                            let long_context = self.long_task_context.clone();
+                            let observer = self.observer.clone();
+                            let path = self.observer_path.clone();
+                            let gate = self.confirmation_gate.clone();
+                            let runtime = self.agent_runtime_context.clone();
+                            tokio::task::spawn_blocking(move || {
+                                let _trace =
+                                    turn_trace.map(crate::qq_context::TurnTraceGuard::from_context);
+                                Self::execute_prepared_call_with_context(
+                                    &content,
+                                    call,
+                                    long_context.as_ref(),
+                                    observer.as_ref(),
+                                    &path,
+                                    Some(&gate),
+                                    runtime,
+                                )
+                            })
+                            .await
+                            .expect("serial tool execution panicked")
+                        };
+                        self.notify_tool_finish(&result);
+                        results.push(result);
+                    }
+                    results
                 };
 
             if let Some((call_id, request)) =

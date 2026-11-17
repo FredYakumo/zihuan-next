@@ -1536,6 +1536,7 @@ export const chat = {
   async stream(
     payload: {
       agent_id: string;
+      target_type?: "role" | "planer";
       session_id?: string | null;
       stream?: boolean;
       model_config_id?: string | null;

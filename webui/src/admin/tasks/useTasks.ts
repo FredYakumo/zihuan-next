@@ -194,6 +194,7 @@ export function useTasks() {
     node_graph: "节点图",
     agent_service: "RoleService 工具",
     workspace_chat: "Workspace 对话",
+    planer_chat: "Planer 对话",
     scheduled_job: "计划任务",
   };
 

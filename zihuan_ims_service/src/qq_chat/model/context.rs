@@ -24,6 +24,7 @@ use crate::qq_chat::tool_quota::{QqChatToolQuotaContext, SessionToolQuotaState};
 
 /// Runtime context assembled per-turn for the QQ chat agent service.
 pub(crate) struct QqChatAgentServiceContext<'a> {
+    pub(crate) planer: Option<&'a crate::qq_chat::planer::ImsPlanerInput>,
     pub(crate) agent_id: &'a str,
     pub(crate) adapter: &'a zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
     pub(crate) bot_name: &'a str,

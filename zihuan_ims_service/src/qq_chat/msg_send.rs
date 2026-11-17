@@ -41,7 +41,10 @@ pub(crate) struct QqChatServiceSendContext<'a> {
     pub max_text_chars: usize,
 }
 
-pub(crate) fn send_planned_batches(ctx: &QqChatServiceSendContext<'_>, batches: &[Vec<Message>]) {
+pub(crate) fn send_planned_batches(
+    ctx: &QqChatServiceSendContext<'_>,
+    batches: &[Vec<Message>],
+) -> Vec<zihuan_core::ims_bot_adapter::runtime::send_qq_message_batches::SendBatchResult> {
     // Human-paced dispatch: every follow-up message waits for the typing time of its own
     // text, so a multi-message reply does not land as one instant burst.
     let delays_ms = reply_batch_delays_ms(batches);
@@ -52,7 +55,7 @@ pub(crate) fn send_planned_batches(ctx: &QqChatServiceSendContext<'_>, batches: 
             batches,
             &delays_ms,
             &ctx.persistence,
-        );
+        )
     } else {
         send_friend_batches_with_persistence_and_delays(
             ctx.adapter,
@@ -60,7 +63,7 @@ pub(crate) fn send_planned_batches(ctx: &QqChatServiceSendContext<'_>, batches: 
             batches,
             &delays_ms,
             &ctx.persistence,
-        );
+        )
     }
 }
 

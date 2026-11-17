@@ -1259,6 +1259,13 @@ pub async fn restart_role_service(req: &mut Request, res: &mut Response, depot: 
 pub async fn delete_role_service(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap().clone();
     let id = req.param::<String>("id").unwrap_or_default();
+    match zihuan_core::config::planers::load_planers() {
+        Ok(planers) if planers.iter().any(|b| b.members.iter().any(|m| m.role_id == id)) => {
+            return render_bad_request(res, "Role 仍被 Planer 引用，请先移除成员".into())
+        }
+        Err(error) => return render_internal_error(res, error),
+        _ => {}
+    }
     let mut role_services = match system_config::load_role_services() {
         Ok(role_services) => role_services,
         Err(err) => return render_internal_error(res, err),

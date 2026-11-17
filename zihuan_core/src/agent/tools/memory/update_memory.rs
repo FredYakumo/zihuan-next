@@ -24,6 +24,14 @@ impl RememberMemoryTool {
     }
 }
 
+const UPDATE_MEMORY_TOOL_DESC: &'static str = r#"Create or correct a memory in an explicit category.
+Concept and behavioral use a key.
+Person has no key and requires immutable qq_id and structured profile;never merge different QQ IDs.
+Behavioral content must be short.
+Source is ROLE_SELF for the Role Service's own independent reflection (level 2),planer for Planer tasks (level 1), or user with the verified triggering sender_id and access_level.
+User corrections must use user source.
+Existing scope and access level are preserved"#;
+
 impl Tool for RememberMemoryTool {
     fn execution_resource(&self, _: &Value) -> crate::agent::tools::ToolExecutionResource {
         crate::agent::tools::ToolExecutionResource::Exclusive
@@ -32,12 +40,16 @@ impl Tool for RememberMemoryTool {
         true
     }
     fn spec(&self) -> Arc<dyn FunctionTool> {
-        Arc::new(MemoryFunctionToolSpec::new("update_memory", "Create or correct a memory in an explicit category. Concept and behavioral use a key. Person has no key and requires immutable qq_id and structured profile; never merge different QQ IDs. Behavioral content must be short. Source is bot for independent reflection, or user with the verified triggering sender_id and access_level. User corrections must use user source. Existing scope and access level are preserved.", json!({"type":"object","properties":{
+        Arc::new(MemoryFunctionToolSpec::new(
+            "update_memory",
+            UPDATE_MEMORY_TOOL_DESC,
+            json!({"type":"object","properties":{
             "category":{"type":"string","enum":["concept","person","behavioral"]},"key":{"type":"string"},"content":{"type":"string"},
-            "source":{"type":"object","properties":{"kind":{"type":"string","enum":["bot","user"]},"sender_id":{"type":"string"},"access_level":{"type":"integer","minimum":0}},"required":["kind"],"additionalProperties":false},
+            "source":{"type":"object","properties":{"kind":{"type":"string","enum":["ROLE_SELF","user","planer"]},"sender_id":{"type":"string"},"access_level":{"type":"integer","minimum":0}},"required":["kind"],"additionalProperties":false},
             "person":{"type":"object","properties":{"qq_id":{"type":"string"},"name":{"type":"string"},"preferred_name":{"type":"string"},"aliases":{"type":"array","items":{"type":"string"}},"impression":{"type":"string"},"guideline":{"type":"string"}},"additionalProperties":false},
             "starts_at":{"type":"string"},"scope":{"type":"string","enum":["current","global","group","sender"]}
-        },"required":["category","content","source"],"additionalProperties":false})))
+        },"required":["category","content","source"],"additionalProperties":false}),
+        ))
     }
     fn execute(&self, _: &str, arguments: &Value) -> Result<String> {
         let _write_guard = crate::storage::MEMORY_MUTATION_LOCK
@@ -49,7 +61,8 @@ impl Tool for RememberMemoryTool {
             .ok_or_else(|| Error::ValidationError("source required".to_string()))?;
         let source_kind = required_string_argument(source, "kind")?;
         let level = match source_kind.as_str() {
-            "bot" => 2,
+            "ROLE_SELF" => crate::storage::user_permission::ROLE_SELF_ACCESS_LEVEL,
+            "planer" => crate::storage::user_permission::PLANER_ACCESS_LEVEL,
             "user" => {
                 let sender = required_string_argument(source, "sender_id")?;
                 if self.resources.access.sender_id.as_deref() != Some(&sender) {
@@ -68,7 +81,11 @@ impl Tool for RememberMemoryTool {
                 }
                 actual
             }
-            _ => return Err(Error::ValidationError("source kind must be bot or user".to_string())),
+            _ => {
+                return Err(Error::ValidationError(
+                    "source kind must be ROLE_SELF, user or planer".to_string(),
+                ))
+            }
         };
         let content = required_string_argument(arguments, "content")?;
         let person_patch = arguments.get("person");

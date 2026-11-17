@@ -1,3 +1,4 @@
+import { planers, planerChatTarget } from "../../api/planers";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 
@@ -75,7 +76,7 @@ export function useDashboard() {
     operatingId.value = id;
     pendingAction.value = "start";
     try {
-      await system.services.start(id);
+      await (services.value.find(s => s.config_id === id)?.role_service_type.type === "planer" ? planers.start(id) : system.services.start(id));
       await load();
     } catch (error) {
       alert(`启动失败: ${(error as Error).message}`);
@@ -92,7 +93,7 @@ export function useDashboard() {
     operatingId.value = id;
     pendingAction.value = "stop";
     try {
-      await system.services.stop(id);
+      await (services.value.find(s => s.config_id === id)?.role_service_type.type === "planer" ? planers.stop(id) : system.services.stop(id));
       await load();
     } catch (error) {
       alert(`停止失败: ${(error as Error).message}`);
@@ -154,7 +155,7 @@ export function useDashboard() {
       const [connections, llm, loadedAgents] = await Promise.all([
         system.connections.list(),
         system.llm.list(),
-        system.services.list(),
+        Promise.all([system.services.list(), planers.list()]).then(([roles, ps]) => [...roles, ...ps.map(planerChatTarget)]),
       ]);
       stats.connections = connections.length;
       stats.llm = llm.length;

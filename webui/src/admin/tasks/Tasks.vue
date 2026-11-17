@@ -54,7 +54,7 @@
             </t-button>
             <t-button variant="text" size="small" :disabled="!row.can_rerun" @click="rerunTask(row.id)">重跑</t-button>
             <t-button variant="text" size="small" @click="openLogViewer(row)">查看日志</t-button>
-            <t-button v-if="row.task_type === 'workspace_chat'" variant="text" size="small" :disabled="!row.chat_session_id" @click="openChatSession(row)">
+            <t-button v-if="['workspace_chat', 'planer_chat'].includes(row.task_type)" variant="text" size="small" :disabled="!row.chat_session_id" @click="openChatSession(row)">
               打开对话
             </t-button>
             <t-button v-else-if="row.task_type !== 'scheduled_job'" variant="text" size="small" :disabled="row.task_type !== 'agent_service' || !row.file_path" @click="openTaskGraph(row.id)">

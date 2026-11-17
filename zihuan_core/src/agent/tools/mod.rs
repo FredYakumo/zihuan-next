@@ -32,6 +32,9 @@ pub use tool_calling_types::{
 pub use tool_progress::{consume_tool_progress_notification, current_task_progress_message};
 pub use web_search::WebSearchTool;
 
+pub type AsyncToolOutput =
+    std::pin::Pin<Box<dyn std::future::Future<Output = ToolExecutionOutput> + Send + 'static>>;
+
 /// A tool that can be invoked during an inference loop.
 pub trait Tool: Send + Sync + 'static {
     /// Returns the LLM-facing function specification (name, description, parameters).
@@ -40,6 +43,11 @@ pub trait Tool: Send + Sync + 'static {
     /// Failures propagate natively: the tool loop records them and hands the calling
     /// model only a downgraded notice, so error details never reach the conversation.
     fn execute(&self, call_content: &str, arguments: &Value) -> Result<String>;
+    /// Optional asynchronous execution for tools that await external task results.
+    /// The engine retains the conversation and tool-call position across this future.
+    fn execute_async(&self, _content: &str, _arguments: &Value) -> Option<AsyncToolOutput> {
+        None
+    }
     fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
         match self.execute(call_content, arguments) {
             Ok(text) => ToolExecutionOutput::text(text),

@@ -302,7 +302,7 @@ pub fn send_friend_batches_with_persistence_and_delays(
     batches: &[Vec<Message>],
     delays_ms: &[u64],
     persistence: &OutboundMessagePersistence,
-) {
+) -> Vec<SendBatchResult> {
     let results = send_qq_message_batches_with_delays(
         adapter, "friend", target_id, batches, delays_ms, LOG_PREFIX,
     );
@@ -319,6 +319,7 @@ pub fn send_friend_batches_with_persistence_and_delays(
         "{LOG_PREFIX} Sent friend batches to {target_id}: all_ok={all_ok}, count={}",
         batches.len()
     );
+    results
 }
 
 /// Send multiple `Vec<Message>` batches to a QQ group.
@@ -361,7 +362,7 @@ pub fn send_group_batches_with_persistence_and_delays(
     batches: &[Vec<Message>],
     delays_ms: &[u64],
     persistence: &OutboundMessagePersistence,
-) {
+) -> Vec<SendBatchResult> {
     let results = send_qq_message_batches_with_delays(
         adapter, "group", target_id, batches, delays_ms, LOG_PREFIX,
     );
@@ -378,6 +379,7 @@ pub fn send_group_batches_with_persistence_and_delays(
         "{LOG_PREFIX} Sent group batches to {target_id}: all_ok={all_ok}, count={}",
         batches.len()
     );
+    results
 }
 
 fn persist_successful_batches(

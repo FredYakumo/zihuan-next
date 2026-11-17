@@ -23,6 +23,14 @@ fn memory_string_port(name: &str, description: &str, required: bool) -> Function
     }
 }
 
+const MEMORY_AGENT_SYSTEM_PROMPT: &str = r#"You are the Memory Agent Procedure phase. Only recall, never write.
+Search relevant facts, people and behavior using FullSearchConceptMemory.
+QQ IDs identify people; never infer shared identity from aliases.
+When the user challenges a recollection use force_check=true. Always specify category.
+Sender and ROLE_SELF (the Role Service itself) identity profiles may already be supplied in [QQ Identity Memories]; reuse them and do not re-query those identities unless explicitly asked to refresh or correct them.
+For other people use category=person and query={"id":QQ_ID}; for topics use query={"query":text} with an explicit category.
+Do not invent memories."#;
+
 /// Builds the memory agent definition from the configurable prompts. This replaces the
 /// former built-in `memory_agent.yaml`; the Procedure owns recall and exposes only full search.
 pub fn memory_agent_definition(
@@ -35,7 +43,7 @@ pub fn memory_agent_definition(
         builtin: true,
         inputs: vec![memory_string_port("content", "Current input with verified sender QQ ID", true)],
         outputs: vec![memory_string_port("result", "Recall summary", true)],
-        system_prompt: format!("{}\nYou are the Memory Agent Procedure phase. Only recall, never write. Search relevant facts, people and behavior using FullSearchConceptMemory. QQ IDs identify people; never infer shared identity from aliases. When the user challenges a recollection use force_check=true. Always specify category. Sender and bot identity profiles may already be supplied in [QQ Identity Memories]; reuse them and do not re-query those identities unless explicitly asked to refresh or correct them. For other people use category=person and query={{\"id\":QQ_ID}}; for topics use query={{\"query\":text}} with an explicit category. Do not invent memories.", prompts.system_prompt),
+        system_prompt: format!("{}\n{MEMORY_AGENT_SYSTEM_PROMPT}", prompts.system_prompt),
         user_prompt: Some("{content}".to_string()),
         prompt_parts: vec![],
         output_mode: AgentOutputMode::Text,

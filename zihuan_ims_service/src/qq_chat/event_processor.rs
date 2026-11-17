@@ -72,6 +72,13 @@ pub(crate) fn process_event(
         sender_id.clone()
     };
 
+    let destination_gate = super::planer::conversation_gate(
+        agent_id,
+        if is_group { "group" } else { "private" },
+        &target_id,
+    );
+    let _destination_guard = block_async(destination_gate.reserve(true));
+
     info!(
         "{LOG_PREFIX} Handling {} message: message_id={} sender={} target={}",
         if is_group { "group" } else { "private" },

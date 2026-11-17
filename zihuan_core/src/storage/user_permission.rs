@@ -5,7 +5,10 @@ use crate::data_refs::RelationalDbConnection;
 use crate::error::{Error, Result};
 
 pub const DEFAULT_ACCESS_LEVEL: u32 = 3;
-pub const BOT_ACCESS_LEVEL: u32 = 2;
+/// The Role Service's own memory source, independent of any triggering user.
+pub const ROLE_SELF_ACCESS_LEVEL: u32 = 2;
+/// A Planer task's memory source; Planer tasks have no authenticated inbound sender.
+pub const PLANER_ACCESS_LEVEL: u32 = 1;
 
 /// The database is authoritative; caller supplied levels never grant access.
 pub async fn access_level(

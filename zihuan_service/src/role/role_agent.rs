@@ -74,6 +74,7 @@ pub struct RoleAgentConfig {
 /// constructed at inference time so the models used for that turn are fixed into the instance
 /// the `Agent` trait is called on.
 pub struct RoleAgent {
+    planer_context: Option<zihuan_core::role::planer::PlanerContext>,
     agent: RoleServiceConfig,
     model_name: String,
     llm: Arc<dyn LLMBase>,
@@ -91,6 +92,7 @@ impl RoleAgent {
             )));
         }
         Ok(Self {
+            planer_context: None,
             agent: config.agent,
             model_name: config.model_name,
             llm: config.llm,
@@ -175,12 +177,19 @@ impl RoleAgent {
         image_understand_llm: Option<Arc<dyn LLMBase>>,
     ) -> Self {
         Self {
+            planer_context: self.planer_context.clone(),
             agent: self.agent.clone(),
             model_name,
             llm,
             image_understand_llm,
             tools: Arc::clone(&self.tools),
         }
+    }
+
+    pub fn with_planer_context(&self, context: zihuan_core::role::planer::PlanerContext) -> Self {
+        let mut agent = self.clone();
+        agent.planer_context = Some(context);
+        agent
     }
 
     pub fn agent(&self) -> &RoleServiceConfig {
@@ -214,7 +223,18 @@ impl RoleAgent {
         }
 
         self.tools.augment_messages(&mut conversation, &context);
-        let default_tools = self.tools.build_default_tools(&context);
+        let mut default_tools = self.tools.build_default_tools(&context);
+        let planer_context = self.planer_context.clone().unwrap_or_else(|| {
+            zihuan_core::role::planer::session_context(
+                &self.agent.id,
+                context.session_id.as_deref().unwrap_or("dashboard"),
+            )
+        });
+        let planer_prompt = zihuan_core::role::planer::prompt_for_context(&planer_context);
+        if !planer_prompt.is_empty() {
+            conversation.insert(0, LLMMessage::system(planer_prompt));
+        }
+        default_tools.extend(zihuan_core::role::planer::tools(planer_context));
 
         run_agent_tool_calling_with_reason(
             &self.agent,
@@ -294,7 +314,18 @@ impl RoleAgent {
         }
 
         self.tools.augment_messages(&mut conversation, &context);
-        let default_tools = self.tools.build_default_tools(&context);
+        let mut default_tools = self.tools.build_default_tools(&context);
+        let planer_context = self.planer_context.clone().unwrap_or_else(|| {
+            zihuan_core::role::planer::session_context(
+                &self.agent.id,
+                context.session_id.as_deref().unwrap_or("dashboard"),
+            )
+        });
+        let planer_prompt = zihuan_core::role::planer::prompt_for_context(&planer_context);
+        if !planer_prompt.is_empty() {
+            conversation.insert(0, LLMMessage::system(planer_prompt));
+        }
+        default_tools.extend(zihuan_core::role::planer::tools(planer_context));
 
         run_agent_tool_calling_streaming(
             &self.agent,

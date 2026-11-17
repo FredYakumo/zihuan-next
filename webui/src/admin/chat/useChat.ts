@@ -1,3 +1,4 @@
+import { planers, planerChatTarget } from "../../api/planers";
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import MarkdownIt from "markdown-it";
 
@@ -499,6 +500,16 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     );
     const selectedServiceType = computed(() => selectedService.value?.role_service_type?.type ?? "");
     const isChatEligible = computed(() => CHAT_ELIGIBLE_SERVICE_TYPES.has(selectedServiceType.value));
+    const planerTaskCards = computed(() => {
+        const tasks = new Map<string, { task_id: string; status: string; approval_url?: string; error?: string }>();
+        for (const message of messages.value) {
+            const payloads = [message.role === "tool" ? message.content : "", ...(message.liveToolCalls ?? []).map(c => c.result ?? "")];
+            for (const payload of payloads) {
+                try { const task = JSON.parse(payload); if (typeof task.task_id === "string" && typeof task.status === "string") tasks.set(task.task_id, task); } catch { /* Ordinary tool output is not a Planer task. */ }
+            }
+        }
+        return [...tasks.values()];
+    });
     const isWorkspaceService = computed(() => selectedServiceType.value === "workspace");
     const agentsMdEnabled = computed(() => {
         const agentType = selectedService.value?.role_service_type as Record<string, unknown> | undefined;
@@ -779,7 +790,6 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     // shares this readiness gate; only the free-form path additionally needs text.
     const canSubmitAskUserChoice = computed(() =>
         isChatEligible.value &&
-        isWorkspaceService.value &&
         !!pendingAskUser.value &&
         selectedService.value?.runtime.status === "running" &&
         !sending.value,
@@ -926,6 +936,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     });
 
     function readableAgentType(type: string): string {
+        if (type === "planer") return "Planer";
         if (type === "http_stream") {
             return "HTTP stream service";
         }
@@ -1726,7 +1737,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             if (revision !== sessionListRevision || selectedServiceId.value !== serviceId) return;
             // Keep only running workspace chat tasks linked to a session for quick status lookup.
             const runningBySession = new Map(taskItems
-                .filter((task) => task.task_type === "workspace_chat" && task.is_running && task.chat_session_id)
+                .filter((task) => ["workspace_chat", "planer_chat"].includes(task.task_type) && task.is_running && task.chat_session_id)
                 .map((task) => [task.chat_session_id as string, task]));
             sessions.value = result.sessions.map((session) => {
                 return {
@@ -2707,7 +2718,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             // Stop rendering the stream immediately. The server-side stop request
             // remains responsible for cancelling the detached inference task.
             activeStreamController?.abort();
-        } else if (isWorkspaceService.value && activeStreamController) {
+        } else if (isChatEligible.value && activeStreamController) {
             // The server creates the Workspace task immediately before emitting its start
             // event. Keep the stream open until that event gives us its task ID; a stop
             // request issued earlier races task registration and cannot cancel the turn.
@@ -2748,6 +2759,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         try {
             await chat.stream({
                 agent_id: selectedServiceId.value,
+                target_type: selectedServiceType.value === "planer" ? "planer" : "role",
                 session_id: activeSessionId.value,
                 stream: true,
                 model_config_id: selectedModelId.value || null,
@@ -2899,6 +2911,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             await chat.stream(
                 {
                     agent_id: selectedServiceId.value,
+                    target_type: selectedServiceType.value === "planer" ? "planer" : "role",
                     session_id: activeSessionId.value || null,
                     stream: true,
                     model_config_id: (options.modelConfigId ?? selectedModelId.value) || null,
@@ -2948,7 +2961,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             const [connections, llm, loadedAgents, contextCompactionSettings, loadedSubAgents] = await Promise.all([
                 system.connections.list(),
                 system.llm.list(),
-                system.services.list(),
+                Promise.all([system.services.list(), planers.list()]).then(([roles, ps]) => [...roles, ...ps.map(planerChatTarget)]),
                 getContextCompactionSettings(),
                 // Display-only: a bad definition must not block the chat page from loading.
                 system.subagents.list(subAgentReferenceableToolIds()).catch((error) => {
@@ -3011,6 +3024,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     });
 
     return {
+        planerTaskCards,
         services,
         servicesLoading,
         sessions,

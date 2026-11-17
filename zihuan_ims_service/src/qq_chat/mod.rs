@@ -1,3 +1,4 @@
+pub mod planer;
 pub(crate) mod command;
 mod core;
 mod event_processor;
@@ -488,6 +489,8 @@ pub async fn spawn(
         .get_or_create_for_service(&config.ims_bot_adapter_connection_id, &agent.id, object_storage)
         .await?;
 
+    let planer_registration = planer::register(&agent.id, &service, adapter.clone());
+
     let inbox = QqChatAgentServiceInbox::new(
         Arc::clone(&service),
         adapter.clone(),
@@ -525,6 +528,7 @@ pub async fn spawn(
 
     Ok(tokio::spawn(async move {
         let _scheduler_guard = scheduler_guard;
+        let _planer_registration = planer_registration;
         let _shutdown = shutdown;
         info!("[service] starting QQ Chat Agent Service '{}'", agent_name);
         let mut tasks = tokio::task::JoinSet::new();

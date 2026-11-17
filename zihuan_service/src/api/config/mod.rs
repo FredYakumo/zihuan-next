@@ -43,3 +43,5 @@ pub fn render_internal_error(res: &mut Response, err: impl ToString) {
     res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
     res.render(Json(serde_json::json!({ "error": err.to_string() })));
 }
+
+pub mod planers;

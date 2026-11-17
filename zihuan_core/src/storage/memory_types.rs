@@ -45,7 +45,7 @@ pub struct PersonMemory {
 pub struct MemoryAttributes {
     #[serde(default)]
     pub category: MemoryCategory,
-    #[serde(default = "bot_access_level")]
+    #[serde(default = "role_self_access_level")]
     pub access_level: u32,
     #[serde(default)]
     pub starts_at: Option<String>,
@@ -53,15 +53,15 @@ pub struct MemoryAttributes {
     pub person: PersonMemory,
 }
 
-pub fn bot_access_level() -> u32 {
-    2
+pub fn role_self_access_level() -> u32 {
+    super::user_permission::ROLE_SELF_ACCESS_LEVEL
 }
 
 impl Default for MemoryAttributes {
     fn default() -> Self {
         Self {
             category: MemoryCategory::Concept,
-            access_level: 2,
+            access_level: role_self_access_level(),
             starts_at: None,
             person: PersonMemory::default(),
         }

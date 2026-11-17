@@ -59,7 +59,7 @@ pub(crate) fn qq_procedure_context(
 
 /// Run one blocking procedure as a one-element chain and return its output.
 ///
-/// **Design:** The QQ turn pipeline is synchronous; `block_async` bridges it to the async
+/// **Design:** The QQ turn pipeline is synchronous; `block_async` planers it to the async
 /// procedure chain executor. Blocking procedures execute their synchronous bodies inline, so
 /// thread semantics stay identical to the previous direct calls.
 fn run_blocking(
