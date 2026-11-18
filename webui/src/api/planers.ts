@@ -7,6 +7,7 @@ export interface PlanerConfig {
 }
 export const planers = {
   list: () => request<PlanerConfig[]>("GET", "/system/planers"),
+  get: (id: string) => request<PlanerConfig>("GET", `/system/planers/${encodeURIComponent(id)}`),
   save: (config: PlanerConfig) => request<PlanerConfig>(config.config_id ? "PUT" : "POST", `/system/planers${config.config_id ? "/" + encodeURIComponent(config.config_id) : ""}`, config),
   remove: (id: string) => request("DELETE", `/system/planers/${encodeURIComponent(id)}`),
   start: (id: string) => request("POST", `/system/planers/${encodeURIComponent(id)}/start`),

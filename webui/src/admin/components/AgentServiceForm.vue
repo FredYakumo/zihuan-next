@@ -3,19 +3,7 @@
         <t-card class="agent-service-form-section" :bordered="false">
             <template #title>{{ form.type === 'qq_chat' ? 'RoleService 配置' : '基本信息' }}</template>
             <t-form-item v-if="form.type === 'workspace'" label="头像" class="agent-service-form-item-full">
-                <div class="agent-service-avatar-row">
-                    <input type="file" accept="image/*" style="display: none" @change="handleAvatarFileSelect" />
-                    <button type="button" class="agent-service-avatar-trigger"
-                        :title="form.avatar_url ? '更换头像' : '上传头像'" @click="openAvatarEditor">
-                        <img v-if="form.avatar_url" :src="getAvatarDisplayUrl(form.avatar_url)"
-                            alt="Avatar preview" class="agent-service-avatar-preview" />
-                        <div v-else class="agent-service-avatar-placeholder">{{ form.name ?
-                            form.name.slice(0, 1).toUpperCase() : 'A' }}</div>
-                        <div class="agent-service-avatar-overlay">
-                            <EditIcon />
-                        </div>
-                    </button>
-                </div>
+                <AvatarEditor v-model:avatar-url="form.avatar_url" :name="form.name" />
             </t-form-item>
             <div class="agent-service-form-grid">
                 <t-form-item label="名称" required>
@@ -289,7 +277,8 @@
 
 <script lang="ts">
 import { defineComponent, type PropType } from "vue";
-import { AddIcon, EditIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
+import { AddIcon, InfoCircleIcon } from "tdesign-icons-vue-next";
+import AvatarEditor from "./AvatarEditor.vue";
 import ConnectionCredentialInput from "./ConnectionCredentialInput.vue";
 import RelationalDatabaseSelect from "./RelationalDatabaseSelect.vue";
 import ScheduledJobsEditor from "./ScheduledJobsEditor.vue";
@@ -306,8 +295,8 @@ import type { UseRoleServicePageReturn } from "../agents/roleServicePage";
 export default defineComponent({
     components: {
         AddIcon,
+        AvatarEditor,
         ConnectionCredentialInput,
-        EditIcon,
         InfoCircleIcon,
         RelationalDatabaseSelect,
         ScheduledJobsEditor,
