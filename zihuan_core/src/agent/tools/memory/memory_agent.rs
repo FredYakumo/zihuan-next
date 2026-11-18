@@ -41,7 +41,11 @@ pub fn memory_agent_definition(
         name: MEMORY_AGENT_NAME.to_string(),
         description: "Recall information relevant to the current user input".to_string(),
         builtin: true,
-        inputs: vec![memory_string_port("content", "Current input with verified sender QQ ID", true)],
+        inputs: vec![memory_string_port(
+            "content",
+            "Current input with verified sender QQ ID",
+            true,
+        )],
         outputs: vec![memory_string_port("result", "Recall summary", true)],
         system_prompt: format!("{}\n{MEMORY_AGENT_SYSTEM_PROMPT}", prompts.system_prompt),
         user_prompt: Some("{content}".to_string()),

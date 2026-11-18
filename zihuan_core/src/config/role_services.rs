@@ -83,8 +83,7 @@ pub fn save_role_services(role_services: Vec<RoleServiceConfig>) -> Result<()> {
             .map(|record| record.config_id.as_str())
             .collect::<std::collections::HashSet<_>>();
         for planer in &root.configs.planers {
-            let config: super::planers::PlanerConfig =
-                serde_json::from_value(planer.spec.clone())?;
+            let config: super::planers::PlanerConfig = serde_json::from_value(planer.spec.clone())?;
             if config
                 .members
                 .iter()

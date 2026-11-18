@@ -1,4 +1,3 @@
-pub mod planer;
 pub(crate) mod command;
 mod core;
 mod event_processor;
@@ -8,6 +7,7 @@ pub mod language_style_store;
 pub(crate) mod logging;
 pub(crate) mod model;
 pub(crate) mod msg_send;
+pub mod planer;
 pub mod privilege_gate;
 pub mod privilege_store;
 pub mod resources;

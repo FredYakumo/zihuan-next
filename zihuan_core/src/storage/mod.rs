@@ -57,7 +57,6 @@ pub use agent_memory_weaviate::{
     search_memory_content_by_vector, update_memory_record, update_memory_record_with_vector,
     AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit, AgentMemoryUpsert,
 };
-pub use user_permission::MemoryWriteSource;
 pub use connection_handle::ConnectionHandle;
 pub use connection_manager::{
     cleanup_runtime_connections, close_runtime_connection, close_runtime_connections_for_config,
@@ -95,6 +94,7 @@ pub use retrieval_ops::{
 pub use role_avatar_rdb_store::{first_available_role_avatar_store, RdbRoleAvatarStore};
 pub use role_avatar_store::{RoleAvatarData, RoleAvatarStore};
 pub use session_cache::LLMMessageSessionCacheRef;
+pub use user_permission::MemoryWriteSource;
 pub use weaviate_persistence::{
     build_image_record_properties, deterministic_media_object_id, deterministic_message_object_id,
     upsert_image_record, upsert_message_event, upsert_qq_message_list,
