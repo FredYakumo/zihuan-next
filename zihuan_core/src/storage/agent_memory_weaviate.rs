@@ -6,11 +6,15 @@ use crate::error::{Error, Result};
 use crate::utils::json_utils::optional_string_argument;
 use crate::weaviate::WeaviateRef;
 
+use super::user_permission::MemoryWriteSource;
+
 const DEFAULT_QUERY_CANDIDATE_MULTIPLIER: usize = 5;
 const MAX_QUERY_CANDIDATES: usize = 100;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AgentMemoryAccessContext {
+    #[serde(skip)]
+    pub write_source: MemoryWriteSource,
     #[serde(default)]
     pub category: super::MemoryCategory,
     #[serde(skip)]

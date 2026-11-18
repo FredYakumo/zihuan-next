@@ -66,6 +66,9 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
             );
             access.agent_id = ctx.agent_id.to_string();
             access.permission_connection = ctx.rdb_pool.cloned();
+            if ctx.planer.is_some() {
+                access.write_source = zihuan_core::storage::MemoryWriteSource::Planer;
+            }
             access
         },
     });
@@ -102,7 +105,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
                     let level = zihuan_core::storage::user_permission::PLANER_ACCESS_LEVEL;
                     (
                         format!(
-                            "Planer task from Role {}; destination {} {}. AccessLevel: {level}. No authenticated inbound sender.\n{}",
+                            "Planer task from Role {}; destination {} {}.\n{}",
                             planer.source_planer_id, planer.target_type, planer.target_id,
                             turn.current_message,
                         ),
@@ -115,7 +118,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
                     )?;
                     (
                         format!(
-                            "Conversation scope QQ ID: {sender_id}; AccessLevel: {level}\n{}",
+                            "Conversation scope QQ ID: {sender_id}\n{}",
                             turn.current_message,
                         ),
                         serde_json::json!({"kind":"user","sender_id":sender_id,"access_level":level}),

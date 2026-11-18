@@ -10,6 +10,16 @@ pub const ROLE_SELF_ACCESS_LEVEL: u32 = 2;
 /// A Planer task's memory source; Planer tasks have no authenticated inbound sender.
 pub const PLANER_ACCESS_LEVEL: u32 = 1;
 
+/// Runtime-owned authority for memory writes, never accepted from model arguments or JSON.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum MemoryWriteSource {
+    #[default]
+    Disabled,
+    User,
+    RoleSelf,
+    Planer,
+}
+
 /// The database is authoritative; caller supplied levels never grant access.
 pub async fn access_level(
     connection: &RelationalDbConnection,

@@ -18,13 +18,9 @@ pub fn build_turn_state_prefix_lines(
         lines.push("**Your character's current state**:".to_string());
         lines.push(format!("- {emotion_prompt}"));
     }
-    // The block is emitted whenever the recall phase ran, even with no hits: its source line is
-    // the only place the model learns which authenticated sender the memory tools act for.
+    // Emit the recall hint even when no titles matched this turn.
     if let Some(recall) = memory_recall {
         lines.push("[Relevant Memory Titles]".to_string());
-        if let Some(source) = recall.source() {
-            lines.push(format!("Authenticated memory request source: {source}"));
-        }
         let entries = memory_hint_lines(recall);
         if entries.is_empty() {
             lines.push(

@@ -57,6 +57,7 @@ pub use agent_memory_weaviate::{
     search_memory_content_by_vector, update_memory_record, update_memory_record_with_vector,
     AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit, AgentMemoryUpsert,
 };
+pub use user_permission::MemoryWriteSource;
 pub use connection_handle::ConnectionHandle;
 pub use connection_manager::{
     cleanup_runtime_connections, close_runtime_connection, close_runtime_connections_for_config,

@@ -167,6 +167,9 @@ impl QqBrain {
         );
         memory_access.agent_id = ctx.agent_id.to_string();
         memory_access.permission_connection = ctx.rdb_pool.cloned();
+        if ctx.planer.is_some() {
+            memory_access.write_source = zihuan_core::storage::MemoryWriteSource::Planer;
+        }
         let service_context = AgentServiceContext::new()
             .with_memory(MemoryCapability::resolve(
                 ctx.local_memory_store.cloned(),

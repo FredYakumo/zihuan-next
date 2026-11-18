@@ -111,6 +111,7 @@ fn memory_unavailable() -> Error {
 /// group-scoped because the trigger carries a single sender.
 fn job_memory_access(params: &Value) -> AgentMemoryAccessContext {
     AgentMemoryAccessContext {
+        write_source: crate::storage::MemoryWriteSource::Disabled,
         category: serde_json::from_value(
             params.get("category").cloned().unwrap_or_else(|| json!("concept")),
         )

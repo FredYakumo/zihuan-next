@@ -159,6 +159,7 @@ pub(crate) fn qq_memory_access_context(
     event_group_id: Option<String>,
 ) -> AgentMemoryAccessContext {
     AgentMemoryAccessContext {
+        write_source: zihuan_core::storage::MemoryWriteSource::User,
         category: Default::default(),
         permission_connection: None,
         agent_id: String::new(),

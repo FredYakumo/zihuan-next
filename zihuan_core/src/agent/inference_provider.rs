@@ -8,6 +8,7 @@ use crate::model_inference::llm::LLMMessage;
 
 #[derive(Clone)]
 pub struct InferenceToolContext {
+    pub memory_write_source: crate::storage::MemoryWriteSource,
     pub last_user_text: String,
     pub workspace_path: Option<String>,
     pub session_id: Option<String>,
