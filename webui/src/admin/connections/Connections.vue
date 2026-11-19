@@ -1,8 +1,9 @@
 <template>
   <section class="page connections-page">
     <AdminPageHeader title="连接配置">
-      <t-button variant="outline" @click="openImportDialog">导入配置</t-button>
-      <t-button theme="primary" @click="openCreateChoice">新建连接</t-button>
+      <t-button variant="outline" @click="openImportPage">导入配置</t-button>
+      <t-button variant="outline" @click="openPluginInstallPage">安装插件</t-button>
+      <t-button theme="primary" @click="openCreatePage">新建连接</t-button>
     </AdminPageHeader>
 
     <t-card class="connections-card" bordered>
@@ -52,8 +53,8 @@
         <template #updated_at="{ row }">{{ formatTime(row.updated_at) }}</template>
         <template #actions="{ row }">
           <div class="connection-actions">
-            <t-button variant="text" size="small" @click="editConnection(row)">编辑</t-button>
-            <t-button variant="text" size="small" @click="duplicateConnection(row)">复制添加</t-button>
+            <t-button variant="text" size="small" @click="openEditor(row)">编辑</t-button>
+            <t-button variant="text" size="small" @click="openCopy(row)">复制添加</t-button>
             <t-button variant="text" size="small" @click="copyConnectionConfig(row)">
               {{ copiedId === row.config_id ? "已复制" : "复制" }}
             </t-button>
@@ -68,285 +69,54 @@
       </t-table>
     </t-card>
 
-    <t-dialog v-model:visible="createChoiceVisible" header="新建连接" :footer="false">
-      <div class="create-choice-grid">
-        <button class="create-choice" @click="chooseExistingConnection"><strong>现有连接</strong><span>使用当前连接配置逻辑</span></button>
-        <button class="create-choice" @click="choosePluginConnection"><strong>安装插件</strong><span>安装基础设施并自动创建连接</span></button>
-      </div>
-    </t-dialog>
-
-    <t-dialog
-      v-model:visible="importDialogVisible"
-      header="导入连接配置"
-      width="640px"
-      :close-on-overlay-click="false"
-      :confirm-btn="{ content: '导入', disabled: !importJsonText.trim() }"
-      cancel-btn="取消"
-      @confirm="submitImport"
-    >
-      <div class="import-dialog-body">
-        <div
-          class="import-dropzone"
-          :class="{ 'import-dropzone--active': importDragging }"
-          role="button"
-          tabindex="0"
-          @click="importFileInput?.click()"
-          @keydown.enter.prevent="importFileInput?.click()"
-          @keydown.space.prevent="importFileInput?.click()"
-          @dragover.prevent="importDragging = true"
-          @dragleave.prevent="handleImportDragLeave"
-          @drop.prevent="handleImportDrop"
-        >
-          <strong>拖拽 JSON 文件到此处</strong>
-          <span>或点击选择 JSON 文件</span>
-        </div>
-        <input
-          ref="importFileInput"
-          type="file"
-          accept=".json,application/json"
-          class="connection-import-input"
-          @change="handleImportFileChange"
-        />
-        <t-textarea
-          v-model="importJsonText"
-          class="import-json-textarea"
-          :autosize="{ minRows: 10, maxRows: 18 }"
-          placeholder="也可以在此直接输入连接配置 JSON"
-        />
-      </div>
-    </t-dialog>
-
-    <t-drawer
-      v-model:visible="drawerVisible"
-      :header="isCreating ? '新建连接' : '编辑连接'"
-      size="640px"
-      :close-on-overlay-click="false"
-      @close="closeDrawer"
-    >
-      <t-form class="connection-form" label-align="top">
-        <div class="connection-form-section">
-          <h3>基本信息</h3>
-          <div class="connection-form-grid">
-            <t-form-item label="名称" required>
-              <t-input v-model="form.name" placeholder="请输入连接名称" />
-            </t-form-item>
-            <t-form-item label="连接类型" required>
-              <t-select v-model="form.type" :disabled="!isCreating">
-                <t-option v-for="type in connectionTypes" :key="type.value" :value="type.value" :label="type.label" />
-              </t-select>
-            </t-form-item>
-          </div>
-          <t-checkbox v-model="form.enabled">启用该连接</t-checkbox>
-        </div>
-
-        <div class="connection-form-section">
-          <h3>{{ connectionTypeLabel(form.type) }} 配置</h3>
-          <div class="connection-form-grid">
-            <template v-if="form.type === 'mysql'">
-              <t-form-item label="地址" required><t-input v-model="form.mysql_host" placeholder="127.0.0.1" /></t-form-item>
-              <t-form-item label="端口" required><t-input v-model="form.mysql_port" placeholder="3306" /></t-form-item>
-              <t-form-item label="账号（可选）"><t-input v-model="form.mysql_user" /></t-form-item>
-              <t-form-item label="密码（可选）"><ConnectionCredentialInput v-model="form.mysql_password" placeholder="请输入密码" /></t-form-item>
-              <t-form-item class="connection-form-item--full" label="数据库名" required><t-input v-model="form.mysql_database" placeholder="zihuan" /></t-form-item>
-              <t-form-item label="最大连接数"><t-input-number v-model="form.mysql_max_connections" :min="1" /></t-form-item>
-              <t-form-item label="获取连接超时（秒）"><t-input-number v-model="form.mysql_acquire_timeout_secs" :min="1" /></t-form-item>
-            </template>
-
-            <template v-else-if="form.type === 'redis'">
-              <t-form-item class="connection-form-item--full" label="URL"><t-input v-model="form.redis_url" placeholder="redis://127.0.0.1:6379" /></t-form-item>
-              <t-form-item label="用户名（可选）"><t-input v-model="form.redis_username" placeholder="default" /></t-form-item>
-              <t-form-item label="密码（可选）"><ConnectionCredentialInput v-model="form.redis_password" /></t-form-item>
-            </template>
-
-            <template v-else-if="form.type === 'weaviate'">
-              <t-form-item label="Base URL" required><t-input v-model="form.weaviate_base_url" /></t-form-item>
-              <t-form-item label="认证方式"><t-select v-model="form.weaviate_auth_method" @change="clearInactiveConnectionCredentials('weaviate')"><t-option value="password" label="密码" /><t-option value="api_key" label="API Key" /></t-select></t-form-item>
-              <t-form-item v-if="form.weaviate_auth_method === 'password'" label="用户名" required><t-input v-model="form.weaviate_username" /></t-form-item>
-              <t-form-item :label="form.weaviate_auth_method === 'password' ? '密码' : 'API Key'" required><ConnectionCredentialInput v-if="form.weaviate_auth_method === 'password'" v-model="form.weaviate_password" /><ConnectionCredentialInput v-else v-model="form.weaviate_api_key" /></t-form-item>
-            </template>
-
-            <template v-else-if="form.type === 'elasticsearch'">
-              <t-form-item label="Base URL" required><t-input v-model="form.elasticsearch_base_url" placeholder="https://localhost:9200" /></t-form-item>
-              <t-form-item label="认证方式"><t-select v-model="form.elasticsearch_auth_method" @change="clearInactiveConnectionCredentials('elasticsearch')"><t-option value="password" label="密码" /><t-option value="api_key" label="API Key" /></t-select></t-form-item>
-              <t-form-item v-if="form.elasticsearch_auth_method === 'password'" label="用户名" required><t-input v-model="form.elasticsearch_username" /></t-form-item>
-              <t-form-item :label="form.elasticsearch_auth_method === 'password' ? '密码' : 'API Key'" required><ConnectionCredentialInput v-if="form.elasticsearch_auth_method === 'password'" v-model="form.elasticsearch_password" /><ConnectionCredentialInput v-else v-model="form.elasticsearch_api_key" /></t-form-item>
-              <t-form-item label="向量维度"><t-input-number v-model="form.elasticsearch_vector_dimensions" :min="1" /></t-form-item>
-            </template>
-
-            <template v-else-if="form.type === 'rustfs'">
-              <t-form-item label="Endpoint"><t-input v-model="form.rustfs_endpoint" /></t-form-item>
-              <t-form-item label="Bucket"><t-input v-model="form.rustfs_bucket" /></t-form-item>
-              <t-form-item label="Region"><t-input v-model="form.rustfs_region" /></t-form-item>
-              <t-form-item label="Access Key"><t-input v-model="form.rustfs_access_key" /></t-form-item>
-              <t-form-item label="Secret Key"><ConnectionCredentialInput v-model="form.rustfs_secret_key" /></t-form-item>
-              <t-form-item label="Public Base URL"><t-input v-model="form.rustfs_public_base_url" /></t-form-item>
-              <t-form-item class="connection-form-item--full"><t-checkbox v-model="form.rustfs_path_style">使用 path-style</t-checkbox></t-form-item>
-            </template>
-
-            <template v-else-if="isBotAdapterConnectionType(form.type)">
-              <t-form-item class="connection-form-item--full" label="渠道">
-                <div class="channel-picker" role="radiogroup" aria-label="Bot 渠道">
-                  <button
-                    type="button"
-                    role="radio"
-                    :aria-checked="!form.wechat_enabled"
-                    :class="['channel-card', { 'channel-card--active': !form.wechat_enabled }]"
-                    @click="form.wechat_enabled = false"
-                  >
-                    <img class="channel-card-icon" :src="qqIcon" alt="" />
-                    <span class="channel-card-text"><strong>QQ</strong><small>OneBot</small></span>
-                  </button>
-                  <button
-                    type="button"
-                    role="radio"
-                    :aria-checked="form.wechat_enabled"
-                    :class="['channel-card', { 'channel-card--active': form.wechat_enabled }]"
-                    @click="selectWechatChannel"
-                  >
-                    <img class="channel-card-icon" :src="wechatIcon" alt="" />
-                    <span class="channel-card-text"><strong>微信</strong><small>WeChatPadPro</small></span>
-                  </button>
-                </div>
-              </t-form-item>
-              <template v-if="form.wechat_enabled">
-                <t-form-item label="Pad URL"><t-input v-model="form.wechat_pad_url" placeholder="http://127.0.0.1:8849" /></t-form-item>
-                <t-form-item label="Pad adminKey"><ConnectionCredentialInput v-model="form.wechat_pad_token" /></t-form-item>
-                <t-form-item label="wxid"><t-input v-model="form.wechat_self_wxid" placeholder="" /></t-form-item>
-                <t-form-item v-if="!form.wechat_relay_url" label="Webhook Token"><t-input v-model="form.wechat_webhook_token" placeholder="回调路径里的随机串" /></t-form-item>
-                <t-form-item label="昵称"><t-input v-model="form.wechat_nickname" /></t-form-item>
-              </template>
-              <template v-else>
-                <t-form-item label="Bot WS URL"><t-input v-model="form.bot_server_url" placeholder="ws://192.168.71.2:3008" /></t-form-item>
-                <t-form-item label="Adapter HTTP URL"><t-input v-model="form.adapter_server_url" placeholder="http://192.168.71.2:3001" /></t-form-item>
-                <t-form-item label="QQ 号"><t-input v-model="form.qq_id" /></t-form-item>
-                <t-form-item label="Token"><ConnectionCredentialInput v-model="form.bot_server_token" /></t-form-item>
-              </template>
-            </template>
-
-            <template v-else-if="form.type === 'web_search_engine'">
-              <t-form-item label="Provider">
-                <t-select v-model="form.web_search_engine_provider">
-                  <template #valueDisplay>
-                    <span class="provider-option">
-                      {{ providerDisplay(form.web_search_engine_provider).label }}
-                      <span v-if="providerDisplay(form.web_search_engine_provider).plugin" class="provider-plugin-badge">Plugin</span>
-                    </span>
-                  </template>
-                  <t-option v-for="option in webSearchProviderOptions" :key="option.value" :value="option.value" :label="option.label">
-                    <span class="provider-option">{{ option.label }}<span v-if="option.plugin" class="provider-plugin-badge">Plugin</span></span>
-                  </t-option>
-                </t-select>
-              </t-form-item>
-              <t-form-item label="Timeout（秒）"><t-input-number v-model="form.web_search_engine_timeout_secs" :min="1" /></t-form-item>
-              <t-form-item
-                v-for="field in selectedWebSearchConfigFields"
-                :key="field.name"
-                :required="!field.optional"
-                class="connection-form-item--full"
-              >
-                <template #label>
-                  <span class="web-search-field-label">
-                    {{ field.label + (field.optional ? '（可选）' : '') }}
-                    <t-tooltip v-if="field.description" :content="field.description" trigger="click">
-                      <button type="button" class="web-search-field-help" :aria-label="`${field.label}说明`" @click.stop.prevent>?</button>
-                    </t-tooltip>
-                  </span>
-                </template>
-                <ConnectionCredentialInput v-if="field.secret || field.name === 'api_token'" :model-value="webSearchFieldValue(field.name)" @update:model-value="(v: string) => webSearchFieldValue(field.name, v)" />
-                <t-input v-else :model-value="webSearchFieldValue(field.name)" @update:model-value="(v: string) => webSearchFieldValue(field.name, v)" />
-              </t-form-item>
-            </template>
-
-            <template v-else-if="form.type === 'tokenizer'">
-              <t-form-item class="connection-form-item--full" label="Tokenizer 模型" required><t-select v-model="form.tokenizer_model_name" placeholder="请选择"><t-option v-for="model in tokenizerModels" :key="model" :value="model" :label="model" /></t-select></t-form-item>
-            </template>
-
-            <template v-else-if="form.type === 'sqlite'">
-              <t-form-item class="connection-form-item--full" label="数据库文件路径"><t-input v-model="form.sqlite_path" placeholder="/path/to/database.db" /></t-form-item>
-            </template>
-          </div>
-        </div>
-      </t-form>
-
-      <template #footer>
-        <div class="connection-drawer-footer">
-          <t-button variant="outline" :disabled="saving" @click="closeDrawer">取消</t-button>
-          <t-button theme="primary" :loading="saving" @click="submitForm">{{ isCreating ? "创建连接" : "保存修改" }}</t-button>
-        </div>
-      </template>
-    </t-drawer>
-
     <ServiceRestartConfirmDialog :state="restartDialog.state" @close="restartDialog.close()" @save-only="restartDialog.saveOnly()" @restart="restartDialog.restartAll()" />
   </section>
 </template>
 
 <script setup lang="ts">
+import { useRouter } from "vue-router";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import ServiceRestartConfirmDialog from "../components/ServiceRestartConfirmDialog.vue";
 import { useConnections } from "./useConnections";
-import ConnectionCredentialInput from "../components/ConnectionCredentialInput.vue";
-import qqIcon from "../../assets/icons/qq.svg";
-import wechatIcon from "../../assets/icons/wechat.svg";
+import type { ConnectionConfig } from "../../api/client";
 
-/** The callback token only has to be unguessable; the URL itself is derived by the backend. */
-function randomWebhookToken() {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function selectWechatChannel() {
-  form.wechat_enabled = true;
-  if (!form.wechat_webhook_token.trim()) {
-    form.wechat_webhook_token = randomWebhookToken();
-  }
-}
-
+const router = useRouter();
 const {
+  restartDialog,
   filteredConnections,
-  tokenizerModels,
-  webSearchProviderOptions,
-  providerDisplay,
-  selectedWebSearchConfigFields,
-  webSearchFieldValue,
-  form,
-  drawerVisible,
-  importDialogVisible,
-  importJsonText,
-  importDragging,
-  importFileInput,
-  createChoiceVisible,
-  saving,
-  isCreating,
   filters,
   connectionTypes,
-  startCreate,
-  closeDrawer,
   load,
-  editConnection,
-  duplicateConnection,
-  submitForm,
   removeConnection,
   connectionSummary,
   runtimeInstanceCount,
-  clearInactiveConnectionCredentials,
   formatTime,
-  isBotAdapterConnectionType,
   copiedId,
-  openImportDialog,
-  handleImportFileChange,
-  handleImportDragLeave,
-  handleImportDrop,
-  submitImport,
-  openCreateChoice,
-  chooseExistingConnection,
-  choosePluginConnection,
+  copyConnectionConfig,
   columns,
   connectionTypeLabel,
-  copyConnectionConfig,
   compactId,
-  restartDialog,
 } = useConnections();
+
+function openCreatePage() {
+  void router.push("/connections/edit");
+}
+
+function openImportPage() {
+  void router.push("/connections/edit?import=1");
+}
+
+function openPluginInstallPage() {
+  void router.push("/plugins/install");
+}
+
+function openEditor(connection: ConnectionConfig) {
+  void router.push({ path: "/connections/edit", query: { id: connection.config_id } });
+}
+
+function openCopy(connection: ConnectionConfig) {
+  void router.push({ path: "/connections/edit", query: { copy: connection.config_id } });
+}
 </script>
 
 <style scoped lang="scss">
