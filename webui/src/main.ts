@@ -7,12 +7,16 @@ import { bootstrapGraphEditor } from "./graph_editor_bootstrap";
 import AdminApp from "./admin/AdminApp.vue";
 import Dashboard from "./admin/dashboard/Dashboard.vue";
 import Connections from "./admin/connections/Connections.vue";
+import ConnectionEdit from "./admin/connections/ConnectionEdit.vue";
 import ConnectionManager from "./admin/connection-manager/ConnectionManager.vue";
 import Llm from "./admin/llm/Llm.vue";
+import LlmEdit from "./admin/llm/LlmEdit.vue";
 import AgentConfig from "./admin/agents/AgentConfig.vue";
+import AgentConfigEdit from "./admin/agents/AgentConfigEdit.vue";
 import Planers from "./admin/agents/Planers.vue";
 import PlanerEdit from "./admin/agents/PlanerEdit.vue";
 import RoleService from "./admin/agents/RoleService.vue";
+import ServiceEdit from "./admin/agents/ServiceEdit.vue";
 import Graphs from "./admin/graphs/Graphs.vue";
 import Tasks from "./admin/tasks/Tasks.vue";
 import ScheduledTasks from "./admin/scheduled-tasks/ScheduledTasks.vue";
@@ -28,6 +32,7 @@ import Settings from "./admin/settings/Settings.vue";
 import ApiKeys from "./admin/settings/ApiKeys.vue";
 import SetupWizard from "./admin/setup/SetupWizard.vue";
 import Plugins from "./admin/plugins/Plugins.vue";
+import PluginInstall from "./admin/plugins/PluginInstall.vue";
 import ModelWeights from "./admin/model-weights/ModelWeights.vue";
 import "./admin/admin.scss";
 import "./ui/theme.css";
@@ -52,10 +57,14 @@ async function main() {
     routes: [
       { path: "/", component: Dashboard },
       { path: "/connections", component: Connections },
+      { path: "/connections/edit", component: ConnectionEdit },
       { path: "/connection-manager", component: ConnectionManager },
       { path: "/llm", component: Llm },
+      { path: "/llm/edit", component: LlmEdit },
       { path: "/agent-config", component: AgentConfig },
+      { path: "/agent-config/edit", component: AgentConfigEdit },
       { path: "/services", component: RoleService },
+      { path: "/services/edit", component: ServiceEdit },
       { path: "/planers", component: Planers },
       {
         path: "/planers/edit",
@@ -86,6 +95,7 @@ async function main() {
       { path: "/api-keys", component: ApiKeys },
       { path: "/model-weights", component: ModelWeights },
       { path: "/plugins", component: Plugins },
+      { path: "/plugins/install", component: PluginInstall },
       { path: "/setup", component: SetupWizard, meta: { public: true } },
       { path: "/setup", component: SetupWizard, meta: { public: true } },
     ],
