@@ -1,16 +1,24 @@
-.planer-page {
-    padding: 24px;
+.planer-alert {
+    margin-bottom: 12px;
 }
 
-.planer-header {
+.planer-name-cell {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 0;
+    gap: 8px;
+    min-width: 0;
 }
 
-.planer-card {
-    margin-bottom: 16px;
+.planer-name-cell > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.planer-empty {
+    padding: 48px;
+    text-align: center;
+    color: var(--td-text-color-placeholder);
 }
 
 :global(.t-select-option.planer-add-model-option) {
@@ -42,4 +50,8 @@
     border-radius: 50%;
     background: var(--td-brand-color);
     color: var(--td-text-color-anti);
+}
+
+.planer-card {
+    margin-bottom: 16px;
 }
