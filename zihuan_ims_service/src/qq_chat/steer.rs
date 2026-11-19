@@ -330,7 +330,7 @@ impl ToolCallingMiddleware for QqChatServiceSteerHook {
             .as_ref()
             .and_then(|turn| turn.memory_resources.clone());
         if let Some(resources) = resources {
-            let profiles = crate::procedure::identity_memory_context(&resources, &self.bot_id)?;
+            let (profiles, _) = crate::procedure::identity_memory_context(&resources, &self.bot_id)?;
             for message in conversation.iter_mut() {
                 message.parts.retain(|part| !matches!(part, MessagePart::Text { text } if text.starts_with(crate::procedure::IDENTITY_MEMORY_LABEL)));
             }

@@ -56,7 +56,6 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
     .map(|memory| AgentMemoryToolResources {
         memory_backend: memory.backend,
         embedding_model: memory.embedding_model,
-        llm: Arc::clone(ctx.llm),
         access: {
             let mut access = qq_memory_access_context(
                 ctx.planer.map_or(Some(sender_id), |planer| planer.memory_scope_person_id()),
@@ -104,11 +103,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
                 let (input, source) = if let Some(planer) = ctx.planer {
                     let level = zihuan_core::storage::user_permission::PLANER_ACCESS_LEVEL;
                     (
-                        format!(
-                            "Planer task from Role {}; destination {} {}.\n{}",
-                            planer.source_planer_id, planer.target_type, planer.target_id,
-                            turn.current_message,
-                        ),
+                        turn.current_message.to_string(),
                         serde_json::json!({"kind":"planer","access_level":level}),
                     )
                 } else {
@@ -117,10 +112,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
                         sender_id,
                     )?;
                     (
-                        format!(
-                            "Conversation scope QQ ID: {sender_id}\n{}",
-                            turn.current_message,
-                        ),
+                        turn.current_message.to_string(),
                         serde_json::json!({"kind":"user","sender_id":sender_id,"access_level":level}),
                     )
                 };

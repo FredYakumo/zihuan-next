@@ -132,7 +132,6 @@ impl InferenceToolProvider for QqInferenceToolProvider {
             self.resources.retrieval_store.clone(),
             self.resources.local_memory_store.clone(),
             self.resources.embedding_model.clone(),
-            self.resources.memory_llm.clone(),
             zihuan_core::storage::AgentMemoryAccessContext::default(),
             self.resources.model_names.clone(),
             &self.resources.plugin_tool_names,
@@ -209,22 +208,6 @@ fn load_qq_resources(
     } else {
         config.embedding.as_ref().map(build_embedding_model)
     };
-    let memory_llm = config
-        .llm_ref_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .map(|llm_ref_id| {
-            resolve_llm_service_config(Some(llm_ref_id), &llm_refs).map_err(|err| {
-                validation_error!("[{}] Failed to load llm config: {err}", &agent.name)
-            })
-        })
-        .transpose()?
-        .map(|llm_config| build_llm_model(&llm_config))
-        .transpose()
-        .unwrap_or_else(|err| {
-            warn!("[inference][qq_agent] memory llm unavailable: {err}");
-            None
-        });
 
     Ok(QqLoadedInferenceResources {
         bot_name: if config.bot_name.trim().is_empty() {
@@ -239,7 +222,6 @@ fn load_qq_resources(
         retrieval_store,
         local_memory_store,
         embedding_model,
-        memory_llm,
         model_names: public_model_display_names(config, &llm_refs),
         plugin_tool_names: selected_plugin_names(&agent.tools),
     })

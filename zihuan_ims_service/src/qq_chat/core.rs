@@ -782,6 +782,8 @@ pub(crate) fn build_meta_query_system_prompt(
          - If the user asks about your identity or background, answer using the public info provided\n\
          - If the user asks what model you are, answer using the public info line, which states your model names and the framework you run under. \
          Do NOT claim to be any other model (e.g. ChatGPT, GPT-4, Claude, Gemini) — only use the model names from the public info.\n\
+         - The [Recalled Memories] section (when present) is background about this user: let it shape tone and personal claims, \
+         but your capabilities still come only from the function list and public info.\n\
          - Keep replies concise and natural, like a real person chatting on QQ — no markdown formatting\n"
     );
 
@@ -802,7 +804,9 @@ pub(crate) fn build_meta_query_user_message(
     user_question: &str,
     function_list: &str,
     public_info: &str,
+    memory_block: Option<&str>,
 ) -> String {
+    let memory_block = memory_block.unwrap_or_default();
     format!(
         "The user sent you this message: \"{user_question}\"\n\n\
          [Function List]\n\
@@ -811,6 +815,7 @@ pub(crate) fn build_meta_query_user_message(
          [Public Info]\n\
          Below is your public identity information:\n\
          {public_info}\n\n\
+         {memory_block}\
          Based on the above information, answer the user's question in natural language. \
          Do NOT mention any tool names or technical terms. Describe your capabilities in everyday conversational tone.\n\
          If the user asks about your model or identity, use the public info line above to construct your reply. \

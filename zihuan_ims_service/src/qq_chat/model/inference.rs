@@ -4,7 +4,6 @@ use std::sync::Arc;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::graph::tool_spec::ToolDefinition;
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
-use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngine;
 use zihuan_core::retrieval::RetrievalStoreRef;
 use zihuan_core::storage::LocalMemoryStore;
@@ -21,7 +20,6 @@ pub(crate) struct QqLoadedInferenceResources {
     pub(crate) retrieval_store: Option<Arc<RetrievalStoreRef>>,
     pub(crate) local_memory_store: Option<Arc<LocalMemoryStore>>,
     pub(crate) embedding_model: Option<Arc<dyn EmbeddingBase>>,
-    pub(crate) memory_llm: Option<Arc<dyn LLMBase>>,
     pub(crate) model_names: Vec<String>,
     pub(crate) plugin_tool_names: Vec<String>,
 }

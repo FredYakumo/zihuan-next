@@ -46,17 +46,6 @@ export interface ContextCompactionSettings {
   percent: number;
 }
 
-export interface MemoryAgentPromptsSettings {
-  system_prompt: string;
-  search_operation_prompt: string;
-  update_operation_prompt: string;
-  defaults: {
-    system_prompt: string;
-    search_operation_prompt: string;
-    update_operation_prompt: string;
-  };
-}
-
 export async function request<T>(
   method: string,
   path: string,
@@ -79,10 +68,6 @@ export async function request<T>(
 
 export function getContextCompactionSettings(): Promise<ContextCompactionSettings> {
   return request("GET", "/settings/context-compaction");
-}
-
-export function getMemoryAgentPromptsSettings(): Promise<MemoryAgentPromptsSettings> {
-  return request("GET", "/settings/memory-agent-settings");
 }
 
 // Registry

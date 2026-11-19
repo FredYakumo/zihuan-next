@@ -18,18 +18,19 @@ pub fn build_turn_state_prefix_lines(
         lines.push("**Your character's current state**:".to_string());
         lines.push(format!("- {emotion_prompt}"));
     }
-    // Emit the recall hint even when no titles matched this turn.
+    // Emit the recall hint even when nothing matched this turn.
     if let Some(recall) = memory_recall {
-        lines.push("[Relevant Memory Titles]".to_string());
+        lines.push("[Recalled Memories]".to_string());
         let entries = memory_hint_lines(recall);
         if entries.is_empty() {
             lines.push(
-                "No memory titles matched this turn; call `search_memory` for anything missing."
+                "No memories matched this turn; call `search_memory` for anything missing."
                     .to_string(),
             );
         } else {
             lines.push(
-                "Recalled memory titles (call `search_memory` for their content):".to_string(),
+                "Recalled memories (behavioral rules are shown in full; concept entries list only their key — call `search_memory` with the key for the stored content):"
+                    .to_string(),
             );
             lines.extend(entries);
         }
@@ -39,25 +40,19 @@ pub fn build_turn_state_prefix_lines(
 
 /// Renders one recalled memory per line, tagged with its category.
 ///
-/// A concept is named by its title, a person by its name plus stored key (the QQ ID stays the
-/// identity), and a behavior by the rule itself — its key is an opaque hash and carries no
-/// meaning. The hint only says which memories exist; their content stays reachable through
-/// `search_memory`.
+/// A behavioral memory shows its key and the full rule on the next line; a concept shows only
+/// its key, whose stored content stays reachable through `search_memory`; a person is named by
+/// its name plus explicit QQ identity (names never prove identity). This renders both the turn's
+/// hint and the compaction refresh hint, so both carry the same shape.
 pub fn memory_hint_lines(recall: &MemoryRecall) -> Vec<String> {
     let mut lines = Vec::new();
-    lines.extend(recall.concepts().iter().map(|memory| format!("- [concept] {}", memory.title())));
-    lines.extend(
-        recall
-            .people()
-            .iter()
-            .map(|memory| format!("- [person] {}", memory.display_title())),
-    );
     lines.extend(
         recall
             .behaviors()
             .iter()
-            .map(|memory| format!("- [behavioral] {}", memory.rule())),
+            .map(|memory| format!("- [behavioral] {}\n  {}", memory.key(), memory.content())),
     );
+    lines.extend(recall.concepts().iter().map(|memory| format!("- [concept] {}", memory.key())));
     lines
 }
 
