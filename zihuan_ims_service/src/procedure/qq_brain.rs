@@ -124,6 +124,9 @@ impl QqBrain {
     ) -> Result<Self> {
         let tool_quota = ctx.tool_quota.clone();
         let mut brain = ToolCallingEngine::new(Arc::clone(turn_llm));
+        if let Some(planer) = ctx.planer {
+            brain.set_cancellation(planer.cancellation.clone());
+        }
         brain.set_observer(Arc::new(QqChatToolCallingObserver {
             trace: trace.clone(),
             identity: Some(QqChatTurnIdentity {
@@ -133,35 +136,40 @@ impl QqBrain {
             }),
         }));
         let turn_context = Arc::new(Mutex::new(None));
-        brain.set_iteration_hook(Arc::new(QqChatServiceSteerHook {
-            pending_steer: Arc::clone(ctx.pending_steer),
-            sender_id: sender_id.to_string(),
-            target_id: target_id.to_string(),
-            is_group,
-            turn_group_name: event_group_name.clone(),
-            bot_id: bot_id.to_string(),
-            bot_name: ctx.bot_name.to_string(),
-            adapter: ctx.adapter.clone(),
-            max_steer_count: ctx.max_steer_count,
-            llm_supports_multimodal_input: turn_llm.supports_multimodal_input(),
-            s3_ref: ctx.s3_ref.cloned(),
-            trace: trace.clone(),
-            consumed_messages: Arc::clone(&consumed_steer_messages),
-            in_flight_steers: Arc::clone(&in_flight_steers),
-            shared_runtime_values: Arc::clone(&shared_runtime_values),
-            session_state: Arc::clone(&turn_session_state),
-            emotion_dimensions: emotion_dimensions.clone(),
-            turn_context: Arc::clone(&turn_context),
-        }));
+        if ctx.planer.is_none() {
+            brain.set_iteration_hook(Arc::new(QqChatServiceSteerHook {
+                pending_steer: Arc::clone(ctx.pending_steer),
+                sender_id: sender_id.to_string(),
+                target_id: target_id.to_string(),
+                is_group,
+                turn_group_name: event_group_name.clone(),
+                bot_id: bot_id.to_string(),
+                bot_name: ctx.bot_name.to_string(),
+                adapter: ctx.adapter.clone(),
+                max_steer_count: ctx.max_steer_count,
+                llm_supports_multimodal_input: turn_llm.supports_multimodal_input(),
+                s3_ref: ctx.s3_ref.cloned(),
+                trace: trace.clone(),
+                consumed_messages: Arc::clone(&consumed_steer_messages),
+                in_flight_steers: Arc::clone(&in_flight_steers),
+                shared_runtime_values: Arc::clone(&shared_runtime_values),
+                session_state: Arc::clone(&turn_session_state),
+                emotion_dimensions: emotion_dimensions.clone(),
+                turn_context: Arc::clone(&turn_context),
+            }));
+        }
 
         let mut memory_access = qq_memory_access_context(
-            sender_id,
+            ctx.planer.map_or(Some(sender_id), |planer| planer.memory_scope_person_id()),
             target_id,
             is_group,
             prepared_input.event.group_id.clone(),
         );
         memory_access.agent_id = ctx.agent_id.to_string();
         memory_access.permission_connection = ctx.rdb_pool.cloned();
+        if ctx.planer.is_some() {
+            memory_access.write_source = zihuan_core::storage::MemoryWriteSource::Planer;
+        }
         let service_context = AgentServiceContext::new()
             .with_memory(MemoryCapability::resolve(
                 ctx.local_memory_store.cloned(),
@@ -394,6 +402,15 @@ impl QqBrain {
             tool_quota.clone(),
         ));
 
+        let planer_context = ctx.planer.map(|b| b.context.clone()).unwrap_or_else(|| {
+            zihuan_core::role::planer::PlanerContext::root(
+                ctx.agent_id,
+                &format!("ims:{sender_id}"),
+            )
+        });
+        for tool in zihuan_core::role::planer::tools(planer_context) {
+            brain.add_tool(SharedTool::new(Arc::from(tool)));
+        }
         let resources = current_agent_resources()?;
         for tool_def in &service.tool_definitions {
             brain.add_tool(wrap_brain_tool_with_quota(
@@ -418,7 +435,7 @@ impl QqBrain {
             ));
         }
 
-        if let Some(task_runtime) = ctx.task_runtime.clone() {
+        if let Some(task_runtime) = ctx.task_runtime.clone().filter(|_| ctx.planer.is_none()) {
             brain.set_long_task_context(LongTaskContext {
                 task_runtime,
                 owner_id: Some(sender_id.to_string()),

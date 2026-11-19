@@ -16,6 +16,7 @@
         <t-menu-item value="/llm" to="/llm" @click="closeSidebar"><template #icon><MindMapIcon /></template>模型配置</t-menu-item>
         <t-menu-item value="/agent-config" to="/agent-config" @click="closeSidebar"><template #icon><MindMapIcon /></template>Agent 配置</t-menu-item>
         <t-menu-item value="/services" to="/services" @click="closeSidebar"><template #icon><ServerIcon /></template>Service 管理</t-menu-item>
+        <t-menu-item value="/planers" to="/planers" @click="closeSidebar"><template #icon><LinkIcon /></template>Planer 配置</t-menu-item>
         <t-menu-item value="/graphs" to="/graphs" @click="closeSidebar"><template #icon><SitemapIcon /></template>节点图与工作流</t-menu-item>
         <t-menu-item value="/tasks" to="/tasks" @click="closeSidebar"><template #icon><TaskIcon /></template>任务管理器</t-menu-item>
         <t-menu-item value="/scheduled-tasks" to="/scheduled-tasks" @click="closeSidebar"><template #icon><TaskIcon /></template>计划任务</t-menu-item>

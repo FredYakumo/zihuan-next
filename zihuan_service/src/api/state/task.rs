@@ -16,6 +16,7 @@ pub enum TaskType {
     NodeGraph,
     AgentService,
     WorkspaceChat,
+    PlanerChat,
     /// One firing of a scheduler job, recorded by the scheduler kernel.
     ScheduledJob,
 }
@@ -176,8 +177,37 @@ impl TaskManager {
         workspace_path: Option<String>,
         stop_flag: Arc<AtomicBool>,
     ) -> Option<String> {
+        self.add_chat_task(
+            TaskType::WorkspaceChat,
+            agent_id,
+            session_id,
+            agent_name,
+            workspace_path,
+            stop_flag,
+        )
+    }
+
+    pub fn add_planer_chat_task(
+        &mut self,
+        agent_id: String,
+        session_id: String,
+        agent_name: String,
+        stop_flag: Arc<AtomicBool>,
+    ) -> Option<String> {
+        self.add_chat_task(TaskType::PlanerChat, agent_id, session_id, agent_name, None, stop_flag)
+    }
+
+    fn add_chat_task(
+        &mut self,
+        kind: TaskType,
+        agent_id: String,
+        session_id: String,
+        agent_name: String,
+        workspace_path: Option<String>,
+        stop_flag: Arc<AtomicBool>,
+    ) -> Option<String> {
         if self.tasks.iter().any(|task| {
-            task.task_type == TaskType::WorkspaceChat
+            matches!(task.task_type, TaskType::WorkspaceChat | TaskType::PlanerChat)
                 && task.is_running
                 && task.chat_session_id.as_deref() == Some(session_id.as_str())
         }) {
@@ -187,7 +217,7 @@ impl TaskManager {
             chat_session_id: Some(session_id),
             file_path: workspace_path,
             stop_flag: Some(stop_flag),
-            ..TaskDraft::new(TaskType::WorkspaceChat, agent_name, agent_id)
+            ..TaskDraft::new(kind, agent_name, agent_id)
         });
         Some(id)
     }
@@ -273,7 +303,7 @@ impl TaskManager {
 
     pub fn stop_workspace_chat_task(&mut self, session_id: &str, task_id: Option<&str>) -> bool {
         let Some(task) = self.tasks.iter_mut().find(|task| {
-            task.task_type == TaskType::WorkspaceChat
+            matches!(task.task_type, TaskType::WorkspaceChat | TaskType::PlanerChat)
                 && task.is_running
                 && task.chat_session_id.as_deref() == Some(session_id)
                 && task_id.is_none_or(|task_id| task.id == task_id)
@@ -377,7 +407,7 @@ impl TaskManager {
         self.tasks
             .iter()
             .find(|task| {
-                task.task_type == TaskType::WorkspaceChat
+                matches!(task.task_type, TaskType::WorkspaceChat | TaskType::PlanerChat)
                     && task.chat_session_id.as_deref() == Some(session_id)
                     && task.is_running
             })

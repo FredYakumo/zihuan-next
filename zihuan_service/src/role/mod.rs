@@ -1,3 +1,4 @@
+pub mod planer_agent;
 mod role_agent;
 pub mod service_log_scope;
 mod service_manager;

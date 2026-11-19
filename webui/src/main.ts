@@ -10,6 +10,8 @@ import Connections from "./admin/connections/Connections.vue";
 import ConnectionManager from "./admin/connection-manager/ConnectionManager.vue";
 import Llm from "./admin/llm/Llm.vue";
 import AgentConfig from "./admin/agents/AgentConfig.vue";
+import Planers from "./admin/agents/Planers.vue";
+import PlanerEdit from "./admin/agents/PlanerEdit.vue";
 import RoleService from "./admin/agents/RoleService.vue";
 import Graphs from "./admin/graphs/Graphs.vue";
 import Tasks from "./admin/tasks/Tasks.vue";
@@ -54,6 +56,14 @@ async function main() {
       { path: "/llm", component: Llm },
       { path: "/agent-config", component: AgentConfig },
       { path: "/services", component: RoleService },
+      { path: "/planers", component: Planers },
+      {
+        path: "/planers/edit",
+        component: PlanerEdit,
+        props: (route) => ({
+          planerId: typeof route.query.id === "string" ? route.query.id : undefined,
+        }),
+      },
       { path: "/graphs", component: Graphs },
       { path: "/tasks", component: Tasks },
       { path: "/scheduled-tasks", component: ScheduledTasks },

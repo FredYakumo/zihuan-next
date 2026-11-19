@@ -150,19 +150,20 @@ pub fn build_info_brain_tools(
     tools
 }
 
-/// Memory access context for one QQ turn: memories are scoped to the sending user and, in
-/// group chats, to the conversation; private chats fall back to the event's originating group.
+/// Memory scope for a QQ turn. Planer group tasks have no sending user; their session
+/// keys must never become person identities. Private tasks use the recipient's scope.
 pub(crate) fn qq_memory_access_context(
-    sender_id: &str,
+    sender_id: Option<&str>,
     target_id: &str,
     is_group: bool,
     event_group_id: Option<String>,
 ) -> AgentMemoryAccessContext {
     AgentMemoryAccessContext {
+        write_source: zihuan_core::storage::MemoryWriteSource::User,
         category: Default::default(),
         permission_connection: None,
         agent_id: String::new(),
-        sender_id: Some(sender_id.to_string()),
+        sender_id: sender_id.map(str::to_string),
         group_id: if is_group {
             Some(target_id.to_string())
         } else {

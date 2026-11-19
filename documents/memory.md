@@ -1,5 +1,7 @@
 # 记忆读写接口
 
+Planer 任务的记忆来源为 `{"kind":"planer","access_level":1}`，写入时来源权限等级固定为 `1`。Role Service 自身独立反思使用 `ROLE_SELF` 来源，等级为 `2`；用户来源使用经过校验的发送者权限等级。更新已有记忆时保留原访问等级。
+
 Rust 业务读写接口位于 `zihuan_core/src/storage/memory/`，按人物、概念和行为分别定义记录、写入参数与操作。`MemoryBackend` 只选择本地文件或检索数据库，三个类别共享底层连接和文档编解码。
 
 | 类别 | 记录 / 写入参数 | 读取 | 写入 | 检索 |
@@ -18,7 +20,7 @@ Rust 业务读写接口位于 `zihuan_core/src/storage/memory/`，按人物、�
 {"category":"person","query":{"id":"916436517"}}
 ```
 
-`id` qq号
+`id` id
 
 ```json
 {"category":"person","query":{"query":"紫幻"}}

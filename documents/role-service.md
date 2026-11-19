@@ -45,3 +45,7 @@ flowchart LR
     brain --> after["AfterBrain Procedure"]
     after --> transport_out["Transport"]
 ```
+
+## Planer
+
+IMS 和 Workspace Role 可归属一个独立的 [Planer](./planer.md)。Role 通过 `planer_request` 请求协助；只有 Planer 获得成员目录，并通过自己的 BUS 串行调度。普通 Workspace 对话和 IMS 入站流程保留原有行为。

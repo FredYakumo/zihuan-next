@@ -104,6 +104,14 @@ pub fn build_router(
                         ),
                 )
                 .push(
+                    Router::with_path("planers")
+                        .get(config::planers::list).post(config::planers::create)
+                        .push(Router::with_path("<id>").get(config::planers::get)
+                            .put(config::planers::update).delete(config::planers::delete)
+                            .push(Router::with_path("start").post(config::planers::start))
+                            .push(Router::with_path("stop").post(config::planers::stop))),
+                )
+                .push(
                     Router::with_path("services")
                         .get(config::role_services::list_role_services)
                         .post(config::role_services::create_role_service)
@@ -629,3 +637,5 @@ fn normalize_host(host: &str) -> Option<String> {
 fn is_trusted_loopback_host(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "[::1]")
 }
+
+pub mod planer_runtime;

@@ -271,7 +271,7 @@ fn build_common_system_rules(
          You need to process events. For example, when a user sends a message, you need to generate a reply or choose not to respond to it.\n\
          During event processing, you may call relevant tools when necessary to help produce the final result.\n\
          When dealing with knowledge, objects, or impressions of a person, event, or thing, you must search the memories first.\n\
-         People are identified only by QQ ID. Names, nicknames and aliases never prove two accounts are the same person. Respect recalled person guidelines and applicable behavioral instructions. Memory writes require category and source; user-requested corrections must use user source with the authenticated sender ID and access level. When necessary, you need to manage memory updates, especially when retrieved memories do not match facts from the current event or external data.\n\
+         People are identified only by QQ ID. Names, nicknames and aliases never prove two accounts are the same person. Respect recalled person guidelines and applicable behavioral instructions. When necessary, you need to manage memory updates, especially when retrieved memories do not match facts from the current event or external data.\n\
          You will often need to update outdated memories.\n\
          Messages prefixed with `[User-STEER Message]` arrive while you are already working on a task. They are supplementary input: finish the current task first, then address them. Do not abandon the current task and do not end the turn just to answer a steer message.\n",
     );
@@ -910,6 +910,23 @@ impl QqChatAgentService {
         adapter: &zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
         time: &str,
     ) -> Result<()> {
+        let ctx = self.turn_context(adapter, event);
+
+        zihuan_core::agent::runtime_context::with_current_agent_runtime_context(
+            zihuan_core::agent::runtime_context::AgentRuntimeContext {
+                resources: crate::qq_chat::resources::QqChatRoleServiceResources::new(
+                    self.config.qq_chat_config.clone(),
+                )
+                .into_shared(),
+            },
+            || super::event_processor::process_event(self, event, time, None, &ctx),
+        )
+    }
+    pub(crate) fn turn_context<'a>(
+        &'a self,
+        adapter: &'a zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter,
+        event: &zihuan_core::ims_bot_adapter::models::MessageEvent,
+    ) -> QqChatAgentServiceContext<'a> {
         let task_db_connection_id =
             self.config.qq_chat_config.resolved_rdb_id().map(ToOwned::to_owned);
         let sender_id = event.sender.user_id.to_string();
@@ -922,7 +939,8 @@ impl QqChatAgentService {
             session_state: Arc::clone(&self.config.tool_quota_session_state),
         });
 
-        let ctx = QqChatAgentServiceContext {
+        QqChatAgentServiceContext {
+            planer: None,
             agent_id: &self.config.agent_id,
             adapter,
             bot_name: &self.config.bot_name,
@@ -965,16 +983,6 @@ impl QqChatAgentService {
                     .flatten()
             }),
             model_names: self.config.public_model_names.clone(),
-        };
-
-        zihuan_core::agent::runtime_context::with_current_agent_runtime_context(
-            zihuan_core::agent::runtime_context::AgentRuntimeContext {
-                resources: crate::qq_chat::resources::QqChatRoleServiceResources::new(
-                    self.config.qq_chat_config.clone(),
-                )
-                .into_shared(),
-            },
-            || super::event_processor::process_event(self, event, time, None, &ctx),
-        )
+        }
     }
 }

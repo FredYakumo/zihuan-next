@@ -178,7 +178,7 @@ export interface ValidationResult {
 
 export interface TaskEntry {
   id: string;
-  task_type: "node_graph" | "agent_service" | "workspace_chat" | "scheduled_job";
+  task_type: "node_graph" | "agent_service" | "workspace_chat" | "planer_chat" | "scheduled_job";
   graph_name: string;
   graph_session_id: string;
   chat_session_id: string | null;

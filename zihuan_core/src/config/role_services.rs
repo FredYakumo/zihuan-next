@@ -72,25 +72,29 @@ pub fn load_role_services() -> Result<Vec<RoleServiceConfig>> {
 
 pub fn save_role_services(role_services: Vec<RoleServiceConfig>) -> Result<()> {
     let center = ConfigCenter::shared();
-    let existing_ids = center
-        .list_configs(ConfigCategory::Service)?
+    let records = role_services
         .into_iter()
-        .map(|record| record.config_id)
-        .collect::<std::collections::HashSet<_>>();
-    let mut incoming_ids = std::collections::HashSet::new();
-
-    for role_service in role_services {
-        let role_service = normalize_identity(role_service, center.new_config_id());
-        let record = role_service_to_record(&role_service)?;
-        incoming_ids.insert(record.config_id.clone());
-        center.upsert_config(record)?;
-    }
-    for config_id in existing_ids {
-        if !incoming_ids.contains(&config_id) {
-            let _ = center.delete_config(ConfigCategory::Service, &config_id)?;
+        .map(|role| role_service_to_record(&normalize_identity(role, center.new_config_id())))
+        .collect::<Result<Vec<_>>>()?;
+    center.update_root(|root| {
+        // Check and replace atomically with Planer edits, including bulk configuration writes.
+        let incoming_ids = records
+            .iter()
+            .map(|record| record.config_id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        for planer in &root.configs.planers {
+            let config: super::planers::PlanerConfig = serde_json::from_value(planer.spec.clone())?;
+            if config
+                .members
+                .iter()
+                .any(|member| !incoming_ids.contains(member.role_id.as_str()))
+            {
+                return Err(crate::string_error!("Role 仍被 Planer 引用，请先移除成员"));
+            }
         }
-    }
-    Ok(())
+        root.configs.agents = records;
+        Ok(())
+    })
 }
 
 fn normalize_identity(

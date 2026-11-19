@@ -121,6 +121,14 @@ async fn main() {
     // recorded as tasks even when no role service has been started yet.
     api::config::role_services::build_agent_task_runtime(Arc::clone(&state), broadcast.clone());
 
+    if let Err(error) = api::planer_runtime::initialize(
+        state.clone(),
+        broadcast.clone(),
+        api::config::role_services::build_agent_task_runtime(state.clone(), broadcast.clone()),
+    ) {
+        error!("Failed to initialize Planer: {error}");
+    }
+
     startup_recover_orphan_tasks(&state).await;
     spawn_task_ttl_cleanup(Arc::clone(&state));
 

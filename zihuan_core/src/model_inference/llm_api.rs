@@ -295,8 +295,22 @@ impl LLMAPI {
             RequestError::Retryable { message: err_detail }
         })?;
         let status = response.status();
-        let response_text =
-            response.text().unwrap_or_else(|_| "Failed to read response".to_string());
+        let response_text = response.text().map_err(|error| {
+            let message = format!(
+                "{} status={} response_body_read_error detail={} message={}",
+                self.format_request_context(request_context, Some((attempt, max_attempts))),
+                status,
+                Self::describe_reqwest_error(&error),
+                error,
+            );
+            // Headers can arrive before a timeout or a broken connection while reading
+            // the body. Treat that as a transport failure, not malformed model JSON.
+            if status.is_success() || Self::should_retry_status(status) {
+                RequestError::Retryable { message }
+            } else {
+                RequestError::NonRetryable { message }
+            }
+        })?;
 
         if self.stream {
             if let Some(message) = match self.uses_responses_api() {

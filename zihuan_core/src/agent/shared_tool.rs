@@ -27,6 +27,14 @@ impl Tool for SharedTool {
         self.0.execute(content, arguments)
     }
 
+    fn execute_async(
+        &self,
+        content: &str,
+        arguments: &Value,
+    ) -> Option<super::tools::AsyncToolOutput> {
+        self.0.execute_async(content, arguments)
+    }
+
     fn returns_failure_details_to_agent(&self) -> bool {
         self.0.returns_failure_details_to_agent()
     }

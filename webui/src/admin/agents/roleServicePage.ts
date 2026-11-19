@@ -4,8 +4,6 @@ import { system, type ConnectionConfig, type ServiceWithRuntime } from "../../ap
 import { useAgents } from "./useAgents";
 import { assertConnectionConfig, assertLlmConfig, normalizeConnectionConfigs } from "../model";
 
-const AVATAR_ZOOM_RULER_TICKS = [3, 2.75, 2.5, 2.25, 2, 1.75, 1.5, 1.25, 1];
-
 export function useRoleServicePage() {
 const agents = useAgents();
 const {
@@ -53,24 +51,6 @@ const {
   retrievalConnections,
   ignoreRulesDisabledReason,
   resetForm,
-  avatarUploading,
-  avatarEditorVisible,
-  avatarDraftUrl,
-  avatarZoom,
-  avatarRotation,
-  avatarCropRect,
-  startAvatarCrop,
-  moveAvatarCrop,
-  endAvatarCrop,
-  rotateAvatar,
-  resetAvatarTransform,
-  startAvatarRotation,
-  openAvatarEditor,
-  closeAvatarEditor,
-  confirmAvatarCrop,
-  handleAvatarFileSelect,
-  uploadAvatarFile,
-  clearAvatar,
   clearEditingAgent,
   ignoreRulePreview,
   formatRequestError,
@@ -142,7 +122,6 @@ const {
   formatTime,
   statusTone,
   summarizeIds,
-  getAvatarDisplayUrl,
   agentAvatarUrl,
   agentInitial,
   serviceCopiedId,
@@ -428,7 +407,6 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
 
 return {
   ...agents,
-  avatarZoomRulerTicks: AVATAR_ZOOM_RULER_TICKS,
   showModelConfigDialog,
   modelImporting,
   showRetrievalDatabaseDialog,

@@ -53,6 +53,12 @@ pub(crate) fn deliver_reply(
     bot_id: &str,
     format_output: &QqFormatOutputOutput,
 ) -> (usize, bool, Option<String>) {
+    if let Some(planer) = ctx.planer {
+        if planer.cancellation.is_cancelled() {
+            *planer.delivery.lock().unwrap() = serde_json::json!({"success":false,"error":"IMS Role 已停止，未发送","receipts":[]});
+            return (0, false, None);
+        }
+    }
     trace.mark_reply_send_started();
     let mut sent_batches = 0usize;
     let mut explicit_no_reply = false;
@@ -78,7 +84,31 @@ pub(crate) fn deliver_reply(
             ),
             max_text_chars: ctx.max_message_length,
         };
-        send_planned_batches(&send_ctx, &format_output.batches);
+        let receipts = send_planned_batches(&send_ctx, &format_output.batches);
+        if let Some(planer) = ctx.planer {
+            let successful = receipts.iter().filter(|r| r.success && !r.skipped).count();
+            let all_sent = successful == format_output.batches.len() && successful > 0;
+            let text = if all_sent {
+                format_output.final_message.clone().unwrap_or_default()
+            } else {
+                format_output
+                    .batches
+                    .iter()
+                    .zip(&receipts)
+                    .filter(|(_, r)| r.success && !r.skipped)
+                    .map(|(batch, _)| {
+                        zihuan_core::ims_bot_adapter::models::message::render_messages_readable(
+                            batch,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            *planer.delivery.lock().unwrap() = serde_json::json!({"text":text,"receipts":receipts,"sent":successful,"total":format_output.batches.len(),"success":all_sent});
+            if !all_sent {
+                return (successful, false, (!text.is_empty()).then_some(text));
+            }
+        }
         trace.record_reply_send(false, true, &format_output.batches);
         sent_batches = format_output.batches.len();
         visible_assistant_history_text = format_output.final_message.clone();

@@ -1,0 +1,173 @@
+// Shared avatar upload/crop editor styles, used by AvatarEditor.vue.
+
+.avatar-editor-trigger {
+  position: relative;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  line-height: 0;
+
+  &:focus-visible {
+    outline: 2px solid var(--td-brand-color);
+  }
+}
+
+.avatar-editor-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--td-component-border);
+}
+
+.avatar-editor-placeholder {
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--td-brand-color);
+  color: var(--td-text-color-anti);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+// The hover overlay carries the edit affordance instead of a text button beside it.
+.avatar-editor-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 45%);
+  color: var(--td-text-color-anti);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+
+  .t-icon {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+.avatar-editor-trigger:hover .avatar-editor-overlay,
+.avatar-editor-trigger:focus-visible .avatar-editor-overlay {
+  opacity: 1;
+}
+
+.avatar-editor-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 332px;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.avatar-editor-preview-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 280px) 24px;
+  align-items: end;
+  column-gap: 2px;
+}
+
+.avatar-editor-crop-column {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.avatar-editor-rotate-handle {
+  width: 30px;
+  height: 30px;
+}
+
+.avatar-editor-vertical-zoom {
+  grid-column: 1;
+  grid-row: 1;
+  height: 280px;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 2px;
+
+  :deep(.t-slider__container) {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+.avatar-editor-zoom-ruler {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  height: 100%;
+}
+
+.avatar-editor-zoom-tick {
+  width: 4px;
+  height: 1px;
+  background-color: var(--td-component-border);
+}
+
+.avatar-editor-zoom-tick--major {
+  width: 8px;
+  background-color: var(--td-text-color-secondary);
+}
+
+.avatar-editor-crop-window {
+  position: relative;
+  width: 280px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--td-bg-color-secondarycontainer);
+  outline: 1px solid var(--td-component-border);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.avatar-editor-crop-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: none;
+  transform-origin: center center;
+  will-change: transform;
+  user-select: none;
+  pointer-events: none;
+}
+
+.avatar-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: 26px;
+  margin-right: 26px;
+}
+
+.avatar-editor-hint {
+  margin-left: 26px;
+  margin-right: 26px;
+  color: var(--td-text-color-placeholder);
+  font-size: 12px;
+  line-height: 1.5;
+}

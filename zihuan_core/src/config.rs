@@ -13,6 +13,7 @@ use crate::system_config::system_config_file_path;
 use dynamic_script_engine::{NodeRuntimeConfig, PythonRuntimeConfig};
 
 pub mod llm_refs;
+pub mod planers;
 pub mod role_services;
 
 const CONFIG_ROOT_VERSION: u32 = 2;
@@ -23,6 +24,7 @@ pub enum ConfigCategory {
     Connection,
     LlmRef,
     Service,
+    Planer,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -41,6 +43,7 @@ pub enum ConfigKind {
     ServiceQqChat,
     ServiceWorkspace,
     CommandPermission,
+    Planer,
 }
 
 impl ConfigKind {
@@ -58,6 +61,7 @@ impl ConfigKind {
             Self::LlmRef => ConfigCategory::LlmRef,
             Self::ServiceQqChat | Self::ServiceWorkspace => ConfigCategory::Service,
             Self::CommandPermission => ConfigCategory::Service,
+            Self::Planer => ConfigCategory::Planer,
         }
     }
 }
@@ -123,6 +127,8 @@ pub struct ConfigCollections {
     pub agents: Vec<StoredConfigRecord>,
     #[serde(default)]
     pub command_permissions: Vec<StoredConfigRecord>,
+    #[serde(default)]
+    pub planers: Vec<StoredConfigRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -184,6 +190,7 @@ impl ConfigRoot {
             connections: parse_config_collection(configs.get("connections"), "connections"),
             llm_refs: parse_config_collection(configs.get("llm_refs"), "llm_refs"),
             agents: parse_config_collection(configs.get("agents"), "agents"),
+            planers: parse_config_collection(configs.get("planers"), "planers"),
             command_permissions: parse_config_collection(
                 configs.get("command_permissions"),
                 "command_permissions",
@@ -322,6 +329,7 @@ fn infer_kind_from_legacy_object(
             }
         },
         ConfigCategory::LlmRef => Ok(ConfigKind::LlmRef),
+        ConfigCategory::Planer => Ok(ConfigKind::Planer),
         ConfigCategory::Service => match object
             .get("agent_type")
             .and_then(Value::as_object)
@@ -344,6 +352,7 @@ fn legacy_object_to_spec(category: ConfigCategory, object: &Map<String, Value>) 
     match category {
         ConfigCategory::Connection => Ok(object.get("kind").cloned().unwrap_or(Value::Null)),
         ConfigCategory::LlmRef => Ok(object.get("llm").cloned().unwrap_or(Value::Null)),
+        ConfigCategory::Planer => Ok(Value::Object(object.clone())),
         ConfigCategory::Service => {
             let mut spec = Map::new();
             spec.insert(
@@ -454,6 +463,7 @@ impl<R: ConfigRepository> ConfigCenter<R> {
             ConfigCategory::Connection => root.configs.connections,
             ConfigCategory::LlmRef => root.configs.llm_refs,
             ConfigCategory::Service => root.configs.agents,
+            ConfigCategory::Planer => root.configs.planers,
         })
     }
 
@@ -465,6 +475,7 @@ impl<R: ConfigRepository> ConfigCenter<R> {
             .into_iter()
             .chain(root.configs.llm_refs)
             .chain(root.configs.agents)
+            .chain(root.configs.planers)
             .find(|record| record.config_id == config_id))
     }
 
@@ -497,6 +508,7 @@ fn bucket_mut(root: &mut ConfigRoot, category: ConfigCategory) -> &mut Vec<Store
         ConfigCategory::Connection => &mut root.configs.connections,
         ConfigCategory::LlmRef => &mut root.configs.llm_refs,
         ConfigCategory::Service => &mut root.configs.agents,
+        ConfigCategory::Planer => &mut root.configs.planers,
     }
 }
 

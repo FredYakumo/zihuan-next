@@ -15,6 +15,7 @@ pub(crate) struct QqMemoryAgent {
     pub identity: QqChatTurnIdentity,
     pub resources: MemoryAgentResources,
     pub input: String,
+    pub source: serde_json::Value,
     pub previous_context: String,
     pub bot_id: String,
     pub identity_context: Option<String>,
@@ -44,7 +45,7 @@ pub(crate) fn identity_memory_context(
     let mut seen = std::collections::HashSet::new();
     for (role, id) in [
         ("sender", resources.access.sender_id.as_deref().unwrap_or_default()),
-        ("bot", bot_id),
+        ("ROLE_SELF", bot_id),
     ] {
         if id.is_empty() || !seen.insert(id) {
             continue;
@@ -97,12 +98,7 @@ impl Procedure for QqMemoryAgent {
             self.previous_context.clone()
         };
         let resources = self.resources.clone();
-        let source_level = if let Some(sender) = &resources.access.sender_id {
-            zihuan_core::storage::user_permission::memory_source_level(&resources.access, sender)?
-        } else {
-            3
-        };
-        let source = serde_json::json!({"kind":"user","sender_id":resources.access.sender_id,"access_level":source_level});
+        let source = self.source.clone();
         let saved = self.identity_context.clone();
         let bot_id = self.bot_id.clone();
         let input = self.input.clone();

@@ -52,11 +52,56 @@ use zihuan_service::role::RoleAgent;
 const CHAT_STREAM_MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 const CHAT_FORK_METADATA_SUFFIX: &str = ".fork.json";
 
-struct WorkspaceChatCancellation(Arc<AtomicBool>);
+/// Shared output adapter: dashboard SSE or an internal Internal event collector.
+enum ChatOutput {
+    Sse(BodySender),
+    Internal(Arc<Mutex<Vec<Value>>>),
+}
+impl ChatOutput {
+    async fn send_data(&mut self, data: impl Into<String>) -> std::result::Result<(), String> {
+        let data = data.into();
+        match self {
+            Self::Sse(sender) => sender.send_data(data).await.map_err(|e| e.to_string()),
+            Self::Internal(events) => {
+                if let Some(payload) = data.strip_prefix("data: ") {
+                    if let Ok(event) = serde_json::from_str::<Value>(payload.trim()) {
+                        if matches!(
+                            event["type"].as_str(),
+                            Some("error" | "ask_user" | "done" | "start")
+                        ) {
+                            events.lock().unwrap().push(event);
+                        }
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+}
+fn session_gate(session_id: &str) -> Arc<zihuan_core::role::turn_queue::TurnQueue> {
+    static GATES: std::sync::OnceLock<
+        Mutex<
+            std::collections::HashMap<
+                String,
+                std::sync::Weak<zihuan_core::role::turn_queue::TurnQueue>,
+            >,
+        >,
+    > = std::sync::OnceLock::new();
+    let mut gates = GATES.get_or_init(Default::default).lock().unwrap();
+    gates.retain(|_, gate| gate.strong_count() > 0);
+    if let Some(gate) = gates.get(session_id).and_then(std::sync::Weak::upgrade) {
+        return gate;
+    }
+    let gate = Arc::new(zihuan_core::role::turn_queue::TurnQueue::default());
+    gates.insert(session_id.to_string(), Arc::downgrade(&gate));
+    gate
+}
+
+struct WorkspaceChatCancellation(Arc<AtomicBool>, Option<Arc<AtomicBool>>);
 
 impl AgentCancellation for WorkspaceChatCancellation {
     fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
+        self.0.load(Ordering::Relaxed) || self.1.as_ref().is_some_and(|c| c.load(Ordering::Relaxed))
     }
 }
 
@@ -81,7 +126,7 @@ impl TransportSink for SseTransportSink {
     }
 }
 
-/// Bridges ToolCallingObserver callbacks into the SSE event stream.
+/// Internals ToolCallingObserver callbacks into the SSE event stream.
 ///
 /// **Purpose:** The ToolCallingEngine tool-call loop emits structured events (tool start/finish)
 /// that the dashboard needs to display in real time. This observer translates those callbacks
@@ -275,8 +320,20 @@ fn history_record_to_message(record: ChatHistoryRecord) -> LLMMessage {
 ///
 /// **Design:** Mirrors the OpenAI chat-completion request shape but adds `agent_id` and
 /// `session_id` fields specific to zihuan's multi-agent routing.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatTargetType {
+    #[default]
+    Role,
+    Planer,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ChatStreamRequest {
+    #[serde(default)]
+    pub target_type: ChatTargetType,
+    #[serde(skip)]
+    planer_context: Option<zihuan_core::role::planer::PlanerContext>,
     pub agent_id: String,
     #[serde(default)]
     pub session_id: Option<String>,
@@ -799,7 +856,7 @@ fn try_dispatch_dashboard_command(
 /// **Architecture:** Called from the `!should_run_inference` branch of
 /// `execute_chat_streaming`, after the `start` event has been sent.
 async fn emit_immediate_output(
-    sender: &mut BodySender,
+    sender: &mut ChatOutput,
     session_id: &str,
     assistant_message_id: &str,
     output_messages: &[LLMMessage],
@@ -867,7 +924,7 @@ async fn emit_immediate_output(
 /// The inference task and this relay run concurrently; the orchestrator joins the inference
 /// handle after this function returns.
 async fn relay_inference_stream(
-    sender: &mut BodySender,
+    sender: &mut ChatOutput,
     assistant_message_id: &str,
     token_rx: &mut mpsc::UnboundedReceiver<StreamToken>,
     event_rx: &mut mpsc::UnboundedReceiver<Value>,
@@ -936,7 +993,7 @@ async fn relay_inference_stream(
 /// completes.
 ///
 async fn relay_collected_text(
-    sender: &mut BodySender,
+    sender: &mut ChatOutput,
     assistant_message_id: &str,
     token_rx: &mut mpsc::UnboundedReceiver<StreamToken>,
     event_rx: &mut mpsc::UnboundedReceiver<Value>,
@@ -972,7 +1029,7 @@ async fn relay_collected_text(
     }
 }
 
-async fn send_sse(sender: &mut BodySender, event: &Value) -> bool {
+async fn send_sse(sender: &mut ChatOutput, event: &Value) -> bool {
     sender.send_data(format!("data: {event}\n\n")).await.is_ok()
 }
 
@@ -1017,7 +1074,7 @@ pub async fn stream_chat(req: &mut Request, res: &mut Response, depot: &mut Depo
     res.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     res.body = receiver;
 
-    tokio::spawn(execute_chat_streaming(state, broadcast_tx, body, sender));
+    tokio::spawn(execute_chat_streaming(state, broadcast_tx, body, ChatOutput::Sse(sender)));
 }
 
 #[handler]
@@ -1147,9 +1204,33 @@ async fn execute_chat_streaming(
     state: Arc<crate::api::state::AppState>,
     broadcast_tx: WsBroadcast,
     body: ChatStreamRequest,
-    mut sender: BodySender,
+    mut sender: ChatOutput,
 ) {
+    if matches!(body.target_type, ChatTargetType::Planer) {
+        execute_planer_stream(state, broadcast_tx, body, sender).await;
+        return;
+    }
+    if let Some(session_id) = body.session_id.as_deref() {
+        if load_chat_session_messages(session_id)
+            .is_ok_and(|records| records.iter().any(|r| r.role_service_type == "planer"))
+        {
+            let _ = send_sse(
+                &mut sender,
+                &json!({"type":"error","error":"Planer 会话必须使用 Planer 对话目标"}),
+            )
+            .await;
+            return;
+        }
+    }
+    let gate = body.session_id.as_deref().map(session_gate);
+    let _session_guard = match gate.as_ref() {
+        Some(gate) => Some(gate.clone().reserve(false).await),
+        None => None,
+    };
+    let internal_input = matches!(&sender, ChatOutput::Internal(_));
     let ChatStreamRequest {
+        planer_context,
+        target_type: _,
         agent_id,
         session_id: requested_session_id,
         messages: raw_messages,
@@ -1163,6 +1244,23 @@ async fn execute_chat_streaming(
     } = body;
     let is_continuation = continuation.is_some();
     let mut messages: Vec<LLMMessage> = raw_messages.into_iter().map(Into::into).collect();
+    if internal_input {
+        let mut history =
+            match requested_session_id.as_deref().map(load_chat_session_messages).transpose() {
+                Ok(records) => records
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(history_record_to_message)
+                    .collect::<Vec<_>>(),
+                Err(error) => {
+                    let event = json!({"type":"error","error":error.to_string()});
+                    let _ = send_sse(&mut sender, &event).await;
+                    return;
+                }
+            };
+        history.extend(messages);
+        messages = history;
+    }
     if let Some(decision) = continuation {
         let Some(session_id) =
             requested_session_id.as_deref().filter(|value| !value.trim().is_empty())
@@ -1275,13 +1373,25 @@ async fn execute_chat_streaming(
         should_persist,
         requires_assistant_message,
         immediate_output_messages,
-    } = match try_dispatch_dashboard_command(
-        &agent,
-        &agent_snapshot,
-        &requested_session_id,
-        messages,
-        &latest_user_message,
-    ) {
+    } = match if internal_input {
+        Ok(CommandDispatchOutcome {
+            session_id: requested_session_id.clone().unwrap_or_else(|| Uuid::new_v4().to_string()),
+            messages,
+            latest_user_message: latest_user_message.clone(),
+            should_run_inference: true,
+            should_persist: true,
+            requires_assistant_message: true,
+            immediate_output_messages: None,
+        })
+    } else {
+        try_dispatch_dashboard_command(
+            &agent,
+            &agent_snapshot,
+            &requested_session_id,
+            messages,
+            &latest_user_message,
+        )
+    } {
         Ok(outcome) => outcome,
         Err(event) => {
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
@@ -1458,10 +1568,18 @@ async fn execute_chat_streaming(
     });
 
     let inference_started_at = Instant::now();
+    let planer_stop_flag = planer_context.as_ref().and_then(|c| c.cancellation.clone());
     let cancellation: Option<Arc<dyn AgentCancellation>> =
         workspace_task.as_ref().map(|(_, stop_flag)| {
-            Arc::new(WorkspaceChatCancellation(Arc::clone(stop_flag))) as Arc<dyn AgentCancellation>
+            Arc::new(WorkspaceChatCancellation(Arc::clone(stop_flag), planer_stop_flag.clone()))
+                as Arc<dyn AgentCancellation>
         });
+    let planer_context = {
+        let mut context = planer_context
+            .unwrap_or_else(|| zihuan_core::role::planer::session_context(&agent_id, &session_id));
+        context.local_cancellation = workspace_task.as_ref().map(|(_, flag)| flag.clone());
+        Some(context)
+    };
     let turn_handle = {
         let manager = state.role_service_manager.clone();
         let agent_id = agent_id.clone();
@@ -1532,6 +1650,10 @@ async fn execute_chat_streaming(
                 Arc::new(role_service.with_llm_override(llm, model_name, image_understand_llm))
             } else {
                 role_service
+            };
+            let brain_agent = match planer_context {
+                Some(context) => Arc::new(brain_agent.with_planer_context(context)),
+                None => brain_agent,
             };
             let observer: Arc<dyn ToolCallingObserver> = Arc::new(SseToolCallingObserver {
                 event_tx: turn_event_tx.clone(),
@@ -1824,7 +1946,7 @@ fn finish_workspace_task(
     };
     let message = error
         .as_deref()
-        .unwrap_or_else(|| summary.as_deref().unwrap_or("Workspace 聊天任务已结束"));
+        .unwrap_or_else(|| summary.as_deref().unwrap_or("对话任务已结束"));
     append_workspace_task_log(state, task_id, level, message);
     state
         .tasks
@@ -2648,4 +2770,176 @@ fn render_bad_request(res: &mut Response, message: String) {
 fn render_internal_error(res: &mut Response, err: impl ToString) {
     res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
     res.render(Json(json!({ "error": err.to_string() })));
+}
+
+/// Internal entry into the same turn, task, history, approval and Procedure lifecycle as SSE.
+pub async fn execute_planer_chat(
+    state: Arc<crate::api::state::AppState>,
+    broadcast: WsBroadcast,
+    role_id: &str,
+    session_id: &str,
+    workspace_path: &str,
+    prompt: &str,
+    planer_context: zihuan_core::role::planer::PlanerContext,
+) -> Result<Value> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut body: ChatStreamRequest = serde_json::from_value(json!({
+        "agent_id": role_id, "session_id": session_id, "workspace_path": workspace_path,
+        "messages": [{"role":"user","content":prompt}], "stream":true
+    }))?;
+    body.planer_context = Some(planer_context);
+    execute_chat_streaming(state, broadcast, body, ChatOutput::Internal(events.clone())).await;
+    let events = events.lock().unwrap().clone();
+    if let Some(error) = events.iter().find(|e| e["type"] == "error") {
+        return Err(zihuan_core::string_error!(
+            "{}",
+            error["error"].as_str().unwrap_or("Workspace task failed")
+        ));
+    }
+    let records = load_chat_session_messages(session_id)?;
+    let message_id = events
+        .iter()
+        .find(|event| event["type"] == "start")
+        .and_then(|event| event["message_id"].as_str());
+    let last = records.iter().rev().find(|record| {
+        record.role == "assistant" && Some(record.message_id.as_str()) == message_id
+    });
+    let pending = events
+        .iter()
+        .rev()
+        .find(|event| event["type"] == "ask_user")
+        .map(|event| serde_json::from_value::<AskUserRequest>(event.clone()))
+        .transpose()?
+        .or_else(|| records.last().and_then(|record| record.pending_ask_user.clone()));
+    if !events.iter().any(|event| event["type"] == "done") && pending.is_none() {
+        return Err(zihuan_core::string_error!("Workspace 任务已停止或未完成"));
+    }
+    let text = last
+        .map(|record| record.content.clone())
+        .or_else(|| pending.as_ref().map(|request| request.question.clone()));
+    Ok(json!({"session_id":session_id,"text":text,"pending_ask_user":pending}))
+}
+
+/// Planer uses the chat transport/history, but never the Workspace agent or its tools.
+async fn execute_planer_stream(
+    state: Arc<crate::api::state::AppState>,
+    broadcast: WsBroadcast,
+    body: ChatStreamRequest,
+    mut sender: ChatOutput,
+) {
+    let session_id = body.session_id.clone().unwrap_or_else(|| Uuid::new_v4().to_string());
+    let gate = session_gate(&session_id);
+    let _reservation = gate.reserve(false).await;
+    let result = async {
+        let runtime = super::planer_runtime::shared()?;
+        let config = runtime.config(&body.agent_id)?;
+        if !config.enabled || !runtime.is_running(&config.config_id) { return Err(zihuan_core::string_error!("Planer 未运行或已禁用")); }
+        let records = load_chat_session_messages(&session_id)?;
+        if records.iter().any(|r| r.agent_id != body.agent_id || r.role_service_type != "planer") {
+            return Err(zihuan_core::string_error!("会话不属于当前 Planer"));
+        }
+        let user: LLMMessage = if let Some(decision) = &body.continuation {
+            let latest = records.last().filter(|r| r.pending_ask_user.as_ref().and_then(|q| q.tool_call_limit.as_ref()).is_some())
+                .ok_or_else(|| zihuan_core::string_error!("会话未等待工具上限决策"))?;
+            if matches!(decision, ChatContinuationDecision::Stop) {
+                append_tool_call_limit_decision_record(&session_id, latest, decision)?;
+                let _ = send_sse(&mut sender, &build_chat_stream_event("done", &session_id, None, None)).await;
+                return Ok(());
+            }
+            LLMMessage::user("用户已同意继续执行尚未完成的任务；请根据已有记录继续，不要重复已经完成的外部操作。")
+        } else {
+            body.messages.into_iter().rev().find(|m| matches!(m.role, MessageRole::User))
+                .ok_or_else(|| zihuan_core::string_error!("需要用户输入"))?.into()
+        };
+        let mut messages: Vec<_> = records.into_iter().map(history_record_to_message).collect();
+        messages.push(user.clone());
+        let message_id = format!("msg_{}", Uuid::new_v4().simple());
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let task_id = state.tasks.lock().unwrap().add_planer_chat_task(body.agent_id.clone(), session_id.clone(), config.name.clone(), stop_flag.clone())
+            .ok_or_else(|| zihuan_core::string_error!("会话已有运行任务"))?;
+        let _ = broadcast.send(ServerMessage::TaskStarted { task_id: task_id.clone(), graph_name: config.name.clone(), graph_session_id: session_id.clone() });
+        let root_cancellation = stop_flag.clone();
+        let trace_id = Uuid::new_v4().to_string();
+        if let Err(error) = persist_planer_messages(&config, &session_id, &trace_id, &message_id, &[user], None) {
+            finish_workspace_task(&state, &broadcast, &task_id, TaskStatus::Failed, Some(error.to_string()), None);
+            return Err(error);
+        }
+        let _ = send_sse(&mut sender, &build_chat_stream_event("start", &session_id, Some(&message_id), Some(&task_id))).await;
+        let snapshot = Arc::new(Mutex::new(RunningChatMessage {
+            agent_id: config.config_id.clone(), message_id: message_id.clone(),
+            agent_name: config.name.clone(), agent_type: "planer".into(), agent_avatar_url: config.avatar_url.clone(),
+            trace_id: trace_id.clone(), workspace_path: None, model_config_id: Some(config.llm_ref_id.clone()), image_understand_model_config_id: None,
+            timestamp: Utc::now().to_rfc3339(), content: String::new(), reasoning_content: String::new(), live_tool_calls: Vec::new(),
+        }));
+        state.running_chat_messages.lock().unwrap().insert(session_id.clone(), snapshot.clone());
+        let (token_tx, mut token_rx) = mpsc::unbounded_channel();
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+        let observer = Arc::new(SseToolCallingObserver {
+            event_tx, session_id: session_id.clone(), message_id: message_id.clone(),
+            change_recorder: workspace_changes::WorkspaceChangeRecorder::new(session_id.clone(), None),
+            running_chat_message: Some(snapshot.clone()),
+        });
+        let mut execution = Box::pin(runtime.chat(&config.config_id, &session_id, messages, Some(token_tx), Some(observer), stop_flag));
+        let outcome = loop {
+            tokio::select! {
+                result = &mut execution => break result,
+                Some(token) = token_rx.recv() => {
+                    let kind = match &token { StreamToken::Thinking(_) => "thinking_delta", StreamToken::Content(_) => "delta" };
+                    { let mut live = snapshot.lock().unwrap(); match &token { StreamToken::Thinking(s) => live.reasoning_content.push_str(s), StreamToken::Content(s) => live.content.push_str(s) } }
+                    let _ = send_sse(&mut sender, &json!({"type":kind,"message_id":message_id,"token":token.as_str()})).await;
+                },
+                Some(event) = event_rx.recv() => { let _ = send_sse(&mut sender, &event).await; },
+            }
+        };
+        while let Ok(event) = event_rx.try_recv() { let _ = send_sse(&mut sender, &event).await; }
+        while let Ok(token) = token_rx.try_recv() {
+            let kind = match &token { StreamToken::Thinking(_) => "thinking_delta", StreamToken::Content(_) => "delta" };
+            let _ = send_sse(&mut sender, &json!({"type":kind,"message_id":message_id,"token":token.as_str()})).await;
+        }
+        clear_running_chat_message(&state, &session_id, Some(&snapshot));
+        let output = match outcome {
+            Ok(output) => output,
+            Err(e) => { finish_workspace_task(&state, &broadcast, &task_id, if root_cancellation.load(Ordering::Relaxed) || !runtime.is_running(&config.config_id) { TaskStatus::Stopped } else { TaskStatus::Failed }, Some(e.to_string()), None); return Err(e); }
+        };
+        let pending = match &output.stop_reason { ToolCallingStopReason::AwaitUserInput(q) | ToolCallingStopReason::ToolCallLimitReached(q) => Some(q.clone()), _ => None };
+        if let Err(e) = persist_planer_messages(&config, &session_id, &trace_id, &message_id, &output.messages, pending.clone()) {
+            finish_workspace_task(&state, &broadcast, &task_id, TaskStatus::Failed, Some(e.to_string()), None); return Err(e);
+        }
+        if let ToolCallingStopReason::TransportError(error) = output.stop_reason {
+            finish_workspace_task(&state, &broadcast, &task_id, TaskStatus::Failed, Some(error.clone()), None);
+            return Err(zihuan_core::string_error!("{error}"));
+        }
+        finish_workspace_task(&state, &broadcast, &task_id, TaskStatus::Success, None, Some("Planer 对话已完成".into()));
+        if let Some(question) = pending {
+            let mut event = serde_json::to_value(question)?; event["type"] = json!("ask_user"); event["message_id"] = json!(message_id); event["session_id"] = json!(session_id);
+            let _ = send_sse(&mut sender, &event).await;
+        }
+        let _ = send_sse(&mut sender, &build_chat_stream_event("done", &session_id, Some(&message_id), None)).await;
+        Ok::<_, Error>(())
+    }.await;
+    if let Err(error) = result {
+        let _ = send_sse(&mut sender, &json!({"type":"error","error":error.to_string()})).await;
+    }
+    let _ = sender.send_data("data: [DONE]\n\n").await;
+}
+fn persist_planer_messages(
+    config: &zihuan_core::config::planers::PlanerConfig,
+    session_id: &str,
+    trace_id: &str,
+    assistant_id: &str,
+    messages: &[LLMMessage],
+    pending: Option<AskUserRequest>,
+) -> Result<()> {
+    for message in messages {
+        let record: ChatHistoryRecord = serde_json::from_value(json!({
+            "session_id":session_id,"agent_id":config.config_id,"agent_name":config.name,"role_service_type":"planer","agent_avatar_url":config.avatar_url,
+            "role":match message.role { MessageRole::User => "user", MessageRole::Assistant => "assistant", MessageRole::Tool => "tool", MessageRole::System => "system" },
+            "content":message.content_text_owned().unwrap_or_default(),"parts":message.parts,"reasoning_content":message.reasoning_content,
+            "timestamp":Utc::now().to_rfc3339(),"trace_id":trace_id,
+            "message_id":if matches!(message.role,MessageRole::Assistant) && message.tool_calls.is_empty() { assistant_id.to_string() } else { format!("msg_{}", Uuid::new_v4().simple()) },
+            "tool_calls":message.tool_calls,"tool_call_id":message.tool_call_id,"model_config_id":config.llm_ref_id,"pending_ask_user":pending,
+        }))?;
+        append_history_record(&record)?;
+    }
+    Ok(())
 }

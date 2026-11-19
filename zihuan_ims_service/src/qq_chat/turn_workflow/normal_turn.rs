@@ -59,13 +59,16 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
         llm: Arc::clone(ctx.llm),
         access: {
             let mut access = qq_memory_access_context(
-                sender_id,
+                ctx.planer.map_or(Some(sender_id), |planer| planer.memory_scope_person_id()),
                 turn.target_id,
                 is_group,
                 turn.prepared_input.event.group_id.clone(),
             );
             access.agent_id = ctx.agent_id.to_string();
             access.permission_connection = ctx.rdb_pool.cloned();
+            if ctx.planer.is_some() {
+                access.write_source = zihuan_core::storage::MemoryWriteSource::Planer;
+            }
             access
         },
     });
@@ -98,19 +101,36 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
     let memory_phase = if turn.service.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
         memory_resources
             .map(|resources| {
-                let level = zihuan_core::storage::user_permission::memory_source_level(
-                    &resources.access,
-                    sender_id,
-                )?;
+                let (input, source) = if let Some(planer) = ctx.planer {
+                    let level = zihuan_core::storage::user_permission::PLANER_ACCESS_LEVEL;
+                    (
+                        format!(
+                            "Planer task from Role {}; destination {} {}.\n{}",
+                            planer.source_planer_id, planer.target_type, planer.target_id,
+                            turn.current_message,
+                        ),
+                        serde_json::json!({"kind":"planer","access_level":level}),
+                    )
+                } else {
+                    let level = zihuan_core::storage::user_permission::memory_source_level(
+                        &resources.access,
+                        sender_id,
+                    )?;
+                    (
+                        format!(
+                            "Conversation scope QQ ID: {sender_id}\n{}",
+                            turn.current_message,
+                        ),
+                        serde_json::json!({"kind":"user","sender_id":sender_id,"access_level":level}),
+                    )
+                };
                 Ok::<_, Error>(crate::procedure::QqMemoryAgent {
                     bot_id: turn.bot_id.to_string(),
                     identity_context: crate::procedure::saved_identity_context(&turn.history),
                     identity: turn_identity.clone(),
                     resources,
-                    input: format!(
-                        "Authenticated sender QQ ID: {sender_id}; AccessLevel: {level}\n{}",
-                        turn.current_message
-                    ),
+                    input,
+                    source,
                     previous_context: turn
                         .history
                         .iter()
@@ -124,6 +144,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
         None
     };
     let before_brain = QqBeforeBrain::new(BeforeBrainContext {
+        planer: ctx.planer,
         trace,
         identity: Some(turn_identity),
         // The turn's routed model decides the API style and multimodal shape of the
@@ -143,10 +164,12 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
     let shared_runtime_values = Arc::new(Mutex::new(ctx.shared_runtime_values.clone()));
     {
         let mut locked = shared_runtime_values.lock().unwrap();
-        locked.insert(
-            QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
-            DataValue::MessageEvent(turn.prepared_input.event.clone()),
-        );
+        if ctx.planer.is_none() {
+            locked.insert(
+                QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
+                DataValue::MessageEvent(turn.prepared_input.event.clone()),
+            );
+        }
         let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = ctx.adapter.clone();
         locked.insert(
             QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
@@ -205,6 +228,9 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
         Some(turn.current_message.clone()),
         Some(&turn.inference_event),
     );
+    if ctx.planer.is_some() {
+        shared.sender = None;
+    }
     // The chain runs inside `block_async`. A guard taken inside the call arguments stays
     // alive until the end of this statement, i.e. for the whole chain, and the preprompt
     // stage locks the same non-reentrant mutex. Clone the state first so the guard is
@@ -290,6 +316,17 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
             ToolCallingStopReason::AwaitUserInput(_) => "推理暂停在等待输入",
             ToolCallingStopReason::Done => "没有生成可发送的回复",
         };
+        if let Some(planer) = ctx.planer {
+            let error = match &brain_output_payload.stop_reason {
+                ToolCallingStopReason::TransportError(error) => {
+                    format!("IMS 模型请求失败，未发送消息：{error}")
+                }
+                _ => format!("IMS 未发送消息：{stop_reason_text}"),
+            };
+            *planer.delivery.lock().unwrap() = serde_json::json!({
+                "success": false, "sent": 0, "receipts": [], "error": error,
+            });
+        }
         emit_qq_context_stage(
             ctx.agent_id,
             sender_id,
@@ -304,6 +341,12 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
         );
     } else if brain_output_payload.final_reply_text.is_some() {
         if brain_output_payload.suppress_send {
+            if let Some(planer) = ctx.planer {
+                *planer.delivery.lock().unwrap() = serde_json::json!({
+                    "success": false, "sent": 0, "receipts": [],
+                    "error": "IMS 模型选择不回复，未发送消息",
+                });
+            }
             turn_completed = true;
             explicit_no_reply = true;
             emit_qq_context_stage(

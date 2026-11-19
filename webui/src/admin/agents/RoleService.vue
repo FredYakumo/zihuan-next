@@ -567,51 +567,6 @@
 
         <RateLimitConfigDrawer v-model:visible="showRateLimitModal" :form="form" />
 
-        <t-dialog v-model:visible="avatarEditorVisible" header="编辑头像" width="420px" :close-on-overlay-click="false"
-            :confirm-btn="{ content: '使用此头像', loading: avatarUploading }" cancel-btn="取消" @confirm="confirmAvatarCrop"
-            @cancel="closeAvatarEditor" @close="closeAvatarEditor">
-            <div class="agent-service-avatar-editor">
-                <div class="agent-service-avatar-editor-preview-row">
-                    <div class="agent-service-avatar-preview-column">
-                        <t-button variant="outline" shape="circle" class="agent-service-avatar-rotate-handle"
-                            :disabled="!avatarDraftUrl" aria-label="进入自由旋转模式" title="按住并拖动以旋转头像"
-                            @pointerdown="startAvatarRotation">
-                            <RotateIcon />
-                        </t-button>
-                        <div :key="avatarDraftUrl || 'avatar-placeholder'" class="agent-service-avatar-crop-window"
-                            @pointerdown.capture="startAvatarCrop" @pointermove="moveAvatarCrop"
-                            @pointerup="endAvatarCrop" @pointercancel="endAvatarCrop"
-                            @lostpointercapture="endAvatarCrop" @dragstart.prevent>
-                            <img v-if="avatarDraftUrl" :key="avatarDraftUrl" :src="avatarDraftUrl" alt="头像裁剪预览"
-                                :draggable="false" class="agent-service-avatar-crop-image"
-                                :style="{ transform: `translate(${avatarPan.x}px, ${avatarPan.y}px) scale(${avatarZoom}) rotate(${avatarRotation}deg)` }" />
-                            <div v-else class="agent-service-avatar-placeholder">{{ form.name ? form.name.slice(0,
-                                1).toUpperCase() : 'A' }}</div>
-                        </div>
-                    </div>
-                    <div v-if="avatarDraftUrl" class="agent-service-avatar-vertical-zoom">
-                        <div class="agent-service-avatar-zoom-ruler" aria-hidden="true">
-                            <span v-for="tick in avatarZoomRulerTicks" :key="tick"
-                                class="agent-service-avatar-zoom-tick"
-                                :class="{ 'agent-service-avatar-zoom-tick--major': tick % 1 === 0 }" />
-                        </div>
-                        <t-slider v-model="avatarZoom" :min="1" :max="3" :step="0.05" layout="vertical" />
-                    </div>
-                </div>
-                <div class="agent-service-avatar-editor-actions">
-                    <input ref="avatarEditorFileInput" type="file" accept="image/*"
-                        class="agent-service-script-file-input" @change="handleAvatarFileSelect" />
-                    <t-button variant="outline" @click="$refs.avatarEditorFileInput?.click()">选择图片</t-button>
-                    <t-button variant="text" shape="square" :disabled="!avatarDraftUrl" title="还原图片默认"
-                        aria-label="还原图片默认" @click="resetAvatarTransform">
-                        <RefreshIcon />
-                    </t-button>
-                    <t-button variant="text" theme="danger" @click="clearAvatar">使用默认头像</t-button>
-                </div>
-                <div class="agent-service-form-hint">拖动头像可移动位置；按住头像上方的旋转图标并拖动可自由旋转。</div>
-            </div>
-        </t-dialog>
-
 
         <t-card class="agent-service-card" bordered>
             <div class="agent-service-toolbar">
@@ -687,7 +642,7 @@
 
 <script lang="ts">
 import { defineComponent } from "vue";
-import { ChevronLeftIcon, CloseIcon, RefreshIcon, RotateIcon, SearchIcon } from "tdesign-icons-vue-next";
+import { ChevronLeftIcon, CloseIcon, SearchIcon } from "tdesign-icons-vue-next";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import AgentServiceForm from "../components/AgentServiceForm.vue";
 import ConfigImportDialog from "../components/ConfigImportDialog.vue";
@@ -706,8 +661,6 @@ export default defineComponent({
         ConfigImportDialog,
         IgnoreRulesList,
         RateLimitConfigDrawer,
-        RefreshIcon,
-        RotateIcon,
         SearchIcon,
         RetrievalDatabaseDialog,
         ServiceRestartConfirmDialog,

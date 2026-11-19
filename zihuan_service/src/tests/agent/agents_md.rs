@@ -92,6 +92,7 @@ fn system_prompt(
     provider.augment_messages(
         &mut messages,
         &InferenceToolContext {
+            memory_write_source: zihuan_core::storage::MemoryWriteSource::Disabled,
             last_user_text: "hello".to_string(),
             workspace_path,
             session_id: None,

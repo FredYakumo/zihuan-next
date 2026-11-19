@@ -27,7 +27,7 @@ export type ConnectionType =
 export type ServiceTypeName = "qq_chat" | "workspace";
 
 /** Service types that support the Dashboard embedded Chat component. */
-export const CHAT_ELIGIBLE_SERVICE_TYPES: ReadonlySet<string> = new Set(["workspace"]);
+export const CHAT_ELIGIBLE_SERVICE_TYPES: ReadonlySet<string> = new Set(["workspace", "planer"]);
 export type ModelRefType = "chat_llm_local" | "chat_llm_api" | "text_embedding_local" | "text_embedding_api";
 export type ToolRunDuration = "Short" | "Long";
 export type LlmWeightStyle = "mock" | "gguf" | "hf";

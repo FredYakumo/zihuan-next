@@ -17,7 +17,7 @@ pub const TARGET_TYPE_GROUP: &str = "group";
 const DEFAULT_LOG_PREFIX: &str = "[SendQQMessageBatchesNode]";
 const FORWARD_MESSAGE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(120);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SendBatchResult {
     pub batch_index: usize,
     pub success: bool,
