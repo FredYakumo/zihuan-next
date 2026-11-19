@@ -17,9 +17,14 @@
                     <t-form-item label="名称"><t-input v-model="form.name" /></t-form-item>
                     <t-form-item label="启用"><t-switch v-model="form.enabled" /></t-form-item>
                     <t-form-item label="自动启动"><t-switch v-model="form.auto_start" /></t-form-item>
-                    <t-form-item label="推理模型"><t-select v-model="form.llm_ref_id" filterable><t-option
-                                v-for="model in models.filter(isChatModelRef)" :key="model.config_id"
-                                :value="model.config_id" :label="model.name" /></t-select></t-form-item>
+                    <t-form-item label="主模型">
+                        <CommonSelect v-model="form.llm_ref_id" placeholder="请选择" filterable
+                            :options="chatModelOptions" @change="handleModelChange">
+                            <t-option class="planer-add-model-option" value="__add_model__" label="新增模型配置">
+                                <span class="planer-add-model-option-content"><AddIcon />新增模型配置</span>
+                            </t-option>
+                        </CommonSelect>
+                    </t-form-item>
                     <t-form-item label="提示词"><t-textarea v-model="form.prompt"
                             placeholder="描述此 Planer 的目标与调度偏好" /></t-form-item>
                     <t-form-item label="所属 Role（可暂不选择）">
@@ -40,15 +45,26 @@
                         @change="v => member.workspace_path = String(v)" /></t-form-item>
             </t-card>
         </t-loading>
+        <ConfigImportDialog v-model:visible="showModelConfigDialog" title="新增模型配置" create-label="新增模型配置"
+            :loading="modelImporting" @create="openModelCreatePage" @clipboard-import="importModelFromClipboard"
+            @file-change="handleModelFileChange" />
     </section>
 </template>
 <script setup lang="ts">
 import { computed } from "vue";
+import { AddIcon } from "tdesign-icons-vue-next";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import AvatarEditor from "../components/AvatarEditor.vue";
+import CommonSelect from "../components/CommonSelect.vue";
+import ConfigImportDialog from "../components/ConfigImportDialog.vue";
 import { usePlanerEdit } from "./PlanerEdit";
 const props = defineProps<{ planerId?: string }>();
-const { items, roles, models, loading, saving, error, form, isChatModelRef, roleLabel, isWorkspace, otherOwner, selectMembers, setAvatar, save, backToList } = usePlanerEdit(props.planerId);
+const {
+    items, roles, chatModelOptions, loading, saving, error, form,
+    showModelConfigDialog, modelImporting,
+    roleLabel, isWorkspace, otherOwner, selectMembers, setAvatar, save, backToList,
+    handleModelChange, openModelCreatePage, importModelFromClipboard, handleModelFileChange,
+} = usePlanerEdit(props.planerId);
 const breadcrumbs = computed(() => [
   { label: "Planer 配置", to: "/planers" },
   { label: form.value.config_id ? "编辑 Planer" : "新建 Planer" },
