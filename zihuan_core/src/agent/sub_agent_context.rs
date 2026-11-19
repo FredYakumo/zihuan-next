@@ -10,8 +10,7 @@ use std::sync::Arc;
 
 use crate::agent::declarative_agent::AgentHost;
 use crate::agent::tools::memory::{
-    register_memory_tools, MemoryAgentResources, MemoryBackend, FULL_SEARCH_MEMORY_TOOL_ID,
-    MEMORY_TOOL_IDS,
+    register_memory_tools, MemoryAgentResources, MemoryBackend, SUB_AGENT_MEMORY_TOOL_IDS,
 };
 use crate::agent::tools::Tool;
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
@@ -112,9 +111,7 @@ impl AgentServiceContext {
                 );
             }
             None => {
-                let mut ids = MEMORY_TOOL_IDS.iter().map(|id| id.to_string()).collect::<Vec<_>>();
-                ids.push(FULL_SEARCH_MEMORY_TOOL_ID.to_string());
-                host.register_disabled_tools(ids, MEMORY_BACKEND_UNAVAILABLE_REASON);
+                host.register_disabled_tools(SUB_AGENT_MEMORY_TOOL_IDS, MEMORY_BACKEND_UNAVAILABLE_REASON);
             }
         };
         for (id, tool) in &self.tools {

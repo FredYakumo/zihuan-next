@@ -17,6 +17,9 @@ pub struct PersonMemoryRecord {
     pub profile: PersonMemory,
     #[serde(default = "default_access_level")]
     pub access_level: u32,
+    /// The backend object id, filled in after a document read; it is stored as the
+    /// backend envelope id (Weaviate UUID / ES `_id`), not inside the document.
+    #[serde(default)]
     pub object_id: String,
     pub created_at: String,
     pub updated_at: String,

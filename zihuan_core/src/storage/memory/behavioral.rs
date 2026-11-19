@@ -16,6 +16,9 @@ pub struct BehavioralMemoryRecord {
     pub sender_id_list: Vec<String>,
     #[serde(default)]
     pub group_id_list: Vec<String>,
+    /// The backend object id, filled in after a document read; it is stored as the
+    /// backend envelope id (Weaviate UUID / ES `_id`), not inside the document.
+    #[serde(default)]
     pub object_id: String,
     pub created_at: String,
     pub updated_at: String,

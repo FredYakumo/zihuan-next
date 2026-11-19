@@ -303,15 +303,19 @@ export function defaultQqChatDefaultToolsEnabled(): Record<string, boolean> {
 /**
  * Tool ids a Sub-agent definition may reference.
  *
- * `image_understand` is reachable through its own switch rather than a default-tool entry, so it
- * is added explicitly. Existing sub-agents are callable as tools too, but the backend already
- * extends this list with every id on disk.
+ * `image_understand` and the memory tools are reachable through their own switches rather than
+ * a default-tool entry, so they are added explicitly. Existing sub-agents are callable as tools
+ * too, but the backend already extends this list with every id on disk.
  */
 export function subAgentReferenceableToolIds(): string[] {
   const ids = [
     ...QQ_CHAT_DEFAULT_TOOLS.map((tool) => tool.id),
     ...WORKSPACE_DEFAULT_TOOLS.map((tool) => tool.id),
     "image_understand",
+    "list_memory_keys",
+    "search_memory",
+    "update_memory",
+    "full_search_memory",
   ];
   return [...new Set(ids)];
 }

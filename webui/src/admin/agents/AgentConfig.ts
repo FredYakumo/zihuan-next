@@ -9,7 +9,13 @@ import { useServiceRestart } from "../components/useServiceRestart";
 const portTypes = ["String", "Integer", "Float", "Boolean", "Json"];
 // Callable tools that the role-service default tool lists do not cover because they are configured
 // through their own switches; a definition may still reference them.
-const SWITCH_CONFIGURED_TOOLS = [{ id: "image_understand", name: "image_understand" }];
+const SWITCH_CONFIGURED_TOOLS = [
+  { id: "image_understand", name: "image_understand" },
+  { id: "list_memory_keys", name: "list_memory_keys" },
+  { id: "search_memory", name: "search_memory" },
+  { id: "update_memory", name: "update_memory" },
+  { id: "full_search_memory", name: "full_search_memory" },
+];
 
 export function useAgentConfig(options: { autoLoad?: boolean } = {}) {
   const router = useRouter();
