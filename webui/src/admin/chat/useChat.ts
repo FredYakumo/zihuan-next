@@ -501,7 +501,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     const selectedServiceType = computed(() => selectedService.value?.role_service_type?.type ?? "");
     const isChatEligible = computed(() => CHAT_ELIGIBLE_SERVICE_TYPES.has(selectedServiceType.value));
     const planerTaskCards = computed(() => {
-        const tasks = new Map<string, { task_id: string; status: string; approval_url?: string; error?: string }>();
+        const tasks = new Map<string, { task_id: string; status: string; error?: string }>();
         for (const message of messages.value) {
             const payloads = [message.role === "tool" ? message.content : "", ...(message.liveToolCalls ?? []).map(c => c.result ?? "")];
             for (const payload of payloads) {

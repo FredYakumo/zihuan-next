@@ -188,9 +188,8 @@
             </div>
             <aside v-if="selectedServiceType === 'planer' && planerTaskCards.length" class="planer-task-panel" aria-label="委托任务">
               <div v-for="task in planerTaskCards" :key="task.task_id" class="planer-task-row">
-                <span>{{ ({queued:'排队中',running:'执行中',waiting_downstream:'等待协助',waiting_auth:'等待人工审批',waiting_input:'等待补充信息',success:'已完成',failed:'失败',cancelled:'已取消',interrupted:'已中断'} as Record<string,string>)[task.status] || task.status }}</span>
+                <span>{{ ({queued:'排队中',running:'执行中',waiting_input:'等待补充信息',success:'已完成',failed:'失败',cancelled:'已取消',interrupted:'已中断'} as Record<string,string>)[task.status] || task.status }}</span>
                 <code>{{ task.task_id.slice(0, 8) }}</code>
-                <a v-if="task.status === 'waiting_auth' && task.approval_url" :href="task.approval_url" target="_blank" rel="noopener">打开 Workspace 审批</a>
                 <span v-if="task.error">{{ task.error }}</span>
               </div>
             </aside>
