@@ -1,17 +1,25 @@
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { system, isChatModelRef, type ServiceWithRuntime, type LlmConfig } from "../../api/client";
 import { planers, type PlanerConfig } from "../../api/planers";
+import { assertLlmConfig } from "../model";
 
 export function usePlanerEdit(planerId?: string) {
   const router = useRouter();
   const items = ref<PlanerConfig[]>([]),
     roles = ref<ServiceWithRuntime[]>([]),
     models = ref<LlmConfig[]>([]);
+  const chatModelOptions = computed(() =>
+    models.value
+      .filter(item => item.enabled && isChatModelRef(item.model))
+      .map(item => ({ value: item.config_id, label: item.name })),
+  );
   const loading = ref(false),
     saving = ref(false),
     error = ref("");
   const form = ref(blank());
+  const showModelConfigDialog = ref(false),
+    modelImporting = ref(false);
 
   function blank(): PlanerConfig {
     return {
@@ -67,6 +75,65 @@ export function usePlanerEdit(planerId?: string) {
     }
   }
 
+  function handleModelChange(value: string | null | undefined) {
+    if (String(value) !== "__add_model__") return;
+    form.value.llm_ref_id = "";
+    showModelConfigDialog.value = true;
+  }
+
+  function openModelCreatePage() {
+    showModelConfigDialog.value = false;
+    router.push("/llm/edit");
+  }
+
+  async function refreshModels() {
+    models.value = await system.llm.list();
+  }
+
+  async function importModelFromText(raw: string) {
+    if (modelImporting.value) return;
+    modelImporting.value = true;
+    try {
+      const config = assertLlmConfig(JSON.parse(raw));
+      const created = await system.llm.create({
+        name: config.name,
+        enabled: config.enabled,
+        model: config.model,
+      });
+      await refreshModels();
+      form.value.llm_ref_id = created.config_id;
+      showModelConfigDialog.value = false;
+    } catch (error) {
+      alert(`模型配置导入失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      modelImporting.value = false;
+    }
+  }
+
+  async function importModelFromClipboard() {
+    try {
+      await importModelFromText(await navigator.clipboard.readText());
+    } catch (error) {
+      alert(`读取剪贴板失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  function handleModelFileChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      void importModelFromText(String(reader.result));
+      input.value = "";
+    };
+    reader.onerror = () => {
+      alert("文件读取失败");
+      input.value = "";
+    };
+    reader.readAsText(file);
+  }
+
   function selectMembers(value: unknown) {
     form.value.members = (value as string[]).map(
       role_id =>
@@ -81,7 +148,7 @@ export function usePlanerEdit(planerId?: string) {
 
   async function save() {
     if (!form.value.name.trim() || !form.value.llm_ref_id) {
-      error.value = "请填写名称并选择推理模型";
+      error.value = "请填写名称并选择主模型";
       return;
     }
     saving.value = true;
@@ -102,8 +169,11 @@ export function usePlanerEdit(planerId?: string) {
   onMounted(load);
 
   return {
-    items, roles, models, loading, saving, error, form,
-    isChatModelRef, roleLabel, modelName, isWorkspace, otherOwner,
+    items, roles, models, chatModelOptions, loading, saving, error, form,
+    showModelConfigDialog, modelImporting,
+    roleLabel, modelName, isWorkspace, otherOwner,
     selectMembers, setAvatar, save, backToList,
+    handleModelChange, openModelCreatePage,
+    importModelFromClipboard, handleModelFileChange,
   };
 }
