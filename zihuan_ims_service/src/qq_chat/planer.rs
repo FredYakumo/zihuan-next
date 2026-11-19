@@ -4,16 +4,13 @@ use super::model::QqChatAgentService;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
-use zihuan_core::agent::tools::{ToolCallingEngine, ToolCallingStopReason};
-use zihuan_core::agent::SharedTool;
 use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 use zihuan_core::ims_bot_adapter::models::{
     event_model::{MessageType, Sender, SenderGender},
     MessageEvent,
 };
-use zihuan_core::model_inference::llm::{LLMMessage, MessageRole};
-use zihuan_core::role::planer::{PlanerCall, PlanerContext, PlanerOperation};
+use zihuan_core::role::planer::{PlanerCall, PlanerContext};
 
 pub(crate) struct ImsPlanerInput {
     pub source_planer_id: String,
@@ -68,8 +65,7 @@ pub(super) fn register(
         service: Arc::downgrade(service),
     }
 }
-/// Ordinary turns share read access; a Planer send owns the destination exclusively.
-/// This preserves existing concurrent group replies while queuing proactive group work.
+/// Ordinary turns share read access; Planer messages reserve their own conversation.
 pub(crate) fn conversation_gate(
     role_id: &str,
     target_type: &str,
@@ -137,22 +133,9 @@ pub async fn execute(role_id: &str, call: PlanerCall, context: PlanerContext) ->
         context,
         delivery: Mutex::new(Value::Null),
     });
-    if matches!(call.operation, PlanerOperation::ImsSearch) {
-        return tokio::task::spawn_blocking(move || {
-            zihuan_core::agent::runtime_context::with_current_agent_runtime_context(
-                zihuan_core::agent::runtime_context::AgentRuntimeContext::from_resources(
-                    super::resources::QqChatRoleServiceResources::new(
-                        service.config.qq_chat_config.clone(),
-                    )
-                    .into_shared(),
-                ),
-                || search(&service, &input),
-            )
-        })
-        .await
-        .map_err(|e| zihuan_core::string_error!("IMS 检索任务中断：{e}"))?;
-    }
-    let gate = conversation_gate(role_id, &input.target_type, &input.target_id);
+    let session_key =
+        format!("planer:{}:{}:{}", input.source_planer_id, input.target_type, input.target_id);
+    let gate = conversation_gate(role_id, "planer", &session_key);
     let pending_destination = gate.clone().reserve(false);
     tokio::pin!(pending_destination);
     let destination_guard = loop {
@@ -164,12 +147,7 @@ pub async fn execute(role_id: &str, call: PlanerCall, context: PlanerContext) ->
             _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
         }
     };
-    let session_key = if input.target_type == "group" {
-        format!("planer:group:{}", input.target_id)
-    } else {
-        input.target_id.clone()
-    };
-    // Queue without occupying a Tokio worker. Claim exactly the same session as ordinary input.
+    // Use the normal FIFO session claim mechanism for this Planer conversation.
     let claim_token = loop {
         let session = service.config.session.clone();
         let key = session_key.clone();
@@ -215,13 +193,13 @@ pub async fn execute(role_id: &str, call: PlanerCall, context: PlanerContext) ->
                 )
                 .into_shared(),
             ),
-            || send(&service, &adapter, &input, &session_key),
+            || process_message(&service, &adapter, &input, &session_key),
         )
     })
     .await
-    .map_err(|e| zihuan_core::string_error!("IMS 发送任务中断：{e}"))?
+    .map_err(|e| zihuan_core::string_error!("IMS Planer 消息处理中断：{e}"))?
 }
-fn send(
+fn process_message(
     service: &QqChatAgentService,
     adapter: &SharedBotAdapter,
     input: &ImsPlanerInput,
@@ -237,7 +215,7 @@ fn send(
         },
         sender: Sender {
             user_id: String::new(),
-            nickname: String::new(),
+            nickname: "Planer".to_string(),
             card: String::new(),
             role: None,
             gender: SenderGender::Unknown,
@@ -323,72 +301,9 @@ fn send(
     })?;
     let delivery = input.delivery.lock().unwrap().clone();
     let delivery = if delivery.is_null() {
-        json!({"success":false,"sent":0,"receipts":[],"error":"未生成可发送内容或被输出审查拒绝"})
+        json!({"success":false,"sent":0,"receipts":[],"error":"Role 未生成回复或回复被审查拒绝"})
     } else {
         delivery
     };
     Ok(delivery)
-}
-fn search(service: &QqChatAgentService, input: &ImsPlanerInput) -> Result<Value> {
-    let config = &service.config;
-    let mut engine = ToolCallingEngine::new(config.llm.clone());
-    engine.set_cancellation(input.cancellation.clone());
-    let mut tools = crate::tools::build_info_brain_tools(
-        &service.default_tools_enabled,
-        Some(config.web_search_engine.clone()),
-        config.rdb_pool.clone(),
-        config.s3_ref.clone(),
-        config.retrieval_store.clone(),
-        config.local_memory_store.clone(),
-        config.embedding_model.clone(),
-        Some(config.llm.clone()),
-        zihuan_core::storage::AgentMemoryAccessContext {
-            agent_id: config.agent_id.clone(),
-            skip_expiry_extend: true,
-            ..Default::default()
-        },
-        config.public_model_names.clone(),
-        &[],
-    );
-    // A strict allowlist also excludes all subagents/plugins that could regain write tools.
-    tools.retain(|tool| {
-        matches!(
-            tool.spec().name(),
-            "get_recent_group_messages"
-                | "get_recent_user_messages"
-                | "image_understand"
-                | "list_memory_keys"
-                | "search_memory"
-        )
-    });
-    if service.is_default_tool_enabled(crate::tools::DEFAULT_TOOL_SEARCH_QQ_MESSAGES) {
-        tools.push(Box::new(crate::tools::SearchQqMessagesTool::new(
-            config.rdb_pool.clone(),
-            crate::tools::ToolNotificationTarget::dashboard(),
-        )));
-    }
-    for tool in tools {
-        engine.add_tool(SharedTool::new(Arc::from(tool)));
-    }
-    let mut read_context = input.context.clone();
-    read_context.read_only = true;
-    for tool in zihuan_core::role::planer::tools(read_context.clone()) {
-        engine.add_tool(SharedTool::new(Arc::from(tool)));
-    }
-    let capabilities = engine.tool_definitions();
-    let (messages, stop) = engine.run(vec![LLMMessage::system(format!(
-        "你是 {}，当前执行来自 Planer {} 的只读检索任务。使用已配置的消息、媒体和记忆查询能力回答问题，返回消息 ID、群/用户、时间及媒体引用等来源。不得发送消息或修改数据。不具备的数据能力必须明确说明。RDB 可用：{}；RustFS 可用：{}；记忆/检索库可用：{}。工具：{}", config.bot_name,input.source_planer_id,config.rdb_pool.is_some(),config.s3_ref.is_some(),config.retrieval_store.is_some() || config.local_memory_store.is_some(),json!(capabilities)) + &zihuan_core::role::planer::prompt_for_context(&read_context) + "\n当前只读任务如需协助，使用 planer_request，且请求必须保持只读。"),LLMMessage::user(input.prompt.clone())]);
-    if !matches!(stop, ToolCallingStopReason::Done) {
-        return Err(zihuan_core::string_error!("IMS 检索未完成：{stop:?}"));
-    }
-    let text = messages
-        .iter()
-        .rev()
-        .find(|m| matches!(m.role, MessageRole::Assistant))
-        .and_then(LLMMessage::content_text_owned)
-        .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| zihuan_core::string_error!("IMS 检索没有返回内容"))?;
-    Ok(
-        json!({"text":text,"sources":messages.iter().filter(|m| matches!(m.role,MessageRole::Tool)).collect::<Vec<_>>()}),
-    )
 }

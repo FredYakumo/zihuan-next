@@ -319,9 +319,9 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
         if let Some(planer) = ctx.planer {
             let error = match &brain_output_payload.stop_reason {
                 ToolCallingStopReason::TransportError(error) => {
-                    format!("IMS 模型请求失败，未发送消息：{error}")
+                    format!("IMS 模型请求失败，未返回结果：{error}")
                 }
-                _ => format!("IMS 未发送消息：{stop_reason_text}"),
+                _ => format!("IMS 未返回结果：{stop_reason_text}"),
             };
             *planer.delivery.lock().unwrap() = serde_json::json!({
                 "success": false, "sent": 0, "receipts": [], "error": error,
@@ -344,7 +344,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
             if let Some(planer) = ctx.planer {
                 *planer.delivery.lock().unwrap() = serde_json::json!({
                     "success": false, "sent": 0, "receipts": [],
-                    "error": "IMS 模型选择不回复，未发送消息",
+                    "error": "IMS 模型选择不回复，未返回结果",
                 });
             }
             turn_completed = true;

@@ -55,9 +55,28 @@ pub(crate) fn deliver_reply(
 ) -> (usize, bool, Option<String>) {
     if let Some(planer) = ctx.planer {
         if planer.cancellation.is_cancelled() {
-            *planer.delivery.lock().unwrap() = serde_json::json!({"success":false,"error":"IMS Role 已停止，未发送","receipts":[]});
+            *planer.delivery.lock().unwrap() =
+                serde_json::json!({"success":false,"error":"Planer 任务已取消","receipts":[]});
             return (0, false, None);
         }
+        let text = format_output
+            .final_message
+            .as_ref()
+            .filter(|text| !text.trim().is_empty() && !format_output.suppress_send)
+            .cloned();
+        let success = text.is_some();
+        *planer.delivery.lock().unwrap() = serde_json::json!({
+            "text": text, "success": success,
+            "error": if success { None } else { Some("Role 未生成回复或回复被审查拒绝") },
+        });
+        zihuan_core::qq_context::emit_qq_context_stage(
+            ctx.agent_id,
+            sender_id,
+            turn_id,
+            "返回 Planer",
+            serde_json::json!({"success":success,"text":text}),
+        );
+        return (0, format_output.suppress_send, text);
     }
     trace.mark_reply_send_started();
     let mut sent_batches = 0usize;
@@ -84,31 +103,7 @@ pub(crate) fn deliver_reply(
             ),
             max_text_chars: ctx.max_message_length,
         };
-        let receipts = send_planned_batches(&send_ctx, &format_output.batches);
-        if let Some(planer) = ctx.planer {
-            let successful = receipts.iter().filter(|r| r.success && !r.skipped).count();
-            let all_sent = successful == format_output.batches.len() && successful > 0;
-            let text = if all_sent {
-                format_output.final_message.clone().unwrap_or_default()
-            } else {
-                format_output
-                    .batches
-                    .iter()
-                    .zip(&receipts)
-                    .filter(|(_, r)| r.success && !r.skipped)
-                    .map(|(batch, _)| {
-                        zihuan_core::ims_bot_adapter::models::message::render_messages_readable(
-                            batch,
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            };
-            *planer.delivery.lock().unwrap() = serde_json::json!({"text":text,"receipts":receipts,"sent":successful,"total":format_output.batches.len(),"success":all_sent});
-            if !all_sent {
-                return (successful, false, (!text.is_empty()).then_some(text));
-            }
-        }
+        let _receipts = send_planned_batches(&send_ctx, &format_output.batches);
         trace.record_reply_send(false, true, &format_output.batches);
         sent_batches = format_output.batches.len();
         visible_assistant_history_text = format_output.final_message.clone();
@@ -153,7 +148,7 @@ pub(crate) fn rearm_jobs_if_replied(
     sender_id: &str,
     replied: bool,
 ) {
-    if replied {
+    if replied && ctx.planer.is_none() {
         zihuan_core::scheduler::rearm_triggered_jobs(ctx.agent_id, sender_id);
     }
 }
