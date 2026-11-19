@@ -1,4 +1,5 @@
 import { computed, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
 
 import { registry, system, type SubAgentDefinition } from "../../api/client";
 import type { NodeToolInfo } from "../../api/types";
@@ -10,15 +11,16 @@ const portTypes = ["String", "Integer", "Float", "Boolean", "Json"];
 // through their own switches; a definition may still reference them.
 const SWITCH_CONFIGURED_TOOLS = [{ id: "image_understand", name: "image_understand" }];
 
-export function useAgentConfig() {
+export function useAgentConfig(options: { autoLoad?: boolean } = {}) {
+  const router = useRouter();
   const restartDialog = useServiceRestart({
     // The editor stays open behind the dialog; these settle it when the flow ends.
     onCompleted: () => {
-      editorVisible.value = false;
+      finishEditing();
       void load();
     },
     onSaveOnly: () => {
-      editorVisible.value = false;
+      finishEditing();
       void load();
     },
   });
@@ -135,6 +137,13 @@ export function useAgentConfig() {
     form[kind].splice(index, 1);
   }
 
+  function finishEditing() {
+    editorVisible.value = false;
+    if (router.currentRoute.value.path === "/agent-config/edit") {
+      void router.push("/agent-config");
+    }
+  }
+
   async function save() {
     error.value = "";
     saving.value = true;
@@ -153,7 +162,7 @@ export function useAgentConfig() {
       // With affected services the dialog opens over the still-open editor, so
       // 取消 returns to the edit page; without them, finish as before.
       if (!restartDialog.openAfterSave(result.affected_running_services)) {
-        editorVisible.value = false;
+        finishEditing();
         await load();
       }
     } catch (cause) {
@@ -175,10 +184,13 @@ export function useAgentConfig() {
     }
   }
 
-  void load();
+  if (options.autoLoad !== false) {
+    void load();
+  }
 
   return {
     restartDialog,
+    router,
     portTypes,
     availableTools,
     subagents,
