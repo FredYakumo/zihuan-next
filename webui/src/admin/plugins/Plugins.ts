@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import { pluginsApi, setup as setupApi, type DetailedSetupConfig, type EnvironmentInfo, type PluginInstallResponse, type PluginRecord, type ScriptPluginDetail, type ScriptPluginFile, type ScriptPluginFileNode, type SetupProgressEvent } from "../../api/client";
 import type { WechatLoginStatusResult } from "../../api/client";
@@ -15,8 +15,9 @@ import wechatIcon from "../../assets/icons/wechat.svg";
 type InstallStep = "picker" | "config" | "progress";
 type PluginInstallMethod = "docker" | "native" | "binary" | "command_docker" | "command_native" | "command_binary";
 
-export function usePluginsPage() {
+export function usePluginsPage(options: { autoLoad?: boolean } = {}) {
   const route = useRoute();
+  const router = useRouter();
 
   const plugins = ref<PluginRecord[]>([]); const loading = ref(false); const saving = ref(false); const installVisible = ref(false); const installStep = ref<InstallStep>("picker");
   const successVisible = ref(false); const successInstallCommand = ref<string | null>(null); const successConnectionConfig = ref<unknown>(undefined);
@@ -181,7 +182,11 @@ export function usePluginsPage() {
     resetInstallationState();
     exitConfirmVisible.value = false;
     installVisible.value = false;
-    void load();
+    if (route.path === "/plugins/install") {
+      void router.push("/plugins");
+    } else {
+      void load();
+    }
   }
   function requestCloseInstall() {
     if (saving.value) {
@@ -228,6 +233,11 @@ export function usePluginsPage() {
     successInstallCommand.value = null;
     successConnectionConfig.value = undefined;
     resetInstallationState();
+    if (route.path === "/plugins/install") {
+      void router.push("/plugins");
+      return;
+    }
+    void load();
   }
   async function install() {
     if (!form.name.trim()) { error.value = "请填写插件名称"; return; }
@@ -595,7 +605,9 @@ export function usePluginsPage() {
       }
     }
   }
-  onMounted(() => { void load(); if (route.query.install === "1") openInstall(); });
+  if (options.autoLoad !== false) {
+    onMounted(() => { void load(); if (route.query.install === "1") openInstall(); });
+  }
   onBeforeUnmount(() => {
     installAttempt += 1;
     clearInstallationSideEffects();
@@ -604,6 +616,7 @@ export function usePluginsPage() {
   });
 
   return {
+    router,
     plugins,
     loading,
     saving,
@@ -706,3 +719,5 @@ export function usePluginsPage() {
   wechatLoginStatusLabel,
   };
 }
+
+export type UsePluginsPageReturn = ReturnType<typeof usePluginsPage>;
