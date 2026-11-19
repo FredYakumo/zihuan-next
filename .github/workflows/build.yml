@@ -68,7 +68,7 @@ jobs:
             package_extension: .tar.xz
             build_command: cargo build --release -p zihuan_service --bin zihuan_next
           - name: macOS-Apple-cpu
-            runner: macos-14
+            runner: macos-15
             artifact_name: macOS-Apple-cpu
             binary_extension: ''
             package_extension: .zip
