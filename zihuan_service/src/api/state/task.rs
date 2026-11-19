@@ -21,6 +21,18 @@ pub enum TaskType {
     ScheduledJob,
 }
 
+impl TaskType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TaskType::NodeGraph => "node_graph",
+            TaskType::AgentService => "agent_service",
+            TaskType::WorkspaceChat => "workspace_chat",
+            TaskType::PlanerChat => "planer_chat",
+            TaskType::ScheduledJob => "scheduled_job",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskEntry {
     pub id: String,
@@ -42,12 +54,26 @@ pub struct TaskEntry {
     pub result_summary: Option<String>,
     pub log_path: Option<String>,
     pub can_rerun: bool,
-    #[serde(default)]
+    /// Full execution trace for QQ Chat tasks. Kept for `/tasks/<id>/graph` and the task
+    /// index, but never serialized as part of a task-list response: a single trace can embed
+    /// the whole model conversation and every tool result, so listing thousands of historical
+    /// tasks used to produce hundreds of megabytes (and was polled repeatedly by the UI).
+    #[serde(default, skip_serializing)]
     pub graph_snapshot: Option<serde_json::Value>,
     #[serde(default)]
     pub task_db_connection_id: Option<String>,
     #[serde(skip, default)]
     pub stop_flag: Option<Arc<AtomicBool>>,
+}
+
+/// On-disk task index row. `graph_snapshot` is skipped by [`TaskEntry`]'s own Serialize impl,
+/// so the index re-adds it explicitly to keep historical task graphs across restarts.
+#[derive(Serialize)]
+struct PersistedTaskEntry<'a> {
+    #[serde(flatten)]
+    entry: &'a TaskEntry,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    graph_snapshot: &'a Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -396,9 +422,11 @@ impl TaskManager {
         self.db_pools.clone()
     }
 
-    pub fn list(&self) -> Vec<TaskEntry> {
-        let mut entries = self.tasks.clone();
-        // Newest first
+    /// Tasks newest first, borrowed so a list response never clones the embedded graph
+    /// snapshots. Serialization omits `graph_snapshot`; use [`TaskManager::get`] plus
+    /// `GET /tasks/<id>/graph` when the full trace is needed.
+    pub fn list_refs(&self) -> Vec<&TaskEntry> {
+        let mut entries: Vec<&TaskEntry> = self.tasks.iter().collect();
         entries.sort_by(|a, b| b.start_time.cmp(&a.start_time));
         entries
     }
@@ -574,7 +602,15 @@ impl TaskManager {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let json = serde_json::to_string_pretty(&self.tasks).map_err(std::io::Error::other)?;
+        let entries: Vec<PersistedTaskEntry<'_>> = self
+            .tasks
+            .iter()
+            .map(|entry| PersistedTaskEntry {
+                entry,
+                graph_snapshot: &entry.graph_snapshot,
+            })
+            .collect();
+        let json = serde_json::to_string_pretty(&entries).map_err(std::io::Error::other)?;
         fs::write(path, json)
     }
 

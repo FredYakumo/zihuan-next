@@ -339,9 +339,35 @@ export function updateModelDownloadSettings(endpoint: string): Promise<{ endpoin
 }
 
 // Tasks
+export interface TaskPage {
+  tasks: TaskEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export const tasks = {
-  list(): Promise<TaskEntry[]> {
-    return request("GET", "/tasks");
+  list(params?: { isRunning?: boolean; taskTypes?: string[] }): Promise<TaskEntry[]> {
+    const qs = new URLSearchParams();
+    if (params?.isRunning !== undefined) qs.set("is_running", String(params.isRunning));
+    if (params?.taskTypes?.length) qs.set("task_type", params.taskTypes.join(","));
+    const query = qs.toString();
+    return request("GET", query ? `/tasks?${query}` : "/tasks");
+  },
+  listPage(params?: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    isRunning?: boolean;
+    taskTypes?: string[];
+  }): Promise<TaskPage> {
+    const qs = new URLSearchParams();
+    qs.set("page", String(params?.page ?? 1));
+    qs.set("page_size", String(params?.pageSize ?? 20));
+    if (params?.search) qs.set("search", params.search);
+    if (params?.isRunning !== undefined) qs.set("is_running", String(params.isRunning));
+    if (params?.taskTypes?.length) qs.set("task_type", params.taskTypes.join(","));
+    return request("GET", `/tasks/page?${qs.toString()}`);
   },
   getChatSessionStatus(sessionId: string): Promise<{ task: TaskEntry | null }> {
     return request("GET", `/tasks/chat-sessions/${encodeURIComponent(sessionId)}/status`);
@@ -876,6 +902,13 @@ export interface ChatSessionSummary {
   title?: string | null;
   running_task_id?: string | null;
   task_status?: "running" | "success" | "failed" | "stopped" | "waiting_auth" | null;
+}
+
+export interface ChatSessionPage {
+  sessions: ChatSessionSummary[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 export interface ChatBranchVersion {
@@ -1617,9 +1650,18 @@ export const chat = {
     }
   },
 
-  listSessions(agentId?: string): Promise<{ sessions: ChatSessionSummary[] }> {
-    const qs = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : "";
-    return request("GET", `/chat/sessions${qs}`);
+  listSessions(
+    agentId?: string,
+    options?: { page?: number; pageSize?: number; search?: string },
+  ): Promise<ChatSessionPage> {
+    const params = new URLSearchParams();
+    if (agentId) params.set("agent_id", agentId);
+    if (options?.page && options.page > 0) params.set("page", String(options.page));
+    if (options?.pageSize && options.pageSize > 0) params.set("page_size", String(options.pageSize));
+    const search = options?.search?.trim();
+    if (search) params.set("search", search);
+    const qs = params.toString();
+    return request("GET", `/chat/sessions${qs ? `?${qs}` : ""}`);
   },
 
   getSessionMessages(sessionId: string): Promise<{ messages: ChatHistoryRecord[]; branches: ChatMessageBranch[]; tasks: WorkspaceTask[] }> {

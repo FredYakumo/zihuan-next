@@ -10,15 +10,27 @@
         </t-button>
         <t-button variant="outline" @click="clearFinished">清理已结束任务</t-button>
       </template>
-      <p class="muted">共 {{ taskItems.length }} 个。</p>
+      <div class="tasks-toolbar">
+        <t-input
+          v-model="taskSearchInput"
+          class="tasks-search-input"
+          placeholder="搜索任务"
+          clearable
+          @input="onSearchInput"
+          @clear="onSearchInput"
+        />
+        <span class="muted">共 {{ taskTotal }} 个。</span>
+      </div>
 
-      <div v-if="taskItems.length === 0" class="empty-state">还没有任务。</div>
+      <div v-if="taskItems.length === 0" class="empty-state">
+        {{ taskSearch ? "没有匹配的任务。" : "还没有任务。" }}
+      </div>
       <template v-else>
         <t-table
           row-key="id"
           bordered
           size="small"
-          :data="pagedTaskItems"
+          :data="taskItems"
           :columns="columns"
           :selected-row-keys="selectedRowKeys"
           @select-change="onSelectChange"
@@ -66,7 +78,7 @@
 
         <t-pagination
           class="tasks-pagination-bar"
-          :total="taskItems.length"
+          :total="taskTotal"
           :current="listPage"
           :page-size="pageSize"
           :page-size-options="[10, 20, 50, 100]"
@@ -138,11 +150,14 @@ import { statusTagTheme } from "../model";
 
 const {
   taskItems,
+  taskTotal,
   pageSize,
   listPage,
   selectedTaskIds,
-  pagedTaskItems,
+  taskSearchInput,
+  taskSearch,
   goToListPage,
+  onSearchInput,
   load,
   stopTask,
   rerunTask,

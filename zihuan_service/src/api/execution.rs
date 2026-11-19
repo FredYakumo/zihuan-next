@@ -9,7 +9,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use super::state::AppState;
-use super::state::{TaskLogEntry, TaskStatus};
+use super::state::{TaskEntry, TaskLogEntry, TaskStatus};
 use super::ws::{ServerMessage, WsBroadcast};
 
 // ─── Execute graph ────────────────────────────────────────────────────────────
@@ -329,12 +329,101 @@ pub async fn delete_tasks(req: &mut Request, res: &mut Response, depot: &mut Dep
 
 // ─── List tasks ───────────────────────────────────────────────────────────────
 
+fn parse_task_types(req: &mut Request) -> Option<Vec<String>> {
+    req.query::<String>("task_type").map(|raw| {
+        raw.split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .collect()
+    })
+}
+
+fn task_matches(
+    task: &TaskEntry,
+    running_filter: Option<bool>,
+    task_types: Option<&[String]>,
+    search: Option<&str>,
+) -> bool {
+    if let Some(running) = running_filter {
+        if task.is_running != running {
+            return false;
+        }
+    }
+    if let Some(types) = task_types {
+        if !types.iter().any(|value| value == task.task_type.as_str()) {
+            return false;
+        }
+    }
+    if let Some(needle) = search {
+        let matched = [
+            Some(task.graph_name.as_str()),
+            Some(task.id.as_str()),
+            Some(task.task_type.as_str()),
+            task.file_path.as_deref(),
+            task.chat_session_id.as_deref(),
+            Some(task.graph_session_id.as_str()),
+            task.result_summary.as_deref(),
+            task.error_message.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|value| value.to_lowercase().contains(needle));
+        if !matched {
+            return false;
+        }
+    }
+    true
+}
+
 #[handler]
-pub async fn list_tasks(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
+pub async fn list_tasks(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let running_filter = req.query::<bool>("is_running");
+    let task_types = parse_task_types(req);
+
     let tasks = state.tasks.lock().unwrap();
-    let entries = tasks.list();
+    let entries: Vec<_> = tasks
+        .list_refs()
+        .into_iter()
+        .filter(|task| task_matches(task, running_filter, task_types.as_deref(), None))
+        .collect();
     res.render(Json(entries));
+}
+
+/// Paginated task list for the task-manager page. `/tasks` intentionally stays unpaginated for
+/// the graph-editor task picker, which needs the full lightweight metadata list.
+#[handler]
+pub async fn list_tasks_page(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let running_filter = req.query::<bool>("is_running");
+    let task_types = parse_task_types(req);
+    let search = req
+        .query::<String>("search")
+        .map(|value| value.trim().to_lowercase())
+        .filter(|value| !value.is_empty());
+    let page = req.query::<usize>("page").unwrap_or(1).max(1);
+    let page_size = req.query::<usize>("page_size").unwrap_or(20).clamp(1, 100);
+
+    let tasks = state.tasks.lock().unwrap();
+    let filtered: Vec<_> = tasks
+        .list_refs()
+        .into_iter()
+        .filter(|task| task_matches(task, running_filter, task_types.as_deref(), search.as_deref()))
+        .collect();
+    let total = filtered.len();
+    let page_items: Vec<_> = filtered
+        .into_iter()
+        .skip(page.saturating_sub(1).saturating_mul(page_size))
+        .take(page_size)
+        .collect();
+
+    res.render(Json(serde_json::json!({
+        "tasks": page_items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    })));
 }
 
 #[handler]
