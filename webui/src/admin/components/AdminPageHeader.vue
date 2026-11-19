@@ -1,6 +1,7 @@
 <template>
   <div class="admin-page-header">
-    <h2 class="admin-page-header-title">{{ title }}</h2>
+    <AdminBreadcrumb v-if="breadcrumbs?.length" :items="breadcrumbs" />
+    <h2 v-else class="admin-page-header-title">{{ title }}</h2>
     <div v-if="$slots.default" class="admin-page-header-actions">
       <slot />
     </div>
@@ -8,7 +9,12 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{ title: string }>();
+import AdminBreadcrumb from "./AdminBreadcrumb.vue";
+
+defineProps<{
+  title?: string;
+  breadcrumbs?: { label: string; to?: string }[];
+}>();
 </script>
 
 <style scoped lang="scss">

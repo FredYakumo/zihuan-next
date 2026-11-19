@@ -1,6 +1,6 @@
 <template>
     <section class="page planer-page">
-        <AdminPageHeader :title="form.config_id ? '编辑 Planer' : '新建 Planer'">
+        <AdminPageHeader :breadcrumbs="breadcrumbs">
             <t-space>
                 <t-button variant="outline" @click="backToList">返回列表</t-button>
                 <t-button :loading="saving" @click="save">保存</t-button>
@@ -43,10 +43,15 @@
     </section>
 </template>
 <script setup lang="ts">
+import { computed } from "vue";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import AvatarEditor from "../components/AvatarEditor.vue";
 import { usePlanerEdit } from "./PlanerEdit";
 const props = defineProps<{ planerId?: string }>();
 const { items, roles, models, loading, saving, error, form, isChatModelRef, roleLabel, isWorkspace, otherOwner, selectMembers, setAvatar, save, backToList } = usePlanerEdit(props.planerId);
+const breadcrumbs = computed(() => [
+  { label: "Planer 配置", to: "/planers" },
+  { label: form.value.config_id ? "编辑 Planer" : "新建 Planer" },
+]);
 </script>
 <style scoped lang="scss" src="./Planers.scss"></style>
