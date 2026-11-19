@@ -30,7 +30,9 @@ function isEmbeddingType(type: string): boolean {
   return type === "text_embedding_local" || type === "text_embedding_api";
 }
 
-export function useLlm() {
+export function useLlm(options: { autoLoad?: boolean } = {}) {
+  const route = useRoute();
+  const router = useRouter();
   const restartDialog = useServiceRestart({
     // The editor stays open behind the dialog; these settle it when the flow ends.
     onCompleted: () => {
@@ -86,7 +88,7 @@ export function useLlm() {
       form.name = `${form.name} 副本`;
       drawerVisible.value = true;
     },
-    isEnabled: () => !drawerVisible.value,
+    isEnabled: () => route.path === "/llm/edit",
   });
 
   const isChatMode = computed(
@@ -165,8 +167,6 @@ export function useLlm() {
     Object.assign(form, defaultLlmForm());
   }
 
-  const route = useRoute();
-  const router = useRouter();
   const importFileInput = ref<HTMLInputElement | null>(null);
   const columns = [
     { colKey: "name", title: "配置名称", width: 210 },
@@ -218,8 +218,6 @@ export function useLlm() {
     copyConfig({ name: item.name, enabled: item.enabled, model: item.model }, item.config_id);
   }
 
-  if (route.query.action === "create") startCreate();
-
   function resetForm() {
     resetCreateForm();
   }
@@ -229,9 +227,16 @@ export function useLlm() {
     drawerVisible.value = true;
   }
 
-  function closeDrawer() {
+  function finishEditing() {
     resetCreateForm();
     drawerVisible.value = false;
+    if (route.path === "/llm/edit") {
+      void router.push("/llm");
+    }
+  }
+
+  function closeDrawer() {
+    finishEditing();
   }
 
   async function load() {
@@ -316,14 +321,12 @@ export function useLlm() {
       // With affected services the dialog opens over the still-open drawer, so
       // 取消 returns to the edit page; without them, finish as before.
       if (!restartDialog.openAfterSave(result.affected_running_services)) {
-        resetCreateForm();
-        drawerVisible.value = false;
+        finishEditing();
         await load();
       }
     } else {
       await system.llm.create(payload);
-      resetCreateForm();
-      drawerVisible.value = false;
+      finishEditing();
       await load();
     }
   }
@@ -359,12 +362,14 @@ export function useLlm() {
     }
   }
 
-  onMounted(() => {
-    load().catch((error) => {
-      console.error(error);
-      alert(`模型配置加载失败: ${(error as Error).message}`);
+  if (options.autoLoad !== false) {
+    onMounted(() => {
+      load().catch((error) => {
+        console.error(error);
+        alert(`模型配置加载失败: ${(error as Error).message}`);
+      });
     });
-  });
+  }
 
   watch(
     () => [form.model_type, form.llm.weight_style, form.llm.model_name],

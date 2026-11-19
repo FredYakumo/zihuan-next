@@ -477,3 +477,15 @@ textarea {
     display: grid;
     gap: 8px;
 }
+
+.plugin-install-card {
+    max-width: 1040px;
+}
+
+.plugin-install-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    max-width: 1040px;
+    margin-top: 16px;
+}

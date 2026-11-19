@@ -37,7 +37,9 @@ type ConnectionFilters = {
   enabled: "all" | "enabled" | "disabled";
 };
 
-export function useConnections() {
+export function useConnections(options: { autoLoad?: boolean } = {}) {
+  const route = useRoute();
+  const router = useRouter();
   const restartDialog = useServiceRestart({
     // The drawer stays open behind the dialog; these settle it when the flow ends.
     onCompleted: () => {
@@ -130,7 +132,7 @@ export function useConnections() {
       form.name = `${form.name} 副本`;
       drawerVisible.value = true;
     },
-    isEnabled: () => !drawerVisible.value && !importDialogVisible.value,
+    isEnabled: () => route.path === "/connections/edit" && !importDialogVisible.value,
   });
 
   function openImportDialog() {
@@ -199,6 +201,9 @@ export function useConnections() {
   function closeDrawer() {
     resetForm();
     drawerVisible.value = false;
+    if (route.path === "/connections/edit") {
+      void router.push("/connections");
+    }
   }
 
   // Params belong to the selected plugin; a stale bag would feed another plugin's fields.
@@ -542,26 +547,7 @@ export function useConnections() {
     }
   }
 
-  const route = useRoute();
-  const router = useRouter();
   const importFileInput = ref<HTMLInputElement | null>(null);
-  const createChoiceVisible = ref(false);
-
-  function openCreateChoice() { createChoiceVisible.value = true; }
-  if (route.query.action === "create") {
-    const queryType = route.query.type;
-    if (
-      queryType === "web_search_engine" ||
-      queryType === "weaviate" ||
-      queryType === "elasticsearch"
-    ) {
-      startCreate(queryType);
-    } else {
-      openCreateChoice();
-    }
-  }
-  function chooseExistingConnection() { createChoiceVisible.value = false; startCreate(); }
-  function choosePluginConnection() { createChoiceVisible.value = false; router.push("/plugins?install=1"); }
 
   const columns = [
     { colKey: "name", title: "连接名称", width: 210 },
@@ -581,15 +567,18 @@ export function useConnections() {
     copyConfig({ name: connection.name, enabled: connection.enabled, kind: connection.kind }, connection.config_id);
   }
 
-  onMounted(() => {
-    load().catch((error) => {
-      console.error(error);
-      alert(`连接配置加载失败: ${(error as Error).message}`);
+  if (options.autoLoad !== false) {
+    onMounted(() => {
+      load().catch((error) => {
+        console.error(error);
+        alert(`连接配置加载失败: ${(error as Error).message}`);
+      });
     });
-  });
+  }
 
   return {
     restartDialog,
+    router,
     connections,
     filteredConnections,
     runtimeInstances,
@@ -604,7 +593,6 @@ export function useConnections() {
     importJsonText,
     importDragging,
     importFileInput,
-    createChoiceVisible,
     saving,
     isCreating,
     filters,
@@ -629,9 +617,6 @@ export function useConnections() {
     handleImportDragLeave,
     handleImportDrop,
     submitImport,
-    openCreateChoice,
-    chooseExistingConnection,
-    choosePluginConnection,
     columns,
     connectionTypeLabel,
     copyConnectionConfig,

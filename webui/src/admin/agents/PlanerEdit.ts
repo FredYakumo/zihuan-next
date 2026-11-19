@@ -102,7 +102,7 @@ export function usePlanerEdit(planerId?: string) {
   onMounted(load);
 
   return {
-    loading, saving, error, form,
+    items, roles, models, loading, saving, error, form,
     isChatModelRef, roleLabel, modelName, isWorkspace, otherOwner,
     selectMembers, setAvatar, save, backToList,
   };

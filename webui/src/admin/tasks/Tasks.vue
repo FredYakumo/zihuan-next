@@ -130,6 +130,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { ChevronLeftIcon, ChevronRightIcon } from "tdesign-icons-vue-next";
 
 import { useTasks } from "./useTasks";

@@ -4,8 +4,8 @@ import { system, type ConnectionConfig, type ServiceWithRuntime } from "../../ap
 import { useAgents } from "./useAgents";
 import { assertConnectionConfig, assertLlmConfig, normalizeConnectionConfigs } from "../model";
 
-export function useRoleServicePage() {
-const agents = useAgents();
+export function useRoleServicePage(options: { autoLoad?: boolean } = {}) {
+const agents = useAgents(options);
 const {
   serviceTypes,
   services,
@@ -198,17 +198,17 @@ function handleWebSearchChange(value: string | number) {
 
 function openModelCreatePage() {
   showModelConfigDialog.value = false;
-  router.push({ path: "/llm", query: { action: "create" } });
+  router.push("/llm/edit");
 }
 
 function openRetrievalDatabaseCreatePage() {
   showRetrievalDatabaseDialog.value = false;
-  router.push({ path: "/connections", query: { action: "create", type: "weaviate" } });
+  router.push({ path: "/connections/edit", query: { type: "weaviate" } });
 }
 
 function openWebSearchCreatePage() {
   showWebSearchDialog.value = false;
-  router.push({ path: "/connections", query: { action: "create", type: "web_search_engine" } });
+  router.push({ path: "/connections/edit", query: { type: "web_search_engine" } });
 }
 
 async function importModelFromText(raw: string) {
@@ -350,13 +350,13 @@ const filteredServices = computed(() => {
 });
 
 const columns = [
-  { colKey: "name", title: "Service 名称", width: 230 },
-  { colKey: "type", title: "Service 类型", width: 185 },
+  { colKey: "name", title: "Service 名称", width: 210 },
+  { colKey: "type", title: "Service 类型", width: 150 },
   { colKey: "model", title: "模型配置", ellipsis: true },
-  { colKey: "runtime", title: "运行状态", width: 150 },
-  { colKey: "enabled", title: "配置状态", width: 100 },
-  { colKey: "updated", title: "启动时间", width: 170 },
-  { colKey: "actions", title: "操作", width: 310, fixed: "right" },
+  { colKey: "runtime", title: "运行状态", width: 140 },
+  { colKey: "enabled", title: "配置状态", width: 90 },
+  { colKey: "updated", title: "启动时间", width: 160 },
+  { colKey: "actions", title: "操作", width: 230, fixed: "right" },
 ];
 
 const toolColumns = [

@@ -1,4 +1,5 @@
 import { computed, markRaw, onMounted, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
 import { CodeIcon, ExtensionIcon, FlowchartIcon, RobotIcon, TerminalIcon } from "tdesign-icons-vue-next";
 
 import {
@@ -42,15 +43,16 @@ import {
 import type { SchedulerJobStatus } from "../../api/types";
 import { useAdminClipboard } from "../components/useAdminClipboard";
 
-export function useAgents() {
+export function useAgents(options: { autoLoad?: boolean } = {}) {
+  const router = useRouter();
   const restartDialog = useServiceRestart({
     // The editor stays open behind the dialog; these settle it when the flow ends.
     onCompleted: () => {
-      closeEditor();
+      finishEditing();
       void load();
     },
     onSaveOnly: () => {
-      closeEditor();
+      finishEditing();
       void load();
     },
   });
@@ -685,6 +687,13 @@ function closeEditor() {
   showCreatePicker.value = false;
   showCreateForm.value = false;
   closeEditModal();
+}
+
+function finishEditing() {
+  closeEditor();
+  if (router.currentRoute.value.path === "/services/edit") {
+    void router.push("/services");
+  }
 }
 
 async function load() {
@@ -1335,12 +1344,12 @@ async function submitForm() {
       // With affected services the dialog opens over the still-open editor, so
       // 取消 returns to the edit page; without them, finish as before.
       if (!restartDialog.openAfterSave(result.affected_running_services)) {
-        closeEditor();
+        finishEditing();
         await load();
       }
     } else {
       await system.services.create(payload);
-      closeEditor();
+      finishEditing();
       await load();
     }
   } catch (error) {
@@ -1416,15 +1425,18 @@ function runtimeBadgeText(service: ServiceWithRuntime): string {
   }
 }
 
-onMounted(() => {
-  load().catch((error) => {
-    console.error(error);
-    alert(`Agent 页面加载失败: ${(error as Error).message}`);
+if (options.autoLoad !== false) {
+  onMounted(() => {
+    load().catch((error) => {
+      console.error(error);
+      alert(`Agent 页面加载失败: ${(error as Error).message}`);
+    });
   });
-});
+}
 
   return {
     restartDialog,
+    router,
     serviceTypes,
     services,
     servicesLoading,

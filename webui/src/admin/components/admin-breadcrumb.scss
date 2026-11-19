@@ -1,0 +1,52 @@
+.admin-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.admin-breadcrumb-link,
+.admin-breadcrumb-text {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--admin-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-breadcrumb-link {
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.admin-breadcrumb-link:hover,
+.admin-breadcrumb-link:focus-visible {
+  color: var(--admin-accent);
+}
+
+.admin-breadcrumb-link:focus-visible {
+  outline: 2px solid var(--admin-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.admin-breadcrumb-current {
+  color: var(--admin-ink);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-breadcrumb-separator {
+  color: var(--admin-muted);
+  user-select: none;
+}

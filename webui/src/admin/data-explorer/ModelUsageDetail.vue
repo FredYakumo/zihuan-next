@@ -1,7 +1,6 @@
 <template>
   <section class="page model-usage-page">
-    <AdminPageHeader :title="model ? model.name + ' · 使用详细' : '模型使用详细'">
-      <t-button variant="outline" @click="router.push('/data-explorer')">返回数据检索</t-button>
+    <AdminPageHeader :breadcrumbs="usageBreadcrumbs">
       <t-button variant="text" :loading="loading" @click="load">刷新</t-button>
     </AdminPageHeader>
     <t-alert v-if="error" theme="error" :message="error" />
@@ -33,11 +32,18 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import AdminPageHeader from "../components/AdminPageHeader.vue";
 import ModelUsageChart from "./ModelUsageChart.vue";
 import { useModelUsageDetail } from "./ModelUsageDetail";
 
-const { router, model, summary, loading, error, period, dateRange, periodDescription, metrics, load } = useModelUsageDetail();
+const { model, summary, loading, error, period, dateRange, periodDescription, metrics, load } = useModelUsageDetail();
+
+const usageBreadcrumbs = computed(() => [
+  { label: "数据检索", to: "/data-explorer" },
+  { label: "模型统计", to: "/data-explorer/models" },
+  { label: model.value ? `${model.value.name} · 使用详细` : "模型使用详细" },
+]);
 </script>
 
 <style scoped lang="scss">

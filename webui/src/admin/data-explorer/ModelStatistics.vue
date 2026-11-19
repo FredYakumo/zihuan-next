@@ -1,6 +1,6 @@
 <template>
   <section class="page model-statistics-page">
-    <AdminPageHeader title="模型统计"><t-button variant="outline" @click="router.push('/data-explorer')">返回数据检索</t-button></AdminPageHeader>
+    <AdminPageHeader :breadcrumbs="[{ label: '数据检索', to: '/data-explorer' }, { label: '模型统计' }]" />
     <t-card title="模型统计" bordered header-bordered>
     <template #actions>
       <div class="model-toolbar">
@@ -38,6 +38,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { SearchIcon } from "tdesign-icons-vue-next";
 import ModelUsageChart from "./ModelUsageChart.vue";
 import { useModelStatistics } from "./ModelStatistics";

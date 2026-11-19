@@ -1,15 +1,12 @@
 <template>
   <section class="page data-explorer-detail-page">
-    <AdminPageHeader :title="pageTitle">
-      <!-- <t-button variant="outline" @click="returnToList">返回 Service 列表</t-button> -->
-    </AdminPageHeader>
+    <AdminPageHeader :breadcrumbs="detailBreadcrumbs" />
 
     <t-card v-if="loadingService" bordered><div class="empty-state">加载 Service 中…</div></t-card>
     <t-card v-else-if="unavailable" bordered><div class="empty-state">该 Service 不存在，或未配置此数据检索能力。</div></t-card>
     <t-card v-else-if="service" bordered header-bordered>
       <template #title>
         <div class="service-card-title">
-          <t-button variant="outline" @click="returnToList">返回 Service 列表</t-button>
           <span class="service-name">{{ service.name }}</span>
           <t-tag variant="light">{{ serviceTypeLabel(service.role_service_type.type) }}</t-tag>
         </div>
@@ -258,6 +255,8 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
+import AdminPageHeader from "../components/AdminPageHeader.vue";
 const memoryCategoryOptions = [
   { label: "事实概念", value: "concept" },
   { label: "人物", value: "person" },
@@ -312,7 +311,6 @@ const {
   serviceTypeLabel,
   matchLabel,
   formatScore,
-  returnToList,
   serviceId,
   backend,
   loadingUsers,
@@ -341,6 +339,12 @@ const {
   contextFlowRef,
   focusTurn,
 } = useDataExplorerDetailPage();
+
+const detailBreadcrumbs = computed(() => [
+  { label: "数据检索", to: "/data-explorer" },
+  { label: "Service 数据", to: "/data-explorer/services" },
+  { label: pageTitle.value },
+]);
 </script>
 
 <style scoped lang="scss">
