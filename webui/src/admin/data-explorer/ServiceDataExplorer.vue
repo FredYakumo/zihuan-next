@@ -1,7 +1,6 @@
 <template>
     <section class="page data-explorer-page">
-        <AdminPageHeader title="Service 数据检索"><t-button variant="outline" @click="returnToEntry">返回数据检索</t-button>
-        </AdminPageHeader>
+        <AdminPageHeader :breadcrumbs="[{ label: '数据检索', to: '/data-explorer' }, { label: 'Service 数据' }]" />
         <t-card title="Service" bordered header-bordered>
             <t-table row-key="config_id" :data="explorerServices" :columns="columns" :hover="true">
                 <template #name="{ row }"><strong>{{ row.name }}</strong>
@@ -22,9 +21,10 @@
 </template>
 
 <script setup lang="ts">
+import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { useServiceDataExplorer } from "./ServiceDataExplorer";
 
-const { explorerServices, columns, serviceTypeLabel, capabilityLabel, openDetail, returnToEntry, serviceCapabilities } = useServiceDataExplorer();
+const { explorerServices, columns, serviceTypeLabel, capabilityLabel, openDetail, serviceCapabilities } = useServiceDataExplorer();
 </script>
 
 <style scoped lang="scss">

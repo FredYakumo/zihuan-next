@@ -17,6 +17,7 @@
 </template>
 
 <script setup lang="ts">
+import AdminPageHeader from "../components/AdminPageHeader.vue";
 import { ChartBarIcon, ChevronRightIcon, ServerIcon } from "tdesign-icons-vue-next";
 import { RouterLink } from "vue-router";
 </script>
