@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -1103,8 +1103,23 @@ pub async fn stop_chat(req: &mut Request, res: &mut Response, depot: &mut Depot)
 #[handler]
 pub async fn list_chat_sessions(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let filter_agent_id = req.query::<String>("agent_id");
+    let page = req.query::<usize>("page").unwrap_or(1).max(1);
+    let page_size = req.query::<usize>("page_size").unwrap_or(5).clamp(1, 100);
+    let search = req
+        .query::<String>("search")
+        .map(|value| value.trim().to_lowercase())
+        .filter(|value| !value.is_empty());
     match load_chat_sessions(filter_agent_id.as_deref()) {
-        Ok(sessions) => res.render(Json(json!({ "sessions": sessions }))),
+        Ok(sessions) => {
+            let (sessions, total) =
+                paginate_chat_sessions(sessions, search.as_deref(), page, page_size);
+            res.render(Json(json!({
+                "sessions": sessions,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+            })));
+        }
         Err(err) => render_internal_error(res, err),
     }
 }
@@ -2577,6 +2592,7 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
 
         let first_record = read_first_record(&path).ok().flatten();
         let first_user_message = read_first_user_message(&path).ok().flatten();
+        let last_record = read_last_record(&path).ok().flatten();
         let title = load_session_title(stem)
             .ok()
             .flatten()
@@ -2596,17 +2612,62 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
             agent_name: first_record.as_ref().map(|r| r.agent_name.clone()),
             role_service_type: first_record.as_ref().map(|r| r.role_service_type.clone()),
             agent_avatar_url: first_record.as_ref().and_then(|r| r.agent_avatar_url.clone()),
-            workspace_path: read_last_record(&path).ok().flatten().and_then(|r| r.workspace_path),
-            pending_ask_user: read_last_record(&path)
-                .ok()
-                .flatten()
-                .and_then(|r| r.pending_ask_user),
+            workspace_path: last_record.as_ref().and_then(|r| r.workspace_path.clone()),
+            pending_ask_user: last_record.as_ref().and_then(|r| r.pending_ask_user.clone()),
             title,
         });
     }
 
     sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     Ok(sessions)
+}
+
+/// Purpose: turn the flat session list into one entry per conversation for the sidebar.
+/// Function: group fork versions by their root session, apply the search filter to whole
+/// conversations, then slice the requested page without splitting a conversation's versions.
+fn paginate_chat_sessions(
+    sessions: Vec<ChatSessionSummary>,
+    search: Option<&str>,
+    page: usize,
+    page_size: usize,
+) -> (Vec<ChatSessionSummary>, usize) {
+    let mut groups: Vec<Vec<ChatSessionSummary>> = Vec::new();
+    let mut group_indexes: HashMap<String, usize> = HashMap::new();
+    // `sessions` is already sorted newest-first, so first encounters order groups by recency.
+    for session in sessions {
+        if let Some(&index) = group_indexes.get(&session.root_session_id) {
+            groups[index].push(session);
+        } else {
+            group_indexes.insert(session.root_session_id.clone(), groups.len());
+            groups.push(vec![session]);
+        }
+    }
+
+    if let Some(needle) = search {
+        groups.retain(|group| group.iter().any(|session| session_matches_search(session, needle)));
+    }
+
+    let total = groups.len();
+    let page_sessions = groups
+        .into_iter()
+        .skip(page.saturating_sub(1).saturating_mul(page_size))
+        .take(page_size)
+        .flatten()
+        .collect();
+    (page_sessions, total)
+}
+
+fn session_matches_search(session: &ChatSessionSummary, needle: &str) -> bool {
+    session.title.to_lowercase().contains(needle)
+        || session.session_id.to_lowercase().contains(needle)
+        || session
+            .agent_name
+            .as_deref()
+            .is_some_and(|value| value.to_lowercase().contains(needle))
+        || session
+            .workspace_path
+            .as_deref()
+            .is_some_and(|value| value.to_lowercase().contains(needle))
 }
 
 /// Resolve the original session of a fork lineage so the client can present all edits and

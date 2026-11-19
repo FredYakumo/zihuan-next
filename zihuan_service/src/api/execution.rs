@@ -330,10 +330,35 @@ pub async fn delete_tasks(req: &mut Request, res: &mut Response, depot: &mut Dep
 // ─── List tasks ───────────────────────────────────────────────────────────────
 
 #[handler]
-pub async fn list_tasks(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
+pub async fn list_tasks(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let running_filter = req.query::<bool>("is_running");
+    let task_types: Option<Vec<String>> = req.query::<String>("task_type").map(|raw| {
+        raw.split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .collect()
+    });
+
     let tasks = state.tasks.lock().unwrap();
-    let entries = tasks.list();
+    let entries: Vec<_> = tasks
+        .list_refs()
+        .into_iter()
+        .filter(|task| {
+            if let Some(running) = running_filter {
+                if task.is_running != running {
+                    return false;
+                }
+            }
+            if let Some(types) = task_types.as_ref() {
+                if !types.iter().any(|value| value == task.task_type.as_str()) {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
     res.render(Json(entries));
 }
 

@@ -375,13 +375,7 @@ pub async fn read_task_progress(
 }
 
 fn task_type_str(task_type: &TaskType) -> &'static str {
-    match task_type {
-        TaskType::NodeGraph => "node_graph",
-        TaskType::AgentService => "agent_service",
-        TaskType::WorkspaceChat => "workspace_chat",
-        TaskType::PlanerChat => "planer_chat",
-        TaskType::ScheduledJob => "scheduled_job",
-    }
+    task_type.as_str()
 }
 
 fn task_status_str(status: &TaskStatus) -> &'static str {

@@ -36,6 +36,11 @@ import {
 import { createUuid } from "../../ui/uuid";
 import type { ToolCallKind } from "../components/useToolCallBadge";
 
+/** Conversations per sidebar page; keeps the history list cheap on large deployments. */
+const SESSION_PAGE_SIZE = 5;
+/** Debounce for the sidebar search box so typing does not fire a request per keystroke. */
+const SESSION_SEARCH_DEBOUNCE_MS = 300;
+
 export interface ChatProps {
     agentId?: string;
     sessionId?: string;
@@ -370,6 +375,12 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     const subAgentNames = ref<Record<string, string>>({});
     const sessions = ref<ChatSessionSummary[]>([]);
     const sessionsLoading = ref(false);
+    const sessionPage = ref(1);
+    const sessionTotal = ref(0);
+    /** Text currently typed into the sidebar search box, debounced into `sessionSearch`. */
+    const sessionSearchInput = ref("");
+    const sessionSearch = ref("");
+    const sessionPageCount = computed(() => Math.max(1, Math.ceil(sessionTotal.value / SESSION_PAGE_SIZE)));
     const activeSessionId = ref("");
     const openingSessionId = ref("");
     const selectedServiceId = ref("");
@@ -398,6 +409,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
     let activeChatTask: { sessionId: string; taskId: string } | null = null;
     let pendingWorkspaceStop: { streamController: AbortController } | null = null;
     let sessionListRevision = 0;
+    let sessionSearchTimer: number | null = null;
     let sessionOpenRevision = 0;
     const sessionStatusRefreshRevisions = new Map<string, number>();
     let preservedServiceChangeId: string | null = null;
@@ -1721,20 +1733,39 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
 
     /**
      * Purpose: refresh session metadata and track history updates after workspace chat tasks finish.
-     * Function: load sessions and tasks in parallel, map running tasks to sessions,
-     * and mark sessions whose tasks have finished for a history refresh.
+     * Function: load the requested history page and running tasks in parallel, map running tasks to
+     * sessions, and mark sessions whose tasks have finished for a history refresh.
      */
     async function reloadSessions() {
         const serviceId = selectedServiceId.value;
+        const page = sessionPage.value;
+        const search = sessionSearch.value;
         const revision = ++sessionListRevision;
         sessionsLoading.value = true;
         // Fetch the selected service's sessions and workspace tasks in parallel.
         try {
             const [result, taskItems] = await Promise.all([
-                chat.listSessions(serviceId || undefined),
-                tasksApi.list(),
+                chat.listSessions(serviceId || undefined, { page, pageSize: SESSION_PAGE_SIZE, search }),
+                // The sidebar only needs running chat tasks. Fetching every historical task
+                // also fetched their full graph snapshots (hundreds of MB in production).
+                tasksApi.list({ isRunning: true, taskTypes: ["workspace_chat", "planer_chat"] }),
             ]);
-            if (revision !== sessionListRevision || selectedServiceId.value !== serviceId) return;
+            if (
+                revision !== sessionListRevision
+                || selectedServiceId.value !== serviceId
+                || sessionPage.value !== page
+                || sessionSearch.value !== search
+            ) return;
+            sessionTotal.value = result.total;
+            // Deleting the last conversation of the last page leaves the requested page empty;
+            // step back so the sidebar shows content again instead of an empty page.
+            if (result.sessions.length === 0 && page > 1) {
+                sessionPage.value = Math.max(1, Math.ceil(result.total / SESSION_PAGE_SIZE));
+                void reloadSessions().catch((error) => {
+                    console.warn("Failed to load chat session page:", error);
+                });
+                return;
+            }
             // Keep only running workspace chat tasks linked to a session for quick status lookup.
             const runningBySession = new Map(taskItems
                 .filter((task) => ["workspace_chat", "planer_chat"].includes(task.task_type) && task.is_running && task.chat_session_id)
@@ -1746,10 +1777,41 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 };
             });
         } finally {
-            if (revision === sessionListRevision && selectedServiceId.value === serviceId) {
+            if (
+                revision === sessionListRevision
+                && selectedServiceId.value === serviceId
+                && sessionPage.value === page
+                && sessionSearch.value === search
+            ) {
                 sessionsLoading.value = false;
             }
         }
+    }
+
+    function goSessionPage(page: number) {
+        const next = Math.min(Math.max(1, page), sessionPageCount.value);
+        if (next === sessionPage.value) return;
+        sessionPage.value = next;
+        reloadSessions().catch((error) => {
+            console.warn("Failed to load chat session page:", error);
+        });
+    }
+
+    /** Purpose: debounce the sidebar search box into a server-side history query. */
+    function onSessionSearchInput() {
+        if (sessionSearchTimer !== null) {
+            window.clearTimeout(sessionSearchTimer);
+        }
+        sessionSearchTimer = window.setTimeout(() => {
+            sessionSearchTimer = null;
+            const next = sessionSearchInput.value.trim();
+            if (next === sessionSearch.value) return;
+            sessionSearch.value = next;
+            sessionPage.value = 1;
+            reloadSessions().catch((error) => {
+                console.warn("Failed to search chat sessions:", error);
+            });
+        }, SESSION_SEARCH_DEBOUNCE_MS);
     }
 
     async function refreshSessionStatus(sessionId: string): Promise<void> {
@@ -2292,6 +2354,16 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         if (!preserveSession) {
             startNewSession();
         }
+        // History is scoped to the selected service; start its list from the first page with no filter.
+        if (sessionSearchTimer !== null) {
+            window.clearTimeout(sessionSearchTimer);
+            sessionSearchTimer = null;
+        }
+        sessionPage.value = 1;
+        sessionSearch.value = "";
+        sessionSearchInput.value = "";
+        sessionTotal.value = 0;
+        sessions.value = [];
         selectedThinkingType.value = "";
         selectedReasoningEffort.value = "";
         if (!isWorkspaceService.value) {
@@ -2522,6 +2594,7 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 }
 
                 streamState.pendingNewConversation = null;
+                sessionPage.value = 1;
                 reloadSessions().catch((error) => {
                     console.warn("Failed to refresh chat sessions after starting a new conversation:", error);
                 });
@@ -2530,6 +2603,9 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
             }
 
             if (event.session_id) {
+                if (activeSessionId.value !== event.session_id) {
+                    sessionPage.value = 1;
+                }
                 activeSessionId.value = event.session_id;
                 emit("update:sessionId", event.session_id);
                 reloadSessions().catch((error) => {
@@ -2928,6 +3004,8 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
                 },
                 streamController.signal,
             );
+            // A new turn moves the conversation to the newest position; show it on page one.
+            sessionPage.value = 1;
             await reloadSessions();
             if (streamState.foreground && activeSessionId.value) {
                 await openSession(activeSessionId.value);
@@ -3015,6 +3093,10 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
 
     onUnmounted(() => {
         activeStreamController?.abort();
+        if (sessionSearchTimer !== null) {
+            window.clearTimeout(sessionSearchTimer);
+            sessionSearchTimer = null;
+        }
         if (commandApprovalPollTimer !== null) {
             window.clearTimeout(commandApprovalPollTimer);
             commandApprovalPollTimer = null;
@@ -3029,6 +3111,13 @@ export function useChat(props: ChatProps, emit: ChatEmit) {
         servicesLoading,
         sessions,
         sessionsLoading,
+        sessionPage,
+        sessionPageCount,
+        sessionTotal,
+        sessionSearchInput,
+        sessionSearch,
+        goSessionPage,
+        onSessionSearchInput,
         activeSessionId,
         openingSessionId,
         selectedServiceId,

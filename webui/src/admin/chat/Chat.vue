@@ -134,8 +134,18 @@
               </button>
             </div>
             <div class="chat-sessions-header">
-              <span>历史</span>
+              <span>历史 <span v-if="sessionTotal" class="chat-sessions-count">{{ sessionTotal }}</span></span>
               <t-loading v-if="sessionsLoading" class="chat-sessions-loading" size="small" />
+            </div>
+            <div class="chat-session-search">
+              <input
+                v-model="sessionSearchInput"
+                class="chat-session-search-input"
+                type="search"
+                placeholder="搜索对话"
+                aria-label="搜索对话"
+                @input="onSessionSearchInput"
+              />
             </div>
             <template v-for="group in groupedSessions" :key="group.pathKey">
               <div class="chat-session-group-header" :title="group.path ?? undefined">
@@ -167,7 +177,26 @@
                 </button>
               </div>
             </template>
-            <div v-if="sessions.length === 0" class="muted">暂无历史会话</div>
+            <div v-if="sessionPageCount > 1" class="chat-session-pagination">
+              <button
+                class="chat-session-page-button"
+                type="button"
+                :disabled="sessionPage <= 1 || sessionsLoading"
+                title="上一页"
+                @click="goSessionPage(sessionPage - 1)"
+              >‹</button>
+              <span>{{ sessionPage }} / {{ sessionPageCount }}</span>
+              <button
+                class="chat-session-page-button"
+                type="button"
+                :disabled="sessionPage >= sessionPageCount || sessionsLoading"
+                title="下一页"
+                @click="goSessionPage(sessionPage + 1)"
+              >›</button>
+            </div>
+            <div v-if="sessions.length === 0" class="muted">
+              {{ sessionSearch ? '没有匹配的对话' : '暂无历史会话' }}
+            </div>
           </aside>
 
           <div :class="['chat-main', { 'chat-main--history-collapsed': historyCollapsed }]">
@@ -1727,6 +1756,13 @@ const {
   servicesLoading,
   sessions,
   sessionsLoading,
+  sessionPage,
+  sessionPageCount,
+  sessionTotal,
+  sessionSearch,
+  sessionSearchInput,
+  goSessionPage,
+  onSessionSearchInput,
   activeSessionId,
   openingSessionId,
   selectedServiceId,
