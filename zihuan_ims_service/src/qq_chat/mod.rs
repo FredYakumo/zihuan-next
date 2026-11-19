@@ -414,22 +414,11 @@ pub async fn spawn(
             |sender_id, content| {
                 zihuan_core::scheduler::store_agent_memory(
                     &memory,
-                    &zihuan_core::storage::AgentMemoryUpsert {
-                        attributes: zihuan_core::storage::MemoryAttributes {
-                            category: zihuan_core::storage::MemoryCategory::Person,
-                            person: zihuan_core::storage::PersonMemory {
-                                qq_id: sender_id.to_string(),
-                                impression: content.to_string(),
-                                ..Default::default()
-                            },
-                            ..Default::default()
-                        },
-                        key: String::new(),
-                        value: content.to_string(),
-                        expires_at: None,
-                        sender_id_list: Vec::new(),
-                        group_id_list: Vec::new(),
-                    },
+                    &serde_json::json!({
+                        "category": "person",
+                        "qq_id": sender_id,
+                        "impression": content,
+                    }),
                 )
                 .map(|_| ())
             },

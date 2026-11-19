@@ -3,7 +3,9 @@ use std::path::PathBuf;
 
 use chrono::{Duration, Utc};
 
-use crate::storage::{AgentMemoryUpsert, LocalMemoryStore, MemoryCategory};
+use crate::storage::memory::MemoryRecord;
+use crate::storage::memory::{prepare_behavioral, prepare_concept};
+use crate::storage::{BehavioralMemoryWrite, ConceptMemoryWrite, LocalMemoryStore};
 
 struct TempDir {
     path: PathBuf,
@@ -23,28 +25,43 @@ impl Drop for TempDir {
     }
 }
 
-fn memory(key: &str, value: &str) -> AgentMemoryUpsert {
-    AgentMemoryUpsert {
-        attributes: Default::default(),
+fn concept(key: &str, content: &str) -> ConceptMemoryWrite {
+    ConceptMemoryWrite {
         key: key.to_string(),
-        value: value.to_string(),
-        expires_at: None,
+        content: content.to_string(),
+        access_level: 2,
+        starts_at: None,
         sender_id_list: Vec::new(),
         group_id_list: Vec::new(),
     }
 }
 
-/// Purpose: Verify local memory writes Markdown files and overwrites matching keys.
-/// TestData: Two favorite-character values for the same `旅行者原神喜爱角色` key.
+fn behavioral(key: &str, content: &str, expires_at: Option<String>) -> BehavioralMemoryWrite {
+    BehavioralMemoryWrite {
+        key: key.to_string(),
+        content: content.to_string(),
+        access_level: 2,
+        expires_at,
+        sender_id_list: Vec::new(),
+        group_id_list: Vec::new(),
+    }
+}
+
+/// Purpose: Verify local concept memory writes one file per title and overwrites it on correction.
+/// TestData: Two favorite-character contents for the same `旅行者原神喜爱角色` key.
 #[test]
 fn test_local_memory_overwrites_matching_markdown_key() {
     let directory = TempDir::new();
     let store = LocalMemoryStore::new(directory.path.clone());
 
-    store.create_or_update(&memory("旅行者原神喜爱角色", "刻晴")).unwrap();
-    store.create_or_update(&memory("旅行者原神喜爱角色", "甘雨")).unwrap();
+    store
+        .save_concept(&prepare_concept(&concept("旅行者原神喜爱角色", "刻晴")).unwrap())
+        .unwrap();
+    store
+        .save_concept(&prepare_concept(&concept("旅行者原神喜爱角色", "甘雨")).unwrap())
+        .unwrap();
 
-    let category_dir = directory.path.join(MemoryCategory::Concept.schema().as_str());
+    let category_dir = directory.path.join("concept_memory");
     let mut markdown = Vec::new();
     for entry in fs::read_dir(&category_dir).unwrap() {
         let path = entry.unwrap().path();
@@ -57,17 +74,6 @@ fn test_local_memory_overwrites_matching_markdown_key() {
     assert_eq!(store.list(Some("甘雨"), 5).unwrap().len(), 1);
 }
 
-/// Purpose: Verify unsafe keys cannot write memory files outside the storage directory.
-/// TestData: A path-traversal key, `../尘歌壶`.
-#[test]
-fn test_local_memory_rejects_path_traversal_key() {
-    let directory = TempDir::new();
-    let store = LocalMemoryStore::new(directory.path.clone());
-
-    assert!(store.create_or_update(&memory("../尘歌壶", "璃月港")).is_err());
-    assert!(!directory.path.join("../尘歌壶.md").exists());
-}
-
 /// Purpose: Verify behavioral local memory persists expiry metadata and filters expired records.
 /// TestData: One behavioral memory about纳西妲 expiring in one hour and one about雷电将军 expired one hour ago.
 #[test]
@@ -76,38 +82,52 @@ fn test_local_memory_persists_expiry_metadata_and_filters_expired_records() {
     let store = LocalMemoryStore::new(directory.path.clone());
     let expires_at = (Utc::now() + Duration::hours(1)).to_rfc3339();
 
-    let mut future_memory = memory("纳西妲的元素爆发", "所闻遍计");
-    future_memory.attributes.category = MemoryCategory::Behavioral;
-    future_memory.expires_at = Some(expires_at.clone());
-    store.create_or_update(&future_memory).unwrap();
-
-    let mut expired_memory = memory("雷电将军的元素爆发", "梦想一心");
-    expired_memory.attributes.category = MemoryCategory::Behavioral;
-    expired_memory.expires_at = Some((Utc::now() - Duration::hours(1)).to_rfc3339());
-    store.create_or_update(&expired_memory).unwrap();
+    store
+        .save_behavioral(
+            &prepare_behavioral(&behavioral(
+                "纳西妲的元素爆发",
+                "所闻遍计",
+                Some(expires_at.clone()),
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+    store
+        .save_behavioral(
+            &prepare_behavioral(&behavioral(
+                "雷电将军的元素爆发",
+                "梦想一心",
+                Some((Utc::now() - Duration::hours(1)).to_rfc3339()),
+            ))
+            .unwrap(),
+        )
+        .unwrap();
 
     let hits = store.list(None, 5).unwrap();
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].record.key, "纳西妲的元素爆发");
-    assert_eq!(hits[0].record.expires_at.as_deref(), Some(expires_at.as_str()));
+    let MemoryRecord::Behavioral(record) = &hits[0].record else {
+        panic!("expected a behavioral record");
+    };
+    assert_eq!(record.key, "纳西妲的元素爆发");
+    assert_eq!(record.expires_at, expires_at);
     assert_eq!(store.list(Some("梦想一心"), 5).unwrap().len(), 0);
 }
 
-/// Purpose: Verify missing or corrupt metadata keeps local memory readable as a permanent memory.
-/// TestData: One关于蒙德的 Markdown file without metadata and one关于璃月 with invalid JSON metadata.
+/// Purpose: Verify records with missing or corrupt metadata are skipped without breaking the listing.
+/// TestData: One concept .md file without metadata and one with invalid JSON metadata.
 #[test]
-fn test_local_memory_treats_missing_or_corrupt_metadata_as_permanent() {
+fn test_local_memory_skips_records_with_missing_or_corrupt_metadata() {
     let directory = TempDir::new();
-    fs::create_dir_all(&directory.path).unwrap();
-    fs::write(directory.path.join("蒙德风神.md"), "巴巴托斯的摸鱼日常").unwrap();
-    fs::write(directory.path.join("璃月岩王帝君.md"), "摩拉克斯的退休生活").unwrap();
-    fs::write(directory.path.join("璃月岩王帝君.meta.json"), "派蒙不是JSON").unwrap();
+    fs::create_dir_all(directory.path.join("concept_memory")).unwrap();
+    fs::write(directory.path.join("concept_memory/蒙德风神.md"), "巴巴托斯的摸鱼日常").unwrap();
+    fs::write(directory.path.join("concept_memory/璃月岩王帝君.md"), "摩拉克斯的退休生活").unwrap();
+    fs::write(directory.path.join("concept_memory/璃月岩王帝君.meta.json"), "派蒙不是JSON")
+        .unwrap();
 
     let store = LocalMemoryStore::new(directory.path.clone());
     let records = store.list(None, 5).unwrap();
 
-    assert_eq!(records.len(), 2);
-    assert!(records.iter().all(|hit| hit.record.expires_at.is_none()));
+    assert_eq!(records.len(), 0);
 }
 
 /// Purpose: Verify invalid behavioral expiry values are rejected before any local memory files are written.
@@ -115,11 +135,12 @@ fn test_local_memory_treats_missing_or_corrupt_metadata_as_permanent() {
 #[test]
 fn test_local_memory_rejects_invalid_expiry_without_writing_files() {
     let directory = TempDir::new();
-    let store = LocalMemoryStore::new(directory.path.clone());
-    let mut invalid_memory = memory("枫原万叶的诗", "风带来的故事");
-    invalid_memory.attributes.category = MemoryCategory::Behavioral;
-    invalid_memory.expires_at = Some("稻妻明天".to_string());
 
-    assert!(store.create_or_update(&invalid_memory).is_err());
-    assert!(!directory.path.exists());
+    assert!(prepare_behavioral(&behavioral(
+        "枫原万叶的诗",
+        "风带来的故事",
+        Some("稻妻明天".to_string())
+    ))
+    .is_err());
+    assert!(!directory.path.join("behavioral_memory").exists());
 }

@@ -1,7 +1,27 @@
-use super::*;
-use crate::storage::MemoryAttributes;
 use chrono::{Duration, Utc};
+use serde::{Deserialize, Serialize};
 
+use super::*;
+use crate::storage::{memory_object_id, normalize_memory_scope_lists};
+
+/// The one model for a behavioral rule: a short rule with an expiry that renews on recall.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BehavioralMemoryRecord {
+    pub key: String,
+    pub content: String,
+    #[serde(default = "default_access_level")]
+    pub access_level: u32,
+    pub expires_at: String,
+    #[serde(default)]
+    pub sender_id_list: Vec<String>,
+    #[serde(default)]
+    pub group_id_list: Vec<String>,
+    pub object_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A behavioral write as callers construct it; normalization fills the defaults.
 #[derive(Debug, Clone)]
 pub struct BehavioralMemoryWrite {
     pub key: String,
@@ -12,70 +32,74 @@ pub struct BehavioralMemoryWrite {
     pub group_id_list: Vec<String>,
 }
 
+/// A validated behavioral write with every default filled and its object id derived.
 #[derive(Debug, Clone)]
-pub struct BehavioralMemoryRecord {
+pub struct BehavioralMemoryPrepared {
     pub key: String,
     pub content: String,
     pub access_level: u32,
-    pub expires_at: Option<String>,
+    pub expires_at: String,
     pub sender_id_list: Vec<String>,
     pub group_id_list: Vec<String>,
     pub object_id: String,
-    pub created_at: String,
-    pub updated_at: String,
 }
 
-impl BehavioralMemoryRecord {
-    pub(crate) fn from_record(record: AgentMemoryRecord) -> Self {
-        Self {
-            key: record.key,
-            content: record.value,
-            access_level: record.attributes.access_level,
-            expires_at: record.expires_at,
-            sender_id_list: record.sender_id_list,
-            group_id_list: record.group_id_list,
-            object_id: record.object_id,
-            created_at: record.created_at,
-            updated_at: record.updated_at,
-        }
+impl BehavioralMemoryPrepared {
+    /// The text the embedding model vectorizes for this record.
+    pub fn embedding_text(&self) -> String {
+        format!("{}\n{}", self.key, self.content)
     }
-    pub fn into_record(self) -> AgentMemoryRecord {
-        AgentMemoryRecord {
-            key: self.key,
-            value: self.content,
-            attributes: MemoryAttributes {
-                category: MemoryCategory::Behavioral,
-                access_level: self.access_level,
-                ..Default::default()
-            },
-            expires_at: self.expires_at,
-            sender_id_list: self.sender_id_list,
-            group_id_list: self.group_id_list,
-            object_id: self.object_id,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-        }
+}
+
+/// Validates the write and fills defaults: the key is required identity and never
+/// derived, the expiry defaults to two days, and scope lists normalize.
+pub fn prepare_behavioral(write: &BehavioralMemoryWrite) -> Result<BehavioralMemoryPrepared> {
+    use crate::error::Error;
+    let content = write.content.trim();
+    if content.is_empty() {
+        return Err(Error::ValidationError("behavioral memory requires content".to_string()));
     }
+    let key = write.key.trim();
+    if key.is_empty() {
+        return Err(Error::ValidationError("behavioral memory requires key".to_string()));
+    }
+    let sender_id_list = normalize_memory_scope_lists(&write.sender_id_list);
+    let group_id_list = normalize_memory_scope_lists(&write.group_id_list);
+    let key = key.to_string();
+    let expires_at = match write.expires_at.as_deref() {
+        Some(expires_at) => chrono::DateTime::parse_from_rfc3339(expires_at.trim())
+            .map_err(|_| Error::ValidationError("invalid memory expires_at".to_string()))?
+            .with_timezone(&Utc)
+            .to_rfc3339(),
+        None => (Utc::now() + Duration::days(2)).to_rfc3339(),
+    };
+    let object_id =
+        memory_object_id(MemoryCategory::Behavioral, &key, &sender_id_list, &group_id_list);
+    Ok(BehavioralMemoryPrepared {
+        key,
+        content: content.to_string(),
+        access_level: write.access_level,
+        expires_at,
+        sender_id_list,
+        group_id_list,
+        object_id,
+    })
 }
 
 impl MemoryBackend {
+    /// Exact identity read; the record for this rule title under this scope, or `None`.
     pub fn get_behavioral(
         &self,
         key: &str,
         sender_id_list: &[String],
         group_id_list: &[String],
     ) -> Result<Option<BehavioralMemoryRecord>> {
-        let identity = AgentMemoryUpsert {
-            attributes: MemoryAttributes {
-                category: MemoryCategory::Behavioral,
-                ..Default::default()
-            },
-            key: key.to_string(),
-            sender_id_list: sender_id_list.to_vec(),
-            group_id_list: group_id_list.to_vec(),
-            ..Default::default()
-        };
-        Ok(self.read_record(&identity)?.map(BehavioralMemoryRecord::from_record))
+        match self {
+            Self::LocalFile(store) => store.get_behavioral(key, sender_id_list, group_id_list),
+            Self::RetrievalStore(store) => {
+                super::super::get_behavioral_in_store(store, key, sender_id_list, group_id_list)
+            }
+        }
     }
 
     pub fn save_behavioral(
@@ -83,19 +107,15 @@ impl MemoryBackend {
         model: Option<&dyn EmbeddingBase>,
         input: &BehavioralMemoryWrite,
     ) -> Result<BehavioralMemoryRecord> {
-        let record = AgentMemoryUpsert {
-            attributes: MemoryAttributes {
-                category: MemoryCategory::Behavioral,
-                access_level: input.access_level,
-                ..Default::default()
-            },
-            key: input.key.clone(),
-            value: input.content.clone(),
-            expires_at: input.expires_at.clone(),
-            sender_id_list: input.sender_id_list.clone(),
-            group_id_list: input.group_id_list.clone(),
-        };
-        self.write_record(model, &record).map(BehavioralMemoryRecord::from_record)
+        let prepared = prepare_behavioral(input)?;
+        match self {
+            Self::LocalFile(store) => store.save_behavioral(&prepared),
+            Self::RetrievalStore(store) => super::super::upsert_behavioral_in_store(
+                store,
+                &prepared,
+                embedding_vector(model, &prepared.embedding_text())?,
+            ),
+        }
     }
 
     pub fn search_behavioral(
@@ -113,61 +133,49 @@ impl MemoryBackend {
                 .lock()
                 .map_err(|_| crate::string_error!("memory mutation lock poisoned"))?;
             for hit in &hits {
-                let Some(record) = self.get_behavioral(
-                    &hit.record.key,
-                    &hit.record.sender_id_list,
-                    &hit.record.group_id_list,
-                )?
-                else {
+                let MemoryRecord::Behavioral(record) = &hit.record else {
                     continue;
                 };
-                if !crate::storage::memory_is_accessible(&record.clone().into_record(), access) {
+                if !crate::storage::memory_is_accessible(&hit.record, access) {
                     continue;
                 }
-                if let Some(expiry) = record
-                    .expires_at
-                    .as_ref()
-                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                {
-                    let now = Utc::now();
-                    let next = (now + (expiry.with_timezone(&Utc) - now) * 2)
-                        .min(now + Duration::days(365));
-                    self.save_behavioral(
-                        model,
-                        &BehavioralMemoryWrite {
-                            key: record.key,
-                            content: record.content,
-                            access_level: record.access_level,
-                            expires_at: Some(next.to_rfc3339()),
-                            sender_id_list: record.sender_id_list,
-                            group_id_list: record.group_id_list,
-                        },
-                    )?;
-                }
+                let expiry = chrono::DateTime::parse_from_rfc3339(&record.expires_at)
+                    .ok()
+                    .map(|expiry| expiry.with_timezone(&Utc));
+                let Some(expiry) = expiry else {
+                    continue;
+                };
+                let now = Utc::now();
+                let next = (now + (expiry - now) * 2).min(now + Duration::days(365));
+                self.save_behavioral(
+                    model,
+                    &BehavioralMemoryWrite {
+                        key: record.key.clone(),
+                        content: record.content.clone(),
+                        access_level: record.access_level,
+                        expires_at: Some(next.to_rfc3339()),
+                        sender_id_list: record.sender_id_list.clone(),
+                        group_id_list: record.group_id_list.clone(),
+                    },
+                )?;
             }
         }
         Ok(hits
             .into_iter()
-            .map(|hit| (BehavioralMemoryRecord::from_record(hit.record), hit.distance))
+            .filter_map(|hit| match hit.record {
+                MemoryRecord::Behavioral(record) => Some((record, hit.distance)),
+                _ => None,
+            })
             .collect())
     }
 }
 
-/// Stable identity for a new behavioral rule when the caller has no existing key.
-pub fn behavioral_key(
-    content: &str,
-    sender_id_list: &[String],
-    group_id_list: &[String],
-) -> String {
-    let identity = AgentMemoryUpsert {
-        attributes: MemoryAttributes {
-            category: MemoryCategory::Behavioral,
-            ..Default::default()
-        },
-        key: content.to_string(),
-        sender_id_list: sender_id_list.to_vec(),
-        group_id_list: group_id_list.to_vec(),
-        ..Default::default()
-    };
-    format!("behavior-{}", crate::storage::memory_object_id(&identity))
+/// Reads one behavioral record from a backend document.
+pub(crate) fn parse_behavioral_record(
+    value: serde_json::Value,
+    object_id: &str,
+) -> Result<BehavioralMemoryRecord> {
+    let mut record: BehavioralMemoryRecord = serde_json::from_value(value)?;
+    record.object_id = object_id.to_string();
+    Ok(record)
 }

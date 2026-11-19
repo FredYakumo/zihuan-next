@@ -1,5 +1,7 @@
+use serde::{Deserialize, Serialize};
+
 use super::*;
-use crate::storage::{MemoryAttributes, PersonMemory};
+use crate::storage::PersonMemory;
 
 /// A person write has an identity in its profile, with no key, scope or expiry.
 #[derive(Debug, Clone)]
@@ -8,45 +10,19 @@ pub struct PersonMemoryWrite {
     pub access_level: u32,
 }
 
-#[derive(Debug, Clone)]
+/// The one model for a person: the profile is the storage document and the wire shape.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersonMemoryRecord {
+    #[serde(flatten)]
     pub profile: PersonMemory,
+    #[serde(default = "default_access_level")]
     pub access_level: u32,
     pub object_id: String,
     pub created_at: String,
     pub updated_at: String,
 }
 
-impl PersonMemoryRecord {
-    pub(crate) fn from_record(record: AgentMemoryRecord) -> Self {
-        Self {
-            profile: record.attributes.person,
-            access_level: record.attributes.access_level,
-            object_id: record.object_id,
-            created_at: record.created_at,
-            updated_at: record.updated_at,
-        }
-    }
-    /// Convert at an existing JSON/tool boundary; the domain model has no key.
-    pub fn into_record(self) -> AgentMemoryRecord {
-        AgentMemoryRecord {
-            key: String::new(),
-            value: serde_json::to_string(&self.profile).expect("person serializes"),
-            attributes: MemoryAttributes {
-                category: MemoryCategory::Person,
-                access_level: self.access_level,
-                person: self.profile,
-                ..Default::default()
-            },
-            object_id: self.object_id,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            expires_at: None,
-            sender_id_list: vec![],
-            group_id_list: vec![],
-        }
-    }
-}
+pub(crate) use super::concept::default_access_level;
 
 pub fn person_search_text(person: &PersonMemory) -> String {
     format!(
@@ -59,34 +35,33 @@ pub fn person_search_text(person: &PersonMemory) -> String {
     )
 }
 
-fn identity(qq_id: &str) -> Result<AgentMemoryUpsert> {
-    if qq_id.is_empty() || !qq_id.chars().all(|c| c.is_ascii_digit()) {
+fn validate_profile(profile: &PersonMemory) -> Result<()> {
+    if profile.qq_id.is_empty() || !profile.qq_id.chars().all(|c| c.is_ascii_digit()) {
         return Err(crate::error::Error::ValidationError(
             "person memory requires a QQ ID".to_string(),
         ));
     }
-    Ok(AgentMemoryUpsert {
-        attributes: MemoryAttributes {
-            category: MemoryCategory::Person,
-            person: PersonMemory {
-                qq_id: qq_id.to_string(),
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-        ..Default::default()
-    })
+    Ok(())
+}
+
+/// Validates the profile. Unlike the other categories there are no defaults to fill:
+/// the QQ ID is the identity and the profile is the whole record.
+pub fn prepare_person(write: &PersonMemoryWrite) -> Result<PersonMemoryWrite> {
+    validate_profile(&write.profile)?;
+    Ok(write.clone())
 }
 
 impl MemoryBackend {
     /// Exact identity read; never falls back to other people or needs an embedding model.
     pub fn get_person(&self, qq_id: &str) -> Result<Option<PersonMemoryRecord>> {
-        identity(qq_id)?;
-        let record = match self {
-            Self::LocalFile(store) => store.get_person_record(qq_id)?,
-            Self::RetrievalStore(store) => crate::storage::get_person_in_store(store, qq_id)?,
-        };
-        Ok(record.map(PersonMemoryRecord::from_record))
+        validate_profile(&PersonMemory {
+            qq_id: qq_id.to_string(),
+            ..Default::default()
+        })?;
+        match self {
+            Self::LocalFile(store) => store.get_person_record(qq_id),
+            Self::RetrievalStore(store) => super::super::get_person_in_store(store, qq_id),
+        }
     }
 
     pub fn save_person(
@@ -94,11 +69,15 @@ impl MemoryBackend {
         model: Option<&dyn EmbeddingBase>,
         input: &PersonMemoryWrite,
     ) -> Result<PersonMemoryRecord> {
-        let mut record = identity(&input.profile.qq_id)?;
-        record.attributes.person = input.profile.clone();
-        record.attributes.access_level = input.access_level;
-        record.value = serde_json::to_string(&input.profile)?;
-        self.write_record(model, &record).map(PersonMemoryRecord::from_record)
+        let prepared = prepare_person(input)?;
+        match self {
+            Self::LocalFile(store) => store.save_person(&prepared),
+            Self::RetrievalStore(store) => super::super::upsert_person_in_store(
+                store,
+                &prepared,
+                embedding_vector(model, &person_search_text(&prepared.profile))?,
+            ),
+        }
     }
 
     /// Text/semantic search is explicitly separate from exact QQ identity lookup.
@@ -115,14 +94,19 @@ impl MemoryBackend {
                     .get_person(id)?
                     .into_iter()
                     .filter(|record| {
-                        crate::storage::memory_is_accessible(&record.clone().into_record(), access)
+                        crate::storage::memory_is_accessible(
+                            &MemoryRecord::Person(record.clone()),
+                            access,
+                        )
                     })
                     .take(limit)
                     .map(|record| (record, None))
                     .collect())
             }
             Some(MemoryQuery::Query(text)) if text.trim().is_empty() => {
-                return Err(crate::string_error!("query must not be empty"))
+                return Err(crate::error::Error::ValidationError(
+                    "query must not be empty".to_string(),
+                ))
             }
             Some(MemoryQuery::Query(text)) => Some(text.as_str()),
             None => None,
@@ -131,9 +115,22 @@ impl MemoryBackend {
             .query_records(model, access, MemoryCategory::Person, text, limit)?
             .into_iter()
             .take(limit)
-            .map(|hit| (PersonMemoryRecord::from_record(hit.record), hit.distance))
+            .filter_map(|hit| match hit.record {
+                MemoryRecord::Person(record) => Some((record, hit.distance)),
+                _ => None,
+            })
             .collect())
     }
+}
+
+/// Reads one person record from a backend document.
+pub(crate) fn parse_person_record(
+    value: serde_json::Value,
+    object_id: &str,
+) -> Result<PersonMemoryRecord> {
+    let mut record: PersonMemoryRecord = serde_json::from_value(value)?;
+    record.object_id = object_id.to_string();
+    Ok(record)
 }
 
 /// Explicit query mode. Numeric fuzzy text stays fuzzy; identity is never inferred.

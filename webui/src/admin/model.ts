@@ -65,6 +65,7 @@ export interface ConnectionFormState {
   elasticsearch_api_key: string;
   elasticsearch_auth_method: ConnectionAuthMethod;
   elasticsearch_vector_dimensions: number;
+  elasticsearch_memory_min_similarity: number;
   rustfs_endpoint: string;
   rustfs_username: string;
   rustfs_password: string;
@@ -396,6 +397,7 @@ export function defaultConnectionForm(): ConnectionFormState {
     elasticsearch_api_key: "",
     elasticsearch_auth_method: "api_key",
     elasticsearch_vector_dimensions: 1024,
+    elasticsearch_memory_min_similarity: 0.5,
     rustfs_endpoint: "",
     rustfs_username: "",
     rustfs_password: "",
@@ -702,6 +704,7 @@ export function connectionFormFromConfig(
         form.elasticsearch_password = "";
       }
       form.elasticsearch_vector_dimensions = Number(connection.kind.vector_dimensions ?? 1024);
+      form.elasticsearch_memory_min_similarity = Number(connection.kind.memory_min_similarity ?? 0.5);
       break;
     case "rustfs":
       form.rustfs_endpoint = String(connection.kind.endpoint ?? "");
@@ -843,6 +846,7 @@ export function buildConnectionPayload(form: ConnectionFormState): {
         api_key: form.elasticsearch_auth_method === "api_key" ? form.elasticsearch_api_key.trim() || null : null,
         auth_method: form.elasticsearch_auth_method,
         vector_dimensions: form.elasticsearch_vector_dimensions,
+        memory_min_similarity: form.elasticsearch_memory_min_similarity,
       };
       break;
     case "rustfs":
