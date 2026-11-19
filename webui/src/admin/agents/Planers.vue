@@ -1,38 +1,54 @@
 <template>
     <section class="page planer-page">
-        <div class="planer-header">
-            <h2>Planer 配置</h2><t-button @click="create()">新建 Planer</t-button>
-        </div>
-        <t-alert v-if="error" theme="error" :message="error" closable @close="error = ''" />
-        <t-loading :loading="loading">
-            <t-card v-for="item in items" :key="item.config_id" :title="item.name" class="planer-card">
-                <template #actions><t-space>
-                        <t-tag :theme="item.runtime?.status === 'running' ? 'success' : 'default'">{{
-                            item.runtime?.status === 'running' ? '运行中' : '已停止' }}</t-tag>
-                        <t-button variant="text" @click="lifecycle(item)">{{ item.runtime?.status === 'running' ? '停止' :
-                            '启动' }}</t-button>
-                        <t-button variant="text" :disabled="item.runtime?.status !== 'running'"
-                            @click="chatAgent = planerChatTarget(item)">对话</t-button>
-                        <t-button variant="text" @click="edit(item)">编辑</t-button>
-                        <t-popconfirm content="删除此 Planer？" @confirm="remove(item)"><t-button theme="danger"
-                                variant="text"
-                                :disabled="item.runtime?.status === 'running'">删除</t-button></t-popconfirm>
-                    </t-space></template>
-                <p>{{ modelName(item.llm_ref_id) }} · {{ item.enabled ? '已启用' : '已禁用' }} · {{ item.members.length }} 个
-                    Role</p>
-                <t-space break-line><t-tag v-for="member in item.members" :key="member.role_id">{{
-                        roleLabel(member.role_id)
-                        }}</t-tag></t-space>
-            </t-card>
-            <t-empty v-if="!loading && !items.length" description="暂无 Planer" />
-        </t-loading>
+        <AdminPageHeader title="Planer 配置">
+            <t-button theme="primary" @click="create()">新建 Planer</t-button>
+        </AdminPageHeader>
+        <t-alert v-if="error" theme="error" :message="error" closable class="planer-alert" @close="error = ''" />
+        <t-card bordered>
+            <t-table :data="items" :columns="columns" row-key="config_id" :loading="loading">
+                <template #name="{ row }">
+                    <div class="planer-name-cell">
+                        <span>{{ row.name }}</span>
+                        <t-tag size="small" variant="light" :theme="row.enabled ? 'primary' : 'default'">{{ row.enabled ? '已启用' : '已禁用' }}</t-tag>
+                    </div>
+                </template>
+                <template #model="{ row }">{{ modelName(row.llm_ref_id) }}</template>
+                <template #members="{ row }">
+                    <t-space break-line size="4px">
+                        <t-tag v-for="member in row.members" :key="member.role_id" size="small" variant="light">{{ roleLabel(member.role_id) }}</t-tag>
+                    </t-space>
+                </template>
+                <template #status="{ row }">
+                    <t-tag size="small" variant="light" :theme="row.runtime?.status === 'running' ? 'success' : 'default'">{{
+                        row.runtime?.status === 'running' ? '运行中' : '已停止' }}</t-tag>
+                </template>
+                <template #actions="{ row }">
+                    <t-button variant="text" size="small" @click="lifecycle(row)">{{ row.runtime?.status === 'running' ? '停止' : '启动' }}</t-button>
+                    <t-button variant="text" size="small" :disabled="row.runtime?.status !== 'running'" @click="chatAgent = planerChatTarget(row)">对话</t-button>
+                    <t-button variant="text" size="small" @click="edit(row)">编辑</t-button>
+                    <t-popconfirm content="删除此 Planer？" @confirm="remove(row)">
+                        <t-button theme="danger" variant="text" size="small" :disabled="row.runtime?.status === 'running'">删除</t-button>
+                    </t-popconfirm>
+                </template>
+                <template #empty><div class="planer-empty">暂无 Planer</div></template>
+            </t-table>
+        </t-card>
         <AgentChatDialog :agent="chatAgent" @close="chatAgent = null" />
     </section>
 </template>
 <script setup lang="ts">
 import { planerChatTarget } from "../../api/planers";
+import AdminPageHeader from "../components/AdminPageHeader.vue";
 import AgentChatDialog from "../components/AgentChatDialog.vue";
 import { usePlaners } from "./Planers";
-const { items, roles, models, loading, error, chatAgent, roleLabel, modelName, create, edit, lifecycle, remove } = usePlaners();
+const { items, loading, error, chatAgent, roleLabel, modelName, create, edit, lifecycle, remove } = usePlaners();
+
+const columns = [
+    { colKey: "name", title: "名称", width: 240 },
+    { colKey: "model", title: "模型", width: 200 },
+    { colKey: "members", title: "Role", minWidth: 240 },
+    { colKey: "status", title: "状态", width: 100 },
+    { colKey: "actions", title: "操作", width: 240, fixed: "right" as const },
+];
 </script>
 <style scoped lang="scss" src="./Planers.scss"></style>
