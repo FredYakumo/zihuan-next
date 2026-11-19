@@ -3,7 +3,9 @@
 @use "../connections/connections" as *;
 
 .agent-service-page {
-  gap: 0;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .agent-service-import-input {
@@ -12,6 +14,7 @@
 
 .agent-service-card {
   border-radius: 0;
+  overflow-x: auto;
 }
 
 .agent-service-toolbar {
@@ -714,4 +717,8 @@
   .agent-service-toolbar {
     grid-template-columns: 1fr;
   }
+}
+
+.agent-service-type-grid--page {
+  max-width: 1040px;
 }
