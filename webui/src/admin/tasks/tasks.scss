@@ -34,6 +34,17 @@
   vertical-align: bottom;
 }
 
+.tasks-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.tasks-search-input {
+  width: min(380px, 100%);
+}
+
 .tasks-pagination-bar {
   margin-top: 16px;
 }

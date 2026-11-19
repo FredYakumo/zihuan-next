@@ -1,4 +1,4 @@
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import type { PrimaryTableCol } from "tdesign-vue-next";
 
 import { tasks, type TaskEntry, type TaskLogEntry } from "../../api/client";
@@ -6,39 +6,31 @@ import { formatTaskDuration } from "../../app/task_manager";
 import { ws } from "../../api/ws";
 import { formatTime, statusTone } from "../model";
 
+const TASK_PAGE_SIZE = 20;
+const TASK_SEARCH_DEBOUNCE_MS = 300;
 
 export function useTasks() {
   const taskItems = ref<TaskEntry[]>([]);
-  const pageSize = ref(10);
+  const taskTotal = ref(0);
+  const pageSize = ref(TASK_PAGE_SIZE);
   const listPage = ref(1);
   const listPageInput = ref(1);
   const selectedTaskIds = ref(new Set<string>());
+  const taskSearchInput = ref("");
+  const taskSearch = ref("");
+  let searchTimer: number | null = null;
+  let loadRevision = 0;
 
   const listTotalPages = computed(() =>
-    Math.max(1, Math.ceil(taskItems.value.length / pageSize.value)),
+    Math.max(1, Math.ceil(taskTotal.value / pageSize.value)),
   );
-  const pagedTaskItems = computed(() => {
-    const start = (listPage.value - 1) * pageSize.value;
-    return taskItems.value.slice(start, start + pageSize.value);
-  });
   const allPagedTasksSelected = computed(
     () =>
-      pagedTaskItems.value.length > 0 &&
-      pagedTaskItems.value.every((task) => selectedTaskIds.value.has(task.id)),
+      taskItems.value.length > 0 &&
+      taskItems.value.every((task) => selectedTaskIds.value.has(task.id)),
   );
   const somePagedTasksSelected = computed(() =>
-    pagedTaskItems.value.some((task) => selectedTaskIds.value.has(task.id)),
-  );
-
-  watch(pageSize, () => {
-    goToListPage(Math.min(listPage.value, listTotalPages.value));
-  });
-
-  watch(
-    () => taskItems.value.length,
-    () => {
-      goToListPage(Math.min(listPage.value, listTotalPages.value));
-    },
+    taskItems.value.some((task) => selectedTaskIds.value.has(task.id)),
   );
 
   function goToListPage(page: number) {
@@ -49,14 +41,44 @@ export function useTasks() {
 
   function jumpToListPage() {
     goToListPage(listPageInput.value);
+    void load().catch((error) => console.error(error));
   }
 
   async function load() {
-    taskItems.value = await tasks.list();
-    const existingIds = new Set(taskItems.value.map((task) => task.id));
-    selectedTaskIds.value = new Set(
-      [...selectedTaskIds.value].filter((id) => existingIds.has(id)),
-    );
+    const revision = ++loadRevision;
+    const page = listPage.value;
+    const search = taskSearch.value;
+    const result = await tasks.listPage({
+      page,
+      pageSize: pageSize.value,
+      search: search || undefined,
+    });
+    if (revision !== loadRevision) return;
+
+    taskTotal.value = result.total;
+    taskItems.value = result.tasks;
+
+    const totalPages = Math.max(1, Math.ceil(result.total / pageSize.value));
+    if (page > totalPages) {
+      listPage.value = totalPages;
+      listPageInput.value = totalPages;
+      if (result.total > 0) {
+        await load();
+      }
+    }
+  }
+
+  function onSearchInput() {
+    if (searchTimer !== null) {
+      window.clearTimeout(searchTimer);
+    }
+    searchTimer = window.setTimeout(() => {
+      searchTimer = null;
+      taskSearch.value = taskSearchInput.value.trim();
+      listPage.value = 1;
+      listPageInput.value = 1;
+      void load().catch((error) => console.error(error));
+    }, TASK_SEARCH_DEBOUNCE_MS);
   }
 
   async function stopTask(id: string) {
@@ -71,6 +93,7 @@ export function useTasks() {
 
   async function clearFinished() {
     await tasks.clearFinished();
+    selectedTaskIds.value = new Set();
     await load();
   }
 
@@ -87,9 +110,9 @@ export function useTasks() {
   function toggleCurrentPageSelection() {
     const next = new Set(selectedTaskIds.value);
     if (allPagedTasksSelected.value) {
-      for (const task of pagedTaskItems.value) next.delete(task.id);
+      for (const task of taskItems.value) next.delete(task.id);
     } else {
-      for (const task of pagedTaskItems.value) next.add(task.id);
+      for (const task of taskItems.value) next.add(task.id);
     }
     selectedTaskIds.value = next;
   }
@@ -97,6 +120,9 @@ export function useTasks() {
   async function deleteSingleTask(task: TaskEntry) {
     if (!confirm(`永久删除任务“${task.graph_name}”？对应日志也会被清除。`)) return;
     await tasks.delete(task.id);
+    const next = new Set(selectedTaskIds.value);
+    next.delete(task.id);
+    selectedTaskIds.value = next;
     await load();
   }
 
@@ -207,8 +233,10 @@ export function useTasks() {
   }
 
   function onPaginationChange(pageInfo: { current: number; pageSize: number }) {
+    const sizeChanged = pageInfo.pageSize !== pageSize.value;
     pageSize.value = pageInfo.pageSize;
-    goToListPage(pageInfo.current);
+    goToListPage(sizeChanged ? 1 : pageInfo.current);
+    void load().catch((error) => console.error(error));
   }
 
   function openTaskGraph(taskId: string) {
@@ -258,20 +286,27 @@ export function useTasks() {
 
   onUnmounted(() => {
     unsubWs?.();
+    if (searchTimer !== null) {
+      window.clearTimeout(searchTimer);
+      searchTimer = null;
+    }
   });
 
   return {
     taskItems,
+    taskTotal,
     pageSize,
     listPage,
     listPageInput,
     selectedTaskIds,
+    taskSearchInput,
+    taskSearch,
     listTotalPages,
-    pagedTaskItems,
     allPagedTasksSelected,
     somePagedTasksSelected,
     goToListPage,
     jumpToListPage,
+    onSearchInput,
     load,
     stopTask,
     rerunTask,

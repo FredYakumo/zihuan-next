@@ -339,6 +339,13 @@ export function updateModelDownloadSettings(endpoint: string): Promise<{ endpoin
 }
 
 // Tasks
+export interface TaskPage {
+  tasks: TaskEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export const tasks = {
   list(params?: { isRunning?: boolean; taskTypes?: string[] }): Promise<TaskEntry[]> {
     const qs = new URLSearchParams();
@@ -346,6 +353,21 @@ export const tasks = {
     if (params?.taskTypes?.length) qs.set("task_type", params.taskTypes.join(","));
     const query = qs.toString();
     return request("GET", query ? `/tasks?${query}` : "/tasks");
+  },
+  listPage(params?: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    isRunning?: boolean;
+    taskTypes?: string[];
+  }): Promise<TaskPage> {
+    const qs = new URLSearchParams();
+    qs.set("page", String(params?.page ?? 1));
+    qs.set("page_size", String(params?.pageSize ?? 20));
+    if (params?.search) qs.set("search", params.search);
+    if (params?.isRunning !== undefined) qs.set("is_running", String(params.isRunning));
+    if (params?.taskTypes?.length) qs.set("task_type", params.taskTypes.join(","));
+    return request("GET", `/tasks/page?${qs.toString()}`);
   },
   getChatSessionStatus(sessionId: string): Promise<{ task: TaskEntry | null }> {
     return request("GET", `/tasks/chat-sessions/${encodeURIComponent(sessionId)}/status`);

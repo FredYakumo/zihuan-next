@@ -270,6 +270,7 @@ pub fn build_router(
             Router::with_path("tasks")
                 .get(execution::list_tasks)
                 .delete(execution::clear_non_running_tasks)
+                .push(Router::with_path("page").get(execution::list_tasks_page))
                 .push(
                     Router::with_path("chat-sessions/<session_id>/status")
                         .get(execution::get_chat_session_task_status),
