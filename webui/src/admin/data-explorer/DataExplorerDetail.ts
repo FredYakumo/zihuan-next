@@ -31,7 +31,7 @@ export function useDataExplorerDetailPage() {
   function onUserRowClick({ row }: { row: ServiceChatUserItem }) { void context.selectUser(row); }
   function serviceTypeLabel(type: string) { return type === "qq_chat" ? "QQ Chat" : type === "http_stream" ? "HTTP Stream" : "Workspace"; }
   function matchLabel(kind: string) {
-    return kind === "keyword" ? "关键词" : kind === "semantic" ? "语义" : kind === "hybrid" ? "混合" : "最近更新";
+    return kind === "keyword" ? "关键词" : kind === "semantic" ? "语义" : kind === "hybrid" ? "混合检索" : "最近更新";
   }
   function formatScore(score: number | null): string {
     return score == null ? "" : String(Number(score.toFixed(4)));

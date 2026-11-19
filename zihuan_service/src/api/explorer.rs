@@ -16,16 +16,21 @@ use zihuan_core::url_utils::{
 
 use crate::system_config::load_connections;
 use zihuan_core::data_refs::RelationalDbConnection;
+use zihuan_core::storage::memory::{
+    prepare_behavioral, prepare_concept, ConceptMemoryWrite, PersonMemoryWrite,
+};
 use zihuan_core::storage::{
-    build_relational_db_connection_for_connection, create_elasticsearch_memory_record,
-    create_memory_record_with_vector, delete_elasticsearch_memory_record, delete_memory_record,
-    get_elasticsearch_memory_record, get_memory_record, list_recent_memory_keys,
+    build_relational_db_connection_for_connection, delete_elasticsearch_memory_record,
+    delete_memory_record, get_elasticsearch_memory_record, get_memory_record,
+    list_recent_memory_keys,
     resource_resolver::{self, build_rdb_ref},
-    search_memory_content_by_vector, update_elasticsearch_memory_record,
-    update_memory_record_with_vector,
+    search_memory_content_by_vector, update_elasticsearch_behavioral_record,
+    update_elasticsearch_concept_record, update_elasticsearch_person_record,
+    upsert_behavioral_record, upsert_concept_record, upsert_elasticsearch_behavioral_record,
+    upsert_elasticsearch_concept_record, upsert_elasticsearch_person_record, upsert_person_record,
     weaviate::build_weaviate_ref as build_storage_weaviate_ref,
-    AgentMemoryAccessContext, AgentMemorySearchHit, AgentMemoryUpsert, ConnectionKind,
-    ObjectStorageConfig, RetrievalDatabase, RetrievalSchema,
+    AgentMemoryAccessContext, ConnectionKind, MemoryRecord, MemorySearchHit, ObjectStorageConfig,
+    RetrievalDatabase, RetrievalSchema,
 };
 use zihuan_ims_service::qq_chat::{
     list_message_rate_limit_usage, reset_message_rate_limit_usage, TurnSummary,
@@ -717,19 +722,82 @@ struct WeaviateSearchResult {
     properties: Value,
 }
 
+/// One memory mutation body, tagged by category: each category carries only its own
+/// fields, mirroring the per-category record models.
 #[derive(Deserialize)]
-struct AgentMemoryMutationRequest {
-    #[serde(flatten)]
-    attributes: zihuan_core::storage::MemoryAttributes,
-    #[serde(alias = "key")]
-    title: String,
-    value: String,
-    #[serde(default)]
-    expires_at: Option<String>,
-    #[serde(default)]
-    sender_id_list: Vec<String>,
-    #[serde(default)]
-    group_id_list: Vec<String>,
+#[serde(tag = "category", rename_all = "snake_case")]
+enum AgentMemoryMutationRequest {
+    Concept {
+        key: String,
+        content: String,
+        #[serde(default)]
+        access_level: Option<u32>,
+        #[serde(default)]
+        starts_at: Option<String>,
+        #[serde(default)]
+        sender_id_list: Vec<String>,
+        #[serde(default)]
+        group_id_list: Vec<String>,
+    },
+    Person {
+        qq_id: String,
+        #[serde(default)]
+        name: String,
+        #[serde(default)]
+        preferred_name: String,
+        #[serde(default)]
+        aliases: Vec<String>,
+        #[serde(default)]
+        impression: String,
+        #[serde(default)]
+        guideline: String,
+        #[serde(default)]
+        access_level: Option<u32>,
+    },
+    Behavioral {
+        key: String,
+        content: String,
+        #[serde(default)]
+        expires_at: Option<String>,
+        #[serde(default)]
+        access_level: Option<u32>,
+        #[serde(default)]
+        sender_id_list: Vec<String>,
+        #[serde(default)]
+        group_id_list: Vec<String>,
+    },
+}
+
+impl AgentMemoryMutationRequest {
+    fn category(&self) -> zihuan_core::storage::MemoryCategory {
+        match self {
+            Self::Concept { .. } => zihuan_core::storage::MemoryCategory::Concept,
+            Self::Person { .. } => zihuan_core::storage::MemoryCategory::Person,
+            Self::Behavioral { .. } => zihuan_core::storage::MemoryCategory::Behavioral,
+        }
+    }
+
+    fn default_access_level(access_level: Option<u32>) -> u32 {
+        access_level.unwrap_or(zihuan_core::storage::user_permission::ROLE_SELF_ACCESS_LEVEL)
+    }
+
+    /// The text the embedding model vectorizes for this record.
+    fn embedding_text(&self) -> zihuan_core::error::Result<String> {
+        Ok(match self {
+            Self::Concept { key, content, .. } => format!("{key}\n{content}"),
+            Self::Person {
+                qq_id,
+                name,
+                preferred_name,
+                aliases,
+                impression,
+                ..
+            } => {
+                format!("{qq_id}\n{name}\n{preferred_name}\n{}\n{impression}", aliases.join(" "))
+            }
+            Self::Behavioral { content, .. } => content.clone(),
+        })
+    }
 }
 
 #[handler]
@@ -752,7 +820,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
             Ok(schema) => schema,
             Err(error) => return render_bad_request(res, error.to_string()),
         },
-        None => RetrievalSchema::AgentMemory,
+        None => RetrievalSchema::ConceptMemory,
     };
 
     let connections = match load_connections() {
@@ -786,13 +854,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         Err(err) => return render_internal_error(res, err),
     };
 
-    if matches!(
-        schema,
-        RetrievalSchema::AgentMemory
-            | RetrievalSchema::ConceptMemory
-            | RetrievalSchema::PersonMemory
-            | RetrievalSchema::BehavioralMemory
-    ) {
+    if schema.memory_category().is_some() {
         let access = AgentMemoryAccessContext {
             admin: true,
             skip_expiry_extend: true,
@@ -804,8 +866,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
                 None => {
                     return render_bad_request(
                         res,
-                        "embedding_model_ref_id is required for agent_memory semantic search"
-                            .into(),
+                        "embedding_model_ref_id is required for memory semantic search".into(),
                     )
                 }
             };
@@ -839,17 +900,9 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         let results = items
             .into_iter()
             .map(|item| WeaviateSearchResult {
-                object_id: Some(item.record.object_id),
+                object_id: Some(item.record.object_id().to_string()),
                 distance: item.distance,
-                properties: json!({
-                    "title": item.record.key,
-                    "value": item.record.value,
-                    "expires_at": item.record.expires_at,
-                    "sender_id_list": item.record.sender_id_list,
-                    "group_id_list": item.record.group_id_list,
-                    "created_at": item.record.created_at,
-                    "updated_at": item.record.updated_at,
-                }),
+                properties: serde_json::to_value(&item.record).expect("memory record serializes"),
             })
             .collect::<Vec<_>>();
         res.render(Json(WeaviateExploreResponse {
@@ -879,8 +932,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
 
         let target_vector = match schema {
             RetrievalSchema::ImageSemantic => Some("description_vector".to_string()),
-            RetrievalSchema::AgentMemory
-            | RetrievalSchema::ConceptMemory
+            RetrievalSchema::ConceptMemory
             | RetrievalSchema::PersonMemory
             | RetrievalSchema::BehavioralMemory
             | RetrievalSchema::QqMessage => None,
@@ -939,7 +991,7 @@ pub async fn create_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Ok(body) => body,
         Err(err) => return render_bad_request(res, err.to_string()),
     };
-    let backend = match resolve_agent_memory_backend(&connection_id, body.attributes.category) {
+    let backend = match resolve_agent_memory_backend(&connection_id, body.category()) {
         Ok(backend) => backend,
         Err(err) => return render_internal_error(res, err),
     };
@@ -950,38 +1002,16 @@ pub async fn create_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Ok(model) => model,
         Err(err) => return render_internal_error(res, err),
     };
-    let vector = match tokio::task::block_in_place(|| {
-        embedding_model.inference(&if body.attributes.category
-            == zihuan_core::storage::MemoryCategory::Person
-        {
-            zihuan_core::storage::memory::person_search_text(&body.attributes.person)
-        } else {
-            format!("{}\n{}", body.title.trim(), body.value.trim())
-        })
-    }) {
-        Ok(vector) => vector,
-        Err(err) => return render_internal_error(res, err),
-    };
-    let input = AgentMemoryUpsert {
-        attributes: body.attributes,
-        key: body.title,
-        value: body.value,
-        expires_at: body.expires_at,
-        sender_id_list: body.sender_id_list,
-        group_id_list: body.group_id_list,
-    };
+    let vector =
+        match tokio::task::block_in_place(|| embedding_model.inference(&body.embedding_text()?)) {
+            Ok(vector) => vector,
+            Err(err) => return render_internal_error(res, err),
+        };
     let _write_guard = match zihuan_core::storage::MEMORY_MUTATION_LOCK.lock() {
         Ok(guard) => guard,
         Err(_) => return render_internal_error(res, "memory mutation lock poisoned"),
     };
-    let result = match &backend {
-        AgentMemoryBackendRef::Weaviate(reference) => {
-            create_memory_record_with_vector(reference, &input, Some(vector))
-        }
-        AgentMemoryBackendRef::Elasticsearch(reference) => {
-            create_elasticsearch_memory_record(reference, &input, vector)
-        }
-    };
+    let result = write_agent_memory(&backend, body, Some(vector));
     match result {
         Ok(record) => res.render(Json(record)),
         Err(err) => render_internal_error(res, err),
@@ -1006,7 +1036,7 @@ pub async fn update_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Ok(body) => body,
         Err(err) => return render_bad_request(res, err.to_string()),
     };
-    let backend = match resolve_agent_memory_backend(&connection_id, body.attributes.category) {
+    let backend = match resolve_agent_memory_backend(&connection_id, body.category()) {
         Ok(backend) => backend,
         Err(err) => return render_internal_error(res, err),
     };
@@ -1017,41 +1047,229 @@ pub async fn update_agent_memory(req: &mut Request, res: &mut Response, _depot: 
         Ok(model) => model,
         Err(err) => return render_internal_error(res, err),
     };
-    let vector = match tokio::task::block_in_place(|| {
-        embedding_model.inference(&if body.attributes.category
-            == zihuan_core::storage::MemoryCategory::Person
-        {
-            zihuan_core::storage::memory::person_search_text(&body.attributes.person)
-        } else {
-            format!("{}\n{}", body.title.trim(), body.value.trim())
-        })
-    }) {
-        Ok(vector) => vector,
-        Err(err) => return render_internal_error(res, err),
-    };
-    let input = AgentMemoryUpsert {
-        attributes: body.attributes,
-        key: body.title,
-        value: body.value,
-        expires_at: body.expires_at,
-        sender_id_list: body.sender_id_list,
-        group_id_list: body.group_id_list,
-    };
+    let vector =
+        match tokio::task::block_in_place(|| embedding_model.inference(&body.embedding_text()?)) {
+            Ok(vector) => vector,
+            Err(err) => return render_internal_error(res, err),
+        };
     let _write_guard = match zihuan_core::storage::MEMORY_MUTATION_LOCK.lock() {
         Ok(guard) => guard,
         Err(_) => return render_internal_error(res, "memory mutation lock poisoned"),
     };
-    let result = match &backend {
-        AgentMemoryBackendRef::Weaviate(reference) => {
-            update_memory_record_with_vector(reference, &object_id, &input, Some(vector))
-        }
-        AgentMemoryBackendRef::Elasticsearch(reference) => {
-            update_elasticsearch_memory_record(reference, &object_id, &input, vector)
-        }
-    };
+    let result = write_agent_memory_at(&backend, &object_id, body, Some(vector));
     match result {
         Ok(record) => res.render(Json(record)),
         Err(err) => render_internal_error(res, err),
+    }
+}
+
+/// Upserts one memory record from the tagged request body on the resolved backend.
+fn write_agent_memory(
+    backend: &AgentMemoryBackendRef,
+    body: AgentMemoryMutationRequest,
+    vector: Option<Vec<f32>>,
+) -> zihuan_core::error::Result<MemoryRecord> {
+    match body {
+        AgentMemoryMutationRequest::Concept {
+            key,
+            content,
+            access_level,
+            starts_at,
+            sender_id_list,
+            group_id_list,
+        } => {
+            let prepared = prepare_concept(&ConceptMemoryWrite {
+                key,
+                content,
+                access_level: AgentMemoryMutationRequest::default_access_level(access_level),
+                starts_at,
+                sender_id_list,
+                group_id_list,
+            })?;
+            match backend {
+                AgentMemoryBackendRef::Weaviate(reference) => {
+                    upsert_concept_record(reference, &prepared, vector)
+                }
+                AgentMemoryBackendRef::Elasticsearch(reference) => {
+                    upsert_elasticsearch_concept_record(
+                        reference,
+                        &prepared,
+                        vector.unwrap_or_default(),
+                    )
+                }
+            }
+        }
+        AgentMemoryMutationRequest::Person {
+            qq_id,
+            name,
+            preferred_name,
+            aliases,
+            impression,
+            guideline,
+            access_level,
+        } => {
+            let write = PersonMemoryWrite {
+                profile: zihuan_core::storage::PersonMemory {
+                    qq_id,
+                    name,
+                    preferred_name,
+                    aliases,
+                    impression,
+                    guideline,
+                },
+                access_level: AgentMemoryMutationRequest::default_access_level(access_level),
+            };
+            match backend {
+                AgentMemoryBackendRef::Weaviate(reference) => {
+                    upsert_person_record(reference, &write, vector)
+                }
+                AgentMemoryBackendRef::Elasticsearch(reference) => {
+                    upsert_elasticsearch_person_record(
+                        reference,
+                        &write,
+                        vector.unwrap_or_default(),
+                    )
+                }
+            }
+        }
+        AgentMemoryMutationRequest::Behavioral {
+            key,
+            content,
+            expires_at,
+            access_level,
+            sender_id_list,
+            group_id_list,
+        } => {
+            let prepared = prepare_behavioral(&zihuan_core::storage::BehavioralMemoryWrite {
+                key,
+                content,
+                access_level: AgentMemoryMutationRequest::default_access_level(access_level),
+                expires_at,
+                sender_id_list,
+                group_id_list,
+            })?;
+            match backend {
+                AgentMemoryBackendRef::Weaviate(reference) => {
+                    upsert_behavioral_record(reference, &prepared, vector)
+                }
+                AgentMemoryBackendRef::Elasticsearch(reference) => {
+                    upsert_elasticsearch_behavioral_record(
+                        reference,
+                        &prepared,
+                        vector.unwrap_or_default(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/// Admin update at an explicit object id; identity fields must match the stored record.
+fn write_agent_memory_at(
+    backend: &AgentMemoryBackendRef,
+    object_id: &str,
+    body: AgentMemoryMutationRequest,
+    vector: Option<Vec<f32>>,
+) -> zihuan_core::error::Result<MemoryRecord> {
+    match body {
+        AgentMemoryMutationRequest::Concept {
+            key,
+            content,
+            access_level,
+            starts_at,
+            sender_id_list,
+            group_id_list,
+        } => {
+            let prepared = prepare_concept(&ConceptMemoryWrite {
+                key,
+                content,
+                access_level: AgentMemoryMutationRequest::default_access_level(access_level),
+                starts_at,
+                sender_id_list,
+                group_id_list,
+            })?;
+            match backend {
+                AgentMemoryBackendRef::Weaviate(reference) => {
+                    zihuan_core::storage::update_concept_record(
+                        reference, object_id, &prepared, vector,
+                    )
+                }
+                AgentMemoryBackendRef::Elasticsearch(reference) => {
+                    update_elasticsearch_concept_record(
+                        reference,
+                        object_id,
+                        &prepared,
+                        vector.unwrap_or_default(),
+                    )
+                }
+            }
+        }
+        AgentMemoryMutationRequest::Person {
+            qq_id,
+            name,
+            preferred_name,
+            aliases,
+            impression,
+            guideline,
+            access_level,
+        } => {
+            let write = PersonMemoryWrite {
+                profile: zihuan_core::storage::PersonMemory {
+                    qq_id,
+                    name,
+                    preferred_name,
+                    aliases,
+                    impression,
+                    guideline,
+                },
+                access_level: AgentMemoryMutationRequest::default_access_level(access_level),
+            };
+            match backend {
+                AgentMemoryBackendRef::Weaviate(reference) => {
+                    zihuan_core::storage::update_person_record(reference, object_id, &write, vector)
+                }
+                AgentMemoryBackendRef::Elasticsearch(reference) => {
+                    update_elasticsearch_person_record(
+                        reference,
+                        object_id,
+                        &write,
+                        vector.unwrap_or_default(),
+                    )
+                }
+            }
+        }
+        AgentMemoryMutationRequest::Behavioral {
+            key,
+            content,
+            expires_at,
+            access_level,
+            sender_id_list,
+            group_id_list,
+        } => {
+            let prepared = prepare_behavioral(&zihuan_core::storage::BehavioralMemoryWrite {
+                key,
+                content,
+                access_level: AgentMemoryMutationRequest::default_access_level(access_level),
+                expires_at,
+                sender_id_list,
+                group_id_list,
+            })?;
+            match backend {
+                AgentMemoryBackendRef::Weaviate(reference) => {
+                    zihuan_core::storage::update_behavioral_record(
+                        reference, object_id, &prepared, vector,
+                    )
+                }
+                AgentMemoryBackendRef::Elasticsearch(reference) => {
+                    update_elasticsearch_behavioral_record(
+                        reference,
+                        object_id,
+                        &prepared,
+                        vector.unwrap_or_default(),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1229,7 +1447,7 @@ struct ServiceMemoryResponse {
 #[derive(Serialize)]
 struct ServiceMemoryItem {
     #[serde(flatten)]
-    record: zihuan_core::storage::AgentMemoryRecord,
+    record: zihuan_core::storage::MemoryRecord,
     match_kinds: Vec<&'static str>,
     score: Option<f64>,
     backend: &'static str,
@@ -1439,6 +1657,7 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
         None
     };
     let queried = query.is_some();
+    let sort_query = query.clone();
     let results = tokio::task::spawn_blocking(move || {
         let backend = zihuan_core::agent::tools::memory::MemoryBackend::RetrievalStore(
             std::sync::Arc::new(store),
@@ -1463,7 +1682,13 @@ pub async fn query_service_memories(req: &mut Request, res: &mut Response, _depo
         Ok(Err(error)) => return render_internal_error(res, error),
         Err(error) => return render_internal_error(res, error),
     };
-    let hits = batches.into_iter().flat_map(|(_, hits)| hits.into_iter().take(limit)).collect();
+    let mut hits: Vec<_> = batches.into_iter().flat_map(|(_, hits)| hits).collect();
+    if let Some(query) = sort_query.as_deref() {
+        zihuan_core::storage::memory::sort_memory_search_hits(query, &mut hits);
+    } else {
+        hits.sort_by(|a, b| b.record.updated_at().cmp(a.record.updated_at()));
+    }
+    hits.truncate(limit);
     res.render(Json(ServiceMemoryResponse {
         items: memory_items(hits, if queried { "hybrid" } else { "recent" }, backend_name, true),
         backend: backend_name,
@@ -2378,7 +2603,7 @@ async fn embedding_vectors(
 }
 
 fn memory_items(
-    hits: Vec<AgentMemorySearchHit>,
+    hits: Vec<MemorySearchHit>,
     kind: &'static str,
     backend: &'static str,
     mutable: bool,

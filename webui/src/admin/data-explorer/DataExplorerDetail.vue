@@ -126,18 +126,18 @@
       <template v-else-if="capability === 'memories'">
         <div class="search-form search-form--simple">
           <t-input v-model="memory.query" placeholder="搜索全部记忆：事实、人物、行为" clearable @enter="searchMemories" />
-          <t-input-number v-model="memory.limit" :min="1" :max="50" title="每类最多返回的记忆数" />
+          <t-input-number v-model="memory.limit" :min="1" :max="50" title="最多返回的记忆总数" />
           <t-button theme="primary" :loading="memory.loading" @click="searchMemories">搜索</t-button>
           <t-button v-if="memory.mutable" variant="outline" @click="mutateMemory('create')">新建记忆</t-button>
         </div>
         <div v-if="memory.items.length" class="memory-list">
           <article v-for="item in memory.items" :key="`${item.category}:${item.object_id}`" class="memory-item">
             <div class="memory-item-header">
-              <strong>{{ item.category === 'person' ? item.preferred_name || item.name || item.qq_id : item.category === 'behavioral' ? '行为记忆' : item.title }}</strong>
+              <strong>{{ item.category === 'person' ? item.preferred_name || item.name || item.qq_id : item.category === 'behavioral' ? '行为记忆' : item.key }}</strong>
               <span>
                 <t-tag size="small" variant="light" :theme="item.category === 'concept' ? 'primary' : item.category === 'person' ? 'success' : 'warning'">{{ memoryCategoryOptions.find(option => option.value === item.category)?.label || item.category }}</t-tag>
                 <t-tag v-for="kind in item.match_kinds" :key="kind" size="small" variant="light" :theme="kind === 'keyword' ? 'primary' : 'default'">{{ matchLabel(kind) }}</t-tag>
-                <t-tag v-if="item.score != null" size="small" variant="light" theme="warning">关联度 {{ formatScore(item.score) }}</t-tag>
+                <t-tag v-if="item.score != null" size="small" variant="light" theme="warning" title="RRF 排名融合分数，不是语义相似度或相关概率；完整昵称或标题匹配优先">排序分 {{ formatScore(item.score) }}</t-tag>
               </span>
             </div>
             <template v-if="item.category === 'person'">
@@ -147,7 +147,7 @@
               <p v-if="item.impression">印象：{{ item.impression }}</p>
               <p v-if="item.guideline">交往准则：{{ item.guideline }}</p>
             </template>
-            <p v-else>{{ item.value }}</p>
+            <p v-else>{{ item.content }}</p>
             <div class="muted">级别 {{ item.access_level }} · 更新于 {{ item.updated_at }} · {{ item.backend }}</div>
             <div v-if="item.mutable" class="memory-actions">
               <t-button variant="text" size="small" @click="mutateMemory('edit', item)">编辑</t-button>
@@ -166,7 +166,7 @@
         >
           <t-form label-width="88px" @submit.prevent="submitMemoryDialog">
             <t-form-item label="记忆类别" required-mark>
-              <t-select v-model="memoryDialog.form.category" :options="memoryCategoryOptions" :disabled="memoryDialog.mode === 'edit'" @change="memoryDialog.errors = { title: '', value: '', qq_id: '' }" />
+              <t-select v-model="memoryDialog.form.category" :options="memoryCategoryOptions" :disabled="memoryDialog.mode === 'edit'" @change="memoryDialog.errors = { key: '', content: '', qq_id: '' }" />
             </t-form-item>
             <t-form-item label="访问级别"><t-input-number v-model="memoryDialog.form.access_level" :min="0" /></t-form-item>
             <t-form-item v-if="memoryDialog.form.category === 'concept'" label="起始时间"><t-input v-model="memoryDialog.form.starts_at" placeholder="RFC3339，留空使用当前时间" /></t-form-item>
@@ -178,11 +178,11 @@
               <t-form-item label="印象"><t-textarea v-model="memoryDialog.form.impression" /></t-form-item>
               <t-form-item label="交往准则"><t-textarea v-model="memoryDialog.form.guideline" /></t-form-item>
             </template>
-            <t-form-item v-if="memoryDialog.form.category === 'concept'" label="记忆标题" required-mark>
-              <t-input :disabled="memoryDialog.mode === 'edit'" v-model="memoryDialog.form.title" :status="memoryDialog.errors.title ? 'error' : undefined" :tips="memoryDialog.errors.title" placeholder="记忆的标题" @change="memoryDialog.errors.title = ''" />
+            <t-form-item v-if="memoryDialog.form.category !== 'person'" label="记忆标题" required-mark>
+              <t-input :disabled="memoryDialog.mode === 'edit'" v-model="memoryDialog.form.key" :status="memoryDialog.errors.key ? 'error' : undefined" :tips="memoryDialog.errors.key" placeholder="记忆的标题" @change="memoryDialog.errors.key = ''" />
             </t-form-item>
             <t-form-item v-if="memoryDialog.form.category !== 'person'" label="记忆内容" required-mark>
-              <t-textarea v-model="memoryDialog.form.value" :autosize="{ minRows: 4, maxRows: 10 }" :status="memoryDialog.errors.value ? 'error' : undefined" :tips="memoryDialog.errors.value" placeholder="要记住的内容" />
+              <t-textarea v-model="memoryDialog.form.content" :autosize="{ minRows: 4, maxRows: 10 }" :status="memoryDialog.errors.content ? 'error' : undefined" :tips="memoryDialog.errors.content" placeholder="要记住的内容" />
             </t-form-item>
             <t-form-item v-if="memoryDialog.form.category === 'behavioral'" label="过期时间">
               <t-input v-model="memoryDialog.form.expires_at" placeholder="RFC3339 格式，留空默认两天" />

@@ -7,6 +7,7 @@ import {
   type ServiceExplorerImageRecord,
   type ServiceExplorerMemoryRecord,
   type MemoryCategory,
+  type MemoryMutationPayload,
   type ServiceWithRuntime,
 } from "../../api/client";
 
@@ -77,8 +78,8 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
     mode: "create" as "create" | "edit",
     saving: false,
     objectId: "",
-    form: { category: "concept" as MemoryCategory, access_level: 2, starts_at: "", qq_id: "", name: "", preferred_name: "", aliases: "", impression: "", guideline: "", title: "", value: "", expires_at: "", sender_id_list: "", group_id_list: "" },
-    errors: { title: "", value: "", qq_id: "" },
+    form: { category: "concept" as MemoryCategory, access_level: 2, starts_at: "", qq_id: "", name: "", preferred_name: "", aliases: "", impression: "", guideline: "", key: "", content: "", expires_at: "", sender_id_list: "", group_id_list: "" },
+    errors: { key: "", content: "", qq_id: "" },
   });
   const image = ref({ loading: false, searched: false, nameQuery: "", descriptionQuery: "", limit: 20, items: [] as ServiceExplorerImageRecord[] });
   const messageTotalPages = computed(() => Math.max(1, Math.ceil(message.value.total / message.value.pageSize)));
@@ -163,20 +164,20 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
       form: {
         category: item?.category ?? "concept",
         access_level: item?.access_level ?? 2,
-        starts_at: item?.starts_at ?? "",
-        qq_id: item?.qq_id ?? "",
-        name: item?.name ?? "",
-        preferred_name: item?.preferred_name ?? "",
-        aliases: item?.aliases?.join(",") ?? "",
-        impression: item?.impression ?? "",
-        guideline: item?.guideline ?? "",
-        title: item?.title ?? "",
-        value: item?.value ?? "",
-        expires_at: item?.expires_at ?? "",
-        sender_id_list: item?.sender_id_list?.join(",") ?? "",
-        group_id_list: item?.group_id_list?.join(",") ?? "",
+        starts_at: item?.category === "concept" ? item.starts_at : "",
+        qq_id: item?.category === "person" ? item.qq_id : "",
+        name: item?.category === "person" ? item.name : "",
+        preferred_name: item?.category === "person" ? item.preferred_name : "",
+        aliases: item?.category === "person" ? item.aliases.join(",") : "",
+        impression: item?.category === "person" ? item.impression : "",
+        guideline: item?.category === "person" ? item.guideline : "",
+        key: item && item.category !== "person" ? item.key : "",
+        content: item && item.category !== "person" ? item.content : "",
+        expires_at: item?.category === "behavioral" ? item.expires_at : "",
+        sender_id_list: item && item.category !== "person" ? item.sender_id_list.join(",") : "",
+        group_id_list: item && item.category !== "person" ? item.group_id_list.join(",") : "",
       },
-      errors: { title: "", value: "", qq_id: "" },
+      errors: { key: "", content: "", qq_id: "" },
     };
   }
 
@@ -195,11 +196,11 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
       impression: dialog.form.impression.trim(),
       guideline: dialog.form.guideline.trim(),
     };
-    const title = category === "person" ? "" : category === "concept" || dialog.mode === "edit" ? dialog.form.title.trim() : "";
-    const value = category === "person" ? JSON.stringify(person) : dialog.form.value.trim();
+    const key = category === "person" ? "" : dialog.form.key.trim();
+    const content = category === "person" ? dialog.form.impression.trim() : dialog.form.content.trim();
     dialog.errors = {
-      title: category !== "concept" || title ? "" : "请输入记忆标题",
-      value: value ? "" : "请输入记忆内容",
+      key: category === "person" || key ? "" : "请输入记忆标题",
+      content: category === "person" || content ? "" : "请输入记忆内容",
       qq_id: category !== "person" || /^\d+$/.test(person.qq_id) ? "" : "请输入有效的 QQ ID",
     };
     if (Object.values(dialog.errors).some(Boolean)) return;
@@ -208,15 +209,26 @@ export function useDataExplorerDetail(serviceId: string, capability: ServiceCapa
       sender_id_list: dialog.form.sender_id_list.split(",").map(entry => entry.trim()).filter(Boolean),
       group_id_list: dialog.form.group_id_list.split(",").map(entry => entry.trim()).filter(Boolean),
     };
-    const payload = {
-      category,
-      access_level: dialog.form.access_level,
-      title,
-      value,
-      ...(category === "person" ? person : scoped),
-      ...(category === "concept" ? { starts_at: dialog.form.starts_at.trim() || new Date().toISOString() } : {}),
-      ...(category === "behavioral" ? { expires_at: dialog.form.expires_at.trim() || new Date(Date.now() + 2 * 86400000).toISOString() } : {}),
-    };
+    const payload: MemoryMutationPayload =
+      category === "person"
+        ? { category, access_level: dialog.form.access_level, ...person }
+        : category === "concept"
+          ? {
+              category,
+              key,
+              content,
+              access_level: dialog.form.access_level,
+              starts_at: dialog.form.starts_at.trim() || new Date().toISOString(),
+              ...scoped,
+            }
+          : {
+              category,
+              key,
+              content,
+              access_level: dialog.form.access_level,
+              expires_at: dialog.form.expires_at.trim() || new Date(Date.now() + 2 * 86400000).toISOString(),
+              ...scoped,
+            };
     try {
       if (dialog.mode === "create") await explorer.createAgentMemory(connectionId, embeddingModelRefId, payload);
       else await explorer.updateAgentMemory(connectionId, embeddingModelRefId, dialog.objectId, payload);
