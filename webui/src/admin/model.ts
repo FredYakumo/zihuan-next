@@ -142,6 +142,7 @@ export interface ServiceFormState {
   auto_start: boolean;
   is_default: boolean;
   type: ServiceTypeName;
+  permission_group: string;
   ims_bot_adapter_connection_id: string;
   rustfs_connection_id: string;
   bot_name: string;
@@ -486,6 +487,7 @@ export function defaultServiceForm(): ServiceFormState {
     auto_start: false,
     is_default: false,
     type: "qq_chat",
+    permission_group: "default",
     ims_bot_adapter_connection_id: "",
     rustfs_connection_id: "",
     bot_name: "",
@@ -1026,6 +1028,7 @@ export function serviceFormFromConfig(
   form.enabled = agent.enabled;
   form.auto_start = agent.auto_start;
   form.is_default = agent.is_default;
+  form.permission_group = agent.permission_group || "default";
   form.tools = agent.tools.map(toolFormFromConfig);
   const agentType = agent.role_service_type as Record<string, unknown>;
   form.type = String(agentType.type) as ServiceTypeName;
@@ -1263,6 +1266,7 @@ export function buildServicePayload(form: ServiceFormState): {
   role_service_type: Record<string, unknown>;
   tools: ServiceToolConfig[];
   avatar_url?: string | null;
+  permission_group: string;
 } {
   const tools = form.tools.map(buildToolPayload);
   const common = {
@@ -1271,6 +1275,7 @@ export function buildServicePayload(form: ServiceFormState): {
     auto_start: form.auto_start,
     is_default: form.is_default,
     tools,
+    permission_group: form.permission_group || "default",
   };
   if (form.type === "qq_chat") {
     const defaultToolsEnabled = Object.fromEntries(

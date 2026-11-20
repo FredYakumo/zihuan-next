@@ -752,6 +752,8 @@ fn try_dispatch_dashboard_command(
         channel: CommandChannel::DashboardChat {
             session_id: requested_session_id.map(|s| s.to_string()),
         },
+        permission_group: None,
+        entity_type: None,
     };
 
     let Some((spec, parsed)) = command_registry.spec_for(&command_context, &raw_user_text) else {

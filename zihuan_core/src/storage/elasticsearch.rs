@@ -652,7 +652,8 @@ pub fn list_elasticsearch_memory_keys(
     let body = if query.is_empty() {
         json!({"size": top_n.min(MAX_QUERY_CANDIDATES), "sort": [{"updated_at": "desc"}], "query": access_filter(access)})
     } else {
-        memory_lexical_body(access, query, memory_result_size(top_n))
+        let pinyin_query = memory_pinyin_query(reference, query)?;
+        memory_lexical_body(access, query, pinyin_query.as_deref(), memory_result_size(top_n))
     };
     parse_memory_hits(
         reference,
@@ -675,6 +676,7 @@ pub fn search_elasticsearch_memory(
     validate_vector(reference, vector)?;
     let size = memory_result_size(top_n);
     let window = (size * 5).min(MAX_QUERY_CANDIDATES);
+    let pinyin_query = memory_pinyin_query(reference, query)?;
     // Lexical and vector retrieval are issued as separate plain searches and
     // fused locally: the server-side `rrf` retriever is an Enterprise feature,
     // and a retriever cannot be combined with a top-level sort.
@@ -683,7 +685,7 @@ pub fn search_elasticsearch_memory(
         reference.request(
             reqwest::Method::POST,
             &format!("/{}/_search", reference.index_name),
-            Some(memory_lexical_body(access, query, window)),
+            Some(memory_lexical_body(access, query, pinyin_query.as_deref(), window)),
         )?,
         access,
     )?;
@@ -706,11 +708,63 @@ fn memory_result_size(top_n: usize) -> usize {
     top_n.clamp(1, 50)
 }
 
-fn memory_lexical_body(access: &AgentMemoryAccessContext, query: &str, size: usize) -> Value {
-    json!({"size":size,"query":memory_lexical_query(access, query),"sort":[{"_score":"desc"},{"updated_at":"desc"}]})
+fn memory_pinyin_query(reference: &ElasticsearchRef, query: &str) -> Result<Option<String>> {
+    let query = query.trim();
+    if query.chars().count() < 2 {
+        return Ok(None);
+    }
+    if query.chars().all(|c| c.is_ascii_alphabetic() || c == ' ') {
+        return Ok(Some(query.to_lowercase()));
+    }
+    if !query
+        .chars()
+        .any(|c| matches!(c, '\u{4E00}'..='\u{9FFF}' | '\u{3400}'..='\u{4DBF}'))
+    {
+        return Ok(None);
+    }
+    // Use the installed plugin's pronunciation dictionary, but exclude initials
+    // and original Hanzi from the query. Existing pinyin fields already contain
+    // full syllables, so this also works without changing or rebuilding indices.
+    let analyzed = reference.request(
+        reqwest::Method::POST,
+        &format!("/{}/_analyze", reference.index_name),
+        Some(json!({
+            "tokenizer":"standard",
+            "filter":["lowercase",{
+                "type":"pinyin",
+                "keep_first_letter":false,
+                "keep_original":false,
+                "keep_full_pinyin":true,
+                "keep_joined_full_pinyin":false
+            }],
+            "text":query
+        })),
+    )?;
+    let tokens = analyzed.get("tokens").and_then(Value::as_array).ok_or_else(|| {
+        crate::string_error!("elasticsearch pinyin analysis returned no tokens array")
+    })?;
+    let syllables = tokens
+        .iter()
+        .filter_map(|token| token.get("token").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join(" ");
+    Ok((!syllables.is_empty()).then_some(syllables))
 }
 
-fn memory_lexical_query(access: &AgentMemoryAccessContext, query: &str) -> Value {
+fn memory_lexical_body(
+    access: &AgentMemoryAccessContext,
+    query: &str,
+    pinyin_query: Option<&str>,
+    size: usize,
+) -> Value {
+    json!({"size":size,"query":memory_lexical_query(access, query, pinyin_query),"sort":[{"_score":"desc"},{"updated_at":"desc"}]})
+}
+
+fn memory_lexical_query(
+    access: &AgentMemoryAccessContext,
+    query: &str,
+    pinyin_query: Option<&str>,
+) -> Value {
     let person = access.category == super::MemoryCategory::Person;
     let fields = if person {
         vec!["name^5", "preferred_name^5", "aliases^5", "impression^2"]
@@ -727,16 +781,21 @@ fn memory_lexical_query(access: &AgentMemoryAccessContext, query: &str) -> Value
             clauses.push(json!({"wildcard":{"qq_id":{"value":format!("*{query}*")}}}));
         }
     }
-    // Pinyin is a name/title fallback for Latin input, never an OR over the
-    // initials of Chinese body text. Existing index analyzers remain usable.
-    if query.len() >= 2 && query.chars().all(|c| c.is_ascii_alphabetic() || c == ' ') {
+    // All full syllables must occur in one field. Analyze these already-converted
+    // terms with standard, so the field analyzer cannot add noisy initials.
+    if let Some(pinyin_query) = pinyin_query {
         let fields = if person {
-            vec!["name.pinyin", "preferred_name.pinyin", "aliases.pinyin"]
+            vec![
+                "name.pinyin^5",
+                "preferred_name.pinyin^5",
+                "aliases.pinyin^5",
+                "impression.pinyin^2",
+            ]
         } else {
-            vec!["key.pinyin"]
+            vec!["key.pinyin^5", "content.pinyin^2"]
         };
         clauses.push(
-            json!({"multi_match":{"query":query,"fields":fields,"operator":"and","boost":0.5}}),
+            json!({"multi_match":{"query":pinyin_query,"fields":fields,"analyzer":"standard","operator":"and","boost":0.5}}),
         );
     }
     json!({"bool":{"filter":[access_filter(access)],"should":clauses,"minimum_should_match":1}})

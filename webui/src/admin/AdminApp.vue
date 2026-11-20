@@ -25,6 +25,7 @@
           <t-tag v-if="logErrorBadgeEnabled && errorCount > 0" class="admin-nav-badge" theme="danger" variant="dark" size="small">{{ errorCount }}</t-tag>
         </t-menu-item>
         <t-menu-item value="/commands" to="/commands" @click="closeSidebar"><template #icon><TerminalIcon /></template>命令管理</t-menu-item>
+        <t-menu-item value="/permission-groups" to="/permission-groups" @click="closeSidebar"><template #icon><KeyIcon /></template>权限组</t-menu-item>
         <t-menu-item value="/connection-manager" to="/connection-manager" @click="closeSidebar"><template #icon><ControlPlatformIcon /></template>连接管理器</t-menu-item>
         <t-menu-item value="/data-explorer" to="/data-explorer" @click="closeSidebar"><template #icon><SearchIcon /></template>数据检索</t-menu-item>
         <t-menu-item value="/api-keys" to="/api-keys" @click="closeSidebar"><template #icon><KeyIcon /></template>API Key</t-menu-item>

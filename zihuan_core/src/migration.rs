@@ -54,6 +54,7 @@ pub async fn prepare(database: &SystemDatabase) -> Result<()> {
     sqlx::query(&permission_ddl.replace("user_permission", "zihuan_settings.user_permission"))
         .execute(&database.pool)
         .await?;
+    crate::permission::prepare(database).await?;
     for migration in MIGRATIONS {
         if !applied(database, migration.name).await? {
             sqlx::query(if database.mysql {
@@ -207,6 +208,45 @@ pub async fn migrate(source: &SystemDatabase, target: &SystemDatabase) -> Result
             "INSERT INTO zihuan_settings.user_permission (agent_id,user_id,permission_key,payload,access_level,elevated_level,elevated_until) VALUES (?,?,?,?,?,?,?) ON CONFLICT(agent_id,user_id,permission_key) DO UPDATE SET payload=excluded.payload,access_level=excluded.access_level,elevated_level=excluded.elevated_level,elevated_until=excluded.elevated_until"
         };
         sqlx::query(statement).bind(row.try_get::<String,_>("agent_id")?).bind(row.try_get::<String,_>("user_id")?).bind(row.try_get::<String,_>("permission_key")?).bind(row.try_get::<Option<String>,_>("payload")?).bind(row.try_get::<i64,_>("access_level")?).bind(row.try_get::<Option<i64>,_>("elevated_level")?).bind(row.try_get::<Option<String>,_>("elevated_until")?).execute(&mut *transaction).await?;
+    }
+    for row in
+        sqlx::query("SELECT name, created_at, updated_at FROM zihuan_settings.permission_group")
+            .fetch_all(&source.pool)
+            .await?
+    {
+        let sql = if target.mysql {
+            "INSERT INTO zihuan_settings.permission_group (name, created_at, updated_at) VALUES (?,?,?) ON DUPLICATE KEY UPDATE updated_at=VALUES(updated_at)"
+        } else {
+            "INSERT INTO zihuan_settings.permission_group (name, created_at, updated_at) VALUES (?,?,?) ON CONFLICT(name) DO UPDATE SET updated_at=excluded.updated_at"
+        };
+        sqlx::query(sql)
+            .bind(row.try_get::<String, _>("name")?)
+            .bind(row.try_get::<String, _>("created_at")?)
+            .bind(row.try_get::<String, _>("updated_at")?)
+            .execute(&mut *transaction)
+            .await?;
+    }
+    for row in sqlx::query(
+        "SELECT group_name, entity_id, entity_type, category, value, created_at, updated_at FROM zihuan_settings.permission_entry",
+    )
+    .fetch_all(&source.pool)
+    .await?
+    {
+        let sql = if target.mysql {
+            "INSERT INTO zihuan_settings.permission_entry (group_name, entity_id, entity_type, category, value, created_at, updated_at) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE value=VALUES(value), updated_at=VALUES(updated_at)"
+        } else {
+            "INSERT INTO zihuan_settings.permission_entry (group_name, entity_id, entity_type, category, value, created_at, updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(group_name, entity_id, entity_type, category) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
+        };
+        sqlx::query(sql)
+            .bind(row.try_get::<String, _>("group_name")?)
+            .bind(row.try_get::<String, _>("entity_id")?)
+            .bind(row.try_get::<String, _>("entity_type")?)
+            .bind(row.try_get::<String, _>("category")?)
+            .bind(row.try_get::<i32, _>("value")?)
+            .bind(row.try_get::<String, _>("created_at")?)
+            .bind(row.try_get::<String, _>("updated_at")?)
+            .execute(&mut *transaction)
+            .await?;
     }
     for row in sqlx::query("SELECT name FROM zihuan_settings.migrations")
         .fetch_all(&source.pool)

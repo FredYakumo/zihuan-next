@@ -345,6 +345,8 @@ impl<'a> QqChatCommandRuntime<'a> {
                         group_id: pending.pending_group_id,
                         target_id,
                     },
+                    permission_group: None,
+                    entity_type: None,
                 };
                 let mut initial_state = CmdState::default();
                 if let Some(task_id) = &pending.pending_task_id {
@@ -406,6 +408,8 @@ pub(crate) fn run_command_effects_now(
             group_id: inference_event.group_id.clone(),
             target_id: target_id.to_string(),
         },
+        permission_group: Some(ctx.permission_group.to_string()),
+        entity_type: Some(ctx.entity_type),
     };
     let Some((spec, parsed)) = registry.spec_for(&cmd_ctx, raw_user_message) else {
         return Ok(false);

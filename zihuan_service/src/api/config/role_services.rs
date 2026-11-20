@@ -465,6 +465,8 @@ pub struct CreateRoleServiceRequest {
     pub tools: Vec<AgentToolConfig>,
     #[serde(default)]
     pub avatar_url: Option<String>,
+    #[serde(default)]
+    pub permission_group: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -481,6 +483,8 @@ pub struct UpdateRoleServiceRequest {
     pub tools: Vec<AgentToolConfig>,
     #[serde(default)]
     pub avatar_url: Option<String>,
+    #[serde(default)]
+    pub permission_group: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -994,6 +998,10 @@ pub async fn create_role_service(req: &mut Request, res: &mut Response, _depot: 
     {
         return render_unprocessable_entity(res, message);
     }
+    let permission_group = match resolve_permission_group(body.permission_group.as_deref()) {
+        Ok(group) => group,
+        Err(message) => return render_unprocessable_entity(res, message),
+    };
 
     let role_service = RoleServiceConfig {
         id: Uuid::new_v4().to_string(),
@@ -1006,6 +1014,7 @@ pub async fn create_role_service(req: &mut Request, res: &mut Response, _depot: 
         updated_at: now_rfc3339(),
         tools: body.tools,
         avatar_url: body.avatar_url.filter(|v| !v.is_empty()),
+        permission_group,
     };
     let mut role_service = role_service;
     role_service.config_id = role_service.id.clone();
@@ -1068,6 +1077,10 @@ pub async fn update_role_service(req: &mut Request, res: &mut Response, depot: &
     {
         return render_unprocessable_entity(res, message);
     }
+    let permission_group = match resolve_permission_group(body.permission_group.as_deref()) {
+        Ok(group) => group,
+        Err(message) => return render_unprocessable_entity(res, message),
+    };
 
     let Some(role_service) = role_services.iter_mut().find(|item| item.id == id) else {
         return render_not_found(res, "Role service not found");
@@ -1081,6 +1094,7 @@ pub async fn update_role_service(req: &mut Request, res: &mut Response, depot: &
     role_service.updated_at = now_rfc3339();
     role_service.tools = body.tools;
     role_service.avatar_url = body.avatar_url.filter(|v| !v.is_empty());
+    role_service.permission_group = permission_group;
     let response = role_service.clone();
 
     match system_config::save_role_services(role_services) {
@@ -1310,6 +1324,18 @@ pub async fn delete_role_service(req: &mut Request, res: &mut Response, depot: &
             })));
         }
         Err(err) => render_internal_error(res, err),
+    }
+}
+
+fn resolve_permission_group(requested: Option<&str>) -> Result<String, String> {
+    let group = requested
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(zihuan_core::permission::DEFAULT_GROUP);
+    match zihuan_core::permission::group_exists(group) {
+        Ok(true) => Ok(group.to_string()),
+        Ok(false) => Err(format!("权限组 '{group}' 不存在")),
+        Err(err) => Err(err.to_string()),
     }
 }
 

@@ -5,6 +5,21 @@ import { useAgents } from "./useAgents";
 import { assertConnectionConfig, assertLlmConfig, normalizeConnectionConfigs } from "../model";
 
 export function useRoleServicePage(options: { autoLoad?: boolean } = {}) {
+const permissionGroups = ref<{ name: string; entry_count: number }[]>([]);
+
+async function loadPermissionGroups() {
+  try {
+    const res = await fetch("/api/system/permission-groups");
+    if (res.ok) permissionGroups.value = await res.json();
+  } catch (error) {
+    console.error("Failed to load permission groups", error);
+  }
+}
+
+async function load() {
+  await Promise.all([loadAgents(), loadPermissionGroups()]);
+}
+
 const agents = useAgents(options);
 const {
   serviceTypes,
@@ -58,7 +73,7 @@ const {
   closeCreatePicker,
   pickCreateType,
   closeEditor,
-  load,
+  load: loadAgents,
   editService,
   duplicateService,
   closeEditModal,
@@ -407,6 +422,8 @@ function copyServiceConfigItem(service: ServiceWithRuntime) {
 
 return {
   ...agents,
+  permissionGroups,
+  load,
   showModelConfigDialog,
   modelImporting,
   showRetrievalDatabaseDialog,

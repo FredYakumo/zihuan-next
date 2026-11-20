@@ -22,6 +22,7 @@ import Tasks from "./admin/tasks/Tasks.vue";
 import ScheduledTasks from "./admin/scheduled-tasks/ScheduledTasks.vue";
 import Logs from "./admin/logs/Logs.vue";
 import Commands from "./admin/commands/Commands.vue";
+import Permissions from "./admin/permissions/Permissions.vue";
 import Chat from "./admin/chat/Chat.vue";
 import DataExplorer from "./admin/data-explorer/DataExplorer.vue";
 import ServiceDataExplorer from "./admin/data-explorer/ServiceDataExplorer.vue";
@@ -78,6 +79,7 @@ async function main() {
       { path: "/scheduled-tasks", component: ScheduledTasks },
       { path: "/logs", component: Logs },
       { path: "/commands", component: Commands },
+      { path: "/permission-groups", component: Permissions },
       {
         path: "/chat",
         component: Chat,

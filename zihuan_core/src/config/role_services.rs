@@ -40,6 +40,9 @@ impl ConfigRecord for RoleServiceConfig {
         if self.name.trim().is_empty() {
             return Err(crate::string_error!("role service name must not be empty"));
         }
+        if self.permission_group.trim().is_empty() {
+            return Err(crate::string_error!("role service permission group must not be empty"));
+        }
         Ok(())
     }
 
@@ -128,6 +131,10 @@ fn role_service_to_record(role_service: &RoleServiceConfig) -> Result<StoredConf
     if let Some(avatar_url) = &role_service.avatar_url {
         spec.insert("avatar_url".to_string(), Value::String(avatar_url.clone()));
     }
+    spec.insert(
+        "permission_group".to_string(),
+        Value::String(role_service.permission_group.clone()),
+    );
     Ok(StoredConfigRecord {
         config_id: role_service.canonical_config_id().to_string(),
         kind: role_service.kind(),
@@ -168,5 +175,12 @@ fn role_service_from_record(record: StoredConfigRecord) -> Result<RoleServiceCon
             .and_then(Value::as_str)
             .map(str::to_string)
             .filter(|value| !value.is_empty()),
+        permission_group: spec
+            .get("permission_group")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(crate::permission::DEFAULT_GROUP)
+            .to_string(),
     })
 }

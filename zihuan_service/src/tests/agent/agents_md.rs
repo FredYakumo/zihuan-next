@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use zihuan_core::agent::inference_provider::{InferenceToolContext, InferenceToolProvider};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage, MessageRole};
-use zihuan_core::role::service_config::RoleServiceConfig;
+use zihuan_core::role::service_config::{default_permission_group, RoleServiceConfig};
 use zihuan_workspace_service::role_config::WorkspaceRoleServiceConfig;
 use zihuan_workspace_service::workspace_agent_service::load_inference_tool_provider;
 
@@ -61,6 +61,7 @@ fn provider(enabled: bool) -> Arc<dyn InferenceToolProvider> {
         updated_at: String::new(),
         tools: Vec::new(),
         avatar_url: None,
+        permission_group: default_permission_group(),
     };
     load_inference_tool_provider(&agent, &config, &[]).expect("load inference tool provider")
 }

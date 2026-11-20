@@ -15,6 +15,12 @@
                         <t-option value="workspace" label="Workspace RoleService" />
                     </t-select>
                 </t-form-item>
+                <t-form-item label="权限组">
+                    <t-select v-model="form.permission_group" filterable placeholder="请选择权限组">
+                        <t-option v-for="group in permissionGroups" :key="group.name" :value="group.name"
+                            :label="group.name" />
+                    </t-select>
+                </t-form-item>
                 <t-form-item v-if="form.type === 'qq_chat'" label="Bot Adapter" required>
                     <t-select v-model="form.ims_bot_adapter_connection_id" placeholder="请选择">
                         <t-option value="" label="请选择" />

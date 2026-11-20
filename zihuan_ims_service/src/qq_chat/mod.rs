@@ -73,6 +73,7 @@ use zihuan_core::ims_bot_adapter::event::EventHandler;
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::nlp::TextSegmenter;
+use zihuan_core::permission::EntityType;
 use zihuan_core::role::service_config::RoleServiceConfig;
 use zihuan_core::runtime::block_async;
 use zihuan_core::storage::message::record_restore::register_rdb_pool;
@@ -270,11 +271,28 @@ pub async fn spawn(
     let llm_refs = load_llm_refs()?;
     let public_model_names = public_model_display_names(&config, &llm_refs);
     let bot_connection = find_connection(&connections, &config.ims_bot_adapter_connection_id)?;
-    let ConnectionKind::BotAdapter(_) = &bot_connection.kind else {
+    let ConnectionKind::BotAdapter(raw_connection) = &bot_connection.kind else {
         return Err(Error::ValidationError(format!(
             "connection '{}' is not a bot adapter connection",
             bot_connection.name
         )));
+    };
+    let entity_type =
+        zihuan_core::ims_bot_adapter::runtime::system_config::parse_ims_bot_adapter_connection(
+            raw_connection,
+        )
+        .map(|connection| {
+            if connection.wechat.is_some() {
+                EntityType::Wxid
+            } else {
+                EntityType::QqId
+            }
+        })
+        .unwrap_or(EntityType::QqId);
+    let permission_group = if agent.permission_group.trim().is_empty() {
+        zihuan_core::permission::DEFAULT_GROUP.to_string()
+    } else {
+        agent.permission_group.clone()
     };
 
     let llm_config = resolve_llm_service_config(config.llm_ref_id.as_deref(), &llm_refs)
@@ -454,6 +472,8 @@ pub async fn spawn(
         task_runtime,
         tool_quota_session_state: Arc::new(Mutex::new(SessionToolQuotaState::default())),
         public_model_names,
+        permission_group,
+        entity_type,
     })?);
 
     let adapter = ActiveAdapterManager::shared()
