@@ -144,7 +144,6 @@ fn validate_connection(
             // can host so later tool calls never hit a missing index.
             for schema in [
                 RetrievalSchema::ImageSemantic,
-                RetrievalSchema::AgentMemory,
                 RetrievalSchema::ConceptMemory,
                 RetrievalSchema::PersonMemory,
                 RetrievalSchema::BehavioralMemory,
@@ -182,7 +181,6 @@ fn validate_connection(
     let mut created = false;
     for schema in [
         RetrievalSchema::ImageSemantic,
-        RetrievalSchema::AgentMemory,
         RetrievalSchema::ConceptMemory,
         RetrievalSchema::PersonMemory,
         RetrievalSchema::BehavioralMemory,

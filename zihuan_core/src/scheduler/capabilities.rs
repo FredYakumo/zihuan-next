@@ -14,7 +14,7 @@ use crate::agent::LLM_KIND_MAIN;
 use crate::error::{Error, Result};
 use crate::graph::DataValue;
 use crate::model_inference::llm::MessageRole;
-use crate::storage::{AgentMemoryAccessContext, AgentMemoryRecord, AgentMemoryUpsert};
+use crate::storage::{AgentMemoryAccessContext, MemoryRecord};
 
 pub fn dispatch(
     resources: &JobResources,
@@ -46,9 +46,9 @@ fn run_subagent(resources: &JobResources, params: &Value) -> Result<Value> {
         .get("inputs")
         .and_then(Value::as_object)
         .ok_or_else(|| Error::ValidationError("subagent.run 缺少 inputs 对象".to_string()))?;
-    // The job's memory backend backs the same memory tools the agent's memory sub agent
-    // uses, so an inline definition may declare them in `tool_ids`; without a backend they
-    // resolve as disabled placeholders and fail explicitly on call.
+    // The job's memory backend backs the same memory tools the QQ turn's brain and the
+    // deep-research sub agent use, so an inline definition may declare them in `tool_ids`;
+    // without a backend they resolve as disabled placeholders and fail explicitly on call.
     let service_context = AgentServiceContext::new()
         .with_memory(resources.memory.as_ref().map(|memory| MemoryCapability {
             backend: memory.memory_backend.clone(),
@@ -122,72 +122,93 @@ fn job_memory_access(params: &Value) -> AgentMemoryAccessContext {
         group_id: None,
         is_group: false,
         admin: false,
+        max_access_level: None,
         skip_expiry_extend: false,
     }
 }
 
 fn memory_upsert(resources: &JobResources, params: &Value) -> Result<Value> {
     let memory = resources.memory.as_ref().ok_or_else(memory_unavailable)?;
-    let input = AgentMemoryUpsert {
-        attributes: serde_json::from_value(params.clone())?,
-        key: if params.get("category").and_then(Value::as_str) == Some("person") {
-            String::new()
-        } else {
-            required_str(params, "key")?.to_string()
-        },
-        value: if params.get("category").and_then(Value::as_str) == Some("person") {
-            String::new()
-        } else {
-            required_str(params, "value")?.to_string()
-        },
-        expires_at: params.get("expires_at").and_then(Value::as_str).map(str::to_string),
-        sender_id_list: optional_string_list(params, "sender_id_list"),
-        group_id_list: optional_string_list(params, "group_id_list"),
-    };
-    let record = store_agent_memory(memory, &input)?;
+    let record = store_agent_memory(memory, params)?;
     Ok(json!({
-        "object_id": record.object_id,
-        "key": record.key,
-        "value": record.value,
-        "updated_at": record.updated_at,
+        "object_id": record.object_id(),
+        "category": record.category(),
+        "updated_at": record.updated_at(),
     }))
 }
 
-/// Writes one memory record into the job memory backend, embedding the content when the
-/// backend needs a vector. Shared by the `memory.upsert` capability and the legacy
-/// dream-memory migration.
-pub fn store_agent_memory(
-    memory: &JobMemoryResources,
-    input: &AgentMemoryUpsert,
-) -> Result<AgentMemoryRecord> {
+/// Writes one memory record described by the capability parameters into the job memory
+/// backend, embedding the content when the backend needs a vector.
+///
+/// Parameter shape per category: `person` carries the profile fields (`qq_id` required,
+/// the stored profile is kept and only `impression` is replaced), `concept` requires
+/// `key` + `content` and honors `starts_at`, `behavioral` requires `key` + `content`
+/// and honors `expires_at`. All categories accept `access_level`,
+/// `sender_id_list` and `group_id_list`.
+pub fn store_agent_memory(memory: &JobMemoryResources, params: &Value) -> Result<MemoryRecord> {
     let _write_guard = crate::storage::MEMORY_MUTATION_LOCK
         .lock()
         .map_err(|_| crate::string_error!("memory mutation lock poisoned"))?;
-    if input.attributes.category == crate::storage::MemoryCategory::Person {
-        let mut profile = input.attributes.person.clone();
-        let existing = memory.memory_backend.get_person(&profile.qq_id)?;
-        let access_level = existing
-            .as_ref()
-            .map(|record| record.access_level)
-            .unwrap_or(input.attributes.access_level);
-        if let Some(existing) = existing {
-            let impression = profile.impression;
-            profile = existing.profile;
-            profile.impression = impression;
+    let category: crate::storage::MemoryCategory = serde_json::from_value(
+        params
+            .get("category")
+            .cloned()
+            .ok_or_else(|| Error::ValidationError("缺少参数 'category'".to_string()))?,
+    )?;
+    let embedding_model = memory.embedding_model.as_deref();
+    let access_level = params
+        .get("access_level")
+        .and_then(Value::as_u64)
+        .map(|level| level as u32)
+        .unwrap_or(crate::storage::user_permission::ROLE_SELF_ACCESS_LEVEL);
+    match category {
+        crate::storage::MemoryCategory::Person => {
+            let mut profile: crate::storage::PersonMemory = serde_json::from_value(params.clone())?;
+            let existing = memory.memory_backend.get_person(&profile.qq_id)?;
+            let access_level =
+                existing.as_ref().map(|record| record.access_level).unwrap_or(access_level);
+            if let Some(existing) = existing {
+                let impression = profile.impression;
+                profile = existing.profile;
+                profile.impression = impression;
+            }
+            memory
+                .memory_backend
+                .save_person(
+                    embedding_model,
+                    &crate::storage::PersonMemoryWrite { profile, access_level },
+                )
+                .map(MemoryRecord::Person)
         }
-        return memory
-            .memory_backend
-            .save_person(
-                memory.embedding_model.as_deref(),
-                &crate::storage::PersonMemoryWrite { profile, access_level },
-            )
-            .map(|record| record.into_record());
+        crate::storage::MemoryCategory::Concept => {
+            let write = crate::storage::ConceptMemoryWrite {
+                key: required_str(params, "key")?.to_string(),
+                content: required_str(params, "content")?.to_string(),
+                access_level,
+                starts_at: params.get("starts_at").and_then(Value::as_str).map(str::to_string),
+                sender_id_list: optional_string_list(params, "sender_id_list"),
+                group_id_list: optional_string_list(params, "group_id_list"),
+            };
+            memory
+                .memory_backend
+                .save_concept(embedding_model, &write)
+                .map(MemoryRecord::Concept)
+        }
+        crate::storage::MemoryCategory::Behavioral => {
+            let write = crate::storage::BehavioralMemoryWrite {
+                key: required_str(params, "key")?.to_string(),
+                content: required_str(params, "content")?.to_string(),
+                access_level,
+                expires_at: params.get("expires_at").and_then(Value::as_str).map(str::to_string),
+                sender_id_list: optional_string_list(params, "sender_id_list"),
+                group_id_list: optional_string_list(params, "group_id_list"),
+            };
+            memory
+                .memory_backend
+                .save_behavioral(embedding_model, &write)
+                .map(MemoryRecord::Behavioral)
+        }
     }
-    crate::agent::tools::memory::write_memory(
-        &memory.memory_backend,
-        memory.embedding_model.as_deref(),
-        input,
-    )
 }
 
 fn memory_search(resources: &JobResources, params: &Value) -> Result<Value> {
@@ -234,11 +255,8 @@ fn memory_list(resources: &JobResources, params: &Value) -> Result<Value> {
     Ok(json!({"items": hits.into_iter().map(memory_hit_json).collect::<Vec<_>>()}))
 }
 
-fn memory_hit_json(hit: crate::storage::AgentMemorySearchHit) -> Value {
-    let record = hit.record;
-    let mut value = serde_json::to_value(&record).expect("memory serializes");
-    value["key"] = json!(record.key);
-    value
+fn memory_hit_json(hit: crate::storage::MemorySearchHit) -> Value {
+    serde_json::to_value(&hit).expect("memory serializes")
 }
 
 fn optional_limit(params: &Value, key: &str, default: i64) -> Result<usize> {

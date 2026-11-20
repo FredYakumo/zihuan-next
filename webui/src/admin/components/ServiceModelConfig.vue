@@ -68,15 +68,6 @@
               <span class="agent-service-add-model-option-content"><AddIcon />新增检索数据库</span>
             </t-option>
           </CommonSelect>
-          <t-button
-            v-if="form.workspace_memory_enabled"
-            variant="text"
-            shape="square"
-            title="编辑记忆提示词"
-            @click="openMemoryPromptsDialog"
-          >
-            <EditIcon />
-          </t-button>
         </div>
       </t-form-item>
       <t-form-item v-if="form.type === 'qq_chat'" label="数学/编程模型">
@@ -112,48 +103,11 @@
         />
       </t-form-item>
     </div>
-    <t-dialog
-      v-model:visible="memoryPromptsVisible"
-      header="Memory Agent配置"
-      :confirm-btn="{ content: '保存', loading: memoryPromptsSaving }"
-      cancel-btn="取消"
-      width="680px"
-      top="6vh"
-      @confirm="saveMemoryPrompts"
-    >
-      <div class="memory-prompts-form">
-        <div class="memory-prompts-field">
-          <label>Agent System Prompt</label>
-          <t-textarea
-            v-model="memoryPrompts.system_prompt"
-            :autosize="{ minRows: 4, maxRows: 12 }"
-            :placeholder="memoryPromptDefaults.system_prompt"
-          />
-        </div>
-        <div class="memory-prompts-field">
-          <label>Search memory prompt</label>
-          <t-textarea
-            v-model="memoryPrompts.search_operation_prompt"
-            :autosize="{ minRows: 3, maxRows: 10 }"
-            :placeholder="memoryPromptDefaults.search_operation_prompt"
-          />
-        </div>
-        <div class="memory-prompts-field">
-          <label>Write memory</label>
-          <t-textarea
-            v-model="memoryPrompts.update_operation_prompt"
-            :autosize="{ minRows: 3, maxRows: 10 }"
-            :placeholder="memoryPromptDefaults.update_operation_prompt"
-          />
-        </div>
-        <p v-if="memoryPromptsError" class="memory-prompts-error">{{ memoryPromptsError }}</p>
-      </div>
-    </t-dialog>
   </t-card>
 </template>
 
 <script setup lang="ts">
-import { AddIcon, EditIcon } from "tdesign-icons-vue-next";
+import { AddIcon } from "tdesign-icons-vue-next";
 import type { ConnectionConfig, LlmConfig } from "../../api/client";
 import type { ServiceFormState } from "../model";
 import CommonSelect from "./CommonSelect.vue";
@@ -172,18 +126,8 @@ const emit = defineEmits<{
   (event: "memory-backend-change", value: string | number): void;
 }>();
 
-const {
-  chatModelOptions,
-  multimodalChatModelOptions,
-  tokenizerOptions,
-  memoryPromptsVisible,
-  memoryPromptsSaving,
-  memoryPromptsError,
-  memoryPrompts,
-  memoryPromptDefaults,
-  openMemoryPromptsDialog,
-  saveMemoryPrompts,
-} = useServiceModelConfig(props, emit);
+const { chatModelOptions, multimodalChatModelOptions, tokenizerOptions } =
+  useServiceModelConfig(props, emit);
 </script>
 
 <style scoped lang="scss">

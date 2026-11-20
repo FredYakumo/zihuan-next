@@ -16,11 +16,9 @@ use crate::ims_bot_adapter::models::message::PersistedMedia;
 use crate::weaviate::{cosine_distance_relevance, gql_escape, WeaviateRef};
 
 use crate::storage::{
-    create_elasticsearch_memory_record, create_memory_record_with_vector,
     list_elasticsearch_memory_keys, list_recent_memory_keys, search_elasticsearch_images,
     search_elasticsearch_memory, search_memory_content_by_vector, upsert_elasticsearch_image,
-    upsert_image_record, AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit,
-    AgentMemoryUpsert, ElasticsearchRef,
+    upsert_image_record, AgentMemoryAccessContext, ElasticsearchRef, MemorySearchHit,
 };
 
 /// One image search hit, independent of the retrieval backend.
@@ -51,15 +49,15 @@ pub trait RetrievalDatabase {
         score
     }
 
-    /// Searches agent memory. `query` drives the lexical leg on backends that
-    /// have one and is ignored by purely vector backends.
+    /// Searches agent memory with lexical/vector recall and RRF rank fusion.
+    /// Returned scores are rank scores, not normalized semantic similarity.
     fn search_memory(
         &self,
         access: &AgentMemoryAccessContext,
         query: &str,
         query_vector: &[f32],
         top_n: usize,
-    ) -> Result<Vec<AgentMemorySearchHit>>;
+    ) -> Result<Vec<MemorySearchHit>>;
 
     /// Lists memory records, most recently updated first, optionally filtered
     /// by `query` without ranking.
@@ -68,14 +66,7 @@ pub trait RetrievalDatabase {
         access: &AgentMemoryAccessContext,
         top_n: usize,
         query: Option<&str>,
-    ) -> Result<Vec<AgentMemorySearchHit>>;
-
-    /// Creates a memory record, or updates the one carrying the same title.
-    fn upsert_memory(
-        &self,
-        input: &AgentMemoryUpsert,
-        vector: Vec<f32>,
-    ) -> Result<AgentMemoryRecord>;
+    ) -> Result<Vec<MemorySearchHit>>;
 
     /// Writes one image record with its description (and optional name) vectors.
     fn upsert_image(
@@ -109,7 +100,7 @@ impl<T: RetrievalDatabase + ?Sized> RetrievalDatabase for Arc<T> {
         query: &str,
         query_vector: &[f32],
         top_n: usize,
-    ) -> Result<Vec<AgentMemorySearchHit>> {
+    ) -> Result<Vec<MemorySearchHit>> {
         (**self).search_memory(access, query, query_vector, top_n)
     }
 
@@ -118,16 +109,8 @@ impl<T: RetrievalDatabase + ?Sized> RetrievalDatabase for Arc<T> {
         access: &AgentMemoryAccessContext,
         top_n: usize,
         query: Option<&str>,
-    ) -> Result<Vec<AgentMemorySearchHit>> {
+    ) -> Result<Vec<MemorySearchHit>> {
         (**self).list_memory(access, top_n, query)
-    }
-
-    fn upsert_memory(
-        &self,
-        input: &AgentMemoryUpsert,
-        vector: Vec<f32>,
-    ) -> Result<AgentMemoryRecord> {
-        (**self).upsert_memory(input, vector)
     }
 
     fn upsert_image(
@@ -168,35 +151,24 @@ impl RetrievalDatabase for WeaviateRef {
         query: &str,
         query_vector: &[f32],
         top_n: usize,
-    ) -> Result<Vec<AgentMemorySearchHit>> {
-        let mut hits = search_memory_content_by_vector(self, access, query_vector, top_n)?;
+    ) -> Result<Vec<MemorySearchHit>> {
         let readonly = AgentMemoryAccessContext {
             skip_expiry_extend: true,
             ..access.clone()
         };
-        let lexical = crate::storage::search_memory_content(self, &readonly, query, top_n)?;
-        let semantic = std::mem::replace(&mut hits, lexical);
-        for hit in semantic {
-            if !hits.iter().any(|old| old.record.object_id == hit.record.object_id) {
-                hits.push(hit);
-            }
-        }
-        if access.category == crate::storage::MemoryCategory::Concept {
-            hits.sort_by(|a, b| {
-                b.record
-                    .attributes
-                    .starts_at
-                    .as_ref()
-                    .unwrap_or(&b.record.updated_at)
-                    .cmp(a.record.attributes.starts_at.as_ref().unwrap_or(&a.record.updated_at))
-            });
-        }
+        let window = top_n.saturating_mul(5).clamp(1, 100);
+        let mut semantic = search_memory_content_by_vector(self, &readonly, query_vector, window)?;
+        // Weaviate reports cosine distance; apply the cutoff before rank fusion.
+        semantic.retain(|hit| {
+            hit.distance.is_some_and(|distance| {
+                distance.is_finite()
+                    && self.normalize_score(distance) >= super::default_memory_min_similarity()
+            })
+        });
+        let lexical = crate::storage::search_memory_content(self, &readonly, query, window)?;
+        let mut hits = super::memory::fuse_memory_hits(&[lexical, semantic]);
+        super::memory::sort_memory_search_hits(query, &mut hits);
         hits.truncate(top_n);
-        for hit in &mut hits {
-            if let Some(distance) = hit.distance.take() {
-                hit.distance = Some(self.normalize_score(distance));
-            }
-        }
         Ok(hits)
     }
 
@@ -205,16 +177,8 @@ impl RetrievalDatabase for WeaviateRef {
         access: &AgentMemoryAccessContext,
         top_n: usize,
         query: Option<&str>,
-    ) -> Result<Vec<AgentMemorySearchHit>> {
+    ) -> Result<Vec<MemorySearchHit>> {
         list_recent_memory_keys(self, access, top_n, query)
-    }
-
-    fn upsert_memory(
-        &self,
-        input: &AgentMemoryUpsert,
-        vector: Vec<f32>,
-    ) -> Result<AgentMemoryRecord> {
-        create_memory_record_with_vector(self, input, Some(vector))
     }
 
     fn upsert_image(
@@ -291,7 +255,7 @@ impl RetrievalDatabase for ElasticsearchRef {
         query: &str,
         query_vector: &[f32],
         top_n: usize,
-    ) -> Result<Vec<AgentMemorySearchHit>> {
+    ) -> Result<Vec<MemorySearchHit>> {
         search_elasticsearch_memory(self, access, query, query_vector, top_n)
     }
 
@@ -300,16 +264,8 @@ impl RetrievalDatabase for ElasticsearchRef {
         access: &AgentMemoryAccessContext,
         top_n: usize,
         query: Option<&str>,
-    ) -> Result<Vec<AgentMemorySearchHit>> {
+    ) -> Result<Vec<MemorySearchHit>> {
         list_elasticsearch_memory_keys(self, access, top_n, query)
-    }
-
-    fn upsert_memory(
-        &self,
-        input: &AgentMemoryUpsert,
-        vector: Vec<f32>,
-    ) -> Result<AgentMemoryRecord> {
-        create_elasticsearch_memory_record(self, input, vector)
     }
 
     fn upsert_image(

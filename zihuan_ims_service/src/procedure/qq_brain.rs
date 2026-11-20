@@ -548,12 +548,13 @@ impl Procedure for QqBrain {
                 let bot_id = memory.bot_id.clone();
                 let source = memory.memories.source().map(str::to_string);
                 let (recalled, profiles) = tokio::task::spawn_blocking(move || {
-                    let profiles = super::identity_memory_context(&resources, &bot_id)?;
-                    let input = format!("{input}\n\n{profiles}");
+                    let (profiles, identity_terms) =
+                        super::identity_memory_context(&resources, &bot_id)?;
                     let recalled = zihuan_core::agent::tools::memory::recall_memory(
                         resources,
                         &input,
                         String::new(),
+                        &identity_terms,
                     )?;
                     Ok::<_, Error>((recalled, profiles))
                 })

@@ -21,8 +21,6 @@ pub struct PlanerContext {
     pub planer_id: String,
     #[serde(default)]
     pub task_id: Option<String>,
-    #[serde(default)]
-    pub read_only: bool,
     #[serde(skip)]
     pub local_cancellation: Option<Arc<AtomicBool>>,
     #[serde(skip)]
@@ -36,7 +34,6 @@ impl PlanerContext {
             visited: vec![role_id.into()],
             planer_id: String::new(),
             task_id: None,
-            read_only: false,
             local_cancellation: None,
             cancellation: None,
         }
@@ -56,16 +53,9 @@ impl PlanerContext {
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PlanerOperation {
-    WorkspaceChat,
-    ImsSend,
-    ImsSearch,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PlanerCall {
     pub target_role_id: String,
-    pub operation: PlanerOperation,
     pub prompt: String,
     #[serde(default)]
     pub session_id: Option<String>,
@@ -102,11 +92,7 @@ pub fn prompt(role_id: &str) -> String {
     }
 }
 pub fn prompt_for_context(context: &PlanerContext) -> String {
-    let mut value = prompt(&context.role_id);
-    if context.read_only {
-        value.push_str("\n当前为只读任务，协助请求也只能读取资料，不能发送消息或修改数据。");
-    }
-    value
+    prompt(&context.role_id)
 }
 pub fn tools(context: PlanerContext) -> Vec<Box<dyn Tool>> {
     if !host().is_some_and(|h| h.owns(&context.role_id)) {

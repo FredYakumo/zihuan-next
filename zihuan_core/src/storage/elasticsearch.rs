@@ -1,5 +1,4 @@
 use crate::connection::Connection;
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -9,14 +8,17 @@ use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 use serde_json::{json, Value};
 
-use crate::algorithm::rrf::{reciprocal_rank_fusion, DEFAULT_RRF_RANK_CONSTANT};
 use crate::error::{Error, Result};
 use crate::retrieval::RetrievalSchema;
 
 use crate::ims_bot_adapter::models::message::PersistedMedia;
+use crate::storage::memory::{
+    parse_behavioral_record, parse_concept_record, parse_person_record, prepare_person,
+    BehavioralMemoryPrepared, ConceptMemoryPrepared, PersonMemoryWrite,
+};
 use crate::storage::{
     memory_is_accessible, validate_connection_authentication, AgentMemoryAccessContext,
-    AgentMemoryRecord, AgentMemorySearchHit, AgentMemoryUpsert, ElasticsearchConnection,
+    ElasticsearchConnection, MemoryRecord, MemorySearchHit,
 };
 
 const REQUEST_TIMEOUT_SECS: u64 = 30;
@@ -36,6 +38,7 @@ pub struct ElasticsearchRef {
     pub index_name: String,
     pub schema: RetrievalSchema,
     pub vector_dimensions: usize,
+    memory_min_similarity: f64,
 }
 
 impl std::fmt::Debug for ElasticsearchRef {
@@ -69,6 +72,13 @@ impl ElasticsearchRef {
         if config.vector_dimensions == 0 {
             return Err(Error::ValidationError(
                 "elasticsearch vector_dimensions is required".to_string(),
+            ));
+        }
+        if !config.memory_min_similarity.is_finite()
+            || !(-1.0..=1.0).contains(&config.memory_min_similarity)
+        {
+            return Err(Error::ValidationError(
+                "elasticsearch memory_min_similarity must be between -1 and 1".to_string(),
             ));
         }
         validate_connection_authentication(
@@ -156,6 +166,7 @@ impl ElasticsearchRef {
             index_name: schema.elasticsearch_index_name().to_string(),
             schema,
             vector_dimensions: config.vector_dimensions,
+            memory_min_similarity: config.memory_min_similarity,
         })
     }
 
@@ -281,98 +292,241 @@ pub fn ensure_elasticsearch_index(
     })
 }
 
-pub fn create_elasticsearch_memory_record(
+/// Writes one concept record: create, or rewrite the fact carrying the same scoped title.
+pub fn upsert_elasticsearch_concept_record(
     reference: &ElasticsearchRef,
-    input: &AgentMemoryUpsert,
+    prepared: &ConceptMemoryPrepared,
     vector: Vec<f32>,
-) -> Result<AgentMemoryRecord> {
-    let normalized = super::memory_types::normalize_memory_input(input)?;
-    let input = &normalized;
+) -> Result<MemoryRecord> {
     validate_vector(reference, &vector)?;
-    let key = input.key.trim();
-    let value = input.value.trim();
-    if (key.is_empty() && input.attributes.category != super::MemoryCategory::Person)
-        || value.is_empty()
-    {
-        return Err(Error::ValidationError("memory title and value must not be empty".to_string()));
-    }
     let now = Utc::now().to_rfc3339();
-    let object_id = if input.attributes.category == super::MemoryCategory::Person {
-        get_person_by_qq_id(reference, &input.attributes.person.qq_id)?
-            .map(|record| record.object_id)
-            .unwrap_or_else(|| super::memory_object_id(input))
-    } else {
-        super::memory_object_id(input)
-    };
-    match get_elasticsearch_memory_record(reference, &object_id) {
-        Ok(_) => return update_elasticsearch_memory_record(reference, &object_id, input, vector),
-        Err(Error::NotFound) => {}
+    let created_at = match get_elasticsearch_memory_record(reference, &prepared.object_id) {
+        Ok(MemoryRecord::Concept(record)) => record.created_at,
+        Ok(other) => return Err(category_mismatch("concept", other.object_id())),
+        Err(Error::NotFound) => now.clone(),
         Err(error) => return Err(error),
-    }
-    let mut document = json!({"key": key, "value": value, "embedding": vector, "expires_at": input.expires_at, "sender_id_list": input.sender_id_list, "group_id_list": input.group_id_list, "created_at": now, "updated_at": now});
-    document
-        .as_object_mut()
-        .unwrap()
-        .extend(serde_json::to_value(&input.attributes)?.as_object().unwrap().clone());
-    if input.attributes.category == super::MemoryCategory::Person {
-        document.as_object_mut().unwrap().remove("key");
-    }
-    reference.request(
-        reqwest::Method::PUT,
-        &format!("/{}/_doc/{}?refresh=wait_for", reference.index_name, object_id),
-        Some(document),
-    )?;
+    };
+    let document = json!({
+        "key": prepared.key,
+        "content": prepared.content,
+        "access_level": prepared.access_level,
+        "starts_at": prepared.starts_at,
+        "sender_id_list": prepared.sender_id_list,
+        "group_id_list": prepared.group_id_list,
+        "created_at": created_at,
+        "updated_at": now,
+        "embedding": vector,
+    });
+    put_memory_document(reference, &prepared.object_id, document)?;
+    get_elasticsearch_memory_record(reference, &prepared.object_id)
+}
+
+/// Writes one behavioral rule: create, or rewrite the rule carrying the same scoped title.
+pub fn upsert_elasticsearch_behavioral_record(
+    reference: &ElasticsearchRef,
+    prepared: &BehavioralMemoryPrepared,
+    vector: Vec<f32>,
+) -> Result<MemoryRecord> {
+    validate_vector(reference, &vector)?;
+    let now = Utc::now().to_rfc3339();
+    let created_at = match get_elasticsearch_memory_record(reference, &prepared.object_id) {
+        Ok(MemoryRecord::Behavioral(record)) => record.created_at,
+        Ok(other) => return Err(category_mismatch("behavioral", other.object_id())),
+        Err(Error::NotFound) => now.clone(),
+        Err(error) => return Err(error),
+    };
+    let document = json!({
+        "key": prepared.key,
+        "content": prepared.content,
+        "access_level": prepared.access_level,
+        "expires_at": prepared.expires_at,
+        "sender_id_list": prepared.sender_id_list,
+        "group_id_list": prepared.group_id_list,
+        "created_at": created_at,
+        "updated_at": now,
+        "embedding": vector,
+    });
+    put_memory_document(reference, &prepared.object_id, document)?;
+    get_elasticsearch_memory_record(reference, &prepared.object_id)
+}
+
+/// Writes one person profile: the QQ ID is the identity, so the profile overwrites it.
+pub fn upsert_elasticsearch_person_record(
+    reference: &ElasticsearchRef,
+    write: &PersonMemoryWrite,
+    vector: Vec<f32>,
+) -> Result<MemoryRecord> {
+    let prepared = prepare_person(write)?;
+    validate_vector(reference, &vector)?;
+    let object_id = get_person_by_qq_id(reference, &prepared.profile.qq_id)?
+        .map(|record| record.object_id)
+        .unwrap_or_else(|| {
+            crate::storage::memory_object_id(
+                crate::storage::MemoryCategory::Person,
+                &prepared.profile.qq_id,
+                &[],
+                &[],
+            )
+        });
+    let now = Utc::now().to_rfc3339();
+    let created_at = match get_elasticsearch_memory_record(reference, &object_id) {
+        Ok(MemoryRecord::Person(record)) => record.created_at,
+        Ok(other) => return Err(category_mismatch("person", other.object_id())),
+        Err(Error::NotFound) => now.clone(),
+        Err(error) => return Err(error),
+    };
+    let document = person_document(&prepared.profile, prepared.access_level, &created_at, &now);
+    put_memory_document(reference, &object_id, document)?;
     get_elasticsearch_memory_record(reference, &object_id)
 }
 
-pub fn update_elasticsearch_memory_record(
+/// Admin update at an explicit object id: identity fields must match the stored record.
+pub fn update_elasticsearch_concept_record(
     reference: &ElasticsearchRef,
     object_id: &str,
-    input: &AgentMemoryUpsert,
+    prepared: &ConceptMemoryPrepared,
     vector: Vec<f32>,
-) -> Result<AgentMemoryRecord> {
-    let normalized = super::memory_types::normalize_memory_input(input)?;
-    let input = &normalized;
+) -> Result<MemoryRecord> {
     validate_vector(reference, &vector)?;
-    let key = input.key.trim();
-    let value = input.value.trim();
-    if (key.is_empty() && input.attributes.category != super::MemoryCategory::Person)
-        || value.is_empty()
-    {
-        return Err(Error::ValidationError("memory title and value must not be empty".to_string()));
+    let MemoryRecord::Concept(existing) = get_elasticsearch_memory_record(reference, object_id)?
+    else {
+        return Err(Error::NotFound);
+    };
+    require_same_identity(
+        &prepared.key,
+        &existing.key,
+        &prepared.sender_id_list,
+        &existing.sender_id_list,
+        &prepared.group_id_list,
+        &existing.group_id_list,
+    )?;
+    let now = Utc::now().to_rfc3339();
+    let document = json!({
+        "key": prepared.key,
+        "content": prepared.content,
+        "access_level": prepared.access_level,
+        "starts_at": prepared.starts_at,
+        "sender_id_list": prepared.sender_id_list,
+        "group_id_list": prepared.group_id_list,
+        "created_at": existing.created_at,
+        "updated_at": now,
+        "embedding": vector,
+    });
+    put_memory_document(reference, object_id, document)?;
+    get_elasticsearch_memory_record(reference, object_id)
+}
+
+pub fn update_elasticsearch_behavioral_record(
+    reference: &ElasticsearchRef,
+    object_id: &str,
+    prepared: &BehavioralMemoryPrepared,
+    vector: Vec<f32>,
+) -> Result<MemoryRecord> {
+    validate_vector(reference, &vector)?;
+    let MemoryRecord::Behavioral(existing) = get_elasticsearch_memory_record(reference, object_id)?
+    else {
+        return Err(Error::NotFound);
+    };
+    require_same_identity(
+        &prepared.key,
+        &existing.key,
+        &prepared.sender_id_list,
+        &existing.sender_id_list,
+        &prepared.group_id_list,
+        &existing.group_id_list,
+    )?;
+    let now = Utc::now().to_rfc3339();
+    let document = json!({
+        "key": prepared.key,
+        "content": prepared.content,
+        "access_level": prepared.access_level,
+        "expires_at": prepared.expires_at,
+        "sender_id_list": prepared.sender_id_list,
+        "group_id_list": prepared.group_id_list,
+        "created_at": existing.created_at,
+        "updated_at": now,
+        "embedding": vector,
+    });
+    put_memory_document(reference, object_id, document)?;
+    get_elasticsearch_memory_record(reference, object_id)
+}
+
+pub fn update_elasticsearch_person_record(
+    reference: &ElasticsearchRef,
+    object_id: &str,
+    write: &PersonMemoryWrite,
+    vector: Vec<f32>,
+) -> Result<MemoryRecord> {
+    let prepared = prepare_person(write)?;
+    validate_vector(reference, &vector)?;
+    let MemoryRecord::Person(existing) = get_elasticsearch_memory_record(reference, object_id)?
+    else {
+        return Err(Error::NotFound);
+    };
+    if existing.profile.qq_id != prepared.profile.qq_id {
+        return Err(Error::ValidationError("person QQ ID is immutable".to_string()));
     }
-    let existing = get_elasticsearch_memory_record(reference, object_id)?;
-    if (input.attributes.category != super::MemoryCategory::Person && input.key != existing.key)
-        || input.sender_id_list != existing.sender_id_list
-        || input.group_id_list != existing.group_id_list
-        || input.attributes.category != existing.attributes.category
+    let now = Utc::now().to_rfc3339();
+    let document =
+        person_document(&prepared.profile, prepared.access_level, &existing.created_at, &now);
+    put_memory_document(reference, object_id, document)?;
+    get_elasticsearch_memory_record(reference, object_id)
+}
+
+fn person_document(
+    profile: &crate::storage::PersonMemory,
+    access_level: u32,
+    created_at: &str,
+    updated_at: &str,
+) -> Value {
+    json!({
+        "qq_id": profile.qq_id,
+        "name": profile.name,
+        "preferred_name": profile.preferred_name,
+        "aliases": profile.aliases,
+        "impression": profile.impression,
+        "guideline": profile.guideline,
+        "access_level": access_level,
+        "created_at": created_at,
+        "updated_at": updated_at,
+    })
+}
+
+fn require_same_identity(
+    key: &str,
+    existing_key: &str,
+    sender_id_list: &[String],
+    existing_senders: &[String],
+    group_id_list: &[String],
+    existing_groups: &[String],
+) -> Result<()> {
+    if key != existing_key || sender_id_list != existing_senders || group_id_list != existing_groups
     {
         return Err(Error::ValidationError(
             "memory identity is immutable; create a new record to change title or scope"
                 .to_string(),
         ));
     }
-    if input.attributes.category == super::MemoryCategory::Person
-        && input.attributes.person.qq_id != existing.attributes.person.qq_id
-    {
-        return Err(Error::ValidationError("person QQ ID is immutable".to_string()));
-    }
+    Ok(())
+}
 
-    let now = Utc::now().to_rfc3339();
-    let mut document = json!({"key": key, "value": value, "embedding": vector, "expires_at": input.expires_at, "sender_id_list": input.sender_id_list, "group_id_list": input.group_id_list, "created_at": existing.created_at, "updated_at": now});
-    document
-        .as_object_mut()
-        .unwrap()
-        .extend(serde_json::to_value(&input.attributes)?.as_object().unwrap().clone());
-    if input.attributes.category == super::MemoryCategory::Person {
-        document.as_object_mut().unwrap().remove("key");
-    }
+fn category_mismatch(category: &str, key: &str) -> Error {
+    Error::ValidationError(format!(
+        "memory object '{key}' already exists as another category than {category}"
+    ))
+}
+
+fn put_memory_document(
+    reference: &ElasticsearchRef,
+    object_id: &str,
+    document: Value,
+) -> Result<()> {
     reference.request(
         reqwest::Method::PUT,
         &format!("/{}/_doc/{}?refresh=wait_for", reference.index_name, object_id),
         Some(document),
     )?;
-    get_elasticsearch_memory_record(reference, object_id)
+    Ok(())
 }
 
 pub fn delete_elasticsearch_memory_record(
@@ -493,7 +647,7 @@ pub fn list_elasticsearch_memory_keys(
     access: &AgentMemoryAccessContext,
     top_n: usize,
     query: Option<&str>,
-) -> Result<Vec<AgentMemorySearchHit>> {
+) -> Result<Vec<MemorySearchHit>> {
     let query = query.unwrap_or_default().trim();
     let body = if query.is_empty() {
         json!({"size": top_n.min(MAX_QUERY_CANDIDATES), "sort": [{"updated_at": "desc"}], "query": access_filter(access)})
@@ -501,6 +655,7 @@ pub fn list_elasticsearch_memory_keys(
         memory_lexical_body(access, query, memory_result_size(top_n))
     };
     parse_memory_hits(
+        reference,
         reference.request(
             reqwest::Method::POST,
             &format!("/{}/_search", reference.index_name),
@@ -516,7 +671,7 @@ pub fn search_elasticsearch_memory(
     query: &str,
     vector: &[f32],
     top_n: usize,
-) -> Result<Vec<AgentMemorySearchHit>> {
+) -> Result<Vec<MemorySearchHit>> {
     validate_vector(reference, vector)?;
     let size = memory_result_size(top_n);
     let window = (size * 5).min(MAX_QUERY_CANDIDATES);
@@ -524,6 +679,7 @@ pub fn search_elasticsearch_memory(
     // fused locally: the server-side `rrf` retriever is an Enterprise feature,
     // and a retriever cannot be combined with a top-level sort.
     let lexical = parse_memory_hits(
+        reference,
         reference.request(
             reqwest::Method::POST,
             &format!("/{}/_search", reference.index_name),
@@ -532,30 +688,22 @@ pub fn search_elasticsearch_memory(
         access,
     )?;
     let semantic = parse_memory_hits(
+        reference,
         reference.request(
             reqwest::Method::POST,
             &format!("/{}/_search", reference.index_name),
-            Some(memory_vector_body(access, vector, window)),
+            Some(memory_vector_body(access, vector, window, reference.memory_min_similarity)),
         )?,
         access,
     )?;
-    let mut hits = fuse_memory_hits(&[lexical, semantic], window);
-    if access.category == super::MemoryCategory::Concept {
-        hits.sort_by(|a, b| {
-            b.record
-                .attributes
-                .starts_at
-                .as_ref()
-                .unwrap_or(&b.record.updated_at)
-                .cmp(a.record.attributes.starts_at.as_ref().unwrap_or(&a.record.updated_at))
-        });
-    }
+    let mut hits = super::memory::fuse_memory_hits(&[lexical, semantic]);
+    super::memory::sort_memory_search_hits(query, &mut hits);
     hits.truncate(size);
     Ok(hits)
 }
 
 fn memory_result_size(top_n: usize) -> usize {
-    top_n.max(1).min(20)
+    top_n.clamp(1, 50)
 }
 
 fn memory_lexical_body(access: &AgentMemoryAccessContext, query: &str, size: usize) -> Value {
@@ -563,24 +711,41 @@ fn memory_lexical_body(access: &AgentMemoryAccessContext, query: &str, size: usi
 }
 
 fn memory_lexical_query(access: &AgentMemoryAccessContext, query: &str) -> Value {
-    if access.category == super::MemoryCategory::Person {
-        return json!({"bool":{"filter":[access_filter(access)],"should":[
-            {"term":{"qq_id":{"value":query,"boost":10}}},
-            {"wildcard":{"qq_id":{"value":format!("*{}*",query.replace('\\',"\\\\").replace('*',"\\*").replace('?',"\\?"))}}},
-            {"multi_match":{"query":query,"fields":["name^5","preferred_name^5","aliases^5","impression^2"],"fuzziness":"AUTO"}},
-            {"multi_match":{"query":query,"fields":["name.pinyin^4","preferred_name.pinyin^4","aliases.pinyin^4","impression.pinyin"]}}
-        ],"minimum_should_match":1}});
+    let person = access.category == super::MemoryCategory::Person;
+    let fields = if person {
+        vec!["name^5", "preferred_name^5", "aliases^5", "impression^2"]
+    } else {
+        vec!["key^5", "content^2"]
+    };
+    let mut clauses = vec![
+        json!({"multi_match":{"query":query,"fields":fields,"type":"best_fields","operator":"and"}}),
+        json!({"multi_match":{"query":query,"fields":fields,"type":"phrase","boost":3}}),
+    ];
+    if person {
+        clauses.push(json!({"term":{"qq_id":{"value":query,"boost":10}}}));
+        if query.chars().all(|c| c.is_ascii_digit()) {
+            clauses.push(json!({"wildcard":{"qq_id":{"value":format!("*{query}*")}}}));
+        }
     }
-    json!({"bool":{"filter":[access_filter(access)],"should":[
-        {"multi_match":{"query":query,"fields":["key^5","value^2","qq_id^10","name^5","preferred_name^5","aliases^5","impression^2"],"type":"best_fields","operator":"and"}},
-        {"multi_match":{"query":query,"fields":["key.pinyin^4","value.pinyin","name.pinyin^4","preferred_name.pinyin^4","aliases.pinyin^4","impression.pinyin"],"type":"best_fields"}}
-    ],"minimum_should_match":1}})
+    // Pinyin is a name/title fallback for Latin input, never an OR over the
+    // initials of Chinese body text. Existing index analyzers remain usable.
+    if query.len() >= 2 && query.chars().all(|c| c.is_ascii_alphabetic() || c == ' ') {
+        let fields = if person {
+            vec!["name.pinyin", "preferred_name.pinyin", "aliases.pinyin"]
+        } else {
+            vec!["key.pinyin"]
+        };
+        clauses.push(
+            json!({"multi_match":{"query":query,"fields":fields,"operator":"and","boost":0.5}}),
+        );
+    }
+    json!({"bool":{"filter":[access_filter(access)],"should":clauses,"minimum_should_match":1}})
 }
 
 pub(crate) fn get_person_by_qq_id(
     reference: &ElasticsearchRef,
     qq_id: &str,
-) -> Result<Option<AgentMemoryRecord>> {
+) -> Result<Option<crate::storage::memory::PersonMemoryRecord>> {
     let access = AgentMemoryAccessContext {
         category: super::MemoryCategory::Person,
         admin: true,
@@ -592,46 +757,32 @@ pub(crate) fn get_person_by_qq_id(
         &format!("/{}/_search", reference.index_name),
         Some(json!({"size":1,"query":{"term":{"qq_id":qq_id}},"sort":[{"updated_at":"desc"}]})),
     )?;
-    Ok(parse_memory_hits(response, &access)?.into_iter().next().map(|hit| hit.record))
-}
-
-fn memory_vector_body(access: &AgentMemoryAccessContext, vector: &[f32], size: usize) -> Value {
-    json!({"size":size,"knn":{"field":"embedding","query_vector":vector,"k":size,"num_candidates":size,"filter":access_filter(access)}})
-}
-
-fn fuse_memory_hits(
-    rankings: &[Vec<AgentMemorySearchHit>],
-    limit: usize,
-) -> Vec<AgentMemorySearchHit> {
-    let object_ids = rankings
-        .iter()
-        .map(|hits| hits.iter().map(|hit| hit.record.object_id.clone()).collect::<Vec<_>>())
-        .collect::<Vec<_>>();
-    let ranking_ids = object_ids.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    let fused = reciprocal_rank_fusion(&ranking_ids, DEFAULT_RRF_RANK_CONSTANT);
-    let mut by_id = HashMap::new();
-    for hit in rankings.iter().flatten() {
-        by_id.entry(hit.record.object_id.clone()).or_insert_with(|| hit.clone());
-    }
-    let mut hits = fused
+    Ok(parse_memory_hits(reference, response, &access)?
         .into_iter()
-        .filter_map(|(object_id, score)| {
-            by_id.get(&object_id).map(|hit| AgentMemorySearchHit {
-                record: hit.record.clone(),
-                distance: Some(score),
-            })
+        .filter_map(|hit| match hit.record {
+            MemoryRecord::Person(record) => Some(record),
+            _ => None,
         })
-        .collect::<Vec<_>>();
-    hits.truncate(limit);
-    hits
+        .next())
 }
 
+fn memory_vector_body(
+    access: &AgentMemoryAccessContext,
+    vector: &[f32],
+    size: usize,
+    min_similarity: f64,
+) -> Value {
+    json!({"size":size,"knn":{"field":"embedding","query_vector":vector,"k":size,"num_candidates":(size * 5).min(1000),"similarity":min_similarity,"filter":access_filter(access)}})
+}
+
+/// The filter every memory query of a category runs under. Person profiles carry no
+/// scope or expiry, so their queries run unfiltered.
 fn access_filter(access: &AgentMemoryAccessContext) -> Value {
     let mut filters = Vec::new();
     if access.category == super::MemoryCategory::Behavioral {
         filters.push(json!({"bool":{"must_not":[{"range":{"expires_at":{"lte":"now"}}}]}}));
     }
-    if !access.admin {
+    if access.category != super::MemoryCategory::Person && !access.admin {
         for (field, id) in [
             ("group_id_list", access.group_id.as_ref()),
             ("sender_id_list", access.sender_id.as_ref()),
@@ -647,9 +798,16 @@ fn access_filter(access: &AgentMemoryAccessContext) -> Value {
 }
 
 fn parse_memory_hits(
+    reference: &ElasticsearchRef,
     value: Value,
     access: &AgentMemoryAccessContext,
-) -> Result<Vec<AgentMemorySearchHit>> {
+) -> Result<Vec<MemorySearchHit>> {
+    let category = reference.schema.memory_category().ok_or_else(|| {
+        Error::ValidationError(format!(
+            "elasticsearch index '{}' is not a memory index",
+            reference.index_name
+        ))
+    })?;
     let hits = value
         .pointer("/hits/hits")
         .and_then(Value::as_array)
@@ -657,23 +815,10 @@ fn parse_memory_hits(
         .unwrap_or_default()
         .into_iter()
         .filter_map(|hit| {
-            let source = hit.get("_source")?;
-            let record = AgentMemoryRecord {
-                attributes: serde_json::from_value(source.clone()).unwrap_or_default(),
-                object_id: hit.get("_id")?.as_str()?.to_string(),
-                key: if source.get("category").and_then(Value::as_str) == Some("person") {
-                    String::new()
-                } else {
-                    source.get("key")?.as_str()?.to_string()
-                },
-                value: source.get("value")?.as_str()?.to_string(),
-                expires_at: source.get("expires_at").and_then(Value::as_str).map(ToOwned::to_owned),
-                sender_id_list: string_list(source, "sender_id_list"),
-                group_id_list: string_list(source, "group_id_list"),
-                created_at: source.get("created_at")?.as_str()?.to_string(),
-                updated_at: source.get("updated_at")?.as_str()?.to_string(),
-            };
-            memory_is_accessible(&record, access).then_some(AgentMemorySearchHit {
+            let object_id = hit.get("_id")?.as_str()?.to_string();
+            let record =
+                parse_memory_record(category, hit.get("_source")?.clone(), &object_id).ok()?;
+            memory_is_accessible(&record, access).then(|| MemorySearchHit {
                 record,
                 distance: hit.get("_score").and_then(Value::as_f64),
             })
@@ -682,10 +827,34 @@ fn parse_memory_hits(
     Ok(hits)
 }
 
+fn parse_memory_record(
+    category: crate::storage::MemoryCategory,
+    source: Value,
+    object_id: &str,
+) -> Result<MemoryRecord> {
+    match category {
+        crate::storage::MemoryCategory::Concept => {
+            Ok(MemoryRecord::Concept(parse_concept_record(source, object_id)?))
+        }
+        crate::storage::MemoryCategory::Person => {
+            Ok(MemoryRecord::Person(parse_person_record(source, object_id)?))
+        }
+        crate::storage::MemoryCategory::Behavioral => {
+            Ok(MemoryRecord::Behavioral(parse_behavioral_record(source, object_id)?))
+        }
+    }
+}
+
 pub fn get_elasticsearch_memory_record(
     reference: &ElasticsearchRef,
     object_id: &str,
-) -> Result<AgentMemoryRecord> {
+) -> Result<MemoryRecord> {
+    let category = reference.schema.memory_category().ok_or_else(|| {
+        Error::ValidationError(format!(
+            "elasticsearch index '{}' is not a memory index",
+            reference.index_name
+        ))
+    })?;
     let value = reference.request(
         reqwest::Method::GET,
         &format!("/{}/_doc/{}", reference.index_name, object_id),
@@ -694,41 +863,9 @@ pub fn get_elasticsearch_memory_record(
     let source = value.get("_source").ok_or_else(|| {
         Error::ValidationError("elasticsearch memory document is missing _source".to_string())
     })?;
-    Ok(AgentMemoryRecord {
-        attributes: serde_json::from_value(source.clone()).unwrap_or_default(),
-        object_id: object_id.to_string(),
-        key: if source.get("category").and_then(Value::as_str) == Some("person") {
-            String::new()
-        } else {
-            source.get("key").and_then(Value::as_str).unwrap_or_default().to_string()
-        },
-        value: source.get("value").and_then(Value::as_str).unwrap_or_default().to_string(),
-        expires_at: source.get("expires_at").and_then(Value::as_str).map(ToOwned::to_owned),
-        sender_id_list: string_list(source, "sender_id_list"),
-        group_id_list: string_list(source, "group_id_list"),
-        created_at: source
-            .get("created_at")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        updated_at: source
-            .get("updated_at")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-    })
+    parse_memory_record(category, source.clone(), object_id)
 }
 
-fn string_list(source: &Value, field: &str) -> Vec<String> {
-    source
-        .get(field)
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(ToOwned::to_owned)
-        .collect()
-}
 fn validate_vector(reference: &ElasticsearchRef, vector: &[f32]) -> Result<()> {
     if vector.len() != reference.vector_dimensions {
         return Err(Error::ValidationError(format!(
@@ -742,12 +879,17 @@ fn validate_vector(reference: &ElasticsearchRef, vector: &[f32]) -> Result<()> {
 
 fn index_definition(reference: &ElasticsearchRef) -> Result<Value> {
     let text = json!({"type":"text","analyzer":"icu_analyzer","fields":{"pinyin":{"type":"text","analyzer":"pinyin_analyzer","search_analyzer":"pinyin_analyzer"}}});
+    let embedding = json!({"type":"dense_vector","dims":reference.vector_dimensions,"index":true,"similarity":"cosine"});
     let properties = match reference.schema {
-        RetrievalSchema::AgentMemory
-        | RetrievalSchema::ConceptMemory
-        | RetrievalSchema::PersonMemory
-        | RetrievalSchema::BehavioralMemory => {
-            json!({"category":{"type":"keyword"},"access_level":{"type":"integer"},"starts_at":{"type":"date"},"qq_id":{"type":"keyword"},"name":text,"preferred_name":text,"aliases":text,"impression":text,"guideline":text,"key":text,"value":text,"embedding":{"type":"dense_vector","dims":reference.vector_dimensions,"index":true,"similarity":"cosine"},"expires_at":{"type":"date"},"sender_id_list":{"type":"keyword"},"group_id_list":{"type":"keyword"},"created_at":{"type":"date"},"updated_at":{"type":"date"}})
+        // Each category index maps exactly the fields its records carry.
+        RetrievalSchema::ConceptMemory => {
+            json!({"access_level":{"type":"integer"},"starts_at":{"type":"date"},"key":text,"content":text,"embedding":embedding,"sender_id_list":{"type":"keyword"},"group_id_list":{"type":"keyword"},"created_at":{"type":"date"},"updated_at":{"type":"date"}})
+        }
+        RetrievalSchema::PersonMemory => {
+            json!({"access_level":{"type":"integer"},"qq_id":{"type":"keyword"},"name":text,"preferred_name":text,"aliases":text,"impression":text,"guideline":text,"embedding":embedding,"created_at":{"type":"date"},"updated_at":{"type":"date"}})
+        }
+        RetrievalSchema::BehavioralMemory => {
+            json!({"access_level":{"type":"integer"},"key":text,"content":text,"embedding":embedding,"expires_at":{"type":"date"},"sender_id_list":{"type":"keyword"},"group_id_list":{"type":"keyword"},"created_at":{"type":"date"},"updated_at":{"type":"date"}})
         }
         RetrievalSchema::ImageSemantic => {
             json!({"media_id":{"type":"keyword"},"original_source":{"type":"keyword","index":false},"rustfs_path":{"type":"keyword"},"name":text,"description":text,"description_vector":{"type":"dense_vector","dims":reference.vector_dimensions,"index":true,"similarity":"cosine"},"name_vector":{"type":"dense_vector","dims":reference.vector_dimensions,"index":true,"similarity":"cosine"},"mime_type":{"type":"keyword"},"source":{"type":"keyword"}})

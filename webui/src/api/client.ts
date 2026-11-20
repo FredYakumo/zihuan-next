@@ -46,17 +46,6 @@ export interface ContextCompactionSettings {
   percent: number;
 }
 
-export interface MemoryAgentPromptsSettings {
-  system_prompt: string;
-  search_operation_prompt: string;
-  update_operation_prompt: string;
-  defaults: {
-    system_prompt: string;
-    search_operation_prompt: string;
-    update_operation_prompt: string;
-  };
-}
-
 export async function request<T>(
   method: string,
   path: string,
@@ -79,10 +68,6 @@ export async function request<T>(
 
 export function getContextCompactionSettings(): Promise<ContextCompactionSettings> {
   return request("GET", "/settings/context-compaction");
-}
-
-export function getMemoryAgentPromptsSettings(): Promise<MemoryAgentPromptsSettings> {
-  return request("GET", "/settings/memory-agent-settings");
 }
 
 // Registry
@@ -1212,40 +1197,89 @@ export interface WeaviateExploreResponse {
   total: number;
   limit: number;
   class_name: string;
-  schema: "image_semantic" | "agent_memory" | "qq_message";
+  schema: "image_semantic" | "concept_memory" | "person_memory" | "behavioral_memory" | "qq_message";
 }
 
 export type MemoryCategory = "concept" | "person" | "behavioral";
-export interface MemoryAttributes {
-  category: MemoryCategory;
+
+interface MemoryRecordBase {
   access_level: number;
-  starts_at?: string | null;
-  qq_id?: string;
-  name?: string;
-  preferred_name?: string;
-  aliases?: string[];
-  impression?: string;
-  guideline?: string;
-}
-export interface AgentMemoryRecord extends MemoryAttributes {
   object_id: string;
-  title: string;
-  value: string;
-  expires_at: string | null;
-  sender_id_list: string[];
-  group_id_list: string[];
   created_at: string;
   updated_at: string;
 }
 
+export interface ConceptMemoryRecord extends MemoryRecordBase {
+  category: "concept";
+  key: string;
+  content: string;
+  starts_at: string;
+  sender_id_list: string[];
+  group_id_list: string[];
+}
+
+export interface PersonMemoryRecord extends MemoryRecordBase {
+  category: "person";
+  qq_id: string;
+  name: string;
+  preferred_name: string;
+  aliases: string[];
+  impression: string;
+  guideline: string;
+}
+
+export interface BehavioralMemoryRecord extends MemoryRecordBase {
+  category: "behavioral";
+  key: string;
+  content: string;
+  expires_at: string;
+  sender_id_list: string[];
+  group_id_list: string[];
+}
+
+export type AgentMemoryRecord = ConceptMemoryRecord | PersonMemoryRecord | BehavioralMemoryRecord;
+
+export interface ConceptMemoryPayload {
+  category: "concept";
+  key: string;
+  content: string;
+  access_level: number;
+  starts_at: string;
+  sender_id_list: string[];
+  group_id_list: string[];
+}
+
+export interface PersonMemoryPayload {
+  category: "person";
+  qq_id: string;
+  name: string;
+  preferred_name: string;
+  aliases: string[];
+  impression: string;
+  guideline: string;
+  access_level: number;
+}
+
+export interface BehavioralMemoryPayload {
+  category: "behavioral";
+  key: string;
+  content: string;
+  expires_at: string;
+  access_level: number;
+  sender_id_list: string[];
+  group_id_list: string[];
+}
+
+export type MemoryMutationPayload = ConceptMemoryPayload | PersonMemoryPayload | BehavioralMemoryPayload;
+
 export type ExplorerMatchKind = "keyword" | "semantic" | "recent";
 
-export interface ServiceExplorerMemoryRecord extends AgentMemoryRecord {
+export type ServiceExplorerMemoryRecord = AgentMemoryRecord & {
   match_kinds: ExplorerMatchKind[];
   score: number | null;
   backend: "weaviate" | "elasticsearch";
   mutable: boolean;
-}
+};
 
 export interface ServiceExplorerImageRecord {
   object_id: string;
@@ -1490,7 +1524,7 @@ export const explorer = {
 
   queryWeaviate(params: {
     connection_id: string;
-    schema?: "image_semantic" | "agent_memory" | "qq_message";
+    schema?: "image_semantic" | "concept_memory" | "person_memory" | "behavioral_memory" | "qq_message";
     embedding_model_ref_id?: string;
     query?: string;
     limit?: number;
@@ -1502,13 +1536,7 @@ export const explorer = {
   createAgentMemory(
     connectionId: string,
     embeddingModelRefId: string,
-    payload: Partial<MemoryAttributes> & {
-      title: string;
-      value: string;
-      expires_at?: string | null;
-      sender_id_list?: string[];
-      group_id_list?: string[];
-    },
+    payload: MemoryMutationPayload,
   ): Promise<AgentMemoryRecord> {
     const qs = buildQueryString({
       connection_id: connectionId,
@@ -1521,13 +1549,7 @@ export const explorer = {
     connectionId: string,
     embeddingModelRefId: string,
     objectId: string,
-    payload: Partial<MemoryAttributes> & {
-      title: string;
-      value: string;
-      expires_at?: string | null;
-      sender_id_list?: string[];
-      group_id_list?: string[];
-    },
+    payload: MemoryMutationPayload,
   ): Promise<AgentMemoryRecord> {
     const qs = buildQueryString({
       connection_id: connectionId,

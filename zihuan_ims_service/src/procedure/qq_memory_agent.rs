@@ -10,8 +10,8 @@ use super::GroupMessageWindowOutput;
 use crate::qq_chat::logging::QqChatTurnIdentity;
 
 pub(crate) struct QqMemoryAgent {
-    /// The turn this recall phase belongs to, rebound on the blocking thread so its model
-    /// inferences report to the turn's context view.
+    /// The turn this recall phase belongs to, rebound on the blocking thread so its
+    /// embedding inferences report to the turn's context view.
     pub identity: QqChatTurnIdentity,
     pub resources: MemoryAgentResources,
     pub input: String,
@@ -24,8 +24,8 @@ pub(crate) struct QqMemoryAgent {
 /// The recall phase's output.
 ///
 /// The recalled memories travel typed by category; the turn assembly renders them, so no
-/// downstream stage parses recall JSON. `resources` and `input` are kept so the brain can run the
-/// recall again when it compacts the turn's history.
+/// downstream stage parses recall JSON. `resources` and `input` are kept so the brain can run
+/// the recall again when it compacts the turn's history.
 pub(crate) struct MemoryAgentOutput {
     pub(crate) memories: MemoryRecall,
     pub(crate) resources: MemoryAgentResources,
@@ -37,11 +37,15 @@ pub(crate) struct MemoryAgentOutput {
 
 pub(crate) const IDENTITY_MEMORY_LABEL: &str = "[QQ Identity Memories]";
 
+/// Reads the sender's and the bot's person memories. Returns the `[QQ Identity Memories]`
+/// context and the sender's name, preferred name and aliases (empty when the sender has no
+/// accessible person memory), which the recall also searches with.
 pub(crate) fn identity_memory_context(
     resources: &MemoryAgentResources,
     bot_id: &str,
-) -> Result<String> {
+) -> Result<(String, Vec<String>)> {
     let mut people = Vec::new();
+    let mut sender_terms = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for (role, id) in [
         ("sender", resources.access.sender_id.as_deref().unwrap_or_default()),
@@ -53,13 +57,28 @@ pub(crate) fn identity_memory_context(
         let person = resources.memory_backend.get_person(id)?;
         let person = person.filter(|record| {
             zihuan_core::storage::memory_is_accessible(
-                &record.clone().into_record(),
+                &zihuan_core::storage::MemoryRecord::Person(record.clone()),
                 &resources.access,
             )
         });
+        if role == "sender" {
+            if let Some(record) = &person {
+                let profile = &record.profile;
+                sender_terms.extend(
+                    [&profile.name, &profile.preferred_name]
+                        .into_iter()
+                        .chain(profile.aliases.iter())
+                        .map(|term| term.trim().to_string())
+                        .filter(|term| !term.is_empty()),
+                );
+            }
+        }
         people.push(serde_json::json!({"role":role,"qq_id":id,"memory":person.map(|record| record.profile)}));
     }
-    Ok(format!("{IDENTITY_MEMORY_LABEL}\n{}", serde_json::to_string(&people)?))
+    Ok((
+        format!("{IDENTITY_MEMORY_LABEL}\n{}", serde_json::to_string(&people)?),
+        sender_terms,
+    ))
 }
 
 pub(crate) fn saved_identity_context(
@@ -105,30 +124,32 @@ impl Procedure for QqMemoryAgent {
         let recall_input = input.clone();
         let recall_resources = resources.clone();
         let identity = self.identity.clone();
-        let (recalled, identity_context) = tokio::task::spawn_blocking(move || {
-            let _turn_trace = zihuan_core::qq_context::TurnTraceGuard::enter(
-                &identity.agent_id,
-                &identity.sender_id,
-                &identity.turn_id,
-            );
-            let profiles = match saved {
-                Some(saved) => saved,
-                None => identity_memory_context(&recall_resources, &bot_id)?,
-            };
-            let recall_input = format!("{recall_input}\n\n{profiles}");
-            Ok::<_, zihuan_core::error::Error>((
-                recall_memory(recall_resources, &recall_input, previous)?,
-                profiles,
-            ))
-        })
-        .await
-        .map_err(|error| zihuan_core::string_error!("memory recall failed: {error}"))??;
+        let (recalled, identity_context, identity_context_is_new) =
+            tokio::task::spawn_blocking(move || {
+                let _turn_trace = zihuan_core::qq_context::TurnTraceGuard::enter(
+                    &identity.agent_id,
+                    &identity.sender_id,
+                    &identity.turn_id,
+                );
+                // Always read the profiles from the store; a saved copy in the history only
+                // decides whether they need injecting again.
+                let (profiles, identity_terms) =
+                    identity_memory_context(&recall_resources, &bot_id)?;
+                let identity_is_new = saved.as_deref() != Some(profiles.as_str());
+                Ok::<_, zihuan_core::error::Error>((
+                    recall_memory(recall_resources, &recall_input, previous, &identity_terms)?,
+                    profiles,
+                    identity_is_new,
+                ))
+            })
+            .await
+            .map_err(|error| zihuan_core::string_error!("memory recall failed: {error}"))??;
         Ok(ProcedureOutput::of(MemoryAgentOutput {
             memories: recalled.with_source(source.to_string()),
             resources,
             input,
             identity_context,
-            identity_context_is_new: self.identity_context.is_none(),
+            identity_context_is_new,
             bot_id: self.bot_id.clone(),
         }))
     }

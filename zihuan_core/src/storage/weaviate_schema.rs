@@ -13,11 +13,14 @@ pub fn collection_config_for_schema(schema: RetrievalSchema) -> WeaviateCollecti
         RetrievalSchema::ImageSemantic => {
             image_vector_collection_config(schema.weaviate_class_name().to_string())
         }
-        RetrievalSchema::AgentMemory
-        | RetrievalSchema::ConceptMemory
-        | RetrievalSchema::PersonMemory
-        | RetrievalSchema::BehavioralMemory => {
-            agent_memory_collection_config(schema.weaviate_class_name().to_string())
+        RetrievalSchema::ConceptMemory => {
+            concept_memory_collection_config(schema.weaviate_class_name().to_string())
+        }
+        RetrievalSchema::PersonMemory => {
+            person_memory_collection_config(schema.weaviate_class_name().to_string())
+        }
+        RetrievalSchema::BehavioralMemory => {
+            behavioral_memory_collection_config(schema.weaviate_class_name().to_string())
         }
         RetrievalSchema::QqMessage => {
             qq_message_collection_config(schema.weaviate_class_name().to_string())
@@ -203,27 +206,21 @@ fn image_vector_collection_config(class_name: String) -> WeaviateCollectionConfi
     }
 }
 
-fn agent_memory_collection_config(class_name: String) -> WeaviateCollectionConfig {
-    let mut config = WeaviateCollectionConfig {
+/// Every memory collection stores its category's own fields only; the collection
+/// itself implies the category, so records carry no category property.
+fn concept_memory_collection_config(class_name: String) -> WeaviateCollectionConfig {
+    WeaviateCollectionConfig {
         class_name,
-        description: Some("Agent runtime memory storage".to_string()),
+        description: Some("Concept (fact) memory storage".to_string()),
         properties: vec![
-            text_property("category", "Memory category"),
             WeaviatePropertyConfig {
                 name: "access_level".to_string(),
                 data_type: vec!["int".to_string()],
                 description: None,
             },
             date_property("starts_at", "Fact effective time"),
-            text_property("qq_id", "Stable person identity"),
-            text_property("name", "Person name"),
-            text_property("preferred_name", "Preferred form of address"),
-            text_array_property("aliases", "Person aliases"),
-            text_property("impression", "Impression and Dream consolidation"),
-            text_property("guideline", "Rules for interaction with this person"),
-            text_property("key", "Memory title / search keyword"),
-            text_property("value", "Memory content"),
-            date_property("expires_at", "Memory expiry time"),
+            text_property("key", "Fact title / search keyword"),
+            text_property("content", "Fact content"),
             text_array_property("sender_id_list", "Accessible sender ids"),
             text_array_property("group_id_list", "Accessible group ids"),
             date_property("created_at", "Record creation time"),
@@ -231,22 +228,54 @@ fn agent_memory_collection_config(class_name: String) -> WeaviateCollectionConfi
         ],
         vectorizer: Some("none".to_string()),
         vector_config: None,
-    };
-    if config.class_name == "AgentMemory" {
-        config.properties.retain(|property| {
-            [
-                "key",
-                "value",
-                "expires_at",
-                "sender_id_list",
-                "group_id_list",
-                "created_at",
-                "updated_at",
-            ]
-            .contains(&property.name.as_str())
-        });
     }
-    config
+}
+
+fn person_memory_collection_config(class_name: String) -> WeaviateCollectionConfig {
+    WeaviateCollectionConfig {
+        class_name,
+        description: Some("Person memory storage".to_string()),
+        properties: vec![
+            WeaviatePropertyConfig {
+                name: "access_level".to_string(),
+                data_type: vec!["int".to_string()],
+                description: None,
+            },
+            text_property("qq_id", "Stable person identity"),
+            text_property("name", "Person name"),
+            text_property("preferred_name", "Preferred form of address"),
+            text_array_property("aliases", "Person aliases"),
+            text_property("impression", "Impression"),
+            text_property("guideline", "Rules for interaction with this person"),
+            date_property("created_at", "Record creation time"),
+            date_property("updated_at", "Record update time"),
+        ],
+        vectorizer: Some("none".to_string()),
+        vector_config: None,
+    }
+}
+
+fn behavioral_memory_collection_config(class_name: String) -> WeaviateCollectionConfig {
+    WeaviateCollectionConfig {
+        class_name,
+        description: Some("Behavioral memory storage".to_string()),
+        properties: vec![
+            WeaviatePropertyConfig {
+                name: "access_level".to_string(),
+                data_type: vec!["int".to_string()],
+                description: None,
+            },
+            text_property("key", "Rule title (opaque hash when generated)"),
+            text_property("content", "Behavioral rule"),
+            date_property("expires_at", "Rule expiry time"),
+            text_array_property("sender_id_list", "Accessible sender ids"),
+            text_array_property("group_id_list", "Accessible group ids"),
+            date_property("created_at", "Record creation time"),
+            date_property("updated_at", "Record update time"),
+        ],
+        vectorizer: Some("none".to_string()),
+        vector_config: None,
+    }
 }
 
 fn qq_message_collection_config(class_name: String) -> WeaviateCollectionConfig {
@@ -313,24 +342,56 @@ mod tests {
     }
 
     #[test]
-    fn agent_memory_collection_schema_matches_memory_fields() {
-        let config = agent_memory_collection_config("AgentMemory".to_string());
-        let fields = config
-            .properties
-            .iter()
-            .map(|property| property.name.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            fields,
-            vec![
-                "key",
-                "value",
-                "expires_at",
-                "sender_id_list",
-                "group_id_list",
-                "created_at",
-                "updated_at"
-            ]
-        );
+    fn memory_collection_schemas_match_per_category_fields() {
+        for (schema, expected) in [
+            (
+                RetrievalSchema::ConceptMemory,
+                vec![
+                    "access_level",
+                    "starts_at",
+                    "key",
+                    "content",
+                    "sender_id_list",
+                    "group_id_list",
+                    "created_at",
+                    "updated_at",
+                ],
+            ),
+            (
+                RetrievalSchema::PersonMemory,
+                vec![
+                    "access_level",
+                    "qq_id",
+                    "name",
+                    "preferred_name",
+                    "aliases",
+                    "impression",
+                    "guideline",
+                    "created_at",
+                    "updated_at",
+                ],
+            ),
+            (
+                RetrievalSchema::BehavioralMemory,
+                vec![
+                    "access_level",
+                    "key",
+                    "content",
+                    "expires_at",
+                    "sender_id_list",
+                    "group_id_list",
+                    "created_at",
+                    "updated_at",
+                ],
+            ),
+        ] {
+            let config = collection_config_for_schema(schema);
+            let fields = config
+                .properties
+                .iter()
+                .map(|property| property.name.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(fields, expected, "{schema:?} collection fields");
+        }
     }
 }

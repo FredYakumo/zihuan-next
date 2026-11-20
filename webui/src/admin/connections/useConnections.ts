@@ -348,6 +348,10 @@ export function useConnections(options: { autoLoad?: boolean } = {}) {
         alert("请填写 Elasticsearch Base URL");
         return;
       }
+      if (!Number.isFinite(form.elasticsearch_memory_min_similarity) || form.elasticsearch_memory_min_similarity < -1 || form.elasticsearch_memory_min_similarity > 1) {
+        alert("记忆语义门槛必须在 -1 到 1 之间");
+        return;
+      }
       if (!Number.isInteger(form.elasticsearch_vector_dimensions) || form.elasticsearch_vector_dimensions <= 0) {
         alert("请填写大于 0 的 Elasticsearch 向量维度");
         return;

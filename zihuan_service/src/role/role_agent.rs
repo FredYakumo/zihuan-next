@@ -415,9 +415,7 @@ fn build_inference_tool_context(
     planer_context: Option<&zihuan_core::role::planer::PlanerContext>,
 ) -> InferenceToolContext {
     InferenceToolContext {
-        memory_write_source: if planer_context.is_some_and(|context| context.read_only) {
-            zihuan_core::storage::MemoryWriteSource::Disabled
-        } else if planer_context.is_some_and(|context| context.task_id.is_some()) {
+        memory_write_source: if planer_context.is_some_and(|context| context.task_id.is_some()) {
             zihuan_core::storage::MemoryWriteSource::Planer
         } else {
             zihuan_core::storage::MemoryWriteSource::User

@@ -17,7 +17,6 @@ use crate::weaviate::WeaviateRef;
 #[serde(rename_all = "snake_case")]
 pub enum RetrievalSchema {
     ImageSemantic,
-    AgentMemory,
     ConceptMemory,
     PersonMemory,
     BehavioralMemory,
@@ -29,7 +28,6 @@ impl RetrievalSchema {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ImageSemantic => "image_semantic",
-            Self::AgentMemory => "agent_memory",
             Self::ConceptMemory => "concept_memory",
             Self::PersonMemory => "person_memory",
             Self::BehavioralMemory => "behavioral_memory",
@@ -41,13 +39,12 @@ impl RetrievalSchema {
     pub fn parse(value: &str) -> Result<Self> {
         match value.trim() {
             "image_semantic" => Ok(Self::ImageSemantic),
-            "agent_memory" => Ok(Self::AgentMemory),
             "concept_memory" => Ok(Self::ConceptMemory),
             "person_memory" => Ok(Self::PersonMemory),
             "behavioral_memory" => Ok(Self::BehavioralMemory),
             "qq_message" => Ok(Self::QqMessage),
             other => Err(Error::ValidationError(format!(
-                "unknown retrieval schema '{other}'; expected 'image_semantic', 'agent_memory' or 'qq_message'"
+                "unknown retrieval schema '{other}'; expected 'image_semantic', 'concept_memory', 'person_memory', 'behavioral_memory' or 'qq_message'"
             ))),
         }
     }
@@ -56,7 +53,6 @@ impl RetrievalSchema {
     pub fn weaviate_class_name(self) -> &'static str {
         match self {
             Self::ImageSemantic => "ImageSemantic",
-            Self::AgentMemory => "AgentMemory",
             Self::ConceptMemory => "ConceptMemory",
             Self::PersonMemory => "PersonMemory",
             Self::BehavioralMemory => "BehavioralMemory",
@@ -68,7 +64,6 @@ impl RetrievalSchema {
     pub fn elasticsearch_index_name(self) -> &'static str {
         match self {
             Self::ImageSemantic => "zihuan_image_semantic",
-            Self::AgentMemory => "zihuan_agent_memory",
             Self::ConceptMemory => "zihuan_concept_memory",
             Self::PersonMemory => "zihuan_person_memory",
             Self::BehavioralMemory => "zihuan_behavioral_memory",
@@ -76,15 +71,23 @@ impl RetrievalSchema {
         }
     }
 
+    /// The memory category this schema stores, `None` for non-memory schemas.
+    pub fn memory_category(self) -> Option<crate::storage::MemoryCategory> {
+        match self {
+            Self::ConceptMemory => Some(crate::storage::MemoryCategory::Concept),
+            Self::PersonMemory => Some(crate::storage::MemoryCategory::Person),
+            Self::BehavioralMemory => Some(crate::storage::MemoryCategory::Behavioral),
+            _ => None,
+        }
+    }
+
     /// Elasticsearch `dense_vector` field holding this schema's embedding.
     pub fn vector_field(self) -> &'static str {
         match self {
             Self::ImageSemantic => "description_vector",
-            Self::AgentMemory
-            | Self::ConceptMemory
-            | Self::PersonMemory
-            | Self::BehavioralMemory => "embedding",
-            Self::QqMessage => "embedding",
+            Self::ConceptMemory | Self::PersonMemory | Self::BehavioralMemory | Self::QqMessage => {
+                "embedding"
+            }
         }
     }
 }

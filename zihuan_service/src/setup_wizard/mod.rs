@@ -127,9 +127,8 @@ pub struct DetailedInstallCommand {
 
 /// Retrieval schemas initialized on a newly installed search database. One
 /// retrieval connection serves every schema, so installers set them all up.
-pub(crate) const RETRIEVAL_SCHEMAS: [RetrievalSchema; 6] = [
+pub(crate) const RETRIEVAL_SCHEMAS: [RetrievalSchema; 5] = [
     RetrievalSchema::ImageSemantic,
-    RetrievalSchema::AgentMemory,
     RetrievalSchema::ConceptMemory,
     RetrievalSchema::PersonMemory,
     RetrievalSchema::BehavioralMemory,

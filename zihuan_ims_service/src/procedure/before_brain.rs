@@ -97,7 +97,7 @@ pub(crate) fn assemble_before_brain(
     if let Some(planer) = ctx.planer {
         system_prompt.push_str(&zihuan_core::role::planer::prompt_for_context(&planer.context));
         system_prompt.push_str(&format!(
-            "\n你是本次 ims_send 的执行者 {}（Role ID：{}），已接到发送任务。来源 Planer {} 是委托方，不是发送通道；收件目标为 {} {}。\n你需要根据指令生成给该收件人的消息正文。最终文本会在本轮推理结束后，由当前 IMS Role 的审查、格式化和发送链路自动投递，并由运行时把真实发送回执返回委托方。执行本次发送不需要也不得再次调用 planer_request；只有确需辅助信息时才可向 Planer 请求协助。\n最终输出只能是给收件人的正文，不要向委托方汇报，不要输出发送成功/失败报告或内部调用链、工具错误解释。指令中要求的发送结果由运行时回报，你不能在实际投递前声称成功或失败。工具失败不等于当前 IMS 发送失败；仍可生成正文时应继续完成。应尽力生成可发送正文；确实无法生成安全正文时输出 [no_reply]，运行时会将任务标记失败。没有真实入站消息，不要使用 @sender 或引用不存在的触发消息。",
+            "\n你是 {}（Role ID：{}），当前收到 Planer {} 发来的消息。按正常事件处理，查询资料、调用工具或记录记忆，然后向 Planer 返回处理结果。参考会话为 {} {}，只用于上下文和记忆作用域，回复不会自动发送到该 IMS 会话。不要伪造入站用户或消息 ID，不要使用 @sender。涉及写入时以工具实际返回为准，不得在工具未成功时声称已记录。最终文本是给 Planer 的回复。",
             ctx.bot_name, planer.context.role_id, planer.source_planer_id,
             planer.target_type, planer.target_id,
         ));
@@ -126,7 +126,7 @@ pub(crate) fn assemble_before_brain(
             .collect::<serde_json::Map<String, serde_json::Value>>();
         let user_message = if let Some(planer) = ctx.planer {
             LLMMessage::user(format!(
-                "委托方 Planer ID: {}；QQ 收件目标 {} {}\n发送指令：{}\n情绪指导：{}\n召回记忆：{}\n请生成本次要投递给上述收件人的正文；发送及向委托方回报回执由运行时完成。",
+                "消息来源：Planer {}；参考会话 {} {}\n消息：{}\n情绪指导：{}\n召回记忆：{}\n请处理这条消息并向 Planer 返回结果。",
                 planer.source_planer_id,
                 planer.target_type,
                 planer.target_id,

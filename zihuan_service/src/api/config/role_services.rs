@@ -495,11 +495,13 @@ fn subagent_available_tool_ids(
 ) -> std::collections::HashSet<String> {
     tool_ids
         .into_iter()
-        .chain([
-            "search_memory".to_string(),
-            "update_memory".to_string(),
-            "list_memory_keys".to_string(),
-        ])
+        // Memory tools are registered by the runtime host (as disabled placeholders without a
+        // backend), so definitions may declare them regardless of the caller's list.
+        .chain(
+            zihuan_core::agent::tools::memory::SUB_AGENT_MEMORY_TOOL_IDS
+                .into_iter()
+                .map(str::to_string),
+        )
         // Existing agent ids are callable tools too, so a definition can reference another.
         .chain(list_agent_ids())
         // A registered DAG node is callable as a tool on its own, so a definition may name one.

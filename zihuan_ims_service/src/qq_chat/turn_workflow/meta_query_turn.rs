@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
 
+use zihuan_core::agent::tools::memory::{recall_memory, MemoryRecall};
+use zihuan_core::agent::MemoryCapability;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole};
 use zihuan_core::qq_context::{
@@ -20,12 +22,16 @@ use super::finalization::{
 };
 use super::{build_after_brain, build_format_output, TurnContext};
 use crate::agent::emotion::utils::{emotion_expression_prompt, has_noticeable_emotion_expression};
+use crate::agent::utils::{memory_hint_lines, memory_recall_trace};
 use crate::procedure::{
     qq_procedure_context, QqBrainOutput, QqFormatOutputOutput, QqMetaQueryBrain,
     QqReplyReviewResult,
 };
 use crate::storage::qq_chat_history_store::save_history;
-use crate::tools::format_public_info_message;
+use crate::tools::{
+    format_public_info_message, qq_memory_access_context, AgentMemoryToolResources,
+    DEFAULT_TOOL_MEMORY_AGENT,
+};
 
 /// Handles meta-query intents by using a dedicated LLM context with pre-fetched function
 /// list and public info, without exposing any tool specs to the LLM.
@@ -35,6 +41,19 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
     let ctx = turn.ctx;
     let trace = turn.trace;
     let is_group = turn.is_group;
+
+    // Behavioural and concept recall rides the direct-answer message even though the
+    // meta-query path skips the brain loop and history.
+    let memory_recall = recall_meta_query_memories(&turn)?;
+    if let Some(recall) = &memory_recall {
+        emit_qq_context_stage(
+            ctx.agent_id,
+            sender_id,
+            turn_id,
+            "记忆召回",
+            memory_recall_trace(recall),
+        );
+    }
 
     // The caller passes the raw loaded history; compact it here with a plain user message
     // as the token-estimate reference so the persisted history stays within budget too.
@@ -66,8 +85,19 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
 
     let meta_system_prompt =
         build_meta_query_system_prompt(ctx.bot_name, style_prompt, &emotion_prompt);
-    let meta_user_message =
-        build_meta_query_user_message(&turn.current_message, &function_list, &public_info);
+    let memory_block = memory_recall.as_ref().filter(|recall| !recall.is_empty()).map(|recall| {
+        format!(
+            "[Recalled Memories]\n\
+             Behavioural rules are shown in full; concept entries list only their key.\n{}\n\n",
+            memory_hint_lines(recall).join("\n")
+        )
+    });
+    let meta_user_message = build_meta_query_user_message(
+        &turn.current_message,
+        &function_list,
+        &public_info,
+        memory_block.as_deref(),
+    );
 
     let meta_messages =
         vec![LLMMessage::system(meta_system_prompt), LLMMessage::user(meta_user_message)];
@@ -209,6 +239,59 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
     );
 
     Ok(QqChatServiceTurnResult { result_summary, turn_completed: true })
+}
+
+/// The access-level ceiling for meta-query recall: only memories written at Planer level or
+/// below (`access_level <= 1`) surface here. A meta query describes the bot's public surface
+/// to whoever asks, so user-written (3) and Role-self (2) memories stay out of the reply.
+const META_QUERY_MAX_MEMORY_ACCESS_LEVEL: u32 = 1;
+
+/// Recalls behavioural and concept memories for a meta-query turn: pure Rust, no LLM.
+///
+/// The meta-query path has no tool loop, so the recall is injected straight into the
+/// direct-answer message instead of riding the before-brain assembly. Identity profiles stay
+/// out of it — the sender is asking about the bot's public surface, not about themselves. The
+/// meta-query brain sees no conversation history either, so the recall runs without a
+/// previous-context filter: nothing can already be visible to it.
+fn recall_meta_query_memories(turn: &TurnContext<'_>) -> Result<Option<MemoryRecall>> {
+    if !turn.service.is_default_tool_enabled(DEFAULT_TOOL_MEMORY_AGENT) {
+        return Ok(None);
+    }
+    let Some(resources) = MemoryCapability::resolve(
+        turn.ctx.local_memory_store.cloned(),
+        turn.ctx.retrieval_store.cloned(),
+        turn.ctx.embedding_model.cloned(),
+    )
+    .map(|memory| AgentMemoryToolResources {
+        memory_backend: memory.backend,
+        embedding_model: memory.embedding_model,
+        access: {
+            let mut access = qq_memory_access_context(
+                Some(turn.sender_id),
+                turn.target_id,
+                turn.is_group,
+                turn.prepared_input.event.group_id.clone(),
+            );
+            access.agent_id = turn.ctx.agent_id.to_string();
+            access.permission_connection = turn.ctx.rdb_pool.cloned();
+            access.max_access_level = Some(META_QUERY_MAX_MEMORY_ACCESS_LEVEL);
+            access
+        },
+    }) else {
+        return Ok(None);
+    };
+    let level = zihuan_core::storage::user_permission::memory_source_level(
+        &resources.access,
+        turn.sender_id,
+    )?;
+    let source = serde_json::json!({
+        "kind": "user",
+        "sender_id": turn.sender_id.to_string(),
+        "access_level": level,
+    })
+    .to_string();
+    let recalled = recall_memory(resources, &turn.current_message, String::new(), &[])?;
+    Ok(Some(recalled.with_source(source)))
 }
 
 /// Close the context-view turn for a meta-query path, which skips the brain loop.

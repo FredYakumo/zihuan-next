@@ -47,6 +47,7 @@
           <t-form-item v-if="form.elasticsearch_auth_method === 'password'" label="用户名" required><t-input v-model="form.elasticsearch_username" /></t-form-item>
           <t-form-item :label="form.elasticsearch_auth_method === 'password' ? '密码' : 'API Key'" required><ConnectionCredentialInput v-if="form.elasticsearch_auth_method === 'password'" v-model="form.elasticsearch_password" /><ConnectionCredentialInput v-else v-model="form.elasticsearch_api_key" /></t-form-item>
           <t-form-item label="向量维度"><t-input-number v-model="form.elasticsearch_vector_dimensions" :min="1" /></t-form-item>
+          <t-form-item label="记忆语义门槛" help="原始余弦相似度，默认 0.5；应按 embedding 模型与实际查询校准。"><t-input-number v-model="form.elasticsearch_memory_min_similarity" :min="-1" :max="1" :step="0.05" /></t-form-item>
         </template>
 
         <template v-else-if="form.type === 'rustfs'">

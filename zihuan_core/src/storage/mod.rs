@@ -8,17 +8,14 @@ mod elasticsearch;
 pub mod hyperparams;
 mod local_memory;
 pub mod memory;
-mod memory_migration;
 mod memory_types;
 pub use memory::{
-    BehavioralMemoryRecord, BehavioralMemoryWrite, ConceptMemoryRecord, ConceptMemoryWrite,
-    MemoryBackend, MemoryQuery, PersonMemoryRecord, PersonMemoryWrite,
+    BehavioralMemoryPrepared, BehavioralMemoryRecord, BehavioralMemoryWrite, ConceptMemoryPrepared,
+    ConceptMemoryRecord, ConceptMemoryWrite, MemoryBackend, MemoryQuery, MemoryRecord,
+    MemorySearchHit, PersonMemoryRecord, PersonMemoryWrite,
 };
-pub use memory_migration::migrate_retrieval_memory;
 pub mod user_permission;
-pub use memory_types::{
-    memory_object_id, MemoryAttributes, MemoryCategory, PersonMemory, MEMORY_MUTATION_LOCK,
-};
+pub use memory_types::{memory_object_id, MemoryCategory, PersonMemory, MEMORY_MUTATION_LOCK};
 pub mod message;
 mod message_record;
 mod mock_rdb;
@@ -51,11 +48,11 @@ pub use crate::retrieval::{
     RetrievalBackend, RetrievalSchema, RetrievalStoreConfig, RetrievalStoreRef,
 };
 pub use agent_memory_weaviate::{
-    create_memory_record, create_memory_record_with_vector, delete_memory_record,
-    extend_expiry_for_hits, get_memory_record, is_memory_expired, list_recent_memory_keys,
-    memory_is_accessible, normalize_memory_scope_lists, search_memory_content,
-    search_memory_content_by_vector, update_memory_record, update_memory_record_with_vector,
-    AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit, AgentMemoryUpsert,
+    delete_memory_record, extend_expiry_for_hits, get_memory_record, is_memory_expired,
+    list_recent_memory_keys, memory_is_accessible, normalize_memory_scope_lists,
+    search_memory_content, search_memory_content_by_vector, update_behavioral_record,
+    update_concept_record, update_person_record, upsert_behavioral_record, upsert_concept_record,
+    upsert_person_record, AgentMemoryAccessContext,
 };
 pub use connection_handle::ConnectionHandle;
 pub use connection_manager::{
@@ -64,10 +61,13 @@ pub use connection_manager::{
 };
 pub use db_schema::ensure_tables_for_connection;
 pub use elasticsearch::{
-    create_elasticsearch_memory_record, delete_elasticsearch_memory_record,
-    ensure_elasticsearch_index, get_elasticsearch_memory_record, list_elasticsearch_memory_keys,
-    search_elasticsearch_images, search_elasticsearch_memory, update_elasticsearch_memory_record,
-    upsert_elasticsearch_image, ElasticsearchImageSearchHit, ElasticsearchRef,
+    delete_elasticsearch_memory_record, ensure_elasticsearch_index,
+    get_elasticsearch_memory_record, list_elasticsearch_memory_keys, search_elasticsearch_images,
+    search_elasticsearch_memory, update_elasticsearch_behavioral_record,
+    update_elasticsearch_concept_record, update_elasticsearch_person_record,
+    upsert_elasticsearch_behavioral_record, upsert_elasticsearch_concept_record,
+    upsert_elasticsearch_image, upsert_elasticsearch_person_record, ElasticsearchImageSearchHit,
+    ElasticsearchRef,
 };
 pub use local_memory::LocalMemoryStore;
 pub use message_record::MessageRecord;
@@ -87,9 +87,10 @@ pub use resource_resolver::{
 };
 pub use retrieval_database::{RetrievalDatabase, RetrievalImageHit};
 pub use retrieval_ops::{
-    get_memory_in_store, get_person_in_store, list_memory_in_store, persist_image_record_to_store,
-    persist_media_to_store, persist_qq_message_list_to_store, search_images_in_store,
-    search_memory_in_store, upsert_memory_in_store, ImagePersistenceRequest,
+    get_behavioral_in_store, get_concept_in_store, get_person_in_store, list_memory_in_store,
+    persist_image_record_to_store, persist_media_to_store, persist_qq_message_list_to_store,
+    search_images_in_store, search_memory_in_store, upsert_behavioral_in_store,
+    upsert_concept_in_store, upsert_person_in_store, ImagePersistenceRequest,
 };
 pub use role_avatar_rdb_store::{first_available_role_avatar_store, RdbRoleAvatarStore};
 pub use role_avatar_store::{RoleAvatarData, RoleAvatarStore};
@@ -208,6 +209,13 @@ pub struct ElasticsearchConnection {
     #[serde(default)]
     pub auth_method: ConnectionAuthMethod,
     pub vector_dimensions: usize,
+    /// Raw cosine similarity cutoff for memory vector candidates, before RRF.
+    #[serde(default = "default_memory_min_similarity")]
+    pub memory_min_similarity: f64,
+}
+
+pub fn default_memory_min_similarity() -> f64 {
+    0.5
 }
 
 pub fn validate_connection_authentication(

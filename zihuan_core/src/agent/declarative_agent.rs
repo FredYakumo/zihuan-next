@@ -42,9 +42,8 @@ use crate::tool_subgraph::data_type_to_json_schema_type;
 ///
 /// Paths are anchored at the crate root so they survive moving this file within `zihuan_core`.
 ///
-/// The `memory_agent` is no longer a YAML definition — it is composed in Rust from the
-/// configurable prompts in [`crate::system_config::MemoryAgentPromptsSection`] and registered
-/// as a recall-only Procedure by the QQ service.
+/// The former `memory_agent` is fully retired: recall runs as a pure-Rust Procedure phase and
+/// its deep search is the `full_search_memory` tool the deep-research sub agent declares.
 const BUILTIN_AGENT_DEFINITIONS: &[(&str, &str)] = &[
     (
         "run_research_subagent",
@@ -62,9 +61,8 @@ const BUILTIN_AGENT_DEFINITIONS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Formerly built-in definitions that the application now provides in Rust. Startup removes
-/// their seeded YAML files so the on-disk catalog stays the source of truth for publishable
-/// agents; prompts that lived in them moved to the system configuration.
+/// Definitions retired outright. Startup removes their seeded YAML files so the on-disk
+/// catalog stays the source of truth for publishable agents.
 const RETIRED_AGENT_DEFINITIONS: &[&str] = &["memory_agent"];
 
 /// Agent definitions live in the `sub_agents` directory relative to the current working
@@ -269,17 +267,6 @@ pub fn load_agent_definition(
     let definition: AgentDefinition = serde_yaml::from_str(&content).map_err(|error| {
         Error::ValidationError(format!("invalid agent '{}': {error}", path.display()))
     })?;
-    let mut definition = definition;
-    if definition.tool_ids.iter().any(|id| id == "memory_agent") {
-        definition.tool_ids.retain(|id| id != "memory_agent");
-        for id in crate::agent::tools::memory::MEMORY_TOOL_IDS {
-            if !definition.tool_ids.iter().any(|existing| existing == id) {
-                definition.tool_ids.push(id.to_string());
-            }
-        }
-        definition.system_prompt =
-            definition.system_prompt.replace("`memory_agent`", "`search_memory`");
-    }
     definition.validate(available_tool_ids)?;
     Ok(definition)
 }

@@ -83,6 +83,7 @@ pub(crate) fn connection_kind(
             DetailedSearchAuthMethod::ApiKey => ConnectionAuthMethod::ApiKey,
         },
         vector_dimensions: search.vector_dimensions,
+        memory_min_similarity: zihuan_core::storage::default_memory_min_similarity(),
     })
 }
 

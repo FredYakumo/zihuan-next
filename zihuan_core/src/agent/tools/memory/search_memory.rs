@@ -26,7 +26,7 @@ impl SearchMemoryTool {
 
 impl Tool for SearchMemoryTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
-        Arc::new(MemoryFunctionToolSpec::new("search_memory", "Search an explicitly selected category. query is either {id: QQ_ID} for exact person identity, or {query: text} for fuzzy search across qq_id, name, preferred_name, aliases and impression. Never infer identity from aliases.", json!({"type":"object","properties":{"category":{"type":"string","enum":["concept","person","behavioral"]},"query":crate::storage::memory::memory_query_schema(),"top_n":{"type":"integer"}},"required":["category","query"],"additionalProperties":false})))
+        Arc::new(MemoryFunctionToolSpec::new("search_memory", "Search an explicitly selected category. query is either {id: QQ_ID} for exact person identity, or {query: text} for hybrid retrieval. Person text searches qq_id, name, preferred_name, aliases and impression; concept/behavioral text searches title and content. Exact names/titles rank first, then relevance, not recency. Results may be empty; distance is a rank-fusion score, not similarity or confidence. Never infer identity from aliases.", json!({"type":"object","properties":{"category":{"type":"string","enum":["concept","person","behavioral"]},"query":crate::storage::memory::memory_query_schema(),"top_n":{"type":"integer"}},"required":["category","query"],"additionalProperties":false})))
     }
     fn execute(&self, _: &str, arguments: &Value) -> Result<String> {
         let category = category_argument(arguments)?;

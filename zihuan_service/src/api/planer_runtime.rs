@@ -23,9 +23,7 @@ use zihuan_core::config::{
 use zihuan_core::error::Result;
 use zihuan_core::model_inference::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken};
-use zihuan_core::role::planer::{
-    PlanerCall, PlanerContext, PlanerFuture, PlanerHost, PlanerOperation,
-};
+use zihuan_core::role::planer::{PlanerCall, PlanerContext, PlanerFuture, PlanerHost};
 use zihuan_core::role::service_config::RoleServiceKind;
 use zihuan_core::task_context::{
     AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
@@ -327,8 +325,7 @@ impl PlanerRuntime {
         Ok(Value::Array(config.members.iter().filter_map(|member| {
             let role = roles.iter().find(|r| r.id == member.role_id)?;
             let running = role.enabled && self.state.role_service_manager.running_role_service(&role.id).is_some();
-            Some(json!({"role_id":role.id,"name":role.name,"type":role.role_service_type.kind,"description":member.description,"running":running,
-                "operations": if !running { vec![] } else if role.role_service_type.kind == RoleServiceKind::Workspace { vec!["workspace_chat"] } else { vec!["ims_send","ims_search"] }}))
+            Some(json!({"role_id":role.id,"name":role.name,"type":role.role_service_type.kind,"description":member.description,"running":running}))
         }).collect()))
     }
     fn run_agent(
@@ -355,8 +352,8 @@ impl PlanerRuntime {
                 })
                 .collect();
             let system_prompt = format!(
-                "你是独立的调度 Agent Planer：{}。{}\n你只能通过 BUS 工具调度所属 Role，不能自己执行文件或命令工作。所属成员：{}。\n根据任务选择执行者；IMS 主动发送用 ims_send 委托完整指令，由 IMS 自行准备上下文、分析及发送，不默认拆成检索和原样转发。planer_send 调用期间会串行执行并等待执行方结束，然后直接返回最终结果；不要重复发送同一任务。需要补充信息用 ask_user，随后携带原 Workspace session_id 续聊。人工审批只能由用户在目标 Workspace 界面完成。不得向 Role 返回其他成员名称、ID、目录或内部路由。当前协作链禁止再次进入的 Role：{}。只读约束：{}。",
-                config.name, config.prompt, runtime.role_catalog(&chain.planer_id)?, json!(chain.context.visited), chain.context.read_only);
+                "你是独立的调度 Agent Planer：{}。{}\n你只能通过 BUS 工具调度所属 Role，不能自己执行文件或命令工作。所属成员：{}。\n根据任务选择 Role，使用 planer_send 发送完整消息。Role 按普通事件处理，来源身份为 Planer，并将回复返回给你。无需指定操作类型；IMS 可选提供 target_type 和 target_id 作为参考会话，最终回复返回 Planer，不自动投递到该会话。planer_send 调用期间会串行执行并等待执行方结束，然后直接返回最终结果；不要重复发送同一任务。需要补充信息用 ask_user，随后携带原 Workspace session_id 续聊。人工审批只能由用户在目标 Workspace 界面完成。不得向 Role 返回其他成员名称、ID、目录或内部路由。当前协作链禁止再次进入的 Role：{}。",
+                config.name, config.prompt, runtime.role_catalog(&chain.planer_id)?, json!(chain.context.visited));
             let agent = PlanerAgent::new(PlanerAgentConfig { llm, system_prompt, tools })?;
             let (tokens, drain) = if let Some(tokens) = tokens {
                 (tokens, None)
@@ -428,9 +425,6 @@ impl PlanerRuntime {
         if call.prompt.trim().is_empty() {
             return Err(zihuan_core::string_error!("prompt 必填"));
         }
-        if chain.context.read_only && !matches!(call.operation, PlanerOperation::ImsSearch) {
-            return Err(zihuan_core::string_error!("只读请求只能调度 IMS 检索"));
-        }
         let config = self.config(&chain.planer_id)?;
         if !config.enabled {
             return Err(zihuan_core::string_error!("Planer 已禁用"));
@@ -455,23 +449,25 @@ impl PlanerRuntime {
         if self.state.role_service_manager.running_role_service(&role.id).is_none() {
             return Err(zihuan_core::string_error!("目标 Role 未运行"));
         }
-        match (&call.operation, role.role_service_type.kind) {
-            (PlanerOperation::WorkspaceChat, RoleServiceKind::Workspace) => {}
-            (PlanerOperation::ImsSend | PlanerOperation::ImsSearch, RoleServiceKind::QqChat) => {}
-            _ => return Err(zihuan_core::string_error!("目标 Role 不支持该操作")),
+        let is_workspace = role.role_service_type.kind == RoleServiceKind::Workspace;
+        if !is_workspace && role.role_service_type.kind != RoleServiceKind::QqChat {
+            return Err(zihuan_core::string_error!("目标 Role 不支持消息处理"));
         }
-        if matches!(call.operation, PlanerOperation::ImsSend)
-            && (!matches!(call.target_type.as_deref(), Some("private" | "group"))
-                || call.target_id.as_deref().unwrap_or("").trim().is_empty())
-        {
-            return Err(zihuan_core::string_error!("IMS 发送需要目标类型及 ID"));
-        }
-        if !matches!(call.operation, PlanerOperation::WorkspaceChat) && call.session_id.is_some() {
+        if !is_workspace && call.session_id.is_some() {
             return Err(zihuan_core::string_error!("session_id 仅用于 Workspace"));
+        }
+        match (call.target_type.as_deref(), call.target_id.as_deref()) {
+            (None, None) => {}
+            (Some("private" | "group"), Some(id)) if !is_workspace && !id.trim().is_empty() => {}
+            _ => {
+                return Err(zihuan_core::string_error!(
+                    "IMS 参考会话需要同时提供有效的 target_type 和 target_id"
+                ))
+            }
         }
         let (session_id, path) = {
             let records = self.records.lock().unwrap();
-            if matches!(call.operation, PlanerOperation::WorkspaceChat) {
+            if is_workspace {
                 if let Some(id) = &call.session_id {
                     let owner = records
                         .sessions
@@ -509,7 +505,6 @@ impl PlanerRuntime {
         let cancellation = Arc::new(AtomicBool::new(false));
         next.task_id = Some(id.clone());
         next.cancellation = Some(cancellation.clone());
-        next.read_only |= matches!(call.operation, PlanerOperation::ImsSearch);
         {
             let mut records = self.records.lock().unwrap();
             if let Some(session_id) = &session_id {
@@ -553,23 +548,20 @@ impl PlanerRuntime {
             runtime.set_status(&task_id, "running");
             let execution_runtime = runtime.clone();
             let execution = async move {
-                match call.operation {
-                    PlanerOperation::WorkspaceChat => {
-                        super::chat::execute_planer_chat(
-                            execution_runtime.state.clone(),
-                            execution_runtime.broadcast.clone(),
-                            &call.target_role_id,
-                            session_id.as_deref().unwrap(),
-                            &path,
-                            &call.prompt,
-                            next,
-                        )
-                        .await
-                    }
-                    _ => {
-                        let target = call.target_role_id.clone();
-                        zihuan_ims_service::qq_chat::planer::execute(&target, call, next).await
-                    }
+                if is_workspace {
+                    super::chat::execute_planer_chat(
+                        execution_runtime.state.clone(),
+                        execution_runtime.broadcast.clone(),
+                        &call.target_role_id,
+                        session_id.as_deref().unwrap(),
+                        &path,
+                        &call.prompt,
+                        next,
+                    )
+                    .await
+                } else {
+                    let target = call.target_role_id.clone();
+                    zihuan_ims_service::qq_chat::planer::execute(&target, call, next).await
                 }
             };
             let result = tokio::spawn(execution).await.unwrap_or_else(|e| {
@@ -869,7 +861,7 @@ impl Tool for PlanerTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         let parameters = match self.name {
             "planer_send" => {
-                json!({"type":"object","properties":{"target_role_id":{"type":"string"},"operation":{"enum":["workspace_chat","ims_send","ims_search"],"type":"string"},"prompt":{"type":"string"},"session_id":{"type":"string"},"target_type":{"type":"string","enum":["private","group"]},"target_id":{"type":"string"}},"required":["target_role_id","operation","prompt"]})
+                json!({"type":"object","properties":{"target_role_id":{"type":"string"},"prompt":{"type":"string"},"session_id":{"type":"string"},"target_type":{"type":"string","enum":["private","group"]},"target_id":{"type":"string"}},"required":["target_role_id","prompt"],"additionalProperties":false})
             }
             "ask_user" => {
                 json!({"type":"object","properties":{"question":{"type":"string"},"options":{"type":"array","items":{"type":"string"}}},"required":["question"]})
@@ -877,7 +869,7 @@ impl Tool for PlanerTool {
             _ => json!({"type":"object","properties":{}}),
         };
         Arc::new(StaticFunctionToolSpec { name: self.name, description: match self.name {
-            "planer_send" => "通过 BUS 串行委托所属 Role，等待执行方结束后直接返回最终结果（含任务状态、回执或待补充信息）。",
+            "planer_send" => "向所属 Role 发送消息，以 Planer 身份触发其正常处理并等待回复。无需指定操作；IMS 的 target_type/target_id 仅提供参考会话，不是发送目标。Workspace 可用 session_id 续聊。",
             "ask_user" => "向用户提问并暂停，或汇总子任务需要补充的信息。审批必须在目标 Workspace 界面由用户处理。",
             _ => "未知的 Planer 工具。",
         }, parameters })

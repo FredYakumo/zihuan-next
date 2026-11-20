@@ -27,7 +27,7 @@ impl Tool for ListMemoryKeysTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(MemoryFunctionToolSpec::new(
             "list_memory_keys",
-            "List accessible memory titles by category.",
+            "List accessible memory titles by category. With query, use the same hybrid retrieval and exact-name-first relevance order as search_memory; without query, browse by time. An empty result means no matching memory was found.",
             json!({"type":"object","properties":{"category":{"type":"string","enum":["concept","person","behavioral"]},"top_n":{"type":"integer"},"query":crate::storage::memory::memory_query_schema()},"required":["category"],"additionalProperties":false}),
         ))
     }
@@ -42,6 +42,18 @@ impl Tool for ListMemoryKeysTool {
             query.as_ref(),
             memory_limit(arguments.get("top_n").and_then(Value::as_i64)) as usize,
         )?;
-        Ok(json!({"ok":true,"items":hits.into_iter().map(|hit| json!({"object_id":hit.record.object_id,"title":if hit.record.attributes.category == crate::storage::MemoryCategory::Person { hit.record.attributes.person.name.clone() } else { hit.record.key },"qq_id":hit.record.attributes.person.qq_id,"category":hit.record.attributes.category,"access_level":hit.record.attributes.access_level})).collect::<Vec<_>>()}).to_string())
+        Ok(json!({"ok":true,"items":hits.into_iter().map(|hit| {
+            let record = hit.record;
+            let (title, qq_id) = match &record {
+                crate::storage::MemoryRecord::Person(person) => {
+                    (person.profile.name.clone(), person.profile.qq_id.clone())
+                }
+                crate::storage::MemoryRecord::Concept(concept) => (concept.key.clone(), String::new()),
+                crate::storage::MemoryRecord::Behavioral(behavioral) => {
+                    (behavioral.key.clone(), String::new())
+                }
+            };
+            json!({"object_id":record.object_id(),"title":title,"qq_id":qq_id,"category":record.category(),"access_level":record.access_level()})
+        }).collect::<Vec<_>>()}).to_string())
     }
 }

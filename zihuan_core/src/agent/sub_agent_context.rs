@@ -10,17 +10,15 @@ use std::sync::Arc;
 
 use crate::agent::declarative_agent::AgentHost;
 use crate::agent::tools::memory::{
-    register_memory_tools, MemoryAgentResources, MemoryBackend, MEMORY_TOOL_IDS,
+    register_memory_tools, MemoryAgentResources, MemoryBackend, SUB_AGENT_MEMORY_TOOL_IDS,
 };
 use crate::agent::tools::Tool;
-use crate::agent::LLM_KIND_MAIN;
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::model_inference::llm::llm_base::LLMBase;
 use crate::retrieval::RetrievalStoreRef;
 use crate::storage::{AgentMemoryAccessContext, LocalMemoryStore};
 
 const MEMORY_BACKEND_UNAVAILABLE_REASON: &str = "memory backend is not configured";
-const MEMORY_LLM_UNAVAILABLE_REASON: &str = "the main LLM is not available";
 
 /// Memory backend plus the embedding model an external backend requires.
 #[derive(Clone)]
@@ -38,9 +36,6 @@ impl MemoryCapability {
         embedding_model: Option<Arc<dyn EmbeddingBase>>,
     ) -> Option<Self> {
         let backend = if let Some(store) = local_memory_store {
-            if let Err(error) = store.migrate_legacy() {
-                log::warn!("legacy local memory migration deferred: {error}");
-            }
             MemoryBackend::LocalFile(store)
         } else if let Some(store) = retrieval_store {
             if embedding_model.is_none() {
@@ -48,11 +43,6 @@ impl MemoryCapability {
                     "memory capability disabled because the external retrieval store has no embedding model"
                 );
                 return None;
-            }
-            if let Some(model) = embedding_model.as_deref() {
-                if let Err(error) = crate::storage::migrate_retrieval_memory(&store, model) {
-                    log::warn!("legacy retrieval memory migration deferred: {error}");
-                }
             }
             MemoryBackend::RetrievalStore(store)
         } else {
@@ -106,29 +96,24 @@ impl AgentServiceContext {
     }
 
     /// Assembles the host: memory tools (real or disabled placeholders), the service's
-    /// constructed tools, every registered LLM kind, and the composed memory agent tool.
+    /// constructed tools, and every registered LLM kind.
     pub fn build_host(&self, memory_access: AgentMemoryAccessContext) -> AgentHost {
         let mut host = AgentHost::new();
-        match self.memory.as_ref().zip(self.llm(LLM_KIND_MAIN)) {
-            Some((memory, llm)) => {
+        match self.memory.as_ref() {
+            Some(memory) => {
                 register_memory_tools(
                     &mut host,
                     MemoryAgentResources {
                         memory_backend: memory.backend.clone(),
                         embedding_model: memory.embedding_model.clone(),
-                        llm,
                         access: memory_access,
                     },
                 );
             }
             None => {
                 host.register_disabled_tools(
-                    MEMORY_TOOL_IDS,
-                    if self.memory.is_some() {
-                        MEMORY_LLM_UNAVAILABLE_REASON
-                    } else {
-                        MEMORY_BACKEND_UNAVAILABLE_REASON
-                    },
+                    SUB_AGENT_MEMORY_TOOL_IDS,
+                    MEMORY_BACKEND_UNAVAILABLE_REASON,
                 );
             }
         };

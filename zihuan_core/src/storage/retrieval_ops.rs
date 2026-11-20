@@ -4,9 +4,13 @@ use crate::error::{Error, Result};
 use crate::ims_bot_adapter::models::message::{Message, PersistedMedia, PersistedMediaSource};
 use crate::model_inference::llm::embedding_base::EmbeddingBase;
 use crate::retrieval::{RetrievalBackend, RetrievalSchema, RetrievalStoreRef};
+use crate::storage::memory::{
+    BehavioralMemoryPrepared, BehavioralMemoryRecord, ConceptMemoryPrepared, ConceptMemoryRecord,
+    PersonMemoryRecord, PersonMemoryWrite,
+};
 use crate::storage::{
-    search_images, AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit,
-    AgentMemoryUpsert, RetrievalDatabase,
+    memory_object_id, search_images, AgentMemoryAccessContext, MemoryCategory, MemoryRecord,
+    MemorySearchHit, RetrievalDatabase,
 };
 
 /// One image-persistence request, independent of the retrieval backend.
@@ -196,7 +200,7 @@ pub fn search_memory_in_store(
     query: &str,
     query_vector: &[f32],
     limit: usize,
-) -> Result<Vec<AgentMemorySearchHit>> {
+) -> Result<Vec<MemorySearchHit>> {
     store
         .database(access.category.schema())?
         .search_memory(access, query, query_vector, limit)
@@ -207,17 +211,133 @@ pub fn list_memory_in_store(
     store: &RetrievalStoreRef,
     access: &AgentMemoryAccessContext,
     limit: usize,
-) -> Result<Vec<AgentMemorySearchHit>> {
+) -> Result<Vec<MemorySearchHit>> {
     store.database(access.category.schema())?.list_memory(access, limit, None)
 }
 
-/// Creates or updates one agent memory record in the store.
-pub fn upsert_memory_in_store(
+/// Reads one concept record by its scoped title identity.
+pub fn get_concept_in_store(
     store: &RetrievalStoreRef,
-    input: &AgentMemoryUpsert,
+    key: &str,
+    sender_id_list: &[String],
+    group_id_list: &[String],
+) -> Result<Option<ConceptMemoryRecord>> {
+    let id = memory_object_id(MemoryCategory::Concept, key.trim(), sender_id_list, group_id_list);
+    match memory_record_by_id(store, RetrievalSchema::ConceptMemory, &id)? {
+        Some(MemoryRecord::Concept(record)) => Ok(Some(record)),
+        _ => Ok(None),
+    }
+}
+
+/// Reads one behavioral record by its scoped title identity.
+pub fn get_behavioral_in_store(
+    store: &RetrievalStoreRef,
+    key: &str,
+    sender_id_list: &[String],
+    group_id_list: &[String],
+) -> Result<Option<BehavioralMemoryRecord>> {
+    let id =
+        memory_object_id(MemoryCategory::Behavioral, key.trim(), sender_id_list, group_id_list);
+    match memory_record_by_id(store, RetrievalSchema::BehavioralMemory, &id)? {
+        Some(MemoryRecord::Behavioral(record)) => Ok(Some(record)),
+        _ => Ok(None),
+    }
+}
+
+/// Reads one memory record at an explicit object id; `Ok(None)` when absent.
+fn memory_record_by_id(
+    store: &RetrievalStoreRef,
+    schema: RetrievalSchema,
+    object_id: &str,
+) -> Result<Option<MemoryRecord>> {
+    let record = match store.backend() {
+        RetrievalBackend::Weaviate => {
+            crate::storage::get_memory_record(store.weaviate(schema)?.as_ref(), object_id)
+        }
+        RetrievalBackend::Elasticsearch => crate::storage::get_elasticsearch_memory_record(
+            store.elasticsearch(schema)?.as_ref(),
+            object_id,
+        ),
+    };
+    match record {
+        Ok(record) => Ok(Some(record)),
+        Err(Error::NotFound) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// Creates or updates one concept record in the store.
+pub fn upsert_concept_in_store(
+    store: &RetrievalStoreRef,
+    prepared: &ConceptMemoryPrepared,
     vector: Vec<f32>,
-) -> Result<AgentMemoryRecord> {
-    store.database(input.attributes.category.schema())?.upsert_memory(input, vector)
+) -> Result<ConceptMemoryRecord> {
+    match store.backend() {
+        RetrievalBackend::Weaviate => crate::storage::upsert_concept_record(
+            store.weaviate(RetrievalSchema::ConceptMemory)?.as_ref(),
+            prepared,
+            Some(vector),
+        ),
+        RetrievalBackend::Elasticsearch => crate::storage::upsert_elasticsearch_concept_record(
+            store.elasticsearch(RetrievalSchema::ConceptMemory)?.as_ref(),
+            prepared,
+            vector,
+        ),
+    }
+    .and_then(|record| match record {
+        MemoryRecord::Concept(record) => Ok(record),
+        _ => Err(Error::ValidationError("concept upsert returned another category".to_string())),
+    })
+}
+
+/// Creates or updates one behavioral record in the store.
+pub fn upsert_behavioral_in_store(
+    store: &RetrievalStoreRef,
+    prepared: &BehavioralMemoryPrepared,
+    vector: Vec<f32>,
+) -> Result<BehavioralMemoryRecord> {
+    match store.backend() {
+        RetrievalBackend::Weaviate => crate::storage::upsert_behavioral_record(
+            store.weaviate(RetrievalSchema::BehavioralMemory)?.as_ref(),
+            prepared,
+            Some(vector),
+        ),
+        RetrievalBackend::Elasticsearch => crate::storage::upsert_elasticsearch_behavioral_record(
+            store.elasticsearch(RetrievalSchema::BehavioralMemory)?.as_ref(),
+            prepared,
+            vector,
+        ),
+    }
+    .and_then(|record| match record {
+        MemoryRecord::Behavioral(record) => Ok(record),
+        _ => Err(Error::ValidationError(
+            "behavioral upsert returned another category".to_string(),
+        )),
+    })
+}
+
+/// Creates or updates one person record in the store.
+pub fn upsert_person_in_store(
+    store: &RetrievalStoreRef,
+    write: &PersonMemoryWrite,
+    vector: Vec<f32>,
+) -> Result<PersonMemoryRecord> {
+    match store.backend() {
+        RetrievalBackend::Weaviate => crate::storage::upsert_person_record(
+            store.weaviate(RetrievalSchema::PersonMemory)?.as_ref(),
+            write,
+            Some(vector),
+        ),
+        RetrievalBackend::Elasticsearch => crate::storage::upsert_elasticsearch_person_record(
+            store.elasticsearch(RetrievalSchema::PersonMemory)?.as_ref(),
+            write,
+            vector,
+        ),
+    }
+    .and_then(|record| match record {
+        MemoryRecord::Person(record) => Ok(record),
+        _ => Err(Error::ValidationError("person upsert returned another category".to_string())),
+    })
 }
 
 fn normalized_elasticsearch_image(properties: Value) -> Value {
@@ -255,35 +375,11 @@ fn parse_media_source(value: Option<&str>) -> PersistedMediaSource {
     }
 }
 
-pub fn get_memory_in_store(
-    store: &RetrievalStoreRef,
-    input: &AgentMemoryUpsert,
-) -> Result<Option<AgentMemoryRecord>> {
-    if input.attributes.category == super::MemoryCategory::Person {
-        return get_person_in_store(store, &input.attributes.person.qq_id);
-    }
-    let id = super::memory_object_id(input);
-    let record = match store.backend() {
-        RetrievalBackend::Weaviate => super::get_memory_record(
-            store.weaviate(input.attributes.category.schema())?.as_ref(),
-            &id,
-        ),
-        RetrievalBackend::Elasticsearch => super::get_elasticsearch_memory_record(
-            store.elasticsearch(input.attributes.category.schema())?.as_ref(),
-            &id,
-        ),
-    };
-    match record {
-        Ok(record) => Ok(Some(record)),
-        Err(Error::NotFound) => Ok(None),
-        Err(error) => Err(error),
-    }
-}
-
+/// Reads one person record by exact QQ identity.
 pub fn get_person_in_store(
     store: &RetrievalStoreRef,
     qq_id: &str,
-) -> Result<Option<AgentMemoryRecord>> {
+) -> Result<Option<PersonMemoryRecord>> {
     match store.backend() {
         RetrievalBackend::Elasticsearch => super::elasticsearch::get_person_by_qq_id(
             store.elasticsearch(RetrievalSchema::PersonMemory)?.as_ref(),

@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use crate::agent::tools::Tool;
 use crate::error::{Error, Result};
 use crate::model_inference::llm::tooling::FunctionTool;
-use crate::storage::{MemoryCategory, MemoryWriteSource, PersonMemory};
+use crate::storage::{MemoryCategory, MemoryRecord, MemoryWriteSource, PersonMemory};
 use crate::utils::json_utils::{optional_string_argument, required_string_argument};
 
 use super::category_argument;
@@ -24,7 +24,7 @@ impl RememberMemoryTool {
     }
 }
 
-const UPDATE_MEMORY_TOOL_DESC: &str = r#"Create or correct a memory in an explicit category."#;
+const UPDATE_MEMORY_TOOL_DESC: &str = r#"Create or correct a memory in an explicit category. `key` is required for concept and behavioral."#;
 
 impl Tool for RememberMemoryTool {
     fn execution_resource(&self, _: &Value) -> crate::agent::tools::ToolExecutionResource {
@@ -78,8 +78,6 @@ impl Tool for RememberMemoryTool {
                 ));
             }
             String::new()
-        } else if category == MemoryCategory::Behavioral {
-            optional_string_argument(arguments, "key").unwrap_or_default()
         } else {
             required_string_argument(arguments, "key")?
         };
@@ -99,29 +97,27 @@ impl Tool for RememberMemoryTool {
         if !matches!(scope, "current" | "sender" | "group" | "global") {
             return Err(Error::ValidationError("invalid scope".to_string()));
         }
-        let key = if category == MemoryCategory::Behavioral && key.is_empty() {
-            crate::storage::memory::behavioral_key(&content, &sender_id_list, &group_id_list)
-        } else {
-            key
-        };
         let backend = &self.resources.memory_backend;
         let existing = match category {
             MemoryCategory::Person => {
-                backend.get_person(&person.qq_id)?.map(|record| record.into_record())
+                backend.get_person(&person.qq_id)?.map(crate::storage::MemoryRecord::Person)
             }
             MemoryCategory::Concept => backend
                 .get_concept(&key, &sender_id_list, &group_id_list)?
-                .map(|record| record.into_record()),
+                .map(crate::storage::MemoryRecord::Concept),
             MemoryCategory::Behavioral => backend
                 .get_behavioral(&key, &sender_id_list, &group_id_list)?
-                .map(|record| record.into_record()),
+                .map(crate::storage::MemoryRecord::Behavioral),
         };
         if let Some(existing) = &existing {
-            if level > existing.attributes.access_level {
+            if level > existing.access_level() {
                 return Ok(json!({"ok":false,"error":"没有权限"}).to_string());
             }
             if category == MemoryCategory::Person {
-                let mut merged = serde_json::to_value(&existing.attributes.person)?;
+                let MemoryRecord::Person(existing) = existing else {
+                    unreachable!("person lookup returns a person record")
+                };
+                let mut merged = serde_json::to_value(&existing.profile)?;
                 if let Some(patch) = person_patch.and_then(Value::as_object) {
                     merged.as_object_mut().unwrap().extend(patch.clone());
                 }
@@ -140,18 +136,15 @@ impl Tool for RememberMemoryTool {
         } else {
             content
         };
-        let access_level =
-            existing.as_ref().map(|record| record.attributes.access_level).unwrap_or(level);
+        let access_level = existing.as_ref().map(|record| record.access_level()).unwrap_or(level);
         let model = self.resources.embedding_model.as_deref();
         let record = match category {
-            MemoryCategory::Person => backend
-                .save_person(
-                    model,
-                    &crate::storage::PersonMemoryWrite { profile: person, access_level },
-                )?
-                .into_record(),
-            MemoryCategory::Concept => backend
-                .save_concept(
+            MemoryCategory::Person => crate::storage::MemoryRecord::Person(backend.save_person(
+                model,
+                &crate::storage::PersonMemoryWrite { profile: person, access_level },
+            )?),
+            MemoryCategory::Concept => {
+                crate::storage::MemoryRecord::Concept(backend.save_concept(
                     model,
                     &crate::storage::ConceptMemoryWrite {
                         key,
@@ -161,10 +154,10 @@ impl Tool for RememberMemoryTool {
                         sender_id_list,
                         group_id_list,
                     },
-                )?
-                .into_record(),
-            MemoryCategory::Behavioral => backend
-                .save_behavioral(
+                )?)
+            }
+            MemoryCategory::Behavioral => {
+                crate::storage::MemoryRecord::Behavioral(backend.save_behavioral(
                     model,
                     &crate::storage::BehavioralMemoryWrite {
                         key,
@@ -174,8 +167,8 @@ impl Tool for RememberMemoryTool {
                         sender_id_list,
                         group_id_list,
                     },
-                )?
-                .into_record(),
+                )?)
+            }
         };
         Ok(json!({"ok":true,"item":record}).to_string())
     }
