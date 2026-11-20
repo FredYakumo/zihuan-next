@@ -31,6 +31,29 @@ use zihuan_core::task_context::{
 use zihuan_core::workspace::AskUserRequest;
 use zihuan_service::role::planer_agent::{PlanerAgent, PlanerAgentConfig};
 
+/// Planer 的调度说明：选择 Role、以普通事件触发，并说明 IMS 目标的投递方式。
+const PLANER_SEND_GUIDANCE: &str = "\
+Pick a Role for the task and use planer_send to deliver the full message. A Role handles it \
+as an ordinary event with Planer as the source identity. No operation type is needed; for an \
+IMS Role, target_type and target_id name the delivery target: when provided, the body the Role \
+produces is reviewed, formatted and delivered to that target through the same pipeline as an \
+ordinary reply, and the real delivery result is returned; when omitted, only the Role's body \
+text is returned and nothing is delivered. For a Workspace session, the Role's reply text is \
+returned. A planer_send call runs serially, waits for the target to finish and then returns the \
+final result; do not send the same task twice. Use ask_user when more information is needed, \
+then continue with the original Workspace session_id. Human approval can only be completed by \
+the user in the target Workspace UI. Never expose other members' names, IDs, directories or \
+internal routing to a Role.";
+
+/// planer_send 的工具说明：IMS 目标提供时投递并返回真实发送结果。
+const PLANER_SEND_DESCRIPTION: &str = "\
+Send a message to one of your Roles as the Planer, triggering its normal processing, and wait \
+for the result. No operation is needed; for an IMS Role, target_type/target_id name the delivery \
+target (group chat / private chat); when provided, the body the Role produces is reviewed, \
+formatted and delivered to that target through the same pipeline as an ordinary reply, and the \
+real delivery result is returned; when omitted, only the body text is returned and nothing is \
+delivered. For a Workspace, use session_id to continue the conversation and get the reply text.";
+
 #[derive(Clone, Serialize, Deserialize)]
 struct SessionOwner {
     context: PlanerContext,
@@ -352,8 +375,14 @@ impl PlanerRuntime {
                 })
                 .collect();
             let system_prompt = format!(
-                "你是独立的调度 Agent Planer：{}。{}\n你只能通过 BUS 工具调度所属 Role，不能自己执行文件或命令工作。所属成员：{}。\n根据任务选择 Role，使用 planer_send 发送完整消息。Role 按普通事件处理，来源身份为 Planer，并将回复返回给你。无需指定操作类型；IMS 可选提供 target_type 和 target_id 作为参考会话，最终回复返回 Planer，不自动投递到该会话。planer_send 调用期间会串行执行并等待执行方结束，然后直接返回最终结果；不要重复发送同一任务。需要补充信息用 ask_user，随后携带原 Workspace session_id 续聊。人工审批只能由用户在目标 Workspace 界面完成。不得向 Role 返回其他成员名称、ID、目录或内部路由。当前协作链禁止再次进入的 Role：{}。",
-                config.name, config.prompt, runtime.role_catalog(&chain.planer_id)?, json!(chain.context.visited));
+                "You are the Planer, an independent dispatching agent: {}. {}\n\
+                 You orchestrate your Roles only through BUS tools and never do file or command work yourself. Members: {}.\n\
+                 {PLANER_SEND_GUIDANCE} Roles this collaboration chain must not re-enter: {}.",
+                config.name,
+                config.prompt,
+                runtime.role_catalog(&chain.planer_id)?,
+                json!(chain.context.visited)
+            );
             let agent = PlanerAgent::new(PlanerAgentConfig { llm, system_prompt, tools })?;
             let (tokens, drain) = if let Some(tokens) = tokens {
                 (tokens, None)
@@ -869,7 +898,7 @@ impl Tool for PlanerTool {
             _ => json!({"type":"object","properties":{}}),
         };
         Arc::new(StaticFunctionToolSpec { name: self.name, description: match self.name {
-            "planer_send" => "向所属 Role 发送消息，以 Planer 身份触发其正常处理并等待回复。无需指定操作；IMS 的 target_type/target_id 仅提供参考会话，不是发送目标。Workspace 可用 session_id 续聊。",
+            "planer_send" => PLANER_SEND_DESCRIPTION,
             "ask_user" => "向用户提问并暂停，或汇总子任务需要补充的信息。审批必须在目标 Workspace 界面由用户处理。",
             _ => "未知的 Planer 工具。",
         }, parameters })

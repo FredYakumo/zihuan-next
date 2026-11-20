@@ -18,6 +18,7 @@ pub(crate) use run_turn::run_turn;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use zihuan_core::ims_bot_adapter::models::sender_model::{FriendSender, Sender};
 use zihuan_core::ims_bot_adapter::models::MessageEvent;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::LLMMessage;
@@ -83,8 +84,6 @@ pub(crate) struct TurnContext<'a> {
 pub(crate) fn build_after_brain<'a>(
     ctx: &'a QqChatAgentServiceContext<'_>,
     trace: &'a QqChatTaskTrace,
-    is_group: bool,
-    sender_id: &str,
     inference_event: &MessageEvent,
     session_state: QqChatSessionState,
     emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
@@ -95,17 +94,31 @@ pub(crate) fn build_after_brain<'a>(
         reply_system_prompt: ctx.natural_language_reply_system_prompt,
         request: QqReplyReviewRequest {
             candidate_message: String::new(),
-            is_group,
             bot_name: ctx.bot_name.to_string(),
-            sender_id: sender_id.to_string(),
-            sender_nickname: inference_event.sender.nickname.clone(),
-            sender_card: inference_event.sender.card.clone(),
+            send_target: turn_send_target(ctx, inference_event),
             session_state,
             emotion_dimensions,
             model_names: ctx.model_names.clone(),
         },
         trace,
     })
+}
+
+/// The destination the turn's reply is delivered to, expressed as the sender union the
+/// inbound path already uses. An ordinary turn replies to the member who triggered it; a
+/// Planer turn has no inbound member and replies to the group/private target carried by the
+/// Planer call (`None` when that call names no target and only wants the result back).
+fn turn_send_target(
+    ctx: &QqChatAgentServiceContext<'_>,
+    inference_event: &MessageEvent,
+) -> Option<Sender> {
+    if let Some(planer) = ctx.planer {
+        return planer.reply_target();
+    }
+    Some(
+        Sender::from_message_event(inference_event)
+            .unwrap_or_else(|| Sender::Friend(FriendSender::from(&inference_event.sender))),
+    )
 }
 
 /// The format-output procedure, shared by the normal and meta-query chains: it turns the

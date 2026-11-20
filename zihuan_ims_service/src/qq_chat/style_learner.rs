@@ -5,6 +5,7 @@ use sqlx::mysql::MySqlRow;
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 use zihuan_core::data_refs::RelationalDbConnection;
+use zihuan_core::ims_bot_adapter::models::sender_model::{FriendSender, Sender};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
@@ -302,11 +303,16 @@ pub(crate) fn execute_style_learning_task(
                         reply_system_prompt: Some("请确保反馈消息也符合刚刚学到的语言风格。"),
                         request: QqReplyReviewRequest {
                             candidate_message: feedback_base.clone(),
-                            is_group: input.is_group,
                             bot_name: owned.bot_name.clone(),
-                            sender_id: input.sender_id.clone(),
-                            sender_nickname: input.inference_event.sender.nickname.clone(),
-                            sender_card: input.inference_event.sender.card.clone(),
+                            send_target: Some(
+                                Sender::from_message_event(&input.inference_event).unwrap_or_else(
+                                    || {
+                                        Sender::Friend(FriendSender::from(
+                                            &input.inference_event.sender,
+                                        ))
+                                    },
+                                ),
+                            ),
                             session_state: crate::qq_session_state::QqChatSessionState::default(),
                             emotion_dimensions: Vec::new(),
                             model_names: Vec::new(),

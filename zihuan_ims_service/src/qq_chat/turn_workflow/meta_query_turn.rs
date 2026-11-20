@@ -121,8 +121,6 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
             Arc::new(build_after_brain(
                 ctx,
                 trace,
-                is_group,
-                sender_id,
                 &turn.inference_event,
                 after_brain_session_state,
                 turn.emotion_dimensions.clone(),

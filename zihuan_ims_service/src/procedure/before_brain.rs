@@ -27,6 +27,19 @@ use crate::qq_chat::{build_group_system_prompt, build_private_system_prompt, bui
 use crate::qq_session_state::QqChatSessionState;
 use crate::role_config::QqChatEmotionDimensionConfig;
 
+const PLANER_REPLY_PROMPT: &str = "\
+Do the requested lookups, tool calls, or memory writes, then produce the final message body. \
+When a target is given, that body is reviewed, formatted and delivered to the target through \
+exactly the same pipeline as an ordinary message, and the target is also this turn's context \
+and memory scope; when no target is given, the body is returned directly as the result. \
+Do not fabricate inbound users or message IDs, do not report on your process, and do not claim \
+success or failure yourself. For anything write-related, rely on what the tools actually \
+returned and never claim a write succeeded when it did not. \
+If there is genuinely nothing to send, output [no_reply].";
+
+const PLANER_USER_PROMPT_TAIL: &str =
+    "Produce the final message body. When a target is given, the runtime handles review, formatting, delivery and the receipt.";
+
 /// Everything a turn's input assembly needs, borrowed from the turn context.
 ///
 /// **Design:** Constructed per turn by the transport adapter and consumed by the before-brain
@@ -97,8 +110,7 @@ pub(crate) fn assemble_before_brain(
     if let Some(planer) = ctx.planer {
         system_prompt.push_str(&zihuan_core::role::planer::prompt_for_context(&planer.context));
         system_prompt.push_str(&format!(
-            "\n你是 {}（Role ID：{}），当前收到 Planer {} 发来的消息。按正常事件处理，查询资料、调用工具或记录记忆，然后向 Planer 返回处理结果。参考会话为 {} {}，只用于上下文和记忆作用域，回复不会自动发送到该 IMS 会话。不要伪造入站用户或消息 ID，不要使用 @sender。涉及写入时以工具实际返回为准，不得在工具未成功时声称已记录。最终文本是给 Planer 的回复。",
-            ctx.bot_name, planer.context.role_id, planer.source_planer_id,
+            "\nThis task's delivery target: {} {}. {PLANER_REPLY_PROMPT}",
             planer.target_type, planer.target_id,
         ));
     } else if let Some(identity) = &ctx.identity {
@@ -126,8 +138,11 @@ pub(crate) fn assemble_before_brain(
             .collect::<serde_json::Map<String, serde_json::Value>>();
         let user_message = if let Some(planer) = ctx.planer {
             LLMMessage::user(format!(
-                "消息来源：Planer {}；参考会话 {} {}\n消息：{}\n情绪指导：{}\n召回记忆：{}\n请处理这条消息并向 Planer 返回结果。",
-                planer.source_planer_id,
+                "Delivery target: {} {}\n\
+                 Task: {}\n\
+                 Emotion guidance: {}\n\
+                 Recalled memories: {}\n\
+                 {PLANER_USER_PROMPT_TAIL}",
                 planer.target_type,
                 planer.target_id,
                 planer.prompt,

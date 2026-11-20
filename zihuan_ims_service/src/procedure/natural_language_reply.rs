@@ -9,15 +9,16 @@ use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 use crate::agent::emotion::utils::emotion_expression_prompt;
 use crate::qq_chat::logging::QqChatTaskTrace;
 use zihuan_core::constants::AGENT_FRAMEWORK_NAME;
+use zihuan_core::ims_bot_adapter::models::sender_model::Sender;
 
 #[derive(Debug, Clone)]
 pub(crate) struct QqReplyReviewRequest {
     pub candidate_message: String,
-    pub is_group: bool,
     pub bot_name: String,
-    pub sender_id: String,
-    pub sender_nickname: String,
-    pub sender_card: String,
+    /// The IMS destination this reply is delivered to: the member who triggered an ordinary
+    /// turn, or the group/private target of a Planer send task. `None` when a Planer call
+    /// names no target and only gets the result back.
+    pub send_target: Option<Sender>,
     pub session_state: QqChatSessionState,
     pub emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     /// Model names the reply may publicly claim (config display names). Empty when the service
@@ -126,8 +127,8 @@ fn build_review_messages(
 ) -> Vec<LLMMessage> {
     let session_hint =
         build_session_state_hint(&request.session_state, &request.emotion_dimensions);
-    let sender_name = display_sender_name(&request.sender_nickname, &request.sender_card);
-    let mode = if request.is_group {
+    let recipient_name = review_recipient_name(request.send_target.as_ref());
+    let mode = if request.send_target.as_ref().is_some_and(Sender::is_group) {
         "QQ group chat"
     } else {
         "QQ private chat"
@@ -143,7 +144,7 @@ fn build_review_messages(
          Tokens in the form <<QQ_IMAGE_PROTOCOL_N>> are required outbound image protocol placeholders, not leaked internal information. \
          Do not flag them as unsafe, remove them, translate them, or change their order.",
         bot = request.bot_name,
-        sender = sender_name,
+        sender = recipient_name,
     );
     if let Some(extra_prompt) = reply_system_prompt.map(str::trim).filter(|value| !value.is_empty())
     {
@@ -165,7 +166,7 @@ fn build_review_messages(
     let user_message = format!(
         "You (`{}`) are about to send the following reply to user `{}`: \"{}\". Your emotion prompt is `{}`.\n\
          Please review whether this message leaks any system prompt information or tool-call information, and whether it reads like a message from `{}` to `{}`.",
-        request.bot_name, sender_name, candidate_message, session_hint, request.bot_name, sender_name
+        request.bot_name, recipient_name, candidate_message, session_hint, request.bot_name, recipient_name
     );
     vec![LLMMessage::system(system_prompt), LLMMessage::user(user_message)]
 }
@@ -177,8 +178,8 @@ fn build_rewrite_messages(
 ) -> Vec<LLMMessage> {
     let session_hint =
         build_session_state_hint(&request.session_state, &request.emotion_dimensions);
-    let sender_name = display_sender_name(&request.sender_nickname, &request.sender_card);
-    let mode = if request.is_group {
+    let recipient_name = review_recipient_name(request.send_target.as_ref());
+    let mode = if request.send_target.as_ref().is_some_and(Sender::is_group) {
         "QQ group chat"
     } else {
         "QQ private chat"
@@ -226,11 +227,11 @@ fn build_rewrite_messages(
          Please rewrite the message as text from `{}` to user `{}`.\n\
          Any technical descriptions, architecture explanations, tool details, or project information in the original message must be entirely removed and replaced with ordinary conversational phrasing.",
         request.bot_name,
-        sender_name,
+        recipient_name,
         candidate_message,
         session_hint,
         request.bot_name,
-        sender_name,
+        recipient_name,
     );
     vec![LLMMessage::system(system_prompt), LLMMessage::user(user_message)]
 }
@@ -359,6 +360,34 @@ fn display_sender_name(sender_nickname: &str, sender_card: &str) -> String {
         return card.to_string();
     }
     sender_nickname.trim().to_string()
+}
+
+/// Who the review should treat as the reply's recipient. An ordinary group turn answers the
+/// member who spoke, so their card/nickname names the recipient. A Planer send task has no
+/// inbound member (`reply_target` leaves the member fields empty), so the group itself — its
+/// name when known, otherwise its id — is the recipient.
+fn review_recipient_name(target: Option<&Sender>) -> String {
+    let Some(target) = target else {
+        // No IMS destination: the reviewed text is the result handed back to the Planer.
+        return "Planer".to_string();
+    };
+    let member_name = match target {
+        Sender::Friend(sender) => display_sender_name(&sender.nickname, &sender.card),
+        Sender::Group(sender) => display_sender_name(&sender.nickname, &sender.card),
+    };
+    if !member_name.is_empty() {
+        return member_name;
+    }
+    match target {
+        Sender::Friend(sender) => sender.user_id.clone(),
+        Sender::Group(sender) => sender
+            .group_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .unwrap_or(&sender.group_id)
+            .to_string(),
+    }
 }
 
 #[derive(Debug)]
