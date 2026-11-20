@@ -24,6 +24,12 @@ pub struct RoleServiceConfig {
     pub tools: Vec<AgentToolConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
+    #[serde(default = "default_permission_group")]
+    pub permission_group: String,
+}
+
+pub fn default_permission_group() -> String {
+    crate::permission::DEFAULT_GROUP.to_string()
 }
 
 impl RoleServiceConfig {

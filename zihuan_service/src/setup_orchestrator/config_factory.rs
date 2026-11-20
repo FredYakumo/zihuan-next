@@ -9,7 +9,7 @@ use zihuan_core::model_inference::model_config::{
     LlmApiStyle, LlmServiceConfig, ModelRefSpec, ModelWeightStyle,
 };
 use zihuan_core::retrieval::RetrievalStoreConfig;
-use zihuan_core::role::service_config::RoleServiceConfig;
+use zihuan_core::role::service_config::{default_permission_group, RoleServiceConfig};
 use zihuan_core::storage::{
     ConnectionAuthMethod, ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection,
     SqliteConnection, WeaviateConnection, WebSearchEngineConnection,
@@ -290,6 +290,7 @@ fn build_qq_chat_agent_service() -> RoleServiceConfig {
         updated_at: now_rfc3339(),
         tools: vec![],
         avatar_url: None,
+        permission_group: default_permission_group(),
     }
 }
 
@@ -322,6 +323,7 @@ fn build_workspace_agent_service(
         updated_at: now_rfc3339(),
         tools: vec![],
         avatar_url: None,
+        permission_group: default_permission_group(),
     }
 }
 
