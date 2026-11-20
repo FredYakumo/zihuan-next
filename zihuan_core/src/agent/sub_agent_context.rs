@@ -111,7 +111,10 @@ impl AgentServiceContext {
                 );
             }
             None => {
-                host.register_disabled_tools(SUB_AGENT_MEMORY_TOOL_IDS, MEMORY_BACKEND_UNAVAILABLE_REASON);
+                host.register_disabled_tools(
+                    SUB_AGENT_MEMORY_TOOL_IDS,
+                    MEMORY_BACKEND_UNAVAILABLE_REASON,
+                );
             }
         };
         for (id, tool) in &self.tools {

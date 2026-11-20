@@ -39,12 +39,8 @@ pub const MEMORY_TOOL_IDS: [&str; 3] = ["list_memory_keys", "search_memory", "up
 
 /// Every memory tool id a sub-agent definition may reference in `tool_ids`: [`MEMORY_TOOL_IDS`]
 /// plus the deep-research full search. Also the registration set when no backend is configured.
-pub const SUB_AGENT_MEMORY_TOOL_IDS: [&str; 4] = [
-    "list_memory_keys",
-    "search_memory",
-    "update_memory",
-    FULL_SEARCH_MEMORY_TOOL_ID,
-];
+pub const SUB_AGENT_MEMORY_TOOL_IDS: [&str; 4] =
+    ["list_memory_keys", "search_memory", "update_memory", FULL_SEARCH_MEMORY_TOOL_ID];
 
 /// Registers the built-in memory tools on an [`AgentHost`] under the ids referenced by
 /// agent definitions: the brain-facing tools plus the deep-research full search.

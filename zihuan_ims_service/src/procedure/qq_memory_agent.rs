@@ -124,24 +124,26 @@ impl Procedure for QqMemoryAgent {
         let recall_input = input.clone();
         let recall_resources = resources.clone();
         let identity = self.identity.clone();
-        let (recalled, identity_context, identity_context_is_new) = tokio::task::spawn_blocking(move || {
-            let _turn_trace = zihuan_core::qq_context::TurnTraceGuard::enter(
-                &identity.agent_id,
-                &identity.sender_id,
-                &identity.turn_id,
-            );
-            // Always read the profiles from the store; a saved copy in the history only
-            // decides whether they need injecting again.
-            let (profiles, identity_terms) = identity_memory_context(&recall_resources, &bot_id)?;
-            let identity_is_new = saved.as_deref() != Some(profiles.as_str());
-            Ok::<_, zihuan_core::error::Error>((
-                recall_memory(recall_resources, &recall_input, previous, &identity_terms)?,
-                profiles,
-                identity_is_new,
-            ))
-        })
-        .await
-        .map_err(|error| zihuan_core::string_error!("memory recall failed: {error}"))??;
+        let (recalled, identity_context, identity_context_is_new) =
+            tokio::task::spawn_blocking(move || {
+                let _turn_trace = zihuan_core::qq_context::TurnTraceGuard::enter(
+                    &identity.agent_id,
+                    &identity.sender_id,
+                    &identity.turn_id,
+                );
+                // Always read the profiles from the store; a saved copy in the history only
+                // decides whether they need injecting again.
+                let (profiles, identity_terms) =
+                    identity_memory_context(&recall_resources, &bot_id)?;
+                let identity_is_new = saved.as_deref() != Some(profiles.as_str());
+                Ok::<_, zihuan_core::error::Error>((
+                    recall_memory(recall_resources, &recall_input, previous, &identity_terms)?,
+                    profiles,
+                    identity_is_new,
+                ))
+            })
+            .await
+            .map_err(|error| zihuan_core::string_error!("memory recall failed: {error}"))??;
         Ok(ProcedureOutput::of(MemoryAgentOutput {
             memories: recalled.with_source(source.to_string()),
             resources,

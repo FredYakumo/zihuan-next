@@ -231,7 +231,9 @@ fn recall_category(
         let handles = passes
             .iter()
             .map(|(text, queries)| {
-                scope.spawn(move || recall_pass(backend, model, access, category, queries, text, limit))
+                scope.spawn(move || {
+                    recall_pass(backend, model, access, category, queries, text, limit)
+                })
             })
             .collect::<Vec<_>>();
         handles
