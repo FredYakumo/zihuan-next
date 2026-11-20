@@ -606,6 +606,7 @@ export interface ServiceConfig {
   is_default: boolean;
   updated_at: string;
   role_service_type: Record<string, unknown> & { type: string };
+  permission_group?: string;
   tools: ServiceToolConfig[];
 }
 
@@ -1009,6 +1010,7 @@ export const system = {
       is_default: boolean;
       role_service_type: Record<string, unknown>;
       tools: ServiceToolConfig[];
+      permission_group?: string;
     }): Promise<ServiceConfig> {
       return request("POST", "/system/services", payload);
     },
@@ -1019,6 +1021,7 @@ export const system = {
       is_default: boolean;
       role_service_type: Record<string, unknown>;
       tools: ServiceToolConfig[];
+      permission_group?: string;
     }): Promise<ServiceMutationResponse> {
       return request("PUT", `/system/services/${configId}`, payload);
     },

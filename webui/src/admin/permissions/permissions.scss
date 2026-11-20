@@ -1,0 +1,75 @@
+.permission-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.permission-search {
+  width: 220px;
+}
+
+.permission-group-select {
+  width: 280px;
+}
+
+.permission-create-btn {
+  margin-left: auto;
+}
+
+.permission-entries-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--admin-border);
+
+  h3 {
+    margin: 0;
+    font-size: 16px;
+  }
+}
+
+.permission-entries-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.permission-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.permission-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  label {
+    font-size: 0.9em;
+    color: var(--admin-muted);
+  }
+}
+
+.permission-form-field--wide {
+  grid-column: 1 / -1;
+}
+
+.permission-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--admin-muted);
+}
+
+.permission-conflict-message {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.muted {
+  color: var(--admin-muted);
+}
