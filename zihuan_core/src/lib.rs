@@ -25,6 +25,7 @@ pub mod message_part;
 pub mod migration;
 pub mod model_inference;
 pub mod nlp;
+pub mod permission;
 pub mod qq_context;
 pub mod rag;
 pub mod retrieval;
