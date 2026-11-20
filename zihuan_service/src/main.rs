@@ -56,30 +56,10 @@ async fn main() {
         Err(error) => error!("Failed to start Dynamic Script Runtime: {error}"),
     }
 
-    // Initialize global command registry and sync persisted permissions
+    // Initialize global command registry.
     {
         let registry = zihuan_service::command::init_global_command_registry();
         info!("Command registry initialized with {} commands", registry.list_commands().len());
-
-        // Migrate legacy command policies and load the authoritative UserPermission rows.
-        let records = match zihuan_core::storage::user_permission::command_records() {
-            Ok(records) => records,
-            Err(error) => {
-                error!("Failed to load UserPermission command policies: {error}");
-                std::process::exit(1);
-            }
-        };
-        {
-            for record in &records {
-                if let Ok(cmd) = serde_json::from_value::<zihuan_core::command::CommandPermission>(
-                    record.spec.clone(),
-                ) {
-                    if record.enabled && cmd.enabled {
-                        registry.set_permissions(&cmd.command_name, cmd.rules);
-                    }
-                }
-            }
-        }
     }
 
     zihuan_core::ims_bot_adapter::runtime::wechat_pad::set_service_port(args.port);

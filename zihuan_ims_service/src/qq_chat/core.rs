@@ -988,6 +988,8 @@ impl QqChatAgentService {
                     .flatten()
             }),
             model_names: self.config.public_model_names.clone(),
+            permission_group: &self.config.permission_group,
+            entity_type: self.config.entity_type,
         }
     }
 }

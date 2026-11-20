@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::{OnceLock, RwLock};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
+use crate::permission::EntityType;
 
 mod builtin;
 mod effect;
@@ -108,31 +108,6 @@ impl CommandScope {
     }
 }
 
-/// Permission rules that control who can use a command.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "rule_type", rename_all = "snake_case")]
-pub enum PermissionRule {
-    Everyone,
-    QqUsers {
-        allowed_ids: Vec<String>,
-    },
-    ApiKeys {
-        allowed_keys: Vec<String>,
-    },
-    Custom {
-        custom_type: String,
-        allow_list: Vec<String>,
-    },
-}
-
-/// Stored permission binding for a command (persisted via config system).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommandPermission {
-    pub command_name: String,
-    pub rules: Vec<PermissionRule>,
-    pub enabled: bool,
-}
-
 /// Identifies the source of a command invocation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -160,55 +135,13 @@ pub struct CommandContext {
     pub agent_id: String,
     pub caller_id: String,
     pub channel: CommandChannel,
-}
-
-// PermissionRegistry — stateless permission evaluator.
-//
-// ## Purpose
-//
-// PermissionRegistry centralises the logic for evaluating a slice of PermissionRule
-// against a CommandContext. It answers: "given these rules and this caller, is the
-// caller authorised?"
-//
-// ## Design
-//
-// - **No internal state.** The struct is a unit type; the `check` method is a pure
-//   function that short-circuits on the first matching `Everyone` or positive match.
-// - **Rule evaluation** iterates the rule list linearly. As soon as any rule grants
-//   access, `true` is returned. An empty rule list defaults to open access.
-// - **Channel-aware matching** is delegated to `CommandContext.caller_id`: QQ users
-//   are matched by sender ID, API keys by the `ApiKeys` variant, and custom rules
-//   match against `custom_type` + `allow_list`.
-
-pub struct PermissionRegistry;
-
-impl PermissionRegistry {
-    pub fn check(rules: &[PermissionRule], ctx: &CommandContext) -> bool {
-        if rules.is_empty() {
-            return true;
-        }
-        for rule in rules {
-            match rule {
-                PermissionRule::Everyone => return true,
-                PermissionRule::QqUsers { allowed_ids } => {
-                    if allowed_ids.iter().any(|id| id == &ctx.caller_id) {
-                        return true;
-                    }
-                }
-                PermissionRule::ApiKeys { allowed_keys } => {
-                    if allowed_keys.iter().any(|k| k == &ctx.caller_id) {
-                        return true;
-                    }
-                }
-                PermissionRule::Custom { allow_list, .. } => {
-                    if allow_list.iter().any(|id| id == &ctx.caller_id) {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
-    }
+    /// Permission group of the invoking RoleService. `None` keeps the legacy open gate used by
+    /// the dashboard.
+    #[serde(default)]
+    pub permission_group: Option<String>,
+    /// Entity type of `caller_id`; `None` keeps the legacy open gate.
+    #[serde(default)]
+    pub entity_type: Option<EntityType>,
 }
 
 #[derive(Debug, Clone)]
@@ -227,18 +160,16 @@ pub struct PermissionCheckResult {
 //
 // ## Design
 //
-// - **Registration** (`register`) accepts a `CommandSpec` (pure data). Each command
-//   starts with a default `Everyone` permission so it is usable immediately.
+// - **Registration** (`register`) accepts a `CommandSpec` (pure data).
 // - **Lookup path** (`spec_for`): raw input is tested for a leading `/`, then the
 //   command name (case-insensitive) is matched first by primary name and then by
 //   aliases. Scope is checked before permissions, so a command that does not apply
 //   to the current agent type is silently ignored.
-// - **Mutability model**: permissions are behind a `Mutex` so they can be updated
-//   at runtime via `set_permissions` without `&mut` access to the registry itself.
+// - **Permissions** are stored in the system database permission groups and checked
+//   through [`crate::permission::check_command_permission`].
 
 struct CommandEntry {
     spec: Arc<CommandSpec>,
-    permissions: Mutex<Vec<PermissionRule>>,
 }
 
 pub struct CommandRegistry {
@@ -253,30 +184,7 @@ impl CommandRegistry {
     /// Register a command spec by its primary name.
     pub fn register(&mut self, spec: CommandSpec) {
         let name = spec.name.clone();
-        self.commands.insert(
-            name,
-            CommandEntry {
-                spec: Arc::new(spec),
-                permissions: Mutex::new(vec![PermissionRule::Everyone]),
-            },
-        );
-    }
-
-    /// Register with explicit initial permissions (used for QQ privileged specs
-    /// whose gate still consults the registry permission rules).
-    pub fn register_with_permissions(
-        &mut self,
-        spec: CommandSpec,
-        permissions: Vec<PermissionRule>,
-    ) {
-        let name = spec.name.clone();
-        self.commands.insert(
-            name,
-            CommandEntry {
-                spec: Arc::new(spec),
-                permissions: Mutex::new(permissions),
-            },
-        );
+        self.commands.insert(name, CommandEntry { spec: Arc::new(spec) });
     }
 
     /// Look up a registered spec by canonical primary name (case-sensitive
@@ -297,31 +205,10 @@ impl CommandRegistry {
         Some((Arc::clone(&entry.spec), parsed))
     }
 
-    /// Update permission rules for a registered command.
-    pub fn set_permissions(&self, name: &str, rules: Vec<PermissionRule>) {
-        if let Some(entry) = self.commands.get(name) {
-            if let Ok(mut guard) = entry.permissions.lock() {
-                *guard = rules;
-            }
-        }
-    }
-
     /// List all registered command specs (read-only metadata; stable order not
     /// guaranteed).
     pub fn list_commands(&self) -> Vec<&CommandSpec> {
         self.commands.values().map(|entry| entry.spec.as_ref()).collect()
-    }
-
-    /// List all command permissions (for admin API).
-    pub fn list_permissions(&self) -> Vec<CommandPermission> {
-        self.commands
-            .iter()
-            .map(|(name, entry)| CommandPermission {
-                command_name: name.clone(),
-                rules: entry.permissions.lock().unwrap().clone(),
-                enabled: true,
-            })
-            .collect()
     }
 
     /// Preview a command without executing it. Used by busy-session steer to
@@ -344,11 +231,23 @@ impl CommandRegistry {
             return PermissionCheckResult { matched: false, allowed: false };
         };
 
-        let permissions = entry.permissions.lock().unwrap();
-        PermissionCheckResult {
-            matched: true,
-            allowed: PermissionRegistry::check(&permissions, ctx),
-        }
+        let (Some(entity_type), Some(group)) = (ctx.entity_type, ctx.permission_group.as_deref())
+        else {
+            return PermissionCheckResult { matched: true, allowed: true };
+        };
+        let allowed = match crate::permission::check_command_permission(
+            group,
+            &ctx.caller_id,
+            entity_type,
+            &entry.spec.name,
+        ) {
+            Ok(allowed) => allowed,
+            Err(error) => {
+                log::warn!("failed to check permission for command {}: {error}", entry.spec.name);
+                false
+            }
+        };
+        PermissionCheckResult { matched: true, allowed }
     }
 
     fn find_matching_entry<'a>(

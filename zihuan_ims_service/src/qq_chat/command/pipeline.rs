@@ -58,6 +58,8 @@ pub(crate) fn run_command_pipeline(
             group_id: inference_event.group_id.clone(),
             target_id: target_id.to_string(),
         },
+        permission_group: Some(ctx.permission_group.to_string()),
+        entity_type: Some(ctx.entity_type),
     };
     let Some((spec, parsed)) = registry.spec_for(&cmd_ctx, raw_user_message) else {
         // Unmatched or scope-mismatched slash line: fall through to the brain.

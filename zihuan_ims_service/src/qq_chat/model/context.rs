@@ -10,6 +10,7 @@ use zihuan_core::graph::DataValue;
 use zihuan_core::graph::SessionStateRef;
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
+use zihuan_core::permission::EntityType;
 use zihuan_core::rag::WebSearchEngine;
 use zihuan_core::retrieval::RetrievalStoreRef;
 use zihuan_core::steer::PendingSteerStore;
@@ -52,6 +53,8 @@ pub(crate) struct QqChatAgentServiceContext<'a> {
     pub(crate) tool_quota: Option<QqChatToolQuotaContext>,
     pub(crate) resolved_language_style: Option<QqChatAgentServiceLanguageStyle>,
     pub(crate) model_names: Vec<String>,
+    pub(crate) permission_group: &'a str,
+    pub(crate) entity_type: EntityType,
 }
 
 /// Persistent runtime configuration for a QQ chat agent service instance.
@@ -87,4 +90,6 @@ pub struct QqChatAgentServiceRuntimeConfig {
     pub task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     pub tool_quota_session_state: Arc<Mutex<SessionToolQuotaState>>,
     pub public_model_names: Vec<String>,
+    pub permission_group: String,
+    pub entity_type: EntityType,
 }
