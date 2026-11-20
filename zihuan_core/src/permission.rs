@@ -1,9 +1,11 @@
 //! Permission groups and entries.
 //!
 //! Permissions are stored in the system database so every service shares the same view. A group
-//! is selected per RoleService; entries grant or deny a category to one user entity. Categories
-//! are dot-separated paths and support a trailing `*` wildcard, so `command.new` is matched by
-//! `command.new`, `command.*` and `*`, most specific first. An absent entry denies.
+//! is selected per RoleService; entries grant or deny a category to one user entity. The entity
+//! id `*` matches every entity of the entry's type. Categories are dot-separated paths and
+//! support a trailing `*` wildcard, so `command.new` is matched by `command.new`, `command.*` and
+//! `*`, most specific first. Entries for the exact entity id win over `*` entries; an absent
+//! entry denies.
 
 use std::collections::HashMap;
 
@@ -14,6 +16,9 @@ use crate::error::{Error, Result};
 use crate::system_database::{with_database, SystemDatabase};
 
 pub const DEFAULT_GROUP: &str = "default";
+
+/// Entity id wildcard in a permission entry: matches every entity of the entry's type.
+pub const WILDCARD_ENTITY_ID: &str = "*";
 
 const MYSQL_GROUP_DDL: &str = "CREATE TABLE IF NOT EXISTS zihuan_settings.permission_group (
     name VARCHAR(128) NOT NULL,
@@ -343,8 +348,9 @@ pub fn delete_entry(
 
 /// Returns whether `category` is allowed for the entity in `group_name`.
 ///
-/// The most specific entry wins: the exact category, then each wildcarded ancestor, then `*`.
-/// A missing entry is a denial.
+/// The most specific entry wins: entries for the exact entity id take precedence over `*`
+/// entries (which cover every entity of the type), and within the same entity id the exact
+/// category wins over each wildcarded ancestor, then `*`. A missing entry is a denial.
 pub fn check_permission(
     group_name: &str,
     entity_id: &str,
@@ -360,23 +366,29 @@ pub fn check_permission(
     let candidates = category_candidates(&category);
     run_database(async move |database| {
         let rows = sqlx::query(
-            "SELECT category, value FROM zihuan_settings.permission_entry
-             WHERE group_name = ? AND entity_id = ? AND entity_type = ?",
+            "SELECT entity_id, category, value FROM zihuan_settings.permission_entry
+             WHERE group_name = ? AND entity_type = ? AND (entity_id = ? OR entity_id = ?)",
         )
         .bind(&group_name)
-        .bind(entity_id)
         .bind(entity_type.as_str())
+        .bind(entity_id)
+        .bind(WILDCARD_ENTITY_ID)
         .fetch_all(&database.pool)
         .await?;
-        let mut values = HashMap::with_capacity(rows.len());
+        let mut exact = HashMap::with_capacity(rows.len());
+        let mut wildcard = HashMap::with_capacity(rows.len());
         for row in &rows {
-            let stored: String = row.try_get("category")?;
+            let stored_entity: String = row.try_get("entity_id")?;
+            let stored_category: String = row.try_get("category")?;
             let value: i32 = row.try_get("value")?;
-            values.insert(stored, value);
+            let map = if stored_entity == WILDCARD_ENTITY_ID { &mut wildcard } else { &mut exact };
+            map.insert(stored_category, value);
         }
-        for candidate in &candidates {
-            if let Some(value) = values.get(candidate) {
-                return Ok(*value != 0);
+        for values in [&exact, &wildcard] {
+            for candidate in &candidates {
+                if let Some(value) = values.get(candidate) {
+                    return Ok(*value != 0);
+                }
             }
         }
         Ok(false)
@@ -407,6 +419,7 @@ fn category_candidates(category: &str) -> Vec<String> {
     candidates
 }
 
+/// Validates an entity id. `*` is allowed and acts as a wildcard for every entity of the type.
 fn validate_entity_id(entity_id: &str) -> Result<String> {
     let entity_id = entity_id.trim();
     if entity_id.is_empty() {
