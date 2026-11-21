@@ -178,12 +178,28 @@ def main():
                 assert "用户A(2001): 我喜欢刻晴" in history
                 assert "啥玩意" not in history and "什么原批" not in history
                 context = wait_for("completed group context", lambda: completed_context())
-                stages = [entry for turn in context["turns"] for entry in turn["entries"] if entry.get("stage") == "group-message-window"]
+                # Context headers deliberately omit step bodies. Read the durable step
+                # directory and fetch the selected procedure's payload, like the WebUI.
+                stages = []
+                for turn in context["turns"]:
+                    path = f"/explorer/services/ims-role/chat-turns/{turn['turn_id']}/steps"
+                    directory = get(path + "?sender_id=2004")
+                    assert directory is not None, "Failed to read group context step directory"
+                    for step in directory["items"]:
+                        if step["name"] != "group-message-window":
+                            continue
+                        body = get(f"{path}/{step['step_id']}?sender_id=2004")
+                        assert body and len(body["items"]) == 1, "Missing group window step body"
+                        stage = body["items"][0]
+                        assert stage["status"] == "completed", "Group window step did not complete"
+                        assert stage["turn_id"] == turn["turn_id"], "Incorrect group window turn"
+                        stages.append(stage)
                 assert len(stages) == 1, "Missing group window procedure stage"
-                detail = stages[0]["detail"]
+                detail = stages[0]["output"]["detail"]
                 assert detail["candidates"] == 3 and detail["selected_indexes"] == [3]
                 assert [message["content"] for message in detail["related"]] == ["我喜欢刻晴"]
                 publish(run / "group-context.json", context)
+                publish(run / "group-window-steps.json", stages)
                 report["group window selected"] = "我喜欢刻晴"
             case("group window", ["用户A: 我喜欢刻晴", "用户B: 啥玩意", "用户C: 什么原批", "用户 @bot: 用户A喜欢什么角色"], "刻晴", group)
         finally:

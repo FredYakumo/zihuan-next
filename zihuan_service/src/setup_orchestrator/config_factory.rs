@@ -172,6 +172,7 @@ fn build_llm_ref(config: &LlmSetupConfig, id: &str, name: &str) -> LlmRefConfig 
                 context_length: 32 * 1024,
                 timeout_secs: 120,
                 retry_count: 2,
+                proxy: None,
             },
         }
     } else {
@@ -191,6 +192,7 @@ fn build_llm_ref(config: &LlmSetupConfig, id: &str, name: &str) -> LlmRefConfig 
                 context_length: 32 * 1024,
                 timeout_secs: 120,
                 retry_count: 2,
+                proxy: None,
             },
         }
     };

@@ -39,6 +39,7 @@ pub fn build_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
                     config.context_length,
                     std::time::Duration::from_secs(config.timeout_secs),
                 )
+                .with_proxy(config.proxy)
                 .with_retry_count(config.retry_count);
                 Ok(Arc::new(api) as Arc<dyn LLMBase>)
             }

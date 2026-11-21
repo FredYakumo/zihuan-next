@@ -16,6 +16,7 @@ pub use memory::{
 };
 pub mod user_permission;
 pub use memory_types::{memory_object_id, MemoryCategory, PersonMemory, MEMORY_MUTATION_LOCK};
+pub mod context_store;
 pub mod message;
 mod message_record;
 mod mock_rdb;

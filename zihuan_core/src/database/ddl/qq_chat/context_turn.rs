@@ -5,7 +5,7 @@ pub const MYSQL_DDL: &str = "CREATE TABLE IF NOT EXISTS qq_chat_context_turn (
     sender_name VARCHAR(128) NULL,
     group_name VARCHAR(128) NULL,
     is_group TINYINT(1) NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL,
+    created_at DATETIME(3) NOT NULL,
     user_text MEDIUMTEXT NOT NULL,
     quoted_json MEDIUMTEXT NULL,
     media_json TEXT NULL,

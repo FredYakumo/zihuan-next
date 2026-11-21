@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::model_inference::model_config::LlmProxyConfig;
+
 pub const LLM_KIND_FIELD: &str = "llm_kind";
 pub const LLM_KIND_MAIN: &str = "main";
 pub const LLM_KIND_INTENT_CLASSIFICATION: &str = "intent_classification";
@@ -45,6 +47,9 @@ pub struct EmbeddingServiceConfig {
     pub timeout_secs: u64,
     #[serde(default = "default_retry_count")]
     pub retry_count: u32,
+    /// Outbound proxy; `None` = connect directly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<LlmProxyConfig>,
 }
 
 fn default_timeout_secs() -> u64 {

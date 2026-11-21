@@ -1,5 +1,7 @@
 use crate::error::{Error, Result};
 use crate::model_inference::llm::embedding_base::{EmbeddingBase, EmbeddingRuntimeInfo};
+use crate::model_inference::llm_api::build_reqwest_proxy;
+use crate::model_inference::model_config::LlmProxyConfig;
 use log::{error, warn};
 use reqwest::blocking::Client;
 use serde::Deserialize;
@@ -16,6 +18,7 @@ pub struct EmbeddingAPI {
     api_key: Option<String>,
     timeout: Duration,
     retry_count: u32,
+    proxy: Option<LlmProxyConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,7 +45,13 @@ impl EmbeddingAPI {
             api_key,
             timeout,
             retry_count: DEFAULT_RETRY_COUNT,
+            proxy: None,
         }
+    }
+
+    pub fn with_proxy(mut self, proxy: Option<LlmProxyConfig>) -> Self {
+        self.proxy = proxy;
+        self
     }
 
     pub fn with_retry_count(mut self, retry_count: u32) -> Self {
@@ -51,7 +60,11 @@ impl EmbeddingAPI {
     }
 
     fn execute_embedding_request(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
-        let client = Client::builder().timeout(self.timeout).build()?;
+        let mut client_builder = Client::builder().timeout(self.timeout);
+        if let Some(reqwest_proxy) = build_reqwest_proxy(self.proxy.as_ref()) {
+            client_builder = client_builder.proxy(reqwest_proxy);
+        }
+        let client = client_builder.build()?;
         let attempts = self.retry_count.max(1);
         let mut last_error: Option<Error> = None;
 

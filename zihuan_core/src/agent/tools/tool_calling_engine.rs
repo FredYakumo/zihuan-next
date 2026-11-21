@@ -195,6 +195,14 @@ impl ToolCallingEngine {
         confirmation_gate: Option<&Mutex<()>>,
         agent_runtime_context: Option<AgentRuntimeContext>,
     ) -> ToolExecutionOutput {
+        if let Err(error) = crate::qq_context::check_turn_storage() {
+            return ToolExecutionOutput::text(super::tool_failure_envelope(error));
+        }
+        let _trace = crate::qq_context::current_turn_trace().map(|mut trace| {
+            trace.path = observer_path.to_vec();
+            trace.path.push(call_id.to_string());
+            crate::qq_context::TurnTraceGuard::from_context(trace)
+        });
         if let Some(rejection) = tool.prepare_execution() {
             return rejection;
         }
@@ -511,6 +519,9 @@ impl ToolCallingEngine {
         let mut conversation = sanitize_messages_for_inference(messages);
         let mut output: Vec<LLMMessage> = Vec::new();
         for iteration in 0..MAX_TOOL_ITERATIONS {
+            if let Err(error) = crate::qq_context::check_turn_storage() {
+                return (output, ToolCallingStopReason::TransportError(error.to_string()));
+            }
             let tool_specs: Vec<Arc<dyn FunctionTool>> = self
                 .tools
                 .iter()
@@ -557,6 +568,9 @@ impl ToolCallingEngine {
                 observer.on_inference_timing(iteration + 1, inference_started.elapsed(), None);
             }
 
+            if let Err(error) = crate::qq_context::check_turn_storage() {
+                return (output, ToolCallingStopReason::TransportError(error.to_string()));
+            }
             self.log_llm_usage(&response);
 
             if let Some(observer) = self.observer.as_ref() {
@@ -622,6 +636,10 @@ impl ToolCallingEngine {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_tool_start(&call.name, &call.call_id, &call.arguments);
                 }
+            }
+
+            if let Err(error) = crate::qq_context::check_turn_storage() {
+                return (output, ToolCallingStopReason::TransportError(error.to_string()));
             }
 
             let mut results: Vec<PreparedToolResult> =
@@ -738,6 +756,9 @@ impl ToolCallingEngine {
         let streaming_llm = self.llm.as_streaming();
 
         for iteration in 0..MAX_TOOL_ITERATIONS {
+            if let Err(error) = crate::qq_context::check_turn_storage() {
+                return (output, ToolCallingStopReason::TransportError(error.to_string()));
+            }
             let tool_specs: Vec<Arc<dyn FunctionTool>> = self
                 .tools
                 .iter()
@@ -817,6 +838,9 @@ impl ToolCallingEngine {
                 }
             }
 
+            if let Err(error) = crate::qq_context::check_turn_storage() {
+                return (output, ToolCallingStopReason::TransportError(error.to_string()));
+            }
             self.log_llm_usage(&response);
 
             if let Some(observer) = self.observer.as_ref() {
@@ -889,6 +913,10 @@ impl ToolCallingEngine {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_tool_start(&call.name, &call.call_id, &call.arguments);
                 }
+            }
+
+            if let Err(error) = crate::qq_context::check_turn_storage() {
+                return (output, ToolCallingStopReason::TransportError(error.to_string()));
             }
 
             let mut results: Vec<PreparedToolResult> =

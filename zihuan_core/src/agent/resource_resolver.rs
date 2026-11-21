@@ -93,6 +93,7 @@ pub fn build_embedding_model(config: &EmbeddingServiceConfig) -> Arc<dyn Embeddi
             config.api_key.clone(),
             Duration::from_secs(config.timeout_secs),
         )
+        .with_proxy(config.proxy.clone())
         .with_retry_count(config.retry_count),
     )
 }

@@ -45,8 +45,8 @@ pub struct JobResources {
     pub connection: RelationalDbConnection,
     pub llm: Arc<dyn LLMBase>,
     pub tool_definitions: Vec<ToolDefinition>,
-    /// Loads the raw conversation history for one sender (process-local message cache).
-    pub history_loader: Arc<dyn Fn(&str) -> Vec<LLMMessage> + Send + Sync>,
+    /// Loads raw conversation history; storage failures propagate to the job.
+    pub history_loader: Arc<dyn Fn(&str) -> crate::error::Result<Vec<LLMMessage>> + Send + Sync>,
     /// Clears the conversation history for one sender.
     pub history_clearer: Arc<dyn Fn(&str) -> Result<()> + Send + Sync>,
     /// Memory backend shared with the owning agent, reachable through the `memory.*`

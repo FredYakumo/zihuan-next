@@ -14,7 +14,9 @@ use crate::model_inference::llm::message::convert::{
 };
 use crate::model_inference::llm::{InferenceParam, LLMMessage, StreamToken};
 use crate::model_inference::message_content_utils::downgrade_messages_for_model;
-use crate::model_inference::model_config::{LlmApiStyle, ReasoningEffort, ThinkingType};
+use crate::model_inference::model_config::{
+    LlmApiStyle, LlmProxyConfig, ReasoningEffort, ThinkingType,
+};
 use crate::utils::string_utils;
 use log::{debug, error, warn};
 use reqwest::blocking::Client;
@@ -29,6 +31,33 @@ use tokio::sync::mpsc;
 const DEFAULT_RETRY_COUNT: u32 = 2;
 const RETRY_DELAY_MS: u64 = 1_000;
 const USER_VISIBLE_REQUEST_ERROR: &str = "Error: LLM API request failed";
+
+/// Builds the reqwest proxy from the model's proxy config. Returns `None`
+/// (with a warning) for an unusable proxy so the request falls back to the
+/// direct connection instead of failing client construction.
+pub(crate) fn build_reqwest_proxy(proxy: Option<&LlmProxyConfig>) -> Option<reqwest::Proxy> {
+    let proxy = proxy?;
+    let proxy_url = match proxy.to_proxy_url() {
+        Ok(proxy_url) => proxy_url,
+        Err(error) => {
+            warn!(
+                "[LLMAPI] invalid proxy config (kind={:?}, host='{}', port={}): {error}; connecting directly",
+                proxy.kind, proxy.host, proxy.port
+            );
+            return None;
+        }
+    };
+    match reqwest::Proxy::all(proxy_url) {
+        Ok(reqwest_proxy) => Some(reqwest_proxy),
+        Err(error) => {
+            warn!(
+                "[LLMAPI] invalid proxy config (kind={:?}, host='{}', port={}): {error}; connecting directly",
+                proxy.kind, proxy.host, proxy.port
+            );
+            None
+        }
+    }
+}
 
 enum RequestError {
     Retryable { message: String },
@@ -56,6 +85,7 @@ pub struct LLMAPI {
     context_length: usize,
     pub timeout: Duration,
     retry_count: u32,
+    proxy: Option<LlmProxyConfig>,
 }
 
 impl LLMAPI {
@@ -145,6 +175,7 @@ impl LLMAPI {
             context_length,
             timeout,
             retry_count: DEFAULT_RETRY_COUNT,
+            proxy: None,
         }
     }
 
@@ -155,6 +186,11 @@ impl LLMAPI {
 
     pub fn with_retry_count(mut self, retry_count: u32) -> Self {
         self.retry_count = retry_count;
+        self
+    }
+
+    pub fn with_proxy(mut self, proxy: Option<LlmProxyConfig>) -> Self {
+        self.proxy = proxy;
         self
     }
 
@@ -295,22 +331,33 @@ impl LLMAPI {
             RequestError::Retryable { message: err_detail }
         })?;
         let status = response.status();
-        let response_text = response.text().map_err(|error| {
-            let message = format!(
-                "{} status={} response_body_read_error detail={} message={}",
-                self.format_request_context(request_context, Some((attempt, max_attempts))),
-                status,
-                Self::describe_reqwest_error(&error),
-                error,
-            );
-            // Headers can arrive before a timeout or a broken connection while reading
-            // the body. Treat that as a transport failure, not malformed model JSON.
-            if status.is_success() || Self::should_retry_status(status) {
-                RequestError::Retryable { message }
-            } else {
-                RequestError::NonRetryable { message }
-            }
-        })?;
+        // Read the body incrementally so a timeout or broken connection while
+        // reading it does not discard whatever the model already returned; the
+        // partial content is logged for diagnostics in the error below.
+        let mut response = response;
+        let mut body_bytes: Vec<u8> = Vec::new();
+        let response_text = response
+            .copy_to(&mut body_bytes)
+            .map(|_| String::from_utf8_lossy(&body_bytes).into_owned())
+            .map_err(|error| {
+                let partial_body = string_utils::shorten_text(&String::from_utf8_lossy(&body_bytes), 800);
+                let message = format!(
+                    "{} status={} response_body_read_error detail={} message={} bytes_read={} partial_body={}",
+                    self.format_request_context(request_context, Some((attempt, max_attempts))),
+                    status,
+                    Self::describe_reqwest_error(&error),
+                    error,
+                    body_bytes.len(),
+                    partial_body,
+                );
+                // Headers can arrive before a timeout or a broken connection while reading
+                // the body. Treat that as a transport failure, not malformed model JSON.
+                if status.is_success() || Self::should_retry_status(status) {
+                    RequestError::Retryable { message }
+                } else {
+                    RequestError::NonRetryable { message }
+                }
+            })?;
 
         if self.stream {
             if let Some(message) = match self.uses_responses_api() {
@@ -446,10 +493,11 @@ impl LLMAPI {
             downgrade_messages_for_model(param.messages.clone(), self.supports_multimodal_input);
         let param = InferenceParam { messages: &messages, tools: param.tools };
 
-        let client = Client::builder()
-            .timeout(self.timeout)
-            .build()
-            .expect("Failed to create HTTP client");
+        let mut client_builder = Client::builder().timeout(self.timeout);
+        if let Some(reqwest_proxy) = build_reqwest_proxy(self.proxy.as_ref()) {
+            client_builder = client_builder.proxy(reqwest_proxy);
+        }
+        let client = client_builder.build().expect("Failed to create HTTP client");
 
         let request_context = RequestContext {
             message_count: param.messages.len(),
@@ -632,10 +680,11 @@ impl LLMAPI {
             )
         };
 
-        let client = reqwest::Client::builder()
-            .timeout(self.timeout)
-            .build()
-            .expect("Failed to create async HTTP client");
+        let mut client_builder = reqwest::Client::builder().timeout(self.timeout);
+        if let Some(reqwest_proxy) = build_reqwest_proxy(self.proxy.as_ref()) {
+            client_builder = client_builder.proxy(reqwest_proxy);
+        }
+        let client = client_builder.build().expect("Failed to create async HTTP client");
 
         let mut request = client.post(&self.api_endpoint).json(&request_body);
         if let Some(ref api_key) = self.api_key {

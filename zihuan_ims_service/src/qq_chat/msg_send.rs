@@ -45,6 +45,10 @@ pub(crate) fn send_planned_batches(
     ctx: &QqChatServiceSendContext<'_>,
     batches: &[Vec<Message>],
 ) -> Vec<zihuan_core::ims_bot_adapter::runtime::send_qq_message_batches::SendBatchResult> {
+    if let Err(error) = zihuan_core::qq_context::check_turn_storage() {
+        log::error!("reply delivery blocked by context persistence failure: {error}");
+        return Vec::new();
+    }
     // Human-paced dispatch: every follow-up message waits for the typing time of its own
     // text, so a multi-message reply does not land as one instant burst.
     let delays_ms = reply_batch_delays_ms(batches);

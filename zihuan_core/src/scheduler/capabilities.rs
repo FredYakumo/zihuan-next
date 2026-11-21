@@ -81,7 +81,7 @@ fn run_subagent(resources: &JobResources, params: &Value) -> Result<Value> {
 
 fn load_history(resources: &JobResources, params: &Value) -> Result<Value> {
     let sender_id = required_str(params, "sender_id")?;
-    let entries = (resources.history_loader)(sender_id)
+    let entries = (resources.history_loader)(sender_id)?
         .into_iter()
         .map(|message| {
             let text = message.content_text_owned();

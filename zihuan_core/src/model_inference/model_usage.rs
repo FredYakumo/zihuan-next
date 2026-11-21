@@ -179,12 +179,15 @@ impl LlmStageRun {
                 "status": "running",
                 "model": model,
                 "config_id": config_id,
+                "path": context.path,
                 "streaming": streaming,
                 "started_at": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
                 "message_count": messages.len(),
                 "prompt_tokens_estimated": estimate_messages_tokens(param.messages),
                 "messages": messages,
                 "tools_count": param.tools.as_ref().map(|tools| tools.len()).unwrap_or(0),
+                "tools": param.tools.map(|tools| tools.iter().map(|tool| tool.get_json()).collect::<Vec<_>>()),
+                "request": param.messages,
             });
             emit_llm_stage(context, &stage_id, &detail);
             Self {
@@ -327,8 +330,10 @@ impl LLMBase for TrackedLlm {
         self.inner.supports_multimodal_input()
     }
     fn inference(&self, param: &InferenceParam) -> Result<LLMMessage> {
+        crate::qq_context::check_turn_storage()?;
         let started = Instant::now();
         let stage = LlmStageRun::start(&self.config_id, self.get_model_name(), param, false);
+        crate::qq_context::check_turn_storage()?;
         let message = match self.inner.inference(param) {
             Ok(message) => message,
             Err(error) => {
@@ -343,6 +348,7 @@ impl LLMBase for TrackedLlm {
         if let Some(stage) = stage {
             stage.finish(started.elapsed(), message.usage.as_ref(), None, &message);
         }
+        crate::qq_context::check_turn_storage()?;
         record_usage(&self.config_id, message.usage.clone(), started.elapsed(), None);
         Ok(message)
     }
@@ -359,8 +365,14 @@ impl StreamingLLMBase for TrackedLlm {
         token_tx: mpsc::UnboundedSender<StreamToken>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = LLMMessage> + Send + 'a>> {
         Box::pin(async move {
+            if let Err(error) = crate::qq_context::check_turn_storage() {
+                return LLMMessage::assistant_text(format!("context persistence failed: {error}"));
+            }
             let started = Instant::now();
             let mut stage = LlmStageRun::start(&self.config_id, self.get_model_name(), param, true);
+            if let Err(error) = crate::qq_context::check_turn_storage() {
+                return LLMMessage::assistant_text(format!("context persistence failed: {error}"));
+            }
             let (relay_tx, mut relay_rx) = mpsc::unbounded_channel::<StreamToken>();
             let inference = self
                 .inner

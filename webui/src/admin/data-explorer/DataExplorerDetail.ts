@@ -15,13 +15,20 @@ export function useDataExplorerDetailPage() {
   const { service, loadingService, unavailable, message, searchMessages, changeMessagePage, memory, memoryDialog, searchMemories, image, searchImages, mutateMemory, submitMemoryDialog } = useDataExplorerDetail(serviceId, capability);
   const context = useChatContext(serviceId);
   if (capability === "contexts") context.loadUsers();
-  const { backend, loadingUsers, users, selectedSenderId, selectedTitle, loadingContext, clearingContext, deletingTurnId, turns, archivedTurns, estimatedContextTokens, contextLimitTokens, contextStartedAt, lastMessageAt, hasActiveTurn, inputTokens, outputTokens, averageTokensPerSecond, averageCacheHitRate, loadUsers, clearSelection, clearContext, deleteTurn } = context;
+  const { backend, loadingUsers, usersTotal, usersPage, usersQuery, searchUsers, refreshUsers, historyCursor, loadingHistory, loadHistory, compacted, associationIncomplete, users, selectedSenderId, selectedTitle, loadingContext, clearingContext, deletingTurnId, turns, archivedTurns, estimatedContextTokens, contextLimitTokens, contextStartedAt, lastMessageAt, hasActiveTurn, inputTokens, outputTokens, averageTokensPerSecond, averageCacheHitRate, loadUsers, clearSelection, clearContext, deleteTurn } = context;
 
   /** Visibility of the conversation finder dialog over the selected user's turns. */
   const turnFinderVisible = ref(false);
   /** The rendered context flow, so a finder pick can scroll it to that turn. */
   const contextFlowRef = ref<ChatContextFlowExposed | null>(null);
-  function focusTurn(turnId: string) { contextFlowRef.value?.scrollToTurn(turnId); }
+  async function focusTurn(turnId: string) {
+    while (!turns.value.some((turn) => turn.turnId === turnId) && !archivedTurns.value.some((turn) => turn.turnId === turnId) && historyCursor.value) {
+      const cursor = historyCursor.value;
+      await loadHistory();
+      if (historyCursor.value === cursor) break;
+    }
+    contextFlowRef.value?.scrollToTurn(turnId);
+  }
 
   const userColumns: PrimaryTableCol<ServiceChatUserItem>[] = [{ colKey: "sender", title: "用户", width: 220 }, { colKey: "group", title: "最近群组", width: 180 }, { colKey: "context_tokens", title: "上下文 Token", width: 130 }, { colKey: "last", title: "最近时间", width: 200 }];
   const messageColumns: PrimaryTableCol<MysqlRecord>[] = [{ colKey: "message_id", title: "消息 ID", width: 160 }, { colKey: "sender", title: "发送者", width: 160 }, { colKey: "send_time", title: "发送时间", width: 180 }, { colKey: "group", title: "群组", width: 150 }, { colKey: "content", title: "内容" }, { colKey: "detail", title: "详情", width: 80 }];
@@ -247,6 +254,16 @@ export function useDataExplorerDetailPage() {
     returnToList,
     backend,
     loadingUsers,
+    usersTotal,
+    usersPage,
+    usersQuery,
+    searchUsers,
+    refreshUsers,
+    historyCursor,
+    loadingHistory,
+    loadHistory,
+    compacted,
+    associationIncomplete,
     users,
     selectedSenderId,
     selectedTitle,

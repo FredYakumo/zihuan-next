@@ -11,7 +11,7 @@
 mod finalization;
 mod meta_query_turn;
 pub(crate) mod normal_turn;
-mod run_turn;
+pub(crate) mod run_turn;
 
 pub(crate) use run_turn::run_turn;
 

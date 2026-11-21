@@ -239,322 +239,55 @@ pub enum QqChatContextEvent {
     },
 }
 
+impl QqChatContextEvent {
+    /// Stable identity for updates of one step; distinct lifecycle events remain distinct.
+    pub fn event_id(&self) -> String {
+        let (agent, sender, turn) = crate::storage::context_store::event_identity(self);
+        let key = match self {
+            Self::TurnStarted { .. } => "started".to_string(),
+            Self::TurnFinished { .. } => "finished".to_string(),
+            Self::Stage { id: Some(id), .. } => format!("stage:{id}"),
+            Self::ToolStarted { call_id, .. } => format!("tool-start:{call_id}"),
+            Self::ToolFinished { call_id, .. } => format!("tool-finish:{call_id}"),
+            _ => serde_json::to_string(self).unwrap_or_default(),
+        };
+        uuid::Uuid::new_v5(
+            &uuid::Uuid::NAMESPACE_OID,
+            format!("{agent}:{sender}:{turn}:{key}").as_bytes(),
+        )
+        .to_string()
+    }
+}
+
 static QQ_CHAT_HISTORY_CACHES: Lazy<RwLock<HashMap<String, Arc<LLMMessageSessionCacheRef>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
+
+static QQ_CONTEXT_STORAGE_ERRORS: Lazy<RwLock<HashMap<String, String>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+pub fn check_turn_storage() -> crate::error::Result<()> {
+    if let Some(trace) = current_turn_trace() {
+        if let Some(error) = QQ_CONTEXT_STORAGE_ERRORS.read().unwrap().get(&trace.turn_id) {
+            return Err(crate::string_error!("context persistence failed: {error}"));
+        }
+        if let Some(cache) = qq_chat_history_cache(&trace.agent_id) {
+            if let Some((_, connection)) = cache.context_database.read().unwrap().clone() {
+                crate::runtime::block_async(crate::storage::context_store::running(
+                    &connection,
+                    &trace.agent_id,
+                    &trace.sender_id,
+                ))?;
+            }
+        }
+    }
+    Ok(())
+}
 
 static QQ_CONTEXT_EMITTER: Lazy<RwLock<Option<Arc<dyn Fn(QqChatContextEvent) + Send + Sync>>>> =
     Lazy::new(|| RwLock::new(None));
 
-/// One step inside a turn, in the order it happened. The conversation cache only keeps the
-/// user/assistant text, so tool calls and named stages are accumulated here instead.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum QqChatTurnEntry {
-    Stage {
-        at: String,
-        stage: String,
-        /// Stable id of a stage updated in place (for example an embedding's start/finish).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        id: Option<String>,
-        detail: Value,
-    },
-    ToolCall {
-        at: String,
-        call_id: String,
-        name: String,
-        arguments: Value,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        result: Option<String>,
-        // u64, not u128: this enum's fields are buffered through serde's content deserializer
-        // when the archived JSON is read back, and that deserializer rejects u128.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        duration_ms: Option<u64>,
-    },
-    /// One step of a sub-agent's own flow, nested under the tool call named by `path`.
-    SubAgent {
-        at: String,
-        path: Vec<String>,
-        event: QqChatSubAgentEntry,
-    },
-}
-
-/// The recorded flow of one QQ turn, including everything the model was given and produced.
-///
-/// Terminology: `documents/glossary.md`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QqChatTurnRecord {
-    pub turn_id: String,
-    pub agent_id: String,
-    pub sender_id: String,
-    pub created_at: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sender_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub group_name: Option<String>,
-    pub is_group: bool,
-    pub user_text: String,
-    /// The quoted message this turn replies to, if any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quoted: Option<QqChatQuotedMessage>,
-    #[serde(default)]
-    pub media: Vec<MediaRef>,
-    #[serde(default)]
-    pub entries: Vec<QqChatTurnEntry>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub assistant_text: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reasoning_text: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub usage: Option<TokenUsage>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub generation_ms: Option<u128>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output_tokens_per_second: Option<f64>,
-    /// This turn continues the previous one with queued steer messages; the view keeps both in
-    /// one visual block without a divider.
-    #[serde(default)]
-    pub continues_previous: bool,
-    pub finished: bool,
-}
-
-/// Turns kept per sender. Old entries are dropped so the log cannot grow without bound.
-const MAX_TURNS_PER_SENDER: usize = 50;
-
-static QQ_CHAT_TURN_LOGS: Lazy<RwLock<HashMap<String, Vec<QqChatTurnRecord>>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
-
-fn turn_log_key(agent_id: &str, sender_id: &str) -> String {
-    format!("{agent_id}:{sender_id}")
-}
-
-/// Fold one live event into the per-sender turn log.
-///
-/// The log is what the Data Explorer context view reads, so it carries the tool calls and
-/// stages that the conversation cache never stores. Updates stay in memory; only a finished
-/// turn is written to Redis, keeping the per-turn write count at one.
-pub fn record_qq_chat_turn_event(event: &QqChatContextEvent) {
-    let (agent_id, sender_id) = match event {
-        QqChatContextEvent::TurnStarted { agent_id, sender_id, .. }
-        | QqChatContextEvent::ToolStarted { agent_id, sender_id, .. }
-        | QqChatContextEvent::ToolFinished { agent_id, sender_id, .. }
-        | QqChatContextEvent::Stage { agent_id, sender_id, .. }
-        | QqChatContextEvent::SubAgent { agent_id, sender_id, .. }
-        | QqChatContextEvent::TurnFinished { agent_id, sender_id, .. } => {
-            (agent_id.as_str(), sender_id.as_str())
-        }
-    };
-    let key = turn_log_key(agent_id, sender_id);
-    let finished = {
-        let Ok(mut guard) = QQ_CHAT_TURN_LOGS.write() else {
-            return;
-        };
-        let turns = guard.entry(key).or_default();
-        match event {
-            QqChatContextEvent::TurnStarted {
-                turn_id,
-                created_at,
-                sender_name,
-                group_name,
-                is_group,
-                user_text,
-                quoted,
-                media,
-                continues_previous,
-                ..
-            } => {
-                if turns.iter().any(|turn| turn.turn_id == *turn_id) {
-                    false
-                } else {
-                    turns.push(QqChatTurnRecord {
-                        turn_id: turn_id.clone(),
-                        agent_id: agent_id.to_string(),
-                        sender_id: sender_id.to_string(),
-                        created_at: created_at.clone(),
-                        sender_name: Some(sender_name.clone()),
-                        group_name: group_name.clone(),
-                        is_group: *is_group,
-                        user_text: user_text.clone(),
-                        quoted: quoted.clone(),
-                        media: media.clone(),
-                        entries: Vec::new(),
-                        assistant_text: None,
-                        reasoning_text: None,
-                        usage: None,
-                        generation_ms: None,
-                        output_tokens_per_second: None,
-                        continues_previous: *continues_previous,
-                        finished: false,
-                    });
-                    if turns.len() > MAX_TURNS_PER_SENDER {
-                        let overflow = turns.len() - MAX_TURNS_PER_SENDER;
-                        turns.drain(0..overflow);
-                    }
-                    false
-                }
-            }
-            QqChatContextEvent::ToolStarted {
-                turn_id, call_id, tool_name, arguments, ..
-            } => {
-                if let Some(turn) = turns.iter_mut().find(|turn| turn.turn_id == *turn_id) {
-                    turn.entries.push(QqChatTurnEntry::ToolCall {
-                        at: now_rfc3339(),
-                        call_id: call_id.clone(),
-                        name: tool_name.clone(),
-                        arguments: arguments.clone(),
-                        result: None,
-                        duration_ms: None,
-                    });
-                }
-                false
-            }
-            QqChatContextEvent::ToolFinished {
-                turn_id, call_id, result, duration_ms, ..
-            } => {
-                if let Some(turn) = turns.iter_mut().find(|turn| turn.turn_id == *turn_id) {
-                    if let Some(QqChatTurnEntry::ToolCall { result: slot, duration_ms: slot_ms, .. }) =
-                        turn.entries.iter_mut().rev().find(|entry| {
-                            matches!(entry, QqChatTurnEntry::ToolCall { call_id: id, .. } if id == call_id)
-                        })
-                    {
-                        *slot = Some(result.clone());
-                        *slot_ms = Some(*duration_ms);
-                    }
-                }
-                false
-            }
-            QqChatContextEvent::Stage { turn_id, at, stage, detail, id, .. } => {
-                if let Some(turn) = turns.iter_mut().find(|turn| turn.turn_id == *turn_id) {
-                    // A progress stage (embedding start → finish) keeps one entry: the later
-                    // event replaces the earlier detail instead of appending a second entry.
-                    let updated = id.as_ref().is_some_and(|stage_id| {
-                        turn.entries.iter_mut().rev().any(|entry| match entry {
-                            QqChatTurnEntry::Stage { id: existing, detail: slot, .. }
-                                if existing.as_deref() == Some(stage_id.as_str()) =>
-                            {
-                                *slot = detail.clone();
-                                true
-                            }
-                            _ => false,
-                        })
-                    });
-                    if !updated {
-                        turn.entries.push(QqChatTurnEntry::Stage {
-                            at: at.clone(),
-                            stage: stage.clone(),
-                            id: id.clone(),
-                            detail: detail.clone(),
-                        });
-                    }
-                }
-                false
-            }
-            QqChatContextEvent::SubAgent { turn_id, at, path, event, .. } => {
-                if let Some(turn) = turns.iter_mut().find(|turn| turn.turn_id == *turn_id) {
-                    // Streaming deltas are a live signal only: the settled assistant message is
-                    // recorded right after them, so archiving every token would just bloat the
-                    // turn log.
-                    if !matches!(event, QqChatSubAgentEntry::AssistantChunk { .. }) {
-                        turn.entries.push(QqChatTurnEntry::SubAgent {
-                            at: at.clone(),
-                            path: path.clone(),
-                            event: event.clone(),
-                        });
-                    }
-                }
-                false
-            }
-            QqChatContextEvent::TurnFinished {
-                turn_id,
-                assistant_text,
-                reasoning_text,
-                usage,
-                generation_ms,
-                output_tokens_per_second,
-                ..
-            } => {
-                let mut finished = false;
-                if let Some(turn) = turns.iter_mut().find(|turn| turn.turn_id == *turn_id) {
-                    turn.assistant_text = assistant_text.clone();
-                    turn.reasoning_text = reasoning_text.clone();
-                    turn.usage = usage.clone();
-                    turn.generation_ms = *generation_ms;
-                    turn.output_tokens_per_second = *output_tokens_per_second;
-                    turn.finished = true;
-                    finished = true;
-                }
-                finished
-            }
-        }
-    };
-
-    let _ = finished;
-}
-
 fn now_rfc3339() -> String {
-    chrono::Local::now().to_rfc3339()
-}
-
-/// The turns recorded by the current process for one sender, oldest first.
-///
-/// This is deliberately process-scoped: durable history lives in the agent's relational
-/// database now, so an old copy must not be resurrected here after a restart — it would show
-/// up as "current runtime context" instead of archived history.
-pub async fn qq_chat_turn_records(agent_id: &str, sender_id: &str) -> Vec<QqChatTurnRecord> {
-    let key = turn_log_key(agent_id, sender_id);
-    QQ_CHAT_TURN_LOGS
-        .read()
-        .ok()
-        .and_then(|guard| guard.get(&key).cloned())
-        .unwrap_or_default()
-}
-
-/// One recorded turn by id, for archiving it after it finishes.
-pub async fn qq_chat_turn_record(
-    agent_id: &str,
-    sender_id: &str,
-    turn_id: &str,
-) -> Option<QqChatTurnRecord> {
-    let key = turn_log_key(agent_id, sender_id);
-    QQ_CHAT_TURN_LOGS
-        .read()
-        .ok()
-        .and_then(|guard| guard.get(&key).cloned())
-        .and_then(|turns| turns.into_iter().find(|turn| turn.turn_id == turn_id))
-}
-
-/// Forget the turns recorded by this process for one sender.
-///
-/// Called when the live conversation cache is cleared: finished turns already live in the
-/// relational archive, so the context view must stop presenting them as current.
-pub fn clear_qq_chat_turn_records(agent_id: &str, sender_id: &str) {
-    if let Ok(mut guard) = QQ_CHAT_TURN_LOGS.write() {
-        guard.remove(&turn_log_key(agent_id, sender_id));
-    }
-}
-
-/// Forget one recorded turn of one sender, e.g. when its record is deleted from the data
-/// explorer. The relational archive is cleaned separately by the caller.
-pub fn remove_qq_chat_turn_record(agent_id: &str, sender_id: &str, turn_id: &str) {
-    if let Ok(mut guard) = QQ_CHAT_TURN_LOGS.write() {
-        if let Some(turns) = guard.get_mut(&turn_log_key(agent_id, sender_id)) {
-            turns.retain(|turn| turn.turn_id != turn_id);
-        }
-    }
-}
-
-/// Turns written to Redis by a previous build, before durable archiving existed.
-///
-/// Reading the value removes it, so the migration runs once: those turns then live in the
-/// relational archive and are never resurrected as "current runtime context".
-pub async fn take_legacy_turn_records(agent_id: &str, sender_id: &str) -> Vec<QqChatTurnRecord> {
-    let Some(cache) = qq_chat_history_cache(agent_id) else {
-        return Vec::new();
-    };
-    let key = format!("qq_chat_turn_log:{agent_id}:{sender_id}");
-    let Some(raw) = cache.redis_take_string(&key).await else {
-        return Vec::new();
-    };
-    serde_json::from_str(&raw).unwrap_or_default()
+    chrono::Utc::now().to_rfc3339()
 }
 
 /// Publish the conversation-context cache of one running QQ role agent so the API layer can
@@ -591,6 +324,22 @@ pub fn set_qq_context_emitter(emitter: Arc<dyn Fn(QqChatContextEvent) + Send + S
 /// Forward one context event to the installed sink. No-op when no sink is installed (e.g. a
 /// standalone agent runtime), so callers never need to branch on availability.
 pub fn emit_qq_context_event(event: QqChatContextEvent) {
+    let (agent, _, turn) = crate::storage::context_store::event_identity(&event);
+    if let Some(cache) = qq_chat_history_cache(agent) {
+        let database = cache.context_database.read().unwrap().clone();
+        if let Some((_, connection)) = database {
+            if let Err(error) = crate::runtime::block_async(
+                crate::storage::context_store::record_event(&connection, &event),
+            ) {
+                log::error!("[context_store] turn {turn}: {error}");
+                QQ_CONTEXT_STORAGE_ERRORS
+                    .write()
+                    .unwrap()
+                    .insert(turn.to_string(), error.to_string());
+                return;
+            }
+        }
+    }
     let emitter = QQ_CONTEXT_EMITTER.read().ok().and_then(|guard| guard.clone());
     if let Some(emitter) = emitter {
         emitter(event);
@@ -609,6 +358,7 @@ pub struct TurnTraceContext {
     pub agent_id: String,
     pub sender_id: String,
     pub turn_id: String,
+    pub path: Vec<String>,
 }
 
 thread_local! {
@@ -622,26 +372,35 @@ thread_local! {
 /// their identity into the next one.
 pub struct TurnTraceGuard {
     previous: Option<TurnTraceContext>,
+    owns_turn: bool,
 }
 
 impl TurnTraceGuard {
     pub fn enter(agent_id: &str, sender_id: &str, turn_id: &str) -> Self {
-        Self::from_context(TurnTraceContext {
+        let mut guard = Self::from_context(TurnTraceContext {
             agent_id: agent_id.to_string(),
             sender_id: sender_id.to_string(),
             turn_id: turn_id.to_string(),
-        })
+            path: Vec::new(),
+        });
+        guard.owns_turn = true;
+        guard
     }
 
     /// Bind an already captured context, for threads that received the turn identity by value.
     pub fn from_context(context: TurnTraceContext) -> Self {
         let previous = TURN_TRACE_CONTEXT.with(|slot| slot.replace(Some(context)));
-        Self { previous }
+        Self { previous, owns_turn: false }
     }
 }
 
 impl Drop for TurnTraceGuard {
     fn drop(&mut self) {
+        if let Some(trace) = current_turn_trace().filter(|_| self.owns_turn) {
+            if self.previous.as_ref().is_none_or(|previous| previous.turn_id != trace.turn_id) {
+                QQ_CONTEXT_STORAGE_ERRORS.write().unwrap().remove(&trace.turn_id);
+            }
+        }
         TURN_TRACE_CONTEXT.with(|slot| {
             *slot.borrow_mut() = self.previous.take();
         });
@@ -674,7 +433,7 @@ pub fn emit_qq_context_stage(
         turn_id: turn_id.to_string(),
         at: now_rfc3339(),
         stage: stage.to_string(),
-        id: None,
+        id: Some(uuid::Uuid::new_v4().to_string()),
         detail,
     });
 }

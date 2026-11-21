@@ -21,6 +21,9 @@ pub struct TokenUsage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LLMMessage {
+    /// Internal history identity; protocol converters deliberately do not send it to models.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_message_id: Option<String>,
     pub role: MessageRole,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<MessagePart>,
@@ -47,6 +50,7 @@ impl LLMMessage {
     /// Construct a system-role message with a single text part.
     pub fn system<S: Into<String>>(content: S) -> Self {
         Self {
+            context_message_id: None,
             role: MessageRole::System,
             parts: vec![MessagePart::text(content)],
             reasoning_content: None,
@@ -59,6 +63,7 @@ impl LLMMessage {
     /// Construct a user-role message with a single text part.
     pub fn user<S: Into<String>>(content: S) -> Self {
         Self {
+            context_message_id: None,
             role: MessageRole::User,
             parts: vec![MessagePart::text(content)],
             reasoning_content: None,
@@ -71,6 +76,7 @@ impl LLMMessage {
     /// Construct a user-role message from pre-built multimodal parts.
     pub fn user_with_parts(parts: Vec<MessagePart>) -> Self {
         Self {
+            context_message_id: None,
             role: MessageRole::User,
             parts,
             reasoning_content: None,
@@ -83,6 +89,7 @@ impl LLMMessage {
     /// Construct an assistant-role message with a single text part.
     pub fn assistant_text<S: Into<String>>(content: S) -> Self {
         Self {
+            context_message_id: None,
             role: MessageRole::Assistant,
             parts: vec![MessagePart::text(content)],
             reasoning_content: None,
@@ -95,6 +102,7 @@ impl LLMMessage {
     /// Construct a tool-role result message linked to a prior tool call id.
     pub fn tool_result<I: Into<String>, C: Into<String>>(tool_call_id: I, content: C) -> Self {
         Self {
+            context_message_id: None,
             role: MessageRole::Tool,
             parts: vec![MessagePart::text(content)],
             reasoning_content: None,

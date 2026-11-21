@@ -50,6 +50,22 @@
     width: min(280px, 100%);
 }
 
+.context-user-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: min(460px, 100%);
+
+    :deep(.t-input__wrap) {
+        flex: 1;
+        min-width: 0;
+    }
+
+    :deep(.t-input) {
+        width: 100%;
+    }
+}
+
 .content-cell {
     white-space: pre-wrap;
     word-break: break-word;

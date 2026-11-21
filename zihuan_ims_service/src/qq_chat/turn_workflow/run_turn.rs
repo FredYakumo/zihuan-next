@@ -52,6 +52,8 @@ pub(crate) fn run_turn(
     service: &QqChatAgentService,
     input: &TurnInput<'_>,
 ) -> Result<QqChatServiceTurnResult> {
+    let operation = input.ctx.cache.operation_lock(input.sender_id);
+    let _operation = zihuan_core::runtime::block_async(operation.lock());
     let message_rate_limit_warning =
         input.message_rate_limit.and_then(|result| result.warning_prompt.as_deref());
     let prepared_input = prepare_current_turn_user_input(
@@ -101,7 +103,31 @@ pub(crate) fn run_turn(
     }
 
     let history_key = conversation_history_key(input.sender_id);
-    let history = load_history(input.ctx.cache, &history_key);
+    let history = load_history(input.ctx.cache, &history_key)?;
+
+    emit_qq_context_event(QqChatContextEvent::TurnStarted {
+        agent_id: input.ctx.agent_id.to_string(),
+        sender_id: input.sender_id.to_string(),
+        sender_name: zihuan_core::ims_bot_adapter::utils::sender_display_name!(
+            &input.event.sender.nickname,
+            &input.event.sender.card
+        ),
+        group_id: input.event.group_id.clone(),
+        group_name: input.event.group_name.clone(),
+        is_group: input.is_group,
+        turn_id: turn_id.clone(),
+        created_at: chrono::Utc::now().to_rfc3339(),
+        user_text: raw_user_message.clone(),
+        quoted: prepared_input.quoted_message.clone(),
+        media: turn_media.clone(),
+        continues_previous: input.continues_previous,
+    });
+    zihuan_core::qq_context::check_turn_storage()?;
+    let _completion = TurnCompletion {
+        agent: input.ctx.agent_id,
+        sender: input.sender_id,
+        turn: &turn_id,
+    };
 
     // Command interception runs through the unified command state machine
     // (crate::qq_chat::command). The pipeline resolves the spec, runs
@@ -120,7 +146,20 @@ pub(crate) fn run_turn(
         &emotion_dimensions,
         input.ctx,
     )? {
-        CommandTurnEnd::Consumed(result) => return Ok(result),
+        CommandTurnEnd::Consumed(result) => {
+            emit_qq_context_event(QqChatContextEvent::TurnFinished {
+                agent_id: input.ctx.agent_id.to_string(),
+                sender_id: input.sender_id.to_string(),
+                turn_id: turn_id.clone(),
+                assistant_text: Some(result.result_summary.clone()),
+                reasoning_text: None,
+                usage: None,
+                generation_ms: None,
+                output_tokens_per_second: None,
+            });
+            zihuan_core::qq_context::check_turn_storage()?;
+            return Ok(result);
+        }
         CommandTurnEnd::Passthrough(text) => current_message = text,
         CommandTurnEnd::NotACommand => {}
     }
@@ -130,26 +169,6 @@ pub(crate) fn run_turn(
     let mut current_session_state = input.ctx.session_state_store.lock().unwrap().clone();
     current_session_state.sync_emotion_dimensions(&emotion_dimensions);
     let turn_session_state = Arc::new(Mutex::new(current_session_state));
-
-    // Announce the turn before the first real step runs, so every stage and tool call that
-    // follows is appended in the order it actually happened.
-    emit_qq_context_event(QqChatContextEvent::TurnStarted {
-        agent_id: input.ctx.agent_id.to_string(),
-        sender_id: input.sender_id.to_string(),
-        sender_name: zihuan_core::ims_bot_adapter::utils::sender_display_name!(
-            &input.event.sender.nickname,
-            &input.event.sender.card
-        ),
-        group_id: input.event.group_id.clone(),
-        group_name: input.event.group_name.clone(),
-        is_group: input.is_group,
-        turn_id: turn_id.clone(),
-        created_at: chrono::Local::now().to_rfc3339(),
-        user_text: raw_user_message.clone(),
-        quoted: prepared_input.quoted_message.clone(),
-        media: turn_media.clone(),
-        continues_previous: input.continues_previous,
-    });
 
     // Report the rate-limit decision once per turn so the context view can show which
     // quota applied and how much of it had been consumed. Steer follow-ups share the
@@ -247,11 +266,40 @@ pub(crate) fn run_turn(
                 error,
             );
         }
+        zihuan_core::qq_context::check_turn_storage()?;
         return meta_result;
     }
 
     // Normal turn: one procedure chain, before-brain -> brain -> after-brain
     // (documents/procedure.md). The before-brain procedure assembles the turn's system
     // prompt and user input; the brain reads them through the shared procedure context.
-    super::normal_turn::run(turn_context)
+    let result = super::normal_turn::run(turn_context);
+    zihuan_core::qq_context::check_turn_storage()?;
+    result
+}
+
+pub(crate) struct TurnCompletion<'a> {
+    pub(crate) agent: &'a str,
+    pub(crate) sender: &'a str,
+    pub(crate) turn: &'a str,
+}
+
+impl Drop for TurnCompletion<'_> {
+    fn drop(&mut self) {
+        if let Some(cache) = zihuan_core::qq_context::qq_chat_history_cache(self.agent) {
+            let database = cache.context_database.read().unwrap().clone();
+            if let Some((_, connection)) = database {
+                if let Err(error) = zihuan_core::runtime::block_async(
+                    zihuan_core::storage::context_store::fail_unfinished(
+                        &connection,
+                        self.agent,
+                        self.sender,
+                        self.turn,
+                    ),
+                ) {
+                    log::error!("failed to finalize conversation turn {}: {error}", self.turn);
+                }
+            }
+        }
+    }
 }

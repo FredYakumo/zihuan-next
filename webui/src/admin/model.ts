@@ -8,6 +8,7 @@ import type {
   ModelRefSpec,
   LlmApiStyle,
   LlmServiceConfig,
+  LlmProxyConfig,
   EmbeddingServiceConfig,
 } from "../api/client";
 import type { DataTypeMetaData } from "../api/types";
@@ -101,6 +102,7 @@ export interface EmbeddingApiFormState {
   api_key: string;
   timeout_secs: number;
   retry_count: number;
+  proxy: LlmProxyConfig | null;
 }
 
 export interface LlmFormState {
@@ -371,6 +373,7 @@ export function defaultLlmConfig(): LlmServiceConfig {
     context_length: 32 * 1024,
     timeout_secs: 30,
     retry_count: 2,
+    proxy: null,
   };
 }
 
@@ -440,6 +443,7 @@ export function defaultEmbeddingApiForm(): EmbeddingApiFormState {
     api_key: "",
     timeout_secs: 30,
     retry_count: 2,
+    proxy: null,
   };
 }
 
@@ -940,6 +944,7 @@ export function llmFormFromConfig(config: LlmConfig): LlmFormState {
       api_key: config.model.api_key ?? "",
       timeout_secs: Number(config.model.timeout_secs ?? 30),
       retry_count: Number(config.model.retry_count ?? 2),
+      proxy: proxyFormFromConfig(config.model.proxy),
     };
     return form;
   }
@@ -965,7 +970,24 @@ export function llmFormFromConfig(config: LlmConfig): LlmFormState {
       context_length: config.model.llm.context_length ?? 32 * 1024,
       timeout_secs: config.model.llm.timeout_secs,
       retry_count: config.model.llm.retry_count,
+      proxy: proxyFormFromConfig(config.model.llm.proxy),
     },
+  };
+}
+
+/** 后端 proxy 配置 → 表单状态（认证字段 null → 空字符串）。 */
+function proxyFormFromConfig(
+  proxy: LlmProxyConfig | null | undefined,
+): LlmProxyConfig | null {
+  if (!proxy) {
+    return null;
+  }
+  return {
+    kind: proxy.kind ?? "http",
+    host: proxy.host ?? "",
+    port: proxy.port ?? 7890,
+    username: proxy.username ?? "",
+    password: proxy.password ?? "",
   };
 }
 
@@ -1480,6 +1502,7 @@ export function buildModelRefPayload(form: LlmFormState): ModelRefSpec {
       api_key: form.embedding.api_key.trim() || null,
       timeout_secs: form.embedding.timeout_secs,
       retry_count: form.embedding.retry_count,
+      proxy: proxyPayloadFromForm(form.embedding.proxy),
     };
   }
 
@@ -1491,6 +1514,8 @@ export function buildModelRefPayload(form: LlmFormState): ModelRefSpec {
         // Mock 的 api_endpoint 是录制目录，需要保留；GGUF/HF 本地推理不需要。
         api_endpoint: form.llm.weight_style === "mock" ? form.llm.api_endpoint.trim() : "",
         api_key: null,
+        // 本地模型不走 HTTP 出站代理。
+        proxy: null,
       },
     };
   }
@@ -1502,7 +1527,22 @@ export function buildModelRefPayload(form: LlmFormState): ModelRefSpec {
       api_endpoint: form.llm.api_endpoint.trim(),
       api_key: form.llm.api_key?.trim() || null,
       weight_style: null,
+      proxy: proxyPayloadFromForm(form.llm.proxy),
     },
+  };
+}
+
+/** 表单 proxy 状态（认证字段用空字符串）→ 后端 payload（空认证字段转 null）。 */
+function proxyPayloadFromForm(proxy: LlmProxyConfig | null | undefined): LlmProxyConfig | null {
+  if (!proxy) {
+    return null;
+  }
+  return {
+    kind: proxy.kind,
+    host: proxy.host.trim(),
+    port: proxy.port,
+    username: proxy.username?.trim() || null,
+    password: proxy.password?.trim() || null,
   };
 }
 

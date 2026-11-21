@@ -114,7 +114,7 @@ pub(crate) fn compact_turn_history(
     llm: &Arc<dyn LLMBase>,
     history: Vec<LLMMessage>,
     current_user_message: &LLMMessage,
-) -> ContextCompactionResult {
+) -> Result<ContextCompactionResult> {
     let mut result = compact_message_history(
         llm,
         history,
@@ -130,9 +130,9 @@ pub(crate) fn compact_turn_history(
             "{LOG_PREFIX} history compacted for {history_key}: tokens {} -> {}",
             result.estimated_tokens_before, result.estimated_tokens_after
         );
-        save_history(cache, history_key, result.messages.clone());
+        save_history(cache, history_key, result.messages.clone())?;
     }
-    result
+    Ok(result)
 }
 
 fn default_tools_enabled_map() -> HashMap<String, bool> {
@@ -418,8 +418,17 @@ pub(crate) fn build_user_message(
         emotion_dimensions,
     );
     let now_text = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let source = if current_input.event.is_group_message {
+        format!(
+            "group {} ({})",
+            current_input.event.group_name.as_deref().unwrap_or("unknown"),
+            current_input.event.group_id.as_deref().unwrap_or("unknown")
+        )
+    } else {
+        "private chat".to_string()
+    };
     let mut current_turn_text = format!(
-        "`The current time is {now_text}, `{sender_name}` sent you (`{bot_name}`) a message: \"{}\". {reply_request}",
+        "`The current time is {now_text}, in {source}, `{sender_name}` sent you (`{bot_name}`) a message: \"{}\". {reply_request}",
         current_input.current_text_for_prompt(),
     );
     // A turn's extra reply directive (e.g. the group-message-window turn's reply

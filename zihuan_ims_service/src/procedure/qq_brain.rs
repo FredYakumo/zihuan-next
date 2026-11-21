@@ -550,7 +550,7 @@ impl Procedure for QqBrain {
             &self.turn_llm,
             self.history.clone(),
             &user_msg,
-        );
+        )?;
         if compact_result.did_compact {
             if let Some(memory) = context.find_output::<super::MemoryAgentOutput>() {
                 inject_identities = true;

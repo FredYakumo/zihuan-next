@@ -201,6 +201,7 @@ pub fn parse_chat_completions_response(api_resp: &Value) -> Option<LLMMessage> {
     );
 
     Some(LLMMessage {
+        context_message_id: None,
         role: str_to_role(msg.get("role")?.as_str().unwrap_or("assistant")),
         parts: text_parts(content),
         reasoning_content: (!reasoning_content.is_empty()).then_some(reasoning_content),
@@ -326,6 +327,7 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
     }
 
     Some(LLMMessage {
+        context_message_id: None,
         role: role.unwrap_or_else(|| str_to_role("assistant")),
         parts: text_parts(content),
         reasoning_content: if reasoning_content.is_empty() {
@@ -495,6 +497,7 @@ pub async fn parse_chat_completions_sse_stream_response(
     }
 
     LLMMessage {
+        context_message_id: None,
         role: role.unwrap_or_else(|| str_to_role("assistant")),
         parts: text_parts(content),
         reasoning_content: if reasoning_content.is_empty() {

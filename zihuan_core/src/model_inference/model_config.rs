@@ -26,6 +26,66 @@ pub enum ModelWeightStyle {
     Hf,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmProxyKind {
+    Http,
+    Socks5,
+}
+
+/// Optional outbound proxy for API models (`ModelRefSpec::ChatLlmApi` /
+/// `ModelRefSpec::TextEmbeddingApi`). `None` / absent field means the request
+/// goes out directly (reqwest still honors `HTTP_PROXY`-style env vars).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmProxyConfig {
+    #[serde(default = "default_proxy_kind")]
+    pub kind: LlmProxyKind,
+    pub host: String,
+    pub port: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+}
+
+impl LlmProxyConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.host.trim().is_empty() {
+            return Err("proxy host must not be empty".into());
+        }
+        if self.port == 0 {
+            return Err("proxy port must be greater than zero".into());
+        }
+        Ok(())
+    }
+
+    /// Builds the reqwest proxy URL, e.g. `http://host:port` or
+    /// `socks5://user:pass@host:port`. Credentials go into the URL userinfo,
+    /// percent-encoded through `url::Url` so special characters survive.
+    pub fn to_proxy_url(&self) -> Result<String, String> {
+        let scheme = match self.kind {
+            LlmProxyKind::Http => "http",
+            LlmProxyKind::Socks5 => "socks5",
+        };
+        let host = self.host.trim();
+        let mut url = url::Url::parse(&format!("{scheme}://{host}:{}", self.port))
+            .map_err(|e| format!("invalid proxy host '{host}': {e}"))?;
+        let username = self.username.as_deref().map(str::trim).unwrap_or("");
+        if !username.is_empty() {
+            let _ = url.set_username(username);
+            let password = self.password.as_deref().unwrap_or("");
+            if !password.is_empty() {
+                let _ = url.set_password(Some(password));
+            }
+        }
+        Ok(url.to_string())
+    }
+}
+
+fn default_proxy_kind() -> LlmProxyKind {
+    LlmProxyKind::Http
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ThinkingType {
@@ -75,6 +135,9 @@ pub struct LlmServiceConfig {
     pub timeout_secs: u64,
     #[serde(default = "default_retry_count")]
     pub retry_count: u32,
+    /// Outbound proxy for API models; `None` = connect directly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<LlmProxyConfig>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -98,6 +161,8 @@ pub enum ModelRefSpec {
         timeout_secs: u64,
         #[serde(default = "default_retry_count")]
         retry_count: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        proxy: Option<LlmProxyConfig>,
     },
 }
 
@@ -130,6 +195,8 @@ enum TaggedModelRefSpec {
         timeout_secs: u64,
         #[serde(default = "default_retry_count")]
         retry_count: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        proxy: Option<LlmProxyConfig>,
     },
 }
 
@@ -147,12 +214,14 @@ impl From<TaggedModelRefSpec> for ModelRefSpec {
                 api_key,
                 timeout_secs,
                 retry_count,
+                proxy,
             } => ModelRefSpec::TextEmbeddingApi {
                 model_name,
                 api_endpoint,
                 api_key,
                 timeout_secs,
                 retry_count,
+                proxy,
             },
         }
     }

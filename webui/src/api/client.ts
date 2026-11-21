@@ -506,6 +506,17 @@ export type LlmApiStyle =
 /** How a locally executed chat model produces outputs. */
 export type LlmWeightStyle = "mock" | "gguf" | "hf";
 
+export type LlmProxyKind = "http" | "socks5";
+
+/** 可选的 API 模型出站代理；缺省 / null 表示直连。 */
+export interface LlmProxyConfig {
+  kind: LlmProxyKind;
+  host: string;
+  port: number;
+  username?: string | null;
+  password?: string | null;
+}
+
 export interface LlmServiceConfig {
   model_name: string;
   api_endpoint: string;
@@ -520,6 +531,7 @@ export interface LlmServiceConfig {
   context_length: number;
   timeout_secs: number;
   retry_count: number;
+  proxy?: LlmProxyConfig | null;
 }
 
 export interface EmbeddingServiceConfig {
@@ -560,6 +572,7 @@ export type ModelRefSpec =
       api_key?: string | null;
       timeout_secs?: number;
       retry_count?: number;
+      proxy?: LlmProxyConfig | null;
     };
 
 /** A chat model ref, local or API. */
@@ -1304,12 +1317,43 @@ export interface ServiceChatUserItem {
   sender_name: string;
   group_name?: string;
   context_tokens: number;
+  has_context?: boolean;
+  window_version?: number;
+  group_id?: string;
+  is_group?: boolean;
   last_time?: string;
 }
 
 export interface ServiceChatUsersResponse {
+  total: number;
+  page: number;
+  page_size: number;
   backend: "memory" | "redis";
   users: ServiceChatUserItem[];
+}
+
+export interface ServiceChatStep {
+  step_id: string;
+  turn_id: string;
+  parent_step_id?: string | null;
+  sequence: number;
+  kind: string;
+  name: string;
+  status: string;
+  revision: number;
+  started_at: string;
+  finished_at?: string | null;
+  model?: string | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  total_tokens?: number | null;
+  cached_prompt_tokens?: number | null;
+  first_token_ms?: number | null;
+  duration_ms?: number | null;
+  output_tokens_per_second?: number | null;
+  error_text?: string | null;
+  input?: unknown;
+  output?: unknown;
 }
 
 export interface ServiceChatContextMedia {
@@ -1350,6 +1394,10 @@ export interface ServiceChatContextQuoted {
 }
 
 export interface ServiceChatContextTurn {
+  steps_available?: boolean;
+  group_id?: string;
+  sender_name?: string;
+  status?: string;
   turn_id: string;
   created_at: string;
   user_text: string;
@@ -1371,6 +1419,11 @@ export interface ServiceChatContextTurn {
 }
 
 export interface ServiceChatContextResponse {
+  window_version: number;
+  next_cursor?: string | null;
+  current_turn_ids: string[];
+  compacted: boolean;
+  association_incomplete: boolean;
   backend: "memory" | "redis";
   sender_id: string;
   system_prompt?: string;
@@ -1462,13 +1515,18 @@ export const explorer = {
     return request("GET", `/explorer/services/${encodeURIComponent(service_id)}/images?${qs}`);
   },
 
-  queryServiceChatUsers(serviceId: string): Promise<ServiceChatUsersResponse> {
-    return request("GET", `/explorer/services/${encodeURIComponent(serviceId)}/chat-users`);
+  queryServiceChatUsers(serviceId: string, page = 1, query = ""): Promise<ServiceChatUsersResponse> {
+    return request("GET", `/explorer/services/${encodeURIComponent(serviceId)}/chat-users?${buildQueryString({page, page_size: 20, query: query.trim() || undefined})}`);
   },
 
-  queryServiceChatContext(serviceId: string, senderId: string): Promise<ServiceChatContextResponse> {
-    const qs = buildQueryString({ sender_id: senderId });
+  queryServiceChatContext(serviceId: string, senderId: string, before?: string): Promise<ServiceChatContextResponse> {
+    const qs = buildQueryString({ sender_id: senderId, before });
     return request("GET", `/explorer/services/${encodeURIComponent(serviceId)}/chat-context?${qs}`);
+  },
+
+  queryServiceChatSteps(serviceId: string, senderId: string, turnId: string, stepId?: string): Promise<{items: ServiceChatStep[]}> {
+    const base = `/explorer/services/${encodeURIComponent(serviceId)}/chat-turns/${encodeURIComponent(turnId)}/steps`;
+    return request("GET", `${base}${stepId ? `/${encodeURIComponent(stepId)}` : ""}?${buildQueryString({sender_id: senderId})}`);
   },
 
   clearServiceChatContext(serviceId: string, senderId: string): Promise<{ cleared: boolean }> {

@@ -373,6 +373,7 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 .unwrap_or_default(),
             };
             Some(DataValue::LLMMessage(crate::model_inference::llm::LLMMessage {
+                context_message_id: None,
                 role,
                 parts,
                 reasoning_content: None,
